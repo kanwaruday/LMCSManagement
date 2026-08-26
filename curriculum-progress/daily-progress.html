@@ -30,6 +30,26 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .chip-val.red{color:var(--red)}.chip-val.amber{color:#d97706}.chip-val.muted{color:#9ca3af}.chip-val.blue{color:#1d4ed8}
 .chip-sub{font-size:9px;color:#9ca3af;margin-top:1px}
 
+/* ── TODAY SUMMARY ── */
+.today-summary{background:var(--white);border-bottom:1px solid var(--border);padding:16px 24px;flex-shrink:0}
+.today-summary-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.today-summary-hdr h2{font-size:13px;font-weight:700;color:var(--dark);text-transform:uppercase;letter-spacing:.4px}
+.today-toggle-btn{background:var(--lgray);border:1px solid var(--border);color:var(--gray);padding:6px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.today-toggle-btn:hover{border-color:var(--red);color:var(--red)}
+.today-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.today-card{display:flex;gap:12px;align-items:flex-start;background:var(--white);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.today-card.alert{border-color:#fecaca;background:#fff8f8}
+.today-card.ok{border-color:#bbf7d0;background:#f0fdf4}
+.today-card-icon{font-size:20px;line-height:1;flex-shrink:0}
+.today-card-count{font-size:24px;font-weight:800;line-height:1;color:var(--dark)}
+.today-card.alert .today-card-count{color:var(--red)}
+.today-card.ok .today-card-count{color:#15803d}
+.today-card-label{font-size:11px;font-weight:700;color:var(--dark);margin-top:2px}
+.today-card-detail{font-size:11px;color:var(--gray);margin-top:4px;line-height:1.5}
+.today-card-detail a{color:var(--red);font-weight:600;text-decoration:none}
+.today-card-detail a:hover{text-decoration:underline}
+@media(max-width:640px){.today-summary{padding:12px 14px}}
+
 /* ── FILTER BAR ── */
 .filter-bar{background:var(--white);border-bottom:1px solid var(--border);padding:8px 24px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap}
 .filter-bar label{font-size:11px;font-weight:700;color:var(--gray);display:flex;align-items:center;gap:5px}
@@ -289,6 +309,34 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   </div>
 </div>
 
+<!-- TODAY SUMMARY -->
+<div class="today-summary" id="todaySummary">
+  <div class="today-summary-hdr">
+    <h2>Today</h2>
+    <button class="today-toggle-btn" id="toggleReportBtn" onclick="toggleFullReport()">Show full report ▾</button>
+  </div>
+  <div class="today-cards">
+    <div class="today-card" id="cardMissing">
+      <div class="today-card-icon">🔴</div>
+      <div class="today-card-body">
+        <div class="today-card-count" id="tsMissingCount">—</div>
+        <div class="today-card-label">Missing uploads today</div>
+        <div class="today-card-detail" id="tsMissingDetail">Checking…</div>
+      </div>
+    </div>
+    <div class="today-card" id="cardOverdue">
+      <div class="today-card-icon">⚠</div>
+      <div class="today-card-body">
+        <div class="today-card-count" id="tsOverdueCount">—</div>
+        <div class="today-card-label">Overdue CWA gaps</div>
+        <div class="today-card-detail" id="tsOverdueDetail">Checking…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="fullReportSection" style="display:none">
+
 <!-- CHIPS STRIP -->
 <div class="chips-strip">
   <div class="chip ok"><div class="chip-lbl">Uploads Today</div><div class="chip-val" id="cUploads">—</div><div class="chip-sub">entries logged today</div></div>
@@ -385,7 +433,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
       <p>Calculating missing uploads…</p>
     </div>
   </div>
+  <!-- No tab button points here anymore (superseded by cwa-gap-report.html as
+       its own tool) but the Today summary above still calls renderGaps() to
+       reuse its computation, so this needs to exist for it to render into. -->
+  <div class="tab-panel" id="panel-gaps" style="display:none"></div>
 </div>
+
+</div><!-- /#fullReportSection -->
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -1099,6 +1153,7 @@ function renderFeed() {
      unmapped — CWA in daily sheet but subject has no CWA date in CM at all
 ═══════════════════════════════════════════════════════════ */
 let gapData     = [];
+let ayStartYear, ayLabel; // set by renderGaps(), read by the separate renderGapPanel()
 let gapSortKey  = 'days';   // days | date | class | school
 let gapSortDir  = -1;
 let gapFiltSchool  = '';
@@ -1126,10 +1181,10 @@ async function renderGaps() {
 
   // ── Academic year: 1 Apr → 31 Mar ───────────────────────
   // Current academic year start = April 1 of this calendar year if we're past it, else last year.
-  const ayStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+  ayStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
   const ayStart = new Date(ayStartYear, 3, 1);   // April 1
   const ayEnd   = new Date(ayStartYear + 1, 2, 31, 23, 59, 59); // March 31 next year
-  const ayLabel = `${ayStartYear}-${String(ayStartYear + 1).slice(2)}`; // e.g. "2026-27"
+  ayLabel = `${ayStartYear}-${String(ayStartYear + 1).slice(2)}`; // e.g. "2026-27"
 
   // ── Build daily CWA index — restricted to current academic year ──
   // [lmsIdx][classMapped][normSubject] → sorted [{dateObj,dateStr,chapter,teacher}]
@@ -1267,12 +1322,18 @@ async function renderGaps() {
   });
 
   // ── Badge & chip count ───────────────────────────────────
+  // gapBadge/cGaps belonged to the old in-page Gaps tab, since removed in
+  // favor of cwa-gap-report.html as its own tool -- guarded since neither
+  // element exists here anymore, only the Today summary reads gapData now.
   const overdueCt = gapData.filter(g=>g.type==='overdue').length;
   const lateCt    = gapData.filter(g=>g.type==='late').length;
   const badge = document.getElementById('gapBadge');
-  badge.textContent = overdueCt + lateCt;
-  badge.style.display = (overdueCt+lateCt) > 0 ? 'inline' : 'none';
-  document.getElementById('cGaps').textContent = overdueCt + lateCt;
+  if (badge) {
+    badge.textContent = overdueCt + lateCt;
+    badge.style.display = (overdueCt+lateCt) > 0 ? 'inline' : 'none';
+  }
+  const cGapsEl = document.getElementById('cGaps');
+  if (cGapsEl) cGapsEl.textContent = overdueCt + lateCt;
 
   renderGapPanel();
 }
@@ -2243,9 +2304,82 @@ function finishInit() {
   buildChips();
   applyPrincipalLock();
   renderFeed();
+  renderTodaySummary(); // fire and forget -- updates its own cards as each check resolves
 
   // Prefetch CM in the background only if not already loaded via proxy
   if (!cmLoaded) _prefetchCM();
+}
+
+/* ── TODAY SUMMARY ──────────────────────────────────────────
+   Principals land on a couple of numbers + an attention list, not the full
+   coordinator-depth dashboard. Reuses renderMissing() and renderGaps() (the
+   latter previously only wired to a since-removed tab, superseded by
+   cwa-gap-report.html as a standalone tool -- its computation is still exactly
+   what we need for the "how many are overdue" count here). */
+async function renderTodaySummary() {
+  const section = document.getElementById('fullReportSection');
+  const btn = document.getElementById('toggleReportBtn');
+  // Principals default to the light view; network-wide (owner/coordinator)
+  // sessions see full detail immediately, matching how this page worked before.
+  if (PRINCIPAL_SESSION) {
+    section.style.display = 'none';
+    btn.textContent = 'Show full report ▾';
+  } else {
+    section.style.display = '';
+    btn.textContent = 'Hide full report ▲';
+  }
+
+  // Both checks hit slow, independent data sources (allocation sheet vs. course
+  // mapping) -- run them concurrently and let each card update on its own,
+  // rather than making one wait on the other.
+  (async () => {
+    try {
+      await renderMissing();
+      const missingCt = parseInt(document.getElementById('missingBadge').textContent, 10) || 0;
+      document.getElementById('tsMissingCount').textContent = missingCt;
+      document.getElementById('cardMissing').className = 'today-card ' + (missingCt > 0 ? 'alert' : 'ok');
+      document.getElementById('tsMissingDetail').innerHTML = missingCt > 0
+        ? `${missingCt} class/subject combo${missingCt !== 1 ? 's' : ''} haven't logged today's work yet. `
+          + `<a href="#" onclick="event.preventDefault();expandAndShowTab('missing')">View list →</a>`
+        : `All expected uploads are in ✅`;
+    } catch (e) {
+      document.getElementById('tsMissingDetail').textContent = 'Could not check right now — try Refresh.';
+    }
+  })();
+
+  (async () => {
+    try {
+      await renderGaps();
+      // renderGaps() itself is cross-school by design (cwa-gap-report.html's job);
+      // apply the same campus lock the rest of this page already uses.
+      const overdueCt = gapData.filter(g => g.type === 'overdue'
+        && (activeSchools.length === 0 || activeSchools.includes(g.lmsIdx))).length;
+      document.getElementById('tsOverdueCount').textContent = overdueCt;
+      document.getElementById('cardOverdue').className = 'today-card ' + (overdueCt > 0 ? 'alert' : 'ok');
+      document.getElementById('tsOverdueDetail').innerHTML = overdueCt > 0
+        ? `${overdueCt} planned CWA item${overdueCt !== 1 ? 's are' : ' is'} past due with nothing logged yet. `
+          + `<a href="cwa-gap-report.html">View overdue list →</a>`
+        : `Nothing overdue 🎉`;
+    } catch (e) {
+      document.getElementById('tsOverdueDetail').textContent = 'Could not check right now — try Refresh.';
+    }
+  })();
+}
+
+function toggleFullReport() {
+  const section = document.getElementById('fullReportSection');
+  const btn = document.getElementById('toggleReportBtn');
+  const showing = section.style.display !== 'none';
+  section.style.display = showing ? 'none' : '';
+  btn.textContent = showing ? 'Show full report ▾' : 'Hide full report ▲';
+}
+
+function expandAndShowTab(tabName) {
+  document.getElementById('fullReportSection').style.display = '';
+  document.getElementById('toggleReportBtn').textContent = 'Hide full report ▲';
+  const tabBtn = document.getElementById('tab-' + tabName);
+  if (tabBtn) showTab(tabName, tabBtn);
+  document.getElementById('fullReportSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Principal-mode: restricts the school multi-select to one campus and locks it
