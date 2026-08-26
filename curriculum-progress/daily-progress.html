@@ -221,22 +221,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .day-cell.some{color:#1d4ed8}
 .day-cell.cwa{color:#15803d}
 
-/* ── UPLOAD COMPLIANCE ── */
-.compliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:1.5rem}
-.comp-card{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:12px 14px}
-.comp-card.today{border-color:#bbf7d0;background:#f0fdf4}
-.comp-card.recent{border-color:#fde68a;background:#fffbeb}
-.comp-card.stale{border-color:#fecaca;background:#fff8f8}
-.comp-card.never{border-color:var(--border);background:var(--lgray);opacity:.6}
-.comp-school{font-size:12px;font-weight:700;color:var(--dark);margin-bottom:3px}
-.comp-last{font-size:.8rem;color:var(--gray)}
-.comp-age{font-size:.75rem;font-weight:700;margin-top:4px}
-.comp-card.today .comp-age{color:#15803d}
-.comp-card.recent .comp-age{color:#b45309}
-.comp-card.stale .comp-age{color:var(--red)}
-.comp-teacher{font-size:.75rem;color:#9ca3af;margin-top:2px}
-.comp-count{font-size:.75rem;color:var(--gray)}
-
 /* ── MISSING UPLOADS ── */
 .missing-school{margin-bottom:20px;border:1px solid var(--border);border-radius:6px;overflow:hidden}
 .missing-school-hdr{background:var(--lgray);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:10px}
@@ -398,9 +382,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   <button class="tab-btn" id="tab-weekly" onclick="showTab('weekly',this)">
     📊 Pulse
   </button>
-  <button class="tab-btn" id="tab-comply" onclick="showTab('comply',this)">
-    ✅ Upload Compliance
-  </button>
   <button class="tab-btn" id="tab-missing" onclick="showTab('missing',this)">
     🔴 Missing Uploads
     <span class="tab-badge amber" id="missingBadge" style="display:none">0</span>
@@ -419,12 +400,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
     <div class="loading-state" id="loadingWeekly">
       <div class="spinner"></div>
       <p>Building weekly pulse…</p>
-    </div>
-  </div>
-  <div class="tab-panel" id="panel-comply">
-    <div class="loading-state" id="loadingComply">
-      <div class="spinner"></div>
-      <p>Checking upload compliance…</p>
     </div>
   </div>
   <div class="tab-panel" id="panel-missing">
@@ -1729,91 +1704,6 @@ function schoolClassRows(lmsIdx, days) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   RENDER — Upload Compliance
-═══════════════════════════════════════════════════════════ */
-function renderCompliance() {
-  const panel = document.getElementById('panel-comply');
-  // Anchor to most recent date in data, not today's calendar date
-  const dateDates = [...new Set(allRecords.map(r => r.dateStr))].sort().reverse();
-  const today = dateDates[0] || todayStr();
-  const yesterday = dateDates[1] || localDateStr(new Date(Date.now()-86400000));
-
-  const cards = CM_SCHOOLS.map((school, idx) => {
-    const schoolRecs = allRecords.filter(r => r.lmsIdx === idx);
-    if (!schoolRecs.length) {
-      return `<div class="comp-card never">
-        <div class="comp-school">🏫 ${school.name}</div>
-        <div class="comp-last">No uploads found in fetched data</div>
-        <div class="comp-age">Not found (last 2000 entries)</div>
-      </div>`;
-    }
-
-    // Find the actual most recent record (don't rely on array sort order)
-    const last = schoolRecs.reduce((a, b) => a.dateStr > b.dateStr ? a : b);
-    const lastDate = last.dateStr;
-    const daysDiff = Math.floor((new Date(today)-new Date(lastDate))/86400000);
-    const cls = daysDiff === 0 ? 'today' : daysDiff === 1 ? 'recent' : 'stale';
-    const ageLabel = daysDiff === 0 ? '✓ Uploaded today'
-      : daysDiff === 1 ? '⚠ Last uploaded yesterday'
-      : `⚠ ${daysDiff} days since last upload`;
-
-    const todayCount  = schoolRecs.filter(r=>r.dateStr===today).length;
-    const weekCount   = schoolRecs.filter(r=>r.dateStr>=localDateStr(new Date(Date.now()-7*86400000))).length;
-    const teachers    = [...new Set(schoolRecs.filter(r=>r.dateStr===lastDate).map(r=>r.teacher))];
-
-    return `<div class="comp-card ${cls}">
-      <div class="comp-school">🏫 ${school.name}</div>
-      <div class="comp-last">Last: ${lastDate} at ${last.timeStr}</div>
-      <div class="comp-age">${ageLabel}</div>
-      <div class="comp-teacher">${teachers.slice(0,3).join(', ')}</div>
-      <div class="comp-count">${todayCount > 0 ? `${todayCount} entries today` : 'No entries today'} &nbsp;·&nbsp; ${weekCount} this week</div>
-    </div>`;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="sec-hdr">Upload Compliance — School Status</div>
-    <p class="sec-sub">Shows the most recent upload from each school and how long since the last entry.</p>
-    <div class="compliance-grid">${cards}</div>
-    <div class="sec-hdr">All Uploaders This Week</div>
-    ${renderUploaderTable()}`;
-}
-
-function renderUploaderTable() {
-  // 7-day window anchored to most recent data date
-  const latestDates = [...new Set(allRecords.map(r => r.dateStr))].sort().reverse();
-  const anchor = latestDates[0] || todayStr();
-  const weekStart = localDateStr(new Date(new Date(anchor) - 6*86400000));
-  const weekRecs  = allRecords.filter(r => r.dateStr >= weekStart);
-
-  // Group by teacher+school+class
-  const uploaders = {};
-  weekRecs.forEach(r => {
-    const key = `${r.lmsIdx}|${r.teacher}`;
-    if (!uploaders[key]) uploaders[key] = { teacher:r.teacher, lmsIdx:r.lmsIdx, classes:new Set(), count:0, lastDate:r.dateStr };
-    uploaders[key].count++;
-    uploaders[key].classes.add(r.classMapped||r.classRaw||'?');
-    if (r.dateStr > uploaders[key].lastDate) uploaders[key].lastDate = r.dateStr;
-  });
-
-  const rows = Object.values(uploaders)
-    .sort((a,b) => b.count - a.count || a.teacher.localeCompare(b.teacher))
-    .map(u => `<tr>
-      <td>${lmsName(u.lmsIdx)}</td>
-      <td style="font-weight:600">${esc(u.teacher)}</td>
-      <td>${[...u.classes].sort().join(', ')}</td>
-      <td style="text-align:center;font-weight:700">${u.count}</td>
-      <td>${u.lastDate}</td>
-    </tr>`).join('');
-
-  return `<div class="gap-table-wrap">
-    <table class="gap-table">
-      <thead><tr><th>School</th><th>Teacher</th><th>Classes Covered</th><th>Entries This Week</th><th>Last Entry</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════════
    ALLOCATION SHEET — fetch & cache
    Source of truth for Missing Uploads.
    Columns: School | School Code | Class | Subject | Teacher | Active | Daily
@@ -2082,7 +1972,6 @@ function showTab(name, btn) {
   btn.classList.add('active');
 
   if (name === 'weekly')  renderWeekly();
-  if (name === 'comply')  renderCompliance();
   if (name === 'missing') renderMissing();
 }
 
@@ -2192,7 +2081,6 @@ function clearAllFilters() {
 function _rerender() {
   renderFeed();
   if (document.getElementById('panel-weekly')?.classList.contains('active'))  renderWeekly();
-  if (document.getElementById('panel-comply')?.classList.contains('active'))  renderCompliance();
   if (document.getElementById('panel-missing')?.classList.contains('active')) renderMissing(); // async — fire and forget
 }
 
@@ -2408,6 +2296,11 @@ function applyPrincipalLock() {
 
   const btn = document.getElementById('msSchoolBtn');
   if (btn) btn.disabled = true;
+
+  // Pulse is a cross-campus trend view (coordinator/owner territory) -- not
+  // useful sliced to one school, and not part of what a principal needs day
+  // to day. Hidden here rather than removed, so coordinators/owner keep it.
+  document.getElementById('tab-weekly')?.remove();
 
   applyPrincipalNavLock();
 }
