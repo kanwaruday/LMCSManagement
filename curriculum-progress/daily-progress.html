@@ -1895,13 +1895,17 @@ function _renderMissingFromAllocation(panel, checkDate, allocation) {
     ? allocation.filter(e => activeSchools.includes(e.lmsIdx))
     : allocation;
 
-  // uploadedByCombo[lmsIdx|cls|subject] → Set of teacher names
+  // uploadedByCombo[lmsIdx|cls|subject] → Map of lowercased teacher name -> the
+  // name as it actually appears in the Daily sheet (kept for display).
   const uploadedByCombo = {};
   allRecords.filter(r => r.dateStr === checkDate).forEach(r => {
     if (!r.classMapped) return;
     const key = `${r.lmsIdx}|${r.classMapped}|${r.subject}`;
-    if (!uploadedByCombo[key]) uploadedByCombo[key] = new Set();
-    if (r.teacher) uploadedByCombo[key].add(r.teacher.trim());
+    if (!uploadedByCombo[key]) uploadedByCombo[key] = new Map();
+    if (r.teacher) {
+      const t = r.teacher.trim();
+      uploadedByCombo[key].set(t.toLowerCase(), t);
+    }
   });
 
   // Determine missing
@@ -1911,9 +1915,13 @@ function _renderMissingFromAllocation(panel, checkDate, allocation) {
     const uploaded  = uploadedByCombo[comboKey];
 
     if (exp.teacher) {
-      // Specific teacher expected — flag if they haven't uploaded
-      if (!uploaded || !uploaded.has(exp.teacher.trim())) {
-        missing.push({ ...exp, uploadedBy: uploaded ? [...uploaded] : [] });
+      // Specific teacher expected — flag if they haven't uploaded. Compared
+      // case-insensitively: the Allocation Sheet and Daily Classwork Sheet
+      // don't agree on casing for the same real person (e.g. "Arpna Sood"
+      // vs. "ARPNA SOOD"), which was previously flagging real uploads as
+      // missing on that mismatch alone.
+      if (!uploaded || !uploaded.has(exp.teacher.trim().toLowerCase())) {
+        missing.push({ ...exp, uploadedBy: uploaded ? [...uploaded.values()] : [] });
       }
     } else {
       // No teacher assigned yet — flag if nobody uploaded this combo at all
