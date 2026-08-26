@@ -1,0 +1,278 @@
+/* LMCS Management Portal — base styles
+   Palette and type follow the LMS Brand Guidelines (Brandbook 2020):
+   Red #CE0000 / Blue #0046AA / Yellow #FFC832, Open Sans body, Product Sans
+   headings (approximated here with Poppins, the closest open-license match). */
+
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Poppins:wght@600;700;800&display=swap");
+
+:root {
+  /* Brand — primary */
+  --lms-red: #ce0000;
+  --lms-blue: #0046aa;
+  --lms-yellow: #ffc832;
+
+  /* Brand — secondary */
+  --lms-red-dark: #a70000;
+  --lms-blue-dark: #002850;
+  --lms-yellow-dark: #f09b0a;
+  --lms-red-pale: #ffbebe;
+  --lms-blue-pale: #d2f0ff;
+  --lms-yellow-pale: #fffacd;
+
+  /* App roles */
+  --color-bg: #f4f6fa;
+  --color-surface: #ffffff;
+  --color-border: #e1e6ee;
+  --color-text: #1c2430;
+  --color-text-muted: #5c6779;
+  --color-primary: var(--lms-blue);
+  --color-primary-dark: var(--lms-blue-dark);
+  --color-accent: var(--lms-red);
+
+  --color-live: #1f7a4d;
+  --color-live-bg: #e2f5ea;
+  --color-building: #a15c00;
+  --color-building-bg: #fff1d6;
+  --color-planned: #5c6779;
+  --color-planned-bg: #eceef2;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(20, 30, 50, 0.06), 0 4px 16px rgba(20, 30, 50, 0.06);
+
+  --font-heading: "Poppins", "Product Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #10141c;
+    --color-surface: #171d28;
+    --color-border: #2a3241;
+    --color-text: #eef1f6;
+    --color-text-muted: #a3adc0;
+    --color-primary: #5b9bef;
+    --color-primary-dark: #8fc0ff;
+    --color-accent: #ff6b6b;
+
+    --color-live: #6fd39c;
+    --color-live-bg: #142a20;
+    --color-building: #f0c14b;
+    --color-building-bg: #322507;
+    --color-planned: #a3adc0;
+    --color-planned-bg: #1f2530;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+h1, h2, h3 { font-family: var(--font-heading); }
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Header */
+header.site {
+  border-bottom: 3px solid var(--color-primary);
+  background: var(--color-surface);
+}
+
+header.site .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.brand img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.brand .tagline {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+nav.roles {
+  display: flex;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+nav.roles span {
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--color-primary-dark);
+  background: var(--lms-blue-pale);
+}
+
+@media (prefers-color-scheme: dark) {
+  nav.roles span { color: var(--color-primary-dark); background: #1c3350; }
+}
+
+/* Hero */
+.hero {
+  padding: 56px 0 40px;
+  position: relative;
+}
+
+.hero .eyebrow {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 10px;
+}
+
+.hero h1 {
+  font-size: clamp(1.7rem, 3.4vw, 2.4rem);
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+
+.hero p {
+  color: var(--color-text-muted);
+  font-size: 1.05rem;
+  max-width: 640px;
+  margin: 0;
+}
+
+/* Section headings */
+section.block {
+  padding: 8px 0 40px;
+}
+
+section.block h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin: 0 0 18px;
+  font-weight: 700;
+}
+
+/* Module grid */
+.modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-primary);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.card p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+.status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.status.live { color: var(--color-live); background: var(--color-live-bg); }
+.status.building { color: var(--color-building); background: var(--color-building-bg); }
+.status.planned { color: var(--color-planned); background: var(--color-planned-bg); }
+
+/* Campus grid */
+.campuses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.campus {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.campus .code {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--lms-yellow-dark);
+  letter-spacing: 0.04em;
+}
+
+.campus .name {
+  font-weight: 600;
+  margin: 2px 0 2px;
+  font-size: 0.95rem;
+}
+
+.campus .principal {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+/* Footer */
+footer.site {
+  border-top: 1px solid var(--color-border);
+  padding: 24px 0 40px;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
