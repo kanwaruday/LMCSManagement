@@ -54,7 +54,7 @@
   <script src="assets/auth.js"></script>
   <script>
     const MODULES = [
-      { name: 'Curriculum & Progress', status: 'building', desc: 'Daily CW/HW tracking mapped against the Annual Curriculum Plan.' },
+      { name: 'Curriculum & Progress', status: 'live', url: 'curriculum-progress/course-mapping-progress.html', desc: 'Daily CW/HW tracking mapped against the Annual Curriculum Plan.' },
       { name: 'Teacher Evaluations', status: 'planned', desc: 'Daily deliverable-based evaluation, feeding the incentive score.' },
       { name: 'Hiring Dashboard', status: 'planned', desc: 'Applicant tracking from screening through offer, per campus.' },
       { name: 'Salary Dashboard', status: 'planned', desc: 'Salary slip and pay scale by employee.' },
@@ -67,7 +67,7 @@
       grid.innerHTML = MODULES.map((m) => (
         '<div class="card">' +
           '<div class="card-top">' +
-            '<h3>' + m.name + '</h3>' +
+            '<h3>' + (m.url ? '<a href="' + m.url + '">' + m.name + '</a>' : m.name) + '</h3>' +
             '<span class="status ' + m.status + '">' + m.status + '</span>' +
           '</div>' +
           '<p>' + m.desc + '</p>' +
