@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Home</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="index.html">
+        <span class="logo-badge"><img src="assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+      <nav class="roles" id="header-status"></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
+    <section class="hero" id="auth-root" style="padding-top:40px;">
+      <span class="eyebrow">Internal · Staff use only</span>
+      <h1>One home for La Montessori School management</h1>
+      <div id="gate-slot"></div>
+    </section>
+
+    <div id="app-root" style="display:none">
+
+      <div class="welcome" id="welcome-strip"></div>
+
+      <section class="block" id="modules">
+        <h2>Modules</h2>
+        <div class="modules" id="modules-grid">
+          <!-- filled in by JS once campus is known -->
+        </div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="assets/auth.js"></script>
+  <script>
+    const MODULES = [
+      { name: 'Curriculum & Progress', status: 'building', desc: 'Daily CW/HW tracking mapped against the Annual Curriculum Plan.' },
+      { name: 'Teacher Evaluations', status: 'planned', desc: 'Daily deliverable-based evaluation, feeding the incentive score.' },
+      { name: 'Hiring Dashboard', status: 'planned', desc: 'Applicant tracking from screening through offer, per campus.' },
+      { name: 'Salary Dashboard', status: 'planned', desc: 'Salary slip and pay scale by employee.' },
+      { name: 'Staff Portal', status: 'planned', desc: 'Unified employee records — lifecycle, roles, and profile in one place.' },
+      { name: 'Bye Laws', status: 'planned', desc: 'HR rulebook of record — conduct, leave rules, and job roles.' },
+    ];
+
+    function renderModules() {
+      const grid = document.getElementById('modules-grid');
+      grid.innerHTML = MODULES.map((m) => (
+        '<div class="card">' +
+          '<div class="card-top">' +
+            '<h3>' + m.name + '</h3>' +
+            '<span class="status ' + m.status + '">' + m.status + '</span>' +
+          '</div>' +
+          '<p>' + m.desc + '</p>' +
+        '</div>'
+      )).join('');
+    }
+
+    function showApp(session) {
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+
+      document.getElementById('header-status').innerHTML =
+        '<span>' + session.campusName + '</span>';
+
+      document.getElementById('welcome-strip').innerHTML =
+        '<div class="welcome-text">Signed in as <b>' + session.name + '</b>' +
+        '<span class="welcome-campus">' + session.campusName + '</span></div>' +
+        '<a href="#" class="signout" id="signout-link">Sign out</a>';
+
+      document.getElementById('signout-link').addEventListener('click', function (e) {
+        e.preventDefault();
+        LMCS.signOut();
+      });
+
+      renderModules();
+    }
+
+    LMCS.requireSession('#gate-slot').then(showApp);
+  </script>
+
+</body>
+</html>
