@@ -1,80 +1,40 @@
 /* LMCS Management Portal — base styles
-   Palette and type follow the LMS Brand Guidelines (Brandbook 2020):
-   Red #CE0000 / Blue #0046AA / Yellow #FFC832, Open Sans body, Product Sans
-   headings (approximated here with Poppins, the closest open-license match). */
-
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Poppins:wght@600;700;800&display=swap");
+   Matches the house style already used by the LMCS Bye Laws site and the
+   Salary Dashboard: red #CE0000 primary, white page, light-gray cards,
+   Segoe UI. No dark mode — none of the sibling tools have one either. */
 
 :root {
-  /* Brand — primary */
-  --lms-red: #ce0000;
-  --lms-blue: #0046aa;
-  --lms-yellow: #ffc832;
+  --red: #ce0000;
+  --red-dark: #a70000;
+  --red-pale: #fde8e8;
+  --dark: #1a1a1a;
+  --gray: #555555;
+  --lgray: #f5f5f5;
+  --border: #dddddd;
+  --white: #ffffff;
 
-  /* Brand — secondary */
-  --lms-red-dark: #a70000;
-  --lms-blue-dark: #002850;
-  --lms-yellow-dark: #f09b0a;
-  --lms-red-pale: #ffbebe;
-  --lms-blue-pale: #d2f0ff;
-  --lms-yellow-pale: #fffacd;
+  --color-live: #1a7f3c;
+  --color-live-bg: #e6f6ec;
+  --color-building: #b45f06;
+  --color-building-bg: #fdf1de;
+  --color-planned: var(--gray);
+  --color-planned-bg: var(--lgray);
 
-  /* App roles */
-  --color-bg: #f4f6fa;
-  --color-surface: #ffffff;
-  --color-border: #e1e6ee;
-  --color-text: #1c2430;
-  --color-text-muted: #5c6779;
-  --color-primary: var(--lms-blue);
-  --color-primary-dark: var(--lms-blue-dark);
-  --color-accent: var(--lms-red);
-
-  --color-live: #1f7a4d;
-  --color-live-bg: #e2f5ea;
-  --color-building: #a15c00;
-  --color-building-bg: #fff1d6;
-  --color-planned: #5c6779;
-  --color-planned-bg: #eceef2;
-
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(20, 30, 50, 0.06), 0 4px 16px rgba(20, 30, 50, 0.06);
-
-  --font-heading: "Poppins", "Product Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #10141c;
-    --color-surface: #171d28;
-    --color-border: #2a3241;
-    --color-text: #eef1f6;
-    --color-text-muted: #a3adc0;
-    --color-primary: #5b9bef;
-    --color-primary-dark: #8fc0ff;
-    --color-accent: #ff6b6b;
-
-    --color-live: #6fd39c;
-    --color-live-bg: #142a20;
-    --color-building: #f0c14b;
-    --color-building-bg: #322507;
-    --color-planned: #a3adc0;
-    --color-planned-bg: #1f2530;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.3);
-  }
+  --radius: 6px;
+  --font: "Segoe UI", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: var(--font-body);
-  background: var(--color-bg);
-  color: var(--color-text);
+  font-family: var(--font);
+  background: var(--white);
+  color: var(--dark);
   line-height: 1.5;
 }
 
-h1, h2, h3 { font-family: var(--font-heading); }
+h1, h2, h3 { font-family: var(--font); }
 
 .wrap {
   max-width: 1080px;
@@ -84,8 +44,8 @@ h1, h2, h3 { font-family: var(--font-heading); }
 
 /* Header */
 header.site {
-  border-bottom: 3px solid var(--color-primary);
-  background: var(--color-surface);
+  background: var(--red);
+  border-bottom: 1px solid var(--red-dark);
 }
 
 header.site .wrap {
@@ -101,26 +61,35 @@ header.site .wrap {
   align-items: center;
   gap: 12px;
   font-weight: 700;
-  font-family: var(--font-heading);
   font-size: 1.1rem;
-  color: var(--color-text);
+  color: var(--white);
   text-decoration: none;
 }
 
-.brand img {
+.brand .logo-badge {
   width: 40px;
   height: 40px;
+  border-radius: 50%;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand .logo-badge img {
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
 .brand .tagline {
   display: block;
-  font-family: var(--font-body);
   font-weight: 600;
   font-size: 0.68rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 nav.roles {
@@ -133,18 +102,13 @@ nav.roles {
 nav.roles span {
   padding: 4px 12px;
   border-radius: 999px;
-  color: var(--color-primary-dark);
-  background: var(--lms-blue-pale);
-}
-
-@media (prefers-color-scheme: dark) {
-  nav.roles span { color: var(--color-primary-dark); background: #1c3350; }
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* Hero */
 .hero {
-  padding: 56px 0 40px;
-  position: relative;
+  padding: 48px 0 36px;
 }
 
 .hero .eyebrow {
@@ -153,19 +117,20 @@ nav.roles span {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-accent);
+  color: var(--red);
   margin-bottom: 10px;
 }
 
 .hero h1 {
   font-size: clamp(1.7rem, 3.4vw, 2.4rem);
   font-weight: 700;
+  color: var(--red);
   margin: 0 0 10px;
   letter-spacing: -0.01em;
 }
 
 .hero p {
-  color: var(--color-text-muted);
+  color: var(--gray);
   font-size: 1.05rem;
   max-width: 640px;
   margin: 0;
@@ -177,12 +142,16 @@ section.block {
 }
 
 section.block h2 {
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  margin: 0 0 18px;
+  font-size: 1.35rem;
+  color: var(--red);
+  margin: 0 0 4px;
   font-weight: 700;
+  border-bottom: 2px solid var(--red);
+  padding-bottom: 10px;
+}
+
+.modules, .campuses {
+  margin-top: 18px;
 }
 
 /* Module grid */
@@ -193,12 +162,10 @@ section.block h2 {
 }
 
 .card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-primary);
+  background: var(--lgray);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
-  box-shadow: var(--shadow);
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -214,12 +181,23 @@ section.block h2 {
 .card h3 {
   margin: 0;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--dark);
+}
+
+.card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card h3 a:hover {
+  color: var(--red);
+  text-decoration: underline;
 }
 
 .card p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--gray);
   font-size: 0.88rem;
 }
 
@@ -245,8 +223,8 @@ section.block h2 {
 }
 
 .campus {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--lgray);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
 }
@@ -254,25 +232,26 @@ section.block h2 {
 .campus .code {
   font-size: 0.72rem;
   font-weight: 700;
-  color: var(--lms-yellow-dark);
+  color: var(--red-dark);
   letter-spacing: 0.04em;
 }
 
 .campus .name {
-  font-weight: 600;
+  font-weight: 700;
   margin: 2px 0 2px;
   font-size: 0.95rem;
+  color: var(--dark);
 }
 
 .campus .principal {
   font-size: 0.82rem;
-  color: var(--color-text-muted);
+  color: var(--gray);
 }
 
 /* Footer */
 footer.site {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border);
   padding: 24px 0 40px;
-  color: var(--color-text-muted);
+  color: var(--gray);
   font-size: 0.82rem;
 }

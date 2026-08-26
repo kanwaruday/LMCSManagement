@@ -13,18 +13,20 @@ cards for what's built vs. planned. No backend yet — static HTML/CSS only.
 ## Structure
 
 ```
-index.html          Home page (central portal)
-assets/style.css     Styles — brand palette, type, layout
-assets/img/          Logo and brand assets
+index.html               Home page (central portal)
+assets/style.css          Styles — brand palette, type, layout
+assets/img/                Logo and brand assets
+salary-dashboard/index.html  Salary slip / pay scale calculator, imported from ~/lmcs-salary-dashboard
 ```
 
 ## Branding
 
-Colors, type, and logo follow the LMS Brand Guidelines (Brandbook 2020):
+Matches the house style already used by [LMCS Bye Laws](https://kanwaruday.github.io/LMCSByeLaws/)
+and the Salary Dashboard, both drawn from the LMS Brand Guidelines (Brandbook 2020):
 
-- **Red** `#CE0000` · **Blue** `#0046AA` · **Yellow** `#FFC832` (+ secondary/pale variants in `assets/style.css`)
-- Heading font: Product Sans (approximated with Poppins — Product Sans has no open web license)
-- Body font: Open Sans
+- Primary: **Red** `#CE0000`, white page background, `#f5f5f5` card surfaces, `#ddd` borders
+- Font: Segoe UI / Arial (system stack — no external font dependency)
+- No dark mode, matching the sibling tools
 - Tagline: "Grooming to Excellence"
 
 ## Campuses
