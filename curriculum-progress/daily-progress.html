@@ -326,8 +326,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   <div class="chip ok"><div class="chip-lbl">Uploads Today</div><div class="chip-val" id="cUploads">—</div><div class="chip-sub">entries logged today</div></div>
   <div class="chip"><div class="chip-lbl">Schools Active Today</div><div class="chip-val blue" id="cSchools">—</div><div class="chip-sub">out of 6 schools</div></div>
   <div class="chip ok"><div class="chip-lbl">CWA Events Today</div><div class="chip-val" id="cCWAToday">—</div><div class="chip-sub">assessments conducted</div></div>
-
-  <div class="chip warn"><div class="chip-lbl">Missing Uploads</div><div class="chip-val amber" id="cMissing">—</div><div class="chip-sub">schools silent today</div></div>
   <div class="chip"><div class="chip-lbl">Last Entry</div><div class="chip-val muted" style="font-size:13px" id="cLastEntry">—</div><div class="chip-sub" id="cLastTime">—</div></div>
 </div>
 
@@ -964,7 +962,6 @@ function buildChips() {
   const todayRecs = allRecords.filter(r => r.dateStr === latestDate);
   const cwaToday  = todayRecs.filter(r => hasCWA(r.cwTag, r.subject));
   const schoolsToday = new Set(todayRecs.map(r => r.lmsIdx));
-  const missingToday = CM_SCHOOLS.length - schoolsToday.size;
 
   // Update chip labels if data is not from today
   if (latestDate !== todayStr()) {
@@ -972,7 +969,6 @@ function buildChips() {
     document.querySelector('#cUploads').closest('.chip').querySelector('.chip-lbl').textContent = `Uploads (${lbl})`;
     document.querySelector('#cSchools').closest('.chip').querySelector('.chip-lbl').textContent = 'Schools Active';
     document.querySelector('#cCWAToday').closest('.chip').querySelector('.chip-lbl').textContent = `CWA Events (${lbl})`;
-    document.querySelector('#cMissing').closest('.chip').querySelector('.chip-lbl').textContent = 'Missing Uploads';
   }
 
   const last = allRecords.length ? allRecords.reduce((a,b) => a.dateStr > b.dateStr ? a : b) : null;
@@ -980,7 +976,6 @@ function buildChips() {
   $('cUploads').textContent   = todayRecs.length || '0';
   $('cSchools').textContent   = `${schoolsToday.size}/6`;
   $('cCWAToday').textContent  = cwaToday.length;
-  $('cMissing').textContent   = missingToday;
   if (last) {
     $('cLastEntry').textContent = lmsName(last.lmsIdx);
     $('cLastTime').textContent  = last.dateObj.toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'});
