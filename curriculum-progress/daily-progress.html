@@ -408,10 +408,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
       <p>Calculating missing uploads…</p>
     </div>
   </div>
-  <!-- No tab button points here anymore (superseded by cwa-gap-report.html as
-       its own tool) but the Today summary above still calls renderGaps() to
-       reuse its computation, so this needs to exist for it to render into. -->
-  <div class="tab-panel" id="panel-gaps" style="display:none"></div>
+  <!-- No CWA-gap panel here anymore -- superseded by cwa-gap-report.html as
+       its own tool. The Today summary above reads its overdue count directly
+       from the Chapter Completion Tracker sheet (checkOverdueFromTracker()),
+       not from any in-page panel. -->
 </div>
 
 </div><!-- /#fullReportSection -->
@@ -1130,432 +1130,65 @@ function renderFeed() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   RENDER — CWA Gap Report (date-aware)
-   Three gap types:
-     overdue  — CM has a CWA date that has passed; no actual CWA found in daily sheet
-     late     — actual CWA in daily sheet found AFTER the planned CM date
-     unmapped — CWA in daily sheet but subject has no CWA date in CM at all
+   TODAY CARD — "Overdue CWA gaps"
+   Reads directly from the LMCS Chapter Completion Tracker sheet
+   (apps-script/ChapterTracker.gs, in the CWHWTracker Apps Script
+   project) instead of recomputing the old client-side chronological
+   pairing here (2026-08-27 -- same cutover as cwa-gap-report.html,
+   which is now this page's own "full report" for gaps; the old
+   in-page renderGaps()/renderGapPanel() duplicate of that algorithm
+   is retired, not kept as a fallback).
+   The tracker's 3-tier escalation model (Behind Pace / Overdue /
+   Critical -- see ChapterTracker.gs's DEADLINE MODEL v3 note) is
+   collapsed into ONE "overdue" count here to keep this card's simple
+   single-number shape; the detail line calls out Critical separately
+   since that's the tier that actually needs attention today.
 ═══════════════════════════════════════════════════════════ */
-let gapData     = [];
-let ayStartYear, ayLabel; // set by renderGaps(), read by the separate renderGapPanel()
-let gapSortKey  = 'days';   // days | date | class | school
-let gapSortDir  = -1;
-let gapFiltSchool  = '';
-let gapFiltClass   = '';
-let gapFiltSubject = '';
-let gapFiltType    = '';    // '' | overdue | late | unmapped
-let gapMinDays     = 7;     // minimum days late/overdue to show
+const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
+const TRACKER_TAB = (() => {
+  const now = new Date();
+  const startYr = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${startYr}-${String(startYr + 1).slice(2)}`;
+})();
 
-function fmtDate(d) {
-  if (!d) return '—';
-  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+async function fetchTrackerStatusRows() {
+  const url = `https://docs.google.com/spreadsheets/d/${TRACKER_SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(TRACKER_TAB)}&_=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  const s = text.indexOf('{'), e = text.lastIndexOf('}');
+  const data = JSON.parse(text.slice(s, e + 1));
+  if (data.status === 'error') throw new Error(data.errors?.[0]?.detailed_message || `tab "${TRACKER_TAB}" not found`);
+  const table = data.table;
+  if (!table?.cols || !table?.rows) return [];
+  let schoolCol = 0, statusCol = 10;
+  table.cols.forEach((col, i) => {
+    const lbl = (col.label || col.id || '').toLowerCase().trim();
+    if (lbl === 'school') schoolCol = i;
+    else if (lbl === 'status') statusCol = i;
+  });
+  const cellStr = (row, i) => { const c = row.c?.[i]; return (!c || c.v == null) ? '' : String(c.f ?? c.v).trim(); };
+  const out = [];
+  table.rows.forEach(row => {
+    const school = cellStr(row, schoolCol);
+    if (!school || school.toLowerCase() === 'school') return;
+    const m = school.match(/(\d+)/);
+    if (!m) return;
+    out.push({ lmsIdx: +m[1] - 1, status: cellStr(row, statusCol) });
+  });
+  return out;
 }
 
-async function renderGaps() {
-  const panel = document.getElementById('panel-gaps');
-  panel.innerHTML = `<div class="loading-state" id="loadingGaps"><div class="spinner"></div><p>Loading Course Mapping data…</p></div>`;
+const NOT_DONE_STATUSES = new Set(['Behind Pace', 'Overdue', 'Critical']);
 
-  try { await loadCourseMapping(); }
-  catch(e) {
-    panel.innerHTML = `<div class="notice" style="display:flex">⚠ Failed to load Course Mapping: ${e.message}</div>`;
-    return;
-  }
-
-  const today = new Date(); today.setHours(0,0,0,0);
-
-  // ── Academic year: 1 Apr → 31 Mar ───────────────────────
-  // Current academic year start = April 1 of this calendar year if we're past it, else last year.
-  ayStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
-  const ayStart = new Date(ayStartYear, 3, 1);   // April 1
-  const ayEnd   = new Date(ayStartYear + 1, 2, 31, 23, 59, 59); // March 31 next year
-  ayLabel = `${ayStartYear}-${String(ayStartYear + 1).slice(2)}`; // e.g. "2026-27"
-
-  // ── Build daily CWA index — restricted to current academic year ──
-  // [lmsIdx][classMapped][normSubject] → sorted [{dateObj,dateStr,chapter,teacher}]
-  const dailyCWA = {};
-  allRecords.filter(r => hasCWA(r.cwTag, r.subject) && r.dateObj >= ayStart && r.dateObj <= ayEnd).forEach(r => {
-    if (r.lmsIdx === null || !r.classMapped) return;
-    const ns = normalizeSubject(r.subject);
-    if (!dailyCWA[r.lmsIdx])                     dailyCWA[r.lmsIdx] = {};
-    if (!dailyCWA[r.lmsIdx][r.classMapped])      dailyCWA[r.lmsIdx][r.classMapped] = {};
-    if (!dailyCWA[r.lmsIdx][r.classMapped][ns])  dailyCWA[r.lmsIdx][r.classMapped][ns] = [];
-    dailyCWA[r.lmsIdx][r.classMapped][ns].push({ dateObj:r.dateObj, dateStr:r.dateStr, chapter:r.cwChapter, teacher:r.teacher });
-  });
-  // sort each list oldest-first so we can pair chronologically
-  Object.values(dailyCWA).forEach(byC => Object.values(byC).forEach(byS =>
-    Object.values(byS).forEach(arr => arr.sort((a,b)=>a.dateObj-b.dateObj))
-  ));
-
-  // ── Teacher lookup from current academic year records ────
-  // Used to fill teacher names for overdue entries where no CWA event exists yet.
-  // Key: lmsIdx|classMapped|normSubject → most recent teacher(s)
-  const teacherIndex = {};
-  allRecords.filter(r => r.dateObj >= ayStart && r.dateObj <= ayEnd).forEach(r => {
-    if (r.lmsIdx === null || !r.classMapped || !r.teacher) return;
-    const key = `${r.lmsIdx}|${r.classMapped}|${normalizeSubject(r.subject)}`;
-    if (!teacherIndex[key]) teacherIndex[key] = { teachers: new Set(), lastDate: '' };
-    teacherIndex[key].teachers.add(r.teacher);
-    if (r.dateStr > teacherIndex[key].lastDate) teacherIndex[key].lastDate = r.dateStr;
-  });
-
-  function lookupTeachers(lmsIdx, cls, subjRaw) {
-    const ns = normalizeSubject(subjRaw);
-    const key = `${lmsIdx}|${cls}|${ns}`;
-    if (teacherIndex[key]) return [...teacherIndex[key].teachers].join(', ');
-    // fuzzy subject fallback
-    const fKey = Object.keys(teacherIndex).find(k => {
-      const [li, cl, ks] = k.split('|');
-      return +li === lmsIdx && cl === cls && (ks === ns || ks.includes(ns) || ns.includes(ks));
-    });
-    return fKey ? [...teacherIndex[fKey].teachers].join(', ') : '—';
-  }
-
-  // Helper: find daily CWA array for a school+class+subject (fuzzy subject match)
-  function getDailyArr(lmsIdx, cls, subjRaw) {
-    const byS = dailyCWA[lmsIdx]?.[cls];
-    if (!byS) return [];
-    const ns = normalizeSubject(subjRaw);
-    // direct match first
-    if (byS[ns]) return byS[ns];
-    // fuzzy
-    const key = Object.keys(byS).find(k => k === ns || k.includes(ns) || ns.includes(k));
-    return key ? byS[key] : [];
-  }
-
-  // ── Build gap list ────────────────────────────────────────
-  gapData = [];
-
-  // Track which daily CWAs have been "claimed" by a CM chapter
-  const claimedKeys = new Set();
-
-  Object.entries(cmStore).forEach(([lmsIdxStr, tabs]) => {
-    const lmsIdx = +lmsIdxStr;
-    Object.entries(tabs).forEach(([tab, chapters]) => {
-      if (!Array.isArray(chapters)) return;
-
-      // Group CM chapters by subject
-      const bySubj = {};
-      chapters.forEach(ch => {
-        const ns = normalizeSubject(ch.subject);
-        if (!bySubj[ns]) bySubj[ns] = [];
-        bySubj[ns].push(ch);
-      });
-
-      Object.entries(bySubj).forEach(([ns, chList]) => {
-        // Only chapters with a planned CWA date that falls within the current academic year
-        const planned = chList
-          .filter(ch => ch.cwaDate && ch.cwaDate >= ayStart && ch.cwaDate <= ayEnd)
-          .sort((a,b) => a.cwaDate - b.cwaDate);
-        if (!planned.length) return;
-
-        const actual = getDailyArr(lmsIdx, tab, chList[0].subject).slice(); // copy
-
-        planned.forEach((ch, i) => {
-          const actualEvent = actual[i] || null;
-          const claimKey    = `${lmsIdx}|${tab}|${ns}|${i}`;
-
-          if (actualEvent) {
-            claimedKeys.add(claimKey);
-            const daysLate = Math.round((actualEvent.dateObj - ch.cwaDate) / 86400000);
-            if (daysLate > 0) {
-              gapData.push({
-                type: 'late', daysLate,
-                lmsIdx, cls: tab,
-                subject: ch.subject,
-                chapterNo: ch.chapterNo,
-                chapterName: ch.chapterName,
-                plannedDate: ch.cwaDate,
-                actualDate: actualEvent.dateObj,
-                actualDateStr: actualEvent.dateStr,
-                teacher: actualEvent.teacher,
-              });
-            }
-            // on-time: no flag
-          } else if (ch.cwaDate < today) {
-            // Planned date passed, no CWA found → overdue
-            const daysOverdue = Math.round((today - ch.cwaDate) / 86400000);
-            gapData.push({
-              type: 'overdue', daysOverdue,
-              lmsIdx, cls: tab,
-              subject: ch.subject,
-              chapterNo: ch.chapterNo,
-              chapterName: ch.chapterName,
-              plannedDate: ch.cwaDate,
-              actualDate: null,
-              teacher: lookupTeachers(lmsIdx, tab, ch.subject),
-            });
-          }
-        });
-
-        // Extra actual CWAs beyond planned count → unmapped
-        actual.slice(planned.length).forEach(ev => {
-          gapData.push({
-            type: 'unmapped',
-            lmsIdx, cls: tab,
-            subject: chList[0].subject,
-            chapterName: ev.chapter || '',
-            plannedDate: null,
-            actualDate: ev.dateObj,
-            actualDateStr: ev.dateStr,
-            teacher: ev.teacher,
-            daysLate: 0,
-          });
-        });
-      });
-    });
-  });
-
-  // ── Badge & chip count ───────────────────────────────────
-  // gapBadge/cGaps belonged to the old in-page Gaps tab, since removed in
-  // favor of cwa-gap-report.html as its own tool -- guarded since neither
-  // element exists here anymore, only the Today summary reads gapData now.
-  const overdueCt = gapData.filter(g=>g.type==='overdue').length;
-  const lateCt    = gapData.filter(g=>g.type==='late').length;
-  const badge = document.getElementById('gapBadge');
-  if (badge) {
-    badge.textContent = overdueCt + lateCt;
-    badge.style.display = (overdueCt+lateCt) > 0 ? 'inline' : 'none';
-  }
-  const cGapsEl = document.getElementById('cGaps');
-  if (cGapsEl) cGapsEl.textContent = overdueCt + lateCt;
-
-  renderGapPanel();
-}
-
-function renderGapPanel() {
-  const panel = document.getElementById('panel-gaps');
-
-  if (!gapData.length) {
-    panel.innerHTML = `<div class="empty-state"><div class="icon">✅</div>
-      <h3>No CWA gaps found</h3>
-      <p>All planned CWA dates in the Course Mapping are either on track or completed on time.</p></div>`;
-    return;
-  }
-
-  // ── Apply min-days threshold to overdue/late ─────────────
-  const visibleGapData = gapData.filter(g => {
-    if (g.type === 'overdue') return g.daysOverdue >= gapMinDays;
-    if (g.type === 'late')    return g.daysLate    >= gapMinDays;
-    return true; // unmapped: always show
-  });
-
-  // ── Group overdue by school+class+subject ────────────────
-  // Instead of one row per chapter, collapse into one summary row per combo.
-  const overdueGroups = {};
-  visibleGapData.filter(g => g.type === 'overdue').forEach(g => {
-    const key = `${g.lmsIdx}|${g.cls}|${g.subject}`;
-    if (!overdueGroups[key]) overdueGroups[key] = {
-      lmsIdx: g.lmsIdx, cls: g.cls, subject: g.subject,
-      teacher: g.teacher, chapters: [], maxDaysOverdue: 0, oldestPlanned: g.plannedDate,
-    };
-    overdueGroups[key].chapters.push({ name: g.chapterName, no: g.chapterNo, planned: g.plannedDate, daysOverdue: g.daysOverdue });
-    if (g.daysOverdue > overdueGroups[key].maxDaysOverdue) overdueGroups[key].maxDaysOverdue = g.daysOverdue;
-    if (g.plannedDate < overdueGroups[key].oldestPlanned) overdueGroups[key].oldestPlanned = g.plannedDate;
-  });
-
-  // Flatten into display rows: each overdue group = 1 row; late/unmapped = 1 row each
-  let rows = [
-    ...Object.values(overdueGroups).map(g => ({ ...g, type: 'overdue', days: g.maxDaysOverdue })),
-    ...visibleGapData.filter(g => g.type === 'late').map(g => ({ ...g, days: g.daysLate })),
-    ...visibleGapData.filter(g => g.type === 'unmapped').map(g => ({ ...g, days: 0 })),
-  ];
-
-  // ── Apply dropdowns ──────────────────────────────────────
-  if (gapFiltType)    rows = rows.filter(g => g.type === gapFiltType);
-  if (gapFiltSchool)  rows = rows.filter(g => g.lmsIdx === parseInt(gapFiltSchool));
-  if (gapFiltClass)   rows = rows.filter(g => g.cls === gapFiltClass);
-  if (gapFiltSubject) rows = rows.filter(g => g.subject === gapFiltSubject);
-
-  // ── Sort ─────────────────────────────────────────────────
-  rows = [...rows].sort((a,b) => {
-    let v = 0;
-    if      (gapSortKey==='days')   v = (a.days||0) - (b.days||0);
-    else if (gapSortKey==='date')   v = (a.oldestPlanned||a.plannedDate||a.actualDate||0) - (b.oldestPlanned||b.plannedDate||b.actualDate||0);
-    else if (gapSortKey==='class')  v = a.cls.localeCompare(b.cls);
-    else if (gapSortKey==='school') v = a.lmsIdx - b.lmsIdx;
-    return v * gapSortDir;
-  });
-
-  const schoolsHit  = new Set(visibleGapData.map(g=>g.lmsIdx));
-  const allClasses  = [...new Set(visibleGapData.map(g=>g.cls))].sort();
-  const allSubjects = [...new Set(visibleGapData.map(g=>g.subject))].sort();
-
-  const overdueGrpCt = Object.keys(overdueGroups).length;
-  const lateCt       = visibleGapData.filter(g=>g.type==='late').length;
-  const unmappedCt   = visibleGapData.filter(g=>g.type==='unmapped').length;
-  const maxDaysLate  = Math.max(0,...visibleGapData.filter(g=>g.type==='late').map(g=>g.daysLate));
-  const maxDaysOver  = Math.max(0,...Object.values(overdueGroups).map(g=>g.maxDaysOverdue));
-  const totalOverdueChapters = visibleGapData.filter(g=>g.type==='overdue').length;
-
-  let html = `
-  <p class="sec-sub" style="margin-bottom:10px">
-    Academic year <strong>${ayLabel}</strong> (1 Apr ${ayStartYear} – 31 Mar ${ayStartYear+1}) ·
-    Cross-references the <strong>planned CWA Date</strong> in each school's Course Mapping
-    against the <strong>actual CWA date</strong> logged in the Daily Classwork sheet.
-    <strong style="color:var(--red)">Overdue</strong> = planned date passed, no CWA logged yet (grouped by class/subject). &nbsp;
-    <strong style="color:#c2410c">Late</strong> = CWA taken after planned date.
-  </p>
-
-  <!-- Filter bar -->
-  <div class="gap-filter-bar">
-    <label>Min days
-      <select onchange="gapMinDays=+this.value;renderGapPanel()">
-        <option value="1"${gapMinDays===1?' selected':''}>≥ 1 day</option>
-        <option value="7"${gapMinDays===7?' selected':''}>≥ 7 days</option>
-        <option value="14"${gapMinDays===14?' selected':''}>≥ 14 days</option>
-        <option value="30"${gapMinDays===30?' selected':''}>≥ 30 days</option>
-      </select>
-    </label>
-    <label>Type
-      <select onchange="gapFiltType=this.value;renderGapPanel()">
-        <option value=""${!gapFiltType?' selected':''}>All types</option>
-        <option value="overdue"${gapFiltType==='overdue'?' selected':''}>🔴 Overdue (${overdueGrpCt} groups)</option>
-        <option value="late"${gapFiltType==='late'?' selected':''}>🟠 Late (${lateCt})</option>
-        <option value="unmapped"${gapFiltType==='unmapped'?' selected':''}>⚪ Not in Mapping (${unmappedCt})</option>
-      </select>
-    </label>
-    <label>🏫 School
-      <select onchange="gapFiltSchool=this.value;renderGapPanel()">
-        <option value="">All Schools</option>
-        ${CM_SCHOOLS.map((s,i)=>schoolsHit.has(i)?`<option value="${i}"${gapFiltSchool==i?' selected':''}>${esc(s.name)}</option>`:'').join('')}
-      </select>
-    </label>
-    <label>📚 Class
-      <select onchange="gapFiltClass=this.value;renderGapPanel()">
-        <option value="">All Classes</option>
-        ${allClasses.map(c=>`<option value="${esc(c)}"${gapFiltClass===c?' selected':''}>${esc(c)}</option>`).join('')}
-      </select>
-    </label>
-    <label>📖 Subject
-      <select onchange="gapFiltSubject=this.value;renderGapPanel()">
-        <option value="">All Subjects</option>
-        ${allSubjects.map(s=>`<option value="${esc(s)}"${gapFiltSubject===s?' selected':''}>${esc(s)}</option>`).join('')}
-      </select>
-    </label>
-    <label class="gap-sort-lbl">Sort by
-      <select onchange="const p=this.value.split('|');gapSortKey=p[0];gapSortDir=+p[1];renderGapPanel()">
-        <option value="days|-1">Days (most first)</option>
-        <option value="date|1">Planned Date (oldest first)</option>
-        <option value="date|-1">Planned Date (newest first)</option>
-        <option value="class|1">Class (A→Z)</option>
-        <option value="school|1">School</option>
-      </select>
-    </label>
-    ${(gapFiltType||gapFiltSchool||gapFiltClass||gapFiltSubject)?
-      `<button class="filt-btn" onclick="gapFiltType='';gapFiltSchool='';gapFiltClass='';gapFiltSubject='';renderGapPanel()">✕ Clear</button>`:''}
-    <button class="filt-btn" style="margin-left:auto" onclick="refreshCM()" title="Re-fetch Course Mapping from Google Sheets">↺ Refresh CM</button>
-  </div>
-
-  <!-- Summary chips -->
-  <div class="gap-chips">
-    <div class="gap-chip${overdueGrpCt?' alert':''}">
-      <div class="gap-chip-lbl">🔴 Overdue Groups</div>
-      <div class="gap-chip-val" style="color:var(--red)">${overdueGrpCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">${totalOverdueChapters} chapters · max ${maxDaysOver}d</div>
-    </div>
-    <div class="gap-chip${lateCt?' warn':''}">
-      <div class="gap-chip-lbl">🟠 Taken Late</div>
-      <div class="gap-chip-val" style="color:#c2410c">${lateCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">max ${maxDaysLate}d late</div>
-    </div>
-    <div class="gap-chip">
-      <div class="gap-chip-lbl">⚪ Not Mapped</div>
-      <div class="gap-chip-val" style="color:var(--gray)">${unmappedCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">no CM entry</div>
-    </div>
-    <div class="gap-chip">
-      <div class="gap-chip-lbl">Schools Affected</div>
-      <div class="gap-chip-val" style="color:#1d4ed8">${new Set(rows.map(g=>g.lmsIdx)).size}</div>
-    </div>
-  </div>`;
-
-  if (!rows.length) {
-    html += `<div class="empty-state"><div class="icon">🔍</div>
-      <h3>No gaps match these filters</h3>
-      <p>Try reducing the minimum days threshold or clearing filters.</p></div>`;
-    panel.innerHTML = html;
-    return;
-  }
-
-  // ── Group display rows by school ─────────────────────────
-  const bySchool = {};
-  rows.forEach(g => { if(!bySchool[g.lmsIdx]) bySchool[g.lmsIdx]=[]; bySchool[g.lmsIdx].push(g); });
-
-  Object.keys(bySchool).sort((a,b)=>+a-+b).forEach(lmsIdx => {
-    const sRows    = bySchool[lmsIdx];
-    const sheetUrl = CM_SCHOOLS[+lmsIdx]?.id
-      ? `https://docs.google.com/spreadsheets/d/${CM_SCHOOLS[+lmsIdx].id}/edit` : '#';
-    const sOver = sRows.filter(g=>g.type==='overdue').length;
-    const sLate = sRows.filter(g=>g.type==='late').length;
-
-    html += `<div class="gap-school-grp">
-      <div class="gap-school-hdr">
-        <span class="gap-school-hdr-name">🏫 ${lmsName(+lmsIdx)}</span>
-        <span class="gap-school-hdr-meta">
-          ${sOver?`<span style="color:var(--red);font-weight:700">🔴 ${sOver} overdue group${sOver!==1?'s':''}</span>&nbsp;·&nbsp;`:''}
-          ${sLate?`<span style="color:#c2410c;font-weight:700">🟠 ${sLate} late</span>&nbsp;·&nbsp;`:''}
-          <a href="${sheetUrl}" target="_blank" rel="noopener"
-             style="color:var(--red);font-weight:600;text-decoration:none;font-size:10px">↗ Open Course Mapping</a>
-        </span>
-      </div>
-      <div class="gap-table-wrap" style="border-radius:0 0 6px 6px;margin-bottom:0">
-        <table class="gap-table">
-          <thead><tr>
-            <th>Status</th><th>Class</th><th>Subject</th><th>Chapters</th>
-            <th>Oldest Planned CWA</th><th>Actual CWA Date</th><th>Days</th><th>Teacher</th>
-          </tr></thead>
-          <tbody>`;
-
-    sRows.forEach(g => {
-      let statusBadge, daysCell, chCell, plannedCell, actualCell, rowStyle = '';
-
-      if (g.type === 'overdue') {
-        const sc = g.maxDaysOverdue >= 30 ? 'sev-high' : g.maxDaysOverdue >= 14 ? 'sev-mid' : 'sev-low';
-        statusBadge  = `<span class="gap-sev ${sc}">🔴 Overdue</span>`;
-        daysCell     = `<span style="color:var(--red);font-weight:700">${g.maxDaysOverdue}d past due</span>`;
-        rowStyle     = ' style="background:#fff8f8"';
-        plannedCell  = fmtDate(g.oldestPlanned);
-        actualCell   = `<span style="color:#9ca3af">Not yet taken</span>`;
-        // Chapter chips — sorted oldest first
-        const sorted = [...g.chapters].sort((a,b)=>a.planned-b.planned);
-        chCell = `<div class="chapter-chips">
-          ${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}
-        </div>`;
-
-      } else if (g.type === 'late') {
-        const sc = g.daysLate >= 14 ? 'sev-high' : g.daysLate >= 7 ? 'sev-mid' : 'sev-low';
-        statusBadge  = `<span class="gap-sev ${sc}">🟠 Late</span>`;
-        daysCell     = `<span style="color:#c2410c;font-weight:700">+${g.daysLate}d</span>`;
-        rowStyle     = ' style="background:#fffbeb"';
-        plannedCell  = fmtDate(g.plannedDate);
-        actualCell   = fmtDate(g.actualDate);
-        const chLabel = g.chapterNo ? `Ch ${g.chapterNo}: ${g.chapterName||''}` : (g.chapterName||'—');
-        chCell = `<span class="ch-chip">${esc(chLabel)}</span>`;
-
-      } else {
-        statusBadge  = `<span class="gap-sev" style="background:#f5f5f5;color:#9ca3af;border-color:#e0e0e0">⚪ No mapping</span>`;
-        daysCell     = `<span style="color:#9ca3af">—</span>`;
-        plannedCell  = `<span style="color:#9ca3af">—</span>`;
-        actualCell   = fmtDate(g.actualDate);
-        chCell = g.chapterName ? `<span class="ch-chip">${esc(g.chapterName)}</span>` : '—';
-      }
-
-      html += `<tr${rowStyle}>
-        <td>${statusBadge}</td>
-        <td><span class="class-badge">${esc(g.cls)}</span></td>
-        <td><span class="subj-chip">${esc(g.subject)}</span></td>
-        <td>${chCell}</td>
-        <td class="date-range">${plannedCell}</td>
-        <td class="date-range">${actualCell}</td>
-        <td style="text-align:center;white-space:nowrap">${daysCell}</td>
-        <td class="teacher-cell">${esc(g.teacher||'—')}</td>
-      </tr>`;
-    });
-
-    html += `</tbody></table></div></div>`;
-  });
-
-  panel.innerHTML = html;
+async function checkOverdueFromTracker() {
+  const rows = await fetchTrackerStatusRows();
+  const inScope = rows.filter(r => activeSchools.length === 0 || activeSchools.includes(r.lmsIdx));
+  const flagged = inScope.filter(r => NOT_DONE_STATUSES.has(r.status));
+  return {
+    total: flagged.length,
+    critical: flagged.filter(r => r.status === 'Critical').length,
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2275,10 +1908,10 @@ function finishInit() {
 
 /* ── TODAY SUMMARY ──────────────────────────────────────────
    Principals land on a couple of numbers + an attention list, not the full
-   coordinator-depth dashboard. Reuses renderMissing() and renderGaps() (the
-   latter previously only wired to a since-removed tab, superseded by
-   cwa-gap-report.html as a standalone tool -- its computation is still exactly
-   what we need for the "how many are overdue" count here). */
+   coordinator-depth dashboard. The Missing Uploads card reuses renderMissing();
+   the Overdue CWA card reads straight from the Chapter Completion Tracker
+   sheet (checkOverdueFromTracker(), above) -- same source cwa-gap-report.html
+   uses, so this card's number always matches that page's. */
 async function renderTodaySummary() {
   const section = document.getElementById('fullReportSection');
   const btn = document.getElementById('toggleReportBtn');
@@ -2312,15 +1945,15 @@ async function renderTodaySummary() {
 
   (async () => {
     try {
-      await renderGaps();
-      // renderGaps() itself is cross-school by design (cwa-gap-report.html's job);
-      // apply the same campus lock the rest of this page already uses.
-      const overdueCt = gapData.filter(g => g.type === 'overdue'
-        && (activeSchools.length === 0 || activeSchools.includes(g.lmsIdx))).length;
+      // checkOverdueFromTracker() reads the LMCS Chapter Completion Tracker
+      // sheet directly (small, server-precomputed) -- it already applies the
+      // same campus lock (activeSchools) the rest of this page uses.
+      const { total: overdueCt, critical } = await checkOverdueFromTracker();
       document.getElementById('tsOverdueCount').textContent = overdueCt;
       document.getElementById('cardOverdue').className = 'today-card ' + (overdueCt > 0 ? 'alert' : 'ok');
       document.getElementById('tsOverdueDetail').innerHTML = overdueCt > 0
-        ? `${overdueCt} planned CWA item${overdueCt !== 1 ? 's are' : ' is'} past due with nothing logged yet. `
+        ? `${overdueCt} planned CWA item${overdueCt !== 1 ? 's are' : ' is'} past due with nothing logged yet`
+          + `${critical ? ` (${critical} Critical)` : ''}. `
           + `<a href="cwa-gap-report.html">View overdue list →</a>`
         : `Nothing overdue 🎉`;
     } catch (e) {
@@ -2392,11 +2025,6 @@ async function _refreshCMInBackground() {
   cmLoaded = false; cmStore = {};
   await _fetchAndStoreCM().catch(() => {});
   cmLoaded = true;
-  // If the gap tab is currently visible, re-render it silently
-  if (document.getElementById('panel-gaps')?.classList.contains('active')) {
-    gapData = [];
-    renderGaps();
-  }
 }
 
 async function _fetchAndStoreCM() {
@@ -2404,19 +2032,7 @@ async function _fetchAndStoreCM() {
   const jobs = CM_SCHOOLS.flatMap((school, idx) =>
     cwaTabs.map(tab => ({ idx, tab, id: school.id }))
   );
-  const total = jobs.length;
-  let done = 0;
-  const loadingP = document.getElementById('loadingGaps')?.querySelector('p');
-
-  const results = await Promise.allSettled(jobs.map(j =>
-    fetchCMTab(j.id, j.tab).then(r => {
-      done++;
-      if (loadingP && document.getElementById('panel-gaps')?.classList.contains('active')) {
-        loadingP.textContent = `Loading… ${done}/${total}`;
-      }
-      return r;
-    })
-  ));
+  const results = await Promise.allSettled(jobs.map(j => fetchCMTab(j.id, j.tab)));
   results.forEach((r, i) => {
     const { idx, tab } = jobs[i];
     if (!cmStore[idx]) cmStore[idx] = {};
@@ -2431,16 +2047,6 @@ async function reloadAll() {
   cmLoaded = false; cmStore = {};
   allRecords = [];
   init();
-}
-
-async function refreshCM() {
-  // Force re-fetch CM data from Google Sheets and re-render gap report
-  localStorage.removeItem(CM_CACHE_KEY);
-  cmLoaded = false; cmStore = {};
-  gapData = [];
-  const panel = document.getElementById('panel-gaps');
-  panel.innerHTML = `<div class="loading-state" id="loadingGaps"><div class="spinner"></div><p>Re-fetching Course Mapping…</p></div>`;
-  await renderGaps();
 }
 
 init();
