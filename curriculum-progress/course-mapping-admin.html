@@ -398,6 +398,20 @@ footer{text-align:center;font-size:.78rem;color:var(--gray);padding:2rem;border-
         </p>
       </div>
 
+      <div class="callout callout-blue">
+        <strong>Employee Roster Proxy</strong> (real EmployeeCode-anchored data, replaces the sheet above)
+        Once <code>apps-script/employee-roster.gs</code> is deployed as a Web App, paste its URL below.
+        When set, this becomes the source Missing Uploads matches against instead of the Allocation Sheet ID
+        above -- pulled from the actual Employee Master workbook (EmpMaster + EmpAcademic), not a
+        separately hand-maintained sheet. Leave blank to keep using the Allocation Sheet.
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="inp-emp-roster-url">Employee Roster Proxy URL</label>
+        <input type="text" id="inp-emp-roster-url" class="mono" placeholder="https://script.google.com/macros/s/.../exec"
+          style="max-width:520px" oninput="markDirty()">
+        <p class="field-note">From apps-script/employee-roster.gs's Web App deployment. Same 1-hour cache as above.</p>
+      </div>
+
       <div class="field-group">
         <label class="field-label">Other Caches</label>
         <div class="field-row" style="gap:10px;flex-wrap:wrap">
@@ -514,6 +528,12 @@ const DEFAULT_CONFIG = {
   proxyUrl: 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec',
   cacheTtlMinutes: 30,
   allocationSheetId: '1Z4-tAwHePJfOQygOA948RyB75mA9TUE9S_VUfoydla4',
+  // Employee Roster Proxy (apps-script/employee-roster.gs) -- once deployed
+  // and pasted here, this REPLACES allocationSheetId as the source for
+  // Missing Uploads (real EmployeeCode-anchored data instead of free text).
+  // Empty by default: undeployed until the workbook's sharing is locked
+  // down, see employee-roster.gs's own setup comment for why.
+  employeeRosterUrl: '',
 };
 
 /* ════════════════════════════════════════════════════
@@ -534,6 +554,7 @@ function loadConfig() {
         proxyUrl:          p.proxyUrl          ?? DEFAULT_CONFIG.proxyUrl,
         cacheTtlMinutes:   p.cacheTtlMinutes   || DEFAULT_CONFIG.cacheTtlMinutes,
         allocationSheetId: p.allocationSheetId || DEFAULT_CONFIG.allocationSheetId,
+        employeeRosterUrl: p.employeeRosterUrl ?? DEFAULT_CONFIG.employeeRosterUrl,
       };
     }
   } catch(e) {}
@@ -587,8 +608,9 @@ function collectConfig() {
   const proxyUrl          = document.getElementById('inp-proxy-url')?.value.trim()         || '';
   const cacheTtlMinutes   = parseInt(document.getElementById('inp-cache-ttl')?.value)      || 30;
   const allocationSheetId = document.getElementById('inp-alloc-sheet')?.value.trim()       || DEFAULT_CONFIG.allocationSheetId;
+  const employeeRosterUrl = document.getElementById('inp-emp-roster-url')?.value.trim()    || '';
 
-  return { version:1, schools, classes, thresholds, cwaExemptSubjects, dailySheetId, proxyUrl, cacheTtlMinutes, allocationSheetId };
+  return { version:1, schools, classes, thresholds, cwaExemptSubjects, dailySheetId, proxyUrl, cacheTtlMinutes, allocationSheetId, employeeRosterUrl };
 }
 
 function validate(config) {
@@ -893,6 +915,9 @@ function buildAllocation() {
   if (inp) inp.value = id;
   updateAllocLink();
   updateAllocCacheStatus();
+
+  const rosterInp = document.getElementById('inp-emp-roster-url');
+  if (rosterInp) rosterInp.value = cfg.employeeRosterUrl || '';
 }
 
 function updateAllocLink() {

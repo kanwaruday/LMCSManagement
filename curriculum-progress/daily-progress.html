@@ -435,10 +435,15 @@ const PROXY_URL = _earlyCfg?.proxyUrl
 const DAILY_SHEET_ID = _earlyCfg?.dailySheetId
   ?? '1z5hzpMRHMru6ulpYs2lsGZr7quAywwpQ_zySa3rvGUA';
 
-// Teacher Allocation Sheet — source of truth for Missing Uploads
-// ID is configurable via Admin Panel; falls back to the default sheet
+// Teacher Allocation Sheet — legacy source of truth for Missing Uploads.
+// ID is configurable via Admin Panel; falls back to the default sheet.
 const ALLOCATION_SHEET_ID = _earlyCfg?.allocationSheetId ?? '1Z4-tAwHePJfOQygOA948RyB75mA9TUE9S_VUfoydla4';
-const ALLOC_CACHE_KEY = 'lmcs_allocation_v1';
+// Employee Roster Proxy (apps-script/employee-roster.gs) -- when set, this
+// REPLACES the Allocation Sheet above as the source: real EmployeeCode-
+// anchored data from the actual Employee Master workbook, not a separately
+// hand-maintained sheet. Empty until deployed (see that file's setup notes).
+const EMPLOYEE_ROSTER_URL = _earlyCfg?.employeeRosterUrl ?? '';
+const ALLOC_CACHE_KEY = EMPLOYEE_ROSTER_URL ? 'lmcs_emp_roster_v1' : 'lmcs_allocation_v1';
 const ALLOC_CACHE_TTL = 60 * 60 * 1000; // 1 hour (independent of CM cache TTL)
 
 const CM_CACHE_TTL = ((_earlyCfg?.cacheTtlMinutes) || 30) * 60 * 1000;
@@ -1718,7 +1723,15 @@ async function fetchAllocation() {
     }
   } catch(e) {}
 
-  // Fetch — range A2:G400 makes row 2 (the header row) the first row returned
+  const data = EMPLOYEE_ROSTER_URL ? await fetchAllocationFromEmployeeRoster() : await fetchAllocationFromSheet();
+
+  try { localStorage.setItem(ALLOC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+  return data;
+}
+
+/** Legacy source: the hand-maintained Allocation Sheet, read via gviz. */
+async function fetchAllocationFromSheet() {
+  // range A2:G400 makes row 2 (the header row) the first row returned
   const url = `https://docs.google.com/spreadsheets/d/${ALLOCATION_SHEET_ID}/gviz/tq?tqx=out:json&sheet=Allocation&range=A2:G400&_=${Date.now()}`;
   const res = await fetch(url, {cache:'no-store'});
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1728,7 +1741,7 @@ async function fetchAllocation() {
 
   const cell = (row, i) => { const c = row.c?.[i]; return (c?.v != null) ? String(c.v).trim() : null; };
 
-  const data = (d.table?.rows || [])
+  return (d.table?.rows || [])
     .slice(1)  // skip the header row returned in the data
     .map(row => {
       const schoolCode = cell(row, 1);          // "LMS 1" … "LMS 6"
@@ -1745,15 +1758,33 @@ async function fetchAllocation() {
       };
     })
     .filter(Boolean);
+}
 
-  try { localStorage.setItem(ALLOC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
-  return data;
+/** Real source: apps-script/employee-roster.gs, backed by the actual
+ *  Employee Master workbook (EmpMaster + EmpAcademic) instead of a
+ *  separately hand-maintained sheet. Already returns "Class 1"/"M-I" style
+ *  labels and normalized subject spellings server-side -- this just needs
+ *  to fold School into lmsIdx to match fetchAllocationFromSheet()'s shape. */
+async function fetchAllocationFromEmployeeRoster() {
+  const url = `${EMPLOYEE_ROSTER_URL}?action=roster&_=${Date.now()}`;
+  const res = await fetch(url, {cache:'no-store'});
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Employee Roster Proxy error');
+
+  return json.rows.map(r => {
+    const m = String(r.school||'').match(/LMS\s*(\d+)/i);
+    const lmsIdx = m ? parseInt(m[1]) - 1 : null;
+    if (lmsIdx === null) return null;
+    return { lmsIdx, cls: r.class, subject: r.subject, teacher: r.teacher || null };
+  }).filter(Boolean);
 }
 
 /* ═══════════════════════════════════════════════════════════
    RENDER — Missing Uploads
-   Primary: cross-references against the Teacher Allocation Sheet.
-   Fallback: 30-day historical inference if the sheet is unreachable.
+   Primary: cross-references against the Teacher Allocation Sheet, or the
+   Employee Roster Proxy if EMPLOYEE_ROSTER_URL is configured.
+   Fallback: 30-day historical inference if both are unreachable.
 ═══════════════════════════════════════════════════════════ */
 async function renderMissing() {
   const panel = document.getElementById('panel-missing');
@@ -1840,7 +1871,10 @@ function _renderMissingFromAllocation(panel, checkDate, allocation) {
   let html = `<div class="miss-lookback">
     <span>📅 Checking date: <strong>${checkDate}</strong></span>
     <span style="color:var(--border)">|</span>
-    <span>Source: <a href="https://docs.google.com/spreadsheets/d/${ALLOCATION_SHEET_ID}/edit" target="_blank" rel="noopener" style="color:var(--red);font-weight:700;text-decoration:none">Teacher Allocation Sheet ↗</a> · ${allocFiltered.length} expected daily submissions</span>
+    <span>Source: ${EMPLOYEE_ROSTER_URL
+      ? `<span style="color:var(--red);font-weight:700">Employee Master (EmpAcademic)</span>`
+      : `<a href="https://docs.google.com/spreadsheets/d/${ALLOCATION_SHEET_ID}/edit" target="_blank" rel="noopener" style="color:var(--red);font-weight:700;text-decoration:none">Teacher Allocation Sheet ↗</a>`
+    } · ${allocFiltered.length} expected daily submissions</span>
     <span style="color:var(--border)">|</span>
     <span style="color:var(--red);font-weight:700">Missing: ${missing.length}</span>
     <span style="margin-left:auto">
