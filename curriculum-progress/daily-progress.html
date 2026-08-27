@@ -2190,18 +2190,21 @@ async function init() {
   document.getElementById('lastUpdated').textContent =
     new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
 
-  // Start the two Today-summary data sources (Employee Roster / Allocation,
-  // and Course Mapping) immediately, in parallel with the daily sheet fetch
-  // below -- rather than waiting for the daily sheet (the single biggest
-  // fetch, several seconds on its own) to finish before even starting them.
-  // Both cache their result as a side effect, so by the time renderMissing()/
-  // renderGaps() actually run (after finishInit()), they read an
-  // already-warm cache instead of starting a fresh fetch from scratch.
-  // Measured live 2026-08-27: daily sheet ~4.5s, roster ~3.1s, CM ~2.2s --
-  // sequential that's ~7.6s+, run concurrently it's bounded by the slowest
-  // one, ~4.5s.
+  // Start the Employee Roster fetch immediately, in parallel with the daily
+  // sheet fetch below -- it's a fully independent backend (Apps Script vs.
+  // PROXY_URL) so there's no reason to wait. Caches as a side effect, so by
+  // the time renderMissing() calls fetchAllocation() again, it just reads
+  // the warm cache. Measured live 2026-08-27: roster ~3.1s.
+  //
+  // NOT prefetching Course Mapping here on purpose: PROXY_URL's response
+  // already bundles cmData together with the daily records in one payload
+  // (see hydrateProxy(), which sets cmLoaded = true from it) -- a separate
+  // _prefetchCM() call here would just fire a second, redundant fetch of
+  // the same data on the common path, competing for bandwidth with the
+  // fetch that actually matters. finishInit() already only prefetches CM
+  // as a fallback (`if (!cmLoaded) _prefetchCM()`), which correctly no-ops
+  // once the proxy has already provided it.
   fetchAllocation().catch(() => {});
-  _prefetchCM();
 
   const today = todayStr();
   document.getElementById('dateFrom').value = today;
