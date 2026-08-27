@@ -438,11 +438,15 @@ const DAILY_SHEET_ID = _earlyCfg?.dailySheetId
 // Teacher Allocation Sheet — legacy source of truth for Missing Uploads.
 // ID is configurable via Admin Panel; falls back to the default sheet.
 const ALLOCATION_SHEET_ID = _earlyCfg?.allocationSheetId ?? '1Z4-tAwHePJfOQygOA948RyB75mA9TUE9S_VUfoydla4';
-// Employee Roster Proxy (apps-script/employee-roster.gs) -- when set, this
-// REPLACES the Allocation Sheet above as the source: real EmployeeCode-
-// anchored data from the actual Employee Master workbook, not a separately
-// hand-maintained sheet. Empty until deployed (see that file's setup notes).
-const EMPLOYEE_ROSTER_URL = _earlyCfg?.employeeRosterUrl ?? '';
+// Employee Roster Proxy (apps-script/employee-roster.gs) -- REPLACES the
+// Allocation Sheet above as the source: real EmployeeCode-anchored data
+// from the Employee Master workbook, not a separately hand-maintained
+// sheet. Deployed and verified 2026-08-27. An admin can still clear this
+// in the Admin Panel to explicitly fall back to the legacy sheet -- that's
+// why this is `??` (only the *absence* of any saved config falls through
+// to the real default below), not `||` (which would treat an intentional
+// blank the same as unset).
+const EMPLOYEE_ROSTER_URL = _earlyCfg?.employeeRosterUrl ?? 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 const ALLOC_CACHE_KEY = EMPLOYEE_ROSTER_URL ? 'lmcs_emp_roster_v1' : 'lmcs_allocation_v1';
 const ALLOC_CACHE_TTL = 60 * 60 * 1000; // 1 hour (independent of CM cache TTL)
 

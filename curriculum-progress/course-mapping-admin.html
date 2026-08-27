@@ -528,12 +528,15 @@ const DEFAULT_CONFIG = {
   proxyUrl: 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec',
   cacheTtlMinutes: 30,
   allocationSheetId: '1Z4-tAwHePJfOQygOA948RyB75mA9TUE9S_VUfoydla4',
-  // Employee Roster Proxy (apps-script/employee-roster.gs) -- once deployed
-  // and pasted here, this REPLACES allocationSheetId as the source for
-  // Missing Uploads (real EmployeeCode-anchored data instead of free text).
-  // Empty by default: undeployed until the workbook's sharing is locked
-  // down, see employee-roster.gs's own setup comment for why.
-  employeeRosterUrl: '',
+  // Employee Roster Proxy (apps-script/employee-roster.gs) -- REPLACES
+  // allocationSheetId as the Missing Uploads source: real EmployeeCode-
+  // anchored data from the Employee Master workbook (EmpMaster +
+  // EmpAcademic) instead of the separately hand-maintained Allocation
+  // Sheet. Deployed and verified 2026-08-27 (332 rows, correctly shaped,
+  // no PII fields). Employee Master's sharing gets locked down to
+  // Restricted once this is confirmed live -- see employee-roster.gs's
+  // own setup comment.
+  employeeRosterUrl: 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec',
 };
 
 /* ════════════════════════════════════════════════════
@@ -608,6 +611,10 @@ function collectConfig() {
   const proxyUrl          = document.getElementById('inp-proxy-url')?.value.trim()         || '';
   const cacheTtlMinutes   = parseInt(document.getElementById('inp-cache-ttl')?.value)      || 30;
   const allocationSheetId = document.getElementById('inp-alloc-sheet')?.value.trim()       || DEFAULT_CONFIG.allocationSheetId;
+  // Deliberately NOT falling back to DEFAULT_CONFIG here (unlike the other
+  // fields above): an admin explicitly clearing this field to opt back into
+  // the legacy Allocation Sheet is a real, intentional state, not a mistake
+  // to correct -- blank must stay blank, not silently revert to the default.
   const employeeRosterUrl = document.getElementById('inp-emp-roster-url')?.value.trim()    || '';
 
   return { version:1, schools, classes, thresholds, cwaExemptSubjects, dailySheetId, proxyUrl, cacheTtlMinutes, allocationSheetId, employeeRosterUrl };
