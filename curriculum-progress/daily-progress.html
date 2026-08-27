@@ -1717,6 +1717,13 @@ function schoolClassRows(lmsIdx, days) {
    Source of truth for Missing Uploads.
    Columns: School | School Code | Class | Subject | Teacher | Active | Daily
 ═══════════════════════════════════════════════════════════ */
+// In-flight dedup: init() now prefetches this in parallel with the daily
+// sheet, and renderMissing() also calls it -- without this, an overlapping
+// second call (fired before the first's localStorage cache is written)
+// would start a redundant Apps Script / sheet fetch instead of joining the
+// one already in flight. Same pattern as _cmPrefetchPromise below.
+let _allocFetchPromise = null;
+
 async function fetchAllocation() {
   // Return from cache if fresh
   try {
@@ -1727,10 +1734,16 @@ async function fetchAllocation() {
     }
   } catch(e) {}
 
-  const data = EMPLOYEE_ROSTER_URL ? await fetchAllocationFromEmployeeRoster() : await fetchAllocationFromSheet();
+  if (_allocFetchPromise) return _allocFetchPromise;
 
-  try { localStorage.setItem(ALLOC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
-  return data;
+  _allocFetchPromise = (EMPLOYEE_ROSTER_URL ? fetchAllocationFromEmployeeRoster() : fetchAllocationFromSheet())
+    .then(data => {
+      try { localStorage.setItem(ALLOC_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+      return data;
+    })
+    .finally(() => { _allocFetchPromise = null; });
+
+  return _allocFetchPromise;
 }
 
 /** Legacy source: the hand-maintained Allocation Sheet, read via gviz. */
@@ -2176,6 +2189,19 @@ function hydrateProxy(data) {
 async function init() {
   document.getElementById('lastUpdated').textContent =
     new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+
+  // Start the two Today-summary data sources (Employee Roster / Allocation,
+  // and Course Mapping) immediately, in parallel with the daily sheet fetch
+  // below -- rather than waiting for the daily sheet (the single biggest
+  // fetch, several seconds on its own) to finish before even starting them.
+  // Both cache their result as a side effect, so by the time renderMissing()/
+  // renderGaps() actually run (after finishInit()), they read an
+  // already-warm cache instead of starting a fresh fetch from scratch.
+  // Measured live 2026-08-27: daily sheet ~4.5s, roster ~3.1s, CM ~2.2s --
+  // sequential that's ~7.6s+, run concurrently it's bounded by the slowest
+  // one, ~4.5s.
+  fetchAllocation().catch(() => {});
+  _prefetchCM();
 
   const today = todayStr();
   document.getElementById('dateFrom').value = today;
