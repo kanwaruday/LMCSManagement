@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Unmapped Chapters</title>
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6;display:flex;flex-direction:column}
+
+/* ── HEADER ── */
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+.hdr-brand{display:flex;align-items:center;gap:10px}
+.hdr-logo{width:32px;height:32px;border-radius:4px;object-fit:cover;flex-shrink:0}
+.hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr p{font-size:9.5px;opacity:.75;margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hdr-ts{font-size:10px;opacity:.65}
+.hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .15s;white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.22)}
+.hdr-btn svg{width:11px;height:11px}
+
+/* ── PROGRESS BAR ── */
+.load-bar-wrap{background:#b91c1c;height:3px;width:100%;flex-shrink:0}
+.load-bar{height:3px;background:#fff;width:0%;transition:width .3s ease;border-radius:0 2px 2px 0}
+
+/* ── SUMMARY CHIPS ── */
+.chips-strip{background:var(--lgray);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;gap:8px;overflow-x:auto;align-items:stretch;flex-shrink:0}
+.chip{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:6px 14px;display:flex;flex-direction:column;gap:1px;min-width:110px;flex-shrink:0}
+.chip-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--gray);font-weight:700}
+.chip-val{font-size:18px;font-weight:700;line-height:1.1}
+.chip-val.muted{color:#9ca3af}.chip-val.blue{color:#1d4ed8}
+.chip-sub{font-size:9px;color:#9ca3af;margin-top:1px}
+
+/* ── MAIN CONTENT ── */
+#appBody{flex:1;overflow:auto;padding:20px 24px;max-width:1440px;margin:0 auto;width:100%}
+
+/* ── LOADING ── */
+.loading-state{text-align:center;padding:60px 20px;color:var(--gray)}
+.loading-state .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-state p{font-size:13px;color:var(--gray);margin-bottom:6px}
+
+/* ── TABLE ── */
+.gap-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:1.5rem}
+.gap-table{width:100%;border-collapse:collapse;min-width:700px;font-size:.82rem}
+.gap-table thead th{background:var(--red);color:#fff;padding:8px 12px;text-align:left;font-size:.75rem;font-weight:700;letter-spacing:.3px;white-space:nowrap;cursor:pointer;user-select:none}
+.gap-table thead th:hover{background:var(--red-h)}
+.gap-table thead th .sort-arrow{opacity:.45;margin-left:4px;font-size:10px}
+.gap-table thead th.sort-asc .sort-arrow::after{content:'▲'}
+.gap-table thead th.sort-desc .sort-arrow::after{content:'▼'}
+.gap-table thead th:not(.sort-asc):not(.sort-desc) .sort-arrow::after{content:'⇅'}
+.gap-table tbody tr{border-bottom:1px solid var(--border)}
+.gap-table tbody tr:last-child{border-bottom:none}
+.gap-table tbody tr:nth-child(even) td{background:var(--lgray)}
+.gap-table tbody tr:hover td{background:rgba(206,0,0,.03)}
+.gap-table td{padding:7px 12px;vertical-align:middle}
+
+.class-badge{display:inline-block;background:#fee2e2;color:var(--red);border:1px solid #fecaca;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap}
+.subj-chip{display:inline-block;background:var(--lgray);border:1px solid var(--border);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;color:var(--gray)}
+.teacher-cell{font-size:.8rem;color:var(--gray)}
+.date-range{font-size:.72rem;color:var(--gray);white-space:nowrap}
+
+.gap-filter-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0 14px;border-bottom:1px solid var(--border);margin-bottom:14px}
+.gap-filter-bar label{font-size:11px;font-weight:700;color:var(--gray);display:flex;align-items:center;gap:5px}
+.gap-filter-bar select{background:var(--white);border:1.5px solid var(--border);border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit;color:var(--dark);outline:none}
+.filt-btn{background:var(--lgray);border:1.5px solid var(--border);border-radius:4px;padding:4px 10px;font-size:11px;font-weight:600;color:var(--gray);cursor:pointer;white-space:nowrap}
+.filt-btn:hover{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+
+.gap-school-grp{margin-bottom:18px}
+.gap-school-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--lgray);border:1px solid var(--border);border-radius:6px 6px 0 0;border-bottom:none}
+.gap-school-hdr-name{font-size:12px;font-weight:700;color:var(--dark)}
+.gap-school-hdr-meta{margin-left:auto;font-size:10px}
+
+.empty-state{text-align:center;padding:48px 20px;color:var(--gray)}
+.empty-state .icon{font-size:36px;margin-bottom:10px}
+.empty-state h3{font-size:14px;font-weight:700;color:var(--dark);margin-bottom:6px}
+.empty-state p{font-size:12px;line-height:1.6}
+.notice{background:#fff3cd;border:1px solid #ffc107;color:#92400e;padding:10px 16px;font-size:11px;border-radius:4px;margin-bottom:14px}
+.info-note{background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11.5px;color:var(--gray);margin-bottom:16px;line-height:1.6}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--lgray)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+@media(max-width:640px){#appBody{padding:12px 14px}.chips-strip{padding:8px 14px}}
+</style>
+</head>
+<body>
+
+<!-- LMCS Portal auth gate — this page requires the same sign-in as the portal home -->
+<style>
+  #lmcs-gate{position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center}
+  #lmcs-gate .auth-gate{max-width:380px;margin:0 auto;padding:32px 28px;border:1px solid #ddd;border-top:3px solid #CE0000;border-radius:6px;text-align:center;font-family:'Segoe UI',Arial,sans-serif}
+  #lmcs-gate .auth-gate p{color:#555;font-size:13px;line-height:1.6;margin:0 0 20px}
+  #lmcs-gate #lmcs-g-signin{display:flex;justify-content:center}
+  #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
+</style>
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js"></script>
+<script>
+(function () {
+  if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
+  LMCS.requireSession('#lmcs-gate-slot').then(function () { window.location.reload(); });
+})();
+</script>
+
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-brand">
+    <img src="logo.png" class="hdr-logo" alt="LMS logo">
+    <div>
+      <h1>LMCS — Unmapped Chapters</h1>
+      <p id="hdrCtx">CWA logged with no matching Course Mapping chapter — reads the LMCS Chapter Completion Tracker</p>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span class="hdr-ts" id="lastUpdated"></span>
+    <a href="cwa-gap-report.html" class="hdr-btn">⚠ CWA Gap Report</a>
+    <a href="daily-progress.html" class="hdr-btn">📋 Daily Progress</a>
+    <a href="course-mapping-progress.html" class="hdr-btn">📊 Course Mapping</a>
+    <a href="../index.html" class="hdr-btn">← Portal</a>
+    <button class="hdr-btn" onclick="reloadAll()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<!-- PROGRESS BAR -->
+<div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
+
+<!-- CHIPS STRIP -->
+<div class="chips-strip">
+  <div class="chip"><div class="chip-lbl">⚪ Unmapped Rows</div><div class="chip-val muted" id="cUnmapped">—</div><div class="chip-sub">CWA logged, no CM entry</div></div>
+  <div class="chip"><div class="chip-lbl">Schools Affected</div><div class="chip-val blue" id="cSchools">—</div><div class="chip-sub">at least one unmapped row</div></div>
+  <div class="chip"><div class="chip-lbl">Academic Year</div><div class="chip-val muted" style="font-size:13px" id="cAcYear">—</div><div class="chip-sub">1 Apr – 31 Mar</div></div>
+</div>
+
+<!-- APP BODY -->
+<div id="appBody">
+  <div class="loading-state" id="mainLoading">
+    <div class="spinner"></div>
+    <p id="loadMsg">Loading Chapter Completion Tracker…</p>
+  </div>
+  <div id="gapPanel" style="display:none"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   Reads the same LMCS Chapter Completion Tracker sheet as
+   cwa-gap-report.html, filtered to Status = 'Unmapped' -- CWA logged
+   that doesn't match any planned Course Mapping chapter for that
+   school/class/subject (covers both sub-cases from ChapterTracker.gs:
+   an actual CWA event whose chapter name doesn't match a planned one,
+   and CWA activity in a combo with no Course Mapping data at all).
+   Split out to its own page per Uday, 2026-09-01, rather than living
+   as one filter option inside the gap report.
+═══════════════════════════════════════════════════════════ */
+const CONFIG_KEY = 'lmcs_cmp_config';
+function loadCfg() {
+  try { const s = localStorage.getItem(CONFIG_KEY); return s ? JSON.parse(s) : null; } catch(e) { return null; }
+}
+const savedCfg = loadCfg();
+
+function getPrincipalSession() {
+  const s = LMCS.getSession();
+  if (!s || s.campusId === 'ALL') return null;
+  return s;
+}
+const PRINCIPAL_SESSION = getPrincipalSession();
+
+const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
+
+const CM_SCHOOLS = savedCfg?.schools ?? [
+  {name:'LMS 1 — Kullu',        id:'1BorpCdePG7O6iZiwgGwNpWZBl7I1IGAT-OAh0fw2yMs'},
+  {name:'LMS 2 — Kelheli',      id:'1ejXKsnK3a2kNGEboTs-yQ2d3Tpk3xG5JRtm9DAmiYXs'},
+  {name:'LMS 3 — Dunkhra',      id:'1MYTOPH_zFIK8xnQk3SsKIgsX5eT5mZgHaJpMgyoJhL8'},
+  {name:'LMS 4 — NerChowk',     id:'1nwPLQprQoQJ35xKDWSi2Y4YDzbvUPZ688u5QwOYmSxU'},
+  {name:'LMS 5 — Sayoli',       id:'172YKw1cMMcG5UZ0jjI8RzO2tGxnVWG3QVCEsDY6CZHg'},
+  {name:'LMS 6 — Jogindernagar',id:'1PkZYbeVCdKeqCbbX2eXAwk7c8w7NAHUOSQKmO6nDZtE'},
+];
+
+const PRINCIPAL_LOCK_IDX = (() => {
+  if (!PRINCIPAL_SESSION) return -1;
+  const idx = parseInt(PRINCIPAL_SESSION.campusId.replace('LMS', ''), 10) - 1;
+  return (idx >= 0 && idx < CM_SCHOOLS.length) ? idx : -1;
+})();
+
+const TRACKER_TAB = (() => {
+  const now = new Date();
+  const startYr = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${startYr}-${String(startYr + 1).slice(2)}`;
+})();
+
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function lmsName(idx) { return CM_SCHOOLS[idx]?.name || `LMS ${idx+1}`; }
+
+function parseSimpleDateStr(s) {
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(+m[1], +m[2]-1, +m[3]);
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+}
+
+async function fetchTrackerSheet(tab) {
+  const url = `https://docs.google.com/spreadsheets/d/${TRACKER_SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}&_=${Date.now()}`;
+  const res = await fetch(url, {cache:'no-store'});
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  const s = text.indexOf('{'), e = text.lastIndexOf('}');
+  const data = JSON.parse(text.slice(s, e+1));
+  if (data.status === 'error') throw new Error(data.errors?.[0]?.detailed_message || `tab "${tab}" not found`);
+  return data.table;
+}
+
+function detectTrackerColumns(table) {
+  const map = {SCHOOL:0,CLASS:1,SUBJECT:2,CHAPTER_NAME:4,TEACHER:5,ACTUAL:9,STATUS:10};
+  if (!table?.cols) return map;
+  table.cols.forEach((col,i) => {
+    const lbl = (col.label||col.id||'').toLowerCase().trim();
+    if (lbl==='school') map.SCHOOL=i;
+    else if (lbl==='class') map.CLASS=i;
+    else if (lbl==='subject') map.SUBJECT=i;
+    else if (lbl==='chapter name') map.CHAPTER_NAME=i;
+    else if (lbl==='teacher') map.TEACHER=i;
+    else if (lbl==='actual cwa date') map.ACTUAL=i;
+    else if (lbl==='status') map.STATUS=i;
+  });
+  return map;
+}
+
+function parseUnmappedRows(table) {
+  if (!table?.rows) return [];
+  const cm = detectTrackerColumns(table);
+  const out = [];
+  table.rows.forEach(row => {
+    const raw = (i) => row.c?.[i] || null;
+    const str = (i) => { const c = raw(i); return (!c||c.v==null) ? '' : String(c.f ?? c.v).trim(); };
+    const school = str(cm.SCHOOL);
+    if (!school || school.toLowerCase()==='school') return;
+    if (str(cm.STATUS) !== 'Unmapped') return;
+    const m = school.match(/(\d+)/);
+    const lmsIdx = m ? (+m[1]-1) : null;
+    if (lmsIdx===null) return;
+    out.push({
+      lmsIdx, cls: str(cm.CLASS), subject: str(cm.SUBJECT),
+      chapterName: str(cm.CHAPTER_NAME), teacher: str(cm.TEACHER),
+      actualDate: parseSimpleDateStr(str(cm.ACTUAL)), actualDateStr: str(cm.ACTUAL),
+    });
+  });
+  return out;
+}
+
+let allRows = [];
+let filtSchool = PRINCIPAL_LOCK_IDX >= 0 ? String(PRINCIPAL_LOCK_IDX) : '';
+let filtClass  = '';
+let filtSubject= '';
+
+function applyPrincipalNavLock() {
+  if (!PRINCIPAL_SESSION) return;
+  document.querySelectorAll('.hdr-right a.hdr-btn').forEach(a => {
+    const href = a.getAttribute('href') || '';
+    if (/course-mapping-admin\.html/.test(href)) a.remove();
+  });
+}
+applyPrincipalNavLock();
+
+function renderPanel() {
+  const panel = document.getElementById('gapPanel');
+  if (PRINCIPAL_LOCK_IDX >= 0) filtSchool = String(PRINCIPAL_LOCK_IDX);
+
+  let rows = allRows;
+  if (filtSchool)  rows = rows.filter(r=>r.lmsIdx===parseInt(filtSchool));
+  if (filtClass)   rows = rows.filter(r=>r.cls===filtClass);
+  if (filtSubject) rows = rows.filter(r=>r.subject===filtSubject);
+  rows = [...rows].sort((a,b)=> (b.actualDate||0)-(a.actualDate||0));
+
+  const allClasses  = [...new Set(allRows.map(r=>r.cls))].sort();
+  const allSubjects = [...new Set(allRows.map(r=>r.subject))].sort();
+
+  document.getElementById('cUnmapped').textContent = rows.length;
+  document.getElementById('cSchools').textContent  = new Set(rows.map(r=>r.lmsIdx)).size;
+
+  let html = `<div class="info-note">⚪ These are CWA events logged against a chapter name that doesn't match anything in that class/subject's Course Mapping — either a naming mismatch (e.g. a typo, or a chapter renamed after Course Mapping was filled in) or the combo has no Course Mapping data at all yet. Fixing Course Mapping for the listed subject usually resolves these on the next 30-min refresh.</div>
+
+  <div class="gap-filter-bar">
+    <label>🏫 School
+      <select onchange="filtSchool=this.value;renderPanel()"${PRINCIPAL_LOCK_IDX>=0?' disabled':''}>
+        ${PRINCIPAL_LOCK_IDX>=0
+          ? `<option value="${PRINCIPAL_LOCK_IDX}" selected>${esc(CM_SCHOOLS[PRINCIPAL_LOCK_IDX].name)}</option>`
+          : `<option value="">All Schools</option>` +
+            CM_SCHOOLS.map((s,i)=>`<option value="${i}"${filtSchool!==''&&+filtSchool===i?' selected':''}>${esc(s.name)}</option>`).join('')}
+      </select>
+    </label>
+    <label>📚 Class
+      <select onchange="filtClass=this.value;renderPanel()">
+        <option value="">All Classes</option>
+        ${allClasses.map(c=>`<option value="${esc(c)}"${filtClass===c?' selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+    </label>
+    <label>📖 Subject
+      <select onchange="filtSubject=this.value;renderPanel()">
+        <option value="">All Subjects</option>
+        ${allSubjects.map(s=>`<option value="${esc(s)}"${filtSubject===s?' selected':''}>${esc(s)}</option>`).join('')}
+      </select>
+    </label>
+    ${(filtSchool!==(PRINCIPAL_LOCK_IDX>=0?String(PRINCIPAL_LOCK_IDX):'')||filtClass||filtSubject)?
+      `<button class="filt-btn" onclick="filtSchool='${PRINCIPAL_LOCK_IDX>=0?PRINCIPAL_LOCK_IDX:''}';filtClass='';filtSubject='';renderPanel()">✕ Clear filters</button>`:''}
+    <button class="filt-btn" onclick="reloadAll()" style="margin-left:auto">↺ Refresh</button>
+  </div>`;
+
+  if (!rows.length) {
+    html += `<div class="empty-state"><div class="icon">✅</div>
+      <h3>No unmapped chapters</h3>
+      <p>Every CWA logged in scope matches a planned Course Mapping chapter.</p></div>`;
+    panel.innerHTML = html;
+    return;
+  }
+
+  const bySchool = {};
+  rows.forEach(r => { if(!bySchool[r.lmsIdx]) bySchool[r.lmsIdx]=[]; bySchool[r.lmsIdx].push(r); });
+
+  Object.keys(bySchool).sort((a,b)=>+a-+b).forEach(lmsIdx => {
+    const sRows = bySchool[lmsIdx];
+    const sheetUrl = CM_SCHOOLS[+lmsIdx]?.id
+      ? `https://docs.google.com/spreadsheets/d/${CM_SCHOOLS[+lmsIdx].id}/edit` : '#';
+    html += `<div class="gap-school-grp">
+      <div class="gap-school-hdr">
+        <span class="gap-school-hdr-name">🏫 ${lmsName(+lmsIdx)}</span>
+        <span class="gap-school-hdr-meta">
+          <span style="color:var(--gray);font-weight:700">${sRows.length} unmapped</span>&nbsp;·&nbsp;
+          <a href="${sheetUrl}" target="_blank" rel="noopener" style="color:var(--red);font-weight:600;text-decoration:none;font-size:10px">↗ Open Course Mapping</a>
+        </span>
+      </div>
+      <div class="gap-table-wrap" style="border-radius:0 0 6px 6px;margin-bottom:0">
+        <table class="gap-table">
+          <thead><tr>
+            <th onclick="sortTable(this)">Class<span class="sort-arrow"></span></th>
+            <th onclick="sortTable(this)">Subject<span class="sort-arrow"></span></th>
+            <th onclick="sortTable(this)">Chapter Logged<span class="sort-arrow"></span></th>
+            <th onclick="sortTable(this)">CWA Date<span class="sort-arrow"></span></th>
+            <th onclick="sortTable(this)">Teacher<span class="sort-arrow"></span></th>
+          </tr></thead>
+          <tbody>`;
+    sRows.forEach(r => {
+      const sortActual = r.actualDate ? r.actualDate.toISOString().slice(0,10) : '';
+      html += `<tr>
+        <td data-val="${esc(r.cls)}"><span class="class-badge">${esc(r.cls)}</span></td>
+        <td data-val="${esc(r.subject)}"><span class="subj-chip">${esc(r.subject)}</span></td>
+        <td data-val="${esc(r.chapterName)}">${esc(r.chapterName||'—')}</td>
+        <td class="date-range" data-val="${sortActual}">${fmtDate(r.actualDate)}</td>
+        <td class="teacher-cell" data-val="${esc(r.teacher||'')}">${esc(r.teacher||'—')}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  });
+
+  panel.innerHTML = html;
+}
+
+function sortTable(th) {
+  const table  = th.closest('table');
+  const tbody  = table.querySelector('tbody');
+  const colIdx = [...th.parentElement.children].indexOf(th);
+  const wasAsc = th.classList.contains('sort-asc');
+  const asc    = !wasAsc;
+  table.querySelectorAll('thead th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+  const rows = [...tbody.querySelectorAll('tr')];
+  rows.sort((a, b) => {
+    const av = a.children[colIdx]?.dataset?.val ?? '';
+    const bv = b.children[colIdx]?.dataset?.val ?? '';
+    const cmp = av.localeCompare(bv, 'en', {numeric: true, sensitivity: 'base'});
+    return asc ? cmp : -cmp;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+async function init() {
+  document.getElementById('lastUpdated').textContent =
+    new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+  document.getElementById('mainLoading').style.display = 'block';
+  document.getElementById('gapPanel').style.display    = 'none';
+  document.getElementById('cAcYear').textContent = TRACKER_TAB;
+
+  try {
+    const table = await fetchTrackerSheet(TRACKER_TAB);
+    allRows = parseUnmappedRows(table);
+  } catch (e) {
+    document.getElementById('mainLoading').innerHTML =
+      `<div class="notice">⚠ Failed to load the Chapter Completion Tracker: ${esc(e.message)}<br>
+       Check that the sheet has a "${esc(TRACKER_TAB)}" tab and is shared as "Anyone with the link → Viewer".</div>`;
+    return;
+  }
+
+  document.getElementById('mainLoading').style.display = 'none';
+  document.getElementById('gapPanel').style.display    = 'block';
+  renderPanel();
+}
+
+async function reloadAll() {
+  allRows = [];
+  filtClass=''; filtSubject='';
+  filtSchool = PRINCIPAL_LOCK_IDX>=0 ? String(PRINCIPAL_LOCK_IDX) : '';
+  init();
+}
+
+init();
+</script>
+</body>
+</html>

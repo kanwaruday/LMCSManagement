@@ -157,6 +157,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
     <span class="hdr-ts" id="lastUpdated"></span>
     <a href="daily-progress.html" class="hdr-btn">📋 Daily Progress</a>
     <a href="course-mapping-progress.html" class="hdr-btn">📊 Course Mapping</a>
+    <a href="unmapped-chapters.html" class="hdr-btn">⚪ Unmapped</a>
     <a href="../index.html" class="hdr-btn">← Portal</a>
     <button class="hdr-btn" onclick="reloadAll()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -168,14 +169,16 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 <!-- PROGRESS BAR -->
 <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
 
-<!-- CHIPS STRIP -->
+<!-- CHIPS STRIP
+     Deliberately face-level: only Overdue + Critical get a permanent number
+     here (per Uday, 2026-09-01). On Time / Late are recorded in the tracker
+     for Teacher Evaluations but never surfaced on this portal. Behind Pace
+     is a softer signal a principal should only see if they dig a little
+     deeper -- reachable via the Show filter below, not shown here. Unmapped
+     moved to its own page (unmapped-chapters.html) rather than a count here. -->
 <div class="chips-strip">
-  <div class="chip ok"><div class="chip-lbl">✅ On Time</div><div class="chip-val green" id="cOnTime">—</div><div class="chip-sub">CWA taken on or before planned date</div></div>
-  <div class="chip warn"><div class="chip-lbl">🟠 Taken Late</div><div class="chip-val amber" id="cLate">—</div><div class="chip-sub">CWA after planned date</div></div>
-  <div class="chip warn"><div class="chip-lbl">🟡 Behind Pace</div><div class="chip-val amber" id="cBehind">—</div><div class="chip-sub">past planned date, within the month</div></div>
   <div class="chip alert"><div class="chip-lbl">🟠 Overdue Groups</div><div class="chip-val red" id="cOverdue">—</div><div class="chip-sub">month passed, still within Term</div></div>
   <div class="chip alert"><div class="chip-lbl">🔴 Critical Groups</div><div class="chip-val dark-red" id="cCritical">—</div><div class="chip-sub">Term deadline passed</div></div>
-  <div class="chip"><div class="chip-lbl">⚪ Not in Mapping</div><div class="chip-val muted" id="cUnmapped">—</div><div class="chip-sub">CWA logged, no CM entry</div></div>
   <div class="chip ok"><div class="chip-lbl">Total CWA Events</div><div class="chip-val green" id="cCWATotal">—</div><div class="chip-sub">OnTime + Late + Unmapped</div></div>
   <div class="chip"><div class="chip-lbl">Schools w/ Gaps</div><div class="chip-val blue" id="cSchools">—</div><div class="chip-sub">at least one flagged item</div></div>
   <div class="chip"><div class="chip-lbl">Academic Year</div><div class="chip-val muted" style="font-size:13px" id="cAcYear">—</div><div class="chip-sub" id="cAcYearSub">—</div></div>
@@ -362,19 +365,29 @@ let gapSortDir  = -1;
 let gapFiltSchool  = PRINCIPAL_LOCK_IDX >= 0 ? String(PRINCIPAL_LOCK_IDX) : '';
 let gapFiltClass   = '';
 let gapFiltSubject = '';
-let gapFiltType    = 'gaps'; // 'gaps' = behind+overdue+critical+late; 'all' = everything; exact type = that type only
-let gapMinDays     = 1;      // applies to Late (per-record) and Behind/Overdue/Critical (per-group max)
+let gapFiltType    = 'gaps'; // 'gaps' (default/face view) = overdue+critical only; 'all' = +behind pace; exact type = that type only
+let gapMinDays     = 1;      // applies per-group (max days within the group)
 
 /* ═══════════════════════════════════════════════════════════
    BUILD GAP DATA FROM TRACKER ROWS
-   Status mapping from the tracker's 3-tier escalation model:
+   This page only ever renders the tracker's 3-tier "not done yet"
+   escalation -- OnTime, Late, and Unmapped are deliberately never built
+   into gapData here (per Uday, 2026-09-01):
      Pending      -> not shown at all (not due yet, nothing to flag)
-     Behind Pace  -> type 'behind'   (soft:   planned date passed, within month)
-     Overdue      -> type 'overdue'  (strong: month passed, within Term)
-     Critical     -> type 'critical' (harsh:  Term deadline passed)
-     Late         -> type 'late'     (CWA logged, but after planned date)
-     OnTime       -> type 'ontime'
-     Unmapped     -> type 'unmapped' (CWA logged, no matching CM chapter)
+     Behind Pace  -> type 'behind'   (soft:   planned date passed, within
+                     month -- built here, but excluded from the default
+                     filter below; a principal has to switch the Show
+                     filter to see it, not "on the face" of the page)
+     Overdue      -> type 'overdue'  (strong: month passed, within Term
+                     -- the portal's primary/default-visible signal)
+     Critical     -> type 'critical' (harsh:  Term deadline passed --
+                     shown AND highlighted; the tier a future automated
+                     warning notification will hook off of, once we build
+                     the HOD/teacher side of the portal)
+   OnTime and Late are still recorded in the tracker sheet itself (every
+   row keeps its real status) for Teacher Evaluations to read later --
+   they're just never surfaced on this page. Unmapped has its own page
+   (unmapped-chapters.html) instead of living here.
    Behind/Overdue/Critical are grouped by school+class+subject+tier (one
    row listing multiple chapter chips), matching the original page's
    grouping behaviour -- just split across 3 tiers instead of 1.
@@ -386,35 +399,7 @@ function buildGapDataFromTracker(rows) {
 
   rows.forEach(r => {
     if (r.status === 'Pending' || !r.status) return;
-
-    if (r.status === 'OnTime') {
-      gaps.push({
-        type:'ontime', lmsIdx:r.lmsIdx, cls:r.cls, subject:r.subject,
-        chapterNo:r.chapterNo, chapterName:r.chapterName,
-        plannedDate:r.plannedDate, deadline:r.deadline,
-        actualDate:r.actualDate, actualDateStr:r.actualDateStr, teacher:r.teacher,
-        daysEarly: r.days<0 ? -r.days : 0, days:0,
-      });
-      return;
-    }
-    if (r.status === 'Late') {
-      gaps.push({
-        type:'late', lmsIdx:r.lmsIdx, cls:r.cls, subject:r.subject,
-        chapterNo:r.chapterNo, chapterName:r.chapterName,
-        plannedDate:r.plannedDate, deadline:r.deadline,
-        actualDate:r.actualDate, actualDateStr:r.actualDateStr, teacher:r.teacher,
-        daysLate:r.days, days:r.days,
-      });
-      return;
-    }
-    if (r.status === 'Unmapped') {
-      gaps.push({
-        type:'unmapped', lmsIdx:r.lmsIdx, cls:r.cls, subject:r.subject,
-        chapterName:r.chapterName, plannedDate:null, deadline:null,
-        actualDate:r.actualDate, actualDateStr:r.actualDateStr, teacher:r.teacher, days:0,
-      });
-      return;
-    }
+    if (r.status === 'OnTime' || r.status === 'Late' || r.status === 'Unmapped') return;
     const tier = TIER_TYPE[r.status];
     if (!tier) return; // unrecognized status -- skip rather than guess
     const key = `${r.lmsIdx}|${r.cls}|${r.subject}|${tier}`;
@@ -439,18 +424,16 @@ function renderGapPanel() {
   const panel = document.getElementById('gapPanel');
   if (PRINCIPAL_LOCK_IDX >= 0) gapFiltSchool = String(PRINCIPAL_LOCK_IDX);
 
-  // Apply min-days threshold (on-time/unmapped are never filtered by min-days)
-  const visible = gapData.filter(g => {
-    if (g.type==='behind' || g.type==='overdue' || g.type==='critical' || g.type==='late') return (g.days||0) >= gapMinDays;
-    return true;
-  });
+  // Apply min-days threshold (per-group max days)
+  const visible = gapData.filter(g => (g.days||0) >= gapMinDays);
 
   let rows = visible;
 
-  // Type filter: 'gaps' = behind+overdue+critical+late; 'ontime'/'unmapped' = that only;
-  // exact type = that type; 'all' = everything.
-  if (gapFiltType === 'gaps')        rows = rows.filter(g => g.type!=='ontime' && g.type!=='unmapped');
-  else if (gapFiltType === 'ontime') rows = rows.filter(g => g.type==='ontime');
+  // Type filter: 'gaps' (default/face view) = overdue+critical only -- Behind
+  // Pace is deliberately excluded unless explicitly selected ("dig a little
+  // deeper", per Uday 2026-09-01); 'all' = every tier including Behind Pace;
+  // exact type = that tier only.
+  if (gapFiltType === 'gaps') rows = rows.filter(g => g.type==='overdue' || g.type==='critical');
   else if (gapFiltType && gapFiltType !== 'all') rows = rows.filter(g => g.type===gapFiltType);
 
   if (gapFiltSchool)  rows = rows.filter(g=>g.lmsIdx===parseInt(gapFiltSchool));
@@ -474,31 +457,35 @@ function renderGapPanel() {
   const behindCt    = rows.filter(g=>g.type==='behind').length;
   const overdueCt   = rows.filter(g=>g.type==='overdue').length;
   const criticalCt  = rows.filter(g=>g.type==='critical').length;
-  const lateCt       = rows.filter(g=>g.type==='late').length;
-  const unmappedCt   = rows.filter(g=>g.type==='unmapped').length;
-  const ontimeCt     = rows.filter(g=>g.type==='ontime').length;
-  const maxDaysLate  = Math.max(0,...rows.filter(g=>g.type==='late').map(g=>g.days||0));
-  const totalFlaggedChs = rows.filter(g=>['behind','overdue','critical'].includes(g.type)).reduce((s,g)=>s+(g.chapters?.length||1),0);
+  const totalFlaggedChs = rows.reduce((s,g)=>s+(g.chapters?.length||1),0);
 
   // Update top-strip chips to match filtered view
-  document.getElementById('cOnTime').textContent   = ontimeCt;
-  document.getElementById('cLate').textContent     = lateCt;
-  document.getElementById('cBehind').textContent   = behindCt;
   document.getElementById('cOverdue').textContent  = overdueCt;
   document.getElementById('cCritical').textContent = criticalCt;
-  document.getElementById('cUnmapped').textContent = unmappedCt;
-  document.getElementById('cSchools').textContent  = new Set(rows.filter(g=>g.type!=='ontime').map(g=>g.lmsIdx)).size;
+  document.getElementById('cSchools').textContent  = new Set(rows.map(g=>g.lmsIdx)).size;
 
-  let html = `
+  let html = '';
+
+  // Critical gets more than a highlighted row -- a standing banner while any
+  // exist, so it's impossible to miss even before scrolling to a school
+  // section (per Uday, 2026-09-01: "not only be seen and highlighted"). A
+  // future automated warning notification (HOD/Principal/subject teacher,
+  // once per chapter) will hook off this same criticalCt, once we build the
+  // HOD/teacher side of the portal -- not implemented yet.
+  if (criticalCt > 0) {
+    html += `<div style="background:#fee2e2;border:1.5px solid var(--red);border-radius:6px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">🔴</span>
+      <span style="font-size:12.5px;color:#7c2d12"><strong>${criticalCt} Critical item${criticalCt!==1?'s':''}</strong> — Term deadline has passed with nothing logged yet. Needs attention today.</span>
+    </div>`;
+  }
+
+  html += `
   <div class="legend">
     <span style="font-size:11px;font-weight:700;color:var(--dark);margin-right:4px">How to read:</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#dcfce7;border:1px solid #bbf7d0"></span>✅ <strong>On Time</strong> — CWA taken on or before the planned date</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#fffbeb;border:1px solid #fde68a"></span>🟠 <strong>Late</strong> — CWA logged, but after the planned date</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#fef3c7;border:1px solid #fde68a"></span>🟡 <strong>Behind Pace</strong> — planned date passed, still within the chapter's month</span>
     <span class="legend-item"><span class="legend-dot" style="background:#fed7aa;border:1px solid #fdba74"></span>🟠 <strong>Overdue</strong> — the month passed, still within the Term</span>
     <span class="legend-item"><span class="legend-dot" style="background:#fee2e2;border:1px solid #fecaca"></span>🔴 <strong>Critical</strong> — the Term deadline has passed with no CWA logged</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#f5f5f5;border:1px solid #e0e0e0"></span>⚪ <strong>Not in mapping</strong> — CWA logged but no matching Course Mapping chapter</span>
-    <span style="margin-left:auto;color:#9ca3af;font-size:10px">Source: LMCS Chapter Completion Tracker · Term/board deadlines read live from each campus's Google Calendar</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#fef3c7;border:1px solid #fde68a"></span>🟡 <strong>Behind Pace</strong> — planned date passed, still within the chapter's month (soft signal — select "Behind Pace only" below to review)</span>
+    <span style="margin-left:auto;color:#9ca3af;font-size:10px">On Time/Late are recorded for Teacher Evaluations, not shown here · <a href="unmapped-chapters.html" style="color:var(--red)">Unmapped chapters →</a> · Source: LMCS Chapter Completion Tracker</span>
   </div>
 
   <div class="gap-filter-bar">
@@ -512,14 +499,11 @@ function renderGapPanel() {
     </label>
     <label>Show
       <select onchange="gapFiltType=this.value;renderGapPanel()">
-        <option value="gaps"${gapFiltType==='gaps'?' selected':''}>⚠ Gaps only (Behind Pace + Overdue + Critical + Late)</option>
-        <option value="all"${gapFiltType==='all'?' selected':''}>All (gaps + on time + not mapped)</option>
-        <option value="ontime"${gapFiltType==='ontime'?' selected':''}>✅ On Time only</option>
-        <option value="behind"${gapFiltType==='behind'?' selected':''}>🟡 Behind Pace only</option>
+        <option value="gaps"${gapFiltType==='gaps'?' selected':''}>⚠ Overdue + Critical (default)</option>
+        <option value="all"${gapFiltType==='all'?' selected':''}>All (+ Behind Pace)</option>
         <option value="overdue"${gapFiltType==='overdue'?' selected':''}>🟠 Overdue only</option>
         <option value="critical"${gapFiltType==='critical'?' selected':''}>🔴 Critical only</option>
-        <option value="late"${gapFiltType==='late'?' selected':''}>🟠 Late only</option>
-        <option value="unmapped"${gapFiltType==='unmapped'?' selected':''}>⚪ Not in Mapping</option>
+        <option value="behind"${gapFiltType==='behind'?' selected':''}>🟡 Behind Pace only — dig deeper</option>
       </select>
     </label>
     <label>🏫 School
@@ -527,7 +511,7 @@ function renderGapPanel() {
         ${PRINCIPAL_LOCK_IDX>=0
           ? `<option value="${PRINCIPAL_LOCK_IDX}" selected>${esc(CM_SCHOOLS[PRINCIPAL_LOCK_IDX].name)}</option>`
           : `<option value="">All Schools</option>` +
-            CM_SCHOOLS.map((s,i)=>`<option value="${i}"${gapFiltSchool==i?' selected':''}>${esc(s.name)}</option>`).join('')}
+            CM_SCHOOLS.map((s,i)=>`<option value="${i}"${gapFiltSchool!==''&&+gapFiltSchool===i?' selected':''}>${esc(s.name)}</option>`).join('')}
       </select>
     </label>
     <label>📚 Class
@@ -557,21 +541,6 @@ function renderGapPanel() {
   </div>
 
   <div class="gap-chips">
-    <div class="gap-chip ok">
-      <div class="gap-chip-lbl">✅ On Time</div>
-      <div class="gap-chip-val" style="color:#15803d">${ontimeCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">taken on or before planned date</div>
-    </div>
-    <div class="gap-chip${lateCt?' warn':''}">
-      <div class="gap-chip-lbl">🟠 Taken Late</div>
-      <div class="gap-chip-val" style="color:#c2410c">${lateCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">${maxDaysLate?`max ${maxDaysLate}d late`:'—'}</div>
-    </div>
-    <div class="gap-chip${behindCt?' warn':''}">
-      <div class="gap-chip-lbl">🟡 Behind Pace</div>
-      <div class="gap-chip-val" style="color:#b45309">${behindCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">soft signal — planned date missed</div>
-    </div>
     <div class="gap-chip${overdueCt?' alert':''}">
       <div class="gap-chip-lbl">🟠 Overdue</div>
       <div class="gap-chip-val" style="color:#c2410c">${overdueCt}</div>
@@ -582,14 +551,14 @@ function renderGapPanel() {
       <div class="gap-chip-val" style="color:var(--red)">${criticalCt}</div>
       <div style="font-size:.7rem;color:#9ca3af">harsh signal — Term missed · ${totalFlaggedChs} chapters flagged total</div>
     </div>
-    <div class="gap-chip">
-      <div class="gap-chip-lbl">⚪ Not Mapped</div>
-      <div class="gap-chip-val" style="color:var(--gray)">${unmappedCt}</div>
-      <div style="font-size:.7rem;color:#9ca3af">no CM entry found</div>
+    <div class="gap-chip" style="opacity:.7" title="Soft signal — select &quot;Behind Pace only&quot; above to review">
+      <div class="gap-chip-lbl">🟡 Behind Pace</div>
+      <div class="gap-chip-val" style="color:#b45309">${gapFiltType==='gaps'?'—':behindCt}</div>
+      <div style="font-size:.7rem;color:#9ca3af">${gapFiltType==='gaps'?'switch filter to view':'planned date missed'}</div>
     </div>
     <div class="gap-chip">
       <div class="gap-chip-lbl">Schools w/ Gaps</div>
-      <div class="gap-chip-val" style="color:#1d4ed8">${new Set(rows.filter(g=>g.type!=='ontime').map(g=>g.lmsIdx)).size}</div>
+      <div class="gap-chip-val" style="color:#1d4ed8">${new Set(rows.map(g=>g.lmsIdx)).size}</div>
     </div>
   </div>`;
 
@@ -609,7 +578,6 @@ function renderGapPanel() {
     const sBehind   = sRows.filter(g=>g.type==='behind').length;
     const sOverdue  = sRows.filter(g=>g.type==='overdue').length;
     const sCritical = sRows.filter(g=>g.type==='critical').length;
-    const sLate     = sRows.filter(g=>g.type==='late').length;
     const sheetUrl = CM_SCHOOLS[+lmsIdx]?.id
       ? `https://docs.google.com/spreadsheets/d/${CM_SCHOOLS[+lmsIdx].id}/edit` : '#';
 
@@ -620,7 +588,6 @@ function renderGapPanel() {
           ${sCritical?`<span style="color:var(--red);font-weight:700">🔴 ${sCritical} critical</span>&nbsp;·&nbsp;`:''}
           ${sOverdue?`<span style="color:#c2410c;font-weight:700">🟠 ${sOverdue} overdue</span>&nbsp;·&nbsp;`:''}
           ${sBehind?`<span style="color:#b45309;font-weight:700">🟡 ${sBehind} behind pace</span>&nbsp;·&nbsp;`:''}
-          ${sLate?`<span style="color:#c2410c;font-weight:700">🟠 ${sLate} late</span>&nbsp;·&nbsp;`:''}
           <a href="${sheetUrl}" target="_blank" rel="noopener"
              style="color:var(--red);font-weight:600;text-decoration:none;font-size:10px">↗ Open Course Mapping</a>
         </span>
@@ -660,7 +627,7 @@ function renderGapPanel() {
         actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
         const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
         chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}</div>`;
-      } else if (g.type==='behind') {
+      } else { // g.type === 'behind'
         statusBadge = `<span class="gap-sev sev-low">🟡 Behind Pace</span>`;
         daysCell    = `<span style="color:#b45309;font-weight:700">${g.maxDays}d late</span>`;
         rowStyle    = ' style="background:#fffdf5"';
@@ -669,39 +636,15 @@ function renderGapPanel() {
         actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
         const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
         chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}</div>`;
-      } else if (g.type==='late') {
-        const sc = g.days>=14?'sev-high':g.days>=7?'sev-mid':'sev-low';
-        statusBadge = `<span class="gap-sev ${sc}">🟠 Late</span>`;
-        daysCell    = `<span style="color:#c2410c;font-weight:700">+${g.days}d</span>`;
-        rowStyle    = ' style="background:#fffbeb"';
-        plannedCell = fmtDate(g.plannedDate);
-        deadlineCell= fmtDate(g.deadline);
-        actualCell  = fmtDate(g.actualDate);
-        chCell = `<span class="ch-chip">${esc(g.chapterNo?`Ch ${g.chapterNo}: ${g.chapterName||''}`:g.chapterName||'—')}</span>`;
-      } else if (g.type==='ontime') {
-        statusBadge = `<span class="gap-sev sev-ok">✅ On Time</span>`;
-        daysCell    = g.daysEarly > 0
-          ? `<span style="color:#15803d;font-weight:700">${g.daysEarly}d early</span>`
-          : `<span style="color:#15803d;font-weight:700">On date</span>`;
-        rowStyle    = ' style="background:#f0fdf4"';
-        plannedCell = fmtDate(g.plannedDate);
-        deadlineCell= fmtDate(g.deadline);
-        actualCell  = fmtDate(g.actualDate);
-        chCell = `<span class="ch-chip">${esc(g.chapterNo?`Ch ${g.chapterNo}: ${g.chapterName||''}`:g.chapterName||'—')}</span>`;
-      } else {
-        statusBadge = `<span class="gap-sev" style="background:#f5f5f5;color:#9ca3af;border-color:#e0e0e0">⚪ No mapping</span>`;
-        daysCell    = `<span style="color:#9ca3af">—</span>`;
-        plannedCell = `<span style="color:#9ca3af">—</span>`;
-        deadlineCell= `<span style="color:#9ca3af">—</span>`;
-        actualCell  = fmtDate(g.actualDate);
-        chCell = g.chapterName ? `<span class="ch-chip">${esc(g.chapterName)}</span>` : '—';
       }
-      // Compute sortable values
-      const statusOrder = {critical:'0',overdue:'1',behind:'2',late:'3',unmapped:'4',ontime:'5'};
+      // Compute sortable values. Only behind/overdue/critical ever reach here
+      // -- OnTime/Late/Unmapped are never built into gapData (see
+      // buildGapDataFromTracker above).
+      const statusOrder = {critical:'0',overdue:'1',behind:'2'};
       const sortPlanned  = g.plannedDate  ? g.plannedDate.toISOString().slice(0,10)  : (g.oldestPlanned ? g.oldestPlanned.toISOString().slice(0,10) : '');
       const sortDeadline = g.deadline     ? g.deadline.toISOString().slice(0,10)     : '';
       const sortActual   = g.actualDate   ? g.actualDate.toISOString().slice(0,10)   : '';
-      const sortDays     = g.type==='ontime' ? (g.daysEarly||0) : -(g.days||0);
+      const sortDays     = -(g.days||0);
 
       html += `<tr${rowStyle}>
         <td data-val="${statusOrder[g.type]||'9'}">${statusBadge}</td>

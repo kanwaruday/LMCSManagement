@@ -285,6 +285,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
     <span class="hdr-ts" id="lastUpdated"></span>
     <a href="cwa-gap-report.html" class="hdr-btn">⚠ CWA Gap Report</a>
     <a href="course-mapping-progress.html" class="hdr-btn">📊 Course Mapping</a>
+    <a href="unmapped-chapters.html" class="hdr-btn">⚪ Unmapped</a>
     <a href="../index.html" class="hdr-btn">← Portal</a>
     <button class="hdr-btn" onclick="reloadAll()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -1138,6 +1139,12 @@ function renderFeed() {
    collapsed into ONE "overdue" count here to keep this card's simple
    single-number shape; the detail line calls out Critical separately
    since that's the tier that actually needs attention today.
+   Behind Pace is deliberately EXCLUDED from this headline number (per
+   Uday, 2026-09-01: it's a soft signal a principal should only see if
+   they dig a little deeper, not something that belongs on the face of
+   the portal) -- it still exists in the tracker sheet and is reachable
+   via cwa-gap-report.html's "Behind Pace only" filter, just not counted
+   here or in cwa-gap-report.html's default/top-level view.
 ═══════════════════════════════════════════════════════════ */
 const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
 const TRACKER_TAB = (() => {
@@ -1174,7 +1181,7 @@ async function fetchTrackerStatusRows() {
   return out;
 }
 
-const NOT_DONE_STATUSES = new Set(['Behind Pace', 'Overdue', 'Critical']);
+const NOT_DONE_STATUSES = new Set(['Overdue', 'Critical']);
 
 async function checkOverdueFromTracker() {
   const rows = await fetchTrackerStatusRows();
