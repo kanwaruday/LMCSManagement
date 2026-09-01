@@ -5,10 +5,17 @@
    Google Sign-In + session logic — that per-page duplication is
    what made the old repo hard to maintain.
 
-   Session shape: { email, campusId, campusName, name, ts, expiresAt, idToken }
+   Session shape: { email, campusId, campusName, name, role, ts, expiresAt, idToken }
    campusId is either one of LMS1..LMS6 (locked to that campus) or
    'ALL' (network-wide — owner/MD/Head tier). Every module filters
-   its data by this one field; there is no separate "owner mode". */
+   its data by this one field; there is no separate "owner mode".
+
+   role (added 2026-08-29) is a SEPARATE dimension from campusId, for
+   features that need "can this person write/manage" rather than "which
+   campus can they see" -- e.g. adding/transferring staff. One of 'Owner'
+   / 'Coordinator' / 'Principal' / 'Teacher', or '' if not set on the
+   allowlist yet. Use LMCS.canManageStaff(session) rather than checking
+   role directly, so the actual rule only lives in one place. */
 
 window.LMCS = (function () {
   const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
@@ -28,13 +35,15 @@ window.LMCS = (function () {
     ALL: 'All Campuses (Network-wide)',
   };
 
-  // Stale snapshot, used only if the live allowlist fetch fails.
+  // Stale snapshot, used only if the live allowlist fetch fails. role left
+  // blank except for Uday (known) rather than guessed -- fails safe (no
+  // staff-management permission) instead of fabricating someone's title.
   const FALLBACK_ALLOWLIST = {
-    'nidhi.kant@lms.org.in':          { campusId: 'LMS1', name: 'Nidhi Kant' },
-    'arti.sharma@lms.org.in':         { campusId: 'LMS2', name: 'Arti Sharma' },
-    'suresh.prasher@lms.org.in':      { campusId: 'LMS3', name: 'Suresh Prasher' },
-    'nisha.lms@lms.org.in':           { campusId: 'LMS4', name: 'Nisha' },
-    'uday.kanwar@lms.org.in':         { campusId: 'ALL',  name: 'Uday Kanwar' },
+    'nidhi.kant@lms.org.in':          { campusId: 'LMS1', name: 'Nidhi Kant', role: '' },
+    'arti.sharma@lms.org.in':         { campusId: 'LMS2', name: 'Arti Sharma', role: '' },
+    'suresh.prasher@lms.org.in':      { campusId: 'LMS3', name: 'Suresh Prasher', role: '' },
+    'nisha.lms@lms.org.in':           { campusId: 'LMS4', name: 'Nisha', role: '' },
+    'uday.kanwar@lms.org.in':         { campusId: 'ALL',  name: 'Uday Kanwar', role: 'Owner' },
   };
 
   function nextSixPM(fromTime) {
@@ -65,7 +74,7 @@ window.LMCS = (function () {
         if (!data.success || !Array.isArray(data.entries)) throw new Error('bad response');
         const map = {};
         data.entries.forEach((e) => {
-          map[e.email.toLowerCase()] = { campusId: e.campusId, name: e.name };
+          map[e.email.toLowerCase()] = { campusId: e.campusId, name: e.name, role: e.role || '' };
         });
         return map;
       })
@@ -97,6 +106,15 @@ window.LMCS = (function () {
 
   function campusLabel(campusId) {
     return CAMPUS_NAMES[campusId] || campusId;
+  }
+
+  // Single source of truth for "can this session add/transfer/deactivate
+  // staff" -- Owner (campusId ALL) or a Coordinator, always scoped to
+  // their own locked campus for Coordinators (callers still need to check
+  // session.campusId when acting, this only answers the yes/no).
+  function canManageStaff(session) {
+    if (!session) return false;
+    return session.campusId === 'ALL' || session.role === 'Coordinator' || session.role === 'Owner';
   }
 
   /**
@@ -149,6 +167,7 @@ window.LMCS = (function () {
             campusId: match.campusId,
             campusName: campusLabel(match.campusId),
             name: match.name,
+            role: match.role || '',
             ts: now,
             expiresAt: nextSixPM(now),
             idToken: response.credential,
@@ -183,5 +202,5 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, campusLabel, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, campusLabel, canManageStaff, CAMPUS_NAMES };
 })();

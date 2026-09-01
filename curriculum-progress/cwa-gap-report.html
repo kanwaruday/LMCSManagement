@@ -227,6 +227,22 @@ const PRINCIPAL_SESSION = getPrincipalSession();
 
 const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
 
+// Same Web App the daily-progress.html proxy fetch uses -- now also the
+// target for manual-override submissions (see markAsTaken below).
+const PROXY_URL = savedCfg?.proxyUrl
+  ?? 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec';
+
+// Manual-override "mark as taken" is Coordinator/Owner only (per Uday,
+// 2026-09-01) -- NOT Principal, deliberately: the principal audits and
+// spots the gap, but the actual override is entered by Coordinator/Owner.
+// This is a CLIENT-SIDE gate only, same trust model as the rest of this
+// portal (e.g. canManageStaff() elsewhere) -- the Web App endpoint itself
+// does not independently verify role server-side, matching how
+// appendPayrollSubmission (Code.gs) already works. Acceptable here for the
+// same reason it's acceptable there: this sits behind Google Sign-In +
+// the staff allowlist already, not open to the public internet.
+const CAN_OVERRIDE = (() => { const s = LMCS.getSession(); return !!(s && LMCS.canManageStaff(s)); })();
+
 const CM_SCHOOLS = savedCfg?.schools ?? [
   {name:'LMS 1 — Kullu',        id:'1BorpCdePG7O6iZiwgGwNpWZBl7I1IGAT-OAh0fw2yMs'},
   {name:'LMS 2 — Kelheli',      id:'1ejXKsnK3a2kNGEboTs-yQ2d3Tpk3xG5JRtm9DAmiYXs'},
@@ -263,6 +279,58 @@ function fmtDate(d) {
 }
 
 function lmsName(idx) { return CM_SCHOOLS[idx]?.name || `LMS ${idx+1}`; }
+// Plain "LMS N" form, matching the exact School column text ChapterTracker.gs
+// writes to the tracker sheet -- lmsName() above has display suffixes
+// ("— Kullu") that would never match on the override lookup.
+function lmsPlainName(idx) { return `LMS ${idx+1}`; }
+
+/* ═══════════════════════════════════════════════════════════
+   MANUAL OVERRIDE ("Mark as taken") -- Coordinator/Owner only, per Uday
+   2026-09-01: for chapters actually completed but never logged in the
+   daily CW/HW update (so the tracker's own log-matching can't see them).
+   Submits to a new Overrides tab (via ChapterTracker.gs's
+   appendChapterOverride, dispatched from Code.gs's doGet) that the next
+   30-min rebuild folds in as a distinct 'Verified' status -- kept OUT of
+   OnTime/Late (a principal/coordinator confirming curriculum coverage
+   isn't the same as the teacher having communicated it to parents on
+   time), so it simply drops out of this Overdue/Critical/Behind Pace view
+   once applied rather than needing any new rendering here.
+   chipRefs indexes chip data by position so the onclick handler never has
+   to interpolate chapter names (Hindi text, punctuation) into an HTML
+   attribute.
+═══════════════════════════════════════════════════════════ */
+let chipRefs = [];
+function pushChipRef(ref) { chipRefs.push(ref); return chipRefs.length - 1; }
+
+async function markAsTaken(idx) {
+  const ref = chipRefs[idx];
+  if (!ref) return;
+  const session = LMCS.getSession();
+  if (!session || !LMCS.canManageStaff(session)) { alert('Only Coordinator/Owner sessions can do this.'); return; }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dateStr = (prompt(
+    `Actual CWA date for "${ref.chapterName}"\n(${lmsPlainName(ref.lmsIdx)} · ${ref.cls} · ${ref.subject})\n\nFormat: YYYY-MM-DD`,
+    today
+  ) || '').trim();
+  if (!dateStr) return; // date is mandatory -- no way to submit without one
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('Please enter the date as YYYY-MM-DD.'); return; }
+  if (dateStr > today) { alert('The date can\'t be in the future -- enter when the CWA was actually taken.'); return; }
+  const note = (prompt('Optional note (e.g. "confirmed in notebook"):', '') || '').trim();
+
+  const payload = {
+    email: session.email, name: session.name, academicYear: TRACKER_TAB,
+    school: lmsPlainName(ref.lmsIdx), cls: ref.cls, subject: ref.subject,
+    chapterName: ref.chapterName, actualDate: dateStr, note,
+  };
+  try {
+    const url = PROXY_URL + '?overrideData=' + encodeURIComponent(JSON.stringify(payload));
+    await fetch(url, { cache: 'no-store' });
+    alert('Marked as taken. This will drop off the gap report on its next refresh (within ~30 min).');
+  } catch (e) {
+    alert('Failed to submit: ' + e.message);
+  }
+}
 
 function parseGvizDate(cell) {
   if (!cell||cell.v==null) return null;
@@ -423,6 +491,7 @@ function buildGapDataFromTracker(rows) {
 function renderGapPanel() {
   const panel = document.getElementById('gapPanel');
   if (PRINCIPAL_LOCK_IDX >= 0) gapFiltSchool = String(PRINCIPAL_LOCK_IDX);
+  chipRefs = []; // reset each render pass -- markAsTaken(idx) refs are only valid for the current DOM
 
   // Apply min-days threshold (per-group max days)
   const visible = gapData.filter(g => (g.days||0) >= gapMinDays);
@@ -617,7 +686,7 @@ function renderGapPanel() {
         deadlineCell= fmtDate(g.deadline);
         actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
         const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}</div>`;
+        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       } else if (g.type==='overdue') {
         statusBadge = `<span class="gap-sev sev-mid">🟠 Overdue</span>`;
         daysCell    = `<span style="color:#c2410c;font-weight:700">${g.maxDays}d past month</span>`;
@@ -626,7 +695,7 @@ function renderGapPanel() {
         deadlineCell= fmtDate(g.deadline);
         actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
         const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}</div>`;
+        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       } else { // g.type === 'behind'
         statusBadge = `<span class="gap-sev sev-low">🟡 Behind Pace</span>`;
         daysCell    = `<span style="color:#b45309;font-weight:700">${g.maxDays}d late</span>`;
@@ -635,7 +704,7 @@ function renderGapPanel() {
         deadlineCell= fmtDate(g.deadline);
         actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
         const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}</span>`).join('')}</div>`;
+        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       }
       // Compute sortable values. Only behind/overdue/critical ever reach here
       // -- OnTime/Late/Unmapped are never built into gapData (see
