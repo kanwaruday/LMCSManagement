@@ -138,6 +138,8 @@ td{padding:6px 12px;vertical-align:middle}
 .planned-status.upcoming{background:#fef3c7;color:var(--amber)}
 .planned-del{border:none;background:none;color:#B7C0CC;cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0}
 .planned-del:hover{color:var(--red)}
+.fetched-list li.has-tag{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.activity-tag{font-size:10px;font-weight:700;color:var(--gray);background:#fff;border:1px solid #DCE2E9;padding:2px 8px;border-radius:999px;flex-shrink:0;white-space:nowrap}
 
 .ss-count-number{font-size:30px;font-weight:700;line-height:1}
 .ss-count-number.ss-met{color:var(--green)}
@@ -199,7 +201,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
-      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Month Activities and Support Session count are wired to real Calendars (see apps-script/principal-dr.gs) — Support Session count is a simple "SS"-tagged count for now, not yet cross-referenced against Teacher SS submissions. Yesterday's tasks, planned activities, and Submit are still mocked pending the daily-reports Sheet + full Support Session naming convention — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
+      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Everything on this tab is now wired to real data (see apps-script/principal-dr.gs): Month Activities merges the School's official Calendar with Planned Activities (tagged "School Specific"); Support Session count is a simple "SS"-tagged Calendar count, not yet cross-referenced against Teacher SS submissions; Tasks Completed suggestions come from the nearest prior working day's Tasks for Tomorrow; Planned Activities and Submit both persist to the "LMCS Principal DR — Daily Reports" Sheet.</div>
       <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
 
       <div class="principal-report-hdr">
@@ -492,25 +494,41 @@ var REGISTER_OPTIONS = [
 ];
 
 // =====================================================================
-// DATA LAYER — BACKEND INTEGRATION POINTS. fetchMonthActivities() and
-// fetchSupportSessionsToday() below are WIRED (via PDR_BACKEND_URL --
-// see each one's own comment for what's still partial/blocked about
-// it). The rest still return hardcoded mock data; replace the BODY of
-// a function to wire it to a real source once its blocker clears (see
-// project_principals_daily_reporting.md for what's still open per
-// function). Threaded through with campusId so they're ready for real
-// per-campus data — the still-mocked ones currently ignore it.
+// DATA LAYER — BACKEND INTEGRATION POINTS. Every function below is now
+// WIRED to apps-script/principal-dr.gs via PDR_BACKEND_URL -- reads go
+// through doGet (?action=...), writes (addPlannedActivity,
+// setPlannedActivityCompleted, deletePlannedActivity, saveDailyReport)
+// go through doPost as a JSON body (see pdrPost_()). See each
+// function's own comment for what's still partial/blocked (Support
+// Session count isn't cross-referenced against Teacher SS submissions
+// yet; see project_principals_daily_reporting.md).
 // =====================================================================
 
-// NOT SEPARATE STORAGE (2026-09-02 audit): this doesn't need its own
-// store -- "yesterday's Tasks for Tomorrow" is just yesterday's row in
-// the same daily-reports Sheet saveDailyReport() writes to, filtered
-// to this campus + (today - 1). One Sheet serves both once it exists.
+// WIRED (2026-09-02): reads apps-script/principal-dr.gs's
+// 'yesterdaystasks' action -- NOT literally "yesterday": it walks
+// backward from the report's OWN date (the reportDate field, which a
+// Principal can edit -- not necessarily today), skipping off-days
+// (Sunday/2nd Saturday/GH Calendar events), and returns the first 2
+// entries of the nearest prior working day's TasksForTomorrow. Empty
+// if nothing's ever been submitted within the lookback window -- not
+// an error state.
 async function fetchYesterdaysTomorrowTasks(campusId) {
-  return [
-    'Finish fee defaulter follow-up for C-8',
-    'Submit MOH register updates'
-  ]; // TODO: replace with a real read of yesterday's row in the daily-reports Sheet, keyed on campusId
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+  try {
+    const dateStr = document.getElementById('reportDate').value || todayDDMMYY();
+    const url = PDR_BACKEND_URL + '?action=yesterdaystasks&campusId=' + encodeURIComponent(campusId) +
+      '&date=' + encodeURIComponent(dateStr) + '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success) { console.warn('fetchYesterdaysTomorrowTasks failed:', res.error); return []; }
+    if (!Array.isArray(res.tasks)) {
+      console.warn('fetchYesterdaysTomorrowTasks: no tasks array in response -- is the Web App deployment out of date?', res);
+      return [];
+    }
+    return res.tasks;
+  } catch (err) {
+    console.warn('fetchYesterdaysTomorrowTasks error:', err);
+    return [];
+  }
 }
 
 // PARTIALLY WIRED (2026-09-02): reads apps-script/principal-dr.gs's
@@ -544,10 +562,14 @@ async function fetchSupportSessionsToday(campusId) {
   }
 }
 
-// WIRED (2026-09-02): reads the School's OFFICIAL Calendar via
-// apps-script/principal-dr.gs's 'monthactivities' action (through the
-// shared PDR_BACKEND_URL / main.gs dispatcher) -- NEXT calendar month,
-// not the current one, per Uday's correction.
+// WIRED (2026-09-02): reads the School's OFFICIAL Calendar (next
+// month) MERGED with Active Planned Activities due next month, via
+// apps-script/principal-dr.gs's 'monthactivities' action -- same
+// window for both per Uday, sorted together chronologically. Each item
+// is now {text, tag} (tag is null for official-Calendar entries,
+// "School Specific" for Planned Activities ones) -- see
+// renderMonthActivities(), NOT the generic renderFetchedList(), since
+// plain strings can't carry the tag.
 async function fetchMonthActivities(campusId) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
   try {
@@ -558,7 +580,7 @@ async function fetchMonthActivities(campusId) {
     // If the deployed Web App is a version older than the 'monthactivities'
     // action, res.success is still true (it silently falls through to the
     // old default response) but res.activities won't exist -- guard against
-    // that instead of returning undefined and crashing renderFetchedList.
+    // that instead of returning undefined and crashing the renderer.
     if (!Array.isArray(res.activities)) {
       console.warn('fetchMonthActivities: no activities array in response -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
       return [];
@@ -570,41 +592,85 @@ async function fetchMonthActivities(campusId) {
   }
 }
 
-// See the original prototype's note on "disappear the next day"
-// behaviour: a fetch-time filter (completed && completedDate===today,
-// or not completed) — not a browser timer. Preserve this when wiring
-// the real Sheet read. `assignee` and the due-date-based
-// upcoming/overdue status (see renderPlannedActivities) added 2026-09-02
-// per Uday: this needs to work like a real task system, not a bare list.
+// WIRED (2026-09-02): reads apps-script/principal-dr.gs's
+// 'plannedactivities' action -- the 'Planned Activities' Sheet tab,
+// filtered to this campus, Deleted rows excluded server-side. Preserves
+// the original prototype's "disappear the next day" intent (see
+// renderPlannedActivities' completed-item styling) via server data, not
+// a browser timer.
 async function fetchPlannedActivities(campusId) {
-  return [
-    { id: 'demo-1', date: '15/09/26', activity: 'Fire drill — full school', assignee: '', completed: false },
-    { id: 'demo-2', date: '18/09/26', activity: 'Parent-Teacher orientation, C-1 to C-5', assignee: 'Nidhi Kant', completed: false }
-  ]; // TODO: replace with a real Sheet read, keyed on campusId
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+  try {
+    const url = PDR_BACKEND_URL + '?action=plannedactivities&campusId=' + encodeURIComponent(campusId) +
+      '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success) { console.warn('fetchPlannedActivities failed:', res.error); return []; }
+    if (!Array.isArray(res.activities)) {
+      console.warn('fetchPlannedActivities: no activities array in response -- is the Web App deployment out of date?', res);
+      return [];
+    }
+    return res.activities; // [{id, date, activity, assignee, completed}]
+  } catch (err) {
+    console.warn('fetchPlannedActivities error:', err);
+    return [];
+  }
+}
+
+// Shared POST helper for every write action (Planned Activities CRUD +
+// Submit). Deliberately sends a plain-text body (no Content-Type
+// header, so no `action`/`idToken` in the URL) -- Apps Script Web Apps
+// don't implement doOptions, so a JSON Content-Type would trigger a
+// CORS preflight and fail; an unset Content-Type defaults to
+// text/plain, which is CORS-safelisted and skips the preflight.
+// doPost(e) on the Apps Script side parses e.postData.contents as JSON.
+async function pdrPost_(action, body) {
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) {
+    return { success: false, error: 'Backend not deployed yet' };
+  }
+  try {
+    const res = await fetch(PDR_BACKEND_URL, {
+      method: 'POST',
+      body: JSON.stringify(Object.assign({ action: action, idToken: SESSION.idToken }, body))
+    }).then(function (r) { return r.json(); });
+    return res;
+  } catch (err) {
+    console.warn('pdrPost_ error (' + action + '):', err);
+    return { success: false, error: String(err) };
+  }
 }
 
 async function addPlannedActivity(campusId, date, activity, assignee) {
-  console.log('addPlannedActivity', campusId, date, activity, assignee);
-  return { id: 'local-' + Date.now(), date: date, activity: activity, assignee: assignee || '', completed: false };
-  // TODO: replace with a real Sheet append; return the row's real id
+  const res = await pdrPost_('addplannedactivity', { campusId: campusId, dueDate: date, title: activity, assignee: assignee || '' });
+  if (!res.success) {
+    console.warn('addPlannedActivity failed:', res.error);
+    // Fail open so the UI stays responsive -- this row just won't have
+    // persisted; a page refresh will show it's missing.
+    return { id: 'local-' + Date.now(), date: date, activity: activity, assignee: assignee || '', completed: false };
+  }
+  return res.activity;
 }
 
 async function setPlannedActivityCompleted(campusId, id, completed) {
-  console.log('setPlannedActivityCompleted', campusId, id, completed);
-  return { ok: true }; // TODO: replace with a real Sheet update, matched on id; stamp completedDate when true
+  const res = await pdrPost_('setplannedactivitycompleted', { campusId: campusId, id: id, completed: completed });
+  if (!res.success) console.warn('setPlannedActivityCompleted failed:', res.error);
+  return res;
 }
 
 async function deletePlannedActivity(campusId, id) {
-  console.log('deletePlannedActivity', campusId, id);
-  return { ok: true }; // TODO: replace with a real Sheet row delete, matched on id
+  const res = await pdrPost_('deleteplannedactivity', { campusId: campusId, id: id });
+  if (!res.success) console.warn('deletePlannedActivity failed:', res.error);
+  return res;
 }
 
-// Should: (1) append a row to the master Sheet, and (2) create/verify
-// the Calendar entries this report implies (MA, DISP, SS, NBK, MEET)
-// for this campus on this date.
+// WIRED (2026-09-02): upserts (not always-appends) the 'Daily Reports'
+// Sheet row for (campusId, payload.date) -- resubmitting the same day
+// (e.g. fixing a typo) overwrites that day's row rather than creating a
+// duplicate, which the yesterdaystasks/Month-Activities-suggestion
+// lookups both depend on being unambiguous. Support Session count is
+// NOT persisted here -- it's Calendar-derived and re-computed live on
+// every load, not something the Principal edits/submits.
 async function saveDailyReport(campusId, payload) {
-  console.log('saveDailyReport', campusId, payload);
-  return { ok: true }; // TODO: replace with a real Sheet write + Calendar create
+  return await pdrPost_('savedailyreport', Object.assign({ campusId: campusId }, payload));
 }
 
 // ---------- runtime state ----------
@@ -663,6 +729,33 @@ function renderFetchedList(id, items) {
   items.forEach(function(t) {
     var li = document.createElement('li');
     li.textContent = t;
+    el.appendChild(li);
+  });
+}
+
+// Month Activities-specific renderer: items are {text, tag} (tag is
+// null for official-Calendar entries, "School Specific" for merged-in
+// Planned Activities) -- renderFetchedList can't show the tag since it
+// only takes plain strings.
+function renderMonthActivities(items) {
+  var el = document.getElementById('monthActivitiesList');
+  el.innerHTML = '';
+  if (items.length === 0) {
+    el.innerHTML = '<li style="color:#B7C0CC;">Nothing logged yet today</li>';
+    return;
+  }
+  items.forEach(function(item) {
+    var li = document.createElement('li');
+    var txt = document.createElement('span');
+    txt.textContent = item.text;
+    li.appendChild(txt);
+    if (item.tag) {
+      li.classList.add('has-tag');
+      var tag = document.createElement('span');
+      tag.className = 'activity-tag';
+      tag.textContent = item.tag;
+      li.appendChild(tag);
+    }
     el.appendChild(li);
   });
 }
@@ -896,10 +989,10 @@ async function submitReport() {
     importantMessage: listToArray('importantMsgList')
   };
   var result = await saveDailyReport(principalCampusId, payload);
-  if (result && result.ok) {
+  if (result && result.success) {
     alert('Report submitted.');
   } else {
-    alert('Something went wrong submitting the report — please try again.');
+    alert('Something went wrong submitting the report' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
   }
 }
 function listToArray(listId) {
@@ -928,7 +1021,7 @@ async function bootPrincipalReport(campusId) {
   renderSsCountBadge(currentSSTeachers.length);
 
   var monthActivities = await fetchMonthActivities(campusId);
-  renderFetchedList('monthActivitiesList', monthActivities);
+  renderMonthActivities(monthActivities);
 
   currentPlannedActivities = await fetchPlannedActivities(campusId);
   renderPlannedActivities();
