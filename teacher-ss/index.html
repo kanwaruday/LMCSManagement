@@ -184,7 +184,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Teacher SS</button>
-      <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal SS</button>
+      <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
 
@@ -467,7 +467,13 @@ function rowHtml(r) {
     '<td class="score-cell">' + avg + '</td><td>' + last + '</td></tr>';
 }
 
-// ── Principal SS tab (adapted from Report_2.html, 2026-09-02) ───────
+// ── Principal DR tab (adapted from Report_2.html, 2026-09-02) ───────
+// Named "DR" (Daily Report/Daily Reporting) deliberately, NOT "SS" --
+// per Uday 2026-09-02, this is the principal's own daily operational
+// report (Morning Assembly, tasks, registers, etc.), a distinct concept
+// from Teacher SS (Support Session, the teacher-evaluation rubric on
+// the Submit tab). Don't rename this to "SS" by analogy with the other
+// tab -- they're different things that happen to share a page.
 // Ported from a standalone Apps Script HTML Service prototype (that
 // used server-side <?= ?> templating for branchName/logoDataUri) into
 // this page's plain client-side JS, driven by the portal session
