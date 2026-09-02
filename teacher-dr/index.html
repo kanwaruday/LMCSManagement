@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Teacher DR</title>
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6;display:flex;flex-direction:column}
+
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+.hdr-brand h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr-brand p{font-size:9.5px;opacity:.75;margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .15s;white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.22)}
+
+#appBody{flex:1;overflow:auto;padding:24px;max-width:1100px;margin:0 auto;width:100%}
+
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+.denied .icon{font-size:36px;margin-bottom:10px}
+.denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
+.notice{background:#fff3cd;border:1px solid #ffc107;color:#92400e;padding:12px 16px;font-size:12px;border-radius:6px;margin-bottom:16px;line-height:1.6}
+
+.tabs{display:flex;gap:6px;margin-bottom:20px;border-bottom:2px solid var(--border)}
+.tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+.campus-picker{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.campus-btn{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer}
+.campus-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+
+.form-embed-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.form-embed-wrap iframe{width:100%;height:1400px;border:none;display:block}
+
+.dash-section{margin-bottom:28px}
+.dash-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.dash-hdr h2{font-size:13px;font-weight:700;color:var(--dark)}
+.dash-meta{font-size:11px;color:var(--gray)}
+
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--red);color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border)}
+tbody tr:last-child{border-bottom:none}
+tbody tr:nth-child(even) td{background:#fafafa}
+tbody tr:hover td{background:var(--red-lt)}
+td{padding:6px 12px;vertical-align:middle}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
+.pill.none{background:#fee2e2;color:var(--red)}
+.pill.ok{background:#dcfce7;color:var(--green)}
+.score-cell{font-weight:700}
+.loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
+.loading-state .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- LMCS Portal auth gate -->
+<style>
+  #lmcs-gate{position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center}
+  #lmcs-gate .auth-gate{max-width:380px;margin:0 auto;padding:32px 28px;border:1px solid #ddd;border-top:3px solid #CE0000;border-radius:6px;text-align:center;font-family:'Segoe UI',Arial,sans-serif}
+  #lmcs-gate .auth-gate p{color:#555;font-size:13px;line-height:1.6;margin:0 0 20px}
+  #lmcs-gate #lmcs-g-signin{display:flex;justify-content:center}
+  #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
+</style>
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js"></script>
+<script>
+(function () {
+  if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
+  LMCS.requireSession('#lmcs-gate-slot').then(function () { window.location.reload(); });
+})();
+</script>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-brand">
+    <h1>LMCS — Teacher DR</h1>
+    <p id="hdrCtx">Principal's Daily Reporting — Teaching bucket</p>
+  </div>
+  <div class="hdr-right">
+    <a href="../index.html" class="hdr-btn">← Portal</a>
+  </div>
+</div>
+
+<div id="appBody">
+  <div id="deniedBox" style="display:none"></div>
+  <div id="appArea" style="display:none">
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Submit DR</button>
+      <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+    </div>
+
+    <!-- ══════════════════ SUBMIT (embedded Google Form) ══════════════════ -->
+    <div class="tab-panel active" id="panel-submit">
+      <div class="notice">This embeds the same "LMS N Teacher DR (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
+      <div id="submitCampusPicker" class="campus-picker" style="display:none"></div>
+      <div class="form-embed-wrap">
+        <iframe id="formFrame" src="" title="Teacher DR Form"></iframe>
+      </div>
+    </div>
+
+    <!-- ══════════════════ DASHBOARD ══════════════════ -->
+    <div class="tab-panel" id="panel-dashboard">
+      <div id="dashBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── Config ────────────────────────────────────────────────────────
+   DASHBOARD_API_URL: the new read-only "Teacher DR Dashboard Proxy"
+   (apps-script/teacher-dr-dashboard-proxy.gs) -- paste its deployed
+   Web App URL here once you've deployed it (script.google.com -> New
+   deployment -> Web App -> Execute as: Me, Who has access: Anyone).
+   Until this is a real URL, the Dashboard tab shows a setup notice
+   instead of erroring silently. */
+const DASHBOARD_API_URL = 'PASTE_DASHBOARD_PROXY_URL_HERE';
+
+// Reuses the same deployed Employee Roster Proxy every other module
+// already points at -- see staff/add-employee.html.
+const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+
+// campusId -> published Google Form viewform id (resolved from the
+// forms.gle short links Uday shared 2026-09-01).
+const CAMPUS_FORM_IDS = {
+  LMS1: '1FAIpQLSfcp0vz4BlYw_X6FH35OpIsKdMToeJg9LHMB2p59QLnrgCjcg',
+  LMS2: '1FAIpQLSd3QMyaHclANFH3vkBcR3lBu3iQpDUigczbg4HyZ9k8r0sn8Q',
+  LMS3: '1FAIpQLSfR769XJF18zU7ex4S3mwd-hafNwfRAf1h2RRRAjJJEcD3w7w',
+  LMS4: '1FAIpQLSeW1pRvQVxvAjixWT7UfFY_QRj1GqvSD6zS1zcR05XiWIx-ZA',
+  LMS5: '1FAIpQLSc_FcTKU1eM16xK_le6jMYQWj2GH4C8jKVTxqXCWqCRqi4nYg',
+  LMS6: '1FAIpQLSfdBB5YX2BCdUxGCGc2cfcOtwgo5LkEKBfyiHAbs_-gdfyDzQ',
+};
+const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+
+let SESSION = null;
+
+async function init() {
+  SESSION = LMCS.getSession();
+  if (!LMCS.canViewTeacherDR(SESSION)) {
+    document.getElementById('deniedBox').style.display = 'block';
+    document.getElementById('deniedBox').innerHTML =
+      '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
+      '<p>Teacher DR is visible to Principals, Coordinators, and the Owner.</p></div>';
+    return;
+  }
+  document.getElementById('appArea').style.display = 'block';
+  setupSubmitTab();
+  loadDashboard(); // fetch eagerly so it's ready if they switch tabs
+}
+
+// ── Submit tab ──────────────────────────────────────────────────────
+function setupSubmitTab() {
+  const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
+  if (campuses.length > 1) {
+    const picker = document.getElementById('submitCampusPicker');
+    picker.style.display = 'flex';
+    picker.innerHTML = campuses.map(function (c, i) {
+      return '<button class="campus-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="pickSubmitCampus(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
+    }).join('');
+  }
+  pickSubmitCampus(campuses[0]);
+}
+
+function pickSubmitCampus(campusId) {
+  document.querySelectorAll('#submitCampusPicker .campus-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.campus === campusId);
+  });
+  const formId = CAMPUS_FORM_IDS[campusId];
+  document.getElementById('formFrame').src = 'https://docs.google.com/forms/d/e/' + formId + '/viewform?embedded=true';
+}
+
+// ── Dashboard tab ───────────────────────────────────────────────────
+async function loadDashboard() {
+  const body = document.getElementById('dashBody');
+  if (!DASHBOARD_API_URL || DASHBOARD_API_URL.indexOf('PASTE_') === 0) {
+    body.innerHTML = '<div class="notice">Dashboard proxy not deployed yet — paste the deployed URL into <code>teacher-dr/index.html</code>’s <code>DASHBOARD_API_URL</code> constant (see the setup comment in <code>apps-script/teacher-dr-dashboard-proxy.gs</code>).</div>';
+    return;
+  }
+  try {
+    const [statsRes, rosterRes] = await Promise.all([
+      fetch(DASHBOARD_API_URL + '?idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); }),
+      fetch(EMPLOYEE_ROSTER_URL + '?action=employees').then(function (r) { return r.json(); }),
+    ]);
+    if (!statsRes.success) {
+      body.innerHTML = '<div class="notice">Couldn’t load the dashboard: ' + (statsRes.error || 'unknown error') + '</div>';
+      return;
+    }
+    renderDashboard(statsRes, rosterRes.success ? rosterRes.employees : []);
+  } catch (err) {
+    body.innerHTML = '<div class="notice">Couldn’t reach the dashboard proxy: ' + err.message + '</div>';
+  }
+}
+
+function renderDashboard(statsRes, allEmployees) {
+  const body = document.getElementById('dashBody');
+  const campusIds = Object.keys(statsRes.campuses);
+  body.innerHTML = campusIds.map(function (campusId) {
+    return renderCampusSection(campusId, statsRes.campuses[campusId], allEmployees);
+  }).join('');
+}
+
+function renderCampusSection(campusId, campusStats, allEmployees) {
+  // Every Active teacher at this campus, whether or not they've been
+  // evaluated yet -- so zero-submission teachers are visible, not just
+  // silently absent.
+  const roster = allEmployees.filter(function (e) { return e.school === LMCS.campusLabel(campusId); });
+  const statsByTeacher = {};
+  campusStats.teachers.forEach(function (t) { statsByTeacher[t.teacher] = t; });
+
+  const rows = roster.map(function (emp) {
+    const key = emp.employeeCode + ' ' + emp.name;
+    const s = statsByTeacher[key];
+    return {
+      teacher: key,
+      submissionCount: s ? s.submissionCount : 0,
+      avgTotal: s ? s.avgTotal : null,
+      lastSubmission: s ? s.lastSubmission : null,
+    };
+  });
+  // Zero-submission teachers first (need attention), then by name.
+  rows.sort(function (a, b) {
+    if ((a.submissionCount === 0) !== (b.submissionCount === 0)) return a.submissionCount === 0 ? -1 : 1;
+    return a.teacher.localeCompare(b.teacher);
+  });
+
+  const zeroCount = rows.filter(function (r) { return r.submissionCount === 0; }).length;
+
+  return '<div class="dash-section">' +
+    '<div class="dash-hdr"><h2>' + LMCS.campusLabel(campusId) + '</h2>' +
+    '<span class="dash-meta">' + campusStats.responseCount + ' total submissions this cycle' + (zeroCount ? ' · ' + zeroCount + ' teacher(s) with none yet' : '') + '</span></div>' +
+    '<div class="tbl-wrap"><table><thead><tr>' +
+    '<th>Teacher</th><th>Submissions</th><th>Avg Score (/100)</th><th>Last DR</th>' +
+    '</tr></thead><tbody>' +
+    rows.map(rowHtml).join('') +
+    '</tbody></table></div></div>';
+}
+
+function rowHtml(r) {
+  const pill = r.submissionCount === 0
+    ? '<span class="pill none">No DR yet</span>'
+    : '<span class="pill ok">' + r.submissionCount + '</span>';
+  const avg = r.avgTotal === null ? '—' : r.avgTotal;
+  const last = r.lastSubmission ? new Date(r.lastSubmission).toLocaleDateString() : '—';
+  return '<tr><td>' + r.teacher + '</td><td>' + pill + '</td>' +
+    '<td class="score-cell">' + avg + '</td><td>' + last + '</td></tr>';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+  document.getElementById('panel-' + tab).classList.add('active');
+}
+
+init();
+</script>
+</body>
+</html>
