@@ -295,7 +295,7 @@ td{padding:6px 12px;vertical-align:middle}
 
           <div class="card">
             <p class="card-title">Support Sessions</p>
-            <p class="card-hint">Number of SS taken today, from the Calendar — minimum 3/day.</p>
+            <p class="card-hint">Number of SS taken on this date, from the Calendar — minimum 3/day.</p>
             <div class="ss-count-number" id="ssCountBadge"></div>
           </div>
 
@@ -558,14 +558,16 @@ async function fetchYesterdaysTomorrowTasks(campusId) {
 }
 
 // PARTIALLY WIRED (2026-09-02): reads apps-script/principal-dr.gs's
-// 'supportsessionstoday' action -- today's events on the Principal's
-// own PERSONAL Calendar whose title contains "SS" as its own tag (see
-// the tag convention comment there). This is a simple count/title
-// list, NOT yet CROSS-REFERENCED against "LMCS Teacher SS 2026
-// (Responses)" (the same sheet teacher-ss.gs reads) -- a Calendar
-// entry alone isn't proof the session actually happened; per Uday
-// there should eventually be a matching Teacher SS Form submission for
-// that teacher/class/subject/day too. That cross-reference, and
+// 'supportsessionstoday' action -- events on the DATE FIELD's date (not
+// always literal "today" -- date-parameterized as of 2026-09-02 per
+// Uday: "Can this fetch the data based on the date selected on the top
+// right") on the Principal's own PERSONAL Calendar whose title contains
+// "SS" as its own tag (see the tag convention comment there). This is a
+// simple count/title list, NOT yet CROSS-REFERENCED against "LMCS
+// Teacher SS 2026 (Responses)" (the same sheet teacher-ss.gs reads) --
+// a Calendar entry alone isn't proof the session actually happened; per
+// Uday there should eventually be a matching Teacher SS Form submission
+// for that teacher/class/subject/day too. That cross-reference, and
 // parsing Class/Subject/Teacher out of the title, are both still
 // blocked on Uday's SS naming-convention meeting -- don't guess a
 // parsing format ahead of that. LMS5/LMS6 return 0 until those
@@ -573,8 +575,9 @@ async function fetchYesterdaysTomorrowTasks(campusId) {
 async function fetchSupportSessionsToday(campusId) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
   try {
+    const dateISO = document.getElementById('reportDate').value || todayISO();
     const url = PDR_BACKEND_URL + '?action=supportsessionstoday&campusId=' + encodeURIComponent(campusId) +
-      '&idToken=' + encodeURIComponent(SESSION.idToken);
+      '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
     if (!res.success) { console.warn('fetchSupportSessionsToday failed:', res.error); return []; }
     if (!Array.isArray(res.sessions)) {
@@ -1118,11 +1121,13 @@ async function loadReportForDate() {
   renderMultiselectOptions();
   renderMsTags();
 
-  // Support Session count and Activities of the Month are both live/
-  // rolling widgets (today's Calendar count, next calendar month) --
-  // NOT date-parameterized, so they stay the same regardless of which
-  // day's report you're viewing. Known limitation, not a bug: viewing
-  // 1 Sept's report still shows TODAY's real SS count next to it.
+  // Support Session count follows the Date field (see
+  // fetchSupportSessionsToday's own comment) -- viewing 1 Sept's report
+  // shows 1 Sept's real SS count. Activities of the Month deliberately
+  // does NOT follow it -- kept pinned to real "next calendar month" per
+  // Uday 2026-09-02 (it's a forward-planning aid, not a historical
+  // record, so it should keep showing what's genuinely coming up even
+  // while reviewing a past report).
   currentSSTeachers = await fetchSupportSessionsToday(campusId);
   renderSsCountBadge(currentSSTeachers.length);
 
