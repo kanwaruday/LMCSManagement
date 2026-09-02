@@ -488,9 +488,26 @@ var CLASS_HOUSE_OPTIONS = [
   'C-1','C-2','C-3','C-4','C-5','C-6','C-7','C-8','C-9','C-10','C-11','C-12',
   'Emerald House','Ruby House','Sapphire House','Topaz House'
 ];
+// Full prescribed register list, sent by Urvashi Ma'am, relayed by
+// Uday 2026-09-02 -- supersedes the earlier 7-item placeholder list.
+// Also mirrored in the Bye Laws vault + site's "Registers at School"
+// page -- keep both in sync if this list changes again. #1 "Principal
+// Register (TRR)" and #25 "Teachers TRR" are deliberately two distinct
+// entries, both abbreviated TRR, not a duplicate to merge.
 var REGISTER_OPTIONS = [
-  'TRRs','Daily Communication Records','MOH Registers','EI Registers',
-  'Communication Register','PTA Register','Inventory Register'
+  'Principal Register (TRR)', 'DR Register', 'School Circular Register',
+  'Incident Report File', 'IT Hardware Ledger', 'Teacher Fine Register',
+  'Staff Meeting MOM', 'Period Adjustment Register', 'Stock Ledger',
+  'Student Fine Register', 'Teachers Attendance Register', 'Health Check Up Register',
+  'MOH & Remedial Register', 'Stock Register', 'Receival Register',
+  'Dispatch Register', 'Admission Withdrawal Register MW', 'Admission Withdrawal Register C1 to 12',
+  'Helping Staff Attendance Register', 'Parents Communication (Feedback)', 'PTA & Parent Orientation Register',
+  'Activity Register', 'House Register', 'Monthly Course Update Register/CWA Register',
+  'Teachers TRR', 'Library Ledger', 'Library Stock Register',
+  'Gate Register', "Student's Attendance Registers",
+  // School-Specific External Registers
+  'EI / External Assessment', 'NCC / Scouts & Guide Register', 'Eco Club Register',
+  'Red Cross Register', 'Drug Abuse Register', 'Corporal Punishment & Sexual Harassment Register'
 ];
 
 // =====================================================================
@@ -678,7 +695,7 @@ var principalCampusId = null;
 var currentSSTeachers = [];
 var MIN_SS_PER_DAY = 3; // principals are expected to take at least this many Support Sessions a day
 var currentPlannedActivities = [];
-var selectedRegisters = ['TRRs']; // TRR pre-checked by default
+var selectedRegisters = ['Teachers TRR']; // TRR pre-checked by default (was the old 'TRRs' placeholder)
 
 function setupPrincipalTab() {
   const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
@@ -1005,7 +1022,7 @@ async function bootPrincipalReport(campusId) {
   populateSelect('maClass', CLASS_HOUSE_OPTIONS);
   document.getElementById('reportDate').value = todayDDMMYY();
   document.getElementById('maScore').value = '';
-  selectedRegisters = ['TRRs'];
+  selectedRegisters = ['Teachers TRR'];
   renderMultiselectOptions();
   renderMsTags();
 
