@@ -117,12 +117,13 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || session.role === 'Coordinator' || session.role === 'Owner';
   }
 
-  // "Can this session view the Teacher DR dashboard" -- Owner (any
+  // "Can this session view the Teacher SS (Support Session, formerly
+  // "DR"/Daily Report -- renamed 2026-09-02) dashboard" -- Owner (any
   // campus) or a Principal/Coordinator scoped to their own locked
   // campus. Teachers themselves don't get dashboard access -- only
   // people who receive/act on evaluation data, matching the same
   // Principal-and-above bar the Apps Script proxy re-checks server-side.
-  function canViewTeacherDR(session) {
+  function canViewTeacherSS(session) {
     if (!session) return false;
     return session.campusId === 'ALL' || session.role === 'Principal' || session.role === 'Coordinator' || session.role === 'Owner';
   }
@@ -212,5 +213,5 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, campusLabel, canManageStaff, canViewTeacherDR, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, campusLabel, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
 })();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Teacher DR</title>
+<title>LMCS — Teacher SS</title>
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -80,8 +80,8 @@ td{padding:6px 12px;vertical-align:middle}
 <!-- HEADER -->
 <div class="hdr">
   <div class="hdr-brand">
-    <h1>LMCS — Teacher DR</h1>
-    <p id="hdrCtx">Principal's Daily Reporting — Teaching bucket</p>
+    <h1>LMCS — Teacher SS</h1>
+    <p id="hdrCtx">Principal's Daily Reporting — Teaching bucket (Support Session, formerly "DR")</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -93,16 +93,16 @@ td{padding:6px 12px;vertical-align:middle}
   <div id="appArea" style="display:none">
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Submit DR</button>
+      <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Submit SS</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
 
     <!-- ══════════════════ SUBMIT (embedded Google Form) ══════════════════ -->
     <div class="tab-panel active" id="panel-submit">
-      <div class="notice">This embeds the same "LMS N Teacher DR (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
+      <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
       <div id="submitCampusPicker" class="campus-picker" style="display:none"></div>
       <div class="form-embed-wrap">
-        <iframe id="formFrame" src="" title="Teacher DR Form"></iframe>
+        <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
       </div>
     </div>
 
@@ -116,12 +116,14 @@ td{padding:6px 12px;vertical-align:middle}
 
 <script>
 /* ── Config ────────────────────────────────────────────────────────
-   DASHBOARD_API_URL: the new read-only "Teacher DR Dashboard Proxy"
-   (apps-script/teacher-dr-dashboard-proxy.gs) -- paste its deployed
-   Web App URL here once you've deployed it (script.google.com -> New
-   deployment -> Web App -> Execute as: Me, Who has access: Anyone).
-   Until this is a real URL, the Dashboard tab shows a setup notice
-   instead of erroring silently. */
+   DASHBOARD_API_URL: the read-only "Teacher SS Dashboard Proxy"
+   (apps-script/teacher-ss-dashboard-proxy.gs, in the "LMCS Teacher SS
+   Backend" Apps Script project) -- paste its deployed Web App URL here
+   once you've deployed it (script.google.com -> New deployment -> Web
+   App -> Execute as: Me, Who has access: Anyone). Until this is a real
+   URL, the Dashboard tab shows a setup notice instead of erroring
+   silently. ("SS" = Support Session, formerly "DR"/Daily Report --
+   renamed 2026-09-02.) */
 const DASHBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbw5lEWeph-kIQv3kGLpQ8hs4TzmYVTFjSYwEy7m7KOWPzpqRScalnQd4K8FchfP7N2j/exec';
 
 // Reuses the same deployed Employee Roster Proxy every other module
@@ -144,11 +146,11 @@ let SESSION = null;
 
 async function init() {
   SESSION = LMCS.getSession();
-  if (!LMCS.canViewTeacherDR(SESSION)) {
+  if (!LMCS.canViewTeacherSS(SESSION)) {
     document.getElementById('deniedBox').style.display = 'block';
     document.getElementById('deniedBox').innerHTML =
       '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
-      '<p>Teacher DR is visible to Principals, Coordinators, and the Owner.</p></div>';
+      '<p>Teacher SS is visible to Principals, Coordinators, and the Owner.</p></div>';
     return;
   }
   document.getElementById('appArea').style.display = 'block';
@@ -181,7 +183,7 @@ function pickSubmitCampus(campusId) {
 async function loadDashboard() {
   const body = document.getElementById('dashBody');
   if (!DASHBOARD_API_URL || DASHBOARD_API_URL.indexOf('PASTE_') === 0) {
-    body.innerHTML = '<div class="notice">Dashboard proxy not deployed yet — paste the deployed URL into <code>teacher-dr/index.html</code>’s <code>DASHBOARD_API_URL</code> constant (see the setup comment in <code>apps-script/teacher-dr-dashboard-proxy.gs</code>).</div>';
+    body.innerHTML = '<div class="notice">Dashboard proxy not deployed yet — paste the deployed URL into <code>teacher-ss/index.html</code>’s <code>DASHBOARD_API_URL</code> constant (see the setup comment in <code>apps-script/teacher-ss-dashboard-proxy.gs</code>).</div>';
     return;
   }
   try {
@@ -237,7 +239,7 @@ function renderCampusSection(campusId, campusStats, allEmployees) {
     '<div class="dash-hdr"><h2>' + LMCS.campusLabel(campusId) + '</h2>' +
     '<span class="dash-meta">' + campusStats.responseCount + ' total submissions this cycle' + (zeroCount ? ' · ' + zeroCount + ' teacher(s) with none yet' : '') + '</span></div>' +
     '<div class="tbl-wrap"><table><thead><tr>' +
-    '<th>Teacher</th><th>Submissions</th><th>Avg Score (/100)</th><th>Last DR</th>' +
+    '<th>Teacher</th><th>Submissions</th><th>Avg Score (/100)</th><th>Last SS</th>' +
     '</tr></thead><tbody>' +
     rows.map(rowHtml).join('') +
     '</tbody></table></div></div>';
@@ -245,7 +247,7 @@ function renderCampusSection(campusId, campusStats, allEmployees) {
 
 function rowHtml(r) {
   const pill = r.submissionCount === 0
-    ? '<span class="pill none">No DR yet</span>'
+    ? '<span class="pill none">No SS yet</span>'
     : '<span class="pill ok">' + r.submissionCount + '</span>';
   const avg = r.avgTotal === null ? '—' : r.avgTotal;
   const last = r.lastSubmission ? new Date(r.lastSubmission).toLocaleDateString() : '—';
