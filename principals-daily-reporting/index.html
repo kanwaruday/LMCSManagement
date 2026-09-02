@@ -1027,7 +1027,16 @@ async function bootPrincipalReport(campusId) {
   renderPlannedActivities();
 
   var yesterdaysTasks = await fetchYesterdaysTomorrowTasks(campusId);
-  renderSuggestionChips(yesterdaysTasks);
+  // Any still-open Planned Activity due today OR overdue also becomes a
+  // Tasks Completed suggestion (per Uday 2026-09-02) -- a late-but-
+  // finally-done activity still gets suggested, not just ones due
+  // exactly today. daysUntil() is defined below, reused from
+  // renderPlannedActivities' own overdue/upcoming status logic.
+  var plannedSuggestions = currentPlannedActivities
+    .filter(function (a) { return !a.completed; })
+    .filter(function (a) { var d = daysUntil(a.date); return d !== null && d <= 0; })
+    .map(function (a) { return a.activity; });
+  renderSuggestionChips(yesterdaysTasks.concat(plannedSuggestions));
 }
 
 function switchTab(tab) {
