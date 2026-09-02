@@ -197,9 +197,9 @@ td{padding:6px 12px;vertical-align:middle}
       </div>
     </div>
 
-    <!-- ══════════════════ PRINCIPAL SS (own-school daily report) ══════════════════ -->
+    <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
-      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Data sources (Support Session count, Month Activities, yesterday's tasks, planned activities, and Submit) are still mocked pending real Sheet/Calendar wiring — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
+      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Month Activities is wired to the School's official Calendar (see apps-script/principal-dr.gs). Support Session count, yesterday's tasks, planned activities, and Submit are still mocked pending the daily-reports Sheet + Support Session naming convention — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
       <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
 
       <div class="principal-report-hdr">
@@ -492,13 +492,14 @@ var REGISTER_OPTIONS = [
 ];
 
 // =====================================================================
-// DATA LAYER — BACKEND INTEGRATION POINTS (still mocked, same as the
-// original prototype). Each function returns hardcoded data for now;
-// replace the BODY of a function to wire it to a real source once the
-// backend Sheet + Calendar are set up (see project_principals_daily_reporting.md
-// for the two open questions: what DISP/NBK/MEET Calendar tags mean,
-// and which Calendar to read/write). Threaded through with campusId so
-// they're ready for real per-campus data — the mocks currently ignore it.
+// DATA LAYER — BACKEND INTEGRATION POINTS. fetchMonthActivities() below
+// is WIRED (reads the School's official Calendar via PDR_BACKEND_URL --
+// see its own comment). The rest still return hardcoded mock data;
+// replace the BODY of a function to wire it to a real source once its
+// blocker clears (see project_principals_daily_reporting.md for what's
+// still open per function). Threaded through with campusId so they're
+// ready for real per-campus data — the still-mocked ones currently
+// ignore it.
 // =====================================================================
 
 // NOT SEPARATE STORAGE (2026-09-02 audit): this doesn't need its own
