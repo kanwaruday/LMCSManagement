@@ -199,7 +199,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
-      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Month Activities is wired to the School's official Calendar (see apps-script/principal-dr.gs). Support Session count, yesterday's tasks, planned activities, and Submit are still mocked pending the daily-reports Sheet + Support Session naming convention — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
+      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Month Activities and Support Session count are wired to real Calendars (see apps-script/principal-dr.gs) — Support Session count is a simple "SS"-tagged count for now, not yet cross-referenced against Teacher SS submissions. Yesterday's tasks, planned activities, and Submit are still mocked pending the daily-reports Sheet + full Support Session naming convention — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
       <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
 
       <div class="principal-report-hdr">
@@ -492,14 +492,14 @@ var REGISTER_OPTIONS = [
 ];
 
 // =====================================================================
-// DATA LAYER — BACKEND INTEGRATION POINTS. fetchMonthActivities() below
-// is WIRED (reads the School's official Calendar via PDR_BACKEND_URL --
-// see its own comment). The rest still return hardcoded mock data;
-// replace the BODY of a function to wire it to a real source once its
-// blocker clears (see project_principals_daily_reporting.md for what's
-// still open per function). Threaded through with campusId so they're
-// ready for real per-campus data — the still-mocked ones currently
-// ignore it.
+// DATA LAYER — BACKEND INTEGRATION POINTS. fetchMonthActivities() and
+// fetchSupportSessionsToday() below are WIRED (via PDR_BACKEND_URL --
+// see each one's own comment for what's still partial/blocked about
+// it). The rest still return hardcoded mock data; replace the BODY of
+// a function to wire it to a real source once its blocker clears (see
+// project_principals_daily_reporting.md for what's still open per
+// function). Threaded through with campusId so they're ready for real
+// per-campus data — the still-mocked ones currently ignore it.
 // =====================================================================
 
 // NOT SEPARATE STORAGE (2026-09-02 audit): this doesn't need its own
@@ -513,25 +513,35 @@ async function fetchYesterdaysTomorrowTasks(campusId) {
   ]; // TODO: replace with a real read of yesterday's row in the daily-reports Sheet, keyed on campusId
 }
 
-// BLOCKED (2026-09-02): source is confirmed as each Principal's PERSONAL
-// Google Calendar (not a shared school one) -- so this needs (1) each
-// Principal to share their calendar (view access) with whichever
-// account runs this backend, a real one-time action per person, not
-// something wireable from here, and (2) the SS/Class/Subject/Teacher
-// naming convention, which Uday is defining in a meeting the day after
-// this comment was written -- don't guess a parsing format ahead of
-// that. Also per Uday: the count shown here should be CROSS-REFERENCED
-// against "LMCS Teacher SS 2026 (Responses)" (the same sheet
-// teacher-ss.gs reads) -- a Calendar entry alone isn't enough proof
-// the session actually happened; there should be a matching Teacher SS
-// Form submission for that teacher/class/subject/day too. Wire this
-// only after both blockers clear.
+// PARTIALLY WIRED (2026-09-02): reads apps-script/principal-dr.gs's
+// 'supportsessionstoday' action -- today's events on the Principal's
+// own PERSONAL Calendar whose title contains "SS" as its own tag (see
+// the tag convention comment there). This is a simple count/title
+// list, NOT yet CROSS-REFERENCED against "LMCS Teacher SS 2026
+// (Responses)" (the same sheet teacher-ss.gs reads) -- a Calendar
+// entry alone isn't proof the session actually happened; per Uday
+// there should eventually be a matching Teacher SS Form submission for
+// that teacher/class/subject/day too. That cross-reference, and
+// parsing Class/Subject/Teacher out of the title, are both still
+// blocked on Uday's SS naming-convention meeting -- don't guess a
+// parsing format ahead of that. LMS5/LMS6 return 0 until those
+// principals share their calendars (see PDR_PRINCIPAL_PERSONAL_CALENDARS).
 async function fetchSupportSessionsToday(campusId) {
-  return [
-    'Sushma ma\'am — C-8, English',
-    'Reena ma\'am — C-6, Hindi',
-    'Vipin sir — C-9, Social Science'
-  ]; // TODO: Calendar read (personal calendars, once shared) cross-referenced against the Teacher SS response sheet
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+  try {
+    const url = PDR_BACKEND_URL + '?action=supportsessionstoday&campusId=' + encodeURIComponent(campusId) +
+      '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success) { console.warn('fetchSupportSessionsToday failed:', res.error); return []; }
+    if (!Array.isArray(res.sessions)) {
+      console.warn('fetchSupportSessionsToday: no sessions array in response -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
+      return [];
+    }
+    return res.sessions;
+  } catch (err) {
+    console.warn('fetchSupportSessionsToday error:', err);
+    return [];
+  }
 }
 
 // WIRED (2026-09-02): reads the School's OFFICIAL Calendar via
