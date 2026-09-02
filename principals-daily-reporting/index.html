@@ -61,6 +61,8 @@ td{padding:6px 12px;vertical-align:middle}
 .principal-report-hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
 .date-field{display:flex;align-items:center;gap:6px}
 .date-field input{border:1.5px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit;color:var(--dark)}
+.date-refresh-btn{border:1.5px solid var(--border);background:#fff;border-radius:6px;padding:6px;display:flex;align-items:center;cursor:pointer;color:var(--gray)}
+.date-refresh-btn:hover{color:var(--red);border-color:var(--red)}
 
 .principal-layout{display:flex;flex-direction:column;gap:14px}
 .principal-layout .main-col{display:flex;flex-direction:column;width:100%}
@@ -201,7 +203,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
-      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Everything on this tab is now wired to real data (see apps-script/principal-dr.gs): Month Activities merges the School's official Calendar with Planned Activities (tagged "School Specific"); Support Session count is a simple "SS"-tagged Calendar count, not yet cross-referenced against Teacher SS submissions; Tasks Completed suggestions come from the nearest prior working day's Tasks for Tomorrow; Planned Activities and Submit both persist to the "LMCS Principal DR — Daily Reports" Sheet.</div>
+      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Everything on this tab is now wired to real data (see apps-script/principal-dr.gs): Month Activities merges the School's official Calendar with Planned Activities (tagged "School Specific"); Support Session count is a simple "SS"-tagged Calendar count, not yet cross-referenced against Teacher SS submissions; Tasks Completed suggestions come from the nearest prior working day's Tasks for Tomorrow, plus any still-open Planned Activity due today or overdue; Planned Activities and Submit both persist to the "LMCS Principal DR — Daily Reports" Sheet. Pick any date in the Date field (or use its refresh button) to load that day's report if one was already submitted.</div>
       <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
 
       <div class="principal-report-hdr">
@@ -211,7 +213,14 @@ td{padding:6px 12px;vertical-align:middle}
         </div>
         <div class="date-field">
           <label class="field-label" style="margin:0;">Date</label>
-          <input type="text" id="reportDate" placeholder="dd/mm/yy">
+          <input type="date" id="reportDate" onchange="loadReportForDate()">
+          <button type="button" class="date-refresh-btn" title="Reload this date's report" onclick="loadReportForDate()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -256,7 +265,7 @@ td{padding:6px 12px;vertical-align:middle}
             <p class="card-hint">Stays here until marked complete — no need to retype it day after day.</p>
             <div id="plannedActivitiesRows"></div>
             <div class="activity-row">
-              <input type="text" id="newPlannedDate" placeholder="dd/mm/yy">
+              <input type="date" id="newPlannedDate">
               <input type="text" id="newPlannedText" placeholder="Activity name">
               <input type="text" id="newPlannedAssignee" placeholder="Assigned to (optional)">
               <button type="button" class="add-row-btn" onclick="addPlannedActivityHandler()">Add</button>
@@ -532,7 +541,7 @@ var REGISTER_OPTIONS = [
 async function fetchYesterdaysTomorrowTasks(campusId) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
   try {
-    const dateStr = document.getElementById('reportDate').value || todayDDMMYY();
+    const dateStr = document.getElementById('reportDate').value || todayISO();
     const url = PDR_BACKEND_URL + '?action=yesterdaystasks&campusId=' + encodeURIComponent(campusId) +
       '&date=' + encodeURIComponent(dateStr) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
@@ -633,6 +642,28 @@ async function fetchPlannedActivities(campusId) {
   }
 }
 
+// WIRED (2026-09-02): reads apps-script/principal-dr.gs's 'dailyreport'
+// action -- an existing Daily Reports row for (campusId, dateISO), if
+// one was already submitted. Powers "view a past report" (per Uday:
+// "Is there a way I can see a past report that I have submitted?") --
+// loadReportForDate() calls this whenever the Date field changes or its
+// refresh button is clicked, and prefills the form from the result.
+// {exists:false} is the normal case for a date nothing's been
+// submitted for yet, not an error.
+async function fetchExistingDailyReport(campusId, dateISO) {
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return { exists: false };
+  try {
+    const url = PDR_BACKEND_URL + '?action=dailyreport&campusId=' + encodeURIComponent(campusId) +
+      '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success) { console.warn('fetchExistingDailyReport failed:', res.error); return { exists: false }; }
+    return res.report || { exists: false };
+  } catch (err) {
+    console.warn('fetchExistingDailyReport error:', err);
+    return { exists: false };
+  }
+}
+
 // Shared POST helper for every write action (Planned Activities CRUD +
 // Submit). Deliberately sends a plain-text body (no Content-Type
 // header, so no `action`/`idToken` in the URL) -- Apps Script Web Apps
@@ -728,12 +759,37 @@ function populateSelect(id, options) {
   });
 }
 
-function todayDDMMYY() {
+// "yyyy-mm-dd" -- what <input type="date"> fields both produce and
+// accept. Switched from dd/mm/yy 2026-09-02 after a real submission got
+// silently corrupted: Sheets auto-converts date-looking strings into
+// real Date cells, and under this spreadsheet's US-style (month-first)
+// locale, "01/09/26" (1 Sept, typed by hand) was misread as 9 Jan --
+// see principal-dr.gs's INCIDENT comment for the full story. ISO is
+// unambiguous under any locale, and native date inputs remove the
+// hand-typing (and the "was that dd/mm or mm/dd?" risk) entirely.
+function todayISO() {
   var d = new Date();
-  var dd = String(d.getDate()).padStart(2,'0');
+  var yyyy = d.getFullYear();
   var mm = String(d.getMonth()+1).padStart(2,'0');
-  var yy = String(d.getFullYear()).slice(-2);
-  return dd + '/' + mm + '/' + yy;
+  var dd = String(d.getDate()).padStart(2,'0');
+  return yyyy + '-' + mm + '-' + dd;
+}
+
+var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function ordinal(day) {
+  if (day >= 11 && day <= 13) return day + 'th';
+  var ld = day % 10;
+  if (ld === 1) return day + 'st';
+  if (ld === 2) return day + 'nd';
+  if (ld === 3) return day + 'rd';
+  return day + 'th';
+}
+// "yyyy-mm-dd" -> "1st Sep", for showing an ISO date to a human (e.g.
+// in the Planned Activities list) without showing raw ISO.
+function friendlyDate(iso) {
+  var d = parseISODate(iso);
+  if (!d) return iso;
+  return ordinal(d.getDate()) + ' ' + MONTH_ABBR[d.getMonth()];
 }
 
 function renderFetchedList(id, items) {
@@ -885,21 +941,21 @@ function addItem(listId, inputId) {
 });
 
 // ---------- other activities planned (persistent, checkable list) ----------
-// "dd/mm/yy" -> Date at local midnight, or null if unparseable. Same
-// format the date fields already use throughout this page.
-function parseDDMMYY(s) {
-  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(s || '').trim());
+// "yyyy-mm-dd" -> Date at local midnight, or null if unparseable. What
+// native <input type="date"> fields produce -- mirrors
+// apps-script/principal-dr.gs's pdrParseISO_() exactly, keep in sync.
+function parseISODate(s) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').trim());
   if (!m) return null;
-  var dd = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1, yy = parseInt(m[3], 10);
-  if (yy < 100) yy += 2000;
-  var d = new Date(yy, mm, dd);
+  var yyyy = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1, dd = parseInt(m[3], 10);
+  var d = new Date(yyyy, mm, dd);
   d.setHours(0, 0, 0, 0);
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Whole days from today to a "dd/mm/yy" date (negative = in the past).
+// Whole days from today to a "yyyy-mm-dd" date (negative = in the past).
 function daysUntil(dateStr) {
-  var d = parseDDMMYY(dateStr);
+  var d = parseISODate(dateStr);
   if (!d) return null;
   var today = new Date(); today.setHours(0, 0, 0, 0);
   return Math.round((d - today) / 86400000);
@@ -941,7 +997,7 @@ function renderPlannedActivities() {
     };
     var date = document.createElement('span');
     date.className = 'planned-date';
-    date.textContent = item.date;
+    date.textContent = friendlyDate(item.date);
     var text = document.createElement('span');
     text.className = 'planned-text';
     text.textContent = item.activity;
@@ -1020,20 +1076,53 @@ function listToArray(listId) {
 
 async function bootPrincipalReport(campusId) {
   populateSelect('maClass', CLASS_HOUSE_OPTIONS);
-  document.getElementById('reportDate').value = todayDDMMYY();
+  document.getElementById('reportDate').value = todayISO();
+  await loadReportForDate();
+}
+
+// Re-fetches/re-renders everything for the CURRENTLY selected campus +
+// whatever date is in the Date field. Called on initial campus load
+// (via bootPrincipalReport), whenever the Date field changes, and by
+// its refresh button. If a Daily Report already exists for that
+// (campus, date) it prefills the whole form from it -- this is the
+// "view a past report" capability Uday asked for 2026-09-02 ("Is there
+// a way I can see a past report that I have submitted?"); otherwise
+// the form is left blank for a fresh entry, same as before.
+async function loadReportForDate() {
+  var campusId = principalCampusId;
+  var dateISO = document.getElementById('reportDate').value || todayISO();
+
+  document.getElementById('maClass').value = CLASS_HOUSE_OPTIONS[0];
   document.getElementById('maScore').value = '';
   selectedRegisters = ['Teachers TRR'];
-  renderMultiselectOptions();
-  renderMsTags();
 
-  // Clear free-text entries left over from a previously-viewed campus --
-  // without this, switching campuses (Owner/multi-campus sessions) would
-  // silently carry unsaved Tasks Completed/Tomorrow/Important Message
-  // text from one campus's report into another's.
+  // Clear free-text entries left over from a previously-viewed
+  // campus/date -- without this, switching (Owner/multi-campus
+  // sessions) or changing the date would silently carry stale Tasks
+  // Completed/Tomorrow/Important Message text into the next view.
   ['tasksCompletedList', 'tasksTomorrowList', 'importantMsgList'].forEach(function (listId) {
     document.getElementById(listId).innerHTML = '';
   });
 
+  var existing = await fetchExistingDailyReport(campusId, dateISO);
+  if (existing && existing.exists) {
+    if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
+    document.getElementById('maScore').value = existing.maScore || '';
+    (existing.tasksCompleted || []).forEach(function (t) { addItemDirect('tasksCompletedList', t); });
+    (existing.tasksForTomorrow || []).forEach(function (t) { addItemDirect('tasksTomorrowList', t); });
+    (existing.importantMessage || []).forEach(function (t) { addItemDirect('importantMsgList', t); });
+    if (existing.registersCrosschecked && existing.registersCrosschecked.length) {
+      selectedRegisters = existing.registersCrosschecked;
+    }
+  }
+  renderMultiselectOptions();
+  renderMsTags();
+
+  // Support Session count and Activities of the Month are both live/
+  // rolling widgets (today's Calendar count, next calendar month) --
+  // NOT date-parameterized, so they stay the same regardless of which
+  // day's report you're viewing. Known limitation, not a bug: viewing
+  // 1 Sept's report still shows TODAY's real SS count next to it.
   currentSSTeachers = await fetchSupportSessionsToday(campusId);
   renderSsCountBadge(currentSSTeachers.length);
 
@@ -1047,7 +1136,7 @@ async function bootPrincipalReport(campusId) {
   // Any still-open Planned Activity due today OR overdue also becomes a
   // Tasks Completed suggestion (per Uday 2026-09-02) -- a late-but-
   // finally-done activity still gets suggested, not just ones due
-  // exactly today. daysUntil() is defined below, reused from
+  // exactly today. daysUntil() is defined above, reused from
   // renderPlannedActivities' own overdue/upcoming status logic.
   var plannedSuggestions = currentPlannedActivities
     .filter(function (a) { return !a.completed; })
