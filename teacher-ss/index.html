@@ -145,17 +145,29 @@ const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 let SESSION = null;
 
 async function init() {
-  SESSION = LMCS.getSession();
-  if (!LMCS.canViewTeacherSS(SESSION)) {
+  try {
+    SESSION = LMCS.getSession();
+    if (!LMCS.canViewTeacherSS(SESSION)) {
+      document.getElementById('deniedBox').style.display = 'block';
+      document.getElementById('deniedBox').innerHTML =
+        '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
+        '<p>Teacher SS is visible to Principals, Coordinators, and the Owner.</p></div>';
+      return;
+    }
+    document.getElementById('appArea').style.display = 'block';
+    setupSubmitTab();
+    loadDashboard(); // fetch eagerly so it's ready if they switch tabs
+  } catch (err) {
+    // A blank page on error is worse than an ugly one -- if init() throws
+    // for any reason (e.g. a stale cached assets/auth.js missing a
+    // function this page expects after a rename), show it instead of
+    // silently leaving the screen empty.
     document.getElementById('deniedBox').style.display = 'block';
     document.getElementById('deniedBox').innerHTML =
-      '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
-      '<p>Teacher SS is visible to Principals, Coordinators, and the Owner.</p></div>';
-    return;
+      '<div class="denied"><div class="icon">⚠️</div><h3>Something went wrong loading this page</h3>' +
+      '<p>' + (err && err.message ? err.message : String(err)) + '</p>' +
+      '<p>Try a hard refresh (Cmd/Ctrl+Shift+R) — this page sometimes gets stuck on a cached copy of a shared file.</p></div>';
   }
-  document.getElementById('appArea').style.display = 'block';
-  setupSubmitTab();
-  loadDashboard(); // fetch eagerly so it's ready if they switch tabs
 }
 
 // ── Submit tab ──────────────────────────────────────────────────────
