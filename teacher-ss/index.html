@@ -118,7 +118,7 @@ td{padding:6px 12px;vertical-align:middle}
 .ms-tag{background:var(--red);color:#fff;font-size:11px;padding:4px 9px;border-radius:999px;display:flex;align-items:center;gap:5px}
 .ms-tag button{border:none;background:none;color:#ffd9d9;cursor:pointer;font-size:12px}
 
-.activity-row{display:grid;grid-template-columns:110px 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
+.activity-row{display:grid;grid-template-columns:110px 1fr 130px auto;gap:8px;margin-bottom:8px;align-items:center}
 @media(max-width:520px){.activity-row{grid-template-columns:1fr}}
 
 .planned-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
@@ -129,6 +129,13 @@ td{padding:6px 12px;vertical-align:middle}
 .planned-row.completed{color:#B7C0CC}
 .planned-row.completed .planned-date{color:#C6CDD6}
 .planned-row.completed .planned-text{text-decoration:line-through}
+.planned-row.overdue{background:#fff5f5}
+.planned-row.overdue .planned-date{color:var(--red)}
+.planned-row.upcoming{background:#fffbeb}
+.planned-assignee{font-size:10.5px;color:var(--gray);background:var(--lgray);padding:2px 8px;border-radius:999px;flex-shrink:0;white-space:nowrap}
+.planned-status{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;flex-shrink:0;white-space:nowrap}
+.planned-status.overdue{background:#fee2e2;color:var(--red)}
+.planned-status.upcoming{background:#fef3c7;color:var(--amber)}
 .planned-del{border:none;background:none;color:#B7C0CC;cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0}
 .planned-del:hover{color:var(--red)}
 
@@ -249,6 +256,7 @@ td{padding:6px 12px;vertical-align:middle}
             <div class="activity-row">
               <input type="text" id="newPlannedDate" placeholder="dd/mm/yy">
               <input type="text" id="newPlannedText" placeholder="Activity name">
+              <input type="text" id="newPlannedAssignee" placeholder="Assigned to (optional)">
               <button type="button" class="add-row-btn" onclick="addPlannedActivityHandler()">Add</button>
             </div>
           </div>
@@ -485,43 +493,66 @@ var REGISTER_OPTIONS = [
 // they're ready for real per-campus data — the mocks currently ignore it.
 // =====================================================================
 
+// NOT SEPARATE STORAGE (2026-09-02 audit): this doesn't need its own
+// store -- "yesterday's Tasks for Tomorrow" is just yesterday's row in
+// the same daily-reports Sheet saveDailyReport() writes to, filtered
+// to this campus + (today - 1). One Sheet serves both once it exists.
 async function fetchYesterdaysTomorrowTasks(campusId) {
   return [
     'Finish fee defaulter follow-up for C-8',
     'Submit MOH register updates'
-  ]; // TODO: replace with a real Sheet read, keyed on campusId + (today - 1)
+  ]; // TODO: replace with a real read of yesterday's row in the daily-reports Sheet, keyed on campusId
 }
 
+// BLOCKED (2026-09-02): source is confirmed as each Principal's PERSONAL
+// Google Calendar (not a shared school one) -- so this needs (1) each
+// Principal to share their calendar (view access) with whichever
+// account runs this backend, a real one-time action per person, not
+// something wireable from here, and (2) the SS/Class/Subject/Teacher
+// naming convention, which Uday is defining in a meeting the day after
+// this comment was written -- don't guess a parsing format ahead of
+// that. Also per Uday: the count shown here should be CROSS-REFERENCED
+// against "LMCS Teacher SS 2026 (Responses)" (the same sheet
+// teacher-ss-dashboard-proxy.gs reads) -- a Calendar entry alone isn't
+// enough proof the session actually happened; there should be a
+// matching Teacher SS Form submission for that teacher/class/subject/day
+// too. Wire this only after both blockers clear.
 async function fetchSupportSessionsToday(campusId) {
   return [
     'Sushma ma\'am — C-8, English',
     'Reena ma\'am — C-6, Hindi',
     'Vipin sir — C-9, Social Science'
-  ]; // TODO: replace with a real Calendar read, filtered to today + this campus + SS entries
+  ]; // TODO: Calendar read (personal calendars, once shared) cross-referenced against the Teacher SS response sheet
 }
 
+// BLOCKED (2026-09-02): source confirmed as the School's OFFICIAL
+// Calendar(s) -- need the Calendar ID(s) (one shared across all 6
+// campuses, or one per campus?) before this can be wired. Also note the
+// scope per Uday's correction: NEXT calendar month, not the current one.
 async function fetchMonthActivities(campusId) {
   return [
     '29th — Literary Fair',
     '29th — MOH',
     '31st — EI Cycle'
-  ]; // TODO: replace with a real Calendar read for this campus, current month
+  ]; // TODO: replace with a real Calendar read for this campus, NEXT calendar month (not current)
 }
 
 // See the original prototype's note on "disappear the next day"
 // behaviour: a fetch-time filter (completed && completedDate===today,
 // or not completed) — not a browser timer. Preserve this when wiring
-// the real Sheet read.
+// the real Sheet read. `assignee` and the due-date-based
+// upcoming/overdue status (see renderPlannedActivities) added 2026-09-02
+// per Uday: this needs to work like a real task system, not a bare list.
 async function fetchPlannedActivities(campusId) {
   return [
-    { id: 'demo-1', date: '15/09/26', activity: 'Fire drill — full school', completed: false },
-    { id: 'demo-2', date: '18/09/26', activity: 'Parent-Teacher orientation, C-1 to C-5', completed: false }
+    { id: 'demo-1', date: '15/09/26', activity: 'Fire drill — full school', assignee: '', completed: false },
+    { id: 'demo-2', date: '18/09/26', activity: 'Parent-Teacher orientation, C-1 to C-5', assignee: 'Nidhi Kant', completed: false }
   ]; // TODO: replace with a real Sheet read, keyed on campusId
 }
 
-async function addPlannedActivity(campusId, date, activity) {
-  console.log('addPlannedActivity', campusId, date, activity);
-  return { id: 'local-' + Date.now(), date: date, activity: activity, completed: false };
+async function addPlannedActivity(campusId, date, activity, assignee) {
+  console.log('addPlannedActivity', campusId, date, activity, assignee);
+  return { id: 'local-' + Date.now(), date: date, activity: activity, assignee: assignee || '', completed: false };
   // TODO: replace with a real Sheet append; return the row's real id
 }
 
@@ -711,6 +742,32 @@ function addItem(listId, inputId) {
 });
 
 // ---------- other activities planned (persistent, checkable list) ----------
+// "dd/mm/yy" -> Date at local midnight, or null if unparseable. Same
+// format the date fields already use throughout this page.
+function parseDDMMYY(s) {
+  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(s || '').trim());
+  if (!m) return null;
+  var dd = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1, yy = parseInt(m[3], 10);
+  if (yy < 100) yy += 2000;
+  var d = new Date(yy, mm, dd);
+  d.setHours(0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Whole days from today to a "dd/mm/yy" date (negative = in the past).
+function daysUntil(dateStr) {
+  var d = parseDDMMYY(dateStr);
+  if (!d) return null;
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / 86400000);
+}
+
+// A planned activity is "reserved for events like Earth Day, a special
+// talk" (Uday, 2026-09-02) that need advance notice, not same-day
+// to-dos -- so it should surface starting this many days before its
+// date, not just sit unflagged in the list until the day itself.
+var UPCOMING_WINDOW_DAYS = 3;
+
 function renderPlannedActivities() {
   var wrap = document.getElementById('plannedActivitiesRows');
   wrap.innerHTML = '';
@@ -719,8 +776,15 @@ function renderPlannedActivities() {
     return;
   }
   currentPlannedActivities.forEach(function(item) {
+    var daysLeft = item.completed ? null : daysUntil(item.date);
+    var status = null; // 'overdue' | 'upcoming' | null
+    if (daysLeft !== null) {
+      if (daysLeft < 0) status = 'overdue';
+      else if (daysLeft <= UPCOMING_WINDOW_DAYS) status = 'upcoming';
+    }
+
     var row = document.createElement('div');
-    row.className = 'planned-row' + (item.completed ? ' completed' : '');
+    row.className = 'planned-row' + (item.completed ? ' completed' : '') + (status ? ' ' + status : '');
 
     var label = document.createElement('label');
     label.className = 'planned-row-main';
@@ -739,6 +803,18 @@ function renderPlannedActivities() {
     text.className = 'planned-text';
     text.textContent = item.activity;
     label.appendChild(cb); label.appendChild(date); label.appendChild(text);
+    if (item.assignee) {
+      var assigneeTag = document.createElement('span');
+      assigneeTag.className = 'planned-assignee';
+      assigneeTag.textContent = item.assignee;
+      label.appendChild(assigneeTag);
+    }
+    if (status) {
+      var statusTag = document.createElement('span');
+      statusTag.className = 'planned-status ' + status;
+      statusTag.textContent = status === 'overdue' ? 'Overdue' : (daysLeft === 0 ? 'Due today' : daysLeft + 'd left');
+      label.appendChild(statusTag);
+    }
 
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
@@ -765,12 +841,14 @@ function renderPlannedActivities() {
 async function addPlannedActivityHandler() {
   var dateInput = document.getElementById('newPlannedDate');
   var textInput = document.getElementById('newPlannedText');
+  var assigneeInput = document.getElementById('newPlannedAssignee');
   if (!textInput.value.trim()) return;
-  var created = await addPlannedActivity(principalCampusId, dateInput.value, textInput.value);
+  var created = await addPlannedActivity(principalCampusId, dateInput.value, textInput.value, assigneeInput.value.trim());
   currentPlannedActivities.push(created);
   renderPlannedActivities();
   dateInput.value = '';
   textInput.value = '';
+  assigneeInput.value = '';
 }
 
 // ---------- submit ----------
