@@ -56,6 +56,89 @@ td{padding:6px 12px;vertical-align:middle}
 .loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
 .loading-state .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Principal's Daily Report tab (adapted from Report_2.html / Stylesheet.html — re-skinned to this page's red palette instead of its original navy/gold) ── */
+.principal-report-hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.date-field{display:flex;align-items:center;gap:6px}
+.date-field input{border:1.5px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit;color:var(--dark)}
+
+.principal-layout{display:flex;flex-direction:column;gap:14px}
+.principal-layout .main-col{display:flex;flex-direction:column;width:100%}
+.principal-layout .sidebar-card{width:100%}
+@media(min-width:860px){
+  .principal-layout{flex-direction:row;align-items:flex-start}
+  .principal-layout .main-col{flex:1;min-width:0;order:1}
+  .principal-layout .sidebar-card{order:2;width:230px;flex-shrink:0;position:sticky;top:20px}
+}
+
+.card{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:16px 16px 18px;margin-bottom:14px}
+.card-title{font-size:12px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.04em;margin:0 0 4px;display:flex;align-items:center;justify-content:space-between}
+.card-hint{font-size:11px;color:#8A96A6;margin:0 0 10px}
+
+.row-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:520px){.row-2col{grid-template-columns:1fr}}
+.field-label{display:block;font-size:11px;font-weight:600;color:var(--gray);margin-bottom:5px}
+.score-input{max-width:90px;text-align:center;font-weight:700;color:var(--red)}
+.principal-layout select,
+.principal-layout input[type=number],
+.principal-layout input[type=text]{
+  border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12.5px;font-family:inherit;color:var(--dark);background:var(--white);width:100%
+}
+.principal-layout select:focus,
+.principal-layout input:focus{outline:none;border-color:var(--red)}
+
+.numbered-list{margin:0 0 10px;padding:0;list-style:none}
+.numbered-list li{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
+.numbered-list li .num{color:var(--red);font-weight:700;min-width:18px}
+.numbered-list li .txt{flex:1}
+.numbered-list li .del{border:none;background:none;color:#B7C0CC;cursor:pointer;font-size:15px;line-height:1}
+.numbered-list li .del:hover{color:var(--red)}
+.add-row{display:flex;gap:8px}
+.add-row input{flex:1}
+.add-row button,.add-row-btn{border:none;background:var(--red);color:#fff;border-radius:6px;padding:0 16px;height:34px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0}
+.add-row button:hover,.add-row-btn:hover{background:var(--red-h)}
+
+.suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.suggestions .chip-label{font-size:11px;color:#8A96A6;width:100%;margin-bottom:2px}
+.chip{border:1px dashed var(--amber);background:#fffbeb;color:var(--amber);border-radius:999px;padding:5px 12px;font-size:11.5px;cursor:pointer}
+.chip:hover{background:var(--amber);color:#fff}
+
+.fetched-list{list-style:none;margin:0;padding:0}
+.fetched-list li{font-size:12.5px;padding:6px 10px;margin-bottom:6px;background:var(--lgray);border-radius:6px;color:var(--dark)}
+.fetched-note{font-size:11px;color:#8A96A6;margin:8px 0 0;font-style:italic}
+
+.multiselect{position:relative}
+.multiselect-toggle{width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;background:var(--white);font-size:12.5px;font-family:inherit;color:var(--dark)}
+.multiselect-toggle .arrow{color:#9AA6B2}
+.multiselect-panel{display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--white);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.08);padding:8px;z-index:10}
+.multiselect-panel.open{display:block}
+.ms-option{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;font-size:12.5px;cursor:pointer}
+.ms-option:hover{background:var(--lgray)}
+.ms-selected-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ms-tag{background:var(--red);color:#fff;font-size:11px;padding:4px 9px;border-radius:999px;display:flex;align-items:center;gap:5px}
+.ms-tag button{border:none;background:none;color:#ffd9d9;cursor:pointer;font-size:12px}
+
+.activity-row{display:grid;grid-template-columns:110px 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
+@media(max-width:520px){.activity-row{grid-template-columns:1fr}}
+
+.planned-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
+.planned-row-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
+.planned-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--red);flex-shrink:0}
+.planned-row .planned-date{color:var(--gray);font-weight:600;font-size:11px;min-width:60px;flex-shrink:0}
+.planned-row .planned-text{flex:1}
+.planned-row.completed{color:#B7C0CC}
+.planned-row.completed .planned-date{color:#C6CDD6}
+.planned-row.completed .planned-text{text-decoration:line-through}
+.planned-del{border:none;background:none;color:#B7C0CC;cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0}
+.planned-del:hover{color:var(--red)}
+
+.ss-count-number{font-size:30px;font-weight:700;line-height:1}
+.ss-count-number.ss-met{color:var(--green)}
+.ss-count-number.ss-short{color:var(--red)}
+
+.submit-bar{display:flex;justify-content:flex-end;margin-top:6px}
+.submit-btn{border:none;background:var(--red);color:#fff;font-size:13px;font-weight:700;padding:11px 26px;border-radius:8px;cursor:pointer}
+.submit-btn:hover{background:var(--red-h)}
 </style>
 </head>
 <body>
@@ -94,6 +177,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Teacher SS</button>
+      <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal SS</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
 
@@ -103,6 +187,113 @@ td{padding:6px 12px;vertical-align:middle}
       <div id="submitCampusPicker" class="campus-picker" style="display:none"></div>
       <div class="form-embed-wrap">
         <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
+      </div>
+    </div>
+
+    <!-- ══════════════════ PRINCIPAL SS (own-school daily report) ══════════════════ -->
+    <div class="tab-panel" id="panel-principal">
+      <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Data sources (Support Session count, Month Activities, yesterday's tasks, planned activities, and Submit) are still mocked pending real Sheet/Calendar wiring — see the "BACKEND INTEGRATION POINTS" comment in the script below.</div>
+      <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
+
+      <div class="principal-report-hdr">
+        <div>
+          <p class="card-title" style="margin:0">Daily Report</p>
+          <p class="card-hint" id="principalBranchLabel" style="margin:0"></p>
+        </div>
+        <div class="date-field">
+          <label class="field-label" style="margin:0;">Date</label>
+          <input type="text" id="reportDate" placeholder="dd/mm/yy">
+        </div>
+      </div>
+
+      <div class="principal-layout">
+
+        <div class="card sidebar-card">
+          <p class="card-title">Activities of the Month</p>
+          <p class="card-hint">Fetched from the school calendar (academic + extra-curricular) — changes automatically each month.</p>
+          <ul class="fetched-list" id="monthActivitiesList"></ul>
+        </div>
+
+        <div class="main-col">
+
+          <div class="card">
+            <p class="card-title">Morning Assembly Marking</p>
+            <div class="row-2col">
+              <div>
+                <label class="field-label">Class / House on duty</label>
+                <select id="maClass"></select>
+              </div>
+              <div>
+                <label class="field-label">Marks (out of 10)</label>
+                <input type="number" class="score-input" id="maScore" min="1" max="10">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Tasks Completed</p>
+            <div class="suggestions" id="taskSuggestions">
+              <div class="chip-label">From yesterday's "Tasks for Tomorrow" — tap to reuse</div>
+            </div>
+            <ul class="numbered-list" id="tasksCompletedList"></ul>
+            <div class="add-row">
+              <input type="text" id="tasksCompletedInput" placeholder="Add a completed task and press Enter">
+              <button type="button" onclick="addItem('tasksCompletedList','tasksCompletedInput')">Add</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Other Activities Planned</p>
+            <p class="card-hint">Stays here until marked complete — no need to retype it day after day.</p>
+            <div id="plannedActivitiesRows"></div>
+            <div class="activity-row">
+              <input type="text" id="newPlannedDate" placeholder="dd/mm/yy">
+              <input type="text" id="newPlannedText" placeholder="Activity name">
+              <button type="button" class="add-row-btn" onclick="addPlannedActivityHandler()">Add</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Registers Crosschecked</p>
+            <div class="multiselect">
+              <button type="button" class="multiselect-toggle" id="msToggle" onclick="toggleMultiselect()">
+                <span id="msToggleLabel">Select registers reviewed today</span>
+                <span class="arrow">&#9662;</span>
+              </button>
+              <div class="multiselect-panel" id="msPanel"><!-- options injected by JS --></div>
+            </div>
+            <div class="ms-selected-tags" id="msTags"></div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Tasks for Tomorrow</p>
+            <ul class="numbered-list" id="tasksTomorrowList"></ul>
+            <div class="add-row">
+              <input type="text" id="tasksTomorrowInput" placeholder="Add a task and press Enter">
+              <button type="button" onclick="addItem('tasksTomorrowList','tasksTomorrowInput')">Add</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Support Sessions</p>
+            <p class="card-hint">Number of SS taken today, from the Calendar — minimum 3/day.</p>
+            <div class="ss-count-number" id="ssCountBadge"></div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Important Message</p>
+            <ul class="numbered-list" id="importantMsgList"></ul>
+            <div class="add-row">
+              <input type="text" id="importantMsgInput" placeholder="Add a message and press Enter">
+              <button type="button" onclick="addItem('importantMsgList','importantMsgInput')">Add</button>
+            </div>
+          </div>
+
+          <div class="submit-bar">
+            <button type="button" class="submit-btn" onclick="submitReport()">Submit Report</button>
+          </div>
+
+        </div>
       </div>
     </div>
 
@@ -156,6 +347,7 @@ async function init() {
     }
     document.getElementById('appArea').style.display = 'block';
     setupSubmitTab();
+    setupPrincipalTab();
     loadDashboard(); // fetch eagerly so it's ready if they switch tabs
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
@@ -265,6 +457,373 @@ function rowHtml(r) {
   const last = r.lastSubmission ? new Date(r.lastSubmission).toLocaleDateString() : '—';
   return '<tr><td>' + r.teacher + '</td><td>' + pill + '</td>' +
     '<td class="score-cell">' + avg + '</td><td>' + last + '</td></tr>';
+}
+
+// ── Principal SS tab (adapted from Report_2.html, 2026-09-02) ───────
+// Ported from a standalone Apps Script HTML Service prototype (that
+// used server-side <?= ?> templating for branchName/logoDataUri) into
+// this page's plain client-side JS, driven by the portal session
+// instead. Structure and behavior are otherwise unchanged from the
+// original, including the mocked data layer below.
+
+var CLASS_HOUSE_OPTIONS = [
+  'C-1','C-2','C-3','C-4','C-5','C-6','C-7','C-8','C-9','C-10','C-11','C-12',
+  'Emerald House','Ruby House','Sapphire House','Topaz House'
+];
+var REGISTER_OPTIONS = [
+  'TRRs','Daily Communication Records','MOH Registers','EI Registers',
+  'Communication Register','PTA Register','Inventory Register'
+];
+
+// =====================================================================
+// DATA LAYER — BACKEND INTEGRATION POINTS (still mocked, same as the
+// original prototype). Each function returns hardcoded data for now;
+// replace the BODY of a function to wire it to a real source once the
+// backend Sheet + Calendar are set up (see project_principals_daily_reporting.md
+// for the two open questions: what DISP/NBK/MEET Calendar tags mean,
+// and which Calendar to read/write). Threaded through with campusId so
+// they're ready for real per-campus data — the mocks currently ignore it.
+// =====================================================================
+
+async function fetchYesterdaysTomorrowTasks(campusId) {
+  return [
+    'Finish fee defaulter follow-up for C-8',
+    'Submit MOH register updates'
+  ]; // TODO: replace with a real Sheet read, keyed on campusId + (today - 1)
+}
+
+async function fetchSupportSessionsToday(campusId) {
+  return [
+    'Sushma ma\'am — C-8, English',
+    'Reena ma\'am — C-6, Hindi',
+    'Vipin sir — C-9, Social Science'
+  ]; // TODO: replace with a real Calendar read, filtered to today + this campus + SS entries
+}
+
+async function fetchMonthActivities(campusId) {
+  return [
+    '29th — Literary Fair',
+    '29th — MOH',
+    '31st — EI Cycle'
+  ]; // TODO: replace with a real Calendar read for this campus, current month
+}
+
+// See the original prototype's note on "disappear the next day"
+// behaviour: a fetch-time filter (completed && completedDate===today,
+// or not completed) — not a browser timer. Preserve this when wiring
+// the real Sheet read.
+async function fetchPlannedActivities(campusId) {
+  return [
+    { id: 'demo-1', date: '15/09/26', activity: 'Fire drill — full school', completed: false },
+    { id: 'demo-2', date: '18/09/26', activity: 'Parent-Teacher orientation, C-1 to C-5', completed: false }
+  ]; // TODO: replace with a real Sheet read, keyed on campusId
+}
+
+async function addPlannedActivity(campusId, date, activity) {
+  console.log('addPlannedActivity', campusId, date, activity);
+  return { id: 'local-' + Date.now(), date: date, activity: activity, completed: false };
+  // TODO: replace with a real Sheet append; return the row's real id
+}
+
+async function setPlannedActivityCompleted(campusId, id, completed) {
+  console.log('setPlannedActivityCompleted', campusId, id, completed);
+  return { ok: true }; // TODO: replace with a real Sheet update, matched on id; stamp completedDate when true
+}
+
+async function deletePlannedActivity(campusId, id) {
+  console.log('deletePlannedActivity', campusId, id);
+  return { ok: true }; // TODO: replace with a real Sheet row delete, matched on id
+}
+
+// Should: (1) append a row to the master Sheet, and (2) create/verify
+// the Calendar entries this report implies (MA, DISP, SS, NBK, MEET)
+// for this campus on this date.
+async function saveDailyReport(campusId, payload) {
+  console.log('saveDailyReport', campusId, payload);
+  return { ok: true }; // TODO: replace with a real Sheet write + Calendar create
+}
+
+// ---------- runtime state ----------
+var principalCampusId = null;
+var currentSSTeachers = [];
+var MIN_SS_PER_DAY = 3; // principals are expected to take at least this many Support Sessions a day
+var currentPlannedActivities = [];
+var selectedRegisters = ['TRRs']; // TRR pre-checked by default
+
+function setupPrincipalTab() {
+  const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
+  if (campuses.length > 1) {
+    const picker = document.getElementById('principalCampusPicker');
+    picker.style.display = 'flex';
+    picker.innerHTML = campuses.map(function (c, i) {
+      return '<button class="campus-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="pickPrincipalCampus(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
+    }).join('');
+  }
+  pickPrincipalCampus(campuses[0]);
+}
+
+function pickPrincipalCampus(campusId) {
+  document.querySelectorAll('#principalCampusPicker .campus-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.campus === campusId);
+  });
+  principalCampusId = campusId;
+  document.getElementById('principalBranchLabel').textContent = LMCS.campusLabel(campusId);
+  bootPrincipalReport(campusId);
+}
+
+function populateSelect(id, options) {
+  var el = document.getElementById(id);
+  el.innerHTML = '';
+  options.forEach(function(o) {
+    var opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    el.appendChild(opt);
+  });
+}
+
+function todayDDMMYY() {
+  var d = new Date();
+  var dd = String(d.getDate()).padStart(2,'0');
+  var mm = String(d.getMonth()+1).padStart(2,'0');
+  var yy = String(d.getFullYear()).slice(-2);
+  return dd + '/' + mm + '/' + yy;
+}
+
+function renderFetchedList(id, items) {
+  var el = document.getElementById(id);
+  el.innerHTML = '';
+  if (items.length === 0) {
+    el.innerHTML = '<li style="color:#B7C0CC;">Nothing logged yet today</li>';
+    return;
+  }
+  items.forEach(function(t) {
+    var li = document.createElement('li');
+    li.textContent = t;
+    el.appendChild(li);
+  });
+}
+
+function renderSsCountBadge(count) {
+  var el = document.getElementById('ssCountBadge');
+  var met = count >= MIN_SS_PER_DAY;
+  el.textContent = count + '/' + MIN_SS_PER_DAY;
+  el.classList.toggle('ss-met', met);
+  el.classList.toggle('ss-short', !met);
+}
+
+function renderSuggestionChips(yesterdaysTasks) {
+  var wrap = document.getElementById('taskSuggestions');
+  wrap.querySelectorAll('.chip').forEach(function(c) { c.remove(); });
+  yesterdaysTasks.forEach(function(t) {
+    var chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = '+ ' + t;
+    chip.onclick = function() { addItemDirect('tasksCompletedList', t); };
+    wrap.appendChild(chip);
+  });
+}
+
+function renderMultiselectOptions() {
+  var panel = document.getElementById('msPanel');
+  panel.innerHTML = '';
+  REGISTER_OPTIONS.forEach(function(r) {
+    var row = document.createElement('label');
+    row.className = 'ms-option';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = selectedRegisters.indexOf(r) > -1;
+    cb.onchange = function() {
+      if (cb.checked) { selectedRegisters.push(r); }
+      else { selectedRegisters = selectedRegisters.filter(function(x){ return x !== r; }); }
+      renderMsTags();
+    };
+    var span = document.createElement('span');
+    span.textContent = r;
+    row.appendChild(cb); row.appendChild(span);
+    panel.appendChild(row);
+  });
+}
+
+function renderMsTags() {
+  var tagsEl = document.getElementById('msTags');
+  tagsEl.innerHTML = '';
+  selectedRegisters.forEach(function(r) {
+    var tag = document.createElement('span');
+    tag.className = 'ms-tag';
+    tag.innerHTML = r + ' ';
+    var x = document.createElement('button');
+    x.textContent = '×';
+    x.onclick = function() {
+      selectedRegisters = selectedRegisters.filter(function(v){ return v !== r; });
+      renderMsTags();
+      renderMultiselectCheckboxState();
+    };
+    tag.appendChild(x);
+    tagsEl.appendChild(tag);
+  });
+  document.getElementById('msToggleLabel').textContent =
+    selectedRegisters.length ? selectedRegisters.length + ' selected' : 'Select registers reviewed today';
+}
+
+function renderMultiselectCheckboxState() {
+  var boxes = document.querySelectorAll('#msPanel input[type=checkbox]');
+  boxes.forEach(function(cb, i) {
+    cb.checked = selectedRegisters.indexOf(REGISTER_OPTIONS[i]) > -1;
+  });
+}
+
+function toggleMultiselect() {
+  document.getElementById('msPanel').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  var ms = document.querySelector('#panel-principal .multiselect');
+  if (ms && !ms.contains(e.target)) document.getElementById('msPanel').classList.remove('open');
+});
+
+// ---------- numbered list (Tasks Completed / Tomorrow / Important Message) ----------
+function renumberList(listId) {
+  var items = document.querySelectorAll('#' + listId + ' .num');
+  items.forEach(function(el, i) { el.textContent = (i + 1) + '.'; });
+}
+function addItemDirect(listId, text) {
+  if (!text.trim()) return;
+  var li = document.createElement('li');
+  li.innerHTML = '<span class="num"></span><span class="txt"></span><button type="button" class="del">&times;</button>';
+  li.querySelector('.txt').textContent = text;
+  li.querySelector('.del').onclick = function() { li.remove(); renumberList(listId); };
+  document.getElementById(listId).appendChild(li);
+  renumberList(listId);
+}
+function addItem(listId, inputId) {
+  var input = document.getElementById(inputId);
+  addItemDirect(listId, input.value);
+  input.value = '';
+  input.focus();
+}
+['tasksCompletedInput','tasksTomorrowInput','importantMsgInput'].forEach(function(inputId) {
+  document.getElementById(inputId).addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var listId = inputId.replace('Input','List');
+      addItem(listId, inputId);
+    }
+  });
+});
+
+// ---------- other activities planned (persistent, checkable list) ----------
+function renderPlannedActivities() {
+  var wrap = document.getElementById('plannedActivitiesRows');
+  wrap.innerHTML = '';
+  if (currentPlannedActivities.length === 0) {
+    wrap.innerHTML = '<p class="fetched-note" style="margin:0 0 10px;">Nothing planned yet.</p>';
+    return;
+  }
+  currentPlannedActivities.forEach(function(item) {
+    var row = document.createElement('div');
+    row.className = 'planned-row' + (item.completed ? ' completed' : '');
+
+    var label = document.createElement('label');
+    label.className = 'planned-row-main';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!item.completed;
+    cb.onchange = async function() {
+      item.completed = cb.checked;
+      renderPlannedActivities();
+      await setPlannedActivityCompleted(principalCampusId, item.id, cb.checked);
+    };
+    var date = document.createElement('span');
+    date.className = 'planned-date';
+    date.textContent = item.date;
+    var text = document.createElement('span');
+    text.className = 'planned-text';
+    text.textContent = item.activity;
+    label.appendChild(cb); label.appendChild(date); label.appendChild(text);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'planned-del';
+    delBtn.title = 'Delete';
+    delBtn.innerHTML =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<polyline points="3 6 5 6 21 6"></polyline>' +
+      '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>' +
+      '<path d="M10 11v6"></path><path d="M14 11v6"></path>' +
+      '<path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path>' +
+      '</svg>';
+    delBtn.onclick = async function() {
+      currentPlannedActivities = currentPlannedActivities.filter(function(x) { return x.id !== item.id; });
+      renderPlannedActivities();
+      await deletePlannedActivity(principalCampusId, item.id);
+    };
+
+    row.appendChild(label); row.appendChild(delBtn);
+    wrap.appendChild(row);
+  });
+}
+
+async function addPlannedActivityHandler() {
+  var dateInput = document.getElementById('newPlannedDate');
+  var textInput = document.getElementById('newPlannedText');
+  if (!textInput.value.trim()) return;
+  var created = await addPlannedActivity(principalCampusId, dateInput.value, textInput.value);
+  currentPlannedActivities.push(created);
+  renderPlannedActivities();
+  dateInput.value = '';
+  textInput.value = '';
+}
+
+// ---------- submit ----------
+async function submitReport() {
+  var payload = {
+    date: document.getElementById('reportDate').value,
+    morningAssembly: { classHouse: document.getElementById('maClass').value, score: document.getElementById('maScore').value },
+    tasksCompleted: listToArray('tasksCompletedList'),
+    supportSessions: { teachers: currentSSTeachers, count: currentSSTeachers.length },
+    registersCrosschecked: selectedRegisters,
+    tasksTomorrow: listToArray('tasksTomorrowList'),
+    importantMessage: listToArray('importantMsgList')
+  };
+  var result = await saveDailyReport(principalCampusId, payload);
+  if (result && result.ok) {
+    alert('Report submitted.');
+  } else {
+    alert('Something went wrong submitting the report — please try again.');
+  }
+}
+function listToArray(listId) {
+  var out = [];
+  document.querySelectorAll('#' + listId + ' .txt').forEach(function(el) { out.push(el.textContent); });
+  return out;
+}
+
+async function bootPrincipalReport(campusId) {
+  populateSelect('maClass', CLASS_HOUSE_OPTIONS);
+  document.getElementById('reportDate').value = todayDDMMYY();
+  document.getElementById('maScore').value = '';
+  selectedRegisters = ['TRRs'];
+  renderMultiselectOptions();
+  renderMsTags();
+
+  // Clear free-text entries left over from a previously-viewed campus --
+  // without this, switching campuses (Owner/multi-campus sessions) would
+  // silently carry unsaved Tasks Completed/Tomorrow/Important Message
+  // text from one campus's report into another's.
+  ['tasksCompletedList', 'tasksTomorrowList', 'importantMsgList'].forEach(function (listId) {
+    document.getElementById(listId).innerHTML = '';
+  });
+
+  currentSSTeachers = await fetchSupportSessionsToday(campusId);
+  renderSsCountBadge(currentSSTeachers.length);
+
+  var monthActivities = await fetchMonthActivities(campusId);
+  renderFetchedList('monthActivitiesList', monthActivities);
+
+  currentPlannedActivities = await fetchPlannedActivities(campusId);
+  renderPlannedActivities();
+
+  var yesterdaysTasks = await fetchYesterdaysTomorrowTasks(campusId);
+  renderSuggestionChips(yesterdaysTasks);
 }
 
 function switchTab(tab) {
