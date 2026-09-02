@@ -325,6 +325,15 @@ td{padding:6px 12px;vertical-align:middle}
    renamed 2026-09-02.) */
 const DASHBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbw5lEWeph-kIQv3kGLpQ8hs4TzmYVTFjSYwEy7m7KOWPzpqRScalnQd4K8FchfP7N2j/exec';
 
+/* PRINCIPAL_DR_API_URL: a SEPARATE Apps Script project/deployment from
+   DASHBOARD_API_URL above -- apps-script/principal-dr.gs, in its own
+   "LMCS Principal DR Backend" project (2026-09-02, per Uday: Teacher SS
+   and Principal DR each get everything associated with them in their
+   own project, not shared). Paste its deployed Web App URL here once
+   it's deployed; until then the "Activities of the Month" card just
+   shows nothing, same as any other empty result. */
+const PRINCIPAL_DR_API_URL = 'PASTE_PRINCIPAL_DR_PROXY_URL_HERE';
+
 // Reuses the same deployed Employee Roster Proxy every other module
 // already points at -- see staff/add-employee.html.
 const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
@@ -532,12 +541,14 @@ async function fetchSupportSessionsToday(campusId) {
 }
 
 // WIRED (2026-09-02): reads the School's OFFICIAL Calendar via
-// teacher-ss-dashboard-proxy.gs's 'monthactivities' action -- NEXT
-// calendar month, not the current one, per Uday's correction.
+// apps-script/principal-dr.gs's 'monthactivities' action, a SEPARATE
+// Apps Script project/deployment from DASHBOARD_API_URL (see
+// PRINCIPAL_DR_API_URL above) -- NEXT calendar month, not the current
+// one, per Uday's correction.
 async function fetchMonthActivities(campusId) {
-  if (!DASHBOARD_API_URL || DASHBOARD_API_URL.indexOf('PASTE_') === 0) return [];
+  if (!PRINCIPAL_DR_API_URL || PRINCIPAL_DR_API_URL.indexOf('PASTE_') === 0) return [];
   try {
-    const url = DASHBOARD_API_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
+    const url = PRINCIPAL_DR_API_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
       '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
     if (!res.success) { console.warn('fetchMonthActivities failed:', res.error); return []; }
