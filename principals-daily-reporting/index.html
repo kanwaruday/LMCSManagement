@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Teacher SS</title>
+<title>LMCS — Principal's Daily Reporting</title>
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -170,8 +170,8 @@ td{padding:6px 12px;vertical-align:middle}
 <!-- HEADER -->
 <div class="hdr">
   <div class="hdr-brand">
-    <h1>LMCS — Teacher SS</h1>
-    <p id="hdrCtx">Principal's Daily Reporting — Teaching bucket (Support Session, formerly "DR")</p>
+    <h1>LMCS — Principal's Daily Reporting</h1>
+    <p id="hdrCtx">Teaching bucket live — Teacher SS, Principal DR, Dashboard. More roles (PTI/IT/Clerk/Helpers SS) and an SS completion tracker coming.</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -315,24 +315,17 @@ td{padding:6px 12px;vertical-align:middle}
 
 <script>
 /* ── Config ────────────────────────────────────────────────────────
-   DASHBOARD_API_URL: the read-only "Teacher SS Dashboard Proxy"
-   (apps-script/teacher-ss-dashboard-proxy.gs, in the "LMCS Teacher SS
-   Backend" Apps Script project) -- paste its deployed Web App URL here
-   once you've deployed it (script.google.com -> New deployment -> Web
-   App -> Execute as: Me, Who has access: Anyone). Until this is a real
-   URL, the Dashboard tab shows a setup notice instead of erroring
-   silently. ("SS" = Support Session, formerly "DR"/Daily Report --
-   renamed 2026-09-02.) */
-const DASHBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbw5lEWeph-kIQv3kGLpQ8hs4TzmYVTFjSYwEy7m7KOWPzpqRScalnQd4K8FchfP7N2j/exec';
-
-/* PRINCIPAL_DR_API_URL: a SEPARATE Apps Script project/deployment from
-   DASHBOARD_API_URL above -- apps-script/principal-dr.gs, in its own
-   "LMCS Principal DR Backend" project (2026-09-02, per Uday: Teacher SS
-   and Principal DR each get everything associated with them in their
-   own project, not shared). Paste its deployed Web App URL here once
-   it's deployed; until then the "Activities of the Month" card just
-   shows nothing, same as any other empty result. */
-const PRINCIPAL_DR_API_URL = 'PASTE_PRINCIPAL_DR_PROXY_URL_HERE';
+   PDR_BACKEND_URL: the ONE Web App URL for the whole "LMCS Principal's
+   Daily Reporting Backend" Apps Script project (2026-09-02 -- final
+   architecture: one project, one doGet, one deployment, with per-
+   concern files inside it: main.gs, teacher-ss.gs, principal-dr.gs,
+   ss-forms-sync.gs, and more as PTI/IT/Clerk/Helpers SS and the SS
+   tracker get built). Every action below goes through this one URL,
+   distinguished by ?action=. Paste the deployed Web App URL here once
+   deployed (script.google.com -> New deployment -> Web App -> Execute
+   as: Me, Who has access: Anyone). Until this is a real URL, tabs that
+   need it show a setup notice / empty state instead of erroring. */
+const PDR_BACKEND_URL = 'PASTE_PDR_BACKEND_URL_HERE';
 
 // Reuses the same deployed Employee Roster Proxy every other module
 // already points at -- see staff/add-employee.html.
@@ -403,13 +396,13 @@ function pickSubmitCampus(campusId) {
 // ── Dashboard tab ───────────────────────────────────────────────────
 async function loadDashboard() {
   const body = document.getElementById('dashBody');
-  if (!DASHBOARD_API_URL || DASHBOARD_API_URL.indexOf('PASTE_') === 0) {
-    body.innerHTML = '<div class="notice">Dashboard proxy not deployed yet — paste the deployed URL into <code>teacher-ss/index.html</code>’s <code>DASHBOARD_API_URL</code> constant (see the setup comment in <code>apps-script/teacher-ss-dashboard-proxy.gs</code>).</div>';
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) {
+    body.innerHTML = '<div class="notice">Backend not deployed yet — paste the deployed URL into <code>principals-daily-reporting/index.html</code>’s <code>PDR_BACKEND_URL</code> constant (see the setup comment in <code>apps-script/main.gs</code>).</div>';
     return;
   }
   try {
     const [statsRes, rosterRes] = await Promise.all([
-      fetch(DASHBOARD_API_URL + '?idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); }),
+      fetch(PDR_BACKEND_URL + '?action=teacherstats&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); }),
       fetch(EMPLOYEE_ROSTER_URL + '?action=employees').then(function (r) { return r.json(); }),
     ]);
     if (!statsRes.success) {
@@ -528,10 +521,10 @@ async function fetchYesterdaysTomorrowTasks(campusId) {
 // this comment was written -- don't guess a parsing format ahead of
 // that. Also per Uday: the count shown here should be CROSS-REFERENCED
 // against "LMCS Teacher SS 2026 (Responses)" (the same sheet
-// teacher-ss-dashboard-proxy.gs reads) -- a Calendar entry alone isn't
-// enough proof the session actually happened; there should be a
-// matching Teacher SS Form submission for that teacher/class/subject/day
-// too. Wire this only after both blockers clear.
+// teacher-ss.gs reads) -- a Calendar entry alone isn't enough proof
+// the session actually happened; there should be a matching Teacher SS
+// Form submission for that teacher/class/subject/day too. Wire this
+// only after both blockers clear.
 async function fetchSupportSessionsToday(campusId) {
   return [
     'Sushma ma\'am — C-8, English',
@@ -541,14 +534,13 @@ async function fetchSupportSessionsToday(campusId) {
 }
 
 // WIRED (2026-09-02): reads the School's OFFICIAL Calendar via
-// apps-script/principal-dr.gs's 'monthactivities' action, a SEPARATE
-// Apps Script project/deployment from DASHBOARD_API_URL (see
-// PRINCIPAL_DR_API_URL above) -- NEXT calendar month, not the current
-// one, per Uday's correction.
+// apps-script/principal-dr.gs's 'monthactivities' action (through the
+// shared PDR_BACKEND_URL / main.gs dispatcher) -- NEXT calendar month,
+// not the current one, per Uday's correction.
 async function fetchMonthActivities(campusId) {
-  if (!PRINCIPAL_DR_API_URL || PRINCIPAL_DR_API_URL.indexOf('PASTE_') === 0) return [];
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
   try {
-    const url = PRINCIPAL_DR_API_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
+    const url = PDR_BACKEND_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
       '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
     if (!res.success) { console.warn('fetchMonthActivities failed:', res.error); return []; }
