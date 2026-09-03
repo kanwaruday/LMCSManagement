@@ -957,11 +957,30 @@ function parseISODate(s) {
 }
 
 // Whole days from today to a "yyyy-mm-dd" date (negative = in the past).
+// Used for the Planned Activities list's own Overdue/Upcoming badges --
+// deliberately always real "today", not the selected report date (same
+// call as Activities of the Month, confirmed by Uday 2026-09-02: these
+// are live task-tracking indicators, not historical, so they should
+// keep reflecting real time even while reviewing a past/future report).
 function daysUntil(dateStr) {
   var d = parseISODate(dateStr);
   if (!d) return null;
   var today = new Date(); today.setHours(0, 0, 0, 0);
   return Math.round((d - today) / 86400000);
+}
+
+// Whole days from `refDateStr` to `dateStr` (negative = dateStr is
+// before refDateStr). Unlike daysUntil() above, this is relative to
+// whatever reference date you pass, not always real "today" -- used by
+// loadReportForDate()'s Tasks Completed suggestion filter so "due today
+// or overdue" means relative to the report's OWN date, per Uday
+// 2026-09-03: "suggestions in the Task Completed should be synced
+// based on the Date on the right top corner."
+function daysBetween(dateStr, refDateStr) {
+  var d = parseISODate(dateStr);
+  var ref = parseISODate(refDateStr);
+  if (!d || !ref) return null;
+  return Math.round((d - ref) / 86400000);
 }
 
 // A planned activity is "reserved for events like Earth Day, a special
@@ -1138,14 +1157,15 @@ async function loadReportForDate() {
   renderPlannedActivities();
 
   var yesterdaysTasks = await fetchYesterdaysTomorrowTasks(campusId);
-  // Any still-open Planned Activity due today OR overdue also becomes a
-  // Tasks Completed suggestion (per Uday 2026-09-02) -- a late-but-
-  // finally-done activity still gets suggested, not just ones due
-  // exactly today. daysUntil() is defined above, reused from
-  // renderPlannedActivities' own overdue/upcoming status logic.
+  // Any still-open Planned Activity due on/before the SELECTED report
+  // date also becomes a Tasks Completed suggestion (per Uday 2026-09-02,
+  // refined 2026-09-03 to follow the Date field via daysBetween() rather
+  // than always real "today" via daysUntil() -- see daysBetween()'s own
+  // comment) -- a late-but-finally-done activity still gets suggested,
+  // not just ones due exactly on that date.
   var plannedSuggestions = currentPlannedActivities
     .filter(function (a) { return !a.completed; })
-    .filter(function (a) { var d = daysUntil(a.date); return d !== null && d <= 0; })
+    .filter(function (a) { var d = daysBetween(a.date, dateISO); return d !== null && d <= 0; })
     .map(function (a) { return a.activity; });
   renderSuggestionChips(yesterdaysTasks.concat(plannedSuggestions));
 }
