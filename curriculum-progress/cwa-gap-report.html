@@ -332,6 +332,175 @@ async function markAsTaken(idx) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   BULK "MARK AS TAKEN" VIA CSV -- Coordinator/Owner only, per Uday
+   2026-09-03: the same override mechanism as markAsTaken() above (same
+   PROXY_URL?overrideData= endpoint, same Overrides tab, same 'Verified'
+   status on the next tracker rebuild), just applied to many rows at once
+   from a spreadsheet a coordinator filled in offline instead of one
+   prompt() per chapter. No server-side change needed -- appendChapterOverride
+   already just appends a row per call.
+   Export writes exactly the rows currently on screen (same min-days/Show/
+   School/Class/Subject filters as the table, via getFilteredSortedGapRows)
+   to a CSV with a blank ActualCWADate column. Upload reads that CSV back,
+   and for every row with a non-blank ActualCWADate submits one override --
+   rows left blank are silently skipped (nothing to do), not an error.
+═══════════════════════════════════════════════════════════ */
+function isoDate(d) { return d ? d.toISOString().slice(0,10) : ''; }
+
+// Minimal RFC4180-ish CSV codec -- no library, since chapter names can
+// contain commas (e.g. "Letter (formal), Analytical paragraph", a real
+// Class 10 English chapter name) so a plain split(',') would corrupt them.
+function csvStringify(rows) {
+  const cell = v => {
+    v = String(v==null ? '' : v);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
+  };
+  return rows.map(r => r.map(cell).join(',')).join('\r\n');
+}
+function csvParse(text) {
+  const rows = []; let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(field); field = ''; rows.push(row); row = [];
+    } else field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+
+const COORD_CSV_HEADERS = ['School','Class','Subject','ChapterNo','ChapterName','Teacher','Status','PlannedCWADate','EffectiveDeadline','DaysOverdue','ActualCWADate','Note'];
+
+function exportForCoordinator() {
+  if (!CAN_OVERRIDE) return;
+  const { rows } = getFilteredSortedGapRows();
+  if (!rows.length) { alert('Nothing to export -- no rows match the current filters.'); return; }
+  const STATUS_LABEL = {critical:'Critical', overdue:'Overdue', behind:'Behind Pace'};
+  const table = [COORD_CSV_HEADERS];
+  rows.forEach(g => table.push([
+    lmsPlainName(g.lmsIdx), g.cls, g.subject, g.chapterNo || '', g.chapterName || '',
+    g.teacher || '', STATUS_LABEL[g.type] || g.type, isoDate(g.plannedDate), isoDate(g.deadline),
+    g.days || 0, '', '', // ActualCWADate, Note -- left blank for the coordinator
+  ]));
+  const blob = new Blob([csvStringify(table)], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  alert(`Exported ${rows.length} row(s). Ask the coordinator to fill in "ActualCWADate" as YYYY-MM-DD for every chapter that was actually taken (leave the rest blank), keep it saved as CSV, then use "Upload Completed Sheet" here to apply it.`);
+}
+
+// Runs `worker` over `items` with at most `limit` in flight at once --
+// PROXY_URL is a single Apps Script web app; firing dozens of requests
+// simultaneously risks tripping its execution quota.
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function lane() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, lane));
+  return results;
+}
+
+async function handleCoordinatorUpload(input) {
+  const file = input.files && input.files[0];
+  input.value = ''; // allow re-selecting the same filename after a fix
+  if (!file) return;
+  const session = LMCS.getSession();
+  if (!session || !LMCS.canManageStaff(session)) { alert('Only Coordinator/Owner sessions can do this.'); return; }
+
+  let table;
+  try {
+    table = csvParse(await file.text());
+  } catch (e) { alert('Could not read that file as CSV: ' + e.message); return; }
+  if (table.length < 2) { alert('That file has no data rows.'); return; }
+
+  const header = table[0].map(h => String(h||'').trim());
+  const col = name => header.indexOf(name);
+  const c = {
+    school: col('School'), cls: col('Class'), subject: col('Subject'),
+    chapterName: col('ChapterName'), actual: col('ActualCWADate'), note: col('Note'),
+  };
+  if (c.school<0 || c.cls<0 || c.subject<0 || c.chapterName<0 || c.actual<0) {
+    alert('That file doesn\'t look like a CWA Gap Report export -- missing one of the expected columns (School, Class, Subject, ChapterName, ActualCWADate).');
+    return;
+  }
+
+  // Soft check against what's currently loaded, to catch a typo'd School/
+  // Class/Subject/ChapterName before it silently fails to match anything
+  // on the next tracker rebuild -- doesn't block submission, just flags it.
+  const knownKeys = new Set(trackerRows.map(r =>
+    [lmsPlainName(r.lmsIdx), r.cls, r.subject, chapterNormalizeName_(r.chapterName)].join('|')));
+
+  const today = new Date().toISOString().slice(0,10);
+  const toSubmit = [], skippedBlank = [], invalid = [], unmatched = [];
+  for (let i = 1; i < table.length; i++) {
+    const r = table[i];
+    const actualDate = String(r[c.actual]||'').trim();
+    const rowLabel = `${r[c.school]||''} / ${r[c.cls]||''} / ${r[c.subject]||''} / ${r[c.chapterName]||''}`;
+    if (!actualDate) { skippedBlank.push(rowLabel); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(actualDate)) { invalid.push(`${rowLabel} -- "${actualDate}" isn't YYYY-MM-DD`); continue; }
+    if (actualDate > today) { invalid.push(`${rowLabel} -- ${actualDate} is in the future`); continue; }
+    const key = [r[c.school], r[c.cls], r[c.subject], chapterNormalizeName_(r[c.chapterName])].join('|');
+    if (!knownKeys.has(key)) unmatched.push(rowLabel); // still submitted below, just flagged
+    toSubmit.push({
+      school: r[c.school], cls: r[c.cls], subject: r[c.subject],
+      chapterName: r[c.chapterName], actualDate, note: c.note>=0 ? (r[c.note]||'') : '',
+    });
+  }
+
+  if (!toSubmit.length) {
+    alert(`Nothing to upload -- ${skippedBlank.length} row(s) had no ActualCWADate` + (invalid.length ? `, ${invalid.length} had an invalid date:\n${invalid.slice(0,10).join('\n')}` : '.'));
+    return;
+  }
+  if (invalid.length && !confirm(`${invalid.length} row(s) have an invalid ActualCWADate and will be skipped:\n${invalid.slice(0,10).join('\n')}${invalid.length>10?`\n…and ${invalid.length-10} more`:''}\n\nProceed with the other ${toSubmit.length} row(s)?`)) return;
+  if (unmatched.length && !confirm(`${unmatched.length} row(s) don't match any chapter currently in the tracker (possible typo in School/Class/Subject/ChapterName) -- they'll still be submitted as-is:\n${unmatched.slice(0,10).join('\n')}${unmatched.length>10?`\n…and ${unmatched.length-10} more`:''}\n\nContinue?`)) return;
+
+  const btn = document.getElementById('coordUploadBtn');
+  const btnLabel = btn ? btn.textContent : '';
+  let done = 0;
+  const setProgress = () => { if (btn) btn.textContent = `⬆ Uploading… ${done}/${toSubmit.length}`; };
+  setProgress();
+  const results = await runWithConcurrency(toSubmit, 3, async (row) => {
+    try {
+      const payload = { email: session.email, name: session.name, academicYear: TRACKER_TAB, ...row };
+      const url = PROXY_URL + '?overrideData=' + encodeURIComponent(JSON.stringify(payload));
+      await fetch(url, { cache: 'no-store' });
+      return { ok: true, row };
+    } catch (e) {
+      return { ok: false, row, error: e.message };
+    } finally {
+      done++; setProgress();
+    }
+  });
+  if (btn) btn.textContent = btnLabel;
+
+  const failed = results.filter(r => !r.ok);
+  let msg = `Submitted ${results.length - failed.length} of ${results.length} override(s).`;
+  if (skippedBlank.length) msg += `\n${skippedBlank.length} row(s) skipped (no ActualCWADate).`;
+  if (invalid.length) msg += `\n${invalid.length} row(s) skipped (invalid date).`;
+  if (failed.length) msg += `\n${failed.length} row(s) FAILED to submit (network error) -- fix and re-upload just those rows:\n${failed.slice(0,10).map(f=>`${f.row.school}/${f.row.cls}/${f.row.subject}/${f.row.chapterName}: ${f.error}`).join('\n')}`;
+  msg += `\n\nThese will drop off the gap report on the next tracker refresh (within ~30 min).`;
+  alert(msg);
+}
+
+// Same normalization ChapterTracker.gs applies server-side (chapterNormalizeName)
+// when matching an override to a chapter -- used here only for the client-side
+// "does this look like a real chapter" sanity check above, not sent anywhere.
+function chapterNormalizeName_(s) { return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
 function parseGvizDate(cell) {
   if (!cell||cell.v==null) return null;
   const m = String(cell.v).match(/Date\((\d+),(\d+),(\d+)/);
@@ -486,14 +655,12 @@ function buildGapDataFromTracker(rows) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   RENDER
+   FILTER + SORT (shared by renderGapPanel and exportForCoordinator, so
+   the exported sheet always matches exactly what's on screen — same
+   min-days threshold, Show/School/Class/Subject filters, and sort order)
 ═══════════════════════════════════════════════════════════ */
-function renderGapPanel() {
-  const panel = document.getElementById('gapPanel');
-  if (PRINCIPAL_LOCK_IDX >= 0) gapFiltSchool = String(PRINCIPAL_LOCK_IDX);
-  chipRefs = []; // reset each render pass -- markAsTaken(idx) refs are only valid for the current DOM
-
-  // Apply min-days threshold (per-group max days)
+function getFilteredSortedGapRows() {
+  // Apply min-days threshold
   const visible = gapData.filter(g => (g.days||0) >= gapMinDays);
 
   let rows = visible;
@@ -517,6 +684,19 @@ function renderGapPanel() {
     else if (gapSortKey==='school') v=a.lmsIdx-b.lmsIdx;
     return v * gapSortDir;
   });
+
+  return { visible, rows };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════════════ */
+function renderGapPanel() {
+  const panel = document.getElementById('gapPanel');
+  if (PRINCIPAL_LOCK_IDX >= 0) gapFiltSchool = String(PRINCIPAL_LOCK_IDX);
+  chipRefs = []; // reset each render pass -- markAsTaken(idx) refs are only valid for the current DOM
+
+  const { visible, rows } = getFilteredSortedGapRows();
 
   // Dropdown option sources — use full visible set so options don't collapse when a filter is active
   const allClasses = [...new Set(visible.map(g=>g.cls))].sort();
@@ -607,6 +787,10 @@ function renderGapPanel() {
     ${(gapFiltType!=='gaps'||gapFiltSchool!==(PRINCIPAL_LOCK_IDX>=0?String(PRINCIPAL_LOCK_IDX):'')||gapFiltClass||gapFiltSubject)?
       `<button class="filt-btn" onclick="gapFiltType='gaps';gapFiltSchool='${PRINCIPAL_LOCK_IDX>=0?PRINCIPAL_LOCK_IDX:''}';gapFiltClass='';gapFiltSubject='';renderGapPanel()">✕ Clear filters</button>`:''}
     <button class="filt-btn" onclick="reloadAll()" title="Re-fetch from the Chapter Completion Tracker sheet">↺ Refresh all</button>
+    ${CAN_OVERRIDE ? `
+    <button class="filt-btn" onclick="exportForCoordinator()" title="Download the rows currently shown (respects all filters above) as a CSV, with a blank Actual CWA Date column to fill in">⬇ Export for Coordinator</button>
+    <input type="file" id="coordUploadInput" accept=".csv" style="display:none" onchange="handleCoordinatorUpload(this)">
+    <button class="filt-btn" id="coordUploadBtn" onclick="document.getElementById('coordUploadInput').click()" title="Upload the filled-in CSV back — every row with an Actual CWA Date gets applied as a &quot;Mark as taken&quot; override">⬆ Upload Completed Sheet</button>` : ''}
   </div>
 
   <div class="gap-chips">
