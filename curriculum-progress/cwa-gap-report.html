@@ -177,8 +177,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
      deeper -- reachable via the Show filter below, not shown here. Unmapped
      moved to its own page (unmapped-chapters.html) rather than a count here. -->
 <div class="chips-strip">
-  <div class="chip alert"><div class="chip-lbl">🟠 Overdue Groups</div><div class="chip-val red" id="cOverdue">—</div><div class="chip-sub">month passed, still within Term</div></div>
-  <div class="chip alert"><div class="chip-lbl">🔴 Critical Groups</div><div class="chip-val dark-red" id="cCritical">—</div><div class="chip-sub">Term deadline passed</div></div>
+  <div class="chip alert"><div class="chip-lbl">🟠 Overdue Chapters</div><div class="chip-val red" id="cOverdue">—</div><div class="chip-sub">month passed, still within Term</div></div>
+  <div class="chip alert"><div class="chip-lbl">🔴 Critical Chapters</div><div class="chip-val dark-red" id="cCritical">—</div><div class="chip-sub">Term deadline passed</div></div>
   <div class="chip ok"><div class="chip-lbl">Total CWA Events</div><div class="chip-val green" id="cCWATotal">—</div><div class="chip-sub">OnTime + Late + Unmapped</div></div>
   <div class="chip"><div class="chip-lbl">Schools w/ Gaps</div><div class="chip-val blue" id="cSchools">—</div><div class="chip-sub">at least one flagged item</div></div>
   <div class="chip"><div class="chip-lbl">Academic Year</div><div class="chip-val muted" style="font-size:13px" id="cAcYear">—</div><div class="chip-sub" id="cAcYearSub">—</div></div>
@@ -456,13 +456,18 @@ let gapMinDays     = 1;      // applies per-group (max days within the group)
    row keeps its real status) for Teacher Evaluations to read later --
    they're just never surfaced on this page. Unmapped has its own page
    (unmapped-chapters.html) instead of living here.
-   Behind/Overdue/Critical are grouped by school+class+subject+tier (one
-   row listing multiple chapter chips), matching the original page's
-   grouping behaviour -- just split across 3 tiers instead of 1.
+   One row per chapter (not grouped by school+class+subject+tier) -- each
+   row's Planned CWA / Deadline columns are that ONE chapter's own dates
+   from Course Mapping, never averaged or collapsed across chapters.
+   Previously (through 2026-09-02) this grouped every flagged chapter for
+   the same school+class+subject+tier into a single row with one chip per
+   chapter, but showed only the EARLIEST chapter's planned date for the
+   whole row -- misleading on a subject with many gaps (e.g. Class 10
+   English with 19 flagged chapters spanning Apr-Jul all showing "10 Apr
+   2026"). Reverted to one row per chapter per Uday, 2026-09-03.
 ═══════════════════════════════════════════════════════════ */
 function buildGapDataFromTracker(rows) {
   const TIER_TYPE = {'Behind Pace':'behind', 'Overdue':'overdue', 'Critical':'critical'};
-  const groups = {};
   const gaps = [];
 
   rows.forEach(r => {
@@ -470,18 +475,13 @@ function buildGapDataFromTracker(rows) {
     if (r.status === 'OnTime' || r.status === 'Late' || r.status === 'Unmapped') return;
     const tier = TIER_TYPE[r.status];
     if (!tier) return; // unrecognized status -- skip rather than guess
-    const key = `${r.lmsIdx}|${r.cls}|${r.subject}|${tier}`;
-    if (!groups[key]) groups[key] = {
-      type:tier, lmsIdx:r.lmsIdx, cls:r.cls, subject:r.subject,
-      teacher:r.teacher, chapters:[], maxDays:0, days:0,
-      oldestPlanned:r.plannedDate, deadline:r.deadline,
-    };
-    groups[key].chapters.push({name:r.chapterName, no:r.chapterNo, planned:r.plannedDate, deadline:r.deadline, days:r.days});
-    if (r.days > groups[key].maxDays) { groups[key].maxDays = r.days; groups[key].days = r.days; }
-    if (r.plannedDate && (!groups[key].oldestPlanned || r.plannedDate < groups[key].oldestPlanned)) groups[key].oldestPlanned = r.plannedDate;
+    gaps.push({
+      type:tier, lmsIdx:r.lmsIdx, cls:r.cls, subject:r.subject, teacher:r.teacher,
+      chapterNo:r.chapterNo, chapterName:r.chapterName,
+      plannedDate:r.plannedDate, deadline:r.deadline, days:r.days||0,
+    });
   });
 
-  Object.values(groups).forEach(g => gaps.push(g));
   return gaps;
 }
 
@@ -512,7 +512,7 @@ function renderGapPanel() {
   rows = [...rows].sort((a,b) => {
     let v=0;
     if      (gapSortKey==='days')   v=(a.days||0)-(b.days||0);
-    else if (gapSortKey==='date')   v=(a.oldestPlanned||a.plannedDate||a.actualDate||0)-(b.oldestPlanned||b.plannedDate||b.actualDate||0);
+    else if (gapSortKey==='date')   v=(a.plannedDate||a.actualDate||0)-(b.plannedDate||b.actualDate||0);
     else if (gapSortKey==='class')  v=a.cls.localeCompare(b.cls);
     else if (gapSortKey==='school') v=a.lmsIdx-b.lmsIdx;
     return v * gapSortDir;
@@ -526,7 +526,7 @@ function renderGapPanel() {
   const behindCt    = rows.filter(g=>g.type==='behind').length;
   const overdueCt   = rows.filter(g=>g.type==='overdue').length;
   const criticalCt  = rows.filter(g=>g.type==='critical').length;
-  const totalFlaggedChs = rows.reduce((s,g)=>s+(g.chapters?.length||1),0);
+  const totalFlaggedChs = rows.length; // one row = one chapter now
 
   // Update top-strip chips to match filtered view
   document.getElementById('cOverdue').textContent  = overdueCt;
@@ -667,7 +667,7 @@ function renderGapPanel() {
             <th onclick="sortTable(this)">Status<span class="sort-arrow"></span></th>
             <th onclick="sortTable(this)">Class<span class="sort-arrow"></span></th>
             <th onclick="sortTable(this)">Subject<span class="sort-arrow"></span></th>
-            <th>Chapters</th>
+            <th>Chapter</th>
             <th onclick="sortTable(this)">Planned CWA<span class="sort-arrow"></span></th>
             <th onclick="sortTable(this)">Deadline<span class="sort-arrow"></span></th>
             <th onclick="sortTable(this)">Actual CWA Date<span class="sort-arrow"></span></th>
@@ -677,40 +677,32 @@ function renderGapPanel() {
           <tbody>`;
 
     sRows.forEach(g => {
-      let statusBadge, daysCell, chCell, plannedCell, deadlineCell, actualCell, rowStyle='';
+      let statusBadge, daysCell, rowStyle='';
       if (g.type==='critical') {
         statusBadge = `<span class="gap-sev sev-high">🔴 Critical</span>`;
-        daysCell    = `<span style="color:var(--red);font-weight:700">${g.maxDays}d past Term</span>`;
+        daysCell    = `<span style="color:var(--red);font-weight:700">${g.days}d past Term</span>`;
         rowStyle    = ' style="background:#fff8f8"';
-        plannedCell = fmtDate(g.oldestPlanned);
-        deadlineCell= fmtDate(g.deadline);
-        actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
-        const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       } else if (g.type==='overdue') {
         statusBadge = `<span class="gap-sev sev-mid">🟠 Overdue</span>`;
-        daysCell    = `<span style="color:#c2410c;font-weight:700">${g.maxDays}d past month</span>`;
+        daysCell    = `<span style="color:#c2410c;font-weight:700">${g.days}d past month</span>`;
         rowStyle    = ' style="background:#fff8f0"';
-        plannedCell = fmtDate(g.oldestPlanned);
-        deadlineCell= fmtDate(g.deadline);
-        actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
-        const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       } else { // g.type === 'behind'
         statusBadge = `<span class="gap-sev sev-low">🟡 Behind Pace</span>`;
-        daysCell    = `<span style="color:#b45309;font-weight:700">${g.maxDays}d late</span>`;
+        daysCell    = `<span style="color:#b45309;font-weight:700">${g.days}d late</span>`;
         rowStyle    = ' style="background:#fffdf5"';
-        plannedCell = fmtDate(g.oldestPlanned);
-        deadlineCell= fmtDate(g.deadline);
-        actualCell  = `<span style="color:#9ca3af">Not yet taken</span>`;
-        const sorted = [...g.chapters].sort((a,b)=>(a.planned||0)-(b.planned||0));
-        chCell = `<div class="chapter-chips">${sorted.map(c=>`<span class="ch-chip" title="${esc(c.name)} · planned ${fmtDate(c.planned)} · deadline ${fmtDate(c.deadline)}">${c.no?'Ch '+c.no+': ':''}${esc(c.name||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:c.name})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span>`).join('')}</div>`;
       }
+      const plannedCell  = fmtDate(g.plannedDate);
+      const deadlineCell = fmtDate(g.deadline);
+      const actualCell   = `<span style="color:#9ca3af">Not yet taken</span>`;
+      // One chapter per row now -- still rendered as a "chip" for visual
+      // consistency with the rest of the portal, and to keep the "Mark as
+      // taken" edit affordance in the same place.
+      const chCell = `<div class="chapter-chips"><span class="ch-chip" title="${esc(g.chapterName)} · planned ${fmtDate(g.plannedDate)} · deadline ${fmtDate(g.deadline)}">${g.chapterNo?'Ch '+g.chapterNo+': ':''}${esc(g.chapterName||'—')}${CAN_OVERRIDE?` <a href="#" onclick="event.preventDefault();markAsTaken(${pushChipRef({lmsIdx:g.lmsIdx,cls:g.cls,subject:g.subject,chapterName:g.chapterName})})" title="Mark as actually taken (Coordinator/Owner)" style="color:#15803d;text-decoration:none;font-weight:800">✏</a>`:''}</span></div>`;
       // Compute sortable values. Only behind/overdue/critical ever reach here
       // -- OnTime/Late/Unmapped are never built into gapData (see
       // buildGapDataFromTracker above).
       const statusOrder = {critical:'0',overdue:'1',behind:'2'};
-      const sortPlanned  = g.plannedDate  ? g.plannedDate.toISOString().slice(0,10)  : (g.oldestPlanned ? g.oldestPlanned.toISOString().slice(0,10) : '');
+      const sortPlanned  = g.plannedDate  ? g.plannedDate.toISOString().slice(0,10)  : '';
       const sortDeadline = g.deadline     ? g.deadline.toISOString().slice(0,10)     : '';
       const sortActual   = g.actualDate   ? g.actualDate.toISOString().slice(0,10)   : '';
       const sortDays     = -(g.days||0);
