@@ -136,6 +136,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
 <script src="../assets/auth.js"></script>
+<!-- Vendored (not CDN) so the export/upload feature works without a third-party
+     script host being reachable -- MIT licensed, https://github.com/exceljs/exceljs -->
+<script src="vendor/exceljs.min.js"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -333,69 +336,119 @@ async function markAsTaken(idx) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   BULK "MARK AS TAKEN" VIA CSV -- Coordinator/Owner only, per Uday
-   2026-09-03: the same override mechanism as markAsTaken() above (same
-   PROXY_URL?overrideData= endpoint, same Overrides tab, same 'Verified'
-   status on the next tracker rebuild), just applied to many rows at once
-   from a spreadsheet a coordinator filled in offline instead of one
-   prompt() per chapter. No server-side change needed -- appendChapterOverride
-   already just appends a row per call.
+   BULK "MARK AS TAKEN" VIA PROTECTED EXCEL FILE -- Coordinator/Owner
+   only, per Uday 2026-09-07. Same override mechanism as markAsTaken()
+   above (same PROXY_URL?overrideData= endpoint, same Overrides tab, same
+   'Verified' status on the next tracker rebuild), just applied to many
+   rows at once from a spreadsheet a coordinator filled in offline. No
+   server-side change needed -- appendChapterOverride already just
+   appends a row per call.
+   A real .xlsx (via the vendored ExcelJS, curriculum-progress/vendor/
+   exceljs.min.js -- MIT licensed) rather than CSV, because CSV has no
+   concept of a locked cell: every column except ActualCWADate and Note
+   is sheet-protected, so Excel itself blocks editing the raw
+   School/Class/Subject/ChapterName columns that identify each row.
+   ActualCWADate is a real Excel date cell displayed as DD/MM/YYYY, with
+   a built-in data-validation prompt/error -- reading back the cell's
+   actual Date value (not its displayed text) sidesteps any DD/MM vs
+   MM/DD ambiguity entirely.
+   Protection is a soft guard, not real security (Excel's "Protect
+   Sheet" can be removed by anyone who knows to try) -- so each row also
+   carries a hidden RowKey (a hash of School|Class|Subject|ChapterName,
+   see rowKeyHash_ below). On upload, that hash is recomputed from
+   whatever's actually in those cells and compared; a mismatch means the
+   protection was bypassed and the row's identity can't be trusted, so
+   it's excluded rather than silently applied against the wrong chapter.
    Export writes exactly the rows currently on screen (same min-days/Show/
-   School/Class/Subject filters as the table, via getFilteredSortedGapRows)
-   to a CSV with a blank ActualCWADate column. Upload reads that CSV back,
-   and for every row with a non-blank ActualCWADate submits one override --
-   rows left blank are silently skipped (nothing to do), not an error.
+   School/Class/Subject filters as the table, via getFilteredSortedGapRows).
+   Rows left with ActualCWADate blank are silently skipped on upload
+   (nothing to do), not an error.
 ═══════════════════════════════════════════════════════════ */
 function isoDate(d) { return d ? d.toISOString().slice(0,10) : ''; }
 
-// Minimal RFC4180-ish CSV codec -- no library, since chapter names can
-// contain commas (e.g. "Letter (formal), Analytical paragraph", a real
-// Class 10 English chapter name) so a plain split(',') would corrupt them.
-function csvStringify(rows) {
-  const cell = v => {
-    v = String(v==null ? '' : v);
-    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
-  };
-  return rows.map(r => r.map(cell).join(',')).join('\r\n');
-}
-function csvParse(text) {
-  const rows = []; let row = [], field = '', inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQuotes = false; }
-      else field += c;
-    } else if (c === '"') inQuotes = true;
-    else if (c === ',') { row.push(field); field = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i+1] === '\n') i++;
-      row.push(field); field = ''; rows.push(row); row = [];
-    } else field += c;
-  }
-  if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows.filter(r => r.length > 1 || r[0] !== '');
+// Local-getter ISO string for a JS Date -- deliberately NOT toISOString()
+// (which is UTC and can land on the wrong calendar day depending on the
+// browser's timezone offset). Excel/ExcelJS dates are timezone-naive wall-
+// clock dates, so reading them back with local getters is what round-trips
+// correctly.
+function isoDateLocal_(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
-const COORD_CSV_HEADERS = ['School','Class','Subject','ChapterNo','ChapterName','Teacher','Status','PlannedCWADate','EffectiveDeadline','DaysOverdue','ActualCWADate','Note'];
+// Deterministic 32-bit FNV-1a hash of the fields that actually identify a
+// row to the override endpoint (School/Class/Subject/ChapterName -- see
+// appendChapterOverride's required fields and chapterReadOverrides_'s match
+// key in ChapterTracker.gs). Not cryptographic -- just enough to detect
+// "this row's identity was edited since export," which is all it needs to
+// do; Teacher/Status/PlannedCWADate/etc. are display-only and deliberately
+// excluded since they're never sent to the backend.
+function rowKeyHash_(...parts) {
+  const str = parts.map(p => String(p==null?'':p)).join('|');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
 
-function exportForCoordinator() {
+// Same normalization ChapterTracker.gs applies server-side (chapterNormalizeName)
+// when matching an override to a chapter -- used here for the RowKey hash and
+// for the "does this look like a real chapter" soft check, not sent anywhere.
+function chapterNormalizeName_(s) { return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+const COORD_XLSX_HEADERS = ['School','Class','Subject','ChapterNo','ChapterName','Teacher','Status','PlannedCWADate','EffectiveDeadline','DaysOverdue','ActualCWADate','Note','RowKey'];
+const COORD_XLSX_EDITABLE = new Set(['ActualCWADate','Note']); // only these stay unlocked
+
+async function exportForCoordinator() {
   if (!CAN_OVERRIDE) return;
   const { rows } = getFilteredSortedGapRows();
   if (!rows.length) { alert('Nothing to export -- no rows match the current filters.'); return; }
   const STATUS_LABEL = {critical:'Critical', overdue:'Overdue', behind:'Behind Pace'};
-  const table = [COORD_CSV_HEADERS];
-  rows.forEach(g => table.push([
-    lmsPlainName(g.lmsIdx), g.cls, g.subject, g.chapterNo || '', g.chapterName || '',
-    g.teacher || '', STATUS_LABEL[g.type] || g.type, isoDate(g.plannedDate), isoDate(g.deadline),
-    g.days || 0, '', '', // ActualCWADate, Note -- left blank for the coordinator
-  ]));
-  const blob = new Blob([csvStringify(table)], {type:'text/csv;charset=utf-8'});
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('CWA Gaps');
+  ws.columns = COORD_XLSX_HEADERS.map(h => ({ header: h, key: h, width: h==='ChapterName'?38:(h==='School'?12:16) }));
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).eachCell(cell => { cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEFEFEF'}}; });
+
+  rows.forEach(g => {
+    const rowKey = rowKeyHash_(lmsPlainName(g.lmsIdx), g.cls, g.subject, g.chapterName);
+    const row = ws.addRow({
+      School: lmsPlainName(g.lmsIdx), Class: g.cls, Subject: g.subject,
+      ChapterNo: g.chapterNo || '', ChapterName: g.chapterName || '', Teacher: g.teacher || '',
+      Status: STATUS_LABEL[g.type] || g.type, PlannedCWADate: g.plannedDate || null,
+      EffectiveDeadline: g.deadline || null, DaysOverdue: g.days || 0,
+      ActualCWADate: null, Note: '', RowKey: rowKey,
+    });
+    ['PlannedCWADate','EffectiveDeadline','ActualCWADate'].forEach(h => { row.getCell(h).numFmt = 'dd/mm/yyyy'; });
+    COORD_XLSX_EDITABLE.forEach(h => { row.getCell(h).protection = { locked: false }; });
+    const actualCell = row.getCell('ActualCWADate');
+    actualCell.dataValidation = {
+      type: 'date', operator: 'between', allowBlank: true,
+      formula1: new Date(2020,0,1), formula2: new Date(),
+      showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Invalid date',
+      error: 'Enter a real calendar date on or before today.',
+      showInputMessage: true, promptTitle: 'Actual CWA Date',
+      prompt: 'Enter as DD/MM/YYYY -- leave blank if this chapter hasn\'t actually been taken yet.',
+    };
+  });
+
+  ws.getColumn('RowKey').hidden = true; // not secret, just out of the way -- the upload-side hash check is what actually matters
+  await ws.protect('lmcs-cwa', {
+    selectLockedCells: true, selectUnlockedCells: true, sort: true, autoFilter: true,
+    formatCells: false, formatColumns: false, formatRows: false,
+    insertRows: false, insertColumns: false, deleteRows: false, deleteColumns: false, insertHyperlinks: false,
+  });
+  // Not real security -- Excel protection can be removed by anyone who knows
+  // Review > Unprotect Sheet. It's here to stop ACCIDENTAL edits to the raw
+  // columns; rowKeyHash_ below is what actually catches a bypassed/edited row.
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.xlsx`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  alert(`Exported ${rows.length} row(s). Ask the coordinator to fill in "ActualCWADate" as YYYY-MM-DD for every chapter that was actually taken (leave the rest blank), keep it saved as CSV, then use "Upload Completed Sheet" here to apply it.`);
+  alert(`Exported ${rows.length} row(s) to Excel. Every column is locked except "Actual CWA Date" (and the optional "Note") -- ask the coordinator to fill in Actual CWA Date as DD/MM/YYYY for every chapter that was actually taken, leave the rest blank, save, then use "Upload Completed Sheet" here to apply it.`);
 }
 
 // Runs `worker` over `items` with at most `limit` in flight at once --
@@ -414,6 +467,19 @@ async function runWithConcurrency(items, limit, worker) {
   return results;
 }
 
+// Strict DD/MM/YYYY parse, for the (uncommon) case where a cell holds plain
+// text instead of a real Excel date -- e.g. re-saved from an app that
+// doesn't preserve the date type. Rejects anything not in that exact shape,
+// including calendar-invalid dates like 30/02/2026, rather than guessing.
+function parseDDMMYYYY_(s) {
+  const m = String(s||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const dd = +m[1], mm = +m[2], yyyy = +m[3];
+  const d = new Date(yyyy, mm-1, dd);
+  if (d.getFullYear()!==yyyy || d.getMonth()!==mm-1 || d.getDate()!==dd) return null;
+  return d;
+}
+
 async function handleCoordinatorUpload(input) {
   const file = input.files && input.files[0];
   input.value = ''; // allow re-selecting the same filename after a fix
@@ -421,52 +487,70 @@ async function handleCoordinatorUpload(input) {
   const session = LMCS.getSession();
   if (!session || !LMCS.canManageStaff(session)) { alert('Only Coordinator/Owner sessions can do this.'); return; }
 
-  let table;
+  const wb = new ExcelJS.Workbook();
   try {
-    table = csvParse(await file.text());
-  } catch (e) { alert('Could not read that file as CSV: ' + e.message); return; }
-  if (table.length < 2) { alert('That file has no data rows.'); return; }
+    await wb.xlsx.load(await file.arrayBuffer());
+  } catch (e) { alert('Could not read that file as an Excel (.xlsx) file: ' + e.message); return; }
+  const ws = wb.worksheets[0];
+  if (!ws || ws.rowCount < 2) { alert('That file has no data rows.'); return; }
 
-  const header = table[0].map(h => String(h||'').trim());
-  const col = name => header.indexOf(name);
-  const c = {
-    school: col('School'), cls: col('Class'), subject: col('Subject'),
-    chapterName: col('ChapterName'), actual: col('ActualCWADate'), note: col('Note'),
-  };
-  if (c.school<0 || c.cls<0 || c.subject<0 || c.chapterName<0 || c.actual<0) {
-    alert('That file doesn\'t look like a CWA Gap Report export -- missing one of the expected columns (School, Class, Subject, ChapterName, ActualCWADate).');
+  const colOf = {};
+  ws.getRow(1).eachCell({includeEmpty:false}, (cell, colNumber) => { colOf[String(cell.value||'').trim()] = colNumber; });
+  const need = ['School','Class','Subject','ChapterName','ActualCWADate','RowKey'];
+  if (need.some(h => !colOf[h])) {
+    alert('That file doesn\'t look like a CWA Gap Report export -- missing one of the expected columns (' + need.join(', ') + '). Please use a file downloaded from "Export for Coordinator" here.');
     return;
   }
 
-  // Soft check against what's currently loaded, to catch a typo'd School/
-  // Class/Subject/ChapterName before it silently fails to match anything
-  // on the next tracker rebuild -- doesn't block submission, just flags it.
+  // Soft check against what's currently loaded, to catch a chapter that's
+  // no longer Overdue/Critical (e.g. someone else already marked it taken)
+  // since the file was exported -- doesn't block submission, just flags it.
   const knownKeys = new Set(trackerRows.map(r =>
     [lmsPlainName(r.lmsIdx), r.cls, r.subject, chapterNormalizeName_(r.chapterName)].join('|')));
 
-  const today = new Date().toISOString().slice(0,10);
-  const toSubmit = [], skippedBlank = [], invalid = [], unmatched = [];
-  for (let i = 1; i < table.length; i++) {
-    const r = table[i];
-    const actualDate = String(r[c.actual]||'').trim();
-    const rowLabel = `${r[c.school]||''} / ${r[c.cls]||''} / ${r[c.subject]||''} / ${r[c.chapterName]||''}`;
+  const today = isoDateLocal_(new Date());
+  const toSubmit = [], skippedBlank = [], invalid = [], unmatched = [], tampered = [];
+  for (let i = 2; i <= ws.rowCount; i++) {
+    const row = ws.getRow(i);
+    const school = String(row.getCell(colOf.School).value||'').trim();
+    const cls = String(row.getCell(colOf.Class).value||'').trim();
+    const subject = String(row.getCell(colOf.Subject).value||'').trim();
+    const chapterName = String(row.getCell(colOf.ChapterName).value||'').trim();
+    if (!school && !cls && !subject && !chapterName) continue; // blank trailing row
+    const rowLabel = `${school} / ${cls} / ${subject} / ${chapterName}`;
+
+    // Tamper check FIRST -- if the raw identity columns don't match the
+    // hidden RowKey from export, nothing else about this row can be
+    // trusted, so it's excluded outright rather than just flagged.
+    const expectedKey = rowKeyHash_(school, cls, subject, chapterName);
+    const storedKey = String(row.getCell(colOf.RowKey).value||'').trim();
+    if (storedKey !== expectedKey) { tampered.push(rowLabel); continue; }
+
+    const rawActual = row.getCell(colOf.ActualCWADate).value;
+    let actualDate = null;
+    if (rawActual instanceof Date) actualDate = isoDateLocal_(rawActual);
+    else if (rawActual && String(rawActual).trim()) {
+      const parsed = parseDDMMYYYY_(rawActual);
+      if (!parsed) { invalid.push(`${rowLabel} -- "${rawActual}" isn't a valid DD/MM/YYYY date`); continue; }
+      actualDate = isoDateLocal_(parsed);
+    }
     if (!actualDate) { skippedBlank.push(rowLabel); continue; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(actualDate)) { invalid.push(`${rowLabel} -- "${actualDate}" isn't YYYY-MM-DD`); continue; }
-    if (actualDate > today) { invalid.push(`${rowLabel} -- ${actualDate} is in the future`); continue; }
-    const key = [r[c.school], r[c.cls], r[c.subject], chapterNormalizeName_(r[c.chapterName])].join('|');
+    if (actualDate > today) { invalid.push(`${rowLabel} -- ${actualDate.split('-').reverse().join('/')} is in the future`); continue; }
+
+    const key = [school, cls, subject, chapterNormalizeName_(chapterName)].join('|');
     if (!knownKeys.has(key)) unmatched.push(rowLabel); // still submitted below, just flagged
-    toSubmit.push({
-      school: r[c.school], cls: r[c.cls], subject: r[c.subject],
-      chapterName: r[c.chapterName], actualDate, note: c.note>=0 ? (r[c.note]||'') : '',
-    });
+    const noteVal = colOf.Note ? String(row.getCell(colOf.Note).value||'').trim() : '';
+    toSubmit.push({ school, cls, subject, chapterName, actualDate, note: noteVal });
   }
 
+  if (tampered.length && !confirm(`${tampered.length} row(s) look like their School/Class/Subject/Chapter text was changed since export (sheet protection bypassed or the file was edited some other way) -- these will be SKIPPED for safety:\n${tampered.slice(0,10).join('\n')}${tampered.length>10?`\n…and ${tampered.length-10} more`:''}\n\nContinue with the remaining rows?`)) return;
   if (!toSubmit.length) {
-    alert(`Nothing to upload -- ${skippedBlank.length} row(s) had no ActualCWADate` + (invalid.length ? `, ${invalid.length} had an invalid date:\n${invalid.slice(0,10).join('\n')}` : '.'));
+    alert(`Nothing to upload -- ${skippedBlank.length} row(s) had no ActualCWADate` + (invalid.length ? `, ${invalid.length} had an invalid date:\n${invalid.slice(0,10).join('\n')}` : '.') + (tampered.length ? `\n${tampered.length} row(s) skipped (identity mismatch).` : ''));
     return;
   }
   if (invalid.length && !confirm(`${invalid.length} row(s) have an invalid ActualCWADate and will be skipped:\n${invalid.slice(0,10).join('\n')}${invalid.length>10?`\n…and ${invalid.length-10} more`:''}\n\nProceed with the other ${toSubmit.length} row(s)?`)) return;
-  if (unmatched.length && !confirm(`${unmatched.length} row(s) don't match any chapter currently in the tracker (possible typo in School/Class/Subject/ChapterName) -- they'll still be submitted as-is:\n${unmatched.slice(0,10).join('\n')}${unmatched.length>10?`\n…and ${unmatched.length-10} more`:''}\n\nContinue?`)) return;
+  if (unmatched.length && !confirm(`${unmatched.length} row(s) don't match any Overdue/Critical chapter currently in the tracker (maybe already resolved, or the tracker refreshed since export) -- they'll still be submitted as-is:\n${unmatched.slice(0,10).join('\n')}${unmatched.length>10?`\n…and ${unmatched.length-10} more`:''}\n\nContinue?`)) return;
+  if (!confirm(`Apply ${toSubmit.length} "actually taken" override(s)? This will drop those chapters off the gap report on the next tracker refresh (within ~30 min).`)) return;
 
   const btn = document.getElementById('coordUploadBtn');
   const btnLabel = btn ? btn.textContent : '';
@@ -491,15 +575,11 @@ async function handleCoordinatorUpload(input) {
   let msg = `Submitted ${results.length - failed.length} of ${results.length} override(s).`;
   if (skippedBlank.length) msg += `\n${skippedBlank.length} row(s) skipped (no ActualCWADate).`;
   if (invalid.length) msg += `\n${invalid.length} row(s) skipped (invalid date).`;
+  if (tampered.length) msg += `\n${tampered.length} row(s) skipped (identity mismatch).`;
   if (failed.length) msg += `\n${failed.length} row(s) FAILED to submit (network error) -- fix and re-upload just those rows:\n${failed.slice(0,10).map(f=>`${f.row.school}/${f.row.cls}/${f.row.subject}/${f.row.chapterName}: ${f.error}`).join('\n')}`;
   msg += `\n\nThese will drop off the gap report on the next tracker refresh (within ~30 min).`;
   alert(msg);
 }
-
-// Same normalization ChapterTracker.gs applies server-side (chapterNormalizeName)
-// when matching an override to a chapter -- used here only for the client-side
-// "does this look like a real chapter" sanity check above, not sent anywhere.
-function chapterNormalizeName_(s) { return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 
 function parseGvizDate(cell) {
   if (!cell||cell.v==null) return null;
@@ -788,9 +868,9 @@ function renderGapPanel() {
       `<button class="filt-btn" onclick="gapFiltType='gaps';gapFiltSchool='${PRINCIPAL_LOCK_IDX>=0?PRINCIPAL_LOCK_IDX:''}';gapFiltClass='';gapFiltSubject='';renderGapPanel()">✕ Clear filters</button>`:''}
     <button class="filt-btn" onclick="reloadAll()" title="Re-fetch from the Chapter Completion Tracker sheet">↺ Refresh all</button>
     ${CAN_OVERRIDE ? `
-    <button class="filt-btn" onclick="exportForCoordinator()" title="Download the rows currently shown (respects all filters above) as a CSV, with a blank Actual CWA Date column to fill in">⬇ Export for Coordinator</button>
-    <input type="file" id="coordUploadInput" accept=".csv" style="display:none" onchange="handleCoordinatorUpload(this)">
-    <button class="filt-btn" id="coordUploadBtn" onclick="document.getElementById('coordUploadInput').click()" title="Upload the filled-in CSV back — every row with an Actual CWA Date gets applied as a &quot;Mark as taken&quot; override">⬆ Upload Completed Sheet</button>` : ''}
+    <button class="filt-btn" onclick="exportForCoordinator()" title="Download the rows currently shown (respects all filters above) as a protected Excel file — every column is locked except Actual CWA Date and Note">⬇ Export for Coordinator</button>
+    <input type="file" id="coordUploadInput" accept=".xlsx" style="display:none" onchange="handleCoordinatorUpload(this)">
+    <button class="filt-btn" id="coordUploadBtn" onclick="document.getElementById('coordUploadInput').click()" title="Upload the filled-in Excel file back — every row with an Actual CWA Date gets applied as a &quot;Mark as taken&quot; override">⬆ Upload Completed Sheet</button>` : ''}
   </div>
 
   <div class="gap-chips">
