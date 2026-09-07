@@ -399,56 +399,61 @@ const COORD_XLSX_EDITABLE = new Set(['ActualCWADate','Note']); // only these sta
 
 async function exportForCoordinator() {
   if (!CAN_OVERRIDE) return;
+  if (typeof ExcelJS === 'undefined') { alert('Could not load the Excel export library (vendor/exceljs.min.js) -- check your connection and reload the page.'); return; }
   const { rows } = getFilteredSortedGapRows();
   if (!rows.length) { alert('Nothing to export -- no rows match the current filters.'); return; }
-  const STATUS_LABEL = {critical:'Critical', overdue:'Overdue', behind:'Behind Pace'};
+  try {
+    const STATUS_LABEL = {critical:'Critical', overdue:'Overdue', behind:'Behind Pace'};
 
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('CWA Gaps');
-  ws.columns = COORD_XLSX_HEADERS.map(h => ({ header: h, key: h, width: h==='ChapterName'?38:(h==='School'?12:16) }));
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).eachCell(cell => { cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEFEFEF'}}; });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('CWA Gaps');
+    ws.columns = COORD_XLSX_HEADERS.map(h => ({ header: h, key: h, width: h==='ChapterName'?38:(h==='School'?12:16) }));
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).eachCell(cell => { cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEFEFEF'}}; });
 
-  rows.forEach(g => {
-    const rowKey = rowKeyHash_(lmsPlainName(g.lmsIdx), g.cls, g.subject, g.chapterName);
-    const row = ws.addRow({
-      School: lmsPlainName(g.lmsIdx), Class: g.cls, Subject: g.subject,
-      ChapterNo: g.chapterNo || '', ChapterName: g.chapterName || '', Teacher: g.teacher || '',
-      Status: STATUS_LABEL[g.type] || g.type, PlannedCWADate: g.plannedDate || null,
-      EffectiveDeadline: g.deadline || null, DaysOverdue: g.days || 0,
-      ActualCWADate: null, Note: '', RowKey: rowKey,
+    rows.forEach(g => {
+      const rowKey = rowKeyHash_(lmsPlainName(g.lmsIdx), g.cls, g.subject, g.chapterName);
+      const row = ws.addRow({
+        School: lmsPlainName(g.lmsIdx), Class: g.cls, Subject: g.subject,
+        ChapterNo: g.chapterNo || '', ChapterName: g.chapterName || '', Teacher: g.teacher || '',
+        Status: STATUS_LABEL[g.type] || g.type, PlannedCWADate: g.plannedDate || null,
+        EffectiveDeadline: g.deadline || null, DaysOverdue: g.days || 0,
+        ActualCWADate: null, Note: '', RowKey: rowKey,
+      });
+      ['PlannedCWADate','EffectiveDeadline','ActualCWADate'].forEach(h => { row.getCell(h).numFmt = 'dd/mm/yyyy'; });
+      COORD_XLSX_EDITABLE.forEach(h => { row.getCell(h).protection = { locked: false }; });
+      const actualCell = row.getCell('ActualCWADate');
+      actualCell.dataValidation = {
+        type: 'date', operator: 'between', allowBlank: true,
+        formula1: new Date(2020,0,1), formula2: new Date(),
+        showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Invalid date',
+        error: 'Enter a real calendar date on or before today.',
+        showInputMessage: true, promptTitle: 'Actual CWA Date',
+        prompt: 'Enter as DD/MM/YYYY -- leave blank if this chapter hasn\'t actually been taken yet.',
+      };
     });
-    ['PlannedCWADate','EffectiveDeadline','ActualCWADate'].forEach(h => { row.getCell(h).numFmt = 'dd/mm/yyyy'; });
-    COORD_XLSX_EDITABLE.forEach(h => { row.getCell(h).protection = { locked: false }; });
-    const actualCell = row.getCell('ActualCWADate');
-    actualCell.dataValidation = {
-      type: 'date', operator: 'between', allowBlank: true,
-      formula1: new Date(2020,0,1), formula2: new Date(),
-      showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Invalid date',
-      error: 'Enter a real calendar date on or before today.',
-      showInputMessage: true, promptTitle: 'Actual CWA Date',
-      prompt: 'Enter as DD/MM/YYYY -- leave blank if this chapter hasn\'t actually been taken yet.',
-    };
-  });
 
-  ws.getColumn('RowKey').hidden = true; // not secret, just out of the way -- the upload-side hash check is what actually matters
-  await ws.protect('lmcs-cwa', {
-    selectLockedCells: true, selectUnlockedCells: true, sort: true, autoFilter: true,
-    formatCells: false, formatColumns: false, formatRows: false,
-    insertRows: false, insertColumns: false, deleteRows: false, deleteColumns: false, insertHyperlinks: false,
-  });
-  // Not real security -- Excel protection can be removed by anyone who knows
-  // Review > Unprotect Sheet. It's here to stop ACCIDENTAL edits to the raw
-  // columns; rowKeyHash_ below is what actually catches a bypassed/edited row.
+    ws.getColumn('RowKey').hidden = true; // not secret, just out of the way -- the upload-side hash check is what actually matters
+    await ws.protect('lmcs-cwa', {
+      selectLockedCells: true, selectUnlockedCells: true, sort: true, autoFilter: true,
+      formatCells: false, formatColumns: false, formatRows: false,
+      insertRows: false, insertColumns: false, deleteRows: false, deleteColumns: false, insertHyperlinks: false,
+    });
+    // Not real security -- Excel protection can be removed by anyone who knows
+    // Review > Unprotect Sheet. It's here to stop ACCIDENTAL edits to the raw
+    // columns; rowKeyHash_ below is what actually catches a bypassed/edited row.
 
-  const buf = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.xlsx`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-  alert(`Exported ${rows.length} row(s) to Excel. Every column is locked except "Actual CWA Date" (and the optional "Note") -- ask the coordinator to fill in Actual CWA Date as DD/MM/YYYY for every chapter that was actually taken, leave the rest blank, save, then use "Upload Completed Sheet" here to apply it.`);
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    alert(`Exported ${rows.length} row(s) to Excel. Every column is locked except "Actual CWA Date" (and the optional "Note") -- ask the coordinator to fill in Actual CWA Date as DD/MM/YYYY for every chapter that was actually taken, leave the rest blank, save, then use "Upload Completed Sheet" here to apply it.`);
+  } catch (e) {
+    alert('Failed to build the Excel export: ' + e.message);
+  }
 }
 
 // Runs `worker` over `items` with at most `limit` in flight at once --
@@ -486,6 +491,7 @@ async function handleCoordinatorUpload(input) {
   if (!file) return;
   const session = LMCS.getSession();
   if (!session || !LMCS.canManageStaff(session)) { alert('Only Coordinator/Owner sessions can do this.'); return; }
+  if (typeof ExcelJS === 'undefined') { alert('Could not load the Excel library (vendor/exceljs.min.js) -- check your connection and reload the page.'); return; }
 
   const wb = new ExcelJS.Workbook();
   try {
