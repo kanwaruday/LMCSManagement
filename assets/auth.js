@@ -53,16 +53,80 @@ window.LMCS = (function () {
     return d.getTime();
   }
 
-  function isSessionExpired(s) {
-    return !s || !s.expiresAt || Date.now() >= s.expiresAt;
-  }
-
   function decodeJwtPayload(token) {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const json = decodeURIComponent(atob(base64).split('').map((c) =>
       '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
     return JSON.parse(json);
+  }
+
+  // The app-level `expiresAt` (next 6PM) is a ceiling on how long we'll
+  // trust a cached session WITHOUT re-checking -- it is NOT how long the
+  // actual Google idToken inside it is valid for. Google ID tokens carry
+  // their own 'exp' claim and are typically only good for about an hour
+  // regardless of what the app thinks. Bug found 2026-09-07: a principal
+  // signed in in the morning had a page that believed it was authenticated
+  // until 6PM while every backend call was silently failing "Not
+  // authorized" from ~an hour after sign-in onward -- fetch handlers just
+  // console.warn + return [] on that, so cards (e.g. Activities of the
+  // Month) looked "genuinely empty" with zero visible error. Fix: treat
+  // whichever expiry is SOONER as the real one.
+  function jwtExpiredMs_(idToken) {
+    try {
+      const exp = decodeJwtPayload(idToken).exp;
+      return exp ? exp * 1000 : null;
+    } catch (_) {
+      return null; // malformed/missing token -- let the app-level check decide
+    }
+  }
+
+  function isSessionExpired(s) {
+    if (!s || !s.expiresAt) return true;
+    if (Date.now() >= s.expiresAt) return true;
+    if (s.idToken) {
+      const jwtExp = jwtExpiredMs_(s.idToken);
+      if (jwtExp && Date.now() >= jwtExp) return true;
+    }
+    return false;
+  }
+
+  // Shown when the cached session's Google idToken has actually expired
+  // (caught either by the periodic watch below, or by a page explicitly
+  // reporting a "Not authorized" backend response). Deliberately does NOT
+  // auto-reload -- a principal could be mid-way through an unsaved Daily
+  // Report, and silently wiping that would be worse than the stale-data
+  // bug this replaces. Instead: a persistent, un-missable banner with a
+  // manual "Sign in again" action, safe to call repeatedly (no duplicate
+  // banners).
+  function notifyAuthFailure() {
+    if (document.getElementById('lmcs-auth-expired-banner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'lmcs-auth-expired-banner';
+    bar.style.cssText =
+      'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+      'background:#B00020;color:#fff;font:600 14px/1.4 system-ui,sans-serif;' +
+      'padding:10px 16px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+    bar.innerHTML =
+      'Your sign-in has expired, so this page has stopped receiving fresh data. ' +
+      '<button id="lmcs-auth-expired-btn" style="margin-left:10px;background:#fff;color:#B00020;' +
+      'border:none;border-radius:4px;padding:4px 12px;font:700 13px/1 system-ui,sans-serif;cursor:pointer;">' +
+      'Sign in again</button>';
+    document.body.appendChild(bar);
+    document.getElementById('lmcs-auth-expired-btn').onclick = signOut;
+  }
+
+  // Started once per page, right after requireSession() first resolves.
+  // Catches the token dying WHILE the tab stays open (the actual bug) --
+  // without this, the improved isSessionExpired() above only helps on the
+  // next full page load/reload, which could be hours away.
+  let expiryWatchStarted = false;
+  function startExpiryWatch_() {
+    if (expiryWatchStarted) return;
+    expiryWatchStarted = true;
+    setInterval(function () {
+      if (isSessionExpired(getSession())) notifyAuthFailure();
+    }, 60 * 1000);
   }
 
   let allowlistPromise = null;
@@ -141,7 +205,7 @@ window.LMCS = (function () {
       if (existing) {
         loadAllowlist().then((allowlist) => {
           // Re-validate the cached session is still on the live allowlist.
-          if (allowlist[existing.email]) { resolve(existing); return; }
+          if (allowlist[existing.email]) { startExpiryWatch_(); resolve(existing); return; }
           localStorage.removeItem(SESSION_KEY);
           renderGate();
         });
@@ -184,6 +248,7 @@ window.LMCS = (function () {
             idToken: response.credential,
           };
           setSession(session);
+          startExpiryWatch_();
           resolve(session);
         };
 
@@ -213,5 +278,5 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, campusLabel, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
 })();

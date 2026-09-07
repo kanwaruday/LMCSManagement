@@ -29,9 +29,18 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
-.campus-picker{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.campus-picker{display:flex;gap:6px;flex-wrap:wrap}
 .campus-btn{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer}
 .campus-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+
+/* School picker (2026-09-07) -- the top-level nav: pick a School once,
+   then Teacher SS / Principal DR / Dashboard below all scope to it, so
+   browsing a school means switching tabs, not re-picking the school on
+   every tab. Only shown for ALL-access sessions (Owner/Coordinator);
+   a Principal is already locked to one school, nothing to pick. */
+.school-picker-wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.school-picker-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);flex-shrink:0}
+.campus-btn.school-btn{padding:8px 16px;font-size:13px}
 
 .form-embed-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .form-embed-wrap iframe{width:100%;height:1400px;border:none;display:block}
@@ -186,6 +195,11 @@ td{padding:6px 12px;vertical-align:middle}
   <div id="deniedBox" style="display:none"></div>
   <div id="appArea" style="display:none">
 
+    <div id="schoolPickerWrap" class="school-picker-wrap" style="display:none">
+      <span class="school-picker-label">School</span>
+      <div id="schoolPicker" class="campus-picker"></div>
+    </div>
+
     <div class="tabs">
       <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Teacher SS</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
@@ -195,7 +209,6 @@ td{padding:6px 12px;vertical-align:middle}
     <!-- ══════════════════ SUBMIT (embedded Google Form) ══════════════════ -->
     <div class="tab-panel active" id="panel-submit">
       <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
-      <div id="submitCampusPicker" class="campus-picker" style="display:none"></div>
       <div class="form-embed-wrap">
         <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
       </div>
@@ -204,7 +217,6 @@ td{padding:6px 12px;vertical-align:middle}
     <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
       <div class="notice">A Principal's own daily report for their school — adapted from a standalone Report_2.html prototype. Everything on this tab is now wired to real data (see apps-script/principal-dr.gs): Month Activities merges the School's official Calendar with Planned Activities (tagged "School Specific"); Support Session count is a simple "SS"-tagged Calendar count, not yet cross-referenced against Teacher SS submissions; Tasks Completed suggestions come from the nearest prior working day's Tasks for Tomorrow, plus any still-open Planned Activity due today or overdue; Planned Activities and Submit both persist to the "LMCS Principal DR — Daily Reports" Sheet. Pick any date in the Date field (or use its refresh button) to load that day's report if one was already submitted.</div>
-      <div id="principalCampusPicker" class="campus-picker" style="display:none"></div>
 
       <div class="principal-report-hdr">
         <div>
@@ -355,6 +367,7 @@ const CAMPUS_FORM_IDS = {
 const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
 let SESSION = null;
+let SELECTED_CAMPUS_ID = null;
 
 async function init() {
   try {
@@ -367,9 +380,8 @@ async function init() {
       return;
     }
     document.getElementById('appArea').style.display = 'block';
-    setupSubmitTab();
-    setupPrincipalTab();
-    loadDashboard(); // fetch eagerly so it's ready if they switch tabs
+    setupSchoolPicker();
+    loadDashboard(); // fetch eagerly so it's ready once a school is picked/switched
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
@@ -383,28 +395,56 @@ async function init() {
   }
 }
 
-// ── Submit tab ──────────────────────────────────────────────────────
-function setupSubmitTab() {
+// ── School picker (2026-09-07) ───────────────────────────────────────
+// Was three separate per-tab campus pickers (Submit had its own,
+// Principal DR had its own, Dashboard had none/showed every campus at
+// once) -- Uday's explicit ask: pick a School ONCE, then browse Teacher
+// SS / Principal DR / Dashboard as tabs *within* that school, instead of
+// re-picking the campus on every tab. Only rendered for ALL-access
+// sessions (Owner/Coordinator); a Principal is already locked to their
+// one school, so there's nothing to pick and this stays hidden.
+function setupSchoolPicker() {
   const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
   if (campuses.length > 1) {
-    const picker = document.getElementById('submitCampusPicker');
-    picker.style.display = 'flex';
-    picker.innerHTML = campuses.map(function (c, i) {
-      return '<button class="campus-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="pickSubmitCampus(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
+    const wrap = document.getElementById('schoolPickerWrap');
+    wrap.style.display = 'flex';
+    document.getElementById('schoolPicker').innerHTML = campuses.map(function (c, i) {
+      return '<button class="campus-btn school-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="selectSchool(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
     }).join('');
   }
-  pickSubmitCampus(campuses[0]);
+  selectSchool(campuses[0]);
 }
 
-function pickSubmitCampus(campusId) {
-  document.querySelectorAll('#submitCampusPicker .campus-btn').forEach(function (b) {
+// Re-points every tab at the newly selected school. Submit and Principal
+// DR reload live (each is already a single fetch per campus); Dashboard
+// re-renders from whatever loadDashboard() has already cached rather
+// than re-fetching, since that one call already covers every campus.
+function selectSchool(campusId) {
+  SELECTED_CAMPUS_ID = campusId;
+  document.querySelectorAll('#schoolPicker .campus-btn').forEach(function (b) {
     b.classList.toggle('active', b.dataset.campus === campusId);
   });
+  pickSubmitCampus(campusId);
+  pickPrincipalCampus(campusId);
+  renderDashboardForSelectedCampus();
+}
+
+// ── Submit tab ──────────────────────────────────────────────────────
+function pickSubmitCampus(campusId) {
   const formId = CAMPUS_FORM_IDS[campusId];
   document.getElementById('formFrame').src = 'https://docs.google.com/forms/d/e/' + formId + '/viewform?embedded=true';
 }
 
 // ── Dashboard tab ───────────────────────────────────────────────────
+// `teacherstats` already returns every campus in one call, so this still
+// fetches once (not once per school) -- switching the School picker just
+// re-renders from the cached response instead of re-fetching. Dashboard
+// used to always show every campus stacked; now (2026-09-07, alongside
+// the School picker) it shows just the selected one, consistent with the
+// rest of the page being scoped to one school at a time.
+let dashStatsRes = null;
+let dashAllEmployees = [];
+
 async function loadDashboard() {
   const body = document.getElementById('dashBody');
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) {
@@ -418,20 +458,26 @@ async function loadDashboard() {
     ]);
     if (!statsRes.success) {
       body.innerHTML = '<div class="notice">Couldn’t load the dashboard: ' + (statsRes.error || 'unknown error') + '</div>';
+      pdrReportAuthFailureIfNeeded_(statsRes);
       return;
     }
-    renderDashboard(statsRes, rosterRes.success ? rosterRes.employees : []);
+    dashStatsRes = statsRes;
+    dashAllEmployees = rosterRes.success ? rosterRes.employees : [];
+    renderDashboardForSelectedCampus();
   } catch (err) {
     body.innerHTML = '<div class="notice">Couldn’t reach the dashboard proxy: ' + err.message + '</div>';
   }
 }
 
-function renderDashboard(statsRes, allEmployees) {
+function renderDashboardForSelectedCampus() {
+  if (!dashStatsRes) return; // loadDashboard() hasn't resolved yet -- it'll call this itself once it does
   const body = document.getElementById('dashBody');
-  const campusIds = Object.keys(statsRes.campuses);
-  body.innerHTML = campusIds.map(function (campusId) {
-    return renderCampusSection(campusId, statsRes.campuses[campusId], allEmployees);
-  }).join('');
+  const campusId = SELECTED_CAMPUS_ID;
+  if (!campusId || !dashStatsRes.campuses[campusId]) {
+    body.innerHTML = '<div class="notice">No Teacher SS submissions logged for this school yet.</div>';
+    return;
+  }
+  body.innerHTML = renderCampusSection(campusId, dashStatsRes.campuses[campusId], dashAllEmployees);
 }
 
 function renderCampusSection(campusId, campusStats, allEmployees) {
@@ -530,6 +576,21 @@ var REGISTER_OPTIONS = [
 // yet; see project_principals_daily_reporting.md).
 // =====================================================================
 
+// Fix (2026-09-07): a `{success:false, error:'Not authorized'}` response
+// almost always means the cached Google idToken has died mid-session
+// (see assets/auth.js's isSessionExpired()/notifyAuthFailure()) -- every
+// fetch* below used to just console.warn and quietly return an empty
+// result, which looked identical to "genuinely nothing to show" (that's
+// what made Activities of the Month look intermittently broken). Now
+// every failed fetch also surfaces LMCS.notifyAuthFailure()'s banner so
+// a dead token is visible instead of silent, on top of auth.js's own
+// 60s background watch.
+function pdrReportAuthFailureIfNeeded_(res) {
+  if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) {
+    LMCS.notifyAuthFailure();
+  }
+}
+
 // WIRED (2026-09-02): reads apps-script/principal-dr.gs's
 // 'yesterdaystasks' action -- NOT literally "yesterday": it walks
 // backward from the report's OWN date (the reportDate field, which a
@@ -545,7 +606,7 @@ async function fetchYesterdaysTomorrowTasks(campusId) {
     const url = PDR_BACKEND_URL + '?action=yesterdaystasks&campusId=' + encodeURIComponent(campusId) +
       '&date=' + encodeURIComponent(dateStr) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchYesterdaysTomorrowTasks failed:', res.error); return []; }
+    if (!res.success) { console.warn('fetchYesterdaysTomorrowTasks failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
     if (!Array.isArray(res.tasks)) {
       console.warn('fetchYesterdaysTomorrowTasks: no tasks array in response -- is the Web App deployment out of date?', res);
       return [];
@@ -580,7 +641,7 @@ async function fetchSupportSessionsToday(campusId) {
     const url = PDR_BACKEND_URL + '?action=supportsessionstoday&campusId=' + encodeURIComponent(campusId) +
       '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchSupportSessionsToday failed:', res.error); return []; }
+    if (!res.success) { console.warn('fetchSupportSessionsToday failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
     if (!Array.isArray(res.sessions)) {
       console.warn('fetchSupportSessionsToday: no sessions array in response -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
       return [];
@@ -606,7 +667,7 @@ async function fetchMonthActivities(campusId) {
     const url = PDR_BACKEND_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
       '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchMonthActivities failed:', res.error); return []; }
+    if (!res.success) { console.warn('fetchMonthActivities failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
     // If the deployed Web App is a version older than the 'monthactivities'
     // action, res.success is still true (it silently falls through to the
     // old default response) but res.activities won't exist -- guard against
@@ -634,7 +695,7 @@ async function fetchPlannedActivities(campusId) {
     const url = PDR_BACKEND_URL + '?action=plannedactivities&campusId=' + encodeURIComponent(campusId) +
       '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchPlannedActivities failed:', res.error); return []; }
+    if (!res.success) { console.warn('fetchPlannedActivities failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
     if (!Array.isArray(res.activities)) {
       console.warn('fetchPlannedActivities: no activities array in response -- is the Web App deployment out of date?', res);
       return [];
@@ -660,7 +721,7 @@ async function fetchExistingDailyReport(campusId, dateISO) {
     const url = PDR_BACKEND_URL + '?action=dailyreport&campusId=' + encodeURIComponent(campusId) +
       '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchExistingDailyReport failed:', res.error); return { exists: false }; }
+    if (!res.success) { console.warn('fetchExistingDailyReport failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return { exists: false }; }
     return res.report || { exists: false };
   } catch (err) {
     console.warn('fetchExistingDailyReport error:', err);
@@ -695,6 +756,7 @@ async function addPlannedActivity(campusId, date, activity, assignee) {
   const res = await pdrPost_('addplannedactivity', { campusId: campusId, dueDate: date, title: activity, assignee: assignee || '' });
   if (!res.success) {
     console.warn('addPlannedActivity failed:', res.error);
+    pdrReportAuthFailureIfNeeded_(res);
     // Fail open so the UI stays responsive -- this row just won't have
     // persisted; a page refresh will show it's missing.
     return { id: 'local-' + Date.now(), date: date, activity: activity, assignee: assignee || '', completed: false };
@@ -704,13 +766,13 @@ async function addPlannedActivity(campusId, date, activity, assignee) {
 
 async function setPlannedActivityCompleted(campusId, id, completed) {
   const res = await pdrPost_('setplannedactivitycompleted', { campusId: campusId, id: id, completed: completed });
-  if (!res.success) console.warn('setPlannedActivityCompleted failed:', res.error);
+  if (!res.success) { console.warn('setPlannedActivityCompleted failed:', res.error); pdrReportAuthFailureIfNeeded_(res); }
   return res;
 }
 
 async function deletePlannedActivity(campusId, id) {
   const res = await pdrPost_('deleteplannedactivity', { campusId: campusId, id: id });
-  if (!res.success) console.warn('deletePlannedActivity failed:', res.error);
+  if (!res.success) { console.warn('deletePlannedActivity failed:', res.error); pdrReportAuthFailureIfNeeded_(res); }
   return res;
 }
 
@@ -732,22 +794,7 @@ var MIN_SS_PER_DAY = 3; // principals are expected to take at least this many Su
 var currentPlannedActivities = [];
 var selectedRegisters = ['Teachers TRR']; // TRR pre-checked by default (was the old 'TRRs' placeholder)
 
-function setupPrincipalTab() {
-  const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
-  if (campuses.length > 1) {
-    const picker = document.getElementById('principalCampusPicker');
-    picker.style.display = 'flex';
-    picker.innerHTML = campuses.map(function (c, i) {
-      return '<button class="campus-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="pickPrincipalCampus(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
-    }).join('');
-  }
-  pickPrincipalCampus(campuses[0]);
-}
-
 function pickPrincipalCampus(campusId) {
-  document.querySelectorAll('#principalCampusPicker .campus-btn').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.campus === campusId);
-  });
   principalCampusId = campusId;
   document.getElementById('principalBranchLabel').textContent = LMCS.campusLabel(campusId);
   bootPrincipalReport(campusId);
@@ -818,7 +865,12 @@ function renderMonthActivities(items) {
   var el = document.getElementById('monthActivitiesList');
   el.innerHTML = '';
   if (items.length === 0) {
-    el.innerHTML = '<li style="color:#B7C0CC;">Nothing logged yet today</li>';
+    // Was the generic "Nothing logged yet today" placeholder shared with
+    // the other (genuinely today-scoped) lists -- wrong fit here since
+    // this card shows next month's calendar, and it made a silent auth
+    // failure (see pdrReportAuthFailureIfNeeded_ above) indistinguishable
+    // from a real empty month. Own copy, 2026-09-07.
+    el.innerHTML = '<li style="color:#B7C0CC;">No activities scheduled for next month yet</li>';
     return;
   }
   items.forEach(function(item) {
@@ -1088,6 +1140,7 @@ async function submitReport() {
   if (result && result.success) {
     alert('Report submitted.');
   } else {
+    pdrReportAuthFailureIfNeeded_(result);
     alert('Something went wrong submitting the report' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
   }
 }
