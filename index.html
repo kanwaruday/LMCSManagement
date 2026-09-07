@@ -58,16 +58,24 @@
       { name: "Principal's Daily Reporting", status: 'live', url: 'principals-daily-reporting/index.html', desc: 'Teacher SS, Principal DR, and more — one hub for every Support Session/Daily Report role and their dashboards. Principal/Coordinator/Owner access.' },
       { name: 'Hiring Dashboard', status: 'planned', desc: 'Applicant tracking from screening through offer, per campus.' },
       { name: 'Salary Dashboard', status: 'planned', desc: 'Salary slip and pay scale by employee.' },
-      { name: 'Staff Portal', status: 'live', url: 'staff/add-employee.html', desc: 'Add, transfer, and mark departed employees in the Employee Master workbook. Coordinator/Owner access only.' },
+      // Paused 2026-09-07 per Uday -- built and deployed (staff/add-employee.html,
+      // staff-management-api.gs), stays LISTED on the dashboard but not clickable
+      // while other work takes priority. Not abandoned -- likely picked back up
+      // next. `url` is kept intact (not deleted) so re-enabling is just flipping
+      // status back to 'live' -- nothing else needs to change.
+      { name: 'Staff Portal', status: 'paused', url: 'staff/add-employee.html', desc: 'Add, transfer, and mark departed employees in the Employee Master workbook. Coordinator/Owner access only.' },
       { name: 'Bye Laws', status: 'live', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'HR rulebook of record — conduct, leave rules, and job roles.' },
     ];
 
+    // Only 'live' modules render as a clickable link -- 'planned' (never built)
+    // and 'paused' (built, temporarily off) both show as plain text, same as
+    // each other today; if that ever needs to look different, split this check.
     function renderModules() {
       const grid = document.getElementById('modules-grid');
       grid.innerHTML = MODULES.map((m) => (
         '<div class="card">' +
           '<div class="card-top">' +
-            '<h3>' + (m.url ? '<a href="' + m.url + '">' + m.name + '</a>' : m.name) + '</h3>' +
+            '<h3>' + (m.status === 'live' && m.url ? '<a href="' + m.url + '">' + m.name + '</a>' : m.name) + '</h3>' +
             '<span class="status ' + m.status + '">' + m.status + '</span>' +
           '</div>' +
           '<p>' + m.desc + '</p>' +

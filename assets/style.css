@@ -19,6 +19,8 @@
   --color-building-bg: #fdf1de;
   --color-planned: var(--gray);
   --color-planned-bg: var(--lgray);
+  --color-paused: #8a5a00;
+  --color-paused-bg: #fbf0da;
 
   --radius: 6px;
   --font: "Segoe UI", Arial, sans-serif;
@@ -214,6 +216,11 @@ section.block h2 {
 .status.live { color: var(--color-live); background: var(--color-live-bg); }
 .status.building { color: var(--color-building); background: var(--color-building-bg); }
 .status.planned { color: var(--color-planned); background: var(--color-planned-bg); }
+.status.paused { color: var(--color-paused); background: var(--color-paused-bg); }
+
+/* Paused cards read as intentionally dimmed, not just another status color --
+   distinct from 'planned' (never started), which stays at full opacity. */
+.card:has(.status.paused) { opacity: 0.72; }
 
 /* Campus grid */
 .campuses {
