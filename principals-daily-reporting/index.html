@@ -16,14 +16,14 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .15s;white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.22)}
 
-#appBody{flex:1;overflow:auto;padding:24px;max-width:1100px;margin:0 auto;width:100%}
+#appBody{flex:1;overflow:auto;padding:18px 24px;max-width:1100px;margin:0 auto;width:100%}
 
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
 .denied .icon{font-size:36px;margin-bottom:10px}
 .denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
 .notice{background:#fff3cd;border:1px solid #ffc107;color:#92400e;padding:12px 16px;font-size:12px;border-radius:6px;margin-bottom:16px;line-height:1.6}
 
-.tabs{display:flex;gap:6px;margin-bottom:20px;border-bottom:2px solid var(--border)}
+.tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid var(--border)}
 .tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
 .tab-panel{display:none}
@@ -67,13 +67,13 @@ td{padding:6px 12px;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Principal's Daily Report tab (adapted from Report_2.html / Stylesheet.html — re-skinned to this page's red palette instead of its original navy/gold) ── */
-.principal-report-hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.principal-report-hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px;flex-wrap:wrap}
 .date-field{display:flex;align-items:center;gap:6px}
 .date-field input{border:1.5px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit;color:var(--dark)}
 .date-refresh-btn{border:1.5px solid var(--border);background:#fff;border-radius:6px;padding:6px;display:flex;align-items:center;cursor:pointer;color:var(--gray)}
 .date-refresh-btn:hover{color:var(--red);border-color:var(--red)}
 
-.principal-layout{display:flex;flex-direction:column;gap:14px}
+.principal-layout{display:flex;flex-direction:column;gap:10px}
 .principal-layout .main-col{display:flex;flex-direction:column;width:100%}
 .principal-layout .sidebar-card{width:100%}
 @media(min-width:860px){
@@ -82,11 +82,11 @@ td{padding:6px 12px;vertical-align:middle}
   .principal-layout .sidebar-card{order:2;width:230px;flex-shrink:0;position:sticky;top:20px}
 }
 
-.card{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:16px 16px 18px;margin-bottom:14px}
-.card-title{font-size:12px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.04em;margin:0 0 4px;display:flex;align-items:center;justify-content:space-between}
-.card-hint{font-size:11px;color:#8A96A6;margin:0 0 10px}
+.card{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:12px 14px 13px;margin-bottom:9px}
+.card-title{font-size:12px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.04em;margin:0 0 3px;display:flex;align-items:center;justify-content:space-between}
+.card-hint{font-size:11px;color:#8A96A6;margin:0 0 7px}
 
-.row-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.row-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:520px){.row-2col{grid-template-columns:1fr}}
 .field-label{display:block;font-size:11px;font-weight:600;color:var(--gray);margin-bottom:5px}
 .score-input{max-width:90px;text-align:center;font-weight:700;color:var(--red)}
@@ -98,8 +98,8 @@ td{padding:6px 12px;vertical-align:middle}
 .principal-layout select:focus,
 .principal-layout input:focus{outline:none;border-color:var(--red)}
 
-.numbered-list{margin:0 0 10px;padding:0;list-style:none}
-.numbered-list li{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
+.numbered-list{margin:0 0 7px;padding:0;list-style:none}
+.numbered-list li{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
 .numbered-list li .num{color:var(--red);font-weight:700;min-width:18px}
 .numbered-list li .txt{flex:1}
 .numbered-list li .del{border:none;background:none;color:#B7C0CC;cursor:pointer;font-size:15px;line-height:1}
@@ -109,14 +109,14 @@ td{padding:6px 12px;vertical-align:middle}
 .add-row button,.add-row-btn{border:none;background:var(--red);color:#fff;border-radius:6px;padding:0 16px;height:34px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0}
 .add-row button:hover,.add-row-btn:hover{background:var(--red-h)}
 
-.suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
 .suggestions .chip-label{font-size:11px;color:#8A96A6;width:100%;margin-bottom:2px}
 .chip{border:1px dashed var(--amber);background:#fffbeb;color:var(--amber);border-radius:999px;padding:5px 12px;font-size:11.5px;cursor:pointer}
 .chip:hover{background:var(--amber);color:#fff}
 
 .fetched-list{list-style:none;margin:0;padding:0}
-.fetched-list li{font-size:12.5px;padding:6px 10px;margin-bottom:6px;background:var(--lgray);border-radius:6px;color:var(--dark)}
-.fetched-note{font-size:11px;color:#8A96A6;margin:8px 0 0;font-style:italic}
+.fetched-list li{font-size:12.5px;padding:5px 10px;margin-bottom:4px;background:var(--lgray);border-radius:6px;color:var(--dark)}
+.fetched-note{font-size:11px;color:#8A96A6;margin:5px 0 0;font-style:italic}
 
 .multiselect{position:relative}
 .multiselect-toggle{width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;background:var(--white);font-size:12.5px;font-family:inherit;color:var(--dark)}
@@ -129,10 +129,10 @@ td{padding:6px 12px;vertical-align:middle}
 .ms-tag{background:var(--red);color:#fff;font-size:11px;padding:4px 9px;border-radius:999px;display:flex;align-items:center;gap:5px}
 .ms-tag button{border:none;background:none;color:#ffd9d9;cursor:pointer;font-size:12px}
 
-.activity-row{display:grid;grid-template-columns:110px 1fr 130px auto;gap:8px;margin-bottom:8px;align-items:center}
+.activity-row{display:grid;grid-template-columns:110px 1fr 130px auto;gap:8px;margin-bottom:6px;align-items:center}
 @media(max-width:520px){.activity-row{grid-template-columns:1fr}}
 
-.planned-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
+.planned-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
 .planned-row-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
 .planned-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--red);flex-shrink:0}
 .planned-row .planned-date{color:var(--gray);font-weight:600;font-size:11px;min-width:60px;flex-shrink:0}
@@ -156,7 +156,7 @@ td{padding:6px 12px;vertical-align:middle}
 .ss-count-number.ss-met{color:var(--green)}
 .ss-count-number.ss-short{color:var(--red)}
 
-.submit-bar{display:flex;justify-content:flex-end;margin-top:6px}
+.submit-bar{display:flex;justify-content:flex-end;margin-top:2px}
 .submit-btn{border:none;background:var(--red);color:#fff;font-size:13px;font-weight:700;padding:11px 26px;border-radius:8px;cursor:pointer}
 .submit-btn:hover{background:var(--red-h)}
 </style>
@@ -226,7 +226,7 @@ td{padding:6px 12px;vertical-align:middle}
         <div class="date-field">
           <label class="field-label" style="margin:0;">Date</label>
           <input type="date" id="reportDate" onchange="loadReportForDate()">
-          <button type="button" class="date-refresh-btn" title="Reload this date's report" onclick="loadReportForDate()">
+          <button type="button" class="date-refresh-btn" title="Hard refresh (reloads the whole page, not just this date's data)" onclick="hardRefreshPage()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"></polyline>
               <polyline points="1 20 1 14 7 14"></polyline>
@@ -369,6 +369,64 @@ const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 let SESSION = null;
 let SELECTED_CAMPUS_ID = null;
 
+// ── Hard refresh (2026-09-07) ────────────────────────────────────────
+// The date-refresh button used to just call loadReportForDate(), which
+// only re-fetches this one date's data -- it left the session, auth.js,
+// and every other piece of page state exactly as they were. Per Uday:
+// make it check "the entire logic of the page", i.e. a real
+// location.reload() (fresh SESSION, fresh auth check, fresh copy of
+// every script on the page), not a soft re-fetch. This is also the
+// direct fix for the class of bug where the Date field goes stale
+// (defaults to "today" once at boot and never updates again if the tab
+// is left open past midnight) -- see checkDateRollover() below for the
+// automatic side of that same fix, and the "Tasks Completed" suggestion
+// comment further down for the real incident this caused 2026-09-05.
+// Since a real reload wipes all JS state, the current tab/school/date
+// are stashed in sessionStorage first and restored once init() reruns.
+function hardRefreshPage() {
+  try {
+    sessionStorage.setItem('pdrHardRefreshRestore', JSON.stringify({
+      tab: (document.querySelector('.tab-btn.active') || {}).dataset ? document.querySelector('.tab-btn.active').dataset.tab : 'principal',
+      campusId: SELECTED_CAMPUS_ID,
+      reportDate: document.getElementById('reportDate') ? document.getElementById('reportDate').value : ''
+    }));
+  } catch (e) { /* sessionStorage unavailable -- reload still happens, just lands on the default view */ }
+  location.reload();
+}
+
+function popHardRefreshRestore_() {
+  var raw = null;
+  try { raw = sessionStorage.getItem('pdrHardRefreshRestore'); sessionStorage.removeItem('pdrHardRefreshRestore'); } catch (e) { /* ignore */ }
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+// ── Date-rollover self-heal (2026-09-07) ─────────────────────────────
+// bootPrincipalReport() sets the Date field to todayISO() exactly once,
+// at boot. A Principal who leaves the tab open across midnight keeps
+// seeing (and can silently submit against) yesterday's date -- this is
+// exactly what corrupted the 5 Sept report (saved under 4 Sept, so its
+// Tasks for Tomorrow never surfaced as a suggestion on the next working
+// day). reportDateBootedISO records what the field was auto-set to;
+// whenever the tab regains focus/visibility (or every few minutes while
+// left open), if the field still holds that auto-set value (untouched
+// by the Principal) AND the real calendar day has since moved on, snap
+// it forward to the real today and reload that day's data.
+var reportDateBootedISO = null;
+function checkDateRollover() {
+  var dateInput = document.getElementById('reportDate');
+  if (!dateInput || !reportDateBootedISO) return;
+  var realToday = todayISO();
+  if (dateInput.value === reportDateBootedISO && realToday !== reportDateBootedISO) {
+    reportDateBootedISO = realToday;
+    dateInput.value = realToday;
+    loadReportForDate();
+  }
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden) checkDateRollover(); });
+window.addEventListener('focus', checkDateRollover);
+setInterval(checkDateRollover, 5 * 60 * 1000);
+
 async function init() {
   try {
     SESSION = LMCS.getSession();
@@ -380,8 +438,23 @@ async function init() {
       return;
     }
     document.getElementById('appArea').style.display = 'block';
+    var restore = popHardRefreshRestore_();
     setupSchoolPicker();
     loadDashboard(); // fetch eagerly so it's ready once a school is picked/switched
+    if (restore) {
+      var campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
+      if (restore.campusId && campuses.indexOf(restore.campusId) > -1) selectSchool(restore.campusId);
+      if (restore.tab) switchTab(restore.tab);
+      if (restore.reportDate) {
+        // bootPrincipalReport()'s own load is already in flight (fired
+        // from selectSchool -> pickPrincipalCampus above) -- give it a
+        // tick, then override with the date we're restoring so it wins.
+        setTimeout(function () {
+          var df = document.getElementById('reportDate');
+          if (df) { df.value = restore.reportDate; reportDateBootedISO = null; loadReportForDate(); }
+        }, 0);
+      }
+    }
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
@@ -1045,12 +1118,21 @@ var UPCOMING_WINDOW_DAYS = 3;
 function renderPlannedActivities() {
   var wrap = document.getElementById('plannedActivitiesRows');
   wrap.innerHTML = '';
-  if (currentPlannedActivities.length === 0) {
+  // Completed items collapse out of this list immediately, per the
+  // card's own hint ("stays here until marked complete") -- fixed
+  // 2026-09-07, this used to leave every completed item sitting here
+  // forever with a strikethrough (e.g. a 5-day-old completed item was
+  // still cluttering the list). currentPlannedActivities itself keeps
+  // completed items (still needed so their checkbox state is correct
+  // if re-rendered, and Tasks Completed suggestions still cross-check
+  // them) -- only the render is filtered.
+  var visible = currentPlannedActivities.filter(function(item) { return !item.completed; });
+  if (visible.length === 0) {
     wrap.innerHTML = '<p class="fetched-note" style="margin:0 0 10px;">Nothing planned yet.</p>';
     return;
   }
-  currentPlannedActivities.forEach(function(item) {
-    var daysLeft = item.completed ? null : daysUntil(item.date);
+  visible.forEach(function(item) {
+    var daysLeft = daysUntil(item.date);
     var status = null; // 'overdue' | 'upcoming' | null
     if (daysLeft !== null) {
       if (daysLeft < 0) status = 'overdue';
@@ -1152,7 +1234,9 @@ function listToArray(listId) {
 
 async function bootPrincipalReport(campusId) {
   populateSelect('maClass', CLASS_HOUSE_OPTIONS);
-  document.getElementById('reportDate').value = todayISO();
+  var t = todayISO();
+  document.getElementById('reportDate').value = t;
+  reportDateBootedISO = t; // see checkDateRollover() -- tracks what we auto-set so a stale tab can self-correct
   await loadReportForDate();
 }
 
