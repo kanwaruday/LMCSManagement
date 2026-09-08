@@ -210,17 +210,20 @@ function principalDrMonthActivities_(caller, campusIdParam) {
 function pdrNextMonthRange_() {
   const now = new Date();
   return {
-    start: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-    end: new Date(now.getFullYear(), now.getMonth() + 2, 1), // exclusive
+    start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), // today, not month start -- rest of this month, no stale past days
+    end: new Date(now.getFullYear(), now.getMonth() + 2, 1), // exclusive -- through end of next month
   };
 }
 
-/** Next calendar month's official-Calendar events MERGED with still-
- *  open Planned Activities due that same month, sorted together
- *  chronologically. Planned Activities entries carry tag:"School
- *  Specific" so the frontend can badge them differently -- confirmed
- *  scope per Uday 2026-09-02: same window as the official Calendar,
- *  not a separate "due soon" window. */
+/** Rest of this month plus all of next month's official-Calendar
+ *  events MERGED with still-open Planned Activities due in that same
+ *  window, sorted together chronologically. Planned Activities
+ *  entries carry tag:"School Specific" so the frontend can badge them
+ *  differently -- confirmed scope per Uday 2026-09-02: same window as
+ *  the official Calendar, not a separate "due soon" window. Widened
+ *  2026-09-08 from "next calendar month only" so activities due later
+ *  in the CURRENT month (e.g. a Planned Activity due in a few days)
+ *  actually show up here instead of silently never appearing. */
 function pdrReadMergedMonthActivities_(campusId) {
   const range = pdrNextMonthRange_();
   const items = [];
