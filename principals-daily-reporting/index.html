@@ -51,6 +51,35 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .dash-meta{font-size:11px;color:var(--gray)}
 .dash-empty{padding:16px 12px;text-align:center;color:var(--gray)}
 
+.role-picker{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.role-btn{background:var(--white);border:1.5px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11.5px;font-weight:600;color:var(--gray);cursor:pointer}
+.role-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+
+.compliance-card{display:flex;gap:16px;flex-wrap:wrap;background:var(--lgray);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11.5px}
+.compliance-card .cc-item{display:flex;align-items:center;gap:6px}
+.compliance-card .cc-campus{font-weight:700;color:var(--dark)}
+.compliance-card .cc-pct{font-weight:700}
+.compliance-card .cc-pct.low{color:var(--red)}
+.compliance-card .cc-pct.mid{color:var(--amber)}
+.compliance-card .cc-pct.high{color:var(--green)}
+
+.flag-banner{background:#fee2e2;border:1px solid var(--red);color:var(--red-h);border-radius:6px;padding:10px 14px;font-size:12px;margin-bottom:12px;line-height:1.6}
+.flag-banner b{font-weight:700}
+
+.pill.amber{background:#fef3c7;color:var(--amber)}
+.roster-row{cursor:pointer}
+.roster-row:hover td{background:var(--red-lt)!important}
+.roster-row.expanded td{background:var(--lgray)!important}
+.detail-row td{padding:0;border-bottom:1px solid var(--border)}
+.detail-row .detail-wrap{padding:10px 14px;background:var(--lgray)}
+.detail-row .hist-row{display:flex;gap:10px;align-items:baseline;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--border)}
+.detail-row .hist-row:last-child{border-bottom:none}
+.detail-row .hist-date{color:var(--gray);min-width:90px}
+.detail-row .hist-total{font-weight:700;min-width:50px}
+.detail-row .hist-params{flex:1;color:var(--gray);font-size:11px}
+.detail-row .hist-evaluator{color:#8A96A6;font-size:10.5px}
+.detail-empty{font-size:11.5px;color:var(--gray);padding:6px 0}
+
 .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 thead th{background:var(--red);color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
@@ -377,6 +406,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ DASHBOARD ══════════════════ -->
     <div class="tab-panel" id="panel-dashboard">
+      <div id="dashRolePicker" class="role-picker"></div>
       <div id="dashBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
     </div>
 
@@ -396,10 +426,6 @@ td{padding:6px 12px;vertical-align:middle}
    as: Me, Who has access: Anyone). Until this is a real URL, tabs that
    need it show a setup notice / empty state instead of erroring. */
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-
-// Reuses the same deployed Employee Roster Proxy every other module
-// already points at -- see staff/add-employee.html.
-const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 
 // The 3 new-role SS forms (2026-09-09) live directly as iframe `src`
 // below (panel-itss/panel-ptiss/panel-clerkss) -- unlike CAMPUS_FORM_IDS
@@ -618,8 +644,26 @@ function pickDriverCampus(campusId) {
 // used to always show every campus stacked; now (2026-09-07, alongside
 // the School picker) it shows just the selected one, consistent with the
 // rest of the page being scoped to one school at a time.
-let dashStatsRes = null;
-let dashAllEmployees = [];
+// Dashboard v1 (2026-09-09) -- generalized from a Teacher-only view to
+// all 6 SS roles, backed by action=ssdashboard (ss-tracker.gs). The
+// backend already merges roster + submissions per employee (same
+// matchesEmployee() the form-sync uses), so unlike the old Teacher-only
+// version, this file no longer needs its own EMPLOYEE_ROSTER_URL fetch
+// or client-side roster/stats merge -- one fetch, roleData.roster is
+// already the complete per-employee picture (quota status, avg score,
+// full drill-down history).
+let dashSSRes = null;          // full action=ssdashboard response, fetched once
+let SELECTED_SS_ROLE = 'teacher';
+let expandedRosterKey = null;  // "<formKey>|<employee>" of the open drill-down row, or null
+
+const SS_ROLE_ORDER = [
+  { key: 'teacher', icon: '📝', short: 'Teacher' },
+  { key: 'itComputer', icon: '💻', short: 'IT' },
+  { key: 'pti', icon: '🏃', short: 'PTI' },
+  { key: 'feeClerkPRO', icon: '🧾', short: 'Clerk' },
+  { key: 'nonTeaching', icon: '🧹', short: 'Non-Teaching' },
+  { key: 'driverCumPeon', icon: '🚌', short: 'Driver' },
+];
 
 async function loadDashboard() {
   const body = document.getElementById('dashBody');
@@ -628,83 +672,125 @@ async function loadDashboard() {
     return;
   }
   try {
-    const [statsRes, rosterRes] = await Promise.all([
-      fetch(PDR_BACKEND_URL + '?action=teacherstats&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); }),
-      fetch(EMPLOYEE_ROSTER_URL + '?action=employees').then(function (r) { return r.json(); }),
-    ]);
-    if (!statsRes.success) {
-      body.innerHTML = '<div class="notice">Couldn’t load the dashboard: ' + (statsRes.error || 'unknown error') + '</div>';
-      pdrReportAuthFailureIfNeeded_(statsRes);
+    const res = await fetch(PDR_BACKEND_URL + '?action=ssdashboard&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+    if (!res.success) {
+      body.innerHTML = '<div class="notice">Couldn’t load the dashboard: ' + (res.error || 'unknown error') + '</div>';
+      pdrReportAuthFailureIfNeeded_(res);
       return;
     }
-    dashStatsRes = statsRes;
-    dashAllEmployees = rosterRes.success ? rosterRes.employees : [];
+    dashSSRes = res;
+    renderRolePicker();
     renderDashboardForSelectedCampus();
   } catch (err) {
     body.innerHTML = '<div class="notice">Couldn’t reach the dashboard proxy: ' + err.message + '</div>';
   }
 }
 
-function renderDashboardForSelectedCampus() {
-  if (!dashStatsRes) return; // loadDashboard() hasn't resolved yet -- it'll call this itself once it does
-  const body = document.getElementById('dashBody');
-  const campusId = SELECTED_CAMPUS_ID;
-  if (!campusId || !dashStatsRes.campuses[campusId]) {
-    body.innerHTML = '<div class="notice">No Teacher SS submissions logged for this school yet.</div>';
-    return;
-  }
-  body.innerHTML = renderCampusSection(campusId, dashStatsRes.campuses[campusId], dashAllEmployees);
+function renderRolePicker() {
+  const wrap = document.getElementById('dashRolePicker');
+  wrap.innerHTML = SS_ROLE_ORDER
+    .filter(function (r) { return dashSSRes.roles[r.key]; })
+    .map(function (r) {
+      return '<button class="role-btn' + (r.key === SELECTED_SS_ROLE ? ' active' : '') + '" onclick="selectSSRole(\'' + r.key + '\')">' + r.icon + ' ' + r.short + '</button>';
+    }).join('');
 }
 
-function renderCampusSection(campusId, campusStats, allEmployees) {
-  // Every Active teacher at this campus, whether or not they've been
-  // evaluated yet -- so zero-submission teachers are visible, not just
-  // silently absent. employee-roster.gs's `school` field is the short
-  // form ("LMS 1"), NOT LMCS.campusLabel()'s display form ("LMS 1 —
-  // Dhalpur") -- comparing against campusLabel() directly never matched
-  // anything, silently rendering every campus's roster as empty (bug
-  // found 2026-09-09 via a "Nothing visible" report on the Dashboard).
-  // Same short-form conversion teacher-ss.gs already uses.
-  const roster = allEmployees.filter(function (e) { return e.school === campusId.replace('LMS', 'LMS '); });
-  const statsByTeacher = {};
-  campusStats.teachers.forEach(function (t) { statsByTeacher[t.teacher] = t; });
+function selectSSRole(roleKey) {
+  SELECTED_SS_ROLE = roleKey;
+  expandedRosterKey = null;
+  renderRolePicker();
+  renderDashboardForSelectedCampus();
+}
 
-  const rows = roster.map(function (emp) {
-    const key = emp.employeeCode + ' ' + emp.name;
-    const s = statsByTeacher[key];
-    return {
-      teacher: key,
-      submissionCount: s ? s.submissionCount : 0,
-      avgTotal: s ? s.avgTotal : null,
-      lastSubmission: s ? s.lastSubmission : null,
-    };
-  });
-  // Zero-submission teachers first (need attention), then by name.
+function renderDashboardForSelectedCampus() {
+  if (!dashSSRes) return; // loadDashboard() hasn't resolved yet -- it'll call this itself once it does
+  const body = document.getElementById('dashBody');
+  const roleData = dashSSRes.roles[SELECTED_SS_ROLE];
+  if (!roleData) { body.innerHTML = '<div class="notice">No data for this role yet.</div>'; return; }
+  body.innerHTML = renderRoleSection(roleData, SELECTED_CAMPUS_ID);
+}
+
+/** `campusId` is the school-picker's selection ('LMS1' style). Single-
+ *  form roles (IT/PTI/Fee Clerk) aren't split by campus at all -- their
+ *  roster spans every campus in one list under formKey 'all', same as
+ *  their Name dropdown already does. */
+function renderRoleSection(roleData, campusId) {
+  const formKey = roleData.perCampus ? campusId.replace('LMS', 'LMS ') : 'all';
+  const rows = roleData.roster.filter(function (r) { return r.formKey === formKey; });
+
+  // Behind-on-quota employees first (need attention), then by name.
   rows.sort(function (a, b) {
-    if ((a.submissionCount === 0) !== (b.submissionCount === 0)) return a.submissionCount === 0 ? -1 : 1;
-    return a.teacher.localeCompare(b.teacher);
+    if (a.quotaMetThisMonth !== b.quotaMetThisMonth) return a.quotaMetThisMonth ? 1 : -1;
+    return a.employee.localeCompare(b.employee);
   });
 
-  const zeroCount = rows.filter(function (r) { return r.submissionCount === 0; }).length;
+  const rubricOutOf = roleData.rubricMax * roleData.rubricTitles.length;
+  const compliance = roleData.campusCompliance.filter(function (c) { return c.formKey === formKey; });
+  const complianceHtml = compliance.length
+    ? '<div class="compliance-card">' + compliance.map(function (c) {
+      const cls = c.compliancePct >= 80 ? 'high' : c.compliancePct >= 50 ? 'mid' : 'low';
+      return '<div class="cc-item"><span class="cc-campus">' + c.formKey + '</span><span>' + c.metQuota + '/' + c.totalEmployees + ' met quota this month —</span><span class="cc-pct ' + cls + '">' + c.compliancePct + '%</span></div>';
+    }).join('') + '</div>'
+    : '';
+
+  // Rubber-stamp flags are role-wide (no campus attribution -- an
+  // evaluator's email isn't tied to a campus in this data), so shown
+  // regardless of which campus is selected.
+  const flagHtml = roleData.evaluatorFlags.length
+    ? '<div class="flag-banner">⚠️ <b>Rubber-stamp check:</b> ' + roleData.evaluatorFlags.map(function (f) {
+      return f.evaluatorEmail + ' (' + f.submissionCount + ' SS, avg ' + f.meanScore + '/' + rubricOutOf + ', stddev ' + f.stddev + ')';
+    }).join(' · ') + ' — unusually uniform scores across submissions. Worth a manual look.</div>'
+    : '';
 
   return '<div class="dash-section">' +
-    '<div class="dash-hdr"><h2>' + LMCS.campusLabel(campusId) + '</h2>' +
-    '<span class="dash-meta">' + campusStats.responseCount + ' total submissions this cycle' + (zeroCount ? ' · ' + zeroCount + ' teacher(s) with none yet' : '') + '</span></div>' +
+    '<div class="dash-hdr"><h2>' + roleData.label + '</h2>' +
+    '<span class="dash-meta">' + roleData.monthLabel + ' · ' + roleData.cycleLabel + ' · quota ' + roleData.quotaPerMonth + '/employee/month</span></div>' +
+    complianceHtml + flagHtml +
     '<div class="tbl-wrap"><table><thead><tr>' +
-    '<th>Teacher</th><th>Submissions</th><th>Avg Score (/100)</th><th>Last SS</th>' +
+    '<th>Employee</th><th>This Month</th><th>This Cycle</th><th>Avg Score</th><th>Last SS</th>' +
     '</tr></thead><tbody>' +
-    (rows.length ? rows.map(rowHtml).join('') : '<tr><td colspan="4" class="dash-empty">No teacher roster found for this campus — the Employee Roster Proxy may be unreachable. Try a hard refresh.</td></tr>') +
+    (rows.length ? rows.map(function (r) { return roleRowHtml(r, roleData, rubricOutOf); }).join('') : '<tr><td colspan="5" class="dash-empty">No employees found for this role at this campus.</td></tr>') +
     '</tbody></table></div></div>';
 }
 
-function rowHtml(r) {
-  const pill = r.submissionCount === 0
-    ? '<span class="pill none">No SS yet</span>'
-    : '<span class="pill ok">' + r.submissionCount + '</span>';
-  const avg = r.avgTotal === null ? '—' : r.avgTotal;
+function roleRowHtml(r, roleData, rubricOutOf) {
+  const rowKey = r.formKey + '|' + r.employee;
+  const monthPill = r.quotaMetThisMonth
+    ? '<span class="pill ok">' + r.submissionsThisMonth + '/' + roleData.quotaPerMonth + '</span>'
+    : (r.submissionsThisMonth > 0
+      ? '<span class="pill amber">' + r.submissionsThisMonth + '/' + roleData.quotaPerMonth + '</span>'
+      : '<span class="pill none">0/' + roleData.quotaPerMonth + '</span>');
+  const avg = r.avgTotal === null ? '—' : r.avgTotal + '/' + rubricOutOf;
   const last = r.lastSubmission ? new Date(r.lastSubmission).toLocaleDateString() : '—';
-  return '<tr><td>' + r.teacher + '</td><td>' + pill + '</td>' +
+  const isExpanded = expandedRosterKey === rowKey;
+
+  let html = '<tr class="roster-row' + (isExpanded ? ' expanded' : '') + '" onclick="toggleRosterDrilldown(\'' + rowKey.replace(/'/g, "\\'") + '\')">' +
+    '<td>' + r.employee + '</td><td>' + monthPill + '</td><td>' + r.submissionsThisCycle + '</td>' +
     '<td class="score-cell">' + avg + '</td><td>' + last + '</td></tr>';
+
+  if (isExpanded) {
+    html += '<tr class="detail-row"><td colspan="5"><div class="detail-wrap">' + renderHistoryDetail(r, roleData, rubricOutOf) + '</div></td></tr>';
+  }
+  return html;
+}
+
+function renderHistoryDetail(r, roleData, rubricOutOf) {
+  if (!r.history.length) return '<div class="detail-empty">No SS submitted for ' + r.employee + ' yet.</div>';
+  return r.history.map(function (h) {
+    const date = h.timestamp ? new Date(h.timestamp).toLocaleDateString() : '—';
+    const paramsStr = roleData.rubricTitles.map(function (title, idx) { return title + ': ' + h.scores[idx]; }).join(' · ');
+    return '<div class="hist-row">' +
+      '<span class="hist-date">' + date + '</span>' +
+      '<span class="hist-total">' + h.total + '/' + rubricOutOf + '</span>' +
+      '<span class="hist-params">' + paramsStr + '</span>' +
+      (h.evaluatorEmail ? '<span class="hist-evaluator">by ' + h.evaluatorEmail + '</span>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function toggleRosterDrilldown(rowKey) {
+  expandedRosterKey = expandedRosterKey === rowKey ? null : rowKey;
+  renderDashboardForSelectedCampus();
 }
 
 // ── Principal DR tab (adapted from Report_2.html, 2026-09-02) ───────

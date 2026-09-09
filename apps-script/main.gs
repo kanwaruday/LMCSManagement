@@ -13,11 +13,16 @@
 // FILE in this same project, following the naming convention below --
 // never a new project, never folded into an unrelated file.
 //
-// Files in this project (2026-09-02):
+// Files in this project (updated 2026-09-09):
 //   main.gs            -- this file: doGet dispatch + shared
 //                         auth/JSON helpers every concern reuses.
 //   teacher-ss.gs       -- Teacher SS (Support Session teacher-
-//                         evaluation rubric) dashboard stats.
+//                         evaluation rubric) dashboard stats -- the
+//                         ORIGINAL single-role reader; ss-tracker.gs
+//                         below has since generalized this pattern to
+//                         all 6 roles, kept separate rather than
+//                         merged/deleted since nothing's confirmed
+//                         unused yet.
 //   principal-dr.gs     -- Principal DR (the principal's own daily
 //                         operational report): Month Activities,
 //                         Support Session count, Daily Reports
@@ -25,12 +30,23 @@
 //                         lookup, Planned Activities CRUD. Stays ONE
 //                         file even as more gets added -- no further
 //                         splitting, per Uday.
-//   ss-forms-sync.gs    -- Run-menu only, no doGet -- fixes/keeps live
-//                         the Google Forms behind Teacher SS (and,
-//                         once built, PTI/IT/Clerk/Helpers SS -- it's
-//                         already a generic multi-role engine).
-//   [future] pti-ss.gs, it-ss.gs, clerk-ss.gs, helpers-ss.gs,
-//     ss-tracker.gs -- not built yet, add when each is.
+//   ss-forms-sync.gs    -- Run-menu only, no doGet -- keeps every SS
+//                         Google Form's Name dropdown + rubric
+//                         validation live. Turned out to be THE generic
+//                         engine for all 6 roles (Teacher/IT/PTI/Clerk/
+//                         Non-Teaching/Driver) via SS_ROLE_CONFIGS,
+//                         rather than one file per role as originally
+//                         planned -- ss-tracker.gs below reuses that
+//                         same config for the Dashboard, one source of
+//                         truth for "what does this role's data look
+//                         like" (rubric titles, name field, where
+//                         responses live).
+//   ss-tracker.gs       -- action=ssdashboard. The SS completion/
+//                         compliance tracker across all 6 roles: quota
+//                         compliance, Principal Compliance escalation,
+//                         per-employee score analysis + drill-down,
+//                         rubber-stamp detection. See its own header
+//                         for full scope/what's deferred.
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -67,6 +83,7 @@ function doGet(e) {
     const action = (e.parameter.action || 'teacherstats').toLowerCase();
 
     if (action === 'teacherstats') return jsonOut_(teacherSsStats_(caller));
+    if (action === 'ssdashboard') return jsonOut_(ssDashboardAll_(caller));
     if (action === 'monthactivities') return jsonOut_(principalDrMonthActivities_(caller, e.parameter.campusId));
     if (action === 'supportsessionstoday') return jsonOut_(principalDrSupportSessionsToday_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'plannedactivities') return jsonOut_(principalDrPlannedActivities_(caller, e.parameter.campusId));

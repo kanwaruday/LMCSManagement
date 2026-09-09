@@ -118,6 +118,16 @@ const SS_ROLE_CONFIGS = {
       'LMS 5': '11otlIiFKWQ5tZ2JfxyyL4pn_5ManI8Oc1LoIbj3o2-0',
       'LMS 6': '1VZhZ2b1nZlRT2X_YiqJhvArlpnd5WjOaXGv1WcROXpI',
     },
+    // Where this role's SUBMITTED RESPONSES live -- used by ss-tracker.gs
+    // for the Dashboard, separate from `forms` above (which is the
+    // editable Form itself). Confirmed live via a tab inspection
+    // 2026-09-09 (see teacher-ss.gs's TERMINOLOGY note -- these tabs
+    // WERE "Teacher DR", got silently renamed to "Teacher SS").
+    responseSheetId: '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc', // "LMCS Teacher SS 2026 (Responses)"
+    responseTabs: {
+      'LMS 1': 'LMS 1 Teacher SS', 'LMS 2': 'LMS 2 Teacher SS', 'LMS 3': 'LMS 3 Teacher SS',
+      'LMS 4': 'LMS 4 Teacher SS', 'LMS 5': 'LMS 5 Teacher SS', 'LMS 6': 'LMS 6 Teacher SS',
+    },
     rubricTitles: [
       'Pedagogy',
       'Teacher Content',
@@ -160,6 +170,8 @@ const SS_ROLE_CONFIGS = {
     label: 'IT Teacher SS',
     perCampus: false, // one form, all 6 campuses (matches the old IT DR form's shape)
     forms: { all: '1sADIFMrO2NiEiszc_-iTS86BuvQEdeTTTu0FGclnqIc' }, // old (stale rubric, unused): 1E1hsC4EDjeeCszK3HviOFK_3NrwZ24E1QMBm04WBcgc
+    responseSheetId: '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc', // same sheet as Teacher SS, own tab
+    responseTabs: { all: 'LMCS Computer Teacher SS' },
     // Titles below match the LIVE form exactly (confirmed via
     // inspectNewSSForms() 2026-09-09) -- wording drifted slightly from
     // the originally-dictated rubric while Uday built the form by hand
@@ -193,6 +205,8 @@ const SS_ROLE_CONFIGS = {
     label: 'PTI SS',
     perCampus: false,
     forms: { all: '1KMn6bCSvaQkNJbNjzhaBzP5Ang-itNHU3pVPml2D7Ro' }, // old (stale rubric, unused): 1oAtyo-Q3bm3bbAcrngoPOcUgYO3jgPd9vcFOCgscJYY
+    responseSheetId: '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc', // same sheet as Teacher SS, own tab
+    responseTabs: { all: 'LMCS PTI SS' },
     // Titles below match the LIVE form exactly (confirmed via
     // inspectNewSSForms() 2026-09-09) -- NOTE this isn't just wording
     // drift like itComputer/feeClerkPRO: the live form merged "Games
@@ -225,6 +239,8 @@ const SS_ROLE_CONFIGS = {
     label: 'Fee Clerk SS',
     perCampus: false,
     forms: { all: '1WxeCJMCDN-HEH7Pc4zbSmTqKtd8RWzZkEH7Dn6Bi3As' }, // old (stale rubric, unused): 1mpjTQisZ6BwsPRI2tjc2MgNO05-Y63X5blLdRzSUooM
+    responseSheetId: '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc', // same sheet as Teacher SS, own tab
+    responseTabs: { all: 'LMCS Clerk SS' },
     // Titles below match the LIVE form exactly (confirmed via
     // inspectNewSSForms() 2026-09-09) -- wording drifted slightly from
     // the originally-dictated rubric while Uday built the form by hand.
@@ -275,6 +291,11 @@ const SS_ROLE_CONFIGS = {
       'LMS 5': '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
       'LMS 6': '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
     },
+    responseSheetId: '1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac', // "LMCS Non-Teaching SS (Responses)"
+    responseTabs: {
+      'LMS 1': 'LMS 1 Non-Teaching', 'LMS 2': 'LMS 2 Non-Teaching', 'LMS 3': 'LMS 3 Non-Teaching',
+      'LMS 4': 'LMS 4 Non-Teaching', 'LMS 5': 'LMS 5 Non-Teaching', 'LMS 6': 'LMS 6 Non-Teaching',
+    },
     rubricTitles: [
       'Cleanliness',
       'Student Reception & Parent Dealing',
@@ -295,8 +316,8 @@ const SS_ROLE_CONFIGS = {
   },
 
   // Added 2026-09-09. Response sheet: "LMCS Driver Responses Sheet",
-  // 1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME (per-campus tab names
-  // TBD, stats reader not wired yet -- same as nonTeaching above).
+  // 1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME, per-campus tabs
+  // "LMS N Drivers" confirmed live via a tab inspection 2026-09-09.
   // Rubric + "Driver Name" field confirmed live via FormApp inspection
   // 2026-09-09 -- wording drifted/reordered slightly from the drafted
   // rubric (same pattern as every hand-built form this session), and
@@ -317,6 +338,11 @@ const SS_ROLE_CONFIGS = {
       'LMS 4': '1oBaF1nmVTyRopGSGy2Kmv_NkLCB4h8leSDuEjmk91Jc',
       'LMS 5': '1K4sC3FyHEMOm8n6ujet8JlhUzqBZMVR7vMccKiHHcqA',
       'LMS 6': '16oTsz4SBj8PvPasi87ajQLw07_PElUYKrifTL0PH75o',
+    },
+    responseSheetId: '1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME', // "LMCS Driver Responses Sheet"
+    responseTabs: {
+      'LMS 1': 'LMS 1 Drivers', 'LMS 2': 'LMS 2 Drivers', 'LMS 3': 'LMS 3 Drivers',
+      'LMS 4': 'LMS 4 Drivers', 'LMS 5': 'LMS 5 Drivers', 'LMS 6': 'LMS 6 Drivers',
     },
     rubricTitles: [
       'Bus Safety, Cleaning & Pre-Trip Inspection',

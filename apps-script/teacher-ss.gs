@@ -16,21 +16,24 @@
 // TERMINOLOGY (2026-09-02): "DR" (Daily Report) for teachers was
 // renamed to "SS" (Support Session) -- this file, the 6 Forms, and the
 // response sheet's Drive file title all now say SS. The sheet's
-// internal TAB names below (TSS_CAMPUS_TO_TAB) still say "Teacher DR"
-// deliberately -- Google Forms doesn't rename an already-linked
-// destination tab when you rename the form, and renaming the tabs
-// themselves isn't reachable with the tools used for everything else
-// here. Don't "fix" TSS_CAMPUS_TO_TAB to say SS without first renaming
-// the actual tabs in the sheet, or every read here breaks.
+// internal TAB names below (TSS_CAMPUS_TO_TAB) used to still say
+// "Teacher DR" because Google Forms doesn't rename an already-linked
+// destination tab when you rename the form -- but the tabs themselves
+// HAVE since been renamed to "LMS N Teacher SS" (confirmed live via a
+// tab inspection 2026-09-09), which means this file was silently
+// returning empty stats for a while (getSheetByName() found nothing
+// under the old "Teacher DR" names). Fixed below -- if this breaks
+// again, re-inspect the live tab names before assuming the fix itself
+// is wrong.
 // ═══════════════════════════════════════════════════════════════════
 
 const TSS_RESPONSES_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)"
 
 // campusId (as used by the portal, e.g. 'LMS1') -> the exact tab name
-// in the responses sheet. Still "Teacher DR" -- see TERMINOLOGY above.
+// in the responses sheet. Confirmed live 2026-09-09 -- see TERMINOLOGY above.
 const TSS_CAMPUS_TO_TAB = {
-  LMS1: 'LMS 1 Teacher DR', LMS2: 'LMS 2 Teacher DR', LMS3: 'LMS 3 Teacher DR',
-  LMS4: 'LMS 4 Teacher DR', LMS5: 'LMS 5 Teacher DR', LMS6: 'LMS 6 Teacher DR',
+  LMS1: 'LMS 1 Teacher SS', LMS2: 'LMS 2 Teacher SS', LMS3: 'LMS 3 Teacher SS',
+  LMS4: 'LMS 4 Teacher SS', LMS5: 'LMS 5 Teacher SS', LMS6: 'LMS 6 Teacher SS',
 };
 
 // Same 10 rubric columns every tab has, in sheet order — must match
