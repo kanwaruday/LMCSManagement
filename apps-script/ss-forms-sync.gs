@@ -58,15 +58,28 @@ const SS_PREFIX_TO_SCHOOL = {
   KUL: 'LMS 1', KEL: 'LMS 2', DUN: 'LMS 3', NCM: 'LMS 4', SAY: 'LMS 5', JOG: 'LMS 6',
 };
 
-// KNOWN DATA-QUALITY CAVEAT (2026-09-02, from the "Designation & Department
-// Tags" audit): EmpSalary's Department column is the canonical 3-way split
-// (Teaching / Non-Teaching / Administrative), joined here by EmployeeCode --
-// same join key EmpAcademic already uses against EmpMaster. BUT as of the
-// audit, a handful of clearly-teaching records (some TGT, a PTI "Games
-// Teacher") had a BLANK Department cell instead of "Teaching", not yet
-// corrected. If a real teacher unexpectedly disappears from a campus's
-// dropdown after this filter went live, check their EmpSalary row's
-// Department cell first before assuming a bug here.
+// KNOWN DATA-QUALITY CAVEAT (updated 2026-09-09, via employee-roster.gs's
+// readDesignationSummary() action=designations): EmpSalary's Department
+// column is NO LONGER the old 3-way Teaching/Non-Teaching/Administrative
+// split described here before -- it now has role-specific buckets too
+// (AdminIT, AdminPTI, AdminClerk, AdminHead, AdminTM, ...), which is what
+// makes matchesEmployee below possible for the 3 new roles. Some cells
+// carry an invisible leading character (a stray word-joiner, not visible
+// in the Sheet) and inconsistent casing (e.g. "CLERK+PRO" vs "Clerk +
+// PRO") -- normalizeCell_() strips both before any comparison. A handful
+// of clearly-teaching records (2026-09-02 audit) had a BLANK Department
+// cell instead of "Teaching", not yet corrected -- if a real teacher
+// unexpectedly disappears from a campus's dropdown, check their EmpSalary
+// row's Department cell first before assuming a bug here.
+function normalizeCell_(v) {
+  // Strips zero-width space/joiner/non-joiner (U+200B-U+200D), LTR/RTL
+  // marks (U+200E-U+200F), BOM (U+FEFF), and word-joiner (U+2060) -- the
+  // invisible characters observed polluting a few Designation/Department
+  // cells (2026-09-09). Written as \u escapes, not literal glyphs, since
+  // the glyphs themselves are invisible and easy to corrupt in an editor.
+  return String(v || '').replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim();
+}
+
 function getDepartmentByCode_() {
   const rows = SpreadsheetApp.openById(SS_EMP_SHEET_ID)
     .getSheetByName('EmpSalary')
@@ -78,9 +91,9 @@ function getDepartmentByCode_() {
   const map = {};
   if (codeCol < 0 || deptCol < 0) return map; // sheet shape unexpected -- fail open to empty, not a crash
   for (let i = 1; i < rows.length; i++) {
-    const code = String(rows[i][codeCol] || '').trim();
+    const code = normalizeCell_(rows[i][codeCol]);
     if (!code) continue;
-    map[code] = String(rows[i][deptCol] || '').trim();
+    map[code] = normalizeCell_(rows[i][deptCol]);
   }
   return map;
 }
@@ -130,6 +143,112 @@ const SS_ROLE_CONFIGS = {
     },
   },
 
+  // Rubric finalized by Uday 2026-09-08. These are BRAND-NEW forms,
+  // built by hand (see "NEW SS FORMS" note near the bottom of this
+  // file) -- the old forms noted in each `forms` comment are on the
+  // stale rubric and are NOT reused. Response sheet is the same
+  // "LMCS Teacher SS 2026 (Responses)" spreadsheet as Teacher SS, each
+  // in its own new tab (see teacher-ss.gs's TSS_CAMPUS_TO_TAB for the
+  // equivalent pattern -- these 3 roles' tab names still need adding
+  // there once the Dashboard reads their responses). matchesEmployee()
+  // wired 2026-09-09 against the real Department taxonomy (confirmed
+  // via employee-roster.gs's action=designations) and added to
+  // ACTIVE_SS_ROLES -- run syncAllSSForms() once to confirm it applies
+  // cleanly (per "ADDING A NEW ROLE" step 4 below) before relying on
+  // the daily trigger for it.
+  itComputer: {
+    label: 'IT Teacher SS',
+    perCampus: false, // one form, all 6 campuses (matches the old IT DR form's shape)
+    forms: { all: '1sADIFMrO2NiEiszc_-iTS86BuvQEdeTTTu0FGclnqIc' }, // old (stale rubric, unused): 1E1hsC4EDjeeCszK3HviOFK_3NrwZ24E1QMBm04WBcgc
+    // Titles below match the LIVE form exactly (confirmed via
+    // inspectNewSSForms() 2026-09-09) -- wording drifted slightly from
+    // the originally-dictated rubric while Uday built the form by hand
+    // (e.g. "Period Adjustment" not "Adjustments", "Computer Lab
+    // Operational" not "Operationability"). The form is the source of
+    // truth for exact strings; don't "fix" these back to the original
+    // dictated wording.
+    rubricTitles: [
+      'Pedagogy',
+      'Teacher Content & Student Response',
+      'Aerobics, Morning Assembly & Dispersal Duty',
+      'Period Adjustment & Quality of Time Table',
+      'Administrative Duties & Data Collection',
+      'IT Support to Principal & Staff',
+      'Computer Lab Operational',
+      'CCTV Functionality',
+      'Social Media',
+      'Attitude Towards LMS',
+    ],
+    rubricMax: 10,
+    nameFieldTitle: function () { return 'Computer Teacher Name'; },
+    // Department taxonomy confirmed 2026-09-09 via action=designations --
+    // "AdminIT" covers the 4 active Computer Teacher records (designation
+    // text itself varies -- "Computer Teacher" with a stray invisible
+    // leading character on one row -- but Department doesn't, so match on
+    // that, not designation text). No school filter: perCampus:false.
+    matchesEmployee: function (empRow) { return empRow.department.toLowerCase() === 'adminit'; },
+  },
+
+  pti: {
+    label: 'PTI SS',
+    perCampus: false,
+    forms: { all: '1KMn6bCSvaQkNJbNjzhaBzP5Ang-itNHU3pVPml2D7Ro' }, // old (stale rubric, unused): 1oAtyo-Q3bm3bbAcrngoPOcUgYO3jgPd9vcFOCgscJYY
+    // Titles below match the LIVE form exactly (confirmed via
+    // inspectNewSSForms() 2026-09-09) -- NOTE this isn't just wording
+    // drift like itComputer/feeClerkPRO: the live form merged "Games
+    // periods as per next Sports" + "Participation in Sports
+    // Competitions" into ONE question, and added a new "Administrative
+    // Duties & Examination Duties" item that wasn't in the originally
+    // dictated 10. Flagging in case that wasn't deliberate -- ask Uday
+    // to confirm before treating this as final.
+    rubricTitles: [
+      'Pedagogy',
+      'Aerobics, Morning Assembly, Lunch & Dispersal Duty',
+      'Participation in Sports Competitions & Games period as per next Sports Event',
+      'Period Adjustment & Implementation',
+      'Management of Support Staff (during School)',
+      'Cleanliness & Maintenance of School',
+      'Discipline of Students',
+      'Administrative Duties & Examination Duties',
+      'Inventory & other records',
+      'Attitude towards LMS',
+    ],
+    rubricMax: 10,
+    nameFieldTitle: function () { return 'Physical Training Instructor Name'; },
+    // "AdminPTI" covers all 5 active PTI records despite 3 different
+    // designation spellings ("Games Teacher (PTI)", "GAMES TEACHER
+    // (PTI)", "PTI (11, 12)") -- see itComputer's comment above.
+    matchesEmployee: function (empRow) { return empRow.department.toLowerCase() === 'adminpti'; },
+  },
+
+  feeClerkPRO: {
+    label: 'Fee Clerk SS',
+    perCampus: false,
+    forms: { all: '1WxeCJMCDN-HEH7Pc4zbSmTqKtd8RWzZkEH7Dn6Bi3As' }, // old (stale rubric, unused): 1mpjTQisZ6BwsPRI2tjc2MgNO05-Y63X5blLdRzSUooM
+    // Titles below match the LIVE form exactly (confirmed via
+    // inspectNewSSForms() 2026-09-09) -- wording drifted slightly from
+    // the originally-dictated rubric while Uday built the form by hand.
+    rubricTitles: [
+      'Fee Collection & Follow up',
+      'Quality of Financial Record Keeping',
+      'Maintenance of Student Records',
+      'Maintenance of Staff & School Records',
+      'Management of Support Staff (Transport)',
+      'Management of Transport Repairs & Finances',
+      'Attendance & Leave Duties - Honesty & Regularity',
+      'Correspondence & Parcel Handling',
+      'Attitude towards School',
+      'Soft Skills with Parents',
+    ],
+    rubricMax: 10,
+    nameFieldTitle: function () { return 'Fee Clerk Name'; },
+    // "AdminClerk" covers all "Clerk + PRO" / "CLERK+PRO" / "CLERK"
+    // records (one row's Department cell itself carried the invisible
+    // leading character -- normalizeCell_() in getDepartmentByCode_
+    // handles that) -- see itComputer's comment above.
+    matchesEmployee: function (empRow) { return empRow.department.toLowerCase() === 'adminclerk'; },
+  },
+
   // ── TODO stubs — fill in once Uday finalizes each role's form ──
   // (rubric + Principal-performance factors + comms system are all
   // still open per project_principals_daily_reporting.md). For each:
@@ -141,18 +260,16 @@ const SS_ROLE_CONFIGS = {
   //        }));
   //   2. Fill in the config below using that real structure.
   //   3. Add the role's key to ACTIVE_SS_ROLES.
-  pti: null,              // PTI DR — existing old form: 1oAtyo-Q3bm3bbAcrngoPOcUgYO3jgPd9vcFOCgscJYY
-  itComputer: null,       // IT DR — existing old form: 1E1hsC4EDjeeCszK3HviOFK_3NrwZ24E1QMBm04WBcgc
-  feeClerkPRO: null,      // Fee Clerk DR — existing old form: 1mpjTQisZ6BwsPRI2tjc2MgNO05-Y63X5blLdRzSUooM
+  helpersDrivers: null,   // Helpers & Drivers -- no existing form, no rubric yet; scope still open
   principalSelfDR: null,  // Principal DR — existing old form: 1IypepIVAQ7n4vR-EvMLAoz4QzjeHoQVeg4JZnL5Vd3o
-  // NOTE: these 4 keep the "DR" label deliberately -- Uday's 2026-09-02
+  // NOTE: these keep the "DR" label deliberately -- Uday's 2026-09-02
   // rename was specifically "for teachers", not these roles.
 };
 
 // Which of the keys above actually run. Add a key here once its config
 // above is filled in — keeps syncAllSSForms() from erroring on the
 // still-null stubs.
-const ACTIVE_SS_ROLES = ['teacher'];
+const ACTIVE_SS_ROLES = ['teacher', 'itComputer', 'pti', 'feeClerkPRO'];
 
 // ── Generic engine — role-agnostic, do not edit per-role ───────────
 
@@ -260,3 +377,18 @@ function installDailySSSyncTrigger() {
 // 3. Add '<role>' to ACTIVE_SS_ROLES.
 // 4. Re-run syncAllSSForms() manually once to confirm it applies
 //    cleanly before relying on the daily trigger for it.
+
+// ── NEW SS FORMS (2026-09-08): built by hand by Uday, not generated ──
+// For syncOneSSRole_() to find the right questions later, each of the
+// 3 forms below MUST have a List/dropdown question titled EXACTLY:
+//   IT Teacher SS  -> "IT Teacher Name"
+//   PTI SS         -> "PTI Name"
+//   Fee Clerk SS   -> "Fee Clerk Name"
+// (matches each role's nameFieldTitle() in SS_ROLE_CONFIGS above) plus
+// the 10 rubric questions from that same config, titled exactly as
+// listed there, as Short answer with response validation "Number
+// between 0 and <rubricMax>" (same as Teacher SS's questions). A
+// "School" question is fine for humans reading responses but isn't
+// read by any code here -- format it however's convenient.
+// Once each form exists: paste its id into the matching
+// `forms.all` PASTE_FORM_ID_* placeholder above.

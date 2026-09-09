@@ -184,7 +184,7 @@ td{padding:6px 12px;vertical-align:middle}
 <div class="hdr">
   <div class="hdr-brand">
     <h1>LMCS — Principal's Daily Reporting</h1>
-    <p id="hdrCtx">Teaching bucket live — Teacher SS, Principal DR, Dashboard. More roles (PTI/IT/Clerk/Helpers SS) and an SS completion tracker coming.</p>
+    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Principal DR, Dashboard. Helpers & Drivers SS and an SS completion tracker coming.</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -202,6 +202,9 @@ td{padding:6px 12px;vertical-align:middle}
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Teacher SS</button>
+      <button class="tab-btn" data-tab="itss" onclick="switchTab('itss')">💻 IT SS</button>
+      <button class="tab-btn" data-tab="ptiss" onclick="switchTab('ptiss')">🏃 PTI SS</button>
+      <button class="tab-btn" data-tab="clerkss" onclick="switchTab('clerkss')">🧾 Clerk SS</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
@@ -211,6 +214,30 @@ td{padding:6px 12px;vertical-align:middle}
       <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
       <div class="form-embed-wrap">
         <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
+      </div>
+    </div>
+
+    <!-- ══════════════════ IT SS / PTI SS / Clerk SS (embedded Google Forms) ══════════════════
+         Unlike Teacher SS above, each of these is ONE form spanning all 6
+         campuses (a "School" question inside the form, filled in by
+         whoever's submitting) -- so the src is static, not re-pointed by
+         selectSchool() the way pickSubmitCampus() re-points formFrame. -->
+    <div class="tab-panel" id="panel-itss">
+      <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+      <div class="form-embed-wrap">
+        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-ptiss">
+      <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+      <div class="form-embed-wrap">
+        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-clerkss">
+      <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+      <div class="form-embed-wrap">
+        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
       </div>
     </div>
 
@@ -351,6 +378,18 @@ const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJf
 // Reuses the same deployed Employee Roster Proxy every other module
 // already points at -- see staff/add-employee.html.
 const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+
+// The 3 new-role SS forms (2026-09-09) live directly as iframe `src`
+// below (panel-itss/panel-ptiss/panel-clerkss) -- unlike CAMPUS_FORM_IDS
+// above, each is ONE form covering all 6 campuses (a "School" question
+// inside the form itself, not a separate form per campus), so there's no
+// campusId-keyed map or JS re-pointing needed, just a static src. Their
+// Name dropdowns are kept in sync with EmpSalary's Department column
+// (AdminIT/AdminPTI/AdminClerk) by ss-forms-sync.gs's daily trigger --
+// see that file for the matching logic. The Name list spans every
+// campus by design (same as the old pre-rebuild forms) -- the in-form
+// "School" question is how a Head narrows to their own person, not a
+// separate dropdown per school here.
 
 // campusId -> published Google Form viewform id (resolved from the
 // forms.gle short links Uday shared 2026-09-01).
