@@ -363,6 +363,21 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
     </div>
   </label>
 
+  <label>🎓
+    <div class="ms-wrap" id="msClass">
+      <button class="ms-btn" type="button" id="msClassBtn" onclick="toggleMs('msClass')">
+        <span id="msClassLabel">All Classes</span><span class="ms-arrow">▾</span>
+      </button>
+      <div class="ms-panel" id="msClassPanel">
+        <div class="ms-actions">
+          <a href="#" onclick="event.preventDefault();msAll('msClass')">Select all</a>
+          <a href="#" onclick="event.preventDefault();msNone('msClass')">Clear</a>
+        </div>
+        <label class="ms-opt ms-all"><input type="checkbox" id="msClassAll" checked onchange="msAllToggle('msClass',this)"> All Classes</label>
+      </div>
+    </div>
+  </label>
+
   <div class="filter-btn-group">
     <button class="filt-btn active" id="qToday" onclick="setQuickDate('today')">Today</button>
     <button class="filt-btn" id="qYest"  onclick="setQuickDate('yesterday')">Yesterday</button>
@@ -658,6 +673,7 @@ let activeDateFrom  = null; // date-range from (inclusive, YYYY-MM-DD)
 let activeDateTo    = null; // date-range to   (inclusive, YYYY-MM-DD)
 let activeSchools   = [];   // [] = all schools; otherwise array of lmsIdx numbers
 let activeSubjects  = [];   // [] = all subjects; otherwise array of subject name strings
+let activeClasses   = [];   // [] = all classes; otherwise array of class display strings
 
 /* ═══════════════════════════════════════════════════════════
    DATE PARSING
@@ -945,12 +961,15 @@ function todayStr() {
   return localDateStr(new Date());
 }
 
+function recClass(r) { return r.classDisplay || r.classMapped || r.classRaw || ''; }
+
 function filtered(records) {
   let r = records;
   if (activeDateFrom) r = r.filter(x => x.dateStr >= activeDateFrom);
   if (activeDateTo)   r = r.filter(x => x.dateStr <= activeDateTo);
   if (activeSchools.length)  r = r.filter(x => activeSchools.includes(x.lmsIdx));
   if (activeSubjects.length) r = r.filter(x => activeSubjects.includes(x.subject));
+  if (activeClasses.length)  r = r.filter(x => activeClasses.includes(recClass(x)));
   return r;
 }
 
@@ -1001,6 +1020,18 @@ function buildChips() {
     lbl.className = 'ms-opt ms-item';
     lbl.innerHTML = `<input type="checkbox" class="ms-item-cb" value="${esc(s)}" checked onchange="msItemToggle('msSubject')"> ${esc(s)}`;
     subjPanel.appendChild(lbl);
+  });
+
+  // Populate class multi-select (dynamic — depends on loaded data; natural-sorted)
+  const classes = [...new Set(allRecords.map(recClass).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'en', {numeric: true}));
+  const classPanel = document.getElementById('msClassPanel');
+  classPanel.querySelectorAll('.ms-item').forEach(el => el.remove());
+  classes.forEach(c => {
+    const lbl = document.createElement('label');
+    lbl.className = 'ms-opt ms-item';
+    lbl.innerHTML = `<input type="checkbox" class="ms-item-cb" value="${esc(c)}" checked onchange="msItemToggle('msClass')"> ${esc(c)}`;
+    classPanel.appendChild(lbl);
   });
 }
 
@@ -1705,6 +1736,13 @@ function _msSyncState(id) {
       : activeSchools.length === 1
         ? (CM_SCHOOLS[activeSchools[0]]?.name || `LMS ${activeSchools[0]+1}`)
         : `${activeSchools.length} schools`;
+  } else if (id === 'msClass') {
+    activeClasses = checked.length === items.length ? [] : checked.map(cb => cb.value);
+    label.textContent = activeClasses.length === 0
+      ? 'All Classes'
+      : activeClasses.length === 1
+        ? activeClasses[0]
+        : `${activeClasses.length} classes`;
   } else {
     activeSubjects = checked.length === items.length ? [] : checked.map(cb => cb.value);
     label.textContent = activeSubjects.length === 0
@@ -1756,9 +1794,10 @@ function clearAllFilters() {
   document.getElementById('dateFrom').value = '';
   document.getElementById('dateTo').value   = '';
   document.querySelectorAll('.filt-btn').forEach(b => b.classList.remove('active'));
-  // Reset both multi-selects to "all"
+  // Reset all multi-selects to "all"
   msAll('msSchool');
   msAll('msSubject');
+  msAll('msClass');
   // _msSyncState is called inside msAll → _rerender already triggered
 }
 
