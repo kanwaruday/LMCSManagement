@@ -674,6 +674,12 @@ let activeDateTo    = null; // date-range to   (inclusive, YYYY-MM-DD)
 let activeSchools   = [];   // [] = all schools; otherwise array of lmsIdx numbers
 let activeSubjects  = [];   // [] = all subjects; otherwise array of subject name strings
 let activeClasses   = [];   // [] = all classes; otherwise array of class display strings
+let subjectSortDir  = null; // null = date order (default); 'asc' | 'desc' = sort activity feed rows by Subject
+
+function toggleSubjectSort() {
+  subjectSortDir = subjectSortDir === 'asc' ? 'desc' : subjectSortDir === 'desc' ? null : 'asc';
+  renderFeed();
+}
 
 /* ═══════════════════════════════════════════════════════════
    DATE PARSING
@@ -1122,7 +1128,11 @@ function renderFeed() {
       .sort((a, b) => classRank(a) - classRank(b))
       .forEach(cls => {
       const isNoClass = cls === NO_CLASS_KEY;
-      const entries = classes[cls].sort((a,b)=>b.dateObj-a.dateObj);
+      const entries = classes[cls].sort((a,b) => subjectSortDir
+        ? (subjectSortDir === 'asc'
+            ? a.subject.localeCompare(b.subject)
+            : b.subject.localeCompare(a.subject)) || (b.dateObj-a.dateObj)
+        : b.dateObj-a.dateObj);
       const badgeStyle = isNoClass
         ? 'background:#fef3c7;color:#b45309;border-color:#fde68a'
         : 'background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)';
@@ -1139,7 +1149,7 @@ function renderFeed() {
             <tr class="col-hdr">
               <th class="th-meta">Date</th>
               <th class="th-meta">Teacher</th>
-              <th class="th-meta">Subject</th>
+              <th class="th-meta" style="cursor:pointer;user-select:none" onclick="toggleSubjectSort()" title="Sort by Subject">Subject${subjectSortDir === 'asc' ? ' ▲' : subjectSortDir === 'desc' ? ' ▼' : ''}</th>
               <th class="th-meta">Book</th>
               <th class="th-cw-col">Chapter</th>
               <th class="th-cw-col">Description</th>
