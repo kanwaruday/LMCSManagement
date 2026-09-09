@@ -249,25 +249,21 @@ const SS_ROLE_CONFIGS = {
     matchesEmployee: function (empRow) { return empRow.department.toLowerCase() === 'adminclerk'; },
   },
 
-  // Added 2026-09-09. Response sheet (once all 6 forms are linked to
-  // it): "LMCS Non-Teaching SS (Responses)",
+  // Added 2026-09-09. Response sheet: "LMCS Non-Teaching SS (Responses)",
   // 1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac -- needed later for a
-  // teacher-ss.gs-style stats reader (per-campus tab names TBD once
-  // linking is done), not wired yet since this message only asked for
-  // the portal tab + employee-name sync, not the Dashboard stats.
-  // UNLIKE itComputer/pti/feeClerkPRO above, this one is genuinely
-  // still a guess -- Uday just shared these 6 forms and is mid-way
-  // through linking them to that response sheet, so neither the
-  // rubric question titles nor the exact Name-field title have been
-  // confirmed via FormApp yet (same "don't guess the live structure"
-  // rule as everywhere else in this file -- rubricTitles is
-  // deliberately left empty rather than assuming it's the Helper SS
-  // rubric drafted elsewhere this session, since it hasn't been
-  // confirmed this form actually carries that content). Department
-  // matching IS solid though, confirmed live via action=designations:
-  // "Non-Teaching" is Helper/Sweeper/Technician/Gardener/N-A -- NOT
-  // Driver Cum Peon, which moved to its own "Transport" department
-  // 2026-09-09 (see the Driver Cum Peon config, once it exists).
+  // teacher-ss.gs-style stats reader (per-campus tab names TBD), not
+  // wired yet since that wasn't asked for. Rubric titles below confirmed
+  // live via FormApp inspection 2026-09-09 -- this IS the Helper SS
+  // rubric drafted earlier this session, wording drifted slightly while
+  // Uday built the form by hand (same pattern as itComputer/pti/
+  // feeClerkPRO). Name field is literally "Staff Name" on every campus's
+  // form, NOT school-prefixed like Teacher's "<School> Teacher Name" --
+  // each of the 6 forms is already campus-specific, so no need to vary
+  // the field's own title per school. Department matching confirmed
+  // live via action=designations: "Non-Teaching" is Helper/Sweeper/
+  // Technician/Gardener/N-A -- NOT Driver Cum Peon, which has its own
+  // "Transport" department (see the Driver Cum Peon config, once it
+  // exists).
   nonTeaching: {
     label: 'Non-Teaching SS',
     perCampus: true, // one form per campus, like Teacher -- see NON_TEACHING_FORM_IDS in index.html
@@ -279,13 +275,20 @@ const SS_ROLE_CONFIGS = {
       'LMS 5': '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
       'LMS 6': '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
     },
-    // TODO: unknown until Uday finishes setting this form up and it's
-    // inspected with FormApp -- see the "ADDING A NEW ROLE" note below.
-    rubricTitles: [],
+    rubricTitles: [
+      'Cleanliness',
+      'Student Reception & Parent Dealing',
+      'Support to Teacher - Classroom, Assembly, Dispersal ',
+      'Montessori Wing Duties & Student Safety',
+      'Student Discipline, Child Psychology & Student Management',
+      'Booksets & Equipment Knowledge',
+      'Student Names & background awareness',
+      'Physical Appearance',
+      'Soft Skills & Use of Word Command',
+      'Attitude towards LMS',
+    ],
     rubricMax: 10,
-    // GUESS, following Teacher's "<School> Teacher Name" convention --
-    // confirm/correct against the real form before relying on this.
-    nameFieldTitle: function (school) { return school + ' Employee Name'; },
+    nameFieldTitle: function () { return 'Staff Name'; },
     matchesEmployee: function (empRow, school) {
       return empRow.school === school && empRow.department.toLowerCase() === 'non-teaching';
     },
