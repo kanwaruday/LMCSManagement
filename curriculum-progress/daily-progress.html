@@ -105,24 +105,34 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .school-group-hdr{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--lgray);border:1px solid var(--border);border-radius:6px 6px 0 0;border-bottom:none}
 .school-group-name{font-size:13px;font-weight:700;color:var(--dark)}
 .school-group-meta{font-size:10px;color:var(--gray);margin-left:auto}
-.class-group{border:1px solid var(--border);border-radius:0 0 6px 6px;overflow:hidden;margin-bottom:12px}
+.class-group{border:1px solid var(--border);border-radius:0 0 6px 6px;margin-bottom:12px}
 .class-group:last-child{border-radius:0 0 6px 6px}
 
 /* Entry table */
 .entry-table{width:100%;border-collapse:collapse;font-size:.82rem}
+/* Header rows are sticky as one unit (thead) so they stay visible while the
+   body scrolls under them; .class-group's overflow:hidden was dropped since
+   it would otherwise clip position:sticky to the table's own box instead of
+   #appBody's scrollport -- rounded bottom corners are recreated below on the
+   last body row instead. */
+.entry-table thead{position:sticky;top:0;z-index:5}
 /* Group header row */
-.entry-table thead tr.grp-hdr th{padding:4px 10px;font-size:.7rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;text-align:center;border-bottom:1px solid rgba(0,0,0,.06)}
+.entry-table thead tr.grp-hdr th{padding:2px 10px;font-size:.7rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;text-align:center;border-bottom:1px solid rgba(0,0,0,.06)}
 .entry-table thead tr.grp-hdr th.th-meta{background:var(--red)}
 .entry-table thead tr.grp-hdr th.th-cw{background:#d1fae5;color:#065f46}
 .entry-table thead tr.grp-hdr th.th-hw{background:#dbeafe;color:#1e3a8a}
-/* Column header row */
-.entry-table thead tr.col-hdr th{padding:5px 10px;font-size:.72rem;font-weight:700;letter-spacing:.3px;white-space:nowrap;text-align:left}
+/* Column header row -- resize:horizontal gives each th a native drag handle;
+   since table-layout is auto, dragging one column's th sets that column's
+   width independently per table (i.e. per class block). */
+.entry-table thead tr.col-hdr th{padding:3px 8px;font-size:.72rem;font-weight:700;letter-spacing:.3px;white-space:nowrap;text-align:left;resize:horizontal;overflow:hidden;box-sizing:border-box}
 .entry-table thead tr.col-hdr th.th-meta{background:#b91c1c;color:#fff}
 .entry-table thead tr.col-hdr th.th-cw-col{background:#ecfdf5;color:#065f46;border-bottom:2px solid #6ee7b7}
 .entry-table thead tr.col-hdr th.th-hw-col{background:#eff6ff;color:#1e3a8a;border-bottom:2px solid #93c5fd}
 /* Body */
 .entry-table tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
 .entry-table tbody tr:last-child{border-bottom:none}
+.entry-table tbody tr:last-child td:first-child{border-radius:0 0 0 6px}
+.entry-table tbody tr:last-child td:last-child{border-radius:0 0 6px 0}
 .entry-table tbody tr:nth-child(even) td{background:#fafafa}
 .entry-table tbody tr:hover td{background:rgba(206,0,0,.03)}
 .entry-table td{padding:6px 10px;vertical-align:top}
