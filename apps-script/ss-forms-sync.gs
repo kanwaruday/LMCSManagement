@@ -249,6 +249,48 @@ const SS_ROLE_CONFIGS = {
     matchesEmployee: function (empRow) { return empRow.department.toLowerCase() === 'adminclerk'; },
   },
 
+  // Added 2026-09-09. Response sheet (once all 6 forms are linked to
+  // it): "LMCS Non-Teaching SS (Responses)",
+  // 1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac -- needed later for a
+  // teacher-ss.gs-style stats reader (per-campus tab names TBD once
+  // linking is done), not wired yet since this message only asked for
+  // the portal tab + employee-name sync, not the Dashboard stats.
+  // UNLIKE itComputer/pti/feeClerkPRO above, this one is genuinely
+  // still a guess -- Uday just shared these 6 forms and is mid-way
+  // through linking them to that response sheet, so neither the
+  // rubric question titles nor the exact Name-field title have been
+  // confirmed via FormApp yet (same "don't guess the live structure"
+  // rule as everywhere else in this file -- rubricTitles is
+  // deliberately left empty rather than assuming it's the Helper SS
+  // rubric drafted elsewhere this session, since it hasn't been
+  // confirmed this form actually carries that content). Department
+  // matching IS solid though, confirmed live via action=designations:
+  // "Non-Teaching" is Helper/Sweeper/Technician/Gardener/N-A -- NOT
+  // Driver Cum Peon, which moved to its own "Transport" department
+  // 2026-09-09 (see the Driver Cum Peon config, once it exists).
+  nonTeaching: {
+    label: 'Non-Teaching SS',
+    perCampus: true, // one form per campus, like Teacher -- see NON_TEACHING_FORM_IDS in index.html
+    forms: {
+      'LMS 1': '1P-VOQ5eGOlFE8uAf7xG0PcMxU0rmUwHq81tEW698Atg',
+      'LMS 2': '1AhqORuik-jFi2OKsBA-wyCsfF5JgpLOY4_h-Nh9pnRU',
+      'LMS 3': '1rcpbmkbDQlmb4ZTxBAm86-Pe8wJIV66NvD0tfoPEVNc',
+      'LMS 4': '1ZdQ9oOrnmgPM2CoyKHk1AZ0ZgBNGJaYwBeLKkAV36ss',
+      'LMS 5': '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
+      'LMS 6': '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
+    },
+    // TODO: unknown until Uday finishes setting this form up and it's
+    // inspected with FormApp -- see the "ADDING A NEW ROLE" note below.
+    rubricTitles: [],
+    rubricMax: 10,
+    // GUESS, following Teacher's "<School> Teacher Name" convention --
+    // confirm/correct against the real form before relying on this.
+    nameFieldTitle: function (school) { return school + ' Employee Name'; },
+    matchesEmployee: function (empRow, school) {
+      return empRow.school === school && empRow.department.toLowerCase() === 'non-teaching';
+    },
+  },
+
   // ── TODO stubs — fill in once Uday finalizes each role's form ──
   // (rubric + Principal-performance factors + comms system are all
   // still open per project_principals_daily_reporting.md). For each:
@@ -269,7 +311,7 @@ const SS_ROLE_CONFIGS = {
 // Which of the keys above actually run. Add a key here once its config
 // above is filled in — keeps syncAllSSForms() from erroring on the
 // still-null stubs.
-const ACTIVE_SS_ROLES = ['teacher', 'itComputer', 'pti', 'feeClerkPRO'];
+const ACTIVE_SS_ROLES = ['teacher', 'itComputer', 'pti', 'feeClerkPRO', 'nonTeaching'];
 
 // ── Generic engine — role-agnostic, do not edit per-role ───────────
 

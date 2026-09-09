@@ -185,7 +185,7 @@ td{padding:6px 12px;vertical-align:middle}
 <div class="hdr">
   <div class="hdr-brand">
     <h1>LMCS — Principal's Daily Reporting</h1>
-    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Principal DR, Dashboard. Helpers & Drivers SS and an SS completion tracker coming.</p>
+    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Non-Teaching SS, Principal DR, Dashboard. An SS completion tracker coming.</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -206,6 +206,7 @@ td{padding:6px 12px;vertical-align:middle}
       <button class="tab-btn" data-tab="itss" onclick="switchTab('itss')">💻 IT SS</button>
       <button class="tab-btn" data-tab="ptiss" onclick="switchTab('ptiss')">🏃 PTI SS</button>
       <button class="tab-btn" data-tab="clerkss" onclick="switchTab('clerkss')">🧾 Clerk SS</button>
+      <button class="tab-btn" data-tab="nonteachingss" onclick="switchTab('nonteachingss')">🧹 Non-Teaching SS</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
@@ -239,6 +240,17 @@ td{padding:6px 12px;vertical-align:middle}
       <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
       <div class="form-embed-wrap">
         <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
+      </div>
+    </div>
+
+    <!-- ══════════════════ NON-TEACHING SS (embedded Google Form, per campus) ══════════════════
+         Per-campus like Teacher SS, not a single multi-campus form like
+         IT/PTI/Clerk SS above -- src is re-pointed by pickNonTeachingCampus()
+         from selectSchool(), same as pickSubmitCampus() does for formFrame. -->
+    <div class="tab-panel" id="panel-nonteachingss">
+      <div class="notice">Your campus's Non-Teaching SS Google Form — still being set up (response sheet linking in progress as of 2026-09-09).</div>
+      <div class="form-embed-wrap">
+        <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
       </div>
     </div>
 
@@ -402,6 +414,24 @@ const CAMPUS_FORM_IDS = {
   LMS5: '1FAIpQLSc_FcTKU1eM16xK_le6jMYQWj2GH4C8jKVTxqXCWqCRqi4nYg',
   LMS6: '1FAIpQLSfdBB5YX2BCdUxGCGc2cfcOtwgo5LkEKBfyiHAbs_-gdfyDzQ',
 };
+
+// campusId -> Non-Teaching SS form id (2026-09-09, one per campus like
+// Teacher SS, unlike IT/PTI/Clerk SS's single multi-campus form). These
+// are the RAW ids from each form's /edit URL, not a published /d/e/...
+// shortlink like CAMPUS_FORM_IDS above -- Uday shared the /edit links
+// directly, so the embed src below omits the "/e/" segment (Forms
+// serves /viewform at both the raw id and the published shortlink).
+// Still being set up (linked to a response sheet) as of 2026-09-09 --
+// rubric/question structure for this form not yet confirmed with
+// FormApp, so ss-forms-sync.gs's nonTeaching config is a best guess.
+const NON_TEACHING_FORM_IDS = {
+  LMS1: '1P-VOQ5eGOlFE8uAf7xG0PcMxU0rmUwHq81tEW698Atg',
+  LMS2: '1AhqORuik-jFi2OKsBA-wyCsfF5JgpLOY4_h-Nh9pnRU',
+  LMS3: '1rcpbmkbDQlmb4ZTxBAm86-Pe8wJIV66NvD0tfoPEVNc',
+  LMS4: '1ZdQ9oOrnmgPM2CoyKHk1AZ0ZgBNGJaYwBeLKkAV36ss',
+  LMS5: '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
+  LMS6: '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
+};
 const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
 let SESSION = null;
@@ -536,6 +566,7 @@ function selectSchool(campusId) {
     b.classList.toggle('active', b.dataset.campus === campusId);
   });
   pickSubmitCampus(campusId);
+  pickNonTeachingCampus(campusId);
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
 }
@@ -544,6 +575,12 @@ function selectSchool(campusId) {
 function pickSubmitCampus(campusId) {
   const formId = CAMPUS_FORM_IDS[campusId];
   document.getElementById('formFrame').src = 'https://docs.google.com/forms/d/e/' + formId + '/viewform?embedded=true';
+}
+
+// ── Non-Teaching SS tab ──────────────────────────────────────────────
+function pickNonTeachingCampus(campusId) {
+  const formId = NON_TEACHING_FORM_IDS[campusId];
+  document.getElementById('nonTeachingFormFrame').src = 'https://docs.google.com/forms/d/' + formId + '/viewform?embedded=true';
 }
 
 // ── Dashboard tab ───────────────────────────────────────────────────
