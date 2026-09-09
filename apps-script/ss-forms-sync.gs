@@ -80,7 +80,19 @@ function normalizeCell_(v) {
   return String(v || '').replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim();
 }
 
+// Memoized for the life of ONE execution -- getDepartmentByCode_() and
+// EmpMaster (see getActiveEmployeeChoices_ below) used to be re-read
+// from scratch on every call, and both get called once per formKey
+// (once per campus for a perCampus role) by both syncAllSSForms() and
+// ss-tracker.gs's Dashboard -- 21 calls in one ssdashboard request,
+// each doing 2 full-sheet reads, is what made the Dashboard take ~90s
+// to load. Found 2026-09-09. A plain top-level variable is the
+// standard Apps Script memoization pattern: it starts fresh every
+// execution (each Web App request is its own execution), so this never
+// serves data from a previous request.
+var _departmentByCodeCache_ = null;
 function getDepartmentByCode_() {
+  if (_departmentByCodeCache_) return _departmentByCodeCache_;
   const rows = SpreadsheetApp.openById(SS_EMP_SHEET_ID)
     .getSheetByName('EmpSalary')
     .getDataRange()
@@ -89,12 +101,13 @@ function getDepartmentByCode_() {
   const codeCol = header.indexOf('EmployeeCode');
   const deptCol = header.indexOf('Department');
   const map = {};
-  if (codeCol < 0 || deptCol < 0) return map; // sheet shape unexpected -- fail open to empty, not a crash
+  if (codeCol < 0 || deptCol < 0) { _departmentByCodeCache_ = map; return map; } // sheet shape unexpected -- fail open to empty, not a crash
   for (let i = 1; i < rows.length; i++) {
     const code = normalizeCell_(rows[i][codeCol]);
     if (!code) continue;
     map[code] = normalizeCell_(rows[i][deptCol]);
   }
+  _departmentByCodeCache_ = map;
   return map;
 }
 
@@ -440,14 +453,23 @@ function syncOneSSRole_(config) {
   return results;
 }
 
+// Memoized for the life of ONE execution -- see getDepartmentByCode_'s
+// comment above for why (this is the other half of the same fix).
+var _empMasterRowsCache_ = null;
+function getEmpMasterRows_() {
+  if (_empMasterRowsCache_) return _empMasterRowsCache_;
+  _empMasterRowsCache_ = SpreadsheetApp.openById(SS_EMP_SHEET_ID)
+    .getSheetByName('EmpMaster')
+    .getDataRange()
+    .getValues();
+  return _empMasterRowsCache_;
+}
+
 /** EmpMaster -> "EmployeeCode Name" strings, Active only, filtered
  *  through the role's matchesEmployee(), sorted by name. */
 function getActiveEmployeeChoices_(config, formKey) {
   const departmentByCode = getDepartmentByCode_();
-  const rows = SpreadsheetApp.openById(SS_EMP_SHEET_ID)
-    .getSheetByName('EmpMaster')
-    .getDataRange()
-    .getValues();
+  const rows = getEmpMasterRows_();
   const header = rows[0];
   const codeCol = header.indexOf('EmployeeCode');
   const nameCol = header.indexOf('Name');

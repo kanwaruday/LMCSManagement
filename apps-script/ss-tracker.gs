@@ -105,9 +105,20 @@ function ssRubberStampFlags_(submissions) {
  *  Column lookup reuses the SAME rubricTitles/nameFieldTitle from
  *  SS_ROLE_CONFIGS the form-sync engine already trusts -- one source of
  *  truth for "what does this role's data look like." */
+// Memoized per spreadsheet ID for the life of ONE execution -- same
+// fix as ss-forms-sync.gs's getDepartmentByCode_/getEmpMasterRows_.
+// Teacher/IT/PTI/Clerk all share ONE response spreadsheet, so without
+// this, opening it fresh per tab (6x just for Teacher's 6 campuses)
+// was pure waste on top of the EmpMaster/EmpSalary N+1 fix.
+var _ssSpreadsheetCache_ = {};
+function ssOpenSpreadsheet_(sheetId) {
+  if (!_ssSpreadsheetCache_[sheetId]) _ssSpreadsheetCache_[sheetId] = SpreadsheetApp.openById(sheetId);
+  return _ssSpreadsheetCache_[sheetId];
+}
+
 function ssReadSubmissions_(config, formKey) {
   const tabName = config.responseTabs[formKey];
-  const sheet = tabName ? SpreadsheetApp.openById(config.responseSheetId).getSheetByName(tabName) : null;
+  const sheet = tabName ? ssOpenSpreadsheet_(config.responseSheetId).getSheetByName(tabName) : null;
   if (!sheet) return [];
 
   const values = sheet.getDataRange().getValues();
@@ -148,13 +159,30 @@ function ssReadAllSubmissions_(roleKey) {
   return out;
 }
 
+// "CODE Name" -> "LMS N" (the short-form school label), derived from
+// the EmployeeCode prefix via ss-forms-sync.gs's own SS_PREFIX_TO_SCHOOL
+// map. Needed because itComputer/pti/feeClerkPRO's roster isn't split
+// by campus at the FORM level (one shared form for all 6 schools), but
+// the Dashboard still needs each employee's REAL campus to scope counts
+// and compliance per school -- added 2026-09-09 per Uday: "only show
+// the employees from that school in the counter". Every role gets this
+// field now, not just those 3 -- for perCampus roles it just confirms
+// what formKey already said.
+function ssSchoolFromEmployeeString_(employeeStr) {
+  const code = employeeStr.split(' ')[0];
+  const prefix = code.split('/')[0];
+  return SS_PREFIX_TO_SCHOOL[prefix] || null;
+}
+
 // ── Roster + submissions, combined ──────────────────────────────────
 /** One role's full picture. `campusFilter` ('LMS 1' style, or null for
- *  everyone) scopes perCampus roles to one campus -- same
- *  Owner-sees-all/Principal-sees-own-campus rule teacherSsStats_
- *  already enforces; single-form roles (itComputer/pti/feeClerkPRO)
- *  aren't subdivided by campus at all (same as their Name dropdown
- *  already isn't), so campusFilter doesn't apply to them.
+ *  everyone) scopes EVERY role to one real campus (via each employee's
+ *  actual school, not the form's own structure) -- same Owner-sees-all/
+ *  Principal-sees-own-campus rule teacherSsStats_ already enforces.
+ *  itComputer/pti/feeClerkPRO read from one shared form (formKey
+ *  'all') but are still scoped per real campus here, same as everyone
+ *  else -- only READING the response data is form-structure-dependent,
+ *  scoping who's included never was meant to be.
  *
  *  Every employee CURRENTLY matching this role (from the live roster,
  *  via the exact matchesEmployee() the form-sync engine already uses)
@@ -176,9 +204,10 @@ function ssRoleDashboard_(roleKey, campusFilter) {
 
   const roster = [];
   Object.keys(config.forms).forEach(function (formKey) {
-    if (config.perCampus && campusFilter && formKey !== campusFilter) return;
-
     getActiveEmployeeChoices_(config, formKey).forEach(function (name) {
+      const school = ssSchoolFromEmployeeString_(name);
+      if (campusFilter && school !== campusFilter) return; // real-campus scoping, every role
+
       const subs = (byEmployee[name] || []).slice().sort(function (a, b) {
         return (b.timestamp ? b.timestamp.getTime() : 0) - (a.timestamp ? a.timestamp.getTime() : 0);
       });
@@ -194,7 +223,8 @@ function ssRoleDashboard_(roleKey, campusFilter) {
       });
 
       roster.push({
-        formKey: formKey,
+        formKey: formKey, // which physical form/tab this data was read from -- structural, not who-owns-it
+        school: school,   // the employee's real campus -- what scoping/grouping should use
         employee: name,
         submissionsThisMonth: thisMonth.length,
         submissionsThisCycle: thisCycle.length,
@@ -215,27 +245,27 @@ function ssRoleDashboard_(roleKey, campusFilter) {
     });
   });
 
-  // Per-campus quota-compliance rollup -- the data behind Principal
-  // Compliance escalation (Coordinator/Owner-visible: which campuses'
-  // Principals are behind, not just each employee's own status). Seeded
-  // from every campus this role actually applies to (not just derived
-  // from `roster`) so a campus with genuinely zero staff in this role
-  // (e.g. Driver Cum Peon at LMS 5) still shows up as "0 employees"
-  // instead of silently vanishing from the list -- found 2026-09-09 via
-  // the first real test run.
+  // Per-campus quota-compliance rollup, grouped by each employee's REAL
+  // school (not formKey -- see the note above) -- the data behind
+  // Principal Compliance escalation. Seeded from every real campus in
+  // scope (not just derived from `roster`) so a campus with genuinely
+  // zero staff in this role (e.g. Driver Cum Peon at LMS 5) still shows
+  // up as "0 employees" instead of silently vanishing -- found
+  // 2026-09-09 via the first real test run.
   const byCampus = {};
-  Object.keys(config.forms).forEach(function (formKey) {
-    if (config.perCampus && campusFilter && formKey !== campusFilter) return;
-    byCampus[formKey] = { total: 0, metQuota: 0 };
+  Object.values(SS_PREFIX_TO_SCHOOL).forEach(function (school) {
+    if (campusFilter && school !== campusFilter) return;
+    byCampus[school] = { total: 0, metQuota: 0 };
   });
   roster.forEach(function (r) {
-    byCampus[r.formKey].total++;
-    if (r.quotaMetThisMonth) byCampus[r.formKey].metQuota++;
+    if (!r.school) return; // shouldn't happen -- unknown EmployeeCode prefix, fail open rather than crash
+    byCampus[r.school].total++;
+    if (r.quotaMetThisMonth) byCampus[r.school].metQuota++;
   });
-  const campusCompliance = Object.keys(byCampus).map(function (formKey) {
-    const c = byCampus[formKey];
+  const campusCompliance = Object.keys(byCampus).map(function (school) {
+    const c = byCampus[school];
     return {
-      formKey: formKey,
+      formKey: school, // named formKey for the frontend's sake -- always a real "LMS N" school now, every role
       totalEmployees: c.total,
       metQuota: c.metQuota,
       compliancePct: c.total ? Math.round((c.metQuota / c.total) * 1000) / 10 : 100,

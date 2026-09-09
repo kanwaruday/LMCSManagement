@@ -652,17 +652,28 @@ function pickDriverCampus(campusId) {
 // or client-side roster/stats merge -- one fetch, roleData.roster is
 // already the complete per-employee picture (quota status, avg score,
 // full drill-down history).
-let dashSSRes = null;          // full action=ssdashboard response, fetched once
-let SELECTED_SS_ROLE = 'teacher';
-let expandedRosterKey = null;  // "<formKey>|<employee>" of the open drill-down row, or null
+let dashSSRes = null;              // full action=ssdashboard response, fetched once
+let SELECTED_SS_BUCKET = 'teaching';
+let expandedRosterKey = null;      // "<roleKey>|<formKey>|<employee>" of the open drill-down row, or null
 
-const SS_ROLE_ORDER = [
-  { key: 'teacher', icon: '📝', short: 'Teacher' },
-  { key: 'itComputer', icon: '💻', short: 'IT' },
-  { key: 'pti', icon: '🏃', short: 'PTI' },
-  { key: 'feeClerkPRO', icon: '🧾', short: 'Clerk' },
-  { key: 'nonTeaching', icon: '🧹', short: 'Non-Teaching' },
-  { key: 'driverCumPeon', icon: '🚌', short: 'Driver' },
+// 2026-09-09, per Uday: collapsed from 6 role tabs to 2 buckets --
+// Teaching (Teacher/IT/PTI) and Non Teaching (Clerk/Non-Teaching/
+// Driver). Each bucket still shows every one of its roles' own
+// section (own rubric, own compliance card) stacked together, since
+// their rubrics have completely different shapes and can't be merged
+// into one table -- only the top-level navigation collapsed, not the
+// underlying data.
+const SS_ROLE_META = {
+  teacher: { icon: '📝', short: 'Teacher' },
+  itComputer: { icon: '💻', short: 'IT' },
+  pti: { icon: '🏃', short: 'PTI' },
+  feeClerkPRO: { icon: '🧾', short: 'Clerk' },
+  nonTeaching: { icon: '🧹', short: 'Non-Teaching' },
+  driverCumPeon: { icon: '🚌', short: 'Driver' },
+};
+const SS_ROLE_BUCKETS = [
+  { key: 'teaching', label: '📚 Teaching', roles: ['teacher', 'itComputer', 'pti'] },
+  { key: 'nonteaching', label: '🧹 Non Teaching', roles: ['feeClerkPRO', 'nonTeaching', 'driverCumPeon'] },
 ];
 
 async function loadDashboard() {
@@ -688,15 +699,13 @@ async function loadDashboard() {
 
 function renderRolePicker() {
   const wrap = document.getElementById('dashRolePicker');
-  wrap.innerHTML = SS_ROLE_ORDER
-    .filter(function (r) { return dashSSRes.roles[r.key]; })
-    .map(function (r) {
-      return '<button class="role-btn' + (r.key === SELECTED_SS_ROLE ? ' active' : '') + '" onclick="selectSSRole(\'' + r.key + '\')">' + r.icon + ' ' + r.short + '</button>';
-    }).join('');
+  wrap.innerHTML = SS_ROLE_BUCKETS.map(function (b) {
+    return '<button class="role-btn' + (b.key === SELECTED_SS_BUCKET ? ' active' : '') + '" onclick="selectSSBucket(\'' + b.key + '\')">' + b.label + '</button>';
+  }).join('');
 }
 
-function selectSSRole(roleKey) {
-  SELECTED_SS_ROLE = roleKey;
+function selectSSBucket(bucketKey) {
+  SELECTED_SS_BUCKET = bucketKey;
   expandedRosterKey = null;
   renderRolePicker();
   renderDashboardForSelectedCampus();
@@ -705,18 +714,25 @@ function selectSSRole(roleKey) {
 function renderDashboardForSelectedCampus() {
   if (!dashSSRes) return; // loadDashboard() hasn't resolved yet -- it'll call this itself once it does
   const body = document.getElementById('dashBody');
-  const roleData = dashSSRes.roles[SELECTED_SS_ROLE];
-  if (!roleData) { body.innerHTML = '<div class="notice">No data for this role yet.</div>'; return; }
-  body.innerHTML = renderRoleSection(roleData, SELECTED_CAMPUS_ID);
+  const bucket = SS_ROLE_BUCKETS.filter(function (b) { return b.key === SELECTED_SS_BUCKET; })[0];
+  const sections = bucket.roles
+    .map(function (roleKey) { return dashSSRes.roles[roleKey]; })
+    .filter(Boolean)
+    .map(function (roleData) { return renderRoleSection(roleData, SELECTED_CAMPUS_ID); })
+    .join('');
+  body.innerHTML = sections || '<div class="notice">No data for this bucket yet.</div>';
 }
 
-/** `campusId` is the school-picker's selection ('LMS1' style). Single-
- *  form roles (IT/PTI/Fee Clerk) aren't split by campus at all -- their
- *  roster spans every campus in one list under formKey 'all', same as
- *  their Name dropdown already does. */
+/** `campusId` is the school-picker's selection ('LMS1' style). Every
+ *  role's roster is scoped by the employee's REAL school (ss-tracker.gs
+ *  derives it from their EmployeeCode prefix), not by which form/tab
+ *  the data happened to be read from -- so IT/PTI/Fee Clerk (one shared
+ *  form for all 6 campuses) are scoped exactly like everyone else now,
+ *  not showing every campus's people mixed together (found 2026-09-09
+ *  per Uday: "only show the employees from that school in the counter"). */
 function renderRoleSection(roleData, campusId) {
-  const formKey = roleData.perCampus ? campusId.replace('LMS', 'LMS ') : 'all';
-  const rows = roleData.roster.filter(function (r) { return r.formKey === formKey; });
+  const school = campusId.replace('LMS', 'LMS ');
+  const rows = roleData.roster.filter(function (r) { return r.school === school; });
 
   // Behind-on-quota employees first (need attention), then by name.
   rows.sort(function (a, b) {
@@ -725,7 +741,7 @@ function renderRoleSection(roleData, campusId) {
   });
 
   const rubricOutOf = roleData.rubricMax * roleData.rubricTitles.length;
-  const compliance = roleData.campusCompliance.filter(function (c) { return c.formKey === formKey; });
+  const compliance = roleData.campusCompliance.filter(function (c) { return c.formKey === school; });
   const complianceHtml = compliance.length
     ? '<div class="compliance-card">' + compliance.map(function (c) {
       const cls = c.compliancePct >= 80 ? 'high' : c.compliancePct >= 50 ? 'mid' : 'low';
@@ -742,8 +758,9 @@ function renderRoleSection(roleData, campusId) {
     }).join(' · ') + ' — unusually uniform scores across submissions. Worth a manual look.</div>'
     : '';
 
+  const meta = SS_ROLE_META[roleData.role] || {};
   return '<div class="dash-section">' +
-    '<div class="dash-hdr"><h2>' + roleData.label + '</h2>' +
+    '<div class="dash-hdr"><h2>' + (meta.icon || '') + ' ' + roleData.label + '</h2>' +
     '<span class="dash-meta">' + roleData.monthLabel + ' · ' + roleData.cycleLabel + ' · quota ' + roleData.quotaPerMonth + '/employee/month</span></div>' +
     complianceHtml + flagHtml +
     '<div class="tbl-wrap"><table><thead><tr>' +
@@ -754,7 +771,7 @@ function renderRoleSection(roleData, campusId) {
 }
 
 function roleRowHtml(r, roleData, rubricOutOf) {
-  const rowKey = r.formKey + '|' + r.employee;
+  const rowKey = roleData.role + '|' + r.formKey + '|' + r.employee;
   const monthPill = r.quotaMetThisMonth
     ? '<span class="pill ok">' + r.submissionsThisMonth + '/' + roleData.quotaPerMonth + '</span>'
     : (r.submissionsThisMonth > 0
