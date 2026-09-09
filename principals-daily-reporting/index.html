@@ -49,6 +49,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .dash-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .dash-hdr h2{font-size:13px;font-weight:700;color:var(--dark)}
 .dash-meta{font-size:11px;color:var(--gray)}
+.dash-empty{padding:16px 12px;text-align:center;color:var(--gray)}
 
 .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -593,8 +594,13 @@ function renderDashboardForSelectedCampus() {
 function renderCampusSection(campusId, campusStats, allEmployees) {
   // Every Active teacher at this campus, whether or not they've been
   // evaluated yet -- so zero-submission teachers are visible, not just
-  // silently absent.
-  const roster = allEmployees.filter(function (e) { return e.school === LMCS.campusLabel(campusId); });
+  // silently absent. employee-roster.gs's `school` field is the short
+  // form ("LMS 1"), NOT LMCS.campusLabel()'s display form ("LMS 1 —
+  // Dhalpur") -- comparing against campusLabel() directly never matched
+  // anything, silently rendering every campus's roster as empty (bug
+  // found 2026-09-09 via a "Nothing visible" report on the Dashboard).
+  // Same short-form conversion teacher-ss.gs already uses.
+  const roster = allEmployees.filter(function (e) { return e.school === campusId.replace('LMS', 'LMS '); });
   const statsByTeacher = {};
   campusStats.teachers.forEach(function (t) { statsByTeacher[t.teacher] = t; });
 
@@ -622,7 +628,7 @@ function renderCampusSection(campusId, campusStats, allEmployees) {
     '<div class="tbl-wrap"><table><thead><tr>' +
     '<th>Teacher</th><th>Submissions</th><th>Avg Score (/100)</th><th>Last SS</th>' +
     '</tr></thead><tbody>' +
-    rows.map(rowHtml).join('') +
+    (rows.length ? rows.map(rowHtml).join('') : '<tr><td colspan="4" class="dash-empty">No teacher roster found for this campus — the Employee Roster Proxy may be unreachable. Try a hard refresh.</td></tr>') +
     '</tbody></table></div></div>';
 }
 
