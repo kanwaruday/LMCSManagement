@@ -52,7 +52,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .dash-meta{font-size:11px;color:var(--gray)}
 .dash-empty{padding:16px 12px;text-align:center;color:var(--gray)}
 
-.role-picker{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.dash-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.role-picker{display:flex;gap:6px;flex-wrap:wrap}
 .role-btn{background:var(--white);border:1.5px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11.5px;font-weight:600;color:var(--gray);cursor:pointer}
 .role-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
 
@@ -407,7 +408,16 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ DASHBOARD ══════════════════ -->
     <div class="tab-panel" id="panel-dashboard">
-      <div id="dashRolePicker" class="role-picker"></div>
+      <div class="dash-toolbar">
+        <div id="dashRolePicker" class="role-picker"></div>
+        <button type="button" class="date-refresh-btn" title="Refresh (pick up any SS just submitted)" onclick="refreshDashboard()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
       <div id="dashBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
     </div>
 
@@ -698,6 +708,17 @@ async function loadDashboard() {
   }
 }
 
+// Manual refresh (2026-09-09) -- so a just-submitted SS shows up
+// without switching tabs and back. Re-fetches action=ssdashboard from
+// scratch (no server-side cache to worry about invalidating) and
+// re-renders; drops any open drill-down row since its data may have
+// changed under it.
+function refreshDashboard() {
+  expandedRosterKey = null;
+  document.getElementById('dashBody').innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>';
+  loadDashboard();
+}
+
 function renderRolePicker() {
   const wrap = document.getElementById('dashRolePicker');
   wrap.innerHTML = SS_ROLE_BUCKETS.map(function (b) {
@@ -771,6 +792,17 @@ function renderRoleSection(roleData, campusId) {
     '</tbody></table></div></div>';
 }
 
+// DD/MM/YYYY, explicitly -- toLocaleDateString() follows the browser's
+// own locale (often MM/DD/YYYY for an en-US browser), inconsistent
+// with the DD/MM/YYYY dates used everywhere else on this page.
+function formatDDMMYYYY_(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return dd + '/' + mm + '/' + d.getFullYear();
+}
+
 function roleRowHtml(r, roleData, rubricOutOf) {
   const rowKey = roleData.role + '|' + r.formKey + '|' + r.employee;
   const monthPill = r.quotaMetThisMonth
@@ -779,7 +811,7 @@ function roleRowHtml(r, roleData, rubricOutOf) {
       ? '<span class="pill amber">' + r.submissionsThisMonth + '/' + roleData.quotaPerMonth + '</span>'
       : '<span class="pill none">0/' + roleData.quotaPerMonth + '</span>');
   const avg = r.avgTotal === null ? '—' : r.avgTotal + '/' + rubricOutOf;
-  const last = r.lastSubmission ? new Date(r.lastSubmission).toLocaleDateString() : '—';
+  const last = formatDDMMYYYY_(r.lastSubmission);
   const isExpanded = expandedRosterKey === rowKey;
 
   let html = '<tr class="roster-row' + (isExpanded ? ' expanded' : '') + '" onclick="toggleRosterDrilldown(\'' + rowKey.replace(/'/g, "\\'") + '\')">' +
@@ -795,7 +827,7 @@ function roleRowHtml(r, roleData, rubricOutOf) {
 function renderHistoryDetail(r, roleData, rubricOutOf) {
   if (!r.history.length) return '<div class="detail-empty">No SS submitted for ' + r.employee + ' yet.</div>';
   return r.history.map(function (h) {
-    const date = h.timestamp ? new Date(h.timestamp).toLocaleDateString() : '—';
+    const date = formatDDMMYYYY_(h.timestamp);
     const paramsStr = roleData.rubricTitles.map(function (title, idx) { return title + ': ' + h.scores[idx]; }).join(' · ');
     return '<div class="hist-row">' +
       '<span class="hist-date">' + date + '</span>' +
