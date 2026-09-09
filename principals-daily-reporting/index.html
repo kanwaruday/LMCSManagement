@@ -185,7 +185,7 @@ td{padding:6px 12px;vertical-align:middle}
 <div class="hdr">
   <div class="hdr-brand">
     <h1>LMCS — Principal's Daily Reporting</h1>
-    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Non-Teaching SS, Principal DR, Dashboard. An SS completion tracker coming.</p>
+    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Non-Teaching SS, Driver SS, Principal DR, Dashboard. An SS completion tracker coming.</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -207,6 +207,7 @@ td{padding:6px 12px;vertical-align:middle}
       <button class="tab-btn" data-tab="ptiss" onclick="switchTab('ptiss')">🏃 PTI SS</button>
       <button class="tab-btn" data-tab="clerkss" onclick="switchTab('clerkss')">🧾 Clerk SS</button>
       <button class="tab-btn" data-tab="nonteachingss" onclick="switchTab('nonteachingss')">🧹 Non-Teaching SS</button>
+      <button class="tab-btn" data-tab="driverss" onclick="switchTab('driverss')">🚌 Driver SS</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     </div>
@@ -248,9 +249,17 @@ td{padding:6px 12px;vertical-align:middle}
          IT/PTI/Clerk SS above -- src is re-pointed by pickNonTeachingCampus()
          from selectSchool(), same as pickSubmitCampus() does for formFrame. -->
     <div class="tab-panel" id="panel-nonteachingss">
-      <div class="notice">Your campus's Non-Teaching SS Google Form — still being set up (response sheet linking in progress as of 2026-09-09).</div>
+      <div class="notice">Your campus's Non-Teaching SS Google Form.</div>
       <div class="form-embed-wrap">
         <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
+      </div>
+    </div>
+
+    <!-- ══════════════════ DRIVER SS (embedded Google Form, per campus) ══════════════════ -->
+    <div class="tab-panel" id="panel-driverss">
+      <div class="notice">Your campus's Driver Cum Peon SS Google Form.</div>
+      <div class="form-embed-wrap">
+        <iframe id="driverFormFrame" src="" title="Driver SS Form"></iframe>
       </div>
     </div>
 
@@ -421,9 +430,8 @@ const CAMPUS_FORM_IDS = {
 // shortlink like CAMPUS_FORM_IDS above -- Uday shared the /edit links
 // directly, so the embed src below omits the "/e/" segment (Forms
 // serves /viewform at both the raw id and the published shortlink).
-// Still being set up (linked to a response sheet) as of 2026-09-09 --
-// rubric/question structure for this form not yet confirmed with
-// FormApp, so ss-forms-sync.gs's nonTeaching config is a best guess.
+// Rubric + "Staff Name" field confirmed live via FormApp 2026-09-09 --
+// see ss-forms-sync.gs's nonTeaching config.
 const NON_TEACHING_FORM_IDS = {
   LMS1: '1P-VOQ5eGOlFE8uAf7xG0PcMxU0rmUwHq81tEW698Atg',
   LMS2: '1AhqORuik-jFi2OKsBA-wyCsfF5JgpLOY4_h-Nh9pnRU',
@@ -431,6 +439,19 @@ const NON_TEACHING_FORM_IDS = {
   LMS4: '1ZdQ9oOrnmgPM2CoyKHk1AZ0ZgBNGJaYwBeLKkAV36ss',
   LMS5: '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
   LMS6: '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
+};
+
+// campusId -> Driver Cum Peon SS form id (2026-09-09), same per-campus
+// pattern as NON_TEACHING_FORM_IDS above. Rubric/Name-field title NOT
+// yet confirmed via FormApp -- see ss-forms-sync.gs's driverCumPeon
+// config, best guess pending inspection.
+const DRIVER_FORM_IDS = {
+  LMS1: '1HwK72yQPXjYQZMH6XGit2dpkGeR2biREflfWnqi2rRs',
+  LMS2: '1n3txv2xoKB-RPiQHv8qbpfeflENA6Frxifi09-eszHg',
+  LMS3: '1bJLdy7rwzpKQbEpUwibRQvHpX8vJt9VtFuO-AKUjBdM',
+  LMS4: '1oBaF1nmVTyRopGSGy2Kmv_NkLCB4h8leSDuEjmk91Jc',
+  LMS5: '1K4sC3FyHEMOm8n6ujet8JlhUzqBZMVR7vMccKiHHcqA',
+  LMS6: '16oTsz4SBj8PvPasi87ajQLw07_PElUYKrifTL0PH75o',
 };
 const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
@@ -567,6 +588,7 @@ function selectSchool(campusId) {
   });
   pickSubmitCampus(campusId);
   pickNonTeachingCampus(campusId);
+  pickDriverCampus(campusId);
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
 }
@@ -581,6 +603,12 @@ function pickSubmitCampus(campusId) {
 function pickNonTeachingCampus(campusId) {
   const formId = NON_TEACHING_FORM_IDS[campusId];
   document.getElementById('nonTeachingFormFrame').src = 'https://docs.google.com/forms/d/' + formId + '/viewform?embedded=true';
+}
+
+// ── Driver SS tab ──────────────────────────────────────────────────
+function pickDriverCampus(campusId) {
+  const formId = DRIVER_FORM_IDS[campusId];
+  document.getElementById('driverFormFrame').src = 'https://docs.google.com/forms/d/' + formId + '/viewform?embedded=true';
 }
 
 // ── Dashboard tab ───────────────────────────────────────────────────

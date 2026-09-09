@@ -294,6 +294,49 @@ const SS_ROLE_CONFIGS = {
     },
   },
 
+  // Added 2026-09-09. Response sheet: "LMCS Driver Responses Sheet",
+  // 1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME (per-campus tab names
+  // TBD, stats reader not wired yet -- same as nonTeaching above).
+  // Rubric + "Driver Name" field confirmed live via FormApp inspection
+  // 2026-09-09 -- wording drifted/reordered slightly from the drafted
+  // rubric (same pattern as every hand-built form this session), and
+  // the Name field turned out to be "Driver Name", NOT "Staff Name"
+  // like nonTeaching's -- don't assume the two forms share a naming
+  // convention just because Uday built them close together.
+  // Department matching confirmed live via action=designations:
+  // "Transport" is Driver Cum Peon only (28 "Driver Cum Peon" + 1
+  // "PEON CUM DRIVER" typo variant, both under Transport as of
+  // 2026-09-09 -- was "Non-Teaching" until Uday moved it that same day).
+  driverCumPeon: {
+    label: 'Driver Cum Peon SS',
+    perCampus: true, // one form per campus, like Teacher/nonTeaching -- see DRIVER_FORM_IDS in index.html
+    forms: {
+      'LMS 1': '1HwK72yQPXjYQZMH6XGit2dpkGeR2biREflfWnqi2rRs',
+      'LMS 2': '1n3txv2xoKB-RPiQHv8qbpfeflENA6Frxifi09-eszHg',
+      'LMS 3': '1bJLdy7rwzpKQbEpUwibRQvHpX8vJt9VtFuO-AKUjBdM',
+      'LMS 4': '1oBaF1nmVTyRopGSGy2Kmv_NkLCB4h8leSDuEjmk91Jc',
+      'LMS 5': '1K4sC3FyHEMOm8n6ujet8JlhUzqBZMVR7vMccKiHHcqA',
+      'LMS 6': '16oTsz4SBj8PvPasi87ajQLw07_PElUYKrifTL0PH75o',
+    },
+    rubricTitles: [
+      'Bus Safety, Cleaning & Pre-Trip Inspection',
+      'Log Book & Fuel Management',
+      'Driving Discipline, Punctuality & Accident-Free Record',
+      'Bus Maintenance & Documentation during Vacations',
+      'Knowledge of Student Names & Awareness',
+      'Assembly & Classroom Support to Teachers',
+      'Corridor Duty & Discipline of Students',
+      'General Duties & School Equipment Knowledge',
+      'Physical Appearance & Uniform',
+      'Attitude towards LMS',
+    ],
+    rubricMax: 10,
+    nameFieldTitle: function () { return 'Driver Name'; },
+    matchesEmployee: function (empRow, school) {
+      return empRow.school === school && empRow.department.toLowerCase() === 'transport';
+    },
+  },
+
   // ── TODO stubs — fill in once Uday finalizes each role's form ──
   // (rubric + Principal-performance factors + comms system are all
   // still open per project_principals_daily_reporting.md). For each:
@@ -314,7 +357,7 @@ const SS_ROLE_CONFIGS = {
 // Which of the keys above actually run. Add a key here once its config
 // above is filled in — keeps syncAllSSForms() from erroring on the
 // still-null stubs.
-const ACTIVE_SS_ROLES = ['teacher', 'itComputer', 'pti', 'feeClerkPRO', 'nonTeaching'];
+const ACTIVE_SS_ROLES = ['teacher', 'itComputer', 'pti', 'feeClerkPRO', 'nonTeaching', 'driverCumPeon'];
 
 // ── Generic engine — role-agnostic, do not edit per-role ───────────
 
@@ -352,7 +395,15 @@ function syncOneSSRole_(config) {
         rangeFixed++;
       }
 
-      if (title === config.nameFieldTitle(formKey) && item.getType() === FormApp.ItemType.LIST) {
+      // setChoiceValues([]) throws ("Array is empty: values") rather
+      // than clearing the list -- found 2026-09-09 when Driver Cum
+      // Peon's LMS 5 form had zero matching employees, which killed
+      // syncAllSSForms() for every role/campus after it in
+      // ACTIVE_SS_ROLES, not just that one form (nothing here caught
+      // it). Skip the update when there's truly nobody to list --
+      // leaves the dropdown's existing choices alone rather than
+      // crashing the whole daily sync over one understaffed campus.
+      if (title === config.nameFieldTitle(formKey) && item.getType() === FormApp.ItemType.LIST && employees.length > 0) {
         item.asListItem().setChoiceValues(employees);
         nameListUpdated = true;
       }
