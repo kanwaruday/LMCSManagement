@@ -51,9 +51,11 @@
 // newline-joined, per Uday 2026-09-02, for readability directly in
 // Sheets -- NOTE: an item containing a literal comma will incorrectly
 // split into two on read-back, a known tradeoff of that choice), the
-// Tasks Completed suggestion lookup (nearest prior WORKING day's Tasks
-// for Tomorrow, skipping Sundays/2nd Saturdays/GH Calendar holidays),
-// reading back an existing day's report so a past submission can be
+// Tasks Completed suggestion lookup (nearest prior day with an actual
+// submitted, non-empty Tasks for Tomorrow -- no longer gated on
+// Sunday/2nd Saturday/GH Calendar holiday status, see
+// pdrFindPriorWorkingDayTasksForTomorrow_'s own comment), reading back
+// an existing day's report so a past submission can be
 // reviewed (action=dailyreport, powers the frontend's date-field
 // refresh/reload), and Planned Activities CRUD (its own "Planned
 // Activities" tab, soft-deleted via Status, never row-removed). This
@@ -169,65 +171,6 @@ function pdrJoinList_(arr) {
  *  per Uday 2026-09-02. */
 function pdrSplitList_(cellValue) {
   return String(cellValue || '').split(/,\s*/).map(function (s) { return s.trim(); }).filter(Boolean);
-}
-
-// ── Off-day check (Sunday / 2nd Saturday / GH Calendar events) ──────
-// Reused from the same "LMS Holiday Rules" convention already used
-// elsewhere (submission trackers): Sunday, the 2nd Saturday of the
-// month, and any all-day Calendar event whose title starts with "GH"
-// (General Holiday) on the campus's OFFICIAL Calendar -- confirmed
-// real examples from testMonthActivities()'s own output: "GH-Dussehra",
-// "GH-Karva Chauth", etc.
-
-// `ghHolidayDates` (optional) is a Set of "yyyy-mm-dd" strings from
-// pdrGHHolidayDatesInRange_ -- pass it when checking many days in a row
-// (e.g. pdrFindPriorWorkingDayTasksForTomorrow_'s backward walk) so this
-// does ONE Calendar query for the whole range instead of one live
-// Calendar call per day checked. Omit it for a genuine single-day check
-// and this falls back to querying live, same as before.
-function pdrIsOffDay_(date, campusId, ghHolidayDates) {
-  if (date.getDay() === 0) return true; // Sunday
-  if (date.getDay() === 6 && Math.ceil(date.getDate() / 7) === 2) return true; // 2nd Saturday
-  if (ghHolidayDates) return ghHolidayDates.has(pdrFormatISO_(date));
-  return pdrHasGHEventOn_(date, campusId);
-}
-
-function pdrHasGHEventOn_(date, campusId) {
-  var calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
-  if (!calId) return false;
-  var cal = CalendarApp.getCalendarById(calId);
-  if (!cal) return false;
-  var dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  var dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-  return cal.getEvents(dayStart, dayEnd).some(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
-}
-
-/** All GH-tagged (all-day) event dates on campusId's official Calendar
- *  within [start, end), as a Set of "yyyy-mm-dd" strings -- ONE Calendar
- *  query covering a whole date range, instead of pdrHasGHEventOn_'s one
- *  query per single day. Used by pdrFindPriorWorkingDayTasksForTomorrow_'s
- *  backward walk (up to 10 days), which used to make up to 10 separate
- *  live Calendar calls per suggestion-chip load -- any one of those being
- *  slow/flaky killed the WHOLE request, and the frontend already
- *  swallows that failure into an empty suggestion list with just a
- *  console.warn (see fetchYesterdaysTomorrowTasks's comment), so it
- *  looked like the suggestions were just randomly inconsistent (Uday
- *  2026-09-10). One query = one failure point instead of ten. */
-function pdrGHHolidayDatesInRange_(campusId, start, end) {
-  var dates = new Set();
-  var calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
-  var cal = calId ? CalendarApp.getCalendarById(calId) : null;
-  if (!cal) return dates;
-  cal.getEvents(start, end).forEach(function (ev) {
-    if (ev.getTitle().indexOf('GH') !== 0) return;
-    var d = new Date(ev.getStartTime().getFullYear(), ev.getStartTime().getMonth(), ev.getStartTime().getDate());
-    var endExclusive = ev.getEndTime(); // all-day events store an exclusive end already
-    while (d < endExclusive) {
-      dates.add(pdrFormatISO_(d));
-      d.setDate(d.getDate() + 1);
-    }
-  });
-  return dates;
 }
 
 // ── Month Activities (School's OFFICIAL Calendar + Planned Activities) ──
@@ -518,29 +461,34 @@ function principalDrYesterdaysTasks_(caller, campusIdParam, dateParam) {
 // doesn't loop forever looking for a match that will never exist.
 const PDR_SUGGESTION_LOOKBACK_DAYS = 10;
 
-/** Walks backward from refDate, skipping off-days (pdrIsOffDay_), and
- *  returns ALL entries of the nearest prior WORKING day's Daily Reports
- *  row that has a non-empty TasksForTomorrow (was capped to the first 2
- *  -- Uday 2026-09-10: LMS2's 07/09 had 6 Tasks for Tomorrow but 08/09
- *  only ever offered 2 as suggestions; every campus hit the same cap,
- *  not just LMS2). A working day with an empty (or missing)
- *  TasksForTomorrow does NOT stop the search -- it keeps walking
+/** Walks backward from refDate, day by day, and returns ALL entries of
+ *  the nearest prior day's Daily Reports row that has a non-empty
+ *  TasksForTomorrow. A day with no row at all, or a row with an empty
+ *  TasksForTomorrow, does NOT stop the search -- it keeps walking
  *  further back, per Uday's spec. Returns [] if nothing turns up within
  *  the lookback bound -- not an error. `valuesOpt` (optional) is a
  *  pre-fetched Daily Reports getDataRange().getValues() -- pass it (see
  *  principalDrLoadBundle_) to skip a second full read of the same sheet
- *  within one request. */
+ *  within one request.
+ *
+ *  Used to also skip Sundays/2nd Saturdays/GH Calendar holidays before
+ *  even checking for a row on those dates -- removed 2026-09-10: LMS2's
+ *  04/09/2026 is GH-Janmashtami on the official Calendar, but a REAL
+ *  report was submitted for it anyway (with real TasksForTomorrow) --
+ *  the off-day skip discarded that data unconditionally, so it could
+ *  never surface as a suggestion on 05/09 or 06/09 (or any later date),
+ *  holiday or not. A day with no submitted row already keeps the walk
+ *  going on its own, whether that day was a holiday or just not
+ *  submitted -- so the off-day check was never actually needed to get
+ *  that behavior right, and it actively hid real data when a report
+ *  existed despite the calendar flag. Deleting it also means this no
+ *  longer depends on live Calendar data at all. */
 function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, valuesOpt) {
   const values = valuesOpt || pdrDailyReportsSheet_().getDataRange().getValues();
   const cursor = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
 
-  const rangeEnd = new Date(cursor); // snapshot before the loop below starts mutating `cursor`
-  const rangeStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - PDR_SUGGESTION_LOOKBACK_DAYS);
-  const ghHolidayDates = pdrGHHolidayDatesInRange_(campusId, rangeStart, rangeEnd); // one Calendar call for the whole walk, not one per day
-
   for (let i = 0; i < PDR_SUGGESTION_LOOKBACK_DAYS; i++) {
     cursor.setDate(cursor.getDate() - 1);
-    if (pdrIsOffDay_(cursor, campusId, ghHolidayDates)) continue;
     const dateISO = pdrFormatISO_(cursor);
 
     for (let r = 1; r < values.length; r++) {
