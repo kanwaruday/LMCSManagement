@@ -392,7 +392,7 @@ td{padding:6px 12px;vertical-align:middle}
               <input type="date" id="newPlannedDate">
               <input type="text" id="newPlannedText" placeholder="Activity name">
               <input type="text" id="newPlannedAssignee" placeholder="Assigned to (optional)">
-              <button type="button" class="add-row-btn" onclick="addPlannedActivityHandler()">Add</button>
+              <button type="button" class="add-row-btn" id="addPlannedActivityBtn" onclick="addPlannedActivityHandler()">Add</button>
             </div>
           </div>
 
@@ -433,7 +433,7 @@ td{padding:6px 12px;vertical-align:middle}
           </div>
 
           <div class="submit-bar">
-            <button type="button" class="submit-btn" onclick="submitReport()">Submit Report</button>
+            <button type="button" class="submit-btn" id="submitReportBtn" onclick="submitReport()">Submit Report</button>
           </div>
 
         </div>
@@ -1478,40 +1478,65 @@ async function addPlannedActivityHandler() {
   var textInput = document.getElementById('newPlannedText');
   var assigneeInput = document.getElementById('newPlannedAssignee');
   if (!textInput.value.trim()) return;
-  var targetCampusId = principalCampusId; // pin -- switching schools mid-await must not push onto the WRONG campus's list
-  var created = await addPlannedActivity(targetCampusId, dateInput.value, textInput.value, assigneeInput.value.trim());
-  if (targetCampusId === principalCampusId) {
-    currentPlannedActivities.push(created);
-    renderPlannedActivities();
-  } else if (plannedActivitiesCache_[targetCampusId]) {
-    // School switched before this resolved -- still saved correctly
-    // server-side under targetCampusId (addPlannedActivity captured it
-    // above), just update that OTHER campus's cache directly instead of
-    // the currently-displayed one.
-    plannedActivitiesCache_[targetCampusId].push(created);
+  var btn = document.getElementById('addPlannedActivityBtn');
+  if (btn.disabled) return; // guard against a double-click firing two adds (see submitReport()'s comment for the same class of issue)
+  btn.disabled = true;
+  try {
+    var targetCampusId = principalCampusId; // pin -- switching schools mid-await must not push onto the WRONG campus's list
+    var created = await addPlannedActivity(targetCampusId, dateInput.value, textInput.value, assigneeInput.value.trim());
+    if (targetCampusId === principalCampusId) {
+      currentPlannedActivities.push(created);
+      renderPlannedActivities();
+    } else if (plannedActivitiesCache_[targetCampusId]) {
+      // School switched before this resolved -- still saved correctly
+      // server-side under targetCampusId (addPlannedActivity captured it
+      // above), just update that OTHER campus's cache directly instead of
+      // the currently-displayed one.
+      plannedActivitiesCache_[targetCampusId].push(created);
+    }
+    dateInput.value = '';
+    textInput.value = '';
+    assigneeInput.value = '';
+  } finally {
+    btn.disabled = false;
   }
-  dateInput.value = '';
-  textInput.value = '';
-  assigneeInput.value = '';
 }
 
 // ---------- submit ----------
+// Guarded against double-submission (2026-09-10, pre-launch QA):
+// backend responses can genuinely take several seconds (Apps Script
+// Web App cold starts, confirmed via real Network-tab timing the same
+// day), and this had no guard against an impatient double-click during
+// that wait -- two concurrent principalDrSaveDailyReport_ calls can
+// both read "no existing row yet" before either has written, creating
+// TWO rows for the same (campus, date) and breaking the "one row per
+// day" invariant the Tasks Completed suggestion lookup depends on.
 async function submitReport() {
-  var payload = {
-    date: document.getElementById('reportDate').value,
-    morningAssembly: { classHouse: document.getElementById('maClass').value, score: document.getElementById('maScore').value },
-    tasksCompleted: listToArray('tasksCompletedList'),
-    supportSessions: { teachers: currentSSTeachers, count: currentSSTeachers.length },
-    registersCrosschecked: selectedRegisters,
-    tasksTomorrow: listToArray('tasksTomorrowList'),
-    importantMessage: listToArray('importantMsgList')
-  };
-  var result = await saveDailyReport(principalCampusId, payload);
-  if (result && result.success) {
-    alert('Report submitted.');
-  } else {
-    pdrReportAuthFailureIfNeeded_(result);
-    alert('Something went wrong submitting the report' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
+  var btn = document.getElementById('submitReportBtn');
+  if (btn.disabled) return; // already submitting -- ignore the extra click(s) instead of firing another save
+  btn.disabled = true;
+  var originalLabel = btn.textContent;
+  btn.textContent = 'Submitting…';
+  try {
+    var payload = {
+      date: document.getElementById('reportDate').value,
+      morningAssembly: { classHouse: document.getElementById('maClass').value, score: document.getElementById('maScore').value },
+      tasksCompleted: listToArray('tasksCompletedList'),
+      supportSessions: { teachers: currentSSTeachers, count: currentSSTeachers.length },
+      registersCrosschecked: selectedRegisters,
+      tasksTomorrow: listToArray('tasksTomorrowList'),
+      importantMessage: listToArray('importantMsgList')
+    };
+    var result = await saveDailyReport(principalCampusId, payload);
+    if (result && result.success) {
+      alert('Report submitted.');
+    } else {
+      pdrReportAuthFailureIfNeeded_(result);
+      alert('Something went wrong submitting the report' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
   }
 }
 function listToArray(listId) {

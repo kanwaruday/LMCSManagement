@@ -419,7 +419,22 @@ function pdrDayLabel_(date, campusId) {
  *  not first-submitted time. Support Session count is deliberately NOT
  *  persisted here -- it's Calendar-derived and recomputed live on every
  *  load, not something the Principal edits/submits. Forces the Date
- *  cell to Plain Text before writing -- see the INCIDENT note. */
+ *  cell to Plain Text before writing -- see the INCIDENT note.
+ *
+ *  LOCKED (2026-09-10, pre-launch QA): the find-row-then-write below is
+ *  a check-then-act -- without a lock, two genuinely concurrent calls
+ *  for the SAME (campusId, dateISO) (e.g. the same report open in two
+ *  browser tabs, or a double-click that slipped past the frontend's own
+ *  guard -- see submitReport()'s comment) could both see "no existing
+ *  row yet" and each append their own row, leaving TWO rows for one
+ *  day. The Tasks Completed suggestion lookup and every other reader
+ *  here assume at most one row per (campus, date); a duplicate breaks
+ *  that silently (which one wins is just whichever a linear scan hits
+ *  first) rather than erroring. The lock makes the whole
+ *  check-then-write atomic against every OTHER call to this same
+ *  function, portal-wide, not just this one campus/date -- serial
+ *  rather than one-lock-per-key, which is fine given how rarely two
+ *  Daily Report saves land in the same instant across the whole portal. */
 function principalDrSaveDailyReport_(caller, body) {
   const campusId = String(body.campusId || '').trim().toUpperCase();
   if (caller.campusId !== 'ALL' && campusId !== caller.campusId) {
@@ -430,26 +445,36 @@ function principalDrSaveDailyReport_(caller, body) {
     return { success: false, error: 'Invalid date: "' + dateISO + '" (expected yyyy-mm-dd)' };
   }
 
-  const ma = body.morningAssembly || {};
-  const row = [
-    new Date(),
-    dateISO,
-    campusId,
-    caller.email,
-    String(ma.classHouse || ''),
-    String(ma.score || ''),
-    pdrJoinList_(body.tasksCompleted),
-    pdrJoinList_(body.tasksTomorrow),
-    pdrJoinList_(body.registersCrosschecked),
-    pdrJoinList_(body.importantMessage),
-  ];
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, error: 'Another save is already in progress -- please try again in a moment.' };
+  }
+  try {
+    const ma = body.morningAssembly || {};
+    const row = [
+      new Date(),
+      dateISO,
+      campusId,
+      caller.email,
+      String(ma.classHouse || ''),
+      String(ma.score || ''),
+      pdrJoinList_(body.tasksCompleted),
+      pdrJoinList_(body.tasksTomorrow),
+      pdrJoinList_(body.registersCrosschecked),
+      pdrJoinList_(body.importantMessage),
+    ];
 
-  const sheet = pdrDailyReportsSheet_();
-  const rowIndex = pdrFindDailyReportRowIndex_(sheet, campusId, dateISO);
-  const targetRow = rowIndex > 0 ? rowIndex : sheet.getLastRow() + 1;
-  sheet.getRange(targetRow, 2).setNumberFormat('@'); // Date column -- Plain Text, see INCIDENT note
-  sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
-  return { success: true };
+    const sheet = pdrDailyReportsSheet_();
+    const rowIndex = pdrFindDailyReportRowIndex_(sheet, campusId, dateISO);
+    const targetRow = rowIndex > 0 ? rowIndex : sheet.getLastRow() + 1;
+    sheet.getRange(targetRow, 2).setNumberFormat('@'); // Date column -- Plain Text, see INCIDENT note
+    sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** 1-indexed sheet row number for (campusId, dateISO)'s Daily Reports
