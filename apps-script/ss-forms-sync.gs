@@ -536,3 +536,168 @@ function installDailySSSyncTrigger() {
 // read by any code here -- format it however's convenient.
 // Once each form exists: paste its id into the matching
 // `forms.all` PASTE_FORM_ID_* placeholder above.
+
+// ── Custom-form prototype (2026-09-11) ──────────────────────────────
+// action=ssformmeta (GET) / action=submitss (POST) -- the custom-HTML-
+// form replacement for a role's Google Form, inside the portal itself.
+// IT SS is the first role wired to this (see principals-daily-
+// reporting/index.html's panel-itss for the frontend half) -- per Uday,
+// if IT SS's load time actually improves over the embedded-iframe
+// version, the other 5 roles get the same treatment.
+//
+// SS_ROLE_CONFIGS above stays the ONE source of truth for a role's
+// shape (rubricTitles/rubricMax/nameFieldTitle/responseSheetId/
+// responseTabs) -- nothing about it is redefined here or in the
+// frontend; ssFormMeta_ just packages it up for the browser to render.
+// Submissions land in the EXACT SAME response sheet/tab the Google Form
+// already writes to -- ss-tracker.gs's Dashboard reads that sheet by
+// HEADER NAME (see its own file header), not column position, so this
+// needed zero changes there to keep working.
+//
+// NOTE (2026-09-02, see main.gs's header): an earlier session already
+// tried a Forms-free rebuild once and Uday pulled it back, specifically
+// asking to check first before trying again -- confirmed 2026-09-11 to
+// go ahead this time BECAUSE storage stays the same Google Sheet
+// (unlike whatever the earlier attempt did); this isn't re-litigating
+// that note, it's the "check with Uday first" it asked for.
+
+/** 'LMS1'..'LMS6' (portal SESSION.campusId / SELECTED_CAMPUS_ID format)
+ *  -> 'LMS 1'..'LMS 6' (SS_ROLE_CONFIGS key format), or null if
+ *  unrecognized. The two formats coexist in this project on purpose
+ *  (SS_PREFIX_TO_SCHOOL above vs main.gs's ALL_CAMPUSES) -- every place
+ *  that crosses between them goes through this one helper. */
+function ssPortalCampusToFormKey_(campusId) {
+  const m = /^LMS([1-6])$/.exec(String(campusId || '').trim().toUpperCase());
+  return m ? 'LMS ' + m[1] : null;
+}
+
+/** Called from main.gs's doGet for action=ssformmeta. Returns everything
+ *  the frontend needs to RENDER one role's form: label, rubric
+ *  titles/max, and the employee choice list -- the same list
+ *  getActiveEmployeeChoices_ keeps the Google Form's own dropdown synced
+ *  with, additionally narrowed to `schoolParam` (portal format) when
+ *  given. That narrowing is NEW here, not in matchesEmployee() itself
+ *  (which stays school-blind for itComputer/pti/feeClerkPRO -- it still
+ *  drives the Form sync unchanged) -- the whole point of this prototype
+ *  is that the portal already knows which campus you're in, so the
+ *  dropdown can be pre-filtered instead of asking the person to also
+ *  pick the right school by hand inside the form (the exact mixup this
+ *  replaces). */
+function ssFormMeta_(caller, roleKey, schoolParam) {
+  const config = SS_ROLE_CONFIGS[roleKey];
+  if (!config || ACTIVE_SS_ROLES.indexOf(roleKey) < 0) return { success: false, error: 'Unknown role: ' + roleKey };
+
+  const school = ssPortalCampusToFormKey_(schoolParam);
+  if (config.perCampus && !school) return { success: false, error: 'Missing/unknown school' };
+  if (caller.campusId !== 'ALL' && school && ssPortalCampusToFormKey_(caller.campusId) !== school) {
+    return { success: false, error: 'Not authorized for that campus' };
+  }
+  const formKey = config.perCampus ? school : 'all';
+
+  const departmentByCode = getDepartmentByCode_();
+  const rows = getEmpMasterRows_();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  const nameCol = header.indexOf('Name');
+  const statusCol = header.indexOf('Status');
+
+  const employees = [];
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][codeCol] || '').trim();
+    if (!code) continue;
+    const prefix = code.split('/')[0];
+    const empSchool = SS_PREFIX_TO_SCHOOL[prefix];
+    if (!empSchool) continue;
+    const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim().toLowerCase() : '';
+    if (status && status !== 'active') continue; // departed/transferred -- exclude, same as getActiveEmployeeChoices_
+
+    const empRow = { code: code, name: String(rows[i][nameCol] || '').trim(), school: empSchool, department: departmentByCode[code] || '' };
+    if (!config.matchesEmployee(empRow, formKey)) continue;
+    if (school && empRow.school !== school) continue; // portal-driven narrowing, see comment above
+    employees.push({ code: empRow.code, name: empRow.name, label: empRow.code + ' ' + empRow.name });
+  }
+  employees.sort(function (a, b) { return a.label.localeCompare(b.label); });
+
+  return {
+    success: true,
+    label: config.label,
+    rubricTitles: config.rubricTitles,
+    rubricMax: config.rubricMax,
+    employees: employees,
+  };
+}
+
+/** Called from main.gs's doPost for action=submitss -- appends one row
+ *  to the role's response sheet/tab, the custom-form replacement for a
+ *  Google Form submission. Writes by HEADER NAME, not fixed column
+ *  position, so it lands correctly regardless of the sheet's exact
+ *  column order -- matches how ss-tracker.gs itself READS this same
+ *  sheet (header.indexOf(), see its own file header). `body`: {role,
+ *  school (portal format), employeeCode, employeeName, scores (array,
+ *  same order as config.rubricTitles)}. Email Address is the VERIFIED
+ *  caller's own email, never client-supplied -- a Google Form lets
+ *  anyone type any email into that field; this closes that.
+ *
+ *  LOCKED the same way principal-dr.gs's principalDrSaveDailyReport_ is
+ *  -- appendRow itself is atomic, but reading the header row and
+ *  building the row array from it isn't a single indivisible step, and
+ *  serializing writes here is cheap given how rarely two SS submissions
+ *  for the same role land in the same instant. */
+function ssSubmit_(caller, body) {
+  const roleKey = String(body.role || '');
+  const config = SS_ROLE_CONFIGS[roleKey];
+  if (!config || ACTIVE_SS_ROLES.indexOf(roleKey) < 0) return { success: false, error: 'Unknown role: ' + roleKey };
+
+  const school = ssPortalCampusToFormKey_(body.school);
+  if (!school) return { success: false, error: 'Missing/unknown school' };
+  if (caller.campusId !== 'ALL' && ssPortalCampusToFormKey_(caller.campusId) !== school) {
+    return { success: false, error: 'Not authorized for that campus' };
+  }
+  const formKey = config.perCampus ? school : 'all';
+
+  const scores = Array.isArray(body.scores) ? body.scores : [];
+  if (scores.length !== config.rubricTitles.length) {
+    return { success: false, error: 'Expected ' + config.rubricTitles.length + ' scores, got ' + scores.length };
+  }
+  for (let i = 0; i < scores.length; i++) {
+    const n = Number(scores[i]);
+    if (!isFinite(n) || n < 0 || n > config.rubricMax) {
+      return { success: false, error: 'Score for "' + config.rubricTitles[i] + '" must be 0-' + config.rubricMax };
+    }
+  }
+  const employeeCode = String(body.employeeCode || '').trim();
+  const employeeName = String(body.employeeName || '').trim();
+  if (!employeeCode || !employeeName) return { success: false, error: 'Employee required' };
+
+  const tabName = config.responseTabs[formKey];
+  const sheet = SpreadsheetApp.openById(config.responseSheetId).getSheetByName(tabName);
+  if (!sheet) return { success: false, error: 'Response sheet tab not found: ' + tabName };
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { success: false, error: 'Another submission is in progress -- please try again in a moment.' };
+  }
+  try {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
+    const row = new Array(header.length).fill('');
+    const set = function (title, value) {
+      const col = header.indexOf(title);
+      if (col >= 0) row[col] = value;
+    };
+    set('Timestamp', new Date());
+    set('Email Address', caller.email);
+    set(config.nameFieldTitle(formKey), employeeCode + ' ' + employeeName);
+    // ponytail: a "School" column, if the sheet has one, is left blank
+    // for rows written this way (its exact header text isn't confirmed
+    // live) -- ss-tracker.gs never reads it, so nothing downstream
+    // breaks; add `set('School', school)` once that text is confirmed,
+    // if a human skimming the sheet ends up needing it filled in.
+    config.rubricTitles.forEach(function (title, i) { set(title, Number(scores[i])); });
+    sheet.appendRow(row);
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}

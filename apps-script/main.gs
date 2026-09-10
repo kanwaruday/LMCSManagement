@@ -30,17 +30,21 @@
 //                         lookup, Planned Activities CRUD. Stays ONE
 //                         file even as more gets added -- no further
 //                         splitting, per Uday.
-//   ss-forms-sync.gs    -- Run-menu only, no doGet -- keeps every SS
-//                         Google Form's Name dropdown + rubric
-//                         validation live. Turned out to be THE generic
+//   ss-forms-sync.gs    -- Started Run-menu only (keeps every SS Google
+//                         Form's Name dropdown + rubric validation
+//                         live); now ALSO action=ssformmeta/submitss
+//                         (added 2026-09-11) -- the custom-HTML-form
+//                         prototype that replaces a role's Google Form
+//                         in the portal itself, IT SS first (see its own
+//                         header note). Turned out to be THE generic
 //                         engine for all 6 roles (Teacher/IT/PTI/Clerk/
 //                         Non-Teaching/Driver) via SS_ROLE_CONFIGS,
 //                         rather than one file per role as originally
-//                         planned -- ss-tracker.gs below reuses that
-//                         same config for the Dashboard, one source of
-//                         truth for "what does this role's data look
-//                         like" (rubric titles, name field, where
-//                         responses live).
+//                         planned -- ss-tracker.gs below AND the new
+//                         ssformmeta/submitss actions all reuse that same
+//                         config, one source of truth for "what does
+//                         this role's data look like" (rubric titles,
+//                         name field, where responses live).
 //   ss-tracker.gs       -- action=ssdashboard. The SS completion/
 //                         compliance tracker across all 6 roles: quota
 //                         compliance, Principal Compliance escalation,
@@ -102,6 +106,7 @@ function doGet(e) {
     if (action === 'dailyreport') return jsonOut_(principalDrGetDailyReport_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'approvalslist') return jsonOut_(aprList_(caller));
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
+    if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -134,6 +139,7 @@ function doPost(e) {
     if (action === 'addapprovalcomment') return jsonOut_(aprAddComment_(caller, body));
     if (action === 'deleteapprovalcomment') return jsonOut_(aprDeleteComment_(caller, body));
     if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
+    if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
