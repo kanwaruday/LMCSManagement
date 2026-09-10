@@ -1,9 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
 // APR — Approvals: requester/approver workflow so a Principal can ask
-// the School Owner for sign-off (HR, events, holidays, school
-// management, financial/purchase, academic changes, other) with their
-// reasoning + evidence, instead of ad hoc calls/WhatsApp, and get a
-// timestamped decision + reason back.
+// the School Owner for sign-off (hiring, compensation, disciplinary,
+// events, trips, holidays, financial/purchase, academic changes,
+// other -- see APR_CATEGORIES) with their reasoning + evidence,
+// instead of ad hoc calls/WhatsApp, and get a timestamped decision +
+// reason back.
 //
 // Reuses this project's existing auth (verifyCallerToken_ in main.gs)
 // and the SAME "LMCS Principal Allowlist" sheet every other file here
@@ -53,8 +54,18 @@ const APR_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Ap
 const APR_TAB = 'Approvals';
 const APR_COMMENTS_TAB = 'Comments';
 
-const APR_CATEGORIES = ['HR', 'Event / Invitation', 'Holiday / Calendar', 'School Management', 'Financial / Purchase', 'Academic Change', 'Other'];
-const APR_FINANCIAL_CATEGORY = 'Financial / Purchase';
+// 2026-09-10, per Uday: replaced the generic 'HR' bucket with 3 named
+// splits (Long Leave/Sabbatical and the other 4 brainstormed
+// categories -- School Management, Fee Concession/Refund, Student
+// Incident/Expulsion, Compliance/Regulatory -- were considered and cut).
+const APR_CATEGORIES = ['Hiring / New Position', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+// Categories that show the Amount + Item fields -- Item doubles as
+// "Item" (Financial/Purchase) or "Employee" (Compensation Change),
+// same generic string column, just a different frontend label, so no
+// new sheet column was needed for Compensation Change. Quantity only
+// makes sense for an actual purchase, so it's gated separately.
+const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
@@ -141,14 +152,15 @@ function aprSubmit_(caller, body) {
   const description = String(body.description || '').trim();
   if (!description) return { success: false, error: 'Description required -- explain the reasoning' };
 
-  const isFinancial = category === APR_FINANCIAL_CATEGORY;
+  const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
+  const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
     id, caller.campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
     title, description,
-    isFinancial && body.amount !== undefined && body.amount !== '' ? Number(body.amount) : '',
-    isFinancial ? String(body.itemName || '').trim() : '',
-    isFinancial && body.quantity !== undefined && body.quantity !== '' ? Number(body.quantity) : '',
+    showsAmount && body.amount !== undefined && body.amount !== '' ? Number(body.amount) : '',
+    showsAmount ? String(body.itemName || '').trim() : '',
+    showsQty && body.quantity !== undefined && body.quantity !== '' ? Number(body.quantity) : '',
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
   ]);

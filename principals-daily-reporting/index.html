@@ -502,12 +502,12 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Description / reasoning</label>
           <textarea id="aprDescription" rows="4" placeholder="Explain why, with any relevant details"></textarea>
         </div>
-        <div class="row-2col" id="aprFinancialFields" style="display:none;margin-top:10px">
+        <div class="row-2col" id="aprItemQtyFields" style="display:none;margin-top:10px">
           <div>
-            <label class="field-label">Item</label>
+            <label class="field-label" id="aprItemNameLabel">Item</label>
             <input type="text" id="aprItemName" placeholder="What are you buying">
           </div>
-          <div>
+          <div id="aprQuantityWrap">
             <label class="field-label">Quantity</label>
             <input type="number" id="aprQuantity" min="1">
           </div>
@@ -1740,8 +1740,15 @@ async function loadReportForDate() {
 // eager-fetch-everything-then-filter-by-selected-school pattern as the
 // SS Dashboard above (approvalslist already returns every campus the
 // caller can see in one call).
-const APR_CATEGORIES = ['HR', 'Event / Invitation', 'Holiday / Calendar', 'School Management', 'Financial / Purchase', 'Academic Change', 'Other'];
-const APR_FINANCIAL_CATEGORY = 'Financial / Purchase';
+// 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
+// this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
+const APR_CATEGORIES = ['Hiring / New Position', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+// Categories that show Amount + Item -- Item doubles as "Item"
+// (Financial/Purchase) or "Employee" (Compensation Change), same
+// generic field, just relabeled -- see aprOnCategoryChange(). Keep in
+// sync with the same consts in approvals.gs.
+const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
 
 let aprRes = null;              // full action=approvalslist response, fetched once
@@ -1763,9 +1770,15 @@ function aprEsc_(s) {
 document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
 function aprOnCategoryChange() {
-  const isFinancial = document.getElementById('aprCategory').value === APR_FINANCIAL_CATEGORY;
-  document.getElementById('aprFinancialFields').style.display = isFinancial ? 'grid' : 'none';
-  document.getElementById('aprAmountField').style.display = isFinancial ? 'block' : 'none';
+  const category = document.getElementById('aprCategory').value;
+  const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
+  const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
+  document.getElementById('aprItemQtyFields').style.display = showsAmount ? 'grid' : 'none';
+  document.getElementById('aprQuantityWrap').style.display = showsQty ? 'block' : 'none';
+  document.getElementById('aprAmountField').style.display = showsAmount ? 'block' : 'none';
+  const isComp = category === 'Compensation Change';
+  document.getElementById('aprItemNameLabel').textContent = isComp ? 'Employee' : 'Item';
+  document.getElementById('aprItemName').placeholder = isComp ? 'Employee name' : 'What are you buying';
 }
 
 async function loadApprovals() {
@@ -1873,7 +1886,7 @@ async function toggleApprovalRow(id) {
 function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
-  if (r.itemName) meta.push('Item: ' + aprEsc_(r.itemName) + (r.quantity != null ? ' × ' + r.quantity : ''));
+  if (r.itemName) meta.push((r.category === 'Compensation Change' ? 'Employee: ' : 'Item: ') + aprEsc_(r.itemName) + (r.quantity != null ? ' × ' + r.quantity : ''));
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
   if (r.evidenceLink) meta.push('Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
   if (r.linkedPlannedActivityId) {
