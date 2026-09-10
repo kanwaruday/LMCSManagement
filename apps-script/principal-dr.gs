@@ -179,9 +179,16 @@ function pdrSplitList_(cellValue) {
 // real examples from testMonthActivities()'s own output: "GH-Dussehra",
 // "GH-Karva Chauth", etc.
 
-function pdrIsOffDay_(date, campusId) {
+// `ghHolidayDates` (optional) is a Set of "yyyy-mm-dd" strings from
+// pdrGHHolidayDatesInRange_ -- pass it when checking many days in a row
+// (e.g. pdrFindPriorWorkingDayTasksForTomorrow_'s backward walk) so this
+// does ONE Calendar query for the whole range instead of one live
+// Calendar call per day checked. Omit it for a genuine single-day check
+// and this falls back to querying live, same as before.
+function pdrIsOffDay_(date, campusId, ghHolidayDates) {
   if (date.getDay() === 0) return true; // Sunday
   if (date.getDay() === 6 && Math.ceil(date.getDate() / 7) === 2) return true; // 2nd Saturday
+  if (ghHolidayDates) return ghHolidayDates.has(pdrFormatISO_(date));
   return pdrHasGHEventOn_(date, campusId);
 }
 
@@ -193,6 +200,34 @@ function pdrHasGHEventOn_(date, campusId) {
   var dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   var dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
   return cal.getEvents(dayStart, dayEnd).some(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
+}
+
+/** All GH-tagged (all-day) event dates on campusId's official Calendar
+ *  within [start, end), as a Set of "yyyy-mm-dd" strings -- ONE Calendar
+ *  query covering a whole date range, instead of pdrHasGHEventOn_'s one
+ *  query per single day. Used by pdrFindPriorWorkingDayTasksForTomorrow_'s
+ *  backward walk (up to 10 days), which used to make up to 10 separate
+ *  live Calendar calls per suggestion-chip load -- any one of those being
+ *  slow/flaky killed the WHOLE request, and the frontend already
+ *  swallows that failure into an empty suggestion list with just a
+ *  console.warn (see fetchYesterdaysTomorrowTasks's comment), so it
+ *  looked like the suggestions were just randomly inconsistent (Uday
+ *  2026-09-10). One query = one failure point instead of ten. */
+function pdrGHHolidayDatesInRange_(campusId, start, end) {
+  var dates = new Set();
+  var calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
+  var cal = calId ? CalendarApp.getCalendarById(calId) : null;
+  if (!cal) return dates;
+  cal.getEvents(start, end).forEach(function (ev) {
+    if (ev.getTitle().indexOf('GH') !== 0) return;
+    var d = new Date(ev.getStartTime().getFullYear(), ev.getStartTime().getMonth(), ev.getStartTime().getDate());
+    var endExclusive = ev.getEndTime(); // all-day events store an exclusive end already
+    while (d < endExclusive) {
+      dates.add(pdrFormatISO_(d));
+      d.setDate(d.getDate() + 1);
+    }
+  });
+  return dates;
 }
 
 // ── Month Activities (School's OFFICIAL Calendar + Planned Activities) ──
@@ -448,9 +483,13 @@ function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate) {
   const values = pdrDailyReportsSheet_().getDataRange().getValues();
   const cursor = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
 
+  const rangeEnd = new Date(cursor); // snapshot before the loop below starts mutating `cursor`
+  const rangeStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - PDR_SUGGESTION_LOOKBACK_DAYS);
+  const ghHolidayDates = pdrGHHolidayDatesInRange_(campusId, rangeStart, rangeEnd); // one Calendar call for the whole walk, not one per day
+
   for (let i = 0; i < PDR_SUGGESTION_LOOKBACK_DAYS; i++) {
     cursor.setDate(cursor.getDate() - 1);
-    if (pdrIsOffDay_(cursor, campusId)) continue;
+    if (pdrIsOffDay_(cursor, campusId, ghHolidayDates)) continue;
     const dateISO = pdrFormatISO_(cursor);
 
     for (let r = 1; r < values.length; r++) {
@@ -499,8 +538,12 @@ function pdrReadPlannedActivities_(campusId) {
   return out;
 }
 
-/** Called from main.gs's doPost for action=addplannedactivity. Forces
- *  the DueDate cell to Plain Text after writing -- see INCIDENT note. */
+/** Called from main.gs's doPost for action=addplannedactivity. Rejects
+ *  a non-ISO dueDate outright (mirrors principalDrSaveDailyReport_'s
+ *  guard -- was missing here, meaning a non-native-date-input caller
+ *  could write an unparseable DueDate that would then silently vanish
+ *  from every date-window filter that reads it, e.g. pdrReadMergedMonthActivities_).
+ *  Forces the DueDate cell to Plain Text after writing -- see INCIDENT note. */
 function principalDrAddPlannedActivity_(caller, body) {
   const campusId = String(body.campusId || '').trim().toUpperCase();
   if (caller.campusId !== 'ALL' && campusId !== caller.campusId) {
@@ -509,6 +552,9 @@ function principalDrAddPlannedActivity_(caller, body) {
   const title = String(body.title || '').trim();
   if (!title) return { success: false, error: 'Activity name required' };
   const dueDate = String(body.dueDate || '').trim();
+  if (dueDate && !pdrParseISO_(dueDate)) {
+    return { success: false, error: 'Invalid due date: "' + dueDate + '" (expected yyyy-mm-dd)' };
+  }
   const assignee = String(body.assignee || '').trim();
   const id = 'pa-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
 
