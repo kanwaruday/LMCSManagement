@@ -2155,9 +2155,22 @@ async function loadSsForm_(roleKey, panelPrefix, campusId) {
   const cacheKey = roleKey + '|' + campusId;
   let meta = ssFormMetaCache_[cacheKey];
   if (!meta) {
-    meta = await fetch(PDR_BACKEND_URL + '?action=ssformmeta&role=' + encodeURIComponent(roleKey)
-      + '&school=' + encodeURIComponent(campusId) + '&idToken=' + encodeURIComponent(SESSION.idToken))
-      .then(function (r) { return r.json(); });
+    // WRAPPED (2026-09-11, found via a real "stuck on Loading forever"
+    // report): an unguarded fetch/json here meant ANY failure -- a
+    // network hiccup, or the backend returning something that isn't
+    // valid JSON -- left the panel on its static "Loading…" text
+    // forever, with the real reason visible only in devtools. Same
+    // guard pdrPost_ already has for POST; this GET call didn't, unlike
+    // it. Now a failure actually reaches renderSsForm_'s error path
+    // instead of silently hanging.
+    try {
+      const res = await fetch(PDR_BACKEND_URL + '?action=ssformmeta&role=' + encodeURIComponent(roleKey)
+        + '&school=' + encodeURIComponent(campusId) + '&idToken=' + encodeURIComponent(SESSION.idToken));
+      meta = await res.json();
+    } catch (err) {
+      console.warn('loadSsForm_ error (' + roleKey + '):', err);
+      meta = { success: false, error: String(err && err.message || err) };
+    }
     if (meta && meta.success) ssFormMetaCache_[cacheKey] = meta;
   }
   renderSsForm_(panelPrefix, meta);
