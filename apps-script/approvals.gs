@@ -172,8 +172,21 @@ function aprSubmit_(caller, body) {
 // request (campus-scoped, same rule as aprDetail_) can post into its
 // thread: the requester explaining more, a Coordinator flagging
 // something, or the Owner asking a question before deciding.
+//
+// 2026-09-10, per Uday: a comment now also nudges status, reusing the
+// existing Pending/Info Requested values instead of adding a new one
+// -- whoever ISN'T the requester commenting on a Pending request
+// flips it to Info Requested (signals "principal, I need something
+// before I can decide"), and the requester replying on an Info
+// Requested request flips it back to Pending (signals "answered,
+// back to you"). Only toggles between those two -- a comment on an
+// already-decided (Approved/Rejected/Revoked) request never reopens
+// it, and this never touches decidedBy/decidedAt/decisionNote -- those
+// stay reserved for an actual Approve/Reject/Request Info/Revoke via
+// aprDecide_, not a casual comment.
 function aprAddComment_(caller, body) {
-  const values = aprSheet_().getDataRange().getValues();
+  const sheet = aprSheet_();
+  const values = sheet.getDataRange().getValues();
   const rowIdx = aprFindRowIndex_(values, body.approvalId);
   if (rowIdx === -1) return { success: false, error: 'Request not found' };
   const target = values[rowIdx];
@@ -185,8 +198,19 @@ function aprAddComment_(caller, body) {
 
   const commentId = 'cmt-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprCommentsSheet_().appendRow([commentId, String(target[0]), caller.email, caller.role, text, new Date()]);
+
+  const requesterEmail = String(target[11]);
+  const currentStatus = String(target[13]);
+  let newStatus = null;
+  if (caller.email !== requesterEmail && currentStatus === APR_STATUS.PENDING) {
+    newStatus = APR_STATUS.INFO_REQUESTED;
+  } else if (caller.email === requesterEmail && currentStatus === APR_STATUS.INFO_REQUESTED) {
+    newStatus = APR_STATUS.PENDING;
+  }
+  if (newStatus) sheet.getRange(rowIdx + 1, 14).setValue(newStatus);
+
   aprNotifyThread_(caller, target, text);
-  return { success: true };
+  return { success: true, status: newStatus || currentStatus };
 }
 
 // action=decideapproval (doPost) -- Owner, or a Coordinator with

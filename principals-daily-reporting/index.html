@@ -1937,6 +1937,14 @@ async function submitApprovalComment(id) {
   input.disabled = false;
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t post that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
   input.value = '';
+  // A comment can flip Pending<->Info Requested server-side (see
+  // aprAddComment_'s comment) -- patch the cached list entry so the
+  // COLLAPSED row's status pill updates too; the reopen below already
+  // re-fetches fresh detail (comment thread + decide bar) regardless.
+  if (res.status && aprRes) {
+    const cachedRow = aprRes.requests.filter(function (r) { return r.id === id; })[0];
+    if (cachedRow) cachedRow.status = res.status;
+  }
   toggleApprovalRow(id); // close
   toggleApprovalRow(id); // reopen -- cheapest way to pull the fresh comment thread
 }
