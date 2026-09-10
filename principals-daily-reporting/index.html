@@ -1478,9 +1478,18 @@ async function addPlannedActivityHandler() {
   var textInput = document.getElementById('newPlannedText');
   var assigneeInput = document.getElementById('newPlannedAssignee');
   if (!textInput.value.trim()) return;
-  var created = await addPlannedActivity(principalCampusId, dateInput.value, textInput.value, assigneeInput.value.trim());
-  currentPlannedActivities.push(created);
-  renderPlannedActivities();
+  var targetCampusId = principalCampusId; // pin -- switching schools mid-await must not push onto the WRONG campus's list
+  var created = await addPlannedActivity(targetCampusId, dateInput.value, textInput.value, assigneeInput.value.trim());
+  if (targetCampusId === principalCampusId) {
+    currentPlannedActivities.push(created);
+    renderPlannedActivities();
+  } else if (plannedActivitiesCache_[targetCampusId]) {
+    // School switched before this resolved -- still saved correctly
+    // server-side under targetCampusId (addPlannedActivity captured it
+    // above), just update that OTHER campus's cache directly instead of
+    // the currently-displayed one.
+    plannedActivitiesCache_[targetCampusId].push(created);
+  }
   dateInput.value = '';
   textInput.value = '';
   assigneeInput.value = '';
@@ -1553,6 +1562,7 @@ async function loadReportForDate() {
   var bundle = await fetchPrincipalDrBundle_(campusId, dateISO);
   if (myToken !== principalLoadToken) return; // a newer load has since started -- discard this stale result
   await plannedActivitiesPromise; // usually already settled by now
+  if (myToken !== principalLoadToken) return; // re-check -- a newer load can start/finish DURING this second await (e.g. a genuinely new campus's first-ever fetch is slow); without this the bundle check above isn't enough and this stale call would still overwrite a newer, correct render below
   setPrincipalLoadStatus(null);
   // A failed fetch (dead token, backend down) falls back to the same
   // empty defaults every individual fetch* used to return on failure --
