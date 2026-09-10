@@ -349,7 +349,30 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
     monthActivities: pdrReadMergedMonthActivities_(campusId, plannedValues),
     plannedActivities: pdrReadPlannedActivities_(campusId, plannedValues),
     yesterdaysTasks: pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, dailyValues),
+    dayLabel: pdrDayLabel_(refDate, campusId),
   };
+}
+
+/** null for an ordinary working day, else a short label for why the
+ *  SELECTED report date is a holiday: "Sunday", "2nd Saturday", or the
+ *  GH Calendar event's own title (e.g. "GH-Janmashtami"). Purely
+ *  informational -- shown on the Daily Report form so a day like
+ *  04/09/2026 doesn't look like an ordinary day (Uday 2026-09-10: "some
+ *  sort of indication to tell the principal" about holidays). This does
+ *  NOT gate or skip anything -- that coupling (skipping a holiday's
+ *  data unconditionally in the suggestion walk) was the bug fixed
+ *  earlier the same day; this is a separate, display-only check, and
+ *  only ONE Calendar query for the ONE selected date, not a range walk. */
+function pdrDayLabel_(date, campusId) {
+  if (date.getDay() === 0) return 'Sunday';
+  if (date.getDay() === 6 && Math.ceil(date.getDate() / 7) === 2) return '2nd Saturday';
+  const calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
+  const cal = calId ? CalendarApp.getCalendarById(calId) : null;
+  if (!cal) return null;
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+  const ghEvent = cal.getEvents(dayStart, dayEnd).find(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
+  return ghEvent ? ghEvent.getTitle() : null;
 }
 
 // ── Daily Reports: save (upsert), read-back, + the Tasks Completed suggestion lookup ──

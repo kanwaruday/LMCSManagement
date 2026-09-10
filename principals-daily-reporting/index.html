@@ -346,6 +346,8 @@ td{padding:6px 12px;vertical-align:middle}
         </div>
       </div>
 
+      <div class="notice" id="dayHolidayNotice" hidden></div>
+
       <div class="principal-layout">
 
         <div class="card sidebar-card">
@@ -1481,6 +1483,17 @@ async function loadReportForDate() {
   var monthActivities = (bundle && bundle.monthActivities) || [];
   var plannedActivities = (bundle && bundle.plannedActivities) || [];
   var yesterdaysTasks = (bundle && bundle.yesterdaysTasks) || [];
+
+  // Purely informational -- lets the Principal know the selected date
+  // is a holiday (Sunday/2nd Saturday/GH Calendar event) so a day like
+  // 04/09/2026 (GH-Janmashtami) doesn't look ordinary. Does NOT change
+  // the Tasks Completed suggestion logic above -- that used to skip
+  // holiday dates unconditionally and that was the bug fixed
+  // 2026-09-10 (see principal-dr.gs's pdrFindPriorWorkingDayTasksForTomorrow_).
+  var dayHolidayNotice = document.getElementById('dayHolidayNotice');
+  var dayLabel = bundle && bundle.dayLabel;
+  dayHolidayNotice.hidden = !dayLabel;
+  if (dayLabel) dayHolidayNotice.textContent = '📅 ' + friendlyDate(dateISO) + ' is ' + dayLabel + ' -- reports can still be filed as usual.';
 
   if (existing.exists) {
     if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
