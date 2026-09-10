@@ -474,11 +474,14 @@ function principalDrYesterdaysTasks_(caller, campusIdParam, dateParam) {
 const PDR_SUGGESTION_LOOKBACK_DAYS = 10;
 
 /** Walks backward from refDate, skipping off-days (pdrIsOffDay_), and
- *  returns the first 2 entries of the nearest prior WORKING day's
- *  Daily Reports row that has a non-empty TasksForTomorrow. A working
- *  day with an empty (or missing) TasksForTomorrow does NOT stop the
- *  search -- it keeps walking further back, per Uday's spec. Returns
- *  [] if nothing turns up within the lookback bound -- not an error. */
+ *  returns ALL entries of the nearest prior WORKING day's Daily Reports
+ *  row that has a non-empty TasksForTomorrow (was capped to the first 2
+ *  -- Uday 2026-09-10: LMS2's 07/09 had 6 Tasks for Tomorrow but 08/09
+ *  only ever offered 2 as suggestions; every campus hit the same cap,
+ *  not just LMS2). A working day with an empty (or missing)
+ *  TasksForTomorrow does NOT stop the search -- it keeps walking
+ *  further back, per Uday's spec. Returns [] if nothing turns up within
+ *  the lookback bound -- not an error. */
 function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate) {
   const values = pdrDailyReportsSheet_().getDataRange().getValues();
   const cursor = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
@@ -495,7 +498,7 @@ function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate) {
     for (let r = 1; r < values.length; r++) {
       if (String(values[r][2]).trim() !== campusId || pdrCellDateToISO_(values[r][1]) !== dateISO) continue;
       const tasksForTomorrow = pdrSplitList_(values[r][7]);
-      if (tasksForTomorrow.length) return tasksForTomorrow.slice(0, 2);
+      if (tasksForTomorrow.length) return tasksForTomorrow;
       break; // found the day's row but it's empty -- stop scanning rows, keep walking back
     }
   }

@@ -940,10 +940,10 @@ function pdrReportAuthFailureIfNeeded_(res) {
 // 'yesterdaystasks' action -- NOT literally "yesterday": it walks
 // backward from the report's OWN date (the reportDate field, which a
 // Principal can edit -- not necessarily today), skipping off-days
-// (Sunday/2nd Saturday/GH Calendar events), and returns the first 2
-// entries of the nearest prior working day's TasksForTomorrow. Empty
-// if nothing's ever been submitted within the lookback window -- not
-// an error state.
+// (Sunday/2nd Saturday/GH Calendar events), and returns ALL entries of
+// the nearest prior working day's TasksForTomorrow (was capped to 2,
+// removed 2026-09-10). Empty if nothing's ever been submitted within
+// the lookback window -- not an error state.
 async function fetchYesterdaysTomorrowTasks(campusId) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
   try {
