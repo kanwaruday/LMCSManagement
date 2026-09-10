@@ -352,7 +352,7 @@ td{padding:6px 12px;vertical-align:middle}
 
         <div class="card sidebar-card">
           <p class="card-title">Activities of the Month</p>
-          <p class="card-hint">Fetched from the school calendar (academic + extra-curricular) — changes automatically each month.</p>
+          <p class="card-hint">Fetched from the school calendar (academic + extra-curricular) — next 60 days, refreshed whenever you pick a school.</p>
           <ul class="fetched-list" id="monthActivitiesList"></ul>
         </div>
 
@@ -949,11 +949,13 @@ function pdrReportAuthFailureIfNeeded_(res) {
 // apps-script/principal-dr.gs's 'principaldrload' action, which does
 // the auth check and each sheet read ONCE and returns everything
 // loadReportForDate() needs in one response: {report, sessions,
-// monthActivities, plannedActivities, yesterdaysTasks}. This is why the
-// page used to feel like it was "doing all the computation each time"
-// -- it was, 5 times over, on every single load. On any failure this
-// returns null (not partial data) so the caller can fall back to empty
-// defaults for everything at once instead of guessing per-field.
+// plannedActivities, yesterdaysTasks, dayLabel}. This is why the page
+// used to feel like it was "doing all the computation each time" -- it
+// was, 5 times over, on every single load. On any failure this returns
+// null (not partial data) so the caller can fall back to empty defaults
+// for everything at once instead of guessing per-field. Does NOT
+// include Month Activities -- see fetchMonthActivities_'s own comment
+// for why that's fetched separately.
 async function fetchPrincipalDrBundle_(campusId, dateISO) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return null;
   try {
@@ -965,7 +967,7 @@ async function fetchPrincipalDrBundle_(campusId, dateISO) {
     // (falls through to the unknown-action response, success:false, so
     // that's already caught above) -- this guards a version that somehow
     // returned success without the expected shape.
-    if (!res.report || !Array.isArray(res.monthActivities)) {
+    if (!res.report) {
       console.warn('fetchPrincipalDrBundle_: unexpected response shape -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
       return null;
     }
@@ -974,6 +976,37 @@ async function fetchPrincipalDrBundle_(campusId, dateISO) {
     console.warn('fetchPrincipalDrBundle_ error:', err);
     return null;
   }
+}
+
+// Activities of the Month depends only on the campus and real "today"
+// (a flat 60-day forward window, see principal-dr.gs's
+// pdrNextMonthRange_) -- NEVER on which report date is selected. Fetched
+// ONCE per school-select (see pickPrincipalCampus) and cached in
+// monthActivitiesCache_ rather than re-fetched on every date click like
+// it used to be as part of the old bundle (Uday 2026-09-10: "can it be
+// a static block that doesn't need repopulation for each day").
+var monthActivitiesCache_ = {}; // campusId -> {text,tag}[]
+async function fetchMonthActivities_(campusId) {
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+  try {
+    const url = PDR_BACKEND_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
+      '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success || !Array.isArray(res.activities)) {
+      console.warn('fetchMonthActivities_ failed:', res.error); pdrReportAuthFailureIfNeeded_(res);
+      return [];
+    }
+    return res.activities;
+  } catch (err) {
+    console.warn('fetchMonthActivities_ error:', err);
+    return [];
+  }
+}
+async function loadMonthActivitiesForCampus_(campusId) {
+  if (!(campusId in monthActivitiesCache_)) {
+    monthActivitiesCache_[campusId] = await fetchMonthActivities_(campusId);
+  }
+  renderMonthActivities(monthActivitiesCache_[campusId]);
 }
 
 // Shared POST helper for every write action (Planned Activities CRUD +
@@ -1063,6 +1096,7 @@ function setPrincipalLoadStatus(msg) {
 function pickPrincipalCampus(campusId) {
   principalCampusId = campusId;
   document.getElementById('principalBranchLabel').textContent = LMCS.campusLabel(campusId);
+  loadMonthActivitiesForCampus_(campusId); // once per school-select, cached -- see its own comment
   bootPrincipalReport(campusId);
 }
 
@@ -1136,7 +1170,7 @@ function renderMonthActivities(items) {
     // this card shows next month's calendar, and it made a silent auth
     // failure (see pdrReportAuthFailureIfNeeded_ above) indistinguishable
     // from a real empty month. Own copy, 2026-09-07.
-    el.innerHTML = '<li style="color:#B7C0CC;">No activities scheduled for next month yet</li>';
+    el.innerHTML = '<li style="color:#B7C0CC;">No activities scheduled in the next 60 days yet</li>';
     return;
   }
   items.forEach(function(item) {
@@ -1480,7 +1514,6 @@ async function loadReportForDate() {
   // reloaded, which is a feature here: one failure state, not five.
   var existing = (bundle && bundle.report) || { exists: false };
   var sessions = (bundle && bundle.sessions) || [];
-  var monthActivities = (bundle && bundle.monthActivities) || [];
   var plannedActivities = (bundle && bundle.plannedActivities) || [];
   var yesterdaysTasks = (bundle && bundle.yesterdaysTasks) || [];
 
@@ -1509,15 +1542,9 @@ async function loadReportForDate() {
   renderMsTags();
 
   // Support Session count follows the Date field -- viewing 1 Sept's
-  // report shows 1 Sept's real SS count. Activities of the Month
-  // deliberately does NOT follow it -- kept pinned to real "next
-  // calendar month" per Uday 2026-09-02 (it's a forward-planning aid,
-  // not a historical record, so it should keep showing what's genuinely
-  // coming up even while reviewing a past report).
+  // report shows 1 Sept's real SS count.
   currentSSTeachers = sessions;
   renderSsCountBadge(currentSSTeachers.length);
-
-  renderMonthActivities(monthActivities);
 
   currentPlannedActivities = plannedActivities;
   renderPlannedActivities();
