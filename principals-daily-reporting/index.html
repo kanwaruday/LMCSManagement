@@ -942,141 +942,35 @@ function pdrReportAuthFailureIfNeeded_(res) {
   }
 }
 
-// WIRED (2026-09-02): reads apps-script/principal-dr.gs's
-// 'yesterdaystasks' action -- NOT literally "yesterday": it walks
-// backward from the report's OWN date (the reportDate field, which a
-// Principal can edit -- not necessarily today), skipping off-days
-// (Sunday/2nd Saturday/GH Calendar events), and returns ALL entries of
-// the nearest prior working day's TasksForTomorrow (was capped to 2,
-// removed 2026-09-10). Empty if nothing's ever been submitted within
-// the lookback window -- not an error state.
-async function fetchYesterdaysTomorrowTasks(campusId) {
-  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+// WIRED (2026-09-10, replacing 5 separate fetch* calls -- see
+// principal-dr.gs's "Combined page-load bundle" comment for why): reads
+// apps-script/principal-dr.gs's 'principaldrload' action, which does
+// the auth check and each sheet read ONCE and returns everything
+// loadReportForDate() needs in one response: {report, sessions,
+// monthActivities, plannedActivities, yesterdaysTasks}. This is why the
+// page used to feel like it was "doing all the computation each time"
+// -- it was, 5 times over, on every single load. On any failure this
+// returns null (not partial data) so the caller can fall back to empty
+// defaults for everything at once instead of guessing per-field.
+async function fetchPrincipalDrBundle_(campusId, dateISO) {
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return null;
   try {
-    const dateStr = document.getElementById('reportDate').value || todayISO();
-    const url = PDR_BACKEND_URL + '?action=yesterdaystasks&campusId=' + encodeURIComponent(campusId) +
-      '&date=' + encodeURIComponent(dateStr) + '&idToken=' + encodeURIComponent(SESSION.idToken);
-    const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchYesterdaysTomorrowTasks failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
-    if (!Array.isArray(res.tasks)) {
-      console.warn('fetchYesterdaysTomorrowTasks: no tasks array in response -- is the Web App deployment out of date?', res);
-      return [];
-    }
-    return res.tasks;
-  } catch (err) {
-    console.warn('fetchYesterdaysTomorrowTasks error:', err);
-    return [];
-  }
-}
-
-// PARTIALLY WIRED (2026-09-02): reads apps-script/principal-dr.gs's
-// 'supportsessionstoday' action -- events on the DATE FIELD's date (not
-// always literal "today" -- date-parameterized as of 2026-09-02 per
-// Uday: "Can this fetch the data based on the date selected on the top
-// right") on the Principal's own PERSONAL Calendar whose title contains
-// "SS" as its own tag (see the tag convention comment there). This is a
-// simple count/title list, NOT yet CROSS-REFERENCED against "LMCS
-// Teacher SS 2026 (Responses)" (the same sheet teacher-ss.gs reads) --
-// a Calendar entry alone isn't proof the session actually happened; per
-// Uday there should eventually be a matching Teacher SS Form submission
-// for that teacher/class/subject/day too. That cross-reference, and
-// parsing Class/Subject/Teacher out of the title, are both still
-// blocked on Uday's SS naming-convention meeting -- don't guess a
-// parsing format ahead of that. LMS5/LMS6 calendars (Priyanka Sharma,
-// Nikita Sen) confirmed accessible and wired 2026-09-07 -- see
-// PDR_PRINCIPAL_PERSONAL_CALENDARS.
-async function fetchSupportSessionsToday(campusId) {
-  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
-  try {
-    const dateISO = document.getElementById('reportDate').value || todayISO();
-    const url = PDR_BACKEND_URL + '?action=supportsessionstoday&campusId=' + encodeURIComponent(campusId) +
+    const url = PDR_BACKEND_URL + '?action=principaldrload&campusId=' + encodeURIComponent(campusId) +
       '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
     const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchSupportSessionsToday failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
-    if (!Array.isArray(res.sessions)) {
-      console.warn('fetchSupportSessionsToday: no sessions array in response -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
-      return [];
+    if (!res.success) { console.warn('fetchPrincipalDrBundle_ failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return null; }
+    // Older deployed Web App version wouldn't have this action at all
+    // (falls through to the unknown-action response, success:false, so
+    // that's already caught above) -- this guards a version that somehow
+    // returned success without the expected shape.
+    if (!res.report || !Array.isArray(res.monthActivities)) {
+      console.warn('fetchPrincipalDrBundle_: unexpected response shape -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
+      return null;
     }
-    return res.sessions;
+    return res;
   } catch (err) {
-    console.warn('fetchSupportSessionsToday error:', err);
-    return [];
-  }
-}
-
-// WIRED (2026-09-02): reads the School's OFFICIAL Calendar (next
-// month) MERGED with Active Planned Activities due next month, via
-// apps-script/principal-dr.gs's 'monthactivities' action -- same
-// window for both per Uday, sorted together chronologically. Each item
-// is now {text, tag} (tag is null for official-Calendar entries,
-// "School Specific" for Planned Activities ones) -- see
-// renderMonthActivities(), NOT the generic renderFetchedList(), since
-// plain strings can't carry the tag.
-async function fetchMonthActivities(campusId) {
-  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
-  try {
-    const url = PDR_BACKEND_URL + '?action=monthactivities&campusId=' + encodeURIComponent(campusId) +
-      '&idToken=' + encodeURIComponent(SESSION.idToken);
-    const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchMonthActivities failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
-    // If the deployed Web App is a version older than the 'monthactivities'
-    // action, res.success is still true (it silently falls through to the
-    // old default response) but res.activities won't exist -- guard against
-    // that instead of returning undefined and crashing the renderer.
-    if (!Array.isArray(res.activities)) {
-      console.warn('fetchMonthActivities: no activities array in response -- is the Web App deployment out of date? (Deploy > Manage deployments > pencil > New version)', res);
-      return [];
-    }
-    return res.activities;
-  } catch (err) {
-    console.warn('fetchMonthActivities error:', err);
-    return [];
-  }
-}
-
-// WIRED (2026-09-02): reads apps-script/principal-dr.gs's
-// 'plannedactivities' action -- the 'Planned Activities' Sheet tab,
-// filtered to this campus, Deleted rows excluded server-side. Preserves
-// the original prototype's "disappear the next day" intent (see
-// renderPlannedActivities' completed-item styling) via server data, not
-// a browser timer.
-async function fetchPlannedActivities(campusId) {
-  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
-  try {
-    const url = PDR_BACKEND_URL + '?action=plannedactivities&campusId=' + encodeURIComponent(campusId) +
-      '&idToken=' + encodeURIComponent(SESSION.idToken);
-    const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchPlannedActivities failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return []; }
-    if (!Array.isArray(res.activities)) {
-      console.warn('fetchPlannedActivities: no activities array in response -- is the Web App deployment out of date?', res);
-      return [];
-    }
-    return res.activities; // [{id, date, activity, assignee, completed}]
-  } catch (err) {
-    console.warn('fetchPlannedActivities error:', err);
-    return [];
-  }
-}
-
-// WIRED (2026-09-02): reads apps-script/principal-dr.gs's 'dailyreport'
-// action -- an existing Daily Reports row for (campusId, dateISO), if
-// one was already submitted. Powers "view a past report" (per Uday:
-// "Is there a way I can see a past report that I have submitted?") --
-// loadReportForDate() calls this whenever the Date field changes or its
-// refresh button is clicked, and prefills the form from the result.
-// {exists:false} is the normal case for a date nothing's been
-// submitted for yet, not an error.
-async function fetchExistingDailyReport(campusId, dateISO) {
-  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return { exists: false };
-  try {
-    const url = PDR_BACKEND_URL + '?action=dailyreport&campusId=' + encodeURIComponent(campusId) +
-      '&date=' + encodeURIComponent(dateISO) + '&idToken=' + encodeURIComponent(SESSION.idToken);
-    const res = await fetch(url).then(function (r) { return r.json(); });
-    if (!res.success) { console.warn('fetchExistingDailyReport failed:', res.error); pdrReportAuthFailureIfNeeded_(res); return { exists: false }; }
-    return res.report || { exists: false };
-  } catch (err) {
-    console.warn('fetchExistingDailyReport error:', err);
-    return { exists: false };
+    console.warn('fetchPrincipalDrBundle_ error:', err);
+    return null;
   }
 }
 
@@ -1574,10 +1468,21 @@ async function loadReportForDate() {
     document.getElementById(listId).innerHTML = '';
   });
 
-  setPrincipalLoadStatus('Loading report…');
-  var existing = await fetchExistingDailyReport(campusId, dateISO);
+  setPrincipalLoadStatus('Loading…');
+  var bundle = await fetchPrincipalDrBundle_(campusId, dateISO);
   if (myToken !== principalLoadToken) return; // a newer load has since started -- discard this stale result
-  if (existing && existing.exists) {
+  setPrincipalLoadStatus(null);
+  // A failed fetch (dead token, backend down) falls back to the same
+  // empty defaults every individual fetch* used to return on failure --
+  // an all-or-nothing bundle can't leave some sections stale and others
+  // reloaded, which is a feature here: one failure state, not five.
+  var existing = (bundle && bundle.report) || { exists: false };
+  var sessions = (bundle && bundle.sessions) || [];
+  var monthActivities = (bundle && bundle.monthActivities) || [];
+  var plannedActivities = (bundle && bundle.plannedActivities) || [];
+  var yesterdaysTasks = (bundle && bundle.yesterdaysTasks) || [];
+
+  if (existing.exists) {
     if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
     document.getElementById('maScore').value = existing.maScore || '';
     (existing.tasksCompleted || []).forEach(function (t) { addItemDirect('tasksCompletedList', t); });
@@ -1590,31 +1495,20 @@ async function loadReportForDate() {
   renderMultiselectOptions();
   renderMsTags();
 
-  // Support Session count follows the Date field (see
-  // fetchSupportSessionsToday's own comment) -- viewing 1 Sept's report
-  // shows 1 Sept's real SS count. Activities of the Month deliberately
-  // does NOT follow it -- kept pinned to real "next calendar month" per
-  // Uday 2026-09-02 (it's a forward-planning aid, not a historical
-  // record, so it should keep showing what's genuinely coming up even
-  // while reviewing a past report).
-  setPrincipalLoadStatus('Loading support sessions…');
-  currentSSTeachers = await fetchSupportSessionsToday(campusId);
-  if (myToken !== principalLoadToken) return;
+  // Support Session count follows the Date field -- viewing 1 Sept's
+  // report shows 1 Sept's real SS count. Activities of the Month
+  // deliberately does NOT follow it -- kept pinned to real "next
+  // calendar month" per Uday 2026-09-02 (it's a forward-planning aid,
+  // not a historical record, so it should keep showing what's genuinely
+  // coming up even while reviewing a past report).
+  currentSSTeachers = sessions;
   renderSsCountBadge(currentSSTeachers.length);
 
-  setPrincipalLoadStatus('Loading month activities…');
-  var monthActivities = await fetchMonthActivities(campusId);
-  if (myToken !== principalLoadToken) return;
   renderMonthActivities(monthActivities);
 
-  setPrincipalLoadStatus('Loading planned activities…');
-  currentPlannedActivities = await fetchPlannedActivities(campusId);
-  if (myToken !== principalLoadToken) return;
+  currentPlannedActivities = plannedActivities;
   renderPlannedActivities();
 
-  setPrincipalLoadStatus('Loading suggestions…');
-  var yesterdaysTasks = await fetchYesterdaysTomorrowTasks(campusId);
-  if (myToken !== principalLoadToken) return;
   // Any still-open Planned Activity due on/before the SELECTED report
   // date also becomes a Tasks Completed suggestion (per Uday 2026-09-02,
   // refined 2026-09-03 to follow the Date field via daysBetween() rather
@@ -1626,7 +1520,6 @@ async function loadReportForDate() {
     .filter(function (a) { var d = daysBetween(a.date, dateISO); return d !== null && d <= 0; })
     .map(function (a) { return a.activity; });
   renderSuggestionChips(yesterdaysTasks.concat(plannedSuggestions));
-  setPrincipalLoadStatus(null);
 }
 
 function switchTab(tab) {

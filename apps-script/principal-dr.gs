@@ -259,7 +259,11 @@ function pdrNextMonthRange_() {
  *  2026-09-08 from "next calendar month only" so activities due later
  *  in the CURRENT month (e.g. a Planned Activity due in a few days)
  *  actually show up here instead of silently never appearing. */
-function pdrReadMergedMonthActivities_(campusId) {
+// `plannedValues` (optional) is a pre-fetched Planned Activities
+// getDataRange().getValues() -- pass it (see principalDrLoadBundle_)
+// when the caller already has it, so this doesn't re-read the whole
+// sheet on top of whatever else read it in the same request.
+function pdrReadMergedMonthActivities_(campusId, plannedValues) {
   const range = pdrNextMonthRange_();
   const items = [];
 
@@ -271,7 +275,7 @@ function pdrReadMergedMonthActivities_(campusId) {
     });
   }
 
-  pdrReadPlannedActivities_(campusId).forEach(function (a) {
+  pdrReadPlannedActivities_(campusId, plannedValues).forEach(function (a) {
     if (a.completed) return; // only still-open planned activities show here
     const due = pdrParseISO_(a.date);
     if (!due || due < range.start || due >= range.end) return;
@@ -367,6 +371,44 @@ function pdrReadSupportSessionsForDate_(campusId, refDate) {
     .map(function (ev) { return ev.getTitle(); });
 }
 
+// ── Combined page-load bundle (2026-09-10, speed fix) ────────────────
+// The frontend's loadReportForDate() used to fire 5 SEPARATE requests
+// (dailyreport, supportsessionstoday, monthactivities, plannedactivities,
+// yesterdaystasks) every time a Principal opened the tab, switched
+// school, or changed the date -- "it feels like it's doing all the
+// computation each time" (Uday 2026-09-10) was literal: main.gs's
+// verifyCallerToken_ (a live call to Google's tokeninfo endpoint PLUS a
+// full read of the Allowlist sheet) ran 5 TIMES per load instead of
+// once, and the Daily Reports sheet got fully read twice (dailyreport +
+// yesterdaystasks) and the Planned Activities sheet got fully read
+// twice (monthactivities + plannedactivities) within that same single
+// page load. One request now does the auth check once and reads each
+// sheet once, passing the already-fetched values into the functions
+// above/below instead of letting each re-read its own sheet.
+function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
+  const campusId = String(campusIdParam || '').trim().toUpperCase();
+  if (caller.campusId !== 'ALL' && campusId !== caller.campusId) {
+    return { success: false, error: 'Not authorized for that campus' };
+  }
+  const dateISO = String(dateParam || '').trim();
+  const refDate = pdrParseISO_(dateISO);
+  if (!refDate) {
+    return { success: false, error: 'Invalid date: "' + dateISO + '" (expected yyyy-mm-dd)' };
+  }
+
+  const dailyValues = pdrDailyReportsSheet_().getDataRange().getValues();
+  const plannedValues = pdrPlannedActivitiesSheet_().getDataRange().getValues();
+
+  return {
+    success: true,
+    report: pdrGetDailyReportFromValues_(dailyValues, campusId, dateISO),
+    sessions: pdrReadSupportSessionsForDate_(campusId, refDate),
+    monthActivities: pdrReadMergedMonthActivities_(campusId, plannedValues),
+    plannedActivities: pdrReadPlannedActivities_(campusId, plannedValues),
+    yesterdaysTasks: pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, dailyValues),
+  };
+}
+
 // ── Daily Reports: save (upsert), read-back, + the Tasks Completed suggestion lookup ──
 
 /** Called from main.gs's doPost for action=savedailyreport. Upserts
@@ -436,24 +478,27 @@ function principalDrGetDailyReport_(caller, campusIdParam, dateParam) {
     return { success: false, error: 'Invalid date: "' + dateISO + '" (expected yyyy-mm-dd)' };
   }
 
-  const values = pdrDailyReportsSheet_().getDataRange().getValues();
+  return { success: true, report: pdrGetDailyReportFromValues_(pdrDailyReportsSheet_().getDataRange().getValues(), campusId, dateISO) };
+}
+
+/** Pulled out of principalDrGetDailyReport_ so principalDrLoadBundle_
+ *  can reuse an already-fetched Daily Reports `values` instead of
+ *  reading the sheet a second time in the same request. */
+function pdrGetDailyReportFromValues_(values, campusId, dateISO) {
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][2]).trim() !== campusId) continue;
     if (pdrCellDateToISO_(values[i][1]) !== dateISO) continue;
     return {
-      success: true,
-      report: {
-        exists: true,
-        maClassOrHouse: String(values[i][4] || ''),
-        maScore: String(values[i][5] || ''),
-        tasksCompleted: pdrSplitList_(values[i][6]),
-        tasksForTomorrow: pdrSplitList_(values[i][7]),
-        registersCrosschecked: pdrSplitList_(values[i][8]),
-        importantMessage: pdrSplitList_(values[i][9]),
-      },
+      exists: true,
+      maClassOrHouse: String(values[i][4] || ''),
+      maScore: String(values[i][5] || ''),
+      tasksCompleted: pdrSplitList_(values[i][6]),
+      tasksForTomorrow: pdrSplitList_(values[i][7]),
+      registersCrosschecked: pdrSplitList_(values[i][8]),
+      importantMessage: pdrSplitList_(values[i][9]),
     };
   }
-  return { success: true, report: { exists: false } };
+  return { exists: false };
 }
 
 /** Called from main.gs's doGet for action=yesterdaystasks. `dateParam`
@@ -481,9 +526,12 @@ const PDR_SUGGESTION_LOOKBACK_DAYS = 10;
  *  not just LMS2). A working day with an empty (or missing)
  *  TasksForTomorrow does NOT stop the search -- it keeps walking
  *  further back, per Uday's spec. Returns [] if nothing turns up within
- *  the lookback bound -- not an error. */
-function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate) {
-  const values = pdrDailyReportsSheet_().getDataRange().getValues();
+ *  the lookback bound -- not an error. `valuesOpt` (optional) is a
+ *  pre-fetched Daily Reports getDataRange().getValues() -- pass it (see
+ *  principalDrLoadBundle_) to skip a second full read of the same sheet
+ *  within one request. */
+function pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, valuesOpt) {
+  const values = valuesOpt || pdrDailyReportsSheet_().getDataRange().getValues();
   const cursor = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
 
   const rangeEnd = new Date(cursor); // snapshot before the loop below starts mutating `cursor`
@@ -521,9 +569,12 @@ function principalDrPlannedActivities_(caller, campusIdParam) {
  *  ISO via pdrCellDateToISO_ regardless of the raw cell's type -- see
  *  the INCIDENT note. Reused by the Month Activities merge (which
  *  filters out completed ones itself) and by the Tasks Completed
- *  suggestion logic on the frontend. */
-function pdrReadPlannedActivities_(campusId) {
-  const values = pdrPlannedActivitiesSheet_().getDataRange().getValues();
+ *  suggestion logic on the frontend. `valuesOpt` (optional) is a
+ *  pre-fetched getDataRange().getValues() -- pass it when the caller
+ *  already read the sheet (see principalDrLoadBundle_) to avoid a
+ *  second full read of the same sheet within one request. */
+function pdrReadPlannedActivities_(campusId, valuesOpt) {
+  const values = valuesOpt || pdrPlannedActivitiesSheet_().getDataRange().getValues();
   const out = [];
   for (let i = 1; i < values.length; i++) {
     const row = values[i];

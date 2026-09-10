@@ -84,6 +84,7 @@ function doGet(e) {
 
     if (action === 'teacherstats') return jsonOut_(teacherSsStats_(caller));
     if (action === 'ssdashboard') return jsonOut_(ssDashboardAll_(caller));
+    if (action === 'principaldrload') return jsonOut_(principalDrLoadBundle_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'monthactivities') return jsonOut_(principalDrMonthActivities_(caller, e.parameter.campusId));
     if (action === 'supportsessionstoday') return jsonOut_(principalDrSupportSessionsToday_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'plannedactivities') return jsonOut_(principalDrPlannedActivities_(caller, e.parameter.campusId));
