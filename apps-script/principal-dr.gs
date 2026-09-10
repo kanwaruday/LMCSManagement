@@ -193,6 +193,18 @@ function pdrNextMonthRange_() {
   };
 }
 
+/** campusId's official-Calendar events within [start, end) -- pulled out
+ *  so principalDrLoadBundle_ can fetch the school calendar ONCE for a
+ *  combined range and hand the same events to both
+ *  pdrReadMergedMonthActivities_ and pdrDayLabel_ below, instead of
+ *  each independently calling CalendarApp (2026-09-10 speed pass --
+ *  they were both hitting the SAME calendar in the SAME request). */
+function pdrSchoolCalendarEvents_(campusId, start, end) {
+  const calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
+  const cal = calId ? CalendarApp.getCalendarById(calId) : null;
+  return cal ? cal.getEvents(start, end) : [];
+}
+
 /** Rest of this month plus all of next month's official-Calendar
  *  events MERGED with still-open Planned Activities due in that same
  *  window, sorted together chronologically. Planned Activities
@@ -206,17 +218,22 @@ function pdrNextMonthRange_() {
 // getDataRange().getValues() -- pass it (see principalDrLoadBundle_)
 // when the caller already has it, so this doesn't re-read the whole
 // sheet on top of whatever else read it in the same request.
-function pdrReadMergedMonthActivities_(campusId, plannedValues) {
+// `schoolEventsOpt` (optional) is a pre-fetched pdrSchoolCalendarEvents_
+// result covering AT LEAST this function's own [start,end) window --
+// pass it (see principalDrLoadBundle_) to skip a second live Calendar
+// query on the same calendar within one request; events outside this
+// function's own range are filtered out below since the passed-in
+// array may cover a wider combined range.
+function pdrReadMergedMonthActivities_(campusId, plannedValues, schoolEventsOpt) {
   const range = pdrNextMonthRange_();
   const items = [];
 
-  const calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
-  const cal = calId ? CalendarApp.getCalendarById(calId) : null;
-  if (cal) {
-    cal.getEvents(range.start, range.end).forEach(function (ev) {
-      items.push({ sortKey: ev.getStartTime(), text: pdrFormatEventDate_(ev) + ' — ' + ev.getTitle(), tag: null });
-    });
-  }
+  const events = schoolEventsOpt || pdrSchoolCalendarEvents_(campusId, range.start, range.end);
+  events.forEach(function (ev) {
+    const start = ev.getStartTime();
+    if (start < range.start || start >= range.end) return; // outside this function's own window
+    items.push({ sortKey: start, text: pdrFormatEventDate_(ev) + ' — ' + ev.getTitle(), tag: null });
+  });
 
   pdrReadPlannedActivities_(campusId, plannedValues).forEach(function (a) {
     if (a.completed) return; // only still-open planned activities show here
@@ -327,7 +344,11 @@ function pdrReadSupportSessionsForDate_(campusId, refDate) {
 // twice (monthactivities + plannedactivities) within that same single
 // page load. One request now does the auth check once and reads each
 // sheet once, passing the already-fetched values into the functions
-// above/below instead of letting each re-read its own sheet.
+// above/below instead of letting each re-read its own sheet. Same
+// treatment for the school's official Calendar, added 2026-09-10:
+// Month Activities and the holiday day-label were BOTH separately
+// querying it within this one request -- now fetched once for a
+// combined range and shared (see pdrSchoolCalendarEvents_).
 function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
   const campusId = String(campusIdParam || '').trim().toUpperCase();
   if (caller.campusId !== 'ALL' && campusId !== caller.campusId) {
@@ -342,14 +363,25 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
   const dailyValues = pdrDailyReportsSheet_().getDataRange().getValues();
   const plannedValues = pdrPlannedActivitiesSheet_().getDataRange().getValues();
 
+  // One Calendar fetch covering BOTH what Month Activities needs (today
+  // through next month) AND what the day-label needs (refDate's own
+  // day, which can be in the past when viewing an older report -- "view
+  // a past report" is a real supported case, so this can't just assume
+  // refDate falls inside the month-activities window).
+  const monthRange = pdrNextMonthRange_();
+  const refDateEndExclusive = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate() + 1);
+  const schoolEventsStart = refDate < monthRange.start ? refDate : monthRange.start;
+  const schoolEventsEnd = refDateEndExclusive > monthRange.end ? refDateEndExclusive : monthRange.end;
+  const schoolEvents = pdrSchoolCalendarEvents_(campusId, schoolEventsStart, schoolEventsEnd);
+
   return {
     success: true,
     report: pdrGetDailyReportFromValues_(dailyValues, campusId, dateISO),
     sessions: pdrReadSupportSessionsForDate_(campusId, refDate),
-    monthActivities: pdrReadMergedMonthActivities_(campusId, plannedValues),
+    monthActivities: pdrReadMergedMonthActivities_(campusId, plannedValues, schoolEvents),
     plannedActivities: pdrReadPlannedActivities_(campusId, plannedValues),
     yesterdaysTasks: pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, dailyValues),
-    dayLabel: pdrDayLabel_(refDate, campusId),
+    dayLabel: pdrDayLabel_(refDate, campusId, schoolEvents),
   };
 }
 
@@ -363,15 +395,22 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
  *  data unconditionally in the suggestion walk) was the bug fixed
  *  earlier the same day; this is a separate, display-only check, and
  *  only ONE Calendar query for the ONE selected date, not a range walk. */
-function pdrDayLabel_(date, campusId) {
+// `schoolEventsOpt` (optional) is a pre-fetched pdrSchoolCalendarEvents_
+// result covering AT LEAST `date`'s day -- pass it (see
+// principalDrLoadBundle_) to skip a second live Calendar query on the
+// same calendar pdrReadMergedMonthActivities_ already queried in the
+// same request. Filtered here for actual overlap with `date` since the
+// passed-in array may cover a wider combined range and/or include
+// multi-day events that don't start on this exact day.
+function pdrDayLabel_(date, campusId, schoolEventsOpt) {
   if (date.getDay() === 0) return 'Sunday';
   if (date.getDay() === 6 && Math.ceil(date.getDate() / 7) === 2) return '2nd Saturday';
-  const calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
-  const cal = calId ? CalendarApp.getCalendarById(calId) : null;
-  if (!cal) return null;
   const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-  const ghEvent = cal.getEvents(dayStart, dayEnd).find(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
+  const events = schoolEventsOpt
+    ? schoolEventsOpt.filter(function (ev) { return ev.getStartTime() < dayEnd && ev.getEndTime() > dayStart; })
+    : pdrSchoolCalendarEvents_(campusId, dayStart, dayEnd);
+  const ghEvent = events.find(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
   return ghEvent ? ghEvent.getTitle() : null;
 }
 

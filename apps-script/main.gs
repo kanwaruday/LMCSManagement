@@ -129,8 +129,34 @@ function doPost(e) {
 // the allowlist every call. Only Principal/Coordinator/Owner may call
 // any action in this project; everyone else (e.g. Teacher role, or not
 // on the list) gets null.
+//
+// CACHED (2026-09-10, speed): this ran on EVERY action across the whole
+// portal -- a live UrlFetchApp call to Google's tokeninfo endpoint PLUS
+// a full Allowlist sheet scan, every time, even for the SAME token
+// across many requests in one sitting (every date change, every
+// Planned Activity add/complete/delete, etc.). Both are now cached via
+// CacheService: the verified {email,campusId,role} result for THIS
+// token (so a repeat call with the same token skips both the network
+// call and the sheet read entirely), and the raw Allowlist rows
+// separately (so even a first-time/different token on a warm cache
+// skips the sheet read). `ponytail:` a 5-minute TTL means a role/campus
+// change in the Allowlist sheet, or a revoked principal, takes up to 5
+// minutes to take effect instead of immediately -- acceptable for an
+// internal ~6-school admin tool; shorten PDR_AUTH_CACHE_SECONDS if that
+// ever needs tightening.
+const PDR_AUTH_CACHE_SECONDS = 300;
+
 function verifyCallerToken_(idToken) {
   if (!idToken) return null;
+  const cache = CacheService.getScriptCache();
+  // Cache key is a hash of the token, not the token itself -- a Google ID
+  // token JWT is well over CacheService's 250-char key limit.
+  const cacheKey = 'pdrauth_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, idToken)
+  );
+  const cachedCaller = cache.get(cacheKey);
+  if (cachedCaller) return JSON.parse(cachedCaller);
+
   try {
     const res = UrlFetchApp.fetch(
       'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
@@ -142,18 +168,33 @@ function verifyCallerToken_(idToken) {
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
     const email = (payload.email || '').toLowerCase();
 
-    const rows = SpreadsheetApp.openById(ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
+    const rows = pdrAllowlistRows_();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
       const campusId = String(rows[i][2] || '').trim().toUpperCase();
       const role = String(rows[i][3] || '').trim();
       if (role !== 'Principal' && role !== 'Coordinator' && role !== 'Owner') return null;
-      return { email: email, campusId: campusId, role: role };
+      const caller = { email: email, campusId: campusId, role: role };
+      cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
+      return caller;
     }
     return null; // not on the allowlist at all
   } catch (err) {
     return null;
   }
+}
+
+// Allowlist sheet rows, cached separately from the per-token result
+// above -- covers the still-uncached case (a token seen for the first
+// time, or after its own cache entry expired) so it doesn't pay for a
+// full sheet read when another user's request already warmed this.
+function pdrAllowlistRows_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('pdr_allowlist_rows');
+  if (cached) return JSON.parse(cached);
+  const rows = SpreadsheetApp.openById(ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
+  cache.put('pdr_allowlist_rows', JSON.stringify(rows), PDR_AUTH_CACHE_SECONDS);
+  return rows;
 }
 
 function jsonOut_(obj) {
