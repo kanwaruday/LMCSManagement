@@ -103,7 +103,11 @@ td{padding:6px 12px;vertical-align:middle}
 .loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
 .loading-state .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
 .spinner-sm{width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
-#principalLoadStatus{font-size:11px;color:#8A96A6;min-height:14px;margin:-4px 0 10px}
+/* Floating toast (not inline -- see setPrincipalLoadStatus) so it
+   overlays instead of shifting the form's layout as it appears/disappears. */
+#principalLoadStatus{position:fixed;top:70px;right:24px;z-index:500;display:flex;align-items:center;background:#fff;border:1px solid var(--border);border-left:3px solid var(--red);border-radius:8px;padding:9px 14px;font-size:12px;color:var(--dark);box-shadow:0 6px 20px rgba(0,0,0,.16);opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .15s,transform .15s}
+#principalLoadStatus.show{opacity:1;transform:translateY(0)}
+@media(max-width:480px){#principalLoadStatus{left:12px;right:12px;top:64px}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Principal's Daily Report tab (adapted from Report_2.html / Stylesheet.html — re-skinned to this page's red palette instead of its original navy/gold) ── */
@@ -234,6 +238,13 @@ td{padding:6px 12px;vertical-align:middle}
 <div id="appBody">
   <div id="deniedBox" style="display:none"></div>
   <div id="appArea" style="display:none">
+    <!-- Floating toast for Principal DR's load progress -- lives at this
+         top level (not inside panel-principal) so it stays visible as an
+         overlay even if you switch tabs while a load is still in flight;
+         a .tab-panel's display:none would otherwise hide it despite
+         position:fixed, since a fixed element can't escape a hidden
+         ancestor. -->
+    <p id="principalLoadStatus"></p>
 
     <div id="schoolPickerWrap" class="school-picker-wrap" style="display:none">
       <span class="school-picker-label">School</span>
@@ -328,7 +339,6 @@ td{padding:6px 12px;vertical-align:middle}
           </button>
         </div>
       </div>
-      <p id="principalLoadStatus"></p>
 
       <div class="principal-layout">
 
@@ -1144,7 +1154,8 @@ var principalLoadToken = 0;
 function setPrincipalLoadStatus(msg) {
   var el = document.getElementById('principalLoadStatus');
   if (!el) return;
-  el.innerHTML = msg ? '<span class="spinner-sm"></span>' + msg : '';
+  if (msg) { el.innerHTML = '<span class="spinner-sm"></span>' + msg; el.classList.add('show'); }
+  else { el.classList.remove('show'); }
 }
 
 function pickPrincipalCampus(campusId) {
