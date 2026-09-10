@@ -329,7 +329,13 @@ td{padding:6px 12px;vertical-align:middle}
         </div>
         <div class="date-field">
           <label class="field-label" style="margin:0;">Date</label>
+          <button type="button" class="date-refresh-btn" title="Previous day" onclick="shiftReportDate(-1)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
           <input type="date" id="reportDate" onchange="loadReportForDate()">
+          <button type="button" class="date-refresh-btn" title="Next day" onclick="shiftReportDate(1)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
           <button type="button" class="date-refresh-btn" title="Hard refresh (reloads the whole page, not just this date's data)" onclick="hardRefreshPage()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"></polyline>
@@ -1371,6 +1377,18 @@ function parseISODate(s) {
   var d = new Date(yyyy, mm, dd);
   d.setHours(0, 0, 0, 0);
   return isNaN(d.getTime()) ? null : d;
+}
+
+// Prev/next-day arrows next to the Date field -- steps by one calendar
+// day (no off-day skipping; that's the suggestion lookback's own
+// concern, not date navigation) and reloads that day's report, same as
+// picking a date by hand would.
+function shiftReportDate(deltaDays) {
+  var input = document.getElementById('reportDate');
+  var d = parseISODate(input.value) || parseISODate(todayISO());
+  d.setDate(d.getDate() + deltaDays);
+  input.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  loadReportForDate();
 }
 
 // Whole days from today to a "yyyy-mm-dd" date (negative = in the past).
