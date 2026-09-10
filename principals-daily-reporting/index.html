@@ -219,6 +219,8 @@ td{padding:6px 12px;vertical-align:middle}
 .apr-comments{margin:10px 0}
 .apr-comment{background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-bottom:6px;font-size:12px}
 .apr-comment .apr-comment-meta{font-size:10.5px;color:var(--gray);margin-bottom:3px}
+.apr-comment-del{color:#B7C0CC;text-decoration:none;font-weight:600}
+.apr-comment-del:hover{color:var(--red)}
 .apr-decide-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
 .apr-decide-bar button{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
 .apr-decide-bar button.approve{background:var(--green)}
@@ -1931,26 +1933,49 @@ function aprDetailHtml_(res) {
   return '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
     '<div class="apr-desc">' + aprEsc_(r.description) + '</div>' +
     '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' +
-    '<div class="apr-comments">' + aprCommentsHtml_(res.comments) + '</div>' +
-    '<div class="add-row"><input type="text" id="aprCommentInput-' + r.id + '" placeholder="Add a comment"><button type="button" onclick="submitApprovalComment(\'' + r.id + '\')">Post</button></div>' +
+    '<div class="apr-comments">' + aprCommentsHtml_(res.comments, r.id) + '</div>' +
+    '<div class="add-row"><input type="text" id="aprCommentInput-' + r.id + '" placeholder="Add a comment"><button type="button" id="aprCommentPostBtn-' + r.id + '" onclick="submitApprovalComment(\'' + r.id + '\')">Post</button></div>' +
     decideBar +
     '</div></td></tr>';
 }
 
-function aprCommentsHtml_(comments) {
+// `approvalId` is only needed to reopen the row after a delete -- see
+// deleteApprovalComment(). Delete only ever shows on your own
+// comments (server re-checks this too, not just hidden client-side).
+function aprCommentsHtml_(comments, approvalId) {
   if (!comments.length) return '<div class="detail-empty">No comments yet.</div>';
   return comments.map(function (c) {
-    return '<div class="apr-comment"><div class="apr-comment-meta">' + aprEsc_(c.authorEmail) + ' (' + aprEsc_(c.authorRole || '—') + ') · ' + formatDDMMYYYY_(c.postedAt) + '</div>' + aprEsc_(c.body) + '</div>';
+    const canDelete = c.authorEmail === SESSION.email;
+    return '<div class="apr-comment"><div class="apr-comment-meta">' + aprEsc_(c.authorEmail) + ' (' + aprEsc_(c.authorRole || '—') + ') · ' + formatDDMMYYYY_(c.postedAt) +
+      (canDelete ? ' · <a href="#" class="apr-comment-del" onclick="deleteApprovalComment(\'' + c.id + '\',\'' + approvalId + '\');return false;">Delete</a>' : '') +
+      '</div>' + aprEsc_(c.body) + '</div>';
   }).join('');
 }
 
+async function deleteApprovalComment(commentId, approvalId) {
+  if (!confirm('Delete this comment?')) return;
+  const res = await pdrPost_('deleteapprovalcomment', { id: commentId });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t delete that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  toggleApprovalRow(approvalId); // close
+  toggleApprovalRow(approvalId); // reopen -- pulls the fresh (shorter) comment thread
+}
+
+// Guarded against double-submission the same way submitReport()/
+// addPlannedActivityHandler() are -- the input alone being disabled
+// during the request wasn't enough, since the Post button itself
+// stayed clickable, which is exactly how the duplicate "Not sure if
+// that makes any sense" comment happened in testing.
 async function submitApprovalComment(id) {
   const input = document.getElementById('aprCommentInput-' + id);
+  const btn = document.getElementById('aprCommentPostBtn-' + id);
+  if (btn.disabled) return;
   const text = input.value.trim();
   if (!text) return;
   input.disabled = true;
+  btn.disabled = true;
   const res = await pdrPost_('addapprovalcomment', { approvalId: id, body: text });
   input.disabled = false;
+  btn.disabled = false;
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t post that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
   input.value = '';
   // A comment can flip Pending<->Info Requested server-side (see

@@ -132,6 +132,7 @@ function doPost(e) {
     if (action === 'deleteplannedactivity') return jsonOut_(principalDrDeletePlannedActivity_(caller, body));
     if (action === 'submitapproval') return jsonOut_(aprSubmit_(caller, body));
     if (action === 'addapprovalcomment') return jsonOut_(aprAddComment_(caller, body));
+    if (action === 'deleteapprovalcomment') return jsonOut_(aprDeleteComment_(caller, body));
     if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });

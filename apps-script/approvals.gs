@@ -213,6 +213,25 @@ function aprAddComment_(caller, body) {
   return { success: true, status: newStatus || currentStatus };
 }
 
+// action=deleteapprovalcomment (doPost) -- a commenter can delete
+// their own comment (e.g. an accidental double-post) -- never anyone
+// else's, decider or not. Doesn't touch status -- only the comment
+// thread is affected, the same as posting one doesn't require a
+// separate "undo the status nudge" path either.
+function aprDeleteComment_(caller, body) {
+  const sheet = aprCommentsSheet_();
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]) !== String(body.id)) continue;
+    if (String(values[i][2]).trim().toLowerCase() !== caller.email) {
+      return { success: false, error: 'You can only delete your own comments' };
+    }
+    sheet.deleteRow(i + 1);
+    return { success: true };
+  }
+  return { success: false, error: 'Comment not found' };
+}
+
 // action=decideapproval (doPost) -- Owner, or a Coordinator with
 // CanApprove=TRUE. `decision` is Approved / Rejected / Info Requested
 // / Revoked (Revoked only valid starting from Approved -- an Owner
