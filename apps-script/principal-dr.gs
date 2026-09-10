@@ -339,15 +339,21 @@ function pdrReadSupportSessionsForDate_(campusId, refDate) {
 // sheet once, passing the already-fetched values into the functions
 // above/below instead of letting each re-read its own sheet.
 //
-// Month Activities is DELIBERATELY NOT part of this bundle (removed
-// 2026-09-10, Uday: "can it be a static block that doesn't need
-// repopulation for each day") -- its content depends only on the
-// campus and real "today", never on which report date is selected, so
-// re-fetching it (and re-querying the school Calendar for it) on every
-// single date click was pure waste. The frontend now fetches it once
-// per school-select via the existing standalone action=monthactivities
-// and caches it client-side; loadReportForDate() (driven by date
-// clicks) no longer touches it at all.
+// Month Activities and Planned Activities are DELIBERATELY NOT part of
+// this bundle (removed 2026-09-10, Uday: "can it be a static block that
+// doesn't need repopulation for each day" / "can we speed this up
+// further") -- neither depends on which report date is selected, only
+// on the campus, so re-fetching either (Month Activities also
+// re-querying the school Calendar) on every single date click was pure
+// waste. The frontend fetches both once per school-select via their
+// existing standalone actions (monthactivities, plannedactivities) and
+// caches them client-side; loadReportForDate() (driven by date clicks)
+// no longer touches either. Planned Activities CRUD (add/complete/
+// delete) already updated the frontend's array in place without
+// re-fetching, so decoupling it here didn't need any frontend
+// synchronization changes beyond where it's first loaded.
+// After this, principalDrLoadBundle_ reads only ONE sheet
+// (Daily Reports) per date click, not two.
 function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
   const campusId = String(campusIdParam || '').trim().toUpperCase();
   if (caller.campusId !== 'ALL' && campusId !== caller.campusId) {
@@ -360,13 +366,11 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
   }
 
   const dailyValues = pdrDailyReportsSheet_().getDataRange().getValues();
-  const plannedValues = pdrPlannedActivitiesSheet_().getDataRange().getValues();
 
   return {
     success: true,
     report: pdrGetDailyReportFromValues_(dailyValues, campusId, dateISO),
     sessions: pdrReadSupportSessionsForDate_(campusId, refDate),
-    plannedActivities: pdrReadPlannedActivities_(campusId, plannedValues),
     yesterdaysTasks: pdrFindPriorWorkingDayTasksForTomorrow_(campusId, refDate, dailyValues),
     dayLabel: pdrDayLabel_(refDate, campusId),
   };
@@ -382,13 +386,29 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
  *  data unconditionally in the suggestion walk) was the bug fixed
  *  earlier the same day; this is a separate, display-only check, and
  *  only ONE Calendar query for the ONE selected date, not a range walk. */
+// CACHED (2026-09-10, speed): a holiday label for a given (campus, date)
+// doesn't change once set -- GH Calendar entries aren't edited mid-day
+// -- but browsing back and forth with the Date field's prev/next arrows
+// re-requests the SAME date repeatedly, and each one used to re-query
+// the school Calendar. Cached 30 min per (campus, date); '' is the
+// cached sentinel for "no holiday" since CacheService can't store null
+// and a get() of null unambiguously means "not cached yet".
+const PDR_DAY_LABEL_CACHE_SECONDS = 1800;
 function pdrDayLabel_(date, campusId) {
   if (date.getDay() === 0) return 'Sunday';
   if (date.getDay() === 6 && Math.ceil(date.getDate() / 7) === 2) return '2nd Saturday';
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'pdrdaylabel_' + campusId + '_' + pdrFormatISO_(date);
+  const cached = cache.get(cacheKey);
+  if (cached !== null) return cached || null;
+
   const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
   const ghEvent = pdrSchoolCalendarEvents_(campusId, dayStart, dayEnd).find(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
-  return ghEvent ? ghEvent.getTitle() : null;
+  const label = ghEvent ? ghEvent.getTitle() : null;
+  cache.put(cacheKey, label || '', PDR_DAY_LABEL_CACHE_SECONDS);
+  return label;
 }
 
 // ── Daily Reports: save (upsert), read-back, + the Tasks Completed suggestion lookup ──

@@ -947,15 +947,17 @@ function pdrReportAuthFailureIfNeeded_(res) {
 // WIRED (2026-09-10, replacing 5 separate fetch* calls -- see
 // principal-dr.gs's "Combined page-load bundle" comment for why): reads
 // apps-script/principal-dr.gs's 'principaldrload' action, which does
-// the auth check and each sheet read ONCE and returns everything
-// loadReportForDate() needs in one response: {report, sessions,
-// plannedActivities, yesterdaysTasks, dayLabel}. This is why the page
-// used to feel like it was "doing all the computation each time" -- it
-// was, 5 times over, on every single load. On any failure this returns
-// null (not partial data) so the caller can fall back to empty defaults
-// for everything at once instead of guessing per-field. Does NOT
-// include Month Activities -- see fetchMonthActivities_'s own comment
-// for why that's fetched separately.
+// the auth check and reads the Daily Reports sheet ONCE, returning
+// everything that's actually DATE-dependent in one response: {report,
+// sessions, yesterdaysTasks, dayLabel}. This is why the page used to
+// feel like it was "doing all the computation each time" -- it was, 5
+// times over, on every single load. On any failure this returns null
+// (not partial data) so the caller can fall back to empty defaults for
+// everything at once instead of guessing per-field. Does NOT include
+// Month Activities or Planned Activities -- neither depends on the
+// selected date, only the campus, so both are fetched once per
+// school-select instead (see fetchMonthActivities_ and
+// fetchPlannedActivities_'s own comments).
 async function fetchPrincipalDrBundle_(campusId, dateISO) {
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return null;
   try {
@@ -1007,6 +1009,43 @@ async function loadMonthActivitiesForCampus_(campusId) {
     monthActivitiesCache_[campusId] = await fetchMonthActivities_(campusId);
   }
   renderMonthActivities(monthActivitiesCache_[campusId]);
+}
+
+// Same treatment for "Other Activities Planned" (2026-09-10, "can we
+// speed this up further") -- it also doesn't depend on the selected
+// report date, only the campus ("stays here until marked complete"),
+// but was still in the per-date bundle triggering a full sheet read on
+// every date click. Fetched once per school-select and cached here;
+// loadReportForDate() awaits this (cache hit resolves instantly, no
+// re-fetch) rather than rendering it itself, since -- unlike Month
+// Activities -- it also feeds that function's Tasks Completed
+// suggestion calculation and needs to be present before that runs.
+// CRUD (add/complete/delete) already mutates currentPlannedActivities
+// in place without re-fetching -- see addPlannedActivityHandler and the
+// checkbox/delete handlers -- so decoupling this needed no changes
+// there beyond keeping this cache in sync on delete (the only one of
+// the three that reassigns the array rather than mutating it in place).
+var plannedActivitiesCache_ = {}; // campusId -> activity[]
+async function fetchPlannedActivities_(campusId) {
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) return [];
+  try {
+    const url = PDR_BACKEND_URL + '?action=plannedactivities&campusId=' + encodeURIComponent(campusId) +
+      '&idToken=' + encodeURIComponent(SESSION.idToken);
+    const res = await fetch(url).then(function (r) { return r.json(); });
+    if (!res.success || !Array.isArray(res.activities)) {
+      console.warn('fetchPlannedActivities_ failed:', res.error); pdrReportAuthFailureIfNeeded_(res);
+      return [];
+    }
+    return res.activities; // [{id, date, activity, assignee, completed}]
+  } catch (err) {
+    console.warn('fetchPlannedActivities_ error:', err);
+    return [];
+  }
+}
+async function loadPlannedActivitiesForCampus_(campusId) {
+  if (!(campusId in plannedActivitiesCache_)) {
+    plannedActivitiesCache_[campusId] = await fetchPlannedActivities_(campusId);
+  }
 }
 
 // Shared POST helper for every write action (Planned Activities CRUD +
@@ -1424,6 +1463,7 @@ function renderPlannedActivities() {
       '</svg>';
     delBtn.onclick = async function() {
       currentPlannedActivities = currentPlannedActivities.filter(function(x) { return x.id !== item.id; });
+      plannedActivitiesCache_[principalCampusId] = currentPlannedActivities; // filter() makes a new array -- resync the campus cache to it
       renderPlannedActivities();
       await deletePlannedActivity(principalCampusId, item.id);
     };
@@ -1504,9 +1544,15 @@ async function loadReportForDate() {
     document.getElementById(listId).innerHTML = '';
   });
 
+  // Fired in parallel with the per-date bundle below, not after it --
+  // resolves instantly on a cache hit (every date click after the
+  // campus's first), only actually waits on a genuinely new campus.
+  var plannedActivitiesPromise = loadPlannedActivitiesForCampus_(campusId);
+
   setPrincipalLoadStatus('Loading…');
   var bundle = await fetchPrincipalDrBundle_(campusId, dateISO);
   if (myToken !== principalLoadToken) return; // a newer load has since started -- discard this stale result
+  await plannedActivitiesPromise; // usually already settled by now
   setPrincipalLoadStatus(null);
   // A failed fetch (dead token, backend down) falls back to the same
   // empty defaults every individual fetch* used to return on failure --
@@ -1514,7 +1560,7 @@ async function loadReportForDate() {
   // reloaded, which is a feature here: one failure state, not five.
   var existing = (bundle && bundle.report) || { exists: false };
   var sessions = (bundle && bundle.sessions) || [];
-  var plannedActivities = (bundle && bundle.plannedActivities) || [];
+  var plannedActivities = plannedActivitiesCache_[campusId] || [];
   var yesterdaysTasks = (bundle && bundle.yesterdaysTasks) || [];
 
   // Purely informational -- lets the Principal know the selected date
