@@ -203,6 +203,29 @@ td{padding:6px 12px;vertical-align:middle}
 .submit-bar{display:flex;justify-content:flex-end;margin-top:2px}
 .submit-btn{border:none;background:var(--red);color:#fff;font-size:13px;font-weight:700;padding:11px 26px;border-radius:8px;cursor:pointer}
 .submit-btn:hover{background:var(--red-h)}
+
+/* ── Approvals tab (2026-09-10) ── */
+#panel-approvals select,#panel-approvals input[type=text],#panel-approvals input[type=number],#panel-approvals textarea{border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12.5px;font-family:inherit;color:var(--dark);background:var(--white);width:100%}
+#panel-approvals select:focus,#panel-approvals input:focus,#panel-approvals textarea:focus{outline:none;border-color:var(--red)}
+#panel-approvals textarea{resize:vertical}
+.pill.revoked{background:#e5e7eb;color:#4b5563}
+.pill.urgent{background:#fee2e2;color:var(--red)}
+.apr-row{cursor:pointer}
+.apr-row:hover td{background:var(--red-lt)!important}
+.apr-row.expanded td{background:var(--lgray)!important}
+.apr-detail-wrap{padding:12px 14px;background:var(--lgray)}
+.apr-desc{font-size:12.5px;color:var(--dark);line-height:1.6;margin-bottom:8px;white-space:pre-wrap}
+.apr-meta-row{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:var(--gray);margin-bottom:10px}
+.apr-comments{margin:10px 0}
+.apr-comment{background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-bottom:6px;font-size:12px}
+.apr-comment .apr-comment-meta{font-size:10.5px;color:var(--gray);margin-bottom:3px}
+.apr-decide-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.apr-decide-bar button{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+.apr-decide-bar button.approve{background:var(--green)}
+.apr-decide-bar button.reject{background:var(--red)}
+.apr-decide-bar button.info{background:var(--amber)}
+.apr-decide-bar button.revoke{background:#4b5563}
+.apr-decide-note{width:100%;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -255,6 +278,7 @@ td{padding:6px 12px;vertical-align:middle}
       <button class="tab-btn active" data-tab="support" onclick="switchTab('support')">🧾 Support Sessions</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 SS Dashboard</button>
+      <button class="tab-btn" data-tab="approvals" onclick="switchTab('approvals')">✅ Approvals</button>
     </div>
 
     <!-- ══════════════════ SUPPORT SESSIONS (all 6 SS forms, one level below this top tab) ══════════════════ -->
@@ -455,6 +479,69 @@ td{padding:6px 12px;vertical-align:middle}
       <div id="dashBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
     </div>
 
+    <!-- ══════════════════ APPROVALS ══════════════════ -->
+    <div class="tab-panel" id="panel-approvals">
+      <div class="card" id="aprNewRequestCard" style="display:none">
+        <p class="card-title">New Approval Request</p>
+        <p class="card-hint">Explain your reasoning and attach evidence — this is what the Owner decides on.</p>
+        <div class="row-2col">
+          <div>
+            <label class="field-label">Category</label>
+            <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
+          </div>
+          <div>
+            <label class="field-label">Urgency</label>
+            <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Title</label>
+          <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;Diwali break request&quot;">
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Description / reasoning</label>
+          <textarea id="aprDescription" rows="4" placeholder="Explain why, with any relevant details"></textarea>
+        </div>
+        <div class="row-2col" id="aprFinancialFields" style="display:none;margin-top:10px">
+          <div>
+            <label class="field-label">Item</label>
+            <input type="text" id="aprItemName" placeholder="What are you buying">
+          </div>
+          <div>
+            <label class="field-label">Quantity</label>
+            <input type="number" id="aprQuantity" min="1">
+          </div>
+        </div>
+        <div id="aprAmountField" style="display:none;margin-top:10px">
+          <label class="field-label">Amount (₹)</label>
+          <input type="number" id="aprAmount" min="0">
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Evidence link (optional)</label>
+          <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link to a quote, invitation, photo, etc.">
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Link to a Planned Activity (optional)</label>
+          <select id="aprLinkedActivity"><option value="">— none —</option></select>
+        </div>
+        <div class="submit-bar">
+          <button type="button" class="submit-btn" id="aprSubmitBtn" onclick="submitApprovalRequest()">Submit Request</button>
+        </div>
+      </div>
+
+      <div class="dash-toolbar">
+        <div id="aprStatusFilter" class="role-picker"></div>
+        <button type="button" class="date-refresh-btn" title="Refresh" onclick="refreshApprovals()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
   </div>
 </div>
 
@@ -602,6 +689,7 @@ async function init() {
     var restore = popHardRefreshRestore_();
     setupSchoolPicker();
     loadDashboard(); // fetch eagerly so it's ready once a school is picked/switched
+    loadApprovals(); // same treatment -- action=approvalslist already returns every accessible campus in one call
     if (restore) {
       var campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
       if (restore.campusId && campuses.indexOf(restore.campusId) > -1) selectSchool(restore.campusId);
@@ -664,6 +752,7 @@ function selectSchool(campusId) {
   pickDriverCampus(campusId);
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
+  renderApprovalsForSelectedCampus();
 }
 
 // ── Submit tab ──────────────────────────────────────────────────────
@@ -1643,7 +1732,277 @@ async function loadReportForDate() {
   renderSuggestionChips(yesterdaysTasks.concat(plannedSuggestions));
 }
 
+// ── Approvals tab (2026-09-10) ───────────────────────────────────────
+// Requester (Principal) / approver (Owner, or a Coordinator delegated
+// via the Allowlist's CanApprove column) workflow. Backed by
+// approvals.gs's action=approvalslist/approvaldetail (GET) and
+// submitapproval/addapprovalcomment/decideapproval (POST). Same
+// eager-fetch-everything-then-filter-by-selected-school pattern as the
+// SS Dashboard above (approvalslist already returns every campus the
+// caller can see in one call).
+const APR_CATEGORIES = ['HR', 'Event / Invitation', 'Holiday / Calendar', 'School Management', 'Financial / Purchase', 'Academic Change', 'Other'];
+const APR_FINANCIAL_CATEGORY = 'Financial / Purchase';
+const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
+
+let aprRes = null;              // full action=approvalslist response, fetched once
+let APR_STATUS_FILTER = 'All';
+let aprExpandedId = null;
+let aprExpandedDetail = null;   // {request, comments, canDecide} for the open row
+
+// Free text a Principal/Owner/Coordinator typed (title, description,
+// comment body, decision note) goes through this before landing in an
+// innerHTML template -- same reasoning addItemDirect() uses .textContent
+// for typed list items elsewhere on this page, just needed here as a
+// string escape since these get interpolated into larger HTML blocks.
+function aprEsc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+
+function aprOnCategoryChange() {
+  const isFinancial = document.getElementById('aprCategory').value === APR_FINANCIAL_CATEGORY;
+  document.getElementById('aprFinancialFields').style.display = isFinancial ? 'grid' : 'none';
+  document.getElementById('aprAmountField').style.display = isFinancial ? 'block' : 'none';
+}
+
+async function loadApprovals() {
+  const body = document.getElementById('aprListBody');
+  if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) {
+    body.innerHTML = '<div class="notice">Backend not deployed yet.</div>';
+    return;
+  }
+  try {
+    const res = await fetch(PDR_BACKEND_URL + '?action=approvalslist&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+    if (!res.success) {
+      body.innerHTML = '<div class="notice">Couldn’t load Approvals: ' + aprEsc_(res.error || 'unknown error') + '</div>';
+      pdrReportAuthFailureIfNeeded_(res);
+      return;
+    }
+    aprRes = res;
+    document.getElementById('aprNewRequestCard').style.display = SESSION.role === 'Principal' ? 'block' : 'none';
+    aprRenderStatusFilter_();
+    renderApprovalsForSelectedCampus();
+  } catch (err) {
+    body.innerHTML = '<div class="notice">Couldn’t reach the Approvals backend: ' + aprEsc_(err.message) + '</div>';
+  }
+}
+
+function refreshApprovals() {
+  aprExpandedId = null;
+  aprExpandedDetail = null;
+  document.getElementById('aprListBody').innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>';
+  loadApprovals();
+}
+
+function aprRenderStatusFilter_() {
+  document.getElementById('aprStatusFilter').innerHTML = APR_STATUS_PILLS.map(function (s) {
+    return '<button class="role-btn' + (s === APR_STATUS_FILTER ? ' active' : '') + '" onclick="aprSelectStatusFilter(\'' + s + '\')">' + s + '</button>';
+  }).join('');
+}
+
+function aprSelectStatusFilter(status) {
+  APR_STATUS_FILTER = status;
+  aprExpandedId = null;
+  aprExpandedDetail = null;
+  aprRenderStatusFilter_();
+  renderApprovalsForSelectedCampus();
+}
+
+function aprStatusPillClass_(status) {
+  if (status === 'Approved') return 'ok';
+  if (status === 'Rejected') return 'none';
+  if (status === 'Revoked') return 'revoked';
+  return 'amber'; // Pending, Info Requested
+}
+
+function renderApprovalsForSelectedCampus() {
+  if (!aprRes || !SELECTED_CAMPUS_ID) return; // loadApprovals() hasn't resolved yet, or no school picked -- it/selectSchool() calls this again once true
+  const body = document.getElementById('aprListBody');
+  let rows = aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
+  if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
+
+  if (!rows.length) {
+    body.innerHTML = '<div class="dash-empty">No ' + (APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ') + 'requests for this school.</div>';
+    return;
+  }
+
+  body.innerHTML = '<div class="tbl-wrap"><table><thead><tr>' +
+    '<th>Title</th><th>Category</th><th>Urgency</th><th>Status</th><th>Requested</th>' +
+    '</tr></thead><tbody>' + rows.map(aprRowHtml_).join('') + '</tbody></table></div>';
+}
+
+function aprRowHtml_(r) {
+  const isExpanded = aprExpandedId === r.id;
+  let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+    '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
+    '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
+    '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></td>' +
+    '<td>' + formatDDMMYYYY_(r.requestedAt) + '</td></tr>';
+  if (isExpanded) {
+    html += '<tr class="detail-row"><td colspan="5"><div class="apr-detail-wrap" id="aprDetailWrap">' +
+      '<div class="loading-state"><div class="spinner"></div>Loading…</div></div></td></tr>';
+  }
+  return html;
+}
+
+async function toggleApprovalRow(id) {
+  if (aprExpandedId === id) {
+    aprExpandedId = null;
+    aprExpandedDetail = null;
+    renderApprovalsForSelectedCampus();
+    return;
+  }
+  aprExpandedId = id;
+  aprExpandedDetail = null;
+  renderApprovalsForSelectedCampus(); // shows the spinner row immediately
+  const res = await fetch(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+  if (!res.success) {
+    pdrReportAuthFailureIfNeeded_(res);
+    const wrap = document.getElementById('aprDetailWrap');
+    if (wrap) wrap.innerHTML = '<div class="notice">Couldn’t load this request: ' + aprEsc_(res.error || 'unknown error') + '</div>';
+    return;
+  }
+  aprExpandedDetail = res;
+  const wrap = document.getElementById('aprDetailWrap');
+  if (wrap) wrap.outerHTML = aprDetailHtml_(res); // still the expanded row -- swap contents in place
+}
+
+function aprDetailHtml_(res) {
+  const r = res.request;
+  const meta = [];
+  if (r.itemName) meta.push('Item: ' + aprEsc_(r.itemName) + (r.quantity != null ? ' × ' + r.quantity : ''));
+  if (r.amount != null) meta.push('Amount: ₹' + r.amount);
+  if (r.evidenceLink) meta.push('Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+  if (r.linkedPlannedActivityId) {
+    const linked = (plannedActivitiesCache_[r.campusId] || []).filter(function (a) { return a.id === r.linkedPlannedActivityId; })[0];
+    if (linked) meta.push('Linked activity: ' + aprEsc_(linked.activity));
+  }
+  meta.push('Requested by ' + aprEsc_(r.requestedBy) + ' on ' + formatDDMMYYYY_(r.requestedAt));
+  if (r.decidedBy) meta.push((r.status) + ' by ' + aprEsc_(r.decidedBy) + ' on ' + formatDDMMYYYY_(r.decidedAt));
+
+  let decideBar = '';
+  if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) {
+    decideBar = '<div class="apr-decide-bar">' +
+      '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Note explaining the decision (required)">' +
+      '<button type="button" class="approve" onclick="decideApproval(\'' + r.id + '\',\'Approved\')">Approve</button>' +
+      '<button type="button" class="reject" onclick="decideApproval(\'' + r.id + '\',\'Rejected\')">Reject</button>' +
+      '<button type="button" class="info" onclick="decideApproval(\'' + r.id + '\',\'Info Requested\')">Request Info</button>' +
+      '</div>';
+  } else if (res.canDecide && r.status === 'Approved') {
+    decideBar = '<div class="apr-decide-bar">' +
+      '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Reason for revoking (required)">' +
+      '<button type="button" class="revoke" onclick="decideApproval(\'' + r.id + '\',\'Revoked\')">Revoke</button>' +
+      '</div>';
+  }
+  if (r.decisionNote) decideBar = '<div class="apr-desc"><b>Decision note:</b> ' + aprEsc_(r.decisionNote) + '</div>' + decideBar;
+
+  return '<tr class="detail-row"><td colspan="5"><div class="apr-detail-wrap" id="aprDetailWrap">' +
+    '<div class="apr-desc">' + aprEsc_(r.description) + '</div>' +
+    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' +
+    '<div class="apr-comments">' + aprCommentsHtml_(res.comments) + '</div>' +
+    '<div class="add-row"><input type="text" id="aprCommentInput-' + r.id + '" placeholder="Add a comment"><button type="button" onclick="submitApprovalComment(\'' + r.id + '\')">Post</button></div>' +
+    decideBar +
+    '</div></td></tr>';
+}
+
+function aprCommentsHtml_(comments) {
+  if (!comments.length) return '<div class="detail-empty">No comments yet.</div>';
+  return comments.map(function (c) {
+    return '<div class="apr-comment"><div class="apr-comment-meta">' + aprEsc_(c.authorEmail) + ' (' + aprEsc_(c.authorRole || '—') + ') · ' + formatDDMMYYYY_(c.postedAt) + '</div>' + aprEsc_(c.body) + '</div>';
+  }).join('');
+}
+
+async function submitApprovalComment(id) {
+  const input = document.getElementById('aprCommentInput-' + id);
+  const text = input.value.trim();
+  if (!text) return;
+  input.disabled = true;
+  const res = await pdrPost_('addapprovalcomment', { approvalId: id, body: text });
+  input.disabled = false;
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t post that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  input.value = '';
+  toggleApprovalRow(id); // close
+  toggleApprovalRow(id); // reopen -- cheapest way to pull the fresh comment thread
+}
+
+async function decideApproval(id, decision) {
+  const noteInput = document.getElementById('aprNote-' + id);
+  const note = noteInput.value.trim();
+  if (!note) { alert('A note explaining the decision is required.'); return; }
+  const btns = document.querySelectorAll('.apr-decide-bar button');
+  btns.forEach(function (b) { b.disabled = true; });
+  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note });
+  btns.forEach(function (b) { b.disabled = false; });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  aprExpandedId = null;
+  aprExpandedDetail = null;
+  refreshApprovals();
+}
+
+// Guarded against double-submission the same way submitReport()/
+// addPlannedActivityHandler() are (see submitReport()'s comment).
+async function submitApprovalRequest() {
+  const btn = document.getElementById('aprSubmitBtn');
+  if (btn.disabled) return;
+  const category = document.getElementById('aprCategory').value;
+  const title = document.getElementById('aprTitle').value.trim();
+  const description = document.getElementById('aprDescription').value.trim();
+  if (!title || !description) { alert('Title and description are both required.'); return; }
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Submitting…';
+  try {
+    const res = await pdrPost_('submitapproval', {
+      category: category,
+      urgency: document.getElementById('aprUrgency').value,
+      title: title,
+      description: description,
+      amount: document.getElementById('aprAmount').value,
+      itemName: document.getElementById('aprItemName').value.trim(),
+      quantity: document.getElementById('aprQuantity').value,
+      evidenceLink: document.getElementById('aprEvidenceLink').value.trim(),
+      linkedPlannedActivityId: document.getElementById('aprLinkedActivity').value,
+    });
+    if (!res.success) {
+      pdrReportAuthFailureIfNeeded_(res);
+      alert('Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.');
+      return;
+    }
+    document.getElementById('aprTitle').value = '';
+    document.getElementById('aprDescription').value = '';
+    document.getElementById('aprAmount').value = '';
+    document.getElementById('aprItemName').value = '';
+    document.getElementById('aprQuantity').value = '';
+    document.getElementById('aprEvidenceLink').value = '';
+    document.getElementById('aprLinkedActivity').value = '';
+    alert('Request submitted.');
+    refreshApprovals();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+// Linked-Activity dropdown -- reuses plannedActivitiesCache_, already
+// kept warm per-campus by the Principal DR tab (selectSchool() calls
+// pickPrincipalCampus() for every school regardless of which tab is
+// active), so this is just a render, not a new fetch -- except the
+// defensive await below in case Approvals is opened before that's
+// resolved yet (e.g. straight after sign-in).
+async function aprPopulateLinkedActivityOptions_(campusId) {
+  await loadPlannedActivitiesForCampus_(campusId);
+  const sel = document.getElementById('aprLinkedActivity');
+  const open = (plannedActivitiesCache_[campusId] || []).filter(function (a) { return !a.completed; });
+  sel.innerHTML = '<option value="">— none —</option>' + open.map(function (a) {
+    return '<option value="' + a.id + '">' + aprEsc_(a.activity) + '</option>';
+  }).join('');
+}
+
 function switchTab(tab) {
+  if (tab === 'approvals' && SELECTED_CAMPUS_ID) aprPopulateLinkedActivityOptions_(SELECTED_CAMPUS_ID);
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');

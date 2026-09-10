@@ -47,6 +47,16 @@
 //                         per-employee score analysis + drill-down,
 //                         rubber-stamp detection. See its own header
 //                         for full scope/what's deferred.
+//   approvals.gs        -- action=approvalslist/approvaldetail (GET),
+//                         submitapproval/addapprovalcomment/
+//                         decideapproval (POST). Principal-to-Owner
+//                         approval requests (HR/events/financial/
+//                         academic/etc) with evidence + a comment
+//                         thread. Decide-rights: Owner always, a
+//                         Coordinator only if the Allowlist sheet's
+//                         CanApprove column (E) is TRUE for them --
+//                         see verifyCallerToken_ below and approvals.gs's
+//                         own header for the delegation model.
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -90,6 +100,8 @@ function doGet(e) {
     if (action === 'plannedactivities') return jsonOut_(principalDrPlannedActivities_(caller, e.parameter.campusId));
     if (action === 'yesterdaystasks') return jsonOut_(principalDrYesterdaysTasks_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'dailyreport') return jsonOut_(principalDrGetDailyReport_(caller, e.parameter.campusId, e.parameter.date));
+    if (action === 'approvalslist') return jsonOut_(aprList_(caller));
+    if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -118,6 +130,9 @@ function doPost(e) {
     if (action === 'addplannedactivity') return jsonOut_(principalDrAddPlannedActivity_(caller, body));
     if (action === 'setplannedactivitycompleted') return jsonOut_(principalDrSetPlannedActivityCompleted_(caller, body));
     if (action === 'deleteplannedactivity') return jsonOut_(principalDrDeletePlannedActivity_(caller, body));
+    if (action === 'submitapproval') return jsonOut_(aprSubmit_(caller, body));
+    if (action === 'addapprovalcomment') return jsonOut_(aprAddComment_(caller, body));
+    if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -174,7 +189,13 @@ function verifyCallerToken_(idToken) {
       const campusId = String(rows[i][2] || '').trim().toUpperCase();
       const role = String(rows[i][3] || '').trim();
       if (role !== 'Principal' && role !== 'Coordinator' && role !== 'Owner') return null;
-      const caller = { email: email, campusId: campusId, role: role };
+      // Column E (added 2026-09-10, Approvals delegation) -- a
+      // Coordinator with this TRUE can decide approvals same as Owner;
+      // Uday flips this cell by hand to delegate/revoke. Blank/FALSE
+      // (including every pre-existing row before this column existed)
+      // is "not delegated" -- fails safe.
+      const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
+      const caller = { email: email, campusId: campusId, role: role, canApprove: canApprove };
       cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
       return caller;
     }
