@@ -29,6 +29,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
+/* Support Sessions sub-tabs (Teacher/IT/PTI/Clerk/Non-Teaching/Driver SS), nested one level below the "Support Sessions" top tab -- same active/inactive look as .tab-btn, just smaller since it's a second level. */
+.subtabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.subtab-btn{background:none;border:none;padding:7px 12px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.subtab-btn.active{color:var(--red);border-bottom-color:var(--red)}
+.subtab-panel{display:none}
+.subtab-panel.active{display:block}
 
 .campus-picker{display:flex;gap:6px;flex-wrap:wrap}
 .campus-btn{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer}
@@ -96,6 +102,8 @@ td{padding:6px 12px;vertical-align:middle}
 .score-cell{font-weight:700}
 .loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
 .loading-state .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
+.spinner-sm{width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
+#principalLoadStatus{font-size:11px;color:#8A96A6;min-height:14px;margin:-4px 0 10px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Principal's Daily Report tab (adapted from Report_2.html / Stylesheet.html — re-skinned to this page's red palette instead of its original navy/gold) ── */
@@ -216,7 +224,7 @@ td{padding:6px 12px;vertical-align:middle}
 <div class="hdr">
   <div class="hdr-brand">
     <h1>LMCS — Principal's Daily Reporting</h1>
-    <p id="hdrCtx">Teacher SS, IT SS, PTI SS, Clerk SS, Non-Teaching SS, Driver SS, Principal DR, Dashboard. An SS completion tracker coming.</p>
+    <p id="hdrCtx">Support Sessions (Teacher/IT/PTI/Clerk/Non-Teaching/Driver), Principal DR, SS Dashboard.</p>
   </div>
   <div class="hdr-right">
     <a href="../index.html" class="hdr-btn">← Portal</a>
@@ -233,64 +241,71 @@ td{padding:6px 12px;vertical-align:middle}
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="submit" onclick="switchTab('submit')">📝 Teacher SS</button>
-      <button class="tab-btn" data-tab="itss" onclick="switchTab('itss')">💻 IT SS</button>
-      <button class="tab-btn" data-tab="ptiss" onclick="switchTab('ptiss')">🏃 PTI SS</button>
-      <button class="tab-btn" data-tab="clerkss" onclick="switchTab('clerkss')">🧾 Clerk SS</button>
-      <button class="tab-btn" data-tab="nonteachingss" onclick="switchTab('nonteachingss')">🧹 Non-Teaching SS</button>
-      <button class="tab-btn" data-tab="driverss" onclick="switchTab('driverss')">🚌 Driver SS</button>
+      <button class="tab-btn active" data-tab="support" onclick="switchTab('support')">🧾 Support Sessions</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
-      <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+      <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 SS Dashboard</button>
     </div>
 
-    <!-- ══════════════════ SUBMIT (embedded Google Form) ══════════════════ -->
-    <div class="tab-panel active" id="panel-submit">
-      <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
-      <div class="form-embed-wrap">
-        <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
+    <!-- ══════════════════ SUPPORT SESSIONS (all 6 SS forms, one level below this top tab) ══════════════════ -->
+    <div class="tab-panel active" id="panel-support">
+      <div class="subtabs">
+        <button class="subtab-btn active" data-subtab="submit" onclick="switchSubTab('submit')">📝 Teacher SS</button>
+        <button class="subtab-btn" data-subtab="itss" onclick="switchSubTab('itss')">💻 IT SS</button>
+        <button class="subtab-btn" data-subtab="ptiss" onclick="switchSubTab('ptiss')">🏃 PTI SS</button>
+        <button class="subtab-btn" data-subtab="clerkss" onclick="switchSubTab('clerkss')">🧾 Clerk SS</button>
+        <button class="subtab-btn" data-subtab="nonteachingss" onclick="switchSubTab('nonteachingss')">🧹 Non-Teaching SS</button>
+        <button class="subtab-btn" data-subtab="driverss" onclick="switchSubTab('driverss')">🚌 Driver SS</button>
       </div>
-    </div>
 
-    <!-- ══════════════════ IT SS / PTI SS / Clerk SS (embedded Google Forms) ══════════════════
-         Unlike Teacher SS above, each of these is ONE form spanning all 6
-         campuses (a "School" question inside the form, filled in by
-         whoever's submitting) -- so the src is static, not re-pointed by
-         selectSchool() the way pickSubmitCampus() re-points formFrame. -->
-    <div class="tab-panel" id="panel-itss">
-      <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-      <div class="form-embed-wrap">
-        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
+      <!-- Teacher SS (embedded Google Form) -->
+      <div class="subtab-panel active" id="panel-submit">
+        <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
+        <div class="form-embed-wrap">
+          <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
+        </div>
       </div>
-    </div>
-    <div class="tab-panel" id="panel-ptiss">
-      <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-      <div class="form-embed-wrap">
-        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
-      </div>
-    </div>
-    <div class="tab-panel" id="panel-clerkss">
-      <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-      <div class="form-embed-wrap">
-        <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
-      </div>
-    </div>
 
-    <!-- ══════════════════ NON-TEACHING SS (embedded Google Form, per campus) ══════════════════
-         Per-campus like Teacher SS, not a single multi-campus form like
-         IT/PTI/Clerk SS above -- src is re-pointed by pickNonTeachingCampus()
-         from selectSchool(), same as pickSubmitCampus() does for formFrame. -->
-    <div class="tab-panel" id="panel-nonteachingss">
-      <div class="notice">Your campus's Non-Teaching SS Google Form.</div>
-      <div class="form-embed-wrap">
-        <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
+      <!-- IT SS / PTI SS / Clerk SS (embedded Google Forms) -- unlike
+           Teacher SS above, each of these is ONE form spanning all 6
+           campuses (a "School" question inside the form, filled in by
+           whoever's submitting) -- so the src is static, not re-pointed
+           by selectSchool() the way pickSubmitCampus() re-points formFrame. -->
+      <div class="subtab-panel" id="panel-itss">
+        <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="form-embed-wrap">
+          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
+        </div>
       </div>
-    </div>
+      <div class="subtab-panel" id="panel-ptiss">
+        <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="form-embed-wrap">
+          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
+        </div>
+      </div>
+      <div class="subtab-panel" id="panel-clerkss">
+        <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="form-embed-wrap">
+          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
+        </div>
+      </div>
 
-    <!-- ══════════════════ DRIVER SS (embedded Google Form, per campus) ══════════════════ -->
-    <div class="tab-panel" id="panel-driverss">
-      <div class="notice">Your campus's Driver Cum Peon SS Google Form.</div>
-      <div class="form-embed-wrap">
-        <iframe id="driverFormFrame" src="" title="Driver SS Form"></iframe>
+      <!-- Non-Teaching SS (embedded Google Form, per campus) -- per-campus
+           like Teacher SS, not a single multi-campus form like IT/PTI/Clerk
+           SS above -- src is re-pointed by pickNonTeachingCampus() from
+           selectSchool(), same as pickSubmitCampus() does for formFrame. -->
+      <div class="subtab-panel" id="panel-nonteachingss">
+        <div class="notice">Your campus's Non-Teaching SS Google Form.</div>
+        <div class="form-embed-wrap">
+          <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
+        </div>
+      </div>
+
+      <!-- Driver SS (embedded Google Form, per campus) -->
+      <div class="subtab-panel" id="panel-driverss">
+        <div class="notice">Your campus's Driver Cum Peon SS Google Form.</div>
+        <div class="form-embed-wrap">
+          <iframe id="driverFormFrame" src="" title="Driver SS Form"></iframe>
+        </div>
       </div>
     </div>
 
@@ -313,6 +328,7 @@ td{padding:6px 12px;vertical-align:middle}
           </button>
         </div>
       </div>
+      <p id="principalLoadStatus"></p>
 
       <div class="principal-layout">
 
@@ -513,6 +529,7 @@ function hardRefreshPage() {
   try {
     sessionStorage.setItem('pdrHardRefreshRestore', JSON.stringify({
       tab: (document.querySelector('.tab-btn.active') || {}).dataset ? document.querySelector('.tab-btn.active').dataset.tab : 'principal',
+      subTab: (document.querySelector('.subtab-btn.active') || {}).dataset ? document.querySelector('.subtab-btn.active').dataset.subtab : 'submit',
       campusId: SELECTED_CAMPUS_ID,
       reportDate: document.getElementById('reportDate') ? document.getElementById('reportDate').value : ''
     }));
@@ -571,6 +588,7 @@ async function init() {
       var campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
       if (restore.campusId && campuses.indexOf(restore.campusId) > -1) selectSchool(restore.campusId);
       if (restore.tab) switchTab(restore.tab);
+      if (restore.subTab) switchSubTab(restore.subTab);
       if (restore.reportDate) {
         // bootPrincipalReport()'s own load is already in flight (fired
         // from selectSchool -> pickPrincipalCampus above) -- give it a
@@ -1111,6 +1129,24 @@ var MIN_SS_PER_DAY = 3; // principals are expected to take at least this many Su
 var currentPlannedActivities = [];
 var selectedRegisters = ['Teachers TRR']; // TRR pre-checked by default (was the old 'TRRs' placeholder)
 
+// Bumped at the start of every loadReportForDate() call; each call
+// captures its own value and checks it after every await. Without this,
+// switching schools (or the date) while the 5 sequential fetches below
+// are still in flight let a SLOWER, now-stale call finish last and
+// paint a different school's data over the one currently selected --
+// the "one principal's report visible in another's" bug (Uday
+// 2026-09-10). Root-caused as a frontend race, not a backend data leak
+// -- the backend already filters every read/write by campusId AND
+// re-verifies the caller's own campus server-side (see main.gs's
+// verifyCallerToken_), so no per-school Sheet split was needed.
+var principalLoadToken = 0;
+
+function setPrincipalLoadStatus(msg) {
+  var el = document.getElementById('principalLoadStatus');
+  if (!el) return;
+  el.innerHTML = msg ? '<span class="spinner-sm"></span>' + msg : '';
+}
+
 function pickPrincipalCampus(campusId) {
   principalCampusId = campusId;
   document.getElementById('principalBranchLabel').textContent = LMCS.campusLabel(campusId);
@@ -1493,6 +1529,7 @@ async function bootPrincipalReport(campusId) {
 // a way I can see a past report that I have submitted?"); otherwise
 // the form is left blank for a fresh entry, same as before.
 async function loadReportForDate() {
+  var myToken = ++principalLoadToken; // see its declaration for why
   var campusId = principalCampusId;
   var dateISO = document.getElementById('reportDate').value || todayISO();
 
@@ -1508,7 +1545,9 @@ async function loadReportForDate() {
     document.getElementById(listId).innerHTML = '';
   });
 
+  setPrincipalLoadStatus('Loading report…');
   var existing = await fetchExistingDailyReport(campusId, dateISO);
+  if (myToken !== principalLoadToken) return; // a newer load has since started -- discard this stale result
   if (existing && existing.exists) {
     if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
     document.getElementById('maScore').value = existing.maScore || '';
@@ -1529,16 +1568,24 @@ async function loadReportForDate() {
   // Uday 2026-09-02 (it's a forward-planning aid, not a historical
   // record, so it should keep showing what's genuinely coming up even
   // while reviewing a past report).
+  setPrincipalLoadStatus('Loading support sessions…');
   currentSSTeachers = await fetchSupportSessionsToday(campusId);
+  if (myToken !== principalLoadToken) return;
   renderSsCountBadge(currentSSTeachers.length);
 
+  setPrincipalLoadStatus('Loading month activities…');
   var monthActivities = await fetchMonthActivities(campusId);
+  if (myToken !== principalLoadToken) return;
   renderMonthActivities(monthActivities);
 
+  setPrincipalLoadStatus('Loading planned activities…');
   currentPlannedActivities = await fetchPlannedActivities(campusId);
+  if (myToken !== principalLoadToken) return;
   renderPlannedActivities();
 
+  setPrincipalLoadStatus('Loading suggestions…');
   var yesterdaysTasks = await fetchYesterdaysTomorrowTasks(campusId);
+  if (myToken !== principalLoadToken) return;
   // Any still-open Planned Activity due on/before the SELECTED report
   // date also becomes a Tasks Completed suggestion (per Uday 2026-09-02,
   // refined 2026-09-03 to follow the Date field via daysBetween() rather
@@ -1550,11 +1597,21 @@ async function loadReportForDate() {
     .filter(function (a) { var d = daysBetween(a.date, dateISO); return d !== null && d <= 0; })
     .map(function (a) { return a.activity; });
   renderSuggestionChips(yesterdaysTasks.concat(plannedSuggestions));
+  setPrincipalLoadStatus(null);
 }
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+  document.getElementById('panel-' + tab).classList.add('active');
+}
+
+// Second-level tab switch, within the "Support Sessions" top tab only
+// (Teacher/IT/PTI/Clerk/Non-Teaching/Driver SS) -- mirrors switchTab()
+// exactly, just scoped to .subtab-btn/.subtab-panel instead.
+function switchSubTab(tab) {
+  document.querySelectorAll('.subtab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.subtab === tab); });
+  document.querySelectorAll('.subtab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
 }
 
