@@ -1831,18 +1831,33 @@ function aprStatusPillClass_(status) {
   return 'amber'; // Pending, Info Requested
 }
 
+// Owner (campusId 'ALL') sees every school's requests on this one tab
+// at once -- per Uday 2026-09-10, this is the one tab that breaks from
+// the portal's usual "pick a school, browse within it" convention,
+// specifically because cross-school oversight IS the point of
+// Approvals for an Owner. A Principal's own list only ever contains
+// their own campus anyway, so this only changes anything for Owner/
+// Coordinator sessions. aprColspan_()/aprShowsCampusCol_() are read by
+// aprRowHtml_/aprDetailHtml_ too, so the extra School column and the
+// detail row's colspan stay in sync without threading a param through
+// every call site.
+function aprShowsCampusCol_() { return SESSION.campusId === 'ALL'; }
+function aprColspan_() { return aprShowsCampusCol_() ? 6 : 5; }
+
 function renderApprovalsForSelectedCampus() {
   if (!aprRes || !SELECTED_CAMPUS_ID) return; // loadApprovals() hasn't resolved yet, or no school picked -- it/selectSchool() calls this again once true
   const body = document.getElementById('aprListBody');
-  let rows = aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
+  const showAll = aprShowsCampusCol_();
+  let rows = showAll ? aprRes.requests.slice() : aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
   if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
 
   if (!rows.length) {
-    body.innerHTML = '<div class="dash-empty">No ' + (APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ') + 'requests for this school.</div>';
+    body.innerHTML = '<div class="dash-empty">No ' + (APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ') + 'requests' + (showAll ? '' : ' for this school') + '.</div>';
     return;
   }
 
   body.innerHTML = '<div class="tbl-wrap"><table><thead><tr>' +
+    (showAll ? '<th>School</th>' : '') +
     '<th>Title</th><th>Category</th><th>Urgency</th><th>Status</th><th>Requested</th>' +
     '</tr></thead><tbody>' + rows.map(aprRowHtml_).join('') + '</tbody></table></div>';
 }
@@ -1850,12 +1865,13 @@ function renderApprovalsForSelectedCampus() {
 function aprRowHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+    (aprShowsCampusCol_() ? '<td>' + aprEsc_(LMCS.campusLabel(r.campusId)) + '</td>' : '') +
     '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></td>' +
     '<td>' + formatDDMMYYYY_(r.requestedAt) + '</td></tr>';
   if (isExpanded) {
-    html += '<tr class="detail-row"><td colspan="5"><div class="apr-detail-wrap" id="aprDetailWrap">' +
+    html += '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
       '<div class="loading-state"><div class="spinner"></div>Loading…</div></div></td></tr>';
   }
   return html;
@@ -1912,7 +1928,7 @@ function aprDetailHtml_(res) {
   }
   if (r.decisionNote) decideBar = '<div class="apr-desc"><b>Decision note:</b> ' + aprEsc_(r.decisionNote) + '</div>' + decideBar;
 
-  return '<tr class="detail-row"><td colspan="5"><div class="apr-detail-wrap" id="aprDetailWrap">' +
+  return '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
     '<div class="apr-desc">' + aprEsc_(r.description) + '</div>' +
     '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' +
     '<div class="apr-comments">' + aprCommentsHtml_(res.comments) + '</div>' +
