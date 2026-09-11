@@ -136,24 +136,11 @@ td{padding:6px 12px;vertical-align:middle}
 .score-input{max-width:90px;text-align:center;font-weight:700;color:var(--red)}
 .principal-layout select,
 .principal-layout input[type=number],
-.principal-layout input[type=text],
-.ss-form-wrap select,
-.ss-form-wrap input[type=number],
-.ss-form-wrap input[type=text]{
+.principal-layout input[type=text]{
   border:1.5px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12.5px;font-family:inherit;color:var(--dark);background:var(--white);width:100%
 }
 .principal-layout select:focus,
-.principal-layout input:focus,
-.ss-form-wrap select:focus,
-.ss-form-wrap input:focus{outline:none;border-color:var(--red)}
-
-/* IT SS custom-form prototype (2026-09-11) -- one row per rubric
-   question, label left / score-input right, same visual language as
-   Principal DR's Morning Assembly Marking row above. */
-.ss-rubric-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--lgray)}
-.ss-rubric-row:last-child{border-bottom:none}
-.ss-rubric-row .field-label{margin:0;flex:1}
-.ss-rubric-row .score-input{flex-shrink:0}
+.principal-layout input:focus{outline:none;border-color:var(--red)}
 
 .numbered-list{margin:0 0 7px;padding:0;list-style:none}
 .numbered-list li{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--lgray);font-size:12.5px}
@@ -318,34 +305,19 @@ td{padding:6px 12px;vertical-align:middle}
         </div>
       </div>
 
-      <!-- PTI SS / Clerk SS (embedded Google Forms) -- unlike Teacher SS
-           above, each of these is ONE form spanning all 6 campuses (a
-           "School" question inside the form, filled in by whoever's
-           submitting) -- so the src is static, not re-pointed by
-           selectSchool() the way pickSubmitCampus() re-points formFrame. -->
-
-      <!-- IT SS -- custom-form prototype (2026-09-11), replacing the
-           embedded Google Form. Loaded lazily (see loadSsForm_(), wired
-           from switchSubTab()/pickItSsCampus()) instead of the old
-           always-on iframe src, which fetched Google's own Form-renderer
-           JS/CSS on every page load whether or not this tab was ever
-           opened -- see ss-forms-sync.gs's ssFormMeta_/ssSubmit_ for the
-           backend half. Employee list is pre-filtered to your selected
-           school, so there's no separate "School" field to get wrong. -->
+      <!-- IT SS / PTI SS / Clerk SS (embedded Google Forms) -- unlike
+           Teacher SS above, each of these is ONE form spanning all 6
+           campuses (a "School" question inside the form, filled in by
+           whoever's submitting) -- so the src is static, not re-pointed
+           by selectSchool() the way pickSubmitCampus() re-points formFrame.
+           (IT SS briefly had a custom-form prototype here, 2026-09-11 --
+           reverted per Uday after the shared Apps Script backend broke
+           mid-rollout; ss-forms-sync.gs's ssFormMeta_/ssSubmit_ are left
+           in place, unused, in case this gets picked back up later.) -->
       <div class="subtab-panel" id="panel-itss">
-        <div class="notice" id="itssHint">Loading…</div>
-        <div class="ss-form-wrap">
-          <div class="card">
-            <p class="card-title">Computer Teacher</p>
-            <select id="itssEmployee"></select>
-          </div>
-          <div class="card">
-            <p class="card-title">Rubric (0–10 each)</p>
-            <div id="itssRubricRows"></div>
-          </div>
-          <div class="submit-bar">
-            <button type="button" class="submit-btn" id="itssSubmitBtn" onclick="submitSsForm('itComputer','itss','itssSubmitBtn')">Submit</button>
-          </div>
+        <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="form-embed-wrap">
+          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
         </div>
       </div>
       <div class="subtab-panel" id="panel-ptiss">
@@ -785,7 +757,6 @@ function selectSchool(campusId) {
     b.classList.toggle('active', b.dataset.campus === campusId);
   });
   pickSubmitCampus(campusId);
-  pickItSsCampus(campusId);
   pickNonTeachingCampus(campusId);
   pickDriverCampus(campusId);
   pickPrincipalCampus(campusId);
@@ -2126,116 +2097,6 @@ function switchSubTab(tab) {
   document.querySelectorAll('.subtab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.subtab === tab); });
   document.querySelectorAll('.subtab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
-  if (tab === 'itss' && !itssLoaded_) loadSsForm_('itComputer', 'itss', SELECTED_CAMPUS_ID);
-}
-
-// ── IT SS (custom-form prototype, 2026-09-11) ────────────────────────
-// Replaces the embedded IT SS Google Form -- see panel-itss's own HTML
-// comment for why. ss-forms-sync.gs's ssFormMeta_/ssSubmit_ are the
-// single source of truth for a role's shape (label/rubricTitles/
-// rubricMax/employees); nothing about that is duplicated here, this
-// just renders whatever ssformmeta returns and posts back to submitss.
-// Data lands in the EXACT SAME response sheet/tab the Google Form
-// already wrote to -- ss-tracker.gs's Dashboard needs no changes (reads
-// by header name, not position -- see its own comment). Written as
-// generic loadSsForm_/renderSsForm_/submitSsForm(roleKey, panelPrefix,
-// ...) rather than IT-SS-specific functions, since the other 5 SS roles
-// are the planned next step once this prototype's load time is
-// confirmed better -- see ss-forms-sync.gs's SS_ROLE_CONFIGS for the
-// roles still on the old embedded-iframe pattern.
-const ssFormMetaCache_ = {}; // "<role>|<school>" -> ssformmeta response, so re-opening the subtab or re-picking an already-seen school doesn't re-fetch
-let itssLoaded_ = false; // true once IT SS has been loaded for the CURRENTLY selected school -- the whole point of lazy loading is not fetching this until the subtab is actually opened
-
-function pickItSsCampus(campusId) {
-  itssLoaded_ = false; // school changed -- re-fetch (from cache if we've seen this school before) next time the subtab is opened
-  if (document.getElementById('panel-itss').classList.contains('active')) loadSsForm_('itComputer', 'itss', campusId);
-}
-
-async function loadSsForm_(roleKey, panelPrefix, campusId) {
-  const cacheKey = roleKey + '|' + campusId;
-  let meta = ssFormMetaCache_[cacheKey];
-  if (!meta) {
-    // WRAPPED (2026-09-11, found via a real "stuck on Loading forever"
-    // report): an unguarded fetch/json here meant ANY failure -- a
-    // network hiccup, or the backend returning something that isn't
-    // valid JSON -- left the panel on its static "Loading…" text
-    // forever, with the real reason visible only in devtools. Same
-    // guard pdrPost_ already has for POST; this GET call didn't, unlike
-    // it. Now a failure actually reaches renderSsForm_'s error path
-    // instead of silently hanging.
-    try {
-      const res = await fetch(PDR_BACKEND_URL + '?action=ssformmeta&role=' + encodeURIComponent(roleKey)
-        + '&school=' + encodeURIComponent(campusId) + '&idToken=' + encodeURIComponent(SESSION.idToken));
-      meta = await res.json();
-    } catch (err) {
-      console.warn('loadSsForm_ error (' + roleKey + '):', err);
-      meta = { success: false, error: String(err && err.message || err) };
-    }
-    if (meta && meta.success) ssFormMetaCache_[cacheKey] = meta;
-  }
-  renderSsForm_(panelPrefix, meta);
-  if (meta && meta.success) itssLoaded_ = true;
-  else pdrReportAuthFailureIfNeeded_(meta);
-}
-
-function renderSsForm_(panelPrefix, meta) {
-  const hint = document.getElementById(panelPrefix + 'Hint');
-  const empSelect = document.getElementById(panelPrefix + 'Employee');
-  const rubricWrap = document.getElementById(panelPrefix + 'RubricRows');
-  if (!meta || !meta.success) {
-    empSelect.innerHTML = '';
-    rubricWrap.innerHTML = '';
-    hint.textContent = 'Could not load the form' + (meta && meta.error ? ': ' + meta.error : '') + '.';
-    return;
-  }
-  hint.textContent = meta.label + ' — teacher list is already filtered to your selected school.';
-  empSelect.innerHTML = meta.employees.map(function (e) {
-    return '<option value="' + e.code.replace(/"/g, '&quot;') + '" data-name="' + e.name.replace(/"/g, '&quot;') + '">' + e.label + '</option>';
-  }).join('');
-  rubricWrap.innerHTML = meta.rubricTitles.map(function (title, i) {
-    return '<div class="ss-rubric-row"><label class="field-label" for="' + panelPrefix + 'Score' + i + '">' + title + '</label>'
-      + '<input type="number" class="score-input" id="' + panelPrefix + 'Score' + i + '" min="0" max="' + meta.rubricMax + '"></div>';
-  }).join('');
-}
-
-// Guarded against double-submission the same way submitReport() is (see
-// its own comment) -- disable the button for the duration of the call.
-async function submitSsForm(roleKey, panelPrefix, btnId) {
-  const btn = document.getElementById(btnId);
-  if (btn.disabled) return;
-  const meta = ssFormMetaCache_[roleKey + '|' + SELECTED_CAMPUS_ID];
-  if (!meta || !meta.success) { alert('Form not loaded yet — try again in a moment.'); return; }
-  const empSelect = document.getElementById(panelPrefix + 'Employee');
-  const chosen = empSelect.options[empSelect.selectedIndex];
-  if (!chosen) { alert('Pick a name first.'); return; }
-  const scores = meta.rubricTitles.map(function (_, i) { return document.getElementById(panelPrefix + 'Score' + i).value; });
-  if (scores.some(function (s) { return s === '' || isNaN(Number(s)) || Number(s) < 0 || Number(s) > meta.rubricMax; })) {
-    alert('Every rubric score must be a number between 0 and ' + meta.rubricMax + '.');
-    return;
-  }
-
-  btn.disabled = true;
-  var originalLabel = btn.textContent;
-  btn.textContent = 'Submitting…';
-  try {
-    var result = await pdrPost_('submitss', {
-      role: roleKey,
-      school: SELECTED_CAMPUS_ID,
-      employeeCode: chosen.value,
-      employeeName: chosen.dataset.name,
-      scores: scores
-    });
-    if (result && result.success) {
-      alert('Submitted.');
-      meta.rubricTitles.forEach(function (_, i) { document.getElementById(panelPrefix + 'Score' + i).value = ''; });
-    } else {
-      pdrReportAuthFailureIfNeeded_(result);
-      alert('Something went wrong submitting' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalLabel;
-  }
 }
 
 init();
