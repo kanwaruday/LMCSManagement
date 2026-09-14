@@ -58,7 +58,10 @@ const APR_COMMENTS_TAB = 'Comments';
 // splits (Long Leave/Sabbatical and the other 4 brainstormed
 // categories -- School Management, Fee Concession/Refund, Student
 // Incident/Expulsion, Compliance/Regulatory -- were considered and cut).
-const APR_CATEGORIES = ['Hiring / New Position', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+// 2026-09-14: added 'Hiring Decision' for the Hiring Dashboard's second
+// approval (finalize a specific candidate + pay, after 'Hiring / New
+// Position' already opened the role) -- see hiring.gs.
+const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no

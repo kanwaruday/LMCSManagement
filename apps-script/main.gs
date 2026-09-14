@@ -61,6 +61,16 @@
 //                         CanApprove column (E) is TRUE for them --
 //                         see verifyCallerToken_ below and approvals.gs's
 //                         own header for the delegation model.
+//   hiring.gs           -- action=hiringapplicants/hiringcheckinterviewreport/
+//                         hiringcheckdocuments (GET), updatehiringstatus
+//                         (POST). Hiring Dashboard: browse the Teaching
+//                         Applicants sheet campus-scoped, track a
+//                         candidate's status, warn-not-block cross-checks
+//                         against the Interview Report and per-campus
+//                         Document Submission sheets. The 'Hired' write
+//                         is gated on two Approvals categories ('Hiring /
+//                         New Position', 'Hiring Decision') both being
+//                         Approved for that campus -- see its own header.
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -107,6 +117,9 @@ function doGet(e) {
     if (action === 'approvalslist') return jsonOut_(aprList_(caller));
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
+    if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
+    if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
+    if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -140,6 +153,7 @@ function doPost(e) {
     if (action === 'deleteapprovalcomment') return jsonOut_(aprDeleteComment_(caller, body));
     if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
+    if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

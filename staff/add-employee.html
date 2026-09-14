@@ -249,6 +249,15 @@ async function init() {
   addCsRow('hire');
   document.getElementById('hireDoj').value = new Date().toISOString().slice(0, 10);
 
+  // Prefill from a deep link, e.g. Hiring Dashboard's "Complete hire" link
+  // (?name=...&school=LMS1) once a candidate is marked Hired there --
+  // same pattern as the old Salary Slip "Send to Salary Slip" deep link.
+  // school is only honored for Owner (campusId ALL); a locked Coordinator
+  // already has hireSchool forced+disabled to their own campus above.
+  const params = new URLSearchParams(location.search);
+  if (params.get('name')) document.getElementById('hireName').value = params.get('name');
+  if (params.get('school') && SESSION.campusId === 'ALL') document.getElementById('hireSchool').value = params.get('school');
+
   document.getElementById('formArea').style.display = 'block';
 
   await loadAllEmployees();

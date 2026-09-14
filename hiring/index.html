@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Hiring Dashboard</title>
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6;display:flex;flex-direction:column}
+
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h);flex-wrap:wrap}
+.hdr-brand{display:flex;align-items:center;gap:10px}
+.hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr p{font-size:9.5px;opacity:.75;margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .15s;white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.22)}
+
+#appBody{flex:1;overflow:auto;padding:24px;max-width:1100px;margin:0 auto;width:100%}
+#authRoot{max-width:420px;margin:60px auto}
+
+.welcome{display:flex;align-items:center;justify-content:space-between;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.welcome b{color:var(--dark)}
+.signout{font-size:11px;color:var(--gray);text-decoration:none}
+.signout:hover{color:var(--red)}
+
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+.denied .icon{font-size:36px;margin-bottom:10px}
+
+.getting-started{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
+.gs-card{border:1px solid var(--border);border-radius:6px;padding:12px 14px;text-decoration:none;color:inherit;transition:border-color .15s}
+.gs-card:hover{border-color:var(--red)}
+.gs-card .t{font-size:12px;font-weight:700;margin-bottom:3px}
+.gs-card .d{font-size:11px;color:var(--gray)}
+
+.status-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;font-size:11.5px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--lgray)}
+.pill.ok{background:#dcfce7;border-color:#bbf7d0;color:var(--green)}
+.pill.no{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+
+.campus-filter{margin-bottom:14px;font-size:12px}
+.campus-filter select{padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 10px;background:var(--lgray);border-bottom:2px solid var(--border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover td{background:var(--red-lt)}
+.name{font-weight:700}
+.sub{color:var(--gray);font-size:11px}
+a.linklike{color:var(--red);text-decoration:none}
+a.linklike:hover{text-decoration:underline}
+select.status-select{padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11.5px;max-width:150px}
+input.notes-input{width:130px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11.5px}
+input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px}
+.row-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.mini-btn{font-size:10.5px;padding:3px 7px;border:1px solid var(--border);border-radius:4px;background:var(--white);cursor:pointer;color:var(--gray)}
+.mini-btn:hover{border-color:var(--red);color:var(--red)}
+.save-btn{font-size:10.5px;padding:3px 9px;border:none;border-radius:4px;background:var(--red);color:#fff;cursor:pointer;font-weight:600}
+.save-btn:hover{background:var(--red-h)}
+.save-btn:disabled{opacity:.5;cursor:default}
+.row-msg{font-size:10.5px;margin-top:4px}
+.row-msg.err{color:#991b1b}
+.row-msg.ok{color:var(--green)}
+.empty{text-align:center;padding:40px;color:var(--gray)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-brand">
+    <div>
+      <h1>Hiring Dashboard</h1>
+      <p>Teaching Applicants — browse, track, hire</p>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <a href="../principals-daily-reporting/index.html" class="hdr-btn">✅ Approvals</a>
+    <a href="../index.html" class="hdr-btn">🏠 Portal Home</a>
+  </div>
+</div>
+
+<div id="appBody">
+
+  <div id="authRoot"></div>
+
+  <div id="appRoot" style="display:none">
+    <div class="welcome" id="welcomeStrip"></div>
+    <div id="deniedRoot"></div>
+    <div id="mainRoot" style="display:none">
+
+      <div class="getting-started">
+        <a href="../principals-daily-reporting/index.html" class="gs-card" target="_blank">
+          <div class="t">1 — Request to open a role</div>
+          <div class="d">Approvals tab → "Hiring / New Position"</div>
+        </a>
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSempUF_QhWrQ8AfoYdXs7o2ACgcec78RyT7ZtuFlFv7pD_cuQ/viewform" class="gs-card" target="_blank">
+          <div class="t">4 — Interview Report Form</div>
+          <div class="d">Fill after the interview + demo</div>
+        </a>
+        <a href="#" id="docFormLink" class="gs-card" target="_blank">
+          <div class="t">9 — Staff Document Submission</div>
+          <div class="d">For your campus, once hired</div>
+        </a>
+        <a href="https://kanwaruday.github.io/lmcs-salary-dashboard/dashboard.html" class="gs-card" target="_blank">
+          <div class="t">7/8 — Salary Slip</div>
+          <div class="d">Separate tool, separate sign-in</div>
+        </a>
+      </div>
+
+      <div class="campus-filter" id="campusFilterRow" style="display:none">
+        Campus: <select id="campusFilter"></select>
+      </div>
+
+      <div class="status-strip" id="statusStrip"></div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
+            <th>Status</th><th>Notes / interview</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="emptyMsg" style="display:none">No applicants for this campus yet.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="../assets/auth.js"></script>
+<script>
+const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+const DOC_FORM_URLS = {
+  LMS1: 'https://forms.gle/mEtGFD6vGhgK3kJG7', LMS2: 'https://forms.gle/LV1fy13jXzrrcXra9',
+  LMS3: 'https://forms.gle/hHgMU9XqBxpk3gWd8', LMS4: 'https://forms.gle/1uFg6AuYpYmP7ukA9',
+  LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
+};
+
+let SESSION = null;
+let APPLICANTS = [];
+let APPROVALS = { list: [] };
+let campusFilter = 'ALL'; // only meaningful when SESSION.campusId === 'ALL'
+
+function gasGet_(action, params) {
+  const qs = Object.assign({ action: action, idToken: SESSION.idToken }, params || {});
+  const url = PDR_BACKEND_URL + '?' + Object.keys(qs).map(function (k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]);
+  }).join('&');
+  return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); });
+}
+
+function gasPost_(action, body) {
+  return fetch(PDR_BACKEND_URL, {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ action: action, idToken: SESSION.idToken }, body)),
+  }).then(function (r) { return r.json(); });
+}
+
+function activeCampus_() {
+  return SESSION.campusId === 'ALL' ? campusFilter : SESSION.campusId;
+}
+
+function renderStatusStrip() {
+  const campus = activeCampus_();
+  const el = document.getElementById('statusStrip');
+  if (campus === 'ALL') { el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>'; return; }
+  const cats = ['Hiring / New Position', 'Hiring Decision'];
+  el.innerHTML = cats.map(function (cat) {
+    const ok = APPROVALS.list.some(function (a) { return a.campusId === campus && a.category === cat && a.status === 'Approved'; });
+    return '<span class="pill ' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + ' ' + cat + '</span>';
+  }).join('');
+}
+
+function renderCampusFilter() {
+  if (SESSION.campusId !== 'ALL') { document.getElementById('campusFilterRow').style.display = 'none'; return; }
+  document.getElementById('campusFilterRow').style.display = '';
+  const sel = document.getElementById('campusFilter');
+  const opts = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+  sel.innerHTML = opts.map(function (c) {
+    return '<option value="' + c + '">' + (c === 'ALL' ? 'All campuses' : LMCS.campusLabel(c)) + '</option>';
+  }).join('');
+  sel.value = campusFilter;
+  sel.onchange = function () {
+    campusFilter = sel.value;
+    renderStatusStrip();
+    renderDocFormLink();
+    renderRows();
+  };
+}
+
+function renderDocFormLink() {
+  const campus = activeCampus_();
+  const link = document.getElementById('docFormLink');
+  if (DOC_FORM_URLS[campus]) { link.href = DOC_FORM_URLS[campus]; link.style.opacity = ''; }
+  else { link.removeAttribute('href'); link.style.opacity = '.5'; }
+}
+
+// Deep-links into the Staff Portal's New Hire tab with name + campus
+// pre-filled -- same "hand off via URL params" pattern the old Salary
+// Slip integration used, rather than duplicating the hire form here.
+// Uses the applicant's OWN campus tag (not the active filter), since an
+// Owner viewing "All campuses" still needs the right school prefilled.
+function hireLinkUrl_(a) {
+  const m = a.branches.match(/LMS-(\d)/);
+  const school = m ? 'LMS' + m[1] : (SESSION.campusId !== 'ALL' ? SESSION.campusId : '');
+  const params = new URLSearchParams({ name: a.name });
+  if (school) params.set('school', school);
+  return '../staff/add-employee.html?' + params.toString();
+}
+
+function statusOptionsHtml_(current) {
+  return APPLICANTS.statuses.map(function (s) {
+    return '<option value="' + s + '"' + (s === current ? ' selected' : '') + '>' + s + '</option>';
+  }).join('');
+}
+
+function renderRows() {
+  const campus = activeCampus_();
+  const list = campus === 'ALL' ? APPLICANTS.applicants : APPLICANTS.applicants.filter(function (a) {
+    return a.branches.indexOf('LMS-' + campus.replace(/[^0-9]/g, '')) !== -1;
+  });
+  document.getElementById('emptyMsg').style.display = list.length ? 'none' : '';
+  document.getElementById('rows').innerHTML = list.map(function (a) {
+    const phoneDigits = a.phone.replace(/\D/g, '');
+    return '<tr data-row="' + a.row + '">' +
+      '<td><div class="name">' + a.name + '</div><div class="sub">' +
+        (phoneDigits ? '<a class="linklike" href="tel:' + a.phone + '">' + a.phone + '</a> · <a class="linklike" href="https://wa.me/91' + phoneDigits.slice(-10) + '" target="_blank">WhatsApp</a>' : a.phone) +
+        ' · ' + (a.age || '—') + ' · ' + (a.gender || '—') + '</div></td>' +
+      '<td>' + (a.subjects || '—') + '</td>' +
+      '<td>' + (a.qualification || '—') + (a.bed ? ' · ' + a.bed : '') + '</td>' +
+      '<td>' + (a.cv ? '<a class="linklike" href="' + a.cv + '" target="_blank">View</a>' : '—') + '</td>' +
+      '<td><select class="status-select">' + statusOptionsHtml_(a.status) + '</select></td>' +
+      '<td><input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes">' +
+        '<br><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '"></td>' +
+      '<td>' +
+        '<button class="save-btn">Save</button>' +
+        '<div class="row-actions">' +
+          '<button class="mini-btn" data-check="report">🔍 report</button>' +
+          '<button class="mini-btn" data-check="docs">🔍 docs</button>' +
+        '</div>' +
+        (a.status === 'Hired' ? '<div class="row-actions"><a class="mini-btn" style="text-decoration:none;display:inline-block" href="' + hireLinkUrl_(a) + '" target="_blank">➕ Complete hire in Staff Portal</a></div>' : '') +
+        '<div class="row-msg"></div>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  document.querySelectorAll('#rows tr').forEach(function (tr) {
+    const row = tr.dataset.row;
+    const applicant = list.find(function (a) { return String(a.row) === row; });
+    tr.querySelector('.save-btn').onclick = function () { saveRow_(tr, applicant); };
+    tr.querySelectorAll('[data-check]').forEach(function (btn) {
+      btn.onclick = function () { runCheck_(applicant, btn.dataset.check); };
+    });
+  });
+}
+
+function saveRow_(tr, applicant) {
+  const btn = tr.querySelector('.save-btn');
+  const msg = tr.querySelector('.row-msg');
+  const status = tr.querySelector('.status-select').value;
+  const notes = tr.querySelector('.notes-input').value;
+  const interviewAt = tr.querySelector('.interview-input').value;
+  btn.disabled = true;
+  msg.textContent = ''; msg.className = 'row-msg';
+  gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt })
+    .then(function (res) {
+      btn.disabled = false;
+      if (!res.success) { msg.textContent = res.error; msg.className = 'row-msg err'; return; }
+      APPLICANTS = res; msg.textContent = 'Saved'; msg.className = 'row-msg ok';
+      setTimeout(function () { renderRows(); }, 400);
+    })
+    .catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'row-msg err'; });
+}
+
+function runCheck_(applicant, kind) {
+  if (kind === 'report') {
+    gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (res) {
+      const r = res.result;
+      alert(r.found ? ('Interview report found.\n\nRemarks: ' + (r.remarks || '—') + '\nPDF: ' + (r.pdf || '—')) : 'No interview report found for this phone number yet.');
+    });
+  } else {
+    const campus = activeCampus_() === 'ALL' ? (applicant.branches.match(/LMS-(\d)/) || [])[0] : activeCampus_();
+    const campusId = campus && campus.indexOf('LMS-') === 0 ? 'LMS' + campus.slice(4) : campus;
+    gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (res) {
+      const r = res.result;
+      if (!r.found) { alert('No document submission found yet for ' + applicant.name + ' at ' + campusId + '.'); return; }
+      alert(r.complete ? 'All required documents present.' : 'Missing: ' + r.missing.join(', '));
+    });
+  }
+}
+
+function loadAll_() {
+  Promise.all([gasGet_('hiringapplicants'), gasGet_('approvalslist')]).then(function (results) {
+    const applicants = results[0], approvals = results[1];
+    if (!applicants.success) { document.getElementById('mainRoot').innerHTML = '<div class="empty">' + applicants.error + '</div>'; document.getElementById('mainRoot').style.display = ''; return; }
+    APPLICANTS = applicants;
+    APPROVALS = approvals.success ? approvals : { list: [] };
+    APPROVALS.list = APPROVALS.requests || [];
+    document.getElementById('mainRoot').style.display = '';
+    renderCampusFilter();
+    renderStatusStrip();
+    renderDocFormLink();
+    renderRows();
+  });
+}
+
+function showApp(session) {
+  SESSION = session;
+  document.getElementById('authRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = '';
+  document.getElementById('welcomeStrip').innerHTML =
+    '<span>Signed in as <b>' + session.name + '</b> — ' + session.campusName + '</span>' +
+    '<a href="#" class="signout" id="signoutLink">Sign out</a>';
+  document.getElementById('signoutLink').onclick = function (e) { e.preventDefault(); LMCS.signOut(); };
+
+  if (!LMCS.canViewTeacherSS(session)) {
+    document.getElementById('deniedRoot').innerHTML =
+      '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
+      '<p>Hiring Dashboard is for Principals, Coordinators, and the Owner.</p></div>';
+    return;
+  }
+  loadAll_();
+}
+
+LMCS.requireSession('#authRoot').then(showApp);
+</script>
+</body>
+</html>
