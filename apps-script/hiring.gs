@@ -105,10 +105,14 @@ function hirNormalizeName_(n) {
 
 // action=hiringapplicants -- an applicant row is visible only if AT LEAST
 // ONE campus in its Branches column currently has an Approved "Hiring /
-// New Position". A locked Principal is further narrowed to just their
-// own campus's rows (by the same "LMS-N" substring tag the sheet's own
-// per-campus tabs use); Owner/Coordinator (campusId 'ALL') see the union
-// across every approved campus -- NOT everyone unconditionally.
+// New Position" AND that requisition's required subjects overlap the
+// applicant's own Subjects (hirSubjectsMatch_ -- a blank requirement is
+// a wildcard, so this doesn't newly hide anything that was visible
+// before subjects existed on the form). A locked Principal is further
+// narrowed to just their own campus's rows (by the same "LMS-N"
+// substring tag the sheet's own per-campus tabs use); Owner/Coordinator
+// (campusId 'ALL') see the union across every approved+matching campus
+// -- NOT everyone unconditionally.
 //
 // 2026-09-14, per Uday (twice): first pass gated locked campuses but
 // exempted Owner on the theory that "they're the approver, they need
@@ -116,14 +120,23 @@ function hirNormalizeName_(n) {
 // the role description, not about browsing candidate PII, so Owner
 // browsing every applicant regardless of approval state has the exact
 // same PII-exposure problem a locked Principal would. No exemption now;
-// the rule is identical for everyone, just evaluated per-campus.
+// the rule is identical for everyone, just evaluated per-campus. Same
+// day, per-subject filtering added on top for the same reason -- an
+// approval for "PRT Science" shouldn't surface a PGT Commerce applicant
+// just because the campus has SOME open role.
 //
 // Deduped by phone number server-side (one implementation instead of
 // every caller re-deduping) -- keeps the most recent submission,
 // backfilling a missing CV link from an older duplicate that had one.
 function hiringApplicants_(caller) {
-  const approvedCampuses = hirApprovedCampuses_('Hiring / New Position');
-  if (caller.campusId !== 'ALL' && !approvedCampuses[caller.campusId]) {
+  const requisitions = hirApprovedRequisitions_('Hiring / New Position');
+  if (caller.campusId !== 'ALL' && !requisitions[caller.campusId]) {
+    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
+  }
+  if (!Object.keys(requisitions).length) {
+    // Nobody, anywhere, has an approved requisition yet -- same "gated"
+    // signal a locked campus gets, so the frontend shows one consistent
+    // message instead of a bare empty table.
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
   const values = hirSheet_().getDataRange().getValues();
@@ -134,11 +147,18 @@ function hiringApplicants_(caller) {
     const r = values[i];
     if (!r[HIR_COL.NAME - 1]) continue;
     const branches = String(r[HIR_COL.BRANCHES - 1] || '').trim();
-    if (tag) {
-      if (branches.indexOf(tag) === -1) continue;
-    } else if (!Object.keys(approvedCampuses).some(function (c) { return branches.indexOf('LMS-' + c.replace(/[^0-9]/g, '')) !== -1; })) {
-      continue; // ALL view: skip rows that don't touch any approved campus
-    }
+    const subjects = String(r[HIR_COL.SUBJECTS - 1] || '').trim();
+
+    // Visible only if at least one campus this applicant applied to (or,
+    // when locked, specifically the caller's own campus) has an Approved
+    // requisition whose required subjects overlap this applicant's own.
+    const matches = Object.keys(requisitions).some(function (c) {
+      const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
+      if (branches.indexOf(campusTag) === -1) return false;
+      if (tag && campusTag !== tag) return false;
+      return requisitions[c].some(function (req) { return hirSubjectsMatch_(req.subjects, subjects); });
+    });
+    if (!matches) continue;
 
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
     const applicant = {
@@ -171,30 +191,72 @@ function hiringApplicants_(caller) {
     }
   }
   const applicants = order.map(function (k) { return byPhone[k]; });
-  if (!applicants.length && !Object.keys(approvedCampuses).length) {
-    // Nobody, anywhere, has an approved requisition yet -- same "gated"
-    // signal a locked campus gets, so the frontend shows one consistent
-    // message instead of a bare empty table.
-    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
-  }
+  // NOT `gated: true` here even if this comes out empty -- unlike the
+  // two checks above (nobody approved ANYTHING), a genuinely empty
+  // result after subject-matching means "approved roles exist, just no
+  // applicant matches them yet," which is real, informative emptiness,
+  // not the same "nothing's been requested" state the gated message is for.
   return { success: true, statuses: HIR_STATUSES, applicants: applicants };
 }
 
-// campusId -> true for every campus with an Approved requisition of this
-// category, computed in one sheet read instead of a per-campus rescan.
-// Reuses approvals.gs's aprSheet_()/APR_STATUS -- same Apps Script
-// project, same global scope, no duplicate sheet-read logic. `category`
-// is 'Hiring / New Position' or 'Hiring Decision'.
-function hirApprovedCampuses_(category) {
+// campusId -> [{subjects, openings}] for every Approved requisition of
+// this category -- 2026-09-14, per Uday: "Hiring / New Position" now
+// carries WHAT was approved (itemName/quantity on the Approvals row,
+// reused the same way Compensation Change reuses Item/Amount -- see
+// approvals.gs's APR_ITEM_CATEGORIES), so hiringApplicants_ below can
+// filter to applicants matching the approved subject, not just "SOME
+// position is open at this campus." A blank subjects string (any
+// requisition approved before this field existed, or one submitted
+// without specifying subjects) means "any subject" -- wildcard, not
+// "matches nothing" -- see hirSubjectsMatch_. Reuses approvals.gs's
+// aprSheet_()/APR_STATUS -- same Apps Script project, same global
+// scope, no duplicate sheet-read logic.
+function hirApprovedRequisitions_(category) {
   const values = aprSheet_().getDataRange().getValues();
-  const set = {};
+  const byCampus = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     if (String(row[2]) !== category) continue;
     if (String(row[13]) !== APR_STATUS.APPROVED) continue;
-    set[String(row[1]).trim()] = true;
+    const campusId = String(row[1]).trim();
+    if (!byCampus[campusId]) byCampus[campusId] = [];
+    byCampus[campusId].push({ subjects: String(row[7] || '').trim(), openings: row[8] === '' ? null : Number(row[8]) });
   }
+  return byCampus;
+}
+
+// campusId -> true for every campus with an Approved requisition of this
+// category -- kept as a plain yes/no wrapper for hirApprovalApproved_
+// (the Hired-write gate below), which never needs subject matching: a
+// "Hiring Decision" approval is already about one specific named
+// candidate, not a subject filter.
+function hirApprovedCampuses_(category) {
+  const reqs = hirApprovedRequisitions_(category);
+  const set = {};
+  Object.keys(reqs).forEach(function (c) { set[c] = true; });
   return set;
+}
+
+// `ponytail:` heuristic token-overlap match, not an exact string
+// comparison -- real "Subjects" column values weren't available to
+// calibrate against precisely when this was built. Strips common role
+// prefixes (PRT/TGT/PGT/NTT, which describe the role LEVEL, not the
+// subject), lowercases, splits on anything non-letter, and matches if
+// any word 3+ letters long is shared between the requisition's required
+// subjects and the applicant's own Subjects field. Upgrade path: once
+// real applicant data shows false positives/negatives, tighten or
+// loosen this against actual examples (e.g. a synonym map for
+// "Maths"/"Mathematics" if that mismatch shows up).
+const HIR_ROLE_PREFIXES = ['prt', 'tgt', 'pgt', 'ntt'];
+function hirNormalizeSubjectTokens_(s) {
+  return String(s || '').toLowerCase().split(/[^a-z]+/)
+    .filter(function (w) { return w.length >= 3 && HIR_ROLE_PREFIXES.indexOf(w) === -1; });
+}
+function hirSubjectsMatch_(required, applicantSubjects) {
+  const reqTokens = hirNormalizeSubjectTokens_(required);
+  if (!reqTokens.length) return true; // blank/prefix-only requirement = any subject
+  const appTokens = hirNormalizeSubjectTokens_(applicantSubjects);
+  return reqTokens.some(function (t) { return appTokens.indexOf(t) !== -1; });
 }
 
 // Approved-requisition check for one specific campus -- used by the

@@ -162,14 +162,28 @@ function activeCampus_() {
   return SESSION.campusId === 'ALL' ? campusFilter : SESSION.campusId;
 }
 
+// 2026-09-14, per Uday: the Approvals side now captures WHICH subjects/
+// how many openings a "Hiring / New Position" requisition was actually
+// approved for (Item/Quantity fields, reused same as Compensation
+// Change reuses them -- see approvals.gs's APR_ITEM_CATEGORIES), and
+// hiringApplicants_ filters the applicant list by it server-side. This
+// pill now shows that detail too, so "why don't I see applicant X"
+// has a visible answer right here instead of being a silent filter.
 function renderStatusStrip() {
   const campus = activeCampus_();
   const el = document.getElementById('statusStrip');
   if (campus === 'ALL') { el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>'; return; }
   const cats = ['Hiring / New Position', 'Hiring Decision'];
   el.innerHTML = cats.map(function (cat) {
-    const ok = APPROVALS.list.some(function (a) { return a.campusId === campus && a.category === cat && a.status === 'Approved'; });
-    return '<span class="pill ' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + ' ' + cat + '</span>';
+    const approved = APPROVALS.list.filter(function (a) { return a.campusId === campus && a.category === cat && a.status === 'Approved'; });
+    const ok = approved.length > 0;
+    let label = cat;
+    if (ok && cat === 'Hiring / New Position') {
+      label += ': ' + approved.map(function (a) {
+        return (a.itemName || 'any subject') + (a.quantity != null ? ' (' + a.quantity + ')' : '');
+      }).join(', ');
+    }
+    return '<span class="pill ' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + ' ' + label + '</span>';
   }).join('');
 }
 

@@ -517,7 +517,7 @@ td{padding:6px 12px;vertical-align:middle}
             <input type="text" id="aprItemName" placeholder="What are you buying">
           </div>
           <div id="aprQuantityWrap">
-            <label class="field-label">Quantity</label>
+            <label class="field-label" id="aprQuantityLabel">Quantity</label>
             <input type="number" id="aprQuantity" min="1">
           </div>
         </div>
@@ -1752,12 +1752,15 @@ async function loadReportForDate() {
 // 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
 // this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
 const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
-// Categories that show Amount + Item -- Item doubles as "Item"
-// (Financial/Purchase) or "Employee" (Compensation Change), same
-// generic field, just relabeled -- see aprOnCategoryChange(). Keep in
-// sync with the same consts in approvals.gs.
+// Item doubles as "Item" (Financial/Purchase), "Employee" (Compensation
+// Change), or "Subjects/Position Required" (Hiring / New Position) --
+// same generic field, just relabeled per category in aprOnCategoryChange().
+// Amount and Item+Qty are gated separately (Hiring shows Item+Qty but no
+// Amount; Compensation Change shows Item+Amount but no Qty). Keep all 3
+// consts in sync with approvals.gs.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase', 'Hiring / New Position'];
 const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
 
 let aprRes = null;              // full action=approvalslist response, fetched once
@@ -1781,13 +1784,23 @@ document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (
 function aprOnCategoryChange() {
   const category = document.getElementById('aprCategory').value;
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
+  const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1;
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
-  document.getElementById('aprItemQtyFields').style.display = showsAmount ? 'grid' : 'none';
+  document.getElementById('aprItemQtyFields').style.display = showsItem ? 'grid' : 'none';
   document.getElementById('aprQuantityWrap').style.display = showsQty ? 'block' : 'none';
   document.getElementById('aprAmountField').style.display = showsAmount ? 'block' : 'none';
-  const isComp = category === 'Compensation Change';
-  document.getElementById('aprItemNameLabel').textContent = isComp ? 'Employee' : 'Item';
-  document.getElementById('aprItemName').placeholder = isComp ? 'Employee name' : 'What are you buying';
+  const itemLabelEl = document.getElementById('aprItemNameLabel');
+  const itemInputEl = document.getElementById('aprItemName');
+  const qtyLabelEl = document.getElementById('aprQuantityLabel');
+  if (category === 'Compensation Change') {
+    itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
+  } else if (category === 'Hiring / New Position') {
+    itemLabelEl.textContent = 'Subjects / Position Required'; itemInputEl.placeholder = 'e.g. PRT Science, TGT Maths';
+    qtyLabelEl.textContent = 'Number of Openings';
+  } else {
+    itemLabelEl.textContent = 'Item'; itemInputEl.placeholder = 'What are you buying';
+    qtyLabelEl.textContent = 'Quantity';
+  }
 }
 
 async function loadApprovals() {
@@ -1911,7 +1924,11 @@ async function toggleApprovalRow(id) {
 function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
-  if (r.itemName) meta.push((r.category === 'Compensation Change' ? 'Employee: ' : 'Item: ') + aprEsc_(r.itemName) + (r.quantity != null ? ' × ' + r.quantity : ''));
+  if (r.itemName) {
+    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'Hiring / New Position' ? 'Subjects/Position: ' : 'Item: ');
+    const qtySuffix = r.quantity == null ? '' : (r.category === 'Hiring / New Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
+    meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
+  }
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
   if (r.evidenceLink) meta.push('Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
   if (r.linkedPlannedActivityId) {

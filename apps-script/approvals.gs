@@ -68,7 +68,16 @@ const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensatio
 // new sheet column was needed for Compensation Change. Quantity only
 // makes sense for an actual purchase, so it's gated separately.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
+// 2026-09-14, per Uday: Hiring / New Position also uses Item + Quantity
+// now -- "Subjects/Position Required" + "Number of Openings" -- so
+// hiring.gs's hiringApplicants_ can filter the Hiring Dashboard down to
+// applicants matching what was actually approved, instead of showing
+// every applicant the moment ANY position is open at a campus. Item and
+// Quantity are gated separately (not both always shown together)
+// because Hiring needs Item+Qty but no Amount, same as Compensation
+// Change needs Item+Amount but no Quantity.
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase', 'Hiring / New Position'];
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
@@ -156,13 +165,14 @@ function aprSubmit_(caller, body) {
   if (!description) return { success: false, error: 'Description required -- explain the reasoning' };
 
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
+  const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1;
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
     id, caller.campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
     title, description,
     showsAmount && body.amount !== undefined && body.amount !== '' ? Number(body.amount) : '',
-    showsAmount ? String(body.itemName || '').trim() : '',
+    showsItem ? String(body.itemName || '').trim() : '',
     showsQty && body.quantity !== undefined && body.quantity !== '' ? Number(body.quantity) : '',
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
