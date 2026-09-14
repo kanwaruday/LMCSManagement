@@ -221,7 +221,7 @@ function renderRows() {
   const emptyMsg = document.getElementById('emptyMsg');
   if (APPLICANTS.gated) {
     document.getElementById('rows').innerHTML = '';
-    emptyMsg.textContent = 'No applicants yet — your campus needs an Approved "Hiring / New Position" request before candidates show here. Use the "Request to open a role" link above.';
+    emptyMsg.textContent = 'No applicants to show — no campus has an Approved "Hiring / New Position" request yet. Use the "Request to open a role" link above.';
     emptyMsg.style.display = '';
     return;
   }

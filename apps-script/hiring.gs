@@ -103,23 +103,27 @@ function hirNormalizeName_(n) {
   return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-// action=hiringapplicants -- Principal sees only their own campus (by
-// substring match on the Branches column, same "LMS-N" tag the sheet's
-// own per-campus tabs already use); Owner/Coordinator (campusId 'ALL')
-// see every campus. Deduped by phone number server-side (one
-// implementation instead of every caller re-deduping) -- keeps the most
-// recent submission, backfilling a missing CV link from an older
-// duplicate that had one.
+// action=hiringapplicants -- an applicant row is visible only if AT LEAST
+// ONE campus in its Branches column currently has an Approved "Hiring /
+// New Position". A locked Principal is further narrowed to just their
+// own campus's rows (by the same "LMS-N" substring tag the sheet's own
+// per-campus tabs use); Owner/Coordinator (campusId 'ALL') see the union
+// across every approved campus -- NOT everyone unconditionally.
 //
-// 2026-09-14, per Uday: a locked campus sees NOTHING here until its own
-// "Hiring / New Position" is Approved -- not just gated on the later
-// Hired write. Applicant phone numbers and CVs are external people's
-// PII; there's no operational need to browse candidates for a role
-// nobody's approved opening. Owner (campusId 'ALL') is exempt -- they're
-// the one who approves these requests and already sees everything else
-// in this portal regardless.
+// 2026-09-14, per Uday (twice): first pass gated locked campuses but
+// exempted Owner on the theory that "they're the approver, they need
+// visibility" -- wrong, caught live: approving a requisition is about
+// the role description, not about browsing candidate PII, so Owner
+// browsing every applicant regardless of approval state has the exact
+// same PII-exposure problem a locked Principal would. No exemption now;
+// the rule is identical for everyone, just evaluated per-campus.
+//
+// Deduped by phone number server-side (one implementation instead of
+// every caller re-deduping) -- keeps the most recent submission,
+// backfilling a missing CV link from an older duplicate that had one.
 function hiringApplicants_(caller) {
-  if (caller.campusId !== 'ALL' && !hirApprovalApproved_(caller.campusId, 'Hiring / New Position')) {
+  const approvedCampuses = hirApprovedCampuses_('Hiring / New Position');
+  if (caller.campusId !== 'ALL' && !approvedCampuses[caller.campusId]) {
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
   const values = hirSheet_().getDataRange().getValues();
@@ -130,7 +134,11 @@ function hiringApplicants_(caller) {
     const r = values[i];
     if (!r[HIR_COL.NAME - 1]) continue;
     const branches = String(r[HIR_COL.BRANCHES - 1] || '').trim();
-    if (tag && branches.indexOf(tag) === -1) continue;
+    if (tag) {
+      if (branches.indexOf(tag) === -1) continue;
+    } else if (!Object.keys(approvedCampuses).some(function (c) { return branches.indexOf('LMS-' + c.replace(/[^0-9]/g, '')) !== -1; })) {
+      continue; // ALL view: skip rows that don't touch any approved campus
+    }
 
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
     const applicant = {
@@ -162,23 +170,38 @@ function hiringApplicants_(caller) {
       byPhone[phone] = applicant;
     }
   }
-  return { success: true, statuses: HIR_STATUSES, applicants: order.map(function (k) { return byPhone[k]; }) };
+  const applicants = order.map(function (k) { return byPhone[k]; });
+  if (!applicants.length && !Object.keys(approvedCampuses).length) {
+    // Nobody, anywhere, has an approved requisition yet -- same "gated"
+    // signal a locked campus gets, so the frontend shows one consistent
+    // message instead of a bare empty table.
+    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
+  }
+  return { success: true, statuses: HIR_STATUSES, applicants: applicants };
 }
 
-// Approved-requisition check reused by both the frontend (to show
-// "Approved ✓" before someone tries) and the write gate below (the
-// real enforcement). Reuses approvals.gs's aprSheet_()/APR_STATUS --
-// same Apps Script project, same global scope, no duplicate sheet read
-// logic. `category` is 'Hiring / New Position' or 'Hiring Decision'.
-function hirApprovalApproved_(campusId, category) {
+// campusId -> true for every campus with an Approved requisition of this
+// category, computed in one sheet read instead of a per-campus rescan.
+// Reuses approvals.gs's aprSheet_()/APR_STATUS -- same Apps Script
+// project, same global scope, no duplicate sheet-read logic. `category`
+// is 'Hiring / New Position' or 'Hiring Decision'.
+function hirApprovedCampuses_(category) {
   const values = aprSheet_().getDataRange().getValues();
+  const set = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    if (String(row[1]).trim() !== campusId) continue;
     if (String(row[2]) !== category) continue;
-    if (String(row[13]) === APR_STATUS.APPROVED) return true;
+    if (String(row[13]) !== APR_STATUS.APPROVED) continue;
+    set[String(row[1]).trim()] = true;
   }
-  return false;
+  return set;
+}
+
+// Approved-requisition check for one specific campus -- used by the
+// Hired-write gate below, which always cares about one applicant's own
+// campus rather than the whole set.
+function hirApprovalApproved_(campusId, category) {
+  return !!hirApprovedCampuses_(category)[campusId];
 }
 
 // action=updatehiringstatus (doPost) -- Principal only, own campus
