@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — CWA Gap Report</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -136,9 +137,26 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
 <script src="../assets/auth.js"></script>
-<!-- Vendored (not CDN) so the export/upload feature works without a third-party
-     script host being reachable -- MIT licensed, https://github.com/exceljs/exceljs -->
-<script src="vendor/exceljs.min.js"></script>
+<script>
+// ExcelJS (vendored, not CDN, so export/upload works without a third-party
+// script host being reachable -- MIT licensed, https://github.com/exceljs/exceljs)
+// is ~950KB -- loaded lazily on first Export/Upload click (loadExcelJs_(),
+// used by exportForCoordinator/handleCoordinatorUpload below) instead of
+// blocking every page load for a feature most visits never touch.
+let excelJsPromise_ = null;
+function loadExcelJs_() {
+  if (typeof ExcelJS !== 'undefined') return Promise.resolve();
+  if (excelJsPromise_) return excelJsPromise_;
+  excelJsPromise_ = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'vendor/exceljs.min.js';
+    s.onload = resolve;
+    s.onerror = () => { excelJsPromise_ = null; reject(new Error('failed to load')); };
+    document.head.appendChild(s);
+  });
+  return excelJsPromise_;
+}
+</script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -399,7 +417,7 @@ const COORD_XLSX_EDITABLE = new Set(['ActualCWADate','Note']); // only these sta
 
 async function exportForCoordinator() {
   if (!CAN_OVERRIDE) return;
-  if (typeof ExcelJS === 'undefined') { alert('Could not load the Excel export library (vendor/exceljs.min.js) -- check your connection and reload the page.'); return; }
+  try { await loadExcelJs_(); } catch (e) { alert('Could not load the Excel export library -- check your connection and try again.'); return; }
   const { rows } = getFilteredSortedGapRows();
   if (!rows.length) { alert('Nothing to export -- no rows match the current filters.'); return; }
   try {
@@ -491,7 +509,7 @@ async function handleCoordinatorUpload(input) {
   if (!file) return;
   const session = LMCS.getSession();
   if (!session || !LMCS.canManageStaff(session)) { alert('Only Coordinator/Owner sessions can do this.'); return; }
-  if (typeof ExcelJS === 'undefined') { alert('Could not load the Excel library (vendor/exceljs.min.js) -- check your connection and reload the page.'); return; }
+  try { await loadExcelJs_(); } catch (e) { alert('Could not load the Excel library -- check your connection and try again.'); return; }
 
   const wb = new ExcelJS.Workbook();
   try {

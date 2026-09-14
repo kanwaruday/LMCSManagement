@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Hiring Dashboard</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -346,7 +347,15 @@ function showApp(session) {
   loadAll_();
 }
 
-LMCS.requireSession('#authRoot').then(showApp);
+// Fast path: skip the live allowlist re-check (can take 20s+ — see the
+// perf audit) when there's already a cached, valid session, same as
+// every other module page's gate.
+const cachedSession = LMCS.getSession();
+if (cachedSession) {
+  showApp(cachedSession);
+} else {
+  LMCS.requireSession('#authRoot').then(showApp);
+}
 </script>
 </body>
 </html>

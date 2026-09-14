@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LMCS Portal — Home</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -103,7 +105,18 @@
       renderModules();
     }
 
-    LMCS.requireSession('#gate-slot').then(showApp);
+    // Fast path: a cached, valid session shows the app immediately instead
+    // of waiting on a live allowlist re-check (that fetch alone can take
+    // 20s+ — see the perf audit) — same pattern every module page already
+    // uses for its own gate. Falls back to requireSession() (which re-
+    // validates the cached session against the allowlist) if there's no
+    // cached session to show yet.
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) {
+      showApp(cachedSession);
+    } else {
+      LMCS.requireSession('#gate-slot').then(showApp);
+    }
   </script>
 
 </body>

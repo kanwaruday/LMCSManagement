@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Principal's Daily Reporting</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -316,20 +317,24 @@ td{padding:6px 12px;vertical-align:middle}
            in place, unused, in case this gets picked back up later.) -->
       <div class="subtab-panel" id="panel-itss">
         <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <!-- data-src, not src: loaded lazily by loadSubTabFrame_() the first
+             time this sub-tab is opened -- see the perf audit; loading all
+             6 SS forms' JS/CSS unconditionally on every page visit, most of
+             which only ever touch Teacher SS, was pure waste. -->
         <div class="form-embed-wrap">
-          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
+          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
         </div>
       </div>
       <div class="subtab-panel" id="panel-ptiss">
         <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
         <div class="form-embed-wrap">
-          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
+          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
         </div>
       </div>
       <div class="subtab-panel" id="panel-clerkss">
         <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
         <div class="form-embed-wrap">
-          <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
+          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
         </div>
       </div>
 
@@ -515,6 +520,22 @@ td{padding:6px 12px;vertical-align:middle}
           <div>
             <label class="field-label" id="aprItemNameLabel">Item</label>
             <input type="text" id="aprItemName" placeholder="What are you buying">
+            <!-- Hiring / New Position only -- a multi-select of subjects
+                 instead of free text, so this stays matchable against
+                 applicants' own Subjects field instead of accumulating
+                 inconsistent spellings. Same .multiselect widget already
+                 used for Registers Crosschecked below, just a second
+                 instance -- writes its selection into aprItemName's
+                 value (still the field that actually gets posted), so
+                 nothing downstream (submit/backend/detail-view) needed
+                 to change. -->
+            <div class="multiselect" id="aprSubjectsMs" style="display:none">
+              <button type="button" class="multiselect-toggle" id="aprSubjectsMsToggle" onclick="toggleAprSubjectsMs()">
+                <span id="aprSubjectsMsToggleLabel">Select subjects needed</span>
+                <span class="arrow">&#9662;</span>
+              </button>
+              <div class="multiselect-panel" id="aprSubjectsMsPanel"></div>
+            </div>
           </div>
           <div id="aprQuantityWrap">
             <label class="field-label" id="aprQuantityLabel">Quantity</label>
@@ -756,12 +777,42 @@ function selectSchool(campusId) {
   document.querySelectorAll('#schoolPicker .campus-btn').forEach(function (b) {
     b.classList.toggle('active', b.dataset.campus === campusId);
   });
-  pickSubmitCampus(campusId);
-  pickNonTeachingCampus(campusId);
-  pickDriverCampus(campusId);
+  // 'submit' (Teacher SS) is the default-active sub-tab, so it loads like
+  // before; the other 5 SS forms only get (re-)pointed at the new School
+  // if the Principal has actually opened them already -- see
+  // loadSubTabFrame_() below.
+  loadSubTabFrame_('submit', campusId, true);
+  ['nonteachingss', 'driverss'].forEach(function (t) {
+    if (loadedSubTabFrames_[t]) loadSubTabFrame_(t, campusId, true);
+  });
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
   renderApprovalsForSelectedCampus();
+}
+
+// ── Support Sessions sub-tab iframes: loaded lazily ─────────────────
+// Each of the 6 SS forms is a separate Google Form embed that pulls its
+// own JS/CSS -- loading all 6 unconditionally on every page visit (the
+// old behavior) was pure waste for the 5 sub-tabs most visits never
+// touch. loadSubTabFrame_() loads one only the first time its sub-tab is
+// actually opened (called from switchSubTab() below), or every time when
+// `force` is passed (selectSchool() re-pointing an already-open one to a
+// newly selected School).
+var loadedSubTabFrames_ = {};
+var STATIC_SUBTAB_FRAMES_ = ['itss', 'ptiss', 'clerkss']; // one form spans all 6 campuses, static src
+var CAMPUS_SUBTAB_LOADERS_ = { submit: pickSubmitCampus, nonteachingss: pickNonTeachingCampus, driverss: pickDriverCampus };
+function loadSubTabFrame_(tab, campusId, force) {
+  if (loadedSubTabFrames_[tab] && !force) return;
+  if (STATIC_SUBTAB_FRAMES_.indexOf(tab) > -1) {
+    var panel = document.getElementById('panel-' + tab);
+    var iframe = panel && panel.querySelector('iframe');
+    if (iframe && iframe.dataset.src && !iframe.src) iframe.src = iframe.dataset.src;
+  } else if (CAMPUS_SUBTAB_LOADERS_[tab]) {
+    CAMPUS_SUBTAB_LOADERS_[tab](campusId);
+  } else {
+    return; // not a Support Sessions sub-tab (e.g. switchTab() calling in with a top-level tab name)
+  }
+  loadedSubTabFrames_[tab] = true;
 }
 
 // ── Submit tab ──────────────────────────────────────────────────────
@@ -1781,21 +1832,56 @@ function aprEsc_(s) {
 
 document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
+// Same list as staff/add-employee.html's SUBJECT_SUGGESTIONS -- single
+// source of truth for "what subjects exist at LMCS" was already there
+// (used when adding a new hire), reused here rather than inventing a
+// second list that could drift out of sync. Keep both in sync if this
+// changes.
+const APR_SUBJECT_OPTIONS = ['English','Hindi','Sanskrit','Math','Science','Social Science',
+  'E.V.S.','GK','Cognitive Activities','P.Ed','Physics','Chemistry','Biology','Accountancy',
+  'Business Studies','Economics','History','Political Science','Information Technology'];
+let selectedAprSubjects = [];
+
+function renderAprSubjectsMsOptions() {
+  document.getElementById('aprSubjectsMsPanel').innerHTML = APR_SUBJECT_OPTIONS.map(function (s) {
+    return '<label class="ms-option"><input type="checkbox" onchange="toggleAprSubject(\'' + s + '\', this.checked)"' +
+      (selectedAprSubjects.indexOf(s) > -1 ? ' checked' : '') + '><span>' + s + '</span></label>';
+  }).join('');
+}
+function toggleAprSubject(s, checked) {
+  if (checked) { if (selectedAprSubjects.indexOf(s) === -1) selectedAprSubjects.push(s); }
+  else { selectedAprSubjects = selectedAprSubjects.filter(function (x) { return x !== s; }); }
+  document.getElementById('aprSubjectsMsToggleLabel').textContent = selectedAprSubjects.length ? selectedAprSubjects.join(', ') : 'Select subjects needed';
+  document.getElementById('aprItemName').value = selectedAprSubjects.join(', '); // the field that actually gets posted
+}
+function toggleAprSubjectsMs() {
+  document.getElementById('aprSubjectsMsPanel').classList.toggle('open');
+}
+document.addEventListener('click', function (e) {
+  const ms = document.getElementById('aprSubjectsMs');
+  if (ms && ms.style.display !== 'none' && !ms.contains(e.target)) document.getElementById('aprSubjectsMsPanel').classList.remove('open');
+});
+
 function aprOnCategoryChange() {
   const category = document.getElementById('aprCategory').value;
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
   const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1;
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
+  const isHiring = category === 'Hiring / New Position';
   document.getElementById('aprItemQtyFields').style.display = showsItem ? 'grid' : 'none';
   document.getElementById('aprQuantityWrap').style.display = showsQty ? 'block' : 'none';
   document.getElementById('aprAmountField').style.display = showsAmount ? 'block' : 'none';
   const itemLabelEl = document.getElementById('aprItemNameLabel');
   const itemInputEl = document.getElementById('aprItemName');
+  const subjectsMsEl = document.getElementById('aprSubjectsMs');
   const qtyLabelEl = document.getElementById('aprQuantityLabel');
+  itemInputEl.style.display = isHiring ? 'none' : '';
+  subjectsMsEl.style.display = isHiring ? '' : 'none';
   if (category === 'Compensation Change') {
     itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
-  } else if (category === 'Hiring / New Position') {
-    itemLabelEl.textContent = 'Subjects / Position Required'; itemInputEl.placeholder = 'e.g. PRT Science, TGT Maths';
+  } else if (isHiring) {
+    itemLabelEl.textContent = 'Subjects / Position Required';
+    renderAprSubjectsMsOptions();
     qtyLabelEl.textContent = 'Number of Openings';
   } else {
     itemLabelEl.textContent = 'Item'; itemInputEl.placeholder = 'What are you buying';
@@ -2077,6 +2163,9 @@ async function submitApprovalRequest() {
     document.getElementById('aprQuantity').value = '';
     document.getElementById('aprEvidenceLink').value = '';
     document.getElementById('aprLinkedActivity').value = '';
+    selectedAprSubjects = [];
+    document.getElementById('aprSubjectsMsToggleLabel').textContent = 'Select subjects needed';
+    if (category === 'Hiring / New Position') renderAprSubjectsMsOptions();
     alert('Request submitted.');
     refreshApprovals();
   } finally {
@@ -2114,6 +2203,7 @@ function switchSubTab(tab) {
   document.querySelectorAll('.subtab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.subtab === tab); });
   document.querySelectorAll('.subtab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
+  loadSubTabFrame_(tab, SELECTED_CAMPUS_ID); // first open of this sub-tab loads its form; later opens are a no-op
 }
 
 init();
