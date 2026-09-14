@@ -110,7 +110,18 @@ function hirNormalizeName_(n) {
 // implementation instead of every caller re-deduping) -- keeps the most
 // recent submission, backfilling a missing CV link from an older
 // duplicate that had one.
+//
+// 2026-09-14, per Uday: a locked campus sees NOTHING here until its own
+// "Hiring / New Position" is Approved -- not just gated on the later
+// Hired write. Applicant phone numbers and CVs are external people's
+// PII; there's no operational need to browse candidates for a role
+// nobody's approved opening. Owner (campusId 'ALL') is exempt -- they're
+// the one who approves these requests and already sees everything else
+// in this portal regardless.
 function hiringApplicants_(caller) {
+  if (caller.campusId !== 'ALL' && !hirApprovalApproved_(caller.campusId, 'Hiring / New Position')) {
+    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
+  }
   const values = hirSheet_().getDataRange().getValues();
   const tag = caller.campusId === 'ALL' ? null : 'LMS-' + caller.campusId.replace(/[^0-9]/g, '');
   const byPhone = {};
