@@ -15,11 +15,25 @@
 //      not by Apps Script's own access settings)
 //   3. Copy the Web App URL into principal.html and principal-admin.html
 //      (ALLOWLIST_API_URL constant in each)
+//
+// PERF (2026-09-15): readEntries() was measured taking 2-40+s and
+// occasionally 404ing outright under LMCSManagement's perf audit —
+// see that repo's assistant conversation. Root cause is suspected to
+// be this deployment's "Who has access" setting (check Deploy > Manage
+// deployments — if it shows domain-restricted instead of "Anyone",
+// that's the real fix, independent of the caching added below).
+// CacheService here is a safety net either way: it caps how often the
+// expensive path runs to once per CACHE_TTL_SECONDS, and every writer
+// (addEntry/editEntry/deleteEntry) busts the cache immediately so a
+// change made via principal-admin.html is never masked by a stale
+// cached list.
 // ═══════════════════════════════════════════════════════════════════
 
 const SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist"
 const ADMIN_EMAILS = ['uday.kanwar@lms.org.in'];
 const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
+const CACHE_KEY = 'allowlist_entries';
+const CACHE_TTL_SECONDS = 300; // 5 min
 
 function doGet(e) {
   const action = (e.parameter.action || 'list').toLowerCase();
@@ -59,7 +73,15 @@ function getSheet() {
 // -- 'Owner' / 'Coordinator' / 'Principal' / 'Teacher', or blank for
 // entries added before this existed (they just don't get any
 // staff-management permission until someone sets it -- fails safe).
+//
+// Cached for CACHE_TTL_SECONDS (see PERF note above) -- addEntry/
+// editEntry/deleteEntry all call invalidateCache_() after writing, so a
+// change is visible on the very next read, not just after the TTL.
 function readEntries() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(CACHE_KEY);
+  if (hit) return JSON.parse(hit);
+
   const rows = getSheet().getDataRange().getValues();
   const entries = [];
   for (let i = 1; i < rows.length; i++) {
@@ -73,7 +95,12 @@ function readEntries() {
       });
     }
   }
+  cache.put(CACHE_KEY, JSON.stringify(entries), CACHE_TTL_SECONDS);
   return entries;
+}
+
+function invalidateCache_() {
+  CacheService.getScriptCache().remove(CACHE_KEY);
 }
 
 function findRowIndex(sheet, email) {
@@ -90,6 +117,7 @@ function addEntry(email, name, campusId, role) {
   const sheet = getSheet();
   if (findRowIndex(sheet, email) !== -1) throw new Error('That email is already on the list — use edit instead');
   sheet.appendRow([email.trim().toLowerCase(), name || '', campusId.trim().toUpperCase(), role || '']);
+  invalidateCache_();
 }
 
 function editEntry(email, name, campusId, role) {
@@ -99,6 +127,7 @@ function editEntry(email, name, campusId, role) {
   sheet.getRange(row, 2).setValue(name || '');
   sheet.getRange(row, 3).setValue((campusId || '').trim().toUpperCase());
   sheet.getRange(row, 4).setValue(role || '');
+  invalidateCache_();
 }
 
 function deleteEntry(email) {
@@ -106,6 +135,7 @@ function deleteEntry(email) {
   const row = findRowIndex(sheet, email);
   if (row === -1) throw new Error('Email not found: ' + email);
   sheet.deleteRow(row);
+  invalidateCache_();
 }
 
 // Verifies a Google Identity Services ID token via Google's own tokeninfo
