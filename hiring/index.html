@@ -48,6 +48,7 @@ th{text-align:left;padding:8px 10px;background:var(--lgray);border-bottom:2px so
 td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
 tr:hover td{background:var(--red-lt)}
 .name{font-weight:700}
+.score-cell{font-weight:700;text-align:center;cursor:help}
 .sub{color:var(--gray);font-size:11px}
 a.linklike{color:var(--red);text-decoration:none}
 a.linklike:hover{text-decoration:underline}
@@ -118,7 +119,7 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
       <table>
         <thead>
           <tr>
-            <th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
+            <th>Match</th><th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
             <th>Status</th><th>Notes / interview</th><th></th>
           </tr>
         </thead>
@@ -247,7 +248,12 @@ function renderRows() {
   emptyMsg.style.display = list.length ? 'none' : '';
   document.getElementById('rows').innerHTML = list.map(function (a) {
     const phoneDigits = a.phone.replace(/\D/g, '');
+    // matchScore/matchRemarks come pre-computed from hirScoreApplicant_
+    // (hiring.gs) -- the list itself is already sorted best-match-first
+    // server-side, this just makes the score (and WHY) visible instead
+    // of an invisible sort order.
     return '<tr data-row="' + a.row + '">' +
+      '<td class="score-cell" title="' + (a.matchRemarks || []).join(' · ').replace(/"/g, '&quot;') + '">' + (a.matchScore != null ? a.matchScore : '—') + '</td>' +
       '<td><div class="name">' + a.name + '</div><div class="sub">' +
         (phoneDigits ? '<a class="linklike" href="tel:' + a.phone + '">' + a.phone + '</a> · <a class="linklike" href="https://wa.me/91' + phoneDigits.slice(-10) + '" target="_blank">WhatsApp</a>' : a.phone) +
         ' · ' + (a.age || '—') + ' · ' + (a.gender || '—') + '</div></td>' +

@@ -125,6 +125,11 @@ function hirNormalizeName_(n) {
 // approval for "PRT Science" shouldn't surface a PGT Commerce applicant
 // just because the campus has SOME open role.
 //
+// Visible applicants also get a matchScore (0-100, see hirScoreApplicant_)
+// against the best-fitting requisition they're relevant to, and the list
+// is sorted highest-first -- "showcase the best matches," not just a
+// filtered dump in sheet order.
+//
 // Deduped by phone number server-side (one implementation instead of
 // every caller re-deduping) -- keeps the most recent submission,
 // backfilling a missing CV link from an older duplicate that had one.
@@ -149,16 +154,19 @@ function hiringApplicants_(caller) {
     const branches = String(r[HIR_COL.BRANCHES - 1] || '').trim();
     const subjects = String(r[HIR_COL.SUBJECTS - 1] || '').trim();
 
-    // Visible only if at least one campus this applicant applied to (or,
-    // when locked, specifically the caller's own campus) has an Approved
-    // requisition whose required subjects overlap this applicant's own.
-    const matches = Object.keys(requisitions).some(function (c) {
+    // Every requisition (across every campus this applicant applied to,
+    // or just the caller's own campus when locked) that this applicant
+    // actually matches -- collected, not just tested as a boolean, so
+    // hirScoreApplicant_ below can score against the BEST of them (an
+    // applicant can be relevant to more than one open role at once).
+    const relevantReqs = [];
+    Object.keys(requisitions).forEach(function (c) {
       const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
-      if (branches.indexOf(campusTag) === -1) return false;
-      if (tag && campusTag !== tag) return false;
-      return requisitions[c].some(function (req) { return hirSubjectsMatch_(req.subjects, subjects); });
+      if (branches.indexOf(campusTag) === -1) return;
+      if (tag && campusTag !== tag) return;
+      requisitions[c].forEach(function (req) { if (hirSubjectsMatch_(req.subjects, subjects)) relevantReqs.push(req); });
     });
-    if (!matches) continue;
+    if (!relevantReqs.length) continue;
 
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
     const applicant = {
@@ -167,7 +175,7 @@ function hiringApplicants_(caller) {
       name: String(r[HIR_COL.NAME - 1] || '').trim(),
       phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
       age: String(r[HIR_COL.AGE - 1] || '').trim(),
-      subjects: String(r[HIR_COL.SUBJECTS - 1] || '').trim(),
+      subjects: subjects,
       branches: branches,
       qualification: String(r[HIR_COL.QUALIFICATION - 1] || '').trim(),
       bed: String(r[HIR_COL.BED - 1] || '').trim(),
@@ -177,6 +185,9 @@ function hiringApplicants_(caller) {
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
       interviewAt: r[HIR_COL.INTERVIEW_AT - 1] ? new Date(r[HIR_COL.INTERVIEW_AT - 1]).toISOString() : '',
     };
+    const scored = hirScoreApplicant_(applicant, relevantReqs);
+    applicant.matchScore = scored.total;
+    applicant.matchRemarks = scored.remarks;
 
     if (!phone || !byPhone[phone]) {
       byPhone[phone || ('row' + applicant.row)] = applicant;
@@ -190,7 +201,8 @@ function hiringApplicants_(caller) {
       byPhone[phone] = applicant;
     }
   }
-  const applicants = order.map(function (k) { return byPhone[k]; });
+  const applicants = order.map(function (k) { return byPhone[k]; })
+    .sort(function (a, b) { return b.matchScore - a.matchScore; });
   // NOT `gated: true` here even if this comes out empty -- unlike the
   // two checks above (nobody approved ANYTHING), a genuinely empty
   // result after subject-matching means "approved roles exist, just no
@@ -199,18 +211,30 @@ function hiringApplicants_(caller) {
   return { success: true, statuses: HIR_STATUSES, applicants: applicants };
 }
 
-// campusId -> [{subjects, openings}] for every Approved requisition of
-// this category -- 2026-09-14, per Uday: "Hiring / New Position" now
-// carries WHAT was approved (itemName/quantity on the Approvals row,
-// reused the same way Compensation Change reuses Item/Amount -- see
-// approvals.gs's APR_ITEM_CATEGORIES), so hiringApplicants_ below can
-// filter to applicants matching the approved subject, not just "SOME
-// position is open at this campus." A blank subjects string (any
-// requisition approved before this field existed, or one submitted
-// without specifying subjects) means "any subject" -- wildcard, not
-// "matches nothing" -- see hirSubjectsMatch_. Reuses approvals.gs's
-// aprSheet_()/APR_STATUS -- same Apps Script project, same global
-// scope, no duplicate sheet-read logic.
+// "TGT: Science, Math" (or bare "NTT") -> {roleLevel, subjectsRaw} --
+// the Approvals side stores role level + subjects as one itemName
+// string (no new sheet column -- see approvals.gs's aprSyncHiringItemName_
+// equivalent on the frontend), this undoes that for matching/scoring,
+// which only ever care about the subjects part.
+function hirParseRequisitionItem_(itemName) {
+  const s = String(itemName || '').trim();
+  const m = s.match(/^(NTT|PRT|TGT|PGT)\s*[:—-]?\s*(.*)$/i);
+  return m ? { roleLevel: m[1].toUpperCase(), subjectsRaw: m[2].trim() } : { roleLevel: '', subjectsRaw: s };
+}
+
+// campusId -> [{subjects, roleLevel, openings}] for every Approved
+// requisition of this category -- 2026-09-14, per Uday: "Hiring / New
+// Position" now carries WHAT was approved (itemName/quantity on the
+// Approvals row, reused the same way Compensation Change reuses Item/
+// Amount -- see approvals.gs's APR_ITEM_CATEGORIES), so
+// hiringApplicants_ above can filter to applicants matching the
+// approved subject, not just "SOME position is open at this campus."
+// A blank subjects string (any requisition approved before this field
+// existed, submitted without specifying subjects, or a bare NTT
+// posting) means "any subject" -- wildcard, not "matches nothing" --
+// see hirSubjectsMatch_. Reuses approvals.gs's aprSheet_()/APR_STATUS
+// -- same Apps Script project, same global scope, no duplicate
+// sheet-read logic.
 function hirApprovedRequisitions_(category) {
   const values = aprSheet_().getDataRange().getValues();
   const byCampus = {};
@@ -219,8 +243,9 @@ function hirApprovedRequisitions_(category) {
     if (String(row[2]) !== category) continue;
     if (String(row[13]) !== APR_STATUS.APPROVED) continue;
     const campusId = String(row[1]).trim();
+    const parsed = hirParseRequisitionItem_(row[7]);
     if (!byCampus[campusId]) byCampus[campusId] = [];
-    byCampus[campusId].push({ subjects: String(row[7] || '').trim(), openings: row[8] === '' ? null : Number(row[8]) });
+    byCampus[campusId].push({ subjects: parsed.subjectsRaw, roleLevel: parsed.roleLevel, openings: row[8] === '' ? null : Number(row[8]) });
   }
   return byCampus;
 }
@@ -237,26 +262,164 @@ function hirApprovedCampuses_(category) {
   return set;
 }
 
-// `ponytail:` heuristic token-overlap match, not an exact string
-// comparison -- real "Subjects" column values weren't available to
-// calibrate against precisely when this was built. Strips common role
-// prefixes (PRT/TGT/PGT/NTT, which describe the role LEVEL, not the
-// subject), lowercases, splits on anything non-letter, and matches if
-// any word 3+ letters long is shared between the requisition's required
-// subjects and the applicant's own Subjects field. Upgrade path: once
-// real applicant data shows false positives/negatives, tighten or
-// loosen this against actual examples (e.g. a synonym map for
-// "Maths"/"Mathematics" if that mismatch shows up).
-const HIR_ROLE_PREFIXES = ['prt', 'tgt', 'pgt', 'ntt'];
-function hirNormalizeSubjectTokens_(s) {
-  return String(s || '').toLowerCase().split(/[^a-z]+/)
-    .filter(function (w) { return w.length >= 3 && HIR_ROLE_PREFIXES.indexOf(w) === -1; });
+// ── Subject canonicalization ──────────────────────────────────────
+// 2026-09-14, confirmed by reading real rows in the Teaching Applicants
+// sheet (not assumed): staff records (EmpAcademic/add-employee.html)
+// and real applicant submissions use DIFFERENT words for the same
+// subject -- "Math" (staff) vs "Mathematics" (applicants), "Social
+// Science" vs "Social Sciences", "P.Ed" vs "Physical Education",
+// "Information Technology" vs "Computer"/"Computer Sciences". Every
+// variant maps to one canonical key so a requisition (staff wording)
+// and an applicant (their own wording) actually find each other
+// instead of silently missing -- and so "Political Science" no longer
+// false-positives against a plain "Science" requirement the way a
+// naive shared-word check would (both contain the word "science").
+const HIR_SUBJECT_CANON = {
+  math: ['Math', 'Maths', 'Mathematics'],
+  science: ['Science', 'Sciences'],
+  socialscience: ['Social Science', 'Social Sciences'],
+  ped: ['P.Ed', 'PEd', 'Physical Education'],
+  infotech: ['Information Technology', 'Computer', 'Computer Science', 'Computer Sciences'],
+  english: ['English'], hindi: ['Hindi'], sanskrit: ['Sanskrit'],
+  history: ['History'], geography: ['Geography'],
+  polsci: ['Political Science', 'Civics'],
+  economics: ['Economics'], accountancy: ['Accountancy'],
+  bstudies: ['Business Studies', 'Commerce'],
+  physics: ['Physics'], chemistry: ['Chemistry'], biology: ['Biology'],
+  evs: ['E.V.S.', 'EVS'], gk: ['GK', 'General Knowledge'],
+  cogact: ['Cognitive Activities'], ntt: ['NTT'],
+};
+function hirNormalizeSubjectPhrase_(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+const HIR_SUBJECT_LOOKUP_ = (function () {
+  const map = {};
+  Object.keys(HIR_SUBJECT_CANON).forEach(function (key) {
+    HIR_SUBJECT_CANON[key].forEach(function (variant) { map[hirNormalizeSubjectPhrase_(variant)] = key; });
+  });
+  return map;
+})();
+// Unrecognized phrase passes through as its own (normalized) key rather
+// than being dropped -- fails open (still comparable/visible) instead
+// of silently vanishing if a genuinely new subject shows up.
+function hirCanonicalSubjectKey_(phrase) {
+  const norm = hirNormalizeSubjectPhrase_(phrase);
+  return norm ? (HIR_SUBJECT_LOOKUP_[norm] || norm) : '';
+}
+function hirSplitSubjects_(s) {
+  return String(s || '').split(/,|&|\band\b/i).map(hirCanonicalSubjectKey_).filter(Boolean);
+}
+
+// "Adjoining" subjects -- per Uday: "a Geography teacher is usually
+// capable of teaching complete Social Science to younger kids." A
+// specialist in a COMPONENT subject is treated as a match (weaker than
+// exact) for the COMBINED subject a younger-class posting actually asks
+// for, and vice versa -- built one direction then mirrored below so it
+// works from either side. `ponytail:` hand-picked clusters (History/
+// Geography/Political Science/Economics -> Social Science; Physics/
+// Chemistry/Biology -> Science), not exhaustive -- extend if another
+// real adjacency comes up.
+const HIR_SUBJECT_ADJACENCY = {
+  socialscience: ['history', 'geography', 'polsci', 'economics'],
+  science: ['physics', 'chemistry', 'biology'],
+};
+(function () {
+  Object.keys(HIR_SUBJECT_ADJACENCY).forEach(function (combined) {
+    HIR_SUBJECT_ADJACENCY[combined].forEach(function (component) {
+      if (!HIR_SUBJECT_ADJACENCY[component]) HIR_SUBJECT_ADJACENCY[component] = [];
+      if (HIR_SUBJECT_ADJACENCY[component].indexOf(combined) === -1) HIR_SUBJECT_ADJACENCY[component].push(combined);
+    });
+  });
+})();
+
+// 1 = exact/alias match, 0.6 = adjacency-cluster match (capable but not
+// a stated specialization), 0 = no match. Blank `required` = any
+// subject (wildcard -- see hirApprovedRequisitions_).
+function hirSubjectMatchStrength_(required, applicantSubjects) {
+  const reqKeys = hirSplitSubjects_(required);
+  if (!reqKeys.length) return 1;
+  const appKeys = hirSplitSubjects_(applicantSubjects);
+  if (!appKeys.length) return 0;
+  let best = 0;
+  reqKeys.forEach(function (rk) {
+    if (appKeys.indexOf(rk) !== -1) { best = 1; return; }
+    if (best < 1 && (HIR_SUBJECT_ADJACENCY[rk] || []).some(function (adj) { return appKeys.indexOf(adj) !== -1; })) best = Math.max(best, 0.6);
+  });
+  return best;
 }
 function hirSubjectsMatch_(required, applicantSubjects) {
-  const reqTokens = hirNormalizeSubjectTokens_(required);
-  if (!reqTokens.length) return true; // blank/prefix-only requirement = any subject
-  const appTokens = hirNormalizeSubjectTokens_(applicantSubjects);
-  return reqTokens.some(function (t) { return appTokens.indexOf(t) !== -1; });
+  return hirSubjectMatchStrength_(required, applicantSubjects) > 0;
+}
+
+// ── HR-style match scoring (2026-09-14, per Uday) ───────────────────
+// Ranks VISIBLE applicants (already subject-gated above) by fit, out of
+// 100, instead of leaving them in arbitrary sheet order. Weighted the
+// way an HR reviewer actually would for a teaching post in India:
+// B.Ed/TET is the single strongest real signal (NCTE/RTE requirements,
+// 30 pts) > subject fit (40 pts, but discounted for "hedging" -- an
+// applicant who checked 6 subjects and yours happens to be one of them
+// is a weaker specialist match than one who checked exactly 1-2) >
+// qualification level appropriate to the role (20 pts) > recency as a
+// tiebreaker (10 pts). `ponytail:` hand-tuned weights, not statistically
+// derived -- revisit once real hiring outcomes show whether this
+// actually orders candidates well.
+function hirBedScore_(bedRaw) {
+  const s = String(bedRaw || '').toLowerCase();
+  // Per Uday: "Not applicable should land them a 0, with a clear
+  // remark explaining why" -- not folded into the generic "No" tier.
+  if (s.indexOf('not applicable') !== -1) return { score: 0, remark: 'B.Ed/TET: Not Applicable' };
+  if (/tet\s*not\s*qualified/.test(s)) return { score: 20, remark: 'B.Ed, TET not qualified' };
+  if (/tet\s*qualified/.test(s)) return { score: 30, remark: 'B.Ed + TET qualified' };
+  if (s.indexOf('yes') !== -1) return { score: 20, remark: 'B.Ed (TET status unclear)' };
+  if (s.indexOf('no') !== -1) return { score: 5, remark: 'No B.Ed' };
+  return { score: 15, remark: 'B.Ed/TET status unclear' };
+}
+
+// Masters matters more the higher the role level -- PGT needs subject
+// depth for senior secondary, PRT/NTT don't need it at all.
+const HIR_QUALIFICATION_EXPECTATION = { NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred' };
+function hirQualificationScore_(qualification, roleLevel) {
+  const isMasters = String(qualification || '').toLowerCase().indexOf('master') !== -1;
+  const expectation = HIR_QUALIFICATION_EXPECTATION[roleLevel] || 'masters-preferred';
+  if (expectation === 'either' || isMasters) return { score: 20, remark: '' };
+  return { score: 12, remark: 'Bachelors only (Masters preferred for ' + (roleLevel || 'this role') + ')' };
+}
+
+function hirRecencyScore_(timestampISO) {
+  if (!timestampISO) return 5;
+  const days = (Date.now() - new Date(timestampISO).getTime()) / 86400000;
+  if (days <= 30) return 10;
+  if (days >= 180) return 2; // floor, not zero -- a great candidate from 7 months ago is still worth a look
+  return Math.round(10 - (days - 30) * 8 / 150);
+}
+
+// One applicant's fit, scored against the BEST-matching of the
+// requisitions they're relevant to (an applicant can be relevant to
+// more than one open role at once -- see hiringApplicants_).
+function hirScoreApplicant_(applicant, relevantReqs) {
+  let best = null;
+  relevantReqs.forEach(function (req) {
+    const reqKeys = hirSplitSubjects_(req.subjects);
+    const appKeys = hirSplitSubjects_(applicant.subjects);
+    const evalKeys = reqKeys.length ? reqKeys : [''];
+    const strengths = evalKeys.map(function (rk) { return hirSubjectMatchStrength_(rk, applicant.subjects); });
+    const avgStrength = strengths.reduce(function (a, b) { return a + b; }, 0) / strengths.length;
+    if (avgStrength <= 0) return; // this requisition doesn't actually apply to this applicant
+    // "Hedging" discount -- narrower, more targeted subject lists score
+    // higher than a long list that happens to include the match too.
+    const matchedCount = evalKeys.filter(function (rk) { return hirSubjectMatchStrength_(rk, applicant.subjects) > 0; }).length;
+    const specializationRatio = appKeys.length ? Math.max(0.5, matchedCount / appKeys.length) : 0.5;
+    const subjectScore = Math.round(40 * avgStrength * specializationRatio);
+
+    const bed = hirBedScore_(applicant.bed);
+    const qual = hirQualificationScore_(applicant.qualification, req.roleLevel);
+    const recency = hirRecencyScore_(applicant.timestamp);
+    const total = subjectScore + bed.score + qual.score + recency;
+    if (!best || total > best.total) {
+      best = { total: total, breakdown: { subject: subjectScore, bed: bed.score, qualification: qual.score, recency: recency }, remarks: [bed.remark, qual.remark].filter(Boolean) };
+    }
+  });
+  return best || { total: 0, breakdown: {}, remarks: [] };
 }
 
 // Approved-requisition check for one specific campus -- used by the

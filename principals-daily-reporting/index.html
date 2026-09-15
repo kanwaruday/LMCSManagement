@@ -516,6 +516,21 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Description / reasoning</label>
           <textarea id="aprDescription" rows="4" placeholder="Explain why, with any relevant details"></textarea>
         </div>
+        <!-- Hiring / New Position only -- role level narrows the
+             subjects multiselect below to what that level actually
+             teaches (NTT is a generalist, no subjects needed at all).
+             itemName ends up "TGT: Science, Math" or bare "NTT" --
+             hiring.gs strips the role prefix before subject-matching,
+             but keeps it for display (status strip, detail view). -->
+        <div id="aprHiringRoleWrap" style="display:none;margin-top:10px">
+          <label class="field-label">Role Level</label>
+          <select id="aprHiringRoleLevel" onchange="renderAprSubjectsMsOptions()">
+            <option value="NTT">NTT (generalist)</option>
+            <option value="PRT">PRT (Primary)</option>
+            <option value="TGT">TGT (up to Class 10)</option>
+            <option value="PGT">PGT (up to Class 12)</option>
+          </select>
+        </div>
         <div class="row-2col" id="aprItemQtyFields" style="display:none;margin-top:10px">
           <div>
             <label class="field-label" id="aprItemNameLabel">Item</label>
@@ -1832,27 +1847,51 @@ function aprEsc_(s) {
 
 document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
-// Same list as staff/add-employee.html's SUBJECT_SUGGESTIONS -- single
-// source of truth for "what subjects exist at LMCS" was already there
-// (used when adding a new hire), reused here rather than inventing a
-// second list that could drift out of sync. Keep both in sync if this
-// changes.
-const APR_SUBJECT_OPTIONS = ['English','Hindi','Sanskrit','Math','Science','Social Science',
-  'E.V.S.','GK','Cognitive Activities','P.Ed','Physics','Chemistry','Biology','Accountancy',
-  'Business Studies','Economics','History','Political Science','Information Technology'];
+// Per-role-level subject lists -- 2026-09-14, per Uday: NTT is a
+// generalist (no subject picker at all); PRT/TGT/PGT each teach a
+// different, real subset (confirmed against LMCS's actual EmpSalary
+// designations -- NTT/PRT/TGT/PGT are the 4 real teaching titles) --
+// NOT the flat 19-subject list this started as, which let a Principal
+// pick PGT-only subjects (Physics, Accountancy...) for a PRT posting.
+// GK/Cognitive Activities dropped from TGT per Uday: "not main
+// subjects, we usually do not hire for these." Wording (Math, Social
+// Science, P.Ed, etc.) deliberately matches staff-side spelling
+// (staff/add-employee.html) for consistency once someone's hired --
+// hiring.gs's HIR_SUBJECT_CANON is what reconciles this against real
+// applicants' own wording (Mathematics, Social Sciences, ...), so this
+// list doesn't need to match applicant spelling itself.
+const APR_HIRING_SUBJECTS_BY_ROLE = {
+  NTT: [], // generalist -- no subject picker shown at all
+  PRT: ['English', 'Hindi', 'Math', 'Science', 'Social Science'],
+  TGT: ['English', 'Hindi', 'Sanskrit', 'Math', 'Science', 'Social Science', 'Information Technology', 'P.Ed', 'E.V.S.'],
+  PGT: ['English', 'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science'],
+};
 let selectedAprSubjects = [];
 
 function renderAprSubjectsMsOptions() {
-  document.getElementById('aprSubjectsMsPanel').innerHTML = APR_SUBJECT_OPTIONS.map(function (s) {
+  const roleLevel = document.getElementById('aprHiringRoleLevel').value;
+  const options = APR_HIRING_SUBJECTS_BY_ROLE[roleLevel] || [];
+  selectedAprSubjects = selectedAprSubjects.filter(function (s) { return options.indexOf(s) !== -1; }); // drop selections that don't exist at the newly-picked role level
+  const wrap = document.getElementById('aprSubjectsMs');
+  wrap.style.display = options.length ? '' : 'none'; // NTT: no subjects to pick, itemName is just the role level
+  document.getElementById('aprSubjectsMsPanel').innerHTML = options.map(function (s) {
     return '<label class="ms-option"><input type="checkbox" onchange="toggleAprSubject(\'' + s + '\', this.checked)"' +
       (selectedAprSubjects.indexOf(s) > -1 ? ' checked' : '') + '><span>' + s + '</span></label>';
   }).join('');
+  aprSyncHiringItemName_();
 }
 function toggleAprSubject(s, checked) {
   if (checked) { if (selectedAprSubjects.indexOf(s) === -1) selectedAprSubjects.push(s); }
   else { selectedAprSubjects = selectedAprSubjects.filter(function (x) { return x !== s; }); }
   document.getElementById('aprSubjectsMsToggleLabel').textContent = selectedAprSubjects.length ? selectedAprSubjects.join(', ') : 'Select subjects needed';
-  document.getElementById('aprItemName').value = selectedAprSubjects.join(', '); // the field that actually gets posted
+  aprSyncHiringItemName_();
+}
+// itemName ends up "TGT: Science, Math" (or bare "NTT") -- one string
+// column, no new sheet field needed. hiring.gs strips the role-level
+// prefix before subject-matching but keeps the whole thing for display.
+function aprSyncHiringItemName_() {
+  const roleLevel = document.getElementById('aprHiringRoleLevel').value;
+  document.getElementById('aprItemName').value = roleLevel + (selectedAprSubjects.length ? ': ' + selectedAprSubjects.join(', ') : '');
 }
 function toggleAprSubjectsMs() {
   document.getElementById('aprSubjectsMsPanel').classList.toggle('open');
@@ -1871,19 +1910,20 @@ function aprOnCategoryChange() {
   document.getElementById('aprItemQtyFields').style.display = showsItem ? 'grid' : 'none';
   document.getElementById('aprQuantityWrap').style.display = showsQty ? 'block' : 'none';
   document.getElementById('aprAmountField').style.display = showsAmount ? 'block' : 'none';
+  document.getElementById('aprHiringRoleWrap').style.display = isHiring ? 'block' : 'none';
   const itemLabelEl = document.getElementById('aprItemNameLabel');
   const itemInputEl = document.getElementById('aprItemName');
-  const subjectsMsEl = document.getElementById('aprSubjectsMs');
   const qtyLabelEl = document.getElementById('aprQuantityLabel');
-  itemInputEl.style.display = isHiring ? 'none' : '';
-  subjectsMsEl.style.display = isHiring ? '' : 'none';
+  itemInputEl.style.display = isHiring ? 'none' : ''; // Hiring drives itemName entirely from the role+subjects UI, not typed directly
   if (category === 'Compensation Change') {
+    document.getElementById('aprSubjectsMs').style.display = 'none';
     itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
   } else if (isHiring) {
     itemLabelEl.textContent = 'Subjects / Position Required';
     renderAprSubjectsMsOptions();
     qtyLabelEl.textContent = 'Number of Openings';
   } else {
+    document.getElementById('aprSubjectsMs').style.display = 'none';
     itemLabelEl.textContent = 'Item'; itemInputEl.placeholder = 'What are you buying';
     qtyLabelEl.textContent = 'Quantity';
   }
@@ -2165,7 +2205,10 @@ async function submitApprovalRequest() {
     document.getElementById('aprLinkedActivity').value = '';
     selectedAprSubjects = [];
     document.getElementById('aprSubjectsMsToggleLabel').textContent = 'Select subjects needed';
-    if (category === 'Hiring / New Position') renderAprSubjectsMsOptions();
+    if (category === 'Hiring / New Position') {
+      document.getElementById('aprHiringRoleLevel').value = 'NTT';
+      renderAprSubjectsMsOptions();
+    }
     alert('Request submitted.');
     refreshApprovals();
   } finally {
