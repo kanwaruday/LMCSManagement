@@ -26,12 +26,32 @@
 //
 // STATUS FILTERING (2026-08-29): EmpMaster has a Status column (blank or
 // "Active" = still employed, anything else e.g. "Left" = departed).
-// readDepartedCodes_() reads it once per request and both readEmployees()
-// and readRosterRows() exclude anyone marked departed -- so flipping one
+// readEmployees() checks it inline (see PERF note below); readRosterRows()
+// still uses readDepartedCodes_() since it's excluding EmpAcademic rows
+// against EmpMaster's status, a different sheet -- so flipping one
 // employee's Status in EmpMaster cascades everywhere this proxy feeds
 // (Missing Uploads, Course Mapping teacher assignment, the Chapter
 // Tracker's teacher lookup) without hunting down every place their name
 // might still appear.
+//
+// PERF (2026-09-15): measured 3.5-29.5s per call under LMCSManagement's
+// perf audit, for a ~12KB response covering 158 employees -- way more
+// than the data size justifies. Two causes found and fixed here:
+//   1. readEmployees() used to call readDepartedCodes_() (a full
+//      EmpMaster read) and THEN separately re-read all of EmpMaster
+//      itself -- two full reads of the same sheet in one request. Now a
+//      single pass checks Status inline while building the employee
+//      list. readRosterRows() still calls readDepartedCodes_() as its
+//      own read, since it's cross-referencing a DIFFERENT sheet
+//      (EmpAcademic) -- that one was never a duplicate read.
+//   2. No caching anywhere in this file (despite a comment elsewhere in
+//      the codebase claiming a "1-hour cache" here -- it didn't exist;
+//      that comment was stale/aspirational). Added CacheService below,
+//      keyed per action, TTL CACHE_TTL_SECONDS -- roster data changes on
+//      hire/transfer/departure, not minute-to-minute, so a few minutes
+//      of staleness is a non-issue. No admin-write endpoint in this file
+//      to bust it on write (unlike principal-allowlist.gs) -- it's
+//      read-only, so a plain TTL is enough.
 //
 // SETUP:
 //   1. script.google.com -> New project -> paste this file
@@ -48,6 +68,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const EMP_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
+const EMP_CACHE_TTL_SECONDS = 300; // 5 min -- see PERF note above
 
 // EmployeeCode prefix -> School Code, matching the LMS Campuses convention
 // used throughout the portal. Confirmed against the live sheet 2026-08-27.
@@ -88,13 +109,24 @@ function empSubjectLabel(code) {
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
   try {
-    if (action === 'roster') return jsonOut({ success: true, rows: readRosterRows() });
-    if (action === 'employees') return jsonOut({ success: true, employees: readEmployees() });
-    if (action === 'designations') return jsonOut({ success: true, designations: readDesignationSummary() });
+    if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
+    if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
+    if (action === 'designations') return jsonOut({ success: true, designations: cached_('emp_designations', readDesignationSummary) });
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });
   }
+}
+
+// Thin CacheService wrapper -- `key` is the cache key, `compute` is the
+// (no-arg) function that builds the real result on a miss. See PERF note.
+function cached_(key, compute) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const result = compute();
+  cache.put(key, JSON.stringify(result), EMP_CACHE_TTL_SECONDS);
+  return result;
 }
 
 /** Distinct Designation values from EmpSalary, with counts -- NEVER any
@@ -131,8 +163,10 @@ function openWorkbook_() {
 
 /** EmpMaster's Status column -> {EmployeeCode: true} for everyone marked
  *  departed (anything other than blank/"Active", case-insensitively).
- *  Read once per request; shared by readEmployees() and readRosterRows()
- *  below -- see STATUS FILTERING note at the top of this file. */
+ *  Used by readRosterRows() below to cross-reference EmpAcademic against
+ *  EmpMaster's status -- readEmployees() no longer calls this (see PERF
+ *  note at the top of this file); it checks Status inline in its own
+ *  single pass over EmpMaster instead. */
 function readDepartedCodes_() {
   const rows = openWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
@@ -150,17 +184,22 @@ function readDepartedCodes_() {
 }
 
 /** EmpMaster: EmployeeCode -> {name, school}. Never reads AuthEmail/ReportsTo
- *  or any other tab -- deliberately narrow. Excludes departed staff. */
+ *  or any other tab -- deliberately narrow. Excludes departed staff.
+ *  Single pass over EmpMaster (Status checked inline) -- this used to call
+ *  readDepartedCodes_() AND read EmpMaster again itself, two full reads of
+ *  the same sheet per request; see PERF note at the top of this file. */
 function readEmployees() {
-  const departed = readDepartedCodes_();
   const rows = openWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const codeCol = header.indexOf('EmployeeCode');
   const nameCol = header.indexOf('Name');
+  const statusCol = header.indexOf('Status');
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const code = String(rows[i][codeCol] || '').trim();
-    if (!code || departed[code]) continue;
+    if (!code) continue;
+    const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim().toLowerCase() : '';
+    if (status && status !== 'active') continue; // departed -- see STATUS FILTERING note above
     const prefix = code.split('/')[0];
     out.push({
       employeeCode: code,
