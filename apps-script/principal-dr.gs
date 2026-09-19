@@ -201,11 +201,32 @@ function pdrNextMonthRange_() {
 
 /** campusId's official-Calendar events within [start, end). Small shared
  *  helper -- resolve campusId -> Calendar -> events -- reused by
- *  pdrReadMergedMonthActivities_ below and pdrDayLabel_ further down. */
+ *  pdrReadMergedMonthActivities_ below, pdrDayLabel_ further down, and
+ *  myUpcomingEvents_ (Teacher Portal, below). */
 function pdrSchoolCalendarEvents_(campusId, start, end) {
   const calId = PDR_SCHOOL_CALENDAR_IDS[campusId];
   const cal = calId ? CalendarApp.getCalendarById(calId) : null;
   return cal ? cal.getEvents(start, end) : [];
+}
+
+// Teacher Portal (2026-09-19), action=myupcomingevents -- the caller's
+// campus official Calendar, next PDR_TEACHER_EVENTS_WINDOW_DAYS days.
+// Reuses pdrSchoolCalendarEvents_ verbatim (same source Month
+// Activities already reads) -- deliberately NOT merged with Planned
+// Activities like pdrReadMergedMonthActivities_ does, since those are
+// a Principal-authored construct with no meaning to a Teacher session.
+const PDR_TEACHER_EVENTS_WINDOW_DAYS = 14;
+function myUpcomingEvents_(caller) {
+  const start = new Date();
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + PDR_TEACHER_EVENTS_WINDOW_DAYS);
+  const events = pdrSchoolCalendarEvents_(caller.campusId, start, end);
+  return {
+    success: true,
+    campusId: caller.campusId,
+    events: events.map(function (e) {
+      return { title: e.getTitle(), start: e.getStartTime().toISOString(), end: e.getEndTime().toISOString(), allDay: e.isAllDayEvent() };
+    }),
+  };
 }
 
 /** Next PDR_MONTH_ACTIVITIES_WINDOW_DAYS days of official-Calendar
