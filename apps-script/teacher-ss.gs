@@ -46,6 +46,32 @@ const TSS_RUBRIC_COLUMNS = [
   'Dedication Towards Class',
 ];
 
+/** Teacher Portal (2026-09-19), action=myssstats -- self-scoped to the
+ *  caller's OWN submissions, never the campus roster teacherSsStats_
+ *  below returns. Teacher-only callers can never reach teacherstats
+ *  (see main.gs's PDR_TEACHER_GET_ACTIONS/pdrIsTeacherOnly_), so this is
+ *  the only SS view available to them -- reuses readCampusStats_
+ *  verbatim (same data, same computation) rather than a second reader.
+ *
+ *  Matches by caller.name (verifyCallerToken_ now reads the Allowlist's
+ *  Name column) against the sheet's Teacher Name column,
+ *  case-insensitive/trimmed -- NOT a strict ===, since the Allowlist
+ *  cell and the Form's roster-sourced dropdown have mismatched before
+ *  in this project (see ChapterTracker.gs / ss-forms-sync.gs's
+ *  normalizeCell_). `found: false` is returned explicitly rather than
+ *  silently rendering "0 submissions" as if that were real data -- a
+ *  name mismatch and genuinely zero submissions must look different to
+ *  the teacher looking at their own screen. */
+function myTeacherSsStats_(caller) {
+  const stats = readCampusStats_(caller.campusId);
+  const wanted = String(caller.name || '').trim().toLowerCase();
+  const mine = wanted ? stats.teachers.filter(function (t) { return t.teacher.trim().toLowerCase() === wanted; })[0] : null;
+  if (!mine) {
+    return { success: true, found: false, rubricParams: TSS_RUBRIC_COLUMNS, campusId: caller.campusId, name: caller.name || '' };
+  }
+  return { success: true, found: true, rubricParams: TSS_RUBRIC_COLUMNS, campusId: caller.campusId, stats: mine };
+}
+
 /** Called from main.gs's doGet for action=teacherstats. Caller's own
  *  campus only, unless Owner (sees all 6). */
 function teacherSsStats_(caller) {

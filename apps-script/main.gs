@@ -108,7 +108,7 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // their own Approvals requests instead of gaining access to every
 // other action by accident. Extend this list, not verifyCallerToken_'s
 // role check, when Teacher Portal grows a new self-scoped action.
-const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail'];
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 
 function doGet(e) {
@@ -135,6 +135,7 @@ function doGet(e) {
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
+    if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(caller));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -237,6 +238,10 @@ function verifyCallerToken_(idToken) {
       // keeps working unchanged -- this was never a data migration.
       const role = String(rows[i][3] || '').trim();
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+      // Name (column B) added to the caller object 2026-09-19 for
+      // myTeacherSsStats_ -- matching a Teacher's own SS submissions
+      // needs their display name, not just email/campusId/role.
+      const name = String(rows[i][1] || '').trim();
       // Teacher added 2026-09-19 for the Teacher Portal -- see
       // PDR_TEACHER_GET_ACTIONS/PDR_TEACHER_POST_ACTIONS and
       // pdrIsTeacherOnly_() below, which are what actually keep a
@@ -248,7 +253,7 @@ function verifyCallerToken_(idToken) {
       // (including every pre-existing row before this column existed)
       // is "not delegated" -- fails safe.
       const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
-      const caller = { email: email, campusId: campusId, role: role, roles: roles, canApprove: canApprove };
+      const caller = { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: canApprove };
       cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
       return caller;
     }
