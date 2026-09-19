@@ -78,6 +78,13 @@ const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 // Change needs Item+Amount but no Quantity.
 const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase', 'Hiring / New Position'];
+// Teacher Portal (2026-09-19): categories a Teacher may self-submit --
+// deliberately narrow (no Hiring/Compensation/Disciplinary, which stay
+// Principal-only) until Uday defines a fuller Teacher-facing category
+// set. Extend this list, not the Teacher-role check in aprSubmit_,
+// when that happens. Neither category triggers the amount/item/qty
+// fields, so the Teacher Portal's submit form skips them entirely.
+const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Other'];
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
@@ -85,9 +92,13 @@ function aprSheet_() { return SpreadsheetApp.openById(APR_SHEET_ID).getSheetByNa
 function aprCommentsSheet_() { return SpreadsheetApp.openById(APR_SHEET_ID).getSheetByName(APR_COMMENTS_TAB); }
 
 // Owner always decides; a Coordinator decides only with the delegated
-// flag main.gs's verifyCallerToken_ read off the Allowlist row.
+// flag main.gs's verifyCallerToken_ read off the Allowlist row. Tightened
+// 2026-09-19 to require the Coordinator role specifically (not just any
+// role with canApprove=TRUE) -- canApprove is only ever meant to
+// delegate FROM Owner TO a Coordinator, so a stray TRUE on some other
+// role's row (e.g. Teacher) must not grant decide-rights.
 function aprCanDecide_(caller) {
-  return caller.role === 'Owner' || !!caller.canApprove;
+  return callerHasRole_(caller, 'Owner') || (callerHasRole_(caller, 'Coordinator') && !!caller.canApprove);
 }
 
 function aprISO_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
@@ -105,28 +116,42 @@ function aprRowToObj_(row) {
   };
 }
 
-// action=approvalslist -- Principal sees only their own campus;
-// Owner/Coordinator (campusId 'ALL') see every campus, same
-// campusId-based scoping every other action in this project uses.
+// action=approvalslist -- a Teacher-only caller (pdrIsTeacherOnly_, see
+// main.gs) sees ONLY their own submitted requests, by email, regardless
+// of campus. Everyone else keeps the existing rule: Principal sees only
+// their own campus; Owner/Coordinator (campusId 'ALL') see every
+// campus. Someone with "Coordinator,Teacher" gets the Coordinator view,
+// not the narrower Teacher one -- Teacher is additive, not a downgrade.
 function aprList_(caller) {
   const values = aprSheet_().getDataRange().getValues();
   const out = [];
+  const teacherOnly = pdrIsTeacherOnly_(caller);
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     if (!row[0]) continue;
-    if (caller.campusId !== 'ALL' && String(row[1]).trim() !== caller.campusId) continue;
+    if (teacherOnly) {
+      if (String(row[11]).trim().toLowerCase() !== caller.email) continue;
+    } else if (caller.campusId !== 'ALL' && String(row[1]).trim() !== caller.campusId) {
+      continue;
+    }
     out.push(aprRowToObj_(row));
   }
   out.sort(function (a, b) { return b.requestedAt.localeCompare(a.requestedAt); });
   return { success: true, requests: out, canDecide: aprCanDecide_(caller) };
 }
 
-// action=approvaldetail&id=...
+// action=approvaldetail&id=... -- same Teacher-only-vs-everyone-else
+// scoping as aprList_ above.
 function aprDetail_(caller, id) {
   const values = aprSheet_().getDataRange().getValues();
+  const teacherOnly = pdrIsTeacherOnly_(caller);
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) !== String(id)) continue;
-    if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) {
+    if (teacherOnly) {
+      if (String(values[i][11]).trim().toLowerCase() !== caller.email) {
+        return { success: false, error: 'Not authorized for that request' };
+      }
+    } else if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) {
       return { success: false, error: 'Not authorized for that campus' };
     }
     return { success: true, request: aprRowToObj_(values[i]), comments: aprComments_(id), canDecide: aprCanDecide_(caller) };
@@ -152,13 +177,22 @@ function aprFindRowIndex_(values, id) {
   return -1;
 }
 
-// action=submitapproval (doPost) -- Principal only, always against
-// their own campus (never a param -- can't be spoofed to file under
-// another school).
+// action=submitapproval (doPost) -- Principal (full category list) or
+// Teacher (APR_TEACHER_CATEGORIES only, added 2026-09-19 for the
+// Teacher Portal), always against caller.campusId (never a param --
+// can't be spoofed to file under another school). Someone holding both
+// roles (e.g. "Coordinator,Teacher" isn't Principal, but "Principal,
+// Teacher" would be) gets the full category list -- Principal's access
+// is a superset, not a separate track.
 function aprSubmit_(caller, body) {
-  if (caller.role !== 'Principal') return { success: false, error: 'Only Principals submit approval requests' };
+  const canFullSubmit = callerHasRole_(caller, 'Principal');
+  const canTeacherSubmit = callerHasRole_(caller, 'Teacher');
+  if (!canFullSubmit && !canTeacherSubmit) return { success: false, error: 'Only Principals and Teachers submit approval requests' };
   const category = String(body.category || '').trim();
   if (APR_CATEGORIES.indexOf(category) === -1) return { success: false, error: 'Invalid category' };
+  if (!canFullSubmit && APR_TEACHER_CATEGORIES.indexOf(category) === -1) {
+    return { success: false, error: 'Teachers can only submit ' + APR_TEACHER_CATEGORIES.join('/') + ' requests' };
+  }
   const title = String(body.title || '').trim();
   if (!title) return { success: false, error: 'Title required' };
   const description = String(body.description || '').trim();
@@ -203,7 +237,11 @@ function aprAddComment_(caller, body) {
   const rowIdx = aprFindRowIndex_(values, body.approvalId);
   if (rowIdx === -1) return { success: false, error: 'Request not found' };
   const target = values[rowIdx];
-  if (caller.campusId !== 'ALL' && String(target[1]).trim() !== caller.campusId) {
+  if (pdrIsTeacherOnly_(caller)) {
+    if (String(target[11]).trim().toLowerCase() !== caller.email) {
+      return { success: false, error: 'Not authorized for that request' };
+    }
+  } else if (caller.campusId !== 'ALL' && String(target[1]).trim() !== caller.campusId) {
     return { success: false, error: 'Not authorized for that campus' };
   }
   const text = String(body.body || '').trim();
@@ -286,9 +324,11 @@ function aprNotifyDeciders_(caller, title, category) {
     const rows = pdrAllowlistRows_(); // shared cache from main.gs
     const to = [];
     for (let i = 1; i < rows.length; i++) {
-      const role = String(rows[i][3] || '').trim();
+      // Multi-role aware (2026-09-19) -- same comma-split as
+      // verifyCallerToken_, so e.g. "Coordinator,Owner" still notifies.
+      const roles = String(rows[i][3] || '').trim().split(',').map(function (r) { return r.trim(); });
       const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
-      if (role === 'Owner' || canApprove) to.push(String(rows[i][0]).trim());
+      if (roles.indexOf('Owner') !== -1 || canApprove) to.push(String(rows[i][0]).trim());
     }
     if (!to.length) return;
     MailApp.sendEmail(to.join(','), 'New approval request: ' + title,

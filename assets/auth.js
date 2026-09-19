@@ -35,17 +35,6 @@ window.LMCS = (function () {
     ALL: 'All Campuses (Network-wide)',
   };
 
-  // Stale snapshot, used only if the live allowlist fetch fails. role left
-  // blank except for Uday (known) rather than guessed -- fails safe (no
-  // staff-management permission) instead of fabricating someone's title.
-  const FALLBACK_ALLOWLIST = {
-    'nidhi.kant@lms.org.in':          { campusId: 'LMS1', name: 'Nidhi Kant', role: '' },
-    'arti.sharma@lms.org.in':         { campusId: 'LMS2', name: 'Arti Sharma', role: '' },
-    'suresh.prasher@lms.org.in':      { campusId: 'LMS3', name: 'Suresh Prasher', role: '' },
-    'nisha.lms@lms.org.in':           { campusId: 'LMS4', name: 'Nisha', role: '' },
-    'uday.kanwar@lms.org.in':         { campusId: 'ALL',  name: 'Uday Kanwar', role: 'Owner' },
-  };
-
   function nextSixPM(fromTime) {
     const d = new Date(fromTime);
     d.setHours(18, 0, 0, 0);
@@ -129,6 +118,18 @@ window.LMCS = (function () {
     }, 60 * 1000);
   }
 
+  // Bug (2026-09-16): this used to fall back to a hardcoded snapshot of
+  // the allowlist on any fetch failure -- that snapshot silently went
+  // stale (5 people, vs. 15 on the real list) and anyone missing from it
+  // got wrongly told "not on the access list", including already-signed-
+  // in users getting kicked out mid-session by the SAME fetch backing
+  // requireSession()'s re-validation. A failed fetch here now propagates
+  // as a rejected promise instead of masquerading as real (but wrong)
+  // data -- see the two call sites below for how each one responds to
+  // that: fail OPEN for an existing session (don't punish a valid user
+  // for a network blip), fail with an honest "couldn't verify, try
+  // again" message for a brand-new sign-in (never silently grant OR deny
+  // access based on data we know is incomplete).
   let allowlistPromise = null;
   function loadAllowlist() {
     if (allowlistPromise) return allowlistPromise;
@@ -143,8 +144,9 @@ window.LMCS = (function () {
         return map;
       })
       .catch((err) => {
-        console.warn('LMCS auth: live allowlist unavailable, using fallback snapshot.', err);
-        return FALLBACK_ALLOWLIST;
+        console.warn('LMCS auth: live allowlist fetch failed.', err);
+        allowlistPromise = null; // don't cache the failure -- let the next call retry
+        throw err;
       });
     return allowlistPromise;
   }
@@ -172,13 +174,26 @@ window.LMCS = (function () {
     return CAMPUS_NAMES[campusId] || campusId;
   }
 
+  // Multi-role (2026-09-19, per Uday): session.role can hold a
+  // comma-separated list (e.g. "Coordinator,Teacher") for someone who
+  // genuinely needs both a management role's access and their own
+  // personal Teacher-Portal self-service. hasRole() is the one place
+  // that parses it -- every permission check below (and any future
+  // caller, including other module pages) should use this instead of
+  // comparing session.role directly. A single-role session like
+  // "Teacher" parses to a 1-element list, so nothing existing changes.
+  function hasRole(session, role) {
+    if (!session || !session.role) return false;
+    return String(session.role).split(',').map(function (r) { return r.trim(); }).indexOf(role) !== -1;
+  }
+
   // Single source of truth for "can this session add/transfer/deactivate
   // staff" -- Owner (campusId ALL) or a Coordinator, always scoped to
   // their own locked campus for Coordinators (callers still need to check
   // session.campusId when acting, this only answers the yes/no).
   function canManageStaff(session) {
     if (!session) return false;
-    return session.campusId === 'ALL' || session.role === 'Coordinator' || session.role === 'Owner';
+    return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   // "Can this session view the Teacher SS (Support Session, formerly
@@ -189,7 +204,7 @@ window.LMCS = (function () {
   // Principal-and-above bar the Apps Script proxy re-checks server-side.
   function canViewTeacherSS(session) {
     if (!session) return false;
-    return session.campusId === 'ALL' || session.role === 'Principal' || session.role === 'Coordinator' || session.role === 'Owner';
+    return session.campusId === 'ALL' || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   /**
@@ -208,6 +223,13 @@ window.LMCS = (function () {
           if (allowlist[existing.email]) { startExpiryWatch_(); resolve(existing); return; }
           localStorage.removeItem(SESSION_KEY);
           renderGate();
+        }).catch(() => {
+          // Couldn't reach the allowlist to re-validate -- fail OPEN and
+          // keep the existing session rather than signing someone out
+          // over a transient fetch failure (see loadAllowlist()'s
+          // comment for the incident this replaces).
+          startExpiryWatch_();
+          resolve(existing);
         });
         return;
       }
@@ -222,11 +244,21 @@ window.LMCS = (function () {
           '</div>';
 
         window.onGoogleSignIn = async function (response) {
-          const allowlist = await loadAllowlist();
           const payload = decodeJwtPayload(response.credential);
           const email = (payload.email || '').toLowerCase();
-          const match = allowlist[email];
           const statusEl = document.getElementById('lmcs-auth-status');
+
+          let allowlist;
+          try {
+            allowlist = await loadAllowlist();
+          } catch (err) {
+            // Never silently deny (or grant) access on data we know is
+            // incomplete -- see loadAllowlist()'s comment.
+            statusEl.innerHTML =
+              '<div class="auth-denied">Couldn’t verify the access list right now (network or server issue) — please try again in a moment.</div>';
+            return;
+          }
+          const match = allowlist[email];
 
           if (!match || !payload.email_verified) {
             statusEl.innerHTML =
@@ -278,5 +310,5 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
 })();

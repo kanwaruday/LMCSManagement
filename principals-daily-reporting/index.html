@@ -1943,7 +1943,7 @@ async function loadApprovals() {
       return;
     }
     aprRes = res;
-    document.getElementById('aprNewRequestCard').style.display = SESSION.role === 'Principal' ? 'block' : 'none';
+    document.getElementById('aprNewRequestCard').style.display = LMCS.hasRole(SESSION, 'Principal') ? 'block' : 'none';
     aprRenderStatusFilter_();
     renderApprovalsForSelectedCampus();
   } catch (err) {

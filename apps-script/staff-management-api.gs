@@ -78,9 +78,14 @@ function verifyStaffManagerToken_(idToken) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
       const campusId = String(rows[i][2] || '').trim().toUpperCase();
+      // Multi-role aware (2026-09-19) -- same comma-split as main.gs's
+      // verifyCallerToken_ (separate deployment/project, so this is its
+      // own copy, not a shared function). "Coordinator,Teacher" still
+      // gets Staff Portal access via the Coordinator half.
       const role = String(rows[i][3] || '').trim();
-      if (role !== 'Coordinator' && role !== 'Owner' && campusId !== 'ALL') return null;
-      return { email: email, campusId: campusId, role: role };
+      const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL') return null;
+      return { email: email, campusId: campusId, role: role, roles: roles };
     }
     return null; // not on the allowlist at all
   } catch (err) {

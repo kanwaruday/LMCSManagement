@@ -99,12 +99,27 @@
 const ALLOWLIST_SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist"
 const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com'; // same client ID assets/auth.js signs in with
 
+// Teacher Portal (added 2026-09-19): the only role that previously
+// never passed verifyCallerToken_ at all. Every other action in this
+// project (SS dashboards, Principal DR, Hiring, etc.) was implicitly
+// Principal/Coordinator/Owner-only simply because verifyCallerToken_
+// rejected everyone else -- opening that check to Teacher (below) means
+// this allowlist is now the ONLY thing keeping a Teacher scoped to
+// their own Approvals requests instead of gaining access to every
+// other action by accident. Extend this list, not verifyCallerToken_'s
+// role check, when Teacher Portal grows a new self-scoped action.
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail'];
+const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
+
 function doGet(e) {
   try {
     const caller = verifyCallerToken_(e.parameter.idToken);
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
 
     const action = (e.parameter.action || 'teacherstats').toLowerCase();
+    if (pdrIsTeacherOnly_(caller) && PDR_TEACHER_GET_ACTIONS.indexOf(action) === -1) {
+      return jsonOut_({ success: false, error: 'Not authorized' });
+    }
 
     if (action === 'teacherstats') return jsonOut_(teacherSsStats_(caller));
     if (action === 'ssdashboard') return jsonOut_(ssDashboardAll_(caller));
@@ -143,6 +158,9 @@ function doPost(e) {
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
 
     const action = String(body.action || '').toLowerCase();
+    if (pdrIsTeacherOnly_(caller) && PDR_TEACHER_POST_ACTIONS.indexOf(action) === -1) {
+      return jsonOut_({ success: false, error: 'Not authorized' });
+    }
 
     if (action === 'savedailyreport') return jsonOut_(principalDrSaveDailyReport_(caller, body));
     if (action === 'addplannedactivity') return jsonOut_(principalDrAddPlannedActivity_(caller, body));
@@ -208,15 +226,29 @@ function verifyCallerToken_(idToken) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
       const campusId = String(rows[i][2] || '').trim().toUpperCase();
+      // Multi-role (2026-09-19, per Uday): the Allowlist's role cell can
+      // hold a comma-separated list, e.g. "Coordinator,Teacher" -- for
+      // someone who genuinely needs both a management role's access AND
+      // their own personal Teacher-Portal self-service. `role` stays the
+      // raw cell (used verbatim as a display string, e.g. Comments'
+      // authorRole in approvals.gs); `roles` is the parsed array every
+      // permission check below should use. A single-role cell like
+      // "Teacher" parses to a 1-element array, so every existing row
+      // keeps working unchanged -- this was never a data migration.
       const role = String(rows[i][3] || '').trim();
-      if (role !== 'Principal' && role !== 'Coordinator' && role !== 'Owner') return null;
+      const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+      // Teacher added 2026-09-19 for the Teacher Portal -- see
+      // PDR_TEACHER_GET_ACTIONS/PDR_TEACHER_POST_ACTIONS and
+      // pdrIsTeacherOnly_() below, which are what actually keep a
+      // Teacher-only caller scoped to their own requests.
+      if (!roles.some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner' || r === 'Teacher'; })) return null;
       // Column E (added 2026-09-10, Approvals delegation) -- a
       // Coordinator with this TRUE can decide approvals same as Owner;
       // Uday flips this cell by hand to delegate/revoke. Blank/FALSE
       // (including every pre-existing row before this column existed)
       // is "not delegated" -- fails safe.
       const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
-      const caller = { email: email, campusId: campusId, role: role, canApprove: canApprove };
+      const caller = { email: email, campusId: campusId, role: role, roles: roles, canApprove: canApprove };
       cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
       return caller;
     }
@@ -224,6 +256,27 @@ function verifyCallerToken_(idToken) {
   } catch (err) {
     return null;
   }
+}
+
+// Shared role-membership check -- every permission check in this
+// project (and approvals.gs, same Apps Script project/global scope)
+// should call this instead of comparing caller.role directly, now that
+// a caller can hold more than one role.
+function callerHasRole_(caller, role) {
+  return !!caller && caller.roles.indexOf(role) !== -1;
+}
+
+// "Is this caller's ONLY actionable role Teacher" -- i.e. do they lack
+// every elevated role, so Teacher-only scoping (PDR_TEACHER_*_ACTIONS,
+// and approvals.gs's self-scoped list/detail/comment branches) should
+// apply. Someone with "Coordinator,Teacher" is NOT teacher-only -- they
+// keep their full Coordinator-level access, Teacher is additive for
+// their own personal requests, not a downgrade.
+function pdrIsTeacherOnly_(caller) {
+  return callerHasRole_(caller, 'Teacher')
+    && !callerHasRole_(caller, 'Principal')
+    && !callerHasRole_(caller, 'Coordinator')
+    && !callerHasRole_(caller, 'Owner');
 }
 
 // Allowlist sheet rows, cached separately from the per-token result

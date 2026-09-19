@@ -66,6 +66,11 @@
       // next. `url` is kept intact (not deleted) so re-enabling is just flipping
       // status back to 'live' -- nothing else needs to change.
       { name: 'Staff Portal', status: 'paused', url: 'staff/add-employee.html', desc: 'Add, transfer, and mark departed employees in the Employee Master workbook. Coordinator/Owner access only.' },
+      // Separate repo (kanwaruday/LMCSTeachers), not a separate login --
+      // same auth.js/backend as everything else here, see that repo's
+      // README for why it's split out. Only "My Requests" (leave & other
+      // approvals) is built so far; Teacher access only.
+      { name: 'Teacher Portal', status: 'live', url: 'https://kanwaruday.github.io/LMCSTeachers/', desc: 'Leave and other requests, self-service. Teacher access.' },
       { name: 'Bye Laws', status: 'live', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'HR rulebook of record — conduct, leave rules, and job roles.' },
     ];
 
