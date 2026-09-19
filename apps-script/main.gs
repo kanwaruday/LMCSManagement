@@ -71,6 +71,13 @@
 //                         is gated on two Approvals categories ('Hiring /
 //                         New Position', 'Hiring Decision') both being
 //                         Approved for that campus -- see its own header.
+//   teacher-portal.gs   -- action=myssstats (teacher-ss.gs, not here),
+//                         myupcomingevents (principal-dr.gs, not here),
+//                         myrankscore. This file specifically: the
+//                         composite SS+Regularity performance score --
+//                         see its own header for the incentive-engine
+//                         connection and the EmployeeCode join-key
+//                         reasoning.
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -108,7 +115,7 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // their own Approvals requests instead of gaining access to every
 // other action by accident. Extend this list, not verifyCallerToken_'s
 // role check, when Teacher Portal grows a new self-scoped action.
-const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents'];
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 
 function doGet(e) {
@@ -137,6 +144,7 @@ function doGet(e) {
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(caller));
     if (action === 'myupcomingevents') return jsonOut_(myUpcomingEvents_(caller));
+    if (action === 'myrankscore') return jsonOut_(myRankScore_(caller));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
