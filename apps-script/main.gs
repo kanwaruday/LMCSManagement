@@ -115,7 +115,7 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // their own Approvals requests instead of gaining access to every
 // other action by accident. Extend this list, not verifyCallerToken_'s
 // role check, when Teacher Portal grows a new self-scoped action.
-const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore'];
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 
 function doGet(e) {
@@ -145,6 +145,7 @@ function doGet(e) {
     if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(caller));
     if (action === 'myupcomingevents') return jsonOut_(myUpcomingEvents_(caller));
     if (action === 'myrankscore') return jsonOut_(myRankScore_(caller));
+    if (action === 'myemployeecode') return jsonOut_(myEmployeeCode_(caller));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

@@ -53,19 +53,22 @@ const TSS_RUBRIC_COLUMNS = [
  *  the only SS view available to them -- reuses readCampusStats_
  *  verbatim (same data, same computation) rather than a second reader.
  *
- *  Matches by caller.name (verifyCallerToken_ now reads the Allowlist's
- *  Name column) against the sheet's Teacher Name column,
- *  case-insensitive/trimmed -- NOT a strict ===, since the Allowlist
- *  cell and the Form's roster-sourced dropdown have mismatched before
- *  in this project (see ChapterTracker.gs / ss-forms-sync.gs's
- *  normalizeCell_). `found: false` is returned explicitly rather than
- *  silently rendering "0 submissions" as if that were real data -- a
- *  name mismatch and genuinely zero submissions must look different to
- *  the teacher looking at their own screen. */
+ *  Matches by EmployeeCode (updated 2026-09-20, per Uday), not name --
+ *  the caller resolves via tpResolveCallerEmployeeCode_ (AuthEmail
+ *  first, name-fallback only if that's unpopulated; see
+ *  teacher-portal.gs, same project/shared scope), then each SS sheet
+ *  row's typed Teacher Name is ALSO resolved to a code before
+ *  comparing -- the sheet itself still only has a name, so this can't
+ *  eliminate that side of the match, only make "who am I" reliable.
+ *  `found: false` is returned explicitly rather than silently
+ *  rendering "0 submissions" as if that were real data -- a resolution
+ *  gap and genuinely zero submissions must look different to the
+ *  teacher looking at their own screen. */
 function myTeacherSsStats_(caller) {
+  const roster = tpRosterByCampus_(caller.campusId);
+  const myCode = tpResolveCallerEmployeeCode_(caller, roster).code;
   const stats = readCampusStats_(caller.campusId);
-  const wanted = String(caller.name || '').trim().toLowerCase();
-  const mine = wanted ? stats.teachers.filter(function (t) { return t.teacher.trim().toLowerCase() === wanted; })[0] : null;
+  const mine = myCode ? stats.teachers.filter(function (t) { return tpResolveEmployeeCode_(t.teacher, roster) === myCode; })[0] : null;
   if (!mine) {
     return { success: true, found: false, rubricParams: TSS_RUBRIC_COLUMNS, campusId: caller.campusId, name: caller.name || '' };
   }
