@@ -56,11 +56,16 @@ const TSS_RUBRIC_COLUMNS = [
  *  Matches by EmployeeCode (updated 2026-09-20, per Uday), not name --
  *  the caller resolves via tpResolveCallerEmployeeCode_ (AuthEmail
  *  first, name-fallback only if that's unpopulated; see
- *  teacher-portal.gs, same project/shared scope), then each SS sheet
- *  row's typed Teacher Name is ALSO resolved to a code before
- *  comparing -- the sheet itself still only has a name, so this can't
- *  eliminate that side of the match, only make "who am I" reliable.
- *  `found: false` is returned explicitly rather than silently
+ *  teacher-portal.gs, same project/shared scope). Each SS sheet row's
+ *  "Teacher Name" cell is then resolved via tpResolveTeacherFieldToCode_
+ *  -- turns out that cell isn't a plain name at all: the Form's
+ *  dropdown (ss-forms-sync.gs's getActiveEmployeeChoices_) builds its
+ *  choices as "EmployeeCode Name", so the code is already sitting
+ *  right there as the first token of every response, extracted
+ *  directly rather than re-derived via name-matching (confirmed after
+ *  a live example -- Vipin Thakur, LMS4 -- showed 0 here despite a
+ *  real score on the PDR SS Dashboard, which already parsed this
+ *  correctly). `found: false` is returned explicitly rather than silently
  *  rendering "0 submissions" as if that were real data -- a resolution
  *  gap and genuinely zero submissions must look different to the
  *  teacher looking at their own screen. */
@@ -68,7 +73,7 @@ function myTeacherSsStats_(caller) {
   const roster = tpRosterByCampus_(caller.campusId);
   const myCode = tpResolveCallerEmployeeCode_(caller, roster).code;
   const stats = readCampusStats_(caller.campusId);
-  const mine = myCode ? stats.teachers.filter(function (t) { return tpResolveEmployeeCode_(t.teacher, roster) === myCode; })[0] : null;
+  const mine = myCode ? stats.teachers.filter(function (t) { return tpResolveTeacherFieldToCode_(t.teacher, roster) === myCode; })[0] : null;
   if (!mine) {
     return { success: true, found: false, rubricParams: TSS_RUBRIC_COLUMNS, campusId: caller.campusId, name: caller.name || '' };
   }
