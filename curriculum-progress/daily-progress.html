@@ -12,6 +12,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 
 /* ── HEADER ── */
 .hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+
+/* Owner-only "data source" links (2026-09-20) -- same pattern as
+   principals-daily-reporting/index.html's, kept file-local. */
+.datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;padding:8px 24px 0}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
 .hdr-brand{display:flex;align-items:center;gap:10px}
 .hdr-logo{width:32px;height:32px;border-radius:4px;object-fit:cover;flex-shrink:0}
 .hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
@@ -303,6 +309,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   </div>
 </div>
 
+<div class="datasrc-links" id="datasrcLinks"></div>
+
 <!-- TODAY SUMMARY -->
 <div class="today-summary" id="todaySummary">
   <div class="today-summary-hdr">
@@ -474,6 +482,25 @@ const ALLOC_CACHE_KEY = EMPLOYEE_ROSTER_URL ? 'lmcs_emp_roster_v1' : 'lmcs_alloc
 const ALLOC_CACHE_TTL = 60 * 60 * 1000; // 1 hour (independent of CM cache TTL)
 
 const CM_CACHE_TTL = ((_earlyCfg?.cacheTtlMinutes) || 30) * 60 * 1000;
+
+// Owner-only "data source" links (2026-09-20) -- reads the SAME live
+// DAILY_SHEET_ID/ALLOCATION_SHEET_ID consts above (already correctly
+// resolved from Admin Panel config or its defaults), not a separately
+// hardcoded guess, so this can never drift from what the page itself
+// actually reads.
+(function () {
+  const session = LMCS.getSession();
+  if (!session || !LMCS.hasRole(session, 'Owner')) return;
+  const sheetUrl = function (id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; };
+  const links = [
+    { label: 'Daily/CW sheet', url: sheetUrl(DAILY_SHEET_ID) },
+    { label: 'Allocation sheet', url: sheetUrl(ALLOCATION_SHEET_ID) },
+  ];
+  document.addEventListener('DOMContentLoaded', function () {
+    const el = document.getElementById('datasrcLinks');
+    if (el) el.innerHTML = '📄 ' + links.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('');
+  });
+})();
 
 // Campus lock: derived from the shared portal session (LMCS.getSession()).
 // campusId 'ALL' means network-wide (owner/MD/Head tier) -- unlocked.

@@ -26,6 +26,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
 
 .tabs{display:flex;gap:6px;margin-bottom:20px;border-bottom:2px solid var(--border)}
+
+/* Owner-only "data source" link (2026-09-20) -- same pattern as
+   principals-daily-reporting/index.html's, kept file-local. */
+.datasrc-links{font-size:10.5px;color:#8A96A6;margin-bottom:14px}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
 .tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
 .tab-panel{display:none}
@@ -93,6 +99,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 <div id="appBody">
   <div id="deniedBox" style="display:none"></div>
   <div id="formArea" style="display:none">
+
+    <div class="datasrc-links" id="datasrcStaff"></div>
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="hire" onclick="switchTab('hire')">➕ New Hire</button>
@@ -238,6 +246,15 @@ async function init() {
       '<div class="denied"><div class="icon">🔒</div><h3>You don\'t have staff-management access</h3>' +
       '<p>This page is limited to Coordinators and the Owner. Contact the owner if this is wrong.</p></div>';
     return;
+  }
+
+  // Owner-only "data source" link (2026-09-20) -- ID duplicated from
+  // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID. All 3
+  // tabs here (New Hire/Transfer/Mark Inactive) write to the same
+  // "LMCSStaffMasters" sheet, so one static link covers all of them.
+  if (LMCS.hasRole(SESSION, 'Owner')) {
+    document.getElementById('datasrcStaff').innerHTML =
+      '📄 <a href="https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>';
   }
 
   populateSchoolSelect('hireSchool');

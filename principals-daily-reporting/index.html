@@ -25,6 +25,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
 .notice{background:#fff3cd;border:1px solid #ffc107;color:#92400e;padding:12px 16px;font-size:12px;border-radius:6px;margin-bottom:16px;line-height:1.6}
 
+/* Owner-only "data source" links (2026-09-20) -- jump straight to the
+   Form/Sheet/Calendar backing whatever's on screen. Hidden entirely
+   for anyone who isn't an Owner (see LMCS.hasRole in renderDataSourceLinks_). */
+.datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;margin-bottom:14px}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
+
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:2px solid var(--border)}
 .tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
@@ -301,6 +308,7 @@ td{padding:6px 12px;vertical-align:middle}
       <!-- Teacher SS (embedded Google Form) -->
       <div class="subtab-panel active" id="panel-submit">
         <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
+        <div class="datasrc-links" id="datasrc-submit"></div>
         <div class="form-embed-wrap">
           <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
         </div>
@@ -317,6 +325,7 @@ td{padding:6px 12px;vertical-align:middle}
            in place, unused, in case this gets picked back up later.) -->
       <div class="subtab-panel" id="panel-itss">
         <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="datasrc-links" id="datasrc-itss"></div>
         <!-- data-src, not src: loaded lazily by loadSubTabFrame_() the first
              time this sub-tab is opened -- see the perf audit; loading all
              6 SS forms' JS/CSS unconditionally on every page visit, most of
@@ -327,12 +336,14 @@ td{padding:6px 12px;vertical-align:middle}
       </div>
       <div class="subtab-panel" id="panel-ptiss">
         <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="datasrc-links" id="datasrc-ptiss"></div>
         <div class="form-embed-wrap">
           <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
         </div>
       </div>
       <div class="subtab-panel" id="panel-clerkss">
         <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
+        <div class="datasrc-links" id="datasrc-clerkss"></div>
         <div class="form-embed-wrap">
           <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
         </div>
@@ -344,6 +355,7 @@ td{padding:6px 12px;vertical-align:middle}
            selectSchool(), same as pickSubmitCampus() does for formFrame. -->
       <div class="subtab-panel" id="panel-nonteachingss">
         <div class="notice">Your campus's Non-Teaching SS Google Form.</div>
+        <div class="datasrc-links" id="datasrc-nonteachingss"></div>
         <div class="form-embed-wrap">
           <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
         </div>
@@ -352,6 +364,7 @@ td{padding:6px 12px;vertical-align:middle}
       <!-- Driver SS (embedded Google Form, per campus) -->
       <div class="subtab-panel" id="panel-driverss">
         <div class="notice">Your campus's Driver Cum Peon SS Google Form.</div>
+        <div class="datasrc-links" id="datasrc-driverss"></div>
         <div class="form-embed-wrap">
           <iframe id="driverFormFrame" src="" title="Driver SS Form"></iframe>
         </div>
@@ -360,6 +373,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ PRINCIPAL DR (own-school daily report) ══════════════════ -->
     <div class="tab-panel" id="panel-principal">
+      <div class="datasrc-links" id="datasrc-principal"></div>
       <div class="principal-report-hdr">
         <div>
           <p class="card-title" style="margin:0">Daily Report</p>
@@ -480,6 +494,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ DASHBOARD ══════════════════ -->
     <div class="tab-panel" id="panel-dashboard">
+      <div class="datasrc-links" id="datasrc-dashboard"></div>
       <div class="dash-toolbar">
         <div id="dashRolePicker" class="role-picker"></div>
         <button type="button" class="date-refresh-btn" title="Refresh (pick up any SS just submitted)" onclick="refreshDashboard()">
@@ -495,6 +510,7 @@ td{padding:6px 12px;vertical-align:middle}
 
     <!-- ══════════════════ APPROVALS ══════════════════ -->
     <div class="tab-panel" id="panel-approvals">
+      <div class="datasrc-links" id="datasrc-approvals"></div>
       <div class="card" id="aprNewRequestCard" style="display:none">
         <p class="card-title">New Approval Request</p>
         <p class="card-hint">Explain your reasoning and attach evidence — this is what the Owner decides on.</p>
@@ -658,6 +674,104 @@ const DRIVER_FORM_IDS = {
 };
 const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
+// ── Owner-only "data source" links (2026-09-20, per Uday) ───────────
+// So an Owner can jump straight to the Form/Sheet/Calendar behind
+// whatever they're looking at, to see why the output is the way it
+// is -- e.g. a suspicious Dashboard number traces back to the actual
+// response rows in 2 clicks, not a "trust me" black box. IDs below are
+// duplicated from the Apps Script backend, same as CAMPUS_FORM_IDS
+// etc. above -- these are just link targets (no data read), so no
+// backend round-trip needed. Kept in sync manually; if a sheet/form is
+// ever recreated, update both here and in the matching backend file.
+const DATASRC_TEACHER_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)" -- also backs IT/PTI/Clerk SS (own tab each)
+const DATASRC_NONTEACHING_SHEET_ID = '1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac'; // "LMCS Non-Teaching SS (Responses)"
+const DATASRC_DRIVER_SHEET_ID = '1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME'; // "LMCS Driver Responses Sheet"
+const DATASRC_STAFF_MASTERS_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // "LMCSStaffMasters" -- feeds every SS form's Name dropdown/roster
+const DATASRC_DAILY_REPORTS_SHEET_ID = '1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y'; // "LMCS Principal DR — Daily Reports"
+const DATASRC_APPROVALS_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals"
+// Same maps as PDR_SCHOOL_CALENDAR_IDS / PDR_PRINCIPAL_PERSONAL_CALENDARS
+// in apps-script/principal-dr.gs.
+const DATASRC_SCHOOL_CALENDAR_IDS = {
+  LMS1: 'c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595@group.calendar.google.com',
+  LMS2: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
+  LMS3: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
+  LMS4: 'lms.org.in_snflpd3f357jv8l380s8sc4ju0@group.calendar.google.com',
+  LMS5: 'c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523@group.calendar.google.com',
+  LMS6: 'c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635@group.calendar.google.com',
+};
+const DATASRC_PRINCIPAL_CALENDARS = {
+  LMS1: 'nidhi.kant@lms.org.in', LMS2: 'arti.sharma@lms.org.in', LMS3: 'suresh.prasher@lms.org.in',
+  LMS4: 'nisha.lms@lms.org.in', LMS5: 'priyanka.sharma@lms.org.in', LMS6: 'nikita.sen@lms.org.in',
+};
+
+function datasrcSheetUrl_(id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; }
+function datasrcCalendarUrl_(calId) { return 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(calId); }
+
+/** {label, url}[] -> the small link row, or '' if not an Owner --
+ *  called by renderAllDataSourceLinks_() below, never render this
+ *  directly for a specific panel. */
+function datasrcHtml_(items) {
+  if (!LMCS.hasRole(SESSION, 'Owner')) return '';
+  return '📄 ' + items.map(function (it) { return '<a href="' + it.url + '" target="_blank" rel="noopener">' + it.label + ' ↗</a>'; }).join('');
+}
+
+/** Fills every .datasrc-links container -- the per-campus ones (Teacher/
+ *  Non-Teaching/Driver SS, Principal DR) depend on SELECTED_CAMPUS_ID, so
+ *  this re-runs from selectSchool() too, not just once at init. No-ops
+ *  (leaves containers empty) for a non-Owner session -- datasrcHtml_
+ *  itself is the single gate, checked per call rather than short-
+ *  circuiting the whole function, so a stale non-Owner render never
+ *  lingers if the session somehow changes mid-page-life. */
+function renderAllDataSourceLinks_() {
+  const c = SELECTED_CAMPUS_ID;
+  const set = function (id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+  set('datasrc-submit', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/e/' + CAMPUS_FORM_IDS[c] + '/viewform' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-itss', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-ptiss', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-clerkss', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-nonteachingss', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/' + NON_TEACHING_FORM_IDS[c] + '/edit' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_NONTEACHING_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-driverss', datasrcHtml_([
+    { label: 'Form', url: 'https://docs.google.com/forms/d/' + DRIVER_FORM_IDS[c] + '/edit' },
+    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_DRIVER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-principal', datasrcHtml_([
+    { label: 'Daily Reports sheet', url: datasrcSheetUrl_(DATASRC_DAILY_REPORTS_SHEET_ID) },
+    { label: "School's Calendar", url: datasrcCalendarUrl_(DATASRC_SCHOOL_CALENDAR_IDS[c]) },
+    { label: "Principal's Calendar (SS count)", url: datasrcCalendarUrl_(DATASRC_PRINCIPAL_CALENDARS[c]) },
+  ]));
+  set('datasrc-dashboard', datasrcHtml_([
+    { label: 'Teacher/IT/PTI/Clerk sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
+    { label: 'Non-Teaching sheet', url: datasrcSheetUrl_(DATASRC_NONTEACHING_SHEET_ID) },
+    { label: 'Driver sheet', url: datasrcSheetUrl_(DATASRC_DRIVER_SHEET_ID) },
+    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
+  ]));
+  set('datasrc-approvals', datasrcHtml_([
+    { label: 'Approvals sheet', url: datasrcSheetUrl_(DATASRC_APPROVALS_SHEET_ID) },
+  ]));
+}
+
 let SESSION = null;
 let SELECTED_CAMPUS_ID = null;
 
@@ -803,6 +917,7 @@ function selectSchool(campusId) {
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
   renderApprovalsForSelectedCampus();
+  renderAllDataSourceLinks_();
 }
 
 // ── Support Sessions sub-tab iframes: loaded lazily ─────────────────

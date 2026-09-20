@@ -12,6 +12,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 
 /* ── HEADER ── */
 .hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+
+/* Owner-only "data source" links (2026-09-20) -- same pattern as
+   principals-daily-reporting/index.html's, kept file-local. */
+.datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;padding:8px 24px 0}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
 .hdr-brand{display:flex;align-items:center;gap:10px}
 .hdr-logo{width:32px;height:32px;border-radius:4px;object-fit:cover;flex-shrink:0}
 .hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
@@ -187,6 +193,8 @@ function loadExcelJs_() {
   </div>
 </div>
 
+<div class="datasrc-links" id="datasrcLinks"></div>
+
 <!-- PROGRESS BAR -->
 <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
 
@@ -247,6 +255,17 @@ function getPrincipalSession() {
 const PRINCIPAL_SESSION = getPrincipalSession();
 
 const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
+
+// Owner-only "data source" link (2026-09-20) -- reads the live
+// TRACKER_SHEET_ID above, not a separately hardcoded guess.
+(function () {
+  const session = LMCS.getSession();
+  if (!session || !LMCS.hasRole(session, 'Owner')) return;
+  document.addEventListener('DOMContentLoaded', function () {
+    const el = document.getElementById('datasrcLinks');
+    if (el) el.innerHTML = '📄 <a href="https://docs.google.com/spreadsheets/d/' + TRACKER_SHEET_ID + '/edit" target="_blank" rel="noopener">Chapter Tracker sheet ↗</a>';
+  });
+})();
 
 // Same Web App the daily-progress.html proxy fetch uses -- now also the
 // target for manual-override submissions (see markAsTaken below).
@@ -415,6 +434,28 @@ function chapterNormalizeName_(s) { return String(s||'').toLowerCase().replace(/
 const COORD_XLSX_HEADERS = ['School','Class','Subject','ChapterNo','ChapterName','Teacher','Status','PlannedCWADate','EffectiveDeadline','DaysOverdue','ActualCWADate','Note','RowKey'];
 const COORD_XLSX_EDITABLE = new Set(['ActualCWADate','Note']); // only these stay unlocked
 
+// Filename should tell a coordinator what's inside without opening it --
+// only the filters actually narrowing the export get included, so an
+// unfiltered export still gets the plain "CWA-Gap-Report-<date>" name.
+function gapExportFilenameSuffix_() {
+  const parts = [];
+  if (gapFiltSchool)  parts.push(lmsPlainName(+gapFiltSchool).replace(/\s+/g,''));
+  if (gapFiltClass)   parts.push(gapFiltClass.replace(/[^a-z0-9]/gi,''));
+  if (gapFiltSubject) parts.push(gapFiltSubject.replace(/[^a-z0-9]/gi,''));
+  if (gapFiltType && gapFiltType !== 'gaps') parts.push(gapFiltType);
+  return parts.length ? parts.join('-') + '-' : '';
+}
+
+// Reverse of the above, for the upload side: pulls the school the filename
+// claims (e.g. "CWA-Gap-Report-LMS2-...xlsx" -> "LMS2"), so an uploaded file
+// can be checked against what it actually contains. Only School is parsed
+// back out -- Class/Subject/Type are stripped to bare alphanumerics on
+// export with no separator markers, so they can't be reconstructed reliably.
+function parseGapExportFilenameSchool_(name) {
+  const m = String(name||'').match(/^CWA-Gap-Report-(LMS\d+)-/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 async function exportForCoordinator() {
   if (!CAN_OVERRIDE) return;
   try { await loadExcelJs_(); } catch (e) { alert('Could not load the Excel export library -- check your connection and try again.'); return; }
@@ -465,7 +506,7 @@ async function exportForCoordinator() {
     const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `CWA-Gap-Report-${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.href = url; a.download = `CWA-Gap-Report-${gapExportFilenameSuffix_()}${new Date().toISOString().slice(0,10)}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     alert(`Exported ${rows.length} row(s) to Excel. Every column is locked except "Actual CWA Date" (and the optional "Note") -- ask the coordinator to fill in Actual CWA Date as DD/MM/YYYY for every chapter that was actually taken, leave the rest blank, save, then use "Upload Completed Sheet" here to apply it.`);
@@ -534,6 +575,7 @@ async function handleCoordinatorUpload(input) {
 
   const today = isoDateLocal_(new Date());
   const toSubmit = [], skippedBlank = [], invalid = [], unmatched = [], tampered = [];
+  const schoolsInFile = new Set();
   for (let i = 2; i <= ws.rowCount; i++) {
     const row = ws.getRow(i);
     const school = String(row.getCell(colOf.School).value||'').trim();
@@ -541,6 +583,7 @@ async function handleCoordinatorUpload(input) {
     const subject = String(row.getCell(colOf.Subject).value||'').trim();
     const chapterName = String(row.getCell(colOf.ChapterName).value||'').trim();
     if (!school && !cls && !subject && !chapterName) continue; // blank trailing row
+    if (school) schoolsInFile.add(school.replace(/\s+/g,'').toUpperCase());
     const rowLabel = `${school} / ${cls} / ${subject} / ${chapterName}`;
 
     // Tamper check FIRST -- if the raw identity columns don't match the
@@ -565,6 +608,17 @@ async function handleCoordinatorUpload(input) {
     if (!knownKeys.has(key)) unmatched.push(rowLabel); // still submitted below, just flagged
     const noteVal = colOf.Note ? String(row.getCell(colOf.Note).value||'').trim() : '';
     toSubmit.push({ school, cls, subject, chapterName, actualDate, note: noteVal });
+  }
+
+  // Filename vs. content check -- catches the wrong file being uploaded
+  // (e.g. a coordinator got sent, or grabbed, a different school's sheet).
+  // Soft: the filename is just a label a person could rename, so this warns
+  // rather than blocks.
+  const declaredSchool = parseGapExportFilenameSchool_(file.name);
+  const otherSchools = [...schoolsInFile].filter(s => s !== declaredSchool);
+  if (declaredSchool && otherSchools.length) {
+    const label = declaredSchool.replace('LMS', 'LMS ');
+    if (!confirm(`This file's name says "${label}" but it contains rows for other school(s) too (${otherSchools.map(s=>s.replace('LMS','LMS ')).join(', ')}). Wrong file uploaded?\n\nContinue anyway?`)) return;
   }
 
   if (tampered.length && !confirm(`${tampered.length} row(s) look like their School/Class/Subject/Chapter text was changed since export (sheet protection bypassed or the file was edited some other way) -- these will be SKIPPED for safety:\n${tampered.slice(0,10).join('\n')}${tampered.length>10?`\n…and ${tampered.length-10} more`:''}\n\nContinue with the remaining rows?`)) return;

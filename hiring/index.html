@@ -30,6 +30,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .denied .icon{font-size:36px;margin-bottom:10px}
 
 .getting-started{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
+
+/* Owner-only "data source" links (2026-09-20) -- same pattern as
+   principals-daily-reporting/index.html's, kept file-local rather than
+   a shared module since every page here is already self-contained. */
+.datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;margin-bottom:14px}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
 .gs-card{border:1px solid var(--border);border-radius:6px;padding:12px 14px;text-decoration:none;color:inherit;transition:border-color .15s}
 .gs-card:hover{border-color:var(--red)}
 .gs-card .t{font-size:12px;font-weight:700;margin-bottom:3px}
@@ -110,6 +117,8 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
         </a>
       </div>
 
+      <div class="datasrc-links" id="datasrcHiring"></div>
+
       <div class="campus-filter" id="campusFilterRow" style="display:none">
         Campus: <select id="campusFilter"></select>
       </div>
@@ -139,6 +148,31 @@ const DOC_FORM_URLS = {
   LMS3: 'https://forms.gle/hHgMU9XqBxpk3gWd8', LMS4: 'https://forms.gle/1uFg6AuYpYmP7ukA9',
   LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
 };
+
+// Owner-only "data source" links (2026-09-20) -- IDs duplicated from
+// apps-script/hiring.gs (HIR_SHEET_ID / HIR_IR_SHEET_ID / HIR_DOC_SHEET_IDS),
+// same as DOC_FORM_URLS above is already duplicated from that file's
+// per-campus Form links. Keep both in sync if a sheet/form is ever recreated.
+const DATASRC_APPLICANTS_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants" responses
+const DATASRC_IR_SHEET_ID = '18NKMBGxT2DuGcrL_m-Y0JGcrmi6oqm6qtLB4Jb_d0Ow'; // "Interview Report Form (Responses)"
+const DATASRC_DOC_SHEET_IDS = {
+  LMS1: '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg', LMS2: '10xxFM1li1-6xzWEBEEPkZIF4MJcilddoVJkEfVbkScM',
+  LMS3: '1qdQnXrWWTrgnCt82MSk_fN6Fqaox-EoenuF_XToypAc', LMS4: '1x8eFlnFcEKaCwF9HMRan_EQwTgSPq9xHubZ7n5vyR8k',
+  LMS5: '1-bhS4eu4OHFhRzllsALtWLRWiGFt-KutbNke3nNlCk8', LMS6: '1-3_3BT7zHVJXy7UqxwZuZmpzUJp4uaibHNaA7onI0jU',
+};
+
+function renderDataSourceLinks_() {
+  const el = document.getElementById('datasrcHiring');
+  if (!LMCS.hasRole(SESSION, 'Owner')) { el.innerHTML = ''; return; }
+  const sheetUrl = function (id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; };
+  const links = [
+    { label: 'Teaching Applicants sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID) },
+    { label: 'Interview Report sheet', url: sheetUrl(DATASRC_IR_SHEET_ID) },
+  ];
+  const campus = activeCampus_();
+  if (DATASRC_DOC_SHEET_IDS[campus]) links.push({ label: 'Doc Submission sheet', url: sheetUrl(DATASRC_DOC_SHEET_IDS[campus]) });
+  el.innerHTML = '📄 ' + links.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('');
+}
 
 let SESSION = null;
 let APPLICANTS = [];
@@ -202,6 +236,7 @@ function renderCampusFilter() {
     campusFilter = sel.value;
     renderStatusStrip();
     renderDocFormLink();
+    renderDataSourceLinks_();
     renderRows();
   };
 }
@@ -331,6 +366,7 @@ function loadAll_() {
     renderCampusFilter();
     renderStatusStrip();
     renderDocFormLink();
+    renderDataSourceLinks_();
     renderRows();
   });
 }

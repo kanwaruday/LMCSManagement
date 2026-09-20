@@ -12,6 +12,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 
 /* ── HEADER ── */
 .hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+
+/* Owner-only "data source" links (2026-09-20) -- same pattern as
+   principals-daily-reporting/index.html's, kept file-local. */
+.datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;padding:8px 24px 0}
+.datasrc-links a{color:#8A96A6;text-decoration:underline}
+.datasrc-links a:hover{color:var(--red)}
 .hdr-brand{display:flex;align-items:center;gap:10px}
 .hdr-logo{width:32px;height:32px;border-radius:4px;object-fit:cover;flex-shrink:0}
 .hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
@@ -130,6 +136,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   </div>
 </div>
 
+<div class="datasrc-links" id="datasrcLinks"></div>
+
 <!-- PROGRESS BAR -->
 <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
 
@@ -183,6 +191,22 @@ const CM_SCHOOLS = savedCfg?.schools ?? [
   {name:'LMS 5 — Sayoli',       id:'172YKw1cMMcG5UZ0jjI8RzO2tGxnVWG3QVCEsDY6CZHg'},
   {name:'LMS 6 — Jogindernagar',id:'1PkZYbeVCdKeqCbbX2eXAwk7c8w7NAHUOSQKmO6nDZtE'},
 ];
+
+// Owner-only "data source" links (2026-09-20) -- reads the live
+// TRACKER_SHEET_ID/CM_SCHOOLS above, not separately hardcoded guesses.
+(function () {
+  const session = LMCS.getSession();
+  if (!session || !LMCS.hasRole(session, 'Owner')) return;
+  document.addEventListener('DOMContentLoaded', function () {
+    const el = document.getElementById('datasrcLinks');
+    if (!el) return;
+    const links = ['<a href="https://docs.google.com/spreadsheets/d/' + TRACKER_SHEET_ID + '/edit" target="_blank" rel="noopener">Chapter Tracker sheet ↗</a>']
+      .concat((CM_SCHOOLS || []).filter(function (s) { return s.enabled !== false; }).map(function (s) {
+        return '<a href="https://docs.google.com/spreadsheets/d/' + s.id + '/edit" target="_blank" rel="noopener">' + s.name + ' sheet ↗</a>';
+      }));
+    el.innerHTML = '📄 ' + links.join('');
+  });
+})();
 
 const PRINCIPAL_LOCK_IDX = (() => {
   if (!PRINCIPAL_SESSION) return -1;
