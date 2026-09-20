@@ -142,10 +142,10 @@ function doGet(e) {
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
-    // viewAsEmail: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
+    // viewAsCode: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
     // comment. Only ever changes anything if `caller` already verified
     // as Owner; every other caller gets their own real identity back.
-    const effectiveCaller = pdrResolveViewAsCaller_(caller, e.parameter.viewAsEmail);
+    const effectiveCaller = pdrResolveViewAsCaller_(caller, e.parameter.viewAsCode);
     if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(effectiveCaller));
     if (action === 'myupcomingevents') return jsonOut_(myUpcomingEvents_(effectiveCaller));
     if (action === 'myrankscore') return jsonOut_(myRankScore_(effectiveCaller));
@@ -301,37 +301,52 @@ function pdrIsTeacherOnly_(caller) {
 // "Owner Test Mode" (2026-09-20, per Uday) -- lets an Owner view the
 // Teacher Portal's READ-ONLY display data (Rank/Evaluations/CW-HW
 // Patterns/Timetable, via myrankscore/myssstats/myupcomingevents/
-// myemployeecode) AS a specific teacher, for QA without ever touching
-// that teacher's credentials. viewAsEmail is client-supplied but is
-// ONLY ever honored once `caller` has already been verified via a real
-// Google ID token AND found to hold the Owner role server-side -- a
-// non-Owner passing this param is simply ignored, never trusted on its
-// own; this is the one place in the whole project where the returned
-// "effective caller" can differ from the actual verified caller, and
-// it's deliberately narrow: read-only actions only. Never wired into
-// submitapproval/addapprovalcomment/decideapproval -- an Owner can
-// already see every teacher's real Requests through the existing
-// campus-wide Approvals view (aprList_'s campusId==='ALL' branch), so
-// there's no legitimate reason to let this touch write actions, and
-// doing so would blur who-actually-submitted-what in the audit trail.
-// Silently falls back to the REAL caller (not an error) if the target
-// email isn't on the allowlist or isn't a Teacher -- a botched view-as
-// attempt should never accidentally expose Owner's own actions as
-// someone else's, or vice versa.
-function pdrResolveViewAsCaller_(caller, viewAsEmail) {
-  if (!viewAsEmail || !callerHasRole_(caller, 'Owner')) return caller;
-  const email = String(viewAsEmail).trim().toLowerCase();
-  const rows = pdrAllowlistRows_();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-    const campusId = String(rows[i][2] || '').trim().toUpperCase();
-    const role = String(rows[i][3] || '').trim();
-    const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-    if (roles.indexOf('Teacher') === -1) return caller; // only ever view-as a Teacher row
-    const name = String(rows[i][1] || '').trim();
-    return { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: false, viewedAsBy: caller.email };
-  }
-  return caller; // target not on the allowlist -- keep the real caller rather than erroring the whole request
+// myemployeecode) AS a specific EMPLOYEE, for QA without ever touching
+// that person's credentials. Resolves by EmployeeCode against the
+// Employee Roster Proxy -- NOT the Allowlist -- so it works for any of
+// the ~173 people in the Employee Master workbook, not just the
+// handful who happen to already be entered on this portal's own
+// Allowlist with a Teacher role (that first version only ever had ONE
+// usable entry: Uday's own test row).
+//
+// viewAsCode is client-supplied but is ONLY ever honored once `caller`
+// has already been verified via a real Google ID token AND found to
+// hold the Owner role server-side -- a non-Owner passing this param is
+// simply ignored, never trusted on its own; this is the one place in
+// the whole project where the returned "effective caller" can differ
+// from the actual verified caller, and it's deliberately narrow:
+// read-only actions only. Never wired into submitapproval/
+// addapprovalcomment/decideapproval -- an Owner can already see every
+// teacher's real Requests through the existing campus-wide Approvals
+// view (aprList_'s campusId==='ALL' branch), so there's no legitimate
+// reason to let this touch write actions, and doing so would blur
+// who-actually-submitted-what in the audit trail.
+//
+// The returned object carries `employeeCode` explicitly --
+// tpResolveCallerEmployeeCode_ (teacher-portal.gs) checks that FIRST,
+// before its normal AuthEmail/name resolution, so myssstats/
+// myrankscore/myemployeecode all use the viewed person's real code
+// directly instead of trying to re-resolve Owner's own identity under
+// a borrowed name (which would silently resolve back to OWNER's own
+// AuthEmail match -- caller.email is deliberately left as Owner's own
+// below, not the viewed person's, specifically so nothing downstream
+// can mistake this for a real sign-in as them).
+function pdrResolveViewAsCaller_(caller, viewAsCode) {
+  if (!viewAsCode || !callerHasRole_(caller, 'Owner')) return caller;
+  const code = String(viewAsCode).trim();
+  try {
+    const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees', { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return caller;
+    const data = JSON.parse(res.getContentText());
+    if (!data.success || !Array.isArray(data.employees)) return caller;
+    const emp = data.employees.filter(function (e) { return e.employeeCode === code; })[0];
+    if (!emp || !emp.school) return caller;
+    const campusId = 'LMS' + String(emp.school).replace('LMS', '').trim(); // 'LMS 2' -> 'LMS2'
+    return {
+      email: caller.email, campusId: campusId, role: 'Teacher', roles: ['Teacher'],
+      name: emp.name, employeeCode: emp.employeeCode, canApprove: false, viewedAsBy: caller.email,
+    };
+  } catch (err) { return caller; } // resolution failure -- keep the real caller rather than erroring the whole request
 }
 
 // Allowlist sheet rows, cached separately from the per-token result
