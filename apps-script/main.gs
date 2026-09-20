@@ -142,10 +142,14 @@ function doGet(e) {
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
-    if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(caller));
-    if (action === 'myupcomingevents') return jsonOut_(myUpcomingEvents_(caller));
-    if (action === 'myrankscore') return jsonOut_(myRankScore_(caller));
-    if (action === 'myemployeecode') return jsonOut_(myEmployeeCode_(caller));
+    // viewAsEmail: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
+    // comment. Only ever changes anything if `caller` already verified
+    // as Owner; every other caller gets their own real identity back.
+    const effectiveCaller = pdrResolveViewAsCaller_(caller, e.parameter.viewAsEmail);
+    if (action === 'myssstats') return jsonOut_(myTeacherSsStats_(effectiveCaller));
+    if (action === 'myupcomingevents') return jsonOut_(myUpcomingEvents_(effectiveCaller));
+    if (action === 'myrankscore') return jsonOut_(myRankScore_(effectiveCaller));
+    if (action === 'myemployeecode') return jsonOut_(myEmployeeCode_(effectiveCaller));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -292,6 +296,42 @@ function pdrIsTeacherOnly_(caller) {
     && !callerHasRole_(caller, 'Principal')
     && !callerHasRole_(caller, 'Coordinator')
     && !callerHasRole_(caller, 'Owner');
+}
+
+// "Owner Test Mode" (2026-09-20, per Uday) -- lets an Owner view the
+// Teacher Portal's READ-ONLY display data (Rank/Evaluations/CW-HW
+// Patterns/Timetable, via myrankscore/myssstats/myupcomingevents/
+// myemployeecode) AS a specific teacher, for QA without ever touching
+// that teacher's credentials. viewAsEmail is client-supplied but is
+// ONLY ever honored once `caller` has already been verified via a real
+// Google ID token AND found to hold the Owner role server-side -- a
+// non-Owner passing this param is simply ignored, never trusted on its
+// own; this is the one place in the whole project where the returned
+// "effective caller" can differ from the actual verified caller, and
+// it's deliberately narrow: read-only actions only. Never wired into
+// submitapproval/addapprovalcomment/decideapproval -- an Owner can
+// already see every teacher's real Requests through the existing
+// campus-wide Approvals view (aprList_'s campusId==='ALL' branch), so
+// there's no legitimate reason to let this touch write actions, and
+// doing so would blur who-actually-submitted-what in the audit trail.
+// Silently falls back to the REAL caller (not an error) if the target
+// email isn't on the allowlist or isn't a Teacher -- a botched view-as
+// attempt should never accidentally expose Owner's own actions as
+// someone else's, or vice versa.
+function pdrResolveViewAsCaller_(caller, viewAsEmail) {
+  if (!viewAsEmail || !callerHasRole_(caller, 'Owner')) return caller;
+  const email = String(viewAsEmail).trim().toLowerCase();
+  const rows = pdrAllowlistRows_();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
+    const campusId = String(rows[i][2] || '').trim().toUpperCase();
+    const role = String(rows[i][3] || '').trim();
+    const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+    if (roles.indexOf('Teacher') === -1) return caller; // only ever view-as a Teacher row
+    const name = String(rows[i][1] || '').trim();
+    return { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: false, viewedAsBy: caller.email };
+  }
+  return caller; // target not on the allowlist -- keep the real caller rather than erroring the whole request
 }
 
 // Allowlist sheet rows, cached separately from the per-token result
