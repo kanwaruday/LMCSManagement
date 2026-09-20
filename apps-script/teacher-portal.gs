@@ -194,25 +194,68 @@ function tpResolveCallerEmployeeCode_(caller, roster) {
 }
 
 // campusId's expected working days in the trailing `windowDays` --
-// Sunday/2nd Saturday/GH-calendar-holiday all excluded, reusing
-// pdrDayLabel_ (principal-dr.gs, same project) rather than
-// reimplementing holiday detection a second way.
+// Sunday/2nd Saturday/GH-calendar-holiday all excluded.
+//
+// PERF (2026-09-20): the original version called pdrDayLabel_ once PER
+// DAY (principal-dr.gs) -- fine for its actual use case (one date at a
+// time, on a Principal viewing a single day's report), but calling it
+// 30 times in a loop here meant up to ~25 individual CalendarApp reads
+// on a cold cache (Sun/2nd-Sat skip the read, everything else doesn't)
+// -- measured as the single biggest contributor to My Score feeling
+// slow. This does ONE CalendarApp read for the whole window instead,
+// then checks each day locally against that one batch of events. A
+// GH event spanning multiple days (a week-long break, not just its
+// start date) marks every day it covers, not just day one.
 function tpExpectedWorkingDays_(campusId, windowDays) {
-  const days = [];
   const today = new Date();
+  const rangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - windowDays + 1);
+  const rangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const ghEvents = pdrSchoolCalendarEvents_(campusId, rangeStart, rangeEnd)
+    .filter(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
+
+  const holidayDates = {};
+  ghEvents.forEach(function (ev) {
+    const evStart = new Date(ev.getStartTime().getFullYear(), ev.getStartTime().getMonth(), ev.getStartTime().getDate());
+    const evEnd = ev.getEndTime(); // exclusive end, per Calendar's own all-day-event convention
+    for (let d = new Date(evStart); d < evEnd; d.setDate(d.getDate() + 1)) {
+      holidayDates[pdrFormatISO_(d)] = true;
+    }
+  });
+
+  const days = [];
   for (let i = 0; i < windowDays; i++) {
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
-    if (!pdrDayLabel_(d, campusId)) days.push(pdrFormatISO_(d));
+    if (d.getDay() === 0) continue; // Sunday
+    if (d.getDay() === 6 && Math.ceil(d.getDate() / 7) === 2) continue; // 2nd Saturday
+    const iso = pdrFormatISO_(d);
+    if (holidayDates[iso]) continue; // GH calendar holiday
+    days.push(iso);
   }
   return days; // array of ISO date strings, working days only
 }
 
-// {employeeCode: daysLoggedCount} for this campus's teachers, over the
-// SAME expected-working-days set tpExpectedWorkingDays_ returns --
-// logging on a non-working day neither helps nor hurts (not counted
-// either direction), so a teacher logging on, say, a holiday isn't
-// penalized but doesn't inflate their score either.
+// PERF (2026-09-20): TP_CWHW_PROXY_URL returns ~13MB (every campus's
+// full daily log, rebuilt fresh on every request as far as this repo
+// can tell) -- fetching it on every single myrankscore call was the
+// single largest cost in the whole action, AND meant it was being
+// fetched twice per page load (once here server-side, once again
+// client-side for "My CW/HW Patterns"), plus once per Owner Test Mode
+// switch. The RESULT of this function is tiny (one integer per
+// employee) even though the INPUT is huge, so cache the result, not
+// the raw payload -- CacheService's 100KB/key limit couldn't hold the
+// raw 13MB response anyway. 30-min TTL: a teacher's Regularity number
+// doesn't need to be fresher than that, and it matches this project's
+// existing day-label cache granularity (see pdrDayLabel_).
+const TP_REGULARITY_CACHE_SECONDS = 1800;
 function tpCwHwLoggedDaysByCode_(campusId, workingDaysSet, roster) {
+  const cache = CacheService.getScriptCache();
+  // Keyed by the window's actual boundary dates, not just windowDays --
+  // so the cache key naturally rolls over as "today" advances, instead
+  // of serving a stale window under an unchanging key.
+  const cacheKey = 'tp_regularity_' + campusId + '_' + (workingDaysSet[0] || '') + '_' + (workingDaysSet[workingDaysSet.length - 1] || '');
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   const byCode = {};
   let data;
   try {

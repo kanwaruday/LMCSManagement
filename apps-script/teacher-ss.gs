@@ -91,10 +91,26 @@ function teacherSsStats_(caller) {
   return { success: true, rubricParams: TSS_RUBRIC_COLUMNS, campuses: byCampus };
 }
 
-/** One campus's tab -> per-teacher aggregates: submission count,
- *  average total score (sum of the 10 rubric columns, 0-100), average
- *  per rubric parameter, and most recent submission date. */
+// Cached 2026-09-20 (Teacher Portal perf): a single Home-tab page load
+// now calls readCampusStats_ up to twice on its own (myssstats +
+// myrankscore both need it), on top of whatever teacherstats/
+// ssdashboard calls the SAME minute from Principal-side pages -- each
+// call was a full re-read of the response sheet's getDataRange().
+// Short TTL (2 min) since this is live evaluation data a Principal
+// might submit at any moment, unlike the roster/day-label caches
+// elsewhere in this project that can safely run longer.
+const TSS_STATS_CACHE_SECONDS = 120;
 function readCampusStats_(campusId) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'tss_stats_' + campusId;
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  const result = readCampusStatsUncached_(campusId);
+  cache.put(cacheKey, JSON.stringify(result), TSS_STATS_CACHE_SECONDS);
+  return result;
+}
+
+function readCampusStatsUncached_(campusId) {
   const tabName = TSS_CAMPUS_TO_TAB[campusId];
   const sheet = SpreadsheetApp.openById(TSS_RESPONSES_SHEET_ID).getSheetByName(tabName);
   if (!sheet) return { teachers: [], responseCount: 0 };
