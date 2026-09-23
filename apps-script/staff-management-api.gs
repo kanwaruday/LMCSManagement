@@ -59,7 +59,8 @@ const STAFF_CACHE_TTL_SECONDS = 300; // 5 min -- same TTL/reasoning as employee-
 
 // Thin CacheService wrapper -- `key` is the cache key, `compute` is the
 // (no-arg) function that builds the real result on a miss. Same pattern as
-// employee-roster.gs's cached_() (own copy, separate Apps Script project).
+// employee-roster.gs's cached_() (own copy -- a separate file, same
+// project as of 2026-09-23, but not literally shared code).
 function cachedStaff_(key, compute) {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(key);
@@ -97,7 +98,7 @@ const STAFF_SCHOOL_PREFIX = {
 // leadership (MD Academics/Operations, Finance Head, Marketing & PR Head,
 // Admin/School/Systems Coordinator, all tagged "AdminTM" in the real
 // sheet) shouldn't be visible here. Own copy of employee-roster.gs's
-// EMP_HIDDEN_DEPARTMENTS (separate Apps Script project) -- keep both in
+// EMP_HIDDEN_DEPARTMENTS (a separate file, same project) -- keep both in
 // sync if this list ever changes.
 const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 
@@ -452,7 +453,7 @@ function readRowFieldsByCode_(ss, sheetName, code, fields) {
 // Class_SubjectN codes (e.g. "C4_Science") into a friendly label ("Class 4
 // — Science") for the detail view, same decode employee-roster.gs's
 // empClassLabel/empSubjectLabel already do for the read-only proxy (own
-// copy here, not shared -- separate Apps Script project).
+// copy here, not shared -- a separate file, same project).
 function codeToClassLabel_(code) {
   const m = String(code).match(/^C(\d+)$/);
   if (m) return 'Class ' + m[1];

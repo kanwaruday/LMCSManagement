@@ -104,7 +104,8 @@ const EMP_HIDDEN_DEPARTMENTS = ['admintm'];
 /** EmployeeCode -> Department (lowercased, trimmed), from EmpSalary.
  *  Separate read from EmpMaster -- see EMP_HIDDEN_DEPARTMENTS above for
  *  why this exists. Own copy, not shared with staff-management-api.gs's
- *  equivalent (separate Apps Script project). */
+ *  equivalent (a separate file, same project as of 2026-09-23 -- but
+ *  each file's helpers still aren't literally shared code). */
 function readDepartmentByCode_() {
   const sheet = openWorkbook_().getSheetByName('EmpSalary');
   if (!sheet) return {};

@@ -21,9 +21,17 @@ those really do need copying from there.
 - `approvals.gs` — Principal-to-Owner approval requests (Approvals tab)
 - `hiring.gs` — Hiring Dashboard: browse Teaching Applicants, track status, gate the "Hired" write on Approvals (added 2026-09-14, ported+refined from `lmcs-salary-dashboard/apps-script/teaching-applicants.gs`, never deployed there)
 
+**One deployment** ("LMCS Employee Roster Proxy" — `EMPLOYEE_ROSTER_URL` **and** `STAFF_API_URL`,
+which are now the same URL):
+- `employee-roster.gs` — public reads (`roster`/`employees`/`designations`, no token) used by PDR,
+  Curriculum Progress, and the Staff Portal's search boxes. Also the project's single `doGet` entry
+  point — routes `nextcode`/`list`/`detail`/`addnewhire`/`transfer`/`markinactive` to `staffDoGet_`.
+- `staff-management-api.gs` — merged into this same project 2026-09-23 (per Uday, one deployment
+  instead of two). Gated read/write actions for the Staff Portal (`staff/add-employee.html`),
+  verified against the Principal Allowlist on every call, completely unchanged by the merge. Its
+  `doGet` was renamed `staffDoGet_` since only one function may be named `doGet` per project.
+
 **Separate deployments**, one file each:
-- `employee-roster.gs` — `EMPLOYEE_ROSTER_URL`, the shared roster proxy (used by PDR, Staff Portal, and Curriculum Progress)
-- `staff-management-api.gs` — `STAFF_API_URL` in [`staff/add-employee.html`](../staff/add-employee.html)
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)
 - `principal-allowlist.gs` — `ALLOWLIST_API_URL` in [`assets/auth.js`](../assets/auth.js), sign-in allowlist
 
