@@ -21,9 +21,20 @@ window.LMCS = (function () {
   const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
   const SESSION_KEY = 'lmcs_session';
 
-  // Same live allowlist sheet principal-admin.html already writes to —
-  // one source of truth for who can sign in and which campus they see.
-  const ALLOWLIST_API_URL = 'https://script.google.com/a/macros/lms.org.in/s/AKfycbx9Lfe0bI6RgjaF2aJcgqmfbgGHsg65Ed-N4RA2_VpBmSxCMj389D6PYtgJq9K1qDqcqA/exec';
+  // One source of truth for who can sign in and which campus they see --
+  // the live "LMCS Principal Allowlist" sheet, via principal-allowlist.gs.
+  // Merged 2026-09-23 (per Uday) into the same Apps Script project/
+  // deployment as the Employee Roster Proxy and Staff Management API --
+  // same URL as staff/add-employee.html's EMPLOYEE_ROSTER_URL/
+  // STAFF_API_URL now, not a separate domain-restricted deployment
+  // anymore (that trade-off -- the allowlist read is now reachable by
+  // anyone with the URL, not just lms.org.in accounts, though writes
+  // stay just as gated -- was Uday's explicit call; see
+  // apps-script/principal-allowlist.gs's header for the full reasoning).
+  // Action renamed 'list' -> 'allowlist_list' below since
+  // staff-management-api.gs's own Directory action is also named 'list'
+  // and the two are now in one shared action-namespace.
+  const ALLOWLIST_API_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 
   const CAMPUS_NAMES = {
     LMS1: 'LMS 1 — Dhalpur',
@@ -134,7 +145,7 @@ window.LMCS = (function () {
   let allowlistPromise = null;
   function loadAllowlist() {
     if (allowlistPromise) return allowlistPromise;
-    allowlistPromise = fetch(ALLOWLIST_API_URL + '?action=list', { cache: 'no-store' })
+    allowlistPromise = fetch(ALLOWLIST_API_URL + '?action=allowlist_list', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         if (!data.success || !Array.isArray(data.entries)) throw new Error('bad response');

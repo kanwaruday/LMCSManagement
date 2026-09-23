@@ -1,32 +1,51 @@
 // ═══════════════════════════════════════════════════════════════════
 // Principal Dashboard — Allowlist API
 //
-// Standalone Apps Script project, deliberately separate from Code.gs
-// (which already has three tangled deployments — see the project's
-// vault note). Backs principal-admin.html's add/edit/delete UI and
-// principal.html's live "who's allowed in" check.
+// LIVES IN THE SAME APPS SCRIPT PROJECT as employee-roster.gs and
+// staff-management-api.gs ("LMCS Employee Roster Proxy") as of
+// 2026-09-23, per Uday -- one project/one deployment for all three
+// instead of three. employee-roster.gs's doGet() is the project's
+// single entry point and routes every ALLOWLIST_ACTIONS_ action here,
+// to allowlistDoGet_() (renamed from doGet() -- only one function of
+// that name is allowed per project).
 //
-// SETUP:
-//   1. Go to script.google.com → New project → paste this file
-//   2. Deploy → New deployment → Web App
-//      Execute as: Me  |  Who has access: Anyone
-//      (same simple mode as Code.gs's other deployments — reads are
-//      public by design, writes are gated by verifyAdminToken below,
-//      not by Apps Script's own access settings)
-//   3. Copy the Web App URL into principal.html and principal-admin.html
-//      (ALLOWLIST_API_URL constant in each)
+// This merge is a real trade-off, decided by Uday (2026-09-23): the
+// OLD standalone deployment was domain-restricted (lms.org.in only) --
+// Google itself blocked anyone outside the Workspace domain from
+// reaching this at all, on top of the code's own checks. The
+// roster/staff deployment it's now merged into is "Anyone" --
+// reachable by anyone with the URL, which is visible in this PUBLIC
+// GitHub repo. The read action (now `allowlist_list`, was `list`) has
+// NO token check in the code -- it relies entirely on the deployment's
+// access setting to be non-public. So post-merge, the list of every
+// Principal/Coordinator/Owner's email/name/campusId/role is fetchable
+// by anyone with the URL, not just lms.org.in accounts. WRITES
+// (allowlist_add/edit/delete) are unaffected either way -- verifyAdminToken
+// below re-checks a real Google ID token against ADMIN_EMAILS
+// server-side regardless of deployment access settings, same "the real
+// gate is server-side, not Apps Script's access setting" pattern used
+// throughout this codebase.
+//
+// Action names prefixed `allowlist_` (2026-09-23) -- staff-management-
+// api.gs's Directory action is ALSO literally named `list`; merging
+// into one shared action-namespace made that a real collision, not
+// just a code-organization one. assets/auth.js's ALLOWLIST_API_URL is
+// now the SAME URL as EMPLOYEE_ROSTER_URL/STAFF_API_URL; its one call
+// site was updated from `?action=list` to `?action=allowlist_list`.
+// No other file in this repo called the write actions (add/edit/delete)
+// -- this allowlist appears to be managed by hand in the sheet today,
+// principal-admin.html referenced below doesn't exist in this repo --
+// so renaming those was zero-risk.
 //
 // PERF (2026-09-15): readEntries() was measured taking 2-40+s and
 // occasionally 404ing outright under LMCSManagement's perf audit —
-// see that repo's assistant conversation. Root cause is suspected to
-// be this deployment's "Who has access" setting (check Deploy > Manage
-// deployments — if it shows domain-restricted instead of "Anyone",
-// that's the real fix, independent of the caching added below).
-// CacheService here is a safety net either way: it caps how often the
-// expensive path runs to once per CACHE_TTL_SECONDS, and every writer
-// (addEntry/editEntry/deleteEntry) busts the cache immediately so a
-// change made via principal-admin.html is never masked by a stale
-// cached list.
+// see that repo's assistant conversation. Root cause was suspected to
+// be the OLD standalone deployment's domain-restricted access setting
+// (fixed by that separate concern, unrelated to the 2026-09-23 merge
+// above). CacheService here is a safety net either way: it caps how
+// often the expensive path runs to once per CACHE_TTL_SECONDS, and
+// every writer (addEntry/editEntry/deleteEntry) busts the cache
+// immediately so a change is never masked by a stale cached list.
 // ═══════════════════════════════════════════════════════════════════
 
 const SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist"
@@ -35,10 +54,18 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 const CACHE_KEY = 'allowlist_entries';
 const CACHE_TTL_SECONDS = 300; // 5 min
 
-function doGet(e) {
-  const action = (e.parameter.action || 'list').toLowerCase();
+// Renamed from doGet() 2026-09-23 when this file merged into the same
+// Apps Script project as employee-roster.gs/staff-management-api.gs --
+// only one function may be named doGet per project, so employee-roster.gs's
+// doGet() is now the single dispatcher and routes here for every
+// ALLOWLIST_ACTIONS_ action. Action names below are also renamed
+// (list/add/edit/delete -> allowlist_list/allowlist_add/allowlist_edit/
+// allowlist_delete) -- see the file header for why. Everything else is
+// otherwise unchanged from when this was its own project's doGet().
+function allowlistDoGet_(e) {
+  const action = (e.parameter.action || 'allowlist_list').toLowerCase();
   try {
-    if (action === 'list') {
+    if (action === 'allowlist_list') {
       return jsonOut({ success: true, entries: readEntries() });
     }
 
@@ -49,11 +76,11 @@ function doGet(e) {
       return jsonOut({ success: false, error: 'Not authorized' });
     }
 
-    if (action === 'add') {
+    if (action === 'allowlist_add') {
       addEntry(e.parameter.email, e.parameter.name, e.parameter.campusId, e.parameter.role);
-    } else if (action === 'edit') {
+    } else if (action === 'allowlist_edit') {
       editEntry(e.parameter.email, e.parameter.name, e.parameter.campusId, e.parameter.role);
-    } else if (action === 'delete') {
+    } else if (action === 'allowlist_delete') {
       deleteEntry(e.parameter.email);
     } else {
       return jsonOut({ success: false, error: 'Unknown action: ' + action });
@@ -159,6 +186,8 @@ function verifyAdminToken(idToken) {
   }
 }
 
-function jsonOut(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
+// jsonOut() is NOT redefined here -- employee-roster.gs's identical
+// implementation is already in this project's shared global scope
+// (same signature, byte-for-byte the same body); a second definition
+// of the same function name would collide, and Apps Script would just
+// silently use whichever one loads last.

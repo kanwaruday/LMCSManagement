@@ -2,13 +2,16 @@
 // Employee Roster Proxy — narrow, public-read Web App in front of the
 // Employee Master workbook (1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0).
 //
-// This project ALSO now contains staff-management-api.gs (merged in
-// 2026-09-23, per Uday, to redeploy as one project instead of two) --
-// see that file's own header for what it adds and why the trust
-// boundary between "public read" (this file) and "gated write/PII"
-// (that file) is unchanged by the merge. doGet() below is the ONE entry
-// point for the whole project and routes to staffDoGet_() for that
-// file's actions.
+// This project ALSO now contains staff-management-api.gs AND
+// principal-allowlist.gs (merged in 2026-09-23, per Uday, to redeploy
+// as one project instead of three) -- see each file's own header for
+// what it adds. doGet() below is the ONE entry point for the whole
+// project and routes to staffDoGet_()/allowlistDoGet_() for those
+// files' actions. Note principal-allowlist.gs's merge is NOT a
+// no-op for security the way staff-management-api.gs's was -- its
+// OLD deployment was domain-restricted (lms.org.in only) and this
+// one is "Anyone"; see that file's header for the trade-off Uday
+// accepted.
 //
 // WHY THIS EXISTS (2026-08-27): that workbook is currently shared
 // "anyone with the link" so the portal's client-side JS can read it
@@ -152,26 +155,34 @@ function empSubjectLabel(code) {
   return EMP_SUBJECT_LABEL[code] || code;
 }
 
-// Merged into this ONE project 2026-09-23, per Uday -- this file and
-// staff-management-api.gs now live together as two files in the same
-// Apps Script project ("LMCS Employee Roster Proxy"), sharing one Web
-// App deployment/exec URL, instead of two separate projects each needing
-// their own redeploy. This is the single doGet() Apps Script requires
-// (only one function of that name is allowed per project) -- it just
-// routes to whichever file's actions the request asked for. Nothing
-// about EACH action's own access rule changed: 'roster'/'employees'/
+// Merged into this ONE project 2026-09-23, per Uday -- this file,
+// staff-management-api.gs, and principal-allowlist.gs now live
+// together as three files in the same Apps Script project ("LMCS
+// Employee Roster Proxy"), sharing one Web App deployment/exec URL,
+// instead of three separate projects each needing their own redeploy.
+// This is the single doGet() Apps Script requires (only one function
+// of that name is allowed per project) -- it just routes to whichever
+// file's actions the request asked for. Nothing about EACH action's
+// own access rule changed by the routing itself: 'roster'/'employees'/
 // 'designations' below are still fully public with no token check;
 // staff-management-api.gs's STAFF_ACTIONS_ (nextcode/list/detail/
 // addnewhire/transfer/markinactive) still go through staffDoGet_(),
 // which still verifies a real Google ID token against the Principal
 // Allowlist for every one of them, completely unchanged from when it
-// was its own project -- merging the deployment never merged the trust
-// boundary between "public read" and "gated write/PII" actions.
+// was its own project. principal-allowlist.gs's ALLOWLIST_ACTIONS_
+// (allowlist_list/allowlist_add/allowlist_edit/allowlist_delete) go
+// through allowlistDoGet_() -- writes are still gated the same way
+// they always were, but allowlist_list itself has NO token check and
+// this project's deployment is "Anyone", unlike that file's old
+// domain-restricted deployment -- see that file's header for the
+// trade-off Uday explicitly accepted merging it in.
 const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive'];
+const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete'];
 
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
+  if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);
   try {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });

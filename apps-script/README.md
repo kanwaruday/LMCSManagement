@@ -21,19 +21,31 @@ those really do need copying from there.
 - `approvals.gs` — Principal-to-Owner approval requests (Approvals tab)
 - `hiring.gs` — Hiring Dashboard: browse Teaching Applicants, track status, gate the "Hired" write on Approvals (added 2026-09-14, ported+refined from `lmcs-salary-dashboard/apps-script/teaching-applicants.gs`, never deployed there)
 
-**One deployment** ("LMCS Employee Roster Proxy" — `EMPLOYEE_ROSTER_URL` **and** `STAFF_API_URL`,
-which are now the same URL):
+**One deployment** ("LMCS Employee Roster Proxy" — `EMPLOYEE_ROSTER_URL`, `STAFF_API_URL`, **and**
+`ALLOWLIST_API_URL` are now all the same URL):
 - `employee-roster.gs` — public reads (`roster`/`employees`/`designations`, no token) used by PDR,
   Curriculum Progress, and the Staff Portal's search boxes. Also the project's single `doGet` entry
-  point — routes `nextcode`/`list`/`detail`/`addnewhire`/`transfer`/`markinactive` to `staffDoGet_`.
+  point — routes `nextcode`/`list`/`detail`/`addnewhire`/`transfer`/`markinactive` to `staffDoGet_`,
+  and `allowlist_list`/`allowlist_add`/`allowlist_edit`/`allowlist_delete` to `allowlistDoGet_`.
 - `staff-management-api.gs` — merged into this same project 2026-09-23 (per Uday, one deployment
-  instead of two). Gated read/write actions for the Staff Portal (`staff/add-employee.html`),
+  instead of three). Gated read/write actions for the Staff Portal (`staff/add-employee.html`),
   verified against the Principal Allowlist on every call, completely unchanged by the merge. Its
   `doGet` was renamed `staffDoGet_` since only one function may be named `doGet` per project.
+- `principal-allowlist.gs` — merged into this same project 2026-09-23 (per Uday). Backs
+  [`assets/auth.js`](../assets/auth.js)'s sign-in check (used by every module page). Its `doGet`
+  was renamed `allowlistDoGet_`, and its actions were renamed `list`/`add`/`edit`/`delete` →
+  `allowlist_list`/`allowlist_add`/`allowlist_edit`/`allowlist_delete` — `staff-management-api.gs`'s
+  own Directory action is *also* named `list`, a real collision once both share one action
+  namespace. **Security trade-off, accepted by Uday:** this file's OLD standalone deployment was
+  domain-restricted to `lms.org.in`; this project's deployment is `Anyone`, and `allowlist_list`
+  has no token check of its own — so the list of every Principal/Coordinator/Owner's
+  email/name/campusId/role is now fetchable by anyone with the URL (visible in this public repo),
+  not just `lms.org.in` accounts. Writes (`allowlist_add`/`edit`/`delete`) are unaffected — still
+  gated by a verified Google ID token against `ADMIN_EMAILS`, regardless of deployment access
+  settings.
 
 **Separate deployments**, one file each:
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)
-- `principal-allowlist.gs` — `ALLOWLIST_API_URL` in [`assets/auth.js`](../assets/auth.js), sign-in allowlist
 
 ## Re-syncing
 
