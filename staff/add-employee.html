@@ -453,8 +453,8 @@ document.getElementById('dirBody').addEventListener('click', function (e) {
    than a hardcoded field list.
 ═══════════════════════════════════════════════════════════ */
 const DETAIL_SECTION_LABELS = {
-  EmpMaster: 'Employment', EmpPersonal: 'Personal', EmpProfessional: 'Professional',
-  EmpKeyNumbers: 'ID & Bank Numbers', EmpAcademic: 'Class / Subject Assignments',
+  EmpMaster: 'Employment', EmpPersonal: 'Personal', EmpSalary: 'Job Details',
+  EmpProfessional: 'Professional', EmpKeyNumbers: 'ID & Bank Numbers',
 };
 
 async function openEmployeeDetail(code) {
@@ -473,7 +473,7 @@ async function openEmployeeDetail(code) {
 
 function renderDetailModal(detail) {
   const name = (detail.EmpMaster && detail.EmpMaster.Name) || 'Employee';
-  const sections = Object.keys(detail).map(function (sec) {
+  const sections = Object.keys(detail).filter(function (sec) { return sec !== 'classSubjects'; }).map(function (sec) {
     const rows = Object.keys(detail[sec]).map(function (k) {
       let v = detail[sec][k];
       if (sec === 'EmpMaster' && k === 'ReportsTo' && v) {
@@ -484,9 +484,14 @@ function renderDetailModal(detail) {
     }).join('');
     return '<div class="modal-sec"><h4>' + esc(DETAIL_SECTION_LABELS[sec] || sec) + '</h4><div class="modal-grid">' + rows + '</div></div>';
   }).join('');
+  const classSubjectsHtml = (detail.classSubjects && detail.classSubjects.length)
+    ? '<div class="modal-sec"><h4>Class / Subject Assignments</h4><div class="modal-grid">' +
+      detail.classSubjects.map(function (cs) { return '<div class="v" style="grid-column:1/-1">' + esc(cs) + '</div>'; }).join('') +
+      '</div></div>'
+    : '';
   document.getElementById('empDetailModal').innerHTML =
     '<div class="modal-box"><button type="button" class="modal-close" data-close>✕</button>' +
-    '<h3 style="margin-bottom:14px">' + esc(name) + '</h3>' + sections + '</div>';
+    '<h3 style="margin-bottom:14px">' + esc(name) + '</h3>' + sections + classSubjectsHtml + '</div>';
 }
 
 document.getElementById('empDetailModal').addEventListener('click', function (e) {

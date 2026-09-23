@@ -235,11 +235,19 @@ function appendAcademicRow_(ss, employeeCode, name, classSubjects) {
 // so it can safely include Role/ReportsTo/DateOfJoining/Status (Inactive
 // and Transferred included, not just Active) for the people actually
 // allowed to manage staff.
+//
+// Role comes from EmpSalary.Designation, NOT EmpMaster.Role -- confirmed
+// against a real export 2026-09-23: EmpMaster.Role is 100% empty across
+// all 173 employees, the actual job title ("PRT", "Head Master/Principal",
+// "Helper"...) only exists in EmpSalary. EmpMaster.AuthEmail is also NOT a
+// real email (it's a bare row-number in the real sheet) -- the real one is
+// EmpPersonal.AuthEmail, read separately in employeeDetail_ below.
 function listEmployees_(caller) {
   const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const idx = {};
   header.forEach(function (h, i) { idx[h] = i; });
+  const designationByCode = readDesignationByCode_();
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const code = String(rows[i][idx.EmployeeCode] || '').trim();
@@ -250,7 +258,7 @@ function listEmployees_(caller) {
       employeeCode: code,
       name: String(rows[i][idx.Name] || '').trim(),
       school: school,
-      role: idx.Role >= 0 ? String(rows[i][idx.Role] || '').trim() : '',
+      role: designationByCode[code] || '',
       reportsTo: idx.ReportsTo >= 0 ? String(rows[i][idx.ReportsTo] || '').trim() : '',
       dateOfJoining: idx.DateOfJoining >= 0 ? formatStaffDate_(rows[i][idx.DateOfJoining]) : '',
       status: (idx.Status >= 0 ? String(rows[i][idx.Status] || '').trim() : '') || 'Active',
@@ -259,19 +267,63 @@ function listEmployees_(caller) {
   return out;
 }
 
+function readDesignationByCode_() {
+  const sheet = openEmpWorkbook_().getSheetByName('EmpSalary');
+  if (!sheet) return {};
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  const desigCol = header.indexOf('Designation');
+  const map = {};
+  if (codeCol < 0 || desigCol < 0) return map;
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][codeCol] || '').trim();
+    if (code) map[code] = String(rows[i][desigCol] || '').trim();
+  }
+  return map;
+}
+
 function formatStaffDate_(d) {
   if (!(d instanceof Date) || isNaN(d.getTime())) return '';
   return Utilities.formatDate(d, 'Etc/GMT', 'yyyy-MM-dd');
 }
 
 // Every column of one sheet's row matching EmployeeCode, as {header: value} --
-// generic (not a hardcoded field list) because EmpPersonal/EmpProfessional/
-// EmpKeyNumbers' exact column names aren't known here (they're the PII tabs
-// employee-roster.gs's file header deliberately never reads -- see that
-// file's WHY note). Whatever the real headers are, this surfaces them as-is
-// for the Directory's detail view rather than guessing field names and
-// silently dropping ones that don't match.
-function readRowByCode_(ss, sheetName, code) {
+// generic (not a hardcoded field list) because most of these tabs' exact
+// column names weren't known when this was first written (they're the PII
+// tabs employee-roster.gs's file header deliberately never reads -- see
+// that file's WHY note). `exclude` drops specific headers confirmed to be
+// junk or redundant against a real export (2026-09-23): EmpMaster's
+// AuthEmail (a bare row-number, not a real email) and OldSystemID/
+// NewEmployeeCode (broken #NAME?/#VALUE! formulas, not real data);
+// EmpPersonal's "Staff Master" (just Code+Name concatenated).
+function readRowByCode_(ss, sheetName, code, exclude) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  if (codeCol < 0) return null;
+  const skip = exclude || [];
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][codeCol] || '').trim() !== code) continue;
+    const obj = {};
+    header.forEach(function (h, idx) {
+      if (!h || skip.indexOf(h) !== -1) return;
+      const v = rows[i][idx];
+      obj[h] = v instanceof Date ? formatStaffDate_(v) : v;
+    });
+    return obj;
+  }
+  return null;
+}
+
+// Same idea as readRowByCode_ but an INCLUDE list instead of exclude --
+// used for EmpSalary, where Basic/GradePay/Increment (actual pay figures)
+// stay out of this portal by design (per Uday, 2026-09-23: those are
+// reserved for the future dedicated Salary Dashboard module); only the
+// non-monetary job info is surfaced here.
+function readRowFieldsByCode_(ss, sheetName, code, fields) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return null;
   const rows = sheet.getDataRange().getValues();
@@ -281,38 +333,95 @@ function readRowByCode_(ss, sheetName, code) {
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][codeCol] || '').trim() !== code) continue;
     const obj = {};
-    header.forEach(function (h, idx) {
-      if (!h) return;
+    fields.forEach(function (f) {
+      const idx = header.indexOf(f);
+      if (idx < 0) return;
       const v = rows[i][idx];
-      obj[h] = v instanceof Date ? formatStaffDate_(v) : v;
+      obj[f] = v instanceof Date ? formatStaffDate_(v) : v;
     });
     return obj;
   }
   return null;
 }
 
+// Reverse of classToCode_/subjectToCode_ above -- decodes EmpAcademic's
+// Class_SubjectN codes (e.g. "C4_Science") into a friendly label ("Class 4
+// — Science") for the detail view, same decode employee-roster.gs's
+// empClassLabel/empSubjectLabel already do for the read-only proxy (own
+// copy here, not shared -- separate Apps Script project).
+function codeToClassLabel_(code) {
+  const m = String(code).match(/^C(\d+)$/);
+  if (m) return 'Class ' + m[1];
+  if (code === 'M1') return 'M-I';
+  if (code === 'M2') return 'M-II';
+  if (code === 'M3') return 'M-III';
+  return code;
+}
+const STAFF_CODE_TO_SUBJECT = {};
+Object.keys(STAFF_SUBJECT_TO_CODE).forEach(function (label) { STAFF_CODE_TO_SUBJECT[STAFF_SUBJECT_TO_CODE[label]] = label; });
+function codeToSubjectLabel_(code) { return STAFF_CODE_TO_SUBJECT[code] || code; }
+
+function readClassSubjects_(ss, code) {
+  const sheet = ss.getSheetByName('EmpAcademic');
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  const subjectCols = [];
+  for (let i = 1; i <= 10; i++) {
+    const idx = header.indexOf('Class_Subject' + i);
+    if (idx >= 0) subjectCols.push(idx);
+  }
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][codeCol] || '').trim() !== code) continue;
+    const out = [];
+    subjectCols.forEach(function (col) {
+      const val = String(rows[i][col] || '').trim();
+      const m = val.match(/^([A-Za-z]+\d+)_(.+)$/);
+      if (!m) return;
+      out.push(codeToClassLabel_(m[1]) + ' — ' + codeToSubjectLabel_(m[2]));
+    });
+    return out;
+  }
+  return [];
+}
+
 // Full per-employee record for the Directory's "view all information" panel
 // -- merges EmpMaster with every other per-employee tab in the workbook
-// (EmpPersonal/EmpProfessional/EmpKeyNumbers: address, DOB, phone, Aadhar,
-// PAN, bank details) plus their EmpAcademic class/subject row. Gated behind
-// the same verified-token + campus-scope check as every write action here,
-// which is WHY this can safely return the PII tabs that the public
+// (EmpPersonal: address/DOB/phone; EmpSalary: job info, pay figures
+// excluded by design; EmpProfessional: qualifications; EmpKeyNumbers:
+// Aadhar/PAN/bank details, shown in full -- per Uday, 2026-09-23, anyone
+// who can already open this portal (Owner, or a Coordinator for their own
+// campus) is trusted with the full numbers, same as every write action
+// here) plus their decoded EmpAcademic class/subject list. Gated behind
+// the same verified-token + campus-scope check as every write action in
+// this file, which is WHY this can safely return the PII tabs the public
 // employee-roster.gs proxy deliberately never touches.
 function employeeDetail_(data, caller) {
   if (!data.employeeCode) throw new Error('employeeCode is required');
   const ss = openEmpWorkbook_();
-  const master = readRowByCode_(ss, 'EmpMaster', data.employeeCode);
+  const master = readRowByCode_(ss, 'EmpMaster', data.employeeCode, ['AuthEmail', 'OldSystemID', 'NewEmployeeCode']);
   if (!master) throw new Error('Employee not found: ' + data.employeeCode);
   const school = String(master.SchoolCode || '').trim().toUpperCase();
   assertScope_(caller, [school]);
 
   const detail = { EmpMaster: master };
-  ['EmpPersonal', 'EmpProfessional', 'EmpKeyNumbers'].forEach(function (sheetName) {
-    const row = readRowByCode_(ss, sheetName, data.employeeCode);
-    if (row) detail[sheetName] = row;
-  });
-  const academic = readRowByCode_(ss, 'EmpAcademic', data.employeeCode);
-  if (academic) detail.EmpAcademic = academic;
+
+  const personal = readRowByCode_(ss, 'EmpPersonal', data.employeeCode, ['Staff Master']);
+  if (personal) detail.EmpPersonal = personal;
+
+  const salary = readRowFieldsByCode_(ss, 'EmpSalary', data.employeeCode, ['EmployeeType', 'Designation', 'Department', 'WorkingHour']);
+  if (salary) detail.EmpSalary = salary;
+
+  const professional = readRowByCode_(ss, 'EmpProfessional', data.employeeCode);
+  if (professional) detail.EmpProfessional = professional;
+
+  const keyNumbers = readRowByCode_(ss, 'EmpKeyNumbers', data.employeeCode);
+  if (keyNumbers) detail.EmpKeyNumbers = keyNumbers;
+
+  const classSubjects = readClassSubjects_(ss, data.employeeCode);
+  if (classSubjects.length) detail.classSubjects = classSubjects;
+
   return detail;
 }
 
