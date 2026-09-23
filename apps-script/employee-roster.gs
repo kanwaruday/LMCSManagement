@@ -72,9 +72,46 @@ const EMP_CACHE_TTL_SECONDS = 300; // 5 min -- see PERF note above
 
 // EmployeeCode prefix -> School Code, matching the LMS Campuses convention
 // used throughout the portal. Confirmed against the live sheet 2026-08-27.
+// HES ("HES — Head Office", added 2026-09-23 per Uday) is a real prefix
+// already used in the sheet (Head Office / admin staff, e.g.
+// HES/19/07/001) -- without this entry those rows silently mapped to
+// school: null everywhere this proxy is read.
 const EMP_PREFIX_TO_SCHOOL = {
-  KUL: 'LMS 1', KEL: 'LMS 2', DUN: 'LMS 3', NCM: 'LMS 4', SAY: 'LMS 5', JOG: 'LMS 6',
+  KUL: 'LMS 1', KEL: 'LMS 2', DUN: 'LMS 3', NCM: 'LMS 4', SAY: 'LMS 5', JOG: 'LMS 6', HES: 'HES',
 };
+
+// Employees whose EmpSalary.Department is one of these are excluded from
+// every read below (readEmployees/readRosterRows), regardless of which
+// campus prefix their EmployeeCode carries -- per Uday (2026-09-23):
+// senior/leadership staff (MD Academics, MD Operations, Finance Head,
+// Marketing & PR Head, Admin/School/Systems Coordinator -- all tagged
+// "AdminTM" in the real sheet) should never show up by name to Principals
+// or in any of this proxy's consumers (Staff Portal search boxes, Course
+// Mapping, Chapter Tracker, Curriculum Progress, Teacher Portal). Some of
+// these people ALSO have older, stale rows still coded to an LMS1-6
+// prefix (pre-HES data) -- filtering on Department, not prefix, catches
+// those too.
+const EMP_HIDDEN_DEPARTMENTS = ['admintm'];
+
+/** EmployeeCode -> Department (lowercased, trimmed), from EmpSalary.
+ *  Separate read from EmpMaster -- see EMP_HIDDEN_DEPARTMENTS above for
+ *  why this exists. Own copy, not shared with staff-management-api.gs's
+ *  equivalent (separate Apps Script project). */
+function readDepartmentByCode_() {
+  const sheet = openWorkbook_().getSheetByName('EmpSalary');
+  if (!sheet) return {};
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  const deptCol = header.indexOf('Department');
+  const map = {};
+  if (codeCol < 0 || deptCol < 0) return map;
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][codeCol] || '').trim();
+    if (code) map[code] = String(rows[i][deptCol] || '').trim().toLowerCase();
+  }
+  return map;
+}
 
 // C1..C12 -> "Class 1".."Class 12", M1..M3 -> "M-I".."M-III" -- matches
 // mapDailyClass() in daily-progress.html exactly, so the client needs no
@@ -189,6 +226,7 @@ function readDepartedCodes_() {
  *  readDepartedCodes_() AND read EmpMaster again itself, two full reads of
  *  the same sheet per request; see PERF note at the top of this file. */
 function readEmployees() {
+  const departments = readDepartmentByCode_();
   const rows = openWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const codeCol = header.indexOf('EmployeeCode');
@@ -200,6 +238,7 @@ function readEmployees() {
     if (!code) continue;
     const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim().toLowerCase() : '';
     if (status && status !== 'active') continue; // departed -- see STATUS FILTERING note above
+    if (EMP_HIDDEN_DEPARTMENTS.indexOf(departments[code]) !== -1) continue; // see EMP_HIDDEN_DEPARTMENTS above
     const prefix = code.split('/')[0];
     out.push({
       employeeCode: code,
@@ -217,6 +256,7 @@ function readEmployees() {
  *  Status flip in EmpMaster is enough, no need to also clear EmpAcademic. */
 function readRosterRows() {
   const departed = readDepartedCodes_();
+  const departments = readDepartmentByCode_();
   const rows = openWorkbook_().getSheetByName('EmpAcademic').getDataRange().getValues();
   const header = rows[0];
   const codeCol = header.indexOf('EmployeeCode');
@@ -231,6 +271,7 @@ function readRosterRows() {
   for (let i = 1; i < rows.length; i++) {
     const code = String(rows[i][codeCol] || '').trim();
     if (!code || departed[code]) continue;
+    if (EMP_HIDDEN_DEPARTMENTS.indexOf(departments[code]) !== -1) continue; // see EMP_HIDDEN_DEPARTMENTS above
     const prefix = code.split('/')[0];
     const school = EMP_PREFIX_TO_SCHOOL[prefix];
     if (!school) continue; // unknown prefix -- skip rather than mis-attribute

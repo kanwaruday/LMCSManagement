@@ -32,6 +32,7 @@ window.LMCS = (function () {
     LMS4: 'LMS 4 — Ner Chowk',
     LMS5: 'LMS 5 — Sayoli',
     LMS6: 'LMS 6 — Jogindernagar',
+    HES: 'HES — Head Office', // added 2026-09-23 per Uday -- Coordinator/Owner-only, see staff/add-employee.html
     ALL: 'All Campuses (Network-wide)',
   };
 

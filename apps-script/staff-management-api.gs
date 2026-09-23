@@ -72,9 +72,24 @@ function tokenCacheKey_(idToken) {
 // EmployeeCode prefix per campus -- matches EMP_PREFIX_TO_SCHOOL in
 // employee-roster.gs (that one maps prefix -> school; this is the reverse,
 // keyed by campusId the portal already uses, e.g. 'LMS1' not 'LMS 1').
+// HES added 2026-09-23 per Uday -- Head Office, a real prefix already used
+// in the sheet (e.g. HES/19/07/001). Staff Portal is the only place this
+// is exposed (Coordinator/Owner-only page already, see canManageStaff in
+// auth.js), so no extra role check is needed to keep it Coordinator/
+// Owner-only.
 const STAFF_SCHOOL_PREFIX = {
-  LMS1: 'KUL', LMS2: 'KEL', LMS3: 'DUN', LMS4: 'NCM', LMS5: 'SAY', LMS6: 'JOG',
+  LMS1: 'KUL', LMS2: 'KEL', LMS3: 'DUN', LMS4: 'NCM', LMS5: 'SAY', LMS6: 'JOG', HES: 'HES',
 };
+
+// Employees whose EmpSalary.Department is one of these are excluded from
+// the Directory and blocked from the detail view, regardless of which
+// campus their EmployeeCode is coded to -- per Uday (2026-09-23): senior
+// leadership (MD Academics/Operations, Finance Head, Marketing & PR Head,
+// Admin/School/Systems Coordinator, all tagged "AdminTM" in the real
+// sheet) shouldn't be visible here. Own copy of employee-roster.gs's
+// EMP_HIDDEN_DEPARTMENTS (separate Apps Script project) -- keep both in
+// sync if this list ever changes.
+const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 
 // Read-only actions get their token verification CACHED (below) -- these
 // fire far more often than writes (nextcode alone re-fires on every
@@ -305,18 +320,20 @@ function buildEmployeeList_(caller) {
   const header = rows[0];
   const idx = {};
   header.forEach(function (h, i) { idx[h] = i; });
-  const designationByCode = readDesignationByCode_();
+  const salaryByCode = readEmpSalaryByCode_();
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const code = String(rows[i][idx.EmployeeCode] || '').trim();
     if (!code) continue;
     const school = String(rows[i][idx.SchoolCode] || '').trim().toUpperCase();
     if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    const salary = salaryByCode[code] || { designation: '', department: '' };
+    if (STAFF_HIDDEN_DEPARTMENTS.indexOf(salary.department) !== -1) continue; // see STAFF_HIDDEN_DEPARTMENTS above
     out.push({
       employeeCode: code,
       name: String(rows[i][idx.Name] || '').trim(),
       school: school,
-      role: designationByCode[code] || '',
+      role: salary.designation,
       reportsTo: idx.ReportsTo >= 0 ? String(rows[i][idx.ReportsTo] || '').trim() : '',
       dateOfJoining: idx.DateOfJoining >= 0 ? formatStaffDate_(rows[i][idx.DateOfJoining]) : '',
       status: (idx.Status >= 0 ? String(rows[i][idx.Status] || '').trim() : '') || 'Active',
@@ -326,22 +343,30 @@ function buildEmployeeList_(caller) {
 }
 
 function bustStaffListCache_() {
-  const keys = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map(function (c) { return 'staff_list_' + c; });
+  const keys = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'].map(function (c) { return 'staff_list_' + c; });
   CacheService.getScriptCache().removeAll(keys);
 }
 
-function readDesignationByCode_() {
+// EmployeeCode -> {designation, department (lowercased, for the
+// STAFF_HIDDEN_DEPARTMENTS check)}, one pass over EmpSalary instead of a
+// separate read per field.
+function readEmpSalaryByCode_() {
   const sheet = openEmpWorkbook_().getSheetByName('EmpSalary');
   if (!sheet) return {};
   const rows = sheet.getDataRange().getValues();
   const header = rows[0];
   const codeCol = header.indexOf('EmployeeCode');
   const desigCol = header.indexOf('Designation');
+  const deptCol = header.indexOf('Department');
   const map = {};
-  if (codeCol < 0 || desigCol < 0) return map;
+  if (codeCol < 0) return map;
   for (let i = 1; i < rows.length; i++) {
     const code = String(rows[i][codeCol] || '').trim();
-    if (code) map[code] = String(rows[i][desigCol] || '').trim();
+    if (!code) continue;
+    map[code] = {
+      designation: desigCol >= 0 ? String(rows[i][desigCol] || '').trim() : '',
+      department: deptCol >= 0 ? String(rows[i][deptCol] || '').trim().toLowerCase() : '',
+    };
   }
   return map;
 }
@@ -465,6 +490,13 @@ function employeeDetail_(data, caller) {
   const ss = openEmpWorkbook_();
   const master = readRowByCode_(ss, 'EmpMaster', data.employeeCode, ['AuthEmail', 'OldSystemID', 'NewEmployeeCode']);
   if (!master) throw new Error('Employee not found: ' + data.employeeCode);
+  // Same "Employee not found" error as a truly-missing code -- a hidden
+  // employee (see STAFF_HIDDEN_DEPARTMENTS above) should look identical to
+  // one that doesn't exist, not distinguishable as "exists but blocked."
+  const salaryLookup = readEmpSalaryByCode_()[data.employeeCode];
+  if (salaryLookup && STAFF_HIDDEN_DEPARTMENTS.indexOf(salaryLookup.department) !== -1) {
+    throw new Error('Employee not found: ' + data.employeeCode);
+  }
   const school = String(master.SchoolCode || '').trim().toUpperCase();
   assertScope_(caller, [school]);
 
