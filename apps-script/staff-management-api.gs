@@ -46,6 +46,7 @@ function doGet(e) {
     const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
     let result;
     if (action === 'nextcode') result = { employeeCode: previewNextCode_(data) };
+    else if (action === 'list') result = { employees: listEmployees_(caller) };
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -222,6 +223,44 @@ function appendAcademicRow_(ss, employeeCode, name, classSubjects) {
     row[subjectCols[i]] = classSubjectCode_(cs.class, cs.subject);
   });
   sheet.appendRow(row);
+}
+
+// ── Directory (Staff Portal's "school-wise existing employees" view) ──
+// Full EmpMaster rows, scoped like every write action here -- Coordinator
+// sees only their own locked campus, Owner sees all. Deliberately separate
+// from employee-roster.gs's readEmployees(): that one is an UNAUTHENTICATED
+// public read, narrowed to {code, name, school} for Active staff only. This
+// one is behind the same verified-token gate as every write in this file,
+// so it can safely include Role/ReportsTo/DateOfJoining/Status (Inactive
+// and Transferred included, not just Active) for the people actually
+// allowed to manage staff.
+function listEmployees_(caller) {
+  const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
+  const header = rows[0];
+  const idx = {};
+  header.forEach(function (h, i) { idx[h] = i; });
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][idx.EmployeeCode] || '').trim();
+    if (!code) continue;
+    const school = String(rows[i][idx.SchoolCode] || '').trim().toUpperCase();
+    if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    out.push({
+      employeeCode: code,
+      name: String(rows[i][idx.Name] || '').trim(),
+      school: school,
+      role: idx.Role >= 0 ? String(rows[i][idx.Role] || '').trim() : '',
+      reportsTo: idx.ReportsTo >= 0 ? String(rows[i][idx.ReportsTo] || '').trim() : '',
+      dateOfJoining: idx.DateOfJoining >= 0 ? formatStaffDate_(rows[i][idx.DateOfJoining]) : '',
+      status: (idx.Status >= 0 ? String(rows[i][idx.Status] || '').trim() : '') || 'Active',
+    });
+  }
+  return out;
+}
+
+function formatStaffDate_(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  return Utilities.formatDate(d, 'Etc/GMT', 'yyyy-MM-dd');
 }
 
 // ── Actions ───────────────────────────────────────────────────────────
