@@ -15,6 +15,22 @@
 // duplicated here -- the frontend calls the existing Employee Roster
 // Proxy's ?action=employees for that (already excludes departed staff).
 //
+// PERF (2026-09-23): the Directory tab was extremely slow to load.
+// Root cause: every single action call here -- including read-only ones
+// like 'list'/'detail'/'nextcode' (the last of which re-fires on every
+// School/Date-of-Joining keystroke in New Hire) -- did a live external
+// fetch to oauth2.googleapis.com AND a full read of the allowlist sheet
+// to verify the token, PLUS listEmployees_() read two more full sheets
+// (EmpMaster + EmpSalary), with NO caching anywhere -- the exact same
+// problem employee-roster.gs already hit and fixed (see its own PERF
+// note), just never carried over to this sibling file. Fixed the same
+// way: cachedStaff_()/tokenCacheKey_() cache token verification for
+// read-only actions only (STAFF_READ_ACTIONS_) -- write actions always
+// verify live, so a just-revoked access can't slip a mutation through
+// during the cache window -- and listEmployees_() is cached per campusId,
+// busted on every write via bustStaffListCache_() so a hire/transfer/
+// inactive the caller just made shows up immediately.
+//
 // SETUP:
 //   1. script.google.com -> New project -> paste this file
 //   2. Deploy -> New deployment -> Web App
@@ -29,6 +45,29 @@
 const STAFF_EMP_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
 const STAFF_ALLOWLIST_SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist"
 const STAFF_GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
+const STAFF_CACHE_TTL_SECONDS = 300; // 5 min -- same TTL/reasoning as employee-roster.gs's EMP_CACHE_TTL_SECONDS
+
+// Thin CacheService wrapper -- `key` is the cache key, `compute` is the
+// (no-arg) function that builds the real result on a miss. Same pattern as
+// employee-roster.gs's cached_() (own copy, separate Apps Script project).
+function cachedStaff_(key, compute) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const result = compute();
+  cache.put(key, JSON.stringify(result), STAFF_CACHE_TTL_SECONDS);
+  return result;
+}
+
+// CacheService keys cap at 250 chars; a Google ID token (JWT) easily runs
+// past that, so this hashes it down to a fixed-length key. Only used to
+// avoid RE-verifying the identical token repeatedly within the TTL -- the
+// verification itself (below) is unchanged, still re-derived from the
+// allowlist every cache miss, never trusted from the client.
+function tokenCacheKey_(idToken) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, idToken || '');
+  return 'tok_' + digest.map(function (b) { return ((b < 0 ? b + 256 : b)).toString(16).padStart(2, '0'); }).join('');
+}
 
 // EmployeeCode prefix per campus -- matches EMP_PREFIX_TO_SCHOOL in
 // employee-roster.gs (that one maps prefix -> school; this is the reverse,
@@ -37,10 +76,20 @@ const STAFF_SCHOOL_PREFIX = {
   LMS1: 'KUL', LMS2: 'KEL', LMS3: 'DUN', LMS4: 'NCM', LMS5: 'SAY', LMS6: 'JOG',
 };
 
+// Read-only actions get their token verification CACHED (below) -- these
+// fire far more often than writes (nextcode alone re-fires on every
+// School/Date-of-Joining keystroke in New Hire) and a few minutes of
+// staleness on a read carries no real risk. Write actions always verify
+// live, uncached, so a just-revoked access can never slip a mutation
+// through during the cache window.
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail'];
+
 function doGet(e) {
   try {
     const action = (e.parameter.action || '').toLowerCase();
-    const caller = verifyStaffManagerToken_(e.parameter.idToken);
+    const caller = STAFF_READ_ACTIONS_.indexOf(action) !== -1
+      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken); })
+      : verifyStaffManagerToken_(e.parameter.idToken);
     if (!caller) return staffJsonOut_({ success: false, error: 'Not authorized' });
 
     const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
@@ -242,7 +291,16 @@ function appendAcademicRow_(ss, employeeCode, name, classSubjects) {
 // "Helper"...) only exists in EmpSalary. EmpMaster.AuthEmail is also NOT a
 // real email (it's a bare row-number in the real sheet) -- the real one is
 // EmpPersonal.AuthEmail, read separately in employeeDetail_ below.
+// Cached per campusId (below) -- this reads two full sheets (EmpMaster +
+// EmpSalary for the Designation lookup) which was the dominant cost of a
+// Directory load with no caching at all. Busted on every write (see
+// bustStaffListCache_) so a hire/transfer/inactive the caller JUST made
+// shows up immediately rather than waiting out the TTL.
 function listEmployees_(caller) {
+  return cachedStaff_('staff_list_' + caller.campusId, function () { return buildEmployeeList_(caller); });
+}
+
+function buildEmployeeList_(caller) {
   const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const idx = {};
@@ -265,6 +323,11 @@ function listEmployees_(caller) {
     });
   }
   return out;
+}
+
+function bustStaffListCache_() {
+  const keys = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map(function (c) { return 'staff_list_' + c; });
+  CacheService.getScriptCache().removeAll(keys);
 }
 
 function readDesignationByCode_() {
@@ -452,6 +515,7 @@ function addNewHire_(data, caller) {
   }));
   appendAcademicRow_(ss, code, data.name, data.classSubjects);
 
+  bustStaffListCache_();
   return { employeeCode: code };
 }
 
@@ -506,6 +570,7 @@ function transferEmployee_(data, caller) {
   }));
   appendAcademicRow_(ss, newCode, oldName, data.classSubjects);
 
+  bustStaffListCache_();
   return { employeeCode: newCode };
 }
 
@@ -538,6 +603,7 @@ function markInactive_(data, caller) {
       const d = new Date(data.dateOfRelieving);
       if (!isNaN(d.getTime())) master.getRange(rowNum, dorelCol + 1).setValue(d);
     }
+    bustStaffListCache_();
     return { success: true };
   }
   throw new Error('Employee not found: ' + data.employeeCode);

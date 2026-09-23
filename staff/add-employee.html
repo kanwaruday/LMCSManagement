@@ -323,8 +323,11 @@ async function init() {
 
   document.getElementById('formArea').style.display = 'block';
 
-  await loadAllEmployees();
-  loadDirectory();
+  // Independent calls to two different backends (public roster proxy vs.
+  // the authenticated Staff API) -- run in parallel instead of one
+  // blocking the other, since each was already slow enough on its own
+  // (see PERF note on doGet in staff-management-api.gs).
+  await Promise.all([loadAllEmployees(), loadDirectory()]);
 }
 
 function populateSchoolSelect(id) {
