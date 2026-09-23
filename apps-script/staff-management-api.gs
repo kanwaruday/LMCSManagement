@@ -47,6 +47,7 @@ function doGet(e) {
     let result;
     if (action === 'nextcode') result = { employeeCode: previewNextCode_(data) };
     else if (action === 'list') result = { employees: listEmployees_(caller) };
+    else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -261,6 +262,58 @@ function listEmployees_(caller) {
 function formatStaffDate_(d) {
   if (!(d instanceof Date) || isNaN(d.getTime())) return '';
   return Utilities.formatDate(d, 'Etc/GMT', 'yyyy-MM-dd');
+}
+
+// Every column of one sheet's row matching EmployeeCode, as {header: value} --
+// generic (not a hardcoded field list) because EmpPersonal/EmpProfessional/
+// EmpKeyNumbers' exact column names aren't known here (they're the PII tabs
+// employee-roster.gs's file header deliberately never reads -- see that
+// file's WHY note). Whatever the real headers are, this surfaces them as-is
+// for the Directory's detail view rather than guessing field names and
+// silently dropping ones that don't match.
+function readRowByCode_(ss, sheetName, code) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  if (codeCol < 0) return null;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][codeCol] || '').trim() !== code) continue;
+    const obj = {};
+    header.forEach(function (h, idx) {
+      if (!h) return;
+      const v = rows[i][idx];
+      obj[h] = v instanceof Date ? formatStaffDate_(v) : v;
+    });
+    return obj;
+  }
+  return null;
+}
+
+// Full per-employee record for the Directory's "view all information" panel
+// -- merges EmpMaster with every other per-employee tab in the workbook
+// (EmpPersonal/EmpProfessional/EmpKeyNumbers: address, DOB, phone, Aadhar,
+// PAN, bank details) plus their EmpAcademic class/subject row. Gated behind
+// the same verified-token + campus-scope check as every write action here,
+// which is WHY this can safely return the PII tabs that the public
+// employee-roster.gs proxy deliberately never touches.
+function employeeDetail_(data, caller) {
+  if (!data.employeeCode) throw new Error('employeeCode is required');
+  const ss = openEmpWorkbook_();
+  const master = readRowByCode_(ss, 'EmpMaster', data.employeeCode);
+  if (!master) throw new Error('Employee not found: ' + data.employeeCode);
+  const school = String(master.SchoolCode || '').trim().toUpperCase();
+  assertScope_(caller, [school]);
+
+  const detail = { EmpMaster: master };
+  ['EmpPersonal', 'EmpProfessional', 'EmpKeyNumbers'].forEach(function (sheetName) {
+    const row = readRowByCode_(ss, sheetName, data.employeeCode);
+    if (row) detail[sheetName] = row;
+  });
+  const academic = readRowByCode_(ss, 'EmpAcademic', data.employeeCode);
+  if (academic) detail.EmpAcademic = academic;
+  return detail;
 }
 
 // ── Actions ───────────────────────────────────────────────────────────
