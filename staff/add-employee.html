@@ -256,14 +256,18 @@ td.name{font-weight:700}
 <script>
 /* ═══════════════════════════════════════════════════════════
    CONFIG
-   STAFF_API_URL: the write-capable "LMCS Staff Management API"
-   project -- deploy apps-script/staff-management-api.gs and paste its
-   Web App URL here. EMPLOYEE_ROSTER_URL is the existing read-only
-   proxy, reused here only for populating the search dropdowns (already
-   excludes departed/inactive staff).
+   staff-management-api.gs merged into the same Apps Script project as
+   employee-roster.gs 2026-09-23 (per Uday, one project to redeploy
+   instead of two) -- STAFF_API_URL and EMPLOYEE_ROSTER_URL are now
+   deliberately the SAME url; every action (public roster reads AND
+   gated staff read/write actions) is served by that one deployment's
+   doGet(), which routes internally. Kept as two separate constants
+   here (not one) so it stays obvious in each call site below which
+   set of actions is being called, and so a future re-split back into
+   two projects only needs one line changed.
 ═══════════════════════════════════════════════════════════ */
-const STAFF_API_URL = 'https://script.google.com/macros/s/AKfycbwPKhRNsGCjbhtpKOCxzj9k1xqT6Pr2MxwbZLUdKQd0eLGS6yVlqn5Hqm6qHjrIH5yV/exec';
 const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+const STAFF_API_URL = EMPLOYEE_ROSTER_URL;
 
 const CAMPUS_LABELS = {
   LMS1: 'LMS 1 — Dhalpur', LMS2: 'LMS 2 — Kelheli', LMS3: 'LMS 3 — Dunkhra',

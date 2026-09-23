@@ -1,19 +1,28 @@
 // ═══════════════════════════════════════════════════════════════════
-// LMCS Staff Management API — write-capable Web App for the
-// Employee Master workbook (1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0).
+// LMCS Staff Management API — write-capable actions for the Employee
+// Master workbook (1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0).
 //
-// Deliberately a SEPARATE project from "LMCS Employee Roster Proxy" --
-// that one is public-read-only by design (see its own file header); this
-// one writes real HR data, so every mutating call is verified against the
-// SAME "LMCS Principal Allowlist" sheet principal-allowlist.gs backs,
-// re-derived server-side from a real Google ID token -- never trusted
-// from the client. Only 'Coordinator' (their own locked campus only) or
-// 'Owner' (any campus) can call the write actions; everyone else gets
-// "Not authorized," full stop.
+// LIVES IN THE SAME APPS SCRIPT PROJECT as employee-roster.gs ("LMCS
+// Employee Roster Proxy") as of 2026-09-23, per Uday -- one project/one
+// deployment to redeploy instead of two. That project's doGet() (in
+// employee-roster.gs) is the single entry point and routes every
+// STAFF_ACTIONS_ action to staffDoGet_() below. The original reason
+// these were two separate projects still holds and hasn't gone away:
+// employee-roster.gs's own actions ('roster'/'employees'/'designations')
+// are public reads with NO token check, deliberately narrow in what they
+// return; every action in THIS file writes real HR data or returns PII
+// (Aadhar/PAN/bank details), so it's verified against the "LMCS
+// Principal Allowlist" sheet principal-allowlist.gs backs, re-derived
+// server-side from a real Google ID token -- never trusted from the
+// client, regardless of which project's doGet answered the request. Only
+// 'Coordinator' (their own locked campus only) or 'Owner' (any campus)
+// can call the write actions; everyone else gets "Not authorized," full
+// stop. Merging the deployment did not merge that trust boundary.
 //
 // Reads for dropdowns (existing employee names/schools) are NOT
-// duplicated here -- the frontend calls the existing Employee Roster
-// Proxy's ?action=employees for that (already excludes departed staff).
+// duplicated here -- the frontend calls the roster proxy's own
+// ?action=employees for that (already excludes departed staff) --
+// same URL, now, as this file's own actions.
 //
 // PERF (2026-09-23): the Directory tab was extremely slow to load.
 // Root cause: every single action call here -- including read-only ones
@@ -32,14 +41,15 @@
 // inactive the caller just made shows up immediately.
 //
 // SETUP:
-//   1. script.google.com -> New project -> paste this file
-//   2. Deploy -> New deployment -> Web App
-//      Execute as: Me | Who has access: Anyone
-//      (same "reads open, writes gated by verified token" model as
-//      principal-allowlist.gs -- Apps Script's own access setting isn't
-//      the real gate here)
-//   3. Copy the Web App URL into staff/add-employee.html's
-//      STAFF_API_URL constant
+//   1. Open the "LMCS Employee Roster Proxy" Apps Script project
+//      (the one that already has employee-roster.gs in it)
+//   2. Add this file to that SAME project (+ next to Files -> paste in)
+//      -- do NOT create a separate project for it
+//   3. Deploy -> Manage deployments -> pencil icon on the existing
+//      deployment -> New version (deploys BOTH files together, keeps
+//      the same Web App URL everything already points at)
+//   4. staff/add-employee.html's STAFF_API_URL should already equal
+//      EMPLOYEE_ROSTER_URL -- if you ever see them differ, that's a bug
 // ═══════════════════════════════════════════════════════════════════
 
 const STAFF_EMP_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
@@ -99,7 +109,13 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // through during the cache window.
 const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail'];
 
-function doGet(e) {
+// Renamed from doGet() 2026-09-23 when this file merged into the same
+// Apps Script project as employee-roster.gs (see that file's doGet() --
+// only one function may be named doGet per project, so it's now the
+// single dispatcher and routes here for every STAFF_ACTIONS_ action).
+// Everything below is otherwise unchanged from when this was its own
+// project's doGet().
+function staffDoGet_(e) {
   try {
     const action = (e.parameter.action || '').toLowerCase();
     const caller = STAFF_READ_ACTIONS_.indexOf(action) !== -1

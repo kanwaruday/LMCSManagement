@@ -2,6 +2,14 @@
 // Employee Roster Proxy — narrow, public-read Web App in front of the
 // Employee Master workbook (1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0).
 //
+// This project ALSO now contains staff-management-api.gs (merged in
+// 2026-09-23, per Uday, to redeploy as one project instead of two) --
+// see that file's own header for what it adds and why the trust
+// boundary between "public read" (this file) and "gated write/PII"
+// (that file) is unchanged by the merge. doGet() below is the ONE entry
+// point for the whole project and routes to staffDoGet_() for that
+// file's actions.
+//
 // WHY THIS EXISTS (2026-08-27): that workbook is currently shared
 // "anyone with the link" so the portal's client-side JS can read it
 // directly — but Google Sheets sharing is per-FILE, not per-tab, and
@@ -143,8 +151,26 @@ function empSubjectLabel(code) {
   return EMP_SUBJECT_LABEL[code] || code;
 }
 
+// Merged into this ONE project 2026-09-23, per Uday -- this file and
+// staff-management-api.gs now live together as two files in the same
+// Apps Script project ("LMCS Employee Roster Proxy"), sharing one Web
+// App deployment/exec URL, instead of two separate projects each needing
+// their own redeploy. This is the single doGet() Apps Script requires
+// (only one function of that name is allowed per project) -- it just
+// routes to whichever file's actions the request asked for. Nothing
+// about EACH action's own access rule changed: 'roster'/'employees'/
+// 'designations' below are still fully public with no token check;
+// staff-management-api.gs's STAFF_ACTIONS_ (nextcode/list/detail/
+// addnewhire/transfer/markinactive) still go through staffDoGet_(),
+// which still verifies a real Google ID token against the Principal
+// Allowlist for every one of them, completely unchanged from when it
+// was its own project -- merging the deployment never merged the trust
+// boundary between "public read" and "gated write/PII" actions.
+const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive'];
+
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
+  if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
   try {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
