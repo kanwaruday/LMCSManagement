@@ -709,7 +709,15 @@ document.getElementById('autoResolveBtn').addEventListener('click', async functi
     const json = await callStaffApi('autoresolvequeue', {});
     if (!json.success) throw new Error(json.error || 'auto-resolve failed');
     msg.className = 'ok';
-    msg.textContent = 'Resolved ' + json.resolved + ' of ' + json.checked + ' items checked.';
+    const r = json.unresolvedReasons || {};
+    const failedSchools = Object.keys(json.sheetDiagnostics || {}).filter(function (c) { return !json.sheetDiagnostics[c].opened; });
+    msg.innerHTML = 'Resolved ' + json.resolved + ' of ' + json.checked + ' items checked.' +
+      (json.checked > json.resolved
+        ? '<br>Not resolved: ' + esc(r.noResponseRow || 0) + ' had no matching file in any Response sheet, ' +
+          esc(r.staleEmployeeId || 0) + ' had an Employee ID not found in the current roster, ' +
+          esc(r.noFileId || 0) + ' had an unreadable Drive Link.' +
+          (failedSchools.length ? '<br><b>Could not open the Response sheet for: ' + esc(failedSchools.join(', ')) + '</b> -- check that sheet ID.' : '')
+        : '');
     await loadVerificationQueue();
   } catch (err) {
     msg.className = 'err';

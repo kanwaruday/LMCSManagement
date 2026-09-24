@@ -721,16 +721,30 @@ function extractDriveFileId_(url) {
 // fileId -> {employeeCode, employeeName}, built fresh from all 6
 // response sheets every run (cheap -- a few thousand cells total, not a
 // hot path, this is a manual one-off/occasional cleanup action).
-function buildFileIdOwnerMap_() {
+// `diagnostics` (per-campus: opened Y/N, row count, file IDs found) is
+// filled in as a side effect if the caller passes an object for it --
+// lets autoResolveFromResponseSheets_ report exactly which campus, if
+// any, failed to open (e.g. a wrong sheet ID) instead of just an overall
+// resolved count that can't explain a partial result.
+function buildFileIdOwnerMap_(diagnostics) {
   const map = {};
   Object.keys(RESPONSE_SHEET_IDS_).forEach(function (campus) {
+    const diag = { opened: false, rows: 0, fileIdsFound: 0, error: null };
+    if (diagnostics) diagnostics[campus] = diag;
     let sheet;
-    try { sheet = SpreadsheetApp.openById(RESPONSE_SHEET_IDS_[campus]).getSheets()[0]; } catch (err) { return; }
+    try {
+      sheet = SpreadsheetApp.openById(RESPONSE_SHEET_IDS_[campus]).getSheets()[0];
+      diag.opened = true;
+    } catch (err) {
+      diag.error = err.message;
+      return;
+    }
     const rows = sheet.getDataRange().getValues();
+    diag.rows = Math.max(rows.length - 1, 0);
     const header = rows[0];
     const nameCol = header.indexOf('Employee Name');
     const idCol = header.indexOf('Employee ID');
-    if (nameCol < 0 || idCol < 0) return;
+    if (nameCol < 0 || idCol < 0) { diag.error = 'no Employee Name/ID column found'; return; }
     for (let i = 1; i < rows.length; i++) {
       const employeeCode = String(rows[i][idCol] || '').trim();
       if (!employeeCode) continue; // can't resolve anything from a row with no ID typed in
@@ -738,7 +752,7 @@ function buildFileIdOwnerMap_() {
       for (let c = 0; c < rows[i].length; c++) {
         if (c === nameCol || c === idCol) continue;
         const fileId = extractDriveFileId_(rows[i][c]);
-        if (fileId) map[fileId] = { employeeCode: employeeCode, employeeName: employeeName };
+        if (fileId) { map[fileId] = { employeeCode: employeeCode, employeeName: employeeName }; diag.fileIdsFound++; }
       }
     }
   });
@@ -752,7 +766,8 @@ function buildFileIdOwnerMap_() {
 // the caller's own campus, since this is a one-shot bulk cleanup over
 // the whole sheet, same as re-running the importer would be.
 function autoResolveFromResponseSheets_(caller) {
-  const ownerMap = buildFileIdOwnerMap_();
+  const sheetDiagnostics = {};
+  const ownerMap = buildFileIdOwnerMap_(sheetDiagnostics);
   const ss = openEmpWorkbook_();
   const sheet = ss.getSheetByName('Certificate Links');
   if (!sheet) throw new Error('Certificate Links tab not found');
@@ -764,16 +779,25 @@ function autoResolveFromResponseSheets_(caller) {
   const linkCol = header.indexOf('Drive Link');
   const statusCol = header.indexOf('Status');
   let checked = 0, resolved = 0;
+  // Why a checked-but-unresolved row stayed that way -- shown back to the
+  // caller so "it didn't match everything" has a real answer instead of
+  // just a bare number. 'noFileId': the Drive Link cell didn't parse.
+  // 'noResponseRow': the file's ID never showed up in ANY response
+  // sheet's cells (also where a campus that failed to open shows up).
+  // 'staleEmployeeId': the response sheet's Employee ID isn't a real,
+  // current EmpMaster row (typo, or someone who's left).
+  const reasons = { noFileId: 0, noResponseRow: 0, staleEmployeeId: 0 };
   for (let i = 1; i < rows.length; i++) {
     const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim() : '';
     const needsReview = status.indexOf('submitter-based') !== -1 || status.indexOf('Ambiguous') !== -1 || status.indexOf('Unmatched') !== -1;
     if (!needsReview) continue;
     checked++;
     const fileId = extractDriveFileId_(linkCol >= 0 ? rows[i][linkCol] : '');
-    const owner = fileId && ownerMap[fileId];
-    if (!owner) continue;
+    if (!fileId) { reasons.noFileId++; continue; }
+    const owner = ownerMap[fileId];
+    if (!owner) { reasons.noResponseRow++; continue; }
     const target = readRowByCode_(ss, 'EmpMaster', owner.employeeCode);
-    if (!target) continue; // response sheet's ID doesn't match a real, current employee -- don't guess
+    if (!target) { reasons.staleEmployeeId++; continue; } // response sheet's ID doesn't match a real, current employee -- don't guess
     const targetSchool = String(target.SchoolCode || '').trim().toUpperCase();
     const rowNum = i + 1;
     if (codeCol >= 0) sheet.getRange(rowNum, codeCol + 1).setValue(owner.employeeCode);
@@ -782,7 +806,7 @@ function autoResolveFromResponseSheets_(caller) {
     if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setValue('Resolved via response-sheet cross-reference (' + caller.email + ', ' + formatStaffDate_(new Date()) + ')');
     resolved++;
   }
-  return { checked: checked, resolved: resolved };
+  return { checked: checked, resolved: resolved, unresolvedReasons: reasons, sheetDiagnostics: sheetDiagnostics };
 }
 
 // EmployeeCode -> {designation, department (lowercased, for the
