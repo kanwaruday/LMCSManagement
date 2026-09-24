@@ -145,16 +145,29 @@ function staffDoGet_(e) {
 //    role/campusId). Returns null if the token doesn't verify, or the
 //    email isn't on the list, or their role isn't Coordinator/Owner. ──
 function verifyStaffManagerToken_(idToken) {
-  if (!idToken) return null;
+  // TEMPORARY diagnostic logging (2026-09-24) -- every return path below
+  // logs WHY, so the Execution log shows the real cause instead of just
+  // "Not authorized" everywhere. Safe to leave (Stackdriver logs cost
+  // nothing extra), but remove once the live issue is confirmed fixed.
+  if (!idToken) { console.log('verifyStaffManagerToken_: no idToken provided'); return null; }
   try {
     const res = UrlFetchApp.fetch(
       'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
       { muteHttpExceptions: true }
     );
-    if (res.getResponseCode() !== 200) return null;
+    if (res.getResponseCode() !== 200) {
+      console.log('verifyStaffManagerToken_: tokeninfo HTTP ' + res.getResponseCode() + ' -- ' + res.getContentText());
+      return null;
+    }
     const payload = JSON.parse(res.getContentText());
-    if (payload.aud !== STAFF_GOOGLE_CLIENT_ID) return null;
-    if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
+    if (payload.aud !== STAFF_GOOGLE_CLIENT_ID) {
+      console.log('verifyStaffManagerToken_: aud mismatch -- got ' + payload.aud + ', expected ' + STAFF_GOOGLE_CLIENT_ID);
+      return null;
+    }
+    if (payload.email_verified !== 'true' && payload.email_verified !== true) {
+      console.log('verifyStaffManagerToken_: email_verified is ' + payload.email_verified + ' for ' + payload.email);
+      return null;
+    }
     const email = (payload.email || '').toLowerCase();
 
     const rows = SpreadsheetApp.openById(STAFF_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
@@ -167,11 +180,17 @@ function verifyStaffManagerToken_(idToken) {
       // gets Staff Portal access via the Coordinator half.
       const role = String(rows[i][3] || '').trim();
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL') return null;
+      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL') {
+        console.log('verifyStaffManagerToken_: ' + email + ' is on the allowlist but role="' + role + '" campusId="' + campusId + '" -- not Coordinator/Owner/ALL');
+        return null;
+      }
+      console.log('verifyStaffManagerToken_: OK -- ' + email + ' campusId=' + campusId + ' role=' + role);
       return { email: email, campusId: campusId, role: role, roles: roles };
     }
+    console.log('verifyStaffManagerToken_: ' + email + ' verified by Google but NOT found on the allowlist sheet');
     return null; // not on the allowlist at all
   } catch (err) {
+    console.log('verifyStaffManagerToken_: threw -- ' + err.message);
     return null;
   }
 }
