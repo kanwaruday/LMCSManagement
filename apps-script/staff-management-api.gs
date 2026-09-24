@@ -108,7 +108,7 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // staleness on a read carries no real risk. Write actions always verify
 // live, uncached, so a just-revoked access can never slip a mutation
 // through during the cache window.
-const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus'];
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus'];
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
@@ -130,6 +130,7 @@ function staffDoGet_(e) {
     else if (action === 'list') result = { employees: listEmployees_(caller) };
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
+    else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -430,6 +431,99 @@ function readCertificatesByCode_() {
     map[code][type].push({ filename: fileCol >= 0 ? String(rows[i][fileCol] || '').trim() : '', driveLink: driveLink });
   }
   return map;
+}
+
+// ── New-upload detection (Uday, 2026-09-24) ──────────────────────────
+// Lightweight, read-only signal for whether employees have uploaded
+// documents since the "Certificate Links" sheet was last refreshed (that
+// refresh itself stays a local, manual step -- drive-index/build_employee
+// _cert_links.py + generate_appscript_import.py + re-running
+// importCertificateLinks() -- this only tells you WHEN a refresh is
+// worth doing, it doesn't automate the refresh itself).
+//
+// Computed LIVE on every 'uploadstatus' call, deliberately uncached, same
+// reasoning as listDocumentStatus_ below: a stale cached number here
+// would be actively misleading (the whole point is freshness), and this
+// is cheap -- six DriveApp folder walks, not a hot per-keystroke path.
+const CENTRAL_REPO_FOLDER_ID_ = '1ogMId6iUIA2WTnnSsEKqj5eDOxqaZeWJ';
+const SCHOOL_TO_CAMPUS_DIR_ = {
+  'LMS 1': 'LMS 1 - Dhalpur', 'LMS 2': 'LMS 2 - Kelheli', 'LMS 3': 'LMS 3 - Dunkhra',
+  'LMS 4': 'LMS 4 - Ner Chowk', 'LMS 5': 'LMS 5 - Sayoli', 'LMS 6': 'LMS 6 - Jogindernagar',
+};
+
+function getSubfolder_(parent, name) {
+  const it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : null;
+}
+
+function countFilesRecursive_(folder, depth) {
+  if (depth > 6) return 0; // guard against an unexpectedly deep/looping tree
+  let count = 0;
+  const files = folder.getFiles();
+  while (files.hasNext()) { files.next(); count++; }
+  const subs = folder.getFolders();
+  while (subs.hasNext()) { count += countFilesRecursive_(subs.next(), depth + 1); }
+  return count;
+}
+
+// Only counts files under subfolders whose name matches one of
+// STAFF_DOCUMENT_TYPES -- the Staff Document Submission form also
+// collects Aadhar/PAN/driving licence/bank cheque/biodata/hiring slip,
+// which the Certificate Links importer deliberately excludes (those
+// aren't certificates), so counting them here would show a permanent
+// false "drift" even with zero real gap.
+function countCertFilesInFormRoot_(formRoot) {
+  let count = 0;
+  const subs = formRoot.getFolders();
+  while (subs.hasNext()) {
+    const sub = subs.next();
+    const base = sub.getName().replace(/\s*\(\d+\)$/, '').replace(' (File responses)', '').trim().toUpperCase();
+    const isCertType = STAFF_DOCUMENT_TYPES.some(function (t) {
+      const tu = t.toUpperCase();
+      return base === tu || base.indexOf(tu) !== -1 || tu.indexOf(base) !== -1;
+    });
+    if (isCertType) count += countFilesRecursive_(sub, 0);
+  }
+  return count;
+}
+
+// Returns { 'LMS 1': {driveFileCount, sheetRowCount, delta} | null, ... }
+// -- null for a school whose folder chain isn't found (renamed/moved)
+// rather than throwing and breaking the whole response for every school.
+function checkNewUploads_() {
+  const root = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+
+  const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
+  const sheetCounts = {};
+  if (sheet) {
+    const rows = sheet.getDataRange().getValues();
+    const header = rows[0];
+    const schoolCol = header.indexOf('School');
+    const linkCol = header.indexOf('Drive Link');
+    for (let i = 1; i < rows.length; i++) {
+      const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
+      if (!link) continue;
+      const school = schoolCol >= 0 ? String(rows[i][schoolCol] || '').trim() : '';
+      if (!school) continue;
+      sheetCounts[school] = (sheetCounts[school] || 0) + 1;
+    }
+  }
+
+  const result = {};
+  Object.keys(SCHOOL_TO_CAMPUS_DIR_).forEach(function (school) {
+    try {
+      const campusFolder = getSubfolder_(root, SCHOOL_TO_CAMPUS_DIR_[school]);
+      const empFile = campusFolder && getSubfolder_(campusFolder, 'Employee File - ' + school);
+      const formRoot = empFile && getSubfolder_(empFile, school + ' Staff Document Submission form (File responses)');
+      if (!formRoot) { result[school] = null; return; }
+      const driveFileCount = countCertFilesInFormRoot_(formRoot);
+      const sheetRowCount = sheetCounts[school] || 0;
+      result[school] = { driveFileCount: driveFileCount, sheetRowCount: sheetRowCount, delta: driveFileCount - sheetRowCount };
+    } catch (err) {
+      result[school] = null;
+    }
+  });
+  return result;
 }
 
 // School-wise document-compliance table (Uday, 2026-09-24): every ACTIVE
