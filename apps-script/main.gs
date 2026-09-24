@@ -68,8 +68,8 @@
 //                         candidate's status, warn-not-block cross-checks
 //                         against the Interview Report and per-campus
 //                         Document Submission sheets. The 'Hired' write
-//                         is gated on two Approvals categories ('Hiring /
-//                         New Position', 'Hiring Decision') both being
+//                         is gated on two Approvals categories ('New/
+//                         Backup Position', 'Hiring Decision') both being
 //                         Approved for that campus -- see its own header.
 //   teacher-portal.gs   -- action=myssstats (teacher-ss.gs, not here),
 //                         myupcomingevents (principal-dr.gs, not here),

@@ -535,7 +535,7 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Urgency</label>
           <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
         </div>
-        <!-- New Position only -- redesigned 2026-09-24 per
+        <!-- New/ Backup Position only -- redesigned 2026-09-24 per
              Uday's annotated mockup: role/subjects moved up here (right
              after Category), Title/Evidence Link/Linked Activity/Number
              of Openings all dropped for this category, and a
@@ -558,6 +558,15 @@ td{padding:6px 12px;vertical-align:middle}
                 <option value="PGT">PGT (up to Class 12)</option>
                 <option value="COMPUTER">Computer Teacher</option>
                 <option value="PTI">PTI / Games Teacher</option>
+                <option value="ACTIVITY">Activity Teacher</option>
+                <option value="DRAWING">Drawing Teacher</option>
+                <option value="LIBRARIAN">Librarian</option>
+                <option value="DRIVER">Driver Cum Peon</option>
+                <option value="HELPER">Helper</option>
+                <option value="SWEEPER">Sweeper</option>
+                <option value="TECHNICIAN">Technician</option>
+                <option value="GARDENER">Gardener</option>
+                <option value="CLERK">Clerk + PRO</option>
               </select>
             </div>
             <div>
@@ -1973,16 +1982,16 @@ async function loadReportForDate() {
 // caller can see in one call).
 // 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
 // this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
-const APR_CATEGORIES = ['New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
 // Item doubles as "Item" (Financial/Purchase), "Employee" (Compensation
-// Change), or "Subjects/Position Required" (New Position) --
+// Change), or "Subjects/Position Required" (New/ Backup Position) --
 // same generic field, just relabeled per category in aprOnCategoryChange().
 // Amount and Item+Qty are gated separately (Hiring shows Item+Qty but no
 // Amount; Compensation Change shows Item+Amount but no Qty). Keep all 3
 // consts in sync with approvals.gs.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New Position'];
-// 2026-09-24: New Position no longer shows a Quantity/"Number
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position'];
+// 2026-09-24: New/ Backup Position no longer shows a Quantity/"Number
 // of Openings" field (dropped per Uday's annotated redesign) -- only
 // Financial/Purchase still has a real "how many" concept. Backend
 // still accepts a quantity for Hiring (unchanged schema), it just never
@@ -2027,7 +2036,7 @@ function aprSelectCategory(c) {
   aprOnCategoryChange();
 }
 // NOT called here -- aprOnCategoryChange() (default category is
-// New Position) calls renderAprSubjectsMsOptions(), which
+// New/ Backup Position) calls renderAprSubjectsMsOptions(), which
 // needs APR_HIRING_SUBJECTS_BY_ROLE, a `const` declared further down
 // this same script. Calling it this early hit that const before its
 // own declaration ran (temporal dead zone -- a real bug found live
@@ -2064,6 +2073,16 @@ const APR_HIRING_SUBJECTS_BY_ROLE = {
   PGT: ['English', 'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science'],
   COMPUTER: ['Information Technology'],
   PTI: ['P.Ed'],
+  // 2026-09-24, per Uday: these 9 added for non-teaching/specialist
+  // campus roles a Principal genuinely hires for -- explicitly "don't
+  // need a subject" (his words), so all blank, same generalist
+  // treatment as NTT. Real EmpSalary designations, confirmed a
+  // requisition for any of these still goes through the SAME Approvals
+  // -> "New/ Backup Position" -> visible-in-Teaching-Applicants-sheet
+  // flow as a teaching hire (the blank-subjects wildcard in
+  // hirSubjectMatchStrength_ already does this -- no extra code needed).
+  ACTIVITY: [], DRAWING: [], LIBRARIAN: [],
+  DRIVER: [], HELPER: [], SWEEPER: [], TECHNICIAN: [], GARDENER: [], CLERK: [],
 };
 let selectedAprSubjects = [];
 
@@ -2140,7 +2159,7 @@ async function aprLoadEmployeeList_() {
 
 function aprOnCategoryChange() {
   const category = document.getElementById('aprCategory').value;
-  const isHiring = category === 'New Position';
+  const isHiring = category === 'New/ Backup Position';
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
   const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1 && !isHiring; // Hiring's item box is replaced entirely by aprHiringFields below
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
@@ -2349,16 +2368,16 @@ function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
   if (r.itemName) {
-    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'New Position' ? 'Subjects/Position: ' : 'Item: ');
-    const qtySuffix = r.quantity == null ? '' : (r.category === 'New Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
+    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'New/ Backup Position' ? 'Subjects/Position: ' : 'Item: ');
+    const qtySuffix = r.quantity == null ? '' : (r.category === 'New/ Backup Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
     meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
   }
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
-  // New Position repurposes evidenceLink for the replacement-
+  // New/ Backup Position repurposes evidenceLink for the replacement-
   // hire note (plain text, not a URL -- see submitApprovalRequest), so
   // it renders as text here instead of a clickable "Evidence: link".
   if (r.evidenceLink) {
-    meta.push(r.category === 'New Position' ? aprEsc_(r.evidenceLink) : 'Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+    meta.push(r.category === 'New/ Backup Position' ? aprEsc_(r.evidenceLink) : 'Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
   }
   if (r.linkedPlannedActivityId) {
     const linked = (plannedActivitiesCache_[r.campusId] || []).filter(function (a) { return a.id === r.linkedPlannedActivityId; })[0];
@@ -2476,10 +2495,10 @@ async function submitApprovalRequest() {
   const btn = document.getElementById('aprSubmitBtn');
   if (btn.disabled) return;
   const category = document.getElementById('aprCategory').value;
-  const isHiring = category === 'New Position';
+  const isHiring = category === 'New/ Backup Position';
   const description = document.getElementById('aprDescription').value.trim();
 
-  // New Position: Title is hidden and auto-derives from
+  // New/ Backup Position: Title is hidden and auto-derives from
   // Role+Subjects (already synced into aprItemName -- see
   // aprSyncHiringItemName_); Evidence Link is hidden too and instead
   // repurposed to carry the replacement-hire note, since it's just a
@@ -2577,7 +2596,7 @@ function switchSubTab(tab) {
 }
 
 // Sets the Category form's initial field visibility to match its
-// default-selected option (New Position) -- see the comment
+// default-selected option (New/ Backup Position) -- see the comment
 // at aprSelectCategory()'s definition for why this has to run down
 // here, after APR_HIRING_SUBJECTS_BY_ROLE is actually declared, not
 // right after the button/select markup gets populated.

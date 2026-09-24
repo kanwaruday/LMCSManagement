@@ -105,7 +105,7 @@ function hirNormalizeName_(n) {
 
 // action=hiringapplicants -- an applicant row is visible only if AT LEAST
 // ONE campus in its Branches column currently has an Approved "Hiring /
-// New Position" AND that requisition's required subjects overlap the
+// New/ Backup Position" AND that requisition's required subjects overlap the
 // applicant's own Subjects (hirSubjectsMatch_ -- a blank requirement is
 // a wildcard, so this doesn't newly hide anything that was visible
 // before subjects existed on the form). A locked Principal is further
@@ -134,7 +134,7 @@ function hirNormalizeName_(n) {
 // every caller re-deduping) -- keeps the most recent submission,
 // backfilling a missing CV link from an older duplicate that had one.
 function hiringApplicants_(caller) {
-  const requisitions = hirApprovedRequisitions_('New Position');
+  const requisitions = hirApprovedRequisitions_('New/ Backup Position');
   if (caller.campusId !== 'ALL' && !requisitions[caller.campusId]) {
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
@@ -218,10 +218,13 @@ function hiringApplicants_(caller) {
 // which only ever care about the subjects part.
 function hirParseRequisitionItem_(itemName) {
   const s = String(itemName || '').trim();
-  // COMPUTER/PTI added 2026-09-24 (Computer Teacher, PTI/Games Teacher --
-  // real EmpSalary designations distinct from the PRT/TGT/PGT ladder,
-  // confirmed to hire through this same Teaching Applicants sheet).
-  const m = s.match(/^(NTT|PRT|TGT|PGT|COMPUTER|PTI)\s*[:—-]?\s*(.*)$/i);
+  // COMPUTER/PTI and the 9 non-teaching/specialist codes below added
+  // 2026-09-24 -- real EmpSalary designations distinct from the PRT/
+  // TGT/PGT ladder, all confirmed to hire through this same Teaching
+  // Applicants sheet (a requisition for any of them still unlocks
+  // Hiring Dashboard visibility via the blank-subjects wildcard in
+  // hirSubjectMatchStrength_, same as every other role here).
+  const m = s.match(/^(NTT|PRT|TGT|PGT|COMPUTER|PTI|ACTIVITY|DRAWING|LIBRARIAN|DRIVER|HELPER|SWEEPER|TECHNICIAN|GARDENER|CLERK)\s*[:—-]?\s*(.*)$/i);
   return m ? { roleLevel: m[1].toUpperCase(), subjectsRaw: m[2].trim() } : { roleLevel: '', subjectsRaw: s };
 }
 
@@ -382,7 +385,13 @@ function hirBedScore_(bedRaw) {
 // depth for senior secondary, PRT/NTT don't need it at all. Computer
 // Teacher/PTI (2026-09-24) are specialist, not part of that academic
 // ladder, so Bachelors is just as fine as Masters for either.
-const HIR_QUALIFICATION_EXPECTATION = { NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred', COMPUTER: 'either', PTI: 'either' };
+const HIR_QUALIFICATION_EXPECTATION = {
+  NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred', COMPUTER: 'either', PTI: 'either',
+  // Non-teaching/specialist roles (2026-09-24) -- Masters is never a
+  // meaningful expectation for these, same treatment as NTT.
+  ACTIVITY: 'either', DRAWING: 'either', LIBRARIAN: 'either',
+  DRIVER: 'either', HELPER: 'either', SWEEPER: 'either', TECHNICIAN: 'either', GARDENER: 'either', CLERK: 'either',
+};
 function hirQualificationScore_(qualification, roleLevel) {
   const isMasters = String(qualification || '').toLowerCase().indexOf('master') !== -1;
   const expectation = HIR_QUALIFICATION_EXPECTATION[roleLevel] || 'masters-preferred';
@@ -462,7 +471,7 @@ function hiringUpdateStatus_(caller, body) {
     const m = branches.match(/LMS-(\d)/);
     const applicantCampus = m ? 'LMS' + m[1] : caller.campusId;
     const missing = [];
-    if (!hirApprovalApproved_(applicantCampus, 'New Position')) missing.push('the "New Position" requisition');
+    if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
     if (!hirApprovalApproved_(applicantCampus, 'Hiring Decision')) missing.push('the "Hiring Decision" approval for this candidate');
     if (missing.length) {
       throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join(' and ') + ' to be Approved.');
