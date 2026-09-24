@@ -510,6 +510,38 @@ function readClassSubjects_(ss, code) {
   return [];
 }
 
+// "Certificate Links" tab (2026-09-24, per Uday) -- one row per SCANNED
+// DOCUMENT, not per employee (a person can have several: Aadhar, PAN,
+// certificates, etc.), keyed by "Employee Code" (note the space in that
+// header, unlike every other tab's "EmployeeCode"). Rows with a blank
+// Drive Link are skipped -- no point listing a document that was never
+// actually uploaded/linked.
+function readCertificateLinks_(ss, code) {
+  const sheet = ss.getSheetByName('Certificate Links');
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('Employee Code');
+  const typeCol = header.indexOf('Document Type');
+  const fileCol = header.indexOf('Filename');
+  const linkCol = header.indexOf('Drive Link');
+  const statusCol = header.indexOf('Status');
+  if (codeCol < 0) return [];
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][codeCol] || '').trim() !== code) continue;
+    const driveLink = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
+    if (!driveLink) continue;
+    out.push({
+      documentType: typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '',
+      filename: fileCol >= 0 ? String(rows[i][fileCol] || '').trim() : '',
+      driveLink: driveLink,
+      status: statusCol >= 0 ? String(rows[i][statusCol] || '').trim() : '',
+    });
+  }
+  return out;
+}
+
 // Full per-employee record for the Directory's "view all information" panel
 // -- merges EmpMaster with every other per-employee tab in the workbook
 // (EmpPersonal: address/DOB/phone; EmpSalary: job info, pay figures
@@ -517,9 +549,10 @@ function readClassSubjects_(ss, code) {
 // Aadhar/PAN/bank details, shown in full -- per Uday, 2026-09-23, anyone
 // who can already open this portal (Owner, or a Coordinator for their own
 // campus) is trusted with the full numbers, same as every write action
-// here) plus their decoded EmpAcademic class/subject list. Gated behind
-// the same verified-token + campus-scope check as every write action in
-// this file, which is WHY this can safely return the PII tabs the public
+// here) plus their decoded EmpAcademic class/subject list and Certificate
+// Links (scanned document links, added 2026-09-24). Gated behind the same
+// verified-token + campus-scope check as every write action in this file,
+// which is WHY this can safely return the PII tabs the public
 // employee-roster.gs proxy deliberately never touches.
 function employeeDetail_(data, caller) {
   if (!data.employeeCode) throw new Error('employeeCode is required');
@@ -552,6 +585,9 @@ function employeeDetail_(data, caller) {
 
   const classSubjects = readClassSubjects_(ss, data.employeeCode);
   if (classSubjects.length) detail.classSubjects = classSubjects;
+
+  const certificates = readCertificateLinks_(ss, data.employeeCode);
+  if (certificates.length) detail.certificates = certificates;
 
   return detail;
 }

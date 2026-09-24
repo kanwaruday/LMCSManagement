@@ -481,7 +481,7 @@ async function openEmployeeDetail(code) {
 
 function renderDetailModal(detail) {
   const name = (detail.EmpMaster && detail.EmpMaster.Name) || 'Employee';
-  const sections = Object.keys(detail).filter(function (sec) { return sec !== 'classSubjects'; }).map(function (sec) {
+  const sections = Object.keys(detail).filter(function (sec) { return sec !== 'classSubjects' && sec !== 'certificates'; }).map(function (sec) {
     const rows = Object.keys(detail[sec]).map(function (k) {
       let v = detail[sec][k];
       if (sec === 'EmpMaster' && k === 'ReportsTo' && v) {
@@ -497,9 +497,25 @@ function renderDetailModal(detail) {
       detail.classSubjects.map(function (cs) { return '<div class="v" style="grid-column:1/-1">' + esc(cs) + '</div>'; }).join('') +
       '</div></div>'
     : '';
+  // Certificate Links tab (2026-09-24) -- one row per scanned document.
+  // Only render an actual clickable link when the Drive Link cell really
+  // looks like an http(s) URL -- falls back to plain text otherwise
+  // rather than risk turning arbitrary sheet content into a link target.
+  const certificatesHtml = (detail.certificates && detail.certificates.length)
+    ? '<div class="modal-sec"><h4>Certificates / Documents</h4><div class="modal-grid">' +
+      detail.certificates.map(function (c) {
+        const isUrl = /^https?:\/\//i.test(c.driveLink || '');
+        const linkHtml = isUrl
+          ? '<a href="' + esc(c.driveLink) + '" target="_blank" rel="noopener">' + esc(c.filename || 'Open') + ' ↗</a>'
+          : esc(c.filename || c.driveLink || '—');
+        return '<div class="k">' + esc(c.documentType || 'Document') + '</div>' +
+          '<div class="v">' + linkHtml + (c.status ? ' <span class="pill">' + esc(c.status) + '</span>' : '') + '</div>';
+      }).join('') +
+      '</div></div>'
+    : '';
   document.getElementById('empDetailModal').innerHTML =
     '<div class="modal-box"><button type="button" class="modal-close" data-close>✕</button>' +
-    '<h3 style="margin-bottom:14px">' + esc(name) + '</h3>' + sections + classSubjectsHtml + '</div>';
+    '<h3 style="margin-bottom:14px">' + esc(name) + '</h3>' + sections + classSubjectsHtml + certificatesHtml + '</div>';
 }
 
 document.getElementById('empDetailModal').addEventListener('click', function (e) {
