@@ -254,7 +254,25 @@ function readCertCounts_() {
     const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
     if (link) { rowsWithLink++; codesWithLink[code] = true; }
   }
-  return { totalRows: totalRows, rowsWithLink: rowsWithLink, distinctEmployeesWithLink: Object.keys(codesWithLink).length };
+  // Cross-check: do those codes actually exist in EmpMaster (exact-match,
+  // same lookup employeeDetail_ does)? A formatting mismatch (e.g. code
+  // padding) here would explain the Portal never finding a match even
+  // though rowsWithLink/distinctEmployeesWithLink both look healthy above.
+  const masterRows = openWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
+  const masterHeader = masterRows[0];
+  const masterCodeCol = masterHeader.indexOf('EmployeeCode');
+  const masterCodes = {};
+  for (let i = 1; i < masterRows.length; i++) {
+    const c = String(masterRows[i][masterCodeCol] || '').trim();
+    if (c) masterCodes[c] = true;
+  }
+  let matchedInEmpMaster = 0;
+  Object.keys(codesWithLink).forEach(function (c) { if (masterCodes[c]) matchedInEmpMaster++; });
+  return {
+    totalRows: totalRows, rowsWithLink: rowsWithLink,
+    distinctEmployeesWithLink: Object.keys(codesWithLink).length,
+    matchedInEmpMaster: matchedInEmpMaster,
+  };
 }
 
 function openWorkbook_() {
