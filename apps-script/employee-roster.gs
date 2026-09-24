@@ -272,6 +272,10 @@ function readCertCounts_() {
     totalRows: totalRows, rowsWithLink: rowsWithLink,
     distinctEmployeesWithLink: Object.keys(codesWithLink).length,
     matchedInEmpMaster: matchedInEmpMaster,
+    // Just the codes -- no names/links -- so Uday can pick one to test
+    // with. Not meaningfully more sensitive than action=employees, which
+    // already publicly maps every one of these same codes to a name.
+    codesWithLink: Object.keys(codesWithLink),
   };
 }
 
