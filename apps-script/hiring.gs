@@ -224,7 +224,11 @@ function hirParseRequisitionItem_(itemName) {
   // Applicants sheet (a requisition for any of them still unlocks
   // Hiring Dashboard visibility via the blank-subjects wildcard in
   // hirSubjectMatchStrength_, same as every other role here).
-  const m = s.match(/^(NTT|PRT|TGT|PGT|COMPUTER|PTI|ACTIVITY|DRAWING|LIBRARIAN|DRIVER|HELPER|SWEEPER|TECHNICIAN|GARDENER|CLERK)\s*[:—-]?\s*(.*)$/i);
+  // PTISR listed BEFORE PTI -- regex alternation tries left-to-right, so
+  // "PTI" alone would otherwise greedily match inside "PTISR: ..." and
+  // leave "SR: ..." as a bogus subjectsRaw. Longer/more-specific
+  // alternative has to come first whenever one code is a prefix of another.
+  const m = s.match(/^(NTT|PRT|TGT|PGT|COMPUTER|PTISR|PTI|ACTIVITY|DRAWING|LIBRARIAN|DRIVER|HELPER|SWEEPER|TECHNICIAN|GARDENER|CLERK)\s*[:—-]?\s*(.*)$/i);
   return m ? { roleLevel: m[1].toUpperCase(), subjectsRaw: m[2].trim() } : { roleLevel: '', subjectsRaw: s };
 }
 
@@ -386,7 +390,7 @@ function hirBedScore_(bedRaw) {
 // Teacher/PTI (2026-09-24) are specialist, not part of that academic
 // ladder, so Bachelors is just as fine as Masters for either.
 const HIR_QUALIFICATION_EXPECTATION = {
-  NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred', COMPUTER: 'either', PTI: 'either',
+  NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred', COMPUTER: 'either', PTI: 'either', PTISR: 'either',
   // Non-teaching/specialist roles (2026-09-24) -- Masters is never a
   // meaningful expectation for these, same treatment as NTT.
   ACTIVITY: 'either', DRAWING: 'either', LIBRARIAN: 'either',

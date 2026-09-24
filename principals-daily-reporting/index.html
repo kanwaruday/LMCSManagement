@@ -558,6 +558,7 @@ td{padding:6px 12px;vertical-align:middle}
                 <option value="PGT">PGT (up to Class 12)</option>
                 <option value="COMPUTER">Computer Teacher</option>
                 <option value="PTI">PTI / Games Teacher</option>
+                <option value="PTISR">PTI (Classes 11-12)</option>
                 <option value="ACTIVITY">Activity Teacher</option>
                 <option value="DRAWING">Drawing Teacher</option>
                 <option value="LIBRARIAN">Librarian</option>
@@ -2079,6 +2080,7 @@ const APR_HIRING_SUBJECTS_BY_ROLE = {
   PGT: ['English', 'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science'],
   COMPUTER: ['Information Technology'],
   PTI: ['P.Ed'],
+  PTISR: ['P.Ed'], // "PTI (11, 12)" -- distinct real EmpSalary designation from PTI/Games Teacher above, same subject, scoped to senior secondary
   // 2026-09-24, per Uday: these 9 added for non-teaching/specialist
   // campus roles a Principal genuinely hires for -- explicitly "don't
   // need a subject" (his words), so all blank, same generalist
