@@ -245,14 +245,22 @@ function readCertCounts_() {
   const header = rows[0];
   const codeCol = header.indexOf('Employee Code');
   const linkCol = header.indexOf('Drive Link');
+  const typeCol = header.indexOf('Document Type');
   let totalRows = 0, rowsWithLink = 0;
   const codesWithLink = {};
+  const allCodes = {};
+  const typeCounts = {}; // "Aadhar Card" -> {total, withLink}
   for (let i = 1; i < rows.length; i++) {
     const code = codeCol >= 0 ? String(rows[i][codeCol] || '').trim() : '';
     if (!code) continue;
     totalRows++;
+    allCodes[code] = (allCodes[code] || 0) + 1;
     const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
     if (link) { rowsWithLink++; codesWithLink[code] = true; }
+    const type = typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '(blank)';
+    if (!typeCounts[type]) typeCounts[type] = { total: 0, withLink: 0 };
+    typeCounts[type].total++;
+    if (link) typeCounts[type].withLink++;
   }
   // Cross-check: do those codes actually exist in EmpMaster (exact-match,
   // same lookup employeeDetail_ does)? A formatting mismatch (e.g. code
@@ -268,10 +276,15 @@ function readCertCounts_() {
   }
   let matchedInEmpMaster = 0;
   Object.keys(codesWithLink).forEach(function (c) { if (masterCodes[c]) matchedInEmpMaster++; });
+  const rowsPerCode = Object.values(allCodes);
   return {
     totalRows: totalRows, rowsWithLink: rowsWithLink,
+    distinctEmployeesTotal: Object.keys(allCodes).length,
     distinctEmployeesWithLink: Object.keys(codesWithLink).length,
     matchedInEmpMaster: matchedInEmpMaster,
+    minRowsPerEmployee: Math.min.apply(null, rowsPerCode),
+    maxRowsPerEmployee: Math.max.apply(null, rowsPerCode),
+    documentTypeCounts: typeCounts,
     // Just the codes -- no names/links -- so Uday can pick one to test
     // with. Not meaningfully more sensitive than action=employees, which
     // already publicly maps every one of these same codes to a name.
