@@ -219,6 +219,8 @@ td{padding:6px 12px;vertical-align:middle}
 .pill.revoked{background:#e5e7eb;color:#4b5563}
 .pill.urgent{background:#fee2e2;color:var(--red)}
 .apr-row{cursor:pointer}
+.apr-row-stale td{background:#fff8ed}
+.apr-stale{color:var(--amber);font-weight:700}
 .apr-row:hover td{background:var(--red-lt)!important}
 .apr-row.expanded td{background:var(--lgray)!important}
 .apr-detail-wrap{padding:12px 14px;background:var(--lgray)}
@@ -514,17 +516,74 @@ td{padding:6px 12px;vertical-align:middle}
       <div class="card" id="aprNewRequestCard" style="display:none">
         <p class="card-title">New Approval Request</p>
         <p class="card-hint">Explain your reasoning and attach evidence — this is what the Owner decides on.</p>
-        <div class="row-2col">
-          <div>
-            <label class="field-label">Category</label>
-            <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
+        <!-- Category as pill buttons (2026-09-24, per Uday) instead of a
+             dropdown -- reuses the same .role-picker/.role-btn pattern
+             already used for the SS Dashboard bucket picker and the
+             status filter pills below, so this is a render + a click
+             handler, not a new component. The actual <select> stays in
+             the DOM (hidden) as the single source of truth every
+             existing category-reading call site (aprOnCategoryChange,
+             submitApprovalRequest) already reads from -- button clicks
+             just update its value and re-render, nothing downstream
+             needed to change. -->
+        <div>
+          <label class="field-label">Category</label>
+          <div class="role-picker" id="aprCategoryButtons"></div>
+          <select id="aprCategory" style="display:none"></select>
+        </div>
+        <div style="margin-top:10px;max-width:220px">
+          <label class="field-label">Urgency</label>
+          <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+        </div>
+        <!-- Hiring / New Position only -- redesigned 2026-09-24 per
+             Uday's annotated mockup: role/subjects moved up here (right
+             after Category), Title/Evidence Link/Linked Activity/Number
+             of Openings all dropped for this category, and a
+             replacement-hire question added. Role Level narrows the
+             subjects multiselect to what that level actually teaches
+             (NTT is a generalist, no subjects needed at all). itemName
+             ends up "TGT: Science, Math" or bare "NTT" and DOUBLES AS
+             THE TITLE for this category (see submitApprovalRequest) --
+             hiring.gs strips the role prefix before subject-matching,
+             but keeps the whole string for display (status strip,
+             detail view, and now the request list's Title column too). -->
+        <div id="aprHiringFields" style="display:none;margin-top:10px">
+          <div class="row-2col">
+            <div>
+              <label class="field-label">Role Level</label>
+              <select id="aprHiringRoleLevel" onchange="renderAprSubjectsMsOptions()">
+                <option value="NTT">NTT (generalist)</option>
+                <option value="PRT">PRT (Primary)</option>
+                <option value="TGT">TGT (up to Class 10)</option>
+                <option value="PGT">PGT (up to Class 12)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Subjects / Position Required</label>
+              <div class="multiselect" id="aprSubjectsMs">
+                <button type="button" class="multiselect-toggle" id="aprSubjectsMsToggle" onclick="toggleAprSubjectsMs()">
+                  <span id="aprSubjectsMsToggleLabel">Select subjects needed</span>
+                  <span class="arrow">&#9662;</span>
+                </button>
+                <div class="multiselect-panel" id="aprSubjectsMsPanel"></div>
+              </div>
+            </div>
           </div>
-          <div>
-            <label class="field-label">Urgency</label>
-            <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+          <div class="row-2col" style="margin-top:10px">
+            <div>
+              <label class="field-label">Replacement Hire?</label>
+              <select id="aprHiringIsReplacement" onchange="aprOnReplacementChange()">
+                <option value="No">No — new position</option>
+                <option value="Yes">Yes — replacing someone</option>
+              </select>
+            </div>
+            <div id="aprOutgoingEmployeeWrap" style="display:none">
+              <label class="field-label">Who is being replaced</label>
+              <input type="text" id="aprOutgoingEmployee" placeholder="Outgoing employee's name">
+            </div>
           </div>
         </div>
-        <div style="margin-top:10px">
+        <div style="margin-top:10px" id="aprTitleWrap">
           <label class="field-label">Title</label>
           <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;Diwali break request&quot;">
         </div>
@@ -532,41 +591,10 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Description / reasoning</label>
           <textarea id="aprDescription" rows="4" placeholder="Explain why, with any relevant details"></textarea>
         </div>
-        <!-- Hiring / New Position only -- role level narrows the
-             subjects multiselect below to what that level actually
-             teaches (NTT is a generalist, no subjects needed at all).
-             itemName ends up "TGT: Science, Math" or bare "NTT" --
-             hiring.gs strips the role prefix before subject-matching,
-             but keeps it for display (status strip, detail view). -->
-        <div id="aprHiringRoleWrap" style="display:none;margin-top:10px">
-          <label class="field-label">Role Level</label>
-          <select id="aprHiringRoleLevel" onchange="renderAprSubjectsMsOptions()">
-            <option value="NTT">NTT (generalist)</option>
-            <option value="PRT">PRT (Primary)</option>
-            <option value="TGT">TGT (up to Class 10)</option>
-            <option value="PGT">PGT (up to Class 12)</option>
-          </select>
-        </div>
         <div class="row-2col" id="aprItemQtyFields" style="display:none;margin-top:10px">
           <div>
             <label class="field-label" id="aprItemNameLabel">Item</label>
             <input type="text" id="aprItemName" placeholder="What are you buying">
-            <!-- Hiring / New Position only -- a multi-select of subjects
-                 instead of free text, so this stays matchable against
-                 applicants' own Subjects field instead of accumulating
-                 inconsistent spellings. Same .multiselect widget already
-                 used for Registers Crosschecked below, just a second
-                 instance -- writes its selection into aprItemName's
-                 value (still the field that actually gets posted), so
-                 nothing downstream (submit/backend/detail-view) needed
-                 to change. -->
-            <div class="multiselect" id="aprSubjectsMs" style="display:none">
-              <button type="button" class="multiselect-toggle" id="aprSubjectsMsToggle" onclick="toggleAprSubjectsMs()">
-                <span id="aprSubjectsMsToggleLabel">Select subjects needed</span>
-                <span class="arrow">&#9662;</span>
-              </button>
-              <div class="multiselect-panel" id="aprSubjectsMsPanel"></div>
-            </div>
           </div>
           <div id="aprQuantityWrap">
             <label class="field-label" id="aprQuantityLabel">Quantity</label>
@@ -577,11 +605,11 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Amount (₹)</label>
           <input type="number" id="aprAmount" min="0">
         </div>
-        <div style="margin-top:10px">
+        <div style="margin-top:10px" id="aprEvidenceWrap">
           <label class="field-label">Evidence link (optional)</label>
           <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link to a quote, invitation, photo, etc.">
         </div>
-        <div style="margin-top:10px">
+        <div style="margin-top:10px" id="aprLinkedActivityWrap">
           <label class="field-label">Link to a Planned Activity (optional)</label>
           <select id="aprLinkedActivity"><option value="">— none —</option></select>
         </div>
@@ -592,13 +620,16 @@ td{padding:6px 12px;vertical-align:middle}
 
       <div class="dash-toolbar">
         <div id="aprStatusFilter" class="role-picker"></div>
-        <button type="button" class="date-refresh-btn" title="Refresh" onclick="refreshApprovals()">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-        </button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="aprCategoryFilter" onchange="aprSelectCategoryFilter(this.value)" style="border:1.5px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;color:var(--gray);background:var(--white)"></select>
+          <button type="button" class="date-refresh-btn" title="Refresh" onclick="refreshApprovals()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
       </div>
       <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
     </div>
@@ -1941,11 +1972,24 @@ const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensatio
 // consts in sync with approvals.gs.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
-const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase', 'Hiring / New Position'];
-const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
+// 2026-09-24: Hiring / New Position no longer shows a Quantity/"Number
+// of Openings" field (dropped per Uday's annotated redesign) -- only
+// Financial/Purchase still has a real "how many" concept. Backend
+// still accepts a quantity for Hiring (unchanged schema), it just never
+// gets sent from this form anymore, same treatment as Evidence Link/
+// Linked Activity below.
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
+// 2026-09-24, per Uday (information architecture pass): "Needs Action"
+// is a synthetic pill (Pending + Info Requested combined) and is now
+// the DEFAULT view -- what someone actually opens this tab to see day
+// to day is "what's waiting on me," not a mixed dump of everything
+// ever filed. "All" stays available as one more pill, not the default.
+const APR_STATUS_PILLS = ['Needs Action', 'All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
+const APR_NEEDS_ACTION_STATUSES = ['Pending', 'Info Requested'];
 
 let aprRes = null;              // full action=approvalslist response, fetched once
-let APR_STATUS_FILTER = 'All';
+let APR_STATUS_FILTER = 'Needs Action';
+let APR_CATEGORY_FILTER = 'All';
 let aprExpandedId = null;
 let aprExpandedDetail = null;   // {request, comments, canDecide} for the open row
 
@@ -1961,6 +2005,21 @@ function aprEsc_(s) {
 }
 
 document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+function aprRenderCategoryButtons_() {
+  const current = document.getElementById('aprCategory').value;
+  document.getElementById('aprCategoryButtons').innerHTML = APR_CATEGORIES.map(function (c) {
+    return '<button type="button" class="role-btn' + (c === current ? ' active' : '') + '" onclick="aprSelectCategory(\'' + c + '\')">' + c + '</button>';
+  }).join('');
+}
+function aprSelectCategory(c) {
+  document.getElementById('aprCategory').value = c;
+  aprRenderCategoryButtons_();
+  aprOnCategoryChange();
+}
+aprRenderCategoryButtons_();
+aprOnCategoryChange(); // pre-existing gap fixed 2026-09-24: onchange never fires on its own for the default-selected option, so the form showed the wrong fields (Title/Evidence Link visible, Hiring fields hidden) until you manually touched the dropdown
+document.getElementById('aprCategoryFilter').innerHTML = '<option value="All">All categories</option>' +
+  APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
 // Per-role-level subject lists -- 2026-09-14, per Uday: NTT is a
 // generalist (no subject picker at all); PRT/TGT/PGT each teach a
@@ -1987,8 +2046,7 @@ function renderAprSubjectsMsOptions() {
   const roleLevel = document.getElementById('aprHiringRoleLevel').value;
   const options = APR_HIRING_SUBJECTS_BY_ROLE[roleLevel] || [];
   selectedAprSubjects = selectedAprSubjects.filter(function (s) { return options.indexOf(s) !== -1; }); // drop selections that don't exist at the newly-picked role level
-  const wrap = document.getElementById('aprSubjectsMs');
-  wrap.style.display = options.length ? '' : 'none'; // NTT: no subjects to pick, itemName is just the role level
+  document.getElementById('aprSubjectsMs').style.display = options.length ? '' : 'none'; // NTT: no subjects to pick, itemName is just the role level
   document.getElementById('aprSubjectsMsPanel').innerHTML = options.map(function (s) {
     return '<label class="ms-option"><input type="checkbox" onchange="toggleAprSubject(\'' + s + '\', this.checked)"' +
       (selectedAprSubjects.indexOf(s) > -1 ? ' checked' : '') + '><span>' + s + '</span></label>';
@@ -2003,7 +2061,10 @@ function toggleAprSubject(s, checked) {
 }
 // itemName ends up "TGT: Science, Math" (or bare "NTT") -- one string
 // column, no new sheet field needed. hiring.gs strips the role-level
-// prefix before subject-matching but keeps the whole thing for display.
+// prefix before subject-matching but keeps the whole thing for display
+// -- and, since 2026-09-24, THIS is also what becomes the request's
+// Title (see submitApprovalRequest), since the Title field itself is
+// hidden for this category.
 function aprSyncHiringItemName_() {
   const roleLevel = document.getElementById('aprHiringRoleLevel').value;
   document.getElementById('aprItemName').value = roleLevel + (selectedAprSubjects.length ? ': ' + selectedAprSubjects.join(', ') : '');
@@ -2016,29 +2077,43 @@ document.addEventListener('click', function (e) {
   if (ms && ms.style.display !== 'none' && !ms.contains(e.target)) document.getElementById('aprSubjectsMsPanel').classList.remove('open');
 });
 
+// Replacement Hire? toggle -- 2026-09-24, per Uday's annotated redesign
+// ("who is being replaced"). Only Yes reveals the name field; the
+// outgoing employee's name (or its absence) is what submitApprovalRequest
+// packs into the repurposed evidenceLink column for this category --
+// see that function's own comment for why no new sheet column was needed.
+function aprOnReplacementChange() {
+  const isReplacement = document.getElementById('aprHiringIsReplacement').value === 'Yes';
+  document.getElementById('aprOutgoingEmployeeWrap').style.display = isReplacement ? 'block' : 'none';
+  if (!isReplacement) document.getElementById('aprOutgoingEmployee').value = '';
+}
+
 function aprOnCategoryChange() {
   const category = document.getElementById('aprCategory').value;
-  const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
-  const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1;
-  const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
   const isHiring = category === 'Hiring / New Position';
+  const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
+  const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1 && !isHiring; // Hiring's item box is replaced entirely by aprHiringFields below
+  const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
+  document.getElementById('aprHiringFields').style.display = isHiring ? 'block' : 'none';
+  // Title/Evidence Link/Linked Activity dropped for Hiring per Uday's
+  // annotated redesign -- Title auto-derives from Role+Subjects
+  // (aprSyncHiringItemName_), Evidence Link is repurposed for the
+  // replacement-hire note (see submitApprovalRequest), Linked Activity
+  // has no Hiring equivalent so it's just not collected.
+  document.getElementById('aprTitleWrap').style.display = isHiring ? 'none' : 'block';
+  document.getElementById('aprEvidenceWrap').style.display = isHiring ? 'none' : 'block';
+  document.getElementById('aprLinkedActivityWrap').style.display = isHiring ? 'none' : 'block';
   document.getElementById('aprItemQtyFields').style.display = showsItem ? 'grid' : 'none';
   document.getElementById('aprQuantityWrap').style.display = showsQty ? 'block' : 'none';
   document.getElementById('aprAmountField').style.display = showsAmount ? 'block' : 'none';
-  document.getElementById('aprHiringRoleWrap').style.display = isHiring ? 'block' : 'none';
   const itemLabelEl = document.getElementById('aprItemNameLabel');
   const itemInputEl = document.getElementById('aprItemName');
   const qtyLabelEl = document.getElementById('aprQuantityLabel');
-  itemInputEl.style.display = isHiring ? 'none' : ''; // Hiring drives itemName entirely from the role+subjects UI, not typed directly
   if (category === 'Compensation Change') {
-    document.getElementById('aprSubjectsMs').style.display = 'none';
     itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
   } else if (isHiring) {
-    itemLabelEl.textContent = 'Subjects / Position Required';
     renderAprSubjectsMsOptions();
-    qtyLabelEl.textContent = 'Number of Openings';
   } else {
-    document.getElementById('aprSubjectsMs').style.display = 'none';
     itemLabelEl.textContent = 'Item'; itemInputEl.placeholder = 'What are you buying';
     qtyLabelEl.textContent = 'Quantity';
   }
@@ -2087,6 +2162,32 @@ function aprSelectStatusFilter(status) {
   renderApprovalsForSelectedCampus();
 }
 
+function aprSelectCategoryFilter(category) {
+  APR_CATEGORY_FILTER = category;
+  aprExpandedId = null;
+  aprExpandedDetail = null;
+  renderApprovalsForSelectedCampus();
+}
+
+// "3d ago" / "5h ago" / "just now" -- used on Needs Action rows so
+// staleness is visible on the row itself instead of requiring someone
+// to do date math against the Requested column. Amber-tinted past
+// AGING_STALE_DAYS via the 'stale' class applied in aprRowHtml_.
+const APR_AGING_STALE_DAYS = 3;
+function aprAgeLabel_(isoDate) {
+  if (!isoDate) return '—';
+  const ms = Date.now() - new Date(isoDate).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days >= 1) return days + 'd ago';
+  const hours = Math.floor(ms / 3600000);
+  if (hours >= 1) return hours + 'h ago';
+  return 'just now';
+}
+function aprIsStale_(isoDate) {
+  if (!isoDate) return false;
+  return (Date.now() - new Date(isoDate).getTime()) / 86400000 >= APR_AGING_STALE_DAYS;
+}
+
 function aprStatusPillClass_(status) {
   if (status === 'Approved') return 'ok';
   if (status === 'Rejected') return 'none';
@@ -2107,32 +2208,64 @@ function aprStatusPillClass_(status) {
 function aprShowsCampusCol_() { return SESSION.campusId === 'ALL'; }
 function aprColspan_() { return aprShowsCampusCol_() ? 6 : 5; }
 
+// Needs-action rows (Pending/Info Requested) always sort above decided
+// history, Urgent first within that, then oldest-first so nothing
+// quietly ages out unseen; decided rows sort by most-recently-decided.
+// Previously this was a flat requestedAt-desc sort from the server
+// (aprList_) -- that's still the base order these build on, just
+// reordered client-side per the "what needs me vs history" split.
+function aprSortRows_(rows) {
+  const needsAction = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; });
+  const decided = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) === -1; });
+  needsAction.sort(function (a, b) {
+    if ((a.urgency === 'Urgent') !== (b.urgency === 'Urgent')) return a.urgency === 'Urgent' ? -1 : 1;
+    return a.requestedAt.localeCompare(b.requestedAt); // oldest first
+  });
+  decided.sort(function (a, b) { return (b.decidedAt || b.requestedAt).localeCompare(a.decidedAt || a.requestedAt); });
+  return needsAction.concat(decided);
+}
+
 function renderApprovalsForSelectedCampus() {
   if (!aprRes || !SELECTED_CAMPUS_ID) return; // loadApprovals() hasn't resolved yet, or no school picked -- it/selectSchool() calls this again once true
   const body = document.getElementById('aprListBody');
   const showAll = aprShowsCampusCol_();
   let rows = showAll ? aprRes.requests.slice() : aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
-  if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
+  if (APR_STATUS_FILTER === 'Needs Action') rows = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; });
+  else if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
+  if (APR_CATEGORY_FILTER !== 'All') rows = rows.filter(function (r) { return r.category === APR_CATEGORY_FILTER; });
+  rows = aprSortRows_(rows);
 
   if (!rows.length) {
-    body.innerHTML = '<div class="dash-empty">No ' + (APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ') + 'requests' + (showAll ? '' : ' for this school') + '.</div>';
+    const statusLabel = APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ';
+    const catLabel = APR_CATEGORY_FILTER === 'All' ? '' : ' in ' + APR_CATEGORY_FILTER;
+    body.innerHTML = '<div class="dash-empty">No ' + statusLabel + 'requests' + catLabel + (showAll ? '' : ' for this school') + '.</div>';
     return;
   }
 
   body.innerHTML = '<div class="tbl-wrap"><table><thead><tr>' +
     (showAll ? '<th>School</th>' : '') +
-    '<th>Title</th><th>Category</th><th>Urgency</th><th>Status</th><th>Requested</th>' +
+    '<th>Title</th><th>Category</th><th>Urgency</th><th>Status</th><th>Age / Decided</th>' +
     '</tr></thead><tbody>' + rows.map(aprRowHtml_).join('') + '</tbody></table></div>';
 }
 
 function aprRowHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
-  let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+  const needsAction = APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1;
+  const stale = needsAction && aprIsStale_(r.requestedAt);
+  // Needs-action rows show age ("4d ago", stale-tinted past 3 days) --
+  // that's the actionable date here. Decided rows show when it was
+  // decided (falling back to requestedAt for the rare pre-decision
+  // row), since "when did this get settled" is what matters once it's
+  // no longer awaiting anyone.
+  const dateCell = needsAction
+    ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
+    : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
+  let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
     (aprShowsCampusCol_() ? '<td>' + aprEsc_(LMCS.campusLabel(r.campusId)) + '</td>' : '') +
     '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></td>' +
-    '<td>' + formatDDMMYYYY_(r.requestedAt) + '</td></tr>';
+    '<td>' + dateCell + '</td></tr>';
   if (isExpanded) {
     html += '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
       '<div class="loading-state"><div class="spinner"></div>Loading…</div></div></td></tr>';
@@ -2171,7 +2304,12 @@ function aprDetailHtml_(res) {
     meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
   }
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
-  if (r.evidenceLink) meta.push('Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+  // Hiring / New Position repurposes evidenceLink for the replacement-
+  // hire note (plain text, not a URL -- see submitApprovalRequest), so
+  // it renders as text here instead of a clickable "Evidence: link".
+  if (r.evidenceLink) {
+    meta.push(r.category === 'Hiring / New Position' ? aprEsc_(r.evidenceLink) : 'Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+  }
   if (r.linkedPlannedActivityId) {
     const linked = (plannedActivitiesCache_[r.campusId] || []).filter(function (a) { return a.id === r.linkedPlannedActivityId; })[0];
     if (linked) meta.push('Linked activity: ' + aprEsc_(linked.activity));
@@ -2288,9 +2426,30 @@ async function submitApprovalRequest() {
   const btn = document.getElementById('aprSubmitBtn');
   if (btn.disabled) return;
   const category = document.getElementById('aprCategory').value;
-  const title = document.getElementById('aprTitle').value.trim();
+  const isHiring = category === 'Hiring / New Position';
   const description = document.getElementById('aprDescription').value.trim();
+
+  // Hiring / New Position: Title is hidden and auto-derives from
+  // Role+Subjects (already synced into aprItemName -- see
+  // aprSyncHiringItemName_); Evidence Link is hidden too and instead
+  // repurposed to carry the replacement-hire note, since it's just a
+  // plain string column with no URL validation, and Hiring no longer
+  // has a real "evidence" concept -- reusing it avoids a new sheet
+  // column for what's a one-off need. Every other category keeps the
+  // original Title/Evidence Link fields untouched.
+  let title, evidenceLink;
+  if (isHiring) {
+    title = document.getElementById('aprItemName').value.trim();
+    const isReplacement = document.getElementById('aprHiringIsReplacement').value === 'Yes';
+    const outgoingName = document.getElementById('aprOutgoingEmployee').value.trim();
+    if (isReplacement && !outgoingName) { alert('Enter the outgoing employee\'s name, or switch Replacement Hire? to No.'); return; }
+    evidenceLink = isReplacement ? ('Replacing: ' + outgoingName) : 'New position (not a replacement)';
+  } else {
+    title = document.getElementById('aprTitle').value.trim();
+    evidenceLink = document.getElementById('aprEvidenceLink').value.trim();
+  }
   if (!title || !description) { alert('Title and description are both required.'); return; }
+
   btn.disabled = true;
   const originalLabel = btn.textContent;
   btn.textContent = 'Submitting…';
@@ -2303,8 +2462,8 @@ async function submitApprovalRequest() {
       amount: document.getElementById('aprAmount').value,
       itemName: document.getElementById('aprItemName').value.trim(),
       quantity: document.getElementById('aprQuantity').value,
-      evidenceLink: document.getElementById('aprEvidenceLink').value.trim(),
-      linkedPlannedActivityId: document.getElementById('aprLinkedActivity').value,
+      evidenceLink: evidenceLink,
+      linkedPlannedActivityId: isHiring ? '' : document.getElementById('aprLinkedActivity').value,
     });
     if (!res.success) {
       pdrReportAuthFailureIfNeeded_(res);
@@ -2320,8 +2479,11 @@ async function submitApprovalRequest() {
     document.getElementById('aprLinkedActivity').value = '';
     selectedAprSubjects = [];
     document.getElementById('aprSubjectsMsToggleLabel').textContent = 'Select subjects needed';
-    if (category === 'Hiring / New Position') {
+    if (isHiring) {
       document.getElementById('aprHiringRoleLevel').value = 'NTT';
+      document.getElementById('aprHiringIsReplacement').value = 'No';
+      document.getElementById('aprOutgoingEmployee').value = '';
+      document.getElementById('aprOutgoingEmployeeWrap').style.display = 'none';
       renderAprSubjectsMsOptions();
     }
     alert('Request submitted.');
