@@ -68,16 +68,19 @@ const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensatio
 // new sheet column was needed for Compensation Change. Quantity only
 // makes sense for an actual purchase, so it's gated separately.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-// 2026-09-14, per Uday: Hiring / New Position also uses Item + Quantity
-// now -- "Subjects/Position Required" + "Number of Openings" -- so
-// hiring.gs's hiringApplicants_ can filter the Hiring Dashboard down to
-// applicants matching what was actually approved, instead of showing
-// every applicant the moment ANY position is open at a campus. Item and
-// Quantity are gated separately (not both always shown together)
-// because Hiring needs Item+Qty but no Amount, same as Compensation
-// Change needs Item+Amount but no Quantity.
+// 2026-09-14, per Uday: Hiring / New Position also uses Item ("Subjects/
+// Position Required") so hiring.gs's hiringApplicants_ can filter the
+// Hiring Dashboard down to applicants matching what was actually
+// approved, instead of showing every applicant the moment ANY position
+// is open at a campus.
+// 2026-09-24: dropped Hiring from APR_ITEM_QTY_CATEGORIES -- "Number of
+// Openings" was removed from the Hiring form (per Uday's annotated
+// redesign) and hirApprovedRequisitions_'s `openings` field was never
+// actually read anywhere, so there was nothing left for it to feed.
+// Frontend copy of this array (principals-daily-reporting/index.html)
+// updated the same way -- keep both in sync.
 const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
-const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase', 'Hiring / New Position'];
+const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // Teacher Portal (2026-09-19): categories a Teacher may self-submit --
 // deliberately narrow (no Hiring/Compensation/Disciplinary, which stay
 // Principal-only) until Uday defines a fuller Teacher-facing category
