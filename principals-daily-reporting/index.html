@@ -2016,8 +2016,15 @@ function aprSelectCategory(c) {
   aprRenderCategoryButtons_();
   aprOnCategoryChange();
 }
-aprRenderCategoryButtons_();
-aprOnCategoryChange(); // pre-existing gap fixed 2026-09-24: onchange never fires on its own for the default-selected option, so the form showed the wrong fields (Title/Evidence Link visible, Hiring fields hidden) until you manually touched the dropdown
+// NOT called here -- aprOnCategoryChange() (default category is
+// Hiring / New Position) calls renderAprSubjectsMsOptions(), which
+// needs APR_HIRING_SUBJECTS_BY_ROLE, a `const` declared further down
+// this same script. Calling it this early hit that const before its
+// own declaration ran (temporal dead zone -- a real bug found live
+// 2026-09-24: it threw, which killed the ENTIRE inline <script> block
+// including the init() call at the very end, so the whole portal
+// rendered blank, not just Approvals). Moved to just before init() --
+// see that call site.
 document.getElementById('aprCategoryFilter').innerHTML = '<option value="All">All categories</option>' +
   APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
@@ -2525,6 +2532,14 @@ function switchSubTab(tab) {
   document.getElementById('panel-' + tab).classList.add('active');
   loadSubTabFrame_(tab, SELECTED_CAMPUS_ID); // first open of this sub-tab loads its form; later opens are a no-op
 }
+
+// Sets the Category form's initial field visibility to match its
+// default-selected option (Hiring / New Position) -- see the comment
+// at aprSelectCategory()'s definition for why this has to run down
+// here, after APR_HIRING_SUBJECTS_BY_ROLE is actually declared, not
+// right after the button/select markup gets populated.
+aprRenderCategoryButtons_();
+aprOnCategoryChange();
 
 init();
 </script>
