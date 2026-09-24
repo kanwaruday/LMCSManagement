@@ -582,24 +582,30 @@ td{padding:6px 12px;vertical-align:middle}
           </div>
           <div class="row-2col" style="margin-top:10px">
             <div>
-              <label class="field-label">Replacement Hire?</label>
-              <select id="aprHiringIsReplacement" onchange="aprOnReplacementChange()">
-                <option value="No">No — new position</option>
-                <option value="Yes">Yes — replacing someone</option>
+              <label class="field-label">Reason for Searching</label>
+              <select id="aprHiringReason" onchange="aprOnHiringReasonChange()">
+                <option value="Backup">Looking for Backup</option>
+                <option value="Resignation">Received Resignation</option>
               </select>
             </div>
-            <div id="aprOutgoingEmployeeWrap" style="display:none">
-              <label class="field-label">Who is being replaced</label>
+            <div>
+              <label class="field-label" id="aprOutgoingEmployeeLabel">Employee's Name</label>
               <!-- Native <datalist> instead of a custom dropdown widget --
                    real-time search/filter for free. Options are loaded
-                   lazily (see aprLoadEmployeeList_) the first time
-                   Replacement Hire? is set to Yes, from the SAME public
-                   Employee Roster endpoint + "Name (CODE) — School" label
-                   format staff/add-employee.html already uses for its own
-                   employee-search fields. -->
+                   lazily (see aprLoadEmployeeList_) once Hiring is
+                   selected, from the SAME public Employee Roster
+                   endpoint + "Name (CODE) — School" label format
+                   staff/add-employee.html already uses for its own
+                   employee-search fields. Always shown now (2026-09-24)
+                   -- both reasons need this name, only the last-working-
+                   day field below is reason-specific. -->
               <input type="text" id="aprOutgoingEmployee" list="aprOutgoingEmployeeList" placeholder="Search by name…">
               <datalist id="aprOutgoingEmployeeList"></datalist>
             </div>
+          </div>
+          <div id="aprLastWorkingDayWrap" style="display:none;margin-top:10px;max-width:220px">
+            <label class="field-label">Expected Last Working Day</label>
+            <input type="date" id="aprLastWorkingDay">
           </div>
         </div>
         <div style="margin-top:10px" id="aprTitleWrap">
@@ -2123,16 +2129,17 @@ document.addEventListener('click', function (e) {
   if (ms && ms.style.display !== 'none' && !ms.contains(e.target)) document.getElementById('aprSubjectsMsPanel').classList.remove('open');
 });
 
-// Replacement Hire? toggle -- 2026-09-24, per Uday's annotated redesign
-// ("who is being replaced"). Only Yes reveals the name field; the
-// outgoing employee's name (or its absence) is what submitApprovalRequest
-// packs into the repurposed evidenceLink column for this category --
-// see that function's own comment for why no new sheet column was needed.
-function aprOnReplacementChange() {
-  const isReplacement = document.getElementById('aprHiringIsReplacement').value === 'Yes';
-  document.getElementById('aprOutgoingEmployeeWrap').style.display = isReplacement ? 'block' : 'none';
-  if (!isReplacement) document.getElementById('aprOutgoingEmployee').value = '';
-  else aprLoadEmployeeList_(); // lazy -- only fetched the first time this is actually needed
+// "Reason for Searching" -- 2026-09-24, per Uday, replacing the old
+// plain Yes/No "Replacement Hire?" toggle. Employee's Name is now
+// ALWAYS shown (both reasons need it); only "Received Resignation"
+// additionally needs an expected last working day. Both the employee
+// name and the reason/last-working-day get packed into the repurposed
+// evidenceLink column by submitApprovalRequest -- see that function's
+// own comment for why no new sheet column was needed.
+function aprOnHiringReasonChange() {
+  const isResignation = document.getElementById('aprHiringReason').value === 'Resignation';
+  document.getElementById('aprLastWorkingDayWrap').style.display = isResignation ? 'block' : 'none';
+  if (!isResignation) document.getElementById('aprLastWorkingDay').value = '';
 }
 
 // Same public Employee Roster proxy + "Name (CODE) — School" label
@@ -2182,6 +2189,7 @@ function aprOnCategoryChange() {
     itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
   } else if (isHiring) {
     renderAprSubjectsMsOptions();
+    aprLoadEmployeeList_(); // lazy -- only fetched once, the first time Hiring is actually selected
   } else {
     itemLabelEl.textContent = 'Item'; itemInputEl.placeholder = 'What are you buying';
     qtyLabelEl.textContent = 'Quantity';
@@ -2509,10 +2517,16 @@ async function submitApprovalRequest() {
   let title, evidenceLink;
   if (isHiring) {
     title = document.getElementById('aprItemName').value.trim();
-    const isReplacement = document.getElementById('aprHiringIsReplacement').value === 'Yes';
-    const outgoingName = document.getElementById('aprOutgoingEmployee').value.trim();
-    if (isReplacement && !outgoingName) { alert('Enter the outgoing employee\'s name, or switch Replacement Hire? to No.'); return; }
-    evidenceLink = isReplacement ? ('Replacing: ' + outgoingName) : 'New position (not a replacement)';
+    const reason = document.getElementById('aprHiringReason').value; // 'Backup' | 'Resignation'
+    const employeeName = document.getElementById('aprOutgoingEmployee').value.trim();
+    if (!employeeName) { alert('Enter the employee\'s name.'); return; }
+    if (reason === 'Backup') {
+      evidenceLink = 'Looking for Backup for: ' + employeeName;
+    } else {
+      const lastDay = document.getElementById('aprLastWorkingDay').value;
+      if (!lastDay) { alert('Enter the expected last working day.'); return; }
+      evidenceLink = 'Received Resignation from: ' + employeeName + ' — last working day ' + lastDay;
+    }
   } else {
     title = document.getElementById('aprTitle').value.trim();
     evidenceLink = document.getElementById('aprEvidenceLink').value.trim();
@@ -2550,9 +2564,10 @@ async function submitApprovalRequest() {
     document.getElementById('aprSubjectsMsToggleLabel').textContent = 'Select subjects needed';
     if (isHiring) {
       document.getElementById('aprHiringRoleLevel').value = 'NTT';
-      document.getElementById('aprHiringIsReplacement').value = 'No';
+      document.getElementById('aprHiringReason').value = 'Backup';
       document.getElementById('aprOutgoingEmployee').value = '';
-      document.getElementById('aprOutgoingEmployeeWrap').style.display = 'none';
+      document.getElementById('aprLastWorkingDay').value = '';
+      document.getElementById('aprLastWorkingDayWrap').style.display = 'none';
       renderAprSubjectsMsOptions();
     }
     alert('Request submitted.');
