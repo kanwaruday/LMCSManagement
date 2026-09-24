@@ -108,7 +108,7 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // staleness on a read carries no real risk. Write actions always verify
 // live, uncached, so a just-revoked access can never slip a mutation
 // through during the cache window.
-const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus'];
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue'];
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
@@ -131,6 +131,8 @@ function staffDoGet_(e) {
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
+    else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
+    else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -572,6 +574,107 @@ function listDocumentStatus_(caller) {
     });
   }
   return out;
+}
+
+// School column in "Certificate Links" is "LMS 1" (with a space), not the
+// campusId convention ("LMS1") used everywhere else -- reverse of the
+// normalize-on-read done in listVerificationQueue_ below, needed when
+// WRITING the School cell back in reassignCertificate_.
+const STAFF_CAMPUS_SHEET_LABEL_ = {
+  LMS1: 'LMS 1', LMS2: 'LMS 2', LMS3: 'LMS 3', LMS4: 'LMS 4', LMS5: 'LMS 5', LMS6: 'LMS 6', HES: 'HES',
+};
+
+// "Needs Verification" queue (Uday, 2026-09-24): every Certificate Links
+// row the automated matcher (drive-index/build_employee_cert_links.py)
+// couldn't confidently attribute to one person on its own -- either it
+// fell back to whoever SUBMITTED the batch ("Matched (submitter-based --
+// verify)" -- the "Kamlesh has +16 files" problem: one Fee Clerk uploads
+// a whole campus's documents in one go, and every file whose filename
+// didn't clearly name the real owner gets attributed to the submitter
+// instead) or found no/multiple roster candidates ("Unmatched"/
+// "Ambiguous"). Scoped to the caller's campus like everything else here.
+// Rows with no Drive Link (the "Unmatched" case has none) are skipped --
+// nothing to actually review without a file to open. NOT cached, same
+// reasoning as listDocumentStatus_ -- this is a review workflow; a stale
+// cached queue would show someone an item that's already been resolved.
+function listVerificationQueue_(caller) {
+  const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('Employee Code');
+  const nameCol = header.indexOf('Employee Name');
+  const schoolCol = header.indexOf('School');
+  const typeCol = header.indexOf('Document Type');
+  const fileCol = header.indexOf('Filename');
+  const linkCol = header.indexOf('Drive Link');
+  const statusCol = header.indexOf('Status');
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim() : '';
+    const needsReview = status.indexOf('submitter-based') !== -1 || status.indexOf('Ambiguous') !== -1 || status.indexOf('Unmatched') !== -1;
+    if (!needsReview) continue;
+    const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
+    if (!link) continue; // e.g. "Unmatched" rows have no file to review at all
+    // "LMS 1" -> "LMS1", matching the campusId convention used everywhere else.
+    const school = (schoolCol >= 0 ? String(rows[i][schoolCol] || '').trim() : '').replace(/\s+/g, '').toUpperCase();
+    if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    out.push({
+      currentEmployeeCode: codeCol >= 0 ? String(rows[i][codeCol] || '').trim() : '',
+      currentEmployeeName: nameCol >= 0 ? String(rows[i][nameCol] || '').trim() : '',
+      school: school,
+      documentType: typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '',
+      filename: fileCol >= 0 ? String(rows[i][fileCol] || '').trim() : '',
+      driveLink: link,
+      status: status,
+    });
+  }
+  return out;
+}
+
+/** data: {filename, documentType, driveLink, newEmployeeCode} -- matches
+ *  the row to update by filename+documentType+driveLink together (not
+ *  just filename+type) so a queue item built from one specific row can
+ *  never accidentally overwrite a different one that happens to share a
+ *  filename. Writes the new employee's code/name/school onto that row and
+ *  stamps Status with who verified it and when -- distinguishes a human-
+ *  confirmed reassignment from the importer's own automated guesses. */
+function reassignCertificate_(data, caller) {
+  if (!data.filename || !data.documentType || !data.newEmployeeCode) {
+    throw new Error('filename, documentType, and newEmployeeCode are required');
+  }
+  const ss = openEmpWorkbook_();
+  const target = readRowByCode_(ss, 'EmpMaster', data.newEmployeeCode);
+  if (!target) throw new Error('Employee not found: ' + data.newEmployeeCode);
+  const targetSchool = String(target.SchoolCode || '').trim().toUpperCase();
+  assertScope_(caller, [targetSchool]);
+
+  const sheet = ss.getSheetByName('Certificate Links');
+  if (!sheet) throw new Error('Certificate Links tab not found');
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('Employee Code');
+  const nameCol = header.indexOf('Employee Name');
+  const schoolCol = header.indexOf('School');
+  const typeCol = header.indexOf('Document Type');
+  const fileCol = header.indexOf('Filename');
+  const linkCol = header.indexOf('Drive Link');
+  const statusCol = header.indexOf('Status');
+
+  for (let i = 1; i < rows.length; i++) {
+    const filename = fileCol >= 0 ? String(rows[i][fileCol] || '').trim() : '';
+    const type = typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '';
+    const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
+    if (filename !== data.filename || type !== data.documentType) continue;
+    if (data.driveLink && link !== data.driveLink) continue;
+    const rowNum = i + 1;
+    if (codeCol >= 0) sheet.getRange(rowNum, codeCol + 1).setValue(data.newEmployeeCode);
+    if (nameCol >= 0) sheet.getRange(rowNum, nameCol + 1).setValue(target.Name || '');
+    if (schoolCol >= 0) sheet.getRange(rowNum, schoolCol + 1).setValue(STAFF_CAMPUS_SHEET_LABEL_[targetSchool] || targetSchool);
+    if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setValue('Reassigned (verified by ' + caller.email + ', ' + formatStaffDate_(new Date()) + ')');
+    return { success: true };
+  }
+  throw new Error('Could not find that document row -- it may have already been reassigned by someone else');
 }
 
 // EmployeeCode -> {designation, department (lowercased, for the
