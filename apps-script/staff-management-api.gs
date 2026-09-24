@@ -108,7 +108,7 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // staleness on a read carries no real risk. Write actions always verify
 // live, uncached, so a just-revoked access can never slip a mutation
 // through during the cache window.
-const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail'];
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus'];
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
@@ -129,6 +129,7 @@ function staffDoGet_(e) {
     if (action === 'nextcode') result = { employeeCode: previewNextCode_(data) };
     else if (action === 'list') result = { employees: listEmployees_(caller) };
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
+    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -381,6 +382,97 @@ function buildEmployeeList_(caller) {
 function bustStaffListCache_() {
   const keys = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'].map(function (c) { return 'staff_list_' + c; });
   CacheService.getScriptCache().removeAll(keys);
+}
+
+// The real, fixed set of Document Type values in the "Certificate Links"
+// tab, confirmed against a live export 2026-09-24 -- the sheet has NO
+// placeholder row for a document that was never uploaded (every single
+// row already has a Drive Link), so "missing" can only be worked out by
+// checking, per employee, which of these 8 types have zero rows at all.
+// If a 9th type is ever added in the sheet, it just won't show up as a
+// column here until this list is updated -- there's no way to discover
+// new types automatically without also inventing a false "missing" state
+// for something that's really just a not-yet-seen category.
+const STAFF_DOCUMENT_TYPES = [
+  'BACHELORS CERTIFICATE',
+  'CLASS 10 BOARD RESULT SHEET',
+  'CLASS 12 BOARD RESULT SHEET',
+  'MASTER CERTIFICATE',
+  'MEDICAL CERTIFICATE',
+  'POLICE VERIFICATION CHARACTER CERTIFICATE',
+  'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)',
+  'HIGHEST QUALIFICATION',
+];
+
+// EmployeeCode -> { documentType: [{filename, driveLink}, ...] } -- only
+// types with at least one non-blank Drive Link are present as keys (an
+// employee can have more than one file under the same type -- multiple
+// scans/re-uploads -- all are kept, not just the first).
+function readCertificatesByCode_() {
+  const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
+  if (!sheet) return {};
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('Employee Code');
+  const typeCol = header.indexOf('Document Type');
+  const fileCol = header.indexOf('Filename');
+  const linkCol = header.indexOf('Drive Link');
+  if (codeCol < 0) return {};
+  const map = {};
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][codeCol] || '').trim();
+    if (!code) continue;
+    const driveLink = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
+    if (!driveLink) continue;
+    const type = typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '';
+    if (!map[code]) map[code] = {};
+    if (!map[code][type]) map[code][type] = [];
+    map[code][type].push({ filename: fileCol >= 0 ? String(rows[i][fileCol] || '').trim() : '', driveLink: driveLink });
+  }
+  return map;
+}
+
+// School-wise document-compliance table (Uday, 2026-09-24): every ACTIVE
+// employee the caller can see, with each of STAFF_DOCUMENT_TYPES marked
+// uploaded (with the file(s)) or missing -- so gaps are visible at a
+// glance instead of having to open each person's detail view one by one.
+// Same campus-scoping and AdminTM exclusion as the Directory; cached per
+// campusId same as listEmployees_ (this sheet is edited entirely outside
+// this app -- by staff uploading documents -- so there's no write path
+// here to bust the cache on; a few minutes of staleness is a non-issue
+// for a compliance overview).
+function listDocumentStatus_(caller) {
+  return cachedStaff_('staff_docstatus_' + caller.campusId, function () { return buildDocumentStatus_(caller); });
+}
+
+function buildDocumentStatus_(caller) {
+  const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
+  const header = rows[0];
+  const idx = {};
+  header.forEach(function (h, i) { idx[h] = i; });
+  const salaryByCode = readEmpSalaryByCode_();
+  const certsByCode = readCertificatesByCode_();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][idx.EmployeeCode] || '').trim();
+    if (!code) continue;
+    const school = String(rows[i][idx.SchoolCode] || '').trim().toUpperCase();
+    if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    const status = (idx.Status >= 0 ? String(rows[i][idx.Status] || '').trim() : '') || 'Active';
+    if (status !== 'Active') continue; // departed/transferred staff aren't tracked for document compliance
+    const salary = salaryByCode[code] || { designation: '', department: '' };
+    if (STAFF_HIDDEN_DEPARTMENTS.indexOf(salary.department) !== -1) continue;
+    const docs = certsByCode[code] || {};
+    const documents = {};
+    STAFF_DOCUMENT_TYPES.forEach(function (t) { documents[t] = docs[t] || null; });
+    out.push({
+      employeeCode: code,
+      name: String(rows[i][idx.Name] || '').trim(),
+      school: school,
+      documents: documents,
+    });
+  }
+  return out;
 }
 
 // EmployeeCode -> {designation, department (lowercased, for the

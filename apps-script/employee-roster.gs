@@ -176,7 +176,7 @@ function empSubjectLabel(code) {
 // this project's deployment is "Anyone", unlike that file's old
 // domain-restricted deployment -- see that file's header for the
 // trade-off Uday explicitly accepted merging it in.
-const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive'];
+const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive', 'documentstatus'];
 const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete'];
 
 function doGet(e) {
@@ -187,7 +187,6 @@ function doGet(e) {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
     if (action === 'designations') return jsonOut({ success: true, designations: cached_('emp_designations', readDesignationSummary) });
-    if (action === 'certcounts') return jsonOut({ success: true, counts: readCertCounts_() });
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });
@@ -231,65 +230,6 @@ function readDesignationSummary() {
     else counts[key].inactive++;
   }
   return Object.values(counts).sort((a, b) => b.count - a.count);
-}
-
-/** TEMPORARY debug action (2026-09-24) -- aggregate counts only, NEVER any
- *  name/code/link, to diagnose why the Staff Portal's Certificates section
- *  isn't showing up for Uday: total rows in "Certificate Links", how many
- *  have a non-blank Drive Link, and how many distinct Employee Codes that
- *  covers. Remove once diagnosed. */
-function readCertCounts_() {
-  const sheet = openWorkbook_().getSheetByName('Certificate Links');
-  if (!sheet) return { error: 'no Certificate Links tab found' };
-  const rows = sheet.getDataRange().getValues();
-  const header = rows[0];
-  const codeCol = header.indexOf('Employee Code');
-  const linkCol = header.indexOf('Drive Link');
-  const typeCol = header.indexOf('Document Type');
-  let totalRows = 0, rowsWithLink = 0;
-  const codesWithLink = {};
-  const allCodes = {};
-  const typeCounts = {}; // "Aadhar Card" -> {total, withLink}
-  for (let i = 1; i < rows.length; i++) {
-    const code = codeCol >= 0 ? String(rows[i][codeCol] || '').trim() : '';
-    if (!code) continue;
-    totalRows++;
-    allCodes[code] = (allCodes[code] || 0) + 1;
-    const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
-    if (link) { rowsWithLink++; codesWithLink[code] = true; }
-    const type = typeCol >= 0 ? String(rows[i][typeCol] || '').trim() : '(blank)';
-    if (!typeCounts[type]) typeCounts[type] = { total: 0, withLink: 0 };
-    typeCounts[type].total++;
-    if (link) typeCounts[type].withLink++;
-  }
-  // Cross-check: do those codes actually exist in EmpMaster (exact-match,
-  // same lookup employeeDetail_ does)? A formatting mismatch (e.g. code
-  // padding) here would explain the Portal never finding a match even
-  // though rowsWithLink/distinctEmployeesWithLink both look healthy above.
-  const masterRows = openWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
-  const masterHeader = masterRows[0];
-  const masterCodeCol = masterHeader.indexOf('EmployeeCode');
-  const masterCodes = {};
-  for (let i = 1; i < masterRows.length; i++) {
-    const c = String(masterRows[i][masterCodeCol] || '').trim();
-    if (c) masterCodes[c] = true;
-  }
-  let matchedInEmpMaster = 0;
-  Object.keys(codesWithLink).forEach(function (c) { if (masterCodes[c]) matchedInEmpMaster++; });
-  const rowsPerCode = Object.values(allCodes);
-  return {
-    totalRows: totalRows, rowsWithLink: rowsWithLink,
-    distinctEmployeesTotal: Object.keys(allCodes).length,
-    distinctEmployeesWithLink: Object.keys(codesWithLink).length,
-    matchedInEmpMaster: matchedInEmpMaster,
-    minRowsPerEmployee: Math.min.apply(null, rowsPerCode),
-    maxRowsPerEmployee: Math.max.apply(null, rowsPerCode),
-    documentTypeCounts: typeCounts,
-    // Just the codes -- no names/links -- so Uday can pick one to test
-    // with. Not meaningfully more sensitive than action=employees, which
-    // already publicly maps every one of these same codes to a name.
-    codesWithLink: Object.keys(codesWithLink),
-  };
 }
 
 function openWorkbook_() {

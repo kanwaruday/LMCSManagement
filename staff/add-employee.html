@@ -83,6 +83,8 @@ td.name{font-weight:700}
 .dir-empty{text-align:center;padding:40px;color:var(--gray);font-size:12.5px}
 .view-link{color:var(--red);text-decoration:none;font-weight:600;font-size:11.5px;white-space:nowrap}
 .view-link:hover{text-decoration:underline}
+.doc-yes{color:var(--green);text-decoration:none;font-weight:700;white-space:nowrap}
+.doc-yes:hover{text-decoration:underline}
 
 /* Employee detail modal */
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto}
@@ -136,6 +138,7 @@ td.name{font-weight:700}
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="directory" onclick="switchTab('directory')">📋 Directory</button>
+      <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
       <button class="tab-btn" data-tab="hire" onclick="switchTab('hire')">➕ New Hire</button>
       <button class="tab-btn" data-tab="transfer" onclick="switchTab('transfer')">🔁 Transfer</button>
       <button class="tab-btn" data-tab="inactive" onclick="switchTab('inactive')">⛔ Mark Inactive</button>
@@ -149,6 +152,15 @@ td.name{font-weight:700}
       </div>
       <div class="dir-school-tabs" id="dirSchoolTabs"></div>
       <div id="dirBody">Loading…</div>
+    </div>
+
+    <!-- ══════════════════ DOCUMENTS ══════════════════ -->
+    <div class="tab-panel" id="panel-documents">
+      <div class="dir-toolbar">
+        <span class="dir-count" id="docCount"></span>
+      </div>
+      <div class="dir-school-tabs" id="docSchoolTabs"></div>
+      <div id="docBody">Loading…</div>
     </div>
 
     <!-- ══════════════════ NEW HIRE ══════════════════ -->
@@ -274,6 +286,19 @@ const CAMPUS_LABELS = {
   LMS4: 'LMS 4 — Ner Chowk', LMS5: 'LMS 5 — Sayoli', LMS6: 'LMS 6 — Jogindernagar',
   HES: 'HES — Head Office',
 };
+// Matches STAFF_DOCUMENT_TYPES in staff-management-api.gs exactly (order
+// and text) -- short labels here are just for the table header; the
+// backend's full text is what's actually checked against the sheet.
+const DOC_TYPES = [
+  { full: 'BACHELORS CERTIFICATE', short: 'Bachelors' },
+  { full: 'CLASS 10 BOARD RESULT SHEET', short: 'Class 10' },
+  { full: 'CLASS 12 BOARD RESULT SHEET', short: 'Class 12' },
+  { full: 'MASTER CERTIFICATE', short: 'Masters' },
+  { full: 'MEDICAL CERTIFICATE', short: 'Medical' },
+  { full: 'POLICE VERIFICATION CHARACTER CERTIFICATE', short: 'Police Verif.' },
+  { full: 'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)', short: 'Prof. Degree' },
+  { full: 'HIGHEST QUALIFICATION', short: 'Highest Qual.' },
+];
 const CLASS_OPTIONS = ['M-I','M-II','M-III','Class 1','Class 2','Class 3','Class 4','Class 5',
   'Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
 const SUBJECT_SUGGESTIONS = ['English','Hindi','Sanskrit','Math','Science','Social Science',
@@ -332,7 +357,7 @@ async function init() {
   // the authenticated Staff API) -- run in parallel instead of one
   // blocking the other, since each was already slow enough on its own
   // (see PERF note on doGet in staff-management-api.gs).
-  await Promise.all([loadAllEmployees(), loadDirectory()]);
+  await Promise.all([loadAllEmployees(), loadDirectory(), loadDocumentStatus()]);
 }
 
 function populateSchoolSelect(id) {
@@ -449,6 +474,75 @@ document.getElementById('dirSchoolTabs').addEventListener('click', function (e) 
 document.getElementById('dirBody').addEventListener('click', function (e) {
   const link = e.target.closest('.view-link');
   if (link) { e.preventDefault(); openEmployeeDetail(link.dataset.code); }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   DOCUMENTS -- school-wise document-compliance matrix, via the
+   authenticated 'documentstatus' action. One row per active employee,
+   one column per DOC_TYPES entry: a green ✓ (linking straight to the
+   file) if uploaded, a red "Missing" pill if not -- the gap Uday
+   wanted visible at a glance instead of opening each person's View
+   panel one by one.
+═══════════════════════════════════════════════════════════ */
+let documentStatusRows = [];
+let currentDocSchool = null;
+
+async function loadDocumentStatus() {
+  try {
+    const json = await callStaffApi('documentstatus', {});
+    if (!json.success) throw new Error(json.error || 'documentstatus failed');
+    documentStatusRows = json.rows;
+    renderDocumentStatus();
+  } catch (e) {
+    document.getElementById('docSchoolTabs').innerHTML = '';
+    document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(e.message) + '</div>';
+  }
+}
+
+function selectDocSchool(school) {
+  currentDocSchool = school;
+  renderDocumentStatus();
+}
+
+function renderDocumentStatus() {
+  document.getElementById('docCount').textContent = documentStatusRows.length + (documentStatusRows.length === 1 ? ' employee' : ' employees');
+
+  const bySchool = {};
+  documentStatusRows.forEach(function (r) { (bySchool[r.school] = bySchool[r.school] || []).push(r); });
+  const schools = Object.keys(CAMPUS_LABELS).filter(function (s) { return bySchool[s] && bySchool[s].length; });
+
+  if (!schools.length) {
+    document.getElementById('docSchoolTabs').innerHTML = '';
+    document.getElementById('docBody').innerHTML = '<div class="dir-empty">No employees to show.</div>';
+    return;
+  }
+  if (!currentDocSchool || schools.indexOf(currentDocSchool) === -1) currentDocSchool = schools[0];
+
+  document.getElementById('docSchoolTabs').innerHTML = schools.map(function (s) {
+    return '<button type="button" class="dir-school-tab' + (s === currentDocSchool ? ' active' : '') + '" data-school="' + esc(s) + '">' +
+      esc(CAMPUS_LABELS[s]) + ' <span class="n">' + bySchool[s].length + '</span></button>';
+  }).join('');
+
+  const list = bySchool[currentDocSchool].slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+  document.getElementById('docBody').innerHTML =
+    '<table><thead><tr><th>Name</th><th>Code</th>' +
+    DOC_TYPES.map(function (t) { return '<th title="' + esc(t.full) + '">' + esc(t.short) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+    list.map(function (r) {
+      const cells = DOC_TYPES.map(function (t) {
+        const files = r.documents[t.full];
+        if (!files || !files.length) return '<td><span class="pill inactive">Missing</span></td>';
+        const extra = files.length > 1 ? ' (+' + (files.length - 1) + ')' : '';
+        return '<td><a class="doc-yes" href="' + esc(files[0].driveLink) + '" target="_blank" rel="noopener">✓' + extra + '</a></td>';
+      }).join('');
+      return '<tr><td class="name">' + esc(r.name) + '</td><td>' + esc(r.employeeCode) + '</td>' + cells + '</tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+document.getElementById('docSchoolTabs').addEventListener('click', function (e) {
+  const btn = e.target.closest('.dir-school-tab');
+  if (btn) selectDocSchool(btn.dataset.school);
 });
 
 /* ═══════════════════════════════════════════════════════════
