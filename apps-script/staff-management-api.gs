@@ -434,18 +434,20 @@ function readCertificatesByCode_() {
 
 // School-wise document-compliance table (Uday, 2026-09-24): every ACTIVE
 // employee the caller can see, with each of STAFF_DOCUMENT_TYPES marked
-// uploaded (with the file(s)) or missing -- so gaps are visible at a
-// glance instead of having to open each person's detail view one by one.
-// Same campus-scoping and AdminTM exclusion as the Directory; cached per
-// campusId same as listEmployees_ (this sheet is edited entirely outside
-// this app -- by staff uploading documents -- so there's no write path
-// here to bust the cache on; a few minutes of staleness is a non-issue
-// for a compliance overview).
+// uploaded (count + first file's link) or missing -- so gaps are visible
+// at a glance instead of having to open each person's detail view one by
+// one. Same campus-scoping and AdminTM exclusion as the Directory.
+//
+// NOT cached (unlike listEmployees_) -- CacheService.put() hard-caps a
+// single value at 100KB, and the full ALL-campus payload (up to ~174
+// employees x 8 types) came in over that, throwing "Argument too large:
+// value" instead of caching (found live, 2026-09-24). This only loads
+// once per page visit anyway (not a hot path re-fired per keystroke like
+// nextcode), so a plain uncached read is simpler and safe here -- slimmed
+// to {count, driveLink of the first file} per type instead of every
+// file's full filename+link, both to shrink the response and because
+// that's all the frontend actually renders.
 function listDocumentStatus_(caller) {
-  return cachedStaff_('staff_docstatus_' + caller.campusId, function () { return buildDocumentStatus_(caller); });
-}
-
-function buildDocumentStatus_(caller) {
   const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const idx = {};
@@ -464,7 +466,10 @@ function buildDocumentStatus_(caller) {
     if (STAFF_HIDDEN_DEPARTMENTS.indexOf(salary.department) !== -1) continue;
     const docs = certsByCode[code] || {};
     const documents = {};
-    STAFF_DOCUMENT_TYPES.forEach(function (t) { documents[t] = docs[t] || null; });
+    STAFF_DOCUMENT_TYPES.forEach(function (t) {
+      const files = docs[t];
+      documents[t] = files && files.length ? { count: files.length, driveLink: files[0].driveLink } : null;
+    });
     out.push({
       employeeCode: code,
       name: String(rows[i][idx.Name] || '').trim(),

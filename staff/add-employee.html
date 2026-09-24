@@ -530,10 +530,10 @@ function renderDocumentStatus() {
     '</tr></thead><tbody>' +
     list.map(function (r) {
       const cells = DOC_TYPES.map(function (t) {
-        const files = r.documents[t.full];
-        if (!files || !files.length) return '<td><span class="pill inactive">Missing</span></td>';
-        const extra = files.length > 1 ? ' (+' + (files.length - 1) + ')' : '';
-        return '<td><a class="doc-yes" href="' + esc(files[0].driveLink) + '" target="_blank" rel="noopener">✓' + extra + '</a></td>';
+        const info = r.documents[t.full];
+        if (!info) return '<td><span class="pill inactive">Missing</span></td>';
+        const extra = info.count > 1 ? ' (+' + (info.count - 1) + ')' : '';
+        return '<td><a class="doc-yes" href="' + esc(info.driveLink) + '" target="_blank" rel="noopener">✓' + extra + '</a></td>';
       }).join('');
       return '<tr><td class="name">' + esc(r.name) + '</td><td>' + esc(r.employeeCode) + '</td>' + cells + '</tr>';
     }).join('') +
