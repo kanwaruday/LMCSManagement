@@ -187,6 +187,7 @@ function doGet(e) {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
     if (action === 'designations') return jsonOut({ success: true, designations: cached_('emp_designations', readDesignationSummary) });
+    if (action === 'sheetdebug') return jsonOut({ success: true, sheets: readSheetDebugInfo_() });
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });
@@ -230,6 +231,30 @@ function readDesignationSummary() {
     else counts[key].inactive++;
   }
   return Object.values(counts).sort((a, b) => b.count - a.count);
+}
+
+/** TEMPORARY debug action (2026-09-24) -- every tab's name/gid/dimensions
+ *  and its HEADER ROW ONLY (never any actual row data), same "structure
+ *  only, never per-employee data" precedent as readDesignationSummary()
+ *  above -- this is on the PUBLIC unauthenticated proxy, so real document
+ *  links/PII must never flow through this action. Built so Claude could
+ *  see the real tab name and column layout of the new "scanned documents"
+ *  tab (gid 2146486688, per Uday) without needing a manual export. Remove
+ *  once that feature is built. */
+function readSheetDebugInfo_() {
+  const sheets = openWorkbook_().getSheets();
+  return sheets.map(function (sheet) {
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    const header = lastRow > 0 && lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+    return {
+      name: sheet.getName(),
+      gid: sheet.getSheetId(),
+      rowCount: lastRow,
+      colCount: lastCol,
+      header: header,
+    };
+  });
 }
 
 function openWorkbook_() {
