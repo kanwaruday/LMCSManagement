@@ -134,7 +134,7 @@ function hirNormalizeName_(n) {
 // every caller re-deduping) -- keeps the most recent submission,
 // backfilling a missing CV link from an older duplicate that had one.
 function hiringApplicants_(caller) {
-  const requisitions = hirApprovedRequisitions_('Hiring / New Position');
+  const requisitions = hirApprovedRequisitions_('New Position');
   if (caller.campusId !== 'ALL' && !requisitions[caller.campusId]) {
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
@@ -218,7 +218,10 @@ function hiringApplicants_(caller) {
 // which only ever care about the subjects part.
 function hirParseRequisitionItem_(itemName) {
   const s = String(itemName || '').trim();
-  const m = s.match(/^(NTT|PRT|TGT|PGT)\s*[:—-]?\s*(.*)$/i);
+  // COMPUTER/PTI added 2026-09-24 (Computer Teacher, PTI/Games Teacher --
+  // real EmpSalary designations distinct from the PRT/TGT/PGT ladder,
+  // confirmed to hire through this same Teaching Applicants sheet).
+  const m = s.match(/^(NTT|PRT|TGT|PGT|COMPUTER|PTI)\s*[:—-]?\s*(.*)$/i);
   return m ? { roleLevel: m[1].toUpperCase(), subjectsRaw: m[2].trim() } : { roleLevel: '', subjectsRaw: s };
 }
 
@@ -376,8 +379,10 @@ function hirBedScore_(bedRaw) {
 }
 
 // Masters matters more the higher the role level -- PGT needs subject
-// depth for senior secondary, PRT/NTT don't need it at all.
-const HIR_QUALIFICATION_EXPECTATION = { NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred' };
+// depth for senior secondary, PRT/NTT don't need it at all. Computer
+// Teacher/PTI (2026-09-24) are specialist, not part of that academic
+// ladder, so Bachelors is just as fine as Masters for either.
+const HIR_QUALIFICATION_EXPECTATION = { NTT: 'either', PRT: 'either', TGT: 'masters-preferred', PGT: 'masters-preferred', COMPUTER: 'either', PTI: 'either' };
 function hirQualificationScore_(qualification, roleLevel) {
   const isMasters = String(qualification || '').toLowerCase().indexOf('master') !== -1;
   const expectation = HIR_QUALIFICATION_EXPECTATION[roleLevel] || 'masters-preferred';
@@ -457,7 +462,7 @@ function hiringUpdateStatus_(caller, body) {
     const m = branches.match(/LMS-(\d)/);
     const applicantCampus = m ? 'LMS' + m[1] : caller.campusId;
     const missing = [];
-    if (!hirApprovalApproved_(applicantCampus, 'Hiring / New Position')) missing.push('the "Hiring / New Position" requisition');
+    if (!hirApprovalApproved_(applicantCampus, 'New Position')) missing.push('the "New Position" requisition');
     if (!hirApprovalApproved_(applicantCampus, 'Hiring Decision')) missing.push('the "Hiring Decision" approval for this candidate');
     if (missing.length) {
       throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join(' and ') + ' to be Approved.');

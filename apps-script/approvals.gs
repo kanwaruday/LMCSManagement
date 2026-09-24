@@ -61,14 +61,14 @@ const APR_COMMENTS_TAB = 'Comments';
 // 2026-09-14: added 'Hiring Decision' for the Hiring Dashboard's second
 // approval (finalize a specific candidate + pay, after 'Hiring / New
 // Position' already opened the role) -- see hiring.gs.
-const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+const APR_CATEGORIES = ['New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no
 // new sheet column was needed for Compensation Change. Quantity only
 // makes sense for an actual purchase, so it's gated separately.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-// 2026-09-14, per Uday: Hiring / New Position also uses Item ("Subjects/
+// 2026-09-14, per Uday: New Position also uses Item ("Subjects/
 // Position Required") so hiring.gs's hiringApplicants_ can filter the
 // Hiring Dashboard down to applicants matching what was actually
 // approved, instead of showing every applicant the moment ANY position
@@ -79,7 +79,7 @@ const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 // actually read anywhere, so there was nothing left for it to feed.
 // Frontend copy of this array (principals-daily-reporting/index.html)
 // updated the same way -- keep both in sync.
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New Position'];
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // Teacher Portal (2026-09-19): categories a Teacher may self-submit --
 // deliberately narrow (no Hiring/Compensation/Disciplinary, which stay

@@ -101,7 +101,7 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
       <div class="getting-started">
         <a href="../principals-daily-reporting/index.html" class="gs-card" target="_blank">
           <div class="t">1 — Request to open a role</div>
-          <div class="d">Approvals tab → "Hiring / New Position"</div>
+          <div class="d">Approvals tab → "New Position"</div>
         </a>
         <a href="https://docs.google.com/forms/d/e/1FAIpQLSempUF_QhWrQ8AfoYdXs7o2ACgcec78RyT7ZtuFlFv7pD_cuQ/viewform" class="gs-card" target="_blank">
           <div class="t">4 — Interview Report Form</div>
@@ -199,7 +199,7 @@ function activeCampus_() {
 }
 
 // 2026-09-14, per Uday: the Approvals side now captures WHICH subjects/
-// how many openings a "Hiring / New Position" requisition was actually
+// how many openings a "New Position" requisition was actually
 // approved for (Item/Quantity fields, reused same as Compensation
 // Change reuses them -- see approvals.gs's APR_ITEM_CATEGORIES), and
 // hiringApplicants_ filters the applicant list by it server-side. This
@@ -209,12 +209,12 @@ function renderStatusStrip() {
   const campus = activeCampus_();
   const el = document.getElementById('statusStrip');
   if (campus === 'ALL') { el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>'; return; }
-  const cats = ['Hiring / New Position', 'Hiring Decision'];
+  const cats = ['New Position', 'Hiring Decision'];
   el.innerHTML = cats.map(function (cat) {
     const approved = APPROVALS.list.filter(function (a) { return a.campusId === campus && a.category === cat && a.status === 'Approved'; });
     const ok = approved.length > 0;
     let label = cat;
-    if (ok && cat === 'Hiring / New Position') {
+    if (ok && cat === 'New Position') {
       label += ': ' + approved.map(function (a) {
         return (a.itemName || 'any subject') + (a.quantity != null ? ' (' + a.quantity + ')' : '');
       }).join(', ');
@@ -272,7 +272,7 @@ function renderRows() {
   const emptyMsg = document.getElementById('emptyMsg');
   if (APPLICANTS.gated) {
     document.getElementById('rows').innerHTML = '';
-    emptyMsg.textContent = 'No applicants to show — no campus has an Approved "Hiring / New Position" request yet. Use the "Request to open a role" link above.';
+    emptyMsg.textContent = 'No applicants to show — no campus has an Approved "New Position" request yet. Use the "Request to open a role" link above.';
     emptyMsg.style.display = '';
     return;
   }

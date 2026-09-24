@@ -535,7 +535,7 @@ td{padding:6px 12px;vertical-align:middle}
           <label class="field-label">Urgency</label>
           <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
         </div>
-        <!-- Hiring / New Position only -- redesigned 2026-09-24 per
+        <!-- New Position only -- redesigned 2026-09-24 per
              Uday's annotated mockup: role/subjects moved up here (right
              after Category), Title/Evidence Link/Linked Activity/Number
              of Openings all dropped for this category, and a
@@ -556,6 +556,8 @@ td{padding:6px 12px;vertical-align:middle}
                 <option value="PRT">PRT (Primary)</option>
                 <option value="TGT">TGT (up to Class 10)</option>
                 <option value="PGT">PGT (up to Class 12)</option>
+                <option value="COMPUTER">Computer Teacher</option>
+                <option value="PTI">PTI / Games Teacher</option>
               </select>
             </div>
             <div>
@@ -579,7 +581,15 @@ td{padding:6px 12px;vertical-align:middle}
             </div>
             <div id="aprOutgoingEmployeeWrap" style="display:none">
               <label class="field-label">Who is being replaced</label>
-              <input type="text" id="aprOutgoingEmployee" placeholder="Outgoing employee's name">
+              <!-- Native <datalist> instead of a custom dropdown widget --
+                   real-time search/filter for free. Options are loaded
+                   lazily (see aprLoadEmployeeList_) the first time
+                   Replacement Hire? is set to Yes, from the SAME public
+                   Employee Roster endpoint + "Name (CODE) — School" label
+                   format staff/add-employee.html already uses for its own
+                   employee-search fields. -->
+              <input type="text" id="aprOutgoingEmployee" list="aprOutgoingEmployeeList" placeholder="Search by name…">
+              <datalist id="aprOutgoingEmployeeList"></datalist>
             </div>
           </div>
         </div>
@@ -1963,16 +1973,16 @@ async function loadReportForDate() {
 // caller can see in one call).
 // 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
 // this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
-const APR_CATEGORIES = ['Hiring / New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+const APR_CATEGORIES = ['New Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
 // Item doubles as "Item" (Financial/Purchase), "Employee" (Compensation
-// Change), or "Subjects/Position Required" (Hiring / New Position) --
+// Change), or "Subjects/Position Required" (New Position) --
 // same generic field, just relabeled per category in aprOnCategoryChange().
 // Amount and Item+Qty are gated separately (Hiring shows Item+Qty but no
 // Amount; Compensation Change shows Item+Amount but no Qty). Keep all 3
 // consts in sync with approvals.gs.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'Hiring / New Position'];
-// 2026-09-24: Hiring / New Position no longer shows a Quantity/"Number
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New Position'];
+// 2026-09-24: New Position no longer shows a Quantity/"Number
 // of Openings" field (dropped per Uday's annotated redesign) -- only
 // Financial/Purchase still has a real "how many" concept. Backend
 // still accepts a quantity for Hiring (unchanged schema), it just never
@@ -2017,7 +2027,7 @@ function aprSelectCategory(c) {
   aprOnCategoryChange();
 }
 // NOT called here -- aprOnCategoryChange() (default category is
-// Hiring / New Position) calls renderAprSubjectsMsOptions(), which
+// New Position) calls renderAprSubjectsMsOptions(), which
 // needs APR_HIRING_SUBJECTS_BY_ROLE, a `const` declared further down
 // this same script. Calling it this early hit that const before its
 // own declaration ran (temporal dead zone -- a real bug found live
@@ -2041,11 +2051,19 @@ document.getElementById('aprCategoryFilter').innerHTML = '<option value="All">Al
 // hiring.gs's HIR_SUBJECT_CANON is what reconciles this against real
 // applicants' own wording (Mathematics, Social Sciences, ...), so this
 // list doesn't need to match applicant spelling itself.
+// 2026-09-24, per Uday: Computer Teacher and PTI/Games Teacher added --
+// real EmpSalary designations (AdminIT/AdminPTI depts) distinct from
+// the PRT/TGT/PGT ladder, confirmed to hire through the SAME Teaching
+// Applicants sheet as everyone else. Each has exactly one subject, so
+// renderAprSubjectsMsOptions() auto-selects it below -- still the same
+// multiselect widget, just nothing to actually pick.
 const APR_HIRING_SUBJECTS_BY_ROLE = {
   NTT: [], // generalist -- no subject picker shown at all
   PRT: ['English', 'Hindi', 'Math', 'Science', 'Social Science'],
   TGT: ['English', 'Hindi', 'Sanskrit', 'Math', 'Science', 'Social Science', 'Information Technology', 'P.Ed', 'E.V.S.'],
   PGT: ['English', 'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science'],
+  COMPUTER: ['Information Technology'],
+  PTI: ['P.Ed'],
 };
 let selectedAprSubjects = [];
 
@@ -2053,7 +2071,9 @@ function renderAprSubjectsMsOptions() {
   const roleLevel = document.getElementById('aprHiringRoleLevel').value;
   const options = APR_HIRING_SUBJECTS_BY_ROLE[roleLevel] || [];
   selectedAprSubjects = selectedAprSubjects.filter(function (s) { return options.indexOf(s) !== -1; }); // drop selections that don't exist at the newly-picked role level
+  if (options.length === 1 && !selectedAprSubjects.length) selectedAprSubjects = options.slice(); // single-subject roles (Computer Teacher, PTI) -- nothing to actually choose, so pre-check it
   document.getElementById('aprSubjectsMs').style.display = options.length ? '' : 'none'; // NTT: no subjects to pick, itemName is just the role level
+  document.getElementById('aprSubjectsMsToggleLabel').textContent = selectedAprSubjects.length ? selectedAprSubjects.join(', ') : 'Select subjects needed';
   document.getElementById('aprSubjectsMsPanel').innerHTML = options.map(function (s) {
     return '<label class="ms-option"><input type="checkbox" onchange="toggleAprSubject(\'' + s + '\', this.checked)"' +
       (selectedAprSubjects.indexOf(s) > -1 ? ' checked' : '') + '><span>' + s + '</span></label>';
@@ -2093,11 +2113,34 @@ function aprOnReplacementChange() {
   const isReplacement = document.getElementById('aprHiringIsReplacement').value === 'Yes';
   document.getElementById('aprOutgoingEmployeeWrap').style.display = isReplacement ? 'block' : 'none';
   if (!isReplacement) document.getElementById('aprOutgoingEmployee').value = '';
+  else aprLoadEmployeeList_(); // lazy -- only fetched the first time this is actually needed
+}
+
+// Same public Employee Roster proxy + "Name (CODE) — School" label
+// format staff/add-employee.html already uses for its own employee-
+// search fields -- reused rather than a second implementation. Public
+// endpoint (no idToken), fetched once and cached in the <datalist>.
+const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+let aprEmployeeListLoaded_ = false;
+async function aprLoadEmployeeList_() {
+  if (aprEmployeeListLoaded_) return;
+  aprEmployeeListLoaded_ = true;
+  try {
+    const res = await fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); });
+    if (!res.success || !Array.isArray(res.employees)) return;
+    document.getElementById('aprOutgoingEmployeeList').innerHTML = res.employees
+      .filter(function (e) { return e.employeeCode && e.name; })
+      .map(function (e) { return '<option value="' + aprEsc_(e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?')) + '">'; })
+      .join('');
+  } catch (err) {
+    aprEmployeeListLoaded_ = false; // let a retry (re-toggling Yes) try again instead of giving up for the whole session
+    console.warn('aprLoadEmployeeList_ error:', err);
+  }
 }
 
 function aprOnCategoryChange() {
   const category = document.getElementById('aprCategory').value;
-  const isHiring = category === 'Hiring / New Position';
+  const isHiring = category === 'New Position';
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
   const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1 && !isHiring; // Hiring's item box is replaced entirely by aprHiringFields below
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
@@ -2306,16 +2349,16 @@ function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
   if (r.itemName) {
-    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'Hiring / New Position' ? 'Subjects/Position: ' : 'Item: ');
-    const qtySuffix = r.quantity == null ? '' : (r.category === 'Hiring / New Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
+    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'New Position' ? 'Subjects/Position: ' : 'Item: ');
+    const qtySuffix = r.quantity == null ? '' : (r.category === 'New Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
     meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
   }
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
-  // Hiring / New Position repurposes evidenceLink for the replacement-
+  // New Position repurposes evidenceLink for the replacement-
   // hire note (plain text, not a URL -- see submitApprovalRequest), so
   // it renders as text here instead of a clickable "Evidence: link".
   if (r.evidenceLink) {
-    meta.push(r.category === 'Hiring / New Position' ? aprEsc_(r.evidenceLink) : 'Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+    meta.push(r.category === 'New Position' ? aprEsc_(r.evidenceLink) : 'Evidence: <a href="' + aprEsc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
   }
   if (r.linkedPlannedActivityId) {
     const linked = (plannedActivitiesCache_[r.campusId] || []).filter(function (a) { return a.id === r.linkedPlannedActivityId; })[0];
@@ -2433,10 +2476,10 @@ async function submitApprovalRequest() {
   const btn = document.getElementById('aprSubmitBtn');
   if (btn.disabled) return;
   const category = document.getElementById('aprCategory').value;
-  const isHiring = category === 'Hiring / New Position';
+  const isHiring = category === 'New Position';
   const description = document.getElementById('aprDescription').value.trim();
 
-  // Hiring / New Position: Title is hidden and auto-derives from
+  // New Position: Title is hidden and auto-derives from
   // Role+Subjects (already synced into aprItemName -- see
   // aprSyncHiringItemName_); Evidence Link is hidden too and instead
   // repurposed to carry the replacement-hire note, since it's just a
@@ -2534,7 +2577,7 @@ function switchSubTab(tab) {
 }
 
 // Sets the Category form's initial field visibility to match its
-// default-selected option (Hiring / New Position) -- see the comment
+// default-selected option (New Position) -- see the comment
 // at aprSelectCategory()'s definition for why this has to run down
 // here, after APR_HIRING_SUBJECTS_BY_ROLE is actually declared, not
 // right after the button/select markup gets populated.
