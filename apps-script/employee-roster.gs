@@ -176,7 +176,7 @@ function empSubjectLabel(code) {
 // this project's deployment is "Anyone", unlike that file's old
 // domain-restricted deployment -- see that file's header for the
 // trade-off Uday explicitly accepted merging it in.
-const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive', 'documentstatus', 'uploadstatus', 'verificationqueue', 'reassigncertificate'];
+const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'transfer', 'markinactive', 'documentstatus', 'uploadstatus', 'verificationqueue', 'reassigncertificate', 'autoresolvequeue'];
 const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete'];
 
 function doGet(e) {

@@ -133,6 +133,7 @@ function staffDoGet_(e) {
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
     else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
+    else if (action === 'autoresolvequeue') result = autoResolveFromResponseSheets_(caller);
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
@@ -675,6 +676,113 @@ function reassignCertificate_(data, caller) {
     return { success: true };
   }
   throw new Error('Could not find that document row -- it may have already been reassigned by someone else');
+}
+
+// ── Auto-resolve from the Form Response sheets (Uday, 2026-09-24) ─────
+// The 6 campus "Staff Document Submission form (Responses)" sheets each
+// have an Employee Name + Employee ID column filled in SEPARATELY from
+// who submitted the form (confirmed live: a row submitted by
+// jai.chand@lms.org.in correctly lists NIDHI SINGH / KUL/25/06/108, not
+// his own identity) -- that's a 100% reliable owner per file, which the
+// importer (drive-index/build_employee_cert_links.py) doesn't use at
+// all; it only parses the FILENAME, which is what caused the submitter-
+// based misattribution in the first place.
+//
+// This cross-references by the Drive FILE ID itself (the long token in
+// the URL), not by document-type label or filename -- deliberately,
+// since the response sheet's own column headers ("Teachers Biodata+
+// Proficiency" etc.) don't match STAFF_DOCUMENT_TYPES' category names,
+// and a file's ID is unique regardless of which label either sheet uses
+// for it. A row is only resolved if the response sheet's Employee ID
+// also matches a REAL, current EmpMaster row -- a typo'd/stale ID in the
+// response sheet is skipped rather than trusted blindly.
+const RESPONSE_SHEET_IDS_ = {
+  LMS1: '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg',
+  LMS2: '10xxFM1li1-6xzWEBEEPkZIF4MJcilddoVJkEfVbkScM',
+  // Uday pasted this same as LMS2's on 2026-09-24 -- using the value
+  // already in hiring/index.html's DATASRC_DOC_SHEET_IDS instead, which
+  // is a DIFFERENT id and was already working there. Worth confirming
+  // with him which is actually correct if this campus resolves nothing.
+  LMS3: '1qdQnXrWWTrgnCt82MSk_fN6Fqaox-EoenuF_XToypAc',
+  LMS4: '1x8eFlnFcEKaCwF9HMRan_EQwTgSPq9xHubZ7n5vyR8k',
+  LMS5: '1-bhS4eu4OHFhRzllsALtWLRWiGFt-KutbNke3nNlCk8',
+  LMS6: '1-3_3BT7zHVJXy7UqxwZuZmpzUJp4uaibHNaA7onI0jU',
+};
+
+// Drive file IDs are long (25+ char) alphanumeric/-/_ tokens -- matches
+// them the same way regardless of URL shape (.../open?id=X or
+// .../file/d/X/view), since the two sheets use different link formats.
+function extractDriveFileId_(url) {
+  if (!url) return null;
+  const m = String(url).match(/[-\w]{25,}/);
+  return m ? m[0] : null;
+}
+
+// fileId -> {employeeCode, employeeName}, built fresh from all 6
+// response sheets every run (cheap -- a few thousand cells total, not a
+// hot path, this is a manual one-off/occasional cleanup action).
+function buildFileIdOwnerMap_() {
+  const map = {};
+  Object.keys(RESPONSE_SHEET_IDS_).forEach(function (campus) {
+    let sheet;
+    try { sheet = SpreadsheetApp.openById(RESPONSE_SHEET_IDS_[campus]).getSheets()[0]; } catch (err) { return; }
+    const rows = sheet.getDataRange().getValues();
+    const header = rows[0];
+    const nameCol = header.indexOf('Employee Name');
+    const idCol = header.indexOf('Employee ID');
+    if (nameCol < 0 || idCol < 0) return;
+    for (let i = 1; i < rows.length; i++) {
+      const employeeCode = String(rows[i][idCol] || '').trim();
+      if (!employeeCode) continue; // can't resolve anything from a row with no ID typed in
+      const employeeName = String(rows[i][nameCol] || '').trim();
+      for (let c = 0; c < rows[i].length; c++) {
+        if (c === nameCol || c === idCol) continue;
+        const fileId = extractDriveFileId_(rows[i][c]);
+        if (fileId) map[fileId] = { employeeCode: employeeCode, employeeName: employeeName };
+      }
+    }
+  });
+  return map;
+}
+
+// Walks every "needs verification" row in Certificate Links (same
+// definition as listVerificationQueue_) and resolves whichever ones the
+// response-sheet cross-reference can confidently answer. Write-gated
+// like everything else -- Coordinator/Owner only -- but NOT scoped to
+// the caller's own campus, since this is a one-shot bulk cleanup over
+// the whole sheet, same as re-running the importer would be.
+function autoResolveFromResponseSheets_(caller) {
+  const ownerMap = buildFileIdOwnerMap_();
+  const ss = openEmpWorkbook_();
+  const sheet = ss.getSheetByName('Certificate Links');
+  if (!sheet) throw new Error('Certificate Links tab not found');
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('Employee Code');
+  const nameCol = header.indexOf('Employee Name');
+  const schoolCol = header.indexOf('School');
+  const linkCol = header.indexOf('Drive Link');
+  const statusCol = header.indexOf('Status');
+  let checked = 0, resolved = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const status = statusCol >= 0 ? String(rows[i][statusCol] || '').trim() : '';
+    const needsReview = status.indexOf('submitter-based') !== -1 || status.indexOf('Ambiguous') !== -1 || status.indexOf('Unmatched') !== -1;
+    if (!needsReview) continue;
+    checked++;
+    const fileId = extractDriveFileId_(linkCol >= 0 ? rows[i][linkCol] : '');
+    const owner = fileId && ownerMap[fileId];
+    if (!owner) continue;
+    const target = readRowByCode_(ss, 'EmpMaster', owner.employeeCode);
+    if (!target) continue; // response sheet's ID doesn't match a real, current employee -- don't guess
+    const targetSchool = String(target.SchoolCode || '').trim().toUpperCase();
+    const rowNum = i + 1;
+    if (codeCol >= 0) sheet.getRange(rowNum, codeCol + 1).setValue(owner.employeeCode);
+    if (nameCol >= 0) sheet.getRange(rowNum, nameCol + 1).setValue(target.Name || owner.employeeName);
+    if (schoolCol >= 0) sheet.getRange(rowNum, schoolCol + 1).setValue(STAFF_CAMPUS_SHEET_LABEL_[targetSchool] || targetSchool);
+    if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setValue('Resolved via response-sheet cross-reference (' + caller.email + ', ' + formatStaffDate_(new Date()) + ')');
+    resolved++;
+  }
+  return { checked: checked, resolved: resolved };
 }
 
 // EmployeeCode -> {designation, department (lowercased, for the
