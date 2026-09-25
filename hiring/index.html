@@ -169,6 +169,14 @@ const DOC_FORM_URLS = {
   LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
 };
 
+// Teacher Interview Report Form -- long viewform URL (not the forms.gle
+// shortlink) since Google Forms' own prefill query params (?usp=pp_url
+// plus entry.<id>=<value>) only apply on that URL. entry IDs pulled
+// 2026-09-26 via the form's own "Get pre-filled link" feature (Uday):
+// entry.579732967=Teachers Name, entry.1224876789=Contact Number,
+// entry.1130683531=Branch.
+const HIR_REPORT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSempUF_QhWrQ8AfoYdXs7o2ACgcec78RyT7ZtuFlFv7pD_cuQ/viewform';
+
 // Owner-only "data source" links (2026-09-20) -- IDs duplicated from
 // apps-script/hiring.gs (HIR_SHEET_ID / HIR_IR_SHEET_ID / HIR_DOC_SHEET_IDS),
 // same as DOC_FORM_URLS above is already duplicated from that file's
@@ -330,6 +338,18 @@ function applicantCampusFor_(a) {
   return m ? 'LMS' + m[1] : '';
 }
 
+// Pre-fills the Teacher Interview Report Form's Name/Contact/Branch,
+// per Uday (2026-09-26) -- the Branch dropdown's own option text is
+// "LMS 2" (a space, confirmed from a real pre-filled link he pulled),
+// not applicantCampusFor_'s bare 'LMS2', hence the reformat.
+function submitReportFormUrl_(a) {
+  const school = applicantCampusFor_(a);
+  const branch = school ? school.replace(/^LMS(\d)/, 'LMS $1') : '';
+  const params = new URLSearchParams({ 'usp': 'pp_url', 'entry.579732967': a.name, 'entry.1224876789': a.phone });
+  if (branch) params.set('entry.1130683531', branch);
+  return HIR_REPORT_FORM_URL + '?' + params.toString();
+}
+
 // Deep-links into the Staff Portal's New Hire tab with name + campus
 // pre-filled -- same "hand off via URL params" pattern the old Salary
 // Slip integration used, rather than duplicating the hire form here.
@@ -448,7 +468,7 @@ function reqBarHtml_(a) {
   if (idx === 0) {
     html += '<div class="req-hint">Next: submit the Interview Report, then refresh.</div>' +
       '<div class="interview-label">Interview Reports</div>' +
-      '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">📝 Submit Report</a>';
+      '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + submitReportFormUrl_(a) + '" target="_blank">📝 Submit Report</a>';
   } else if (idx >= 1) {
     html += '<div class="interview-label">Interview Reports</div>';
     if (a.interviewReportPdf) {
