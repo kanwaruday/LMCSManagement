@@ -185,6 +185,52 @@ function hirApplicantId_(row) {
   return 'T-' + String(row).padStart(4, '0');
 }
 
+// ONE-TIME migration (2026-09-25, per Uday) -- the status ladder was
+// just replaced (HIR_STATUSES above); this carries forward whatever
+// stage an already-in-progress applicant was actually at, instead of
+// every legacy value silently rendering as "not started" on the new
+// ladder. Not web-exposed (no action= route) -- there's no way for this
+// session to call it with real write access, so it's meant to be run
+// ONCE directly from the Apps Script editor: select
+// "hirMigrateLegacyStatuses_" in the function dropdown next to Run,
+// click Run, authorize if prompted, then check View > Logs for the
+// count. Idempotent -- a row already holding a valid new-ladder value
+// (including one already migrated) is left untouched, so running it
+// twice by accident does nothing the second time.
+const HIR_LEGACY_STATUS_MAP = {
+  'Interviewed': 'Interview & Demo Done',
+  'Offered': 'Salary Offer',
+  // No ladder equivalent for these two anymore (see HIR_STATUSES
+  // comment -- output-only now, per Uday) -- migrate to blank, i.e.
+  // "not yet at Interview Scheduled".
+  'New': '', 'Contacted': '',
+};
+function hirMigrateLegacyStatuses_() {
+  const sheet = hirSheet_();
+  const values = sheet.getDataRange().getValues();
+  let changed = 0;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const current = String(row[HIR_COL.STATUS - 1] || '').trim();
+    if (!current || HIR_STATUSES.indexOf(current) !== -1) continue; // already blank, or already a valid new-ladder value
+    const rowNum = i + 1;
+    if (current === 'Not Responding') {
+      // Folds into Rejected, per Uday -- only fills Notes if it's
+      // currently blank, so a real existing note is never overwritten.
+      sheet.getRange(rowNum, HIR_COL.STATUS).setValue('Rejected');
+      const notes = String(row[HIR_COL.NOTES - 1] || '').trim();
+      if (!notes) sheet.getRange(rowNum, HIR_COL.NOTES).setValue('Did not respond');
+    } else if (HIR_LEGACY_STATUS_MAP.hasOwnProperty(current)) {
+      sheet.getRange(rowNum, HIR_COL.STATUS).setValue(HIR_LEGACY_STATUS_MAP[current]);
+    } else {
+      continue; // unrecognized value -- leave alone rather than guess
+    }
+    changed++;
+  }
+  Logger.log('hirMigrateLegacyStatuses_: updated ' + changed + ' row(s)');
+  return changed;
+}
+
 // Guards against corrupted sheet cells (e.g. a Timestamp cell containing
 // stray text instead of a date, seen live 2026-09-25) -- new Date(v)
 // throws on .toISOString() for anything unparseable, which would
