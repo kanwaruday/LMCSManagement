@@ -72,7 +72,7 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
    clicking any of them just changes the PENDING selection (same as the
    old dropdown did) -- nothing saves until the row's Save button runs. */
 .ladder{display:flex;flex-direction:column;gap:3px;min-width:190px}
-.req-bar{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.req-bar{min-width:200px}
 .req-hint{font-size:10.5px;font-weight:700;color:var(--red);margin-bottom:4px}
 .ladder-item{display:block;width:100%;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--gray);cursor:pointer}
 .ladder-item:hover{border-color:var(--red)}
@@ -148,7 +148,7 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
           <thead>
             <tr>
               <th>Match</th><th>Applicant</th><th>Applied</th><th>Subjects</th><th>Qualification</th><th>CV</th>
-              <th>Stage</th><th></th>
+              <th>Stage</th><th>Next steps</th><th></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -530,7 +530,8 @@ function renderRows() {
       '<td>' + (a.subjects || '—') + '</td>' +
       '<td>' + (a.qualification || '—') + (a.bed ? ' · ' + a.bed : '') + '</td>' +
       '<td>' + (a.cv ? '<a class="linklike" href="' + a.cv + '" target="_blank">View</a>' : '—') + '</td>' +
-      '<td class="ladder-cell">' + ladderHtml_(a.status) + reqBarHtml_(a) +
+      '<td class="ladder-cell">' + ladderHtml_(a.status) + '</td>' +
+      '<td class="reqbar-cell">' + reqBarHtml_(a) +
         '<input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes"></td>' +
       '<td>' +
         '<button class="save-btn">Save</button>' +
