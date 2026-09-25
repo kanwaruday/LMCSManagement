@@ -732,7 +732,17 @@ function hirRefreshTrackerCore_() {
     else { byPhone[key] = applicant; } // later row wins, same rule as hiringApplicants_
   }
 
-  const rows = order.map(function (k) { return byPhone[k]; }).map(function (a) {
+  // Approved-requisition matches float to the top (best match score
+  // first within that group) -- a sort, not a filter, since "every
+  // applicant" stays true either way, just ordered by what's actually
+  // actionable right now instead of raw sheet-row order.
+  const applicantsSorted = order.map(function (k) { return byPhone[k]; }).sort(function (a, b) {
+    const aOk = a.matchedCampus ? 1 : 0;
+    const bOk = b.matchedCampus ? 1 : 0;
+    if (aOk !== bOk) return bOk - aOk;
+    return (b.matchScore || 0) - (a.matchScore || 0);
+  });
+  const rows = applicantsSorted.map(function (a) {
     return [
       a.applicantId, a.name, a.phone, a.age, a.subjects, a.branches, a.status,
       a.bestRole || '—', a.matchScore != null ? a.matchScore : '—',
