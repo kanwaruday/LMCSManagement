@@ -394,12 +394,19 @@ function reqBarHtml_(a) {
 // Saves immediately (whatever Notes/dates are currently in the row at
 // that moment go with it) -- a Hired/Reject click is already an
 // unambiguous, deliberate action, no separate confirm step needed.
+// 2026-09-25, per Uday: "only when all of the relevant submissions are
+// made would the stage of an applicant actually change" -- this used
+// to optimistically redraw the ladder as ticked the instant a rung was
+// clicked, BEFORE the server confirmed the save. If the hard gate then
+// rejected it (e.g. Hired without a CV/Interview Report/documents on
+// file), the ladder kept showing the false, unsaved state until a full
+// page reload -- exactly backwards from what's required. Now the
+// ladder-cell is left completely untouched by a click; it only ever
+// re-renders from the FRESH server response inside saveRow_'s success
+// path (renderRows(), full-table rebuild), so a rejected save leaves
+// the ladder exactly as it truly was, no false-positive tick possible.
 function selectLadderStage_(tr, stage) {
   tr.dataset.pendingStatus = stage;
-  const withStage = Object.assign({}, tr._applicant, { status: stage });
-  tr.querySelector('.ladder-cell').innerHTML = ladderHtml_(stage) + reqBarHtml_(withStage);
-  wireLadderClicks_(tr);
-  renderRowActions_(tr);
   saveRow_(tr, tr._applicant);
 }
 
@@ -511,10 +518,14 @@ function saveRow_(tr, applicant) {
   // without a Hired/Reject click. hiring.gs treats blank as "don't
   // touch Status, the stage is derived from evidence anyway."
   btn.disabled = true;
-  msg.textContent = ''; msg.className = 'row-msg';
+  msg.textContent = 'Saving…'; msg.className = 'row-msg';
   gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt, mdInterviewAt: mdInterviewAt })
     .then(function (res) {
       btn.disabled = false;
+      // A rejected write (e.g. Hired without CV/Report/documents) leaves
+      // the ladder untouched -- it was never optimistically updated in
+      // the first place (see selectLadderStage_), so there's nothing to
+      // revert here. The error just explains why nothing changed.
       if (!res.success) { msg.textContent = res.error; msg.className = 'row-msg err'; return; }
       APPLICANTS = res; msg.textContent = 'Saved'; msg.className = 'row-msg ok';
       setTimeout(function () { renderRows(); }, 400);
