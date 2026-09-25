@@ -61,10 +61,11 @@
 //                         CanApprove column (E) is TRUE for them --
 //                         see verifyCallerToken_ below and approvals.gs's
 //                         own header for the delegation model.
-//   hiring.gs           -- action=hiringapplicants/hiringcheckinterviewreport/
-//                         hiringcheckdocuments (GET), updatehiringstatus
-//                         (POST). Hiring Dashboard: browse the Teaching
-//                         Applicants sheet campus-scoped, track a
+//   hiring.gs           -- action=hiringapplicants/hiringapprovalstatus/
+//                         hiringcheckinterviewreport/hiringcheckdocuments
+//                         (GET), updatehiringstatus (POST). Hiring
+//                         Dashboard: browse the Teaching
+//                         Applicants sheet district-scoped, track a
 //                         candidate's status, warn-not-block cross-checks
 //                         against the Interview Report and per-campus
 //                         Document Submission sheets. The 'Hired' write
@@ -140,6 +141,7 @@ function doGet(e) {
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
+    if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     // viewAsCode: Owner Test Mode -- see pdrResolveViewAsCaller_'s own

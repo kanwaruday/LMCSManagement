@@ -103,16 +103,37 @@ function hirNormalizeName_(n) {
   return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// 2026-09-25, per Uday: LMS1/LMS2/LMS3 are one district cluster, LMS4/
+// LMS5/LMS6 another -- an applicant who only ticked one campus on the
+// form can end up hired at a sister campus in the same district, so a
+// locked Principal now browses their WHOLE district's applicants, not
+// just rows that literally mention their own campus tag. Owner/ALL is
+// unaffected (already sees everything approved anywhere).
+const HIR_DISTRICT_CAMPUSES = {
+  LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS3: ['LMS1', 'LMS2', 'LMS3'],
+  LMS4: ['LMS4', 'LMS5', 'LMS6'], LMS5: ['LMS4', 'LMS5', 'LMS6'], LMS6: ['LMS4', 'LMS5', 'LMS6'],
+};
+function hirDistrictCampuses_(campusId) { return HIR_DISTRICT_CAMPUSES[campusId] || [campusId]; }
+
 // action=hiringapplicants -- an applicant row is visible only if AT LEAST
 // ONE campus in its Branches column currently has an Approved "Hiring /
 // New/ Backup Position" AND that requisition's required subjects overlap the
 // applicant's own Subjects (hirSubjectsMatch_ -- a blank requirement is
 // a wildcard, so this doesn't newly hide anything that was visible
 // before subjects existed on the form). A locked Principal is further
-// narrowed to just their own campus's rows (by the same "LMS-N"
-// substring tag the sheet's own per-campus tabs use); Owner/Coordinator
-// (campusId 'ALL') see the union across every approved+matching campus
-// -- NOT everyone unconditionally.
+// narrowed to their own DISTRICT's campuses only (HIR_DISTRICT_CAMPUSES,
+// by the same "LMS-N" substring tag the sheet's own per-campus tabs
+// use) -- not just their exact campus, since 2026-09-25; Owner/
+// Coordinator (campusId 'ALL') see the union across every approved+
+// matching campus network-wide -- NOT everyone unconditionally.
+//
+// 2026-09-25, per Uday: source of truth is the "Form Responses 1" tab
+// this file already reads (HIR_SHEET_GID) -- the per-campus tabs (LMS
+// 1..6) in that same spreadsheet are just FILTER()-formula views of it
+// for humans to skim, not a separate data source, and are never read
+// here. Walk-in interviewees who never filled the Google Form are a
+// deliberately separate mechanism (not this sheet) -- out of scope for
+// this file until that's built.
 //
 // 2026-09-14, per Uday (twice): first pass gated locked campuses but
 // exempted Owner on the theory that "they're the approver, they need
@@ -135,17 +156,19 @@ function hirNormalizeName_(n) {
 // backfilling a missing CV link from an older duplicate that had one.
 function hiringApplicants_(caller) {
   const requisitions = hirApprovedRequisitions_('New/ Backup Position');
-  if (caller.campusId !== 'ALL' && !requisitions[caller.campusId]) {
-    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
-  }
-  if (!Object.keys(requisitions).length) {
-    // Nobody, anywhere, has an approved requisition yet -- same "gated"
-    // signal a locked campus gets, so the frontend shows one consistent
-    // message instead of a bare empty table.
+  // District-wide, not single-campus, for a locked caller (see
+  // HIR_DISTRICT_CAMPUSES above) -- Owner/ALL keeps seeing the union
+  // across every approved campus, same as before.
+  const visibleCampuses = caller.campusId === 'ALL' ? null : hirDistrictCampuses_(caller.campusId);
+  const hasApproval = visibleCampuses ? visibleCampuses.some(function (c) { return !!requisitions[c]; }) : Object.keys(requisitions).length > 0;
+  if (!hasApproval) {
+    // Covers both a locked caller whose whole district has nothing
+    // approved, and the ALL case where literally no campus anywhere
+    // does -- same "gated" signal either way, so the frontend shows one
+    // consistent message instead of a bare empty table.
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
   const values = hirSheet_().getDataRange().getValues();
-  const tag = caller.campusId === 'ALL' ? null : 'LMS-' + caller.campusId.replace(/[^0-9]/g, '');
   const byPhone = {};
   const order = [];
   for (let i = 1; i < values.length; i++) {
@@ -155,15 +178,16 @@ function hiringApplicants_(caller) {
     const subjects = String(r[HIR_COL.SUBJECTS - 1] || '').trim();
 
     // Every requisition (across every campus this applicant applied to,
-    // or just the caller's own campus when locked) that this applicant
-    // actually matches -- collected, not just tested as a boolean, so
-    // hirScoreApplicant_ below can score against the BEST of them (an
-    // applicant can be relevant to more than one open role at once).
+    // or just the caller's own district when locked) that this
+    // applicant actually matches -- collected, not just tested as a
+    // boolean, so hirScoreApplicant_ below can score against the BEST
+    // of them (an applicant can be relevant to more than one open role
+    // at once).
     const relevantReqs = [];
     Object.keys(requisitions).forEach(function (c) {
+      if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return; // outside caller's district
       const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
       if (branches.indexOf(campusTag) === -1) return;
-      if (tag && campusTag !== tag) return;
       requisitions[c].forEach(function (req) { if (hirSubjectsMatch_(req.subjects, subjects)) relevantReqs.push(req); });
     });
     if (!relevantReqs.length) continue;
@@ -209,6 +233,28 @@ function hiringApplicants_(caller) {
   // applicant matches them yet," which is real, informative emptiness,
   // not the same "nothing's been requested" state the gated message is for.
   return { success: true, statuses: HIR_STATUSES, applicants: applicants };
+}
+
+// action=hiringapprovalstatus -- district-scoped approval detail for the
+// Hiring Dashboard's status strip. Deliberately NOT reusing
+// action=approvalslist (aprList_ in approvals.gs), which scopes a locked
+// Principal to ONLY their own campus's approvals -- correct for that
+// generic Approvals tab (a sister campus's Compensation Change or
+// Disciplinary request is nobody else's business), but hiringApplicants_
+// above now shows a locked Principal their whole DISTRICT's applicants
+// (2026-09-25), so the strip needs to say which district campus(es)
+// actually hold the approval unlocking that view, without widening the
+// general endpoint's PII scoping for every other category.
+function hiringApprovalStatus_(caller) {
+  const visibleCampuses = caller.campusId === 'ALL' ? Object.keys(HIR_DISTRICT_CAMPUSES) : hirDistrictCampuses_(caller.campusId);
+  const newPosition = hirApprovedRequisitions_('New/ Backup Position');
+  const hiringDecision = hirApprovedCampuses_('Hiring Decision');
+  return {
+    success: true,
+    campuses: visibleCampuses.map(function (c) {
+      return { campusId: c, newPositions: newPosition[c] || [], hiringDecisionApproved: !!hiringDecision[c] };
+    }),
+  };
 }
 
 // "TGT: Science, Math" (or bare "NTT") -> {roleLevel, subjectsRaw} --
@@ -447,14 +493,17 @@ function hirApprovalApproved_(campusId, category) {
   return !!hirApprovedCampuses_(category)[campusId];
 }
 
-// action=updatehiringstatus (doPost) -- Principal only, own campus
+// action=updatehiringstatus (doPost) -- Principal only, own DISTRICT
 // re-checked server-side (defense in depth, same as the client-side
-// filter). Setting status to 'Hired' is the one write this whole module
-// actually gates: both the requisition approval (open the role) and the
-// hiring-decision approval (approve this specific hire) must already be
-// Approved for the applicant's campus, or the write is refused with a
-// message naming what's still missing -- Owner/MD's sign-off is a real
-// control, not a UI suggestion.
+// filter -- 2026-09-25: widened from own-campus-only alongside the
+// district-wide browse change, since a Principal can now be acting on
+// an applicant from a sister campus). Setting status to 'Hired' is the
+// one write this whole module actually gates: both the requisition
+// approval (open the role) and the hiring-decision approval (approve
+// this specific hire) must already be Approved for the campus actually
+// doing the hiring, or the write is refused with a message naming
+// what's still missing -- Owner/MD's sign-off is a real control, not a
+// UI suggestion.
 function hiringUpdateStatus_(caller, body) {
   const row = parseInt(body.row, 10);
   if (!row || row < 2) throw new Error('Invalid row');
@@ -464,16 +513,23 @@ function hiringUpdateStatus_(caller, body) {
   const sheet = hirSheet_();
   const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
   if (caller.campusId !== 'ALL') {
-    const tag = 'LMS-' + caller.campusId.replace(/[^0-9]/g, '');
-    if (branches.indexOf(tag) === -1) throw new Error('This applicant did not apply to your campus');
+    const districtTags = hirDistrictCampuses_(caller.campusId).map(function (c) { return 'LMS-' + c.replace(/[^0-9]/g, ''); });
+    if (!districtTags.some(function (t) { return branches.indexOf(t) !== -1; })) {
+      throw new Error('This applicant did not apply to your district');
+    }
   }
 
   if (status === 'Hired') {
-    // The applicant's own campus, not just the caller's -- an Owner
-    // (campusId ALL) acting on behalf of a campus must still satisfy
-    // THAT campus's approvals.
-    const m = branches.match(/LMS-(\d)/);
-    const applicantCampus = m ? 'LMS' + m[1] : caller.campusId;
+    // The campus actually doing the hiring is the CALLER's own campus,
+    // not necessarily whichever campus the applicant happened to list
+    // first on the form -- a locked Principal browsing their district
+    // can now mark Hired for a candidate who only ticked a sister
+    // campus, and it's their own school's approvals that matter. Owner/
+    // ALL has no single campus of their own to default to, so it keeps
+    // the old branches-parse fallback (first campus mentioned) for that
+    // one case only.
+    const branchMatch = branches.match(/LMS-(\d)/);
+    const applicantCampus = caller.campusId !== 'ALL' ? caller.campusId : (branchMatch ? 'LMS' + branchMatch[1] : caller.campusId);
     const missing = [];
     if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
     if (!hirApprovalApproved_(applicantCampus, 'Hiring Decision')) missing.push('the "Hiring Decision" approval for this candidate');

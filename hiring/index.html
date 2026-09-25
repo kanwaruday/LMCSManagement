@@ -176,7 +176,7 @@ function renderDataSourceLinks_() {
 
 let SESSION = null;
 let APPLICANTS = [];
-let APPROVALS = { list: [] };
+let APPROVAL_STATUS = { campuses: [] };
 let campusFilter = 'ALL'; // only meaningful when SESSION.campusId === 'ALL'
 
 function gasGet_(action, params) {
@@ -198,29 +198,37 @@ function activeCampus_() {
   return SESSION.campusId === 'ALL' ? campusFilter : SESSION.campusId;
 }
 
-// 2026-09-14, per Uday: the Approvals side now captures WHICH subjects/
-// how many openings a "New/ Backup Position" requisition was actually
-// approved for (Item/Quantity fields, reused same as Compensation
-// Change reuses them -- see approvals.gs's APR_ITEM_CATEGORIES), and
-// hiringApplicants_ filters the applicant list by it server-side. This
-// pill now shows that detail too, so "why don't I see applicant X"
-// has a visible answer right here instead of being a silent filter.
+// 2026-09-25, per Uday: a locked Principal now browses their whole
+// DISTRICT's applicants (see HIR_DISTRICT_CAMPUSES in hiring.gs), not
+// just their own campus's -- so this pulls from action=hiringapprovalstatus
+// (district-scoped, Hiring-categories-only) instead of filtering the
+// general action=approvalslist result, which deliberately only ever
+// returns a locked Principal's OWN campus (correct for that generic
+// Approvals tab, wrong for this district-wide view). Shows one pill-pair
+// per relevant campus when there's more than one, so "why don't I see
+// applicant X" still has a visible, per-campus answer.
 function renderStatusStrip() {
-  const campus = activeCampus_();
   const el = document.getElementById('statusStrip');
-  if (campus === 'ALL') { el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>'; return; }
-  const cats = ['New/ Backup Position', 'Hiring Decision'];
-  el.innerHTML = cats.map(function (cat) {
-    const approved = APPROVALS.list.filter(function (a) { return a.campusId === campus && a.category === cat && a.status === 'Approved'; });
-    const ok = approved.length > 0;
-    let label = cat;
-    if (ok && cat === 'New/ Backup Position') {
-      label += ': ' + approved.map(function (a) {
-        return (a.itemName || 'any subject') + (a.quantity != null ? ' (' + a.quantity + ')' : '');
+  const singleCampus = SESSION.campusId === 'ALL' ? campusFilter : null; // Owner narrowed to one campus via the dropdown
+  if (SESSION.campusId === 'ALL' && campusFilter === 'ALL') {
+    el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>';
+    return;
+  }
+  const rows = (APPROVAL_STATUS.campuses || []).filter(function (c) { return !singleCampus || c.campusId === singleCampus; });
+  const multi = rows.length > 1;
+  el.innerHTML = rows.map(function (c) {
+    const posOk = c.newPositions.length > 0;
+    let posLabel = 'New/ Backup Position';
+    if (posOk) {
+      posLabel += ': ' + c.newPositions.map(function (r) {
+        return (r.roleLevel || 'Any') + (r.subjects ? ': ' + r.subjects : '') + (r.openings != null ? ' (' + r.openings + ')' : '');
       }).join(', ');
     }
-    return '<span class="pill ' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + ' ' + label + '</span>';
-  }).join('');
+    const prefix = multi ? '<b>' + LMCS.campusLabel(c.campusId) + '</b> ' : '';
+    return prefix +
+      '<span class="pill ' + (posOk ? 'ok' : 'no') + '">' + (posOk ? '✓' : '✗') + ' ' + posLabel + '</span>' +
+      '<span class="pill ' + (c.hiringDecisionApproved ? 'ok' : 'no') + '">' + (c.hiringDecisionApproved ? '✓' : '✗') + ' Hiring Decision</span>';
+  }).join(multi ? '<br><br>' : '');
 }
 
 function renderCampusFilter() {
@@ -251,11 +259,15 @@ function renderDocFormLink() {
 // Deep-links into the Staff Portal's New Hire tab with name + campus
 // pre-filled -- same "hand off via URL params" pattern the old Salary
 // Slip integration used, rather than duplicating the hire form here.
-// Uses the applicant's OWN campus tag (not the active filter), since an
-// Owner viewing "All campuses" still needs the right school prefilled.
+// 2026-09-25: prefers the CALLER's own campus over parsing the
+// applicant's original branches -- district-wide browsing means a
+// locked Principal can now mark Hired someone who only ticked a sister
+// campus on the form, and it's the caller's own school actually doing
+// the hiring. Owner/ALL has no own campus, so it keeps the old
+// branches-parse fallback for that one case.
 function hireLinkUrl_(a) {
-  const m = a.branches.match(/LMS-(\d)/);
-  const school = m ? 'LMS' + m[1] : (SESSION.campusId !== 'ALL' ? SESSION.campusId : '');
+  let school = SESSION.campusId !== 'ALL' ? SESSION.campusId : '';
+  if (!school) { const m = a.branches.match(/LMS-(\d)/); school = m ? 'LMS' + m[1] : ''; }
   const params = new URLSearchParams({ name: a.name });
   if (school) params.set('school', school);
   return '../staff/add-employee.html?' + params.toString();
@@ -276,7 +288,11 @@ function renderRows() {
     emptyMsg.style.display = '';
     return;
   }
-  const list = campus === 'ALL' ? APPLICANTS.applicants : APPLICANTS.applicants.filter(function (a) {
+  // A locked Principal's list is already district-scoped server-side
+  // (hiringApplicants_) -- re-filtering here to their exact campus tag
+  // would undo that and hide sister-campus applicants they're now meant
+  // to see. Only Owner's single-campus dropdown narrows further.
+  const list = (SESSION.campusId !== 'ALL' || campus === 'ALL') ? APPLICANTS.applicants : APPLICANTS.applicants.filter(function (a) {
     return a.branches.indexOf('LMS-' + campus.replace(/[^0-9]/g, '')) !== -1;
   });
   emptyMsg.textContent = 'No applicants for this campus yet.';
@@ -356,12 +372,11 @@ function runCheck_(applicant, kind) {
 }
 
 function loadAll_() {
-  Promise.all([gasGet_('hiringapplicants'), gasGet_('approvalslist')]).then(function (results) {
-    const applicants = results[0], approvals = results[1];
+  Promise.all([gasGet_('hiringapplicants'), gasGet_('hiringapprovalstatus')]).then(function (results) {
+    const applicants = results[0], approvalStatus = results[1];
     if (!applicants.success) { document.getElementById('mainRoot').innerHTML = '<div class="empty">' + applicants.error + '</div>'; document.getElementById('mainRoot').style.display = ''; return; }
     APPLICANTS = applicants;
-    APPROVALS = approvals.success ? approvals : { list: [] };
-    APPROVALS.list = APPROVALS.requests || [];
+    APPROVAL_STATUS = approvalStatus.success ? approvalStatus : { campuses: [] };
     document.getElementById('mainRoot').style.display = '';
     renderCampusFilter();
     renderStatusStrip();
