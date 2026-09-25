@@ -91,7 +91,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
       <div class="card">
         <h2>Candidate &amp; Role</h2>
         <div class="grid">
-          <div class="field"><label>Candidate Name</label><input type="text" id="fName"></div>
+          <div class="field"><label>Candidate Name</label><input type="text" id="fName" autocomplete="off"><datalist id="fNameList"></datalist></div>
           <div class="field"><label>Campus</label>
             <select id="fCampus">
               <option value="LMS1">LMS 1</option><option value="LMS2">LMS 2</option><option value="LMS3">LMS 3</option>
@@ -100,7 +100,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
           </div>
           <div class="field"><label>Designation</label><select id="fDesignation"><option value="">— manual entry —</option></select></div>
           <div class="field"><label>Subjects (info only)</label><input type="text" id="fSubjects" placeholder="e.g. P.Ed"></div>
-          <div class="field-check"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
+          <div class="field-check" id="fExistingRow" style="display:none"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
         </div>
       </div>
 
@@ -151,6 +151,11 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
 <script>
 // Same live backend project as hiring.gs/approvals.gs -- see apps-script/README.md.
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+// Same read-only Roster Proxy staff/add-employee.html already searches
+// against (its own EMPLOYEE_ROSTER_URL) -- reused here for the
+// Existing-employee search box rather than duplicating a second source
+// of truth for "who's on staff."
+const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 
 let SESSION = null;
 let EPF_EXEMPTION_APPROVED = false;
@@ -430,6 +435,37 @@ function wireInputs_() {
   document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('recordBtn').onclick = recordSalaryOffer_;
+  document.getElementById('fExisting').addEventListener('change', toggleExistingEmployeeSearch_);
+}
+
+// 2026-09-26, per Uday: checking "Existing employee" turns Candidate
+// Name into a search box against the same staff roster
+// staff/add-employee.html already searches (Name (CODE) — School, via
+// a <datalist> so it stays free-text-friendly rather than a strict
+// dropdown) -- lazy-loaded on first check rather than on page load,
+// since most visits here are for a brand-new hire who isn't on the
+// roster at all. Unchecking reverts to a plain free-text name field.
+let rosterLoaded_ = false;
+function toggleExistingEmployeeSearch_() {
+  const on = document.getElementById('fExisting').checked;
+  const nameInput = document.getElementById('fName');
+  if (on) nameInput.setAttribute('list', 'fNameList'); else nameInput.removeAttribute('list');
+  if (on && !rosterLoaded_) {
+    rosterLoaded_ = true;
+    fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.success) return;
+        const dl = document.getElementById('fNameList');
+        json.employees.forEach(function (e) {
+          if (!e.employeeCode || !e.name) return;
+          const opt = document.createElement('option');
+          opt.value = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
+          dl.appendChild(opt);
+        });
+      })
+      .catch(function (err) { console.warn('Could not load staff roster for search:', err); });
+  }
 }
 
 function prefillFromParams_() {
@@ -479,6 +515,10 @@ function showApp(session) {
       '<p>Salary Dashboard is for Principals, Coordinators, and the Owner.</p></div>';
     return;
   }
+  // 2026-09-26, per Uday: revising an existing employee's pay is an
+  // Owner-only action -- a Principal/Coordinator only ever computes a
+  // fresh new-hire offer, so they don't see this checkbox at all.
+  if (LMCS.hasRole(session, 'Owner')) document.getElementById('fExistingRow').style.display = '';
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
   populateDesignationSelect_();
