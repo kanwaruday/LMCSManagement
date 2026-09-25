@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Salary Dashboard</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6;display:flex;flex-direction:column}
+
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h);flex-wrap:wrap}
+.hdr-brand{display:flex;align-items:center;gap:10px}
+.hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr p{font-size:9.5px;opacity:.75;margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .15s;white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.22)}
+
+#appBody{flex:1;overflow:auto;padding:24px;max-width:900px;margin:0 auto;width:100%}
+#authRoot{max-width:420px;margin:60px auto}
+
+.welcome{display:flex;align-items:center;justify-content:space-between;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.welcome b{color:var(--dark)}
+.signout{font-size:11px;color:var(--gray);text-decoration:none}
+.signout:hover{color:var(--red)}
+
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+.denied .icon{font-size:36px;margin-bottom:10px}
+
+.note{font-size:11px;color:var(--gray);background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:16px}
+
+.card{border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin-bottom:16px}
+.card h2{font-size:13px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 16px}
+.field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--gray);margin-bottom:4px;font-weight:600}
+.field input,.field select{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:5px;font-size:12.5px;font-family:inherit}
+.field-check{display:flex;align-items:center;gap:7px;padding-top:20px}
+.field-check input{width:auto}
+.field-check label{font-size:12px;color:var(--dark);text-transform:none;font-weight:500}
+
+table.results{width:100%;border-collapse:collapse;font-size:12.5px}
+table.results td{padding:6px 8px;border-bottom:1px solid var(--border)}
+table.results td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+table.results tr.total td{font-weight:700;border-top:2px solid var(--dark);border-bottom:none}
+table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);border-bottom:1px solid var(--red-lt)}
+
+.epf-box{background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-top:10px}
+.epf-status{font-size:11.5px;margin-top:6px}
+.epf-status.approved{color:var(--green);font-weight:700}
+.epf-status.pending{color:var(--red)}
+.mini-btn{font-size:11px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--white);cursor:pointer;color:var(--gray)}
+.mini-btn:hover{border-color:var(--red);color:var(--red)}
+.record-btn{font-size:12.5px;padding:9px 18px;border:none;border-radius:5px;background:var(--red);color:#fff;cursor:pointer;font-weight:700}
+.record-btn:hover{background:var(--red-h)}
+.record-btn:disabled{opacity:.5;cursor:default}
+.record-msg{font-size:11px;margin-top:6px}
+.record-msg.err{color:#991b1b}
+.record-msg.ok{color:var(--green)}
+.source-note{font-size:10px;color:var(--gray);margin-top:14px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-brand">
+    <div>
+      <h1>Salary Dashboard</h1>
+      <p>Offer-letter calculator — new hire / offer</p>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <a href="../hiring/index.html" class="hdr-btn">🧑‍💼 Hiring Dashboard</a>
+    <a href="../index.html" class="hdr-btn">🏠 Portal Home</a>
+  </div>
+</div>
+
+<div id="appBody">
+
+  <div id="authRoot"></div>
+
+  <div id="appRoot" style="display:none">
+    <div class="welcome" id="welcomeStrip"></div>
+    <div id="deniedRoot"></div>
+    <div id="mainRoot" style="display:none">
+
+      <div class="note">v1 scope: offer-letter / new-hire calculator only (not monthly payroll, incentives, or leave). EPF wage ceiling and caps below reflect the EPFO gazette notification effective 17 Sept 2026 (₹15,000 → ₹25,000).</div>
+
+      <div class="card">
+        <h2>Candidate &amp; Role</h2>
+        <div class="grid">
+          <div class="field"><label>Candidate Name</label><input type="text" id="fName"></div>
+          <div class="field"><label>Campus</label>
+            <select id="fCampus">
+              <option value="LMS1">LMS 1</option><option value="LMS2">LMS 2</option><option value="LMS3">LMS 3</option>
+              <option value="LMS4">LMS 4</option><option value="LMS5">LMS 5</option><option value="LMS6">LMS 6</option>
+            </select>
+          </div>
+          <div class="field-check"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Experience &amp; Base Pay</h2>
+        <div class="grid">
+          <div class="field"><label>LMS Experience (years)</label><input type="number" id="fLmsExp" value="0" min="0" step="0.5"></div>
+          <div class="field"><label>Other Experience (years)</label><input type="number" id="fOtherExp" value="0" min="0" step="0.5"></div>
+          <div class="field"><label>Pre-Basic Pay (₹)</label><input type="number" id="fPreBasic" value="0" min="0" step="100"></div>
+          <div class="field"><label>Grade Pay (₹)</label><input type="number" id="fGradePay" value="0" min="0" step="100"></div>
+          <div class="field"><label>Work Hours / Week</label><input type="number" id="fWorkHours" value="40" min="1" step="0.5"></div>
+          <div class="field"><label>Ideal Hours / Week</label><input type="number" id="fIdealHours" value="40" min="1" step="0.5"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Statutory &amp; Deductions</h2>
+        <div class="grid">
+          <div class="field-check"><input type="checkbox" id="fEpf" checked><label for="fEpf">EPF applicable</label></div>
+          <div class="field-check"><input type="checkbox" id="fEsi" checked><label for="fEsi">ESI applicable (if under ₹21,000 gross)</label></div>
+          <div class="field-check"><input type="checkbox" id="fMdExempt"><label for="fMdExempt">MD role — request EPF exemption</label></div>
+          <div class="field"><label>Tuition Fee Wash (₹/month)</label><input type="number" id="fTuiFee" value="0" min="0" step="50"></div>
+        </div>
+        <div class="epf-box" id="epfBox" style="display:none">
+          <div id="epfStatusLine">Checking exemption status…</div>
+          <div id="epfActionLine"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Computed Offer</h2>
+        <table class="results" id="resultsTable"></table>
+      </div>
+
+      <div class="card" id="recordCard" style="display:none">
+        <h2>Record</h2>
+        <button type="button" class="record-btn" id="recordBtn">Record as Salary Offer</button>
+        <div class="record-msg" id="recordMsg"></div>
+      </div>
+
+      <div class="source-note">EPF caps (₹2,082 / ₹917) and the ₹25,000 wage ceiling are hardcoded from the EPFO Gazette Notification dated 17 Sept 2026, superseding the ₹15,000 ceiling in force since 2014. Update these two numbers directly here if the ceiling changes again — ESI's own ₹21,000 ceiling is a separate scheme, untouched by that notification.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="../assets/auth.js"></script>
+<script>
+// Same live backend project as hiring.gs/approvals.gs -- see apps-script/README.md.
+const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+
+let SESSION = null;
+let EPF_EXEMPTION_APPROVED = false;
+
+function gasGet_(action, params) {
+  const qs = Object.assign({ action: action, idToken: SESSION.idToken }, params || {});
+  const url = PDR_BACKEND_URL + '?' + Object.keys(qs).map(function (k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]);
+  }).join('&');
+  return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); });
+}
+
+function gasPost_(action, body) {
+  return fetch(PDR_BACKEND_URL, {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ action: action, idToken: SESSION.idToken }, body)),
+  }).then(function (r) { return r.json(); });
+}
+
+// ── Calculator engine ────────────────────────────────────────────────
+// Restructured from the old lmcs-salary-dashboard repo's dashboard.html
+// calcSalary() flow (the only part of that system actually in live use),
+// with EPF/ESI/DA/ADA rates corrected against PayrollConstants.gs's
+// real-payroll-PDF-verified values and the 17 Sept 2026 EPFO wage
+// ceiling. See the source-note in the page body for the ceiling itself.
+const ADA_R = { LMS3: 0.25 }; // 25% at LMS 3, 35% everywhere else
+const EPF_WAGE_CEILING = 25000;
+const EPS_CAP = 2082; // floor(0.0833 * 25000), was 1250 @ ₹15,000 ceiling
+const EPF_CAP = 917;  // floor(0.0367 * 25000), was 550 @ ₹15,000 ceiling
+const ESI_WAGE_CEILING = 21000; // untouched by the Sept 2026 EPFO notification, own scheme
+
+function calcSalary_() {
+  const existing = document.getElementById('fExisting').checked;
+  const campus = document.getElementById('fCampus').value;
+  const lmsExp = Number(document.getElementById('fLmsExp').value) || 0;
+  const otherExp = Number(document.getElementById('fOtherExp').value) || 0;
+  const preBasic = Number(document.getElementById('fPreBasic').value) || 0;
+  const gradePay = Number(document.getElementById('fGradePay').value) || 0;
+  const workHours = Number(document.getElementById('fWorkHours').value) || 1;
+  const idealHours = Number(document.getElementById('fIdealHours').value) || 1;
+  const epfOn = document.getElementById('fEpf').checked;
+  const esiOn = document.getElementById('fEsi').checked;
+  const mdExempt = document.getElementById('fMdExempt').checked && EPF_EXEMPTION_APPROVED;
+  const tuiFee = Number(document.getElementById('fTuiFee').value) || 0;
+
+  const inc = existing ? Math.floor(lmsExp + otherExp / 2) : Math.floor(3 + lmsExp + otherExp / 2);
+  const nb = Math.floor((preBasic + gradePay) * Math.pow(1.03, inc) * (workHours / idealHours));
+  const da = Math.floor(0.05 * nb);
+  const adaRate = ADA_R[campus] || 0.35;
+  const ada = Math.floor(adaRate * nb);
+  const ns = nb + da + ada;
+
+  const epfExempt = !epfOn || mdExempt;
+  const epfE = epfExempt ? 0 : Math.floor(ns > EPF_WAGE_CEILING ? EPS_CAP : ns * 0.0833);
+  const pfE = epfExempt ? 0 : Math.floor(ns > EPF_WAGE_CEILING ? EPF_CAP : ns * 0.0367);
+  const totEpf = (epfE + pfE) * 2; // employee + employer combined
+
+  const esiAllowed = esiOn && ns < ESI_WAGE_CEILING;
+  const esiE = esiAllowed ? Math.floor(ns * 0.0325) : 0;
+  const esiEe = esiAllowed ? Math.floor(ns * 0.0075) : 0;
+  const totEsi = esiE + esiEe;
+
+  const cti = ns + epfE + pfE + esiE + tuiFee;
+  const rrf1 = existing ? 0 : Math.ceil(cti * 0.12);
+  const rrf2 = existing ? 0 : Math.ceil(cti * 0.09);
+  const rrf3 = existing ? 0 : Math.ceil(cti * 0.06);
+  const netY1 = cti - rrf1 - totEpf - totEsi - tuiFee;
+  const netY2 = cti - rrf2 - totEpf - totEsi - tuiFee;
+  const netY3 = cti - rrf3 - totEpf - totEsi - tuiFee;
+
+  return { inc, nb, da, ada, ns, epfExempt, epfE, pfE, totEpf, esiAllowed, esiE, esiEe, totEsi, cti, rrf1, rrf2, rrf3, netY1, netY2, netY3 };
+}
+
+function inr_(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+function renderResults_() {
+  const r = calcSalary_();
+  window._lastResult = r;
+  const rows = [
+    ['Basic', r.nb], ['DA (5%)', r.da], ['ADA', r.ada], ['Gross Salary', r.ns],
+    ['EPS (employer, ' + (r.epfExempt ? 'exempt' : '8.33%') + ')', r.epfE],
+    ['EPF (employer, ' + (r.epfExempt ? 'exempt' : '3.67%') + ')', r.pfE],
+    ['Total EPF (employee + employer)', r.totEpf],
+    ['ESI employer (3.25%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiE],
+    ['ESI employee (0.75%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiEe],
+    ['CTI (Cost to Institution)', r.cti],
+  ];
+  let html = rows.map(function (row) { return '<tr><td>' + row[0] + '</td><td>' + inr_(row[1]) + '</td></tr>'; }).join('');
+  [['Year 1', r.rrf1, r.netY1], ['Year 2', r.rrf2, r.netY2], ['Year 3', r.rrf3, r.netY3]].forEach(function (y) {
+    html += '<tr class="year-hdr"><td colspan="2">' + y[0] + '</td></tr>';
+    html += '<tr><td>Retention Reserve Fund</td><td>' + inr_(y[1]) + '</td></tr>';
+    html += '<tr class="total"><td>Net Bank Take-Home / month</td><td>' + inr_(y[2]) + '</td></tr>';
+  });
+  document.getElementById('resultsTable').innerHTML = html;
+}
+
+// ── EPF exemption approval flow ──────────────────────────────────────
+function refreshEpfExemptionStatus_() {
+  const box = document.getElementById('epfBox');
+  const name = document.getElementById('fName').value.trim();
+  if (!document.getElementById('fMdExempt').checked) { box.style.display = 'none'; renderResults_(); return; }
+  box.style.display = '';
+  if (!name) {
+    document.getElementById('epfStatusLine').innerHTML = 'Enter the candidate name above first.';
+    document.getElementById('epfActionLine').innerHTML = '';
+    EPF_EXEMPTION_APPROVED = false;
+    renderResults_();
+    return;
+  }
+  document.getElementById('epfStatusLine').textContent = 'Checking exemption status…';
+  gasGet_('salaryepfexemptionstatus', { name: name }).then(function (res) {
+    EPF_EXEMPTION_APPROVED = !!res.approved;
+    const statusEl = document.getElementById('epfStatusLine');
+    const actionEl = document.getElementById('epfActionLine');
+    if (EPF_EXEMPTION_APPROVED) {
+      statusEl.innerHTML = '<span class="epf-status approved">✓ Owner-approved EPF exemption on file for ' + name + '</span>';
+      actionEl.innerHTML = '';
+    } else {
+      statusEl.innerHTML = '<span class="epf-status pending">No approved EPF exemption on file for ' + name + ' yet — EPF is still being deducted below.</span>';
+      actionEl.innerHTML = '<button type="button" class="mini-btn" id="requestEpfBtn">Request EPF Exemption</button><span id="requestEpfMsg" style="margin-left:8px;font-size:11px"></span>';
+      document.getElementById('requestEpfBtn').onclick = requestEpfExemption_;
+    }
+    renderResults_();
+  }).catch(function () {
+    EPF_EXEMPTION_APPROVED = false;
+    document.getElementById('epfStatusLine').innerHTML = '<span class="epf-status pending">Network error checking exemption status — treating as not exempt.</span>';
+    document.getElementById('epfActionLine').innerHTML = '';
+    renderResults_();
+  });
+}
+
+function requestEpfExemption_() {
+  const name = document.getElementById('fName').value.trim();
+  const campus = document.getElementById('fCampus').value;
+  const btn = document.getElementById('requestEpfBtn');
+  const msg = document.getElementById('requestEpfMsg');
+  btn.disabled = true; msg.textContent = 'Submitting…';
+  gasPost_('submitapproval', {
+    category: 'EPF Exemption',
+    title: 'EPF Exemption — ' + name,
+    description: 'MD-level hire at ' + LMCS.campusLabel(campus) + '. Requesting EPF exemption per standard MD compensation structure.',
+    itemName: name,
+  }).then(function (res) {
+    btn.disabled = false;
+    msg.textContent = res.success ? 'Submitted — awaiting Owner decision.' : (res.error || 'Failed');
+  }).catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; });
+}
+
+// ── Record as Salary Offer (writes evidence back onto the Hiring row) ─
+const params = new URLSearchParams(location.search);
+const APPLICANT_ID = params.get('applicantId') || '';
+
+function recordSalaryOffer_() {
+  const row = parseInt(String(APPLICANT_ID).replace(/^T-0*/, ''), 10);
+  const btn = document.getElementById('recordBtn');
+  const msg = document.getElementById('recordMsg');
+  if (!row) { msg.textContent = 'No applicant linked — open this page from the Hiring Dashboard.'; msg.className = 'record-msg err'; return; }
+  const r = window._lastResult || calcSalary_();
+  btn.disabled = true; msg.textContent = 'Recording…'; msg.className = 'record-msg';
+  gasPost_('updatehiringstatus', {
+    row: row,
+    status: '',
+    notes: 'Salary Offer recorded: CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo (' + new Date().toISOString().slice(0, 10) + ')',
+    salaryOfferAt: new Date().toISOString(),
+  }).then(function (res) {
+    btn.disabled = false;
+    if (!res.success) { msg.textContent = res.error; msg.className = 'record-msg err'; return; }
+    msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
+  }).catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'record-msg err'; });
+}
+
+function wireInputs_() {
+  ['fExisting', 'fCampus', 'fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fTuiFee'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', renderResults_);
+  });
+  document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
+  document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
+  document.getElementById('recordBtn').onclick = recordSalaryOffer_;
+}
+
+function prefillFromParams_() {
+  if (params.get('name')) document.getElementById('fName').value = params.get('name');
+  if (params.get('school')) document.getElementById('fCampus').value = params.get('school');
+  document.getElementById('recordCard').style.display = APPLICANT_ID ? '' : 'none';
+}
+
+function showApp(session) {
+  SESSION = session;
+  document.getElementById('authRoot').style.display = 'none';
+  document.getElementById('appRoot').style.display = '';
+  document.getElementById('welcomeStrip').innerHTML =
+    '<span>Signed in as <b>' + session.name + '</b> — ' + session.campusName + '</span>' +
+    '<a href="#" class="signout" id="signoutLink">Sign out</a>';
+  document.getElementById('signoutLink').onclick = function (e) { e.preventDefault(); LMCS.signOut(); };
+
+  if (!LMCS.canViewTeacherSS(session)) {
+    document.getElementById('deniedRoot').innerHTML =
+      '<div class="denied"><div class="icon">🔒</div><h3>Not available for your role</h3>' +
+      '<p>Salary Dashboard is for Principals, Coordinators, and the Owner.</p></div>';
+    return;
+  }
+  document.getElementById('mainRoot').style.display = '';
+  if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
+  prefillFromParams_();
+  wireInputs_();
+  renderResults_();
+}
+
+const cachedSession = LMCS.getSession();
+if (cachedSession) {
+  showApp(cachedSession);
+} else {
+  LMCS.requireSession('#authRoot').then(showApp);
+}
+</script>
+</body>
+</html>

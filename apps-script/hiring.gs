@@ -59,15 +59,19 @@ const HIR_SHEET_GID = 1181288827; // targets the exact tab regardless of its nam
 // from -- never touching the columns the live Google Form owns.
 // Column 14 (MD_INTERVIEW_AT) added 2026-09-25 -- brand new, appended
 // past the form's own columns same as INTERVIEW_AT (13) already was.
-// If the live sheet doesn't have a column N yet, Apps Script's
-// getRange/setValue on it auto-extends the sheet's grid on first write
-// -- no manual "add a column" step needed, though a header label there
-// ("MD Academics Interview At") is worth adding by hand for anyone
-// reading the raw sheet.
+// Column 15 (SALARY_OFFER_AT) added same day, same convention -- written
+// by the new Salary Dashboard module (salary.gs's caller, via
+// updatehiringstatus's body.salaryOfferAt) once an offer is computed and
+// recorded there, giving 'Salary Offer' the evidence source it never had
+// (see hirDerivedLadderStage_ below). If the live sheet doesn't have a
+// column N/O yet, Apps Script's getRange/setValue on it auto-extends the
+// sheet's grid on first write -- no manual "add a column" step needed,
+// though header labels there ("MD Academics Interview At", "Salary
+// Offer At") are worth adding by hand for anyone reading the raw sheet.
 const HIR_COL = {
   TIMESTAMP: 1, NAME: 2, PHONE: 3, AGE: 4, SUBJECTS: 5, BRANCHES: 6,
   QUALIFICATION: 7, BED: 8, GENDER: 9, CV: 10, STATUS: 11, NOTES: 12, INTERVIEW_AT: 13,
-  MD_INTERVIEW_AT: 14,
+  MD_INTERVIEW_AT: 14, SALARY_OFFER_AT: 15,
 };
 
 // 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
@@ -90,42 +94,40 @@ const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academ
 const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academics Interview Scheduled', 'Salary Offer', 'Hired'];
 function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
-// 2026-09-25, per Uday: "not by my clicking" -- the first three ladder
+// 2026-09-25, per Uday: "not by my clicking" -- the first four ladder
 // rungs are no longer something a Principal manually selects. Each one
-// is DERIVED from real evidence: a date entered, or an Interview Report
-// actually found on file (not just the button having been clicked).
-// 'Salary Offer' has no evidence source yet (Uday hasn't built the
-// Salary Dashboard's own tracking/prefill integration) -- it simply
-// never auto-derives until that exists; nothing blocks Hired in the
-// meantime, since Hired's own hard gate (CV/Report/Documents/Approvals,
-// see hiringUpdateStatus_) is the real control regardless of whether
-// Salary Offer ever got ticked. 'Hired' and 'Rejected' stay OUTSIDE
-// this derivation entirely -- they're deliberate decisions, written
-// only by an explicit click, never inferred from data.
+// is DERIVED from real evidence: a date entered, an Interview Report
+// actually found on file, or (same day, once the Salary Dashboard module
+// existed to write it) a recorded salary offer -- not just a button
+// having been clicked. 'Hired' and 'Rejected' stay OUTSIDE this
+// derivation entirely -- they're deliberate decisions, written only by
+// an explicit click, never inferred from data.
 // Sequential (2026-09-25, per Uday) -- each rung requires the one
 // before it, not just its own evidence in isolation: Interview
 // Scheduled needs only its own date; Interview & Demo Done needs BOTH
 // that date AND a found Interview Report; MD Academics Interview
-// Scheduled needs the Report AND its own date. A later date with no
-// report (e.g. someone typed an MD Academics date before a report ever
+// Scheduled needs the Report AND its own date; Salary Offer needs all of
+// that AND a recorded offer. A later date/offer with no earlier evidence
+// (e.g. someone typed an MD Academics date before a report ever
 // existed) doesn't skip the chain -- it just caps out at whatever the
 // chain actually supports.
-function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt) {
+function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt, hasSalaryOfferAt) {
   if (!hasInterviewAt) return '';
   if (!hasReport) return 'Interview Scheduled';
   if (!hasMdInterviewAt) return 'Interview & Demo Done';
-  return 'MD Academics Interview Scheduled';
+  if (!hasSalaryOfferAt) return 'MD Academics Interview Scheduled';
+  return 'Salary Offer';
 }
 
 // The status hiringApplicants_/hirRefreshTrackerCore_ actually SHOW: a
 // stored 'Hired' or 'Rejected' always wins (terminal, deliberate,
 // never overridden by derivation); anything else is recomputed live
 // from evidence every time, so the sheet's own Status cell is never the
-// source of truth for the first three rungs -- see hiringUpdateStatus_,
+// source of truth for the first four rungs -- see hiringUpdateStatus_,
 // which correspondingly only ever WRITES Hired/Rejected to that cell.
-function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasMdInterviewAt) {
+function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasMdInterviewAt, hasSalaryOfferAt) {
   if (storedStatus === 'Hired' || storedStatus === 'Rejected') return storedStatus;
-  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt);
+  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt, hasSalaryOfferAt);
 }
 
 // "Interview Reports" tab -- filled in independently by whoever conducts
@@ -459,6 +461,7 @@ function hiringApplicants_(caller) {
     const applicantPhoneRaw = String(r[HIR_COL.PHONE - 1] || '').trim();
     const interviewAtISO = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
     const mdInterviewAtISO = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
+    const salaryOfferAtISO = hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]);
     const storedStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
     const applicant = {
       row: i + 1, // 1-based sheet row, used to write status/notes back
@@ -481,10 +484,11 @@ function hiringApplicants_(caller) {
       // 2026-09-25, per Uday ("not by my clicking"): derived live from
       // evidence, not read as-is from the sheet -- see
       // hirEffectiveStatus_'s own comment.
-      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[hirNormalizePhone_(applicantPhoneRaw)], !!mdInterviewAtISO),
+      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[hirNormalizePhone_(applicantPhoneRaw)], !!mdInterviewAtISO, !!salaryOfferAtISO),
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
       interviewAt: interviewAtISO,
       mdInterviewAt: mdInterviewAtISO,
+      salaryOfferAt: salaryOfferAtISO,
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -904,6 +908,14 @@ function hiringUpdateStatus_(caller, body) {
     const d = new Date(body.mdInterviewAt);
     if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).setValue(d);
   }
+  // Written by the Salary Dashboard module (salary/index.html's "Record
+  // as Salary Offer"), same optional-write pattern as the two dates
+  // above -- this is what gives 'Salary Offer' the evidence source noted
+  // as missing in hirDerivedLadderStage_'s history/comment.
+  if (body.salaryOfferAt) {
+    const d = new Date(body.salaryOfferAt);
+    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.SALARY_OFFER_AT).setValue(d);
+  }
   return hiringApplicants_(caller);
 }
 
@@ -1007,6 +1019,7 @@ function hirRefreshTrackerCore_() {
 
     const trackerInterviewAt = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
     const trackerMdInterviewAt = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
+    const trackerSalaryOfferAt = hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]);
     const trackerStoredStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
     const applicant = {
       row: i + 1,
@@ -1020,7 +1033,7 @@ function hirRefreshTrackerCore_() {
       branches: branches,
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
       // Same live derivation as hiringApplicants_ -- see hirEffectiveStatus_.
-      status: hirEffectiveStatus_(trackerStoredStatus, !!trackerInterviewAt, !!irPhones[phone], !!trackerMdInterviewAt),
+      status: hirEffectiveStatus_(trackerStoredStatus, !!trackerInterviewAt, !!irPhones[phone], !!trackerMdInterviewAt, !!trackerSalaryOfferAt),
       bestRole: '', matchScore: null, matchedCampus: '',
     };
     if (relevantReqs.length) {

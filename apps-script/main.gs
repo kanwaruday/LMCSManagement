@@ -80,6 +80,12 @@
 //                         see its own header for the incentive-engine
 //                         connection and the EmployeeCode join-key
 //                         reasoning.
+//   salary.gs           -- action=salaryepfexemptionstatus (GET).
+//                         Salary Dashboard's offer-letter calculator
+//                         (salary/index.html) computes everything
+//                         client-side; this is only the EPF-exemption
+//                         approval check, reusing approvals.gs's
+//                         generic pipeline (category 'EPF Exemption').
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -145,6 +151,7 @@ function doGet(e) {
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
+    if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
     // viewAsCode: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
     // comment. Only ever changes anything if `caller` already verified
     // as Owner; every other caller gets their own real identity back.

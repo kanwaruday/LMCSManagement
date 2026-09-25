@@ -61,7 +61,12 @@ const APR_COMMENTS_TAB = 'Comments';
 // 2026-09-14: added 'Hiring Decision' for the Hiring Dashboard's second
 // approval (finalize a specific candidate + pay, after 'Hiring / New
 // Position' already opened the role) -- see hiring.gs.
-const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+// 2026-09-25: added 'EPF Exemption' for the Salary Dashboard -- MD-level
+// hires are EPF-exempt by default OFF; a Principal requests the
+// exemption per-candidate here, only the Owner can approve it (same
+// generic decide-rights as every other category, see aprCanDecide_) --
+// see salary.gs's salEpfExemptionApproved_.
+const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no
@@ -77,9 +82,12 @@ const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 // Openings" was removed from the Hiring form (per Uday's annotated
 // redesign) and hirApprovedRequisitions_'s `openings` field was never
 // actually read anywhere, so there was nothing left for it to feed.
+// 2026-09-25: 'EPF Exemption' also uses Item (as "Candidate") so
+// salEpfExemptionApproved_ can match an Approved row to the specific
+// candidate the Salary Dashboard is asking about.
 // Frontend copy of this array (principals-daily-reporting/index.html)
 // updated the same way -- keep both in sync.
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position'];
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position', 'EPF Exemption'];
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // Teacher Portal (2026-09-19): categories a Teacher may self-submit --
 // deliberately narrow (no Hiring/Compensation/Disciplinary, which stay

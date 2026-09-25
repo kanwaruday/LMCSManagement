@@ -1989,15 +1989,16 @@ async function loadReportForDate() {
 // caller can see in one call).
 // 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
 // this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
-const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'Other'];
+const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Item doubles as "Item" (Financial/Purchase), "Employee" (Compensation
-// Change), or "Subjects/Position Required" (New/ Backup Position) --
-// same generic field, just relabeled per category in aprOnCategoryChange().
-// Amount and Item+Qty are gated separately (Hiring shows Item+Qty but no
-// Amount; Compensation Change shows Item+Amount but no Qty). Keep all 3
-// consts in sync with approvals.gs.
+// Change), "Subjects/Position Required" (New/ Backup Position), or
+// "Candidate" (EPF Exemption) -- same generic field, just relabeled per
+// category in aprOnCategoryChange(). Amount and Item+Qty are gated
+// separately (Hiring shows Item+Qty but no Amount; Compensation Change
+// shows Item+Amount but no Qty; EPF Exemption shows Item only). Keep all
+// 3 consts in sync with approvals.gs.
 const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position'];
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position', 'EPF Exemption'];
 // 2026-09-24: New/ Backup Position no longer shows a Quantity/"Number
 // of Openings" field (dropped per Uday's annotated redesign) -- only
 // Financial/Purchase still has a real "how many" concept. Backend
@@ -2189,6 +2190,8 @@ function aprOnCategoryChange() {
   const qtyLabelEl = document.getElementById('aprQuantityLabel');
   if (category === 'Compensation Change') {
     itemLabelEl.textContent = 'Employee'; itemInputEl.placeholder = 'Employee name';
+  } else if (category === 'EPF Exemption') {
+    itemLabelEl.textContent = 'Candidate'; itemInputEl.placeholder = 'Candidate name';
   } else if (isHiring) {
     renderAprSubjectsMsOptions();
     aprLoadEmployeeList_(); // lazy -- only fetched once, the first time Hiring is actually selected
@@ -2378,7 +2381,7 @@ function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
   if (r.itemName) {
-    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'New/ Backup Position' ? 'Subjects/Position: ' : 'Item: ');
+    const itemLabel = r.category === 'Compensation Change' ? 'Employee: ' : (r.category === 'New/ Backup Position' ? 'Subjects/Position: ' : (r.category === 'EPF Exemption' ? 'Candidate: ' : 'Item: '));
     const qtySuffix = r.quantity == null ? '' : (r.category === 'New/ Backup Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity);
     meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
   }

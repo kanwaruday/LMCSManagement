@@ -334,6 +334,18 @@ function hireLinkUrl_(a) {
   return '../staff/add-employee.html?' + params.toString();
 }
 
+// Same hand-off pattern as hireLinkUrl_ above, into the Salary Dashboard
+// module (2026-09-25) -- applicantId doubles as the sheet row (hiring.gs's
+// hirApplicantId_ is literally 'T-' + row padded), so the calculator can
+// parse it back out and write salaryOfferAt to the right row without a
+// second lookup call.
+function salaryLinkUrl_(a) {
+  const school = applicantCampusFor_(a);
+  const params = new URLSearchParams({ name: a.name, applicantId: a.applicantId });
+  if (school) params.set('school', school);
+  return '../salary/index.html?' + params.toString();
+}
+
 // The ladder (2026-09-25, per Uday) -- HIR_LADDER-equivalent order lives
 // in hiring.gs; APPLICANTS.statuses is that same list plus 'Rejected'
 // tacked on (see hiring.gs's HIR_STATUSES), so slicing it here keeps
@@ -384,7 +396,7 @@ function reqBarHtml_(a) {
   } else if (idx === 1) {
     hint = 'Next: enter the MD Academics interview date below, then Save.';
   } else {
-    hint = 'Next: Salary Offer — dashboard not built yet.';
+    hint = 'Next: compute and record a Salary Offer in the Salary Dashboard (link below).';
   }
   return '<div class="req-bar"><div class="req-hint">' + hint + reportLink + '</div>' +
     '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">' +
@@ -421,22 +433,21 @@ function wireLadderClicks_(tr) {
 // Contextual link buttons, keyed off the applicant's TRUE current
 // status (server-derived from evidence, applicant.status) -- ladder
 // index gates: Interview Report Form once past the interview itself;
-// Document Submission from MD Academics Interview Scheduled onward
-// (the highest rung the sequential chain can actually reach on its
-// own, now that Salary Offer isn't derivable), so documents can start
-// flowing in BEFORE the Hired click hits the hard gate in hiring.gs
-// (CV + Interview Report + all documents + both Approvals).
+// Document Submission and Salary Dashboard both from MD Academics
+// Interview Scheduled onward, so documents can start flowing in and an
+// offer can be computed BEFORE the Hired click hits the hard gate in
+// hiring.gs (CV + Interview Report + all documents + both Approvals) --
+// none of those three are prerequisites of each other.
 function renderRowActions_(tr) {
   const applicant = tr._applicant;
   const idx = ladderStatuses_().indexOf(applicant.status);
   const school = applicantCampusFor_(applicant);
   const extra = [];
   if (idx >= 1) extra.push('<a class="mini-btn" style="text-decoration:none" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">🔗 Interview Report Form</a>');
-  // Unlinked placeholder (2026-09-25, per Uday) -- no real Salary
-  // Dashboard integration exists yet (he's building that tool next),
-  // so this is deliberately not a clickable link, just a visible
-  // placeholder for where it'll go.
-  if (idx >= 2) extra.push('<span class="mini-btn" style="opacity:.6;cursor:default">🔗 Salary Dashboard</span>');
+  // Real link (2026-09-25) -- opens the Salary Dashboard's offer-letter
+  // calculator, name/campus/applicantId pre-filled via URL params (same
+  // hand-off pattern as hireLinkUrl_ below).
+  if (idx >= 2) extra.push('<a class="mini-btn" style="text-decoration:none" href="' + salaryLinkUrl_(applicant) + '" target="_blank">🔗 Salary Dashboard</a>');
   if (idx >= 2 && DOC_FORM_URLS[school]) extra.push('<a class="mini-btn" style="text-decoration:none" href="' + DOC_FORM_URLS[school] + '" target="_blank">🔗 Document Submission Form</a>');
   if (applicant.status === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Complete hire in Staff Portal</a>');
   tr.querySelector('.row-extra-actions').innerHTML = extra.join('');
