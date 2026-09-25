@@ -396,11 +396,20 @@ function ladderHtml_(pendingStatus) {
   return '<div class="ladder">' + rungs + '<button type="button" class="' + rejectCls + '" data-stage="Rejected">✗ Reject</button></div>';
 }
 
+// 2026-09-25, per Uday: clicking a stage now saves immediately (whatever
+// Notes/dates are currently in the row at that moment go with it),
+// instead of just staging a pending change someone then has to remember
+// to commit via the separate Save button clear across the row in the
+// Notes column -- a stage click is already an unambiguous, deliberate
+// action, unlike the old flat dropdown where an in-progress selection
+// genuinely needed a distinct confirm step. The Save button still works
+// on its own for editing Notes/dates without changing stage.
 function selectLadderStage_(tr, stage) {
   tr.dataset.pendingStatus = stage;
   tr.querySelector('.ladder-cell').innerHTML = ladderHtml_(stage);
   wireLadderClicks_(tr);
   renderRowActions_(tr);
+  saveRow_(tr, tr._applicant);
 }
 
 function wireLadderClicks_(tr) {
