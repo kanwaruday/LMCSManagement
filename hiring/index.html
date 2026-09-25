@@ -55,6 +55,7 @@ th{text-align:left;padding:8px 10px;background:var(--lgray);border-bottom:2px so
 td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
 tr:hover td{background:var(--red-lt)}
 .name{font-weight:700}
+.applicant-id{font-weight:400;font-family:monospace;font-size:10.5px;color:var(--gray);background:var(--lgray);padding:1px 5px;border-radius:3px}
 .score-cell{font-weight:700;text-align:center;cursor:help}
 .sub{color:var(--gray);font-size:11px}
 a.linklike{color:var(--red);text-decoration:none}
@@ -308,7 +309,7 @@ function renderRows() {
     // of an invisible sort order.
     return '<tr data-row="' + a.row + '">' +
       '<td class="score-cell" title="' + (a.matchRemarks || []).join(' · ').replace(/"/g, '&quot;') + '">' + (a.matchScore != null ? a.matchScore : '—') + '</td>' +
-      '<td><div class="name">' + a.name + '</div><div class="sub">' +
+      '<td><div class="name">' + a.name + ' <span class="applicant-id">' + a.applicantId + '</span></div><div class="sub">' +
         (phoneDigits ? '<a class="linklike" href="tel:' + a.phone + '">' + a.phone + '</a> · <a class="linklike" href="https://wa.me/91' + phoneDigits.slice(-10) + '" target="_blank">WhatsApp</a>' : a.phone) +
         ' · ' + (a.age || '—') + ' · ' + (a.gender || '—') + '</div></td>' +
       '<td>' + (a.subjects || '—') + '</td>' +

@@ -117,6 +117,22 @@ function hirNormalizeName_(n) {
   return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Temporary Applicant ID (2026-09-25, per Uday) -- "T-0764" from the
+// sheet row, so Principals/Owner have a stable way to refer to a
+// candidate in conversation/approval notes without name collisions
+// (there are several duplicate names in the real sheet). Derived, not
+// stored -- no new column, no counter, no Apps Script trigger. Row
+// number is already what hiringUpdateStatus_ depends on for writing
+// status back, so this doesn't add any new fragility, just surfaces
+// the same stability the app already relies on. Naturally stops
+// mattering once someone's Hired (they get a real EmployeeCode instead)
+// or Rejected (nobody references it again) -- "temporary" without
+// needing an active expiry. Would shift only if the sheet were manually
+// re-sorted, same pre-existing caveat as the status-write path.
+function hirApplicantId_(row) {
+  return 'T-' + String(row).padStart(4, '0');
+}
+
 // Guards against corrupted sheet cells (e.g. a Timestamp cell containing
 // stray text instead of a date, seen live 2026-09-25) -- new Date(v)
 // throws on .toISOString() for anything unparseable, which would
@@ -220,6 +236,7 @@ function hiringApplicants_(caller) {
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
     const applicant = {
       row: i + 1, // 1-based sheet row, used to write status/notes back
+      applicantId: hirApplicantId_(i + 1),
       timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
       name: String(r[HIR_COL.NAME - 1] || '').trim(),
       phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
