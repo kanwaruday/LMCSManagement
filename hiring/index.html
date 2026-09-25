@@ -386,6 +386,13 @@ function ladderHtml_(currentStatus) {
       return '<button type="button" class="' + cls + '" data-stage="Hired">' + (done ? '✓ ' : '○ ') + s + '</button>';
     }
     const cls = 'ladder-item ladder-derived' + (done ? ' ladder-done' : '');
+    // 'Interview & Demo Done' only ever ticks once a real Interview Report
+    // is on file (see hirDerivedLadderStage_ in hiring.gs) -- once done,
+    // make the tick itself open that report's PDF instead of leaving it a
+    // dead label, so a Principal doesn't have to dig for it separately.
+    if (s === 'Interview & Demo Done' && done) {
+      return '<button type="button" class="' + cls + '" data-open-report="1">' + '✓ ' + s + '</button>';
+    }
     return '<span class="' + cls + '">' + (done ? '✓ ' : '○ ') + s + '</span>';
   }).join('');
   const rejectCls = 'ladder-item ladder-reject' + (currentStatus === 'Rejected' ? ' ladder-pending' : '');
@@ -444,6 +451,21 @@ function selectLadderStage_(tr, stage) {
 function wireLadderClicks_(tr) {
   tr.querySelectorAll('.ladder-item[data-stage]').forEach(function (btn) {
     btn.onclick = function () { selectLadderStage_(tr, btn.dataset.stage); };
+  });
+  tr.querySelectorAll('.ladder-item[data-open-report]').forEach(function (btn) {
+    btn.onclick = function () { openInterviewReportPdf_(tr._applicant); };
+  });
+}
+
+// Shared by the ladder's own "Interview & Demo Done" tick and the
+// "🔍 report" row-action button below, so there's one place that knows
+// how to turn a lookup result into either an opened PDF or an alert.
+function openInterviewReportPdf_(applicant) {
+  gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (res) {
+    const r = res.result;
+    if (r.found && r.pdf) { window.open(r.pdf, '_blank'); return; }
+    if (r.found) { alert('Interview report found but no PDF link on file.\nRemarks: ' + (r.remarks || '—')); return; }
+    alert('No interview report found for this phone number yet.');
   });
 }
 
@@ -563,10 +585,7 @@ function saveRow_(tr, applicant) {
 
 function runCheck_(applicant, kind) {
   if (kind === 'report') {
-    gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (res) {
-      const r = res.result;
-      alert(r.found ? ('Interview report found.\n\nRemarks: ' + (r.remarks || '—') + '\nPDF: ' + (r.pdf || '—')) : 'No interview report found for this phone number yet.');
-    });
+    openInterviewReportPdf_(applicant);
   } else {
     const campusId = applicantCampusFor_(applicant);
     gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (res) {
