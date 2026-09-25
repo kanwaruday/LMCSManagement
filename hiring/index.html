@@ -72,6 +72,8 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
    clicking any of them just changes the PENDING selection (same as the
    old dropdown did) -- nothing saves until the row's Save button runs. */
 .ladder{display:flex;flex-direction:column;gap:3px;min-width:190px}
+.req-bar{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.req-hint{font-size:10.5px;font-weight:700;color:var(--red);margin-bottom:4px}
 .ladder-item{display:block;width:100%;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--gray);cursor:pointer}
 .ladder-item:hover{border-color:var(--red)}
 .ladder-item.ladder-derived{cursor:default;background:var(--lgray)}
@@ -362,12 +364,40 @@ function ladderHtml_(currentStatus) {
   return '<div class="ladder">' + rungs + '<button type="button" class="' + rejectCls + '" data-stage="Rejected">✗ Reject</button></div>';
 }
 
+// 2026-09-25, per Uday: a dedicated "what do I need to do next, and
+// where do I do it" bar living right under the ticks, instead of the
+// update controls sitting off in the separate Notes column where the
+// connection to the Stage ticks wasn't obvious. Both date fields stay
+// always visible/editable regardless of current stage (so an earlier
+// date can still be reviewed or corrected after moving past it) -- only
+// the hint line and the Interview Report Form link change based on
+// what's actually still needed.
+function reqBarHtml_(a) {
+  if (a.status === 'Hired' || a.status === 'Rejected') return '';
+  const idx = ladderStatuses_().indexOf(a.status);
+  let hint, reportLink = '';
+  if (idx < 0) {
+    hint = 'Next: enter the interview date below, then Save.';
+  } else if (idx === 0) {
+    hint = 'Next: submit the Interview Report, then refresh.';
+    reportLink = ' <a class="mini-btn" style="text-decoration:none" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">🔗 open form</a>';
+  } else if (idx === 1) {
+    hint = 'Next: enter the MD Academics interview date below, then Save.';
+  } else {
+    hint = 'Next: Salary Offer — dashboard not built yet.';
+  }
+  return '<div class="req-bar"><div class="req-hint">' + hint + reportLink + '</div>' +
+    '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">' +
+    '<div class="interview-label">MD Academics interview</div><input class="md-interview-input" type="datetime-local" value="' + (a.mdInterviewAt ? a.mdInterviewAt.slice(0, 16) : '') + '"></div>';
+}
+
 // Saves immediately (whatever Notes/dates are currently in the row at
 // that moment go with it) -- a Hired/Reject click is already an
 // unambiguous, deliberate action, no separate confirm step needed.
 function selectLadderStage_(tr, stage) {
   tr.dataset.pendingStatus = stage;
-  tr.querySelector('.ladder-cell').innerHTML = ladderHtml_(stage);
+  const withStage = Object.assign({}, tr._applicant, { status: stage });
+  tr.querySelector('.ladder-cell').innerHTML = ladderHtml_(stage) + reqBarHtml_(withStage);
   wireLadderClicks_(tr);
   renderRowActions_(tr);
   saveRow_(tr, tr._applicant);
@@ -443,10 +473,8 @@ function renderRows() {
       '<td>' + (a.subjects || '—') + '</td>' +
       '<td>' + (a.qualification || '—') + (a.bed ? ' · ' + a.bed : '') + '</td>' +
       '<td>' + (a.cv ? '<a class="linklike" href="' + a.cv + '" target="_blank">View</a>' : '—') + '</td>' +
-      '<td class="ladder-cell">' + ladderHtml_(a.status) + '</td>' +
-      '<td><input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes">' +
-        '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">' +
-        '<div class="interview-label">MD Academics interview</div><input class="md-interview-input" type="datetime-local" value="' + (a.mdInterviewAt ? a.mdInterviewAt.slice(0, 16) : '') + '"></td>' +
+      '<td class="ladder-cell">' + ladderHtml_(a.status) + reqBarHtml_(a) + '</td>' +
+      '<td><input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes"></td>' +
       '<td>' +
         '<button class="save-btn">Save</button>' +
         '<div class="row-actions">' +
