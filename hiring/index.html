@@ -42,10 +42,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .gs-card .t{font-size:12px;font-weight:700;margin-bottom:3px}
 .gs-card .d{font-size:11px;color:var(--gray)}
 
-.status-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;font-size:11.5px}
-.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--lgray)}
-.pill.ok{background:#dcfce7;border-color:#bbf7d0;color:var(--green)}
-.pill.no{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 
 /* Campus tabs + role picker (2026-09-25) -- same convention as
    principals-daily-reporting/index.html's .campus-btn/.role-btn, so the
@@ -118,22 +114,17 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
     <div id="deniedRoot"></div>
     <div id="mainRoot" style="display:none">
 
+      <!-- 2026-09-25, per Uday: cards 4 (Interview Report Form), 7/8
+           (Salary Slip), and 9 (Staff Document Submission) removed --
+           all three are now baked into the per-row stage ladder
+           (renderRowActions_), contextual to the exact applicant and
+           campus instead of generic/static (card 9 used to render
+           visibly broken -- grayed out -- whenever "All Campuses" was
+           selected, since it only ever resolved one campus's link). -->
       <div class="getting-started">
         <a href="../principals-daily-reporting/index.html" class="gs-card" target="_blank">
           <div class="t">1 — Request to open a role</div>
           <div class="d">Approvals tab → "New/ Backup Position"</div>
-        </a>
-        <a href="https://docs.google.com/forms/d/e/1FAIpQLSempUF_QhWrQ8AfoYdXs7o2ACgcec78RyT7ZtuFlFv7pD_cuQ/viewform" class="gs-card" target="_blank">
-          <div class="t">4 — Interview Report Form</div>
-          <div class="d">Fill after the interview + demo</div>
-        </a>
-        <a href="#" id="docFormLink" class="gs-card" target="_blank">
-          <div class="t">9 — Staff Document Submission</div>
-          <div class="d">For your campus, once hired</div>
-        </a>
-        <a href="https://kanwaruday.github.io/lmcs-salary-dashboard/dashboard.html" class="gs-card" target="_blank">
-          <div class="t">7/8 — Salary Slip</div>
-          <div class="d">Separate tool, separate sign-in</div>
         </a>
       </div>
 
@@ -142,8 +133,6 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
       <div id="campusTabsRow" style="display:none;margin-bottom:14px">
         <div class="role-picker" id="campusTabs"></div>
       </div>
-
-      <div class="status-strip" id="statusStrip"></div>
 
       <!-- Step 2 of the journey: pick a campus (above), see its approved
            open roles here as clickable pills -- nothing below shows
@@ -251,26 +240,6 @@ function activeCampus_() {
   return SESSION.campusId === 'ALL' ? campusFilter : SESSION.campusId;
 }
 
-// 2026-09-25, per Uday: a locked Principal now browses their whole
-// DISTRICT's applicants (see HIR_DISTRICT_CAMPUSES in hiring.gs), not
-// just their own campus's -- so this pulls from action=hiringapprovalstatus
-// (district-scoped, Hiring-categories-only) instead of filtering the
-// general action=approvalslist result, which deliberately only ever
-// returns a locked Principal's OWN campus (correct for that generic
-// Approvals tab, wrong for this district-wide view). Only the Hiring
-// Decision pill lives here now -- "New/ Backup Position" status moved
-// into the clickable roles list below (renderRolesList_), which shows
-// the same detail (and more) as something you act on, not just read.
-function renderStatusStrip() {
-  const el = document.getElementById('statusStrip');
-  const rows = campusesInScope_();
-  const multi = rows.length > 1;
-  el.innerHTML = rows.map(function (c) {
-    const prefix = multi ? '<b>' + LMCS.campusLabel(c.campusId) + '</b> ' : '';
-    return prefix + '<span class="pill ' + (c.hiringDecisionApproved ? 'ok' : 'no') + '">' + (c.hiringDecisionApproved ? '✓' : '✗') + ' Hiring Decision</span>';
-  }).join(multi ? '<br><br>' : '');
-}
-
 // Step 1 of the journey: pick a campus. Tabs instead of a dropdown, same
 // .campus-btn/.school-btn convention principals-daily-reporting/index.html
 // already uses for its own school picker -- Owner/ALL only, a locked
@@ -289,8 +258,6 @@ function selectCampusTab_(c) {
   campusFilter = c;
   selectedRoleKey = null; // changing campus means starting the role pick over
   renderCampusTabs_();
-  renderStatusStrip();
-  renderDocFormLink();
   renderDataSourceLinks_();
   renderRolesList_();
   renderRows();
@@ -337,13 +304,6 @@ function selectRole_(roleKey) {
   selectedRoleKey = roleKey;
   renderRolesList_();
   renderRows();
-}
-
-function renderDocFormLink() {
-  const campus = activeCampus_();
-  const link = document.getElementById('docFormLink');
-  if (DOC_FORM_URLS[campus]) { link.href = DOC_FORM_URLS[campus]; link.style.opacity = ''; }
-  else { link.removeAttribute('href'); link.style.opacity = '.5'; }
 }
 
 // Which campus actually owns acting on this applicant -- the CALLER's
@@ -546,8 +506,6 @@ function loadAll_() {
     APPROVAL_STATUS = approvalStatus.success ? approvalStatus : { campuses: [] };
     document.getElementById('mainRoot').style.display = '';
     renderCampusTabs_();
-    renderStatusStrip();
-    renderDocFormLink();
     renderDataSourceLinks_();
     renderRolesList_();
     renderRows();
