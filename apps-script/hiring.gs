@@ -506,6 +506,13 @@ function hiringApplicants_(caller) {
       byPhone[phone] = applicant;
     }
   }
+  // 2026-09-26, per Uday: whoever's furthest along the hiring ladder
+  // floats to the very top, above everything else -- someone already at
+  // MD Academics Interview Scheduled is more urgent to act on than a
+  // fresh, better-scoring applicant nobody's even called yet. WITHIN the
+  // same stage, the 2026-09-25 recency-then-score order (below) still
+  // decides it.
+  //
   // 2026-09-25, per Uday: applicants from the last year float above
   // everyone older, since a stale application from years ago is rarely
   // worth chasing first even if it happens to score well -- but WITHIN
@@ -515,6 +522,9 @@ function hiringApplicants_(caller) {
   // that scoring rather than replacing it.
   const applicants = order.map(function (k) { return byPhone[k]; })
     .sort(function (a, b) {
+      const aStage = hirLadderIndex_(a.status);
+      const bStage = hirLadderIndex_(b.status);
+      if (aStage !== bStage) return bStage - aStage;
       const aRecent = hirIsRecent_(a.timestamp) ? 1 : 0;
       const bRecent = hirIsRecent_(b.timestamp) ? 1 : 0;
       if (aRecent !== bRecent) return bRecent - aRecent;
