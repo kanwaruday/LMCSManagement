@@ -103,6 +103,17 @@ function hirNormalizeName_(n) {
   return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Guards against corrupted sheet cells (e.g. a Timestamp cell containing
+// stray text instead of a date, seen live 2026-09-25) -- new Date(v)
+// throws on .toISOString() for anything unparseable, which would
+// otherwise take down hiringApplicants_ for EVERY applicant just
+// because one row's data is bad.
+function hirSafeISO_(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
 // 2026-09-25, per Uday: LMS1/LMS2/LMS3 are one district cluster, LMS4/
 // LMS5/LMS6 another -- an applicant who only ticked one campus on the
 // form can end up hired at a sister campus in the same district, so a
@@ -195,7 +206,7 @@ function hiringApplicants_(caller) {
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
     const applicant = {
       row: i + 1, // 1-based sheet row, used to write status/notes back
-      timestamp: r[HIR_COL.TIMESTAMP - 1] ? new Date(r[HIR_COL.TIMESTAMP - 1]).toISOString() : '',
+      timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
       name: String(r[HIR_COL.NAME - 1] || '').trim(),
       phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
       age: String(r[HIR_COL.AGE - 1] || '').trim(),
@@ -207,7 +218,7 @@ function hiringApplicants_(caller) {
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
       status: String(r[HIR_COL.STATUS - 1] || '').trim() || 'New',
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
-      interviewAt: r[HIR_COL.INTERVIEW_AT - 1] ? new Date(r[HIR_COL.INTERVIEW_AT - 1]).toISOString() : '',
+      interviewAt: hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]),
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -540,7 +551,15 @@ function hiringUpdateStatus_(caller, body) {
 
   sheet.getRange(row, HIR_COL.STATUS).setValue(status);
   sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
-  if (body.interviewAt) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(new Date(body.interviewAt));
+  if (body.interviewAt) {
+    // Guard the write side too -- an unparseable value here would plant
+    // the exact same class of corrupted-cell bug hirSafeISO_ above
+    // exists to survive on read (a real "F"-in-a-Timestamp-cell was
+    // found live 2026-09-25). Silently skips the write rather than
+    // saving garbage; Status/Notes above still get saved either way.
+    const interviewDate = new Date(body.interviewAt);
+    if (!isNaN(interviewDate.getTime())) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(interviewDate);
+  }
   return hiringApplicants_(caller);
 }
 
