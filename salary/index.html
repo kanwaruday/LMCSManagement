@@ -97,7 +97,8 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
               <option value="LMS4">LMS 4</option><option value="LMS5">LMS 5</option><option value="LMS6">LMS 6</option>
             </select>
           </div>
-          <div class="field"><label>Role / Subjects</label><input type="text" id="fRole" placeholder="e.g. PRT: Maths, Science"></div>
+          <div class="field"><label>Designation</label><select id="fDesignation"><option value="">— manual entry —</option></select></div>
+          <div class="field"><label>Subjects (info only)</label><input type="text" id="fSubjects" placeholder="e.g. P.Ed"></div>
           <div class="field-check"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
         </div>
       </div>
@@ -109,8 +110,8 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
           <div class="field"><label>Other Experience (years)</label><input type="number" id="fOtherExp" value="0" min="0" step="0.5"></div>
           <div class="field"><label>Pre-Basic Pay (₹)</label><input type="number" id="fPreBasic" value="0" min="0" step="100"></div>
           <div class="field"><label>Grade Pay (₹)</label><input type="number" id="fGradePay" value="0" min="0" step="100"></div>
-          <div class="field"><label>Work Hours / Week</label><input type="number" id="fWorkHours" value="40" min="1" step="0.5"></div>
-          <div class="field"><label>Ideal Hours / Week</label><input type="number" id="fIdealHours" value="40" min="1" step="0.5"></div>
+          <div class="field"><label>Assigned Hours (blank = full load)</label><input type="number" id="fWorkHours" placeholder="same as Ideal Hours" min="0.5" step="0.5"></div>
+          <div class="field"><label>Ideal Hours (role standard)</label><input type="number" id="fIdealHours" value="8" min="1" step="0.5"></div>
         </div>
       </div>
 
@@ -180,6 +181,78 @@ const EPS_CAP = 2082; // floor(0.0833 * 25000), was 1250 @ ₹15,000 ceiling
 const EPF_CAP = 917;  // floor(0.0367 * 25000), was 550 @ ₹15,000 ceiling
 const ESI_WAGE_CEILING = 21000; // untouched by the Sept 2026 EPFO notification, own scheme
 
+// Pay-scale table (2026-09-25) -- ported from the old lmcs-salary-dashboard
+// repo's dashboard.html (its `D.base` object, keyed by designation+school).
+// Values there were IDENTICAL across all 7 schools (HES + LMS 1-6) for
+// every designation -- school only ever affected DA/ADA rate (see ADA_R
+// above), never Basic/GP -- so this drops the per-school duplication and
+// keys by designation alone. Pre-Basic/Grade Pay/Ideal Hours only --
+// auto-fills the three fields below, all three stay editable afterward
+// for a negotiated offer.
+const DESIG_PAY_TABLE = {
+  'Helper': { preBasic: 4900, gp: 1300, idealHours: 8 },
+  'Sweeper': { preBasic: 4900, gp: 1300, idealHours: 8 },
+  'Driver': { preBasic: 5910, gp: 2000, idealHours: 8 }, // old table had "Driver Cum Daftri"/"Driver Cum Peon", same values
+  'Activity Teacher': { preBasic: 5910, gp: 2600, idealHours: 6 },
+  'NTT': { preBasic: 5910, gp: 2600, idealHours: 6 },
+  'Technician': { preBasic: 5910, gp: 2600, idealHours: 8 },
+  'Clerk + PRO': { preBasic: 5910, gp: 3200, idealHours: 8 },
+  'PRT': { preBasic: 5910, gp: 3200, idealHours: 6 },
+  'Games Teacher (PTI)': { preBasic: 5910, gp: 3200, idealHours: 8 },
+  'Computer Teacher': { preBasic: 10300, gp: 3200, idealHours: 8 },
+  'TGT': { preBasic: 10300, gp: 3600, idealHours: 6 },
+  'PTI (11, 12)': { preBasic: 10300, gp: 4200, idealHours: 8 },
+  'PGT': { preBasic: 10300, gp: 4200, idealHours: 6 },
+  'Vice Principal': { preBasic: 10300, gp: 4200, idealHours: 8 },
+  'School Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'Academic Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'Admin Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'IT Coordinator (Social Media)': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'Systems Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'HOD (Full Time)': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'Head Master/ Principal': { preBasic: 10300, gp: 5400, idealHours: 8 },
+  'Academic Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'Finance Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'Human Resource Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'Marketing & PR Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'Systems Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'M.D. Academics': { preBasic: 15600, gp: 5400, idealHours: 8 },
+  'M.D. Operations': { preBasic: 15600, gp: 5400, idealHours: 8 },
+};
+// hiring.gs role codes (hirParseRequisitionItem_'s regex) -> this table's
+// designation keys, so the ?role= param from the Hiring Dashboard deep
+// link auto-selects the right row. DRAWING/LIBRARIAN/GARDENER have no
+// entry in the old table at all (never existed as a designation there) --
+// left unmapped on purpose rather than guessed; those fall back to
+// manual entry same as before. PTISR (senior PTI, grades 11-12) maps to
+// 'PTI (11, 12)'; plain PTI maps to the junior 'Games Teacher (PTI)' band.
+const ROLE_CODE_TO_DESIGNATION = {
+  NTT: 'NTT', PRT: 'PRT', TGT: 'TGT', PGT: 'PGT',
+  COMPUTER: 'Computer Teacher', PTISR: 'PTI (11, 12)', PTI: 'Games Teacher (PTI)',
+  ACTIVITY: 'Activity Teacher', DRIVER: 'Driver', HELPER: 'Helper',
+  SWEEPER: 'Sweeper', TECHNICIAN: 'Technician', CLERK: 'Clerk + PRO',
+};
+
+function populateDesignationSelect_() {
+  const sel = document.getElementById('fDesignation');
+  Object.keys(DESIG_PAY_TABLE).forEach(function (d) {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = d;
+    sel.appendChild(opt);
+  });
+}
+
+function applyDesignationPay_() {
+  const d = document.getElementById('fDesignation').value;
+  const row = DESIG_PAY_TABLE[d];
+  if (row) {
+    document.getElementById('fPreBasic').value = row.preBasic;
+    document.getElementById('fGradePay').value = row.gp;
+    document.getElementById('fIdealHours').value = row.idealHours;
+  }
+  renderResults_();
+}
+
 function calcSalary_() {
   const existing = document.getElementById('fExisting').checked;
   const campus = document.getElementById('fCampus').value;
@@ -187,8 +260,13 @@ function calcSalary_() {
   const otherExp = Number(document.getElementById('fOtherExp').value) || 0;
   const preBasic = Number(document.getElementById('fPreBasic').value) || 0;
   const gradePay = Number(document.getElementById('fGradePay').value) || 0;
-  const workHours = Number(document.getElementById('fWorkHours').value) || 1;
   const idealHours = Number(document.getElementById('fIdealHours').value) || 1;
+  // Matches the old dashboard.html's calcSalary(desig, school, ..., wh, ...):
+  // `workH = wh || bd.ideal_hours` -- Assigned Hours is an OVERRIDE, blank
+  // means full load (ratio of 1), not an independent default. A part-load
+  // hire is the only case where this field should differ from Ideal Hours.
+  const workHoursRaw = document.getElementById('fWorkHours').value;
+  const workHours = workHoursRaw ? Number(workHoursRaw) : idealHours;
   const epfOn = document.getElementById('fEpf').checked;
   const esiOn = document.getElementById('fEsi').checked;
   const mdExempt = document.getElementById('fMdExempt').checked && EPF_EXEMPTION_APPROVED;
@@ -324,7 +402,9 @@ function recordSalaryOffer_() {
   const msg = document.getElementById('recordMsg');
   if (!row) { msg.textContent = 'No applicant linked — open this page from the Hiring Dashboard.'; msg.className = 'record-msg err'; return; }
   const r = window._lastResult || calcSalary_();
-  const role = document.getElementById('fRole').value.trim();
+  const designation = document.getElementById('fDesignation').value;
+  const subjects = document.getElementById('fSubjects').value.trim();
+  const role = designation + (designation && subjects ? ': ' : '') + subjects;
   const summary = 'Salary Offer recorded: ' + (role ? role + ' — ' : '') + 'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo (' + new Date().toISOString().slice(0, 10) + ')';
   const notes = EXISTING_NOTES ? EXISTING_NOTES + ' | ' + summary : summary;
   btn.disabled = true; msg.textContent = 'Recording…'; msg.className = 'record-msg';
@@ -345,6 +425,7 @@ function wireInputs_() {
   ['fExisting', 'fCampus', 'fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fTuiFee'].forEach(function (id) {
     document.getElementById(id).addEventListener('input', renderResults_);
   });
+  document.getElementById('fDesignation').addEventListener('change', applyDesignationPay_);
   document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('recordBtn').onclick = recordSalaryOffer_;
@@ -353,8 +434,19 @@ function wireInputs_() {
 function prefillFromParams_() {
   if (params.get('name')) document.getElementById('fName').value = params.get('name');
   if (params.get('school')) document.getElementById('fCampus').value = params.get('school');
-  const role = params.get('role'), subjects = params.get('subjects');
-  if (role || subjects) document.getElementById('fRole').value = role + (role && subjects ? ': ' : '') + (subjects || '');
+  if (params.get('subjects')) document.getElementById('fSubjects').value = params.get('subjects');
+  const roleCode = params.get('role');
+  const designation = roleCode && ROLE_CODE_TO_DESIGNATION[roleCode.toUpperCase()];
+  if (designation) {
+    document.getElementById('fDesignation').value = designation;
+    applyDesignationPay_();
+  } else if (roleCode) {
+    // No pay-scale entry for this role code (e.g. DRAWING/LIBRARIAN/
+    // GARDENER) -- show it as a hint in Subjects rather than silently
+    // dropping it, since Pre-Basic/GP still need manual entry either way.
+    const subj = document.getElementById('fSubjects');
+    subj.value = roleCode + (subj.value ? ': ' + subj.value : '') + ' (no pay-scale entry — enter Basic/GP manually)';
+  }
   document.getElementById('recordCard').style.display = APPLICANT_ID ? '' : 'none';
   loadExistingNotes_();
 }
@@ -376,6 +468,7 @@ function showApp(session) {
   }
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
+  populateDesignationSelect_();
   prefillFromParams_();
   wireInputs_();
   renderResults_();
