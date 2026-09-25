@@ -450,6 +450,13 @@ function toggleExistingEmployeeSearch_() {
   const on = document.getElementById('fExisting').checked;
   const nameInput = document.getElementById('fName');
   if (on) nameInput.setAttribute('list', 'fNameList'); else nameInput.removeAttribute('list');
+  // 2026-09-26, per Uday: when this row arrived hand-off-locked
+  // (APPLICANT_ID, see prefillFromParams_), checking "Existing
+  // employee" has to unlock Candidate Name too, or there's no way to
+  // actually type into the search box that just appeared. Unchecking
+  // restores the hand-off lock rather than leaving it permanently
+  // editable.
+  nameInput.readOnly = on ? false : !!APPLICANT_ID;
   if (on && !rosterLoaded_) {
     rosterLoaded_ = true;
     fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' })
