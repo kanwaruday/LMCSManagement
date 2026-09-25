@@ -47,8 +47,16 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .pill.ok{background:#dcfce7;border-color:#bbf7d0;color:var(--green)}
 .pill.no{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 
-.campus-filter{margin-bottom:14px;font-size:12px}
-.campus-filter select{padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px}
+/* Campus tabs + role picker (2026-09-25) -- same convention as
+   principals-daily-reporting/index.html's .campus-btn/.role-btn, so the
+   "pick a school, then pick from what's open there" pattern looks
+   consistent across the portal instead of reinventing a dropdown here. */
+.role-picker{display:flex;gap:6px;flex-wrap:wrap}
+.campus-btn{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer}
+.campus-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+.campus-btn.school-btn{padding:8px 16px;font-size:13px}
+.role-btn{background:var(--white);border:1.5px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11.5px;font-weight:600;color:var(--gray);cursor:pointer}
+.role-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
 
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:8px 10px;background:var(--lgray);border-bottom:2px solid var(--border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);white-space:nowrap}
@@ -120,22 +128,29 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
 
       <div class="datasrc-links" id="datasrcHiring"></div>
 
-      <div class="campus-filter" id="campusFilterRow" style="display:none">
-        Campus: <select id="campusFilter"></select>
+      <div id="campusTabsRow" style="display:none;margin-bottom:14px">
+        <div class="role-picker" id="campusTabs"></div>
       </div>
 
       <div class="status-strip" id="statusStrip"></div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Match</th><th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
-            <th>Status</th><th>Notes / interview</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div class="empty" id="emptyMsg" style="display:none">No applicants for this campus yet.</div>
+      <!-- Step 2 of the journey: pick a campus (above), see its approved
+           open roles here as clickable pills -- nothing below shows
+           until one is picked (Step 3). -->
+      <div id="rolesRow" style="margin-bottom:14px"></div>
+
+      <div id="applicantSection" style="display:none">
+        <table>
+          <thead>
+            <tr>
+              <th>Match</th><th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
+              <th>Status</th><th>Notes / interview</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty" id="emptyMsg" style="display:none">Pick a role above to see matching applicants.</div>
+      </div>
     </div>
   </div>
 
@@ -204,6 +219,7 @@ let SESSION = null;
 let APPLICANTS = [];
 let APPROVAL_STATUS = { campuses: [] };
 let campusFilter = 'ALL'; // only meaningful when SESSION.campusId === 'ALL'
+let selectedRoleKey = null; // which specific open role's applicants are showing (Step 3 of the journey) -- null until one's clicked
 
 function gasGet_(action, params) {
   const qs = Object.assign({ action: action, idToken: SESSION.idToken }, params || {});
@@ -230,49 +246,86 @@ function activeCampus_() {
 // (district-scoped, Hiring-categories-only) instead of filtering the
 // general action=approvalslist result, which deliberately only ever
 // returns a locked Principal's OWN campus (correct for that generic
-// Approvals tab, wrong for this district-wide view). Shows one pill-pair
-// per relevant campus when there's more than one, so "why don't I see
-// applicant X" still has a visible, per-campus answer.
+// Approvals tab, wrong for this district-wide view). Only the Hiring
+// Decision pill lives here now -- "New/ Backup Position" status moved
+// into the clickable roles list below (renderRolesList_), which shows
+// the same detail (and more) as something you act on, not just read.
 function renderStatusStrip() {
   const el = document.getElementById('statusStrip');
-  const singleCampus = SESSION.campusId === 'ALL' ? campusFilter : null; // Owner narrowed to one campus via the dropdown
-  if (SESSION.campusId === 'ALL' && campusFilter === 'ALL') {
-    el.innerHTML = '<span class="sub">Pick a campus above to see its approval status.</span>';
-    return;
-  }
-  const rows = (APPROVAL_STATUS.campuses || []).filter(function (c) { return !singleCampus || c.campusId === singleCampus; });
+  const rows = campusesInScope_();
   const multi = rows.length > 1;
   el.innerHTML = rows.map(function (c) {
-    const posOk = c.newPositions.length > 0;
-    let posLabel = 'New/ Backup Position';
-    if (posOk) {
-      posLabel += ': ' + c.newPositions.map(function (r) {
-        return (r.roleLevel || 'Any') + (r.subjects ? ': ' + r.subjects : '') + (r.openings != null ? ' (' + r.openings + ')' : '');
-      }).join(', ');
-    }
     const prefix = multi ? '<b>' + LMCS.campusLabel(c.campusId) + '</b> ' : '';
-    return prefix +
-      '<span class="pill ' + (posOk ? 'ok' : 'no') + '">' + (posOk ? '✓' : '✗') + ' ' + posLabel + '</span>' +
-      '<span class="pill ' + (c.hiringDecisionApproved ? 'ok' : 'no') + '">' + (c.hiringDecisionApproved ? '✓' : '✗') + ' Hiring Decision</span>';
+    return prefix + '<span class="pill ' + (c.hiringDecisionApproved ? 'ok' : 'no') + '">' + (c.hiringDecisionApproved ? '✓' : '✗') + ' Hiring Decision</span>';
   }).join(multi ? '<br><br>' : '');
 }
 
-function renderCampusFilter() {
-  if (SESSION.campusId !== 'ALL') { document.getElementById('campusFilterRow').style.display = 'none'; return; }
-  document.getElementById('campusFilterRow').style.display = '';
-  const sel = document.getElementById('campusFilter');
+// Step 1 of the journey: pick a campus. Tabs instead of a dropdown, same
+// .campus-btn/.school-btn convention principals-daily-reporting/index.html
+// already uses for its own school picker -- Owner/ALL only, a locked
+// Principal has nothing to pick (they already see their whole district).
+function renderCampusTabs_() {
+  const wrap = document.getElementById('campusTabsRow');
+  if (SESSION.campusId !== 'ALL') { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
   const opts = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-  sel.innerHTML = opts.map(function (c) {
-    return '<option value="' + c + '">' + (c === 'ALL' ? 'All campuses' : LMCS.campusLabel(c)) + '</option>';
+  document.getElementById('campusTabs').innerHTML = opts.map(function (c) {
+    return '<button type="button" class="campus-btn school-btn' + (c === campusFilter ? ' active' : '') + '" onclick="selectCampusTab_(\'' + c + '\')">' + (c === 'ALL' ? 'All Campuses' : LMCS.campusLabel(c)) + '</button>';
   }).join('');
-  sel.value = campusFilter;
-  sel.onchange = function () {
-    campusFilter = sel.value;
-    renderStatusStrip();
-    renderDocFormLink();
-    renderDataSourceLinks_();
-    renderRows();
-  };
+}
+
+function selectCampusTab_(c) {
+  campusFilter = c;
+  selectedRoleKey = null; // changing campus means starting the role pick over
+  renderCampusTabs_();
+  renderStatusStrip();
+  renderDocFormLink();
+  renderDataSourceLinks_();
+  renderRolesList_();
+  renderRows();
+}
+
+// Which campuses' approval status/roles are currently in view: Owner
+// narrowed to one specific tab -> just that campus; Owner viewing "All
+// Campuses" or a locked Principal (already district-scoped server-side
+// by hiringApprovalStatus_) -> everything the backend returned.
+function campusesInScope_() {
+  if (SESSION.campusId === 'ALL' && campusFilter !== 'ALL') {
+    return (APPROVAL_STATUS.campuses || []).filter(function (c) { return c.campusId === campusFilter; });
+  }
+  return APPROVAL_STATUS.campuses || [];
+}
+
+// Step 2 of the journey: every approved "New/ Backup Position" role in
+// scope, as clickable pills -- nothing about applicants shows until one
+// is clicked (Step 3, selectRole_ below). An empty list here doubles as
+// the "nothing approved yet" signal that used to be APPLICANTS.gated.
+function renderRolesList_() {
+  const el = document.getElementById('rolesRow');
+  const campuses = campusesInScope_();
+  const roles = [];
+  campuses.forEach(function (c) {
+    c.newPositions.forEach(function (r) {
+      roles.push({ campusId: c.campusId, roleLevel: r.roleLevel, subjects: r.subjects, roleKey: r.roleKey });
+    });
+  });
+  if (!roles.length) {
+    el.innerHTML = '<div class="empty">No approved "New/ Backup Position" roles yet. Use the "Request to open a role" link above.</div>';
+    document.getElementById('applicantSection').style.display = 'none';
+    return;
+  }
+  const multiCampus = campuses.length > 1;
+  el.innerHTML = '<div class="role-picker">' + roles.map(function (r) {
+    const label = (multiCampus ? LMCS.campusLabel(r.campusId) + ' — ' : '') + (r.roleLevel || 'Any') + (r.subjects ? ': ' + r.subjects : '');
+    return '<button type="button" class="role-btn' + (r.roleKey === selectedRoleKey ? ' active' : '') + '" onclick="selectRole_(\'' + r.roleKey + '\')">' + label + '</button>';
+  }).join('') + '</div>';
+  document.getElementById('applicantSection').style.display = '';
+}
+
+function selectRole_(roleKey) {
+  selectedRoleKey = roleKey;
+  renderRolesList_();
+  renderRows();
 }
 
 function renderDocFormLink() {
@@ -306,22 +359,22 @@ function statusOptionsHtml_(current) {
 }
 
 function renderRows() {
-  const campus = activeCampus_();
   const emptyMsg = document.getElementById('emptyMsg');
-  if (APPLICANTS.gated) {
+  // Nothing shows until a specific role is picked (Step 3) -- an empty
+  // roles list already covers "nothing approved anywhere" via
+  // renderRolesList_ hiding applicantSection entirely, so this only
+  // ever needs to handle "roles exist, none picked yet" and "picked,
+  // here's who matches."
+  if (!selectedRoleKey) {
     document.getElementById('rows').innerHTML = '';
-    emptyMsg.textContent = 'No applicants to show — no campus has an Approved "New/ Backup Position" request yet. Use the "Request to open a role" link above.';
+    emptyMsg.textContent = 'Pick a role above to see matching applicants.';
     emptyMsg.style.display = '';
     return;
   }
-  // A locked Principal's list is already district-scoped server-side
-  // (hiringApplicants_) -- re-filtering here to their exact campus tag
-  // would undo that and hide sister-campus applicants they're now meant
-  // to see. Only Owner's single-campus dropdown narrows further.
-  const list = (SESSION.campusId !== 'ALL' || campus === 'ALL') ? APPLICANTS.applicants : APPLICANTS.applicants.filter(function (a) {
-    return a.branches.indexOf('LMS-' + campus.replace(/[^0-9]/g, '')) !== -1;
+  const list = (APPLICANTS.applicants || []).filter(function (a) {
+    return (a.matchedRoleKeys || []).indexOf(selectedRoleKey) !== -1;
   });
-  emptyMsg.textContent = 'No applicants for this campus yet.';
+  emptyMsg.textContent = 'No applicants match this role yet.';
   emptyMsg.style.display = list.length ? 'none' : '';
   document.getElementById('rows').innerHTML = list.map(function (a) {
     const phoneDigits = a.phone.replace(/\D/g, '');
@@ -404,10 +457,11 @@ function loadAll_() {
     APPLICANTS = applicants;
     APPROVAL_STATUS = approvalStatus.success ? approvalStatus : { campuses: [] };
     document.getElementById('mainRoot').style.display = '';
-    renderCampusFilter();
+    renderCampusTabs_();
     renderStatusStrip();
     renderDocFormLink();
     renderDataSourceLinks_();
+    renderRolesList_();
     renderRows();
   });
 }

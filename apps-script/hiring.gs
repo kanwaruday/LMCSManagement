@@ -131,6 +131,18 @@ function hirNormalizeName_(n) {
   return String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Stable, opaque identifier for one specific open requisition (campus +
+// role + subjects) -- 2026-09-25, per Uday's "click a campus, see its
+// open roles, click a role, see just that role's applicants" redesign.
+// hiringApplicants_ tags each applicant with every roleKey they match
+// (see matchedRoleKeys below); hiringApprovalStatus_ tags each open
+// requisition with the same key, so the frontend can filter the
+// applicant list down to one clicked role without re-implementing any
+// subject-matching logic client-side.
+function hirRoleKey_(campusId, roleLevel, subjects) {
+  return campusId + '|' + (roleLevel || '') + '|' + (subjects || '');
+}
+
 // Temporary Applicant ID (2026-09-25, per Uday) -- "T-0764" from the
 // sheet row, so Principals/Owner have a stable way to refer to a
 // candidate in conversation/approval notes without name collisions
@@ -243,7 +255,9 @@ function hiringApplicants_(caller) {
       if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return; // outside caller's district
       const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
       if (branches.indexOf(campusTag) === -1) return;
-      requisitions[c].forEach(function (req) { if (hirSubjectsMatch_(req.subjects, subjects)) relevantReqs.push(req); });
+      requisitions[c].forEach(function (req) {
+        if (hirSubjectsMatch_(req.subjects, subjects)) relevantReqs.push(Object.assign({ campusId: c }, req));
+      });
     });
     if (!relevantReqs.length) continue;
 
@@ -251,6 +265,11 @@ function hiringApplicants_(caller) {
     const applicant = {
       row: i + 1, // 1-based sheet row, used to write status/notes back
       applicantId: hirApplicantId_(i + 1),
+      // Every specific open role this applicant matches (not just the
+      // single best one matchScore is computed against) -- lets the
+      // frontend filter to "applicants for THIS role" after a click,
+      // without duplicating subject-matching logic client-side.
+      matchedRoleKeys: relevantReqs.map(function (req) { return hirRoleKey_(req.campusId, req.roleLevel, req.subjects); }),
       timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
       name: String(r[HIR_COL.NAME - 1] || '').trim(),
       phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
@@ -308,7 +327,10 @@ function hiringApprovalStatus_(caller) {
   return {
     success: true,
     campuses: visibleCampuses.map(function (c) {
-      return { campusId: c, newPositions: newPosition[c] || [], hiringDecisionApproved: !!hiringDecision[c] };
+      const positions = (newPosition[c] || []).map(function (r) {
+        return Object.assign({ roleKey: hirRoleKey_(c, r.roleLevel, r.subjects) }, r);
+      });
+      return { campusId: c, newPositions: positions, hiringDecisionApproved: !!hiringDecision[c] };
     }),
   };
 }
