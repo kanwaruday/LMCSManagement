@@ -224,6 +224,7 @@ let APPLICANTS = [];
 let APPROVAL_STATUS = { campuses: [] };
 let campusFilter = 'ALL'; // only meaningful when SESSION.campusId === 'ALL'
 let selectedRoleKey = null; // which specific open role's applicants are showing (Step 3 of the journey) -- null until one's clicked
+let ROLES = []; // every approved role in scope, set by renderRolesList_ -- salaryLinkUrl_ looks up selectedRoleKey in here
 
 function gasGet_(action, params) {
   const qs = Object.assign({ action: action, idToken: SESSION.idToken }, params || {});
@@ -291,6 +292,11 @@ function renderRolesList_() {
       roles.push({ campusId: c.campusId, roleLevel: r.roleLevel, subjects: r.subjects, roleKey: r.roleKey });
     });
   });
+  // Kept globally (2026-09-25) so salaryLinkUrl_ can look up the
+  // currently-selected role's level/subjects by key -- this function is
+  // the only place that already knows that mapping, rather than
+  // recomputing it or threading it through renderRows/renderRowActions_.
+  ROLES = roles;
   if (!roles.length) {
     el.innerHTML = '<div class="empty">No approved "New/ Backup Position" roles yet. Use the "Request to open a role" link above.</div>';
     document.getElementById('applicantSection').style.display = 'none';
@@ -338,11 +344,21 @@ function hireLinkUrl_(a) {
 // module (2026-09-25) -- applicantId doubles as the sheet row (hiring.gs's
 // hirApplicantId_ is literally 'T-' + row padded), so the calculator can
 // parse it back out and write salaryOfferAt to the right row without a
-// second lookup call.
+// second lookup call. Also carries the specific role being hired for
+// (level + subjects) -- per Uday, name + role are the two base
+// parameters a salary calculation actually starts from, so they're
+// pre-filled rather than re-typed. Looked up from ROLES by
+// selectedRoleKey (the role the Principal is currently viewing this
+// applicant under) rather than a.matchedRoleKeys[0], since an applicant
+// can match more than one open role and the one on-screen right now is
+// the one actually being acted on.
 function salaryLinkUrl_(a) {
   const school = applicantCampusFor_(a);
+  const role = ROLES.filter(function (r) { return r.roleKey === selectedRoleKey; })[0];
   const params = new URLSearchParams({ name: a.name, applicantId: a.applicantId });
   if (school) params.set('school', school);
+  if (role && role.roleLevel) params.set('role', role.roleLevel);
+  if (role && role.subjects) params.set('subjects', role.subjects);
   return '../salary/index.html?' + params.toString();
 }
 
@@ -396,7 +412,8 @@ function reqBarHtml_(a) {
   } else if (idx === 1) {
     hint = 'Next: enter the MD Academics interview date below, then Save.';
   } else {
-    hint = 'Next: compute and record a Salary Offer in the Salary Dashboard (link below).';
+    hint = 'Next: compute and record a Salary Offer.';
+    reportLink = ' <a class="mini-btn" style="text-decoration:none" href="' + salaryLinkUrl_(a) + '" target="_blank">💰 Open Salary Dashboard</a>';
   }
   return '<div class="req-bar"><div class="req-hint">' + hint + reportLink + '</div>' +
     '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">' +

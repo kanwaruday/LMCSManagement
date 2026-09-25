@@ -97,6 +97,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
               <option value="LMS4">LMS 4</option><option value="LMS5">LMS 5</option><option value="LMS6">LMS 6</option>
             </select>
           </div>
+          <div class="field"><label>Role / Subjects</label><input type="text" id="fRole" placeholder="e.g. PRT: Maths, Science"></div>
           <div class="field-check"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
         </div>
       </div>
@@ -299,6 +300,23 @@ function requestEpfExemption_() {
 // ── Record as Salary Offer (writes evidence back onto the Hiring row) ─
 const params = new URLSearchParams(location.search);
 const APPLICANT_ID = params.get('applicantId') || '';
+let EXISTING_NOTES = ''; // fetched once on load -- see loadExistingNotes_
+
+// hiringUpdateStatus_ (hiring.gs) REPLACES the Notes cell wholesale, same
+// as the Hiring Dashboard's own Notes textbox already does -- it never
+// appends server-side. So this page has to fetch whatever's already
+// there first and fold the recorded offer into it, or a click here would
+// silently wipe out an existing rejection reason/walk-in note/etc.
+function loadExistingNotes_() {
+  if (!APPLICANT_ID) return;
+  const row = parseInt(String(APPLICANT_ID).replace(/^T-0*/, ''), 10);
+  if (!row) return;
+  gasGet_('hiringapplicants').then(function (res) {
+    if (!res.success) return;
+    const match = (res.applicants || []).filter(function (a) { return a.row === row; })[0];
+    if (match) EXISTING_NOTES = match.notes || '';
+  }).catch(function () { /* best-effort -- Record still works, just won't preserve prior notes */ });
+}
 
 function recordSalaryOffer_() {
   const row = parseInt(String(APPLICANT_ID).replace(/^T-0*/, ''), 10);
@@ -306,15 +324,19 @@ function recordSalaryOffer_() {
   const msg = document.getElementById('recordMsg');
   if (!row) { msg.textContent = 'No applicant linked — open this page from the Hiring Dashboard.'; msg.className = 'record-msg err'; return; }
   const r = window._lastResult || calcSalary_();
+  const role = document.getElementById('fRole').value.trim();
+  const summary = 'Salary Offer recorded: ' + (role ? role + ' — ' : '') + 'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo (' + new Date().toISOString().slice(0, 10) + ')';
+  const notes = EXISTING_NOTES ? EXISTING_NOTES + ' | ' + summary : summary;
   btn.disabled = true; msg.textContent = 'Recording…'; msg.className = 'record-msg';
   gasPost_('updatehiringstatus', {
     row: row,
     status: '',
-    notes: 'Salary Offer recorded: CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo (' + new Date().toISOString().slice(0, 10) + ')',
+    notes: notes,
     salaryOfferAt: new Date().toISOString(),
   }).then(function (res) {
     btn.disabled = false;
     if (!res.success) { msg.textContent = res.error; msg.className = 'record-msg err'; return; }
+    EXISTING_NOTES = notes;
     msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
   }).catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'record-msg err'; });
 }
@@ -331,7 +353,10 @@ function wireInputs_() {
 function prefillFromParams_() {
   if (params.get('name')) document.getElementById('fName').value = params.get('name');
   if (params.get('school')) document.getElementById('fCampus').value = params.get('school');
+  const role = params.get('role'), subjects = params.get('subjects');
+  if (role || subjects) document.getElementById('fRole').value = role + (role && subjects ? ': ' : '') + (subjects || '');
   document.getElementById('recordCard').style.display = APPLICANT_ID ? '' : 'none';
+  loadExistingNotes_();
 }
 
 function showApp(session) {
