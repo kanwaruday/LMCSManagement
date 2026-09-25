@@ -493,8 +493,7 @@ function wireLadderClicks_(tr) {
 // closed once the lookup finishes.
 function openInterviewReportPdf_(applicant) {
   const win = window.open('', '_blank');
-  gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (res) {
-    const r = res.result;
+  gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (r) {
     if (r.found && r.pdf) { if (win) win.location = r.pdf; else window.open(r.pdf, '_blank'); return; }
     if (win) win.close();
     if (r.found) { alert('Interview report found but no PDF link on file.\nRemarks: ' + (r.remarks || '—')); return; }
@@ -622,8 +621,7 @@ function runCheck_(applicant, kind) {
     openInterviewReportPdf_(applicant);
   } else {
     const campusId = applicantCampusFor_(applicant);
-    gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (res) {
-      const r = res.result;
+    gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (r) {
       if (!r.found) { alert('No document submission found yet for ' + applicant.name + ' at ' + campusId + '.'); return; }
       alert(r.complete ? 'All required documents present.' : 'Missing: ' + r.missing.join(', '));
     });
