@@ -502,23 +502,15 @@ function wireLadderClicks_(tr) {
 
 // Contextual link buttons, keyed off the applicant's TRUE current
 // status (server-derived from evidence, applicant.status) -- ladder
-// index gates: Interview Report Form once past the interview itself;
-// Document Submission and Salary Dashboard both from MD Academics
-// Interview Scheduled onward, so documents can start flowing in and an
-// offer can be computed BEFORE the Hired click hits the hard gate in
-// hiring.gs (CV + Interview Report + all documents + both Approvals) --
-// none of those three are prerequisites of each other.
+// 2026-09-26, per Uday: the Interview Report Form/Salary Dashboard/
+// Document Submission Form links used to live here too, duplicating
+// what the Next Steps column (reqBarHtml_) already shows tied to the
+// actual Stage ticks -- removed as dead weight. Complete-hire stays:
+// it's the one action with nowhere else to live, since reqBarHtml_
+// returns nothing once status is 'Hired' (or 'Rejected').
 function renderRowActions_(tr) {
   const applicant = tr._applicant;
-  const idx = ladderStatuses_().indexOf(applicant.status);
-  const school = applicantCampusFor_(applicant);
   const extra = [];
-  if (idx >= 1) extra.push('<a class="mini-btn" style="text-decoration:none" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">🔗 Interview Report Form</a>');
-  // Real link (2026-09-25) -- opens the Salary Dashboard's offer-letter
-  // calculator, name/campus/applicantId pre-filled via URL params (same
-  // hand-off pattern as hireLinkUrl_ below).
-  if (idx >= 2) extra.push('<a class="mini-btn" style="text-decoration:none" href="' + salaryLinkUrl_(applicant) + '" target="_blank">🔗 Salary Dashboard</a>');
-  if (idx >= 2 && DOC_FORM_URLS[school]) extra.push('<a class="mini-btn" style="text-decoration:none" href="' + DOC_FORM_URLS[school] + '" target="_blank">🔗 Document Submission Form</a>');
   if (applicant.status === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Complete hire in Staff Portal</a>');
   tr.querySelector('.row-extra-actions').innerHTML = extra.join('');
 }
@@ -566,10 +558,6 @@ function renderRows() {
         '<input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes"></td>' +
       '<td>' +
         '<button class="save-btn">Save</button>' +
-        '<div class="row-actions">' +
-          '<button class="mini-btn" data-check="report">🔍 report</button>' +
-          '<button class="mini-btn" data-check="docs">🔍 docs</button>' +
-        '</div>' +
         '<div class="row-actions row-extra-actions"></div>' +
         '<div class="row-msg"></div>' +
       '</td>' +
@@ -581,9 +569,6 @@ function renderRows() {
     const applicant = list.find(function (a) { return String(a.row) === row; });
     tr._applicant = applicant;
     tr.querySelector('.save-btn').onclick = function () { saveRow_(tr, applicant); };
-    tr.querySelectorAll('[data-check]').forEach(function (btn) {
-      btn.onclick = function () { runCheck_(applicant, btn.dataset.check); };
-    });
     wireLadderClicks_(tr);
     renderRowActions_(tr);
   });
@@ -613,22 +598,6 @@ function saveRow_(tr, applicant) {
       setTimeout(function () { renderRows(); }, 400);
     })
     .catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'row-msg err'; });
-}
-
-function runCheck_(applicant, kind) {
-  if (kind === 'report') {
-    // Synchronous -- applicant.interviewReportPdf is already sitting in
-    // APPLICANTS from the initial page load (see ladderHtml_'s own
-    // comment for why this stopped being an async per-click lookup).
-    if (applicant.interviewReportPdf) window.open(applicant.interviewReportPdf, '_blank');
-    else alert('No interview report found for this phone number yet.');
-  } else {
-    const campusId = applicantCampusFor_(applicant);
-    gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (r) {
-      if (!r.found) { alert('No document submission found yet for ' + applicant.name + ' at ' + campusId + '.'); return; }
-      alert(r.complete ? 'All required documents present.' : 'Missing: ' + r.missing.join(', '));
-    });
-  }
 }
 
 function loadAll_() {
