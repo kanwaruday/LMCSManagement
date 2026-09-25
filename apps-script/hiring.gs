@@ -137,7 +137,7 @@ function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasMdInter
 // tab now that this is no longer that tab's own dedicated file.
 const HIR_IR_SHEET_ID = HIR_SHEET_ID;
 const HIR_IR_SHEET_GID = 1241435504;
-const HIR_IR_COL = { NAME: 1, PHONE: 2, BRANCH: 3, REMARKS: 5, PDF: 6 }; // 0-indexed
+const HIR_IR_COL = { NAME: 1, PHONE: 2, BRANCH: 3, SUBJECT: 4, REMARKS: 5, PDF: 6 }; // 0-indexed
 
 // "Applicant Live Status" tab -- 2026-09-25, per Uday: an ungated,
 // management-wide view (every applicant, not just those matching an
@@ -267,6 +267,89 @@ function hirMigrateLegacyStatuses_() {
   }
   Logger.log('hirMigrateLegacyStatuses_: updated ' + changed + ' row(s)');
   return changed;
+}
+
+// REUSABLE, re-runnable backfill for walk-in interviewees (2026-09-25,
+// per Uday: "add them in showing us as walk-in interviewee ... we are
+// building for the future not the past"). Root problem found live:
+// ~47% of Interview Reports entries have no matching Teaching
+// Applicants row by phone -- some are people interviewed without ever
+// filling the initial Google Form (genuine walk-ins), others are the
+// same applicant under a mismatched/typo'd phone number in one sheet
+// or the other. Either way, hirInterviewReportPhones_'s phone-match
+// can never find them, which silently caps their derived ladder stage
+// at nothing -- a genuinely-interviewed, fully-documented candidate
+// could look like zero progress, or get wrongly blocked from Hired.
+//
+// This appends a new Teaching Applicants row for each SIMPLE case --
+// deliberately skips anything "complicated" rather than guessing:
+//   - phone doesn't cleanly normalize to exactly 10 digits (garbled,
+//     short, multi-number) -- not a usable join key
+//   - the name already exists in Teaching Applicants under a DIFFERENT
+//     phone -- likely the same real person with a typo somewhere, and
+//     auto-merging that risks silently attaching one person's report
+//     to a different person's applicant record. Needs a human to pick
+//     the right one, not this function.
+// Not web-exposed -- run manually from the Apps Script editor (function
+// dropdown -> Run), same as hirMigrateLegacyStatuses_. Safe to re-run
+// on a schedule if Uday wants it ongoing: only ever acts on phones
+// that are STILL unmatched at run time, so a person only ever gets
+// backfilled once, and running it again later just sweeps up whatever
+// NEW walk-in reports have shown up since.
+function hirBackfillWalkInApplicants_() {
+  const appSheet = hirSheet_();
+  const appValues = appSheet.getDataRange().getValues();
+  const existingPhones = {};
+  const existingNames = {};
+  for (let i = 1; i < appValues.length; i++) {
+    const p = hirNormalizePhone_(appValues[i][HIR_COL.PHONE - 1]);
+    if (p) existingPhones[p] = true;
+    const n = hirNormalizeName_(appValues[i][HIR_COL.NAME - 1]);
+    if (n) existingNames[n] = true;
+  }
+
+  const irValues = hirIrSheet_().getDataRange().getValues();
+  const newRows = [];
+  let skippedComplicated = 0;
+  for (let i = 1; i < irValues.length; i++) {
+    const r = irValues[i];
+    const name = String(r[HIR_IR_COL.NAME] || '').trim();
+    const rawPhone = String(r[HIR_IR_COL.PHONE] || '').trim();
+    if (!name) continue;
+    const normPhone = hirNormalizePhone_(rawPhone);
+    if (normPhone && existingPhones[normPhone]) continue; // already a real match, nothing to do
+    if (rawPhone.replace(/\D/g, '').length !== 10) { skippedComplicated++; continue; } // not a clean 10-digit number
+    if (existingNames[hirNormalizeName_(name)]) { skippedComplicated++; continue; } // same name, different phone elsewhere -- ambiguous, skip
+
+    // "LMS 6" (Interview Reports' own wording) -> "LMS-6" -- only needs
+    // to contain the substring hirSheet_-reading code already matches
+    // on (branches.indexOf('LMS-' + n)), doesn't need to replicate the
+    // full multi-campus checkbox text Teaching Applicants normally has.
+    const branchTag = String(r[HIR_IR_COL.BRANCH] || '').trim().replace(/^LMS\s*(\d)/i, 'LMS-$1');
+    const ts = r[0] instanceof Date ? r[0] : new Date();
+
+    const row = new Array(HIR_COL.MD_INTERVIEW_AT).fill('');
+    row[HIR_COL.TIMESTAMP - 1] = ts;
+    row[HIR_COL.NAME - 1] = name;
+    row[HIR_COL.PHONE - 1] = rawPhone;
+    row[HIR_COL.SUBJECTS - 1] = String(r[HIR_IR_COL.SUBJECT] || '').trim();
+    row[HIR_COL.BRANCHES - 1] = branchTag;
+    row[HIR_COL.NOTES - 1] = 'Walk-in interviewee -- backfilled from Interview Reports ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    // They WERE interviewed -- use the report's own timestamp as the
+    // Interview Scheduled date too, so the ladder correctly derives
+    // past that rung instead of showing zero progress for someone who
+    // walked straight into an interview with no separate "scheduled"
+    // step of their own.
+    row[HIR_COL.INTERVIEW_AT - 1] = ts;
+    newRows.push(row);
+    if (normPhone) existingPhones[normPhone] = true; // guard duplicate IR rows for the same walk-in within this same run
+  }
+
+  if (newRows.length) {
+    appSheet.getRange(appSheet.getLastRow() + 1, 1, newRows.length, HIR_COL.MD_INTERVIEW_AT).setValues(newRows);
+  }
+  Logger.log('hirBackfillWalkInApplicants_: added ' + newRows.length + ' walk-in applicant(s), skipped ' + skippedComplicated + ' complicated entr(ies)');
+  return { added: newRows.length, skippedComplicated: skippedComplicated };
 }
 
 // Guards against corrupted sheet cells (e.g. a Timestamp cell containing
