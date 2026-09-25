@@ -153,8 +153,11 @@ const DOC_FORM_URLS = {
 // apps-script/hiring.gs (HIR_SHEET_ID / HIR_IR_SHEET_ID / HIR_DOC_SHEET_IDS),
 // same as DOC_FORM_URLS above is already duplicated from that file's
 // per-campus Form links. Keep both in sync if a sheet/form is ever recreated.
-const DATASRC_APPLICANTS_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants" responses
-const DATASRC_IR_SHEET_ID = '18NKMBGxT2DuGcrL_m-Y0JGcrmi6oqm6qtLB4Jb_d0Ow'; // "Interview Report Form (Responses)"
+// 2026-09-25: Teaching Applicants and Interview Reports are now tabs in
+// the SAME spreadsheet (Uday merged them) -- same ID, gid picks the tab.
+const DATASRC_APPLICANTS_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants" + "Interview Reports" tabs
+const DATASRC_APPLICANTS_GID = '1181288827';
+const DATASRC_IR_GID = '1241435504';
 const DATASRC_DOC_SHEET_IDS = {
   LMS1: '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg', LMS2: '10xxFM1li1-6xzWEBEEPkZIF4MJcilddoVJkEfVbkScM',
   LMS3: '1qdQnXrWWTrgnCt82MSk_fN6Fqaox-EoenuF_XToypAc', LMS4: '1x8eFlnFcEKaCwF9HMRan_EQwTgSPq9xHubZ7n5vyR8k',
@@ -164,10 +167,10 @@ const DATASRC_DOC_SHEET_IDS = {
 function renderDataSourceLinks_() {
   const el = document.getElementById('datasrcHiring');
   if (!LMCS.hasRole(SESSION, 'Owner')) { el.innerHTML = ''; return; }
-  const sheetUrl = function (id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; };
+  const sheetUrl = function (id, gid) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit' + (gid ? '#gid=' + gid : ''); };
   const links = [
-    { label: 'Teaching Applicants sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID) },
-    { label: 'Interview Report sheet', url: sheetUrl(DATASRC_IR_SHEET_ID) },
+    { label: 'Teaching Applicants sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_APPLICANTS_GID) },
+    { label: 'Interview Report sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_IR_GID) },
   ];
   const campus = activeCampus_();
   if (DATASRC_DOC_SHEET_IDS[campus]) links.push({ label: 'Doc Submission sheet', url: sheetUrl(DATASRC_DOC_SHEET_IDS[campus]) });

@@ -41,8 +41,17 @@
 // already route to it. Nothing to configure beyond that.
 // ═══════════════════════════════════════════════════════════════════
 
+// 2026-09-25: Uday merged the standalone "Interview Report Form
+// (Responses)" spreadsheet into this one as a second tab ("Interview
+// Reports"), so HIR_IR_SHEET_ID now equals HIR_SHEET_ID -- same file,
+// two tabs, each still owned by its own live Google Form. The merge
+// ALSO changed the Teaching Applicants tab's own gid (800656734 ->
+// 1181288827) as a side effect -- gids aren't guaranteed stable across
+// a spreadsheet-merge operation the way they are across a plain rename,
+// so if this ever needs re-pointing again, re-check the gid in the
+// tab's own URL rather than assuming it held.
 const HIR_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants"
-const HIR_SHEET_GID = 800656734; // targets the exact tab regardless of its name
+const HIR_SHEET_GID = 1181288827; // targets the exact tab regardless of its name
 
 // Columns in the response sheet (1-indexed) -- STATUS/NOTES/INTERVIEW_AT
 // reuse the form's own trailing Remarks/"Column 1" columns plus one
@@ -55,10 +64,15 @@ const HIR_COL = {
 
 const HIR_STATUSES = ['New', 'Contacted', 'Interview Scheduled', 'Interviewed', 'Offered', 'Hired', 'Rejected', 'Not Responding'];
 
-// "Interview Report Form (Responses)" -- filled in independently by
-// whoever conducts the interview. Read-only here, to warn (not block)
-// if a report can't be found once an applicant is marked Interviewed.
-const HIR_IR_SHEET_ID = '18NKMBGxT2DuGcrL_m-Y0JGcrmi6oqm6qtLB4Jb_d0Ow';
+// "Interview Reports" tab -- filled in independently by whoever conducts
+// the interview. Read-only here, to warn (not block) if a report can't
+// be found once an applicant is marked Interviewed. Same spreadsheet as
+// HIR_SHEET_ID now (see comment above); HIR_IR_SHEET_GID targets its
+// specific tab the same way HIR_SHEET_GID does for Teaching Applicants
+// -- getSheets()[0] (first tab by index) would silently grab the WRONG
+// tab now that this is no longer that tab's own dedicated file.
+const HIR_IR_SHEET_ID = HIR_SHEET_ID;
+const HIR_IR_SHEET_GID = 1241435504;
 const HIR_IR_COL = { NAME: 1, PHONE: 2, BRANCH: 3, REMARKS: 5, PDF: 6 }; // 0-indexed
 
 // Per-campus "Staff Document Submission form (Responses)" sheets -- used
@@ -563,14 +577,19 @@ function hiringUpdateStatus_(caller, body) {
   return hiringApplicants_(caller);
 }
 
-// action=hiringcheckinterviewreport -- looks up the "Interview Report
-// Form (Responses)" sheet by phone number (the one reliable shared key
-// -- that sheet has no applicant-name normalization to trust).
-// Read-only, warns, never blocks.
+// action=hiringcheckinterviewreport -- looks up the "Interview Reports"
+// tab by phone number (the one reliable shared key -- that sheet has no
+// applicant-name normalization to trust). Read-only, warns, never blocks.
+function hirIrSheet_() {
+  const ss = SpreadsheetApp.openById(HIR_IR_SHEET_ID);
+  const sheet = ss.getSheets().find(function (s) { return s.getSheetId() === HIR_IR_SHEET_GID; });
+  if (!sheet) throw new Error('Interview Reports sheet tab not found');
+  return sheet;
+}
 function hiringCheckInterviewReport_(phone) {
   const target = hirNormalizePhone_(phone);
   if (!target) return { found: false };
-  const values = SpreadsheetApp.openById(HIR_IR_SHEET_ID).getSheets()[0].getDataRange().getValues();
+  const values = hirIrSheet_().getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
     if (hirNormalizePhone_(r[HIR_IR_COL.PHONE]) === target) {
