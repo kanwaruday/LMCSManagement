@@ -421,10 +421,16 @@ function reqBarHtml_(a) {
   if (idx < 0) html += '<div class="req-hint">Next: enter the interview date below, then Save.</div>';
   html += '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">';
 
-  // 2. Interview Report Form link -- opens once the interview date is saved.
+  // 2. Interview Report -- opens once the interview date is saved. Same
+  // lookup/PDF-open as the ladder's own "Interview & Demo Done" tick
+  // (openInterviewReportPdf_, wired via data-open-report) -- column G
+  // "Upload Scanned PDF..." on the Interview Reports sheet, matched by
+  // phone. Before a report's actually on file this just alerts "not
+  // found yet" rather than opening anything; the blank submission FORM
+  // itself still lives in the row's own action buttons, unaffected.
   if (idx >= 0) {
     if (idx === 0) html += '<div class="req-hint">Next: submit the Interview Report, then refresh.</div>';
-    html += '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">🔗 open form</a>';
+    html += '<button type="button" class="mini-btn" style="display:inline-block;margin-top:4px" data-open-report="1">🔗 Interview Report</button>';
   }
 
   // 3. MD Academics interview date -- opens once the Interview Report is on file.
@@ -467,7 +473,7 @@ function wireLadderClicks_(tr) {
   tr.querySelectorAll('.ladder-item[data-stage]').forEach(function (btn) {
     btn.onclick = function () { selectLadderStage_(tr, btn.dataset.stage); };
   });
-  tr.querySelectorAll('.ladder-item[data-open-report]').forEach(function (btn) {
+  tr.querySelectorAll('[data-open-report]').forEach(function (btn) {
     btn.onclick = function () { openInterviewReportPdf_(tr._applicant); };
   });
 }
