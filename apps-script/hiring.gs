@@ -652,21 +652,33 @@ function hirTrackerSheet_() {
   return sheet;
 }
 
-// action=hiringrefreshtracker (doPost) -- Owner only. Recomputes the
-// "Applicant Live Status" tab from scratch: one row per unique applicant
-// (deduped by phone, same rule as hiringApplicants_), covering EVERY
-// applicant network-wide regardless of district or whether any campus
-// currently has an approved requisition -- deliberately the UNGATED
-// management view, distinct from the gated per-Principal dashboard.
-// Rewrites the whole tab every run rather than an incremental upsert --
-// it's a derived view, not a source of truth, so correctness from a
-// clean recompute matters more than preserving row identity across runs.
-// Doesn't check documents (HIR_DOC_SHEET_IDS) -- that's a per-candidate,
-// on-demand check in the dashboard (6 separate sheets), too slow to
-// re-run for every applicant on every refresh.
+// action=hiringrefreshtracker (doPost) -- Owner only (manual "Refresh
+// Tracker" button in the dashboard, for an instant refresh right after
+// approving something). hirRefreshTrackerCore_ below does the real work
+// and is ALSO the target of a time-driven trigger (set up directly in
+// the Apps Script editor's Triggers page, e.g. every 15 min) so the
+// tab stays live for anyone reading the Sheet directly, not just
+// whoever last remembered to click the button in the dashboard. A
+// trigger invocation has no signed-in caller at all, so the Owner-check
+// has to live in this thin wrapper, not in the core function itself.
 function hiringRefreshTracker_(caller) {
   if (!callerHasRole_(caller, 'Owner')) throw new Error('Only the Owner can refresh the tracker');
+  return hirRefreshTrackerCore_();
+}
 
+// Recomputes the "Applicant Live Status" tab from scratch: one row per
+// unique applicant (deduped by phone, same rule as hiringApplicants_),
+// covering EVERY applicant network-wide regardless of district or
+// whether any campus currently has an approved requisition --
+// deliberately the UNGATED management view, distinct from the gated
+// per-Principal dashboard. Rewrites the whole tab every run rather than
+// an incremental upsert -- it's a derived view, not a source of truth,
+// so correctness from a clean recompute matters more than preserving
+// row identity across runs. Doesn't check documents (HIR_DOC_SHEET_IDS)
+// -- that's a per-candidate, on-demand check in the dashboard (6
+// separate sheets), too slow to re-run for every applicant on every
+// refresh.
+function hirRefreshTrackerCore_() {
   const requisitions = hirApprovedRequisitions_('New/ Backup Position');
   const hiringDecisionCampuses = hirApprovedCampuses_('Hiring Decision');
   const irPhones = hirInterviewReportPhones_();
