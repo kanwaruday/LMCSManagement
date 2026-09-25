@@ -36,6 +36,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 16px}
 .field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--gray);margin-bottom:4px;font-weight:600}
 .field input,.field select{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:5px;font-size:12.5px;font-family:inherit}
+.field input:disabled,.field input:read-only,.field select:disabled{background:var(--lgray);color:var(--gray);cursor:default}
 .field-check{display:flex;align-items:center;gap:7px;padding-top:20px}
 .field-check input{width:auto}
 .field-check label{font-size:12px;color:var(--dark);text-transform:none;font-weight:500}
@@ -448,6 +449,18 @@ function prefillFromParams_() {
     subj.value = roleCode + (subj.value ? ': ' + subj.value : '') + ' (no pay-scale entry — enter Basic/GP manually)';
   }
   document.getElementById('recordCard').style.display = APPLICANT_ID ? '' : 'none';
+  // 2026-09-26, per Uday: once this page arrived via a hand-off from the
+  // Hiring Dashboard (APPLICANT_ID set), Candidate & Role is a fact
+  // about that specific applicant, not something to retype here -- lock
+  // it so a Principal can't accidentally compute an offer for the wrong
+  // person/campus/role. Someone opening this page standalone (no
+  // APPLICANT_ID) still gets normal editable fields, same as always.
+  if (APPLICANT_ID) {
+    document.getElementById('fName').readOnly = true;
+    document.getElementById('fCampus').disabled = true;
+    document.getElementById('fDesignation').disabled = true;
+    document.getElementById('fSubjects').readOnly = true;
+  }
   loadExistingNotes_();
 }
 
