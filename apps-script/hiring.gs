@@ -90,6 +90,44 @@ const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academ
 const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academics Interview Scheduled', 'Salary Offer', 'Hired'];
 function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
+// 2026-09-25, per Uday: "not by my clicking" -- the first three ladder
+// rungs are no longer something a Principal manually selects. Each one
+// is DERIVED from real evidence: a date entered, or an Interview Report
+// actually found on file (not just the button having been clicked).
+// 'Salary Offer' has no evidence source yet (Uday hasn't built the
+// Salary Dashboard's own tracking/prefill integration) -- it simply
+// never auto-derives until that exists; nothing blocks Hired in the
+// meantime, since Hired's own hard gate (CV/Report/Documents/Approvals,
+// see hiringUpdateStatus_) is the real control regardless of whether
+// Salary Offer ever got ticked. 'Hired' and 'Rejected' stay OUTSIDE
+// this derivation entirely -- they're deliberate decisions, written
+// only by an explicit click, never inferred from data.
+// Sequential (2026-09-25, per Uday) -- each rung requires the one
+// before it, not just its own evidence in isolation: Interview
+// Scheduled needs only its own date; Interview & Demo Done needs BOTH
+// that date AND a found Interview Report; MD Academics Interview
+// Scheduled needs the Report AND its own date. A later date with no
+// report (e.g. someone typed an MD Academics date before a report ever
+// existed) doesn't skip the chain -- it just caps out at whatever the
+// chain actually supports.
+function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt) {
+  if (!hasInterviewAt) return '';
+  if (!hasReport) return 'Interview Scheduled';
+  if (!hasMdInterviewAt) return 'Interview & Demo Done';
+  return 'MD Academics Interview Scheduled';
+}
+
+// The status hiringApplicants_/hirRefreshTrackerCore_ actually SHOW: a
+// stored 'Hired' or 'Rejected' always wins (terminal, deliberate,
+// never overridden by derivation); anything else is recomputed live
+// from evidence every time, so the sheet's own Status cell is never the
+// source of truth for the first three rungs -- see hiringUpdateStatus_,
+// which correspondingly only ever WRITES Hired/Rejected to that cell.
+function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasMdInterviewAt) {
+  if (storedStatus === 'Hired' || storedStatus === 'Rejected') return storedStatus;
+  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasMdInterviewAt);
+}
+
 // "Interview Reports" tab -- filled in independently by whoever conducts
 // the interview. Read-only here, to warn (not block) if a report can't
 // be found once an applicant is marked Interviewed. Same spreadsheet as
@@ -308,6 +346,7 @@ function hiringApplicants_(caller) {
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
   const values = hirSheet_().getDataRange().getValues();
+  const irPhones = hirInterviewReportPhones_(); // one sheet read, reused per-applicant below for the derived-stage check
   const byPhone = {};
   const order = [];
   for (let i = 1; i < values.length; i++) {
@@ -334,6 +373,10 @@ function hiringApplicants_(caller) {
     if (!relevantReqs.length) continue;
 
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
+    const applicantPhoneRaw = String(r[HIR_COL.PHONE - 1] || '').trim();
+    const interviewAtISO = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
+    const mdInterviewAtISO = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
+    const storedStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
     const applicant = {
       row: i + 1, // 1-based sheet row, used to write status/notes back
       applicantId: hirApplicantId_(i + 1),
@@ -344,7 +387,7 @@ function hiringApplicants_(caller) {
       matchedRoleKeys: relevantReqs.map(function (req) { return hirRoleKey_(req.campusId, req.roleLevel, req.subjects); }),
       timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
       name: String(r[HIR_COL.NAME - 1] || '').trim(),
-      phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
+      phone: applicantPhoneRaw,
       age: String(r[HIR_COL.AGE - 1] || '').trim(),
       subjects: subjects,
       branches: branches,
@@ -352,10 +395,13 @@ function hiringApplicants_(caller) {
       bed: String(r[HIR_COL.BED - 1] || '').trim(),
       gender: String(r[HIR_COL.GENDER - 1] || '').trim(),
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      status: String(r[HIR_COL.STATUS - 1] || '').trim(), // blank = not yet at Interview Scheduled, see HIR_STATUSES comment
+      // 2026-09-25, per Uday ("not by my clicking"): derived live from
+      // evidence, not read as-is from the sheet -- see
+      // hirEffectiveStatus_'s own comment.
+      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[hirNormalizePhone_(applicantPhoneRaw)], !!mdInterviewAtISO),
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
-      interviewAt: hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]),
-      mdInterviewAt: hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]),
+      interviewAt: interviewAtISO,
+      mdInterviewAt: mdInterviewAtISO,
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -683,7 +729,18 @@ function hiringUpdateStatus_(caller, body) {
   const row = parseInt(body.row, 10);
   if (!row || row < 2) throw new Error('Invalid row');
   const status = String(body.status || '').trim();
-  if (HIR_STATUSES.indexOf(status) === -1) throw new Error('Invalid status');
+  // 2026-09-25, per Uday ("not by my clicking"): the first three ladder
+  // rungs are derived live from evidence (see hirEffectiveStatus_), not
+  // written here at all -- this action only ever writes 'Hired' or
+  // 'Rejected' to the Status cell, both deliberate decisions. A blank
+  // status (or any other value, including a stale derived one the
+  // client happened to still be holding) means "just save Notes/dates,
+  // don't touch Status" -- not an error, since that's the normal case
+  // every time someone enters an interview date without also deciding
+  // Hired/Rejected in the same click.
+  if (status && status !== 'Hired' && status !== 'Rejected') {
+    throw new Error('Invalid status');
+  }
 
   const sheet = hirSheet_();
   const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
@@ -741,7 +798,12 @@ function hiringUpdateStatus_(caller, body) {
     }
   }
 
-  sheet.getRange(row, HIR_COL.STATUS).setValue(status);
+  // Only ever writes for a deliberate Hired/Rejected click -- see the
+  // comment above. Everything before that stays derived, so the Status
+  // cell itself stays blank until one of those two decisions is made.
+  if (status === 'Hired' || status === 'Rejected') {
+    sheet.getRange(row, HIR_COL.STATUS).setValue(status);
+  }
   sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
   // Guard the write side too -- an unparseable value here would plant
   // the exact same class of corrupted-cell bug hirSafeISO_ exists to
@@ -860,6 +922,9 @@ function hirRefreshTrackerCore_() {
       });
     });
 
+    const trackerInterviewAt = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
+    const trackerMdInterviewAt = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
+    const trackerStoredStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
     const applicant = {
       row: i + 1,
       applicantId: hirApplicantId_(i + 1),
@@ -871,7 +936,8 @@ function hirRefreshTrackerCore_() {
       subjects: subjects,
       branches: branches,
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      status: String(r[HIR_COL.STATUS - 1] || '').trim(),
+      // Same live derivation as hiringApplicants_ -- see hirEffectiveStatus_.
+      status: hirEffectiveStatus_(trackerStoredStatus, !!trackerInterviewAt, !!irPhones[phone], !!trackerMdInterviewAt),
       bestRole: '', matchScore: null, matchedCampus: '',
     };
     if (relevantReqs.length) {
