@@ -63,7 +63,8 @@
 //                         own header for the delegation model.
 //   hiring.gs           -- action=hiringapplicants/hiringapprovalstatus/
 //                         hiringcheckinterviewreport/hiringcheckdocuments
-//                         (GET), updatehiringstatus (POST). Hiring
+//                         (GET), updatehiringstatus/hiringrefreshtracker
+//                         (POST, latter Owner-only). Hiring
 //                         Dashboard: browse the Teaching
 //                         Applicants sheet district-scoped, track a
 //                         candidate's status, warn-not-block cross-checks
@@ -189,6 +190,7 @@ function doPost(e) {
     if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
     if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
+    if (action === 'hiringrefreshtracker') return jsonOut_(hiringRefreshTracker_(caller));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

@@ -156,14 +156,33 @@ const DOC_FORM_URLS = {
 // per-campus Form links. Keep both in sync if a sheet/form is ever recreated.
 // 2026-09-25: Teaching Applicants and Interview Reports are now tabs in
 // the SAME spreadsheet (Uday merged them) -- same ID, gid picks the tab.
-const DATASRC_APPLICANTS_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants" + "Interview Reports" tabs
+const DATASRC_APPLICANTS_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants" + "Interview Reports" + "Applicant Live Status" tabs
 const DATASRC_APPLICANTS_GID = '1181288827';
 const DATASRC_IR_GID = '1241435504';
+const DATASRC_TRACKER_GID = '1351967428';
 const DATASRC_DOC_SHEET_IDS = {
   LMS1: '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg', LMS2: '10xxFM1li1-6xzWEBEEPkZIF4MJcilddoVJkEfVbkScM',
   LMS3: '1qdQnXrWWTrgnCt82MSk_fN6Fqaox-EoenuF_XToypAc', LMS4: '1x8eFlnFcEKaCwF9HMRan_EQwTgSPq9xHubZ7n5vyR8k',
   LMS5: '1-bhS4eu4OHFhRzllsALtWLRWiGFt-KutbNke3nNlCk8', LMS6: '1-3_3BT7zHVJXy7UqxwZuZmpzUJp4uaibHNaA7onI0jU',
 };
+
+// "Refresh Tracker" (2026-09-25) -- Owner-only button that recomputes
+// the ungated "Applicant Live Status" tab (see hiringRefreshTracker_ in
+// hiring.gs). Lives alongside the data-source links since both are
+// Owner-only, sheet-adjacent conveniences.
+function refreshTracker_() {
+  const btn = document.getElementById('refreshTrackerBtn');
+  const msg = document.getElementById('refreshTrackerMsg');
+  btn.disabled = true;
+  msg.textContent = 'Refreshing…';
+  gasPost_('hiringrefreshtracker', {}).then(function (res) {
+    btn.disabled = false;
+    msg.textContent = res.success ? ('Updated ' + res.count + ' applicants ✓') : (res.error || 'Failed');
+  }).catch(function () {
+    btn.disabled = false;
+    msg.textContent = 'Network error — try again';
+  });
+}
 
 function renderDataSourceLinks_() {
   const el = document.getElementById('datasrcHiring');
@@ -172,10 +191,13 @@ function renderDataSourceLinks_() {
   const links = [
     { label: 'Teaching Applicants sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_APPLICANTS_GID) },
     { label: 'Interview Report sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_IR_GID) },
+    { label: 'Applicant Live Status sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_TRACKER_GID) },
   ];
   const campus = activeCampus_();
   if (DATASRC_DOC_SHEET_IDS[campus]) links.push({ label: 'Doc Submission sheet', url: sheetUrl(DATASRC_DOC_SHEET_IDS[campus]) });
-  el.innerHTML = '📄 ' + links.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('');
+  el.innerHTML = '📄 ' + links.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('') +
+    ' · <button type="button" class="mini-btn" id="refreshTrackerBtn" onclick="refreshTracker_()">🔄 Refresh Tracker</button>' +
+    ' <span class="sub" id="refreshTrackerMsg"></span>';
 }
 
 let SESSION = null;

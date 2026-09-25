@@ -75,6 +75,20 @@ const HIR_IR_SHEET_ID = HIR_SHEET_ID;
 const HIR_IR_SHEET_GID = 1241435504;
 const HIR_IR_COL = { NAME: 1, PHONE: 2, BRANCH: 3, REMARKS: 5, PDF: 6 }; // 0-indexed
 
+// "Applicant Live Status" tab -- 2026-09-25, per Uday: an ungated,
+// management-wide view (every applicant, not just those matching an
+// approved role for the caller's own district) for tracking the whole
+// pipeline outside the per-Principal dashboard. Same spreadsheet as
+// HIR_SHEET_ID; script-maintained (hiringRefreshTracker_ rewrites it
+// wholesale on demand), never hand-edited -- it's a derived view, not a
+// source of truth.
+const HIR_TRACKER_SHEET_GID = 1351967428;
+const HIR_TRACKER_HEADERS = [
+  'Applicant ID', 'Name', 'Phone', 'Age', 'Subjects Applied', 'Branches Applied',
+  'Status', 'Best Matching Role', 'Match Score', 'Requisition Approved?',
+  'Hiring Decision Approved?', 'Interview Report Uploaded?', 'CV Link', 'Applied On', 'Last Refreshed',
+];
+
 // Per-campus "Staff Document Submission form (Responses)" sheets -- used
 // to warn (not block) if required documents are missing before Hired.
 const HIR_DOC_SHEET_IDS = {
@@ -614,6 +628,116 @@ function hiringCheckInterviewReport_(phone) {
     }
   }
   return { found: false };
+}
+
+// Set of normalized phones with at least one uploaded Interview Report --
+// one sheet read, used by hiringRefreshTracker_ instead of a per-row
+// lookup (cheap for one candidate via the dashboard's own 🔍report
+// button, but would mean re-reading this sheet hundreds of times for
+// the tracker's bulk refresh).
+function hirInterviewReportPhones_() {
+  const values = hirIrSheet_().getDataRange().getValues();
+  const set = {};
+  for (let i = 1; i < values.length; i++) {
+    const phone = hirNormalizePhone_(values[i][HIR_IR_COL.PHONE]);
+    if (phone) set[phone] = true;
+  }
+  return set;
+}
+
+function hirTrackerSheet_() {
+  const ss = SpreadsheetApp.openById(HIR_SHEET_ID);
+  const sheet = ss.getSheets().find(function (s) { return s.getSheetId() === HIR_TRACKER_SHEET_GID; });
+  if (!sheet) throw new Error('Applicant Live Status sheet tab not found');
+  return sheet;
+}
+
+// action=hiringrefreshtracker (doPost) -- Owner only. Recomputes the
+// "Applicant Live Status" tab from scratch: one row per unique applicant
+// (deduped by phone, same rule as hiringApplicants_), covering EVERY
+// applicant network-wide regardless of district or whether any campus
+// currently has an approved requisition -- deliberately the UNGATED
+// management view, distinct from the gated per-Principal dashboard.
+// Rewrites the whole tab every run rather than an incremental upsert --
+// it's a derived view, not a source of truth, so correctness from a
+// clean recompute matters more than preserving row identity across runs.
+// Doesn't check documents (HIR_DOC_SHEET_IDS) -- that's a per-candidate,
+// on-demand check in the dashboard (6 separate sheets), too slow to
+// re-run for every applicant on every refresh.
+function hiringRefreshTracker_(caller) {
+  if (!callerHasRole_(caller, 'Owner')) throw new Error('Only the Owner can refresh the tracker');
+
+  const requisitions = hirApprovedRequisitions_('New/ Backup Position');
+  const hiringDecisionCampuses = hirApprovedCampuses_('Hiring Decision');
+  const irPhones = hirInterviewReportPhones_();
+
+  const values = hirSheet_().getDataRange().getValues();
+  const byPhone = {};
+  const order = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (!r[HIR_COL.NAME - 1]) continue;
+    const branches = String(r[HIR_COL.BRANCHES - 1] || '').trim();
+    const subjects = String(r[HIR_COL.SUBJECTS - 1] || '').trim();
+    const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
+
+    // Every approved requisition (ANY campus, no district/gate limit --
+    // this is the network-wide management view) this applicant's
+    // branches touch.
+    const relevantReqs = [];
+    let matchedCampus = '';
+    Object.keys(requisitions).forEach(function (c) {
+      const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
+      if (branches.indexOf(campusTag) === -1) return;
+      requisitions[c].forEach(function (req) {
+        if (hirSubjectsMatch_(req.subjects, subjects)) { relevantReqs.push(req); matchedCampus = c; }
+      });
+    });
+
+    const applicant = {
+      row: i + 1,
+      applicantId: hirApplicantId_(i + 1),
+      timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
+      name: String(r[HIR_COL.NAME - 1] || '').trim(),
+      phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
+      phoneNorm: phone,
+      age: String(r[HIR_COL.AGE - 1] || '').trim(),
+      subjects: subjects,
+      branches: branches,
+      cv: String(r[HIR_COL.CV - 1] || '').trim(),
+      status: String(r[HIR_COL.STATUS - 1] || '').trim() || 'New',
+      bestRole: '', matchScore: null, matchedCampus: '',
+    };
+    if (relevantReqs.length) {
+      const scored = hirScoreApplicant_(applicant, relevantReqs);
+      applicant.matchScore = scored.total;
+      applicant.bestRole = relevantReqs[0].roleLevel + (relevantReqs[0].subjects ? ': ' + relevantReqs[0].subjects : '');
+      applicant.matchedCampus = matchedCampus;
+    }
+
+    const key = phone || ('row' + applicant.row);
+    if (!phone || !byPhone[key]) { byPhone[key] = applicant; order.push(key); }
+    else { byPhone[key] = applicant; } // later row wins, same rule as hiringApplicants_
+  }
+
+  const rows = order.map(function (k) { return byPhone[k]; }).map(function (a) {
+    return [
+      a.applicantId, a.name, a.phone, a.age, a.subjects, a.branches, a.status,
+      a.bestRole || '—', a.matchScore != null ? a.matchScore : '—',
+      a.matchedCampus ? 'Yes' : 'No',
+      a.matchedCampus && hiringDecisionCampuses[a.matchedCampus] ? 'Yes' : 'No',
+      irPhones[a.phoneNorm] ? 'Yes' : 'No',
+      a.cv, a.timestamp, new Date().toISOString(),
+    ];
+  });
+
+  const sheet = hirTrackerSheet_();
+  const neededRows = rows.length + 1; // +1 for the header
+  if (sheet.getMaxRows() < neededRows) sheet.insertRowsAfter(sheet.getMaxRows(), neededRows - sheet.getMaxRows());
+  const clearRows = sheet.getMaxRows() - 1;
+  if (clearRows > 0) sheet.getRange(2, 1, clearRows, HIR_TRACKER_HEADERS.length).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, HIR_TRACKER_HEADERS.length).setValues(rows);
+  return { success: true, count: rows.length };
 }
 
 // action=hiringcheckdocuments -- looks up a campus's "Staff Document
