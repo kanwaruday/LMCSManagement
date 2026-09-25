@@ -478,13 +478,25 @@ function wireLadderClicks_(tr) {
   });
 }
 
-// Shared by the ladder's own "Interview & Demo Done" tick and the
-// "🔍 report" row-action button below, so there's one place that knows
-// how to turn a lookup result into either an opened PDF or an alert.
+// Shared by the ladder's own "Interview & Demo Done" tick, the req-bar's
+// "Interview Report" button, and the "🔍 report" row-action button, so
+// there's one place that knows how to turn a lookup result into either
+// an opened PDF or an alert.
+//
+// Opens the blank tab SYNCHRONOUSLY, before the async lookup even
+// starts, and redirects it once the PDF URL comes back -- calling
+// window.open() only after gasGet_'s fetch resolves lost the "this was
+// a real click" context by then, so most browsers silently popup-block
+// it (no error, no alert, just nothing happening -- exactly what Uday
+// hit live). A blank tab opened inside the click handler itself still
+// counts as user-initiated, so it's allowed, and can be redirected or
+// closed once the lookup finishes.
 function openInterviewReportPdf_(applicant) {
+  const win = window.open('', '_blank');
   gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (res) {
     const r = res.result;
-    if (r.found && r.pdf) { window.open(r.pdf, '_blank'); return; }
+    if (r.found && r.pdf) { if (win) win.location = r.pdf; else window.open(r.pdf, '_blank'); return; }
+    if (win) win.close();
     if (r.found) { alert('Interview report found but no PDF link on file.\nRemarks: ' + (r.remarks || '—')); return; }
     alert('No interview report found for this phone number yet.');
   });
