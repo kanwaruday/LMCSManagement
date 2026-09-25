@@ -57,12 +57,38 @@ const HIR_SHEET_GID = 1181288827; // targets the exact tab regardless of its nam
 // reuse the form's own trailing Remarks/"Column 1" columns plus one
 // appended-for-this-purpose column, same as the code this was ported
 // from -- never touching the columns the live Google Form owns.
+// Column 14 (MD_INTERVIEW_AT) added 2026-09-25 -- brand new, appended
+// past the form's own columns same as INTERVIEW_AT (13) already was.
+// If the live sheet doesn't have a column N yet, Apps Script's
+// getRange/setValue on it auto-extends the sheet's grid on first write
+// -- no manual "add a column" step needed, though a header label there
+// ("MD Academics Interview At") is worth adding by hand for anyone
+// reading the raw sheet.
 const HIR_COL = {
   TIMESTAMP: 1, NAME: 2, PHONE: 3, AGE: 4, SUBJECTS: 5, BRANCHES: 6,
   QUALIFICATION: 7, BED: 8, GENDER: 9, CV: 10, STATUS: 11, NOTES: 12, INTERVIEW_AT: 13,
+  MD_INTERVIEW_AT: 14,
 };
 
-const HIR_STATUSES = ['New', 'Contacted', 'Interview Scheduled', 'Interviewed', 'Offered', 'Hired', 'Rejected', 'Not Responding'];
+// 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
+// Contacted/Not Responding -- "irrelevant if someone's been called 100
+// times but nothing's scheduled") with an output-only ladder. No status
+// at all (blank) now means "not yet at Interview Scheduled" -- there's
+// no "New"/"Contacted" placeholder value anymore; the free-text Notes
+// field (unchanged) is still there for a Principal to jot "called 3x,
+// no pickup" without it needing to be a formal stage. 'Rejected' is a
+// terminal exit reachable from any point, not a rung on the ladder --
+// see hirLadderIndex_ below, which is what the ladder/checklist UI and
+// scoring both key off instead of raw array position.
+const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academics Interview Scheduled', 'Salary Offer', 'Hired', 'Rejected'];
+// The linear ladder only (excludes 'Rejected') -- hirLadderIndex_(status)
+// returns -1 for blank/unrecognized (including legacy 'New'/'Contacted'/
+// 'Interviewed'/'Offered'/'Not Responding' values already sitting in the
+// sheet from before this ladder changed -- those just render as "not
+// started" going forward rather than crashing or being silently
+// rewritten) and -1 for 'Rejected' too, since it's not a ladder rung.
+const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'MD Academics Interview Scheduled', 'Salary Offer', 'Hired'];
+function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
 // "Interview Reports" tab -- filled in independently by whoever conducts
 // the interview. Read-only here, to warn (not block) if a report can't
@@ -280,9 +306,10 @@ function hiringApplicants_(caller) {
       bed: String(r[HIR_COL.BED - 1] || '').trim(),
       gender: String(r[HIR_COL.GENDER - 1] || '').trim(),
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      status: String(r[HIR_COL.STATUS - 1] || '').trim() || 'New',
+      status: String(r[HIR_COL.STATUS - 1] || '').trim(), // blank = not yet at Interview Scheduled, see HIR_STATUSES comment
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
       interviewAt: hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]),
+      mdInterviewAt: hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]),
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -300,8 +327,20 @@ function hiringApplicants_(caller) {
       byPhone[phone] = applicant;
     }
   }
+  // 2026-09-25, per Uday: applicants from the last year float above
+  // everyone older, since a stale application from years ago is rarely
+  // worth chasing first even if it happens to score well -- but WITHIN
+  // each of those two buckets, the existing fit-quality score (B.Ed/
+  // subject/qualification-weighted, recency only a minor tiebreaker
+  // inside it) still decides order. This adds a recency gate on top of
+  // that scoring rather than replacing it.
   const applicants = order.map(function (k) { return byPhone[k]; })
-    .sort(function (a, b) { return b.matchScore - a.matchScore; });
+    .sort(function (a, b) {
+      const aRecent = hirIsRecent_(a.timestamp) ? 1 : 0;
+      const bRecent = hirIsRecent_(b.timestamp) ? 1 : 0;
+      if (aRecent !== bRecent) return bRecent - aRecent;
+      return b.matchScore - a.matchScore;
+    });
   // NOT `gated: true` here even if this comes out empty -- unlike the
   // two checks above (nobody approved ANYTHING), a genuinely empty
   // result after subject-matching means "approved roles exist, just no
@@ -527,6 +566,18 @@ function hirQualificationScore_(qualification, roleLevel) {
   return { score: 12, remark: 'Bachelors only (Masters preferred for ' + (roleLevel || 'this role') + ')' };
 }
 
+// Recency BUCKET for the list-order gate in hiringApplicants_ -- a
+// coarser, harder cutoff (1 year) than hirRecencyScore_'s smooth 0-180
+// day taper used inside the fit score itself. A blank/unparseable
+// timestamp (hirSafeISO_ already returns '' for those) counts as NOT
+// recent -- an application with no readable date is not something to
+// float above dated ones.
+function hirIsRecent_(timestampISO) {
+  if (!timestampISO) return false;
+  const days = (Date.now() - new Date(timestampISO).getTime()) / 86400000;
+  return days <= 365;
+}
+
 function hirRecencyScore_(timestampISO) {
   if (!timestampISO) return 5;
   const days = (Date.now() - new Date(timestampISO).getTime()) / 86400000;
@@ -597,35 +648,70 @@ function hiringUpdateStatus_(caller, body) {
     }
   }
 
+  // Rejected is a terminal exit, not a ladder rung (see HIR_LADDER) --
+  // per Uday, it always needs a one-line reason. Reuses the existing
+  // free-text Notes field rather than a dedicated column -- Notes has
+  // no other job for a Rejected row, so there's no real ambiguity, and
+  // it avoids a schema change for what's already a plain string field.
+  if (status === 'Rejected' && !String(body.notes || '').trim()) {
+    throw new Error('Enter a one-line reason for rejecting this candidate (in Notes) before saving.');
+  }
+
+  // The campus actually doing the hiring is the CALLER's own campus,
+  // not necessarily whichever campus the applicant happened to list
+  // first on the form -- a locked Principal browsing their district can
+  // now act on a candidate who only ticked a sister campus, and it's
+  // their own school's approvals/documents that matter. Owner/ALL has
+  // no single campus of their own to default to, so it keeps the old
+  // branches-parse fallback (first campus mentioned) for that one case.
+  const branchMatch = branches.match(/LMS-(\d)/);
+  const applicantCampus = caller.campusId !== 'ALL' ? caller.campusId : (branchMatch ? 'LMS' + branchMatch[1] : caller.campusId);
+
   if (status === 'Hired') {
-    // The campus actually doing the hiring is the CALLER's own campus,
-    // not necessarily whichever campus the applicant happened to list
-    // first on the form -- a locked Principal browsing their district
-    // can now mark Hired for a candidate who only ticked a sister
-    // campus, and it's their own school's approvals that matter. Owner/
-    // ALL has no single campus of their own to default to, so it keeps
-    // the old branches-parse fallback (first campus mentioned) for that
-    // one case only.
-    const branchMatch = branches.match(/LMS-(\d)/);
-    const applicantCampus = caller.campusId !== 'ALL' ? caller.campusId : (branchMatch ? 'LMS' + branchMatch[1] : caller.campusId);
+    // 2026-09-25, per Uday: "before hiring, all documents need to be
+    // uploaded, along with the existing one (CV) and Interview Report"
+    // -- this used to be warn-only (the dashboard's 🔍report/🔍docs
+    // buttons), now it's a real gate on the Hired write itself, same
+    // rigor as the two Approvals checks below. Known tradeoff: the
+    // documents check matches by NAME (no phone column in that sheet,
+    // same "best-effort" limitation hiringCheckDocuments_'s own header
+    // already documents) -- a spelling mismatch could false-negative
+    // and block a legitimate hire. The error message below names
+    // exactly what's missing so that's diagnosable on the spot rather
+    // than a silent refusal.
+    const name = String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim();
+    const phone = String(sheet.getRange(row, HIR_COL.PHONE).getValue() || '').trim();
+    const cv = String(sheet.getRange(row, HIR_COL.CV).getValue() || '').trim();
     const missing = [];
     if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
     if (!hirApprovalApproved_(applicantCampus, 'Hiring Decision')) missing.push('the "Hiring Decision" approval for this candidate');
+    if (!cv) missing.push('a CV on file');
+    if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
+    const docs = hiringCheckDocuments_(applicantCampus, name);
+    if (!docs.found) missing.push('a Staff Document Submission on file');
+    else if (!docs.complete) missing.push('the missing document(s): ' + docs.missing.join(', '));
     if (missing.length) {
-      throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join(' and ') + ' to be Approved.');
+      throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join('; and ') + '.');
     }
   }
 
   sheet.getRange(row, HIR_COL.STATUS).setValue(status);
   sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
+  // Guard the write side too -- an unparseable value here would plant
+  // the exact same class of corrupted-cell bug hirSafeISO_ exists to
+  // survive on read (a real "F"-in-a-Timestamp-cell was found live
+  // 2026-09-25). Silently skips the write rather than saving garbage;
+  // Status/Notes above still get saved either way. Two independent
+  // stage dates now (Interview Scheduled / MD Academics Interview
+  // Scheduled), each optional and written whenever present regardless
+  // of which status is currently being saved.
   if (body.interviewAt) {
-    // Guard the write side too -- an unparseable value here would plant
-    // the exact same class of corrupted-cell bug hirSafeISO_ above
-    // exists to survive on read (a real "F"-in-a-Timestamp-cell was
-    // found live 2026-09-25). Silently skips the write rather than
-    // saving garbage; Status/Notes above still get saved either way.
-    const interviewDate = new Date(body.interviewAt);
-    if (!isNaN(interviewDate.getTime())) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(interviewDate);
+    const d = new Date(body.interviewAt);
+    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(d);
+  }
+  if (body.mdInterviewAt) {
+    const d = new Date(body.mdInterviewAt);
+    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).setValue(d);
   }
   return hiringApplicants_(caller);
 }
@@ -739,7 +825,7 @@ function hirRefreshTrackerCore_() {
       subjects: subjects,
       branches: branches,
       cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      status: String(r[HIR_COL.STATUS - 1] || '').trim() || 'New',
+      status: String(r[HIR_COL.STATUS - 1] || '').trim(),
       bestRole: '', matchScore: null, matchedCampus: '',
     };
     if (relevantReqs.length) {

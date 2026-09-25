@@ -68,9 +68,20 @@ tr:hover td{background:var(--red-lt)}
 .sub{color:var(--gray);font-size:11px}
 a.linklike{color:var(--red);text-decoration:none}
 a.linklike:hover{text-decoration:underline}
-select.status-select{padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11.5px;max-width:150px}
 input.notes-input{width:130px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11.5px}
-input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px}
+input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;margin-top:3px;width:100%}
+.interview-label{font-size:9.5px;color:var(--gray);text-transform:uppercase;letter-spacing:.3px}
+/* Stage ladder (2026-09-25) -- replaces the plain status <select> with a
+   checklist: past/current stages tick green, future ones stay plain,
+   clicking any of them just changes the PENDING selection (same as the
+   old dropdown did) -- nothing saves until the row's Save button runs. */
+.ladder{display:flex;flex-direction:column;gap:3px;min-width:190px}
+.ladder-item{display:block;width:100%;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--gray);cursor:pointer}
+.ladder-item:hover{border-color:var(--red)}
+.ladder-item.ladder-done{background:#dcfce7;border-color:#bbf7d0;color:var(--green);font-weight:600}
+.ladder-item.ladder-pending{background:var(--red-lt);border-color:var(--red);color:var(--red);font-weight:700}
+.ladder-item.ladder-reject{color:#991b1b;margin-top:2px}
+.ladder-item.ladder-reject.ladder-pending{background:#fef2f2;border-color:#991b1b;color:#991b1b}
 .row-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
 .mini-btn{font-size:10.5px;padding:3px 7px;border:1px solid var(--border);border-radius:4px;background:var(--white);cursor:pointer;color:var(--gray)}
 .mini-btn:hover{border-color:var(--red);color:var(--red)}
@@ -143,8 +154,8 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
         <table>
           <thead>
             <tr>
-              <th>Match</th><th>Applicant</th><th>Subjects</th><th>Qualification</th><th>CV</th>
-              <th>Status</th><th>Notes / interview</th><th></th>
+              <th>Match</th><th>Applicant</th><th>Applied</th><th>Subjects</th><th>Qualification</th><th>CV</th>
+              <th>Stage</th><th>Notes</th><th></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -335,27 +346,89 @@ function renderDocFormLink() {
   else { link.removeAttribute('href'); link.style.opacity = '.5'; }
 }
 
+// Which campus actually owns acting on this applicant -- the CALLER's
+// own campus when locked (a Principal can now act on a sister-district
+// applicant, and it's their own school's process that applies), falling
+// back to the first campus the applicant's own form branches mention
+// only for Owner/ALL, who has no campus of their own. Shared by the
+// Staff Portal link, the Document Submission link, and the docs check
+// -- one place for this resolution instead of three slightly different
+// copies.
+function applicantCampusFor_(a) {
+  if (SESSION.campusId !== 'ALL') return SESSION.campusId;
+  const m = a.branches.match(/LMS-(\d)/);
+  return m ? 'LMS' + m[1] : '';
+}
+
 // Deep-links into the Staff Portal's New Hire tab with name + campus
 // pre-filled -- same "hand off via URL params" pattern the old Salary
 // Slip integration used, rather than duplicating the hire form here.
-// 2026-09-25: prefers the CALLER's own campus over parsing the
-// applicant's original branches -- district-wide browsing means a
-// locked Principal can now mark Hired someone who only ticked a sister
-// campus on the form, and it's the caller's own school actually doing
-// the hiring. Owner/ALL has no own campus, so it keeps the old
-// branches-parse fallback for that one case.
 function hireLinkUrl_(a) {
-  let school = SESSION.campusId !== 'ALL' ? SESSION.campusId : '';
-  if (!school) { const m = a.branches.match(/LMS-(\d)/); school = m ? 'LMS' + m[1] : ''; }
+  const school = applicantCampusFor_(a);
   const params = new URLSearchParams({ name: a.name });
   if (school) params.set('school', school);
   return '../staff/add-employee.html?' + params.toString();
 }
 
-function statusOptionsHtml_(current) {
-  return APPLICANTS.statuses.map(function (s) {
-    return '<option value="' + s + '"' + (s === current ? ' selected' : '') + '>' + s + '</option>';
+// The ladder (2026-09-25, per Uday) -- HIR_LADDER-equivalent order lives
+// in hiring.gs; APPLICANTS.statuses is that same list plus 'Rejected'
+// tacked on (see hiring.gs's HIR_STATUSES), so slicing it here keeps
+// this file from hand-duplicating the ladder order as a second literal.
+function ladderStatuses_() { return (APPLICANTS.statuses || []).filter(function (s) { return s !== 'Rejected'; }); }
+
+// Renders the clickable checklist for one row's PENDING status (doesn't
+// save anything -- selectLadderStage_ below just updates a data
+// attribute and re-renders this one row; the existing Save button is
+// still what actually commits it, same two-step pattern the old
+// dropdown+Save already used). Ticks every ladder rung up to and
+// including whichever is picked; 'Rejected' sits apart since it's a
+// terminal exit, not a rung (mirrors hiring.gs's HIR_LADDER/HIR_STATUSES
+// split).
+function ladderHtml_(pendingStatus) {
+  const ladder = ladderStatuses_();
+  const pendingIdx = ladder.indexOf(pendingStatus);
+  const rungs = ladder.map(function (s, i) {
+    const done = pendingIdx !== -1 && i <= pendingIdx;
+    const cls = 'ladder-item' + (done ? ' ladder-done' : '') + (s === pendingStatus ? ' ladder-pending' : '');
+    return '<button type="button" class="' + cls + '" data-stage="' + s + '">' + (done ? '✓ ' : '○ ') + s + '</button>';
   }).join('');
+  const rejectCls = 'ladder-item ladder-reject' + (pendingStatus === 'Rejected' ? ' ladder-pending' : '');
+  return '<div class="ladder">' + rungs + '<button type="button" class="' + rejectCls + '" data-stage="Rejected">✗ Reject</button></div>';
+}
+
+function selectLadderStage_(tr, stage) {
+  tr.dataset.pendingStatus = stage;
+  tr.querySelector('.ladder-cell').innerHTML = ladderHtml_(stage);
+  wireLadderClicks_(tr);
+  renderRowActions_(tr);
+}
+
+function wireLadderClicks_(tr) {
+  tr.querySelectorAll('.ladder-item').forEach(function (btn) {
+    btn.onclick = function () { selectLadderStage_(tr, btn.dataset.stage); };
+  });
+}
+
+// Contextual link buttons -- shown based on the PENDING (not yet saved)
+// stage selection, so a Principal sees "here's what's next" the moment
+// they click a rung, not only after Save. Ladder index gates: Interview
+// Report Form once past the interview itself; Salary Dashboard and the
+// Document Submission link both from Salary Offer onward, so documents
+// can start flowing in BEFORE the Hired click hits the hard gate in
+// hiring.gs (CV + Interview Report + all documents + both Approvals).
+function renderRowActions_(tr) {
+  const applicant = tr._applicant;
+  const pending = tr.dataset.pendingStatus;
+  const idx = ladderStatuses_().indexOf(pending);
+  const school = applicantCampusFor_(applicant);
+  const extra = [];
+  if (idx >= 1) extra.push('<a class="mini-btn" style="text-decoration:none" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">🔗 Interview Report Form</a>');
+  if (idx >= 3) extra.push('<a class="mini-btn" style="text-decoration:none" href="https://kanwaruday.github.io/lmcs-salary-dashboard/dashboard.html" target="_blank">🔗 Salary Dashboard</a>');
+  // ponytail: no data prefill into the Salary Dashboard yet -- Uday is
+  // building that tool next; this is just the doorway for now.
+  if (idx >= 3 && DOC_FORM_URLS[school]) extra.push('<a class="mini-btn" style="text-decoration:none" href="' + DOC_FORM_URLS[school] + '" target="_blank">🔗 Document Submission Form</a>');
+  if (pending === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Complete hire in Staff Portal</a>');
+  tr.querySelector('.row-extra-actions').innerHTML = extra.join('');
 }
 
 function renderRows() {
@@ -379,27 +452,29 @@ function renderRows() {
   document.getElementById('rows').innerHTML = list.map(function (a) {
     const phoneDigits = a.phone.replace(/\D/g, '');
     // matchScore/matchRemarks come pre-computed from hirScoreApplicant_
-    // (hiring.gs) -- the list itself is already sorted best-match-first
-    // server-side, this just makes the score (and WHY) visible instead
-    // of an invisible sort order.
-    return '<tr data-row="' + a.row + '">' +
+    // (hiring.gs) -- the list itself is already sorted recent-first then
+    // best-match-first server-side, this just makes the score (and WHY)
+    // visible instead of an invisible sort order.
+    return '<tr data-row="' + a.row + '" data-pending-status="' + (a.status || '') + '">' +
       '<td class="score-cell" title="' + (a.matchRemarks || []).join(' · ').replace(/"/g, '&quot;') + '">' + (a.matchScore != null ? a.matchScore : '—') + '</td>' +
       '<td><div class="name">' + a.name + ' <span class="applicant-id">' + a.applicantId + '</span></div><div class="sub">' +
         (phoneDigits ? '<a class="linklike" href="tel:' + a.phone + '">' + a.phone + '</a> · <a class="linklike" href="https://wa.me/91' + phoneDigits.slice(-10) + '" target="_blank">WhatsApp</a>' : a.phone) +
         ' · ' + (a.age || '—') + ' · ' + (a.gender || '—') + '</div></td>' +
+      '<td class="sub">' + (a.timestamp ? new Date(a.timestamp).toLocaleString() : '—') + '</td>' +
       '<td>' + (a.subjects || '—') + '</td>' +
       '<td>' + (a.qualification || '—') + (a.bed ? ' · ' + a.bed : '') + '</td>' +
       '<td>' + (a.cv ? '<a class="linklike" href="' + a.cv + '" target="_blank">View</a>' : '—') + '</td>' +
-      '<td><select class="status-select">' + statusOptionsHtml_(a.status) + '</select></td>' +
+      '<td class="ladder-cell">' + ladderHtml_(a.status) + '</td>' +
       '<td><input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes">' +
-        '<br><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '"></td>' +
+        '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">' +
+        '<div class="interview-label">MD Academics interview</div><input class="md-interview-input" type="datetime-local" value="' + (a.mdInterviewAt ? a.mdInterviewAt.slice(0, 16) : '') + '"></td>' +
       '<td>' +
         '<button class="save-btn">Save</button>' +
         '<div class="row-actions">' +
           '<button class="mini-btn" data-check="report">🔍 report</button>' +
           '<button class="mini-btn" data-check="docs">🔍 docs</button>' +
         '</div>' +
-        (a.status === 'Hired' ? '<div class="row-actions"><a class="mini-btn" style="text-decoration:none;display:inline-block" href="' + hireLinkUrl_(a) + '" target="_blank">➕ Complete hire in Staff Portal</a></div>' : '') +
+        '<div class="row-actions row-extra-actions"></div>' +
         '<div class="row-msg"></div>' +
       '</td>' +
     '</tr>';
@@ -408,22 +483,27 @@ function renderRows() {
   document.querySelectorAll('#rows tr').forEach(function (tr) {
     const row = tr.dataset.row;
     const applicant = list.find(function (a) { return String(a.row) === row; });
+    tr._applicant = applicant;
     tr.querySelector('.save-btn').onclick = function () { saveRow_(tr, applicant); };
     tr.querySelectorAll('[data-check]').forEach(function (btn) {
       btn.onclick = function () { runCheck_(applicant, btn.dataset.check); };
     });
+    wireLadderClicks_(tr);
+    renderRowActions_(tr);
   });
 }
 
 function saveRow_(tr, applicant) {
   const btn = tr.querySelector('.save-btn');
   const msg = tr.querySelector('.row-msg');
-  const status = tr.querySelector('.status-select').value;
+  const status = tr.dataset.pendingStatus || '';
   const notes = tr.querySelector('.notes-input').value;
   const interviewAt = tr.querySelector('.interview-input').value;
+  const mdInterviewAt = tr.querySelector('.md-interview-input').value;
+  if (!status) { msg.textContent = 'Pick a stage above first'; msg.className = 'row-msg err'; return; }
   btn.disabled = true;
   msg.textContent = ''; msg.className = 'row-msg';
-  gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt })
+  gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt, mdInterviewAt: mdInterviewAt })
     .then(function (res) {
       btn.disabled = false;
       if (!res.success) { msg.textContent = res.error; msg.className = 'row-msg err'; return; }
@@ -440,8 +520,7 @@ function runCheck_(applicant, kind) {
       alert(r.found ? ('Interview report found.\n\nRemarks: ' + (r.remarks || '—') + '\nPDF: ' + (r.pdf || '—')) : 'No interview report found for this phone number yet.');
     });
   } else {
-    const campus = activeCampus_() === 'ALL' ? (applicant.branches.match(/LMS-(\d)/) || [])[0] : activeCampus_();
-    const campusId = campus && campus.indexOf('LMS-') === 0 ? 'LMS' + campus.slice(4) : campus;
+    const campusId = applicantCampusFor_(applicant);
     gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (res) {
       const r = res.result;
       if (!r.found) { alert('No document submission found yet for ' + applicant.name + ' at ' + campusId + '.'); return; }
