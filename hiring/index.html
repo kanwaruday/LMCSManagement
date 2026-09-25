@@ -375,7 +375,8 @@ function ladderStatuses_() { return (APPLICANTS.statuses || []).filter(function 
 // hirEffectiveStatus_ in hiring.gs) and just renders as a plain tick
 // here, not a button; `currentStatus` is that server-computed value,
 // used purely for displaying how far along the ladder someone is.
-function ladderHtml_(currentStatus) {
+function ladderHtml_(a) {
+  const currentStatus = a.status;
   const ladder = ladderStatuses_();
   const idx = ladder.indexOf(currentStatus);
   const rungs = ladder.map(function (s, i) {
@@ -389,9 +390,17 @@ function ladderHtml_(currentStatus) {
     // 'Interview & Demo Done' only ever ticks once a real Interview Report
     // is on file (see hirDerivedLadderStage_ in hiring.gs) -- once done,
     // make the tick itself open that report's PDF instead of leaving it a
-    // dead label, so a Principal doesn't have to dig for it separately.
+    // dead label. 2026-09-26, per Uday (still blank after the earlier
+    // async-lookup fixes): a.interviewReportPdf now comes straight from
+    // the same hiringApplicants_ payload this row was already built
+    // from (hiring.gs's hirInterviewReportPhones_ joins it in bulk) --
+    // a plain <a href>, same as the CV link, instead of a button that
+    // has to fetch the URL first and then call window.open() from
+    // inside a .then() callback, which most browsers stop treating as a
+    // real click by the time it resolves and silently block.
     if (s === 'Interview & Demo Done' && done) {
-      return '<button type="button" class="' + cls + '" data-open-report="1">' + '✓ ' + s + '</button>';
+      if (a.interviewReportPdf) return '<a class="' + cls + '" style="text-decoration:none;box-sizing:border-box" href="' + a.interviewReportPdf + '" target="_blank">✓ ' + s + '</a>';
+      return '<span class="' + cls + '" title="Report on file, but no PDF uploaded in that row">✓ ' + s + '</span>';
     }
     return '<span class="' + cls + '">' + (done ? '✓ ' : '○ ') + s + '</span>';
   }).join('');
@@ -425,19 +434,28 @@ function reqBarHtml_(a) {
   // trying to do two different jobs depending on stage (go submit vs.
   // go view), which read as broken/confusing. Now it's a header with
   // exactly one action under it at a time: "Submit Report" (the blank
-  // Google Form) before a report's on file, "View Report" (the
-  // applicant's own PDF via openInterviewReportPdf_/data-open-report --
-  // column G "Upload Scanned PDF..." on the Interview Reports sheet,
-  // matched by phone) once idx has actually advanced past this rung,
-  // i.e. hirDerivedLadderStage_ in hiring.gs already confirmed one
-  // exists.
+  // Google Form) before a report's on file, "View Report" once
+  // hirDerivedLadderStage_ (hiring.gs) has confirmed one exists.
+  //
+  // View Report is a.interviewReportPdf -- a plain <a href>, straight
+  // from the same hiringApplicants_ payload the row was already built
+  // from (hiring.gs's hirInterviewReportPhones_ joins it in bulk from
+  // column G on the Interview Reports sheet), not a button that fetches
+  // the URL on click and then calls window.open() from inside a
+  // .then() -- that pattern is what kept opening a blank tab: most
+  // browsers stop treating a window.open() as tied to the original
+  // click by the time an async lookup resolves, and silently block it.
   if (idx === 0) {
     html += '<div class="req-hint">Next: submit the Interview Report, then refresh.</div>' +
       '<div class="interview-label">Interview Reports</div>' +
       '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="https://forms.gle/3J5hhHVfTdjn162t9" target="_blank">📝 Submit Report</a>';
   } else if (idx >= 1) {
-    html += '<div class="interview-label">Interview Reports</div>' +
-      '<button type="button" class="mini-btn" style="display:inline-block;margin-top:4px" data-open-report="1">🔍 View Report</button>';
+    html += '<div class="interview-label">Interview Reports</div>';
+    if (a.interviewReportPdf) {
+      html += '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + a.interviewReportPdf + '" target="_blank">🔍 View Report</a>';
+    } else {
+      html += '<div class="sub" style="margin-top:4px">Report on file, but no PDF uploaded in that row.</div>';
+    }
   }
 
   // 3. MD Academics interview date -- opens once the Interview Report is on file.
@@ -479,41 +497,6 @@ function selectLadderStage_(tr, stage) {
 function wireLadderClicks_(tr) {
   tr.querySelectorAll('.ladder-item[data-stage]').forEach(function (btn) {
     btn.onclick = function () { selectLadderStage_(tr, btn.dataset.stage); };
-  });
-  tr.querySelectorAll('[data-open-report]').forEach(function (btn) {
-    btn.onclick = function () { openInterviewReportPdf_(tr._applicant); };
-  });
-}
-
-// Shared by the ladder's own "Interview & Demo Done" tick, the req-bar's
-// "Interview Report" button, and the "🔍 report" row-action button, so
-// there's one place that knows how to turn a lookup result into either
-// an opened PDF or an alert.
-//
-// Opens the blank tab SYNCHRONOUSLY, before the async lookup even
-// starts, and redirects it once the PDF URL comes back -- calling
-// window.open() only after gasGet_'s fetch resolves lost the "this was
-// a real click" context by then, so most browsers silently popup-block
-// it (no error, no alert, just nothing happening -- exactly what Uday
-// hit live). A blank tab opened inside the click handler itself still
-// counts as user-initiated, so it's allowed, and can be redirected or
-// closed once the lookup finishes.
-// .catch added 2026-09-26 -- without it, a failed fetch or a non-JSON
-// response (gasGet_ has no error handling of its own) left the blank
-// tab opened above sitting blank FOREVER with no alert either, since
-// the .then() callback simply never ran -- exactly the "still leads to
-// a blank page" Uday hit even after the res.result fix. Now a failure
-// closes the tab and says so, instead of leaving it hanging silently.
-function openInterviewReportPdf_(applicant) {
-  const win = window.open('', '_blank');
-  gasGet_('hiringcheckinterviewreport', { phone: applicant.phone }).then(function (r) {
-    if (r.found && r.pdf) { if (win) win.location = r.pdf; else window.open(r.pdf, '_blank'); return; }
-    if (win) win.close();
-    if (r.found) { alert('Interview report found but no PDF link on file.\nRemarks: ' + (r.remarks || '—')); return; }
-    alert('No interview report found for this phone number yet.');
-  }).catch(function (err) {
-    if (win) win.close();
-    alert('Could not look up the interview report (network or server error). Try again.\n' + (err && err.message ? err.message : err));
   });
 }
 
@@ -578,7 +561,7 @@ function renderRows() {
       '<td>' + (a.subjects || '—') + '</td>' +
       '<td>' + (a.qualification || '—') + (a.bed ? ' · ' + a.bed : '') + '</td>' +
       '<td>' + (a.cv ? '<a class="linklike" href="' + a.cv + '" target="_blank">View</a>' : '—') + '</td>' +
-      '<td class="ladder-cell">' + ladderHtml_(a.status) + '</td>' +
+      '<td class="ladder-cell">' + ladderHtml_(a) + '</td>' +
       '<td class="reqbar-cell">' + reqBarHtml_(a) +
         '<input class="notes-input" type="text" value="' + (a.notes || '').replace(/"/g, '&quot;') + '" placeholder="Notes"></td>' +
       '<td>' +
@@ -634,7 +617,11 @@ function saveRow_(tr, applicant) {
 
 function runCheck_(applicant, kind) {
   if (kind === 'report') {
-    openInterviewReportPdf_(applicant);
+    // Synchronous -- applicant.interviewReportPdf is already sitting in
+    // APPLICANTS from the initial page load (see ladderHtml_'s own
+    // comment for why this stopped being an async per-click lookup).
+    if (applicant.interviewReportPdf) window.open(applicant.interviewReportPdf, '_blank');
+    else alert('No interview report found for this phone number yet.');
   } else {
     const campusId = applicantCampusFor_(applicant);
     gasGet_('hiringcheckdocuments', { campusId: campusId, name: applicant.name }).then(function (r) {

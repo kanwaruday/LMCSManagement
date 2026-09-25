@@ -152,7 +152,7 @@ const HIR_TRACKER_SHEET_GID = 1351967428;
 const HIR_TRACKER_HEADERS = [
   'Applicant ID', 'Name', 'Phone', 'Age', 'Subjects Applied', 'Branches Applied',
   'Status', 'Best Matching Role', 'Match Score', 'Requisition Approved?',
-  'Hiring Decision Approved?', 'Interview Report Uploaded?', 'CV Link', 'Applied On', 'Last Refreshed',
+  'Hiring Decision Approved?', 'Interview Report Link', 'CV Link', 'Applied On', 'Last Refreshed',
 ];
 
 // Per-campus "Staff Document Submission form (Responses)" sheets -- used
@@ -484,11 +484,14 @@ function hiringApplicants_(caller) {
       // 2026-09-25, per Uday ("not by my clicking"): derived live from
       // evidence, not read as-is from the sheet -- see
       // hirEffectiveStatus_'s own comment.
-      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[hirNormalizePhone_(applicantPhoneRaw)], !!mdInterviewAtISO, !!salaryOfferAtISO),
+      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[phone], !!mdInterviewAtISO, !!salaryOfferAtISO),
       notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
       interviewAt: interviewAtISO,
       mdInterviewAt: mdInterviewAtISO,
       salaryOfferAt: salaryOfferAtISO,
+      // Direct link, not a per-click lookup -- see hirInterviewReportPhones_'s
+      // own comment for why.
+      interviewReportPdf: (irPhones[phone] && irPhones[phone].pdf) || '',
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -956,12 +959,24 @@ function hiringCheckInterviewReport_(phone) {
 // lookup (cheap for one candidate via the dashboard's own 🔍report
 // button, but would mean re-reading this sheet hundreds of times for
 // the tracker's bulk refresh).
+// 2026-09-26, per Uday: now carries the PDF link (column G, "Upload
+// Scanned PDF...") and remarks alongside the plain true/false match,
+// not just the match itself -- an object is truthy exactly like the
+// old `true` was, so every existing `!!irPhones[phone]`/`irPhones[phone]
+// ? ... : ...` callsite below keeps working unchanged. This is what
+// lets hiringApplicants_ hand the frontend a ready-to-click PDF link
+// directly in the initial payload instead of a separate per-click
+// lookup (hiringcheckinterviewreport) -- that lookup used to back a
+// window.open() called only after its own async round-trip resolved,
+// which most browsers no longer treat as tied to the original click
+// and silently popup-block; a plain <a href> from data already on hand
+// sidesteps that entirely, same as the CV link already does.
 function hirInterviewReportPhones_() {
   const values = hirIrSheet_().getDataRange().getValues();
   const set = {};
   for (let i = 1; i < values.length; i++) {
     const phone = hirNormalizePhone_(values[i][HIR_IR_COL.PHONE]);
-    if (phone) set[phone] = true;
+    if (phone) set[phone] = { pdf: String(values[i][HIR_IR_COL.PDF] || '').trim(), remarks: String(values[i][HIR_IR_COL.REMARKS] || '').trim() };
   }
   return set;
 }
@@ -1074,7 +1089,12 @@ function hirRefreshTrackerCore_() {
       a.bestRole || '—', a.matchScore != null ? a.matchScore : '—',
       a.matchedCampus ? 'Yes' : 'No',
       a.matchedCampus && hiringDecisionCampuses[a.matchedCampus] ? 'Yes' : 'No',
-      irPhones[a.phoneNorm] ? 'Yes' : 'No',
+      // 2026-09-26, per Uday: the actual PDF link, not just Yes/No --
+      // irPhones[phone] is now an { pdf, remarks } object (see
+      // hirInterviewReportPhones_'s own comment), so this is directly
+      // clickable from the tracker sheet instead of requiring a second
+      // trip through the Interview Reports tab.
+      (irPhones[a.phoneNorm] && irPhones[a.phoneNorm].pdf) || '',
       a.cv, a.timestamp, new Date().toISOString(),
     ];
   });
