@@ -633,22 +633,42 @@ function listVerificationQueue_(caller) {
   return out;
 }
 
-/** data: {filename, documentType, driveLink, newEmployeeCode} -- matches
- *  the row to update by filename+documentType+driveLink together (not
- *  just filename+type) so a queue item built from one specific row can
- *  never accidentally overwrite a different one that happens to share a
- *  filename. Writes the new employee's code/name/school onto that row and
- *  stamps Status with who verified it and when -- distinguishes a human-
- *  confirmed reassignment from the importer's own automated guesses. */
+/** data: {filename, documentType, driveLink, newEmployeeCode?, remarks?}
+ *  -- matches the row to update by filename+documentType+driveLink
+ *  together (not just filename+type) so a queue item built from one
+ *  specific row can never accidentally overwrite a different one that
+ *  happens to share a filename. At least one of newEmployeeCode/remarks
+ *  is required:
+ *  - newEmployeeCode given: reassigns as before (writes the new
+ *    employee's code/name/school onto the row); if remarks is ALSO
+ *    given, it's appended to the Status stamp.
+ *  - remarks only, no newEmployeeCode: for a document that can't be
+ *    attributed to anyone currently in the live roster (per Uday,
+ *    2026-09-24: a departed employee's leftover file, or "NA" -- not
+ *    actually a real certificate) -- the row's Employee Code/Name are
+ *    left exactly as they are, only Status records the remark. Scoped
+ *    by the ROW'S OWN current School in this case (there's no target
+ *    employee to scope by); by the target employee's school when
+ *    reassigning, same as before. Either way, Status records who
+ *    resolved it and when -- distinguishes a human decision from the
+ *    importer's own automated guesses. */
 function reassignCertificate_(data, caller) {
-  if (!data.filename || !data.documentType || !data.newEmployeeCode) {
-    throw new Error('filename, documentType, and newEmployeeCode are required');
+  if (!data.filename || !data.documentType) {
+    throw new Error('filename and documentType are required');
   }
+  const remarks = data.remarks ? String(data.remarks).trim() : '';
+  if (!data.newEmployeeCode && !remarks) {
+    throw new Error('Pick an employee, add a remark, or both');
+  }
+
   const ss = openEmpWorkbook_();
-  const target = readRowByCode_(ss, 'EmpMaster', data.newEmployeeCode);
-  if (!target) throw new Error('Employee not found: ' + data.newEmployeeCode);
-  const targetSchool = String(target.SchoolCode || '').trim().toUpperCase();
-  assertScope_(caller, [targetSchool]);
+  let target = null, targetSchool = '';
+  if (data.newEmployeeCode) {
+    target = readRowByCode_(ss, 'EmpMaster', data.newEmployeeCode);
+    if (!target) throw new Error('Employee not found: ' + data.newEmployeeCode);
+    targetSchool = String(target.SchoolCode || '').trim().toUpperCase();
+    assertScope_(caller, [targetSchool]);
+  }
 
   const sheet = ss.getSheetByName('Certificate Links');
   if (!sheet) throw new Error('Certificate Links tab not found');
@@ -669,10 +689,25 @@ function reassignCertificate_(data, caller) {
     if (filename !== data.filename || type !== data.documentType) continue;
     if (data.driveLink && link !== data.driveLink) continue;
     const rowNum = i + 1;
-    if (codeCol >= 0) sheet.getRange(rowNum, codeCol + 1).setValue(data.newEmployeeCode);
-    if (nameCol >= 0) sheet.getRange(rowNum, nameCol + 1).setValue(target.Name || '');
-    if (schoolCol >= 0) sheet.getRange(rowNum, schoolCol + 1).setValue(STAFF_CAMPUS_SHEET_LABEL_[targetSchool] || targetSchool);
-    if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setValue('Reassigned (verified by ' + caller.email + ', ' + formatStaffDate_(new Date()) + ')');
+
+    if (target) {
+      if (codeCol >= 0) sheet.getRange(rowNum, codeCol + 1).setValue(data.newEmployeeCode);
+      if (nameCol >= 0) sheet.getRange(rowNum, nameCol + 1).setValue(target.Name || '');
+      if (schoolCol >= 0) sheet.getRange(rowNum, schoolCol + 1).setValue(STAFF_CAMPUS_SHEET_LABEL_[targetSchool] || targetSchool);
+      if (statusCol >= 0) {
+        const stamp = 'Reassigned (verified by ' + caller.email + ', ' + formatStaffDate_(new Date()) + ')';
+        sheet.getRange(rowNum, statusCol + 1).setValue(remarks ? stamp + ' -- ' + remarks : stamp);
+      }
+    } else {
+      // Remarks-only -- no employee target to scope by, so scope against
+      // the row's OWN current school instead (same normalization as
+      // listVerificationQueue_/autoResolveFromResponseSheets_).
+      const rowSchool = (schoolCol >= 0 ? String(rows[i][schoolCol] || '').trim() : '').replace(/\s+/g, '').toUpperCase();
+      assertScope_(caller, [rowSchool]);
+      if (statusCol >= 0) {
+        sheet.getRange(rowNum, statusCol + 1).setValue('Resolved with remark (' + caller.email + ', ' + formatStaffDate_(new Date()) + '): ' + remarks);
+      }
+    }
     return { success: true };
   }
   throw new Error('Could not find that document row -- it may have already been reassigned by someone else');

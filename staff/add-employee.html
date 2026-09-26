@@ -98,6 +98,7 @@ td.name{font-weight:700}
 .verify-meta .current{color:var(--gray)}
 .verify-meta .reason{width:100%;color:#9ca3af;font-size:11px}
 .verify-action{display:flex;gap:8px}
+.verify-action + .verify-action{margin-top:6px}
 .verify-action input{flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:5px;font-size:12.5px;font-family:inherit}
 .verify-action input:focus{outline:none;border-color:var(--red)}
 .verify-btn{background:var(--red);color:#fff;border:none;border-radius:5px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -658,8 +659,11 @@ function renderVerificationQueue() {
         '<span class="reason">' + esc(r.status) + '</span>' +
       '</div>' +
       '<div class="verify-action">' +
-        '<input type="text" class="verify-input" list="verifyEmployeeList" placeholder="Search the correct employee…">' +
+        '<input type="text" class="verify-input" list="verifyEmployeeList" placeholder="Search the correct employee (optional if adding a remark)…">' +
         '<button type="button" class="verify-btn">Reassign</button>' +
+      '</div>' +
+      '<div class="verify-action">' +
+        '<input type="text" class="verify-remarks" placeholder="Remarks (e.g. \'Belongs to a former employee\', \'NA\')…">' +
       '</div>' +
       '<div class="verify-msg"></div>' +
     '</div>';
@@ -673,18 +677,25 @@ document.getElementById('verifyBody').addEventListener('click', async function (
   const idx = Number(item.dataset.idx);
   const row = verificationQueueRows[idx];
   const input = item.querySelector('.verify-input');
+  const remarksInput = item.querySelector('.verify-remarks');
   const msg = item.querySelector('.verify-msg');
-  const picked = resolveEmployeeLabel(input);
-  if (!picked) {
+  const remarks = remarksInput.value.trim();
+  const picked = input.value.trim() ? resolveEmployeeLabel(input) : null;
+  if (input.value.trim() && !picked) {
     msg.className = 'verify-msg err';
-    msg.textContent = 'Pick an existing employee from the list first';
+    msg.textContent = 'Pick an existing employee from the list, clear the search box, or both';
+    return;
+  }
+  if (!picked && !remarks) {
+    msg.className = 'verify-msg err';
+    msg.textContent = 'Pick an employee, add a remark, or both';
     return;
   }
   btn.disabled = true;
   try {
     const json = await callStaffApi('reassigncertificate', {
       filename: row.filename, documentType: row.documentType, driveLink: row.driveLink,
-      newEmployeeCode: picked.employeeCode,
+      newEmployeeCode: picked ? picked.employeeCode : '', remarks: remarks,
     });
     if (!json.success) throw new Error(json.error || 'reassign failed');
     verificationQueueRows.splice(idx, 1);
