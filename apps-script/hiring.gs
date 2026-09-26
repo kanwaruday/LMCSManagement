@@ -541,18 +541,22 @@ function hiringApplicants_(caller) {
   return { success: true, statuses: HIR_STATUSES, applicants: applicants };
 }
 
-// action=hiringapprovalstatus -- district-scoped approval detail for the
-// Hiring Dashboard's status strip. Deliberately NOT reusing
-// action=approvalslist (aprList_ in approvals.gs), which scopes a locked
-// Principal to ONLY their own campus's approvals -- correct for that
-// generic Approvals tab (a sister campus's Compensation Change or
-// Disciplinary request is nobody else's business), but hiringApplicants_
-// above now shows a locked Principal their whole DISTRICT's applicants
-// (2026-09-25), so the strip needs to say which district campus(es)
-// actually hold the approval unlocking that view, without widening the
-// general endpoint's PII scoping for every other category.
+// action=hiringapprovalstatus -- approval detail for the Hiring
+// Dashboard's role-pills (Step 2 of the journey). Own-campus only for a
+// locked caller, per Uday (2026-09-26): "New/ Backup Position" is a
+// campus-specific hiring decision, not something a sister campus's
+// Principal should see or act on, even though hiringApplicants_ below
+// deliberately stays DISTRICT-wide for the *candidate* pool (a name
+// that filled the one shared Google Form can still end up hired at a
+// sister campus -- that's a different, still-valid concern). This
+// stays consistent with that in practice: renderRolesList_/selectRole_
+// in the frontend only ever reveal applicants for one EXPLICITLY
+// clicked role-pill, and a sister campus's roles no longer appear as
+// pills to click at all, so a locked Principal can never surface a
+// sister-campus applicant through this screen even though the
+// underlying candidate match could still exist.
 function hiringApprovalStatus_(caller) {
-  const visibleCampuses = caller.campusId === 'ALL' ? Object.keys(HIR_DISTRICT_CAMPUSES) : hirDistrictCampuses_(caller.campusId);
+  const visibleCampuses = caller.campusId === 'ALL' ? Object.keys(HIR_DISTRICT_CAMPUSES) : [caller.campusId];
   const newPosition = hirApprovedRequisitions_('New/ Backup Position');
   const hiringDecision = hirApprovedCampuses_('Hiring Decision');
   return {
