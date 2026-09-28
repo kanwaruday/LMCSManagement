@@ -438,6 +438,7 @@ function recordSalaryOffer_() {
     EXISTING_NOTES = notes;
     if (SALARY_OFFER_ALREADY_SUBMITTED) {
       msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
+      returnToHiringDashboard_();
       return;
     }
     // First time recording for this applicant -- also submit the
@@ -459,11 +460,24 @@ function recordSalaryOffer_() {
         ? 'Recorded ✓ — submitted for Owner approval.'
         : 'Recorded, but the approval request failed: ' + (aprRes.error || 'unknown error') + ' — try Record again.';
       msg.className = aprRes.success ? 'record-msg ok' : 'record-msg err';
+      // Only return to the Hiring Dashboard on the genuinely green path
+      // -- per Uday, an approval-submit failure needs "try Record
+      // again" to stay on screen and actionable, not whisked away.
+      if (aprRes.success) returnToHiringDashboard_();
     }).catch(function () {
       msg.textContent = 'Recorded, but the approval request hit a network error — try Record again.';
       msg.className = 'record-msg err';
     });
   }).catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'record-msg err'; });
+}
+
+// 2026-09-28, per Uday: after a successful Record, give the Principal a
+// moment to actually read the green confirmation, then take them back
+// to the Hiring Dashboard where this applicant now shows the next
+// ladder rung -- closes the loop instead of leaving them stranded on
+// the Salary Dashboard with nothing left to do here.
+function returnToHiringDashboard_() {
+  setTimeout(function () { location.href = '../hiring/index.html'; }, 1400);
 }
 
 function wireInputs_() {
