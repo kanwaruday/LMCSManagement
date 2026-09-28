@@ -101,6 +101,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
           <div class="field"><label>Designation</label><select id="fDesignation"><option value="">— manual entry —</option></select></div>
           <div class="field"><label>Subjects (info only)</label><input type="text" id="fSubjects" placeholder="e.g. P.Ed"></div>
           <div class="field-check" id="fExistingRow" style="display:none"><input type="checkbox" id="fExisting"><label for="fExisting">Existing employee (revision, not new hire)</label></div>
+          <div class="field-check" id="fDesigBasedRow" style="display:none"><input type="checkbox" id="fDesigBased"><label for="fDesigBased">Designation Based Salary</label></div>
         </div>
       </div>
 
@@ -536,7 +537,8 @@ function wireInputs_() {
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', applyExistingEmployeePay_);
   document.getElementById('recordBtn').onclick = recordSalaryOffer_;
-  document.getElementById('fExisting').addEventListener('change', toggleExistingEmployeeSearch_);
+  document.getElementById('fExisting').addEventListener('change', function () { onModeCheckboxChange_('existing'); });
+  document.getElementById('fDesigBased').addEventListener('change', function () { onModeCheckboxChange_('designation'); });
 }
 
 // 2026-09-26, per Uday: checking "Existing employee" turns Candidate
@@ -574,6 +576,60 @@ function toggleExistingEmployeeSearch_() {
       })
       .catch(function (err) { console.warn('Could not load staff roster for search:', err); });
   }
+}
+
+// 2026-09-28, per Uday: a third mode, alongside default New Hire and
+// Existing Employee -- shows the STANDARD pay-scale salary for a
+// Designation+Campus combination, no specific person involved (e.g.
+// "what does a PRT cost at LMS 2"). Mutually exclusive with Existing
+// Employee (see onModeCheckboxChange_ below, which unchecks the other
+// before re-applying both mode functions); Designation and Campus are
+// the only fields left editable -- everything else is disabled and
+// auto-computed from the pay-scale table at 0 experience/full load
+// (the same base case applyDesignationPay_ already produces for a plain
+// designation pick), so it can't drift into being about a specific
+// negotiated case. Record/EPF-exemption don't apply without a real
+// candidate, so both are hidden in this mode.
+const DESIG_MODE_LOCKED_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fChildGrade', 'fTuiFee'];
+function applyDesignationBasedMode_() {
+  const on = document.getElementById('fDesigBased').checked;
+  const nameInput = document.getElementById('fName');
+  const subjInput = document.getElementById('fSubjects');
+  nameInput.disabled = on;
+  subjInput.disabled = on;
+  if (on) {
+    nameInput.removeAttribute('list');
+    nameInput.value = '';
+    subjInput.value = '';
+  }
+  DESIG_MODE_LOCKED_IDS.forEach(function (id) { document.getElementById(id).disabled = on; });
+  const mdExempt = document.getElementById('fMdExempt');
+  mdExempt.checked = false;
+  mdExempt.disabled = on;
+  document.getElementById('epfBox').style.display = 'none';
+  document.getElementById('recordCard').style.display = (on || !APPLICANT_ID) ? 'none' : '';
+  if (on) {
+    document.getElementById('fLmsExp').value = 0;
+    document.getElementById('fOtherExp').value = 0;
+    applyDesignationPay_();
+    applyCampusRates_();
+  }
+  renderResults_();
+}
+
+// Shared entry point for BOTH mode checkboxes -- enforces mutual
+// exclusivity (checking one unchecks the other) then unconditionally
+// re-applies both mode functions, which are each safe to call with their
+// own checkbox off (they just restore normal field state).
+function onModeCheckboxChange_(which) {
+  if (which === 'existing' && document.getElementById('fExisting').checked) {
+    document.getElementById('fDesigBased').checked = false;
+  }
+  if (which === 'designation' && document.getElementById('fDesigBased').checked) {
+    document.getElementById('fExisting').checked = false;
+  }
+  toggleExistingEmployeeSearch_();
+  applyDesignationBasedMode_();
 }
 
 // 2026-09-28, per Uday: picking a real employee out of the search box
@@ -668,7 +724,10 @@ function showApp(session) {
   // 2026-09-26, per Uday: revising an existing employee's pay is an
   // Owner-only action -- a Principal/Coordinator only ever computes a
   // fresh new-hire offer, so they don't see this checkbox at all.
-  if (LMCS.hasRole(session, 'Owner')) document.getElementById('fExistingRow').style.display = '';
+  if (LMCS.hasRole(session, 'Owner')) {
+    document.getElementById('fExistingRow').style.display = '';
+    document.getElementById('fDesigBasedRow').style.display = '';
+  }
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
   // Config (pay scale/rates/constants, all read live from Uday's
