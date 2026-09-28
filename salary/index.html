@@ -541,86 +541,133 @@ function wireInputs_() {
   document.getElementById('fDesigBased').addEventListener('change', function () { onModeCheckboxChange_('designation'); });
 }
 
+// 2026-09-28, per Uday (full redesign of this card's field-locking):
+// FOUR mutually exclusive modes now govern which fields are actually
+// editable, computed fresh from state every time something relevant
+// changes (a checkbox, or arriving with an applicant already linked):
+//   'designation' -- fDesigBased checked. Only Campus+Designation
+//       editable; a standard pay-scale lookup for a role, no person
+//       involved at all.
+//   'existing'    -- fExisting checked. Only Candidate Name is active
+//       (a searchable box against the real staff roster); everything
+//       else -- Campus/Designation included -- is derived automatically
+//       from her real record once picked, and locked.
+//   'handoff'     -- neither checkbox checked, but APPLICANT_ID is set
+//       (arrived via a Hiring Dashboard deep link). Name+Designation
+//       (and therefore the standard-scale salary) are already decided by
+//       which applicant/role this is -- every field is locked, nothing
+//       to retype. The two mode checkboxes themselves are hidden from
+//       everyone except the Owner in every mode (see showApp), so a
+//       Principal/Coordinator arriving this way never sees them at all.
+//   'new'         -- the default: nothing checked, no APPLICANT_ID.
+//       Every field is a normal, freely editable new-hire offer.
+// currentMode_() is the single source of truth others should read
+// instead of re-deriving it from the checkboxes/APPLICANT_ID themselves.
+function currentMode_() {
+  if (document.getElementById('fDesigBased').checked) return 'designation';
+  if (document.getElementById('fExisting').checked) return 'existing';
+  if (APPLICANT_ID) return 'handoff';
+  return 'new';
+}
+
+// Every field besides Candidate Name/Campus/Designation/Subjects -- these
+// are editable ONLY in 'new' mode; every other mode locks all of them
+// (auto-computed instead), so "which fields can I type in" always
+// reduces to one simple rule instead of four modes each hand-rolling it.
+const EXTRA_FIELD_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fMdExempt', 'fChildGrade', 'fTuiFee'];
+
+function applyFieldLockState_() {
+  const mode = currentMode_();
+  const nameInput = document.getElementById('fName');
+  const campusSel = document.getElementById('fCampus');
+  const desigSel = document.getElementById('fDesignation');
+  const subjInput = document.getElementById('fSubjects');
+
+  // Candidate Name: the ONE active field in 'existing' mode (searchable);
+  // shown-but-locked in 'handoff' (it's a known fact, not editable); fully
+  // disabled+cleared in 'designation' (no person involved); free in 'new'.
+  if (mode === 'existing') {
+    nameInput.disabled = false; nameInput.readOnly = false;
+    nameInput.setAttribute('list', 'fNameList');
+  } else if (mode === 'designation') {
+    nameInput.disabled = true; nameInput.readOnly = false;
+    nameInput.value = ''; nameInput.removeAttribute('list');
+  } else if (mode === 'handoff') {
+    nameInput.disabled = false; nameInput.readOnly = true;
+    nameInput.removeAttribute('list');
+  } else {
+    nameInput.disabled = false; nameInput.readOnly = false;
+    nameInput.removeAttribute('list');
+  }
+
+  // Campus/Designation: the ONLY two fields left editable in
+  // 'designation' mode; also editable in 'new'; locked (auto-derived) in
+  // 'existing' and 'handoff'.
+  const lockCampusDesig = (mode === 'existing' || mode === 'handoff');
+  campusSel.disabled = lockCampusDesig;
+  desigSel.disabled = lockCampusDesig;
+
+  // Subjects is informational-only and tied to a specific candidate --
+  // editable only in the true from-scratch 'new' case.
+  subjInput.disabled = (mode !== 'new');
+
+  // Every remaining field: locked in every mode except 'new'.
+  const lockExtras = (mode !== 'new');
+  EXTRA_FIELD_IDS.forEach(function (id) { document.getElementById(id).disabled = lockExtras; });
+  if (lockExtras) {
+    const md = document.getElementById('fMdExempt');
+    if (md.checked) md.checked = false;
+    document.getElementById('epfBox').style.display = 'none';
+  }
+
+  // Record only makes sense against the ORIGINAL linked applicant in the
+  // plain 'handoff' view -- if an Owner switches into 'existing' or
+  // 'designation' mid-page, recording against a since-overwritten form
+  // would silently attach the wrong person's numbers to that applicant.
+  document.getElementById('recordCard').style.display = (mode === 'handoff') ? '' : 'none';
+}
+
 // 2026-09-26, per Uday: checking "Existing employee" turns Candidate
 // Name into a search box against the same staff roster
 // staff/add-employee.html already searches (Name (CODE) — School, via
 // a <datalist> so it stays free-text-friendly rather than a strict
 // dropdown) -- lazy-loaded on first check rather than on page load,
 // since most visits here are for a brand-new hire who isn't on the
-// roster at all. Unchecking reverts to a plain free-text name field.
+// roster at all.
 let rosterLoaded_ = false;
 function toggleExistingEmployeeSearch_() {
-  const on = document.getElementById('fExisting').checked;
-  const nameInput = document.getElementById('fName');
-  if (on) nameInput.setAttribute('list', 'fNameList'); else nameInput.removeAttribute('list');
-  // 2026-09-26, per Uday: when this row arrived hand-off-locked
-  // (APPLICANT_ID, see prefillFromParams_), checking "Existing
-  // employee" has to unlock Candidate Name too, or there's no way to
-  // actually type into the search box that just appeared. Unchecking
-  // restores the hand-off lock rather than leaving it permanently
-  // editable.
-  nameInput.readOnly = on ? false : !!APPLICANT_ID;
-  if (on && !rosterLoaded_) {
-    rosterLoaded_ = true;
-    fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (json) {
-        if (!json.success) return;
-        const dl = document.getElementById('fNameList');
-        json.employees.forEach(function (e) {
-          if (!e.employeeCode || !e.name) return;
-          const opt = document.createElement('option');
-          opt.value = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
-          dl.appendChild(opt);
-        });
-      })
-      .catch(function (err) { console.warn('Could not load staff roster for search:', err); });
-  }
+  if (!document.getElementById('fExisting').checked || rosterLoaded_) return;
+  rosterLoaded_ = true;
+  fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (json) {
+      if (!json.success) return;
+      const dl = document.getElementById('fNameList');
+      json.employees.forEach(function (e) {
+        if (!e.employeeCode || !e.name) return;
+        const opt = document.createElement('option');
+        opt.value = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
+        dl.appendChild(opt);
+      });
+    })
+    .catch(function (err) { console.warn('Could not load staff roster for search:', err); });
 }
 
-// 2026-09-28, per Uday: a third mode, alongside default New Hire and
-// Existing Employee -- shows the STANDARD pay-scale salary for a
+// 2026-09-28, per Uday: a standard pay-scale lookup for a
 // Designation+Campus combination, no specific person involved (e.g.
-// "what does a PRT cost at LMS 2"). Mutually exclusive with Existing
-// Employee (see onModeCheckboxChange_ below, which unchecks the other
-// before re-applying both mode functions); Designation and Campus are
-// the only fields left editable -- everything else is disabled and
-// auto-computed from the pay-scale table at 0 experience/full load
-// (the same base case applyDesignationPay_ already produces for a plain
-// designation pick), so it can't drift into being about a specific
-// negotiated case. Record/EPF-exemption don't apply without a real
-// candidate, so both are hidden in this mode.
-const DESIG_MODE_LOCKED_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fChildGrade', 'fTuiFee'];
+// "what does a PRT cost at LMS 2") -- 0 experience/full load, the same
+// base case applyDesignationPay_ already produces for a plain pick.
 function applyDesignationBasedMode_() {
-  const on = document.getElementById('fDesigBased').checked;
-  const nameInput = document.getElementById('fName');
-  const subjInput = document.getElementById('fSubjects');
-  nameInput.disabled = on;
-  subjInput.disabled = on;
-  if (on) {
-    nameInput.removeAttribute('list');
-    nameInput.value = '';
-    subjInput.value = '';
-  }
-  DESIG_MODE_LOCKED_IDS.forEach(function (id) { document.getElementById(id).disabled = on; });
-  const mdExempt = document.getElementById('fMdExempt');
-  mdExempt.checked = false;
-  mdExempt.disabled = on;
-  document.getElementById('epfBox').style.display = 'none';
-  document.getElementById('recordCard').style.display = (on || !APPLICANT_ID) ? 'none' : '';
-  if (on) {
-    document.getElementById('fLmsExp').value = 0;
-    document.getElementById('fOtherExp').value = 0;
-    applyDesignationPay_();
-    applyCampusRates_();
-  }
-  renderResults_();
+  if (!document.getElementById('fDesigBased').checked) return;
+  document.getElementById('fLmsExp').value = 0;
+  document.getElementById('fOtherExp').value = 0;
+  applyDesignationPay_();
+  applyCampusRates_();
 }
 
 // Shared entry point for BOTH mode checkboxes -- enforces mutual
-// exclusivity (checking one unchecks the other) then unconditionally
-// re-applies both mode functions, which are each safe to call with their
-// own checkbox off (they just restore normal field state).
+// exclusivity (checking one unchecks the other), does each mode's own
+// one-time setup, then applies the shared lock state and re-renders.
 function onModeCheckboxChange_(which) {
   if (which === 'existing' && document.getElementById('fExisting').checked) {
     document.getElementById('fDesigBased').checked = false;
@@ -630,21 +677,21 @@ function onModeCheckboxChange_(which) {
   }
   toggleExistingEmployeeSearch_();
   applyDesignationBasedMode_();
+  applyFieldLockState_();
+  renderResults_();
 }
 
 // 2026-09-28, per Uday: picking a real employee out of the search box
-// should show "what her present salary must be," not an empty form --
-// fetches her actual EmpSalary record (staff-management-api.gs's new
-// Owner-only salaryfullrecord action) and prefills Campus/Designation/
-// Pre-Basic/Grade Pay/Assigned Hours from it. LMS/Other Experience are
-// deliberately zeroed rather than left whatever they were -- existing-
-// employee mode already skips the new-hire "+3 base increments," and
-// Basic/GradePay here are her REAL CURRENT figures (not the scale's
-// starting point), so any nonzero experience would apply the 1.03^inc
-// compounding a second time on top of pay that's already current. The
-// result is her real Basic/GP passed straight through the same DA/ADA/
-// EPF/ESI/CTI/RRF pipeline as a new offer -- today's numbers, not a
-// re-derived guess.
+// should show "what her present salary must be" -- DERIVED the same way
+// a new-hire offer is (standard pay-scale Basic/GP × 1.03^increments ×
+// hours ratio), just driven by her REAL recorded increment count and
+// working hours instead of typed experience years, rather than simply
+// parroting back her raw stored Basic/GradePay. LMS Experience doubles
+// as the increment-count input here (Other Experience stays 0) since
+// 'existing' mode's inc = floor(lmsExp + otherExp/2) already reduces to
+// exactly her Increment count with otherExp=0 -- no new field needed.
+// Falls back to her raw stored Basic/GradePay directly (0 experience)
+// only if her Designation has no pay-scale entry at all to derive from.
 function applyExistingEmployeePay_() {
   if (!document.getElementById('fExisting').checked) return;
   const m = document.getElementById('fName').value.match(/\(([^)]+)\)\s*—/);
@@ -658,16 +705,24 @@ function applyExistingEmployeePay_() {
     const designation = String(s.Designation || '').trim();
     const desigSel = document.getElementById('fDesignation');
     const hasDesig = designation && Array.prototype.some.call(desigSel.options, function (o) { return o.value === designation; });
+    const increment = Number(s.Increment) || 0;
     if (hasDesig) {
       desigSel.value = designation;
-      applyDesignationPay_(); // sets Ideal Hours from the pay-scale table; Basic/GP below override its starting-scale guess with her real figures
+      applyDesignationPay_(); // sets Pre-Basic/GP/Ideal Hours from the pay-scale table
+      document.getElementById('fLmsExp').value = increment;
+      document.getElementById('fOtherExp').value = 0;
+    } else {
+      // No scale entry for her designation -- nothing to derive from, so
+      // fall back to her raw stored figures directly at 0 experience.
+      if (s.Basic !== undefined && s.Basic !== '') document.getElementById('fPreBasic').value = Number(s.Basic) || 0;
+      if (s.GradePay !== undefined && s.GradePay !== '') document.getElementById('fGradePay').value = Number(s.GradePay) || 0;
+      document.getElementById('fLmsExp').value = 0;
+      document.getElementById('fOtherExp').value = 0;
     }
-    if (s.Basic !== undefined && s.Basic !== '') document.getElementById('fPreBasic').value = Number(s.Basic) || 0;
-    if (s.GradePay !== undefined && s.GradePay !== '') document.getElementById('fGradePay').value = Number(s.GradePay) || 0;
     if (s.WorkingHour !== undefined && s.WorkingHour !== '') document.getElementById('fWorkHours').value = Number(s.WorkingHour) || '';
-    document.getElementById('fLmsExp').value = 0;
-    document.getElementById('fOtherExp').value = 0;
-    applyCampusRates_(); // re-applies EPF default + child-grade options for her real campus; also re-renders
+    applyCampusRates_(); // re-applies EPF default + child-grade options for her real campus
+    applyFieldLockState_();
+    renderResults_();
   }).catch(function () {
     alert('Network error loading ' + code + '\'s pay record — try again.');
   });
@@ -690,19 +745,7 @@ function prefillFromParams_() {
     const subj = document.getElementById('fSubjects');
     subj.value = roleCode + (subj.value ? ': ' + subj.value : '') + ' (no pay-scale entry — enter Basic/GP manually)';
   }
-  document.getElementById('recordCard').style.display = APPLICANT_ID ? '' : 'none';
-  // 2026-09-26, per Uday: once this page arrived via a hand-off from the
-  // Hiring Dashboard (APPLICANT_ID set), Candidate & Role is a fact
-  // about that specific applicant, not something to retype here -- lock
-  // it so a Principal can't accidentally compute an offer for the wrong
-  // person/campus/role. Someone opening this page standalone (no
-  // APPLICANT_ID) still gets normal editable fields, same as always.
-  if (APPLICANT_ID) {
-    document.getElementById('fName').readOnly = true;
-    document.getElementById('fCampus').disabled = true;
-    document.getElementById('fDesignation').disabled = true;
-    document.getElementById('fSubjects').readOnly = true;
-  }
+  applyFieldLockState_(); // locks everything but Name/Campus/Designation (already read-only above) when APPLICANT_ID is set -- see currentMode_'s 'handoff' case
   loadExistingNotes_();
 }
 
