@@ -108,7 +108,7 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // staleness on a read carries no real risk. Write actions always verify
 // live, uncached, so a just-revoked access can never slip a mutation
 // through during the cache window.
-const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue'];
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord'];
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
@@ -129,6 +129,7 @@ function staffDoGet_(e) {
     if (action === 'nextcode') result = { employeeCode: previewNextCode_(data) };
     else if (action === 'list') result = { employees: listEmployees_(caller) };
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
+    else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
     else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
@@ -1051,6 +1052,34 @@ function employeeDetail_(data, caller) {
   if (certificates.length) detail.certificates = certificates;
 
   return detail;
+}
+
+// Full EmpSalary row INCLUDING Basic/GradePay/Increment (2026-09-28, per
+// Uday) -- the Salary Dashboard's "revise an existing employee" flow
+// needs their real current pay to prefill/show what they're actually on,
+// which is exactly the carve-out readRowFieldsByCode_'s comment above
+// flagged as reserved for this module. Same EmpMaster-lookup + scope-
+// check + hidden-department pattern as employeeDetail_, but ALSO
+// hard-requires Owner specifically (not just Coordinator) -- matches
+// salary/index.html's own UI gate, which only shows the existing-
+// employee revise flow to an Owner in the first place; a Coordinator can
+// see non-monetary staff info via 'detail' but not raw pay figures here.
+function salaryFullRecord_(data, caller) {
+  if (!data.employeeCode) throw new Error('employeeCode is required');
+  if (caller.roles.indexOf('Owner') === -1) throw new Error('Only the Owner can view an employee\'s full pay record');
+  const ss = openEmpWorkbook_();
+  const master = readRowByCode_(ss, 'EmpMaster', data.employeeCode, ['AuthEmail', 'OldSystemID', 'NewEmployeeCode']);
+  if (!master) throw new Error('Employee not found: ' + data.employeeCode);
+  const salaryLookup = readEmpSalaryByCode_()[data.employeeCode];
+  if (salaryLookup && STAFF_HIDDEN_DEPARTMENTS.indexOf(salaryLookup.department) !== -1) {
+    throw new Error('Employee not found: ' + data.employeeCode);
+  }
+  const school = String(master.SchoolCode || '').trim().toUpperCase();
+  assertScope_(caller, [school]);
+
+  const salary = readRowByCode_(ss, 'EmpSalary', data.employeeCode, []);
+  if (!salary) throw new Error('No EmpSalary record for ' + data.employeeCode);
+  return { school: school, name: String(master.Name || '').trim(), salary: salary };
 }
 
 // ── Actions ───────────────────────────────────────────────────────────

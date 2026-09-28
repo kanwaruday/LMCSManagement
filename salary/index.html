@@ -161,6 +161,17 @@ const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK
 let SESSION = null;
 let EPF_EXEMPTION_APPROVED = false;
 
+// Roster Proxy project's action+data calling convention (its actions take
+// a JSON `data` param, not flat query params like the PDR project's
+// gasGet_/gasPost_ below) -- same shape as staff/add-employee.html's own
+// callStaffApi.
+function staffApiGet_(action, data) {
+  const url = EMPLOYEE_ROSTER_URL + '?action=' + encodeURIComponent(action) +
+    '&idToken=' + encodeURIComponent(SESSION.idToken) +
+    '&data=' + encodeURIComponent(JSON.stringify(data || {})) + '&_=' + Date.now();
+  return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); });
+}
+
 function gasGet_(action, params) {
   const qs = Object.assign({ action: action, idToken: SESSION.idToken }, params || {});
   const url = PDR_BACKEND_URL + '?' + Object.keys(qs).map(function (k) {
@@ -523,6 +534,7 @@ function wireInputs_() {
   document.getElementById('fDesignation').addEventListener('change', applyDesignationPay_);
   document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
+  document.getElementById('fName').addEventListener('change', applyExistingEmployeePay_);
   document.getElementById('recordBtn').onclick = recordSalaryOffer_;
   document.getElementById('fExisting').addEventListener('change', toggleExistingEmployeeSearch_);
 }
@@ -562,6 +574,47 @@ function toggleExistingEmployeeSearch_() {
       })
       .catch(function (err) { console.warn('Could not load staff roster for search:', err); });
   }
+}
+
+// 2026-09-28, per Uday: picking a real employee out of the search box
+// should show "what her present salary must be," not an empty form --
+// fetches her actual EmpSalary record (staff-management-api.gs's new
+// Owner-only salaryfullrecord action) and prefills Campus/Designation/
+// Pre-Basic/Grade Pay/Assigned Hours from it. LMS/Other Experience are
+// deliberately zeroed rather than left whatever they were -- existing-
+// employee mode already skips the new-hire "+3 base increments," and
+// Basic/GradePay here are her REAL CURRENT figures (not the scale's
+// starting point), so any nonzero experience would apply the 1.03^inc
+// compounding a second time on top of pay that's already current. The
+// result is her real Basic/GP passed straight through the same DA/ADA/
+// EPF/ESI/CTI/RRF pipeline as a new offer -- today's numbers, not a
+// re-derived guess.
+function applyExistingEmployeePay_() {
+  if (!document.getElementById('fExisting').checked) return;
+  const m = document.getElementById('fName').value.match(/\(([^)]+)\)\s*—/);
+  const code = m && m[1].trim();
+  if (!code) return; // free-text name, not picked from the roster -- nothing to fetch
+  staffApiGet_('salaryfullrecord', { employeeCode: code }).then(function (res) {
+    if (!res.success) { alert('Could not load ' + code + '\'s pay record: ' + (res.error || 'unknown error')); return; }
+    const s = res.salary || {};
+    const campus = String(res.school || '').replace(/\s+/g, '').toUpperCase();
+    if (campus) document.getElementById('fCampus').value = campus;
+    const designation = String(s.Designation || '').trim();
+    const desigSel = document.getElementById('fDesignation');
+    const hasDesig = designation && Array.prototype.some.call(desigSel.options, function (o) { return o.value === designation; });
+    if (hasDesig) {
+      desigSel.value = designation;
+      applyDesignationPay_(); // sets Ideal Hours from the pay-scale table; Basic/GP below override its starting-scale guess with her real figures
+    }
+    if (s.Basic !== undefined && s.Basic !== '') document.getElementById('fPreBasic').value = Number(s.Basic) || 0;
+    if (s.GradePay !== undefined && s.GradePay !== '') document.getElementById('fGradePay').value = Number(s.GradePay) || 0;
+    if (s.WorkingHour !== undefined && s.WorkingHour !== '') document.getElementById('fWorkHours').value = Number(s.WorkingHour) || '';
+    document.getElementById('fLmsExp').value = 0;
+    document.getElementById('fOtherExp').value = 0;
+    applyCampusRates_(); // re-applies EPF default + child-grade options for her real campus; also re-renders
+  }).catch(function () {
+    alert('Network error loading ' + code + '\'s pay record — try again.');
+  });
 }
 
 function prefillFromParams_() {
