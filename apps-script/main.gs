@@ -158,6 +158,12 @@ function doGet(e) {
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
     if (action === 'salaryconfig') return jsonOut_(salaryConfig_());
+    // TEMPORARY diagnostic (2026-09-28) -- remove once the PayScale Table
+    // Pre-Basic Pay/Grade Pay parsing issue is confirmed fixed. Trigger
+    // from the Salary Dashboard's own browser console (already signed in,
+    // so SESSION.idToken is real) with:
+    //   fetch(PDR_BACKEND_URL + '?action=diagpayscale&idToken=' + encodeURIComponent(SESSION.idToken)).then(r=>r.json()).then(console.log)
+    if (action === 'diagpayscale') return jsonOut_(salDiagnosePayScale_());
     // viewAsCode: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
     // comment. Only ever changes anything if `caller` already verified
     // as Owner; every other caller gets their own real identity back.

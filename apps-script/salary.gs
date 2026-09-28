@@ -191,6 +191,29 @@ function salaryConfig_() {
   };
 }
 
+// TEMPORARY diagnostic (2026-09-28) -- see main.gs's action=diagpayscale
+// comment for how to trigger this from the browser. Checks whether
+// PayScale Table's Pre-Basic Pay/Grade Pay cells are real numbers (what
+// Number(cell) needs) or literal currency-symbol text (which Number()
+// can't parse, silently becoming 0 via `Number(x) || 0`). Bypasses the
+// cache so it always reflects the sheet's current state, not a stale
+// cached parse from before a sheet fix. Remove once confirmed fixed.
+function salDiagnosePayScale_() {
+  const values = salConfigValues_(SAL_TAB_PAYSCALE);
+  const headerRow = salPayScaleHeaderRow_(values);
+  const pgtRowIdx = values.findIndex(function (r) { return String(r[1] || '').trim() === 'PGT'; });
+  const pgtRow = pgtRowIdx >= 0 ? values[pgtRowIdx] : null;
+  return {
+    success: true,
+    headerRowIndex: headerRow,
+    headerRowContent: headerRow >= 0 ? values[headerRow] : null,
+    pgtRowIndex: pgtRowIdx,
+    pgtRowRaw: pgtRow,
+    preBasicCell: pgtRow ? { typeofValue: typeof pgtRow[2], rawValue: pgtRow[2], numberOfIt: Number(pgtRow[2]) } : null,
+    gradePayCell: pgtRow ? { typeofValue: typeof pgtRow[3], rawValue: pgtRow[3], numberOfIt: Number(pgtRow[3]) } : null,
+  };
+}
+
 // Same free-text matching convention hirApprovedRequisitions_ (hiring.gs)
 // already uses against the Approvals sheet's itemName column -- there is
 // no per-instance foreign key on that sheet (confirmed when this was
