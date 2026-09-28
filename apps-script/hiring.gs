@@ -947,11 +947,12 @@ function hiringUpdateStatus_(caller, body) {
   if (status === 'Hired') {
     const name = String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim();
     const phone = String(sheet.getRange(row, HIR_COL.PHONE).getValue() || '').trim();
-    const cv = String(sheet.getRange(row, HIR_COL.CV).getValue() || '').trim();
     const missing = [];
     if (!hirIsHiringApproved_(hirApplicantId_(row))) missing.push('an Owner\'s approval of this candidate\'s Salary Offer (after their MD Academics interview)');
     if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
-    if (!cv) missing.push('a CV on file');
+    // 2026-09-28, per Uday: CV dropped from this gate -- the Interview
+    // Report already carries the candidate's bio-data, so a separate CV
+    // upload is redundant, not a genuine missing-document risk.
     if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
     const docs = hiringCheckDocuments_(applicantCampus, name);
     if (!docs.found) missing.push('a Staff Document Submission on file');
