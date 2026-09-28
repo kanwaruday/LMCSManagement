@@ -692,6 +692,16 @@ function onModeCheckboxChange_(which) {
 // exactly her Increment count with otherExp=0 -- no new field needed.
 // Falls back to her raw stored Basic/GradePay directly (0 experience)
 // only if her Designation has no pay-scale entry at all to derive from.
+// 2026-09-28 -- root cause of Pre-Basic/Grade Pay showing 0 was in
+// salary.gs (Number("10,300") is NaN, comma breaks it), not here, but
+// this parses the same defensively for the fallback branch below in
+// case her raw EmpSalary Basic/GradePay are ever comma-formatted too.
+function salParseNum_(v) {
+  if (typeof v === 'number') return v;
+  const cleaned = String(v || '').replace(/[^0-9.-]/g, '');
+  return cleaned ? Number(cleaned) : 0;
+}
+
 function applyExistingEmployeePay_() {
   if (!document.getElementById('fExisting').checked) return;
   const m = document.getElementById('fName').value.match(/\(([^)]+)\)\s*—/);
@@ -705,7 +715,7 @@ function applyExistingEmployeePay_() {
     const designation = String(s.Designation || '').trim();
     const desigSel = document.getElementById('fDesignation');
     const hasDesig = designation && Array.prototype.some.call(desigSel.options, function (o) { return o.value === designation; });
-    const increment = Number(s.Increment) || 0;
+    const increment = salParseNum_(s.Increment);
     if (hasDesig) {
       desigSel.value = designation;
       applyDesignationPay_(); // sets Pre-Basic/GP/Ideal Hours from the pay-scale table
@@ -714,12 +724,17 @@ function applyExistingEmployeePay_() {
     } else {
       // No scale entry for her designation -- nothing to derive from, so
       // fall back to her raw stored figures directly at 0 experience.
-      if (s.Basic !== undefined && s.Basic !== '') document.getElementById('fPreBasic').value = Number(s.Basic) || 0;
-      if (s.GradePay !== undefined && s.GradePay !== '') document.getElementById('fGradePay').value = Number(s.GradePay) || 0;
+      if (s.Basic !== undefined && s.Basic !== '') document.getElementById('fPreBasic').value = salParseNum_(s.Basic);
+      if (s.GradePay !== undefined && s.GradePay !== '') document.getElementById('fGradePay').value = salParseNum_(s.GradePay);
       document.getElementById('fLmsExp').value = 0;
       document.getElementById('fOtherExp').value = 0;
     }
-    if (s.WorkingHour !== undefined && s.WorkingHour !== '') document.getElementById('fWorkHours').value = Number(s.WorkingHour) || '';
+    if (s.WorkingHour !== undefined && s.WorkingHour !== '') document.getElementById('fWorkHours').value = salParseNum_(s.WorkingHour) || '';
+    // Subject Allocated (2026-09-28, per Uday) -- info-only, same as a
+    // free-typed Subjects value, just sourced from her real EmpAcademic
+    // class/subject assignments instead of typed in.
+    const subj = document.getElementById('fSubjects');
+    subj.value = (res.classSubjects && res.classSubjects.length) ? res.classSubjects.join(', ') : '';
     applyCampusRates_(); // re-applies EPF default + child-grade options for her real campus
     applyFieldLockState_();
     renderResults_();

@@ -54,6 +54,19 @@ function salNormalizeCampus_(raw) {
 // before it -- immune to this whole class of accident. Throws a clear
 // error instead of silently returning nothing if the header can't be
 // found at all (e.g. both header cells got wiped, not just shifted).
+// 2026-09-28 -- the ACTUAL root cause of Pre-Basic Pay/Grade Pay always
+// coming through as 0: Number("10,300") is NaN in JavaScript (the comma
+// breaks it), and `NaN || 0` silently becomes 0 with no error anywhere.
+// Ideal Hours (single digits, e.g. "6") happened to keep working, which
+// is what made this look like a row-matching problem instead of what it
+// actually was. Strips any non-numeric formatting (₹, commas, spaces)
+// before parsing -- works whether the cell holds a real number, a
+// formatted-currency number, or literal currency text.
+function salParseNumber_(v) {
+  if (typeof v === 'number') return v;
+  const cleaned = String(v || '').replace(/[^0-9.-]/g, '');
+  return cleaned ? Number(cleaned) : 0;
+}
 function salPayScaleHeaderRow_(values) {
   for (let i = 0; i < values.length; i++) {
     if (String(values[i][0] || '').trim() === 'Role Code' && String(values[i][1] || '').trim() === 'Designation') return i;
@@ -74,9 +87,9 @@ function salPayScale_() {
     out.push({
       roleCode: String(r[0] || '').trim().toUpperCase(),
       designation: String(r[1]).trim(),
-      preBasic: Number(r[2]) || 0,
-      gradePay: Number(r[3]) || 0,
-      idealHours: Number(r[4]) || 8,
+      preBasic: salParseNumber_(r[2]),
+      gradePay: salParseNumber_(r[3]),
+      idealHours: salParseNumber_(r[4]) || 8,
       classification: String(r[5] || ''),
       esBand: String(r[6] || ''),
     });
@@ -128,7 +141,7 @@ function salTuitionFees_() {
     for (let c = 1; c < header.length; c++) {
       const label = String(header[c] || '').trim();
       if (!label || r[c] === '' || r[c] == null) continue;
-      grades[label] = Number(r[c]) || 0;
+      grades[label] = salParseNumber_(r[c]);
     }
     out[campusId] = grades;
   }
@@ -150,8 +163,8 @@ function salPayrollRates_() {
     const campusId = salNormalizeCampus_(r[0]);
     if (!campusId) continue;
     out[campusId] = {
-      da: (Number(r[1]) || 0) / 100,
-      ada: (Number(r[2]) || 0) / 100,
+      da: salParseNumber_(r[1]) / 100,
+      ada: salParseNumber_(r[2]) / 100,
       epfDefault: String(r[3] || '').trim().toLowerCase() !== 'no',
     };
   }
@@ -174,7 +187,7 @@ function salPayrollConstants_() {
     const r = values[i];
     const key = String(r[0] || '').trim();
     if (!key) continue;
-    out[key] = Number(r[1]);
+    out[key] = salParseNumber_(r[1]);
   }
   cache.put('sal_payrollconstants', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
   return out;

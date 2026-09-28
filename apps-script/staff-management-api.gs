@@ -1079,7 +1079,11 @@ function salaryFullRecord_(data, caller) {
 
   const salary = readRowByCode_(ss, 'EmpSalary', data.employeeCode, []);
   if (!salary) throw new Error('No EmpSalary record for ' + data.employeeCode);
-  return { school: school, name: String(master.Name || '').trim(), salary: salary };
+  // Subject Allocated (2026-09-28, per Uday) -- reuses employeeDetail_'s
+  // existing EmpAcademic reader/decoder rather than a second copy; comes
+  // back as e.g. ["Class 4 — Science", "Class 5 — Science"].
+  const classSubjects = readClassSubjects_(ss, data.employeeCode);
+  return { school: school, name: String(master.Name || '').trim(), salary: salary, classSubjects: classSubjects };
 }
 
 // ── Actions ───────────────────────────────────────────────────────────
