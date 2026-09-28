@@ -122,6 +122,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
           <div class="field-check"><input type="checkbox" id="fEpf" checked><label for="fEpf">EPF applicable</label></div>
           <div class="field-check"><input type="checkbox" id="fEsi" checked><label for="fEsi">ESI applicable (if under ₹21,000 gross)</label></div>
           <div class="field-check"><input type="checkbox" id="fMdExempt"><label for="fMdExempt">MD role — request EPF exemption</label></div>
+          <div class="field"><label>Staff Child's Grade (for fee wash)</label><select id="fChildGrade"><option value="">No child / N/A</option></select></div>
           <div class="field"><label>Tuition Fee Wash (₹/month)</label><input type="number" id="fTuiFee" value="0" min="0" step="50"></div>
         </div>
         <div class="epf-box" id="epfBox" style="display:none">
@@ -141,7 +142,7 @@ table.results tr.year-hdr td{padding-top:14px;font-weight:700;color:var(--red);b
         <div class="record-msg" id="recordMsg"></div>
       </div>
 
-      <div class="source-note">EPF caps (₹2,082 / ₹917) and the ₹25,000 wage ceiling are hardcoded from the EPFO Gazette Notification dated 17 Sept 2026, superseding the ₹15,000 ceiling in force since 2014. Update these two numbers directly here if the ceiling changes again — ESI's own ₹21,000 ceiling is a separate scheme, untouched by that notification.</div>
+      <div class="source-note">Pay scale, DA/ADA, EPF/ESI/RRF rates and caps, and tuition fees are all read live from the "LMCS-Salary-PayScale" Google Sheet — edit that sheet to change a number, no code change needed. The ₹25,000 EPF wage ceiling (was ₹15,000) reflects the EPFO Gazette Notification dated 17 Sept 2026; ESI's own ₹21,000 threshold is a separate scheme, untouched by that notification.</div>
     </div>
   </div>
 
@@ -175,87 +176,108 @@ function gasPost_(action, body) {
   }).then(function (r) { return r.json(); });
 }
 
-// ── Calculator engine ────────────────────────────────────────────────
-// Restructured from the old lmcs-salary-dashboard repo's dashboard.html
-// calcSalary() flow (the only part of that system actually in live use),
-// with EPF/ESI/DA/ADA rates corrected against PayrollConstants.gs's
-// real-payroll-PDF-verified values and the 17 Sept 2026 EPFO wage
-// ceiling. See the source-note in the page body for the ceiling itself.
-const ADA_R = { LMS3: 0.25 }; // 25% at LMS 3, 35% everywhere else
-const EPF_WAGE_CEILING = 25000;
-const EPS_CAP = 2082; // floor(0.0833 * 25000), was 1250 @ ₹15,000 ceiling
-const EPF_CAP = 917;  // floor(0.0367 * 25000), was 550 @ ₹15,000 ceiling
-const ESI_WAGE_CEILING = 21000; // untouched by the Sept 2026 EPFO notification, own scheme
+// ── Live config (2026-09-28) ─────────────────────────────────────────
+// Every rate/table the calculator used to hardcode (pay scale, DA/ADA,
+// EPF/ESI/RRF rates and caps, per-campus EPF default, tuition fees) now
+// comes from Uday's own "LMCS-Salary-PayScale" Google Sheet, read live by
+// salary.gs's salaryConfig_() -- editing that sheet takes effect on the
+// next page load, no redeploy. CONFIG is populated once by
+// loadSalaryConfig_() before anything else runs (see showApp below);
+// nothing in this file should assume it's non-null before that resolves.
+// DEFAULT_C is a last-resort fallback ONLY for a PayRoll Constants key
+// that's missing/misspelled in the sheet (not for a network failure,
+// which shows a hard error instead -- see loadSalaryConfig_) so a typo'd
+// row doesn't silently zero out part of the calculation.
+let CONFIG = null;
+const DEFAULT_C = {
+  'RRF Y1 %': 12, 'RRF Y2 %': 9, 'RRF Y3 %': 6,
+  'EPF Cap Salary': 25000, 'EPF Employer Cap': 2082, 'PF Employer Cap': 917,
+  'EPF Rate %': 8.33, 'PF Rate %': 3.67,
+  'ESI Threshold': 21000, 'ESI Employer %': 3.25, 'ESI Employee %': 0.75,
+  'Base Increments': 3, 'Other Exp Divisor': 2, 'Annual Increment %': 3,
+};
+function cVal_(key) {
+  const v = CONFIG && CONFIG.constants && CONFIG.constants[key];
+  return (typeof v === 'number' && !isNaN(v)) ? v : DEFAULT_C[key];
+}
 
-// Pay-scale table (2026-09-25) -- ported from the old lmcs-salary-dashboard
-// repo's dashboard.html (its `D.base` object, keyed by designation+school).
-// Values there were IDENTICAL across all 7 schools (HES + LMS 1-6) for
-// every designation -- school only ever affected DA/ADA rate (see ADA_R
-// above), never Basic/GP -- so this drops the per-school duplication and
-// keys by designation alone. Pre-Basic/Grade Pay/Ideal Hours only --
-// auto-fills the three fields below, all three stay editable afterward
-// for a negotiated offer.
-const DESIG_PAY_TABLE = {
-  'Helper': { preBasic: 4900, gp: 1300, idealHours: 8 },
-  'Sweeper': { preBasic: 4900, gp: 1300, idealHours: 8 },
-  'Driver': { preBasic: 5910, gp: 2000, idealHours: 8 }, // old table had "Driver Cum Daftri"/"Driver Cum Peon", same values
-  'Activity Teacher': { preBasic: 5910, gp: 2600, idealHours: 6 },
-  'NTT': { preBasic: 5910, gp: 2600, idealHours: 6 },
-  'Technician': { preBasic: 5910, gp: 2600, idealHours: 8 },
-  'Clerk + PRO': { preBasic: 5910, gp: 3200, idealHours: 8 },
-  'PRT': { preBasic: 5910, gp: 3200, idealHours: 6 },
-  'Games Teacher (PTI)': { preBasic: 5910, gp: 3200, idealHours: 8 },
-  'Computer Teacher': { preBasic: 10300, gp: 3200, idealHours: 8 },
-  'TGT': { preBasic: 10300, gp: 3600, idealHours: 6 },
-  'PTI (11, 12)': { preBasic: 10300, gp: 4200, idealHours: 8 },
-  'PGT': { preBasic: 10300, gp: 4200, idealHours: 6 },
-  'Vice Principal': { preBasic: 10300, gp: 4200, idealHours: 8 },
-  'School Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'Academic Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'Admin Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'IT Coordinator (Social Media)': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'Systems Coordinator': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'HOD (Full Time)': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'Head Master/ Principal': { preBasic: 10300, gp: 5400, idealHours: 8 },
-  'Academic Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'Finance Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'Human Resource Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'Marketing & PR Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'Systems Head': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'M.D. Academics': { preBasic: 15600, gp: 5400, idealHours: 8 },
-  'M.D. Operations': { preBasic: 15600, gp: 5400, idealHours: 8 },
-};
-// hiring.gs role codes (hirParseRequisitionItem_'s regex) -> this table's
-// designation keys, so the ?role= param from the Hiring Dashboard deep
-// link auto-selects the right row. DRAWING/LIBRARIAN/GARDENER have no
-// entry in the old table at all (never existed as a designation there) --
-// left unmapped on purpose rather than guessed; those fall back to
-// manual entry same as before. PTISR (senior PTI, grades 11-12) maps to
-// 'PTI (11, 12)'; plain PTI maps to the junior 'Games Teacher (PTI)' band.
-const ROLE_CODE_TO_DESIGNATION = {
-  NTT: 'NTT', PRT: 'PRT', TGT: 'TGT', PGT: 'PGT',
-  COMPUTER: 'Computer Teacher', PTISR: 'PTI (11, 12)', PTI: 'Games Teacher (PTI)',
-  ACTIVITY: 'Activity Teacher', DRIVER: 'Driver', HELPER: 'Helper',
-  SWEEPER: 'Sweeper', TECHNICIAN: 'Technician', CLERK: 'Clerk + PRO',
-};
+function loadSalaryConfig_() {
+  return gasGet_('salaryconfig').then(function (res) {
+    if (!res.success) throw new Error(res.error || 'Failed to load config');
+    CONFIG = res;
+  });
+}
+
+// hiring.gs role codes (hirParseRequisitionItem_'s regex) -> the sheet's
+// Designation string, built from PayScale Table's own Role Code column
+// (CONFIG.payScale) rather than a second hardcoded map -- a role added to
+// the sheet with a Role Code filled in is immediately reachable from the
+// Hiring Dashboard's ?role= deep link, no code change needed. A role code
+// with no matching row (e.g. DRAWING/LIBRARIAN/GARDENER, which have never
+// had a pay-scale entry) just returns undefined -- handled the same
+// "fall back to manual entry" way as before.
+function designationForRoleCode_(roleCode) {
+  const row = (CONFIG.payScale || []).filter(function (r) { return r.roleCode === roleCode; })[0];
+  return row && row.designation;
+}
 
 function populateDesignationSelect_() {
   const sel = document.getElementById('fDesignation');
-  Object.keys(DESIG_PAY_TABLE).forEach(function (d) {
+  (CONFIG.payScale || []).forEach(function (r) {
     const opt = document.createElement('option');
-    opt.value = d; opt.textContent = d;
+    opt.value = r.designation; opt.textContent = r.designation;
     sel.appendChild(opt);
   });
 }
 
 function applyDesignationPay_() {
   const d = document.getElementById('fDesignation').value;
-  const row = DESIG_PAY_TABLE[d];
+  const row = (CONFIG.payScale || []).filter(function (r) { return r.designation === d; })[0];
   if (row) {
     document.getElementById('fPreBasic').value = row.preBasic;
-    document.getElementById('fGradePay').value = row.gp;
+    document.getElementById('fGradePay').value = row.gradePay;
     document.getElementById('fIdealHours').value = row.idealHours;
   }
+  renderResults_();
+}
+
+// Per-campus DA/ADA rate and EPF-default-enrollment, from the PayRoll
+// Rates tab (CONFIG.payrollRates). Applying EPF default on campus change
+// mirrors the same auto-fill-but-editable pattern as Designation above --
+// a Principal can still tick/untick it manually afterward.
+function applyCampusRates_() {
+  const campus = document.getElementById('fCampus').value;
+  const rates = CONFIG.payrollRates && CONFIG.payrollRates[campus];
+  if (rates) document.getElementById('fEpf').checked = rates.epfDefault;
+  populateChildGradeSelect_();
+  renderResults_();
+}
+
+// Tuition Fee Wash (2026-09-28) -- auto-fills from the Tuition Fees tab
+// by campus + the staff member's child's grade, instead of a raw manual
+// number. Still an editable field afterward (same convention as every
+// other auto-filled number here) since a real negotiated case can differ
+// from the sheet. "No child / N/A" is the default -- most hires have no
+// fee-wash at all, so this never forces a number where none applies.
+function populateChildGradeSelect_() {
+  const sel = document.getElementById('fChildGrade');
+  const campus = document.getElementById('fCampus').value;
+  const grades = (CONFIG.tuitionFees && CONFIG.tuitionFees[campus]) || {};
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">No child / N/A</option>';
+  Object.keys(grades).forEach(function (g) {
+    const opt = document.createElement('option');
+    opt.value = g; opt.textContent = g + ' — ₹' + grades[g].toLocaleString('en-IN');
+    sel.appendChild(opt);
+  });
+  if (grades[prev] != null) sel.value = prev;
+}
+
+function applyChildGradeFee_() {
+  const campus = document.getElementById('fCampus').value;
+  const grade = document.getElementById('fChildGrade').value;
+  const fee = grade && CONFIG.tuitionFees && CONFIG.tuitionFees[campus] && CONFIG.tuitionFees[campus][grade];
+  document.getElementById('fTuiFee').value = fee || 0;
   renderResults_();
 }
 
@@ -278,27 +300,34 @@ function calcSalary_() {
   const mdExempt = document.getElementById('fMdExempt').checked && EPF_EXEMPTION_APPROVED;
   const tuiFee = Number(document.getElementById('fTuiFee').value) || 0;
 
-  const inc = existing ? Math.floor(lmsExp + otherExp / 2) : Math.floor(3 + lmsExp + otherExp / 2);
-  const nb = Math.floor((preBasic + gradePay) * Math.pow(1.03, inc) * (workHours / idealHours));
-  const da = Math.floor(0.05 * nb);
-  const adaRate = ADA_R[campus] || 0.35;
-  const ada = Math.floor(adaRate * nb);
+  const otherExpDivisor = cVal_('Other Exp Divisor');
+  const baseIncrements = cVal_('Base Increments');
+  const annualIncrementRate = 1 + cVal_('Annual Increment %') / 100;
+  const inc = existing ? Math.floor(lmsExp + otherExp / otherExpDivisor) : Math.floor(baseIncrements + lmsExp + otherExp / otherExpDivisor);
+  const nb = Math.floor((preBasic + gradePay) * Math.pow(annualIncrementRate, inc) * (workHours / idealHours));
+  const campusRates = (CONFIG.payrollRates && CONFIG.payrollRates[campus]) || { da: 0.05, ada: 0.35 };
+  const da = Math.floor(campusRates.da * nb);
+  const ada = Math.floor(campusRates.ada * nb);
   const ns = nb + da + ada;
 
+  const epfCeiling = cVal_('EPF Cap Salary');
+  const epsCap = cVal_('EPF Employer Cap');
+  const pfCap = cVal_('PF Employer Cap');
   const epfExempt = !epfOn || mdExempt;
-  const epfE = epfExempt ? 0 : Math.floor(ns > EPF_WAGE_CEILING ? EPS_CAP : ns * 0.0833);
-  const pfE = epfExempt ? 0 : Math.floor(ns > EPF_WAGE_CEILING ? EPF_CAP : ns * 0.0367);
+  const epfE = epfExempt ? 0 : Math.floor(ns > epfCeiling ? epsCap : ns * cVal_('EPF Rate %') / 100);
+  const pfE = epfExempt ? 0 : Math.floor(ns > epfCeiling ? pfCap : ns * cVal_('PF Rate %') / 100);
   const totEpf = (epfE + pfE) * 2; // employee + employer combined
 
-  const esiAllowed = esiOn && ns < ESI_WAGE_CEILING;
-  const esiE = esiAllowed ? Math.floor(ns * 0.0325) : 0;
-  const esiEe = esiAllowed ? Math.floor(ns * 0.0075) : 0;
+  const esiThreshold = cVal_('ESI Threshold');
+  const esiAllowed = esiOn && ns < esiThreshold;
+  const esiE = esiAllowed ? Math.floor(ns * cVal_('ESI Employer %') / 100) : 0;
+  const esiEe = esiAllowed ? Math.floor(ns * cVal_('ESI Employee %') / 100) : 0;
   const totEsi = esiE + esiEe;
 
   const cti = ns + epfE + pfE + esiE + tuiFee;
-  const rrf1 = existing ? 0 : Math.ceil(cti * 0.12);
-  const rrf2 = existing ? 0 : Math.ceil(cti * 0.09);
-  const rrf3 = existing ? 0 : Math.ceil(cti * 0.06);
+  const rrf1 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y1 %') / 100);
+  const rrf2 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y2 %') / 100);
+  const rrf3 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y3 %') / 100);
   const netY1 = cti - rrf1 - totEpf - totEsi - tuiFee;
   const netY2 = cti - rrf2 - totEpf - totEsi - tuiFee;
   const netY3 = cti - rrf3 - totEpf - totEsi - tuiFee;
@@ -311,13 +340,18 @@ function inr_(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 function renderResults_() {
   const r = calcSalary_();
   window._lastResult = r;
+  const campus = document.getElementById('fCampus').value;
+  // Math.round to kill float noise from the /100 then *100 round-trip
+  // (e.g. 0.05*100 can land on 5.000000000000001) -- purely a display
+  // concern, calcSalary_ itself uses the raw fraction, never this string.
+  const daPct = Math.round((((CONFIG.payrollRates && CONFIG.payrollRates[campus] && CONFIG.payrollRates[campus].da) || 0.05) * 10000)) / 100;
   const rows = [
-    ['Basic', r.nb], ['DA (5%)', r.da], ['ADA', r.ada], ['Gross Salary', r.ns],
-    ['EPS (employer, ' + (r.epfExempt ? 'exempt' : '8.33%') + ')', r.epfE],
-    ['EPF (employer, ' + (r.epfExempt ? 'exempt' : '3.67%') + ')', r.pfE],
+    ['Basic', r.nb], ['DA (' + daPct + '%)', r.da], ['ADA', r.ada], ['Gross Salary', r.ns],
+    ['EPS (employer, ' + (r.epfExempt ? 'exempt' : cVal_('EPF Rate %') + '%') + ')', r.epfE],
+    ['EPF (employer, ' + (r.epfExempt ? 'exempt' : cVal_('PF Rate %') + '%') + ')', r.pfE],
     ['Total EPF (employee + employer)', r.totEpf],
-    ['ESI employer (3.25%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiE],
-    ['ESI employee (0.75%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiEe],
+    ['ESI employer (' + cVal_('ESI Employer %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiE],
+    ['ESI employee (' + cVal_('ESI Employee %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiEe],
     ['CTI (Cost to Institution)', r.cti],
   ];
   let html = rows.map(function (row) { return '<tr><td>' + row[0] + '</td><td>' + inr_(row[1]) + '</td></tr>'; }).join('');
@@ -481,9 +515,11 @@ function returnToHiringDashboard_() {
 }
 
 function wireInputs_() {
-  ['fExisting', 'fCampus', 'fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fTuiFee'].forEach(function (id) {
+  ['fExisting', 'fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fTuiFee'].forEach(function (id) {
     document.getElementById(id).addEventListener('input', renderResults_);
   });
+  document.getElementById('fCampus').addEventListener('change', applyCampusRates_); // DA/ADA + EPF default + child-grade options all key off campus
+  document.getElementById('fChildGrade').addEventListener('change', applyChildGradeFee_);
   document.getElementById('fDesignation').addEventListener('change', applyDesignationPay_);
   document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
@@ -532,8 +568,9 @@ function prefillFromParams_() {
   if (params.get('name')) document.getElementById('fName').value = params.get('name');
   if (params.get('school')) document.getElementById('fCampus').value = params.get('school');
   if (params.get('subjects')) document.getElementById('fSubjects').value = params.get('subjects');
+  applyCampusRates_(); // sets EPF default + child-grade options for the prefilled/default campus
   const roleCode = params.get('role');
-  const designation = roleCode && ROLE_CODE_TO_DESIGNATION[roleCode.toUpperCase()];
+  const designation = roleCode && designationForRoleCode_(roleCode.toUpperCase());
   if (designation) {
     document.getElementById('fDesignation').value = designation;
     applyDesignationPay_();
@@ -581,10 +618,21 @@ function showApp(session) {
   if (LMCS.hasRole(session, 'Owner')) document.getElementById('fExistingRow').style.display = '';
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
-  populateDesignationSelect_();
-  prefillFromParams_();
-  wireInputs_();
-  renderResults_();
+  // Config (pay scale/rates/constants, all read live from Uday's
+  // "LMCS-Salary-PayScale" sheet) has to be in hand before anything below
+  // can compute a real number -- everything that depends on it is
+  // sequenced inside this .then(), not run in parallel with it. A load
+  // failure (network/auth/sheet renamed) shows a hard error instead of
+  // silently computing with undefined rates.
+  document.getElementById('resultsTable').innerHTML = '<tr><td colspan="2">Loading pay-scale config…</td></tr>';
+  loadSalaryConfig_().then(function () {
+    populateDesignationSelect_();
+    prefillFromParams_();
+    wireInputs_();
+    renderResults_();
+  }).catch(function (err) {
+    document.getElementById('resultsTable').innerHTML = '<tr><td colspan="2">Could not load pay-scale config: ' + (err && err.message || 'unknown error') + ' — reload to retry.</td></tr>';
+  });
 }
 
 const cachedSession = LMCS.getSession();

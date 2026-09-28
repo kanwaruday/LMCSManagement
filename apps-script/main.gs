@@ -81,11 +81,15 @@
 //                         see its own header for the incentive-engine
 //                         connection and the EmployeeCode join-key
 //                         reasoning.
-//   salary.gs           -- action=salaryepfexemptionstatus (GET).
-//                         Salary Dashboard's offer-letter calculator
-//                         (salary/index.html) computes everything
-//                         client-side; this is only the EPF-exemption
-//                         approval check, reusing approvals.gs's
+//   salary.gs           -- action=salaryepfexemptionstatus/salaryconfig
+//                         (GET). Salary Dashboard's offer-letter
+//                         calculator (salary/index.html) computes the
+//                         FORMULA client-side, but every rate/table it
+//                         feeds on (pay scale, DA/ADA, EPF/ESI/RRF,
+//                         tuition fees) is read live from Uday's own
+//                         "LMCS-Salary-PayScale" Google Sheet via
+//                         salaryconfig; salaryepfexemptionstatus is the
+//                         one write-adjacent check, reusing approvals.gs's
 //                         generic pipeline (category 'EPF Exemption').
 //
 // Naming convention: shared helpers/constants (this file) have no
@@ -153,6 +157,7 @@ function doGet(e) {
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
+    if (action === 'salaryconfig') return jsonOut_(salaryConfig_());
     // viewAsCode: Owner Test Mode -- see pdrResolveViewAsCaller_'s own
     // comment. Only ever changes anything if `caller` already verified
     // as Owner; every other caller gets their own real identity back.

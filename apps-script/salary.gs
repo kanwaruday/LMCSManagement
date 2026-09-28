@@ -1,17 +1,178 @@
 // ═══════════════════════════════════════════════════════════════════
 // SALARY -- Salary Dashboard v1: offer-letter/new-hire calculator only
 // (not monthly payroll/incentives/leave -- see the design conversation
-// this was built in). The calculator itself (rates, formulas) runs
-// entirely client-side in salary/index.html, same as the old
-// lmcs-salary-dashboard repo's dashboard.html did -- this file is only
-// the one piece of server logic that calculator needs: checking whether
-// an Owner has approved an EPF exemption for a specific candidate (the
-// MD-hire case), reusing approvals.gs's existing generic pipeline rather
-// than building a new one.
+// this was built in). The calculation FORMULA itself still runs
+// client-side in salary/index.html (same as the old lmcs-salary-dashboard
+// repo's dashboard.html did) -- but every rate/table it feeds on is read
+// live from the "LMCS-Salary-PayScale" Google Sheet (Uday's own workbook,
+// built 2026-09-28) via salaryConfig_() below, instead of being hardcoded
+// in JS. Editing that sheet takes effect immediately, no redeploy.
 //
-// action=salaryepfexemptionstatus (GET, this file's only action) --
-// wired in main.gs's doGet.
+// Two actions (GET, wired in main.gs's doGet):
+//   salaryepfexemptionstatus -- per-candidate EPF exemption approval check
+//   salaryconfig             -- the whole pay-scale/rates/constants bundle
 // ═══════════════════════════════════════════════════════════════════
+
+// "LMCS-Salary-PayScale" -- Uday's own workbook, 5 tabs, built 2026-09-28
+// as a live replacement for what was originally a hardcoded JS table
+// ported from the old lmcs-salary-dashboard repo. Read-only from this
+// project's side; Uday edits the sheet directly, no admin UI needed.
+const SAL_CONFIG_SHEET_ID = '1d8MdOgXNM5KVJjLwejAKpbbDaINnvPZO6zX_E5xABYU';
+const SAL_TAB_PAYSCALE = 'PayScale Table';
+const SAL_TAB_JOBROLE_NORMS = 'JobRole Norms';
+const SAL_TAB_TUITION_FEES = 'Tuition Fees';
+const SAL_TAB_PAYROLL_RATES = 'PayRoll Rates';
+const SAL_TAB_PAYROLL_CONSTANTS = 'PayRoll Constants';
+const SAL_CONFIG_CACHE_SECONDS = 300; // same TTL as pdrAllowlistRows_ -- config rarely changes mid-session
+
+function salConfigValues_(tabName) {
+  const sheet = SpreadsheetApp.openById(SAL_CONFIG_SHEET_ID).getSheetByName(tabName);
+  if (!sheet) throw new Error('Sheet tab not found: ' + tabName);
+  return sheet.getDataRange().getValues();
+}
+
+// "LMS 1" / "lms1" / " LMS 6 " -> "LMS1" -- normalizes the sheet's
+// school-name spelling (with a space) to this portal's campusId
+// convention (no space) used everywhere else (hiring.gs, approvals.gs,
+// assets/auth.js). HES has no campusId equivalent in this portal (only
+// LMS1-6 are real campuses here) -- rows for it just end up under a key
+// nothing ever looks up, harmless.
+function salNormalizeCampus_(raw) {
+  return String(raw || '').replace(/\s+/g, '').toUpperCase();
+}
+
+// PayScale Table: title (row1) + subtitle (row2) + blank (row3) + header
+// (row4) + data. Columns: Role Code, Designation, Pre-Basic Pay, Grade
+// Pay, Ideal Hours, Classification, ES Band -- see the review workbook
+// this sheet was built from for the exact layout.
+function salPayScale_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('sal_payscale');
+  if (cached) return JSON.parse(cached);
+  const values = salConfigValues_(SAL_TAB_PAYSCALE);
+  const out = [];
+  for (let i = 4; i < values.length; i++) {
+    const r = values[i];
+    if (!String(r[1] || '').trim()) continue; // blank Designation -- notes row or trailing blank
+    out.push({
+      roleCode: String(r[0] || '').trim().toUpperCase(),
+      designation: String(r[1]).trim(),
+      preBasic: Number(r[2]) || 0,
+      gradePay: Number(r[3]) || 0,
+      idealHours: Number(r[4]) || 8,
+      classification: String(r[5] || ''),
+      esBand: String(r[6] || ''),
+    });
+  }
+  cache.put('sal_payscale', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  return out;
+}
+
+// JobRole Norms: header row1, data from row2. Reference info only (leave/
+// timing/travel policy) -- doesn't feed the salary formula itself, RRF
+// Policy is shown here per-role but its actual numbers live in PayRoll
+// Constants (RRF Y1/Y2/Y3 %) since every role's policy reads the same.
+function salJobRoleNorms_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('sal_jobrolenorms');
+  if (cached) return JSON.parse(cached);
+  const values = salConfigValues_(SAL_TAB_JOBROLE_NORMS);
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (!String(r[0] || '').trim()) continue;
+    out.push({
+      designation: String(r[0]).trim(), vacations: String(r[1] || ''),
+      casualLeave: String(r[2] || ''), timing: String(r[3] || ''),
+      travelAllowance: String(r[4] || ''), rrfPolicy: String(r[5] || ''),
+    });
+  }
+  cache.put('sal_jobrolenorms', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  return out;
+}
+
+// Tuition Fees: header row1 has grade labels (M1/M2/M3/C1-C10/C11-Sci/
+// C11-Com/C11-Hum/C12-Sci/C12-Com/C12-Hum) from column B onward -- read
+// directly from the header rather than hardcoded, so a sheet column
+// added/renamed later (e.g. a new stream) shows up without a code change.
+// Shape: { campusId: { gradeLabel: feeNumber } }.
+function salTuitionFees_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('sal_tuitionfees');
+  if (cached) return JSON.parse(cached);
+  const values = salConfigValues_(SAL_TAB_TUITION_FEES);
+  const header = values[0];
+  const out = {};
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const campusId = salNormalizeCampus_(r[0]);
+    if (!campusId) continue;
+    const grades = {};
+    for (let c = 1; c < header.length; c++) {
+      const label = String(header[c] || '').trim();
+      if (!label || r[c] === '' || r[c] == null) continue;
+      grades[label] = Number(r[c]) || 0;
+    }
+    out[campusId] = grades;
+  }
+  cache.put('sal_tuitionfees', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  return out;
+}
+
+// PayRoll Rates: School, DA %, ADA %, EPF Enrolled by Default (Yes/No).
+// Shape: { campusId: { da, ada, epfDefault } } -- da/ada stored as
+// fractions (5 -> 0.05) to match what calcSalary_ multiplies by directly.
+function salPayrollRates_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('sal_payrollrates');
+  if (cached) return JSON.parse(cached);
+  const values = salConfigValues_(SAL_TAB_PAYROLL_RATES);
+  const out = {};
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const campusId = salNormalizeCampus_(r[0]);
+    if (!campusId) continue;
+    out[campusId] = {
+      da: (Number(r[1]) || 0) / 100,
+      ada: (Number(r[2]) || 0) / 100,
+      epfDefault: String(r[3] || '').trim().toLowerCase() !== 'no',
+    };
+  }
+  cache.put('sal_payrollrates', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  return out;
+}
+
+// PayRoll Constants: Setting/Value two-column table -- returned as a
+// plain {Setting: Value} map, keyed EXACTLY as the sheet spells it
+// (salary/index.html reads by those same literal strings), so a renamed
+// setting is a visible key miss on the frontend rather than a silent
+// wrong number.
+function salPayrollConstants_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('sal_payrollconstants');
+  if (cached) return JSON.parse(cached);
+  const values = salConfigValues_(SAL_TAB_PAYROLL_CONSTANTS);
+  const out = {};
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const key = String(r[0] || '').trim();
+    if (!key) continue;
+    out[key] = Number(r[1]);
+  }
+  cache.put('sal_payrollconstants', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  return out;
+}
+
+function salaryConfig_() {
+  return {
+    success: true,
+    payScale: salPayScale_(),
+    jobRoleNorms: salJobRoleNorms_(),
+    tuitionFees: salTuitionFees_(),
+    payrollRates: salPayrollRates_(),
+    constants: salPayrollConstants_(),
+  };
+}
 
 // Same free-text matching convention hirApprovedRequisitions_ (hiring.gs)
 // already uses against the Approvals sheet's itemName column -- there is
