@@ -203,15 +203,22 @@ function aprFindRowIndex_(values, id) {
   return -1;
 }
 
-// action=submitapproval (doPost) -- Principal (full category list) or
-// Teacher (APR_TEACHER_CATEGORIES only, added 2026-09-19 for the
-// Teacher Portal), always against caller.campusId (never a param --
-// can't be spoofed to file under another school). Someone holding both
-// roles (e.g. "Coordinator,Teacher" isn't Principal, but "Principal,
-// Teacher" would be) gets the full category list -- Principal's access
-// is a superset, not a separate track.
+// action=submitapproval (doPost) -- Principal/Coordinator/Owner (full
+// category list) or Teacher (APR_TEACHER_CATEGORIES only, added
+// 2026-09-19 for the Teacher Portal), always against caller.campusId
+// (never a param -- can't be spoofed to file under another school).
+// 2026-09-28, per Uday (bug found live): reuses pdrIsTeacherOnly_
+// (main.gs) instead of checking for literal role 'Principal' -- that
+// used to wrongly Teacher-restrict anyone whose ONLY non-Principal role
+// happened to include 'Teacher' too (e.g. an Owner or Coordinator's
+// personal Teacher-Portal row), which broke the Salary Dashboard's
+// "Record as Salary Offer" submitting a Salary Offer Approval for
+// exactly that kind of account -- that page is explicitly open to
+// Principals, Coordinators, AND the Owner (see salary/index.html's
+// canViewTeacherSS gate), so all three need full-category submit
+// rights here, not just literal Principal.
 function aprSubmit_(caller, body) {
-  const canFullSubmit = callerHasRole_(caller, 'Principal');
+  const canFullSubmit = !pdrIsTeacherOnly_(caller);
   const canTeacherSubmit = callerHasRole_(caller, 'Teacher');
   if (!canFullSubmit && !canTeacherSubmit) return { success: false, error: 'Only Principals and Teachers submit approval requests' };
   const category = String(body.category || '').trim();
