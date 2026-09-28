@@ -388,20 +388,28 @@ function salaryLinkUrl_(a) {
 // this file from hand-duplicating the ladder order as a second literal.
 function ladderStatuses_() { return (APPLICANTS.statuses || []).filter(function (s) { return s !== 'Rejected'; }); }
 
-// 2026-09-28, per Uday: 'Hired' stopped being a deliberate Principal
-// click too -- it's now DERIVED, same as every rung before it, from an
-// Owner's decision on this candidate's Salary Offer Approval request
-// (hirEffectiveStatus_ in hiring.gs). Only 'Rejected' is still a
-// button here -- a Principal can still bail out early on an obviously
-// unsuitable candidate before ever reaching a Salary Offer.
-// `currentStatus` is the server-computed value, used purely for
-// displaying how far along the ladder someone is.
+// 2026-09-28, per Uday ("the Principal must get a feeling of a win
+// while being able to hire"): 'Hired' is a real Principal click again.
+// The new 'Hiring Approved' rung sits right before it -- a plain
+// derived tick, no button -- and ticks once an Owner has Approved this
+// candidate's Salary Offer Approval request. Reaching it is the
+// PRECONDITION the Hired click actually checks server-side (see
+// hiringUpdateStatus_ in hiring.gs), not the hire itself: a Principal
+// can click Hired the moment 'Hiring Approved' is lit, but the write is
+// refused until every compulsory document is also on file. `currentStatus`
+// is the server-computed value, used purely for displaying how far
+// along the ladder someone is.
 function ladderHtml_(a) {
   const currentStatus = a.status;
   const ladder = ladderStatuses_();
   const idx = ladder.indexOf(currentStatus);
   const rungs = ladder.map(function (s, i) {
     const done = idx !== -1 && i <= idx;
+    const isPending = s === currentStatus;
+    if (s === 'Hired') {
+      const cls = 'ladder-item' + (done ? ' ladder-done' : '') + (isPending ? ' ladder-pending' : '');
+      return '<button type="button" class="' + cls + '" data-stage="Hired">' + (done ? '✓ ' : '○ ') + s + '</button>';
+    }
     const cls = 'ladder-item ladder-derived' + (done ? ' ladder-done' : '');
     // 'Interview & Demo Done' only ever ticks once a real Interview Report
     // is on file (see hirDerivedLadderStage_ in hiring.gs) -- once done,
@@ -429,16 +437,16 @@ function ladderHtml_(a) {
 // update controls sitting off in the separate Notes column where the
 // connection to the Stage ticks wasn't obvious.
 //
-// 2026-09-28, per Uday: reordered -- Salary Offer now comes right after
-// the Interview Report (idx 1), BEFORE the MD Academics interview date
-// (idx 2), not after -- the salary numbers get finalized and submitted
-// for Owner approval before the candidate even meets MD Academics, not
-// as a last step once they already have. Once everything here is done
-// (idx 3, MD Academics Interview Scheduled), there's nothing left for a
-// Principal to do -- Hired/Rejected is now an Owner's call on the
-// Salary Offer Approval request itself (see hiring.gs's
-// hirEffectiveStatus_), so this bar just says so instead of showing a
-// dead-end button.
+// 2026-09-28, per Uday: reordered -- Salary Offer comes right after the
+// Interview Report (idx 1), BEFORE the MD Academics interview date
+// (idx 2) -- the salary numbers get finalized and submitted for Owner
+// approval before the candidate even meets MD Academics. At idx 3 (MD
+// Academics done), nothing to do but wait on the Owner's decision. At
+// idx 4 ('Hiring Approved', an Owner said yes), it's back in the
+// Principal's hands -- get every compulsory document in, then click
+// Hired above once it's ready (that click itself still checks
+// everything server-side, see hiringUpdateStatus_ in hiring.gs -- this
+// bar is just the nudge, not the enforcement).
 function reqBarHtml_(a) {
   if (a.status === 'Hired' || a.status === 'Rejected') return '';
   const idx = ladderStatuses_().indexOf(a.status);
@@ -486,10 +494,21 @@ function reqBarHtml_(a) {
     html += '<div class="interview-label">MD Academics interview</div><input class="md-interview-input" type="datetime-local" value="' + (a.mdInterviewAt ? a.mdInterviewAt.slice(0, 16) : '') + '">';
   }
 
-  // 5. Nothing left for a Principal to do -- an Owner now decides
-  // Hired/Rejected directly on the Salary Offer Approval request.
-  if (idx >= 3) {
+  // 5. Waiting on the Owner -- MD Academics is done, nothing else a
+  // Principal can do until that Salary Offer Approval is decided.
+  if (idx === 3) {
     html += '<div class="req-hint">Awaiting an Owner’s decision on the Salary Offer Approval for this candidate (Approvals tab).</div>';
+  }
+
+  // 6. Hiring Approved -- the Owner said yes. Back in the Principal's
+  // hands: get every document in, then click Hired above.
+  if (idx >= 4) {
+    const school = applicantCampusFor_(a);
+    html += '<div class="req-hint">✓ Owner-approved. Next: get every compulsory document in, then click Hired above.</div>';
+    if (DOC_FORM_URLS[school]) {
+      html += '<div class="interview-label">Documents</div>' +
+        '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + DOC_FORM_URLS[school] + '" target="_blank">🔗 Document Submission Form</a>';
+    }
   }
 
   return html + '</div>';

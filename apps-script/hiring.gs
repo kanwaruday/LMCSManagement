@@ -86,55 +86,62 @@ const HIR_COL = {
 // terminal exit reachable from any point, not a rung on the ladder --
 // see hirLadderIndex_ below, which is what the ladder/checklist UI and
 // scoring both key off instead of raw array position.
-const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hired', 'Rejected'];
+const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired', 'Rejected'];
 // The linear ladder only (excludes 'Rejected') -- hirLadderIndex_(status)
 // returns -1 for blank/unrecognized (including legacy 'New'/'Contacted'/
 // 'Interviewed'/'Offered'/'Not Responding' values already sitting in the
 // sheet from before this ladder changed -- those just render as "not
 // started" going forward rather than crashing or being silently
 // rewritten) and -1 for 'Rejected' too, since it's not a ladder rung.
-const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hired'];
+const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired'];
 function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
-// 2026-09-28, per Uday: reordered -- Salary Offer now comes BEFORE MD
-// Academics Interview Scheduled, not after. The salary numbers must be
-// finalized by the Principal (submitted for Owner approval via the
-// Salary Dashboard's "Record as Salary Offer") before the candidate
-// even meets MD Academics, not as a final step once they already have.
-// Sequential, same as always: each rung requires the one before it.
-// 'Hired' and 'Rejected' are no longer written by a Principal click at
-// all as of this same change -- see hirEffectiveStatus_ below, which
-// now derives them from an Owner's decision on that Salary Offer
-// Approval request instead.
-function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt) {
+// 2026-09-28, per Uday (reordering): Salary Offer comes BEFORE MD
+// Academics Interview Scheduled -- the salary numbers must be finalized
+// by the Principal (submitted for Owner approval via the Salary
+// Dashboard's "Record as Salary Offer") before the candidate even
+// meets MD Academics, not as a final step once they already have.
+//
+// 2026-09-28, per Uday (later same day): "the Principal must get a
+// feeling of a win while being able to hire" -- Hired went back to
+// being a real Principal click (see hiringUpdateStatus_), not
+// something purely derived. 'Hiring Approved' is the new rung in
+// between: it ticks once an Owner has Approved this candidate's Salary
+// Offer Approval request (after the MD Academics interview) -- that's
+// the PRECONDITION for the Hired button to actually succeed, not the
+// hire itself. A Principal can click Hired the moment they reach this
+// rung, but the write is refused (see hiringUpdateStatus_) until every
+// compulsory document is also on file -- that final click, once
+// everything's actually ready, is the "win" moment.
+function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, hiringApproved) {
   if (!hasInterviewAt) return '';
   if (!hasReport) return 'Interview Scheduled';
   if (!hasSalaryOfferAt) return 'Interview & Demo Done';
   if (!hasMdInterviewAt) return 'Salary Offer';
-  return 'MD Academics Interview Scheduled';
+  if (!hiringApproved) return 'MD Academics Interview Scheduled';
+  return 'Hiring Approved';
 }
 
 // The status hiringApplicants_/hirRefreshTrackerCore_ actually SHOW.
 //
-// 2026-09-28, per Uday -- reworked so 'Hired' is no longer something a
-// Principal writes by clicking a button at all: it's now DERIVED from
-// an Owner deciding this specific candidate's 'Salary Offer Approval'
-// request (see hirSalaryOfferDecisions_ below, matched by applicantId
-// in the request's Item field, same pattern salEpfExemptionApproved_
-// already used for EPF Exemption). Gated on hasMdInterviewAt existing
-// -- aprDecide_ (approvals.gs) already refuses to let an Owner decide
-// that request before the MD Academics interview date is on file, so
-// this is defense in depth, not the real gate.
+// 2026-09-28, per Uday: an Owner declining the Salary Offer Approval
+// (after the MD Academics interview) still directly derives 'Rejected'
+// -- that's an unambiguous terminal call, nothing left for a Principal
+// to decide. Approving it, however, no longer directly derives 'Hired'
+// -- it only unlocks the 'Hiring Approved' rung, from which a Principal
+// must still click Hired themselves (see hirDerivedLadderStage_ and
+// hiringUpdateStatus_'s own comments for why).
 //
-// A Principal-written 'Rejected' still wins and stays terminal -- per
-// Uday, an obviously-unsuitable candidate can still be rejected early,
-// before ever reaching a Salary Offer, same as before. Once written it
-// short-circuits everything else, including a later Owner decision.
+// A Principal-written 'Rejected' still wins and stays terminal -- an
+// obviously-unsuitable candidate can still be rejected early, before
+// ever reaching a Salary Offer, same as before.
 function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, salaryOfferDecision) {
   if (storedStatus === 'Hired' || storedStatus === 'Rejected') return storedStatus;
-  if (hasMdInterviewAt && salaryOfferDecision === APR_STATUS.APPROVED) return 'Hired';
+  if (hasMdInterviewAt && salaryOfferDecision === APR_STATUS.APPROVED) {
+    return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, true);
+  }
   if (hasMdInterviewAt && salaryOfferDecision === APR_STATUS.REJECTED) return 'Rejected';
-  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt);
+  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, false);
 }
 
 // "Interview Reports" tab -- filled in independently by whoever conducts
@@ -850,69 +857,62 @@ function hirSalaryOfferDecisions_() {
   return map;
 }
 
-// 2026-09-28, per Uday: the CV/Interview Report/Documents hard gate,
-// and the "MD Academics interview must have happened first" gate, used
-// to live in hiringUpdateStatus_'s Hired-write path -- moved here
-// because Hired is no longer a write this file performs at all (see
-// hirEffectiveStatus_'s own comment). The real control point is now an
-// Owner's Approve/Reject click on this specific candidate's 'Salary
-// Offer Approval' request, so that's where aprDecide_ (approvals.gs,
-// same project) calls this before honoring the decision.
-//
-// applicantId is parsed back to a row number the same way
-// hirApplicantId_ built it ('T-0000' -> row); no sheet scan needed.
-// The MD-interview-date gate applies to EITHER decision (Approved or
-// Rejected) -- an Owner shouldn't be deciding this at all before that
-// interview happened. The document-completeness gate only applies to
-// Approved -- there's nothing wrong with rejecting an incomplete file.
+// 2026-09-28, per Uday: this used to also carry the CV/Interview
+// Report/Documents hard gate -- moved back to hiringUpdateStatus_'s
+// Hired-write path (see its own comment), since Hired is a real
+// Principal click again. Approving a Salary Offer Approval now only
+// means "the Owner signs off on hiring this candidate," a lighter-
+// weight decision than "every document is actually on file" -- that's
+// the Principal's own final check at the Hired click, the "win" moment
+// this whole redesign is for. What's left here is just the timing
+// gate: an Owner can't decide EITHER way before the MD Academics
+// interview has actually happened.
 function hirSalaryOfferGateCheck_(applicantId, decision) {
   const row = parseInt(String(applicantId || '').replace(/^T-0*/, ''), 10);
   if (!row) return { ok: false, error: 'Could not identify the applicant from this request’s Item field (expected a "T-0000" style ID).' };
-  const sheet = hirSheet_();
-  const mdInterviewAt = sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue();
+  const mdInterviewAt = hirSheet_().getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue();
   if (!mdInterviewAt) {
     return { ok: false, error: 'Can’t decide this yet -- the MD Academics interview hasn’t been recorded for this candidate on the Hiring Dashboard.' };
   }
-  if (decision !== APR_STATUS.APPROVED) return { ok: true };
-  const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
-  const name = String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim();
-  const phone = String(sheet.getRange(row, HIR_COL.PHONE).getValue() || '').trim();
-  const cv = String(sheet.getRange(row, HIR_COL.CV).getValue() || '').trim();
-  const branchMatch = branches.match(/LMS-(\d)/);
-  const applicantCampus = branchMatch ? 'LMS' + branchMatch[1] : '';
-  const missing = [];
-  if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
-  if (!cv) missing.push('a CV on file');
-  if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
-  const docs = hiringCheckDocuments_(applicantCampus, name);
-  if (!docs.found) missing.push('a Staff Document Submission on file');
-  else if (!docs.complete) missing.push('the missing document(s): ' + docs.missing.join(', '));
-  if (missing.length) return { ok: false, error: 'Can’t approve yet -- still waiting on ' + missing.join('; and ') + '.' };
   return { ok: true };
+}
+
+// Read-only "has an Owner approved hiring THIS applicant" check, used
+// by hiringUpdateStatus_'s Hired-write gate below -- the one place a
+// single applicantId lookup (not the bulk hirSalaryOfferDecisions_ map)
+// makes sense, since it's only ever called once per Hired click, not
+// once per row in a list.
+function hirIsHiringApproved_(applicantId) {
+  const row = parseInt(String(applicantId || '').replace(/^T-0*/, ''), 10);
+  if (!row) return false;
+  if (!hirSheet_().getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue()) return false;
+  return hirSalaryOfferDecisions_()[applicantId] === APR_STATUS.APPROVED;
 }
 
 // action=updatehiringstatus (doPost) -- Principal only, own DISTRICT
 // re-checked server-side (defense in depth, same as the client-side
-// filter). 2026-09-28, per Uday: 'Hired' is no longer a value this
-// action accepts at all -- it's derived from an Owner's decision on
-// the candidate's Salary Offer Approval (see hirEffectiveStatus_ and
-// hirSalaryOfferGateCheck_ above). Only an early, deliberate 'Rejected'
-// is still written here, for a candidate a Principal already knows
-// won't proceed, before ever reaching a Salary Offer.
+// filter). 2026-09-28, per Uday ("the Principal must get a feeling of a
+// win while being able to hire"): 'Hired' is a real Principal click
+// again -- gated on hirIsHiringApproved_ (an Owner already approved
+// this specific candidate's Salary Offer Approval, after their MD
+// Academics interview) PLUS every compulsory document actually being
+// on file, same rigor the original Hired-write gate had before this
+// whole feature existed. An early, deliberate 'Rejected' stays
+// available too, for a candidate a Principal already knows won't
+// proceed, before ever reaching a Salary Offer -- unchanged.
 function hiringUpdateStatus_(caller, body) {
   const row = parseInt(body.row, 10);
   if (!row || row < 2) throw new Error('Invalid row');
   const status = String(body.status || '').trim();
-  // 2026-09-25, per Uday ("not by my clicking"): every ladder rung is
-  // derived live from evidence (see hirEffectiveStatus_), not written
-  // here at all -- this action only ever writes 'Rejected' to the
-  // Status cell, the one remaining deliberate decision a Principal
-  // makes directly. A blank status (or any other value, including a
-  // stale derived one the client happened to still be holding) means
-  // "just save Notes/dates, don't touch Status" -- not an error, since
-  // that's the normal case every time someone enters an interview date
-  // without also rejecting in the same click.
-  if (status && status !== 'Rejected') {
+  // 2026-09-25, per Uday ("not by my clicking"): every rung up to
+  // 'Hiring Approved' is derived live from evidence (see
+  // hirEffectiveStatus_), not written here at all. A blank status (or
+  // any other value, including a stale derived one the client happened
+  // to still be holding) means "just save Notes/dates, don't touch
+  // Status" -- not an error, since that's the normal case every time
+  // someone enters an interview date without also deciding Hired/
+  // Rejected in the same click.
+  if (status && status !== 'Hired' && status !== 'Rejected') {
     throw new Error('Invalid status');
   }
 
@@ -934,12 +934,37 @@ function hiringUpdateStatus_(caller, body) {
     throw new Error('Enter a one-line reason for rejecting this candidate (in Notes) before saving.');
   }
 
-  // Only ever writes for a deliberate early Rejected click -- see the
-  // comment above. Everything else stays derived, so the Status cell
-  // itself stays blank until that one decision is made (or an Owner
-  // later decides the Salary Offer Approval, which doesn't touch this
-  // cell at all -- see hirEffectiveStatus_).
-  if (status === 'Rejected') {
+  // The campus actually doing the hiring is the CALLER's own campus,
+  // not necessarily whichever campus the applicant happened to list
+  // first on the form -- a locked Principal browsing their district can
+  // act on a candidate who only ticked a sister campus, and it's their
+  // own school's approvals/documents that matter. Owner/ALL has no
+  // single campus of their own to default to, so it keeps the old
+  // branches-parse fallback (first campus mentioned) for that one case.
+  const branchMatch = branches.match(/LMS-(\d)/);
+  const applicantCampus = caller.campusId !== 'ALL' ? caller.campusId : (branchMatch ? 'LMS' + branchMatch[1] : caller.campusId);
+
+  if (status === 'Hired') {
+    const name = String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim();
+    const phone = String(sheet.getRange(row, HIR_COL.PHONE).getValue() || '').trim();
+    const cv = String(sheet.getRange(row, HIR_COL.CV).getValue() || '').trim();
+    const missing = [];
+    if (!hirIsHiringApproved_(hirApplicantId_(row))) missing.push('an Owner\'s approval of this candidate\'s Salary Offer (after their MD Academics interview)');
+    if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('the "New/ Backup Position" requisition');
+    if (!cv) missing.push('a CV on file');
+    if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
+    const docs = hiringCheckDocuments_(applicantCampus, name);
+    if (!docs.found) missing.push('a Staff Document Submission on file');
+    else if (!docs.complete) missing.push('the missing document(s): ' + docs.missing.join(', '));
+    if (missing.length) {
+      throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join('; and ') + '.');
+    }
+  }
+
+  // Only ever writes for a deliberate Hired/Rejected click -- see the
+  // comment above. Everything before that stays derived, so the Status
+  // cell itself stays blank until one of those two decisions is made.
+  if (status === 'Hired' || status === 'Rejected') {
     sheet.getRange(row, HIR_COL.STATUS).setValue(status);
   }
   sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
