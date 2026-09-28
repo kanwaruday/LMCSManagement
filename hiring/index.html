@@ -388,24 +388,20 @@ function salaryLinkUrl_(a) {
 // this file from hand-duplicating the ladder order as a second literal.
 function ladderStatuses_() { return (APPLICANTS.statuses || []).filter(function (s) { return s !== 'Rejected'; }); }
 
-// 2026-09-25, per Uday ("not by my clicking"): only 'Hired' and
-// 'Rejected' are still a deliberate click -- real decisions, never
-// inferred. Every earlier rung is DERIVED server-side from actual
-// evidence (a date entered, an Interview Report found -- see
-// hirEffectiveStatus_ in hiring.gs) and just renders as a plain tick
-// here, not a button; `currentStatus` is that server-computed value,
-// used purely for displaying how far along the ladder someone is.
+// 2026-09-28, per Uday: 'Hired' stopped being a deliberate Principal
+// click too -- it's now DERIVED, same as every rung before it, from an
+// Owner's decision on this candidate's Salary Offer Approval request
+// (hirEffectiveStatus_ in hiring.gs). Only 'Rejected' is still a
+// button here -- a Principal can still bail out early on an obviously
+// unsuitable candidate before ever reaching a Salary Offer.
+// `currentStatus` is the server-computed value, used purely for
+// displaying how far along the ladder someone is.
 function ladderHtml_(a) {
   const currentStatus = a.status;
   const ladder = ladderStatuses_();
   const idx = ladder.indexOf(currentStatus);
   const rungs = ladder.map(function (s, i) {
     const done = idx !== -1 && i <= idx;
-    const isPending = s === currentStatus;
-    if (s === 'Hired') {
-      const cls = 'ladder-item' + (done ? ' ladder-done' : '') + (isPending ? ' ladder-pending' : '');
-      return '<button type="button" class="' + cls + '" data-stage="Hired">' + (done ? '✓ ' : '○ ') + s + '</button>';
-    }
     const cls = 'ladder-item ladder-derived' + (done ? ' ladder-done' : '');
     // 'Interview & Demo Done' only ever ticks once a real Interview Report
     // is on file (see hirDerivedLadderStage_ in hiring.gs) -- once done,
@@ -433,14 +429,16 @@ function ladderHtml_(a) {
 // update controls sitting off in the separate Notes column where the
 // connection to the Stage ticks wasn't obvious.
 //
-// 2026-09-26, per Uday: laid out as a genuine progression -- Interview
-// Scheduled date, then the Interview Report Form link, then the MD
-// Academics date, then Open Salary Dashboard, each section only
-// appearing once its own trigger has actually fired (idx crossing the
-// matching ladder rung), and staying visible after that rather than
-// disappearing again once you've moved past it -- so a Principal never
-// sees, say, the MD Academics date field before there's even an
-// Interview Report on file for it to mean anything.
+// 2026-09-28, per Uday: reordered -- Salary Offer now comes right after
+// the Interview Report (idx 1), BEFORE the MD Academics interview date
+// (idx 2), not after -- the salary numbers get finalized and submitted
+// for Owner approval before the candidate even meets MD Academics, not
+// as a last step once they already have. Once everything here is done
+// (idx 3, MD Academics Interview Scheduled), there's nothing left for a
+// Principal to do -- Hired/Rejected is now an Owner's call on the
+// Salary Offer Approval request itself (see hiring.gs's
+// hirEffectiveStatus_), so this bar just says so instead of showing a
+// dead-end button.
 function reqBarHtml_(a) {
   if (a.status === 'Hired' || a.status === 'Rejected') return '';
   const idx = ladderStatuses_().indexOf(a.status);
@@ -450,21 +448,15 @@ function reqBarHtml_(a) {
   if (idx < 0) html += '<div class="req-hint">Next: enter the interview date below, then Save.</div>';
   html += '<div class="interview-label">Interview scheduled</div><input class="interview-input" type="datetime-local" value="' + (a.interviewAt ? a.interviewAt.slice(0, 16) : '') + '">';
 
-  // 2. Interview Reports -- 2026-09-26, per Uday: this was one button
-  // trying to do two different jobs depending on stage (go submit vs.
-  // go view), which read as broken/confusing. Now it's a header with
-  // exactly one action under it at a time: "Submit Report" (the blank
-  // Google Form) before a report's on file, "View Report" once
-  // hirDerivedLadderStage_ (hiring.gs) has confirmed one exists.
-  //
-  // View Report is a.interviewReportPdf -- a plain <a href>, straight
-  // from the same hiringApplicants_ payload the row was already built
-  // from (hiring.gs's hirInterviewReportPhones_ joins it in bulk from
-  // column G on the Interview Reports sheet), not a button that fetches
-  // the URL on click and then calls window.open() from inside a
-  // .then() -- that pattern is what kept opening a blank tab: most
-  // browsers stop treating a window.open() as tied to the original
-  // click by the time an async lookup resolves, and silently block it.
+  // 2. Interview Reports -- one header, one action at a time: "Submit
+  // Report" (the blank Google Form) before a report's on file, "View
+  // Report" once hirDerivedLadderStage_ (hiring.gs) has confirmed one
+  // exists. View Report is a.interviewReportPdf -- a plain <a href>,
+  // straight from the hiringApplicants_ payload this row was already
+  // built from, not a fetch-then-window.open() (that pattern is what
+  // kept opening a blank tab -- most browsers stop treating
+  // window.open() as tied to the original click by the time an async
+  // lookup resolves, and silently block it).
   if (idx === 0) {
     html += '<div class="req-hint">Next: submit the Interview Report, then refresh.</div>' +
       '<div class="interview-label">Interview Reports</div>' +
@@ -478,16 +470,26 @@ function reqBarHtml_(a) {
     }
   }
 
-  // 3. MD Academics interview date -- opens once the Interview Report is on file.
+  // 3. Salary Dashboard -- opens once the Interview Report is on file.
+  // "Record as Salary Offer" there both stamps the evidence date AND
+  // submits a Salary Offer Approval request to the Owners (see
+  // salary/index.html's recordSalaryOffer_) -- this rung ticks the
+  // moment that's submitted, not once an Owner has decided it.
   if (idx >= 1) {
-    if (idx === 1) html += '<div class="req-hint">Next: enter the MD Academics interview date below, then Save.</div>';
+    if (idx === 1) html += '<div class="req-hint">Next: compute and record a Salary Offer.</div>';
+    html += '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + salaryLinkUrl_(a) + '" target="_blank">💰 Open Salary Dashboard</a>';
+  }
+
+  // 4. MD Academics interview date -- opens once the Salary Offer is submitted.
+  if (idx >= 2) {
+    if (idx === 2) html += '<div class="req-hint">Next: enter the MD Academics interview date below, then Save.</div>';
     html += '<div class="interview-label">MD Academics interview</div><input class="md-interview-input" type="datetime-local" value="' + (a.mdInterviewAt ? a.mdInterviewAt.slice(0, 16) : '') + '">';
   }
 
-  // 4. Salary Dashboard -- opens once the MD Academics date is saved.
-  if (idx >= 2) {
-    if (idx === 2) html += '<div class="req-hint">Next: compute and record a Salary Offer.</div>';
-    html += '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + salaryLinkUrl_(a) + '" target="_blank">💰 Open Salary Dashboard</a>';
+  // 5. Nothing left for a Principal to do -- an Owner now decides
+  // Hired/Rejected directly on the Salary Offer Approval request.
+  if (idx >= 3) {
+    html += '<div class="req-hint">Awaiting an Owner’s decision on the Salary Offer Approval for this candidate (Approvals tab).</div>';
   }
 
   return html + '</div>';

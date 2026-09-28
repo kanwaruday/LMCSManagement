@@ -69,10 +69,11 @@
 //                         Applicants sheet district-scoped, track a
 //                         candidate's status, warn-not-block cross-checks
 //                         against the Interview Report and per-campus
-//                         Document Submission sheets. The 'Hired' write
-//                         is gated on two Approvals categories ('New/
-//                         Backup Position', 'Hiring Decision') both being
-//                         Approved for that campus -- see its own header.
+//                         Document Submission sheets. 'Hired'/'Rejected'
+//                         are derived (2026-09-28), not written here --
+//                         an Owner deciding the candidate's 'Salary
+//                         Offer Approval' request (approvals.gs) is what
+//                         determines them -- see hiring.gs's own header.
 //   teacher-portal.gs   -- action=myssstats (teacher-ss.gs, not here),
 //                         myupcomingevents (principal-dr.gs, not here),
 //                         myrankscore. This file specifically: the

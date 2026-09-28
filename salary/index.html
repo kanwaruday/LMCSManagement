@@ -385,6 +385,14 @@ function requestEpfExemption_() {
 const params = new URLSearchParams(location.search);
 const APPLICANT_ID = params.get('applicantId') || '';
 let EXISTING_NOTES = ''; // fetched once on load -- see loadExistingNotes_
+// 2026-09-28, per Uday: "Record as Salary Offer" now ALSO submits a
+// Salary Offer Approval request to the Owners (see recordSalaryOffer_)
+// -- this tracks whether one was already submitted for this applicant,
+// fetched once on load same as EXISTING_NOTES, so re-recording (e.g.
+// tweaking a number before the Owner decides) updates the evidence
+// timestamp/Notes without flooding the Approvals tab with duplicate
+// Pending requests for the same candidate.
+let SALARY_OFFER_ALREADY_SUBMITTED = false;
 
 // hiringUpdateStatus_ (hiring.gs) REPLACES the Notes cell wholesale, same
 // as the Hiring Dashboard's own Notes textbox already does -- it never
@@ -398,7 +406,10 @@ function loadExistingNotes_() {
   gasGet_('hiringapplicants').then(function (res) {
     if (!res.success) return;
     const match = (res.applicants || []).filter(function (a) { return a.row === row; })[0];
-    if (match) EXISTING_NOTES = match.notes || '';
+    if (match) {
+      EXISTING_NOTES = match.notes || '';
+      SALARY_OFFER_ALREADY_SUBMITTED = !!match.salaryOfferAt;
+    }
   }).catch(function () { /* best-effort -- Record still works, just won't preserve prior notes */ });
 }
 
@@ -408,6 +419,8 @@ function recordSalaryOffer_() {
   const msg = document.getElementById('recordMsg');
   if (!row) { msg.textContent = 'No applicant linked — open this page from the Hiring Dashboard.'; msg.className = 'record-msg err'; return; }
   const r = window._lastResult || calcSalary_();
+  const name = document.getElementById('fName').value.trim();
+  const campus = document.getElementById('fCampus').value;
   const designation = document.getElementById('fDesignation').value;
   const subjects = document.getElementById('fSubjects').value.trim();
   const role = designation + (designation && subjects ? ': ' : '') + subjects;
@@ -423,7 +436,33 @@ function recordSalaryOffer_() {
     btn.disabled = false;
     if (!res.success) { msg.textContent = res.error; msg.className = 'record-msg err'; return; }
     EXISTING_NOTES = notes;
-    msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
+    if (SALARY_OFFER_ALREADY_SUBMITTED) {
+      msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
+      return;
+    }
+    // First time recording for this applicant -- also submit the
+    // Salary Offer Approval request the Owners decide, per Uday's
+    // 2026-09-28 redesign. Item MUST start with the applicant's exact
+    // "T-0000" ID -- hiring.gs's hirSalaryOfferDecisions_ matches on
+    // that, not on name (a name substring risked matching the wrong
+    // candidate for a decision this consequential).
+    msg.textContent = 'Recorded — submitting for Owner approval…';
+    gasPost_('submitapproval', {
+      category: 'Salary Offer Approval',
+      title: 'Salary Offer — ' + name + (role ? ' (' + role + ')' : ''),
+      description: (role ? role + ' at ' + LMCS.campusLabel(campus) + '. ' : '') +
+        'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo.',
+      itemName: APPLICANT_ID + ' — ' + name,
+    }).then(function (aprRes) {
+      SALARY_OFFER_ALREADY_SUBMITTED = true;
+      msg.textContent = aprRes.success
+        ? 'Recorded ✓ — submitted for Owner approval.'
+        : 'Recorded, but the approval request failed: ' + (aprRes.error || 'unknown error') + ' — try Record again.';
+      msg.className = aprRes.success ? 'record-msg ok' : 'record-msg err';
+    }).catch(function () {
+      msg.textContent = 'Recorded, but the approval request hit a network error — try Record again.';
+      msg.className = 'record-msg err';
+    });
   }).catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'record-msg err'; });
 }
 

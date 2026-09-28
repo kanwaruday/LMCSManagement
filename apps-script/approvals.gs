@@ -66,7 +66,16 @@ const APR_COMMENTS_TAB = 'Comments';
 // exemption per-candidate here, only the Owner can approve it (same
 // generic decide-rights as every other category, see aprCanDecide_) --
 // see salary.gs's salEpfExemptionApproved_.
-const APR_CATEGORIES = ['New/ Backup Position', 'Hiring Decision', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+// 2026-09-28, per Uday: renamed 'Hiring Decision' -> 'Salary Offer
+// Approval', and it changed meaning at the same time -- it's no longer
+// a same-day rubber-stamp after Hired is already decided. It's now
+// submitted BEFORE the MD Academics interview (from the Salary
+// Dashboard's "Record as Salary Offer"), and an Owner deciding it
+// Approved/Rejected is now what DERIVES Hired/Rejected on the Hiring
+// Dashboard for that specific candidate -- see hiring.gs's
+// hirEffectiveStatus_/hirSalaryOfferDecisions_/hirSalaryOfferGateCheck_,
+// and the gate in aprDecide_ below that calls the latter.
+const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no
@@ -85,9 +94,15 @@ const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 // 2026-09-25: 'EPF Exemption' also uses Item (as "Candidate") so
 // salEpfExemptionApproved_ can match an Approved row to the specific
 // candidate the Salary Dashboard is asking about.
+// 2026-09-28: 'Salary Offer Approval' also uses Item, but matched by
+// the applicant's exact "T-0000" ID (hirApplicantId_'s format) rather
+// than a name substring -- see hirSalaryOfferDecisions_ in hiring.gs.
+// The Salary Dashboard's "Record as Salary Offer" always formats it
+// correctly; a manual submit via this portal's own form must start the
+// Item with that same ID or the request will never resolve for anyone.
 // Frontend copy of this array (principals-daily-reporting/index.html)
 // updated the same way -- keep both in sync.
-const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position', 'EPF Exemption'];
+const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position', 'EPF Exemption', 'Salary Offer Approval'];
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // Teacher Portal (2026-09-19): categories a Teacher may self-submit --
 // deliberately narrow (no Hiring/Compensation/Disciplinary, which stay
@@ -316,6 +331,20 @@ function aprDecide_(caller, body) {
   }
   if (decision === APR_STATUS.REVOKED && String(values[rowIdx][13]) !== APR_STATUS.APPROVED) {
     return { success: false, error: 'Only an Approved request can be revoked' };
+  }
+
+  // 2026-09-28, per Uday: deciding a 'Salary Offer Approval' now
+  // directly determines Hired/Rejected for one specific candidate on
+  // the Hiring Dashboard (see hiring.gs's hirEffectiveStatus_), so it
+  // needs its own real gate here, same rigor as the old Hired-write
+  // gate this replaced -- see hirSalaryOfferGateCheck_'s own comment
+  // for exactly what it checks and why each half only applies to
+  // Approved vs. either decision.
+  const category = String(values[rowIdx][2]);
+  if (category === 'Salary Offer Approval' && (decision === APR_STATUS.APPROVED || decision === APR_STATUS.REJECTED)) {
+    const idMatch = String(values[rowIdx][7] || '').match(/T-\d{4}/);
+    const gate = hirSalaryOfferGateCheck_(idMatch ? idMatch[0] : '', decision);
+    if (!gate.ok) return { success: false, error: gate.error };
   }
 
   const row = rowIdx + 1; // 1-based sheet row
