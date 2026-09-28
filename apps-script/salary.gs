@@ -41,17 +41,34 @@ function salNormalizeCampus_(raw) {
   return String(raw || '').replace(/\s+/g, '').toUpperCase();
 }
 
-// PayScale Table: title (row1) + subtitle (row2) + blank (row3) + header
-// (row4) + data. Columns: Role Code, Designation, Pre-Basic Pay, Grade
-// Pay, Ideal Hours, Classification, ES Band -- see the review workbook
-// this sheet was built from for the exact layout.
+// PayScale Table: title/subtitle/blank rows above a header row, then
+// data. 2026-09-28 -- was hardcoded as "header always row 4, data always
+// row 5" until a stray edit (something typed into the title cell while
+// it was mid-edit) silently shifted the real header down a row and broke
+// every Designation lookup in the app with no error anywhere -- the
+// title/subtitle rows above the header aren't load-bearing structure,
+// they're just decoration a human can accidentally disturb, so trusting
+// a fixed offset into them was the actual bug. Now finds the header row
+// by CONTENT (column A === 'Role Code', column B === 'Designation') and
+// reads data starting the row after, however many decoration rows came
+// before it -- immune to this whole class of accident. Throws a clear
+// error instead of silently returning nothing if the header can't be
+// found at all (e.g. both header cells got wiped, not just shifted).
+function salPayScaleHeaderRow_(values) {
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === 'Role Code' && String(values[i][1] || '').trim() === 'Designation') return i;
+  }
+  return -1;
+}
 function salPayScale_() {
   const cache = CacheService.getScriptCache();
   const cached = cache.get('sal_payscale');
   if (cached) return JSON.parse(cached);
   const values = salConfigValues_(SAL_TAB_PAYSCALE);
+  const headerRow = salPayScaleHeaderRow_(values);
+  if (headerRow === -1) throw new Error('PayScale Table: could not find the header row (looking for "Role Code"/"Designation" in columns A/B) -- sheet structure may have changed');
   const out = [];
-  for (let i = 4; i < values.length; i++) {
+  for (let i = headerRow + 1; i < values.length; i++) {
     const r = values[i];
     if (!String(r[1] || '').trim()) continue; // blank Designation -- notes row or trailing blank
     out.push({
