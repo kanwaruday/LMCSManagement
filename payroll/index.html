@@ -9,7 +9,7 @@
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:12px;line-height:1.4;display:flex;flex-direction:column}
-.hdr{background:var(--red);color:#fff;padding:0 20px;height:36px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
+.hdr{background:var(--red);color:#fff;padding:4px 20px;min-height:36px;flex-wrap:wrap;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
 .hdr h1{font-size:13px;font-weight:700;letter-spacing:.3px}
 .hdr p{font-size:8.5px;opacity:.75}
 .hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:4px 10px;border-radius:4px;font-size:10.5px;font-weight:600;text-decoration:none;white-space:nowrap}
@@ -42,6 +42,12 @@ tr.total td{font-weight:700;border-top:2px solid var(--dark);background:var(--lg
 td.pos{color:var(--green);font-weight:600}
 td.neg{color:#991b1b;font-weight:600}
 h2{font-size:12px;margin:4px 0 6px}
+.locked{font-size:11px;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:7px 10px;margin-bottom:8px}
+.lock-btn{font-size:11.5px;padding:5px 14px;border:1px solid var(--dark);border-radius:5px;background:var(--white);color:var(--dark);cursor:pointer;font-weight:700}
+.lock-btn:hover{background:var(--dark);color:#fff}
+table.inputs input[type=number]{width:70px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:11px;text-align:right}
+table.inputs input[type=text]{width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:11px}
+table.inputs tr.dirty td{background:#fef9c3}
 .loading-pill{display:none;position:fixed;top:16px;right:16px;background:var(--dark);color:#fff;padding:8px 14px;border-radius:20px;font-size:11.5px;align-items:center;gap:8px;z-index:1000}
 .loading-pill.on{display:flex}
 .loading-spinner{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
@@ -51,7 +57,7 @@ h2{font-size:12px;margin:4px 0 6px}
 <body>
 <div class="loading-pill" id="loadingPill"><span class="loading-spinner"></span><span>Running payroll…</span></div>
 <div class="hdr">
-  <div><h1>Salary Dashboard · Monthly Payroll</h1><p>Monthly salary run — draft (Stage 1), Owner only</p></div>
+  <div><h1>Salary Dashboard · Monthly Payroll</h1><p>Monthly salary run — draft, inputs &amp; lock — Owner only</p></div>
   <div><a href="../salary/index.html" class="hdr-btn">🧮 Offer Calculator</a> <a href="../index.html" class="hdr-btn">🏠 Portal Home</a></div>
 </div>
 <div id="appBody">
@@ -60,13 +66,24 @@ h2{font-size:12px;margin:4px 0 6px}
     <div class="welcome" id="welcomeStrip"></div>
     <div id="deniedRoot"></div>
     <div id="mainRoot" style="display:none">
-      <div class="note">Draft only — nothing is saved or locked yet. Employees come from the <b>Salary Master</b> tab, paid days and one-offs from <b>Monthly Inputs</b> (blank = full month), rates from LMCS-Salary-PayScale. "ERP Net" comes from the <b>ERP Reference</b> tab, for the parallel run.</div>
+      <div class="note">Employees come from the <b>Salary Master</b> tab, paid days and one-offs from <b>Monthly Inputs</b> (blank = full month), rates from LMCS-Salary-PayScale. "ERP Net" comes from the <b>ERP Reference</b> tab, for the parallel run.</div>
       <div class="toolbar">
         <label>Month <input type="month" id="fMonth"></label>
         <button class="btn" id="runBtn">Run draft</button>
         <input type="search" id="fSearch" placeholder="Search name / code">
         <label><input type="checkbox" id="fDiffOnly"> Only rows that differ from ERP</label>
         <button class="mini-btn" id="csvBtn">⬇ Export CSV</button>
+        <span id="openActions" style="display:none">
+          <button class="mini-btn" id="editBtn">✏️ Edit inputs</button>
+          <button class="lock-btn" id="lockBtn">🔒 Lock month</button>
+        </span>
+        <span id="editActions" style="display:none">
+          <button class="btn" id="saveBtn">Save inputs</button>
+          <button class="mini-btn" id="importBtn">⬆ Import inputs CSV</button>
+          <button class="mini-btn" id="templateBtn">⬇ Inputs template</button>
+          <button class="mini-btn" id="cancelBtn">Cancel</button>
+          <input type="file" id="importFile" accept=".csv" style="display:none">
+        </span>
       </div>
       <div id="msgRoot"></div>
       <div id="resultRoot"></div>
@@ -82,13 +99,20 @@ h2{font-size:12px;margin:4px 0 6px}
 const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv/exec';
 
 const ENTITY_LABEL = { HES: 'HES', LMS1: 'LMS 1', LMS2: 'LMS 2', LMS3: 'LMS 3', LMS4: 'LMS 4', LMS5: 'LMS 5', LMS6: 'LMS 6' };
-let SESSION = null, RESULT = null, ENTITY = 'ALL';
+let SESSION = null, RESULT = null, ENTITY = 'ALL', EDITING = false, EDITS = {};
 
 function payApi_(action, data) {
   const url = PAYROLL_BACKEND_URL + '?action=' + encodeURIComponent(action) +
     '&idToken=' + encodeURIComponent(SESSION.idToken) +
     '&data=' + encodeURIComponent(JSON.stringify(data || {})) + '&_=' + Date.now();
   return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); });
+}
+
+function payPost_(action, data) {
+  return fetch(PAYROLL_BACKEND_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: action, idToken: SESSION.idToken, data: data }),
+  }).then(function (r) { return r.json(); });
 }
 
 function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -127,10 +151,15 @@ function sum_(rows, fn) { return rows.reduce(function (a, r) { return a + (Numbe
 
 function render_() {
   if (!RESULT) return;
+  document.getElementById('openActions').style.display = RESULT.locked || EDITING ? 'none' : '';
+  document.getElementById('editActions').style.display = EDITING ? '' : 'none';
+  if (EDITING) { renderInputs_(); return; }
   const rows = visibleRows_();
   const entities = Object.keys(ENTITY_LABEL).filter(function (e) { return RESULT.rows.some(function (r) { return r.entity === e; }); });
   const s = RESULT.settings;
-  let html = '<div class="note">' + RESULT.month + ' · ' + RESULT.daysInMonth + ' days · EPF ceiling ₹' + inr_(s.epfCeiling) +
+  let html = RESULT.locked ? '<div class="locked">🔒 <b>' + esc_(RESULT.month) + ' is locked</b> — ' + esc_(RESULT.locked.at) + ' by ' + esc_(RESULT.locked.by) +
+    '. Read-only, exactly as locked. Corrections go into next month as Other Earnings / Other Deductions.</div>' : '';
+  html += '<div class="note">' + RESULT.month + ' · ' + RESULT.daysInMonth + ' days · EPF ceiling ₹' + inr_(s.epfCeiling) +
     ' · ESI threshold ₹' + inr_(s.esiThreshold) + ' · RRF ' + Math.round(s.rrfY1 * 100) + '/' + Math.round(s.rrfY2 * 100) + '/' + Math.round(s.rrfY3 * 100) +
     '% · Stop RRF at ' + s.rrfTargetMonths + '× CTI: <b>' + (s.rrfStopAtTarget ? 'ON' : 'OFF') + '</b> · Gratuity provision ' + Math.round(s.gratRate * 100) + '%</div>';
 
@@ -171,22 +200,136 @@ function render_() {
 }
 
 function run_() {
-  const month = document.getElementById('fMonth').value;
+  EDITING = false;
+  handle_(payApi_('draft', { month: document.getElementById('fMonth').value }));
+}
+
+// Every backend call returns a full month result (draft or locked) -- one handler for all.
+function handle_(promise, okMsg) {
   const msg = document.getElementById('msgRoot');
-  if (!PAYROLL_BACKEND_URL) { msg.innerHTML = '<div class="err">Payroll backend not deployed yet — set PAYROLL_BACKEND_URL in payroll/index.html.</div>'; return; }
-  msg.innerHTML = '';
   document.getElementById('loadingPill').classList.add('on');
-  payApi_('draft', { month: month }).then(function (res) {
+  return promise.then(function (res) {
     document.getElementById('loadingPill').classList.remove('on');
-    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
     RESULT = res;
-    if (res.warnings.length) msg.innerHTML = '<div class="warn"><b>' + res.warnings.length + ' warning(s):</b><br>' + res.warnings.map(esc_).join('<br>') + '</div>';
-    if (!res.rows.length) msg.innerHTML += '<div class="warn">No employees in Salary Master effective for ' + esc_(month) + '.</div>';
+    msg.innerHTML = okMsg ? '<div class="note">' + esc_(okMsg) + '</div>' : '';
+    if (res.warnings.length) msg.innerHTML += '<div class="warn"><b>' + res.warnings.length + ' warning(s):</b><br>' + res.warnings.map(esc_).join('<br>') + '</div>';
+    if (!res.rows.length) msg.innerHTML += '<div class="warn">No employees for ' + esc_(res.month) + '.</div>';
     render_();
+    return true;
   }).catch(function (err) {
     document.getElementById('loadingPill').classList.remove('on');
     msg.innerHTML = '<div class="err">Could not reach the payroll backend: ' + esc_(err.message) + '</div>';
+    return false;
   });
+}
+
+// ── Stage 2: edit Monthly Inputs ─────────────────────────────────────
+const INPUT_FIELDS = [ // [key, CSV/sheet header, kind]
+  ['paidDays', 'Paid Days', 'num'], ['clDays', 'CL Days Encashed', 'num'], ['hold', 'Hold for F&F (Y/N)', 'yn'],
+  ['otherEarnings', 'Other Earnings', 'num'], ['otherEarningsNote', 'Other Earnings Note', 'text'],
+  ['otherDeductions', 'Other Deductions', 'num'], ['otherDeductionsNote', 'Other Deductions Note', 'text']];
+
+function startEdit_() {
+  EDITING = true; EDITS = {};
+  RESULT.rows.forEach(function (r) { EDITS[r.code] = Object.assign({}, r.input); });
+  render_();
+}
+
+function isDirty_(r) { return JSON.stringify(EDITS[r.code]) !== JSON.stringify(r.input); }
+
+function renderInputs_() {
+  const rows = visibleRows_();
+  let html = '<div class="note">Blank Paid Days = full month (' + RESULT.daysInMonth + '). Hold = pay this month\'s salary at F&amp;F instead of to the bank. ' +
+    'Changed rows turn yellow; only they are saved.</div><div class="wrap" style="max-height:65vh"><table class="inputs"><tr>' +
+    '<th class="l">Code</th><th class="l">Name</th><th class="l">Entity</th><th>Paid Days</th><th>CL Days Encashed</th><th>Hold F&amp;F</th>' +
+    '<th>Other + ₹</th><th class="l">Note</th><th>Other − ₹</th><th class="l">Note</th></tr>';
+  rows.forEach(function (r) {
+    const e = EDITS[r.code];
+    const num = function (k, ph) { return '<td><input type="number" min="0" data-c="' + esc_(r.code) + '" data-k="' + k + '" value="' + esc_(e[k]) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></td>'; };
+    const txt = function (k) { return '<td class="l"><input type="text" data-c="' + esc_(r.code) + '" data-k="' + k + '" value="' + esc_(e[k]) + '"></td>'; };
+    html += '<tr' + (isDirty_(r) ? ' class="dirty"' : '') + '><td class="l">' + esc_(r.code) + '</td><td class="l">' + esc_(r.name) + '</td><td class="l">' + esc_(ENTITY_LABEL[r.entity] || r.entity) + '</td>' +
+      num('paidDays', RESULT.daysInMonth) + num('clDays') +
+      '<td style="text-align:center"><input type="checkbox" data-c="' + esc_(r.code) + '" data-k="hold"' + (e.hold ? ' checked' : '') + '></td>' +
+      num('otherEarnings') + txt('otherEarningsNote') + num('otherDeductions') + txt('otherDeductionsNote') + '</tr>';
+  });
+  document.getElementById('resultRoot').innerHTML = html + '</table></div>';
+  document.querySelectorAll('table.inputs input').forEach(function (el) {
+    el.onchange = function () {
+      EDITS[el.dataset.c][el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+      const r = RESULT.rows.find(function (x) { return x.code === el.dataset.c; });
+      el.closest('tr').classList.toggle('dirty', isDirty_(r));
+    };
+  });
+}
+
+function saveInputs_() {
+  const changed = RESULT.rows.filter(isDirty_).map(function (r) { return Object.assign({ code: r.code }, EDITS[r.code]); });
+  if (!changed.length) { EDITING = false; render_(); return; }
+  handle_(payPost_('saveinputs', { month: RESULT.month, rows: changed }), 'Saved inputs for ' + changed.length + ' employee(s) and recalculated.')
+    .then(function (ok) { if (ok) { EDITING = false; render_(); } });
+}
+
+function lockMonth_() {
+  const net = sum_(RESULT.rows, function (r) { return r.net; });
+  if (RESULT.warnings.length) { alert('Fix the warnings shown above before locking.'); return; }
+  if (!confirm('Lock ' + RESULT.month + '?\n\n' + RESULT.rows.length + ' employees · Net pay ₹' + inr_(net) +
+    '\n\nThis writes the Payroll Register, Run Log and Ledger (RRF, held salary). A locked month cannot be edited or re-run.')) return;
+  handle_(payPost_('lock', { month: RESULT.month }), RESULT.month + ' locked.');
+}
+
+function parseCsv_(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(function (r) { return r.some(function (v) { return v.trim(); }); });
+}
+
+function importInputs_(file) {
+  file.text().then(function (text) {
+    const rows = parseCsv_(text);
+    const hdr = rows[0].map(function (h) { return h.trim(); });
+    const ci = hdr.indexOf('Employee Code');
+    if (ci === -1) { alert('CSV needs an "Employee Code" column (download the Inputs template).'); return; }
+    let applied = 0; const unknown = [];
+    rows.slice(1).forEach(function (r) {
+      const code = String(r[ci] || '').trim();
+      if (!EDITS[code]) { if (code) unknown.push(code); return; }
+      INPUT_FIELDS.forEach(function (f) {
+        const i = hdr.indexOf(f[1]);
+        if (i === -1) return;
+        const v = String(r[i] || '').trim();
+        EDITS[code][f[0]] = f[2] === 'yn' ? /^y/i.test(v) : v;
+      });
+      applied++;
+    });
+    render_();
+    alert('Applied ' + applied + ' row(s) from the CSV — review the yellow rows, then Save inputs.' +
+      (unknown.length ? '\n\nNot in this month\'s employees: ' + unknown.join(', ') : ''));
+  });
+}
+
+function downloadCsv_(name, lines) {
+  const csv = lines.map(function (l) { return l.map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = name;
+  a.click();
+}
+
+function inputsTemplate_() {
+  downloadCsv_('payroll-inputs-' + RESULT.month + '.csv', [['Employee Code', 'Name'].concat(INPUT_FIELDS.map(function (f) { return f[1]; }))]
+    .concat(RESULT.rows.map(function (r) {
+      const e = EDITS[r.code];
+      return [r.code, r.name].concat(INPUT_FIELDS.map(function (f) { return f[2] === 'yn' ? (e[f[0]] ? 'Y' : '') : e[f[0]]; }));
+    })));
 }
 
 function exportCsv_() {
@@ -194,11 +337,7 @@ function exportCsv_() {
   const lines = [COLS.map(function (c) { return c[0]; })].concat(visibleRows_().map(function (r) {
     return COLS.map(function (c) { const v = c[1](r); return v == null ? '' : v; });
   }));
-  const csv = lines.map(function (l) { return l.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = 'payroll-draft-' + RESULT.month + (ENTITY === 'ALL' ? '' : '-' + ENTITY) + '.csv';
-  a.click();
+  downloadCsv_('payroll-' + (RESULT.locked ? 'locked-' : 'draft-') + RESULT.month + (ENTITY === 'ALL' ? '' : '-' + ENTITY) + '.csv', lines);
 }
 
 function showApp(session) {
@@ -218,6 +357,13 @@ function showApp(session) {
   document.getElementById('fSearch').oninput = render_;
   document.getElementById('fDiffOnly').onchange = render_;
   document.getElementById('csvBtn').onclick = exportCsv_;
+  document.getElementById('editBtn').onclick = startEdit_;
+  document.getElementById('cancelBtn').onclick = function () { EDITING = false; render_(); };
+  document.getElementById('saveBtn').onclick = saveInputs_;
+  document.getElementById('lockBtn').onclick = lockMonth_;
+  document.getElementById('templateBtn').onclick = inputsTemplate_;
+  document.getElementById('importBtn').onclick = function () { document.getElementById('importFile').click(); };
+  document.getElementById('importFile').onchange = function (e) { if (e.target.files[0]) importInputs_(e.target.files[0]); e.target.value = ''; };
 }
 
 const cachedSession = LMCS.getSession();

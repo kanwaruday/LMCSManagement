@@ -15,9 +15,13 @@
 //     entity DA/ADA % + EPF/ESI registration) and PayRoll Constants,
 //     shared with the Salary Dashboard so both read the same rates.
 //
-// Stage 1 (2026-09-29): action=draft -- computes any month from Salary
-// Master + Monthly Inputs, compared against the ERP Reference tab.
-// Nothing is written except missing tabs/constants.
+// Actions:
+//   draft (GET)       -- any month from Salary Master + Monthly Inputs vs the
+//                        ERP Reference tab; a locked month is read back from
+//                        Payroll Register instead (Stage 1, 2026-09-29)
+//   saveinputs (POST) -- upsert paid days / CL encashed / hold / one-offs
+//   lock (POST)       -- write Register + Run Log + Ledger; month then read-only
+//                        (Stage 2, 2026-09-29)
 //
 // DEPLOY: Deploy -> New deployment -> Web app, Execute as: Me, Who has
 // access: Anyone (every call is still token-checked). Paste the /exec
@@ -55,14 +59,24 @@ const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes
 const PAY_READ_ACTIONS_ = ['draft'];
 
 function doGet(e) {
+  return payHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data ? JSON.parse(e.parameter.data) : {});
+}
+
+// Writes (Stage 2) come as POST -- a month of inputs is too long for a URL.
+function doPost(e) {
+  const body = JSON.parse((e.postData && e.postData.contents) || '{}');
+  return payHandle_(body.action, body.idToken, body.data || {});
+}
+
+function payHandle_(action, idToken, data) {
   try {
-    const action = String(e.parameter.action || '').toLowerCase();
-    const idToken = e.parameter.idToken;
+    action = String(action || '').toLowerCase();
     const caller = PAY_READ_ACTIONS_.indexOf(action) !== -1 ? payCachedOwner_(idToken) : payVerifyOwner_(idToken);
     if (!caller) return payJson_({ success: false, error: 'Not authorized -- payroll is Owner-only' });
-    const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
     let result;
     if (action === 'draft') result = payDraft_(data.month);
+    else if (action === 'saveinputs') result = paySaveInputs_(data.month, data.rows || [], caller);
+    else if (action === 'lock') result = payLock_(data.month, caller);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
     return payJson_(Object.assign({ success: true }, result));
   } catch (err) {
@@ -179,15 +193,65 @@ function payRates_(rs) {
   return out;
 }
 
-// ── Draft run ────────────────────────────────────────────────────────
-function payDraft_(month) {
+// ── Month helpers ────────────────────────────────────────────────────
+function payCheckMonth_(month) {
   if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('month must be YYYY-MM');
   const y = Number(month.slice(0, 4)), m = Number(month.slice(5, 7));
   const monthEnd = new Date(y, m, 0);
-  const ctx0 = { monthEnd: monthEnd, daysInMonth: monthEnd.getDate() };
+  return { start: new Date(y, m - 1, 1), monthEnd: monthEnd, daysInMonth: monthEnd.getDate() };
+}
 
+// Register columns after Month/Code/Name/Entity/Designation, in PAY_TABS order,
+// mapped to payCalc_'s keys -- one list for both writing and reading back.
+const PAY_REG_FIELDS = [['Paid Days', 'paidDays'], ['Month Basic', 'basic'], ['ADA', 'ada'], ['DA', 'da'],
+  ['CL Encashment', 'clEncashment'], ['Tuition (A)', 'tuitionA'], ['Other Earnings', 'otherEarnings'], ['Gross', 'gross'],
+  ['EPF Employee', 'epf'], ['ESI Employee', 'esi'], ['RRF Rate', 'rrfRate'], ['RRF', 'rrf'], ['Tuition (D)', 'tuitionD'],
+  ['Other Deductions', 'otherDeductions'], ['Total Deductions', 'totalDeductions'], ['Net Pay', 'net'],
+  ['Bank Payable', 'bankPayable'], ['Held for F&F', 'heldForFnF'], ['EPF Employer', 'epfEmployer'],
+  ['ESI Employer', 'esiEmployer'], ['CTI', 'cti'], ['Gratuity Provision', 'gratuityProvision']];
+
+// {by, at} if this month is locked in the Run Log, else null.
+function payLockInfo_(ss, month) {
+  const hit = payRows_(ss.getSheetByName('Run Log')).filter(function (r) {
+    return payMonthKey_(r['Month']) === month && /^locked/i.test(String(r['Status (Draft/Locked)'] || ''));
+  })[0];
+  if (!hit) return null;
+  const at = hit['Locked At'];
+  return { by: String(hit['Locked By'] || ''), at: at instanceof Date ? Utilities.formatDate(at, PAY_TZ, 'dd MMM yyyy, HH:mm') : String(at || '') };
+}
+
+function payErp_(ss, month) {
+  const erp = {};
+  payRows_(ss.getSheetByName('ERP Reference')).forEach(function (r) {
+    if (payMonthKey_(r['Month']) === month) erp[String(r['Employee Code']).trim()] = payNum_(r['ERP Net Pay']);
+  });
+  return erp;
+}
+
+// ── Draft run ────────────────────────────────────────────────────────
+// A locked month is read back from the Payroll Register exactly as locked;
+// an open month is recomputed from Salary Master + Monthly Inputs.
+function payDraft_(month) {
   const ss = SpreadsheetApp.openById(PAY_SHEET_ID);
   payEnsureTabs_(ss);
+  payCheckMonth_(month);
+  const lock = payLockInfo_(ss, month);
+  if (!lock) return payCompute_(ss, month);
+  const erp = payErp_(ss, month);
+  const rows = payRows_(ss.getSheetByName('Payroll Register')).filter(function (r) { return payMonthKey_(r['Month']) === month; })
+    .map(function (r) {
+      const o = { code: String(r['Employee Code']), name: String(r['Name']), entity: String(r['Entity']), designation: String(r['Designation']) };
+      PAY_REG_FIELDS.forEach(function (f) { o[f[1]] = payNum_(r[f[0]]); });
+      o.erpNet = o.code in erp ? erp[o.code] : null;
+      return o;
+    });
+  const rs = SpreadsheetApp.openById(PAY_RATES_SHEET_ID);
+  return { month: month, daysInMonth: payCheckMonth_(month).daysInMonth, locked: lock, settings: paySettings_(rs), rows: rows, warnings: [] };
+}
+
+function payCompute_(ss, month) {
+  const ctx0 = payCheckMonth_(month);
+  const monthEnd = ctx0.monthEnd;
   const rs = SpreadsheetApp.openById(PAY_RATES_SHEET_ID);
   const settings = paySettings_(rs);
   const rates = payRates_(rs);
@@ -206,10 +270,7 @@ function payDraft_(month) {
   payRows_(ss.getSheetByName('Monthly Inputs')).forEach(function (r) {
     if (payMonthKey_(r['Month']) === month) inputs[String(r['Employee Code']).trim()] = r;
   });
-  const erp = {};
-  payRows_(ss.getSheetByName('ERP Reference')).forEach(function (r) {
-    if (payMonthKey_(r['Month']) === month) erp[String(r['Employee Code']).trim()] = payNum_(r['ERP Net Pay']);
-  });
+  const erp = payErp_(ss, month);
   // Opening RRF = every RRF ledger entry from months before this one.
   const openingRrf = {};
   payRows_(ss.getSheetByName('Ledger')).forEach(function (r) {
@@ -236,11 +297,105 @@ function payDraft_(month) {
       rates[entity], settings, Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0));
     if (!payNum_(r['Full Basic'])) warnings.push(code + ': Full Basic is 0');
     rows.push(Object.assign({ code: code, name: String(r['Name'] || '').trim(), entity: entity,
-      designation: String(r['Designation'] || '').trim(), erpNet: code in erp ? erp[code] : null }, calc));
+      designation: String(r['Designation'] || '').trim(), erpNet: code in erp ? erp[code] : null,
+      input: { paidDays: inp['Paid Days'] === undefined ? '' : inp['Paid Days'], clDays: inp['CL Days Encashed'] || '',
+        hold: payYes_(inp['Hold for F&F (Y/N)']), otherEarnings: inp['Other Earnings'] || '', otherEarningsNote: inp['Other Earnings Note'] || '',
+        otherDeductions: inp['Other Deductions'] || '', otherDeductionsNote: inp['Other Deductions Note'] || '' } }, calc));
   });
   Object.keys(inputs).forEach(function (code) { if (!master[code]) warnings.push(code + ': has Monthly Inputs but no Salary Master row'); });
 
   const order = ['HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   rows.sort(function (a, b) { return (order.indexOf(a.entity) - order.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
-  return { month: month, daysInMonth: ctx0.daysInMonth, settings: settings, rates: rates, rows: rows, warnings: warnings };
+  return { month: month, daysInMonth: ctx0.daysInMonth, locked: null, settings: settings, rates: rates, rows: rows, warnings: warnings };
+}
+
+// ── Stage 2: save Monthly Inputs ─────────────────────────────────────
+// rows: [{code, paidDays, clDays, hold, otherEarnings, otherEarningsNote,
+// otherDeductions, otherDeductionsNote}] -- upserted by Month + Employee
+// Code (one row per person per month). Returns the recomputed draft.
+function paySaveInputs_(month, rows, caller) {
+  const ctx = payCheckMonth_(month);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.openById(PAY_SHEET_ID);
+    payEnsureTabs_(ss);
+    if (payLockInfo_(ss, month)) throw new Error(month + ' is locked -- corrections go into next month as Other Earnings/Deductions');
+    const known = {};
+    payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) { known[String(r['Employee Code']).trim()] = true; });
+    const num = function (v, label, code, max) {
+      if (v === '' || v === null || v === undefined) return '';
+      const n = Number(v);
+      if (isNaN(n) || n < 0 || (max !== undefined && n > max)) throw new Error(code + ': ' + label + ' "' + v + '" is not valid');
+      return n;
+    };
+    const sheet = ss.getSheetByName('Monthly Inputs');
+    const values = sheet.getDataRange().getValues();
+    const idx = {};
+    for (let i = 1; i < values.length; i++) idx[payMonthKey_(values[i][0]) + '|' + String(values[i][1]).trim()] = i;
+    const now = new Date();
+    rows.forEach(function (r) {
+      const code = String(r.code || '').trim();
+      if (!known[code]) throw new Error(code + ': not in Salary Master');
+      const row = [ctx.start, code, num(r.paidDays, 'Paid Days', code, ctx.daysInMonth), num(r.clDays, 'CL Days', code),
+        r.hold ? 'Y' : '', num(r.otherEarnings, 'Other Earnings', code), String(r.otherEarningsNote || ''),
+        num(r.otherDeductions, 'Other Deductions', code), String(r.otherDeductionsNote || ''), caller.email, now];
+      const k = month + '|' + code;
+      if (k in idx) values[idx[k]] = row; else { idx[k] = values.length; values.push(row); }
+    });
+    sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
+    SpreadsheetApp.flush();
+    return payCompute_(ss, month);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── Stage 2: lock a month ────────────────────────────────────────────
+// Appends the computed rows to Payroll Register, one Run Log row per
+// entity (with the rates in force), and the month's RRF deductions and
+// held salaries to the Ledger. Refuses if already locked or if the draft
+// has warnings (someone would be silently left out).
+function payLock_(month, caller) {
+  const ctx = payCheckMonth_(month);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.openById(PAY_SHEET_ID);
+    payEnsureTabs_(ss);
+    if (payLockInfo_(ss, month)) throw new Error(month + ' is already locked');
+    const d = payCompute_(ss, month);
+    if (d.warnings.length) throw new Error('Fix these before locking: ' + d.warnings.join('; '));
+    if (!d.rows.length) throw new Error('Nothing to lock -- no employees for ' + month);
+    const now = new Date();
+    const append = function (name, rows) {
+      if (!rows.length) return;
+      const sh = ss.getSheetByName(name);
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    };
+    append('Payroll Register', d.rows.map(function (r) {
+      return [ctx.start, r.code, r.name, r.entity, r.designation]
+        .concat(PAY_REG_FIELDS.map(function (f) { return r[f[1]]; })).concat([now, caller.email]);
+    }));
+    const byEntity = {};
+    d.rows.forEach(function (r) {
+      const e = byEntity[r.entity] = byEntity[r.entity] || { n: 0, gross: 0, net: 0, cti: 0 };
+      e.n++; e.gross += r.gross; e.net += r.net; e.cti += r.cti;
+    });
+    append('Run Log', Object.keys(byEntity).map(function (e) {
+      const t = byEntity[e];
+      return [ctx.start, e, 'Locked', t.n, t.gross, t.net, t.cti,
+        JSON.stringify({ settings: d.settings, rates: d.rates[e] }), caller.email, now, ''];
+    }));
+    const ledger = [];
+    d.rows.forEach(function (r) {
+      if (r.rrf) ledger.push([now, ctx.start, r.code, 'RRF', 'Deduction', r.rrf, 'Payroll ' + month, '', caller.email, now]);
+      if (r.heldForFnF) ledger.push([now, ctx.start, r.code, 'Held Salary', 'Deduction', r.heldForFnF, 'Payroll ' + month, 'Salary held for F&F', caller.email, now]);
+    });
+    append('Ledger', ledger);
+    SpreadsheetApp.flush();
+    return payDraft_(month);
+  } finally {
+    lock.releaseLock();
+  }
 }
