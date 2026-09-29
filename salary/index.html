@@ -87,6 +87,8 @@ table.results tr.sep td{padding-top:8px}
     </div>
   </div>
   <div class="hdr-right">
+    <!-- 2026-09-29, per Uday: Monthly Payroll lives inside Salary Dashboard, not as its own module. Owner-only (shown in showApp). -->
+    <a href="../payroll/index.html" class="hdr-btn" id="payrollLink" style="display:none">📋 Monthly Payroll</a>
     <a href="../hiring/index.html" class="hdr-btn">🧑‍💼 Hiring Dashboard</a>
     <a href="../index.html" class="hdr-btn">🏠 Portal Home</a>
   </div>
@@ -167,7 +169,7 @@ table.results tr.sep td{padding-top:8px}
         <div class="record-msg" id="recordMsg"></div>
       </div>
 
-      <div class="source-note">Pay scale, DA/ADA, EPF/ESI/RRF rates and caps, and tuition fees are all read live from the "LMCS-Salary-PayScale" Google Sheet — edit that sheet to change a number, no code change needed. The ₹25,000 EPF wage ceiling (was ₹15,000) reflects the EPFO Gazette Notification dated 17 Sept 2026; ESI's own ₹21,000 threshold is a separate scheme, untouched by that notification. RRF is a refundable security deposit (not a lost deduction) accumulated during an employee's first 3 years of service — up to 80% is available as an interest-free emergency loan, and the full balance is returned on a proper resignation.</div>
+      <div class="source-note">Pay scale, DA/ADA, EPF/ESI/RRF rates and caps, and tuition fees are all read live from the "LMCS-Salary-PayScale" Google Sheet — edit that sheet to change a number, no code change needed. The ₹25,000 EPF wage ceiling (was ₹15,000) reflects the EPFO Gazette Notification dated 17 Sept 2026; ESI's own ₹21,000 threshold is a separate scheme, untouched by that notification. RRF is a refundable security deposit (not a lost deduction) accumulated during an employee's first 3 years of service — up to 70% is available as an interest-free emergency loan, and the full balance is returned on a proper resignation.</div>
     </div>
   </div>
 
@@ -401,7 +403,7 @@ function calcSalary_() {
   // 2026-09-29, per Uday: RRF (Refundable Reserve Fund) is a REFUNDABLE
   // security deposit accumulated during someone's actual first 3 years
   // of service (12%/9%/6%) -- it's withheld from monthly take-home,
-  // but it's the employee's own money held in reserve (up to 80%
+  // but it's the employee's own money held in reserve (up to 70%
   // borrowable interest-free during an emergency; returned in full on a
   // proper resignation). That's a tenure fact, not a "new hire vs
   // existing employee" mode switch -- rrf1/2/3 always represent "if this
@@ -924,6 +926,7 @@ function showApp(session) {
   if (LMCS.hasRole(session, 'Owner')) {
     document.getElementById('fExistingRow').style.display = '';
     document.getElementById('fDesigBasedRow').style.display = '';
+    document.getElementById('payrollLink').style.display = '';
   }
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;

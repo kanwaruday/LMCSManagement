@@ -44,6 +44,15 @@ those really do need copying from there.
   gated by a verified Google ID token against `ADMIN_EMAILS`, regardless of deployment access
   settings.
 
+**One deployment** ("LMCS Payroll Backend" — `PAYROLL_BACKEND_URL` in [`payroll/index.html`](../payroll/index.html), added 2026-09-29):
+- Page: `payroll/index.html`, reached from the Salary Dashboard header (Owner only), not a separate home-page module.
+- `payroll.gs` — `doGet` entry point, Owner-only token check, sheet I/O against the "LMCS Payroll" sheet
+  (creates its own tabs) and LMCS-Salary-PayScale's PayRoll Rates/Constants.
+- `payroll-calc.gs` — the monthly salary formula as a pure function; `payrollCalcSelfTest_` runs in the
+  editor or under `node`.
+- Deploy as Web app, Execute as **Me**, access **Anyone** (every call is still token-checked).
+- Salary data never goes in this repo — import CSVs are generated locally and imported into the sheet.
+
 **Separate deployments**, one file each:
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)
 

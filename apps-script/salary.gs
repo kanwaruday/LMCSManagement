@@ -177,7 +177,7 @@ function salPayrollRates_() {
     out[campusId] = {
       da: salParseNumber_(r[1]) / 100,
       ada: salParseNumber_(r[2]) / 100,
-      epfDefault: String(r[3] || '').trim().toLowerCase() !== 'no',
+      epfDefault: !/^n/i.test(String(r[3] || '').trim()), // 'N' or 'No' (sheet switched to Y/N 2026-09-29)
     };
   }
   cache.put('sal_payrollrates', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
