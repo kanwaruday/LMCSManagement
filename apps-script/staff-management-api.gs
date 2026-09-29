@@ -130,6 +130,7 @@ function staffDoGet_(e) {
     else if (action === 'list') result = { employees: listEmployees_(caller) };
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
+    else if (action === 'installjobrolesync') result = installJobRolePayScaleSyncTriggerAction_(data, caller);
     else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };

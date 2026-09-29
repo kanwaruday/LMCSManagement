@@ -51,6 +51,26 @@ function installJobRolePayScaleSyncTrigger_() {
   Logger.log('Installed. Editing PayScale Table in LMCS-Salary-PayScale will now auto-sync JobRole Norms.');
 }
 
+// action=installjobrolesync (2026-09-29, per Uday) -- the Apps Script
+// editor's function dropdown has been unreliable across several
+// sessions, so this lets the trigger install run through the Web App
+// instead: a browser console command on an already-signed-in page,
+// reusing that page's real session, no dropdown involved at all. Same
+// STAFF_ACTIONS_/staffDoGet_ routing every other gated action here
+// already uses (see employee-roster.gs/staff-management-api.gs) --
+// Owner-only, since creating a project trigger is a real setup action,
+// not a data read. IMPORTANT: this still requires ONE redeploy of this
+// project first (pasting this function in), because installing a
+// trigger needs the script.scriptapp OAuth scope -- Apps Script will
+// prompt Uday to authorize that scope AT DEPLOY TIME (in his own
+// browser, via the Deploy dialog), not as a runtime error when this
+// action is actually called afterward.
+function installJobRolePayScaleSyncTriggerAction_(data, caller) {
+  if (caller.roles.indexOf('Owner') === -1) throw new Error('Only the Owner can install this trigger');
+  installJobRolePayScaleSyncTrigger_();
+  return { message: 'Installed -- editing PayScale Table in LMCS-Salary-PayScale will now auto-sync JobRole Norms.' };
+}
+
 // The installable trigger's entry point -- Google calls this with the
 // same event shape a bound onEdit(e) would get.
 function onSalaryPayScaleEdit_(e) {
