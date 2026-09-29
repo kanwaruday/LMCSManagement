@@ -1083,7 +1083,16 @@ function salaryFullRecord_(data, caller) {
   // existing EmpAcademic reader/decoder rather than a second copy; comes
   // back as e.g. ["Class 4 — Science", "Class 5 — Science"].
   const classSubjects = readClassSubjects_(ss, data.employeeCode);
-  return { school: school, name: String(master.Name || '').trim(), salary: salary, classSubjects: classSubjects };
+  // DateOfJoining (2026-09-29, per Uday) -- RRF is a refundable reserve
+  // fund accumulated during someone's actual first 3 years of service
+  // (12%/9%/6%), not a "new hire vs existing" on/off switch -- this lets
+  // salary/index.html work out which year of service applies to HER
+  // right now (or none, past year 3), instead of the old blanket
+  // "existing employee = no RRF at all."
+  return {
+    school: school, name: String(master.Name || '').trim(), salary: salary,
+    classSubjects: classSubjects, dateOfJoining: master.DateOfJoining || '',
+  };
 }
 
 // ── Actions ───────────────────────────────────────────────────────────

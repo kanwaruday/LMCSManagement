@@ -160,7 +160,7 @@ table.results tr.sep td{padding-top:8px}
         <div class="record-msg" id="recordMsg"></div>
       </div>
 
-      <div class="source-note">Pay scale, DA/ADA, EPF/ESI/RRF rates and caps, and tuition fees are all read live from the "LMCS-Salary-PayScale" Google Sheet — edit that sheet to change a number, no code change needed. The ₹25,000 EPF wage ceiling (was ₹15,000) reflects the EPFO Gazette Notification dated 17 Sept 2026; ESI's own ₹21,000 threshold is a separate scheme, untouched by that notification.</div>
+      <div class="source-note">Pay scale, DA/ADA, EPF/ESI/RRF rates and caps, and tuition fees are all read live from the "LMCS-Salary-PayScale" Google Sheet — edit that sheet to change a number, no code change needed. The ₹25,000 EPF wage ceiling (was ₹15,000) reflects the EPFO Gazette Notification dated 17 Sept 2026; ESI's own ₹21,000 threshold is a separate scheme, untouched by that notification. RRF is a refundable security deposit (not a lost deduction) accumulated during an employee's first 3 years of service — up to 80% is available as an interest-free emergency loan, and the full balance is returned on a proper resignation.</div>
     </div>
   </div>
 
@@ -372,10 +372,20 @@ function calcSalary_() {
   const esiEe = esiAllowed ? Math.floor(ns * cVal_('ESI Employee %') / 100) : 0;
   const totEsi = esiE + esiEe;
 
+  // 2026-09-29, per Uday: RRF (Retention Reserve Fund) is a REFUNDABLE
+  // security deposit accumulated during someone's actual first 3 years
+  // of service (12%/9%/6%) -- it's withheld from monthly take-home,
+  // but it's the employee's own money held in reserve (up to 80%
+  // borrowable interest-free during an emergency; returned in full on a
+  // proper resignation). That's a tenure fact, not a "new hire vs
+  // existing employee" mode switch -- rrf1/2/3 always represent "if this
+  // were Year 1/2/3 of service"; which one (if any) actually applies to
+  // a SPECIFIC person right now is resolved in renderResults_ from their
+  // real join date, not here.
   const cti = ns + epfE + pfE + esiE + tuiFee;
-  const rrf1 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y1 %') / 100);
-  const rrf2 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y2 %') / 100);
-  const rrf3 = existing ? 0 : Math.ceil(cti * cVal_('RRF Y3 %') / 100);
+  const rrf1 = Math.ceil(cti * cVal_('RRF Y1 %') / 100);
+  const rrf2 = Math.ceil(cti * cVal_('RRF Y2 %') / 100);
+  const rrf3 = Math.ceil(cti * cVal_('RRF Y3 %') / 100);
   const netY1 = cti - rrf1 - totEpf - totEsi - tuiFee;
   const netY2 = cti - rrf2 - totEpf - totEsi - tuiFee;
   const netY3 = cti - rrf3 - totEpf - totEsi - tuiFee;
@@ -384,6 +394,21 @@ function calcSalary_() {
 }
 
 function inr_(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+// 2026-09-29, per Uday: which year of RRF an EXISTING employee is
+// actually in right now, from her real DateOfJoining -- null if unknown
+// (no date on file) or not applicable (new-hire/designation modes, where
+// nobody's actually started yet, so all 3 years are still a projection).
+// 1/2/3 = currently accruing that year; 4+ = fully past RRF, nothing
+// withheld anymore.
+let EXISTING_SERVICE_YEAR = null;
+function computeServiceYear_(dateOfJoiningStr) {
+  if (!dateOfJoiningStr) return null;
+  const doj = new Date(dateOfJoiningStr);
+  if (isNaN(doj.getTime())) return null;
+  const years = (Date.now() - doj.getTime()) / (365.25 * 86400000);
+  return Math.floor(years) + 1; // 0-1yr => Year 1, 1-2yr => Year 2, etc.
+}
 
 function renderResults_() {
   const r = calcSalary_();
@@ -403,13 +428,36 @@ function renderResults_() {
     ['CTI (Cost to Institution)', r.cti],
   ];
   let html = rows.map(function (row) { return '<tr><td>' + row[0] + '</td><td>' + inr_(row[1]) + '</td></tr>'; }).join('');
-  // 2026-09-29, per Uday: compacted from 3 repeated Year-N blocks (9 rows)
-  // down to one 4-column mini-table (3 rows) -- RRF/Net Bank are the only
-  // figures that actually vary by year, so a Year-1/2/3 header row plus
-  // one row each is all that's needed, not a full block per year.
-  html += '<tr class="year-hdr sep"><td></td><td>Year 1</td><td>Year 2</td><td>Year 3</td></tr>';
-  html += '<tr><td>Retention Reserve Fund</td><td>' + inr_(r.rrf1) + '</td><td>' + inr_(r.rrf2) + '</td><td>' + inr_(r.rrf3) + '</td></tr>';
-  html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(r.netY1) + '</td><td>' + inr_(r.netY2) + '</td><td>' + inr_(r.netY3) + '</td></tr>';
+
+  const mode = currentMode_();
+  const rrfByYear = { 1: r.rrf1, 2: r.rrf2, 3: r.rrf3 };
+  if (mode === 'existing' && EXISTING_SERVICE_YEAR) {
+    // A specific real person, at a specific known point in her tenure --
+    // only ONE year (or none, past Year 3) is actually relevant, not a
+    // 3-year projection. RRF is a REFUNDABLE reserve, not a lost
+    // deduction -- said explicitly so the lower take-home doesn't read
+    // as a pay cut.
+    const y = EXISTING_SERVICE_YEAR;
+    if (y >= 1 && y <= 3) {
+      const rrfAmt = rrfByYear[y];
+      const netAmt = r.cti - rrfAmt - r.totEpf - r.totEsi - Number(document.getElementById('fTuiFee').value || 0);
+      html += '<tr class="year-hdr sep"><td colspan="2">Year ' + y + ' of service — RRF still accruing</td></tr>';
+      html += '<tr><td>Retention Reserve Fund (refundable)</td><td>' + inr_(rrfAmt) + '</td></tr>';
+      html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(netAmt) + '</td></tr>';
+    } else {
+      const netAmt = r.cti - r.totEpf - r.totEsi - Number(document.getElementById('fTuiFee').value || 0);
+      html += '<tr class="year-hdr sep"><td colspan="2">Year ' + y + ' of service — RRF no longer accrues</td></tr>';
+      html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(netAmt) + '</td></tr>';
+    }
+  } else {
+    // New hire / designation lookup / handoff -- nobody's tenure clock
+    // has started yet (or it's a generic role lookup), so show the full
+    // 3-year projection as before. 2026-09-29: compacted from 3 repeated
+    // Year-N blocks (9 rows) down to one 4-column mini-table (3 rows).
+    html += '<tr class="year-hdr sep"><td></td><td>Year 1</td><td>Year 2</td><td>Year 3</td></tr>';
+    html += '<tr><td>Retention Reserve Fund (refundable)</td><td>' + inr_(r.rrf1) + '</td><td>' + inr_(r.rrf2) + '</td><td>' + inr_(r.rrf3) + '</td></tr>';
+    html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(r.netY1) + '</td><td>' + inr_(r.netY2) + '</td><td>' + inr_(r.netY3) + '</td></tr>';
+  }
   document.getElementById('resultsTable').innerHTML = html;
 }
 
@@ -632,6 +680,10 @@ const EXTRA_FIELD_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWor
 
 function applyFieldLockState_() {
   const mode = currentMode_();
+  // 2026-09-29 -- a stale RRF service-year from a PREVIOUSLY looked-up
+  // employee must not leak into a different mode (or a fresh search that
+  // hasn't resolved yet) -- only 'existing' mode's own fetch sets this.
+  if (mode !== 'existing') EXISTING_SERVICE_YEAR = null;
   const nameInput = document.getElementById('fName');
   const campusSel = document.getElementById('fCampus');
   const desigSel = document.getElementById('fDesignation');
@@ -793,6 +845,9 @@ function applyExistingEmployeePay_() {
     // class/subject assignments instead of typed in.
     const subj = document.getElementById('fSubjects');
     subj.value = (res.classSubjects && res.classSubjects.length) ? res.classSubjects.join(', ') : '';
+    // RRF year (2026-09-29) -- from her real DateOfJoining, see
+    // computeServiceYear_/renderResults_.
+    EXISTING_SERVICE_YEAR = computeServiceYear_(res.dateOfJoining);
     applyCampusRates_(); // re-applies EPF default + child-grade options for her real campus
     applyFieldLockState_();
     renderResults_();
