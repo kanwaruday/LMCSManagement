@@ -372,7 +372,7 @@ function calcSalary_() {
   const esiEe = esiAllowed ? Math.floor(ns * cVal_('ESI Employee %') / 100) : 0;
   const totEsi = esiE + esiEe;
 
-  // 2026-09-29, per Uday: RRF (Retention Reserve Fund) is a REFUNDABLE
+  // 2026-09-29, per Uday: RRF (Refundable Reserve Fund) is a REFUNDABLE
   // security deposit accumulated during someone's actual first 3 years
   // of service (12%/9%/6%) -- it's withheld from monthly take-home,
   // but it's the employee's own money held in reserve (up to 80%
@@ -442,7 +442,7 @@ function renderResults_() {
       const rrfAmt = rrfByYear[y];
       const netAmt = r.cti - rrfAmt - r.totEpf - r.totEsi - Number(document.getElementById('fTuiFee').value || 0);
       html += '<tr class="year-hdr sep"><td colspan="2">Year ' + y + ' of service — RRF still accruing</td></tr>';
-      html += '<tr><td>Retention Reserve Fund (refundable)</td><td>' + inr_(rrfAmt) + '</td></tr>';
+      html += '<tr><td>Refundable Reserve Fund</td><td>' + inr_(rrfAmt) + '</td></tr>';
       html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(netAmt) + '</td></tr>';
     } else {
       const netAmt = r.cti - r.totEpf - r.totEsi - Number(document.getElementById('fTuiFee').value || 0);
@@ -455,7 +455,7 @@ function renderResults_() {
     // 3-year projection as before. 2026-09-29: compacted from 3 repeated
     // Year-N blocks (9 rows) down to one 4-column mini-table (3 rows).
     html += '<tr class="year-hdr sep"><td></td><td>Year 1</td><td>Year 2</td><td>Year 3</td></tr>';
-    html += '<tr><td>Retention Reserve Fund (refundable)</td><td>' + inr_(r.rrf1) + '</td><td>' + inr_(r.rrf2) + '</td><td>' + inr_(r.rrf3) + '</td></tr>';
+    html += '<tr><td>Refundable Reserve Fund</td><td>' + inr_(r.rrf1) + '</td><td>' + inr_(r.rrf2) + '</td><td>' + inr_(r.rrf3) + '</td></tr>';
     html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(r.netY1) + '</td><td>' + inr_(r.netY2) + '</td><td>' + inr_(r.netY3) + '</td></tr>';
   }
   document.getElementById('resultsTable').innerHTML = html;
