@@ -154,6 +154,11 @@ table.results tr.sep td{padding-top:8px}
         <table class="results" id="resultsTable"></table>
       </div>
 
+      <div class="card" id="jobRoleNormsCard" style="display:none">
+        <h2>Job Role Norms</h2>
+        <table class="results" id="jobRoleNormsTable"></table>
+      </div>
+
       <div class="card" id="recordCard" style="display:none">
         <h2>Record</h2>
         <button type="button" class="record-btn" id="recordBtn">Record as Salary Offer</button>
@@ -286,7 +291,26 @@ function applyDesignationPay_() {
     document.getElementById('fGradePay').value = row.gradePay;
     document.getElementById('fIdealHours').value = row.idealHours;
   }
+  renderJobRoleNorms_(d);
   renderResults_();
+}
+
+// Job Role Norms card (2026-09-29, per Uday) -- reference info (leave/
+// timing/travel/RRF policy) from the "JobRole Norms" tab, shown per
+// designation. Read-only, doesn't feed calcSalary_ at all.
+function renderJobRoleNorms_(designation) {
+  const card = document.getElementById('jobRoleNormsCard');
+  const norms = (CONFIG.jobRoleNorms || []).filter(function (r) { return r.designation === designation; })[0];
+  if (!norms) { card.style.display = 'none'; return; }
+  const rows = [
+    ['Vacations', norms.vacations], ['Casual Leave', norms.casualLeave],
+    ['Timing', norms.timing], ['Travel Allowance', norms.travelAllowance],
+    ['RRF Policy', norms.rrfPolicy],
+  ];
+  document.getElementById('jobRoleNormsTable').innerHTML = rows.map(function (row) {
+    return '<tr><td>' + row[0] + '</td><td>' + (row[1] || '—') + '</td></tr>';
+  }).join('');
+  card.style.display = '';
 }
 
 // Per-campus DA/ADA rate and EPF-default-enrollment, from the PayRoll
