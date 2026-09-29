@@ -25,8 +25,20 @@ const SAL_TAB_PAYROLL_RATES = 'PayRoll Rates';
 const SAL_TAB_PAYROLL_CONSTANTS = 'PayRoll Constants';
 const SAL_CONFIG_CACHE_SECONDS = 300; // same TTL as pdrAllowlistRows_ -- config rarely changes mid-session
 
+// 2026-09-29 -- memoized within one execution (a plain global, reset
+// fresh each request the same way every other var here is): salaryConfig_
+// calls all 5 tab-readers below in one request, and on a cold cache
+// (nothing in CacheService yet, e.g. first load after the 5-minute TTL)
+// each one was calling SpreadsheetApp.openById() separately -- 5 real
+// opens of the SAME spreadsheet for one page load, a real chunk of "this
+// is slow" latency. Opening it once and reusing the handle for every tab
+// read doesn't change what's cached (each tab still has its own
+// CacheService entry/TTL below), just removes the redundant re-opens on
+// a miss.
+let salSpreadsheet_ = null;
 function salConfigValues_(tabName) {
-  const sheet = SpreadsheetApp.openById(SAL_CONFIG_SHEET_ID).getSheetByName(tabName);
+  if (!salSpreadsheet_) salSpreadsheet_ = SpreadsheetApp.openById(SAL_CONFIG_SHEET_ID);
+  const sheet = salSpreadsheet_.getSheetByName(tabName);
   if (!sheet) throw new Error('Sheet tab not found: ' + tabName);
   return sheet.getDataRange().getValues();
 }

@@ -156,6 +156,7 @@ function doGet(e) {
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
+    if (action === 'hiringrownotes') return jsonOut_(hiringRowNotes_(e.parameter.row));
     if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
     if (action === 'salaryconfig') return jsonOut_(salaryConfig_());
     // TEMPORARY diagnostic (2026-09-28) -- remove once the PayScale Table

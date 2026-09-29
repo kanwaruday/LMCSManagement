@@ -476,17 +476,23 @@ let SALARY_OFFER_ALREADY_SUBMITTED = false;
 // appends server-side. So this page has to fetch whatever's already
 // there first and fold the recorded offer into it, or a click here would
 // silently wipe out an existing rejection reason/walk-in note/etc.
+// 2026-09-29 -- was calling action=hiringapplicants (a full scan of the
+// whole Teaching Applicants sheet + Interview Report cross-reference +
+// match-scoring against every approved requisition, all to read TWO
+// cells of one known row) -- switched to the lightweight
+// action=hiringrownotes (a single getRange read by row number), which is
+// most of what was making this page feel slow to load. Also no longer
+// blocks anything -- called in parallel with the config load (see
+// showApp) rather than chained after it, since neither depends on the
+// other.
 function loadExistingNotes_() {
-  if (!APPLICANT_ID) return;
+  if (!APPLICANT_ID) return Promise.resolve();
   const row = parseInt(String(APPLICANT_ID).replace(/^T-0*/, ''), 10);
-  if (!row) return;
-  gasGet_('hiringapplicants').then(function (res) {
+  if (!row) return Promise.resolve();
+  return gasGet_('hiringrownotes', { row: row }).then(function (res) {
     if (!res.success) return;
-    const match = (res.applicants || []).filter(function (a) { return a.row === row; })[0];
-    if (match) {
-      EXISTING_NOTES = match.notes || '';
-      SALARY_OFFER_ALREADY_SUBMITTED = !!match.salaryOfferAt;
-    }
+    EXISTING_NOTES = res.notes || '';
+    SALARY_OFFER_ALREADY_SUBMITTED = !!res.salaryOfferAt;
   }).catch(function () { /* best-effort -- Record still works, just won't preserve prior notes */ });
 }
 
@@ -802,7 +808,6 @@ function prefillFromParams_() {
     subj.value = roleCode + (subj.value ? ': ' + subj.value : '') + ' (no pay-scale entry — enter Basic/GP manually)';
   }
   applyFieldLockState_(); // locks everything but Name/Campus/Designation (already read-only above) when APPLICANT_ID is set -- see currentMode_'s 'handoff' case
-  loadExistingNotes_();
 }
 
 function showApp(session) {
@@ -829,6 +834,11 @@ function showApp(session) {
   }
   document.getElementById('mainRoot').style.display = '';
   if (SESSION.campusId !== 'ALL') document.getElementById('fCampus').value = SESSION.campusId;
+  // 2026-09-29 -- fired here, in PARALLEL with the config load below, not
+  // chained after it -- loadExistingNotes_ doesn't depend on CONFIG at
+  // all, and the two were needlessly sequential (one full network
+  // round-trip waiting on another) before this.
+  loadExistingNotes_();
   // Config (pay scale/rates/constants, all read live from Uday's
   // "LMCS-Salary-PayScale" sheet) has to be in hand before anything below
   // can compute a real number -- everything that depends on it is

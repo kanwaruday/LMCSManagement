@@ -556,6 +556,27 @@ function hiringApplicants_(caller) {
   return { success: true, statuses: HIR_STATUSES, applicants: applicants };
 }
 
+// action=hiringrownotes -- 2026-09-29, per Uday: the Salary Dashboard's
+// loadExistingNotes_ only ever needs ONE known applicant's Notes +
+// whether salaryOfferAt is already set, but was calling the full
+// hiringApplicants_ for it -- a scan of the whole (900+ row) Teaching
+// Applicants sheet, an Interview Reports cross-reference, and a match-
+// score computation against every approved requisition, all to read two
+// cells. This is the O(1) equivalent: a single getRange read by row
+// number, no scoring/matching/gating logic at all. Not campus/district-
+// scoped like hiringApplicants_ is -- the caller already knows this
+// exact row from their own Hiring Dashboard deep link (see hirApplicantId_),
+// so there's nothing to hide by row number alone the way there is by
+// browsing the full applicant list.
+function hiringRowNotes_(row) {
+  const r = parseInt(row, 10);
+  if (!r || r < 2) throw new Error('Invalid row');
+  const sheet = hirSheet_();
+  const notes = String(sheet.getRange(r, HIR_COL.NOTES).getValue() || '');
+  const salaryOfferAt = hirSafeISO_(sheet.getRange(r, HIR_COL.SALARY_OFFER_AT).getValue());
+  return { success: true, notes: notes, salaryOfferAt: salaryOfferAt };
+}
+
 // action=hiringapprovalstatus -- approval detail for the Hiring
 // Dashboard's role-pills (Step 2 of the journey). Own-campus only for a
 // locked caller, per Uday (2026-09-26): "New/ Backup Position" is a
