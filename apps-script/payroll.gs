@@ -46,7 +46,7 @@ const PAY_ENTITIES = ['HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 const PAY_TABS = {
   'Salary Master': ['Employee Code', 'Name', 'Entity', 'Designation', 'Date of Joining', 'Effective From', 'Full Basic',
     'EPF Member (Y/N)', 'RRF Member (Y/N)', 'Staff-Child Tuition', 'Pay Mode', 'Bank Account No', 'IFSC', 'UAN', 'PAN',
-    'Status (Active/Left)', 'Remarks', 'Last Working Day'],
+    'Status (Active/Left)', 'Remarks', 'Last Working Day', 'Monthly TDS (₹)'],
   // Structured offers from the Offer Calculator's "Record as Salary Offer" (stage c, 2026-09-30).
   'Salary Offers': ['Applicant ID', 'Name', 'Entity', 'Designation', 'Subjects', 'Full Basic', 'EPF Member (Y/N)', 'Staff-Child Tuition',
     'CTI', 'Net Y1', 'Recorded By', 'Recorded At', 'Status (Offered/Joined/Dismissed)', 'Employee Code', 'Date of Joining', 'Closed By', 'Closed At'],
@@ -59,7 +59,7 @@ const PAY_TABS = {
   'Payroll Register': ['Month', 'Employee Code', 'Name', 'Entity', 'Designation', 'Paid Days', 'Month Basic', 'ADA', 'DA',
     'CL Encashment', 'Tuition (A)', 'Other Earnings', 'Gross', 'EPF Employee', 'ESI Employee', 'RRF Rate', 'RRF',
     'Tuition (D)', 'Other Deductions', 'Total Deductions', 'Net Pay', 'Bank Payable', 'Held for F&F', 'EPF Employer',
-    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held', 'Loan Recovery'],
+    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held', 'Loan Recovery', 'TDS'],
   'Run Log': ['Month', 'Entity', 'Status (Draft/Locked)', 'Headcount', 'Gross', 'Net Pay', 'CTI', 'Settings Snapshot',
     'Locked By', 'Locked At', 'Notes'],
   'Checklist': ['Month', 'Entity', 'Step', 'Done By', 'Done At'],
@@ -73,6 +73,9 @@ const PAY_TABS = {
     'Gratuity Years', 'CL Days', 'CL Encashment', 'Notice Pay', 'Other Earnings', 'Notice Period Recovery', 'Loan Outstanding', 'Collection from Students',
     'Outstanding Fee of Ward', 'Other Dues', 'Total Earnings', 'Total Deductions', 'Net Payable', 'Paid On', 'Payment Mode', 'Reference', 'Notes',
     'Settled By', 'Settled At'],
+  // Every bank letter recorded as issued (stage 3, 2026-09-30): the reference series and what was sent.
+  'Bank Letters': ['Ref No', 'Serial', 'Month', 'Entity', 'Letter Date', 'Cheque No', 'Amount', 'Staff', 'Addressee', 'Debit Account',
+    'Issued By', 'Issued At'],
   'Tally Ledger Map': ['Entity', 'Payroll Head', 'Tally Ledger Name', 'Cost Centre', 'Dr/Cr'],
   'ERP Reference': ['Month', 'Employee Code', 'ERP Gross', 'ERP EPF', 'ERP ESI', 'ERP RRF', 'ERP Net Pay', 'ERP CTI'],
   // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
@@ -86,14 +89,14 @@ const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes
 // Adjustment line-item types (Uday, 2026-09-30) -> Earning / Deduction.
 const PAY_ADJ_TYPES = {
   'Arrears': 'Earning', 'Admission Incentive': 'Earning', 'Performance Bonus': 'Earning', 'Travel Allowance': 'Earning',
-  'Notice Pay': 'Earning', 'Other Earning': 'Earning',
+  'Notice Pay': 'Earning', 'Other Earning': 'Earning', 'TDS': 'Deduction',
   'Advance / Loan Recovery': 'Deduction', 'Fine': 'Deduction', 'Notice Period Recovery': 'Deduction', 'Other Deduction': 'Deduction',
 };
 
 // Checklist steps that must be ticked for a school before it can be locked.
 const PAY_STEPS = ['staff', 'leave', 'adjustments', 'holds', 'review'];
 
-const PAY_READ_ACTIONS_ = ['month', 'draft', 'accounts', 'fnfpreview'];
+const PAY_READ_ACTIONS_ = ['month', 'draft', 'accounts', 'fnfpreview', 'outputs'];
 
 function doGet(e) {
   return payHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data ? JSON.parse(e.parameter.data) : {});
@@ -135,11 +138,13 @@ function payHandle_(action, idToken, data) {
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
       issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
       settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
+      issueletter: function (ss) { payIssueLetter_(ss, data, caller); },
     };
     let result;
     if (action === 'month' || action === 'draft') result = payMonth_(payOpen_(), data.month);
     else if (action === 'previewleave') result = { preview: payUploadLeave_(payOpen_(), data, caller, true) };
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
+    else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
@@ -280,7 +285,7 @@ function paySettings_(rs) {
     esiEmpRate: c['ESI Employee %'] / 100, esiErRate: c['ESI Employer %'] / 100, esiThreshold: c['ESI Threshold'],
     rrfY1: c['RRF Y1 %'] / 100, rrfY2: c['RRF Y2 %'] / 100, rrfY3: c['RRF Y3 %'] / 100,
     rrfTargetMonths: c['RRF Target Months'], rrfStopAtTarget: c['RRF Stop At Target (1=Yes)'] === 1,
-    gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'],
+    gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'], epsRate: c['EPF Rate %'] / 100,
   };
 }
 
@@ -324,7 +329,7 @@ const PAY_REG_FIELDS = [['Paid Days', 'paidDays'], ['Month Basic', 'basic'], ['A
   ['Other Deductions', 'otherDeductions'], ['Total Deductions', 'totalDeductions'], ['Net Pay', 'net'],
   ['Bank Payable', 'bankPayable'], ['Held for F&F', 'heldForFnF'], ['Withheld (Grievance)', 'withheld'],
   ['Released Held', 'released'], ['EPF Employer', 'epfEmployer'], ['ESI Employer', 'esiEmployer'], ['CTI', 'cti'],
-  ['Gratuity Provision', 'gratuityProvision'], ['Loan Recovery', 'loanRecovery']];
+  ['Gratuity Provision', 'gratuityProvision'], ['Loan Recovery', 'loanRecovery'], ['TDS', 'tds']];
 
 function payForMonth_(ss, tab, month) {
   return payRows_(ss.getSheetByName(tab)).filter(function (r) { return payMonthKey_(r['Month']) === month; });
@@ -429,12 +434,14 @@ function payCompute_(ss, month) {
   const rates = payRates_(rs);
   const warnings = [];
 
-  // Salary Master: latest row per code effective on or before month end.
-  const master = {};
+  // Salary Master: latest row per code effective on or before month end (all rows kept for ESI coverage).
+  const master = {}, history = {};
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
     const code = String(r['Employee Code'] || '').trim();
     const eff = payDate_(r['Effective From']);
-    if (!code || !eff || eff > monthEnd) return;
+    if (!code || !eff) return;
+    (history[code] = history[code] || []).push({ eff: eff, row: r });
+    if (eff > monthEnd) return;
     if (!master[code] || eff >= master[code].eff) master[code] = { eff: eff, row: r };
   });
 
@@ -472,15 +479,16 @@ function payCompute_(ss, month) {
     // Advance / RRF-loan recovery: the scheduled monthly amount, never more than what is still owed.
     const loanDue = Math.max(0, Math.min(loanSched[code] || 0, loanBalance[code] || 0));
     const skipLoan = payYes_(inp['Skip Loan Recovery (Y/N)']);
-    const sumDir = function (dir) { return adj.reduce(function (t, a) { return t + (a.direction === dir ? a.amount : 0); }, 0); };
+    const sumDir = function (dir) { return adj.reduce(function (t, a) { return t + (a.direction === dir && a.type !== 'TDS' ? a.amount : 0); }, 0); };
+    const tds = payNum_(r['Monthly TDS (₹)']) + adj.reduce(function (t, a) { return t + (a.type === 'TDS' ? a.amount : 0); }, 0);
     const hold = /^f/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'fnf'
       : /^g/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'grievance'
       : payYes_(inp['Hold for F&F (Y/N)']) ? 'fnf' : '';
     const calc = payCalc_(
-      { fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
+      { esiCovered: payEsiCovered_(history[code], rates, settings, ctx0), fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
         tuition: payNum_(r['Staff-Child Tuition']), doj: doj },
       { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
-        otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue },
+        otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue, tds: tds },
       rates[entity], settings, Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0));
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
     rows.push(Object.assign({ code: code, name: String(r['Name'] || '').trim(), entity: entity,
@@ -1245,4 +1253,66 @@ function paySettleFnf_(ss, d, caller) {
   const lv = loans.getDataRange().getValues();
   const lh = lv[0].map(function (x) { return String(x).trim(); });
   for (let i = 1; i < lv.length; i++) if (String(lv[i][lh.indexOf('Employee Code')]).trim() === code) loans.getRange(i + 1, lh.indexOf('Status (Active/Closed)') + 1).setValue('Closed');
+}
+
+// ── ESI coverage per contribution period (2026-09-30, "do what is legally right") ──
+// Periods run Apr-Sep and Oct-Mar. Coverage is decided on the full-month wages
+// (Basic + ADA + DA) in force at the start of the period -- or on joining, for
+// someone who joined during it -- and holds for the whole period.
+function payEsiCovered_(rows, rates, settings, ctx) {
+  if (!rows || !rows.length) return undefined;
+  const y = ctx.start.getFullYear(), m = ctx.start.getMonth();
+  const periodStart = m >= 3 && m <= 8 ? new Date(y, 3, 1) : new Date(m >= 9 ? y : y - 1, 9, 1);
+  const sorted = rows.slice().sort(function (a, b) { return a.eff - b.eff; });
+  let pick = sorted[0];
+  sorted.forEach(function (x) { if (x.eff <= periodStart) pick = x; });
+  const r = pick.row, rt = rates[payEntity_(r['Entity'])];
+  if (!rt) return undefined;
+  const b = payNum_(r['Full Basic']);
+  return b + payRound_(b * rt.ada) + payRound_(b * rt.da) <= settings.esiThreshold;
+}
+
+// ── Outputs (stage 3, 2026-09-30) ─────────────────────────────────────
+// Everything the page needs to print bank letters, salary sheets and pay
+// slips and to build the EPF (ECR) and ESI upload files: the month, each
+// person's bank / UAN / ESI numbers from the Staff Master's EmpKeyNumbers tab,
+// leave records, and the bank letters already recorded.
+function payOutputs_(ss, month) {
+  const m = payMonth_(ss, month);
+  const keys = {};
+  const kt = SpreadsheetApp.openById(PAY_ROSTER_SHEET_ID).getSheetByName('EmpKeyNumbers');
+  if (kt) {
+    const v = kt.getDataRange().getDisplayValues(); // display values keep leading zeros in account numbers
+    const h = v[0].map(function (x) { return String(x).trim(); });
+    const col = function (n) { return h.indexOf(n); };
+    v.slice(1).forEach(function (r) {
+      const code = String(r[col('EmployeeCode')] || '').trim();
+      const clean = function (x) { x = String(x || '').trim(); return x === '-' || x === '0' ? '' : x; };
+      if (code) keys[code] = { account: clean(r[col('BankAcNumber')]), ifsc: clean(r[col('IFSCCode')]), uan: clean(r[col('UanNumber')]),
+        esi: clean(r[col('EsiNumber')]), pan: clean(r[col('PanNo')]) };
+    });
+  }
+  const leave = {};
+  payForMonth_(ss, 'Leave Records', month).forEach(function (l) { leave[String(l['Employee Code']).trim()] = payLeaveRecord_(l); });
+  m.rows.forEach(function (r) { if (!r.leave && leave[r.code]) r.leave = leave[r.code]; });
+  const letters = payRows_(ss.getSheetByName('Bank Letters')).map(function (l) {
+    return { ref: String(l['Ref No']), serial: payNum_(l['Serial']), month: payMonthKey_(l['Month']), entity: payEntity_(l['Entity']),
+      date: payIso_(payDate_(l['Letter Date'])), cheque: String(l['Cheque No'] || ''), amount: payNum_(l['Amount']), staff: payNum_(l['Staff']),
+      addressee: String(l['Addressee'] || ''), debitAccount: String(l['Debit Account'] || '') };
+  });
+  return Object.assign(m, { keys: keys, letters: letters });
+}
+
+// d: {month, entity, serial, ref, date, cheque, amount, staff, addressee, debitAccount}
+function payIssueLetter_(ss, d, caller) {
+  const ctx = payCheckMonth_(d.month);
+  const e = payEntity_(d.entity);
+  if (!payLocks_(ss, d.month)[e]) throw new Error('Lock ' + e + ' for ' + d.month + ' before recording its bank letter');
+  const serial = Number(d.serial);
+  if (!(serial > 0) || serial !== Math.floor(serial)) throw new Error('Reference serial must be a whole number');
+  if (!String(d.ref || '').trim()) throw new Error('Reference number is required');
+  if (payRows_(ss.getSheetByName('Bank Letters')).some(function (l) { return String(l['Ref No']).trim() === String(d.ref).trim(); })) throw new Error('Reference ' + d.ref + ' was already used');
+  payAppend_(ss.getSheetByName('Bank Letters'), [{ 'Ref No': String(d.ref).trim(), 'Serial': serial, 'Month': ctx.start, 'Entity': e,
+    'Letter Date': payDate_(d.date) || new Date(), 'Cheque No': String(d.cheque || ''), 'Amount': Math.round(Number(d.amount) || 0), 'Staff': Number(d.staff) || 0,
+    'Addressee': String(d.addressee || ''), 'Debit Account': String(d.debitAccount || ''), 'Issued By': caller.email, 'Issued At': new Date() }]);
 }

@@ -631,7 +631,7 @@ function registerCols_() {
     ['Days', function (r) { return r.paidDays; }], ['Basic', function (r) { return r.basic; }, false, true], ['ADA', function (r) { return r.ada; }, false, true],
     ['DA', function (r) { return r.da; }, false, true], ['Gross', function (r) { return r.gross; }, false, true],
     ['EPF', function (r) { return r.epf; }, false, true], ['ESI', function (r) { return r.esi; }, false, true],
-    ['RRF', function (r) { return r.rrf; }, false, true], ['Loan Rec', function (r) { return r.loanRecovery; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
+    ['RRF', function (r) { return r.rrf; }, false, true], ['TDS', function (r) { return r.tds || 0; }, false, true], ['Loan Rec', function (r) { return r.loanRecovery; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
     ['Net Pay', function (r) { return r.net; }, false, true], ['Bank', function (r) { return r.bankPayable; }, false, true],
     ['CTI', function (r) { return r.cti; }, false, true], ['Gratuity Prov', function (r) { return r.gratuityProvision; }, false, true],
     ['ERP Net', function (r) { return r.erpNet; }, false, true], ['Net Diff', netDiff_, false, true, true],
@@ -783,7 +783,7 @@ function exportCsv_() {
 
 // ── Stage 4 views (2026-09-30): Accounts & loans · Full & Final · Opening balances ──
 let VIEW = 'month', ACC = null, FNF = null, OPENING = null;
-const VIEWS = [['month', 'Month checklist'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances']];
+const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances']];
 
 function viewBar_() {
   return VIEWS.map(function (v) { return '<span class="view' + (VIEW === v[0] ? ' on' : '') + '" data-view="' + v[0] + '">' + v[1] + '</span>'; }).join('');
@@ -791,6 +791,7 @@ function viewBar_() {
 function show_(v) {
   VIEW = v; FNF = null;
   if (v === 'month') { render_(); return; }
+  if (v === 'outputs') { loadOutputs_(); return; }
   loadAccounts_();
 }
 function loadAccounts_(okMsg) {
@@ -820,6 +821,7 @@ function schoolOf_(a) { return a.former ? 'Former' : ENTITY_LABEL[a.entity] || a
 
 function renderView_() {
   const root = document.getElementById('monthRoot');
+  if (VIEW === 'outputs') { root.innerHTML = schoolTabs_() + '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
   if (!ACC) { root.innerHTML = ''; return; }
   root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
   wireViews_();
@@ -1019,9 +1021,230 @@ function wireViews_() {
   };
 }
 
+
+// ── Outputs (stage 3, 2026-09-30): bank letter, salary sheet, pay slips, EPF ECR, ESI ──
+let OUT = null, LETTER = null;
+const SCHOOL_NAME = { HES: 'Hidimba Educational Society', LMS1: 'La Montessori School Kullu', LMS2: 'La Montessori School Kelheli', LMS3: 'La Montessori School Dunkhra',
+  LMS4: 'La Montessori School Nerchowk', LMS5: 'La Montessori School Sayoli', LMS6: 'La Montessori School Jogindernagar' };
+const SLIP_TITLE = { HES: 'HES Kullu', LMS1: 'LMS Kullu', LMS2: 'LMS Kelheli Kullu', LMS3: 'LMS Dunkhra', LMS4: 'LMS Nerchowk', LMS5: 'LMS Sayoli', LMS6: 'LMS Jogindernagar' };
+const LETTERHEAD = '<div style="text-align:center;border-bottom:3px solid #333;padding-bottom:6px;margin-bottom:14px"><div style="font:bold 26px Times New Roman;color:#1a237e">HIDIMBA EDUCATIONAL SOCIETY</div>' +
+  '<div style="font:bold 16px Times New Roman;color:#1a237e">THE MALL, DHALPUR KULLU-175101</div><div style="font:bold 11px Times New Roman;color:#1a237e">(Regd. Under Societies Act XX1, 1860 &amp; Amended Under H.P. Soc. Reg. Act 2006)</div>' +
+  '<div style="font:bold 17px Times New Roman;color:#c00">Running &amp; Managing La Montessori Chain of Schools</div></div>';
+
+function loadOutputs_() {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingPill').classList.add('on');
+  return payGet_('outputs', { month: M.month }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    OUT = res; render_();
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+
+// Indian-system amount in words: 793246 -> "Seven Lakh Ninety Three Thousand Two Hundred Forty Six Rupees only".
+function inWords_(n) {
+  n = Math.round(n);
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const t = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const two = function (x) { return x < 20 ? a[x] : t[Math.floor(x / 10)] + (x % 10 ? ' ' + a[x % 10] : ''); };
+  const three = function (x) { return (x >= 100 ? a[Math.floor(x / 100)] + ' Hundred' + (x % 100 ? ' ' : '') : '') + (x % 100 ? two(x % 100) : ''); };
+  if (!n) return 'Zero Rupees only';
+  const parts = [], cr = Math.floor(n / 1e7), lk = Math.floor(n / 1e5) % 100, th = Math.floor(n / 1e3) % 100, rest = n % 1000;
+  if (cr) parts.push(two(cr) + ' Crore'); if (lk) parts.push(two(lk) + ' Lakh'); if (th) parts.push(two(th) + ' Thousand'); if (rest) parts.push(three(rest));
+  return parts.join(' ') + ' Rupees only';
+}
+function fyOf_(ym) { const y = Number(ym.slice(0, 4)), mo = Number(ym.slice(5, 7)); const s = mo >= 4 ? y : y - 1; return { start: s, label: s + '-' + String(s + 1).slice(2) }; }
+function outRows_(e) { return OUT.rows.filter(function (r) { return r.entity === e; }); }
+function key_(r) { return OUT.keys[r.code] || {}; }
+function adjSum_(r, types) { return (r.adjustments || []).filter(function (a) { return types.indexOf(a.type) !== -1; }).reduce(function (t, a) { return t + a.amount; }, 0); }
+function openPrint_(title, body, landscape) {
+  const w = window.open('', '_blank');
+  w.document.write('<html><head><title>' + esc_(title) + '</title><style>body{font-family:Arial;font-size:12px;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:3px 5px}' +
+    'th{background:#eee}td.n,th.n{text-align:right}.draft{position:fixed;top:40%;left:20%;font-size:90px;color:rgba(200,0,0,.12);transform:rotate(-25deg)}@page{size:' + (landscape ? 'A4 landscape' : 'A4') + ';margin:12mm}' +
+    '.slip{border:1px solid #6aa;padding:8px 10px;margin-bottom:10px;page-break-inside:avoid}.slip td{border:none;padding:1px 4px}.slip table.lv td,.slip table.lv th{border:1px solid #333;text-align:center}</style></head><body>' +
+    (M.locked[SCOPE] ? '' : '<div class="draft">DRAFT — NOT LOCKED</div>') + body + '</body></html>');
+  w.document.close(); w.print();
+}
+
+function outputsView_() {
+  let h = '<h2>Outputs — ' + monthLabel_(M.month) + '</h2>';
+  if (!OUT || OUT.month !== M.month) return h + '<div class="muted">Loading…</div>';
+  const es = Object.keys(ENTITY_LABEL).filter(function (e) { return OUT.rows.some(function (r) { return r.entity === e; }); });
+  // Cross-school statutory files
+  const epfRows = OUT.rows.filter(function (r) { return r.epf > 0; }), esiRows = OUT.rows.filter(function (r) { return r.esi > 0; });
+  const unlocked = es.filter(function (e) { return !M.locked[e]; });
+  h += '<div class="note"><b>EPF (one establishment, all schools):</b> ' + epfRows.length + ' members · <b>ESI:</b> ' + esiRows.length + ' employees.' +
+    (unlocked.length ? ' <span class="neg">Not locked yet: ' + unlocked.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') + ' — files will be drafts.</span>' : '') + '</div>' +
+    '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button></div>';
+  if (SCOPE === 'ALL') {
+    h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.map(function (e) {
+      const rs = outRows_(e), lt = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
+      return '<tr class="pick" data-scope="' + e + '"><td class="l">' + ENTITY_LABEL[e] + '</td><td>' + rs.length + '</td><td>' + inr_(sum_(rs, function (r) { return r.bankPayable; })) + '</td><td class="l">' +
+        (M.locked[e] ? '🔒 locked' : 'draft') + '</td><td class="l">' + (lt ? esc_(lt.ref) + ' · cheque ' + esc_(lt.cheque) : '—') + '</td></tr>';
+    }).join('') + '</table></div><div class="muted">Pick a school for its bank letter, salary sheet and pay slips.</div>';
+    return h;
+  }
+  const e = SCOPE, rs = outRows_(e);
+  const bank = rs.filter(function (r) { return r.bankPayable > 0 && key_(r).account; }), cash = rs.filter(function (r) { return r.bankPayable > 0 && !key_(r).account; });
+  const issued = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
+  const prev = OUT.letters.filter(function (l) { return l.entity === e; }).slice(-1)[0] || {};
+  const fy = fyOf_(M.month), maxSerial = OUT.letters.filter(function (l) { return fyOf_(l.month).start === fy.start; }).reduce(function (m, l) { return Math.max(m, l.serial); }, 0);
+  if (!LETTER || LETTER.entity !== e || LETTER.month !== M.month) {
+    const d = new Date(); d.setDate(d.getDate());
+    LETTER = { entity: e, month: M.month, serial: issued ? issued.serial : maxSerial ? maxSerial + 1 : '', date: new Date().toISOString().slice(0, 10), cheque: issued ? issued.cheque : '',
+      addressee: prev.addressee || 'Sr Branch Manager\nSBI\nKULLU', debitAccount: prev.debitAccount || SCHOOL_NAME[e] };
+  }
+  const L = LETTER, ref = 'HES/LMS/SAL/' + (L.serial || '__') + '/' + String(fy.start).slice(2) + '(' + fy.start + '-' + String(fy.start + 1).slice(2) + ')';
+  h += '<h2 style="font-size:12px;margin-top:10px">Bank letter — ' + ENTITY_LABEL[e] + (issued ? ' <span class="pos">recorded as ' + esc_(issued.ref) + '</span>' : '') + '</h2>' +
+    '<div class="note">Everything below can be edited before printing. ' + bank.length + ' staff paid by transfer, total ₹' + inr_(sum_(bank, function (r) { return r.bankPayable; })) + '.' +
+    (cash.length ? ' <span class="neg">No bank account in EmpKeyNumbers for ' + cash.length + ' (not in the letter, pay separately): ' + cash.map(function (r) { return esc_(r.name) + ' ₹' + inr_(r.bankPayable); }).join(', ') + '.</span>' : '') + '</div>' +
+    '<div class="addrow"><label class="muted">Ref serial <input type="number" id="ltSerial" value="' + esc_(L.serial) + '" style="width:70px" placeholder="e.g. 33"></label> <span class="muted">→ ' + esc_(ref) + '</span>' +
+    ' <label class="muted">Date <input type="date" id="ltDate" value="' + esc_(L.date) + '"></label> <label class="muted">Cheque no. <input id="ltCheque" value="' + esc_(L.cheque) + '" style="width:110px"></label></div>' +
+    '<div class="addrow"><label class="muted">Addressed to<br><textarea id="ltTo" rows="3" style="width:220px">' + esc_(L.addressee) + '</textarea></label> <label class="muted">Debit the account of<br><input id="ltDebit" value="' + esc_(L.debitAccount) + '" style="width:320px"></label>' +
+    ' <button class="btn" id="ltPrint">🖨 Print letter</button>' + (issued ? '' : ' <button class="mini-btn" id="ltRecord"' + (M.locked[e] ? '' : ' disabled title="Lock the school first"') + '>Record as issued</button>') + '</div>';
+  h += '<h2 style="font-size:12px;margin-top:10px">Salary sheet &amp; pay slips</h2><div class="addrow"><button class="btn" id="shPrint">🖨 Salary sheet</button> <button class="mini-btn" id="shXlsx">⬇ Salary sheet (.xlsx)</button> <button class="btn" id="psPrint">🖨 Pay slips (' + rs.length + ')</button></div>';
+  return h;
+}
+
+function readLetter_() {
+  const q = function (s) { return document.querySelector(s); };
+  Object.assign(LETTER, { serial: q('#ltSerial').value, date: q('#ltDate').value, cheque: q('#ltCheque').value, addressee: q('#ltTo').value, debitAccount: q('#ltDebit').value });
+  const fy = fyOf_(M.month);
+  LETTER.ref = 'HES/LMS/SAL/' + LETTER.serial + '/' + String(fy.start).slice(2) + '(' + fy.start + '-' + String(fy.start + 1).slice(2) + ')';
+  return LETTER;
+}
+function letterPrint_() {
+  const L = readLetter_(), e = SCOPE, rs = outRows_(e).filter(function (r) { return r.bankPayable > 0 && key_(r).account; });
+  const total = sum_(rs, function (r) { return r.bankPayable; });
+  const d = L.date ? L.date.split('-').reverse().join('/') : '';
+  openPrint_('Bank letter ' + ENTITY_LABEL[e], LETTERHEAD + '<p><b>Ref No.:</b> ' + esc_(L.ref) + '</p><p>' + esc_(L.addressee).replace(/\n/g, '<br>') + '</p><p><b>Dated :</b> ' + d + '</p>' +
+    '<p><b>Reg :</b> Salary for ' + monthLabel_(M.month) + '</p><p>Sir</p><p>We will be thankful to you if you kindly debit the account of ' + esc_(L.debitAccount) + ' and credit in the accounts of the following staff members working in ' +
+    esc_(L.debitAccount) + '.<br>Cheque No. : ' + esc_(L.cheque) + ' for Rs.' + total + ' dated ' + d + ' is attached for debit purpose.</p>' +
+    '<table><tr><th>Sr. No</th><th>Name</th><th class="n">Net Payable</th><th>Account Number</th><th>IFSC CODE</th></tr>' + rs.map(function (r, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc_(r.name) + '</td><td class="n">' + r.bankPayable + '</td><td>' + esc_(key_(r).account) + '</td><td>' + esc_(key_(r).ifsc) + '</td></tr>';
+    }).join('') + '<tr><td></td><td>Total</td><td class="n">' + total + '</td><td></td><td></td></tr></table><p><b>' + inWords_(total) + '</b></p><p><b>Thanking You</b></p><p><b>Yours Sincerely</b></p>');
+}
+
+// Salary sheet columns, in the ERP SALARY.xlsx order.
+function sheetCols_() {
+  return [['S.No', null], ['Emp.Code', function (r) { return r.code; }], ['Name', function (r) { return r.name; }], ['Designation', function (r) { return r.designation; }],
+    ['Present', function (r) { return r.paidDays; }], ['Month Basic', function (r) { return r.basic; }], ['Additional Duty Allowance', function (r) { return r.ada; }], ['DA', function (r) { return r.da; }],
+    ['LENC', function (r) { return r.clEncashment; }], ['INCENTIVE', function (r) { return adjSum_(r, ['Admission Incentive', 'Performance Bonus']); }], ['TRAV. AL.', function (r) { return adjSum_(r, ['Travel Allowance']); }],
+    ['OTHER EARN.', function (r) { return adjSum_(r, ['Arrears', 'Notice Pay', 'Other Earning']); }], ['TF(A)', function (r) { return r.tuitionA; }], ['Gr Sal', function (r) { return r.gross; }],
+    ['CTI', function (r) { return r.cti; }], ['EPF', function (r) { return r.epf; }], ['ESI', function (r) { return r.esi; }], ['TDS', function (r) { return r.tds || 0; }], ['RRF', function (r) { return r.rrf; }],
+    ['ADV. RECOVERY', function (r) { return r.loanRecovery || 0; }], ['OTHER RECOVERY', function (r) { return r.otherDeductions; }], ['TF(D)', function (r) { return r.tuitionD; }],
+    ['Total Ded', function (r) { return r.totalDeductions; }], ['Net Pay', function (r) { return r.net; }], ['Held', function (r) { return (r.heldForFnF || 0) + (r.withheld || 0); }],
+    ['Bank Transfer', function (r) { return r.bankPayable; }], ['Pay Mode', function (r) { return key_(r).account ? 'Transfer' : 'Cash/Cheque'; }],
+    ['Account No', function (r) { return key_(r).account || ''; }], ['IFSC Code', function (r) { return key_(r).ifsc || ''; }], ['UAN No', function (r) { return key_(r).uan || ''; }], ['Sign', function () { return ''; }]];
+}
+function sheetPrint_() {
+  const rs = outRows_(SCOPE), cols = sheetCols_();
+  const num = function (c) { return ['S.No', 'Emp.Code', 'Name', 'Designation', 'Pay Mode', 'Account No', 'IFSC Code', 'UAN No', 'Sign'].indexOf(c[0]) === -1; };
+  openPrint_('Salary sheet ' + ENTITY_LABEL[SCOPE], '<div style="font-size:9px">' + LETTERHEAD + '<h3 style="text-align:center">' + esc_(SCHOOL_NAME[SCOPE]) + ' — Salary Sheet for ' + monthLabel_(M.month) + '</h3>' +
+    '<table style="font-size:8.5px"><tr>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join('') + '</tr>' + rs.map(function (r, i) {
+      return '<tr>' + cols.map(function (c) { const v = c[1] ? c[1](r) : i + 1; return '<td' + (num(c) ? ' class="n"' : '') + (c[0] === 'Sign' ? ' style="width:60px"' : '') + '>' + esc_(v) + '</td>'; }).join('') + '</tr>';
+    }).join('') + '<tr>' + cols.map(function (c, i) { return i === 1 ? '<td><b>Total</b></td>' : '<td class="n"><b>' + (num(c) && c[0] !== 'Present' && c[1] ? sum_(rs, c[1]) : '') + '</b></td>'; }).join('') + '</tr></table>' +
+    '<p style="margin-top:40px">Prepared by: ____________________ &nbsp;&nbsp; Checked by: ____________________ &nbsp;&nbsp; Approved by: ____________________</p></div>', true);
+}
+function sheetXlsx_() {
+  loadExcelJs_().then(function () {
+    const rs = outRows_(SCOPE), cols = sheetCols_(), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('SalaryReport');
+    ws.addRow([SCHOOL_NAME[SCOPE] + ' — ' + monthLabel_(M.month)]).font = { bold: true };
+    ws.addRow(cols.map(function (c) { return c[0]; })).font = { bold: true };
+    rs.forEach(function (r, i) { ws.addRow(cols.map(function (c) { return c[1] ? c[1](r) : i + 1; })); });
+    ws.getColumn(28).numFmt = '@';
+    return wb.xlsx.writeBuffer().then(function (buf) { download_('Salary ' + ENTITY_LABEL[SCOPE] + ' ' + M.month + '.xlsx', new Blob([buf])); });
+  });
+}
+function download_(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+
+function slipsPrint_() {
+  const rs = outRows_(SCOPE), s = OUT.settings;
+  const line = function (k, v) { return '<tr><td>' + k + '</td><td>:</td><td style="text-align:right">' + (Number(v) || 0).toFixed(2) + '</td></tr>'; };
+  openPrint_('Pay slips ' + ENTITY_LABEL[SCOPE], rs.map(function (r) {
+    const k = key_(r), l = r.leave || { counts: {} }, c = l.counts || {};
+    const eps = Math.round(Math.min(r.basic + r.ada + r.da, s.epfCeiling) * s.epsRate), epsEr = r.epfEmployer ? Math.min(eps, r.epfEmployer) : 0;
+    const open = l.clBalance === '' || l.clBalance == null ? '' : Number(l.clBalance);
+    const earnings = line('Basic', r.basic) + line('DA', r.da) + line('Additional Duty Allowance', r.ada) + line('Employer Share of EPF', epsEr) + line('Employer Share of PF', r.epfEmployer - epsEr) +
+      line('Employer Share of ESI', r.esiEmployer) + line('LENC', r.clEncashment) + (r.adjustments || []).filter(function (a) { return a.direction === 'Earning'; }).map(function (a) { return line(esc_(a.type), a.amount); }).join('') +
+      (r.tuitionA ? line('TF(A)', r.tuitionA) : '');
+    const deductions = line('EPF (Employee)', r.epf) + line('ESI (Employee)', r.esi) + (r.tds ? line('TDS', r.tds) : '') + line('RRF', r.rrf) + (r.loanRecovery ? line('Advance Recovery', r.loanRecovery) : '') +
+      (r.adjustments || []).filter(function (a) { return a.direction === 'Deduction' && a.type !== 'TDS'; }).map(function (a) { return line(esc_(a.type), a.amount); }).join('') + (r.tuitionD ? line('TF(D)', r.tuitionD) : '');
+    return '<div class="slip"><div style="text-align:center;font-weight:bold">' + esc_(SLIP_TITLE[r.entity]) + '<br>Pay Slip For The Month Of ' + monthLabel_(M.month) + '</div>' +
+      '<table style="width:100%"><tr><td>Emp Code</td><td>: ' + esc_(r.code) + '</td><td>Days Present</td><td>: ' + Number(r.paidDays).toFixed(2) + '</td></tr><tr><td>Name</td><td>: ' + esc_(r.name) +
+      '</td><td>Account No.</td><td>: ' + esc_(k.account || 'Cash/Cheque') + '</td></tr><tr><td>Designation</td><td>: ' + esc_(r.designation) + '</td><td>IFSC CODE</td><td>: ' + esc_(k.ifsc || '') +
+      '</td></tr><tr><td>ESI No.</td><td>: ' + esc_(k.esi || 'N/A') + '</td><td>UAN No.</td><td>: ' + esc_(k.uan || 'N/A') + '</td></tr></table>' +
+      '<div>Leave Details</div><table class="lv" style="width:100%"><tr><th>Opening CL</th><th>CL</th><th>Late</th><th>Short</th><th>Half</th><th>Leave</th><th>Absent</th><th>Special Day</th><th>Comp. Leave</th><th>Unpaid days</th><th>Closing CL</th></tr><tr>' +
+      [open, c.casual, c.late, c.short, c.half, c.single, c.absent, (c.sd7 || 0) + (c.sdLt7 || 0) + (c.sdNone || 0) || '', c.comp, l.unpaidLeave || l.vacUnpaid ? (l.unpaidLeave || 0) + (l.vacUnpaid || 0) : '',
+        open === '' ? '' : Math.max(0, open - (l.clUsed || 0))].map(function (v) { return '<td>' + (v === undefined || v === '' ? '' : v) + '</td>'; }).join('') + '</tr></table>' +
+      '<table style="width:100%"><tr><td style="vertical-align:top;width:50%"><b>Earnings</b><table style="width:100%">' + earnings + '</table></td><td style="vertical-align:top"><b>Deductions</b><table style="width:100%">' + deductions + '</table></td></tr></table>' +
+      '<table style="width:100%;border-top:1px solid #999"><tr><td><b>Total CTI :</b> ' + r.cti.toFixed(2) + '</td><td><b>Total Deduction :</b> ' + r.totalDeductions.toFixed(2) + '</td><td><b>Net Bank Transfer :</b> ' + r.bankPayable.toFixed(2) +
+      ((r.heldForFnF || r.withheld) ? ' (held: ' + ((r.heldForFnF || 0) + (r.withheld || 0)).toFixed(2) + ')' : '') + '</td></tr></table></div>';
+  }).join(''));
+}
+
+// EPF ECR 2.0 text: UAN#~#Name#~#Gross#~#EPF wages#~#EPS wages#~#EDLI wages#~#EE#~#EPS#~#ER (EPF-EPS)#~#NCP days#~#Refund
+function ecr_() {
+  const s = OUT.settings, rows = OUT.rows.filter(function (r) { return r.epf > 0; }), missing = [];
+  const lines = rows.map(function (r) {
+    const uan = key_(r).uan;
+    if (!uan) { missing.push(r.code + ' ' + r.name); return null; }
+    const wages = Math.min(r.basic + r.ada + r.da, s.epfCeiling), eps = Math.round(wages * s.epsRate);
+    return [uan, r.name.toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim(), r.gross - r.tuitionA, wages, wages, wages, r.epf, eps, r.epf - eps,
+      Math.max(0, Math.round(M.daysInMonth - r.paidDays)), 0].join('#~#');
+  }).filter(Boolean);
+  const tot = function (i) { return lines.reduce(function (t, l) { return t + Number(l.split('#~#')[i]); }, 0); };
+  download_('ECR ' + M.month + '.txt', new Blob([lines.join('\n')], { type: 'text/plain' }));
+  const w = tot(3);
+  document.getElementById('msgRoot').innerHTML = '<div class="ok">ECR for ' + lines.length + ' members: EE ₹' + inr_(tot(6)) + ' · EPS ₹' + inr_(tot(7)) + ' · ER ₹' + inr_(tot(8)) +
+    ' · estimated admin (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' · EDLI (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' (not in CTI — CA question).</div>' +
+    (missing.length ? '<div class="warn">No UAN in EmpKeyNumbers, left out of the file: ' + missing.map(esc_).join(', ') + '</div>' : '');
+}
+// ESIC monthly contribution upload (MC template).
+function esiFile_() {
+  loadExcelJs_().then(function () {
+    const rows = OUT.rows.filter(function (r) { return r.esi > 0; }), missing = [];
+    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Sheet1');
+    ws.addRow(['IP Number (10 Digits)', 'IP Name( Only alphabets and space )', 'No of Days for which wages paid/payable during the month', 'Total Monthly Wages',
+      'Reason Code for Zero workings days(numeric only; provide 0 for all other reasons- Click on the link for reference)', 'Last Working Day( Format DD/MM/YYYY  or DD-MM-YYYY)']).font = { bold: true };
+    rows.forEach(function (r) {
+      const ip = String(key_(r).esi || '').replace(/\D/g, '');
+      if (ip.length !== 10) { missing.push(r.code + ' ' + r.name); return; }
+      ws.addRow([ip, r.name.replace(/[^A-Za-z ]/g, ' ').replace(/\s+/g, ' ').trim(), Math.round(r.paidDays), r.basic + r.ada + r.da, 0, '']);
+    });
+    ws.getColumn(1).numFmt = '@';
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      download_('ESI ' + M.month + '.xlsx', new Blob([buf]));
+      document.getElementById('msgRoot').innerHTML = '<div class="ok">ESI file for ' + (rows.length - missing.length) + ' employees: employee ₹' + inr_(sum_(rows, function (r) { return r.esi; })) +
+        ' · employer ₹' + inr_(sum_(rows, function (r) { return r.esiEmployer; })) + '.</div>' + (missing.length ? '<div class="warn">No 10-digit ESI number in EmpKeyNumbers, left out: ' + missing.map(esc_).join(', ') + '</div>' : '');
+    });
+  });
+}
+
+function wireOutputs_() {
+  const q = function (s) { return document.querySelector(s); };
+  if (q('#ecrBtn')) q('#ecrBtn').onclick = ecr_;
+  if (q('#esiBtn')) q('#esiBtn').onclick = esiFile_;
+  if (q('#ltPrint')) q('#ltPrint').onclick = letterPrint_;
+  if (q('#shPrint')) q('#shPrint').onclick = sheetPrint_;
+  if (q('#shXlsx')) q('#shXlsx').onclick = sheetXlsx_;
+  if (q('#psPrint')) q('#psPrint').onclick = slipsPrint_;
+  if (q('#ltRecord')) q('#ltRecord').onclick = function () {
+    const L = readLetter_(), rs = outRows_(SCOPE).filter(function (r) { return r.bankPayable > 0 && key_(r).account; });
+    if (!L.serial || !L.cheque) { alert('Enter the reference serial and cheque number first.'); return; }
+    if (!confirm('Record ' + L.ref + ' for ' + ENTITY_LABEL[SCOPE] + ' — cheque ' + L.cheque + ', ₹' + inr_(sum_(rs, function (r) { return r.bankPayable; })) + '?')) return;
+    const msg = document.getElementById('msgRoot');
+    payPost_('issueletter', { month: M.month, entity: SCOPE, serial: L.serial, ref: L.ref, date: L.date, cheque: L.cheque, amount: sum_(rs, function (r) { return r.bankPayable; }), staff: rs.length,
+      addressee: L.addressee, debitAccount: L.debitAccount }).then(function (res) {
+      if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+      M = res; LETTER = null; msg.innerHTML = '<div class="ok">Recorded ' + esc_(L.ref) + '.</div>'; loadOutputs_();
+    });
+  };
+}
+
 function load_() {
   LEAVE_PREVIEW = null;
-  call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…').then(function (ok) { if (ok && VIEW !== 'month') loadAccounts_(); });
+  call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…').then(function (ok) { if (ok && VIEW === 'outputs') loadOutputs_(); else if (ok && VIEW !== 'month') loadAccounts_(); });
 }
 
 function showApp(session) {

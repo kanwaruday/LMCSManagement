@@ -31,10 +31,11 @@ function payMonthsBetween_(from, to) {
   return Math.max(0, m);
 }
 
-// emp: {fullBasic, epfMember, rrfMember, tuition, doj (Date)}
+// emp: {fullBasic, epfMember, rrfMember, tuition, doj (Date), esiCovered (optional -- coverage for
+//      the ESI contribution period; see payEsiCovered_ in payroll.gs)}
 // input: {paidDays, clDays, hold ('fnf' | 'grievance' | ''; true = 'fnf'), release (₹ of earlier
 //         held salary paid out this month), otherEarnings, otherDeductions,
-//         loanRecovery (₹ due this month on salary advances / RRF loans)}
+//         loanRecovery (₹ due this month on salary advances / RRF loans), tds (₹ income tax)}
 // rates: {da, ada, epfRegistered, esiRegistered}   (fractions / booleans)
 // s: settings -- {epfRate, epfCeiling, esiEmpRate, esiErRate, esiThreshold,
 //    rrfY1, rrfY2, rrfY3, rrfTargetMonths, rrfStopAtTarget, gratRate, clDivisor}
@@ -51,9 +52,13 @@ function payCalc_(emp, input, rates, s, ctx) {
   const da = R(basic * rates.da);
   const wages = basic + ada + da;
   const epf = emp.epfMember && rates.epfRegistered ? R(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
-  const esiOn = rates.esiRegistered && wages <= s.esiThreshold;
-  const esi = esiOn ? R(wages * s.esiEmpRate) : 0;
-  const esiEr = esiOn ? R(wages * s.esiErRate) : 0;
+  // ESI (2026-09-30, per Uday "do what is legally right"): coverage is decided once per contribution
+  // period (Apr-Sep, Oct-Mar) -- someone covered at its start stays covered even if wages cross the
+  // threshold mid-period -- and contributions are rounded UP to the next rupee, as ESIC does.
+  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : wages <= s.esiThreshold);
+  const up = function (x) { return Math.ceil(Math.round(x * 1e6) / 1e6); };
+  const esi = esiOn ? up(wages * s.esiEmpRate) : 0;
+  const esiEr = esiOn ? up(wages * s.esiErRate) : 0;
   const clEnc = R((Number(input.clDays) || 0) * (wages - epf - esi) / s.clDivisor);
   const tuition = Number(emp.tuition) || 0;
   const otherEarnings = Number(input.otherEarnings) || 0;
@@ -73,9 +78,10 @@ function payCalc_(emp, input, rates, s, ctx) {
   if (rrfRate && s.rrfStopAtTarget) rrf = Math.min(rrf, Math.max(0, R(target - opening)));
 
   const otherDeductions = Number(input.otherDeductions) || 0;
+  const tds = Number(input.tds) || 0;
   // Loan / advance recovery never takes net pay below zero (stage 4, 2026-09-30).
-  const loanRecovery = Math.max(0, Math.min(Number(input.loanRecovery) || 0, gross - (epf + esi + rrf + tuition + otherDeductions)));
-  const totalDeductions = epf + esi + rrf + tuition + otherDeductions + loanRecovery;
+  const loanRecovery = Math.max(0, Math.min(Number(input.loanRecovery) || 0, gross - (epf + esi + rrf + tuition + otherDeductions + tds)));
+  const totalDeductions = epf + esi + rrf + tuition + otherDeductions + tds + loanRecovery;
   const net = gross - totalDeductions;
   // Held for F&F = leaving month's salary, paid at F&F. Withheld (grievance)
   // = Appointment Letter: up to 2 extra weeks. Either way it leaves the bank
@@ -85,7 +91,7 @@ function payCalc_(emp, input, rates, s, ctx) {
   return {
     paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages,
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
-    epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery,
+    epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery, tds: tds,
     totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
     heldForFnF: hold === 'fnf' ? net : 0, withheld: hold === 'grievance' ? net : 0,
     epfEmployer: epf, esiEmployer: esiEr, cti: cti, gratuityProvision: R((basic + da) * s.gratRate),
@@ -211,6 +217,12 @@ function payrollCalcSelfTest_() {
   r = payCalc_(emp, { hold: 'grievance', release: 5000 }, rates, S, ctx);
   eq(r.withheld, r.net, 'withheld (grievance)'); eq(r.heldForFnF, 0, 'not an F&F hold');
   eq(r.bankPayable, 5000, 'only the released earlier hold goes to bank');
+  r = payCalc_(emp, { tds: 2000 }, rates, S, ctx);
+  eq(r.tds, 2000, 'TDS'); eq(r.net, 14000 - 1680 - 105 - 1936 - 2000, 'net after TDS');
+  r = payCalc_(Object.assign({}, emp, { fullBasic: 16000, esiCovered: true }), {}, rates, S, ctx);
+  eq(r.esi, Math.ceil(22400 * 0.0075), 'covered for the period even above 21000, rounded up'); eq(r.esiEmployer, 728, '3.25% of 22400');
+  eq(payCalc_(Object.assign({}, emp, { esiCovered: false }), {}, rates, S, ctx).esi, 0, 'not covered this period');
+  eq(payCalc_(Object.assign({}, emp, { fullBasic: 9950 }), {}, rates, S, ctx).esi, Math.ceil(13930 * 0.0075), 'rounds up (104.475 -> 105)');
   r = payCalc_(emp, { loanRecovery: 5000 }, rates, S, ctx);
   eq(r.loanRecovery, 5000, 'loan recovery'); eq(r.net, 14000 - 1680 - 105 - 1936 - 5000, 'net after recovery');
   r = payCalc_(emp, { loanRecovery: 50000 }, rates, S, ctx);

@@ -46,7 +46,7 @@ those really do need copying from there.
 
 **One deployment** ("LMCS Payroll Backend" — `PAYROLL_BACKEND_URL` in [`payroll/index.html`](../payroll/index.html), added 2026-09-29):
 - Page: `payroll/index.html`, reached from the Salary Dashboard header (Owner only), not a separate home-page module.
-- `payroll.gs` — `doGet`/`doPost` entry points (month; saveinputs, addadjustment, deleteadjustment, markstep, previewleave, uploadleave, joinoffer, dismissoffer, addemployee, markleft, applytransfer, lock, unlock, importopening, issueloan, settlefnf as POST; accounts, fnfpreview as GET), Owner-only token check; recordoffer (POST) is the one action open to Principals/Coordinators -- it can only append an offer, sheet I/O against the "LMCS Payroll" sheet
+- `payroll.gs` — `doGet`/`doPost` entry points (month; saveinputs, addadjustment, deleteadjustment, markstep, previewleave, uploadleave, joinoffer, dismissoffer, addemployee, markleft, applytransfer, lock, unlock, importopening, issueloan, settlefnf, issueletter as POST; accounts, fnfpreview, outputs as GET), Owner-only token check; recordoffer (POST) is the one action open to Principals/Coordinators -- it can only append an offer, sheet I/O against the "LMCS Payroll" sheet
   (creates its own tabs) and LMCS-Salary-PayScale's PayRoll Rates/Constants.
 - `payroll-calc.gs` — the monthly salary formula as a pure function; `payrollCalcSelfTest_` runs in the
   editor or under `node`.
