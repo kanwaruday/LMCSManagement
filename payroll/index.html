@@ -65,6 +65,14 @@ td.neg{color:#991b1b;font-weight:600}
 .tick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border:1px solid var(--border);border-radius:14px;cursor:pointer;background:var(--white)}
 .tick.done{background:var(--green-lt);border-color:#bbf7d0;color:var(--green)}
 .muted{color:var(--gray);font-size:10.5px}
+.schools{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.school{font-size:11.5px;font-weight:600;padding:5px 12px;border:1px solid var(--border);border-radius:16px;background:var(--white);cursor:pointer}
+.school:hover{border-color:var(--dark)}
+.school.on{background:var(--dark);color:#fff;border-color:var(--dark)}
+.school .n{font-weight:400;opacity:.7;margin-left:4px}
+tr.pick{cursor:pointer}
+tr.pick:hover td{background:var(--lgray)}
+tr.cur td{background:#fef9c3}
 .loading-pill{display:none;position:fixed;top:16px;right:16px;background:var(--dark);color:#fff;padding:8px 14px;border-radius:20px;font-size:11.5px;align-items:center;gap:8px;z-index:1000}
 .loading-pill.on{display:flex}
 .loading-spinner{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
@@ -85,10 +93,6 @@ td.neg{color:#991b1b;font-weight:600}
     <div id="mainRoot" style="display:none">
       <div class="toolbar">
         <label>Month <input type="month" id="fMonth"></label>
-        <label>Schools <select id="fScope">
-          <option value="ALL">All schools</option><option value="HES">HES</option><option value="LMS1">LMS 1</option><option value="LMS2">LMS 2</option>
-          <option value="LMS3">LMS 3</option><option value="LMS4">LMS 4</option><option value="LMS5">LMS 5</option><option value="LMS6">LMS 6</option>
-        </select></label>
         <button class="btn" id="loadBtn">Open month</button>
       </div>
       <div id="msgRoot"></div>
@@ -115,7 +119,9 @@ const STEPS = [
   { id: 'review', n: '⑤', t: 'Review' },
   { id: 'lock', n: '⑥', t: 'Lock' },
 ];
-let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'staff', SHOW_ALL_ERP = false;
+// 2026-09-30, per Uday: school-wise by default feel (tabs + by-school table, like the
+// first payroll screen), with All schools kept as an option.
+let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'staff', ONLY_DIFF = false;
 
 // ── Backend ──────────────────────────────────────────────────────────
 function payGet_(action, data) {
@@ -186,7 +192,7 @@ function render_() {
   const hasErp = rows.some(function (r) { return r.erpNet != null; });
   const nd = sum_(rows, netDiff_), cd = sum_(rows, ctiDiff_);
   const erpStat = function (v) { return hasErp ? '<span class="' + cls_(v) + '">' + inr_(v) + '</span>' : '<span class="muted">no ERP data</span>'; };
-  let html = '<div class="status">' +
+  let html = schoolTabs_() + '<div class="status">' +
     stat_('Month', monthLabel_(M.month)) + stat_('Scope', SCOPE === 'ALL' ? 'All schools' : ENTITY_LABEL[SCOPE]) +
     stat_('Staff', rows.length) + stat_('Gross', '₹' + inr_(sum_(rows, function (r) { return r.gross; }))) +
     stat_('Net pay', '₹' + inr_(sum_(rows, function (r) { return r.net; }))) +
@@ -196,6 +202,7 @@ function render_() {
     '<span class="deadline">Lock by 8 ' + nextLabel + ' · pay on 10 ' + nextLabel + (lockedEs.length ? ' · 🔒 ' + lockedEs.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') : '') + '</span></div>';
 
   // Checklist cards
+  html += bySchool_();
   html += '<div class="cards">' + STEPS.map(function (s) {
     const done = s.id === 'lock' ? entitiesInScope_().every(isLocked_) : scopeStepDone_(s.id);
     const allLocked = entitiesInScope_().every(isLocked_);
@@ -207,6 +214,37 @@ function render_() {
   html += '<div class="panel">' + panel_(OPEN) + '</div>';
   document.getElementById('monthRoot').innerHTML = html;
   wire_();
+}
+
+function schoolTabs_() {
+  const present = Object.keys(ENTITY_LABEL).filter(function (e) { return M.rows.some(function (r) { return r.entity === e; }); });
+  return '<div class="schools">' + ['ALL'].concat(present).map(function (e) {
+    const n = e === 'ALL' ? M.rows.length : M.rows.filter(function (r) { return r.entity === e; }).length;
+    return '<span class="school' + (SCOPE === e ? ' on' : '') + '" data-scope="' + e + '">' + (e === 'ALL' ? 'All schools' : ENTITY_LABEL[e]) +
+      (e !== 'ALL' && isLocked_(e) ? ' 🔒' : '') + '<span class="n">' + n + '</span></span>';
+  }).join('') + '</div>';
+}
+
+// By-school totals (always every school); click a row to switch to that school.
+function bySchool_() {
+  const present = Object.keys(ENTITY_LABEL).filter(function (e) { return M.rows.some(function (r) { return r.entity === e; }); });
+  const hasErp = M.rows.some(function (r) { return r.erpNet != null; });
+  const cols = [['Staff', null], ['Gross', function (r) { return r.gross; }], ['EPF (Ee+Er)', function (r) { return r.epf + r.epfEmployer; }],
+    ['ESI (Ee+Er)', function (r) { return r.esi + r.esiEmployer; }], ['RRF', function (r) { return r.rrf; }], ['Net Pay', function (r) { return r.net; }],
+    ['Bank', function (r) { return r.bankPayable; }], ['Held', function (r) { return r.heldForFnF + r.withheld; }], ['CTI', function (r) { return r.cti; }],
+    ['Gratuity Prov', function (r) { return r.gratuityProvision; }]]
+    .concat(hasErp ? [['ERP Net', function (r) { return r.erpNet; }], ['Net Diff', netDiff_, true], ['ERP CTI', function (r) { return r.erpCti; }], ['CTI Diff', ctiDiff_, true]] : []);
+  let h = '<div class="wrap"><table><tr><th class="l">School</th>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join('') + '<th class="l">Status</th></tr>';
+  present.concat(['ALL']).forEach(function (e) {
+    const rs = M.rows.filter(function (r) { return e === 'ALL' || r.entity === e; });
+    const cls = e === 'ALL' ? 'total' : 'pick' + (SCOPE === e ? ' cur' : '');
+    h += '<tr class="' + cls + '"' + (e === 'ALL' ? '' : ' data-scope="' + e + '"') + '><td class="l">' + (e === 'ALL' ? 'TOTAL' : ENTITY_LABEL[e]) + '</td>' + cols.map(function (c) {
+      if (!c[1]) return '<td>' + rs.length + '</td>';
+      const v = sum_(rs, c[1]);
+      return '<td' + (c[2] ? ' class="' + cls_(v) + '"' : '') + '>' + inr_(v) + '</td>';
+    }).join('') + '<td class="l muted">' + (e === 'ALL' ? '' : isLocked_(e) ? '🔒 locked' : M.steps.filter(function (s) { return stepDone_(s, e); }).length + '/' + M.steps.length + ' steps') + '</td></tr>';
+  });
+  return h + '</table></div>';
 }
 
 function stat_(k, v) { return '<span><div class="k">' + k + '</div><div class="v">' + v + '</div></span>'; }
@@ -542,9 +580,9 @@ function reviewPanel_() {
 
   const hasErp = scopeRows_().some(function (r) { return r.erpNet != null; });
   // No ERP data (months after the parallel run) -> the review table is simply the full register.
-  const erpRows = scopeRows_().filter(function (r) { return !hasErp || SHOW_ALL_ERP || netDiff_(r) || ctiDiff_(r); });
-  h += '<h2 style="font-size:12px">' + (hasErp ? 'Parallel run vs ERP (rows that differ)' : 'Full register <span class="muted">— no ERP Reference rows for this month</span>') +
-    ' <span class="grow"></span>' + (hasErp ? '<label class="muted"><input type="checkbox" id="erpAll"' + (SHOW_ALL_ERP ? ' checked' : '') + '> show everyone (full register)</label> ' : '') +
+  const erpRows = scopeRows_().filter(function (r) { return !hasErp || !ONLY_DIFF || netDiff_(r) || ctiDiff_(r); });
+  h += '<h2 style="font-size:12px">Register — ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) + (hasErp ? ', with the ERP parallel run' : ' <span class="muted">— no ERP Reference rows for this month</span>') +
+    ' <span class="grow"></span>' + (hasErp ? '<label class="muted"><input type="checkbox" id="erpDiff"' + (ONLY_DIFF ? ' checked' : '') + '> only rows that differ from ERP</label> ' : '') +
     '<button class="mini-btn" id="csvBtn">⬇ Export CSV</button></h2>';
   const cols = registerCols_();
   h += '<div class="wrap" style="max-height:60vh"><table><tr>' + cols.map(function (c) { return '<th' + (c[2] ? ' class="l"' : '') + '>' + c[0] + '</th>'; }).join('') + '</tr>';
@@ -678,7 +716,8 @@ function wire_() {
   document.querySelectorAll('[data-release]').forEach(function (c) {
     c.onchange = function () { const r = M.rows.find(function (x) { return x.code === c.dataset.release; }); post_('saveinputs', { rows: [inputFor_(r, { release: c.checked ? r.heldBalance : '' })] }, 'Saving…'); };
   });
-  if (q('#erpAll')) q('#erpAll').onchange = function () { SHOW_ALL_ERP = this.checked; render_(); };
+  if (q('#erpDiff')) q('#erpDiff').onchange = function () { ONLY_DIFF = this.checked; render_(); };
+  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; LEAVE_PREVIEW = null; render_(); }; });
   if (q('#csvBtn')) q('#csvBtn').onclick = exportCsv_;
   document.querySelectorAll('[data-lock]').forEach(function (b) {
     b.onclick = function () {
@@ -703,7 +742,6 @@ function exportCsv_() {
 
 function load_() {
   LEAVE_PREVIEW = null;
-  SCOPE = document.getElementById('fScope').value;
   call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…');
 }
 
@@ -722,8 +760,6 @@ function showApp(session) {
   document.getElementById('fMonth').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   document.getElementById('loadBtn').onclick = load_;
   document.getElementById('fMonth').onchange = load_;
-  // Changing scope needs no reload -- the month already holds every school.
-  document.getElementById('fScope').onchange = function () { SCOPE = this.value; render_(); };
   load_();
 }
 
