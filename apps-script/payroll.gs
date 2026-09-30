@@ -63,6 +63,8 @@ const PAY_TABS = {
     'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)', 'Amount', 'Reference', 'Notes', 'Entered By', 'Entered At'],
   'Tally Ledger Map': ['Entity', 'Payroll Head', 'Tally Ledger Name', 'Cost Centre', 'Dr/Cr'],
   'ERP Reference': ['Month', 'Employee Code', 'ERP Gross', 'ERP EPF', 'ERP ESI', 'ERP RRF', 'ERP Net Pay', 'ERP CTI'],
+  // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
+  // PAY_LEAVE_FIELDS in payroll-calc.gs, which loads AFTER this file.
 };
 
 // Payroll-only settings, appended to PayRoll Constants if missing.
@@ -102,10 +104,12 @@ function payHandle_(action, idToken, data) {
       addadjustment: function (ss) { payAddAdjustment_(ss, data, caller); },
       deleteadjustment: function (ss) { payDeleteAdjustment_(ss, data.month, data.id); },
       markstep: function (ss) { payMarkStep_(ss, data, caller); },
+      uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
       lock: function (ss) { payLock_(ss, data.month, data.entity, caller); },
     };
     let result;
     if (action === 'month' || action === 'draft') result = payMonth_(payOpen_(), data.month);
+    else if (action === 'previewleave') result = { preview: payUploadLeave_(payOpen_(), data, caller, true) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
     return payJson_(Object.assign({ success: true }, result));
@@ -172,6 +176,7 @@ function payCachedOwner_(idToken) {
 // ── Sheet helpers ────────────────────────────────────────────────────
 // Creates missing tabs, and appends any header a live tab is missing.
 function payEnsureTabs_(ss) {
+  PAY_TABS['Leave Records'] = PAY_TABS['Leave Records'] || payLeaveHeaders_();
   Object.keys(PAY_TABS).forEach(function (name) {
     let sh = ss.getSheetByName(name);
     if (!sh) {
@@ -366,7 +371,8 @@ function payMonth_(ss, month) {
   rows.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
   return { month: month, daysInMonth: ctx.daysInMonth, settings: live.settings, rates: live.rates, rows: rows,
     warnings: live.warnings.filter(function (w) { return !locks[w.entity]; }), locked: locks,
-    checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES };
+    checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES,
+    leaveFields: PAY_LEAVE_FIELDS.map(function (f) { return [f[0], f[1], f[2]]; }), vacRules: PAY_VAC_RULES };
 }
 
 // code -> net for the previous month: locked schools from the Register,
@@ -405,6 +411,9 @@ function payCompute_(ss, month) {
       direction: String(a['Direction']), amount: payNum_(a['Amount']), note: String(a['Note'] || '') });
   });
   const openingRrf = payLedgerBalances_(ss, 'RRF', month);
+  const roleOf = payJobRoles_(rs);
+  const leave = {};
+  payForMonth_(ss, 'Leave Records', month).forEach(function (l) { leave[String(l['Employee Code']).trim()] = payLeaveRecord_(l); });
   const heldBalance = payLedgerBalances_(ss, 'Held Salary', month);
 
   const rows = [];
@@ -430,6 +439,7 @@ function payCompute_(ss, month) {
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
     rows.push(Object.assign({ code: code, name: String(r['Name'] || '').trim(), entity: entity,
       designation: String(r['Designation'] || '').trim(), adjustments: adj, heldBalance: heldBalance[code] || 0,
+      probation: payMonthsBetween_(doj, monthEnd) < 12, vacRule: roleOf(r['Designation']), leave: leave[code] || null,
       input: { paidDays: inp['Paid Days'] === undefined ? '' : inp['Paid Days'], clDays: inp['CL Days Encashed'] || '',
         hold: hold, release: inp['Release Held (₹)'] || '' } }, calc));
   });
@@ -476,15 +486,17 @@ function paySaveInputs_(ss, month, rows, caller) {
   rows.forEach(function (r) {
     const code = String(r.code || '').trim();
     payAssertOpen_(locks, entityOf(code), month);
-    const hold = r.hold === 'fnf' ? 'F&F' : r.hold === 'grievance' ? 'Grievance' : '';
-    const release = num(r.release, 'Release Held', code, held[code] || 0);
     const k = month + '|' + code;
     if (!(k in idx)) { idx[k] = values.length; values.push(hdr.map(function () { return ''; })); }
     const row = values[idx[k]];
     const set = function (h, v) { row[col(h)] = v; };
+    // Only the fields sent are changed -- e.g. a leave upload sets Paid Days
+    // without touching a hold set earlier from the Holds card.
     set('Month', ctx.start); set('Employee Code', code);
-    set('Paid Days', num(r.paidDays, 'Paid Days', code, ctx.daysInMonth)); set('CL Days Encashed', num(r.clDays, 'CL Days', code));
-    set('Hold for F&F (Y/N)', ''); set('Hold (F&F/Grievance)', hold); set('Release Held (₹)', release);
+    if ('paidDays' in r) set('Paid Days', num(r.paidDays, 'Paid Days', code, ctx.daysInMonth));
+    if ('clDays' in r) set('CL Days Encashed', num(r.clDays, 'CL Days', code));
+    if ('hold' in r) { set('Hold for F&F (Y/N)', ''); set('Hold (F&F/Grievance)', r.hold === 'fnf' ? 'F&F' : r.hold === 'grievance' ? 'Grievance' : ''); }
+    if ('release' in r) set('Release Held (₹)', num(r.release, 'Release Held', code, held[code] || 0));
     set('Updated By', caller.email); set('Updated At', now);
   });
   sheet.getRange(1, 1, values.length, hdr.length).setValues(values);
@@ -580,4 +592,119 @@ function payLock_(ss, month, entity, caller) {
     if (r.released) entry(r, 'Held Salary', 'Payout', -r.released, 'Earlier held salary released');
   });
   payAppend_(ss.getSheetByName('Ledger'), ledger);
+}
+
+// ── Leave template upload (stage b, 2026-09-30) ──────────────────────
+// Designation -> vacation rule from JobRole Norms ("Vacations" / "Casual
+// Leave" columns). ERP designations are spelled differently from JobRole
+// Norms, so a few confident aliases; anything else -> '' (picked in the template).
+const PAY_ROLE_ALIASES = { peoncumdriver: 'drivercumpeon', driver: 'drivercumpeon', daftri: 'drivercumdaftri',
+  headmaster: 'headmasterprincipal', principal: 'headmasterprincipal', mdprincipal: 'headmasterprincipal',
+  systemcoordinator: 'systemscoordinator', physicaltraininginstructor: 'gamesteacherpti', clerk: 'clerkpro',
+  gardner: 'gardener', sweeperesspt: 'sweeper', md: 'mdoperations' };
+function payNormRole_(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function payJobRoles_(rs) {
+  const map = {};
+  const sh = rs.getSheetByName('JobRole Norms');
+  if (sh) payRows_(sh).forEach(function (r) {
+    const vac = String(r['Vacations'] || '').split('\n')[0].trim().toLowerCase();
+    const rule = /^na$/i.test(String(r['Casual Leave'] || '').trim()) ? 'Not tracked'
+      : /^half/.test(vac) ? 'Half' : /^no vacation/.test(vac) ? 'Works' : vac ? 'Full' : '';
+    map[payNormRole_(r['Designation'])] = rule;
+  });
+  return function (designation) {
+    const k = payNormRole_(designation);
+    return map[k] !== undefined ? map[k] : map[PAY_ROLE_ALIASES[k]] || '';
+  };
+}
+
+// Leave Records headers (one row per person per month from the template upload).
+function payLeaveHeaders_() {
+  return ['Month', 'Employee Code'].concat(PAY_LEAVE_FIELDS.map(function (f) { return f[1]; })).concat(['Opening CL Balance',
+    'Opening Comp Balance', 'Vacation Rule', 'Vacation Working Days', 'Vacation Days Worked', 'Leave Days Charged', 'Comp Used',
+    'CL Used', 'Unpaid Leave Days', 'Vacation Unpaid Days', 'Paid Days', 'Notes', 'Uploaded By', 'Uploaded At']);
+}
+
+function payLeaveRecord_(l) {
+  const counts = {};
+  PAY_LEAVE_FIELDS.forEach(function (f) { if (l[f[1]] !== '' && l[f[1]] !== undefined) counts[f[0]] = payNum_(l[f[1]]); });
+  return { counts: counts, clBalance: l['Opening CL Balance'], compBalance: l['Opening Comp Balance'], vacRule: String(l['Vacation Rule'] || ''),
+    vacDays: l['Vacation Working Days'], vacWorked: l['Vacation Days Worked'], charged: payNum_(l['Leave Days Charged']),
+    compUsed: payNum_(l['Comp Used']), clUsed: payNum_(l['CL Used']), unpaidLeave: payNum_(l['Unpaid Leave Days']),
+    vacUnpaid: payNum_(l['Vacation Unpaid Days']), paidDays: payNum_(l['Paid Days']), notes: String(l['Notes'] || '') };
+}
+
+// d: {month, vacDays: {entity: n}, rows: [{code, counts: {key: n}, clBalance, compBalance, vacRule, vacWorked}]}
+// Converts every row (payLeaveConvert_) and, unless preview, saves Leave
+// Records and sets Paid Days in Monthly Inputs. A row with nothing in it
+// clears that person's earlier upload for the month. Returns the conversion.
+function payUploadLeave_(ss, d, caller, preview) {
+  const ctx = payCheckMonth_(d.month);
+  const month = d.month;
+  const locks = payLocks_(ss, month);
+  const master = {};
+  payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
+    const eff = payDate_(r['Effective From']);
+    const code = String(r['Employee Code']).trim();
+    if (eff && eff <= ctx.monthEnd && (!master[code] || eff >= master[code].eff)) master[code] = { eff: eff, row: r };
+  });
+  const existing = {};
+  payForMonth_(ss, 'Leave Records', month).forEach(function (l) { existing[String(l['Employee Code']).trim()] = true; });
+  const blank = function (v) { return v === '' || v === null || v === undefined; };
+  const vacDays = {};
+  Object.keys(d.vacDays || {}).forEach(function (e) {
+    const n = blank(d.vacDays[e]) ? 0 : Number(d.vacDays[e]);
+    if (!(n >= 0 && n <= ctx.daysInMonth && n === Math.floor(n))) throw new Error(e + ': vacation working days "' + d.vacDays[e] + '" is not valid');
+    vacDays[payEntity_(e)] = n;
+  });
+  const num = function (v, label, code, max, whole) {
+    if (blank(v)) return '';
+    const n = Number(v);
+    if (isNaN(n) || n < 0 || (max !== undefined && n > max) || (whole && n !== Math.floor(n))) throw new Error(code + ': ' + label + ' "' + v + '" is not valid');
+    return n;
+  };
+  const out = [];
+  (d.rows || []).forEach(function (r) {
+    const code = String(r.code || '').trim();
+    if (!master[code]) throw new Error(code + ': not in Salary Master for ' + month);
+    const m = master[code].row;
+    const entity = payEntity_(m['Entity']);
+    if (locks[entity]) return; // locked schools are skipped, not an error -- the template may cover all schools
+    const counts = {};
+    PAY_LEAVE_FIELDS.forEach(function (f) { const v = num((r.counts || {})[f[0]], f[1], code, 99, true); if (v !== '' && v !== 0) counts[f[0]] = v; });
+    const rule = String(r.vacRule || '');
+    if (rule && PAY_VAC_RULES.indexOf(rule) === -1) throw new Error(code + ': unknown vacation rule "' + rule + '"');
+    const l = { counts: counts, clBalance: num(r.clBalance, 'Opening CL Balance', code), compBalance: num(r.compBalance, 'Opening Comp Balance', code),
+      vacRule: rule, vacDays: vacDays[entity] || 0, vacWorked: num(r.vacWorked, 'Vacation Days Worked', code, vacDays[entity] || 0, true),
+      probation: payMonthsBetween_(payDate_(m['Date of Joining']), ctx.monthEnd) < 12 };
+    const empty = !Object.keys(counts).length && !(l.vacDays && (l.probation || rule === 'Half'));
+    if (empty && !existing[code]) return;
+    const c = payLeaveConvert_(l, ctx.daysInMonth);
+    if (l.vacDays && (l.probation || rule === 'Half') && blank(r.vacWorked)) c.notes.unshift('Vacation Days Worked left blank -- counted as 0');
+    out.push(Object.assign({ code: code, name: String(m['Name'] || ''), entity: entity, clear: empty, input: l }, c));
+  });
+  if (preview) return out;
+
+  // Replace this month's Leave Records for every uploaded person, then set Paid Days.
+  const sheet = ss.getSheetByName('Leave Records');
+  const values = sheet.getDataRange().getValues();
+  const hdr = values[0].map(function (h) { return String(h).trim(); });
+  const codes = {};
+  out.forEach(function (o) { codes[o.code] = true; });
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (payMonthKey_(values[i][hdr.indexOf('Month')]) === month && codes[String(values[i][hdr.indexOf('Employee Code')]).trim()]) sheet.deleteRow(i + 1);
+  }
+  const now = new Date();
+  payAppend_(sheet, out.filter(function (o) { return !o.clear; }).map(function (o) {
+    const row = { 'Month': ctx.start, 'Employee Code': o.code, 'Opening CL Balance': o.input.clBalance, 'Opening Comp Balance': o.input.compBalance,
+      'Vacation Rule': o.input.vacRule, 'Vacation Working Days': o.input.vacDays, 'Vacation Days Worked': o.input.vacWorked,
+      'Leave Days Charged': o.charged, 'Comp Used': o.compUsed, 'CL Used': o.clUsed, 'Unpaid Leave Days': o.unpaidLeave,
+      'Vacation Unpaid Days': o.vacUnpaid, 'Paid Days': o.paidDays, 'Notes': o.notes.join('; '), 'Uploaded By': caller.email, 'Uploaded At': now };
+    PAY_LEAVE_FIELDS.forEach(function (f) { row[f[1]] = f[0] in o.input.counts ? o.input.counts[f[0]] : ''; });
+    return row;
+  }));
+  // Full month -> blank Paid Days (the "everyone else" default), so the leave list stays exceptions-only.
+  paySaveInputs_(ss, month, out.map(function (o) { return { code: o.code, paidDays: o.paidDays === ctx.daysInMonth ? '' : o.paidDays }; }), caller);
+  return out;
 }

@@ -215,7 +215,7 @@ function cardSummary_(id) {
   const rows = scopeRows_();
   if (id === 'staff') return 'Joiners, leavers, transfers — coming next';
   if (id === 'leave') {
-    const n = rows.filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment; }).length;
+    const n = rows.filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment || r.leave; }).length;
     return n ? n + ' with leave / CL encashed' : 'Everyone full month';
   }
   if (id === 'adjustments') {
@@ -255,15 +255,166 @@ function panel_(id) {
 
 // ② Leave & paid days -- exceptions only, until the Excel leave template (next stage).
 function leavePanel_() {
-  const rows = scopeRows_().filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment; });
-  let h = '<h2>② Leave &amp; paid days <span class="grow"></span>' + tick_('leave') + '</h2>' +
-    '<div class="note">Everyone is paid the full month (' + M.daysInMonth + ' days) unless listed here. The downloadable leave template (bye-law categories → Comp / CL / unpaid → paid days) comes next; for now enter the resulting paid days directly.</div>';
-  if (openRows_().length) h += '<div class="addrow"><input list="empList" id="lvEmp" placeholder="Search employee…"> Paid days <input type="number" id="lvDays" min="0" max="' + M.daysInMonth + '" step="0.5" style="width:70px"> CL days encashed <input type="number" id="lvCl" min="0" step="0.5" style="width:70px"> <button class="btn" id="lvAdd">Save</button></div>';
+  const rows = scopeRows_().filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment || r.leave; });
+  let h = '<h2>② Leave &amp; paid days <span class="grow"></span>' + tick_('leave') + '</h2>';
+  if (openRows_().length) {
+    h += '<div class="note"><b>Monthly leave file:</b> download the template (every open employee in ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) +
+      ', with this month’s entries if any), fill in the counts, and upload it. Each count is converted by the bye-law leave norms, charged to Compensatory Leave → CL → unpaid, and becomes paid days. ' +
+      'You see a preview before anything is saved. Everyone not listed below is paid the full month (' + M.daysInMonth + ' days).</div>' +
+      '<div class="addrow"><button class="btn" id="lvTemplate">⬇ Download leave template</button> <button class="mini-btn" id="lvUpload">⬆ Upload filled template</button>' +
+      '<input type="file" id="lvFile" accept=".xlsx" style="display:none"> <span class="muted">Override one person:</span> <input list="empList" id="lvEmp" placeholder="Search employee…"> Paid days <input type="number" id="lvDays" min="0" max="' + M.daysInMonth + '" step="0.5" style="width:70px"> CL days encashed <input type="number" id="lvCl" min="0" step="0.5" style="width:70px"> <button class="mini-btn" id="lvAdd">Save</button></div>';
+  }
+  if (LEAVE_PREVIEW) return h + leavePreview_();
   if (!rows.length) return h + '<div class="muted">No one yet.</div>';
-  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Paid days</th><th>CL encashed (₹)</th><th>Basic</th><th>Net pay</th><th></th></tr>';
+  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Leave days</th><th>Comp used</th><th>CL used</th><th>Unpaid</th><th>Paid days</th><th>CL encashed (₹)</th><th>Net pay</th><th class="l">Notes</th><th></th></tr>';
   rows.forEach(function (r) {
-    h += '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + r.paidDays + '</td><td>' + inr_(r.clEncashment) +
-      '</td><td>' + inr_(r.basic) + '</td><td>' + inr_(r.net) + '</td><td>' + (r.input && !isLocked_(r.entity) ? '<button class="x-btn" data-clear="' + esc_(r.code) + '" title="Back to full month">✕</button>' : '') + '</td></tr>';
+    const l = r.leave || {};
+    h += '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + (r.leave ? l.charged : '') + '</td><td>' + (r.leave ? l.compUsed : '') +
+      '</td><td>' + (r.leave ? l.clUsed : '') + '</td><td>' + (r.leave ? l.unpaidLeave + l.vacUnpaid : '') + '</td><td>' + r.paidDays + '</td><td>' + inr_(r.clEncashment) + '</td><td>' + inr_(r.net) +
+      '</td><td class="l muted">' + esc_(l.notes || (r.leave ? '' : 'entered directly')) + '</td><td>' + (r.input && !isLocked_(r.entity) && !r.leave ? '<button class="x-btn" data-clear="' + esc_(r.code) + '" title="Back to full month">✕</button>' : '') + '</td></tr>';
+  });
+  return h + '</table></div>';
+}
+
+// ── Leave template (.xlsx with data validation), built and read in the browser ──
+let LEAVE_PREVIEW = null; // {rows, upload} while an uploaded file awaits confirmation
+const LEAVE_COLS = function () { // [header, key, kind]
+  return [['Employee Code', 'code', 'info'], ['Name', 'name', 'info'], ['School', 'school', 'info'], ['Designation', 'designation', 'info'], ['Probation', 'probation', 'info']]
+    .concat(M.leaveFields.map(function (f) { return [f[1], 'c:' + f[0], 'count']; }))
+    .concat([['Opening CL Balance', 'clBalance', 'balance'], ['Opening Comp Balance', 'compBalance', 'balance'], ['Vacation Rule', 'vacRule', 'rule'],
+      ['Vacation Days Worked', 'vacWorked', 'worked'], ['Remarks', 'remarks', 'text']]);
+};
+function loadExcelJs_() {
+  if (window.ExcelJS) return Promise.resolve();
+  return new Promise(function (ok, fail) {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload = ok; s.onerror = function () { fail(new Error('Could not load the Excel library')); };
+    document.head.appendChild(s);
+  });
+}
+function downloadLeaveTemplate_() {
+  loadExcelJs_().then(function () {
+    const cols = LEAVE_COLS();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Leave', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    ws.columns = cols.map(function (c) { return { header: c[0], key: c[1], width: c[2] === 'info' ? (c[1] === 'name' ? 24 : 14) : c[2] === 'text' ? 30 : 13 }; });
+    const hdr = ws.getRow(1);
+    hdr.font = { bold: true, color: { argb: 'FFFFFFFF' } }; hdr.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; hdr.height = 45;
+    cols.forEach(function (c, i) {
+      hdr.getCell(i + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c[2] === 'info' ? 'FF555555' : 'FF1A1A1A' } };
+      const f = c[2] === 'count' && M.leaveFields.find(function (x) { return 'c:' + x[0] === c[1]; });
+      if (f) hdr.getCell(i + 1).note = 'Number of instances this month. Each = ' + (Math.round(f[2] * 100) / 100) + ' leave day(s).';
+    });
+    const vacDays = {};
+    const rows = openRows_();
+    rows.forEach(function (r) {
+      const l = r.leave || {};
+      const v = { code: r.code, name: r.name, school: ENTITY_LABEL[r.entity], designation: r.designation, probation: r.probation ? 'Yes' : '',
+        clBalance: l.clBalance, compBalance: l.compBalance, vacRule: r.leave ? l.vacRule : r.vacRule, vacWorked: l.vacWorked };
+      M.leaveFields.forEach(function (f) { v['c:' + f[0]] = (l.counts || {})[f[0]]; });
+      const row = ws.addRow(v);
+      cols.forEach(function (c, i) {
+        const cell = row.getCell(i + 1);
+        if (c[2] === 'info') { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; return; }
+        cell.protection = { locked: false };
+        if (c[2] === 'count') cell.dataValidation = { type: 'whole', operator: 'between', formulae: [0, 99], allowBlank: true, showErrorMessage: true, errorTitle: 'Leave count', error: 'Whole number of instances, 0–99.' };
+        if (c[2] === 'balance') cell.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 400], allowBlank: true, showErrorMessage: true, error: 'Balance in days, 0 or more.' };
+        if (c[2] === 'worked') cell.dataValidation = { type: 'whole', operator: 'between', formulae: [0, 31], allowBlank: true, showErrorMessage: true, error: 'Whole days worked during the vacation.' };
+        if (c[2] === 'rule') cell.dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + M.vacRules.join(',') + '"'], showErrorMessage: true, error: 'Pick from the list.' };
+      });
+      if (r.leave && r.leave.vacDays !== '' && r.leave.vacDays != null) vacDays[r.entity] = r.leave.vacDays;
+    });
+    ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, autoFilter: true, sort: true });
+
+    const vs = wb.addWorksheet('Vacation days');
+    vs.columns = [{ header: 'School', key: 's', width: 12 }, { header: 'Vacation working days this month', key: 'd', width: 34 }];
+    vs.getRow(1).font = { bold: true };
+    entitiesInScope_().filter(function (e) { return !isLocked_(e); }).forEach(function (e) {
+      const row = vs.addRow({ s: ENTITY_LABEL[e], d: vacDays[e] });
+      row.getCell(2).protection = { locked: false };
+      row.getCell(2).dataValidation = { type: 'whole', operator: 'between', formulae: [0, 31], allowBlank: true, showErrorMessage: true, error: 'Whole days, 0–31.' };
+    });
+    vs.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+
+    const hs = wb.addWorksheet('How to fill');
+    hs.getColumn(1).width = 110;
+    ['LEAVE TEMPLATE — ' + monthLabel_(M.month) + ' (' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) + ')', '',
+      'Leave sheet: one row per employee. Grey columns are fixed. Leave counts are NUMBER OF INSTANCES this month (whole numbers); leave blank for none.',
+      'Leave days per instance (bye-laws, OO-09/26): ' + M.leaveFields.map(function (f) { return f[1] + ' ' + (Math.round(f[2] * 100) / 100); }).join(' · '),
+      'The month’s total leave days are charged to Compensatory Leave first, then CL, then unpaid. Half-day CL counts as one full CL.',
+      'Opening CL / Comp Balance: balance available at the start of the month. Blank = none, so all leave is charged as unpaid.',
+      'Vacation Rule (from JobRole Norms, pick if blank): Full = vacation paid · Half = must work half the vacation working days (rounded down); shortfall becomes leave · Works = no vacation · Not tracked = no leave deductions (coordinators/heads).',
+      'Vacation Days Worked: only for Half-rule roles and probationers (Probation = Yes). Probationers are not paid for vacation days they do not work.',
+      'Vacation days sheet: number of vacation WORKING days in this month for each school (0 or blank if no vacation).',
+      'Upload the file on the Payroll page (② Leave & paid days → Upload). You will see the conversion before anything is saved.']
+      .forEach(function (t, i) { const c = hs.getCell(i + 1, 1); c.value = t; c.alignment = { wrapText: true }; if (!i) c.font = { bold: true, size: 13 }; });
+
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      a.download = 'Leave ' + M.month + (SCOPE === 'ALL' ? '' : ' ' + ENTITY_LABEL[SCOPE]) + '.xlsx';
+      a.click();
+    });
+  }).catch(function (err) { document.getElementById('msgRoot').innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+function cellVal_(v) {
+  if (v && typeof v === 'object') v = 'result' in v ? v.result : v.richText ? v.richText.map(function (t) { return t.text; }).join('') : v.text || '';
+  return v == null ? '' : typeof v === 'string' ? v.trim() : v;
+}
+function uploadLeave_(file) {
+  const msg = document.getElementById('msgRoot');
+  loadExcelJs_().then(function () { return file.arrayBuffer(); }).then(function (buf) {
+    const wb = new ExcelJS.Workbook();
+    return wb.xlsx.load(buf).then(function () {
+      const ws = wb.getWorksheet('Leave');
+      if (!ws) throw new Error('This file has no "Leave" sheet — download the template from this page.');
+      const hdr = {};
+      ws.getRow(1).eachCell(function (c, i) { hdr[String(cellVal_(c.value))] = i; });
+      if (!hdr['Employee Code']) throw new Error('The Leave sheet needs an "Employee Code" column.');
+      const cols = LEAVE_COLS().filter(function (c) { return c[2] !== 'info' && c[2] !== 'text'; });
+      const rows = [];
+      ws.eachRow(function (row, n) {
+        if (n === 1) return;
+        const code = String(cellVal_(row.getCell(hdr['Employee Code']).value));
+        if (!code) return;
+        const o = { code: code, counts: {} };
+        cols.forEach(function (c) {
+          if (!hdr[c[0]]) return;
+          const v = cellVal_(row.getCell(hdr[c[0]]).value);
+          if (c[1].indexOf('c:') === 0) o.counts[c[1].slice(2)] = v; else o[c[1]] = v;
+        });
+        rows.push(o);
+      });
+      const vacDays = {};
+      const vs = wb.getWorksheet('Vacation days');
+      const byLabel = {};
+      Object.keys(ENTITY_LABEL).forEach(function (e) { byLabel[ENTITY_LABEL[e]] = e; });
+      if (vs) vs.eachRow(function (row, n) { if (n > 1 && byLabel[cellVal_(row.getCell(1).value)]) vacDays[byLabel[cellVal_(row.getCell(1).value)]] = cellVal_(row.getCell(2).value); });
+      const upload = { month: M.month, rows: rows, vacDays: vacDays };
+      document.getElementById('loadingPill').classList.add('on');
+      return payPost_('previewleave', upload).then(function (res) {
+        document.getElementById('loadingPill').classList.remove('on');
+        if (!res.success) throw new Error(res.error);
+        LEAVE_PREVIEW = { rows: res.preview, upload: upload, file: file.name };
+        msg.innerHTML = '';
+        render_();
+      });
+    });
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">Upload failed: ' + esc_(err.message) + '</div>'; });
+}
+function leavePreview_() {
+  const p = LEAVE_PREVIEW.rows;
+  let h = '<div class="warn"><b>Preview of “' + esc_(LEAVE_PREVIEW.file) + '”</b> — ' + p.length + ' employee(s) with leave (or clearing an earlier upload). Nothing is saved yet. ' +
+    '<button class="btn" id="lvConfirm">Save leave &amp; paid days</button> <button class="mini-btn" id="lvCancel">Cancel</button></div>';
+  if (!p.length) return h + '<div class="muted">No leave in this file.</div>';
+  h += '<div class="wrap" style="max-height:60vh"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Entered</th><th>Leave days</th><th>Comp used</th><th>CL used</th><th>Unpaid leave</th><th>Vacation unpaid</th><th>Paid days</th><th class="l">Notes</th></tr>';
+  p.forEach(function (o) {
+    const entered = M.leaveFields.filter(function (f) { return o.input.counts[f[0]]; }).map(function (f) { return o.input.counts[f[0]] + ' ' + f[1]; });
+    if (o.input.vacWorked !== '' && o.input.vacWorked != null) entered.push('vacation worked ' + o.input.vacWorked);
+    h += '<tr' + (o.paidDays < M.daysInMonth ? ' class="diff"' : '') + '><td class="l">' + esc_(o.code + ' — ' + o.name) + '</td><td class="l">' + ENTITY_LABEL[o.entity] + '</td><td class="l">' +
+      esc_(o.clear ? '(cleared)' : entered.join(', ')) + '</td><td>' + o.charged + '</td><td>' + o.compUsed + '</td><td>' + o.clUsed + '</td><td>' + o.unpaidLeave + '</td><td>' + o.vacUnpaid +
+      '</td><td>' + o.paidDays + '</td><td class="l muted">' + esc_(o.notes.join('; ')) + '</td></tr>';
   });
   return h + '</table></div>';
 }
@@ -401,6 +552,15 @@ function wire_() {
   document.querySelectorAll('[data-tick]').forEach(function (t) {
     t.onclick = function () { post_('markstep', { entity: SCOPE, step: t.dataset.tick, done: !scopeStepDone_(t.dataset.tick) }, 'Saving…'); };
   });
+  if (q('#lvTemplate')) q('#lvTemplate').onclick = downloadLeaveTemplate_;
+  if (q('#lvUpload')) q('#lvUpload').onclick = function () { q('#lvFile').click(); };
+  if (q('#lvFile')) q('#lvFile').onchange = function (e) { if (e.target.files[0]) uploadLeave_(e.target.files[0]); e.target.value = ''; };
+  if (q('#lvCancel')) q('#lvCancel').onclick = function () { LEAVE_PREVIEW = null; render_(); };
+  if (q('#lvConfirm')) q('#lvConfirm').onclick = function () {
+    const up = LEAVE_PREVIEW.upload, n = LEAVE_PREVIEW.rows.length;
+    LEAVE_PREVIEW = null;
+    call_(payPost_('uploadleave', up), 'Saving leave…', 'Saved leave for ' + n + ' employee(s) and set their paid days.');
+  };
   if (q('#lvAdd')) q('#lvAdd').onclick = function () {
     const r = pick_('lvEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
     post_('saveinputs', { rows: [inputFor_(r, { paidDays: q('#lvDays').value, clDays: q('#lvCl').value })] }, 'Saving…', 'Saved ' + r.name + '.');
@@ -449,6 +609,7 @@ function exportCsv_() {
 }
 
 function load_() {
+  LEAVE_PREVIEW = null;
   SCOPE = document.getElementById('fScope').value;
   call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…');
 }
