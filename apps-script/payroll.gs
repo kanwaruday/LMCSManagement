@@ -39,6 +39,29 @@ const PAY_RATES_SHEET_ID = '1d8MdOgXNM5KVJjLwejAKpbbDaINnvPZO6zX_E5xABYU';  // "
 const PAY_ALLOWLIST_SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist"
 const PAY_GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
 const PAY_TZ = 'Asia/Kolkata';
+
+// ── Speed (2026-09-30) ── Every Sheets call is a network round trip, so within
+// one request each workbook is opened once and each tab read once. Globals are
+// reset for every request, so these never serve stale data across requests.
+// PAY_MEMO is switched off while a write action runs and back on to build the
+// refreshed month afterwards.
+const PAY_BOOKS = {};
+let PAY_MEMO = null;
+function payOpenById_(id) {
+  if (!PAY_BOOKS[id]) {
+    const real = SpreadsheetApp.openById(id), sheets = {};
+    PAY_BOOKS[id] = {
+      getSheetByName: function (n) { return n in sheets ? sheets[n] : (sheets[n] = real.getSheetByName(n)); },
+      insertSheet: function (n) { return (sheets[n] = real.insertSheet(n)); },
+    };
+  }
+  return PAY_BOOKS[id];
+}
+function payValues_(sheet) {
+  if (!PAY_MEMO) return sheet.getDataRange().getValues();
+  if (!PAY_MEMO.has(sheet)) PAY_MEMO.set(sheet, sheet.getDataRange().getValues());
+  return PAY_MEMO.get(sheet);
+}
 const PAY_ENTITIES = ['HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
 // Columns appended to an existing tab keep working (payEnsureTabs_ adds any
@@ -109,6 +132,7 @@ function doPost(e) {
 }
 
 function payHandle_(action, idToken, data) {
+  PAY_MEMO = new Map();
   try {
     action = String(action || '').toLowerCase();
     // The Offer Calculator (Principals/Coordinators too) may only append an offer.
@@ -117,10 +141,12 @@ function payHandle_(action, idToken, data) {
       if (!staff) return payJson_({ success: false, error: 'Not authorized to record offers' });
       const lock = LockService.getScriptLock();
       lock.waitLock(20000);
-      try { payRecordOffer_(payOpen_(), data, staff); } finally { lock.releaseLock(); }
+      try { PAY_MEMO = null; payRecordOffer_(payOpen_(), data, staff) } finally { lock.releaseLock(); }
       return payJson_({ success: true });
     }
-    const caller = PAY_READ_ACTIONS_.indexOf(action) !== -1 ? payCachedOwner_(idToken) : payVerifyOwner_(idToken);
+    // Verified sign-in cached 5 min for every action (2026-09-30, for speed): removing
+    // someone's Owner access takes up to 5 minutes to apply.
+    const caller = payCachedOwner_(idToken);
     if (!caller) return payJson_({ success: false, error: 'Not authorized -- payroll is Owner-only' });
     const writes = {
       saveinputs: function (ss) { paySaveInputs_(ss, data.month, data.rows || [], caller); },
@@ -130,11 +156,11 @@ function payHandle_(action, idToken, data) {
       uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
       lock: function (ss) { payLock_(ss, data.month, data.entity, caller); },
       unlock: function (ss) { payUnlock_(ss, data.month, data.entity, caller); },
-      joinoffer: function (ss) { payJoinOffer_(ss, data, caller); },
-      dismissoffer: function (ss) { payCloseOffer_(ss, String(data.applicantId || ''), 'Dismissed', {}, caller); },
-      addemployee: function (ss) { payNewMasterRow_(ss, data, caller); },
-      markleft: function (ss) { payMarkLeft_(ss, data); },
-      applytransfer: function (ss) { payApplyTransfer_(ss, data, caller); },
+      joinoffer: function (ss) { payJoinOffer_(ss, data, caller) },
+      dismissoffer: function (ss) { payCloseOffer_(ss, String(data.applicantId || ''), 'Dismissed', {}, caller) },
+      addemployee: function (ss) { payNewMasterRow_(ss, data, caller) },
+      markleft: function (ss) { payMarkLeft_(ss, data) },
+      applytransfer: function (ss) { payApplyTransfer_(ss, data, caller) },
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
       issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
       settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
@@ -161,8 +187,10 @@ function payWrite_(month, fn) {
   lock.waitLock(20000);
   try {
     const ss = payOpen_();
+    PAY_MEMO = null; // writes always read fresh
     fn(ss);
     SpreadsheetApp.flush();
+    PAY_MEMO = new Map();
     return payMonth_(ss, month);
   } finally {
     lock.releaseLock();
@@ -170,7 +198,7 @@ function payWrite_(month, fn) {
 }
 
 function payOpen_() {
-  const ss = SpreadsheetApp.openById(PAY_SHEET_ID);
+  const ss = payOpenById_(PAY_SHEET_ID);
   payEnsureTabs_(ss);
   return ss;
 }
@@ -201,7 +229,7 @@ function payVerifyAllowlist_(idToken) {
   return null;
 }
 
-// Reads only: a verified caller is cached 5 min under a hash of the token.
+// A verified caller is cached 5 min under a hash of the token.
 function payCachedOwner_(idToken) {
   const key = 'pay_tok_' + Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, idToken || '')
     .map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('');
@@ -218,6 +246,12 @@ function payCachedOwner_(idToken) {
 // Creates missing tabs, and appends any header a live tab is missing.
 function payEnsureTabs_(ss) {
   PAY_TABS['Leave Records'] = PAY_TABS['Leave Records'] || payLeaveHeaders_();
+  // Skipped when this exact tab layout was already checked in the last 6 hours
+  // (was 14 header reads on every request).
+  const cache = CacheService.getScriptCache();
+  const version = 'pay_tabs_' + Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(PAY_TABS))
+    .map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('');
+  if (cache.get(version)) return;
   Object.keys(PAY_TABS).forEach(function (name) {
     let sh = ss.getSheetByName(name);
     if (!sh) {
@@ -233,6 +267,7 @@ function payEnsureTabs_(ss) {
     while (last > 0 && !have[last - 1]) last--;
     if (missing.length) sh.getRange(1, last + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
   });
+  cache.put(version, '1', 21600);
 }
 
 // Appends objects as rows, placing each value under its header.
@@ -245,7 +280,7 @@ function payAppend_(sheet, objs) {
 
 // Rows of a tab as objects keyed by header text.
 function payRows_(sheet) {
-  const values = sheet.getDataRange().getValues();
+  const values = payValues_(sheet);
   const hdr = values[0].map(function (h) { return String(h).trim(); });
   return values.slice(1).filter(function (r) { return r.some(function (v) { return v !== ''; }); })
     .map(function (r) { const o = {}; hdr.forEach(function (h, i) { o[h] = r[i]; }); return o; });
@@ -270,7 +305,7 @@ function payDate_(v) {
 
 function paySettings_(rs) {
   const sh = rs.getSheetByName('PayRoll Constants');
-  const values = sh.getDataRange().getValues();
+  const values = payValues_(sh);
   const c = {};
   values.slice(1).forEach(function (r) { if (r[0]) c[String(r[0]).trim()] = payNum_(r[1]); });
   const missing = PAY_NEW_CONSTANTS.filter(function (kv) { return !(kv[0] in c); });
@@ -429,7 +464,7 @@ function payPrevNets_(ss, month) {
 function payCompute_(ss, month) {
   const ctx0 = payCheckMonth_(month);
   const monthEnd = ctx0.monthEnd;
-  const rs = SpreadsheetApp.openById(PAY_RATES_SHEET_ID);
+  const rs = payOpenById_(PAY_RATES_SHEET_ID);
   const settings = paySettings_(rs);
   const rates = payRates_(rs);
   const warnings = [];
@@ -817,7 +852,7 @@ function payMasterLatest_(ss) {
 function payApprovalStatus_() {
   const out = {};
   try {
-    const values = SpreadsheetApp.openById(PAY_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues();
+    const values = payOpenById_(PAY_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues();
     for (let i = 1; i < values.length; i++) {
       if (String(values[i][2]) !== 'Salary Offer Approval') continue;
       const m = String(values[i][7] || '').match(/T-\d{4}/);
@@ -830,7 +865,7 @@ function payApprovalStatus_() {
 function payStaffChanges_(ss, month) {
   const ctx = payCheckMonth_(month);
   const latest = payMasterLatest_(ss);
-  const emp = SpreadsheetApp.openById(PAY_ROSTER_SHEET_ID);
+  const emp = payOpenById_(PAY_ROSTER_SHEET_ID);
   const roster = payRows_(emp.getSheetByName('EmpMaster')).map(function (r) {
     return { code: String(r['EmployeeCode'] || '').trim(), name: String(r['Name'] || '').trim(), entity: payEntity_(r['SchoolCode']),
       doj: payIso_(payDate_(r['DateOfJoining'])), status: String(r['Status'] || '').trim() || 'Active', dorel: payIso_(payDate_(r['DoRel'])) };
@@ -888,6 +923,7 @@ function payStaffChanges_(ss, month) {
 // d: {applicantId, name, entity, designation, subjects, fullBasic, epf, tuition, cti, netY1}
 // Upserted by Applicant ID; a joined/dismissed offer is not reopened.
 function payRecordOffer_(ss, d, caller) {
+  payStaffChanged_(); // staff lists are cached -- refresh them after any staff change
   const id = String(d.applicantId || '').trim();
   if (!/^T-\d{4}$/.test(id)) throw new Error('applicantId must look like T-0000');
   const entity = payEntity_(d.entity);
@@ -911,6 +947,7 @@ function payRecordOffer_(ss, d, caller) {
 }
 
 function payCloseOffer_(ss, id, status, extra, caller) {
+  payStaffChanged_(); // staff lists are cached -- refresh them after any staff change
   const sheet = ss.getSheetByName('Salary Offers');
   const values = sheet.getDataRange().getValues();
   const hdr = values[0].map(function (h) { return String(h).trim(); });
@@ -924,6 +961,7 @@ function payCloseOffer_(ss, id, status, extra, caller) {
 }
 
 function payNewMasterRow_(ss, d, caller) {
+  payStaffChanged_(); // staff lists are cached -- refresh them after any staff change
   const code = String(d.code || '').trim();
   if (!/^[A-Z]{3}\/\d{2}\/\d{2}\/\d+$/.test(code)) throw new Error('Employee code "' + code + '" does not look like KUL/26/10/123');
   if (payMasterLatest_(ss)[code]) throw new Error(code + ' is already on payroll');
@@ -952,6 +990,7 @@ function payJoinOffer_(ss, d, caller) {
 
 // d: {code, lastDay} -- the latest Salary Master row becomes Left with a last working day.
 function payMarkLeft_(ss, d) {
+  payStaffChanged_(); // staff lists are cached -- refresh them after any staff change
   const latest = payMasterLatest_(ss)[String(d.code || '').trim()];
   if (!latest) throw new Error(d.code + ': not on payroll');
   const lwd = payDate_(d.lastDay);
@@ -967,6 +1006,7 @@ function payMarkLeft_(ss, d) {
 // the 1st with the same pay and joining date, and RRF / held-salary balances
 // move across (entries dated last month, so they count in this month's opening).
 function payApplyTransfer_(ss, d, caller) {
+  payStaffChanged_(); // staff lists are cached -- refresh them after any staff change
   const ctx = payCheckMonth_(d.month);
   const latest = payMasterLatest_(ss);
   const old = latest[String(d.oldCode || '').trim()];
@@ -995,9 +1035,21 @@ function payApplyTransfer_(ss, d, caller) {
 
 // Staff changes read the Employee Master and Approvals -- if either is
 // unreachable the month still opens, with the reason on the card.
+// Cached 5 minutes (it opens the Employee Master and Approvals workbooks); any
+// staff action in payroll bumps the generation so its result shows at once.
 function payStaffSafe_(ss, month) {
-  try { return payStaffChanges_(ss, month); } catch (e) { return { error: e.message }; }
+  const cache = CacheService.getScriptCache();
+  const key = 'pay_staff_' + month + '_' + (cache.get('pay_staff_gen') || '0');
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  try {
+    const out = payStaffChanges_(ss, month);
+    const json = JSON.stringify(out);
+    if (json.length < 90000) cache.put(key, json, 300);
+    return out;
+  } catch (e) { return { error: e.message }; }
 }
+function payStaffChanged_() { CacheService.getScriptCache().put('pay_staff_gen', String(Date.now()), 21600); }
 
 // ── Unlock (2026-09-30, per Uday -- for accidental locks) ────────────
 // Removes one school's lock for a month: its Run Log "Locked" row, its
@@ -1161,7 +1213,7 @@ function payIssueLoan_(ss, d, caller) {
 // ── Accounts: every employee's balances and gratuity ─────────────────
 function payAccounts_(ss, month) {
   const ctx = payCheckMonth_(month);
-  const rates = payRates_(SpreadsheetApp.openById(PAY_RATES_SHEET_ID));
+  const rates = payRates_(payOpenById_(PAY_RATES_SHEET_ID));
   const latest = payMasterLatest_(ss);
   const bal = payBalancesNow_(ss);
   const sched = payLoanSchedules_(ss, month);
@@ -1277,10 +1329,11 @@ function payEsiCovered_(rows, rates, settings, ctx) {
 // slips and to build the EPF (ECR) and ESI upload files: the month, each
 // person's bank / UAN / ESI numbers from the Staff Master's EmpKeyNumbers tab,
 // leave records, and the bank letters already recorded.
+// Only the extras -- the page already holds the month (was a full recompute, 2026-09-30).
 function payOutputs_(ss, month) {
-  const m = payMonth_(ss, month);
+  payCheckMonth_(month);
   const keys = {};
-  const kt = SpreadsheetApp.openById(PAY_ROSTER_SHEET_ID).getSheetByName('EmpKeyNumbers');
+  const kt = payOpenById_(PAY_ROSTER_SHEET_ID).getSheetByName('EmpKeyNumbers');
   if (kt) {
     const v = kt.getDataRange().getDisplayValues(); // display values keep leading zeros in account numbers
     const h = v[0].map(function (x) { return String(x).trim(); });
@@ -1294,13 +1347,12 @@ function payOutputs_(ss, month) {
   }
   const leave = {};
   payForMonth_(ss, 'Leave Records', month).forEach(function (l) { leave[String(l['Employee Code']).trim()] = payLeaveRecord_(l); });
-  m.rows.forEach(function (r) { if (!r.leave && leave[r.code]) r.leave = leave[r.code]; });
   const letters = payRows_(ss.getSheetByName('Bank Letters')).map(function (l) {
     return { ref: String(l['Ref No']), serial: payNum_(l['Serial']), month: payMonthKey_(l['Month']), entity: payEntity_(l['Entity']),
       date: payIso_(payDate_(l['Letter Date'])), cheque: String(l['Cheque No'] || ''), amount: payNum_(l['Amount']), staff: payNum_(l['Staff']),
       addressee: String(l['Addressee'] || ''), debitAccount: String(l['Debit Account'] || '') };
   });
-  return Object.assign(m, { keys: keys, letters: letters });
+  return { month: month, keys: keys, leave: leave, letters: letters };
 }
 
 // d: {month, entity, serial, ref, date, cheque, amount, staff, addressee, debitAccount}

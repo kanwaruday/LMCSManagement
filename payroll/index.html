@@ -1037,7 +1037,9 @@ function loadOutputs_() {
   return payGet_('outputs', { month: M.month }).then(function (res) {
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
-    OUT = res; render_();
+    // The backend sends only the extras; the rows are the month already on the page.
+    OUT = Object.assign({}, M, { keys: res.keys, letters: res.letters, rows: M.rows.map(function (r) { return r.leave || !res.leave[r.code] ? r : Object.assign({}, r, { leave: res.leave[r.code] }); }) });
+    render_();
   }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
 }
 
