@@ -32,7 +32,8 @@ function payMonthsBetween_(from, to) {
 }
 
 // emp: {fullBasic, epfMember, rrfMember, tuition, doj (Date)}
-// input: {paidDays, clDays, hold, otherEarnings, otherDeductions}
+// input: {paidDays, clDays, hold ('fnf' | 'grievance' | ''; true = 'fnf'), release (₹ of earlier
+//         held salary paid out this month), otherEarnings, otherDeductions}
 // rates: {da, ada, epfRegistered, esiRegistered}   (fractions / booleans)
 // s: settings -- {epfRate, epfCeiling, esiEmpRate, esiErRate, esiThreshold,
 //    rrfY1, rrfY2, rrfY3, rrfTargetMonths, rrfStopAtTarget, gratRate, clDivisor}
@@ -73,12 +74,17 @@ function payCalc_(emp, input, rates, s, ctx) {
   const otherDeductions = Number(input.otherDeductions) || 0;
   const totalDeductions = epf + esi + rrf + tuition + otherDeductions;
   const net = gross - totalDeductions;
-  const hold = !!input.hold;
+  // Held for F&F = leaving month's salary, paid at F&F. Withheld (grievance)
+  // = Appointment Letter: up to 2 extra weeks. Either way it leaves the bank
+  // transfer; `release` pays an earlier hold out on top of this month's pay.
+  const hold = input.hold === true ? 'fnf' : String(input.hold || '');
+  const release = Number(input.release) || 0;
   return {
     paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages,
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
     epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions,
-    totalDeductions: totalDeductions, net: net, bankPayable: hold ? 0 : net, heldForFnF: hold ? net : 0,
+    totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
+    heldForFnF: hold === 'fnf' ? net : 0, withheld: hold === 'grievance' ? net : 0,
     epfEmployer: epf, esiEmployer: esiEr, cti: cti, gratuityProvision: R((basic + da) * s.gratRate),
     closingRrf: opening + rrf,
   };
@@ -120,6 +126,9 @@ function payrollCalcSelfTest_() {
   r = payCalc_(emp, { hold: true, clDays: 3 }, rates, S, ctx);
   eq(r.clEncashment, 1222, 'CL encashment = 3 × 12215 / 30');
   eq(r.bankPayable, 0, 'held salary not paid to bank'); eq(r.heldForFnF, r.net, 'held for F&F');
+  r = payCalc_(emp, { hold: 'grievance', release: 5000 }, rates, S, ctx);
+  eq(r.withheld, r.net, 'withheld (grievance)'); eq(r.heldForFnF, 0, 'not an F&F hold');
+  eq(r.bankPayable, 5000, 'only the released earlier hold goes to bank');
   return 'payrollCalcSelfTest_ passed';
 }
 

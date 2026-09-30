@@ -6,7 +6,7 @@
 <title>LMCS — Salary Dashboard · Monthly Payroll</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <style>
-:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--green-lt:#f0fdf4;--amber:#b45309;--blue:#1e3a8a;--blue-lt:#eff6ff}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:12px;line-height:1.4;display:flex;flex-direction:column}
 .hdr{background:var(--red);color:#fff;padding:4px 20px;min-height:36px;flex-wrap:wrap;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
@@ -14,40 +14,57 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .hdr p{font-size:8.5px;opacity:.75}
 .hdr-btn{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:4px 10px;border-radius:4px;font-size:10.5px;font-weight:600;text-decoration:none;white-space:nowrap}
 .hdr-btn:hover{background:rgba(255,255,255,.22)}
-#appBody{flex:1;overflow:auto;padding:10px 16px;width:100%}
+#appBody{flex:1;overflow:auto;padding:10px 16px;width:100%;max-width:1400px;margin:0 auto}
 #authRoot{max-width:420px;margin:60px auto}
 .welcome{display:flex;align-items:center;justify-content:space-between;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:7px 12px;margin-bottom:8px;gap:10px;font-size:11.5px}
 .signout{font-size:10.5px;color:var(--gray);text-decoration:none}
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
 .denied .icon{font-size:36px;margin-bottom:10px}
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.toolbar input,.toolbar select{padding:4px 7px;border:1px solid var(--border);border-radius:4px;font-size:11.5px;font-family:inherit}
+input,select{padding:4px 7px;border:1px solid var(--border);border-radius:4px;font-size:11.5px;font-family:inherit}
 .btn{font-size:11.5px;padding:5px 14px;border:none;border-radius:5px;background:var(--red);color:#fff;cursor:pointer;font-weight:700}
 .btn:hover{background:var(--red-h)}
+.btn:disabled{opacity:.45;cursor:default}
 .mini-btn{font-size:10.5px;padding:4px 9px;border:1px solid var(--border);border-radius:5px;background:var(--white);cursor:pointer;color:var(--gray)}
 .mini-btn:hover{border-color:var(--red);color:var(--red)}
-.note{font-size:10px;color:var(--gray);background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:5px 10px;margin-bottom:8px}
+.x-btn{border:none;background:none;color:#991b1b;cursor:pointer;font-size:13px;padding:0 4px}
+.note{font-size:10.5px;color:var(--gray);background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px}
 .warn{font-size:10.5px;color:var(--amber);background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;margin-bottom:8px}
 .err{font-size:11px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin-bottom:8px}
-.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
-.tab{font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:14px;background:var(--white);cursor:pointer}
-.tab.on{background:var(--dark);color:#fff;border-color:var(--dark)}
-.wrap{overflow:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:10px}
+.ok{font-size:11px;color:var(--green);background:var(--green-lt);border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;margin-bottom:8px}
+.status{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:10px}
+.status .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--gray)}
+.status .v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.status .deadline{margin-left:auto;font-size:10.5px;color:var(--gray)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px}
+.card{border:1px solid var(--border);border-radius:8px;padding:9px 12px;cursor:pointer;background:var(--white);position:relative}
+.card:hover{border-color:var(--dark)}
+.card.on{border:2px solid var(--dark);padding:8px 11px}
+.card.soon{cursor:default;opacity:.55}
+.card .t{font-weight:700;font-size:12px}
+.card .s{font-size:10.5px;color:var(--gray);margin-top:3px;min-height:15px}
+.card .badge{position:absolute;top:8px;right:10px;font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:10px}
+.badge.done{background:var(--green-lt);color:var(--green)}
+.badge.todo{background:#fffbeb;color:var(--amber)}
+.badge.lock{background:var(--blue-lt);color:var(--blue)}
+.panel{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.panel h2{font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.panel h2 .grow{flex:1}
+.addrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--lgray);border-radius:6px;padding:7px 8px;margin-bottom:8px}
+.addrow input[list]{width:260px}
+.wrap{overflow:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:8px}
 table{border-collapse:collapse;font-size:11px;width:100%}
 th{position:sticky;top:0;background:var(--dark);color:#fff;font-weight:600;padding:5px 6px;text-align:right;white-space:nowrap;font-size:10px}
 th.l,td.l{text-align:left}
 td{padding:3px 6px;border-bottom:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td input[type=number]{width:70px;text-align:right;padding:2px 4px;font-size:11px}
 tr.diff td{background:#fff7ed}
 tr.total td{font-weight:700;border-top:2px solid var(--dark);background:var(--lgray)}
 td.pos{color:var(--green);font-weight:600}
 td.neg{color:#991b1b;font-weight:600}
-h2{font-size:12px;margin:4px 0 6px}
-.locked{font-size:11px;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:7px 10px;margin-bottom:8px}
-.lock-btn{font-size:11.5px;padding:5px 14px;border:1px solid var(--dark);border-radius:5px;background:var(--white);color:var(--dark);cursor:pointer;font-weight:700}
-.lock-btn:hover{background:var(--dark);color:#fff}
-table.inputs input[type=number]{width:70px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:11px;text-align:right}
-table.inputs input[type=text]{width:130px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-size:11px}
-table.inputs tr.dirty td{background:#fef9c3}
+.tick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border:1px solid var(--border);border-radius:14px;cursor:pointer;background:var(--white)}
+.tick.done{background:var(--green-lt);border-color:#bbf7d0;color:var(--green)}
+.muted{color:var(--gray);font-size:10.5px}
 .loading-pill{display:none;position:fixed;top:16px;right:16px;background:var(--dark);color:#fff;padding:8px 14px;border-radius:20px;font-size:11.5px;align-items:center;gap:8px;z-index:1000}
 .loading-pill.on{display:flex}
 .loading-spinner{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
@@ -55,9 +72,9 @@ table.inputs tr.dirty td{background:#fef9c3}
 </style>
 </head>
 <body>
-<div class="loading-pill" id="loadingPill"><span class="loading-spinner"></span><span>Running payroll…</span></div>
+<div class="loading-pill" id="loadingPill"><span class="loading-spinner"></span><span id="loadingText">Working…</span></div>
 <div class="hdr">
-  <div><h1>Salary Dashboard · Monthly Payroll</h1><p>Monthly salary run — draft, inputs &amp; lock — Owner only</p></div>
+  <div><h1>Salary Dashboard · Monthly Payroll</h1><p>Month checklist — Owner only</p></div>
   <div><a href="../salary/index.html" class="hdr-btn">🧮 Offer Calculator</a> <a href="../index.html" class="hdr-btn">🏠 Portal Home</a></div>
 </div>
 <div id="appBody">
@@ -66,155 +83,60 @@ table.inputs tr.dirty td{background:#fef9c3}
     <div class="welcome" id="welcomeStrip"></div>
     <div id="deniedRoot"></div>
     <div id="mainRoot" style="display:none">
-      <div class="note">Employees come from the <b>Salary Master</b> tab, paid days and one-offs from <b>Monthly Inputs</b> (blank = full month), rates from LMCS-Salary-PayScale. "ERP Net" comes from the <b>ERP Reference</b> tab, for the parallel run.</div>
       <div class="toolbar">
         <label>Month <input type="month" id="fMonth"></label>
-        <button class="btn" id="runBtn">Run draft</button>
-        <input type="search" id="fSearch" placeholder="Search name / code">
-        <label><input type="checkbox" id="fDiffOnly"> Only rows that differ from ERP</label>
-        <button class="mini-btn" id="csvBtn">⬇ Export CSV</button>
-        <span id="openActions" style="display:none">
-          <button class="mini-btn" id="editBtn">✏️ Edit inputs</button>
-          <button class="lock-btn" id="lockBtn">🔒 Lock month</button>
-        </span>
-        <span id="editActions" style="display:none">
-          <button class="btn" id="saveBtn">Save inputs</button>
-          <button class="mini-btn" id="importBtn">⬆ Import inputs CSV</button>
-          <button class="mini-btn" id="templateBtn">⬇ Inputs template</button>
-          <button class="mini-btn" id="cancelBtn">Cancel</button>
-          <input type="file" id="importFile" accept=".csv" style="display:none">
-        </span>
+        <label>Schools <select id="fScope">
+          <option value="ALL">All schools</option><option value="HES">HES</option><option value="LMS1">LMS 1</option><option value="LMS2">LMS 2</option>
+          <option value="LMS3">LMS 3</option><option value="LMS4">LMS 4</option><option value="LMS5">LMS 5</option><option value="LMS6">LMS 6</option>
+        </select></label>
+        <button class="btn" id="loadBtn">Open month</button>
       </div>
       <div id="msgRoot"></div>
-      <div id="resultRoot"></div>
+      <div id="monthRoot"></div>
+      <datalist id="empList"></datalist>
     </div>
   </div>
 </div>
 
 <script src="../assets/auth.js"></script>
 <script>
-// "LMCS Payroll Backend" -- its own Apps Script project/deployment (see
-// apps-script/payroll.gs header). Paste the Web App /exec URL here after
-// the first deploy.
+// "LMCS Payroll Backend" -- its own Apps Script project (apps-script/payroll.gs).
 const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv/exec';
 
+// 2026-09-30 redesign, per Uday: the month as a checklist of what actually
+// changes (leave, one-offs, holds), scoped to all schools or one -- the full
+// register is the detailed view inside Review, not the main screen.
 const ENTITY_LABEL = { HES: 'HES', LMS1: 'LMS 1', LMS2: 'LMS 2', LMS3: 'LMS 3', LMS4: 'LMS 4', LMS5: 'LMS 5', LMS6: 'LMS 6' };
-let SESSION = null, RESULT = null, ENTITY = 'ALL', EDITING = false, EDITS = {};
+const STEPS = [
+  { id: 'staff', n: '①', t: 'Staff changes', soon: true },
+  { id: 'leave', n: '②', t: 'Leave & paid days' },
+  { id: 'adjustments', n: '③', t: 'Adjustments' },
+  { id: 'holds', n: '④', t: 'Holds' },
+  { id: 'review', n: '⑤', t: 'Review' },
+  { id: 'lock', n: '⑥', t: 'Lock' },
+];
+let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'leave', SHOW_ALL_ERP = false;
 
-function payApi_(action, data) {
-  const url = PAYROLL_BACKEND_URL + '?action=' + encodeURIComponent(action) +
-    '&idToken=' + encodeURIComponent(SESSION.idToken) +
+// ── Backend ──────────────────────────────────────────────────────────
+function payGet_(action, data) {
+  const url = PAYROLL_BACKEND_URL + '?action=' + encodeURIComponent(action) + '&idToken=' + encodeURIComponent(SESSION.idToken) +
     '&data=' + encodeURIComponent(JSON.stringify(data || {})) + '&_=' + Date.now();
   return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); });
 }
-
 function payPost_(action, data) {
-  return fetch(PAYROLL_BACKEND_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: action, idToken: SESSION.idToken, data: data }),
-  }).then(function (r) { return r.json(); });
+  return fetch(PAYROLL_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: action, idToken: SESSION.idToken, data: data }) })
+    .then(function (r) { return r.json(); });
 }
-
-function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-function inr_(n) { return n == null ? '—' : n === 0 ? '-' : Math.round(n).toLocaleString('en-IN'); }
-function diff_(r) { return r.erpNet == null ? null : r.net - r.erpNet; }
-
-// [header, value-fn, left-aligned?, include in totals?]
-const COLS = [
-  ['Code', function (r) { return r.code; }, true], ['Name', function (r) { return r.name; }, true],
-  ['Entity', function (r) { return ENTITY_LABEL[r.entity] || r.entity; }, true], ['Designation', function (r) { return r.designation; }, true],
-  ['Days', function (r) { return r.paidDays; }], ['Basic', function (r) { return r.basic; }, false, true],
-  ['ADA', function (r) { return r.ada; }, false, true], ['DA', function (r) { return r.da; }, false, true],
-  ['CL Enc', function (r) { return r.clEncashment; }, false, true], ['Tuition', function (r) { return r.tuitionA; }, false, true],
-  ['Other +', function (r) { return r.otherEarnings; }, false, true], ['Gross', function (r) { return r.gross; }, false, true],
-  ['EPF', function (r) { return r.epf; }, false, true], ['ESI', function (r) { return r.esi; }, false, true],
-  ['RRF %', function (r) { return r.rrfRate ? Math.round(r.rrfRate * 100) + '%' : '-'; }],
-  ['RRF', function (r) { return r.rrf; }, false, true], ['Other −', function (r) { return r.otherDeductions; }, false, true],
-  ['Deductions', function (r) { return r.totalDeductions; }, false, true], ['Net Pay', function (r) { return r.net; }, false, true],
-  ['Bank', function (r) { return r.bankPayable; }, false, true], ['Held F&F', function (r) { return r.heldForFnF; }, false, true],
-  ['EPF (Er)', function (r) { return r.epfEmployer; }, false, true], ['ESI (Er)', function (r) { return r.esiEmployer; }, false, true],
-  ['CTI', function (r) { return r.cti; }, false, true], ['Gratuity Prov', function (r) { return r.gratuityProvision; }, false, true],
-  ['ERP Net', function (r) { return r.erpNet; }, false, true], ['Diff vs ERP', diff_, false, true],
-];
-
-function visibleRows_() {
-  const q = document.getElementById('fSearch').value.trim().toLowerCase();
-  const diffOnly = document.getElementById('fDiffOnly').checked;
-  return RESULT.rows.filter(function (r) {
-    if (ENTITY !== 'ALL' && r.entity !== ENTITY) return false;
-    if (diffOnly && !diff_(r)) return false;
-    return !q || (r.name + ' ' + r.code).toLowerCase().indexOf(q) !== -1;
-  });
-}
-
-function sum_(rows, fn) { return rows.reduce(function (a, r) { return a + (Number(fn(r)) || 0); }, 0); }
-
-function render_() {
-  if (!RESULT) return;
-  document.getElementById('openActions').style.display = RESULT.locked || EDITING ? 'none' : '';
-  document.getElementById('editActions').style.display = EDITING ? '' : 'none';
-  if (EDITING) { renderInputs_(); return; }
-  const rows = visibleRows_();
-  const entities = Object.keys(ENTITY_LABEL).filter(function (e) { return RESULT.rows.some(function (r) { return r.entity === e; }); });
-  const s = RESULT.settings;
-  let html = RESULT.locked ? '<div class="locked">🔒 <b>' + esc_(RESULT.month) + ' is locked</b> — ' + esc_(RESULT.locked.at) + ' by ' + esc_(RESULT.locked.by) +
-    '. Read-only, exactly as locked. Corrections go into next month as Other Earnings / Other Deductions.</div>' : '';
-  html += '<div class="note">' + RESULT.month + ' · ' + RESULT.daysInMonth + ' days · EPF ceiling ₹' + inr_(s.epfCeiling) +
-    ' · ESI threshold ₹' + inr_(s.esiThreshold) + ' · RRF ' + Math.round(s.rrfY1 * 100) + '/' + Math.round(s.rrfY2 * 100) + '/' + Math.round(s.rrfY3 * 100) +
-    '% · Stop RRF at ' + s.rrfTargetMonths + '× CTI: <b>' + (s.rrfStopAtTarget ? 'ON' : 'OFF') + '</b> · Gratuity provision ' + Math.round(s.gratRate * 100) + '%</div>';
-
-  // Entity summary (always all entities, independent of filters)
-  html += '<h2>By paying entity</h2><div class="wrap"><table><tr><th class="l">Entity</th><th>Staff</th><th>Gross</th><th>EPF (Ee+Er)</th><th>ESI (Ee+Er)</th><th>RRF</th><th>Net Pay</th><th>Bank Payable</th><th>Held F&amp;F</th><th>CTI</th><th>Gratuity Prov</th><th>ERP Net</th><th>Diff vs ERP</th></tr>';
-  entities.concat(['ALL']).forEach(function (e) {
-    const rs = RESULT.rows.filter(function (r) { return e === 'ALL' || r.entity === e; });
-    const d = sum_(rs, diff_);
-    html += '<tr' + (e === 'ALL' ? ' class="total"' : '') + '><td class="l">' + (e === 'ALL' ? 'TOTAL' : ENTITY_LABEL[e]) + '</td><td>' + rs.length + '</td>' +
-      [function (r) { return r.gross; }, function (r) { return r.epf + r.epfEmployer; }, function (r) { return r.esi + r.esiEmployer; },
-       function (r) { return r.rrf; }, function (r) { return r.net; }, function (r) { return r.bankPayable; }, function (r) { return r.heldForFnF; },
-       function (r) { return r.cti; }, function (r) { return r.gratuityProvision; }, function (r) { return r.erpNet; }]
-        .map(function (fn) { return '<td>' + inr_(sum_(rs, fn)) + '</td>'; }).join('') +
-      '<td class="' + (d > 0 ? 'pos' : d < 0 ? 'neg' : '') + '">' + inr_(d) + '</td></tr>';
-  });
-  html += '</table></div>';
-
-  html += '<div class="tabs">' + ['ALL'].concat(entities).map(function (e) {
-    return '<span class="tab' + (ENTITY === e ? ' on' : '') + '" data-e="' + e + '">' + (e === 'ALL' ? 'All' : ENTITY_LABEL[e]) + '</span>';
-  }).join('') + '</div>';
-
-  html += '<div class="wrap" style="max-height:60vh"><table><tr>' + COLS.map(function (c) { return '<th' + (c[2] ? ' class="l"' : '') + '>' + c[0] + '</th>'; }).join('') + '</tr>';
-  rows.forEach(function (r) {
-    const d = diff_(r);
-    html += '<tr' + (d ? ' class="diff"' : '') + '>' + COLS.map(function (c) {
-      const v = c[1](r);
-      if (c[2]) return '<td class="l">' + esc_(v) + '</td>';
-      if (c[0] === 'Diff vs ERP') return '<td class="' + (v > 0 ? 'pos' : v < 0 ? 'neg' : '') + '">' + inr_(v) + '</td>';
-      return '<td>' + (typeof v === 'number' || v == null ? inr_(v) : esc_(v)) + '</td>';
-    }).join('') + '</tr>';
-  });
-  html += '<tr class="total">' + COLS.map(function (c, i) {
-    return i === 0 ? '<td class="l">TOTAL</td>' : i === 1 ? '<td class="l">' + rows.length + ' shown</td>' : c[3] ? '<td>' + inr_(sum_(rows, c[1])) + '</td>' : '<td></td>';
-  }).join('') + '</tr></table></div>';
-
-  document.getElementById('resultRoot').innerHTML = html;
-  document.querySelectorAll('.tab').forEach(function (t) { t.onclick = function () { ENTITY = t.dataset.e; render_(); }; });
-}
-
-function run_() {
-  EDITING = false;
-  handle_(payApi_('draft', { month: document.getElementById('fMonth').value }));
-}
-
-// Every backend call returns a full month result (draft or locked) -- one handler for all.
-function handle_(promise, okMsg) {
+// Every call returns the whole month -- one handler redraws everything.
+function call_(promise, label, okMsg) {
   const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingText').textContent = label || 'Working…';
   document.getElementById('loadingPill').classList.add('on');
   return promise.then(function (res) {
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
-    RESULT = res;
-    msg.innerHTML = okMsg ? '<div class="note">' + esc_(okMsg) + '</div>' : '';
-    if (res.warnings.length) msg.innerHTML += '<div class="warn"><b>' + res.warnings.length + ' warning(s):</b><br>' + res.warnings.map(esc_).join('<br>') + '</div>';
-    if (!res.rows.length) msg.innerHTML += '<div class="warn">No employees for ' + esc_(res.month) + '.</div>';
+    M = res;
+    msg.innerHTML = okMsg ? '<div class="ok">' + esc_(okMsg) + '</div>' : '';
     render_();
     return true;
   }).catch(function (err) {
@@ -223,121 +145,312 @@ function handle_(promise, okMsg) {
     return false;
   });
 }
+function post_(action, data, label, okMsg) { return call_(payPost_(action, Object.assign({ month: M.month }, data)), label, okMsg); }
 
-// ── Stage 2: edit Monthly Inputs ─────────────────────────────────────
-const INPUT_FIELDS = [ // [key, CSV/sheet header, kind]
-  ['paidDays', 'Paid Days', 'num'], ['clDays', 'CL Days Encashed', 'num'], ['hold', 'Hold for F&F (Y/N)', 'yn'],
-  ['otherEarnings', 'Other Earnings', 'num'], ['otherEarningsNote', 'Other Earnings Note', 'text'],
-  ['otherDeductions', 'Other Deductions', 'num'], ['otherDeductionsNote', 'Other Deductions Note', 'text']];
+// ── Helpers ──────────────────────────────────────────────────────────
+function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function inr_(n) { return n == null ? '—' : n === 0 ? '-' : Math.round(n).toLocaleString('en-IN'); }
+function sum_(rows, fn) { return rows.reduce(function (a, r) { return a + (Number(fn(r)) || 0); }, 0); }
+function cls_(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
+function netDiff_(r) { return r.erpNet == null ? null : r.net - r.erpNet; }
+function ctiDiff_(r) { return r.erpCti == null ? null : r.cti - r.erpCti; }
+function inScope_(r) { return SCOPE === 'ALL' || r.entity === SCOPE; }
+function scopeRows_() { return M.rows.filter(inScope_); }
+function isLocked_(entity) { return !!M.locked[entity]; }
+function openRows_() { return scopeRows_().filter(function (r) { return !isLocked_(r.entity); }); }
+function entitiesInScope_() { return Object.keys(ENTITY_LABEL).filter(function (e) { return (SCOPE === 'ALL' || SCOPE === e) && M.rows.some(function (r) { return r.entity === e; }); }); }
+function label_(r) { return r.code + ' — ' + r.name + ' (' + ENTITY_LABEL[r.entity] + ')'; }
+function pick_(inputId) {
+  const v = document.getElementById(inputId).value;
+  return M.rows.find(function (r) { return label_(r) === v || r.code === v.trim(); });
+}
+// A step is done for a school if ticked for it or for ALL; for the ALL scope, when every school in scope is done.
+function stepDone_(step, entity) { const c = M.checklist; return !!((c[entity] || {})[step] || (c.ALL || {})[step]); }
+function scopeStepDone_(step) {
+  const es = entitiesInScope_().filter(function (e) { return !isLocked_(e); });
+  return es.length > 0 && es.every(function (e) { return stepDone_(step, e); });
+}
+function monthLabel_(ym) { return new Date(ym + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }); }
 
-function startEdit_() {
-  EDITING = true; EDITS = {};
-  RESULT.rows.forEach(function (r) { EDITS[r.code] = Object.assign({}, r.input); });
-  render_();
+// ── Render ───────────────────────────────────────────────────────────
+function render_() {
+  if (!M) return;
+  const rows = scopeRows_();
+  const open = openRows_();
+  document.getElementById('empList').innerHTML = open.map(function (r) { return '<option value="' + esc_(label_(r)) + '">'; }).join('');
+
+  // Status strip
+  const next = new Date(M.month + '-01T00:00:00'); next.setMonth(next.getMonth() + 1);
+  const nextLabel = next.toLocaleDateString('en-IN', { month: 'short' });
+  const lockedEs = entitiesInScope_().filter(isLocked_);
+  const hasErp = rows.some(function (r) { return r.erpNet != null; });
+  const nd = sum_(rows, netDiff_), cd = sum_(rows, ctiDiff_);
+  const erpStat = function (v) { return hasErp ? '<span class="' + cls_(v) + '">' + inr_(v) + '</span>' : '<span class="muted">no ERP data</span>'; };
+  let html = '<div class="status">' +
+    stat_('Month', monthLabel_(M.month)) + stat_('Scope', SCOPE === 'ALL' ? 'All schools' : ENTITY_LABEL[SCOPE]) +
+    stat_('Staff', rows.length) + stat_('Gross', '₹' + inr_(sum_(rows, function (r) { return r.gross; }))) +
+    stat_('Net pay', '₹' + inr_(sum_(rows, function (r) { return r.net; }))) +
+    stat_('Bank transfer', '₹' + inr_(sum_(rows, function (r) { return r.bankPayable; }))) +
+    stat_('CTI', '₹' + inr_(sum_(rows, function (r) { return r.cti; }))) +
+    stat_('vs ERP net', erpStat(nd)) + stat_('vs ERP CTI', erpStat(cd)) +
+    '<span class="deadline">Lock by 8 ' + nextLabel + ' · pay on 10 ' + nextLabel + (lockedEs.length ? ' · 🔒 ' + lockedEs.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') : '') + '</span></div>';
+
+  // Checklist cards
+  html += '<div class="cards">' + STEPS.map(function (s) {
+    const done = s.id === 'lock' ? entitiesInScope_().every(isLocked_) : scopeStepDone_(s.id);
+    const allLocked = entitiesInScope_().every(isLocked_);
+    const badge = s.soon ? '' : allLocked ? '<span class="badge lock">Locked</span>' : done ? '<span class="badge done">✓ Done</span>' : '<span class="badge todo">To do</span>';
+    return '<div class="card' + (OPEN === s.id ? ' on' : '') + (s.soon ? ' soon' : '') + '" data-step="' + s.id + '">' + badge +
+      '<div class="t">' + s.n + ' ' + s.t + '</div><div class="s">' + cardSummary_(s.id) + '</div></div>';
+  }).join('') + '</div>';
+
+  html += '<div class="panel">' + panel_(OPEN) + '</div>';
+  document.getElementById('monthRoot').innerHTML = html;
+  wire_();
 }
 
-function isDirty_(r) { return JSON.stringify(EDITS[r.code]) !== JSON.stringify(r.input); }
+function stat_(k, v) { return '<span><div class="k">' + k + '</div><div class="v">' + v + '</div></span>'; }
 
-function renderInputs_() {
-  const rows = visibleRows_();
-  let html = '<div class="note">Blank Paid Days = full month (' + RESULT.daysInMonth + '). Hold = pay this month\'s salary at F&amp;F instead of to the bank. ' +
-    'Changed rows turn yellow; only they are saved.</div><div class="wrap" style="max-height:65vh"><table class="inputs"><tr>' +
-    '<th class="l">Code</th><th class="l">Name</th><th class="l">Entity</th><th>Paid Days</th><th>CL Days Encashed</th><th>Hold F&amp;F</th>' +
-    '<th>Other + ₹</th><th class="l">Note</th><th>Other − ₹</th><th class="l">Note</th></tr>';
+function cardSummary_(id) {
+  const rows = scopeRows_();
+  if (id === 'staff') return 'Joiners, leavers, transfers — coming next';
+  if (id === 'leave') {
+    const n = rows.filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment; }).length;
+    return n ? n + ' with leave / CL encashed' : 'Everyone full month';
+  }
+  if (id === 'adjustments') {
+    const items = [].concat.apply([], rows.map(function (r) { return r.adjustments; }));
+    return items.length ? items.length + ' item(s) · +₹' + inr_(sum_(rows, function (r) { return r.otherEarnings; })) + ' / −₹' + inr_(sum_(rows, function (r) { return r.otherDeductions; })) : 'None';
+  }
+  if (id === 'holds') {
+    const h = rows.filter(function (r) { return r.heldForFnF || r.withheld; }).length;
+    const rel = rows.filter(function (r) { return r.heldBalance; }).length;
+    return (h ? h + ' held this month' : 'No holds') + (rel ? ' · ' + rel + ' with earlier held salary' : '');
+  }
+  if (id === 'review') {
+    const w = M.warnings.filter(function (w) { return SCOPE === 'ALL' || !w.entity || w.entity === SCOPE; }).length;
+    return (w ? w + ' warning(s) · ' : '') + bigChanges_().length + ' big change(s) vs last month';
+  }
+  if (id === 'lock') {
+    const es = entitiesInScope_();
+    return es.filter(isLocked_).length + ' of ' + es.length + ' school(s) locked';
+  }
+  return '';
+}
+
+function tick_(step) {
+  if (entitiesInScope_().every(isLocked_)) return '';
+  const done = scopeStepDone_(step);
+  return '<span class="tick' + (done ? ' done' : '') + '" data-tick="' + step + '">' + (done ? '✓ Done — click to undo' : '☐ Mark done for ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE])) + '</span>';
+}
+
+function panel_(id) {
+  if (id === 'staff') return '<h2>① Staff changes</h2><div class="note">Coming next: offers recorded in the Offer Calculator appear here as “Awaiting joining”; you mark them Joined with their joining date and code, and the first month is prorated automatically. Joiners, leavers and transfers from the Staff Portal are picked up here too.</div>';
+  if (id === 'leave') return leavePanel_();
+  if (id === 'adjustments') return adjPanel_();
+  if (id === 'holds') return holdsPanel_();
+  if (id === 'review') return reviewPanel_();
+  return lockPanel_();
+}
+
+// ② Leave & paid days -- exceptions only, until the Excel leave template (next stage).
+function leavePanel_() {
+  const rows = scopeRows_().filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment; });
+  let h = '<h2>② Leave &amp; paid days <span class="grow"></span>' + tick_('leave') + '</h2>' +
+    '<div class="note">Everyone is paid the full month (' + M.daysInMonth + ' days) unless listed here. The downloadable leave template (bye-law categories → Comp / CL / unpaid → paid days) comes next; for now enter the resulting paid days directly.</div>';
+  if (openRows_().length) h += '<div class="addrow"><input list="empList" id="lvEmp" placeholder="Search employee…"> Paid days <input type="number" id="lvDays" min="0" max="' + M.daysInMonth + '" step="0.5" style="width:70px"> CL days encashed <input type="number" id="lvCl" min="0" step="0.5" style="width:70px"> <button class="btn" id="lvAdd">Save</button></div>';
+  if (!rows.length) return h + '<div class="muted">No one yet.</div>';
+  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Paid days</th><th>CL encashed (₹)</th><th>Basic</th><th>Net pay</th><th></th></tr>';
   rows.forEach(function (r) {
-    const e = EDITS[r.code];
-    const num = function (k, ph) { return '<td><input type="number" min="0" data-c="' + esc_(r.code) + '" data-k="' + k + '" value="' + esc_(e[k]) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></td>'; };
-    const txt = function (k) { return '<td class="l"><input type="text" data-c="' + esc_(r.code) + '" data-k="' + k + '" value="' + esc_(e[k]) + '"></td>'; };
-    html += '<tr' + (isDirty_(r) ? ' class="dirty"' : '') + '><td class="l">' + esc_(r.code) + '</td><td class="l">' + esc_(r.name) + '</td><td class="l">' + esc_(ENTITY_LABEL[r.entity] || r.entity) + '</td>' +
-      num('paidDays', RESULT.daysInMonth) + num('clDays') +
-      '<td style="text-align:center"><input type="checkbox" data-c="' + esc_(r.code) + '" data-k="hold"' + (e.hold ? ' checked' : '') + '></td>' +
-      num('otherEarnings') + txt('otherEarningsNote') + num('otherDeductions') + txt('otherDeductionsNote') + '</tr>';
+    h += '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + r.paidDays + '</td><td>' + inr_(r.clEncashment) +
+      '</td><td>' + inr_(r.basic) + '</td><td>' + inr_(r.net) + '</td><td>' + (r.input && !isLocked_(r.entity) ? '<button class="x-btn" data-clear="' + esc_(r.code) + '" title="Back to full month">✕</button>' : '') + '</td></tr>';
   });
-  document.getElementById('resultRoot').innerHTML = html + '</table></div>';
-  document.querySelectorAll('table.inputs input').forEach(function (el) {
-    el.onchange = function () {
-      EDITS[el.dataset.c][el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
-      const r = RESULT.rows.find(function (x) { return x.code === el.dataset.c; });
-      el.closest('tr').classList.toggle('dirty', isDirty_(r));
+  return h + '</table></div>';
+}
+
+// ③ Adjustments -- line items, several per person.
+function adjPanel_() {
+  const types = Object.keys(M.adjTypes);
+  let h = '<h2>③ Adjustments <span class="grow"></span>' + tick_('adjustments') + '</h2>';
+  if (openRows_().length) h += '<div class="addrow"><input list="empList" id="adEmp" placeholder="Search employee…"> <select id="adType">' +
+    ['Earning', 'Deduction'].map(function (d) {
+      return '<optgroup label="' + d + 's">' + types.filter(function (t) { return M.adjTypes[t] === d; }).map(function (t) { return '<option>' + esc_(t) + '</option>'; }).join('') + '</optgroup>';
+    }).join('') + '</select> ₹ <input type="number" id="adAmt" min="1" style="width:90px"> <input id="adNote" placeholder="Note (e.g. Aug arrears)" style="width:220px"> <button class="btn" id="adAdd">Add</button></div>';
+  const items = [];
+  scopeRows_().forEach(function (r) { r.adjustments.forEach(function (a) { items.push({ r: r, a: a }); }); });
+  if (!items.length) return h + '<div class="muted">No adjustments this month.</div>';
+  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Type</th><th>Earning</th><th>Deduction</th><th class="l">Note</th><th></th></tr>';
+  items.forEach(function (x) {
+    const earn = x.a.direction === 'Earning';
+    h += '<tr><td class="l">' + esc_(x.r.code + ' — ' + x.r.name) + '</td><td class="l">' + ENTITY_LABEL[x.r.entity] + '</td><td class="l">' + esc_(x.a.type) +
+      '</td><td>' + (earn ? inr_(x.a.amount) : '') + '</td><td>' + (earn ? '' : inr_(x.a.amount)) + '</td><td class="l">' + esc_(x.a.note) + '</td><td>' +
+      (isLocked_(x.r.entity) ? '' : '<button class="x-btn" data-deladj="' + esc_(x.a.id) + '" title="Remove">✕</button>') + '</td></tr>';
+  });
+  return h + '<tr class="total"><td class="l">TOTAL</td><td></td><td></td><td>' + inr_(sum_(items, function (x) { return x.a.direction === 'Earning' ? x.a.amount : 0; })) +
+    '</td><td>' + inr_(sum_(items, function (x) { return x.a.direction === 'Deduction' ? x.a.amount : 0; })) + '</td><td></td><td></td></tr></table></div>';
+}
+
+// ④ Holds -- this month's holds, and releasing earlier held salary.
+function holdsPanel_() {
+  let h = '<h2>④ Holds <span class="grow"></span>' + tick_('holds') + '</h2>' +
+    '<div class="note"><b>Held for F&amp;F</b>: the leaving month’s salary (Salary Security), paid at Full &amp; Final. <b>Withheld (grievance)</b>: Appointment Letter — for serious grievances, salary can be withheld for no more than 2 extra weeks; release it next month. Held amounts leave the bank transfer and go to the Ledger.</div>';
+  if (openRows_().length) h += '<div class="addrow"><input list="empList" id="hoEmp" placeholder="Search employee…"> <select id="hoType"><option value="fnf">Held for F&amp;F</option><option value="grievance">Withheld (grievance)</option></select> <button class="btn" id="hoAdd">Hold this month’s salary</button></div>';
+  const held = scopeRows_().filter(function (r) { return r.heldForFnF || r.withheld; });
+  h += held.length ? '<div class="wrap"><table><tr><th class="l">Held this month</th><th class="l">School</th><th class="l">Type</th><th>Net held</th><th></th></tr>' + held.map(function (r) {
+    return '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td class="l">' + (r.heldForFnF ? 'Held for F&amp;F' : 'Withheld (grievance)') +
+      '</td><td>' + inr_(r.heldForFnF || r.withheld) + '</td><td>' + (isLocked_(r.entity) ? '' : '<button class="x-btn" data-unhold="' + esc_(r.code) + '" title="Remove hold">✕</button>') + '</td></tr>';
+  }).join('') + '</table></div>' : '<div class="muted" style="margin-bottom:8px">No salary held this month.</div>';
+  const earlier = scopeRows_().filter(function (r) { return r.heldBalance || r.released; });
+  if (earlier.length) h += '<div class="wrap"><table><tr><th class="l">Held from earlier months</th><th class="l">School</th><th>Balance</th><th>Release this month</th></tr>' + earlier.map(function (r) {
+    const on = !!r.released;
+    return '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + inr_(r.heldBalance) + '</td><td>' +
+      (isLocked_(r.entity) ? inr_(r.released) : '<label><input type="checkbox" data-release="' + esc_(r.code) + '"' + (on ? ' checked' : '') + '> pay ₹' + inr_(r.heldBalance) + ' with this salary</label>') + '</td></tr>';
+  }).join('') + '</table></div>';
+  return h;
+}
+
+// ⑤ Review -- warnings, month-on-month changes, ERP comparison, full register.
+function bigChanges_() {
+  return scopeRows_().filter(function (r) { return r.prevNet && Math.abs(r.net - r.prevNet) / r.prevNet > 0.10; });
+}
+function reviewPanel_() {
+  const w = M.warnings.filter(function (x) { return SCOPE === 'ALL' || !x.entity || x.entity === SCOPE; });
+  let h = '<h2>⑤ Review <span class="grow"></span>' + tick_('review') + '</h2>';
+  if (w.length) h += '<div class="warn"><b>' + w.length + ' warning(s) — fix before locking:</b><br>' + w.map(function (x) { return esc_(x.text); }).join('<br>') + '</div>';
+  const big = bigChanges_();
+  h += '<h2 style="font-size:12px">Net pay changed more than 10% vs last month (' + big.length + ')</h2>';
+  h += big.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Last month</th><th>This month</th><th>Change</th><th class="l">Why</th></tr>' + big.map(function (r) {
+    const why = [];
+    if (r.paidDays !== M.daysInMonth) why.push(r.paidDays + ' paid days');
+    r.adjustments.forEach(function (a) { why.push(a.type + ' ₹' + inr_(a.amount)); });
+    if (r.heldForFnF || r.withheld) why.push('held');
+    if (r.released) why.push('released earlier hold');
+    return '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + inr_(r.prevNet) + '</td><td>' + inr_(r.net) +
+      '</td><td class="' + cls_(r.net - r.prevNet) + '">' + inr_(r.net - r.prevNet) + '</td><td class="l">' + esc_(why.join(', ') || '—') + '</td></tr>';
+  }).join('') + '</table></div>' : '<div class="muted" style="margin-bottom:8px">' + (scopeRows_().some(function (r) { return r.prevNet != null; }) ? 'None.' : 'No previous month to compare with yet.') + '</div>';
+
+  const hasErp = scopeRows_().some(function (r) { return r.erpNet != null; });
+  // No ERP data (months after the parallel run) -> the review table is simply the full register.
+  const erpRows = scopeRows_().filter(function (r) { return !hasErp || SHOW_ALL_ERP || netDiff_(r) || ctiDiff_(r); });
+  h += '<h2 style="font-size:12px">' + (hasErp ? 'Parallel run vs ERP (rows that differ)' : 'Full register <span class="muted">— no ERP Reference rows for this month</span>') +
+    ' <span class="grow"></span>' + (hasErp ? '<label class="muted"><input type="checkbox" id="erpAll"' + (SHOW_ALL_ERP ? ' checked' : '') + '> show everyone (full register)</label> ' : '') +
+    '<button class="mini-btn" id="csvBtn">⬇ Export CSV</button></h2>';
+  const cols = registerCols_();
+  h += '<div class="wrap" style="max-height:60vh"><table><tr>' + cols.map(function (c) { return '<th' + (c[2] ? ' class="l"' : '') + '>' + c[0] + '</th>'; }).join('') + '</tr>';
+  erpRows.forEach(function (r) {
+    h += '<tr' + (netDiff_(r) || ctiDiff_(r) ? ' class="diff"' : '') + '>' + cols.map(function (c) {
+      const v = c[1](r);
+      if (c[2]) return '<td class="l">' + esc_(v) + '</td>';
+      if (c[4]) return '<td class="' + cls_(v) + '">' + inr_(v) + '</td>';
+      return '<td>' + (typeof v === 'number' || v == null ? inr_(v) : esc_(v)) + '</td>';
+    }).join('') + '</tr>';
+  });
+  return h + '<tr class="total">' + cols.map(function (c, i) {
+    return i === 0 ? '<td class="l">TOTAL</td>' : i === 1 ? '<td class="l">' + erpRows.length + ' shown</td>' : c[3] ? '<td>' + inr_(sum_(erpRows, c[1])) + '</td>' : '<td></td>';
+  }).join('') + '</tr></table></div>';
+}
+// [header, value, left?, total?, signed-diff?]
+function registerCols_() {
+  return [
+    ['Code', function (r) { return r.code; }, true], ['Name', function (r) { return r.name; }, true],
+    ['School', function (r) { return ENTITY_LABEL[r.entity]; }, true], ['Designation', function (r) { return r.designation; }, true],
+    ['Days', function (r) { return r.paidDays; }], ['Basic', function (r) { return r.basic; }, false, true], ['ADA', function (r) { return r.ada; }, false, true],
+    ['DA', function (r) { return r.da; }, false, true], ['Gross', function (r) { return r.gross; }, false, true],
+    ['EPF', function (r) { return r.epf; }, false, true], ['ESI', function (r) { return r.esi; }, false, true],
+    ['RRF', function (r) { return r.rrf; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
+    ['Net Pay', function (r) { return r.net; }, false, true], ['Bank', function (r) { return r.bankPayable; }, false, true],
+    ['CTI', function (r) { return r.cti; }, false, true], ['Gratuity Prov', function (r) { return r.gratuityProvision; }, false, true],
+    ['ERP Net', function (r) { return r.erpNet; }, false, true], ['Net Diff', netDiff_, false, true, true],
+    ['ERP CTI', function (r) { return r.erpCti; }, false, true], ['CTI Diff', ctiDiff_, false, true, true],
+  ];
+}
+
+// ⑥ Lock -- per school; needs ② to ⑤ done and no warnings.
+function lockPanel_() {
+  const es = entitiesInScope_();
+  let h = '<h2>⑥ Lock</h2><div class="note">Locking writes the Payroll Register, a Run Log row per school (with the rates used) and the Ledger (RRF deducted, salary held or released). A locked school’s month is read-only; corrections go into next month as Adjustments.</div>';
+  h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Net pay</th><th>Bank transfer</th><th class="l">Steps</th><th class="l">Status</th></tr>';
+  es.forEach(function (e) {
+    const rs = M.rows.filter(function (r) { return r.entity === e; });
+    const missing = M.steps.filter(function (s) { return !stepDone_(s, e); });
+    const warn = M.warnings.filter(function (x) { return x.entity === e || !x.entity; }).length;
+    const status = isLocked_(e) ? '🔒 ' + esc_(M.locked[e].at) + ' by ' + esc_(M.locked[e].by)
+      : missing.length || warn ? '<span class="muted">' + (missing.length ? 'to do: ' + missing.join(', ') : '') + (warn ? (missing.length ? ' · ' : '') + warn + ' warning(s)' : '') + '</span>'
+      : '<button class="btn" data-lock="' + e + '">Lock ' + ENTITY_LABEL[e] + '</button>';
+    h += '<tr><td class="l">' + ENTITY_LABEL[e] + '</td><td>' + rs.length + '</td><td>' + inr_(sum_(rs, function (r) { return r.net; })) + '</td><td>' +
+      inr_(sum_(rs, function (r) { return r.bankPayable; })) + '</td><td class="l">' + (isLocked_(e) ? '—' : (M.steps.length - missing.length) + ' / ' + M.steps.length) + '</td><td class="l">' + status + '</td></tr>';
+  });
+  h += '</table></div>';
+  // Lock-all only when every open school is ready -- the backend refuses ALL otherwise.
+  const unlocked = es.filter(function (e) { return !isLocked_(e); });
+  const ready = unlocked.filter(function (e) { return M.steps.every(function (s) { return stepDone_(s, e); }) && !M.warnings.some(function (x) { return x.entity === e || !x.entity; }); });
+  if (SCOPE === 'ALL' && unlocked.length > 1 && ready.length === unlocked.length) h += '<button class="btn" data-lock="ALL">Lock all schools (' + ready.length + ')</button>';
+  return h;
+}
+
+// ── Actions ──────────────────────────────────────────────────────────
+function inputFor_(r, over) {
+  const i = r.input || {};
+  return Object.assign({ code: r.code, paidDays: i.paidDays, clDays: i.clDays, hold: i.hold || '', release: i.release }, over);
+}
+function wire_() {
+  const q = function (s) { return document.querySelector(s); };
+  document.querySelectorAll('.card').forEach(function (c) {
+    c.onclick = function () { const s = STEPS.find(function (x) { return x.id === c.dataset.step; }); if (!s.soon) { OPEN = s.id; render_(); } };
+  });
+  document.querySelectorAll('[data-tick]').forEach(function (t) {
+    t.onclick = function () { post_('markstep', { entity: SCOPE, step: t.dataset.tick, done: !scopeStepDone_(t.dataset.tick) }, 'Saving…'); };
+  });
+  if (q('#lvAdd')) q('#lvAdd').onclick = function () {
+    const r = pick_('lvEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
+    post_('saveinputs', { rows: [inputFor_(r, { paidDays: q('#lvDays').value, clDays: q('#lvCl').value })] }, 'Saving…', 'Saved ' + r.name + '.');
+  };
+  document.querySelectorAll('[data-clear]').forEach(function (b) {
+    b.onclick = function () { const r = M.rows.find(function (x) { return x.code === b.dataset.clear; }); post_('saveinputs', { rows: [inputFor_(r, { paidDays: '', clDays: '' })] }, 'Saving…'); };
+  });
+  if (q('#adAdd')) q('#adAdd').onclick = function () {
+    const r = pick_('adEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
+    post_('addadjustment', { code: r.code, type: q('#adType').value, amount: q('#adAmt').value, note: q('#adNote').value }, 'Adding…', 'Added ' + q('#adType').value + ' for ' + r.name + '.');
+  };
+  document.querySelectorAll('[data-deladj]').forEach(function (b) {
+    b.onclick = function () { if (confirm('Remove this adjustment?')) post_('deleteadjustment', { id: b.dataset.deladj }, 'Removing…'); };
+  });
+  if (q('#hoAdd')) q('#hoAdd').onclick = function () {
+    const r = pick_('hoEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
+    post_('saveinputs', { rows: [inputFor_(r, { hold: q('#hoType').value })] }, 'Saving…', 'Holding ' + r.name + '’s salary this month.');
+  };
+  document.querySelectorAll('[data-unhold]').forEach(function (b) {
+    b.onclick = function () { const r = M.rows.find(function (x) { return x.code === b.dataset.unhold; }); post_('saveinputs', { rows: [inputFor_(r, { hold: '' })] }, 'Saving…'); };
+  });
+  document.querySelectorAll('[data-release]').forEach(function (c) {
+    c.onchange = function () { const r = M.rows.find(function (x) { return x.code === c.dataset.release; }); post_('saveinputs', { rows: [inputFor_(r, { release: c.checked ? r.heldBalance : '' })] }, 'Saving…'); };
+  });
+  if (q('#erpAll')) q('#erpAll').onchange = function () { SHOW_ALL_ERP = this.checked; render_(); };
+  if (q('#csvBtn')) q('#csvBtn').onclick = exportCsv_;
+  document.querySelectorAll('[data-lock]').forEach(function (b) {
+    b.onclick = function () {
+      const e = b.dataset.lock;
+      const rs = M.rows.filter(function (r) { return e === 'ALL' ? !isLocked_(r.entity) : r.entity === e; });
+      if (!confirm('Lock ' + (e === 'ALL' ? 'all ready schools' : ENTITY_LABEL[e]) + ' for ' + monthLabel_(M.month) + '?\n\n' + rs.length + ' employees · Net ₹' + inr_(sum_(rs, function (r) { return r.net; })) +
+        ' · Bank ₹' + inr_(sum_(rs, function (r) { return r.bankPayable; })) + '\n\nThis cannot be undone from the portal.')) return;
+      post_('lock', { entity: e }, 'Locking…', 'Locked.');
     };
   });
 }
 
-function saveInputs_() {
-  const changed = RESULT.rows.filter(isDirty_).map(function (r) { return Object.assign({ code: r.code }, EDITS[r.code]); });
-  if (!changed.length) { EDITING = false; render_(); return; }
-  handle_(payPost_('saveinputs', { month: RESULT.month, rows: changed }), 'Saved inputs for ' + changed.length + ' employee(s) and recalculated.')
-    .then(function (ok) { if (ok) { EDITING = false; render_(); } });
-}
-
-function lockMonth_() {
-  const net = sum_(RESULT.rows, function (r) { return r.net; });
-  if (RESULT.warnings.length) { alert('Fix the warnings shown above before locking.'); return; }
-  if (!confirm('Lock ' + RESULT.month + '?\n\n' + RESULT.rows.length + ' employees · Net pay ₹' + inr_(net) +
-    '\n\nThis writes the Payroll Register, Run Log and Ledger (RRF, held salary). A locked month cannot be edited or re-run.')) return;
-  handle_(payPost_('lock', { month: RESULT.month }), RESULT.month + ' locked.');
-}
-
-function parseCsv_(text) {
-  const rows = []; let row = [], cur = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
-    else if (ch === '"') q = true;
-    else if (ch === ',') { row.push(cur); cur = ''; }
-    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
-    else cur += ch;
-  }
-  if (cur || row.length) { row.push(cur); rows.push(row); }
-  return rows.filter(function (r) { return r.some(function (v) { return v.trim(); }); });
-}
-
-function importInputs_(file) {
-  file.text().then(function (text) {
-    const rows = parseCsv_(text);
-    const hdr = rows[0].map(function (h) { return h.trim(); });
-    const ci = hdr.indexOf('Employee Code');
-    if (ci === -1) { alert('CSV needs an "Employee Code" column (download the Inputs template).'); return; }
-    let applied = 0; const unknown = [];
-    rows.slice(1).forEach(function (r) {
-      const code = String(r[ci] || '').trim();
-      if (!EDITS[code]) { if (code) unknown.push(code); return; }
-      INPUT_FIELDS.forEach(function (f) {
-        const i = hdr.indexOf(f[1]);
-        if (i === -1) return;
-        const v = String(r[i] || '').trim();
-        EDITS[code][f[0]] = f[2] === 'yn' ? /^y/i.test(v) : v;
-      });
-      applied++;
-    });
-    render_();
-    alert('Applied ' + applied + ' row(s) from the CSV — review the yellow rows, then Save inputs.' +
-      (unknown.length ? '\n\nNot in this month\'s employees: ' + unknown.join(', ') : ''));
-  });
-}
-
-function downloadCsv_(name, lines) {
-  const csv = lines.map(function (l) { return l.map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+function exportCsv_() {
+  const cols = registerCols_();
+  const lines = [cols.map(function (c) { return c[0]; })].concat(scopeRows_().map(function (r) { return cols.map(function (c) { const v = c[1](r); return v == null ? '' : v; }); }));
+  const csv = lines.map(function (l) { return l.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = name;
+  a.download = 'payroll-' + M.month + (SCOPE === 'ALL' ? '' : '-' + SCOPE) + '.csv';
   a.click();
 }
 
-function inputsTemplate_() {
-  downloadCsv_('payroll-inputs-' + RESULT.month + '.csv', [['Employee Code', 'Name'].concat(INPUT_FIELDS.map(function (f) { return f[1]; }))]
-    .concat(RESULT.rows.map(function (r) {
-      const e = EDITS[r.code];
-      return [r.code, r.name].concat(INPUT_FIELDS.map(function (f) { return f[2] === 'yn' ? (e[f[0]] ? 'Y' : '') : e[f[0]]; }));
-    })));
-}
-
-function exportCsv_() {
-  if (!RESULT) return;
-  const lines = [COLS.map(function (c) { return c[0]; })].concat(visibleRows_().map(function (r) {
-    return COLS.map(function (c) { const v = c[1](r); return v == null ? '' : v; });
-  }));
-  downloadCsv_('payroll-' + (RESULT.locked ? 'locked-' : 'draft-') + RESULT.month + (ENTITY === 'ALL' ? '' : '-' + ENTITY) + '.csv', lines);
+function load_() {
+  SCOPE = document.getElementById('fScope').value;
+  call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…');
 }
 
 function showApp(session) {
@@ -353,17 +466,11 @@ function showApp(session) {
   document.getElementById('mainRoot').style.display = '';
   const now = new Date();
   document.getElementById('fMonth').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  document.getElementById('runBtn').onclick = run_;
-  document.getElementById('fSearch').oninput = render_;
-  document.getElementById('fDiffOnly').onchange = render_;
-  document.getElementById('csvBtn').onclick = exportCsv_;
-  document.getElementById('editBtn').onclick = startEdit_;
-  document.getElementById('cancelBtn').onclick = function () { EDITING = false; render_(); };
-  document.getElementById('saveBtn').onclick = saveInputs_;
-  document.getElementById('lockBtn').onclick = lockMonth_;
-  document.getElementById('templateBtn').onclick = inputsTemplate_;
-  document.getElementById('importBtn').onclick = function () { document.getElementById('importFile').click(); };
-  document.getElementById('importFile').onchange = function (e) { if (e.target.files[0]) importInputs_(e.target.files[0]); e.target.value = ''; };
+  document.getElementById('loadBtn').onclick = load_;
+  document.getElementById('fMonth').onchange = load_;
+  // Changing scope needs no reload -- the month already holds every school.
+  document.getElementById('fScope').onchange = function () { SCOPE = this.value; render_(); };
+  load_();
 }
 
 const cachedSession = LMCS.getSession();
