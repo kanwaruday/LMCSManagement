@@ -623,7 +623,7 @@ function lockPanel_() {
     const rs = M.rows.filter(function (r) { return r.entity === e; });
     const missing = M.steps.filter(function (s) { return !stepDone_(s, e); });
     const warn = M.warnings.filter(function (x) { return x.entity === e || !x.entity; }).length;
-    const status = isLocked_(e) ? '🔒 ' + esc_(M.locked[e].at) + ' by ' + esc_(M.locked[e].by)
+    const status = isLocked_(e) ? '🔒 ' + esc_(M.locked[e].at) + ' by ' + esc_(M.locked[e].by) + ' <button class="mini-btn" data-unlock="' + e + '">Unlock</button>'
       : missing.length || warn ? '<span class="muted">' + (missing.length ? 'to do: ' + missing.join(', ') : '') + (warn ? (missing.length ? ' · ' : '') + warn + ' warning(s)' : '') + '</span>'
       : '<button class="btn" data-lock="' + e + '">Lock ' + ENTITY_LABEL[e] + '</button>';
     h += '<tr><td class="l">' + ENTITY_LABEL[e] + '</td><td>' + rs.length + '</td><td>' + inr_(sum_(rs, function (r) { return r.net; })) + '</td><td>' +
@@ -719,6 +719,13 @@ function wire_() {
   if (q('#erpDiff')) q('#erpDiff').onchange = function () { ONLY_DIFF = this.checked; render_(); };
   document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; LEAVE_PREVIEW = null; render_(); }; });
   if (q('#csvBtn')) q('#csvBtn').onclick = exportCsv_;
+  document.querySelectorAll('[data-unlock]').forEach(function (b) {
+    b.onclick = function () {
+      const e = b.dataset.unlock;
+      if (!confirm('Unlock ' + ENTITY_LABEL[e] + ' for ' + monthLabel_(M.month) + '?\n\nThis removes its Payroll Register rows and the RRF / held-salary Ledger entries the lock wrote, so the month can be edited and locked again. Only for a lock made by mistake.')) return;
+      post_('unlock', { entity: e }, 'Unlocking…', ENTITY_LABEL[e] + ' unlocked for ' + monthLabel_(M.month) + '.');
+    };
+  });
   document.querySelectorAll('[data-lock]').forEach(function (b) {
     b.onclick = function () {
       const e = b.dataset.lock;

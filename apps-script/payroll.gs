@@ -27,6 +27,7 @@
 //   addadjustment, deleteadjustment -- one-off earning/deduction line items
 //   markstep       -- tick (or untick) a checklist step for a school or ALL
 //   lock           -- one school or ALL: Register + Run Log + Ledger, read-only after
+//   unlock         -- undo one school's lock (only if no later month is locked for it)
 //
 // DEPLOY: Deploy -> New deployment -> Web app, Execute as: Me, Who has
 // access: Anyone (every call is still token-checked). Paste the /exec
@@ -117,6 +118,7 @@ function payHandle_(action, idToken, data) {
       markstep: function (ss) { payMarkStep_(ss, data, caller); },
       uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
       lock: function (ss) { payLock_(ss, data.month, data.entity, caller); },
+      unlock: function (ss) { payUnlock_(ss, data.month, data.entity, caller); },
       joinoffer: function (ss) { payJoinOffer_(ss, data, caller); },
       dismissoffer: function (ss) { payCloseOffer_(ss, String(data.applicantId || ''), 'Dismissed', {}, caller); },
       addemployee: function (ss) { payNewMasterRow_(ss, data, caller); },
@@ -960,4 +962,41 @@ function payApplyTransfer_(ss, d, caller) {
 // unreachable the month still opens, with the reason on the card.
 function payStaffSafe_(ss, month) {
   try { return payStaffChanges_(ss, month); } catch (e) { return { error: e.message }; }
+}
+
+// ── Unlock (2026-09-30, per Uday -- for accidental locks) ────────────
+// Removes one school's lock for a month: its Run Log "Locked" row, its
+// Payroll Register rows, and the Ledger entries that lock wrote (Reference
+// "Payroll <month>" for that school's employees). Refused if a LATER month is
+// locked for the school -- that month's RRF / held balances were built on this
+// one. Leaves an "Unlocked" Run Log row as the audit trail.
+function payUnlock_(ss, month, entity, caller) {
+  const ctx = payCheckMonth_(month);
+  const e = payEntity_(entity);
+  if (!payLocks_(ss, month)[e]) throw new Error(e + ' is not locked for ' + month);
+  const later = payRows_(ss.getSheetByName('Run Log')).filter(function (r) {
+    return payEntity_(r['Entity']) === e && /^locked/i.test(String(r['Status (Draft/Locked)'] || '')) && payMonthKey_(r['Month']) > month;
+  }).map(function (r) { return payMonthKey_(r['Month']); });
+  if (later.length) throw new Error(e + ' is also locked for ' + later.join(', ') + ' -- unlock the latest month first');
+
+  const codes = {};
+  payForMonth_(ss, 'Payroll Register', month).forEach(function (r) { if (payEntity_(r['Entity']) === e) codes[String(r['Employee Code']).trim()] = true; });
+  const del = function (tab, match) {
+    const sheet = ss.getSheetByName(tab);
+    const values = sheet.getDataRange().getValues();
+    const hdr = values[0].map(function (h) { return String(h).trim(); });
+    let n = 0;
+    for (let i = values.length - 1; i >= 1; i--) {
+      const o = {};
+      hdr.forEach(function (h, j) { o[h] = values[i][j]; });
+      if (match(o)) { sheet.deleteRow(i + 1); n++; }
+    }
+    return n;
+  };
+  const sameMonth = function (o) { return payMonthKey_(o['Month']) === month; };
+  const reg = del('Payroll Register', function (o) { return sameMonth(o) && payEntity_(o['Entity']) === e; });
+  const led = del('Ledger', function (o) { return String(o['Reference'] || '') === 'Payroll ' + month && codes[String(o['Employee Code']).trim()]; });
+  del('Run Log', function (o) { return sameMonth(o) && payEntity_(o['Entity']) === e && /^locked/i.test(String(o['Status (Draft/Locked)'] || '')); });
+  payAppend_(ss.getSheetByName('Run Log'), [{ 'Month': ctx.start, 'Entity': e, 'Status (Draft/Locked)': 'Unlocked', 'Headcount': reg,
+    'Locked By': caller.email, 'Locked At': new Date(), 'Notes': 'Unlocked: removed ' + reg + ' register row(s) and ' + led + ' ledger entr' + (led === 1 ? 'y' : 'ies') }]);
 }
