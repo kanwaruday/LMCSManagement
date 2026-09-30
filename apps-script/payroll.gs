@@ -45,7 +45,10 @@ const PAY_ENTITIES = ['HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 const PAY_TABS = {
   'Salary Master': ['Employee Code', 'Name', 'Entity', 'Designation', 'Date of Joining', 'Effective From', 'Full Basic',
     'EPF Member (Y/N)', 'RRF Member (Y/N)', 'Staff-Child Tuition', 'Pay Mode', 'Bank Account No', 'IFSC', 'UAN', 'PAN',
-    'Status (Active/Left)', 'Remarks'],
+    'Status (Active/Left)', 'Remarks', 'Last Working Day'],
+  // Structured offers from the Offer Calculator's "Record as Salary Offer" (stage c, 2026-09-30).
+  'Salary Offers': ['Applicant ID', 'Name', 'Entity', 'Designation', 'Subjects', 'Full Basic', 'EPF Member (Y/N)', 'Staff-Child Tuition',
+    'CTI', 'Net Y1', 'Recorded By', 'Recorded At', 'Status (Offered/Joined/Dismissed)', 'Employee Code', 'Date of Joining', 'Closed By', 'Closed At'],
   // Other Earnings/Deductions columns are from Stage 2 and no longer used --
   // one-offs live in the Adjustments tab (2026-09-30).
   'Monthly Inputs': ['Month', 'Employee Code', 'Paid Days', 'CL Days Encashed', 'Hold for F&F (Y/N)', 'Other Earnings',
@@ -79,8 +82,7 @@ const PAY_ADJ_TYPES = {
 };
 
 // Checklist steps that must be ticked for a school before it can be locked.
-// 'staff' joins this list when Staff Changes is built (stage c).
-const PAY_STEPS = ['leave', 'adjustments', 'holds', 'review'];
+const PAY_STEPS = ['staff', 'leave', 'adjustments', 'holds', 'review'];
 
 const PAY_READ_ACTIONS_ = ['month', 'draft'];
 
@@ -97,6 +99,15 @@ function doPost(e) {
 function payHandle_(action, idToken, data) {
   try {
     action = String(action || '').toLowerCase();
+    // The Offer Calculator (Principals/Coordinators too) may only append an offer.
+    if (action === 'recordoffer') {
+      const staff = payVerifyStaff_(idToken);
+      if (!staff) return payJson_({ success: false, error: 'Not authorized to record offers' });
+      const lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try { payRecordOffer_(payOpen_(), data, staff); } finally { lock.releaseLock(); }
+      return payJson_({ success: true });
+    }
     const caller = PAY_READ_ACTIONS_.indexOf(action) !== -1 ? payCachedOwner_(idToken) : payVerifyOwner_(idToken);
     if (!caller) return payJson_({ success: false, error: 'Not authorized -- payroll is Owner-only' });
     const writes = {
@@ -106,6 +117,11 @@ function payHandle_(action, idToken, data) {
       markstep: function (ss) { payMarkStep_(ss, data, caller); },
       uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
       lock: function (ss) { payLock_(ss, data.month, data.entity, caller); },
+      joinoffer: function (ss) { payJoinOffer_(ss, data, caller); },
+      dismissoffer: function (ss) { payCloseOffer_(ss, String(data.applicantId || ''), 'Dismissed', {}, caller); },
+      addemployee: function (ss) { payNewMasterRow_(ss, data, caller); },
+      markleft: function (ss) { payMarkLeft_(ss, data); },
+      applytransfer: function (ss) { payApplyTransfer_(ss, data, caller); },
     };
     let result;
     if (action === 'month' || action === 'draft') result = payMonth_(payOpen_(), data.month);
@@ -145,6 +161,12 @@ function payJson_(obj) {
 
 // ── Auth ─────────────────────────────────────────────────────────────
 function payVerifyOwner_(idToken) {
+  const c = payVerifyAllowlist_(idToken);
+  return c && c.roles.indexOf('Owner') !== -1 ? { email: c.email } : null;
+}
+
+// Verified Google ID token -> {email, roles} from the allowlist, or null.
+function payVerifyAllowlist_(idToken) {
   if (!idToken) return null;
   const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) return null;
@@ -154,8 +176,7 @@ function payVerifyOwner_(idToken) {
   const rows = SpreadsheetApp.openById(PAY_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-    const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); });
-    return roles.indexOf('Owner') !== -1 ? { email: email } : null;
+    return { email: email, roles: String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }) };
   }
   return null;
 }
@@ -371,7 +392,7 @@ function payMonth_(ss, month) {
   rows.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
   return { month: month, daysInMonth: ctx.daysInMonth, settings: live.settings, rates: live.rates, rows: rows,
     warnings: live.warnings.filter(function (w) { return !locks[w.entity]; }), locked: locks,
-    checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES,
+    checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES, staff: payStaffSafe_(ss, month),
     leaveFields: PAY_LEAVE_FIELDS.map(function (f) { return [f[0], f[1], f[2]]; }), vacRules: PAY_VAC_RULES };
 }
 
@@ -419,12 +440,16 @@ function payCompute_(ss, month) {
   const rows = [];
   Object.keys(master).forEach(function (code) {
     const r = master[code].row;
-    if (/^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
+    const lwd = payDate_(r['Last Working Day']);
+    if (lwd ? lwd < ctx0.start : /^left/i.test(String(r['Status (Active/Left)'] || ''))) return; // left before this month
     const entity = payEntity_(r['Entity']);
     const doj = payDate_(r['Date of Joining']);
     if (!rates[entity]) { warnings.push({ entity: entity, text: code + ': no PayRoll Rates row for entity "' + r['Entity'] + '" -- skipped' }); return; }
     if (!doj) { warnings.push({ entity: entity, text: code + ': no Date of Joining -- skipped' }); return; }
     const inp = inputs[code] || {};
+    // Joiners / leavers: paid days default to the days employed this month.
+    const employed = payEmployedDays_(doj, lwd, ctx0);
+    const paidDays = inp['Paid Days'] === undefined || inp['Paid Days'] === '' ? (employed < ctx0.daysInMonth ? employed : '') : inp['Paid Days'];
     const adj = adjustments[code] || [];
     const sumDir = function (dir) { return adj.reduce(function (t, a) { return t + (a.direction === dir ? a.amount : 0); }, 0); };
     const hold = /^f/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'fnf'
@@ -433,7 +458,7 @@ function payCompute_(ss, month) {
     const calc = payCalc_(
       { fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
         tuition: payNum_(r['Staff-Child Tuition']), doj: doj },
-      { paidDays: inp['Paid Days'], clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
+      { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
         otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction') },
       rates[entity], settings, Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0));
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
@@ -680,7 +705,7 @@ function payUploadLeave_(ss, d, caller, preview) {
       probation: payMonthsBetween_(payDate_(m['Date of Joining']), ctx.monthEnd) < 12 };
     const empty = !Object.keys(counts).length && !(l.vacDays && (l.probation || rule === 'Half'));
     if (empty && !existing[code]) return;
-    const c = payLeaveConvert_(l, ctx.daysInMonth);
+    const c = payLeaveConvert_(l, payEmployedDays_(payDate_(m['Date of Joining']), payDate_(m['Last Working Day']), ctx));
     if (l.vacDays && (l.probation || rule === 'Half') && blank(r.vacWorked)) c.notes.unshift('Vacation Days Worked left blank -- counted as 0');
     out.push(Object.assign({ code: code, name: String(m['Name'] || ''), entity: entity, clear: empty, input: l }, c));
   });
@@ -707,4 +732,232 @@ function payUploadLeave_(ss, d, caller, preview) {
   // Full month -> blank Paid Days (the "everyone else" default), so the leave list stays exceptions-only.
   paySaveInputs_(ss, month, out.map(function (o) { return { code: o.code, paidDays: o.paidDays === ctx.daysInMonth ? '' : o.paidDays }; }), caller);
   return out;
+}
+
+// ── Staff changes (stage c, 2026-09-30) ──────────────────────────────
+// Offers recorded in the Offer Calculator (Salary Offers tab), their Owner
+// decision in LMCS Approvals, and the Employee Master compared with the
+// Salary Master: who is in the Staff Portal but not on payroll, who was
+// marked Inactive or Transferred there, and who joined or left this month.
+const PAY_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // Employee Roster (EmpMaster)
+const PAY_APPROVALS_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals"
+
+// Allowlisted Principal / Coordinator / Owner -- only for recordoffer, which
+// can append an offer and read nothing back.
+function payVerifyStaff_(idToken) {
+  const c = payVerifyAllowlist_(idToken);
+  return c && c.roles.some(function (r) { return ['Owner', 'Coordinator', 'Principal'].indexOf(r) !== -1; }) ? c : null;
+}
+
+// Days employed in the month: from the later of month start / joining date
+// to the earlier of month end / last working day. Default paid days for
+// joiners and leavers.
+function payEmployedDays_(doj, lwd, ctx) {
+  const from = doj && doj > ctx.start ? doj : ctx.start;
+  const to = lwd && lwd < ctx.monthEnd ? lwd : ctx.monthEnd;
+  return Math.max(0, Math.round((new Date(to.getFullYear(), to.getMonth(), to.getDate()) - new Date(from.getFullYear(), from.getMonth(), from.getDate())) / 86400000) + 1);
+}
+
+function payNormName_(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
+function payIso_(d) { return d instanceof Date && !isNaN(d) ? Utilities.formatDate(d, PAY_TZ, 'yyyy-MM-dd') : ''; }
+
+// Latest Salary Master row per code (any date), with its sheet row number.
+function payMasterLatest_(ss) {
+  const sheet = ss.getSheetByName('Salary Master');
+  const values = sheet.getDataRange().getValues();
+  const hdr = values[0].map(function (h) { return String(h).trim(); });
+  const out = {};
+  for (let i = 1; i < values.length; i++) {
+    const o = {};
+    hdr.forEach(function (h, j) { o[h] = values[i][j]; });
+    const code = String(o['Employee Code'] || '').trim();
+    const eff = payDate_(o['Effective From']);
+    if (code && (!out[code] || (eff && eff >= out[code].eff))) out[code] = { eff: eff, row: o, rowNum: i + 1 };
+  }
+  return out;
+}
+
+function payApprovalStatus_() {
+  const out = {};
+  try {
+    const values = SpreadsheetApp.openById(PAY_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][2]) !== 'Salary Offer Approval') continue;
+      const m = String(values[i][7] || '').match(/T-\d{4}/);
+      if (m) out[m[0]] = String(values[i][13] || 'Pending'); // later rows win
+    }
+  } catch (e) { /* approvals unreadable -> shown as unknown */ }
+  return out;
+}
+
+function payStaffChanges_(ss, month) {
+  const ctx = payCheckMonth_(month);
+  const latest = payMasterLatest_(ss);
+  const emp = SpreadsheetApp.openById(PAY_ROSTER_SHEET_ID);
+  const roster = payRows_(emp.getSheetByName('EmpMaster')).map(function (r) {
+    return { code: String(r['EmployeeCode'] || '').trim(), name: String(r['Name'] || '').trim(), entity: payEntity_(r['SchoolCode']),
+      doj: payIso_(payDate_(r['DateOfJoining'])), status: String(r['Status'] || '').trim() || 'Active', dorel: payIso_(payDate_(r['DoRel'])) };
+  }).filter(function (r) { return r.code; });
+  const desig = {};
+  const es = emp.getSheetByName('EmpSalary');
+  if (es) payRows_(es).forEach(function (r) { desig[String(r['EmployeeCode'] || '').trim()] = String(r['Designation'] || '').trim(); });
+  const inRoster = {};
+  roster.forEach(function (r) { inRoster[r.code] = r; });
+  const active = function (code) { return latest[code] && !/^left/i.test(String(latest[code].row['Status (Active/Left)'] || '')); };
+
+  const approvals = payApprovalStatus_();
+  const offers = payRows_(ss.getSheetByName('Salary Offers')).filter(function (o) { return /^offered/i.test(String(o['Status (Offered/Joined/Dismissed)'] || 'Offered')); })
+    .map(function (o) {
+      const id = String(o['Applicant ID']).trim();
+      return { id: id, name: String(o['Name'] || ''), entity: payEntity_(o['Entity']), designation: String(o['Designation'] || ''),
+        subjects: String(o['Subjects'] || ''), fullBasic: payNum_(o['Full Basic']), epf: payYes_(o['EPF Member (Y/N)']),
+        tuition: payNum_(o['Staff-Child Tuition']), cti: payNum_(o['CTI']), recordedBy: String(o['Recorded By'] || ''),
+        recordedAt: payStamp_(o['Recorded At']), approval: approvals[id] || 'Not submitted' };
+    });
+
+  const transfers = [], left = [], newCodes = {};
+  Object.keys(latest).forEach(function (code) {
+    if (!active(code)) return;
+    const r = inRoster[code];
+    if (!r || r.status === 'Active') return;
+    if (/^transferred/i.test(r.status)) {
+      const yymm = code.split('/').slice(1, 3).join('/');
+      const to = roster.filter(function (x) { return x.status === 'Active' && !latest[x.code] && payNormName_(x.name) === payNormName_(r.name) && x.code.split('/').slice(1, 3).join('/') === yymm; })[0];
+      if (to) { newCodes[to.code] = true; transfers.push({ oldCode: code, name: r.name, from: payEntity_(latest[code].row['Entity']), newCode: to.code, to: to.entity }); return; }
+    }
+    left.push({ code: code, name: String(latest[code].row['Name'] || r.name), entity: payEntity_(latest[code].row['Entity']), status: r.status, dorel: r.dorel });
+  });
+  const notOnPayroll = roster.filter(function (r) { return r.status === 'Active' && !latest[r.code] && !newCodes[r.code]; })
+    .map(function (r) {
+      const offer = offers.filter(function (o) { return payNormName_(o.name) === payNormName_(r.name); })[0];
+      return { code: r.code, name: r.name, entity: r.entity, doj: r.doj, designation: desig[r.code] || '', offerId: offer ? offer.id : '' };
+    });
+  const notInRoster = Object.keys(latest).filter(function (c) { return active(c) && !inRoster[c]; })
+    .map(function (c) { return { code: c, name: String(latest[c].row['Name'] || ''), entity: payEntity_(latest[c].row['Entity']) }; });
+
+  // Joined or leaving within this month (prorated automatically).
+  const joiners = [], leavers = [];
+  Object.keys(latest).forEach(function (code) {
+    const r = latest[code].row;
+    const doj = payDate_(r['Date of Joining']), lwd = payDate_(r['Last Working Day']);
+    const base = { code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']) };
+    if (doj && doj >= ctx.start && doj <= ctx.monthEnd) joiners.push(Object.assign({ date: payIso_(doj), days: payEmployedDays_(doj, lwd, ctx) }, base));
+    if (lwd && lwd >= ctx.start && lwd <= ctx.monthEnd) leavers.push(Object.assign({ date: payIso_(lwd), days: payEmployedDays_(doj, lwd, ctx) }, base));
+  });
+  return { offers: offers, notOnPayroll: notOnPayroll, transfers: transfers, left: left, notInRoster: notInRoster, joiners: joiners, leavers: leavers };
+}
+
+// ── Staff change actions ─────────────────────────────────────────────
+// d: {applicantId, name, entity, designation, subjects, fullBasic, epf, tuition, cti, netY1}
+// Upserted by Applicant ID; a joined/dismissed offer is not reopened.
+function payRecordOffer_(ss, d, caller) {
+  const id = String(d.applicantId || '').trim();
+  if (!/^T-\d{4}$/.test(id)) throw new Error('applicantId must look like T-0000');
+  const entity = payEntity_(d.entity);
+  if (PAY_ENTITIES.indexOf(entity) === -1) throw new Error('Unknown school: ' + d.entity);
+  const basic = Number(d.fullBasic);
+  if (!(basic > 0)) throw new Error('Full Basic must be more than 0');
+  const sheet = ss.getSheetByName('Salary Offers');
+  const values = sheet.getDataRange().getValues();
+  const hdr = values[0].map(function (h) { return String(h).trim(); });
+  const obj = { 'Applicant ID': id, 'Name': String(d.name || '').trim(), 'Entity': entity, 'Designation': String(d.designation || ''),
+    'Subjects': String(d.subjects || ''), 'Full Basic': Math.round(basic), 'EPF Member (Y/N)': d.epf ? 'Y' : 'N',
+    'Staff-Child Tuition': Math.round(Number(d.tuition) || 0), 'CTI': Math.round(Number(d.cti) || 0), 'Net Y1': Math.round(Number(d.netY1) || 0),
+    'Recorded By': caller.email, 'Recorded At': new Date(), 'Status (Offered/Joined/Dismissed)': 'Offered' };
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][hdr.indexOf('Applicant ID')]).trim() !== id) continue;
+    if (!/^offered/i.test(String(values[i][hdr.indexOf('Status (Offered/Joined/Dismissed)')] || 'Offered'))) throw new Error(id + ' is already ' + values[i][hdr.indexOf('Status (Offered/Joined/Dismissed)')]);
+    sheet.getRange(i + 1, 1, 1, hdr.length).setValues([hdr.map(function (h, j) { return h in obj ? obj[h] : values[i][j]; })]);
+    return;
+  }
+  payAppend_(sheet, [obj]);
+}
+
+function payCloseOffer_(ss, id, status, extra, caller) {
+  const sheet = ss.getSheetByName('Salary Offers');
+  const values = sheet.getDataRange().getValues();
+  const hdr = values[0].map(function (h) { return String(h).trim(); });
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][hdr.indexOf('Applicant ID')]).trim() !== id) continue;
+    const o = Object.assign({ 'Status (Offered/Joined/Dismissed)': status, 'Closed By': caller.email, 'Closed At': new Date() }, extra);
+    sheet.getRange(i + 1, 1, 1, hdr.length).setValues([hdr.map(function (h, j) { return h in o ? o[h] : values[i][j]; })]);
+    return values[i].reduce(function (acc, v, j) { acc[hdr[j]] = v; return acc; }, {});
+  }
+  throw new Error('Offer not found: ' + id);
+}
+
+function payNewMasterRow_(ss, d, caller) {
+  const code = String(d.code || '').trim();
+  if (!/^[A-Z]{3}\/\d{2}\/\d{2}\/\d+$/.test(code)) throw new Error('Employee code "' + code + '" does not look like KUL/26/10/123');
+  if (payMasterLatest_(ss)[code]) throw new Error(code + ' is already on payroll');
+  const doj = payDate_(d.doj);
+  if (!doj) throw new Error('Date of Joining is required');
+  const entity = payEntity_(d.entity);
+  if (PAY_ENTITIES.indexOf(entity) === -1) throw new Error('Unknown school: ' + d.entity);
+  const basic = Number(d.fullBasic);
+  if (!(basic > 0)) throw new Error('Full Basic must be more than 0');
+  payAppend_(ss.getSheetByName('Salary Master'), [{ 'Employee Code': code, 'Name': String(d.name || '').trim(), 'Entity': entity,
+    'Designation': String(d.designation || ''), 'Date of Joining': doj, 'Effective From': doj, 'Full Basic': Math.round(basic),
+    'EPF Member (Y/N)': d.epf ? 'Y' : 'N', 'RRF Member (Y/N)': d.rrf === false ? 'N' : 'Y', 'Staff-Child Tuition': Math.round(Number(d.tuition) || 0),
+    'Status (Active/Left)': 'Active', 'Remarks': String(d.remarks || 'Added by ' + caller.email) }]);
+}
+
+// d: {applicantId, code, doj} -- offer -> Salary Master row, offer marked Joined.
+function payJoinOffer_(ss, d, caller) {
+  const o = payRows_(ss.getSheetByName('Salary Offers')).filter(function (x) {
+    return String(x['Applicant ID']).trim() === d.applicantId && /^offered/i.test(String(x['Status (Offered/Joined/Dismissed)'] || 'Offered'));
+  })[0];
+  if (!o) throw new Error('Open offer not found: ' + d.applicantId);
+  payNewMasterRow_(ss, { code: d.code, name: o['Name'], entity: o['Entity'], designation: o['Designation'], doj: d.doj, fullBasic: payNum_(o['Full Basic']),
+    epf: payYes_(o['EPF Member (Y/N)']), rrf: true, tuition: payNum_(o['Staff-Child Tuition']), remarks: 'From offer ' + d.applicantId }, caller);
+  payCloseOffer_(ss, d.applicantId, 'Joined', { 'Employee Code': String(d.code).trim(), 'Date of Joining': payDate_(d.doj) }, caller);
+}
+
+// d: {code, lastDay} -- the latest Salary Master row becomes Left with a last working day.
+function payMarkLeft_(ss, d) {
+  const latest = payMasterLatest_(ss)[String(d.code || '').trim()];
+  if (!latest) throw new Error(d.code + ': not on payroll');
+  const lwd = payDate_(d.lastDay);
+  if (!lwd) throw new Error('Last working day is required');
+  const sheet = ss.getSheetByName('Salary Master');
+  const hdr = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
+  sheet.getRange(latest.rowNum, hdr.indexOf('Status (Active/Left)') + 1).setValue('Left');
+  sheet.getRange(latest.rowNum, hdr.indexOf('Last Working Day') + 1).setValue(lwd);
+}
+
+// d: {month, oldCode, newCode, entity} -- per Uday, the whole month is paid at
+// the new school: old code ends the day before this month, new code starts on
+// the 1st with the same pay and joining date, and RRF / held-salary balances
+// move across (entries dated last month, so they count in this month's opening).
+function payApplyTransfer_(ss, d, caller) {
+  const ctx = payCheckMonth_(d.month);
+  const latest = payMasterLatest_(ss);
+  const old = latest[String(d.oldCode || '').trim()];
+  if (!old) throw new Error(d.oldCode + ': not on payroll');
+  if (latest[String(d.newCode || '').trim()]) throw new Error(d.newCode + ' is already on payroll');
+  const r = old.row;
+  payMarkLeft_(ss, { code: d.oldCode, lastDay: new Date(ctx.start.getTime() - 86400000) });
+  const row = {};
+  Object.keys(r).forEach(function (h) { row[h] = r[h]; });
+  Object.assign(row, { 'Employee Code': String(d.newCode).trim(), 'Entity': payEntity_(d.entity), 'Effective From': ctx.start,
+    'Status (Active/Left)': 'Active', 'Last Working Day': '', 'Remarks': 'Transferred from ' + d.oldCode });
+  payAppend_(ss.getSheetByName('Salary Master'), [row]);
+  const prevMonth = new Date(ctx.start.getFullYear(), ctx.start.getMonth() - 1, 1);
+  const now = new Date(), ledger = [];
+  ['RRF', 'Held Salary', 'Security', 'Loan'].forEach(function (acct) {
+    const bal = payLedgerBalances_(ss, acct, d.month)[d.oldCode] || 0;
+    if (!bal) return;
+    [[d.oldCode, -bal], [d.newCode, bal]].forEach(function (x) {
+      ledger.push({ 'Date': now, 'Month': prevMonth, 'Employee Code': x[0], 'Account (RRF/Security/Loan/Held Salary)': acct,
+        'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)': 'Adjustment', 'Amount': x[1],
+        'Reference': 'Transfer ' + d.oldCode + ' -> ' + d.newCode, 'Notes': '', 'Entered By': caller.email, 'Entered At': now });
+    });
+  });
+  payAppend_(ss.getSheetByName('Ledger'), ledger);
+}
+
+// Staff changes read the Employee Master and Approvals -- if either is
+// unreachable the month still opens, with the reason on the card.
+function payStaffSafe_(ss, month) {
+  try { return payStaffChanges_(ss, month); } catch (e) { return { error: e.message }; }
 }

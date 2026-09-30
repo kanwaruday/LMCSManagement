@@ -186,6 +186,10 @@ const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJf
 const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 
 let SESSION = null;
+// Monthly Payroll backend (apps-script/payroll.gs, its own project). Record as
+// Salary Offer also saves the structured offer there (2026-09-30), so it shows
+// under Monthly Payroll -> Staff changes -> Offers awaiting joining.
+const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv/exec';
 let EPF_EXEMPTION_APPROVED = false;
 
 // 2026-09-28, per Uday: one consistent "the portal is doing something"
@@ -608,10 +612,9 @@ function recordSalaryOffer_() {
     btn.disabled = false;
     if (!res.success) { hideLoading_(); msg.textContent = res.error; msg.className = 'record-msg err'; return; }
     EXISTING_NOTES = notes;
+    const payrollSaved = savePayrollOffer_(r, name, campus, designation, subjects);
     if (SALARY_OFFER_ALREADY_SUBMITTED) {
-      hideLoading_();
-      msg.textContent = 'Recorded ✓ — visible on the Hiring Dashboard now.'; msg.className = 'record-msg ok';
-      returnToHiringDashboard_();
+      payrollSaved.then(function (note) { hideLoading_(); finishRecord_(msg, 'Recorded ✓ — visible on the Hiring Dashboard now.', true, note); });
       return;
     }
     // First time recording for this applicant -- also submit the
@@ -629,22 +632,39 @@ function recordSalaryOffer_() {
         'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo.',
       itemName: APPLICANT_ID + ' — ' + name,
     }).then(function (aprRes) {
-      hideLoading_();
       SALARY_OFFER_ALREADY_SUBMITTED = true;
-      msg.textContent = aprRes.success
-        ? 'Recorded ✓ — submitted for Owner approval.'
-        : 'Recorded, but the approval request failed: ' + (aprRes.error || 'unknown error') + ' — try Record again.';
-      msg.className = aprRes.success ? 'record-msg ok' : 'record-msg err';
+      payrollSaved.then(function (note) {
+        hideLoading_();
+        finishRecord_(msg, aprRes.success ? 'Recorded ✓ — submitted for Owner approval.'
+          : 'Recorded, but the approval request failed: ' + (aprRes.error || 'unknown error') + ' — try Record again.', aprRes.success, note);
+      });
       // Only return to the Hiring Dashboard on the genuinely green path
       // -- per Uday, an approval-submit failure needs "try Record
       // again" to stay on screen and actionable, not whisked away.
-      if (aprRes.success) returnToHiringDashboard_();
     }).catch(function () {
       hideLoading_();
       msg.textContent = 'Recorded, but the approval request hit a network error — try Record again.';
       msg.className = 'record-msg err';
     });
   }).catch(function () { hideLoading_(); btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'record-msg err'; });
+}
+
+// Structured copy of the offer for Monthly Payroll. Resolves to '' on success or
+// a note to show -- a failure never undoes the recording, it just keeps the page
+// here so Record can be clicked again.
+function savePayrollOffer_(r, name, campus, designation, subjects) {
+  return fetch(PAYROLL_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'recordoffer', idToken: SESSION.idToken, data: {
+    applicantId: APPLICANT_ID, name: name, entity: campus, designation: designation, subjects: subjects, fullBasic: r.nb,
+    epf: !r.epfExempt, tuition: Number(document.getElementById('fTuiFee').value) || 0, cti: r.cti, netY1: r.netY1 } }) })
+    .then(function (p) { return p.json(); }).catch(function () { return { success: false, error: 'network error' }; })
+    .then(function (p) { return p.success ? '' : ' Payroll copy NOT saved (' + (p.error || 'unknown error') + ') — click Record again.'; });
+}
+// Only return to the Hiring Dashboard on the fully green path -- any failure
+// stays on screen and actionable (per Uday), including the payroll copy.
+function finishRecord_(msg, text, ok, payrollNote) {
+  msg.textContent = text + payrollNote;
+  msg.className = ok && !payrollNote ? 'record-msg ok' : 'record-msg err';
+  if (ok && !payrollNote) returnToHiringDashboard_();
 }
 
 // 2026-09-28, per Uday: after a successful Record, give the Principal a

@@ -108,14 +108,14 @@ const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_
 // register is the detailed view inside Review, not the main screen.
 const ENTITY_LABEL = { HES: 'HES', LMS1: 'LMS 1', LMS2: 'LMS 2', LMS3: 'LMS 3', LMS4: 'LMS 4', LMS5: 'LMS 5', LMS6: 'LMS 6' };
 const STEPS = [
-  { id: 'staff', n: '①', t: 'Staff changes', soon: true },
+  { id: 'staff', n: '①', t: 'Staff changes' },
   { id: 'leave', n: '②', t: 'Leave & paid days' },
   { id: 'adjustments', n: '③', t: 'Adjustments' },
   { id: 'holds', n: '④', t: 'Holds' },
   { id: 'review', n: '⑤', t: 'Review' },
   { id: 'lock', n: '⑥', t: 'Lock' },
 ];
-let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'leave', SHOW_ALL_ERP = false;
+let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'staff', SHOW_ALL_ERP = false;
 
 // ── Backend ──────────────────────────────────────────────────────────
 function payGet_(action, data) {
@@ -213,7 +213,13 @@ function stat_(k, v) { return '<span><div class="k">' + k + '</div><div class="v
 
 function cardSummary_(id) {
   const rows = scopeRows_();
-  if (id === 'staff') return 'Joiners, leavers, transfers — coming next';
+  if (id === 'staff') {
+    const st = M.staff || {};
+    if (st.error) return 'Could not read the Employee Master';
+    const todo = staffList_(st.offers).length + staffList_(st.notOnPayroll).length + staffList_(st.transfers).length + staffList_(st.left).length;
+    const moved = staffList_(st.joiners).length + staffList_(st.leavers).length;
+    return (todo ? todo + ' to act on' : 'Nothing to act on') + (moved ? ' · ' + moved + ' joining/leaving this month' : '');
+  }
   if (id === 'leave') {
     const n = rows.filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment || r.leave; }).length;
     return n ? n + ' with leave / CL encashed' : 'Everyone full month';
@@ -245,12 +251,66 @@ function tick_(step) {
 }
 
 function panel_(id) {
-  if (id === 'staff') return '<h2>① Staff changes</h2><div class="note">Coming next: offers recorded in the Offer Calculator appear here as “Awaiting joining”; you mark them Joined with their joining date and code, and the first month is prorated automatically. Joiners, leavers and transfers from the Staff Portal are picked up here too.</div>';
+  if (id === 'staff') return staffPanel_();
   if (id === 'leave') return leavePanel_();
   if (id === 'adjustments') return adjPanel_();
   if (id === 'holds') return holdsPanel_();
   if (id === 'review') return reviewPanel_();
   return lockPanel_();
+}
+
+// ① Staff changes -- offers awaiting joining, and the Employee Master vs payroll.
+function staffList_(list) { return (list || []).filter(function (x) { return SCOPE === 'ALL' || x.entity === SCOPE || x.from === SCOPE || x.to === SCOPE; }); }
+function staffPanel_() {
+  const st = M.staff || {};
+  let h = '<h2>① Staff changes <span class="grow"></span>' + tick_('staff') + '</h2>';
+  if (st.error) return h + '<div class="err">Could not read the Employee Master / Approvals: ' + esc_(st.error) + '</div>';
+  const offers = staffList_(st.offers), nop = staffList_(st.notOnPayroll), tr = staffList_(st.transfers), left = staffList_(st.left);
+  const jn = staffList_(st.joiners), lv = staffList_(st.leavers), nir = staffList_(st.notInRoster);
+  h += '<datalist id="nopList">' + nop.map(function (x) { return '<option value="' + esc_(x.code) + '">' + esc_(x.name) + '</option>'; }).join('') + '</datalist>';
+  const sec = function (t, n) { return '<h2 style="font-size:12px;margin-top:10px">' + t + ' (' + n + ')</h2>'; };
+  const school = function (e) { return ENTITY_LABEL[e] || e; };
+
+  h += sec('Offers awaiting joining', offers.length);
+  h += offers.length ? '<div class="note">Recorded with “Record as Salary Offer” in the Offer Calculator. When the person joins, add them in the Staff Portal (New Hire) to get their employee code, then mark Joined here — the first month is prorated from the joining date.</div>' +
+    '<div class="wrap"><table><tr><th class="l">Applicant</th><th class="l">School</th><th class="l">Designation</th><th>Full basic</th><th>CTI</th><th class="l">Owner approval</th><th class="l">Employee code</th><th class="l">Joined on</th><th></th></tr>' +
+    offers.map(function (o) {
+      const m = nop.filter(function (x) { return x.offerId === o.id; })[0] || {};
+      return '<tr><td class="l">' + esc_(o.id + ' — ' + o.name) + '<div class="muted">' + esc_(o.recordedBy + ' · ' + o.recordedAt) + '</div></td><td class="l">' + school(o.entity) + '</td><td class="l">' + esc_(o.designation) +
+        '</td><td>' + inr_(o.fullBasic) + '</td><td>' + inr_(o.cti) + '</td><td class="l ' + (o.approval === 'Approved' ? 'pos' : '') + '">' + esc_(o.approval) +
+        '</td><td class="l"><input list="nopList" data-joincode="' + esc_(o.id) + '" value="' + esc_(m.code || '') + '" placeholder="e.g. KUL/26/10/110" style="width:140px"></td>' +
+        '<td class="l"><input type="date" data-joindoj="' + esc_(o.id) + '" value="' + esc_(m.doj || '') + '"></td><td><button class="btn" data-join="' + esc_(o.id) + '">Joined</button> <button class="x-btn" data-dismiss="' + esc_(o.id) + '" title="Dismiss offer">✕</button></td></tr>';
+    }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+
+  h += sec('In the Staff Portal but not on payroll', nop.length);
+  h += nop.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Designation</th><th class="l">Joined</th><th>Full basic</th><th>EPF</th><th>RRF</th><th>Tuition</th><th></th></tr>' +
+    nop.map(function (x) {
+      if (x.offerId) return '<tr><td class="l">' + esc_(x.code + ' — ' + x.name) + '</td><td class="l">' + school(x.entity) + '</td><td class="l">' + esc_(x.designation) + '</td><td class="l">' + esc_(x.doj) +
+        '</td><td colspan="5" class="l muted">Matches offer ' + esc_(x.offerId) + ' — mark it Joined above</td></tr>';
+      const k = esc_(x.code);
+      return '<tr><td class="l">' + esc_(x.code + ' — ' + x.name) + '</td><td class="l">' + school(x.entity) + '</td><td class="l">' + esc_(x.designation) + '</td><td class="l">' + esc_(x.doj) +
+        '</td><td><input type="number" min="1" data-nb="' + k + '" style="width:80px"></td><td><input type="checkbox" data-nepf="' + k + '"' + (x.entity === 'LMS6' ? '' : ' checked') + '></td>' +
+        '<td><input type="checkbox" data-nrrf="' + k + '" checked></td><td><input type="number" min="0" data-ntf="' + k + '" style="width:70px"></td><td><button class="btn" data-addemp="' + k + '">Add to payroll</button></td></tr>';
+    }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+
+  h += sec('Transfers in the Staff Portal', tr.length);
+  h += tr.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">From</th><th class="l">To</th><th></th></tr>' + tr.map(function (x) {
+    return '<tr><td class="l">' + esc_(x.name) + '</td><td class="l">' + esc_(x.oldCode) + ' (' + school(x.from) + ')</td><td class="l">' + esc_(x.newCode) + ' (' + school(x.to) + ')</td><td><button class="btn" data-transfer="' +
+      esc_(x.oldCode) + '">Apply — paid at ' + school(x.to) + ' for all of ' + monthLabel_(M.month) + '</button></td></tr>';
+  }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+
+  h += sec('Marked left in the Staff Portal', left.length);
+  h += left.length ? '<div class="note">Paid up to the last working day. To hold their final salary for Full &amp; Final, add a hold in ④.</div><div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Staff Portal</th><th class="l">Last working day</th><th></th></tr>' +
+    left.map(function (x) {
+      return '<tr><td class="l">' + esc_(x.code + ' — ' + x.name) + '</td><td class="l">' + school(x.entity) + '</td><td class="l">' + esc_(x.status + (x.dorel ? ', relieved ' + x.dorel : '')) +
+        '</td><td class="l"><input type="date" data-lwd="' + esc_(x.code) + '" value="' + esc_(x.dorel) + '"></td><td><button class="btn" data-left="' + esc_(x.code) + '">Mark left</button></td></tr>';
+    }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+
+  if (jn.length || lv.length) h += sec('Joining / leaving this month (prorated automatically)', jn.length + lv.length) + '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l"></th><th class="l">Date</th><th>Days paid</th></tr>' +
+    jn.map(function (x) { return '<tr><td class="l">' + esc_(x.code + ' — ' + x.name) + '</td><td class="l">' + school(x.entity) + '</td><td class="l">Joined</td><td class="l">' + esc_(x.date) + '</td><td>' + x.days + '</td></tr>'; }).join('') +
+    lv.map(function (x) { return '<tr><td class="l">' + esc_(x.code + ' — ' + x.name) + '</td><td class="l">' + school(x.entity) + '</td><td class="l">Leaving</td><td class="l">' + esc_(x.date) + '</td><td>' + x.days + '</td></tr>'; }).join('') + '</table></div>';
+  if (nir.length) h += sec('On payroll but not in the Employee Master', nir.length) + '<div class="warn">' + nir.map(function (x) { return esc_(x.code + ' — ' + x.name + ' (' + school(x.entity) + ')'); }).join('<br>') + '</div>';
+  return h;
 }
 
 // ② Leave & paid days -- exceptions only, until the Excel leave template (next stage).
@@ -551,6 +611,39 @@ function wire_() {
   });
   document.querySelectorAll('[data-tick]').forEach(function (t) {
     t.onclick = function () { post_('markstep', { entity: SCOPE, step: t.dataset.tick, done: !scopeStepDone_(t.dataset.tick) }, 'Saving…'); };
+  });
+  document.querySelectorAll('[data-join]').forEach(function (b) {
+    b.onclick = function () {
+      const id = b.dataset.join, code = q('[data-joincode="' + id + '"]').value.trim(), doj = q('[data-joindoj="' + id + '"]').value;
+      if (!code || !doj) { alert('Enter the employee code (from the Staff Portal) and the joining date.'); return; }
+      post_('joinoffer', { applicantId: id, code: code, doj: doj }, 'Adding to payroll…', id + ' joined as ' + code + '.');
+    };
+  });
+  document.querySelectorAll('[data-dismiss]').forEach(function (b) {
+    b.onclick = function () { if (confirm('Dismiss offer ' + b.dataset.dismiss + '? It will no longer show here.')) post_('dismissoffer', { applicantId: b.dataset.dismiss }, 'Saving…'); };
+  });
+  document.querySelectorAll('[data-addemp]').forEach(function (b) {
+    b.onclick = function () {
+      const code = b.dataset.addemp, x = M.staff.notOnPayroll.find(function (n) { return n.code === code; });
+      const nb = q('[data-nb="' + code + '"]').value;
+      if (!(Number(nb) > 0)) { alert('Enter the full monthly basic for ' + x.name + '.'); return; }
+      post_('addemployee', { code: code, name: x.name, entity: x.entity, designation: x.designation, doj: x.doj, fullBasic: nb,
+        epf: q('[data-nepf="' + code + '"]').checked, rrf: q('[data-nrrf="' + code + '"]').checked, tuition: q('[data-ntf="' + code + '"]').value }, 'Adding to payroll…', x.name + ' added to payroll.');
+    };
+  });
+  document.querySelectorAll('[data-transfer]').forEach(function (b) {
+    b.onclick = function () {
+      const x = M.staff.transfers.find(function (t) { return t.oldCode === b.dataset.transfer; });
+      if (confirm('Transfer ' + x.name + ' to ' + ENTITY_LABEL[x.to] + ' (' + x.newCode + ') for all of ' + monthLabel_(M.month) + '?\nRRF and held-salary balances move to the new code.'))
+        post_('applytransfer', { oldCode: x.oldCode, newCode: x.newCode, entity: x.to }, 'Applying transfer…', x.name + ' transferred.');
+    };
+  });
+  document.querySelectorAll('[data-left]').forEach(function (b) {
+    b.onclick = function () {
+      const code = b.dataset.left, d = q('[data-lwd="' + code + '"]').value;
+      if (!d) { alert('Enter the last working day.'); return; }
+      post_('markleft', { code: code, lastDay: d }, 'Saving…', code + ' marked left from ' + d + '.');
+    };
   });
   if (q('#lvTemplate')) q('#lvTemplate').onclick = downloadLeaveTemplate_;
   if (q('#lvUpload')) q('#lvUpload').onclick = function () { q('#lvFile').click(); };
