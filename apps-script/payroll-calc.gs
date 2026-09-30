@@ -33,7 +33,8 @@ function payMonthsBetween_(from, to) {
 
 // emp: {fullBasic, epfMember, rrfMember, tuition, doj (Date)}
 // input: {paidDays, clDays, hold ('fnf' | 'grievance' | ''; true = 'fnf'), release (₹ of earlier
-//         held salary paid out this month), otherEarnings, otherDeductions}
+//         held salary paid out this month), otherEarnings, otherDeductions,
+//         loanRecovery (₹ due this month on salary advances / RRF loans)}
 // rates: {da, ada, epfRegistered, esiRegistered}   (fractions / booleans)
 // s: settings -- {epfRate, epfCeiling, esiEmpRate, esiErRate, esiThreshold,
 //    rrfY1, rrfY2, rrfY3, rrfTargetMonths, rrfStopAtTarget, gratRate, clDivisor}
@@ -72,7 +73,9 @@ function payCalc_(emp, input, rates, s, ctx) {
   if (rrfRate && s.rrfStopAtTarget) rrf = Math.min(rrf, Math.max(0, R(target - opening)));
 
   const otherDeductions = Number(input.otherDeductions) || 0;
-  const totalDeductions = epf + esi + rrf + tuition + otherDeductions;
+  // Loan / advance recovery never takes net pay below zero (stage 4, 2026-09-30).
+  const loanRecovery = Math.max(0, Math.min(Number(input.loanRecovery) || 0, gross - (epf + esi + rrf + tuition + otherDeductions)));
+  const totalDeductions = epf + esi + rrf + tuition + otherDeductions + loanRecovery;
   const net = gross - totalDeductions;
   // Held for F&F = leaving month's salary, paid at F&F. Withheld (grievance)
   // = Appointment Letter: up to 2 extra weeks. Either way it leaves the bank
@@ -82,12 +85,25 @@ function payCalc_(emp, input, rates, s, ctx) {
   return {
     paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages,
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
-    epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions,
+    epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery,
     totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
     heldForFnF: hold === 'fnf' ? net : 0, withheld: hold === 'grievance' ? net : 0,
     epfEmployer: epf, esiEmployer: esiEr, cti: cti, gratuityProvision: R((basic + da) * s.gratRate),
     closingRrf: opening + rrf,
   };
+}
+
+// ── Gratuity (Payment of Gratuity Act; stage 4, 2026-09-30) ──────────
+// 15/26 × last drawn monthly (Basic + DA) × years of service, a final part-year
+// of 6+ months counting as a full year, capped at ₹20,00,000; payable only after
+// 5 years. Wages exclude ADA by law (Uday, 2026-09-29). Same rule as
+// gratuity-liability.gs, here so payroll and F&F use it directly.
+function payGratuity_(fullBasic, daRate, doj, asOf) {
+  const months = payMonthsBetween_(doj, asOf);
+  const years = Math.floor(months / 12) + (months % 12 >= 6 ? 1 : 0);
+  const wages = payRound_(fullBasic) + payRound_(fullBasic * daRate);
+  const amount = Math.min(2000000, payRound_(15 / 26 * wages * years));
+  return { months: months, years: years, wages: wages, accrued: amount, vested: months >= 60, payable: months >= 60 ? amount : 0 };
 }
 
 // ── Leave -> paid days (2026-09-30, bye-laws leave norms / OO-09/26) ──
@@ -195,7 +211,14 @@ function payrollCalcSelfTest_() {
   r = payCalc_(emp, { hold: 'grievance', release: 5000 }, rates, S, ctx);
   eq(r.withheld, r.net, 'withheld (grievance)'); eq(r.heldForFnF, 0, 'not an F&F hold');
   eq(r.bankPayable, 5000, 'only the released earlier hold goes to bank');
+  r = payCalc_(emp, { loanRecovery: 5000 }, rates, S, ctx);
+  eq(r.loanRecovery, 5000, 'loan recovery'); eq(r.net, 14000 - 1680 - 105 - 1936 - 5000, 'net after recovery');
+  r = payCalc_(emp, { loanRecovery: 50000 }, rates, S, ctx);
+  eq(r.net, 0, 'recovery capped at net pay');
+  const g = payGratuity_(20000, 0.05, new Date(2020, 3, 1), new Date(2026, 9, 31));
+  eq(g.years, 7, '6y 6m rounds up to 7'); eq(g.wages, 21000, 'basic + DA'); eq(g.accrued, Math.round(15 / 26 * 21000 * 7), 'gratuity'); eq(g.vested, true, 'vested');
+  eq(payGratuity_(20000, 0.05, new Date(2023, 0, 1), new Date(2026, 9, 31)).payable, 0, 'not payable before 5 years');
   return 'payrollCalcSelfTest_ passed';
 }
 
-if (typeof module !== 'undefined') module.exports = { payCalc_: payCalc_, payrollCalcSelfTest_: payrollCalcSelfTest_, payLeaveConvert_: payLeaveConvert_, payLeaveSelfTest_: payLeaveSelfTest_ };
+if (typeof module !== 'undefined') module.exports = { payCalc_: payCalc_, payGratuity_: payGratuity_, payrollCalcSelfTest_: payrollCalcSelfTest_, payLeaveConvert_: payLeaveConvert_, payLeaveSelfTest_: payLeaveSelfTest_ };

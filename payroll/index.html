@@ -65,6 +65,12 @@ td.neg{color:#991b1b;font-weight:600}
 .tick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border:1px solid var(--border);border-radius:14px;cursor:pointer;background:var(--white)}
 .tick.done{background:var(--green-lt);border-color:#bbf7d0;color:var(--green)}
 .muted{color:var(--gray);font-size:10.5px}
+.viewbar{display:flex;gap:0;border-bottom:2px solid var(--dark);margin-bottom:10px}
+.view{font-size:12px;font-weight:700;padding:6px 14px;cursor:pointer;color:var(--gray);border-radius:6px 6px 0 0}
+.view:hover{color:var(--dark)}
+.view.on{background:var(--dark);color:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
 .schools{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
 .school{font-size:11.5px;font-weight:600;padding:5px 12px;border:1px solid var(--border);border-radius:16px;background:var(--white);cursor:pointer}
 .school:hover{border-color:var(--dark)}
@@ -95,6 +101,7 @@ tr.cur td{background:#fef9c3}
         <label>Month <input type="month" id="fMonth"></label>
         <button class="btn" id="loadBtn">Open month</button>
       </div>
+      <div class="viewbar" id="viewBar"></div>
       <div id="msgRoot"></div>
       <div id="monthRoot"></div>
       <datalist id="empList"></datalist>
@@ -181,6 +188,9 @@ function monthLabel_(ym) { return new Date(ym + '-01T00:00:00').toLocaleDateStri
 // ── Render ───────────────────────────────────────────────────────────
 function render_() {
   if (!M) return;
+  document.getElementById('viewBar').innerHTML = viewBar_();
+  document.querySelectorAll('[data-view]').forEach(function (el) { el.onclick = function () { show_(el.dataset.view); }; });
+  if (VIEW !== 'month') { renderView_(); return; }
   const rows = scopeRows_();
   const open = openRows_();
   document.getElementById('empList').innerHTML = open.map(function (r) { return '<option value="' + esc_(label_(r)) + '">'; }).join('');
@@ -525,9 +535,10 @@ function adjPanel_() {
     ['Earning', 'Deduction'].map(function (d) {
       return '<optgroup label="' + d + 's">' + types.filter(function (t) { return M.adjTypes[t] === d; }).map(function (t) { return '<option>' + esc_(t) + '</option>'; }).join('') + '</optgroup>';
     }).join('') + '</select> ₹ <input type="number" id="adAmt" min="1" style="width:90px"> <input id="adNote" placeholder="Note (e.g. Aug arrears)" style="width:220px"> <button class="btn" id="adAdd">Add</button></div>';
+  h += recoveries_();
   const items = [];
   scopeRows_().forEach(function (r) { r.adjustments.forEach(function (a) { items.push({ r: r, a: a }); }); });
-  if (!items.length) return h + '<div class="muted">No adjustments this month.</div>';
+  if (!items.length) return h + '<div class="muted">No one-off adjustments this month.</div>';
   h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Type</th><th>Earning</th><th>Deduction</th><th class="l">Note</th><th></th></tr>';
   items.forEach(function (x) {
     const earn = x.a.direction === 'Earning';
@@ -537,6 +548,20 @@ function adjPanel_() {
   });
   return h + '<tr class="total"><td class="l">TOTAL</td><td></td><td></td><td>' + inr_(sum_(items, function (x) { return x.a.direction === 'Earning' ? x.a.amount : 0; })) +
     '</td><td>' + inr_(sum_(items, function (x) { return x.a.direction === 'Deduction' ? x.a.amount : 0; })) + '</td><td></td><td></td></tr></table></div>';
+}
+
+// Automatic advance / RRF-loan recoveries this month (stage 4). A skip needs the
+// employee's application as the reason (Uday, 2026-09-30).
+function recoveries_() {
+  const rs = scopeRows_().filter(function (r) { return r.loanDue || r.loanRecovery; });
+  if (!rs.length) return '';
+  return '<h2 style="font-size:12px">Advance / loan recoveries (' + rs.length + ')</h2><div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Outstanding</th><th>Due</th><th>Recovering</th><th class="l">Skip this month (reason = employee’s application)</th></tr>' +
+    rs.map(function (r) {
+      const locked = isLocked_(r.entity);
+      return '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + inr_(r.loanBalance) + '</td><td>' + inr_(r.loanDue) + '</td><td>' + inr_(r.loanRecovery) +
+        '</td><td class="l">' + (locked || !r.input ? esc_(r.skipReason || '') : '<input data-skipreason="' + esc_(r.code) + '" value="' + esc_(r.skipReason || '') + '" placeholder="e.g. application dated 5 Oct" style="width:200px"> ' +
+          '<button class="mini-btn" data-skip="' + esc_(r.code) + '">' + (r.skipLoan ? 'Resume recovery' : 'Skip') + '</button>') + '</td></tr>';
+    }).join('') + '</table></div>';
 }
 
 // ④ Holds -- this month's holds, and releasing earlier held salary.
@@ -606,7 +631,7 @@ function registerCols_() {
     ['Days', function (r) { return r.paidDays; }], ['Basic', function (r) { return r.basic; }, false, true], ['ADA', function (r) { return r.ada; }, false, true],
     ['DA', function (r) { return r.da; }, false, true], ['Gross', function (r) { return r.gross; }, false, true],
     ['EPF', function (r) { return r.epf; }, false, true], ['ESI', function (r) { return r.esi; }, false, true],
-    ['RRF', function (r) { return r.rrf; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
+    ['RRF', function (r) { return r.rrf; }, false, true], ['Loan Rec', function (r) { return r.loanRecovery; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
     ['Net Pay', function (r) { return r.net; }, false, true], ['Bank', function (r) { return r.bankPayable; }, false, true],
     ['CTI', function (r) { return r.cti; }, false, true], ['Gratuity Prov', function (r) { return r.gratuityProvision; }, false, true],
     ['ERP Net', function (r) { return r.erpNet; }, false, true], ['Net Diff', netDiff_, false, true, true],
@@ -683,6 +708,14 @@ function wire_() {
       post_('markleft', { code: code, lastDay: d }, 'Saving…', code + ' marked left from ' + d + '.');
     };
   });
+  document.querySelectorAll('[data-skip]').forEach(function (b) {
+    b.onclick = function () {
+      const r = M.rows.find(function (x) { return x.code === b.dataset.skip; });
+      const reason = q('[data-skipreason="' + b.dataset.skip + '"]').value.trim();
+      if (!r.skipLoan && !reason) { alert('Enter the reason (the employee’s application) to skip this month’s recovery.'); return; }
+      post_('saveinputs', { rows: [{ code: r.code, skipLoan: !r.skipLoan, skipReason: reason }] }, 'Saving…', r.skipLoan ? 'Recovery resumed for ' + r.name + '.' : 'Recovery skipped this month for ' + r.name + '.');
+    };
+  });
   if (q('#lvTemplate')) q('#lvTemplate').onclick = downloadLeaveTemplate_;
   if (q('#lvUpload')) q('#lvUpload').onclick = function () { q('#lvFile').click(); };
   if (q('#lvFile')) q('#lvFile').onchange = function (e) { if (e.target.files[0]) uploadLeave_(e.target.files[0]); e.target.value = ''; };
@@ -747,9 +780,248 @@ function exportCsv_() {
   a.click();
 }
 
+
+// ── Stage 4 views (2026-09-30): Accounts & loans · Full & Final · Opening balances ──
+let VIEW = 'month', ACC = null, FNF = null, OPENING = null;
+const VIEWS = [['month', 'Month checklist'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances']];
+
+function viewBar_() {
+  return VIEWS.map(function (v) { return '<span class="view' + (VIEW === v[0] ? ' on' : '') + '" data-view="' + v[0] + '">' + v[1] + '</span>'; }).join('');
+}
+function show_(v) {
+  VIEW = v; FNF = null;
+  if (v === 'month') { render_(); return; }
+  loadAccounts_();
+}
+function loadAccounts_(okMsg) {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingPill').classList.add('on');
+  return payGet_('accounts', { month: M ? M.month : document.getElementById('fMonth').value }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    ACC = res;
+    msg.innerHTML = okMsg ? '<div class="ok">' + esc_(okMsg) + '</div>' : '';
+    render_();
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+// Writes from these views return the month; refresh both.
+function postAcc_(action, data, label, okMsg) {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingText').textContent = label; document.getElementById('loadingPill').classList.add('on');
+  return payPost_(action, Object.assign({ month: M.month }, data)).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
+    M = res;
+    return loadAccounts_(okMsg).then(function () { return true; });
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; return false; });
+}
+function accInScope_(a) { return SCOPE === 'ALL' || a.entity === SCOPE; }
+function schoolOf_(a) { return a.former ? 'Former' : ENTITY_LABEL[a.entity] || a.entity; }
+
+function renderView_() {
+  const root = document.getElementById('monthRoot');
+  if (!ACC) { root.innerHTML = ''; return; }
+  root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
+  wireViews_();
+}
+
+// ── Accounts & loans ──
+function accountsView_() {
+  const cti = {};
+  M.rows.forEach(function (r) { cti[r.code] = r.cti; });
+  const target = M.settings.rrfTargetMonths;
+  const list = ACC.accounts.filter(accInScope_).sort(function (a, b) { return (a.former - b.former) || (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : a.code < b.code ? -1 : 1); });
+  let h = '<h2>Accounts &amp; loans <span class="muted">— balances today (Ledger), gratuity as at ' + monthLabel_(M.month) + '</span></h2>';
+  if (!ACC.openingImported) h += '<div class="warn">Opening balances (Tally, 31-Aug-2026) are not imported yet — see <b>Opening balances</b>. Until then RRF, Security and advances start from zero.</div>';
+  h += '<div class="wrap" style="max-height:55vh"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Status</th><th>RRF</th><th>RRF target (' + target + '× CTI)</th><th>Security</th><th>Held salary</th>' +
+    '<th>Advance / loan due</th><th>Monthly recovery</th><th>Gratuity accrued</th><th>Payable if left now</th></tr>';
+  list.forEach(function (a) {
+    const t = cti[a.code] ? target * cti[a.code] : null;
+    const status = a.settled ? 'F&amp;F settled ' + esc_(a.settled) : a.former ? 'Former staff' : a.left ? 'Left ' + esc_(a.lwd) : 'Active';
+    h += '<tr><td class="l">' + esc_(a.code + ' — ' + a.name) + '</td><td class="l">' + schoolOf_(a) + '</td><td class="l">' + status + '</td><td>' + inr_(a.rrf) + '</td><td class="' + (t && a.rrf < t ? 'neg' : '') + '">' + (t ? inr_(t) : '') +
+      '</td><td>' + inr_(a.security) + '</td><td>' + inr_(a.held) + '</td><td>' + inr_(a.loan) + '</td><td>' + inr_(a.loanMonthly) + '</td><td>' +
+      (a.gratuity ? inr_(a.gratuity.accrued) + ' <span class="muted">(' + a.gratuity.years + ' yr)</span>' : '') + '</td><td>' + (a.gratuity ? inr_(a.gratuity.payable) : '') + '</td></tr>';
+  });
+  const col = function (k) { return inr_(sum_(list, function (a) { return a[k]; })); };
+  h += '<tr class="total"><td class="l">TOTAL (' + list.length + ')</td><td></td><td></td><td>' + col('rrf') + '</td><td></td><td>' + col('security') + '</td><td>' + col('held') + '</td><td>' + col('loan') + '</td><td>' + col('loanMonthly') +
+    '</td><td>' + inr_(sum_(list, function (a) { return a.gratuity ? a.gratuity.accrued : 0; })) + '</td><td>' + inr_(sum_(list, function (a) { return a.gratuity ? a.gratuity.payable : 0; })) + '</td></tr></table></div>';
+
+  h += '<h2 style="font-size:12px;margin-top:10px">Give a salary advance or RRF loan</h2><div class="note">Recovered automatically from salary each month from the start month (shown in ③ Adjustments; a skip needs the employee’s application). RRF loan: at most 70% of the RRF balance, once every 2 years.</div>' +
+    '<div class="addrow"><input list="empList" id="lnEmp" placeholder="Search employee…"> <select id="lnType"><option>Salary Advance</option><option>RRF Loan</option></select> ₹ <input type="number" id="lnAmt" min="1" placeholder="Amount" style="width:90px">' +
+    ' recover ₹ <input type="number" id="lnMonthly" min="1" placeholder="per month" style="width:90px"> given on <input type="date" id="lnDate"> from <input type="month" id="lnStart"> <input id="lnNote" placeholder="Note" style="width:160px"> <button class="btn" id="lnAdd">Record</button></div>';
+  const loans = ACC.loans.filter(function (l) { const a = ACC.accounts.find(function (x) { return x.code === l.code; }); return !a || accInScope_(a); });
+  h += '<h2 style="font-size:12px;margin-top:10px">Advances &amp; loans (' + loans.length + ')</h2>';
+  h += loans.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">Type</th><th class="l">Given</th><th>Amount</th><th>Monthly</th><th class="l">From</th><th>Outstanding (all loans)</th><th class="l">Status</th><th class="l">Notes</th></tr>' +
+    loans.map(function (l) {
+      const a = ACC.accounts.find(function (x) { return x.code === l.code; }) || {};
+      return '<tr><td class="l">' + esc_(l.code + (a.name ? ' — ' + a.name : '')) + '</td><td class="l">' + esc_(l.type) + '</td><td class="l">' + esc_(l.givenOn) + '</td><td>' + inr_(l.amount) + '</td><td>' + inr_(l.monthly) +
+        '</td><td class="l">' + esc_(l.start) + '</td><td>' + inr_(a.loan) + '</td><td class="l">' + (a.loan > 0 ? esc_(l.status) : 'Repaid') + '</td><td class="l muted">' + esc_(l.notes) + '</td></tr>';
+    }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+  return h;
+}
+
+// ── Full & Final ──
+const FNF_FIELDS = [ // [key, label, side]
+  ['clDays', 'CL days to encash', 'e'], ['clRate', 'CL rate per day (₹, default last net ÷ 30)', 'e'], ['noticePay', 'Notice Pay (₹)', 'e'], ['otherEarnings', 'Other earnings (₹)', 'e'],
+  ['noticeRecovery', 'Notice Period Recovery (₹)', 'd'], ['studentCollection', 'Collection from Students (₹)', 'd'], ['wardFee', 'Outstanding Fee of Ward (₹)', 'd'], ['otherDues', 'Any Other Dues / Recovery (₹)', 'd']];
+function fnfView_() {
+  const open = ACC.accounts.filter(function (a) { return a.left && !a.settled && accInScope_(a); });
+  const done = ACC.accounts.filter(function (a) { return a.settled && accInScope_(a); });
+  let h = '<h2>Full &amp; Final settlement</h2><div class="note">For staff marked left (Staff changes) and former staff with balances. Resignation rules: notice is 90 days after 11+ months of service, otherwise 30; salary drawn for the last vacation may be refundable if leaving within 3 years. Settling pays out Security, RRF and held salary, recovers any advance, and closes their balances.</div>';
+  h += '<div class="addrow">Employee <select id="fnfPick"><option value="">— choose (' + open.length + ' to settle) —</option>' + open.map(function (a) {
+    return '<option value="' + esc_(a.code) + '"' + (FNF && FNF.code === a.code ? ' selected' : '') + '>' + esc_(a.code + ' — ' + a.name + ' (' + schoolOf_(a) + (a.lwd ? ', left ' + a.lwd : '') + ')') + '</option>';
+  }).join('') + '</select></div>';
+  if (FNF && FNF.st) {
+    const st = FNF.st, a = st.account;
+    const line = function (label, v) { return '<tr><td class="l">' + label + '</td><td>' + inr_(v) + '</td></tr>'; };
+    h += '<div class="two">' +
+      '<div><h2 style="font-size:12px">Earnings</h2><div class="wrap"><table>' + line('Salary Security (held salary)', st.earnings.salarySecurity) + line('Security', st.earnings.security) + line('RRF', st.earnings.rrf) +
+      line('Gratuity' + (a.gratuity ? ' (' + a.gratuity.years + ' yr' + (a.gratuity.vested ? '' : ', under 5 years — not payable') + ')' : ''), st.earnings.gratuity) +
+      line('CL Encashment (' + st.clDays + ' × ₹' + inr_(st.clRate) + ')', st.earnings.clEncashment) + line('Notice Pay', st.earnings.noticePay) + line('Other earnings', st.earnings.otherEarnings) +
+      '<tr class="total"><td class="l">Total earnings</td><td>' + inr_(st.totalEarnings) + '</td></tr></table></div></div>' +
+      '<div><h2 style="font-size:12px">Deductions</h2><div class="wrap"><table>' + line('Notice Period Recovery', st.deductions.noticeRecovery) + line('Advance / loan outstanding', st.deductions.loan) +
+      line('Collection from Students', st.deductions.studentCollection) + line('Outstanding Fee of Ward', st.deductions.wardFee) + line('Any Other Dues / Recovery', st.deductions.otherDues) +
+      '<tr class="total"><td class="l">Total deductions</td><td>' + inr_(st.totalDeductions) + '</td></tr></table></div></div></div>' +
+      '<div class="status"><span><div class="k">Net payable</div><div class="v">₹' + inr_(st.net) + '</div></span><span class="muted">' + esc_(a.code + ' — ' + a.name) + (a.doj ? ' · joined ' + esc_(a.doj) : '') + (a.lwd ? ' · last day ' + esc_(a.lwd) : '') + '</span></div>';
+    h += '<div class="addrow">' + FNF_FIELDS.map(function (f) {
+      return '<label class="muted">' + f[1] + ' <input type="number" min="0" id="fnf_' + f[0] + '" value="' + esc_(FNF.manual[f[0]] == null ? '' : FNF.manual[f[0]]) + '" style="width:90px"></label>';
+    }).join(' ') + ' <button class="mini-btn" id="fnfCalc">Recalculate</button></div>' +
+      '<div class="addrow">Paid on <input type="date" id="fnfPaid"> via <select id="fnfMode"><option>Bank transfer</option><option>Cheque</option><option>Cash</option></select> ref <input id="fnfRef" placeholder="UTR / cheque no." style="width:150px">' +
+      ' <input id="fnfNotes" placeholder="Notes" style="width:200px"> <button class="btn" id="fnfSettle">Settle &amp; close balances</button> <button class="mini-btn" id="fnfPrint">🖨 Print form</button></div>';
+  }
+  h += '<h2 style="font-size:12px;margin-top:10px">Settled (' + done.length + ')</h2>' + (done.length ? '<div class="muted">' + done.map(function (a) { return esc_(a.code + ' — ' + a.name + ' · ' + a.settled); }).join('<br>') + '</div>' : '<div class="muted">None yet.</div>');
+  return h;
+}
+function fnfManual_() {
+  const m = {};
+  FNF_FIELDS.forEach(function (f) { const el = document.getElementById('fnf_' + f[0]); if (el && el.value !== '') m[f[0]] = el.value; });
+  return m;
+}
+function fnfLoad_(code, manual) {
+  if (!code) { FNF = null; render_(); return; }
+  document.getElementById('loadingPill').classList.add('on');
+  payGet_('fnfpreview', { code: code, manual: manual || {} }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { document.getElementById('msgRoot').innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    FNF = { code: code, st: res.statement, manual: manual || {} };
+    render_();
+  });
+}
+function fnfPrint_() {
+  const st = FNF.st, a = st.account, r = function (v) { return inr_(v); };
+  const rows = [['Salary Security', r(st.earnings.salarySecurity), 'Notice Period Deduction', r(st.deductions.noticeRecovery)],
+    ['Security', r(st.earnings.security), 'Collection from Students', r(st.deductions.studentCollection)], ['RRF', r(st.earnings.rrf), 'Outstanding Fee of Ward', r(st.deductions.wardFee)],
+    ['Gratuity', r(st.earnings.gratuity), 'Advance / Loan Outstanding', r(st.deductions.loan)], ['CL Encashment', r(st.earnings.clEncashment), 'Any Other Dues / Recovery', r(st.deductions.otherDues)],
+    ['Notice Pay', r(st.earnings.noticePay), '', ''], ['Other', r(st.earnings.otherEarnings), '', ''], ['<b>Total Earnings</b>', '<b>' + r(st.totalEarnings) + '</b>', '<b>Total Deduction</b>', '<b>' + r(st.totalDeductions) + '</b>']];
+  const w = window.open('', '_blank');
+  w.document.write('<html><head><title>Full & Final — ' + esc_(a.name) + '</title><style>body{font-family:Arial;padding:30px;font-size:13px}h1{font-size:20px;text-align:center;margin:0}p.c{text-align:center;margin:2px}' +
+    'table{border-collapse:collapse;width:100%;margin:14px 0}td{border:1px solid #333;padding:6px}td.n{text-align:right}.f td{border:none;padding:4px 0}</style></head><body>' +
+    '<h1>HIDIMBA EDUCATIONAL SOCIETY</h1><p class="c">The Mall, Dhalpur, Kullu-175101 · Running &amp; Managing La Montessori Chain of Schools</p><h2 style="text-align:center;font-size:15px">FULL &amp; FINAL SETTLEMENT FORM</h2>' +
+    '<table class="f"><tr><td>Name: <b>' + esc_(a.name) + '</b></td><td>Employee ID: <b>' + esc_(a.code) + '</b></td></tr><tr><td>Designation: ' + esc_(a.designation || '') + '</td><td>School: ' + esc_(schoolOf_(a)) + '</td></tr>' +
+    '<tr><td>Date of Joining: ' + esc_(a.doj) + '</td><td>Date of Relieving: ' + esc_(a.lwd) + '</td></tr></table>' +
+    '<table><tr><td><b>Earnings</b></td><td class="n"><b>Amount</b></td><td><b>Deductions</b></td><td class="n"><b>Amount</b></td></tr>' +
+    rows.map(function (x) { return '<tr><td>' + x[0] + '</td><td class="n">' + x[1] + '</td><td>' + x[2] + '</td><td class="n">' + x[3] + '</td></tr>'; }).join('') + '</table>' +
+    '<p>Net Payable in Rupees: <b>₹' + r(st.net) + '</b></p><p>Prepared by: ____________________ &nbsp; Signature: ____________________</p>' +
+    '<h3 style="text-align:center">Receipt</h3><p>It is certified that I have received my full and final settlement from La Montessori School via ______________ vide cheque / reference ______________ for the mentioned amount. Being the full and final settlement of my dues, I have no further claim of whatsoever nature in the future.</p>' +
+    '<p>Signature: ____________________ &nbsp; Name: ____________________</p></body></html>');
+  w.document.close(); w.print();
+}
+
+// ── Opening balances (Tally mapping workbook) ──
+function openingView_() {
+  let h = '<h2>Opening balances — Tally, 31 Aug 2026</h2>';
+  h += ACC.openingImported ? '<div class="ok">Opening balances are imported. Re-importing replaces them (tick “replace”).</div>' : '<div class="warn">Not imported yet.</div>';
+  h += '<div class="note">Upload <b>Payroll - Tally opening balance mapping (to 31-Aug-2026).xlsx</b> after filling its yellow cells. Codes used: <b>Confirmed Code</b> if filled (<b>NONE</b> = has left — the balance stays payable at F&amp;F as former staff), otherwise the <b>Suggested Code</b> for Exact / Code differs / Likely rows. <b>Check</b> rows need a Confirmed Code unless you tick “accept suggestions”. Advances need a Monthly Recovery. ' +
+    'RRF “stop at target” is currently <b>' + (M.settings.rrfStopAtTarget ? 'ON' : 'OFF') + '</b>' + (M.settings.rrfStopAtTarget ? '' : ' — after importing, set “RRF Stop At Target (1=Yes)” to 1 in PayRoll Constants so RRF follows the 3 × CTI rule') + '.</div>';
+  h += '<div class="addrow"><button class="btn" id="opUpload">⬆ Upload mapping workbook</button><input type="file" id="opFile" accept=".xlsx" style="display:none"> <label class="muted"><input type="checkbox" id="opAccept"' + (OPENING && OPENING.accept ? ' checked' : '') + '> accept suggestions for unconfirmed Check rows</label></div>';
+  if (!OPENING) return h;
+  const p = OPENING.parsed;
+  const tot = {};
+  p.balances.forEach(function (b) { tot[b.account] = (tot[b.account] || 0) + b.amount; });
+  h += '<div class="status">' + stat_('RRF', '₹' + inr_(tot.RRF || 0)) + stat_('Security', '₹' + inr_(tot.Security || 0)) + stat_('Lines', p.balances.length) +
+    stat_('Former staff', p.balances.filter(function (b) { return b.former; }).length) + stat_('Advances', '₹' + inr_(sum_(p.loans, function (l) { return l.amount; })) + ' · ' + p.loans.length) + '</div>';
+  if (p.problems.length) h += '<div class="err"><b>' + p.problems.length + ' row(s) to resolve before importing:</b><br>' + p.problems.map(esc_).join('<br>') + '</div>';
+  else h += '<div class="addrow"><label class="muted"><input type="checkbox" id="opReplace"> replace an earlier import</label> <button class="btn" id="opImport">Import ' + (p.balances.length + p.loans.length) + ' opening balance(s)</button></div>';
+  return h;
+}
+function codeFromTally_(name) {
+  const m = String(name).match(/([A-Z]{3})[-\/ ]*(\d{2})\/(\d{1,2})\/(\d+)/);
+  return m ? m[1] + '/' + m[2] + '/' + m[3].padStart(2, '0') + '/' + m[4] : 'FORMER: ' + String(name).trim();
+}
+function parseOpening_(wb, accept) {
+  const sheet = function (n) {
+    const ws = wb.getWorksheet(n); if (!ws) throw new Error('Workbook has no "' + n + '" sheet');
+    const hdr = ws.getRow(1).values.map(function (v) { return String(cellVal_(v)).trim(); });
+    const out = [];
+    ws.eachRow(function (row, i) { if (i === 1) return; const o = {}; hdr.forEach(function (h, j) { if (h) o[h] = cellVal_(row.getCell(j).value); }); out.push(o); });
+    return out;
+  };
+  const problems = [], balances = [], loans = [];
+  sheet('Mapping').forEach(function (r) {
+    if (!r['Tally Ledger Name'] || !(Number(r['Balance 31-Aug (Rs)']) > 0)) return;
+    const conf = String(r['Confirmed Code'] || '').trim().toUpperCase(), status = String(r['Status'] || '');
+    let code = '', former = false;
+    if (conf === 'NONE' || (!conf && /^not on/i.test(status))) { former = true; code = codeFromTally_(r['Tally Ledger Name']); }
+    else if (conf) code = conf;
+    else if (/^(exact|code differs|likely)/i.test(status) || (accept && /^check/i.test(status))) code = String(r['Suggested Code'] || '').trim();
+    else problems.push('Mapping: "' + r['Tally Ledger Name'] + '" (' + status + ') — fill Confirmed Code' + (r['Suggested Code'] ? ' (suggested ' + r['Suggested Code'] + ')' : ''));
+    if (code) balances.push({ code: code, account: String(r['Account']), amount: Number(r['Balance 31-Aug (Rs)']), source: String(r['Tally Branch'] + ': ' + r['Tally Ledger Name']), former: former });
+  });
+  sheet('Advances').forEach(function (r) {
+    if (!r['Tally Ledger'] || r['Tally Ledger'] === 'TOTAL' || !(Number(r['Balance (Rs)']) > 0)) return;
+    const conf = String(r['Confirmed Code'] || '').trim().toUpperCase();
+    const code = conf === 'NONE' ? codeFromTally_(r['Tally Ledger']) : conf || String(r['Suggested Code'] || '').trim();
+    if (!code) { problems.push('Advances: "' + r['Tally Ledger'] + '" — fill Confirmed Code (or NONE if not on payroll)'); return; }
+    const former = conf === 'NONE';
+    if (!former && !(Number(r['Monthly Recovery (Rs)']) > 0)) problems.push('Advances: "' + r['Tally Ledger'] + '" — fill Monthly Recovery');
+    loans.push({ code: code, amount: Number(r['Balance (Rs)']), monthly: Number(r['Monthly Recovery (Rs)']) || 0, source: String(r['Tally Branch'] + ': ' + r['Tally Ledger']), history: String(r['Recovery history'] || ''), former: former });
+  });
+  return { balances: balances, loans: loans, problems: problems };
+}
+
+function wireViews_() {
+  const q = function (s) { return document.querySelector(s); };
+  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; render_(); }; });
+  if (q('#lnAdd')) q('#lnAdd').onclick = function () {
+    const r = pick_('lnEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
+    postAcc_('issueloan', { code: r.code, type: q('#lnType').value, amount: q('#lnAmt').value, monthly: q('#lnMonthly').value, givenOn: q('#lnDate').value, startMonth: q('#lnStart').value, notes: q('#lnNote').value },
+      'Recording…', q('#lnType').value + ' recorded for ' + r.name + '.');
+  };
+  if (q('#fnfPick')) q('#fnfPick').onchange = function () { fnfLoad_(this.value, {}); };
+  if (q('#fnfCalc')) q('#fnfCalc').onclick = function () { fnfLoad_(FNF.code, fnfManual_()); };
+  if (q('#fnfPrint')) q('#fnfPrint').onclick = fnfPrint_;
+  if (q('#fnfSettle')) q('#fnfSettle').onclick = function () {
+    const manual = fnfManual_();
+    if (!q('#fnfPaid').value) { alert('Enter the payment date.'); return; }
+    if (!confirm('Settle Full & Final for ' + FNF.st.account.name + ' — net ₹' + inr_(FNF.st.net) + '?\n\nThis pays out Security, RRF and held salary, recovers the advance, and closes their balances. It cannot be redone from the portal.')) return;
+    postAcc_('settlefnf', { code: FNF.code, manual: manual, paidOn: q('#fnfPaid').value, mode: q('#fnfMode').value, reference: q('#fnfRef').value, notes: q('#fnfNotes').value },
+      'Settling…', 'Full & Final settled for ' + FNF.st.account.name + '.').then(function (ok) { if (ok) FNF = null; });
+  };
+  if (q('#opUpload')) q('#opUpload').onclick = function () { q('#opFile').click(); };
+  if (q('#opAccept')) q('#opAccept').onchange = function () {
+    if (OPENING) { OPENING.accept = this.checked; OPENING.parsed = parseOpening_(OPENING.wb, this.checked); render_(); }
+  };
+  if (q('#opFile')) q('#opFile').onchange = function (e) {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    loadExcelJs_().then(function () { return f.arrayBuffer(); }).then(function (buf) {
+      const wb = new ExcelJS.Workbook();
+      return wb.xlsx.load(buf).then(function () {
+        const accept = !!(q('#opAccept') && q('#opAccept').checked);
+        OPENING = { wb: wb, accept: accept, parsed: parseOpening_(wb, accept) };
+        render_();
+      });
+    }).catch(function (err) { document.getElementById('msgRoot').innerHTML = '<div class="err">Could not read the workbook: ' + esc_(err.message) + '</div>'; });
+  };
+  if (q('#opImport')) q('#opImport').onclick = function () {
+    const p = OPENING.parsed, replace = q('#opReplace').checked;
+    if (!confirm('Import ' + p.balances.length + ' RRF/Security balance(s) and ' + p.loans.length + ' advance(s) as of 31-Aug-2026' + (replace ? ', replacing the earlier import' : '') + '?')) return;
+    postAcc_('importopening', { balances: p.balances, loans: p.loans, replace: replace }, 'Importing…', 'Opening balances imported.').then(function (ok) { if (ok) OPENING = null; });
+  };
+}
+
 function load_() {
   LEAVE_PREVIEW = null;
-  call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…');
+  call_(payGet_('month', { month: document.getElementById('fMonth').value }), 'Opening month…').then(function (ok) { if (ok && VIEW !== 'month') loadAccounts_(); });
 }
 
 function showApp(session) {

@@ -54,17 +54,25 @@ const PAY_TABS = {
   // one-offs live in the Adjustments tab (2026-09-30).
   'Monthly Inputs': ['Month', 'Employee Code', 'Paid Days', 'CL Days Encashed', 'Hold for F&F (Y/N)', 'Other Earnings',
     'Other Earnings Note', 'Other Deductions', 'Other Deductions Note', 'Updated By', 'Updated At',
-    'Hold (F&F/Grievance)', 'Release Held (₹)'],
+    'Hold (F&F/Grievance)', 'Release Held (₹)', 'Skip Loan Recovery (Y/N)', 'Skip Reason'],
   'Adjustments': ['ID', 'Month', 'Employee Code', 'Type', 'Direction', 'Amount', 'Note', 'Added By', 'Added At'],
   'Payroll Register': ['Month', 'Employee Code', 'Name', 'Entity', 'Designation', 'Paid Days', 'Month Basic', 'ADA', 'DA',
     'CL Encashment', 'Tuition (A)', 'Other Earnings', 'Gross', 'EPF Employee', 'ESI Employee', 'RRF Rate', 'RRF',
     'Tuition (D)', 'Other Deductions', 'Total Deductions', 'Net Pay', 'Bank Payable', 'Held for F&F', 'EPF Employer',
-    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held'],
+    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held', 'Loan Recovery'],
   'Run Log': ['Month', 'Entity', 'Status (Draft/Locked)', 'Headcount', 'Gross', 'Net Pay', 'CTI', 'Settings Snapshot',
     'Locked By', 'Locked At', 'Notes'],
   'Checklist': ['Month', 'Entity', 'Step', 'Done By', 'Done At'],
   'Ledger': ['Date', 'Month', 'Employee Code', 'Account (RRF/Security/Loan/Held Salary)',
     'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)', 'Amount', 'Reference', 'Notes', 'Entered By', 'Entered At'],
+  // Salary advances and RRF loans, recovered automatically each month (stage 4, 2026-09-30).
+  'Loans': ['Loan ID', 'Employee Code', 'Type (Salary Advance/RRF Loan)', 'Given On', 'Amount', 'Monthly Recovery', 'Start Month',
+    'Status (Active/Closed)', 'Notes', 'Added By', 'Added At'],
+  // One row per Full & Final settlement.
+  'F&F': ['F&F ID', 'Employee Code', 'Name', 'Entity', 'Date of Joining', 'Last Working Day', 'Salary Security', 'Security', 'RRF', 'Gratuity',
+    'Gratuity Years', 'CL Days', 'CL Encashment', 'Notice Pay', 'Other Earnings', 'Notice Period Recovery', 'Loan Outstanding', 'Collection from Students',
+    'Outstanding Fee of Ward', 'Other Dues', 'Total Earnings', 'Total Deductions', 'Net Payable', 'Paid On', 'Payment Mode', 'Reference', 'Notes',
+    'Settled By', 'Settled At'],
   'Tally Ledger Map': ['Entity', 'Payroll Head', 'Tally Ledger Name', 'Cost Centre', 'Dr/Cr'],
   'ERP Reference': ['Month', 'Employee Code', 'ERP Gross', 'ERP EPF', 'ERP ESI', 'ERP RRF', 'ERP Net Pay', 'ERP CTI'],
   // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
@@ -85,7 +93,7 @@ const PAY_ADJ_TYPES = {
 // Checklist steps that must be ticked for a school before it can be locked.
 const PAY_STEPS = ['staff', 'leave', 'adjustments', 'holds', 'review'];
 
-const PAY_READ_ACTIONS_ = ['month', 'draft'];
+const PAY_READ_ACTIONS_ = ['month', 'draft', 'accounts', 'fnfpreview'];
 
 function doGet(e) {
   return payHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data ? JSON.parse(e.parameter.data) : {});
@@ -124,10 +132,15 @@ function payHandle_(action, idToken, data) {
       addemployee: function (ss) { payNewMasterRow_(ss, data, caller); },
       markleft: function (ss) { payMarkLeft_(ss, data); },
       applytransfer: function (ss) { payApplyTransfer_(ss, data, caller); },
+      importopening: function (ss) { payImportOpening_(ss, data, caller); },
+      issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
+      settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
     };
     let result;
     if (action === 'month' || action === 'draft') result = payMonth_(payOpen_(), data.month);
     else if (action === 'previewleave') result = { preview: payUploadLeave_(payOpen_(), data, caller, true) };
+    else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
+    else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
     return payJson_(Object.assign({ success: true }, result));
@@ -311,7 +324,7 @@ const PAY_REG_FIELDS = [['Paid Days', 'paidDays'], ['Month Basic', 'basic'], ['A
   ['Other Deductions', 'otherDeductions'], ['Total Deductions', 'totalDeductions'], ['Net Pay', 'net'],
   ['Bank Payable', 'bankPayable'], ['Held for F&F', 'heldForFnF'], ['Withheld (Grievance)', 'withheld'],
   ['Released Held', 'released'], ['EPF Employer', 'epfEmployer'], ['ESI Employer', 'esiEmployer'], ['CTI', 'cti'],
-  ['Gratuity Provision', 'gratuityProvision']];
+  ['Gratuity Provision', 'gratuityProvision'], ['Loan Recovery', 'loanRecovery']];
 
 function payForMonth_(ss, tab, month) {
   return payRows_(ss.getSheetByName(tab)).filter(function (r) { return payMonthKey_(r['Month']) === month; });
@@ -438,6 +451,9 @@ function payCompute_(ss, month) {
   const leave = {};
   payForMonth_(ss, 'Leave Records', month).forEach(function (l) { leave[String(l['Employee Code']).trim()] = payLeaveRecord_(l); });
   const heldBalance = payLedgerBalances_(ss, 'Held Salary', month);
+  const securityBalance = payLedgerBalances_(ss, 'Security', month);
+  const loanBalance = payLedgerBalances_(ss, 'Loan', month);
+  const loanSched = payLoanSchedules_(ss, month);
 
   const rows = [];
   Object.keys(master).forEach(function (code) {
@@ -453,6 +469,9 @@ function payCompute_(ss, month) {
     const employed = payEmployedDays_(doj, lwd, ctx0);
     const paidDays = inp['Paid Days'] === undefined || inp['Paid Days'] === '' ? (employed < ctx0.daysInMonth ? employed : '') : inp['Paid Days'];
     const adj = adjustments[code] || [];
+    // Advance / RRF-loan recovery: the scheduled monthly amount, never more than what is still owed.
+    const loanDue = Math.max(0, Math.min(loanSched[code] || 0, loanBalance[code] || 0));
+    const skipLoan = payYes_(inp['Skip Loan Recovery (Y/N)']);
     const sumDir = function (dir) { return adj.reduce(function (t, a) { return t + (a.direction === dir ? a.amount : 0); }, 0); };
     const hold = /^f/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'fnf'
       : /^g/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'grievance'
@@ -461,12 +480,14 @@ function payCompute_(ss, month) {
       { fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
         tuition: payNum_(r['Staff-Child Tuition']), doj: doj },
       { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
-        otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction') },
+        otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue },
       rates[entity], settings, Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0));
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
     rows.push(Object.assign({ code: code, name: String(r['Name'] || '').trim(), entity: entity,
       designation: String(r['Designation'] || '').trim(), adjustments: adj, heldBalance: heldBalance[code] || 0,
       probation: payMonthsBetween_(doj, monthEnd) < 12, vacRule: roleOf(r['Designation']), leave: leave[code] || null,
+      rrfBalance: openingRrf[code] || 0, securityBalance: securityBalance[code] || 0, loanBalance: loanBalance[code] || 0, loanDue: loanDue,
+      skipLoan: skipLoan, skipReason: String(inp['Skip Reason'] || ''),
       input: { paidDays: inp['Paid Days'] === undefined ? '' : inp['Paid Days'], clDays: inp['CL Days Encashed'] || '',
         hold: hold, release: inp['Release Held (₹)'] || '' } }, calc));
   });
@@ -524,6 +545,11 @@ function paySaveInputs_(ss, month, rows, caller) {
     if ('clDays' in r) set('CL Days Encashed', num(r.clDays, 'CL Days', code));
     if ('hold' in r) { set('Hold for F&F (Y/N)', ''); set('Hold (F&F/Grievance)', r.hold === 'fnf' ? 'F&F' : r.hold === 'grievance' ? 'Grievance' : ''); }
     if ('release' in r) set('Release Held (₹)', num(r.release, 'Release Held', code, held[code] || 0));
+    if ('skipLoan' in r) {
+      // Uday, 2026-09-30: skipping a recovery needs the employee's application -- record why.
+      if (r.skipLoan && !String(r.skipReason || '').trim()) throw new Error(code + ': give a reason (the employee\'s application) to skip this month\'s recovery');
+      set('Skip Loan Recovery (Y/N)', r.skipLoan ? 'Y' : ''); set('Skip Reason', r.skipLoan ? String(r.skipReason).trim() : '');
+    }
     set('Updated By', caller.email); set('Updated At', now);
   });
   sheet.getRange(1, 1, values.length, hdr.length).setValues(values);
@@ -617,6 +643,7 @@ function payLock_(ss, month, entity, caller) {
     if (r.heldForFnF) entry(r, 'Held Salary', 'Deduction', r.heldForFnF, 'Salary held for F&F');
     if (r.withheld) entry(r, 'Held Salary', 'Deduction', r.withheld, 'Withheld (grievance) -- release within 2 weeks of the 10th');
     if (r.released) entry(r, 'Held Salary', 'Payout', -r.released, 'Earlier held salary released');
+    if (r.loanRecovery) entry(r, 'Loan', 'Loan Repaid', -r.loanRecovery, 'Recovered from salary');
   });
   payAppend_(ss.getSheetByName('Ledger'), ledger);
 }
@@ -999,4 +1026,223 @@ function payUnlock_(ss, month, entity, caller) {
   del('Run Log', function (o) { return sameMonth(o) && payEntity_(o['Entity']) === e && /^locked/i.test(String(o['Status (Draft/Locked)'] || '')); });
   payAppend_(ss.getSheetByName('Run Log'), [{ 'Month': ctx.start, 'Entity': e, 'Status (Draft/Locked)': 'Unlocked', 'Headcount': reg,
     'Locked By': caller.email, 'Locked At': new Date(), 'Notes': 'Unlocked: removed ' + reg + ' register row(s) and ' + led + ' ledger entr' + (led === 1 ? 'y' : 'ies') }]);
+}
+
+// ── Stage 4: balances, loans, gratuity, F&F (2026-09-30) ─────────────
+// Balances live in the Ledger as signed amounts per account (RRF, Security,
+// Held Salary: money the school holds for the employee; Loan: money the
+// employee owes). Opening balances come from Tally as of 31 Aug 2026.
+const PAY_OPENING_REF = 'Opening 31-Aug-2026';
+const PAY_OPENING_MONTH = new Date(2026, 7, 1); // August -> counts as opening for September onward
+const PAY_ACCOUNTS = ['RRF', 'Security', 'Held Salary', 'Loan'];
+
+function payLedgerAll_(ss) {
+  return payRows_(ss.getSheetByName('Ledger')).map(function (r) {
+    return { code: String(r['Employee Code']).trim(), account: String(r['Account (RRF/Security/Loan/Held Salary)'] || '').trim(),
+      type: String(r['Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)'] || ''), amount: payNum_(r['Amount']),
+      month: payMonthKey_(r['Month']), reference: String(r['Reference'] || ''), notes: String(r['Notes'] || '') };
+  });
+}
+
+// code -> {RRF, Security, Held Salary, Loan} over every ledger entry (current balances).
+function payBalancesNow_(ss) {
+  const out = {};
+  payLedgerAll_(ss).forEach(function (e) {
+    const b = out[e.code] = out[e.code] || { 'RRF': 0, 'Security': 0, 'Held Salary': 0, 'Loan': 0 };
+    const acct = PAY_ACCOUNTS.filter(function (a) { return a.toLowerCase() === e.account.toLowerCase(); })[0];
+    if (acct) b[acct] += e.amount;
+  });
+  return out;
+}
+
+// code -> sum of Monthly Recovery for active loans that have started by `month`.
+function payLoanSchedules_(ss, month) {
+  const out = {};
+  payRows_(ss.getSheetByName('Loans')).forEach(function (l) {
+    if (/^closed/i.test(String(l['Status (Active/Closed)'] || ''))) return;
+    const start = payMonthKey_(l['Start Month']);
+    if (start && start > month) return;
+    const code = String(l['Employee Code']).trim();
+    out[code] = (out[code] || 0) + payNum_(l['Monthly Recovery']);
+  });
+  return out;
+}
+
+// ── Opening balance import (from the confirmed Tally mapping workbook) ──
+// d: {balances: [{code, account, amount, source, former}], loans: [{code, source, amount, monthly, former, history}], replace}
+// All-or-nothing; refused if an opening import already exists unless replace
+// (which first removes the earlier import's ledger entries and loans).
+function payImportOpening_(ss, d, caller) {
+  const ledger = ss.getSheetByName('Ledger');
+  const already = payLedgerAll_(ss).some(function (e) { return e.reference === PAY_OPENING_REF; });
+  if (already && !d.replace) throw new Error('Opening balances were already imported -- tick "replace" to import again');
+  const latest = payMasterLatest_(ss);
+  const errors = [];
+  const check = function (x, what) {
+    const code = String(x.code || '').trim();
+    if (!code) errors.push(what + ' "' + x.source + '": no employee code');
+    else if (!x.former && !latest[code]) errors.push(what + ' "' + x.source + '": ' + code + ' is not in Salary Master');
+    if (!(Number(x.amount) > 0)) errors.push(what + ' "' + x.source + '": amount must be more than 0');
+    return code;
+  };
+  (d.balances || []).forEach(function (b) {
+    check(b, 'Balance');
+    if (['RRF', 'Security'].indexOf(b.account) === -1) errors.push('Balance "' + b.source + '": account must be RRF or Security');
+  });
+  (d.loans || []).forEach(function (l) {
+    check(l, 'Advance');
+    if (!l.former && !(Number(l.monthly) > 0)) errors.push('Advance "' + l.source + '": monthly recovery is required');
+  });
+  if (errors.length) throw new Error(errors.length + ' problem(s): ' + errors.slice(0, 15).join('; ') + (errors.length > 15 ? ' …' : ''));
+
+  if (already) {
+    const v = ledger.getDataRange().getValues();
+    const h = v[0].map(function (x) { return String(x).trim(); });
+    for (let i = v.length - 1; i >= 1; i--) if (String(v[i][h.indexOf('Reference')]) === PAY_OPENING_REF) ledger.deleteRow(i + 1);
+    const loans = ss.getSheetByName('Loans');
+    const lv = loans.getDataRange().getValues();
+    const lh = lv[0].map(function (x) { return String(x).trim(); });
+    for (let i = lv.length - 1; i >= 1; i--) if (/^opening import/i.test(String(lv[i][lh.indexOf('Notes')]))) loans.deleteRow(i + 1);
+  }
+  const now = new Date(), asOf = new Date(2026, 7, 31);
+  const entry = function (code, account, amount, source, former) {
+    return { 'Date': asOf, 'Month': PAY_OPENING_MONTH, 'Employee Code': code, 'Account (RRF/Security/Loan/Held Salary)': account,
+      'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)': 'Opening', 'Amount': Math.round(Number(amount)),
+      'Reference': PAY_OPENING_REF, 'Notes': 'Tally: ' + source + (former ? ' (former staff, payable at F&F)' : ''), 'Entered By': caller.email, 'Entered At': now };
+  };
+  payAppend_(ledger, (d.balances || []).map(function (b) { return entry(String(b.code).trim(), b.account, b.amount, b.source, b.former); })
+    .concat((d.loans || []).map(function (l) { return entry(String(l.code).trim(), 'Loan', l.amount, l.source, l.former); })));
+  payAppend_(ss.getSheetByName('Loans'), (d.loans || []).filter(function (l) { return !l.former; }).map(function (l) {
+    return { 'Loan ID': 'L-' + Utilities.getUuid().slice(0, 6), 'Employee Code': String(l.code).trim(), 'Type (Salary Advance/RRF Loan)': 'Salary Advance',
+      'Given On': '', 'Amount': Math.round(Number(l.amount)), 'Monthly Recovery': Math.round(Number(l.monthly)), 'Start Month': new Date(2026, 8, 1),
+      'Status (Active/Closed)': 'Active', 'Notes': 'Opening import (outstanding 31-Aug-2026): ' + l.source + (l.history ? ' -- ' + l.history : ''),
+      'Added By': caller.email, 'Added At': now };
+  }));
+}
+
+// ── New salary advance / RRF loan ────────────────────────────────────
+// d: {month, code, type ('Salary Advance'|'RRF Loan'), amount, monthly, givenOn, startMonth ('YYYY-MM')}
+// RRF loans (bye-laws): up to 70% of the accumulated RRF, at most once every 2 years.
+function payIssueLoan_(ss, d, caller) {
+  const code = String(d.code || '').trim();
+  if (!payMasterLatest_(ss)[code]) throw new Error(code + ': not on payroll');
+  const amount = Math.round(Number(d.amount)), monthly = Math.round(Number(d.monthly));
+  if (!(amount > 0) || !(monthly > 0)) throw new Error('Amount and monthly recovery must be more than 0');
+  if (['Salary Advance', 'RRF Loan'].indexOf(d.type) === -1) throw new Error('Unknown loan type');
+  const given = payDate_(d.givenOn);
+  if (!given) throw new Error('Date given is required');
+  if (!/^\d{4}-\d{2}$/.test(String(d.startMonth || ''))) throw new Error('Recovery start month is required');
+  if (d.type === 'RRF Loan') {
+    const rrf = (payBalancesNow_(ss)[code] || {})['RRF'] || 0;
+    if (amount > Math.floor(rrf * 0.7)) throw new Error('RRF loan can be at most 70% of the RRF balance (₹' + Math.floor(rrf * 0.7) + ')');
+    const twoYears = new Date(given.getFullYear() - 2, given.getMonth(), given.getDate());
+    const recent = payRows_(ss.getSheetByName('Loans')).filter(function (l) {
+      return String(l['Employee Code']).trim() === code && /rrf/i.test(String(l['Type (Salary Advance/RRF Loan)'])) && (payDate_(l['Given On']) || 0) > twoYears;
+    });
+    if (recent.length) throw new Error('An RRF loan was already given in the last 2 years');
+  }
+  const now = new Date();
+  payAppend_(ss.getSheetByName('Loans'), [{ 'Loan ID': 'L-' + Utilities.getUuid().slice(0, 6), 'Employee Code': code, 'Type (Salary Advance/RRF Loan)': d.type,
+    'Given On': given, 'Amount': amount, 'Monthly Recovery': monthly, 'Start Month': new Date(Number(d.startMonth.slice(0, 4)), Number(d.startMonth.slice(5, 7)) - 1, 1),
+    'Status (Active/Closed)': 'Active', 'Notes': String(d.notes || ''), 'Added By': caller.email, 'Added At': now }]);
+  payAppend_(ss.getSheetByName('Ledger'), [{ 'Date': given, 'Month': new Date(given.getFullYear(), given.getMonth(), 1), 'Employee Code': code,
+    'Account (RRF/Security/Loan/Held Salary)': 'Loan', 'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)': 'Loan Issued',
+    'Amount': amount, 'Reference': d.type + ' ' + payIso_(given), 'Notes': String(d.notes || ''), 'Entered By': caller.email, 'Entered At': now }]);
+}
+
+// ── Accounts: every employee's balances and gratuity ─────────────────
+function payAccounts_(ss, month) {
+  const ctx = payCheckMonth_(month);
+  const rates = payRates_(SpreadsheetApp.openById(PAY_RATES_SHEET_ID));
+  const latest = payMasterLatest_(ss);
+  const bal = payBalancesNow_(ss);
+  const sched = payLoanSchedules_(ss, month);
+  const settled = {};
+  payRows_(ss.getSheetByName('F&F')).forEach(function (f) { settled[String(f['Employee Code']).trim()] = payIso_(payDate_(f['Paid On'])) || 'yes'; });
+  const lastNet = {};
+  payRows_(ss.getSheetByName('Payroll Register')).forEach(function (r) { lastNet[String(r['Employee Code']).trim()] = payNum_(r['Net Pay']); });
+  const rows = [];
+  Object.keys(latest).forEach(function (code) {
+    const r = latest[code].row;
+    const entity = payEntity_(r['Entity']);
+    const doj = payDate_(r['Date of Joining']), lwd = payDate_(r['Last Working Day']);
+    const b = bal[code] || {};
+    const left = !!lwd || /^left/i.test(String(r['Status (Active/Left)'] || ''));
+    const g = doj ? payGratuity_(payNum_(r['Full Basic']), (rates[entity] || {}).da || 0, doj, lwd && lwd < ctx.monthEnd ? lwd : ctx.monthEnd) : null;
+    rows.push({ code: code, name: String(r['Name'] || ''), entity: entity, designation: String(r['Designation'] || ''), doj: payIso_(doj), lwd: payIso_(lwd),
+      left: left, former: false, rrf: b['RRF'] || 0, security: b['Security'] || 0, held: b['Held Salary'] || 0, loan: b['Loan'] || 0,
+      loanMonthly: sched[code] || 0, gratuity: g, lastNet: lastNet[code] || null, settled: settled[code] || '' });
+  });
+  // Ledger balances for people not in the Salary Master (left before payroll started).
+  Object.keys(bal).forEach(function (code) {
+    if (latest[code]) return;
+    const b = bal[code];
+    if (!b['RRF'] && !b['Security'] && !b['Held Salary'] && !b['Loan']) return;
+    const note = payLedgerAll_(ss).filter(function (e) { return e.code === code; })[0];
+    rows.push({ code: code, name: note ? note.notes.replace(/^Tally: /, '').replace(/ \(former staff.*$/, '') : code, entity: '', designation: '', doj: '', lwd: '',
+      left: true, former: true, rrf: b['RRF'], security: b['Security'], held: b['Held Salary'], loan: b['Loan'], loanMonthly: 0, gratuity: null, lastNet: null, settled: settled[code] || '' });
+  });
+  const loans = payRows_(ss.getSheetByName('Loans')).map(function (l) {
+    return { id: String(l['Loan ID']), code: String(l['Employee Code']).trim(), type: String(l['Type (Salary Advance/RRF Loan)']), givenOn: payIso_(payDate_(l['Given On'])),
+      amount: payNum_(l['Amount']), monthly: payNum_(l['Monthly Recovery']), start: payMonthKey_(l['Start Month']), status: String(l['Status (Active/Closed)']), notes: String(l['Notes'] || '') };
+  });
+  return { month: month, accounts: rows, loans: loans, openingImported: payLedgerAll_(ss).some(function (e) { return e.reference === PAY_OPENING_REF; }) };
+}
+
+// ── Full & Final settlement ──────────────────────────────────────────
+// Earnings: Salary Security (held salary), Security, RRF, Gratuity (5+ years),
+// CL Encashment (days × net/30), Notice Pay, Other. Deductions: Notice Period
+// Recovery, loan outstanding, Collection from Students, Outstanding Fee of
+// Ward, Other Dues. (F&F form as revised by Uday, 2026-09-29.)
+const PAY_FNF_MANUAL = ['clDays', 'clRate', 'noticePay', 'otherEarnings', 'noticeRecovery', 'studentCollection', 'wardFee', 'otherDues'];
+
+function payFnfStatement_(ss, code, manual) {
+  const acc = payAccounts_(ss, Utilities.formatDate(new Date(), PAY_TZ, 'yyyy-MM')).accounts.filter(function (a) { return a.code === code; })[0];
+  if (!acc) throw new Error(code + ': no payroll record or balances');
+  if (!acc.left) throw new Error(code + ' has not left -- mark them left in Staff changes first');
+  const m = manual || {};
+  const n = function (k) { const v = Number(m[k]); if (m[k] !== undefined && m[k] !== '' && (isNaN(v) || v < 0)) throw new Error(k + ' must be 0 or more'); return isNaN(v) ? 0 : v; };
+  // CL encashment = net salary / 30 per day (Uday, 2026-09-29): last locked net pay, or -- before any
+  // month is locked -- this month's computed net scaled up to a full month.
+  let lastNet = acc.lastNet;
+  if (!lastNet && !acc.former) {
+    const month = acc.lwd ? acc.lwd.slice(0, 7) : Utilities.formatDate(new Date(), PAY_TZ, 'yyyy-MM');
+    const live = payCompute_(ss, month).rows.filter(function (r) { return r.code === code; })[0];
+    if (live && live.paidDays) lastNet = live.net * payCheckMonth_(month).daysInMonth / live.paidDays;
+  }
+  const clRate = m.clRate === undefined || m.clRate === '' ? Math.round((lastNet || 0) / 30) : n('clRate');
+  const e = { salarySecurity: acc.held, security: acc.security, rrf: acc.rrf, gratuity: acc.gratuity ? acc.gratuity.payable : 0,
+    clEncashment: Math.round(n('clDays') * clRate), noticePay: n('noticePay'), otherEarnings: n('otherEarnings') };
+  const dd = { noticeRecovery: n('noticeRecovery'), loan: acc.loan, studentCollection: n('studentCollection'), wardFee: n('wardFee'), otherDues: n('otherDues') };
+  const sum = function (o) { return Object.keys(o).reduce(function (t, k) { return t + o[k]; }, 0); };
+  return { account: acc, clRate: clRate, clDays: n('clDays'), earnings: e, deductions: dd, totalEarnings: sum(e), totalDeductions: sum(dd), net: sum(e) - sum(dd) };
+}
+
+// d: {month, code, manual: {...}, paidOn, mode, reference, notes}
+function paySettleFnf_(ss, d, caller) {
+  const code = String(d.code || '').trim();
+  if (payRows_(ss.getSheetByName('F&F')).some(function (f) { return String(f['Employee Code']).trim() === code; })) throw new Error(code + ' already has a Full & Final settlement');
+  const st = payFnfStatement_(ss, code, d.manual);
+  const paid = payDate_(d.paidOn);
+  if (!paid) throw new Error('Payment date is required');
+  const a = st.account, now = new Date(), id = 'FNF-' + code;
+  payAppend_(ss.getSheetByName('F&F'), [{ 'F&F ID': id, 'Employee Code': code, 'Name': a.name, 'Entity': a.entity, 'Date of Joining': a.doj, 'Last Working Day': a.lwd,
+    'Salary Security': st.earnings.salarySecurity, 'Security': st.earnings.security, 'RRF': st.earnings.rrf, 'Gratuity': st.earnings.gratuity,
+    'Gratuity Years': a.gratuity ? a.gratuity.years : '', 'CL Days': st.clDays, 'CL Encashment': st.earnings.clEncashment, 'Notice Pay': st.earnings.noticePay,
+    'Other Earnings': st.earnings.otherEarnings, 'Notice Period Recovery': st.deductions.noticeRecovery, 'Loan Outstanding': st.deductions.loan,
+    'Collection from Students': st.deductions.studentCollection, 'Outstanding Fee of Ward': st.deductions.wardFee, 'Other Dues': st.deductions.otherDues,
+    'Total Earnings': st.totalEarnings, 'Total Deductions': st.totalDeductions, 'Net Payable': st.net, 'Paid On': paid,
+    'Payment Mode': String(d.mode || ''), 'Reference': String(d.reference || ''), 'Notes': String(d.notes || ''), 'Settled By': caller.email, 'Settled At': now }]);
+  // Close every balance the settlement paid out or recovered.
+  const month = new Date(paid.getFullYear(), paid.getMonth(), 1);
+  payAppend_(ss.getSheetByName('Ledger'), [['Security', a.security, 'Payout'], ['RRF', a.rrf, 'Payout'], ['Held Salary', a.held, 'Payout'], ['Loan', a.loan, 'Loan Repaid']]
+    .filter(function (x) { return x[1]; }).map(function (x) {
+      return { 'Date': paid, 'Month': month, 'Employee Code': code, 'Account (RRF/Security/Loan/Held Salary)': x[0],
+        'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)': x[2], 'Amount': -x[1], 'Reference': id, 'Notes': 'Full & Final settlement',
+        'Entered By': caller.email, 'Entered At': now };
+    }));
+  const loans = ss.getSheetByName('Loans');
+  const lv = loans.getDataRange().getValues();
+  const lh = lv[0].map(function (x) { return String(x).trim(); });
+  for (let i = 1; i < lv.length; i++) if (String(lv[i][lh.indexOf('Employee Code')]).trim() === code) loans.getRange(i + 1, lh.indexOf('Status (Active/Closed)') + 1).setValue('Closed');
 }
