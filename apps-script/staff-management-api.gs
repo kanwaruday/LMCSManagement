@@ -132,7 +132,7 @@ function staffDoGet_(e) {
     else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
     else if (action === 'installjobrolesync') result = installJobRolePayScaleSyncTriggerAction_(data, caller);
     else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
-    else if (action === 'uploadstatus') result = { schools: checkNewUploads_() };
+    else if (action === 'uploadstatus') result = { schools: checkNewUploads_(e.parameter.force === '1') };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
     else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
     else if (action === 'autoresolvequeue') result = autoResolveFromResponseSheets_(caller);
@@ -358,6 +358,12 @@ function listEmployees_(caller) {
   return cachedStaff_('staff_list_' + caller.campusId, function () { return buildEmployeeList_(caller); });
 }
 
+// Every per-campusId cache key this file (and employee-roster.gs's public
+// roster/employees/designations) ever writes -- shared by bustStaffListCache_
+// below so one list stays the single source of truth for "which keys must
+// die on a write" instead of three copies drifting apart.
+const STAFF_CAMPUS_IDS_ = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'];
+
 function buildEmployeeList_(caller) {
   const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
@@ -385,9 +391,21 @@ function buildEmployeeList_(caller) {
   return out;
 }
 
+// Broadened 2026-09-30 (PayRoll session's perf audit) -- originally only
+// cleared this file's own staff_list_* keys (the Directory). Now also
+// clears documentstatus/verificationqueue's per-campus keys (added below,
+// same caching gap the audit flagged) and employee-roster.gs's
+// emp_employees/emp_roster keys (that file raised its own TTL from 5 min
+// to 1 hour, relying on THIS function to bust it promptly on a real write
+// instead of just waiting out the hour). All three live in the same
+// project's shared CacheService.getScriptCache(), so one removeAll() here
+// clears them regardless of which file's function reads them back.
 function bustStaffListCache_() {
-  const keys = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'].map(function (c) { return 'staff_list_' + c; });
-  CacheService.getScriptCache().removeAll(keys);
+  const prefixed = [];
+  ['staff_list_', 'doc_status_', 'verify_queue_'].forEach(function (prefix) {
+    STAFF_CAMPUS_IDS_.forEach(function (c) { prefixed.push(prefix + c); });
+  });
+  CacheService.getScriptCache().removeAll(prefixed.concat(['emp_employees', 'emp_roster']));
 }
 
 // The real, fixed set of Document Type values in the "Certificate Links"
@@ -446,10 +464,13 @@ function readCertificatesByCode_() {
 // importCertificateLinks() -- this only tells you WHEN a refresh is
 // worth doing, it doesn't automate the refresh itself).
 //
-// Computed LIVE on every 'uploadstatus' call, deliberately uncached, same
-// reasoning as listDocumentStatus_ below: a stale cached number here
-// would be actively misleading (the whole point is freshness), and this
-// is cheap -- six DriveApp folder walks, not a hot per-keystroke path.
+// Cached 1 hour as of 2026-09-30 (PayRoll session's perf audit) -- six
+// DriveApp folder walks turned out NOT cheap in practice on the live
+// Drive tree, and this only needs to answer "roughly how stale is the
+// sheet" -- an hour of staleness on a freshness CHECK is fine, unlike
+// the document/verification data itself. `forceCheck` (the portal's
+// "Check now" button) bypasses and refreshes the cache for when someone
+// really does need the live number right after uploading.
 const CENTRAL_REPO_FOLDER_ID_ = '1ogMId6iUIA2WTnnSsEKqj5eDOxqaZeWJ';
 const SCHOOL_TO_CAMPUS_DIR_ = {
   'LMS 1': 'LMS 1 - Dhalpur', 'LMS 2': 'LMS 2 - Kelheli', 'LMS 3': 'LMS 3 - Dunkhra',
@@ -495,7 +516,20 @@ function countCertFilesInFormRoot_(formRoot) {
 // Returns { 'LMS 1': {driveFileCount, sheetRowCount, delta} | null, ... }
 // -- null for a school whose folder chain isn't found (renamed/moved)
 // rather than throwing and breaking the whole response for every school.
-function checkNewUploads_() {
+const UPLOAD_STATUS_CACHE_TTL_SECONDS_ = 3600; // 1 hour -- see comment above
+
+function checkNewUploads_(forceCheck) {
+  const cache = CacheService.getScriptCache();
+  if (!forceCheck) {
+    const hit = cache.get('upload_status');
+    if (hit) return JSON.parse(hit);
+  }
+  const result = computeNewUploads_();
+  cache.put('upload_status', JSON.stringify(result), UPLOAD_STATUS_CACHE_TTL_SECONDS_);
+  return result;
+}
+
+function computeNewUploads_() {
   const root = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
 
   const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
@@ -537,16 +571,20 @@ function checkNewUploads_() {
 // at a glance instead of having to open each person's detail view one by
 // one. Same campus-scoping and AdminTM exclusion as the Directory.
 //
-// NOT cached (unlike listEmployees_) -- CacheService.put() hard-caps a
-// single value at 100KB, and the full ALL-campus payload (up to ~174
-// employees x 8 types) came in over that, throwing "Argument too large:
-// value" instead of caching (found live, 2026-09-24). This only loads
-// once per page visit anyway (not a hot path re-fired per keystroke like
-// nextcode), so a plain uncached read is simpler and safe here -- slimmed
-// to {count, driveLink of the first file} per type instead of every
-// file's full filename+link, both to shrink the response and because
-// that's all the frontend actually renders.
+// Cached per campusId (2026-09-30, PayRoll session's perf audit) -- the
+// 100KB-per-value cap that ruled out caching the ALL-campus payload
+// (2026-09-24 incident, see git history) doesn't apply per-campus: even
+// LMS's largest single campus is well under that. A Coordinator's own
+// request (always one campus) was never the problem; only Owner's 'ALL'
+// request risks the old crash, so that one specific key is deliberately
+// left uncached below -- everything else gets the normal 5-min TTL, busted
+// on reassigncertificate/autoresolvequeue (see bustStaffListCache_).
 function listDocumentStatus_(caller) {
+  if (caller.campusId === 'ALL') return buildDocumentStatus_(caller);
+  return cachedStaff_('doc_status_' + caller.campusId, function () { return buildDocumentStatus_(caller); });
+}
+
+function buildDocumentStatus_(caller) {
   const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
   const header = rows[0];
   const idx = {};
@@ -599,8 +637,20 @@ const STAFF_CAMPUS_SHEET_LABEL_ = {
 // Rows with no Drive Link (the "Unmatched" case has none) are skipped --
 // nothing to actually review without a file to open. NOT cached, same
 // reasoning as listDocumentStatus_ -- this is a review workflow; a stale
-// cached queue would show someone an item that's already been resolved.
+// Cached per campusId as of 2026-09-30 (PayRoll session's perf audit) --
+// "stale queue" risk is real but bounded by the same 5-min TTL as
+// everything else here, and is busted immediately on reassigncertificate/
+// autoresolvequeue (see bustStaffListCache_), so the only staleness window
+// left is two people resolving the exact same item within seconds of each
+// other -- already handled by reassignCertificate_'s "already reassigned
+// by someone else" error on a re-match-miss. Owner's 'ALL' view stays
+// uncached, same 100KB-cap reasoning as listDocumentStatus_ above.
 function listVerificationQueue_(caller) {
+  if (caller.campusId === 'ALL') return buildVerificationQueue_(caller);
+  return cachedStaff_('verify_queue_' + caller.campusId, function () { return buildVerificationQueue_(caller); });
+}
+
+function buildVerificationQueue_(caller) {
   const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
@@ -710,6 +760,7 @@ function reassignCertificate_(data, caller) {
         sheet.getRange(rowNum, statusCol + 1).setValue('Resolved with remark (' + caller.email + ', ' + formatStaffDate_(new Date()) + '): ' + remarks);
       }
     }
+    bustStaffListCache_();
     return { success: true };
   }
   throw new Error('Could not find that document row -- it may have already been reassigned by someone else');
@@ -843,6 +894,7 @@ function autoResolveFromResponseSheets_(caller) {
     if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setValue('Resolved via response-sheet cross-reference (' + caller.email + ', ' + formatStaffDate_(new Date()) + ')');
     resolved++;
   }
+  if (resolved > 0) bustStaffListCache_();
   return { checked: checked, resolved: resolved, unresolvedReasons: reasons, sheetDiagnostics: sheetDiagnostics };
 }
 

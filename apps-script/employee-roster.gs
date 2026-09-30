@@ -79,7 +79,14 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const EMP_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
-const EMP_CACHE_TTL_SECONDS = 300; // 5 min -- see PERF note above
+// 1 hour, raised from 5 min (2026-09-30, PayRoll session's perf audit) --
+// these three (roster/employees/designations) are public reads with no
+// write path of their own to bust on; a new hire/transfer/inactive DOES
+// change them, but that already goes through staff-management-api.gs's
+// bustStaffListCache_(), which now also clears these same keys (see that
+// function) -- so an hour-stale cache here only matters for the rare
+// direct-sheet-edit case, not the normal write flow.
+const EMP_CACHE_TTL_SECONDS = 3600;
 
 // EmployeeCode prefix -> School Code, matching the LMS Campuses convention
 // used throughout the portal. Confirmed against the live sheet 2026-08-27.
