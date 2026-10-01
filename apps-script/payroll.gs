@@ -137,7 +137,7 @@ function payHandle_(action, idToken, data) {
     action = String(action || '').toLowerCase();
     // The Offer Calculator (Principals/Coordinators too) may only append an offer.
     if (action === 'recordoffer') {
-      const staff = payVerifyStaff_(idToken);
+      const staff = payCachedStaff_(idToken);
       if (!staff) return payJson_({ success: false, error: 'Not authorized to record offers' });
       const lock = LockService.getScriptLock();
       lock.waitLock(20000);
@@ -819,6 +819,20 @@ const PAY_APPROVALS_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; /
 function payVerifyStaff_(idToken) {
   const c = payVerifyAllowlist_(idToken);
   return c && c.roles.some(function (r) { return ['Owner', 'Coordinator', 'Principal'].indexOf(r) !== -1; }) ? c : null;
+}
+
+// Cached 5 min, same as payCachedOwner_ -- speed fix (audit 2026-10-01): recordoffer
+// is called on every "Record as Salary Offer" click (Offer Calculator), each one a
+// tokeninfo round trip plus a full Allowlist sheet read with no caching at all.
+function payCachedStaff_(idToken) {
+  const key = 'pay_stafftok_' + Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, idToken || '')
+    .map(function (b) { return ((b + 256) % 256).toString(16).padStart(2, '0'); }).join('');
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const staff = payVerifyStaff_(idToken);
+  if (staff) cache.put(key, JSON.stringify(staff), 300);
+  return staff;
 }
 
 // Days employed in the month: from the later of month start / joining date
