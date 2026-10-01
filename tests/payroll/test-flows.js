@@ -330,4 +330,60 @@ module.exports = function run(t) {
     assert.equal(applied.success, true, applied.error);
     assert.equal(applied.rows.find((r) => r.code === code).basic, stepped, '3-step increment actually applied');
   });
+
+  t.test('tally export: balances per company, blocks on unmapped deductions / missing loan ledger', () => {
+    const T = '2027-11';
+    const loanCode = 'ELK/25/04/100'; // HES, untouched by earlier tests
+    const feeCode = 'FOX/23/09/104'; // LMS1
+    // The Stage 4 test's opening-import loan (FOX/24/02/090) predates the Tally Ledger Name
+    // column and recovers every month forever -- set its ledger once so it stops blocking
+    // every month from here on, same as Uday would do once for a real pre-existing loan.
+    const preexisting = h.books['1sal'].tabs.Loans.values;
+    const preHdr = preexisting[0];
+    const preRow = preexisting.find((r) => r[preHdr.indexOf('Employee Code')] === 'FOX/24/02/090');
+    if (preRow) preRow[preHdr.indexOf('Tally Ledger Name')] = 'Sal Adv. Rakesh Kumar FOX/24/02/090';
+    // Given a month before T -- payLedgerBalances_ only counts entries strictly before the
+    // month being computed, so a loan "given" and due to start in the SAME month wouldn't
+    // actually recover anything that month (its balance isn't on the books yet).
+    const issued = call('issueloan', { month: T, code: loanCode, type: 'Salary Advance', amount: 10000, monthly: 2000, givenOn: '2027-10-15', startMonth: T });
+    if (!issued.success) throw new Error('setup failed: ' + issued.error);
+    call('addadjustment', { month: T, code: feeCode, type: 'Child Fee Recovery', amount: 500 });
+    call('addadjustment', { month: T, code: feeCode, type: 'Fine', amount: 50 });
+    const bad = call('tallyexport', { month: T });
+    assert.match(bad.error, /not locked/, 'refuses before the month is even locked');
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((st) => call('markstep', { month: T, entity: 'ALL', step: st, done: true }));
+    call('lock', { month: T, entity: 'ALL' });
+    // Both problems present at once: missing loan ledger AND the unmapped Fine type.
+    const blocked = call('tallyexport', { month: T });
+    assert.match(blocked.error, /no Tally Ledger Name/);
+    assert.match(blocked.error, new RegExp(loanCode.replace(/\//g, '\\/')));
+    assert.match(blocked.error, /"Fine".*no confirmed Tally ledger/);
+    // Fill in the loan ledger -- Fine alone still blocks it (can't add a correcting
+    // adjustment after locking, so this proves the Fine check independently).
+    const loanSheet = h.books['1sal'].tabs.Loans.values;
+    const hdr = loanSheet[0];
+    const row = loanSheet.find((r) => r[hdr.indexOf('Employee Code')] === loanCode);
+    row[hdr.indexOf('Tally Ledger Name')] = 'Sal Adv. Test Person ' + loanCode;
+    const stillBlocked = call('tallyexport', { month: T });
+    assert.ok(!/no Tally Ledger Name/.test(stillBlocked.error), 'loan ledger problem is resolved');
+    assert.match(stillBlocked.error, /"Fine".*no confirmed Tally ledger/);
+  });
+
+  t.test('tally export: a clean month balances and groups companies correctly', () => {
+    const T = '2027-12';
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((st) => call('markstep', { month: T, entity: 'ALL', step: st, done: true }));
+    call('lock', { month: T, entity: 'ALL' });
+    const res = call('tallyexport', { month: T });
+    assert.equal(res.success, true, res.error);
+    // LMS4's only fixture employee was transferred to LMS5 in an earlier test, so LMS4 has no
+    // staff by now -- 6 entities with staff, HES+LMS2 share one company -> 5 vouchers.
+    assert.equal(res.vouchers.length, 5);
+    const kelheli = res.vouchers.find((v) => v.company === 'LMS Kelheli Branch [2021-22]');
+    assert.deepEqual(kelheli.entities, ['HES', 'LMS2'], 'HES and LMS2 combined into one company voucher');
+    res.vouchers.forEach((v) => {
+      const drTotal = Math.round(v.dr.reduce((t, x) => t + x.amount, 0) * 100);
+      const crTotal = Math.round(v.cr.reduce((t, x) => t + x.amount, 0) * 100);
+      assert.equal(drTotal, crTotal, v.company + ' balances');
+    });
+  });
 };

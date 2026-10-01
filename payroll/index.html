@@ -1198,7 +1198,8 @@ function outputsView_() {
   const unlocked = es.filter(function (e) { return !M.locked[e]; });
   h += '<div class="note"><b>EPF (one establishment, all schools):</b> ' + epfRows.length + ' members · <b>ESI:</b> ' + esiRows.length + ' employees.' +
     (unlocked.length ? ' <span class="neg">Not locked yet: ' + unlocked.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') + ' — files will be drafts.</span>' : '') + '</div>' +
-    '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button></div>';
+    '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button>' +
+    ' <button class="btn" id="tallyBtn">⬇ Tally journal (.xml)</button></div>';
   if (SCOPE === 'ALL') {
     h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.map(function (e) {
       const rs = outRows_(e), lt = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
@@ -1344,10 +1345,46 @@ function esiFile_() {
   });
 }
 
+// Tally journal export (2026-10-01). One self-contained ENVELOPE per company -- the only real,
+// working example Uday sent (LMS1/Kullu, Aug 2026) was a single company per file, so that's the
+// only structure actually verified; generating all companies into one file is unverified and not
+// attempted. Backend already refuses (with specifics) if anything would leave the voucher
+// unbalanced -- see payTallyVoucher_ in apps-script/payroll.gs.
+function xmlEsc_(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function tallyVoucherXml_(month, narration, v) {
+  const date = month.replace('-', '') + '01'; // the real voucher used the month's own 1st, not the lock date
+  const num = 'Salary ' + narration.split(' ').pop(); // narration ends "... MON-YYYY"
+  const line = function (l) { return '<ALLLEDGERENTRIES.LIST><LEDGERNAME>' + xmlEsc_(l.ledger) + '</LEDGERNAME><ISDEEMEDPOSITIVE>' + (l.dr ? 'Yes' : 'No') +
+    '</ISDEEMEDPOSITIVE><AMOUNT>' + (l.dr ? '-' : '') + l.amount.toFixed(2) + '</AMOUNT></ALLLEDGERENTRIES.LIST>'; };
+  const lines = v.dr.map(function (x) { return line({ ledger: x.ledger, amount: x.amount, dr: true }); }).join('') +
+    v.cr.map(function (x) { return line({ ledger: x.ledger, amount: x.amount, dr: false }); }).join('');
+  return '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>' +
+    '<STATICVARIABLES><SVCURRENTCOMPANY>' + xmlEsc_(v.svCurrentCompany) + '</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>' +
+    '<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">' +
+    '<DATE>' + date + '</DATE><NARRATION>' + xmlEsc_(narration) + '</NARRATION><VOUCHERTYPENAME>Journal</VOUCHERTYPENAME><VOUCHERNUMBER>' + xmlEsc_(num) + '</VOUCHERNUMBER>' +
+    lines + '</VOUCHER></TALLYMESSAGE></REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>';
+}
+function tally_() {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingText').textContent = 'Building Tally export…'; document.getElementById('loadingPill').classList.add('on');
+  payGet_('tallyexport', { month: M.month }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    res.vouchers.forEach(function (v) {
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + tallyVoucherXml_(res.month, res.narration, v);
+      download_('Tally ' + v.company.replace(/[^\w -]/g, '') + ' ' + M.month + '.xml', new Blob([xml], { type: 'application/xml' }));
+    });
+    msg.innerHTML = '<div class="ok">' + res.vouchers.length + ' Tally journal file(s) downloaded, one per company: ' +
+      res.vouchers.map(function (v) { return esc_(v.company) + ' (₹' + inr_(v.total) + ')'; }).join(', ') +
+      '. <b>Not yet verified against a real Tally import except LMS1/Kullu’s ledger map</b> -- check one import before relying on this for all 6.</div>';
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+
 function wireOutputs_() {
   const q = function (s) { return document.querySelector(s); };
   if (q('#ecrBtn')) q('#ecrBtn').onclick = ecr_;
   if (q('#esiBtn')) q('#esiBtn').onclick = esiFile_;
+  if (q('#tallyBtn')) q('#tallyBtn').onclick = tally_;
   if (q('#ltPrint')) q('#ltPrint').onclick = letterPrint_;
   if (q('#shPrint')) q('#shPrint').onclick = sheetPrint_;
   if (q('#shXlsx')) q('#shXlsx').onclick = sheetXlsx_;

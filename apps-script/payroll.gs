@@ -89,8 +89,11 @@ const PAY_TABS = {
   'Ledger': ['Date', 'Month', 'Employee Code', 'Account (RRF/Security/Loan/Held Salary)',
     'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)', 'Amount', 'Reference', 'Notes', 'Entered By', 'Entered At'],
   // Salary advances and RRF loans, recovered automatically each month (stage 4, 2026-09-30).
+  // 'Tally Ledger Name' (2026-10-01): each advance/loan has its own named Tally ledger, not a
+  // shared one (confirmed from a real voucher -- two advances in the same voucher used different
+  // naming patterns) -- filled in once per loan, the Tally export looks it up here.
   'Loans': ['Loan ID', 'Employee Code', 'Type (Salary Advance/RRF Loan)', 'Given On', 'Amount', 'Monthly Recovery', 'Start Month',
-    'Status (Active/Closed)', 'Notes', 'Added By', 'Added At'],
+    'Status (Active/Closed)', 'Notes', 'Tally Ledger Name', 'Added By', 'Added At'],
   // One row per Full & Final settlement.
   'F&F': ['F&F ID', 'Employee Code', 'Name', 'Entity', 'Date of Joining', 'Last Working Day', 'Salary Security', 'Security', 'RRF', 'Gratuity',
     'Gratuity Years', 'CL Days', 'CL Encashment', 'Notice Pay', 'Other Earnings', 'Notice Period Recovery', 'Loan Outstanding', 'Collection from Students',
@@ -122,6 +125,11 @@ const PAY_ADJ_TYPES = {
   'Arrears': 'Earning', 'Admission Incentive': 'Earning', 'Performance Bonus': 'Earning', 'Travel Allowance': 'Earning',
   'Notice Pay': 'Earning', 'Other Earning': 'Earning', 'TDS': 'Deduction',
   'Advance / Loan Recovery': 'Deduction', 'Fine': 'Deduction', 'Notice Period Recovery': 'Deduction', 'Other Deduction': 'Deduction',
+  // Added 2026-10-01: a staff member's own child's fees recovered via salary -- confirmed by
+  // Uday as distinct from the Staff-Child Tuition waiver (that one nets to zero via the
+  // Free Education Staff / Tuition Fee Staff ledger pair; this is real cash recovered).
+  // Maps 1:1 to the "Fee Recovery-Staff" Tally ledger.
+  'Child Fee Recovery': 'Deduction',
 };
 
 // Checklist steps that must be ticked for a school before it can be locked.
@@ -182,6 +190,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
     else if (action === 'dataquality') result = payDataQuality_(payOpen_(), data.month);
     else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month, data.times) };
+    else if (action === 'tallyexport') result = payTallyVoucher_(payOpen_(), data.month);
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
@@ -1547,6 +1556,112 @@ function payEsiCovered_(rows, rates, settings, ctx) {
 // person's bank / UAN / ESI numbers from the Staff Master's EmpKeyNumbers tab,
 // leave records, and the bank letters already recorded.
 // Only the extras -- the page already holds the month (was a full recompute, 2026-09-30).
+// ── Tally journal export (2026-10-01) ─────────────────────────────────
+// Entity -> Tally company, confirmed with Uday against the real company list
+// (HES and LMS2 share Kelheli's books; LMS6 is booked under Guru International). This is the
+// grouping key (keep it simple/robust) -- PAY_TALLY_COMPANY_XML below is the separate, more
+// fragile "exact string Tally's import expects" for the SVCURRENTCOMPANY tag specifically.
+const PAY_TALLY_COMPANY = { HES: 'LMS Kelheli Branch [2021-22]', LMS1: 'LMS Kullu Branch [2021-22]', LMS2: 'LMS Kelheli Branch [2021-22]',
+  LMS3: 'LMS Dunkhra Branch [2021-22]', LMS4: 'LMS Nerchowk Branch [2021-22]', LMS5: 'La Montessori School -Sayoli', LMS6: 'Guru International LMS' };
+// The real voucher Uday sent used "1 LMS Kullu Branch [2021-22]" (WITH the leading "1 ") as
+// SVCURRENTCOMPANY, matching exactly how the "List of Companies" screen shows it -- that
+// prefix might be part of the actual Tally-internal name, not just a UI index, so these keep
+// each company's own prefix style as shown rather than assuming it's safe to strip. UNVERIFIED
+// for anything but LMS1 (the only one with a real working example) -- if an XML import for
+// another company is rejected, the fix is almost certainly here, not in the money logic.
+const PAY_TALLY_COMPANY_XML = {
+  'LMS Kullu Branch [2021-22]': '1 LMS Kullu Branch [2021-22]',
+  'LMS Kelheli Branch [2021-22]': '2.LMS Kelheli Branch[2021-22]',
+  'LMS Dunkhra Branch [2021-22]': '3.LMS Dunkhra Branch[2021-22]',
+  'LMS Nerchowk Branch [2021-22]': '4. LMS Nerchowk Branch [2021-22]',
+  'La Montessori School -Sayoli': '5.La Montessori School -Sayoli',
+  'Guru International LMS': 'Guru International LMS',
+};
+// Adjustment types with no confirmed Tally ledger -- if any of these has a nonzero amount for
+// someone in the export, that company's export is refused (see payTallyVoucher_) rather than
+// silently leaving the voucher unbalanced. 'Advance / Loan Recovery' here means a manual
+// adjustment of that type, NOT the Loans-tab scheduled recovery (which IS handled, via each
+// loan's own Tally Ledger Name).
+const PAY_TALLY_UNMAPPED_TYPES = ['Fine', 'Notice Period Recovery', 'Other Deduction', 'Advance / Loan Recovery'];
+
+// Builds one balanced journal per Tally company for a month that's fully locked for every
+// entity booked into it. Throws (listing exactly what's missing) rather than ever returning
+// an unbalanced voucher -- see PAY_TALLY_UNMAPPED_TYPES and the per-loan ledger-name lookup.
+function payTallyVoucher_(ss, month) {
+  const ctx = payCheckMonth_(month);
+  const locks = payLocks_(ss, month);
+  // Which entities actually have staff this month -- from the LIVE compute, not the Payroll
+  // Register, which is empty for anyone not locked yet (that's exactly the case we need to catch).
+  const live = payCompute_(ss, month);
+  const entitiesWithStaff = {};
+  live.rows.forEach(function (r) { entitiesWithStaff[r.entity] = true; });
+  const reg = payForMonth_(ss, 'Payroll Register', month);
+  const byCompany = {};
+  const issues = [];
+  Object.keys(entitiesWithStaff).forEach(function (e) {
+    if (!locks[e]) issues.push(e + ' is not locked for ' + month + ' yet');
+  });
+  if (issues.length) throw new Error(issues.join('; '));
+  const loansByCode = {};
+  payRows_(ss.getSheetByName('Loans')).forEach(function (l) { loansByCode[String(l['Employee Code']).trim()] = String(l['Tally Ledger Name'] || '').trim(); });
+  const adjByCode = {};
+  payForMonth_(ss, 'Adjustments', month).forEach(function (a) {
+    const code = String(a['Employee Code']).trim();
+    (adjByCode[code] = adjByCode[code] || []).push({ type: String(a['Type']), direction: String(a['Direction']), amount: payNum_(a['Amount']) });
+  });
+  reg.forEach(function (r) {
+    const e = payEntity_(r['Entity']);
+    if (!locks[e]) return; // already flagged above
+    const company = PAY_TALLY_COMPANY[e];
+    if (!company) { issues.push(e + ' has no Tally company mapped (PAY_TALLY_COMPANY)'); return; }
+    const code = String(r['Employee Code']).trim();
+    const c = byCompany[company] = byCompany[company] || { entities: {}, gross: 0, tuitionA: 0, tuitionD: 0, epfEr: 0, epfEe: 0,
+      esiEr: 0, esiEe: 0, rrf: 0, tds: 0, bankPayable: 0, childFeeRecovery: 0, loanLedgers: {} };
+    c.entities[e] = true;
+    c.gross += payNum_(r['Gross']); c.tuitionA += payNum_(r['Tuition (A)']); c.tuitionD += payNum_(r['Tuition (D)']);
+    c.epfEr += payNum_(r['EPF Employer']); c.epfEe += payNum_(r['EPF Employee']); c.esiEr += payNum_(r['ESI Employer']); c.esiEe += payNum_(r['ESI Employee']);
+    c.rrf += payNum_(r['RRF']); c.tds += payNum_(r['TDS']); c.bankPayable += payNum_(r['Bank Payable']);
+    const loanRecovery = payNum_(r['Loan Recovery']);
+    if (loanRecovery) {
+      const ledger = loansByCode[code];
+      if (!ledger) issues.push(code + ' (' + e + '): has a loan recovery this month but no Tally Ledger Name on its Loans row');
+      else c.loanLedgers[ledger] = (c.loanLedgers[ledger] || 0) + loanRecovery;
+    }
+    (adjByCode[code] || []).forEach(function (a) {
+      if (a.direction !== 'Deduction') return;
+      if (a.type === 'Child Fee Recovery') { c.childFeeRecovery += a.amount; return; }
+      if (PAY_TALLY_UNMAPPED_TYPES.indexOf(a.type) !== -1 && a.amount) {
+        issues.push(code + ' (' + e + '): "' + a.type + '" ₹' + a.amount + ' has no confirmed Tally ledger for this type');
+      }
+    });
+  });
+  if (issues.length) throw new Error(issues.length + ' problem(s) before a Tally export can be generated: ' + issues.slice(0, 15).join('; ') + (issues.length > 15 ? ' …' : ''));
+
+  const vouchers = Object.keys(byCompany).sort().map(function (company) {
+    const c = byCompany[company];
+    const dr = [{ ledger: 'Salary Account', amount: c.gross - c.tuitionA }];
+    if (c.tuitionA) dr.push({ ledger: 'Free Education Staff', amount: c.tuitionA });
+    if (c.epfEr) dr.push({ ledger: 'Own Contribution to EPF', amount: c.epfEr });
+    if (c.esiEr) dr.push({ ledger: 'Own ESI Employer Cont. @ 3.25%', amount: c.esiEr });
+    const cr = [{ ledger: 'Salary Payable', amount: c.bankPayable }];
+    if (c.epfEr) cr.push({ ledger: 'Employer Contribution to EPF Payable', amount: c.epfEr });
+    if (c.epfEe) cr.push({ ledger: 'Employee Contribution to EPF Payable', amount: c.epfEe });
+    if (c.esiEr) cr.push({ ledger: 'ESI Payable Employer Share', amount: c.esiEr });
+    if (c.esiEe) cr.push({ ledger: 'ESI Payable Employee Share', amount: c.esiEe });
+    if (c.rrf) cr.push({ ledger: 'RRF Staff Payable', amount: c.rrf });
+    if (c.tuitionD) cr.push({ ledger: 'Tuition Fee Staff', amount: c.tuitionD });
+    if (c.childFeeRecovery) cr.push({ ledger: 'Fee Recovery-Staff', amount: c.childFeeRecovery });
+    if (c.tds) cr.push({ ledger: 'TDS Payable', amount: c.tds });
+    Object.keys(c.loanLedgers).sort().forEach(function (l) { cr.push({ ledger: l, amount: c.loanLedgers[l] }); });
+    const round2 = function (x) { return Math.round(x * 100) / 100; };
+    const drTotal = round2(dr.reduce(function (t, x) { return t + x.amount; }, 0));
+    const crTotal = round2(cr.reduce(function (t, x) { return t + x.amount; }, 0));
+    if (drTotal !== crTotal) throw new Error(company + ': voucher does not balance (Dr ' + drTotal + ' vs Cr ' + crTotal + ') -- this is a bug, not a data problem, tell Claude');
+    return { company: company, svCurrentCompany: PAY_TALLY_COMPANY_XML[company] || company, entities: Object.keys(c.entities).sort(), dr: dr, cr: cr, total: drTotal };
+  });
+  return { month: month, narration: 'Salary for the Month of ' + Utilities.formatDate(ctx.start, PAY_TZ, 'MMM-yyyy').toUpperCase(), vouchers: vouchers };
+}
+
 function payOutputs_(ss, month) {
   payCheckMonth_(month);
   const keys = {};
