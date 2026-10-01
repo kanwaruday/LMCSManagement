@@ -51,12 +51,13 @@ function payCalc_(emp, input, rates, s, ctx) {
   const ada = R(basic * rates.ada);
   const da = R(basic * rates.da);
   const wages = basic + ada + da;
-  const epf = emp.epfMember && rates.epfRegistered ? R(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
-  // ESI (2026-09-30, per Uday "do what is legally right"): coverage is decided once per contribution
-  // period (Apr-Sep, Oct-Mar) -- someone covered at its start stays covered even if wages cross the
-  // threshold mid-period -- and contributions are rounded UP to the next rupee, as ESIC does.
-  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : wages <= s.esiThreshold);
+  // EPF and ESI are both rounded UP to the next rupee (Uday, confirmed with Pawan Sir 2026-10-01 --
+  // overrides the ERP's own normal rounding on EPF, which the September validation had matched).
   const up = function (x) { return Math.ceil(Math.round(x * 1e6) / 1e6); };
+  const epf = emp.epfMember && rates.epfRegistered ? up(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
+  // ESI: coverage is decided once per contribution period (Apr-Sep, Oct-Mar) -- someone covered at
+  // its start stays covered even if wages cross the threshold mid-period.
+  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : wages <= s.esiThreshold);
   const esi = esiOn ? up(wages * s.esiEmpRate) : 0;
   const esiEr = esiOn ? up(wages * s.esiErRate) : 0;
   const clEnc = R((Number(input.clDays) || 0) * (wages - epf - esi) / s.clDivisor);
@@ -223,6 +224,9 @@ function payrollCalcSelfTest_() {
   eq(r.esi, Math.ceil(22400 * 0.0075), 'covered for the period even above 21000, rounded up'); eq(r.esiEmployer, 728, '3.25% of 22400');
   eq(payCalc_(Object.assign({}, emp, { esiCovered: false }), {}, rates, S, ctx).esi, 0, 'not covered this period');
   eq(payCalc_(Object.assign({}, emp, { fullBasic: 9950 }), {}, rates, S, ctx).esi, Math.ceil(13930 * 0.0075), 'rounds up (104.475 -> 105)');
+  // EPF rounds up too (Uday, confirmed with Pawan Sir 2026-10-01) -- 7336 wages,
+  // 12% = 880.32, which normal rounding would send to 880, not 881.
+  eq(payCalc_(Object.assign({}, emp, { fullBasic: 5240 }), {}, rates, S, ctx).epf, 881, 'EPF rounds up (880.32 -> 881)');
   r = payCalc_(emp, { loanRecovery: 5000 }, rates, S, ctx);
   eq(r.loanRecovery, 5000, 'loan recovery'); eq(r.net, 14000 - 1680 - 105 - 1936 - 5000, 'net after recovery');
   r = payCalc_(emp, { loanRecovery: 50000 }, rates, S, ctx);
