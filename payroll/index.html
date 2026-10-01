@@ -799,8 +799,8 @@ function exportCsv_() {
 
 
 // ── Stage 4 views (2026-09-30): Accounts & loans · Full & Final · Opening balances ──
-let VIEW = 'month', ACC = null, FNF = null, OPENING = null;
-const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances']];
+let VIEW = 'month', ACC = null, FNF = null, OPENING = null, DQ = null;
+const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances'], ['dataquality', 'Data quality']];
 
 function viewBar_() {
   return VIEWS.map(function (v) { return '<span class="view' + (VIEW === v[0] ? ' on' : '') + '" data-view="' + v[0] + '">' + v[1] + '</span>'; }).join('');
@@ -809,7 +809,28 @@ function show_(v) {
   VIEW = v; FNF = null;
   if (v === 'month') { render_(); return; }
   if (v === 'outputs') { loadOutputs_(); return; }
+  if (v === 'dataquality') { loadDataQuality_(); return; }
   loadAccounts_();
+}
+// Data quality (audit 2026-10-01, section 3): missing bank details/UAN/ESI
+// number, and employee codes not found in the Roster's EmpKeyNumbers.
+function loadDataQuality_() {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingPill').classList.add('on');
+  return payGet_('dataquality', { month: M ? M.month : document.getElementById('fMonth').value }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    DQ = res;
+    msg.innerHTML = '';
+    render_();
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+function dataQualityView_() {
+  if (!DQ.issues.length) return '<p>No data-quality issues found for ' + DQ.checked + ' staff in ' + monthLabel_(DQ.month) + '.</p>';
+  const byCode = {};
+  DQ.issues.forEach(function (x) { (byCode[x.code] = byCode[x.code] || { name: x.name, entity: x.entity, texts: [] }).texts.push(x.text); });
+  return '<p>' + Object.keys(byCode).length + ' of ' + DQ.checked + ' staff have an issue, for ' + monthLabel_(DQ.month) + ':</p><table class="reg"><tr><th>Code</th><th>Name</th><th>School</th><th>Issues</th></tr>' +
+    Object.keys(byCode).map(function (c) { const r = byCode[c]; return '<tr><td>' + esc_(c) + '</td><td>' + esc_(r.name) + '</td><td>' + esc_(r.entity) + '</td><td>' + r.texts.map(esc_).join('<br>') + '</td></tr>'; }).join('') + '</table>';
 }
 function loadAccounts_(okMsg) {
   const msg = document.getElementById('msgRoot');
@@ -839,6 +860,7 @@ function schoolOf_(a) { return a.former ? 'Former' : ENTITY_LABEL[a.entity] || a
 function renderView_() {
   const root = document.getElementById('monthRoot');
   if (VIEW === 'outputs') { root.innerHTML = schoolTabs_() + '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
+  if (VIEW === 'dataquality') { root.innerHTML = DQ ? schoolTabs_() + '<div class="panel">' + dataQualityView_() + '</div>' : ''; wireViews_(); return; }
   if (!ACC) { root.innerHTML = ''; return; }
   root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
   wireViews_();

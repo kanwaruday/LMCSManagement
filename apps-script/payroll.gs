@@ -171,6 +171,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'previewleave') result = { preview: payUploadLeave_(payOpen_(), data, caller, true) };
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
     else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
+    else if (action === 'dataquality') result = payDataQuality_(payOpen_(), data.month);
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
@@ -1375,6 +1376,53 @@ function payOutputs_(ss, month) {
       addressee: String(l['Addressee'] || ''), debitAccount: String(l['Debit Account'] || '') };
   });
   return { month: month, keys: keys, leave: leave, letters: letters };
+}
+
+// ── Data quality (audit 2026-10-01, section 3) ────────────────────────
+// Flags everything that will bite at outputs time if left until then: missing
+// bank details/UAN/ESI number, and an employee code that doesn't resolve the
+// same way in both places that key off it (Salary Master vs the Roster's
+// EmpKeyNumbers, which payOutputs_ reads for the bank letter/ECR/ESI file).
+function payDataQuality_(ss, month) {
+  const ctx = payCheckMonth_(month);
+  const keys = {};
+  const kt = payOpenById_(PAY_ROSTER_SHEET_ID).getSheetByName('EmpKeyNumbers');
+  if (kt) {
+    const v = kt.getDataRange().getDisplayValues();
+    const h = v[0].map(function (x) { return String(x).trim(); });
+    const col = function (n) { return h.indexOf(n); };
+    const clean = function (x) { x = String(x || '').trim(); return x === '-' || x === '0' ? '' : x; };
+    v.slice(1).forEach(function (r) {
+      const code = String(r[col('EmployeeCode')] || '').trim();
+      if (code) keys[code] = { account: clean(r[col('BankAcNumber')]), ifsc: clean(r[col('IFSCCode')]), uan: clean(r[col('UanNumber')]), esi: clean(r[col('EsiNumber')]), pan: clean(r[col('PanNo')]) };
+    });
+  }
+  const rates = payRates_(payOpenById_(PAY_RATES_SHEET_ID));
+  const seen = {}, issues = [];
+  const flag = function (code, name, entity, text) { issues.push({ code: code, name: name, entity: entity, text: text }); };
+  payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
+    const code = String(r['Employee Code'] || '').trim();
+    if (!code) return;
+    const eff = payDate_(r['Effective From']);
+    if (!eff || eff > ctx.monthEnd) return;
+    if (/^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
+    const lwd = payDate_(r['Last Working Day']);
+    if (lwd && lwd < ctx.start) return;
+    if (seen[code]) { flag(code, r['Name'], r['Entity'], 'Employee Code appears more than once in Salary Master'); return; }
+    seen[code] = true;
+    const name = String(r['Name'] || ''), entity = String(r['Entity'] || '');
+    const k = keys[code];
+    if (!k) { flag(code, name, entity, 'Not found in EmpKeyNumbers (Roster) -- bank letter/ECR/ESI file will skip them'); return; }
+    if (!k.account || !k.ifsc) flag(code, name, entity, 'Missing bank account number or IFSC');
+    if (payYes_(r['EPF Member (Y/N)']) && !k.uan) flag(code, name, entity, 'EPF member but no UAN on file');
+    if (!k.pan) flag(code, name, entity, 'Missing PAN');
+    // ESI number is only required once actually covered -- payEsiCovered_ needs full
+    // wage history, which this report doesn't build; flagging "no ESI number at all"
+    // for anyone at an ESI-registered entity is a reasonable proxy, not a precise
+    // coverage check (someone who has always been above the threshold is a false positive).
+    if ((rates[payEntity_(r['Entity'])] || {}).esiRegistered && !k.esi) flag(code, name, entity, 'No ESI number on file (fine if always above the ESI wage threshold)');
+  });
+  return { month: month, issues: issues, checked: Object.keys(seen).length };
 }
 
 // d: {month, entity, serial, ref, date, cheque, amount, staff, addressee, debitAccount}

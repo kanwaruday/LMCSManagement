@@ -4,7 +4,7 @@
 // and fixture codes/entities in place of the real Sep-2026 names.
 'use strict';
 const assert = require('assert');
-const { boot } = require('./harness');
+const { boot, makeSheet } = require('./harness');
 const { buildFixture } = require('./fixtures');
 
 module.exports = function run(t) {
@@ -219,5 +219,21 @@ module.exports = function run(t) {
     assert.ok(after.settled);
     const resettle = call('settlefnf', { month: O4, code: rrfCode, paidOn: '2027-07-10' });
     assert.match(resettle.error, /already has a Full/);
+  });
+
+  t.test('data quality: missing bank details, no EmpKeyNumbers row, EPF member with no UAN', () => {
+    h.books['1Oj'].tabs.EmpKeyNumbers = makeSheet([
+      ['EmployeeCode', 'BankAcNumber', 'IFSCCode', 'UanNumber', 'EsiNumber', 'PanNo'],
+      ['FOX/24/02/090', '', '', '', '', ''], // on payroll, EPF member, nothing on file
+      ['FOX/23/09/104', '1234567890', 'HDFC0001234', 'UAN456', 'ESI789', 'PAN1234A'], // clean
+    ], 'EmpKeyNumbers', h.counter);
+    const r = call('dataquality', { month: M });
+    const byCode = {};
+    r.issues.forEach((x) => (byCode[x.code] = byCode[x.code] || []).push(x.text));
+    assert.ok(byCode['FOX/24/02/090'].some((t) => /bank account/.test(t)));
+    assert.ok(byCode['FOX/24/02/090'].some((t) => /no UAN/.test(t)));
+    assert.ok(!byCode['FOX/23/09/104'], 'clean row raises nothing');
+    assert.ok(byCode['OWL/24/01/050'].some((t) => /Not found in EmpKeyNumbers/.test(t)), 'everyone else is missing from EmpKeyNumbers entirely');
+    assert.ok(!byCode['JAY/21/03/020'].some((t) => /No ESI number/.test(t)), 'LMS6 is not ESI-registered, so no ESI-number flag even though absent from EmpKeyNumbers');
   });
 };

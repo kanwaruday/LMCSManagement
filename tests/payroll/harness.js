@@ -93,4 +93,4 @@ function boot(fixture) {
   return { ctx, call, books, counter, run: (code) => vm.runInContext(code, ctx) };
 }
 
-module.exports = { boot };
+module.exports = { boot, makeSheet };
