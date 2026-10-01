@@ -39,6 +39,21 @@ module.exports = function run(t) {
     assert.match(bad.error, /more than 0/);
   });
 
+  t.test('recurring adjustment: start/end month range', () => {
+    const code = 'OWL/24/01/050'; // untouched elsewhere so far
+    const r = call('addadjustment', { month: '2026-10', endMonth: '2027-01', code, type: 'Travel Allowance', amount: 300, note: 'recurring' });
+    assert.equal(r.success, true, r.error);
+    assert.deepEqual(r.adjustmentResult, { months: ['2026-10', '2026-11', '2026-12', '2027-01'], skippedLocked: [] });
+    ['2026-10', '2026-11', '2026-12', '2027-01'].forEach((mo) => {
+      assert.equal(call('month', { month: mo }).rows.find((x) => x.code === code).otherEarnings, 300, mo + ' got the recurring entry');
+    });
+    assert.ok(!call('month', { month: '2027-02' }).rows.find((x) => x.code === code).otherEarnings, 'does not spill past endMonth');
+    const noRange = call('addadjustment', { month: '2026-10', endMonth: '2026-10', code, type: 'Fine', amount: 10 });
+    assert.match(noRange.error, /End month must be after the start month/);
+    const tooLong = call('addadjustment', { month: '2026-10', endMonth: '2030-01', code, type: 'Fine', amount: 10 });
+    assert.match(tooLong.error, /more than 36 months/);
+  });
+
   t.test('holds and release validation', () => {
     m = call('saveinputs', { month: M, rows: [{ code: B.code, hold: 'grievance' }] });
     const b = m.rows.find((r) => r.code === B.code);

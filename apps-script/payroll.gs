@@ -158,7 +158,7 @@ function payHandle_(action, idToken, data) {
     if (!caller) return payJson_({ success: false, error: 'Not authorized -- payroll is Owner-only' });
     const writes = {
       saveinputs: function (ss) { paySaveInputs_(ss, data.month, data.rows || [], caller); },
-      addadjustment: function (ss) { payAddAdjustment_(ss, data, caller); },
+      addadjustment: function (ss) { extra = { adjustmentResult: payAddAdjustment_(ss, data, caller) }; },
       deleteadjustment: function (ss) { payDeleteAdjustment_(ss, data.month, data.id); },
       markstep: function (ss) { payMarkStep_(ss, data, caller); },
       uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
@@ -366,6 +366,10 @@ function payCheckMonth_(month) {
 }
 function payPrevMonth_(month) {
   const d = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function payNextMonth_(month) {
+  const d = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1);
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 function payStamp_(d) { return d instanceof Date ? Utilities.formatDate(d, PAY_TZ, 'dd MMM yyyy, HH:mm') : String(d || ''); }
@@ -646,16 +650,49 @@ function paySaveInputs_(ss, month, rows, caller) {
 }
 
 // ── Adjustments ──────────────────────────────────────────────────────
+// d: {month, code, type, amount, note, endMonth (optional -- 'YYYY-MM', repeats the SAME
+// adjustment on its own row for every month from month..endMonth, inclusive). Per Uday
+// 2026-10-01: for recurring items (an allowance/recovery running several months) instead of
+// adding it by hand each month. A month in the range that's already locked for this entity
+// is skipped, not an error -- same "corrections go into next month" rule as a single add;
+// capped at 36 months so a typo in endMonth can't silently queue years of rows.
 function payAddAdjustment_(ss, d, caller) {
-  const ctx = payCheckMonth_(d.month);
   const code = String(d.code || '').trim();
-  payAssertOpen_(payLocks_(ss, d.month), payEntityOf_(ss)(code), d.month);
   const dir = PAY_ADJ_TYPES[d.type];
   if (!dir) throw new Error('Unknown adjustment type: ' + d.type);
   const amount = Number(d.amount);
   if (!(amount > 0)) throw new Error('Amount must be more than 0');
-  payAppend_(ss.getSheetByName('Adjustments'), [{ 'ID': Utilities.getUuid().slice(0, 8), 'Month': ctx.start, 'Employee Code': code,
-    'Type': d.type, 'Direction': dir, 'Amount': Math.round(amount), 'Note': String(d.note || ''), 'Added By': caller.email, 'Added At': new Date() }]);
+  const entity = payEntityOf_(ss)(code);
+  if (!d.endMonth) {
+    // Single month: the original, exact "go fix next month instead" error.
+    payAssertOpen_(payLocks_(ss, d.month), entity, d.month);
+    const ctx = payCheckMonth_(d.month);
+    payAppend_(ss.getSheetByName('Adjustments'), [{ 'ID': Utilities.getUuid().slice(0, 8), 'Month': ctx.start, 'Employee Code': code,
+      'Type': d.type, 'Direction': dir, 'Amount': Math.round(amount), 'Note': String(d.note || ''), 'Added By': caller.email, 'Added At': new Date() }]);
+    return { months: [d.month], skippedLocked: [] };
+  }
+  payCheckMonth_(d.endMonth);
+  const months = [String(d.month)];
+  let m = d.month;
+  while (m !== d.endMonth) {
+    m = payNextMonth_(m);
+    months.push(m);
+    if (months.length > 36) throw new Error('That start/end range is more than 36 months -- check the end month');
+  }
+  if (months.length < 2) throw new Error('End month must be after the start month');
+  const locks = {}; // month -> locks map, computed once per month
+  const now = new Date(), rows = [], added = [], skippedLocked = [];
+  months.forEach(function (month) {
+    const ctx = payCheckMonth_(month);
+    if (!(month in locks)) locks[month] = payLocks_(ss, month);
+    if (locks[month][entity]) { skippedLocked.push(month); return; }
+    rows.push({ 'ID': Utilities.getUuid().slice(0, 8), 'Month': ctx.start, 'Employee Code': code,
+      'Type': d.type, 'Direction': dir, 'Amount': Math.round(amount), 'Note': String(d.note || ''), 'Added By': caller.email, 'Added At': now });
+    added.push(month);
+  });
+  if (!rows.length) throw new Error('Every month from ' + d.month + ' to ' + d.endMonth + ' is already locked for ' + entity);
+  payAppend_(ss.getSheetByName('Adjustments'), rows);
+  return { months: added, skippedLocked: skippedLocked };
 }
 
 function payDeleteAdjustment_(ss, month, id) {

@@ -164,7 +164,8 @@ function call_(promise, label, okMsg) {
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { setButtonsDisabled_(false); msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
     M = res;
-    msg.innerHTML = okMsg ? '<div class="ok">' + esc_(okMsg) + '</div>' : '';
+    const msgText = typeof okMsg === 'function' ? okMsg(res) : okMsg;
+    msg.innerHTML = msgText ? '<div class="ok">' + esc_(msgText) + '</div>' : '';
     render_(); // rebuilds the buttons, re-enabled
     return true;
   }).catch(function (err) {
@@ -556,7 +557,9 @@ function adjPanel_() {
   if (openRows_().length) h += '<div class="addrow"><input list="empList" id="adEmp" placeholder="Search employee…"> <select id="adType">' +
     ['Earning', 'Deduction'].map(function (d) {
       return '<optgroup label="' + d + 's">' + types.filter(function (t) { return M.adjTypes[t] === d; }).map(function (t) { return '<option>' + esc_(t) + '</option>'; }).join('') + '</optgroup>';
-    }).join('') + '</select> ₹ <input type="number" id="adAmt" min="1" style="width:90px"> <input id="adNote" placeholder="Note (e.g. Aug arrears)" style="width:220px"> <button class="btn" id="adAdd">Add</button></div>';
+    }).join('') + '</select> ₹ <input type="number" id="adAmt" min="1" style="width:90px"> <input id="adNote" placeholder="Note (e.g. Aug arrears)" style="width:220px">' +
+    ' <span class="muted">through</span> <input type="month" id="adEndMonth" title="Repeat this same adjustment every month up to and including this one (optional)">' +
+    ' <button class="btn" id="adAdd">Add</button></div>';
   h += recoveries_();
   const items = [];
   scopeRows_().forEach(function (r) { r.adjustments.forEach(function (a) { items.push({ r: r, a: a }); }); });
@@ -756,7 +759,13 @@ function wire_() {
   });
   if (q('#adAdd')) q('#adAdd').onclick = function () {
     const r = pick_('adEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
-    post_('addadjustment', { code: r.code, type: q('#adType').value, amount: q('#adAmt').value, note: q('#adNote').value }, 'Adding…', 'Added ' + q('#adType').value + ' for ' + r.name + '.');
+    const type = q('#adType').value, endMonth = q('#adEndMonth').value || undefined;
+    post_('addadjustment', { code: r.code, type: type, amount: q('#adAmt').value, note: q('#adNote').value, endMonth: endMonth }, 'Adding…', function (res) {
+      const ar = res.adjustmentResult || { months: [M.month], skippedLocked: [] };
+      let note = 'Added ' + type + ' for ' + r.name + (ar.months.length > 1 ? ', ' + ar.months.length + ' months (' + ar.months[0] + ' – ' + ar.months[ar.months.length - 1] + ')' : '') + '.';
+      if (ar.skippedLocked.length) note += ' Skipped (already locked): ' + ar.skippedLocked.join(', ') + '.';
+      return note;
+    });
   };
   document.querySelectorAll('[data-deladj]').forEach(function (b) {
     b.onclick = function () { if (confirm('Remove this adjustment?')) post_('deleteadjustment', { id: b.dataset.deladj }, 'Removing…'); };
