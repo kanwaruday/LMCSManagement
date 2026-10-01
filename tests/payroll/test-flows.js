@@ -301,4 +301,18 @@ module.exports = function run(t) {
     assert.deepEqual(applied.rosterSync, { success: true, updated: [code], notFound: [] });
     assert.equal(h.books['1Oj'].tabs.EmpSalary.values.find((r) => r[0] === code)[2], 3, 'Increment count went 2 -> 3');
   });
+
+  t.test('annual increment: multi-step (times) compounds and projects Net/CTI from the real calc', () => {
+    const code = 'ELK/05/03/005'; // doj 2005, Full Basic 20000 at this point in the fixture
+    const one = call('incrementpreview', { month: '2027-01' }).eligible.find((e) => e.code === code);
+    const three = call('incrementpreview', { month: '2027-01', times: 3 }).eligible.find((e) => e.code === code);
+    assert.equal(one.newBasic, Math.round(one.basic * 1.03));
+    const stepped = Math.round(Math.round(Math.round(one.basic * 1.03) * 1.03) * 1.03);
+    assert.equal(three.newBasic, stepped, 'compounds like 3 separate annual runs, rounding each step');
+    assert.ok(three.newNet > one.newNet && three.newCti > one.newCti, 'bigger basic -> bigger projected Net and CTI');
+    assert.equal(one.oldNet, three.oldNet, 'the "before" figures do not depend on times');
+    const applied = call('applyincrement', { month: '2027-01', codes: [code], times: 3 });
+    assert.equal(applied.success, true, applied.error);
+    assert.equal(applied.rows.find((r) => r.code === code).basic, stepped, '3-step increment actually applied');
+  });
 };

@@ -844,10 +844,11 @@ function dataQualityView_() {
 // September they're still employed. Checkboxes let you drop someone from
 // this run without touching the others; Apply writes a new effective-dated
 // Salary Master row per person, same as a transfer does.
+let INC_TIMES = 1;
 function loadIncrement_() {
   const msg = document.getElementById('msgRoot');
   document.getElementById('loadingPill').classList.add('on');
-  return payGet_('incrementpreview', { month: M ? M.month : document.getElementById('fMonth').value }).then(function (res) {
+  return payGet_('incrementpreview', { month: M ? M.month : document.getElementById('fMonth').value, times: INC_TIMES }).then(function (res) {
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
     INC = res;
@@ -855,13 +856,18 @@ function loadIncrement_() {
     render_();
   }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
 }
+// Times > 1 (Owner-only -- the whole Payroll tool already is) compounds that many
+// separate annual increments in one go, e.g. for someone who missed prior years.
+// Net Pay/CTI columns are the real payCalc_ re-run with the new Basic, not a % guess.
 function incrementView_() {
-  if (!INC.eligible.length) return '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
-  return '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '% in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
-    '<table class="reg"><tr><th></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th></tr>' +
+  const timesPicker = '<p>Increments to apply: <input type="number" id="incTimes" min="1" max="12" value="' + INC_TIMES + '" style="width:48px"> <span class="muted">(more than 1 compounds that many years at once -- Owner only)</span></p>';
+  if (!INC.eligible.length) return timesPicker + '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
+  return timesPicker + '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '%' + (INC_TIMES > 1 ? ' x ' + INC_TIMES : '') + ' in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
+    '<table class="reg"><tr><th></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th><th>Net Pay</th><th>CTI</th></tr>' +
     INC.eligible.map(function (e) {
       return '<tr><td><input type="checkbox" class="inc-pick" value="' + esc_(e.code) + '" checked></td><td>' + esc_(e.code) + '</td><td>' + esc_(e.name) +
-        '</td><td>' + esc_(e.entity) + '</td><td>' + e.months + '</td><td>' + inr_(e.basic) + '</td><td>' + inr_(e.newBasic) + '</td></tr>';
+        '</td><td>' + esc_(e.entity) + '</td><td>' + e.months + '</td><td>' + inr_(e.basic) + '</td><td>' + inr_(e.newBasic) + '</td>' +
+        '<td>' + (e.newNet != null ? inr_(e.oldNet) + ' → ' + inr_(e.newNet) : '—') + '</td><td>' + (e.newCti != null ? inr_(e.oldCti) + ' → ' + inr_(e.newCti) : '—') + '</td></tr>';
     }).join('') + '</table><p><button class="btn" id="incApply">Apply to checked</button></p>';
 }
 function loadAccounts_(okMsg) {
@@ -1056,13 +1062,19 @@ function parseOpening_(wb, accept) {
 function wireViews_() {
   const q = function (s) { return document.querySelector(s); };
   document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; render_(); }; });
+  if (q('#incTimes')) q('#incTimes').onchange = function () {
+    const n = Math.max(1, Math.min(12, Math.round(Number(this.value) || 1)));
+    INC_TIMES = n;
+    loadIncrement_();
+  };
   if (q('#incApply')) q('#incApply').onclick = function () {
     const codes = Array.prototype.map.call(document.querySelectorAll('.inc-pick:checked'), function (c) { return c.value; });
     if (!codes.length) { alert('Nothing checked.'); return; }
-    if (!confirm('Apply the increment to ' + codes.length + ' employee(s)? This writes a new Salary Master row for each.')) return;
+    const label = INC_TIMES > 1 ? INC_TIMES + ' increments' : 'the increment';
+    if (!confirm('Apply ' + label + ' to ' + codes.length + ' employee(s)? This writes a new Salary Master row for each.')) return;
     const msg = document.getElementById('msgRoot');
     document.getElementById('loadingPill').classList.add('on');
-    payPost_('applyincrement', { month: M.month, codes: codes }).then(function (res) {
+    payPost_('applyincrement', { month: M.month, codes: codes, times: INC_TIMES }).then(function (res) {
       document.getElementById('loadingPill').classList.remove('on');
       if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
       M = res;

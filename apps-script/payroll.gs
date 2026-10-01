@@ -104,7 +104,7 @@ const PAY_TABS = {
   // Annual increments (2026-10-01, per Uday): flat Annual Increment % on Full
   // Basic, every September, once an employee has completed the RRF cycle
   // (36 months). One row per person per time this was applied.
-  'Increments': ['Month', 'Employee Code', 'Name', 'Entity', 'Old Basic', 'New Basic', 'Rate %', 'Applied By', 'Applied At'],
+  'Increments': ['Month', 'Employee Code', 'Name', 'Entity', 'Old Basic', 'New Basic', 'Rate %', 'Times', 'Applied By', 'Applied At'],
   // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
   // PAY_LEAVE_FIELDS in payroll-calc.gs, which loads AFTER this file.
 };
@@ -181,7 +181,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
     else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
     else if (action === 'dataquality') result = payDataQuality_(payOpen_(), data.month);
-    else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month) };
+    else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month, data.times) };
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
@@ -540,7 +540,7 @@ function payCompute_(ss, month) {
   const loanBalance = payLedgerBalances_(ss, 'Loan', month);
   const loanSched = payLoanSchedules_(ss, month);
 
-  const rows = [];
+  const rows = [], calcArgs = {};
   Object.keys(master).forEach(function (code) {
     const r = master[code].row;
     const lwd = payDate_(r['Last Working Day']);
@@ -562,12 +562,13 @@ function payCompute_(ss, month) {
     const hold = /^f/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'fnf'
       : /^g/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'grievance'
       : payYes_(inp['Hold for F&F (Y/N)']) ? 'fnf' : '';
-    const calc = payCalc_(
-      { esiCovered: payEsiCovered_(history[code], rates, settings, ctx0), fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
-        tuition: payNum_(r['Staff-Child Tuition']), doj: doj },
-      { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
-        otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue, tds: tds },
-      rates[entity], settings, Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0));
+    const empArg = { esiCovered: payEsiCovered_(history[code], rates, settings, ctx0), fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
+      tuition: payNum_(r['Staff-Child Tuition']), doj: doj };
+    const inputArg = { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
+      otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue, tds: tds };
+    const ctxArg = Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0);
+    const calc = payCalc_(empArg, inputArg, rates[entity], settings, ctxArg);
+    calcArgs[code] = { emp: empArg, input: inputArg, rates: rates[entity], settings: settings, ctx: ctxArg };
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
     rows.push(Object.assign({ code: code, name: String(r['Name'] || '').trim(), entity: entity,
       designation: String(r['Designation'] || '').trim(), adjustments: adj, heldBalance: heldBalance[code] || 0,
@@ -579,7 +580,10 @@ function payCompute_(ss, month) {
   });
   Object.keys(inputs).forEach(function (code) { if (!master[code]) warnings.push({ entity: '', text: code + ': has Monthly Inputs but no Salary Master row' }); });
   Object.keys(adjustments).forEach(function (code) { if (!master[code]) warnings.push({ entity: '', text: code + ': has Adjustments but no Salary Master row' }); });
-  return { settings: settings, rates: rates, rows: rows, warnings: warnings };
+  // calcArgs: code -> the exact {emp, input, rates, settings, ctx} passed to payCalc_ this month --
+  // lets a caller re-run payCalc_ with a hypothetical Full Basic (annual increment preview) without
+  // re-deriving entity rates/leave/adjustments/loan-recovery/etc. a second time.
+  return { settings: settings, rates: rates, rows: rows, warnings: warnings, calcArgs: calcArgs };
 }
 
 // code -> entity for everyone in Salary Master (any row); throws on unknown code.
@@ -1103,8 +1107,13 @@ function payApplyTransfer_(ss, d, caller) {
 // not a Remarks-text guess). Only touches Payroll's own Salary Master Full
 // Basic -- the Roster's separate EmpSalary.Increment count (used by the
 // Offer Calculator) is NOT updated here, see audit/REPORT.md.
-function payIncrementEligible_(ss, month) {
+// times: how many increments to compound in one go (Owner-only feature -- every caller
+// of this is already Owner, payCachedOwner_ gates the whole backend). Defaults to 1,
+// the normal "one September" case; >1 compounds like that many separate annual runs
+// would, rounding after each step, for a deliberate multi-year catch-up.
+function payIncrementEligible_(ss, month, times) {
   const ctx = payCheckMonth_(month);
+  const n = Math.max(1, Math.round(Number(times) || 1));
   const master = {};
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
     const code = String(r['Employee Code'] || '').trim();
@@ -1116,8 +1125,10 @@ function payIncrementEligible_(ss, month) {
   });
   const already = {};
   payForMonth_(ss, 'Increments', month).forEach(function (r) { already[String(r['Employee Code']).trim()] = true; });
-  const settings = paySettings_(payOpenById_(PAY_RATES_SHEET_ID));
-  const pct = settings.annualIncrementPct;
+  const live = payCompute_(ss, month);
+  const byCode = {};
+  live.rows.forEach(function (r) { byCode[r.code] = r; });
+  const pct = live.settings.annualIncrementPct;
   const out = [];
   Object.keys(master).forEach(function (code) {
     if (already[code]) return;
@@ -1125,8 +1136,19 @@ function payIncrementEligible_(ss, month) {
     const doj = payDate_(r['Date of Joining']);
     const basic = payNum_(r['Full Basic']);
     if (!doj || !basic || payMonthsBetween_(doj, ctx.monthEnd) < 36) return;
-    out.push({ code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']), designation: String(r['Designation'] || ''),
-      doj: payIso_(doj), months: payMonthsBetween_(doj, ctx.monthEnd), basic: basic, newBasic: Math.round(basic * (1 + pct / 100)), rate: pct });
+    let newBasic = basic;
+    for (let i = 0; i < n; i++) newBasic = Math.round(newBasic * (1 + pct / 100));
+    const row = { code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']), designation: String(r['Designation'] || ''),
+      doj: payIso_(doj), months: payMonthsBetween_(doj, ctx.monthEnd), basic: basic, newBasic: newBasic, rate: pct, times: n };
+    // Projected Net Pay/CTI this month with the new Basic -- re-runs the REAL payCalc_
+    // with everything else about this month unchanged (paid days, leave, adjustments,
+    // loan recovery, holds), not a guess from the % alone.
+    const args = live.calcArgs[code], current = byCode[code];
+    if (args && current) {
+      const projected = payCalc_(Object.assign({}, args.emp, { fullBasic: newBasic }), args.input, args.rates, args.settings, args.ctx);
+      row.oldNet = current.net; row.newNet = projected.net; row.oldCti = current.cti; row.newCti = projected.cti;
+    }
+    out.push(row);
   });
   out.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
   return out;
@@ -1137,7 +1159,7 @@ function payApplyIncrement_(ss, d, caller, idToken) {
   const ctx = payCheckMonth_(d.month);
   const want = d.codes && d.codes.length ? {} : null;
   if (want) d.codes.forEach(function (c) { want[String(c).trim()] = true; });
-  const eligible = payIncrementEligible_(ss, d.month).filter(function (e) { return !want || want[e.code]; });
+  const eligible = payIncrementEligible_(ss, d.month, d.times).filter(function (e) { return !want || want[e.code]; });
   if (!eligible.length) throw new Error('Nothing eligible to increment for ' + d.month);
   const latest = payMasterLatest_(ss);
   const now = new Date();
@@ -1147,10 +1169,11 @@ function payApplyIncrement_(ss, d, caller, idToken) {
     if (!src) return;
     const row = {};
     Object.keys(src).forEach(function (h) { row[h] = src[h]; });
-    Object.assign(row, { 'Full Basic': e.newBasic, 'Effective From': ctx.start, 'Remarks': 'Annual Increment ' + d.month + ' (+' + e.rate + '%)' });
+    Object.assign(row, { 'Full Basic': e.newBasic, 'Effective From': ctx.start,
+      'Remarks': 'Annual Increment ' + d.month + ' (+' + e.rate + '%' + (e.times > 1 ? ' x ' + e.times : '') + ')' });
     newRows.push(row);
     incRows.push({ 'Month': ctx.start, 'Employee Code': e.code, 'Name': e.name, 'Entity': e.entity, 'Old Basic': e.basic,
-      'New Basic': e.newBasic, 'Rate %': e.rate, 'Applied By': caller.email, 'Applied At': now });
+      'New Basic': e.newBasic, 'Rate %': e.rate, 'Times': e.times, 'Applied By': caller.email, 'Applied At': now });
     appliedCodes.push(e.code);
   });
   payAppend_(ss.getSheetByName('Salary Master'), newRows);
