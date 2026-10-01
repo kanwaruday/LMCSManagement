@@ -859,6 +859,13 @@ function loadIncrement_() {
 // Times > 1 (Owner-only -- the whole Payroll tool already is) compounds that many
 // separate annual increments in one go, e.g. for someone who missed prior years.
 // Net Pay/CTI columns are the real payCalc_ re-run with the new Basic, not a % guess.
+// % change shown next to Net Pay/CTI can differ from the Basic's own % (RRF tier
+// boundaries, ESI/EPF ceilings etc. can shift non-linearly) -- that's real, not a bug.
+function incPct_(a, b) {
+  if (a == null || b == null || !a) return '';
+  const p = (b - a) / a * 100;
+  return ' <span class="muted">(' + (p >= 0 ? '+' : '') + p.toFixed(1) + '%)</span>';
+}
 function incrementView_() {
   const timesPicker = '<p>Increments to apply: <input type="number" id="incTimes" min="1" max="12" value="' + INC_TIMES + '" style="width:48px"> <span class="muted">(more than 1 compounds that many years at once -- Owner only)</span></p>';
   if (!INC.eligible.length) return timesPicker + '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
@@ -867,7 +874,8 @@ function incrementView_() {
     INC.eligible.map(function (e) {
       return '<tr><td><input type="checkbox" class="inc-pick" value="' + esc_(e.code) + '" checked></td><td>' + esc_(e.code) + '</td><td>' + esc_(e.name) +
         '</td><td>' + esc_(e.entity) + '</td><td>' + e.months + '</td><td>' + inr_(e.basic) + '</td><td>' + inr_(e.newBasic) + '</td>' +
-        '<td>' + (e.newNet != null ? inr_(e.oldNet) + ' → ' + inr_(e.newNet) : '—') + '</td><td>' + (e.newCti != null ? inr_(e.oldCti) + ' → ' + inr_(e.newCti) : '—') + '</td></tr>';
+        '<td>' + (e.newNet != null ? inr_(e.oldNet) + ' → ' + inr_(e.newNet) + incPct_(e.oldNet, e.newNet) : '—') + '</td>' +
+        '<td>' + (e.newCti != null ? inr_(e.oldCti) + ' → ' + inr_(e.newCti) + incPct_(e.oldCti, e.newCti) : '—') + '</td></tr>';
     }).join('') + '</table><p><button class="btn" id="incApply">Apply to checked</button></p>';
 }
 function loadAccounts_(okMsg) {
