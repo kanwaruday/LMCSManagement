@@ -78,8 +78,31 @@ function boot(fixture) {
         .replace('dd', String(d.getDate()).padStart(2, '0')).replace('HH', String(d.getHours()).padStart(2, '0')).replace('mm', String(d.getMinutes()).padStart(2, '0')),
     },
     UrlFetchApp: {
+      // Also fakes the cross-project "LMCS Employee Roster Proxy" call
+      // payBumpRosterIncrement_ makes (action=bumpincrement), against the
+      // same fake '1Oj' EmpSalary tab, so a round trip is actually exercised
+      // rather than just stubbed out -- see fixtures.js's '1Oj' book.
       fetch: (url) => {
-        const token = decodeURIComponent(String(url).split('id_token=')[1] || '');
+        const u = String(url);
+        if (u.indexOf('action=bumpincrement') !== -1) {
+          const m = u.match(/[?&]data=([^&]*)/);
+          const data = m ? JSON.parse(decodeURIComponent(m[1])) : {};
+          const codes = Array.isArray(data.codes) ? data.codes : [];
+          const sheet = books['1Oj'] && books['1Oj'].tabs && books['1Oj'].tabs.EmpSalary;
+          const updated = [], notFound = [];
+          if (sheet) {
+            const hdr = sheet.values[0] || [];
+            const codeCol = hdr.indexOf('EmployeeCode'), incCol = hdr.indexOf('Increment');
+            codes.forEach((code) => {
+              const row = sheet.values.find((r, i) => i > 0 && r[codeCol] === code);
+              if (!row || incCol === -1) { notFound.push(code); return; }
+              row[incCol] = (Number(row[incCol]) || 0) + 1;
+              updated.push(code);
+            });
+          } else codes.forEach((c) => notFound.push(c));
+          return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: true, updated, notFound }) };
+        }
+        const token = decodeURIComponent(u.split('id_token=')[1] || '');
         const who = fixture.tokens[token];
         return { getResponseCode: () => (who ? 200 : 400), getContentText: () => JSON.stringify(who ? { aud: fixture.clientId, email_verified: true, email: who } : {}) };
       },

@@ -59,7 +59,7 @@ function buildFixture() {
       '1sal': { 'Salary Master': salaryMasterRows() },
       '1d8': { 'PayRoll Rates': RATES, 'PayRoll Constants': CONSTS, 'JobRole Norms': JOBROLE_NORMS },
       '1NZ': { Allowlist: [['Email', 'Name', 'Role', 'Roles'], ['owner@test.lms', 'Test Owner', 'Owner', 'Owner'], ['principal@test.lms', 'Test Principal', 'Principal', 'Principal']] },
-      '1Oj': { EmpMaster: [['EmployeeCode', 'Name', 'SchoolCode', 'DateOfJoining', 'Status', 'DoRel']], EmpSalary: [['EmployeeCode', 'Designation']] },
+      '1Oj': { EmpMaster: [['EmployeeCode', 'Name', 'SchoolCode', 'DateOfJoining', 'Status', 'DoRel']], EmpSalary: [['EmployeeCode', 'Designation', 'Increment']] },
       '1Tr': { Approvals: [['ID', 'x', 'Category', 'a', 'b', 'c', 'd', 'Item', 'e', 'f', 'g', 'h', 'i', 'Status']] },
     },
   };

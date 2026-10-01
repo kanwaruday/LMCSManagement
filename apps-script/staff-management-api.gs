@@ -139,6 +139,7 @@ function staffDoGet_(e) {
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
+    else if (action === 'bumpincrement') result = bumpIncrement_(data, caller);
     else return staffJsonOut_({ success: false, error: 'Unknown action: ' + action });
 
     return staffJsonOut_(Object.assign({ success: true }, result));
@@ -1267,6 +1268,41 @@ function markInactive_(data, caller) {
     return { success: true };
   }
   throw new Error('Employee not found: ' + data.employeeCode);
+}
+
+// Bumps EmpSalary.Increment by 1 for each code -- called server-to-server
+// from the Payroll backend's applyincrement action (2026-10-01, per Uday),
+// right after it raises Full Basic there, so the Offer Calculator's
+// increment-count-driven pay derivation (salaryfullrecord / applyExisting-
+// EmployeePay_) stays in sync with Payroll's own Salary Master. Owner-only,
+// same bar as salaryfullrecord (this is compensation data). Best-effort per
+// code -- one missing EmpSalary row doesn't fail the rest of the batch,
+// since Payroll's own record is already the source of truth for actual pay
+// by the time this runs; the caller (Payroll) surfaces which codes failed.
+function bumpIncrement_(data, caller) {
+  if (caller.roles.indexOf('Owner') === -1) throw new Error('Only the Owner can update increment counts');
+  const codes = Array.isArray(data.codes) ? data.codes.map(function (c) { return String(c).trim(); }) : [];
+  if (!codes.length) throw new Error('codes is required');
+  const sheet = openEmpWorkbook_().getSheetByName('EmpSalary');
+  if (!sheet) throw new Error('EmpSalary tab not found');
+  const rows = sheet.getDataRange().getValues();
+  const header = rows[0];
+  const codeCol = header.indexOf('EmployeeCode');
+  const incCol = header.indexOf('Increment');
+  if (codeCol < 0 || incCol < 0) throw new Error('EmpSalary is missing EmployeeCode or Increment column');
+  const byCode = {};
+  for (let i = 1; i < rows.length; i++) byCode[String(rows[i][codeCol] || '').trim()] = i + 1;
+  const updated = [], notFound = [];
+  codes.forEach(function (code) {
+    const rowNum = byCode[code];
+    if (!rowNum) { notFound.push(code); return; }
+    const cell = sheet.getRange(rowNum, incCol + 1);
+    const current = Number(String(cell.getValue() || '0').replace(/[^0-9.-]/g, '')) || 0;
+    cell.setValue(current + 1);
+    updated.push(code);
+  });
+  bustStaffListCache_();
+  return { updated: updated, notFound: notFound };
 }
 
 function staffJsonOut_(obj) {

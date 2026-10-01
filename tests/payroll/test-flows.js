@@ -262,15 +262,18 @@ module.exports = function run(t) {
     assert.deepEqual(novRow.leaveCarryOpening, { cl: 6, comp: 0 }, '3 untouched CL (comp covered the 1 charged day) + 3 months accrual (Sep, Oct, Nov)');
   });
 
-  t.test('annual increment: 3% at 36 months, recurring, idempotent per month', () => {
+  t.test('annual increment: 3% at 36 months, recurring, idempotent per month, Roster sync', () => {
     const longTenured = 'ELK/05/03/005'; // doj 2005 -- always eligible
     const notYet = 'ELK/24/02/090'; // doj Feb 2024 -- well under 36 months by Sept 2026
+    h.books['1Oj'].tabs.EmpSalary.values.push([longTenured, 'PRT', 4]);
     let pv = call('incrementpreview', { month: '2026-09' }).eligible;
     assert.ok(pv.some((e) => e.code === longTenured));
     assert.ok(!pv.some((e) => e.code === notYet), 'not yet 36 months');
     const before = pv.find((e) => e.code === longTenured).basic;
     const applied = call('applyincrement', { month: '2026-09', codes: [longTenured] });
     assert.equal(applied.success, true, applied.error);
+    assert.deepEqual(applied.rosterSync, { success: true, updated: [longTenured], notFound: [] }, 'cross-project EmpSalary.Increment bump');
+    assert.equal(h.books['1Oj'].tabs.EmpSalary.values.find((r) => r[0] === longTenured)[2], 5, 'Increment count went 4 -> 5');
     const sep = call('month', { month: '2026-09' });
     assert.equal(sep.rows.find((r) => r.code === longTenured).basic, Math.round(before * 1.03), '3% applied, effective this same September');
     // Idempotent: re-running the same month does nothing more for them.

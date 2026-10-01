@@ -166,12 +166,12 @@ function payHandle_(action, idToken, data) {
       markleft: function (ss) { payMarkLeft_(ss, data) },
       applytransfer: function (ss) { payApplyTransfer_(ss, data, caller) },
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
-      applyincrement: function (ss) { payApplyIncrement_(ss, data, caller); },
+      applyincrement: function (ss) { extra = payApplyIncrement_(ss, data, caller, idToken); },
       issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
       settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
       issueletter: function (ss) { payIssueLetter_(ss, data, caller); },
     };
-    let result;
+    let result, extra; // extra: a write can attach fields beyond the refreshed month (e.g. applyincrement's rosterSync)
     if (action === 'month' || action === 'draft') result = payMonth_(payOpen_(), data.month);
     else if (action === 'previewleave') result = { preview: payUploadLeave_(payOpen_(), data, caller, true) };
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
@@ -181,7 +181,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
-    return payJson_(Object.assign({ success: true }, result));
+    return payJson_(Object.assign({ success: true }, result, extra));
   } catch (err) {
     return payJson_({ success: false, error: err.message });
   }
@@ -850,6 +850,9 @@ function payUploadLeave_(ss, d, caller, preview) {
 // Salary Master: who is in the Staff Portal but not on payroll, who was
 // marked Inactive or Transferred there, and who joined or left this month.
 const PAY_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // Employee Roster (EmpMaster)
+// "LMCS Employee Roster Proxy" web app -- same URL salary/index.html, staff/add-employee.html etc.
+// already use. payApplyIncrement_ calls its 'bumpincrement' action (2026-10-01, per Uday).
+const PAY_ROSTER_WEB_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 const PAY_APPROVALS_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals"
 
 // Allowlisted Principal / Coordinator / Owner -- only for recordoffer, which
@@ -1125,7 +1128,7 @@ function payIncrementEligible_(ss, month) {
 }
 
 // d: {month, codes (optional -- restrict to a subset of the preview, else everyone eligible)}
-function payApplyIncrement_(ss, d, caller) {
+function payApplyIncrement_(ss, d, caller, idToken) {
   const ctx = payCheckMonth_(d.month);
   const want = d.codes && d.codes.length ? {} : null;
   if (want) d.codes.forEach(function (c) { want[String(c).trim()] = true; });
@@ -1133,7 +1136,7 @@ function payApplyIncrement_(ss, d, caller) {
   if (!eligible.length) throw new Error('Nothing eligible to increment for ' + d.month);
   const latest = payMasterLatest_(ss);
   const now = new Date();
-  const newRows = [], incRows = [];
+  const newRows = [], incRows = [], appliedCodes = [];
   eligible.forEach(function (e) {
     const src = latest[e.code] && latest[e.code].row;
     if (!src) return;
@@ -1143,9 +1146,33 @@ function payApplyIncrement_(ss, d, caller) {
     newRows.push(row);
     incRows.push({ 'Month': ctx.start, 'Employee Code': e.code, 'Name': e.name, 'Entity': e.entity, 'Old Basic': e.basic,
       'New Basic': e.newBasic, 'Rate %': e.rate, 'Applied By': caller.email, 'Applied At': now });
+    appliedCodes.push(e.code);
   });
   payAppend_(ss.getSheetByName('Salary Master'), newRows);
   payAppend_(ss.getSheetByName('Increments'), incRows);
+  return { rosterSync: payBumpRosterIncrement_(appliedCodes, idToken) };
+}
+
+// Best-effort cross-project call: the Roster's own EmpSalary.Increment count
+// (used by the Offer Calculator) is a SEPARATE Apps Script project/sheet from
+// Payroll's own Salary Master, which is already updated by the time this
+// runs and remains the source of truth for actual pay regardless of whether
+// this call succeeds. Reuses the SAME Google ID token the caller signed in
+// with -- re-verified independently against the Roster project's own
+// Allowlist, not trusted from Payroll's side. Never throws: a failure here
+// is reported back for the Owner to see and retry/do by hand, not a reason
+// to fail the increment that already landed in Payroll.
+function payBumpRosterIncrement_(codes, idToken) {
+  if (!codes.length) return { success: true, updated: [], notFound: [] };
+  try {
+    const url = PAY_ROSTER_WEB_URL + '?action=bumpincrement&idToken=' + encodeURIComponent(idToken) + '&data=' + encodeURIComponent(JSON.stringify({ codes: codes }));
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const body = JSON.parse(res.getContentText());
+    if (!body.success) return { success: false, error: body.error || ('HTTP ' + res.getResponseCode()) };
+    return { success: true, updated: body.updated || [], notFound: body.notFound || [] };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 // Staff changes read the Employee Master and Approvals -- if either is

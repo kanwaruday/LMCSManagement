@@ -1066,7 +1066,12 @@ function wireViews_() {
       document.getElementById('loadingPill').classList.remove('on');
       if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
       M = res;
-      msg.innerHTML = '<div class="ok">Increment applied to ' + codes.length + ' employee(s).</div>';
+      const rs = res.rosterSync || {};
+      let note = 'Increment applied to ' + codes.length + ' employee(s) in Payroll.';
+      if (rs.success === false) note += ' Roster EmpSalary.Increment count was NOT updated (' + esc_(rs.error) + ') -- bump it there by hand.';
+      else if (rs.notFound && rs.notFound.length) note += ' Roster count updated for ' + rs.updated.length + '; not found in EmpSalary: ' + rs.notFound.join(', ') + '.';
+      else note += ' Roster EmpSalary.Increment count updated too.';
+      msg.innerHTML = '<div class="' + (rs.success === false ? 'err' : 'ok') + '">' + note + '</div>';
       loadIncrement_();
     });
   };
