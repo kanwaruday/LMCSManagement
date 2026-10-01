@@ -238,4 +238,20 @@ module.exports = function run(t) {
     assert.ok(!byCode['JAY/21/03/020'].some((t) => /No ESI number/.test(t)), 'LMS6 is not ESI-registered, so no ESI-number flag even though absent from EmpKeyNumbers');
     assert.ok(!byCode['ELK/05/03/005'], 'wages above the ESI threshold -- no ESI-number flag even with none on file');
   });
+
+  t.test('leave template: CL/Comp balance carries forward when a month has no upload yet', () => {
+    const code = 'JAY/19/07/014'; // untouched by earlier tests
+    const aug = call('uploadleave', { month: '2027-08', vacDays: {}, rows: [{ code, counts: { late: 4 }, clBalance: 5, compBalance: 2 }] });
+    const augRow = aug.rows.find((r) => r.code === code);
+    assert.equal(augRow.leave.compUsed, 1, 'comp covers the 1 charged day first');
+    assert.equal(augRow.leave.clUsed, 0);
+    const sep = call('month', { month: '2027-09' }); // nothing uploaded for September yet
+    const sepRow = sep.rows.find((r) => r.code === code);
+    assert.equal(sepRow.leave, null, 'carry-forward never fakes an actual upload');
+    assert.deepEqual(sepRow.leaveCarryOpening, { cl: 5, comp: 1 }, 'leftover CL (unused) and Comp (2 - 1 used) carried forward');
+    // Once September itself has an upload, its own numbers win, not the carried ones.
+    const sep2 = call('uploadleave', { month: '2027-09', vacDays: {}, rows: [{ code, counts: { single: 1 }, clBalance: 3, compBalance: 0 }] });
+    const sep2Row = sep2.rows.find((r) => r.code === code);
+    assert.equal(sep2Row.leave.clBalance, 3, "this month's own upload, not the carried-forward 5");
+  });
 };

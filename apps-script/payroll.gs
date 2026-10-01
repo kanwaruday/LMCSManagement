@@ -439,17 +439,42 @@ function payMonth_(ss, month) {
 
   const erp = payErp_(ss, month);
   const prev = payPrevNets_(ss, payPrevMonth_(month));
+  const prevLeave = payPrevLeaveClosing_(ss, payPrevMonth_(month));
   rows.forEach(function (r) {
     const e = erp[r.code];
     r.erpNet = e ? e.net : null;
     r.erpCti = e ? e.cti : null;
     r.prevNet = r.code in prev ? prev[r.code] : null;
+    // Only a suggestion for the downloaded template -- never overrides an
+    // actual upload already on file for this month (r.leave).
+    if (!r.leave && prevLeave[r.code]) r.leaveCarryOpening = prevLeave[r.code];
   });
   rows.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
   return { month: month, daysInMonth: ctx.daysInMonth, settings: live.settings, rates: live.rates, rows: rows,
     warnings: live.warnings.filter(function (w) { return !locks[w.entity]; }), locked: locks,
     checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES, staff: payStaffSafe_(ss, month),
     leaveFields: PAY_LEAVE_FIELDS.map(function (f) { return [f[0], f[1], f[2]]; }), vacRules: PAY_VAC_RULES };
+}
+
+// code -> {cl, comp}, each person's leftover CL/Comp balance after the most
+// recent month that actually has a Leave Records row for them (walks back up
+// to 12 months -- most months won't have an upload for someone with nothing
+// to report). No monthly accrual is added here, just what was left over.
+function payPrevLeaveClosing_(ss, month) {
+  const out = {}, want = {};
+  payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) { want[String(r['Employee Code']).trim()] = true; });
+  let m = month;
+  for (let i = 0; i < 12 && Object.keys(want).length; i++) {
+    payForMonth_(ss, 'Leave Records', m).forEach(function (l) {
+      const code = String(l['Employee Code']).trim();
+      if (!want[code]) return;
+      out[code] = { cl: payRound2_(payNum_(l['Opening CL Balance']) - payNum_(l['CL Used'])),
+        comp: payRound2_(payNum_(l['Opening Comp Balance']) - payNum_(l['Comp Used'])) };
+      delete want[code];
+    });
+    m = payPrevMonth_(m);
+  }
+  return out;
 }
 
 // code -> net for the previous month: locked schools from the Register,

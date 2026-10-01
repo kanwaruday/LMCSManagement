@@ -435,8 +435,13 @@ function downloadLeaveTemplate_() {
     const rows = openRows_();
     rows.forEach(function (r) {
       const l = r.leave || {};
+      // No upload yet for this month -- carry the balance left over from their
+      // last month with a Leave Record forward, instead of a blank cell.
+      const carry = r.leaveCarryOpening || {};
       const v = { code: r.code, name: r.name, school: ENTITY_LABEL[r.entity], designation: r.designation, probation: r.probation ? 'Yes' : '',
-        clBalance: l.clBalance, compBalance: l.compBalance, vacRule: r.leave ? l.vacRule : r.vacRule, vacWorked: l.vacWorked };
+        clBalance: r.leave ? l.clBalance : (r.leaveCarryOpening ? carry.cl : ''),
+        compBalance: r.leave ? l.compBalance : (r.leaveCarryOpening ? carry.comp : ''),
+        vacRule: r.leave ? l.vacRule : r.vacRule, vacWorked: l.vacWorked };
       M.leaveFields.forEach(function (f) { v['c:' + f[0]] = (l.counts || {})[f[0]]; });
       const row = ws.addRow(v);
       cols.forEach(function (c, i) {
