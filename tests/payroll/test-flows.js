@@ -226,6 +226,7 @@ module.exports = function run(t) {
       ['EmployeeCode', 'BankAcNumber', 'IFSCCode', 'UanNumber', 'EsiNumber', 'PanNo'],
       ['FOX/24/02/090', '', '', '', '', ''], // on payroll, EPF member, nothing on file
       ['FOX/23/09/104', '1234567890', 'HDFC0001234', 'UAN456', 'ESI789', 'PAN1234A'], // clean
+      ['ELK/05/03/005', '1234567890', 'HDFC0001234', 'UAN789', '', 'PAN5678B'], // wages above the ESI threshold, no ESI number
     ], 'EmpKeyNumbers', h.counter);
     const r = call('dataquality', { month: M });
     const byCode = {};
@@ -235,5 +236,6 @@ module.exports = function run(t) {
     assert.ok(!byCode['FOX/23/09/104'], 'clean row raises nothing');
     assert.ok(byCode['OWL/24/01/050'].some((t) => /Not found in EmpKeyNumbers/.test(t)), 'everyone else is missing from EmpKeyNumbers entirely');
     assert.ok(!byCode['JAY/21/03/020'].some((t) => /No ESI number/.test(t)), 'LMS6 is not ESI-registered, so no ESI-number flag even though absent from EmpKeyNumbers');
+    assert.ok(!byCode['ELK/05/03/005'], 'wages above the ESI threshold -- no ESI-number flag even with none on file');
   });
 };

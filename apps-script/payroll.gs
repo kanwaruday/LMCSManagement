@@ -1398,6 +1398,9 @@ function payDataQuality_(ss, month) {
     });
   }
   const rates = payRates_(payOpenById_(PAY_RATES_SHEET_ID));
+  const computed = payCompute_(ss, month);
+  const wages = {};
+  computed.rows.forEach(function (row) { wages[row.code] = row.wages; });
   const seen = {}, issues = [];
   const flag = function (code, name, entity, text) { issues.push({ code: code, name: name, entity: entity, text: text }); };
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
@@ -1416,11 +1419,16 @@ function payDataQuality_(ss, month) {
     if (!k.account || !k.ifsc) flag(code, name, entity, 'Missing bank account number or IFSC');
     if (payYes_(r['EPF Member (Y/N)']) && !k.uan) flag(code, name, entity, 'EPF member but no UAN on file');
     if (!k.pan) flag(code, name, entity, 'Missing PAN');
-    // ESI number is only required once actually covered -- payEsiCovered_ needs full
-    // wage history, which this report doesn't build; flagging "no ESI number at all"
-    // for anyone at an ESI-registered entity is a reasonable proxy, not a precise
-    // coverage check (someone who has always been above the threshold is a false positive).
-    if ((rates[payEntity_(r['Entity'])] || {}).esiRegistered && !k.esi) flag(code, name, entity, 'No ESI number on file (fine if always above the ESI wage threshold)');
+    // Only flag a missing ESI number for someone actually at/under this month's wage
+    // threshold -- per Uday, 2026-10-01, the entity-only check was flooding the report
+    // with false positives for every high earner at an ESI-registered school. This still
+    // isn't a precise coverage check (a contribution period keeps someone covered even
+    // after a raise crosses the threshold -- payEsiCovered_ needs the wage history this
+    // report doesn't build), so someone covered mid-period on a now-higher wage could
+    // still be missed; it only clears the much larger false-positive case.
+    if ((rates[payEntity_(r['Entity'])] || {}).esiRegistered && !k.esi && wages[code] !== undefined && wages[code] <= computed.settings.esiThreshold) {
+      flag(code, name, entity, 'No ESI number on file (wages ₹' + wages[code] + ' are at/under the ESI threshold)');
+    }
   });
   return { month: month, issues: issues, checked: Object.keys(seen).length };
 }
