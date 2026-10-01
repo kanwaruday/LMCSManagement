@@ -249,7 +249,7 @@ function salDiagnosePayScale_() {
 function salEpfExemptionApproved_(candidateName) {
   const name = String(candidateName || '').trim().toLowerCase();
   if (!name) return false;
-  const values = aprSheet_().getDataRange().getValues();
+  const values = aprValues_();
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     if (String(row[2]) !== 'EPF Exemption') continue;

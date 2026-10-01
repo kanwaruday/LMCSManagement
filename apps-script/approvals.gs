@@ -114,8 +114,38 @@ const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Other'];
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
-function aprSheet_() { return SpreadsheetApp.openById(APR_SHEET_ID).getSheetByName(APR_TAB); }
-function aprCommentsSheet_() { return SpreadsheetApp.openById(APR_SHEET_ID).getSheetByName(APR_COMMENTS_TAB); }
+// 2026-10-01, per Uday (PayRoll session's speed audit): a single
+// Hiring Dashboard page load used to open this workbook 4 separate
+// times and read every row of it 4 separate times -- openById'ing the
+// SAME id twice is pure waste (the handle is never stale, only cell
+// VALUES can be), so it's cached here forever. aprValues_ below
+// additionally memoizes the actual getDataRange().getValues() read,
+// but only for the lifetime of ONE web request (APR_REQUEST_MEMO is
+// reset at the top of doGet/doPost in main.gs) -- never across
+// requests, since an Apps Script instance can be reused warm and stale
+// approval data would be a real correctness bug, not just slowness.
+let APR_SS_HANDLE_ = null;
+function aprWorkbook_() {
+  if (!APR_SS_HANDLE_) APR_SS_HANDLE_ = SpreadsheetApp.openById(APR_SHEET_ID);
+  return APR_SS_HANDLE_;
+}
+function aprSheet_() { return aprWorkbook_().getSheetByName(APR_TAB); }
+function aprCommentsSheet_() { return aprWorkbook_().getSheetByName(APR_COMMENTS_TAB); }
+
+let APR_REQUEST_MEMO = null;
+function aprResetRequestMemo_() { APR_REQUEST_MEMO = new Map(); }
+// Every read of the Approvals sheet within ONE request should go
+// through this instead of calling aprSheet_().getDataRange().getValues()
+// directly -- hiringApplicants_ alone used to trigger 2 independent
+// full reads of this sheet (hirApprovedRequisitions_ +
+// hirSalaryOfferDecisions_), hiringApprovalStatus_ 2 more
+// (hirApprovedRequisitions_ directly + again via hirApprovedCampuses_).
+function aprValues_() {
+  const sheet = aprSheet_();
+  if (!APR_REQUEST_MEMO) return sheet.getDataRange().getValues(); // defensive -- should never actually happen, see aprResetRequestMemo_
+  if (!APR_REQUEST_MEMO.has(sheet)) APR_REQUEST_MEMO.set(sheet, sheet.getDataRange().getValues());
+  return APR_REQUEST_MEMO.get(sheet);
+}
 
 // Owner always decides; a Coordinator decides only with the delegated
 // flag main.gs's verifyCallerToken_ read off the Allowlist row. Tightened
@@ -149,7 +179,7 @@ function aprRowToObj_(row) {
 // campus. Someone with "Coordinator,Teacher" gets the Coordinator view,
 // not the narrower Teacher one -- Teacher is additive, not a downgrade.
 function aprList_(caller) {
-  const values = aprSheet_().getDataRange().getValues();
+  const values = aprValues_();
   const out = [];
   const teacherOnly = pdrIsTeacherOnly_(caller);
   for (let i = 1; i < values.length; i++) {
@@ -169,7 +199,7 @@ function aprList_(caller) {
 // action=approvaldetail&id=... -- same Teacher-only-vs-everyone-else
 // scoping as aprList_ above.
 function aprDetail_(caller, id) {
-  const values = aprSheet_().getDataRange().getValues();
+  const values = aprValues_();
   const teacherOnly = pdrIsTeacherOnly_(caller);
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) !== String(id)) continue;

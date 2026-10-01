@@ -195,9 +195,19 @@ const HIR_REQUIRED_DOC_KEYWORDS = {
   'Medical Certificate': ['MEDICAL CERTIFICATE'],
 };
 
+// 2026-10-01, per Uday (PayRoll session's speed audit): hirSheet_,
+// hirIrSheet_, and hirTrackerSheet_ all open HIR_SHEET_ID (the same
+// workbook -- HIR_IR_SHEET_ID is just an alias for it) independently,
+// which used to mean a single hiringApplicants_ call opened it twice.
+// Cached here forever, same reasoning as approvals.gs's aprWorkbook_ --
+// the handle is never stale, only cell values can be.
+let HIR_SS_HANDLE_ = null;
+function hirWorkbook_() {
+  if (!HIR_SS_HANDLE_) HIR_SS_HANDLE_ = SpreadsheetApp.openById(HIR_SHEET_ID);
+  return HIR_SS_HANDLE_;
+}
 function hirSheet_() {
-  const ss = SpreadsheetApp.openById(HIR_SHEET_ID);
-  const sheet = ss.getSheets().find(function (s) { return s.getSheetId() === HIR_SHEET_GID; });
+  const sheet = hirWorkbook_().getSheets().find(function (s) { return s.getSheetId() === HIR_SHEET_GID; });
   if (!sheet) throw new Error('Teaching Applicants sheet tab not found');
   return sheet;
 }
@@ -641,7 +651,7 @@ function hirParseRequisitionItem_(itemName) {
 // -- same Apps Script project, same global scope, no duplicate
 // sheet-read logic.
 function hirApprovedRequisitions_(category) {
-  const values = aprSheet_().getDataRange().getValues();
+  const values = aprValues_();
   const byCampus = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
@@ -864,7 +874,7 @@ function hirApprovalApproved_(campusId, category) {
 // this decision is consequential enough to want an exact match, not a
 // name-substring one.
 function hirSalaryOfferDecisions_() {
-  const values = aprSheet_().getDataRange().getValues();
+  const values = aprValues_();
   const map = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
@@ -1021,8 +1031,7 @@ function hiringUpdateStatus_(caller, body) {
 // tab by phone number (the one reliable shared key -- that sheet has no
 // applicant-name normalization to trust). Read-only, warns, never blocks.
 function hirIrSheet_() {
-  const ss = SpreadsheetApp.openById(HIR_IR_SHEET_ID);
-  const sheet = ss.getSheets().find(function (s) { return s.getSheetId() === HIR_IR_SHEET_GID; });
+  const sheet = hirWorkbook_().getSheets().find(function (s) { return s.getSheetId() === HIR_IR_SHEET_GID; });
   if (!sheet) throw new Error('Interview Reports sheet tab not found');
   return sheet;
 }
@@ -1067,8 +1076,7 @@ function hirInterviewReportPhones_() {
 }
 
 function hirTrackerSheet_() {
-  const ss = SpreadsheetApp.openById(HIR_SHEET_ID);
-  const sheet = ss.getSheets().find(function (s) { return s.getSheetId() === HIR_TRACKER_SHEET_GID; });
+  const sheet = hirWorkbook_().getSheets().find(function (s) { return s.getSheetId() === HIR_TRACKER_SHEET_GID; });
   if (!sheet) throw new Error('Applicant Live Status sheet tab not found');
   return sheet;
 }

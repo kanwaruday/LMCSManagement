@@ -29,6 +29,17 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
 .denied .icon{font-size:36px;margin-bottom:10px}
 
+/* 2026-10-01, per Uday: a status bar for loadAll_ -- before this,
+   nothing told you whether the page was loading, stuck, or actually
+   broken (loadAll_ had no .catch() at all, so a network failure just
+   left mainRoot hidden forever with zero feedback). */
+.status-bar{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:7px 12px;border-radius:5px;margin-bottom:12px;background:var(--lgray);color:var(--gray);border:1px solid var(--border)}
+.status-bar.ok{background:rgba(21,128,61,.08);color:var(--green);border-color:rgba(21,128,61,.3)}
+.status-bar.err{background:var(--red-lt);color:var(--red);border-color:rgba(206,0,0,.3)}
+.status-bar .retry-btn{margin-left:auto;background:#fff;border:1px solid currentColor;color:inherit;border-radius:4px;padding:2px 9px;font-size:11px;cursor:pointer}
+.spin{display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 .getting-started{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
 
 /* Owner-only "data source" links (2026-09-20) -- same pattern as
@@ -115,6 +126,7 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
 
   <div id="appRoot" style="display:none">
     <div class="welcome" id="welcomeStrip"></div>
+    <div class="status-bar" id="statusBar" style="display:none"></div>
     <div id="deniedRoot"></div>
     <div id="mainRoot" style="display:none">
 
@@ -641,10 +653,30 @@ function saveRow_(tr, applicant) {
     .catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'row-msg err'; });
 }
 
+function setStatus_(state, text) {
+  const bar = document.getElementById('statusBar');
+  bar.style.display = '';
+  bar.className = 'status-bar' + (state ? ' ' + state : '');
+  bar.innerHTML = (state === 'loading' ? '<span class="spin"></span>' : '') + '<span>' + text + '</span>' +
+    (state === 'err' ? '<button type="button" class="retry-btn" onclick="loadAll_()">Retry</button>' : '');
+}
+
+// 2026-10-01, per Uday ("this is not loading, please check" + "show me
+// a status bar"): this used to have no .catch() at all -- a network
+// failure on EITHER request left mainRoot hidden forever with zero
+// feedback, indistinguishable from the page just being broken. Now
+// every outcome (loading / loaded / failed) is visible, and a failure
+// gets a Retry button instead of a dead page.
 function loadAll_() {
+  setStatus_('loading', 'Loading applicants…');
   Promise.all([gasGet_('hiringapplicants'), gasGet_('hiringapprovalstatus')]).then(function (results) {
     const applicants = results[0], approvalStatus = results[1];
-    if (!applicants.success) { document.getElementById('mainRoot').innerHTML = '<div class="empty">' + applicants.error + '</div>'; document.getElementById('mainRoot').style.display = ''; return; }
+    if (!applicants.success) {
+      setStatus_('err', applicants.error || 'Failed to load.');
+      document.getElementById('mainRoot').innerHTML = '<div class="empty">' + applicants.error + '</div>';
+      document.getElementById('mainRoot').style.display = '';
+      return;
+    }
     APPLICANTS = applicants;
     APPROVAL_STATUS = approvalStatus.success ? approvalStatus : { campuses: [] };
     document.getElementById('mainRoot').style.display = '';
@@ -652,6 +684,9 @@ function loadAll_() {
     renderDataSourceLinks_();
     renderRolesList_();
     renderRows();
+    setStatus_('ok', 'Loaded ' + (applicants.applicants || []).length + ' applicant(s) — ' + new Date().toLocaleTimeString());
+  }).catch(function () {
+    setStatus_('err', 'Network error — could not reach the backend.');
   });
 }
 

@@ -132,6 +132,7 @@ const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats',
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 
 function doGet(e) {
+  aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
     const caller = verifyCallerToken_(e.parameter.idToken);
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
@@ -190,6 +191,7 @@ function doGet(e) {
 // browsers treat it as CORS-safelisted and skip a preflight OPTIONS
 // request -- this project has no doOptions, so a preflight would fail.
 function doPost(e) {
+  aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
     const body = JSON.parse(e.postData.contents);
     const caller = verifyCallerToken_(body.idToken);
