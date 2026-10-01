@@ -148,23 +148,29 @@ function payPost_(action, data) {
 // one and silently overwrite it in M -- audit 2026-10-01, matches a reported case
 // of an adjustment that "saved" but didn't show. Only the most recently ISSUED
 // request's response is ever applied; every other one is dropped as stale.
+// Buttons stayed clickable while a save was in flight (quick win, audit 2026-10-01)
+// -- a fast double-click could fire the same action twice. render_() always rebuilds
+// the buttons on success, so only the error/catch paths need to re-enable explicitly.
+function setButtonsDisabled_(on) { document.querySelectorAll('.btn, button').forEach(function (b) { b.disabled = on; }); }
 let REQ_SEQ = 0;
 function call_(promise, label, okMsg) {
   const seq = ++REQ_SEQ;
   const msg = document.getElementById('msgRoot');
   document.getElementById('loadingText').textContent = label || 'Working…';
   document.getElementById('loadingPill').classList.add('on');
+  setButtonsDisabled_(true);
   return promise.then(function (res) {
     if (seq !== REQ_SEQ) return false; // a newer request already landed -- this one is stale
     document.getElementById('loadingPill').classList.remove('on');
-    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
+    if (!res.success) { setButtonsDisabled_(false); msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
     M = res;
     msg.innerHTML = okMsg ? '<div class="ok">' + esc_(okMsg) + '</div>' : '';
-    render_();
+    render_(); // rebuilds the buttons, re-enabled
     return true;
   }).catch(function (err) {
     if (seq !== REQ_SEQ) return false;
     document.getElementById('loadingPill').classList.remove('on');
+    setButtonsDisabled_(false);
     msg.innerHTML = '<div class="err">Could not reach the payroll backend: ' + esc_(err.message) + '</div>';
     return false;
   });
