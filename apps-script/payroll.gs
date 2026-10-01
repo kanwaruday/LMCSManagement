@@ -1049,7 +1049,15 @@ function payStaffSafe_(ss, month) {
     return out;
   } catch (e) { return { error: e.message }; }
 }
-function payStaffChanged_() { CacheService.getScriptCache().put('pay_staff_gen', String(Date.now()), 21600); }
+// A counter, not Date.now() -- two staff-changing writes inside the same millisecond
+// (overnight audit, 2026-10-01) produced the same "generation" token, so the second
+// write's payMonth_ call read the first write's now-stale cached staff-changes entry
+// for the month it just changed (e.g. a just-joined offer still showing as pending).
+// Every caller holds the script lock already, so this read-then-write is safe.
+function payStaffChanged_() {
+  const cache = CacheService.getScriptCache();
+  cache.put('pay_staff_gen', String(Number(cache.get('pay_staff_gen') || '0') + 1), 21600);
+}
 
 // ── Unlock (2026-09-30, per Uday -- for accidental locks) ────────────
 // Removes one school's lock for a month: its Run Log "Locked" row, its

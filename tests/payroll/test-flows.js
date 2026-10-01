@@ -1,0 +1,223 @@
+// Backend flow tests against the fake fixture (no real salary data). Run via
+// `node tests/payroll/run.js`. Ported from the pre-audit scratchpad e2e tests,
+// with the real-ERP comparison assertions removed (can't commit real data here)
+// and fixture codes/entities in place of the real Sep-2026 names.
+'use strict';
+const assert = require('assert');
+const { boot } = require('./harness');
+const { buildFixture } = require('./fixtures');
+
+module.exports = function run(t) {
+  const h = boot(buildFixture());
+  const call = h.call;
+  const M = '2026-10';
+
+  t.test('owner-only auth', () => {
+    const anon = call('month', { month: M }, 'bad-token');
+    assert.equal(anon.success, false);
+    assert.match(anon.error, /Owner-only/);
+  });
+
+  let m = call('month', { month: M });
+  assert.equal(m.rows.length, 10, 'all fixture staff appear');
+  const A = m.rows.find((r) => r.entity === 'LMS1'), B = m.rows.find((r) => r.entity === 'LMS2'), C = m.rows.find((r) => r.entity === 'LMS3');
+
+  t.test('adjustments add/delete/validate', () => {
+    m = call('addadjustment', { month: M, code: A.code, type: 'Arrears', amount: 2000, note: 'Aug arrears' });
+    m = call('addadjustment', { month: M, code: A.code, type: 'Advance / Loan Recovery', amount: 500 });
+    let a = m.rows.find((r) => r.code === A.code);
+    assert.equal(a.otherEarnings, 2000);
+    assert.equal(a.otherDeductions, 500);
+    assert.equal(a.adjustments.length, 2);
+    m = call('deleteadjustment', { month: M, id: a.adjustments[1].id });
+    a = m.rows.find((r) => r.code === A.code);
+    assert.equal(a.adjustments.length, 1);
+    assert.equal(a.otherDeductions, 0);
+    let bad = call('addadjustment', { month: M, code: A.code, type: 'Bribe', amount: 5 });
+    assert.match(bad.error, /Unknown adjustment/);
+    bad = call('addadjustment', { month: M, code: A.code, type: 'Fine', amount: 0 });
+    assert.match(bad.error, /more than 0/);
+  });
+
+  t.test('holds and release validation', () => {
+    m = call('saveinputs', { month: M, rows: [{ code: B.code, hold: 'grievance' }] });
+    const b = m.rows.find((r) => r.code === B.code);
+    assert.equal(b.withheld, b.net);
+    assert.equal(b.bankPayable, 0);
+    const bad = call('saveinputs', { month: M, rows: [{ code: C.code, release: 100 }] });
+    assert.match(bad.error, /not valid/);
+  });
+
+  t.test('lock requires all checklist steps', () => {
+    const bad = call('lock', { month: M, entity: 'LMS1' });
+    assert.match(bad.error, /tick these steps first -- staff, leave, adjustments, holds, review/);
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((step) => call('markstep', { month: M, entity: 'LMS1', step, done: true }));
+    m = call('lock', { month: M, entity: 'LMS1' });
+    assert.deepEqual(Object.keys(m.locked), ['LMS1']);
+    const a = m.rows.find((r) => r.code === A.code);
+    assert.equal(a.adjustments.length, 1, 'locked row keeps its adjustment');
+    const bad2 = call('addadjustment', { month: M, code: A.code, type: 'Fine', amount: 10 });
+    assert.match(bad2.error, /LMS1 is locked/);
+  });
+
+  t.test('untick resets a step; lock ALL writes every remaining school', () => {
+    call('markstep', { month: M, entity: 'LMS1', step: 'review', done: false });
+    let d = call('month', { month: M });
+    assert.equal(Object.keys(d.checklist.LMS1).length, 4, 'untick works');
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((step) => call('markstep', { month: M, entity: 'ALL', step, done: true }));
+    m = call('lock', { month: M, entity: 'ALL' });
+    assert.equal(Object.keys(m.locked).length, 7, 'all 7 entities locked');
+    const bad = call('lock', { month: M, entity: 'ALL' });
+    assert.match(bad.error, /Nothing left to lock/);
+  });
+
+  t.test('held salary carries forward and can be released next month', () => {
+    const b = m.rows.find((r) => r.code === B.code);
+    const O = '2026-11';
+    let o = call('month', { month: O });
+    let ob = o.rows.find((r) => r.code === B.code);
+    assert.equal(ob.heldBalance, b.withheld);
+    assert.equal(ob.prevNet, b.net, 'prev month net read from the register, not recomputed');
+    const bad = call('saveinputs', { month: O, rows: [{ code: B.code, release: b.withheld + 1 }] });
+    assert.match(bad.error, /not valid/);
+    o = call('saveinputs', { month: O, rows: [{ code: B.code, release: b.withheld }] });
+    ob = o.rows.find((r) => r.code === B.code);
+    assert.equal(ob.bankPayable, ob.net + b.withheld);
+    assert.equal(ob.released, b.withheld);
+  });
+
+  t.test('leave template: vacation rules, balances, bad input', () => {
+    const N = '2027-09'; // 30-day month, so the late/short conversion matches the ported values
+    let n = call('month', { month: N });
+    const prt = n.rows.find((r) => r.designation === 'PRT' && r.entity === 'LMS1');
+    const hel = n.rows.find((r) => r.designation === 'Helper' && r.entity === 'LMS1');
+    const pcd = n.rows.find((r) => r.designation === 'Peon Cum Driver');
+    const odd = n.rows.find((r) => r.designation === 'Karate Teacher');
+    assert.equal(prt.vacRule, 'Full');
+    assert.equal(hel.vacRule, 'Half');
+    assert.equal(pcd.vacRule, 'Half', 'Peon Cum Driver aliases Driver Cum Peon');
+    assert.equal(odd.vacRule, '', 'unmapped designation');
+    call('saveinputs', { month: N, rows: [{ code: prt.code, hold: 'fnf' }] });
+    const up = {
+      month: N, vacDays: { [hel.entity]: 21 },
+      rows: [
+        { code: prt.code, counts: { late: 3, short: 1 } },
+        { code: pcd.code, counts: { casual: 2, absent: 1 }, clBalance: 3, compBalance: 1 },
+        { code: hel.code, counts: {}, vacRule: 'Half', vacWorked: 7 },
+        { code: odd.code, counts: {} },
+      ],
+    };
+    const pv = call('previewleave', up).preview;
+    const g = (c) => pv.find((x) => x.code === c);
+    assert.equal(g(prt.code).paidDays, 28.92);
+    assert.equal(g(pcd.code).paidDays, 30);
+    assert.equal(g(pcd.code).compUsed, 1);
+    assert.ok(!g(odd.code), 'empty row with no earlier record skipped');
+    n = call('uploadleave', up);
+    const np = n.rows.find((r) => r.code === prt.code);
+    assert.equal(np.paidDays, 28.92);
+    assert.equal(np.heldForFnF, np.net, 'hold kept after leave upload');
+    const bad = call('previewleave', { month: N, rows: [{ code: prt.code, counts: { late: 1.5 } }] });
+    assert.match(bad.error, /not valid/);
+    const bad2 = call('previewleave', { month: N, rows: [{ code: prt.code, counts: {}, vacRule: 'Sometimes' }] });
+    assert.match(bad2.error, /unknown vacation rule/);
+  });
+
+  // Also the regression test for the payStaffChanged_ cache-generation race (audit
+  // 2026-10-01, fixed in apps-script/payroll.gs): back-to-back staff-changing writes,
+  // each immediately followed by a staff-list read, must never see stale data.
+  t.test('staff changes: joiner via offer, leaver, duplicate-code flag', () => {
+    const O2 = '2027-01';
+    h.books['1Oj'].tabs.EmpMaster.values.push(['NEW/27/01/200', 'New Person', 'LMS1', new Date(2027, 0, 5), 'Active', '']);
+    h.books['1Tr'].tabs.Approvals.values.push(['1', '', 'Salary Offer Approval', '', '', '', '', 'T-0001 — New Person', '', '', '', '', '', 'Approved']);
+    const rec = call('recordoffer', { applicantId: 'T-0001', name: 'New Person', entity: 'LMS1', designation: 'PRT', fullBasic: 12000, epf: true, tuition: 0, cti: 18000, netY1: 14000 }, 'principal-token');
+    assert.equal(rec.success, true, rec.error);
+    let st = call('month', { month: O2 }).staff;
+    assert.equal(st.offers.length, 1);
+    assert.equal(st.offers[0].approval, 'Approved');
+    assert.deepEqual(st.notOnPayroll.map((x) => x.code), ['NEW/27/01/200']);
+    let d = call('joinoffer', { month: O2, applicantId: 'T-0001', code: 'NEW/27/01/200', doj: '2027-01-05' });
+    const j = d.rows.find((r) => r.code === 'NEW/27/01/200');
+    assert.equal(j.paidDays, 27, 'joined 5 Jan -> 27 days');
+    assert.equal(d.staff.joiners.length, 1);
+    const leaverCode = 'JAY/20/05/030';
+    d = call('markleft', { month: O2, code: leaverCode, lastDay: '2027-01-20' });
+    assert.equal(d.rows.find((r) => r.code === leaverCode).paidDays, 20);
+    assert.equal(d.staff.leavers.length, 1);
+    assert.ok(!call('month', { month: '2027-02' }).rows.find((r) => r.code === leaverCode), 'gone next month');
+  });
+
+  t.test('transfer: whole month at new entity', () => {
+    const O2 = '2027-01';
+    const oldCode = 'ELK/24/02/090', newCode = 'ELK-TR/24/02/090';
+    const d = call('applytransfer', { month: O2, oldCode, newCode, entity: 'LMS5' });
+    assert.equal(d.success, true, d.error);
+    assert.ok(!d.rows.find((r) => r.code === oldCode), 'old code not paid this month');
+    const tn = d.rows.find((r) => r.code === newCode);
+    assert.equal(tn.entity, 'LMS5');
+    assert.equal(tn.paidDays, 31, 'whole month at the new school');
+  });
+
+  t.test('unlock: removes only that school/month, blocked if a later month is locked', () => {
+    const U = '2027-03', V = '2027-04', steps = ['staff', 'leave', 'adjustments', 'holds', 'review'];
+    steps.forEach((step) => call('markstep', { month: U, entity: 'ALL', step, done: true }));
+    let u = call('lock', { month: U, entity: 'LMS2' });
+    const lms2n = u.rows.filter((r) => r.entity === 'LMS2').length;
+    steps.forEach((step) => call('markstep', { month: V, entity: 'ALL', step, done: true }));
+    call('lock', { month: V, entity: 'LMS2' });
+    const blocked = call('unlock', { month: U, entity: 'LMS2' });
+    assert.match(blocked.error, /also locked for 2027-04/);
+    call('unlock', { month: V, entity: 'LMS2' });
+    u = call('unlock', { month: U, entity: 'LMS2' });
+    assert.ok(!u.locked.LMS2, 'LMS2 unlocked');
+    const again = call('unlock', { month: U, entity: 'LMS2' });
+    assert.match(again.error, /not locked/);
+    u = call('lock', { month: U, entity: 'LMS2' });
+    assert.ok(u.locked.LMS2, 'can lock again');
+  });
+
+  t.test('opening balances, loans, accounts, F&F', () => {
+    const S = '2027-05';
+    const rrfCode = 'ELK/05/03/005', loanCode = 'FOX/24/02/090';
+    const bad = call('importopening', { month: S, balances: [{ code: 'NOPE/1/1/1', account: 'RRF', amount: 5, source: 'x' }] });
+    assert.match(bad.error, /not in Salary Master/);
+    const bad2 = call('importopening', { month: S, loans: [{ code: loanCode, amount: 100, source: 'y' }] });
+    assert.match(bad2.error, /monthly recovery is required/);
+    const imp = { month: S, balances: [{ code: rrfCode, account: 'RRF', amount: 50000, source: 'Opening RRF' }], loans: [{ code: loanCode, amount: 25000, monthly: 5000, source: 'Sal Adv' }] };
+    call('importopening', imp);
+    const dup = call('importopening', imp);
+    assert.match(dup.error, /already imported/);
+    let m4 = call('month', { month: S });
+    const rr = m4.rows.find((r) => r.code === loanCode);
+    assert.equal(rr.loanDue, 5000);
+    assert.equal(rr.loanRecovery, 5000);
+    const skipBad = call('saveinputs', { month: S, rows: [{ code: loanCode, skipLoan: true }] });
+    assert.match(skipBad.error, /give a reason/);
+    m4 = call('saveinputs', { month: S, rows: [{ code: loanCode, skipLoan: true, skipReason: 'test' }] });
+    assert.equal(m4.rows.find((r) => r.code === loanCode).loanRecovery, 0);
+    call('saveinputs', { month: S, rows: [{ code: loanCode, skipLoan: false }] });
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((step) => call('markstep', { month: S, entity: 'ALL', step, done: true }));
+    call('lock', { month: S, entity: 'ALL' });
+    const O4 = '2027-06';
+    let o4 = call('month', { month: O4 });
+    assert.equal(o4.rows.find((r) => r.code === loanCode).loanBalance, 20000, '25000 - 5000 recovered in May');
+
+    const acc = call('accounts', { month: O4 });
+    assert.ok(acc.openingImported);
+    const gs = acc.accounts.find((x) => x.code === rrfCode);
+    assert.ok(gs.gratuity.vested && gs.gratuity.accrued > 0, '20+ year staff is gratuity-vested');
+
+    const earlyFnf = call('fnfpreview', { code: rrfCode });
+    assert.match(earlyFnf.error, /has not left/);
+    call('markleft', { month: O4, code: rrfCode, lastDay: '2027-06-15' });
+    const statement = call('fnfpreview', { code: rrfCode, manual: { clDays: 3, noticeRecovery: 1000 } }).statement;
+    assert.ok(statement.earnings.gratuity > 0, 'gratuity paid for 20+ years');
+    assert.equal(statement.net, statement.totalEarnings - statement.totalDeductions);
+    call('settlefnf', { month: O4, code: rrfCode, manual: { clDays: 3, noticeRecovery: 1000 }, paidOn: '2027-07-10', mode: 'Bank', reference: 'UTR1' });
+    const after = call('accounts', { month: O4 }).accounts.find((x) => x.code === rrfCode);
+    assert.equal(after.security, 0);
+    assert.ok(after.settled);
+    const resettle = call('settlefnf', { month: O4, code: rrfCode, paidOn: '2027-07-10' });
+    assert.match(resettle.error, /already has a Full/);
+  });
+};
