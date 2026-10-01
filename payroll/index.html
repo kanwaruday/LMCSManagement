@@ -141,11 +141,21 @@ function payPost_(action, data) {
     .then(function (r) { return r.json(); });
 }
 // Every call returns the whole month -- one handler redraws everything.
+// Nothing here stops two requests being in flight at once (no button is disabled
+// while saving), and fetch/Apps Script give no guarantee the responses arrive back
+// in the order they were sent. Without REQ_SEQ, a quick second click (or a slow
+// network reordering a response) could let an OLDER response land after a newer
+// one and silently overwrite it in M -- audit 2026-10-01, matches a reported case
+// of an adjustment that "saved" but didn't show. Only the most recently ISSUED
+// request's response is ever applied; every other one is dropped as stale.
+let REQ_SEQ = 0;
 function call_(promise, label, okMsg) {
+  const seq = ++REQ_SEQ;
   const msg = document.getElementById('msgRoot');
   document.getElementById('loadingText').textContent = label || 'Working…';
   document.getElementById('loadingPill').classList.add('on');
   return promise.then(function (res) {
+    if (seq !== REQ_SEQ) return false; // a newer request already landed -- this one is stale
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
     M = res;
@@ -153,6 +163,7 @@ function call_(promise, label, okMsg) {
     render_();
     return true;
   }).catch(function (err) {
+    if (seq !== REQ_SEQ) return false;
     document.getElementById('loadingPill').classList.remove('on');
     msg.innerHTML = '<div class="err">Could not reach the payroll backend: ' + esc_(err.message) + '</div>';
     return false;
