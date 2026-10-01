@@ -107,7 +107,7 @@ const PAY_TABS = {
 
 // Payroll-only settings, appended to PayRoll Constants if missing.
 const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes)', 0],
-  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30]];
+  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1]];
 
 // Adjustment line-item types (Uday, 2026-09-30) -> Earning / Deduction.
 const PAY_ADJ_TYPES = {
@@ -322,6 +322,7 @@ function paySettings_(rs) {
     rrfY1: c['RRF Y1 %'] / 100, rrfY2: c['RRF Y2 %'] / 100, rrfY3: c['RRF Y3 %'] / 100,
     rrfTargetMonths: c['RRF Target Months'], rrfStopAtTarget: c['RRF Stop At Target (1=Yes)'] === 1,
     gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'], epsRate: c['EPF Rate %'] / 100,
+    clAccrual: c['CL Accrual Per Month'],
   };
 }
 
@@ -439,7 +440,7 @@ function payMonth_(ss, month) {
 
   const erp = payErp_(ss, month);
   const prev = payPrevNets_(ss, payPrevMonth_(month));
-  const prevLeave = payPrevLeaveClosing_(ss, payPrevMonth_(month));
+  const prevLeave = payPrevLeaveClosing_(ss, payPrevMonth_(month), live.settings.clAccrual);
   rows.forEach(function (r) {
     const e = erp[r.code];
     r.erpNet = e ? e.net : null;
@@ -456,23 +457,28 @@ function payMonth_(ss, month) {
     leaveFields: PAY_LEAVE_FIELDS.map(function (f) { return [f[0], f[1], f[2]]; }), vacRules: PAY_VAC_RULES };
 }
 
-// code -> {cl, comp}, each person's leftover CL/Comp balance after the most
-// recent month that actually has a Leave Records row for them (walks back up
-// to 12 months -- most months won't have an upload for someone with nothing
-// to report). No monthly accrual is added here, just what was left over.
-function payPrevLeaveClosing_(ss, month) {
+// code -> {cl, comp}, each person's CL/Comp balance as of the start of `month`:
+// whatever was left over (Opening - Used) after the most recent month that
+// actually has a Leave Records row for them, plus CL Accrual Per Month for
+// every month since that's gone by with no upload (walks back up to 12
+// months -- most months won't have an upload for someone with nothing to
+// report). Comp isn't accrued automatically (it's earned ad hoc), so only CL
+// gets the per-month addition.
+function payPrevLeaveClosing_(ss, month, clAccrual) {
   const out = {}, want = {};
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) { want[String(r['Employee Code']).trim()] = true; });
-  let m = month;
+  let m = month, elapsed = 1;
   for (let i = 0; i < 12 && Object.keys(want).length; i++) {
+    const accrued = elapsed * (Number(clAccrual) || 0);
     payForMonth_(ss, 'Leave Records', m).forEach(function (l) {
       const code = String(l['Employee Code']).trim();
       if (!want[code]) return;
-      out[code] = { cl: payRound2_(payNum_(l['Opening CL Balance']) - payNum_(l['CL Used'])),
+      out[code] = { cl: payRound2_(payNum_(l['Opening CL Balance']) - payNum_(l['CL Used']) + accrued),
         comp: payRound2_(payNum_(l['Opening Comp Balance']) - payNum_(l['Comp Used'])) };
       delete want[code];
     });
     m = payPrevMonth_(m);
+    elapsed++;
   }
   return out;
 }

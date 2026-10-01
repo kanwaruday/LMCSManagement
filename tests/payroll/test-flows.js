@@ -248,10 +248,17 @@ module.exports = function run(t) {
     const sep = call('month', { month: '2027-09' }); // nothing uploaded for September yet
     const sepRow = sep.rows.find((r) => r.code === code);
     assert.equal(sepRow.leave, null, 'carry-forward never fakes an actual upload');
-    assert.deepEqual(sepRow.leaveCarryOpening, { cl: 5, comp: 1 }, 'leftover CL (unused) and Comp (2 - 1 used) carried forward');
+    assert.deepEqual(sepRow.leaveCarryOpening, { cl: 6, comp: 1 }, 'leftover CL (5 unused + 1 month accrual) and Comp (2 - 1 used, no accrual) carried forward');
     // Once September itself has an upload, its own numbers win, not the carried ones.
     const sep2 = call('uploadleave', { month: '2027-09', vacDays: {}, rows: [{ code, counts: { single: 1 }, clBalance: 3, compBalance: 0 }] });
     const sep2Row = sep2.rows.find((r) => r.code === code);
     assert.equal(sep2Row.leave.clBalance, 3, "this month's own upload, not the carried-forward 5");
+
+    // Multi-month gap: accrual adds up for every month since the last real upload.
+    const code2 = 'JAY/21/03/020';
+    call('uploadleave', { month: '2027-08', vacDays: {}, rows: [{ code: code2, counts: { single: 1 }, clBalance: 3, compBalance: 1 }] });
+    const nov = call('month', { month: '2027-11' }); // Sep, Oct, Nov all have no upload for code2
+    const novRow = nov.rows.find((r) => r.code === code2);
+    assert.deepEqual(novRow.leaveCarryOpening, { cl: 6, comp: 0 }, '3 untouched CL (comp covered the 1 charged day) + 3 months accrual (Sep, Oct, Nov)');
   });
 };
