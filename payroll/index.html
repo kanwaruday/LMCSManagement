@@ -141,19 +141,36 @@ function payPost_(action, data) {
     .then(function (r) { return r.json(); });
 }
 // Every call returns the whole month -- one handler redraws everything.
+// Nothing here stops two requests being in flight at once (no button is disabled
+// while saving), and fetch/Apps Script give no guarantee the responses arrive back
+// in the order they were sent. Without REQ_SEQ, a quick second click (or a slow
+// network reordering a response) could let an OLDER response land after a newer
+// one and silently overwrite it in M -- audit 2026-10-01, matches a reported case
+// of an adjustment that "saved" but didn't show. Only the most recently ISSUED
+// request's response is ever applied; every other one is dropped as stale.
+// Buttons stayed clickable while a save was in flight (quick win, audit 2026-10-01)
+// -- a fast double-click could fire the same action twice. render_() always rebuilds
+// the buttons on success, so only the error/catch paths need to re-enable explicitly.
+function setButtonsDisabled_(on) { document.querySelectorAll('.btn, button').forEach(function (b) { b.disabled = on; }); }
+let REQ_SEQ = 0;
 function call_(promise, label, okMsg) {
+  const seq = ++REQ_SEQ;
   const msg = document.getElementById('msgRoot');
   document.getElementById('loadingText').textContent = label || 'Working…';
   document.getElementById('loadingPill').classList.add('on');
+  setButtonsDisabled_(true);
   return promise.then(function (res) {
+    if (seq !== REQ_SEQ) return false; // a newer request already landed -- this one is stale
     document.getElementById('loadingPill').classList.remove('on');
-    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
+    if (!res.success) { setButtonsDisabled_(false); msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return false; }
     M = res;
     msg.innerHTML = okMsg ? '<div class="ok">' + esc_(okMsg) + '</div>' : '';
-    render_();
+    render_(); // rebuilds the buttons, re-enabled
     return true;
   }).catch(function (err) {
+    if (seq !== REQ_SEQ) return false;
     document.getElementById('loadingPill').classList.remove('on');
+    setButtonsDisabled_(false);
     msg.innerHTML = '<div class="err">Could not reach the payroll backend: ' + esc_(err.message) + '</div>';
     return false;
   });
@@ -782,8 +799,8 @@ function exportCsv_() {
 
 
 // ── Stage 4 views (2026-09-30): Accounts & loans · Full & Final · Opening balances ──
-let VIEW = 'month', ACC = null, FNF = null, OPENING = null;
-const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances']];
+let VIEW = 'month', ACC = null, FNF = null, OPENING = null, DQ = null;
+const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances'], ['dataquality', 'Data quality']];
 
 function viewBar_() {
   return VIEWS.map(function (v) { return '<span class="view' + (VIEW === v[0] ? ' on' : '') + '" data-view="' + v[0] + '">' + v[1] + '</span>'; }).join('');
@@ -792,7 +809,28 @@ function show_(v) {
   VIEW = v; FNF = null;
   if (v === 'month') { render_(); return; }
   if (v === 'outputs') { loadOutputs_(); return; }
+  if (v === 'dataquality') { loadDataQuality_(); return; }
   loadAccounts_();
+}
+// Data quality (audit 2026-10-01, section 3): missing bank details/UAN/ESI
+// number, and employee codes not found in the Roster's EmpKeyNumbers.
+function loadDataQuality_() {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingPill').classList.add('on');
+  return payGet_('dataquality', { month: M ? M.month : document.getElementById('fMonth').value }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    DQ = res;
+    msg.innerHTML = '';
+    render_();
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+function dataQualityView_() {
+  if (!DQ.issues.length) return '<p>No data-quality issues found for ' + DQ.checked + ' staff in ' + monthLabel_(DQ.month) + '.</p>';
+  const byCode = {};
+  DQ.issues.forEach(function (x) { (byCode[x.code] = byCode[x.code] || { name: x.name, entity: x.entity, texts: [] }).texts.push(x.text); });
+  return '<p>' + Object.keys(byCode).length + ' of ' + DQ.checked + ' staff have an issue, for ' + monthLabel_(DQ.month) + ':</p><table class="reg"><tr><th>Code</th><th>Name</th><th>School</th><th>Issues</th></tr>' +
+    Object.keys(byCode).map(function (c) { const r = byCode[c]; return '<tr><td>' + esc_(c) + '</td><td>' + esc_(r.name) + '</td><td>' + esc_(r.entity) + '</td><td>' + r.texts.map(esc_).join('<br>') + '</td></tr>'; }).join('') + '</table>';
 }
 function loadAccounts_(okMsg) {
   const msg = document.getElementById('msgRoot');
@@ -822,6 +860,7 @@ function schoolOf_(a) { return a.former ? 'Former' : ENTITY_LABEL[a.entity] || a
 function renderView_() {
   const root = document.getElementById('monthRoot');
   if (VIEW === 'outputs') { root.innerHTML = schoolTabs_() + '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
+  if (VIEW === 'dataquality') { root.innerHTML = DQ ? schoolTabs_() + '<div class="panel">' + dataQualityView_() + '</div>' : ''; wireViews_(); return; }
   if (!ACC) { root.innerHTML = ''; return; }
   root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
   wireViews_();
