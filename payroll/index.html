@@ -804,8 +804,8 @@ function exportCsv_() {
 
 
 // ── Stage 4 views (2026-09-30): Accounts & loans · Full & Final · Opening balances ──
-let VIEW = 'month', ACC = null, FNF = null, OPENING = null, DQ = null;
-const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances'], ['dataquality', 'Data quality']];
+let VIEW = 'month', ACC = null, FNF = null, OPENING = null, DQ = null, INC = null;
+const VIEWS = [['month', 'Month checklist'], ['outputs', 'Outputs'], ['accounts', 'Accounts & loans'], ['fnf', 'Full & Final'], ['opening', 'Opening balances'], ['dataquality', 'Data quality'], ['increment', 'Annual increment']];
 
 function viewBar_() {
   return VIEWS.map(function (v) { return '<span class="view' + (VIEW === v[0] ? ' on' : '') + '" data-view="' + v[0] + '">' + v[1] + '</span>'; }).join('');
@@ -815,6 +815,7 @@ function show_(v) {
   if (v === 'month') { render_(); return; }
   if (v === 'outputs') { loadOutputs_(); return; }
   if (v === 'dataquality') { loadDataQuality_(); return; }
+  if (v === 'increment') { loadIncrement_(); return; }
   loadAccounts_();
 }
 // Data quality (audit 2026-10-01, section 3): missing bank details/UAN/ESI
@@ -836,6 +837,32 @@ function dataQualityView_() {
   DQ.issues.forEach(function (x) { (byCode[x.code] = byCode[x.code] || { name: x.name, entity: x.entity, texts: [] }).texts.push(x.text); });
   return '<p>' + Object.keys(byCode).length + ' of ' + DQ.checked + ' staff have an issue, for ' + monthLabel_(DQ.month) + ':</p><table class="reg"><tr><th>Code</th><th>Name</th><th>School</th><th>Issues</th></tr>' +
     Object.keys(byCode).map(function (c) { const r = byCode[c]; return '<tr><td>' + esc_(c) + '</td><td>' + esc_(r.name) + '</td><td>' + esc_(r.entity) + '</td><td>' + r.texts.map(esc_).join('<br>') + '</td></tr>'; }).join('') + '</table>';
+}
+// Annual increment (2026-10-01, per Uday): flat Annual Increment % on Full
+// Basic every September, for anyone past 36 months (same cutoff as the RRF
+// Y3 tier -- "finished the RRF cycle"). Recurring: eligible again every
+// September they're still employed. Checkboxes let you drop someone from
+// this run without touching the others; Apply writes a new effective-dated
+// Salary Master row per person, same as a transfer does.
+function loadIncrement_() {
+  const msg = document.getElementById('msgRoot');
+  document.getElementById('loadingPill').classList.add('on');
+  return payGet_('incrementpreview', { month: M ? M.month : document.getElementById('fMonth').value }).then(function (res) {
+    document.getElementById('loadingPill').classList.remove('on');
+    if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+    INC = res;
+    msg.innerHTML = '';
+    render_();
+  }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
+}
+function incrementView_() {
+  if (!INC.eligible.length) return '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
+  return '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '% in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
+    '<table class="reg"><tr><th></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th></tr>' +
+    INC.eligible.map(function (e) {
+      return '<tr><td><input type="checkbox" class="inc-pick" value="' + esc_(e.code) + '" checked></td><td>' + esc_(e.code) + '</td><td>' + esc_(e.name) +
+        '</td><td>' + esc_(e.entity) + '</td><td>' + e.months + '</td><td>' + inr_(e.basic) + '</td><td>' + inr_(e.newBasic) + '</td></tr>';
+    }).join('') + '</table><p><button class="btn" id="incApply">Apply to checked</button></p>';
 }
 function loadAccounts_(okMsg) {
   const msg = document.getElementById('msgRoot');
@@ -866,6 +893,7 @@ function renderView_() {
   const root = document.getElementById('monthRoot');
   if (VIEW === 'outputs') { root.innerHTML = schoolTabs_() + '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
   if (VIEW === 'dataquality') { root.innerHTML = DQ ? schoolTabs_() + '<div class="panel">' + dataQualityView_() + '</div>' : ''; wireViews_(); return; }
+  if (VIEW === 'increment') { root.innerHTML = INC ? schoolTabs_() + '<div class="panel">' + incrementView_() + '</div>' : ''; wireViews_(); return; }
   if (!ACC) { root.innerHTML = ''; return; }
   root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
   wireViews_();
@@ -1028,6 +1056,20 @@ function parseOpening_(wb, accept) {
 function wireViews_() {
   const q = function (s) { return document.querySelector(s); };
   document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; render_(); }; });
+  if (q('#incApply')) q('#incApply').onclick = function () {
+    const codes = Array.prototype.map.call(document.querySelectorAll('.inc-pick:checked'), function (c) { return c.value; });
+    if (!codes.length) { alert('Nothing checked.'); return; }
+    if (!confirm('Apply the increment to ' + codes.length + ' employee(s)? This writes a new Salary Master row for each.')) return;
+    const msg = document.getElementById('msgRoot');
+    document.getElementById('loadingPill').classList.add('on');
+    payPost_('applyincrement', { month: M.month, codes: codes }).then(function (res) {
+      document.getElementById('loadingPill').classList.remove('on');
+      if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+      M = res;
+      msg.innerHTML = '<div class="ok">Increment applied to ' + codes.length + ' employee(s).</div>';
+      loadIncrement_();
+    });
+  };
   if (q('#lnAdd')) q('#lnAdd').onclick = function () {
     const r = pick_('lnEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
     postAcc_('issueloan', { code: r.code, type: q('#lnType').value, amount: q('#lnAmt').value, monthly: q('#lnMonthly').value, givenOn: q('#lnDate').value, startMonth: q('#lnStart').value, notes: q('#lnNote').value },

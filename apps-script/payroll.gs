@@ -101,13 +101,17 @@ const PAY_TABS = {
     'Issued By', 'Issued At'],
   'Tally Ledger Map': ['Entity', 'Payroll Head', 'Tally Ledger Name', 'Cost Centre', 'Dr/Cr'],
   'ERP Reference': ['Month', 'Employee Code', 'ERP Gross', 'ERP EPF', 'ERP ESI', 'ERP RRF', 'ERP Net Pay', 'ERP CTI'],
+  // Annual increments (2026-10-01, per Uday): flat Annual Increment % on Full
+  // Basic, every September, once an employee has completed the RRF cycle
+  // (36 months). One row per person per time this was applied.
+  'Increments': ['Month', 'Employee Code', 'Name', 'Entity', 'Old Basic', 'New Basic', 'Rate %', 'Applied By', 'Applied At'],
   // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
   // PAY_LEAVE_FIELDS in payroll-calc.gs, which loads AFTER this file.
 };
 
 // Payroll-only settings, appended to PayRoll Constants if missing.
 const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes)', 0],
-  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1]];
+  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1], ['Annual Increment %', 3]];
 
 // Adjustment line-item types (Uday, 2026-09-30) -> Earning / Deduction.
 const PAY_ADJ_TYPES = {
@@ -162,6 +166,7 @@ function payHandle_(action, idToken, data) {
       markleft: function (ss) { payMarkLeft_(ss, data) },
       applytransfer: function (ss) { payApplyTransfer_(ss, data, caller) },
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
+      applyincrement: function (ss) { payApplyIncrement_(ss, data, caller); },
       issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
       settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
       issueletter: function (ss) { payIssueLetter_(ss, data, caller); },
@@ -172,6 +177,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
     else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
     else if (action === 'dataquality') result = payDataQuality_(payOpen_(), data.month);
+    else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month) };
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
     else return payJson_({ success: false, error: 'Unknown action: ' + action });
@@ -322,7 +328,7 @@ function paySettings_(rs) {
     rrfY1: c['RRF Y1 %'] / 100, rrfY2: c['RRF Y2 %'] / 100, rrfY3: c['RRF Y3 %'] / 100,
     rrfTargetMonths: c['RRF Target Months'], rrfStopAtTarget: c['RRF Stop At Target (1=Yes)'] === 1,
     gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'], epsRate: c['EPF Rate %'] / 100,
-    clAccrual: c['CL Accrual Per Month'],
+    clAccrual: c['CL Accrual Per Month'], annualIncrementPct: c['Annual Increment %'],
   };
 }
 
@@ -1079,6 +1085,69 @@ function payApplyTransfer_(ss, d, caller) {
   payAppend_(ss.getSheetByName('Ledger'), ledger);
 }
 
+// ── Annual increment (2026-10-01, per Uday) ───────────────────────────
+// Flat Annual Increment % on Full Basic, every September, for anyone who's
+// completed 36 months -- the same cutoff as the RRF Y3 tier in payCalc_, so
+// "finished the RRF cycle" and "increment-eligible" are literally the same
+// check. Recurring: there's no year limit, so someone keeps getting it every
+// September for as long as they're employed. Skips anyone already given an
+// increment for this exact month (the Increments tab is the record of that,
+// not a Remarks-text guess). Only touches Payroll's own Salary Master Full
+// Basic -- the Roster's separate EmpSalary.Increment count (used by the
+// Offer Calculator) is NOT updated here, see audit/REPORT.md.
+function payIncrementEligible_(ss, month) {
+  const ctx = payCheckMonth_(month);
+  const master = {};
+  payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
+    const code = String(r['Employee Code'] || '').trim();
+    const eff = payDate_(r['Effective From']);
+    if (!code || !eff || eff > ctx.monthEnd) return;
+    const lwd = payDate_(r['Last Working Day']);
+    if (lwd ? lwd < ctx.start : /^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
+    if (!master[code] || eff >= master[code].eff) master[code] = { eff: eff, row: r };
+  });
+  const already = {};
+  payForMonth_(ss, 'Increments', month).forEach(function (r) { already[String(r['Employee Code']).trim()] = true; });
+  const settings = paySettings_(payOpenById_(PAY_RATES_SHEET_ID));
+  const pct = settings.annualIncrementPct;
+  const out = [];
+  Object.keys(master).forEach(function (code) {
+    if (already[code]) return;
+    const r = master[code].row;
+    const doj = payDate_(r['Date of Joining']);
+    const basic = payNum_(r['Full Basic']);
+    if (!doj || !basic || payMonthsBetween_(doj, ctx.monthEnd) < 36) return;
+    out.push({ code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']), designation: String(r['Designation'] || ''),
+      doj: payIso_(doj), months: payMonthsBetween_(doj, ctx.monthEnd), basic: basic, newBasic: Math.round(basic * (1 + pct / 100)), rate: pct });
+  });
+  out.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
+  return out;
+}
+
+// d: {month, codes (optional -- restrict to a subset of the preview, else everyone eligible)}
+function payApplyIncrement_(ss, d, caller) {
+  const ctx = payCheckMonth_(d.month);
+  const want = d.codes && d.codes.length ? {} : null;
+  if (want) d.codes.forEach(function (c) { want[String(c).trim()] = true; });
+  const eligible = payIncrementEligible_(ss, d.month).filter(function (e) { return !want || want[e.code]; });
+  if (!eligible.length) throw new Error('Nothing eligible to increment for ' + d.month);
+  const latest = payMasterLatest_(ss);
+  const now = new Date();
+  const newRows = [], incRows = [];
+  eligible.forEach(function (e) {
+    const src = latest[e.code] && latest[e.code].row;
+    if (!src) return;
+    const row = {};
+    Object.keys(src).forEach(function (h) { row[h] = src[h]; });
+    Object.assign(row, { 'Full Basic': e.newBasic, 'Effective From': ctx.start, 'Remarks': 'Annual Increment ' + d.month + ' (+' + e.rate + '%)' });
+    newRows.push(row);
+    incRows.push({ 'Month': ctx.start, 'Employee Code': e.code, 'Name': e.name, 'Entity': e.entity, 'Old Basic': e.basic,
+      'New Basic': e.newBasic, 'Rate %': e.rate, 'Applied By': caller.email, 'Applied At': now });
+  });
+  payAppend_(ss.getSheetByName('Salary Master'), newRows);
+  payAppend_(ss.getSheetByName('Increments'), incRows);
+}
+
 // Staff changes read the Employee Master and Approvals -- if either is
 // unreachable the month still opens, with the reason on the card.
 // Cached 5 minutes (it opens the Employee Master and Approvals workbooks); any
@@ -1439,9 +1508,8 @@ function payDataQuality_(ss, month) {
     if (!code) return;
     const eff = payDate_(r['Effective From']);
     if (!eff || eff > ctx.monthEnd) return;
-    if (/^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
     const lwd = payDate_(r['Last Working Day']);
-    if (lwd && lwd < ctx.start) return;
+    if (lwd ? lwd < ctx.start : /^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
     if (seen[code]) { flag(code, r['Name'], r['Entity'], 'Employee Code appears more than once in Salary Master'); return; }
     seen[code] = true;
     const name = String(r['Name'] || ''), entity = String(r['Entity'] || '');
