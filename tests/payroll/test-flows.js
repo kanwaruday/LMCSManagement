@@ -272,8 +272,9 @@ module.exports = function run(t) {
     const before = pv.find((e) => e.code === longTenured).basic;
     const applied = call('applyincrement', { month: '2026-09', codes: [longTenured] });
     assert.equal(applied.success, true, applied.error);
-    assert.deepEqual(applied.rosterSync, { success: true, updated: [longTenured], notFound: [] }, 'cross-project EmpSalary.Increment bump');
-    assert.equal(h.books['1Oj'].tabs.EmpSalary.values.find((r) => r[0] === longTenured)[2], 5, 'Increment count went 4 -> 5');
+    assert.deepEqual(applied.rosterSync, { success: true, skipped: true, updated: [], notFound: [] },
+      'Roster sync is OFF by default while Payroll is still being tested -- Staff Master untouched');
+    assert.equal(h.books['1Oj'].tabs.EmpSalary.values.find((r) => r[0] === longTenured)[2], 4, 'Increment count NOT touched');
     const sep = call('month', { month: '2026-09' });
     assert.equal(sep.rows.find((r) => r.code === longTenured).basic, Math.round(before * 1.03), '3% applied, effective this same September');
     // Idempotent: re-running the same month does nothing more for them.
@@ -289,5 +290,15 @@ module.exports = function run(t) {
     const next = call('incrementpreview', { month: '2027-09' }).eligible.find((e) => e.code === again);
     assert.equal(next.basic, Math.round(base * 1.03));
     assert.equal(next.newBasic, Math.round(base * 1.03 * 1.03));
+  });
+
+  t.test('annual increment: Roster sync actually runs once turned on', () => {
+    h.books['1d8'].tabs['PayRoll Constants'].values.push(['Sync Roster Increment (1=Yes)', 1]);
+    const code = 'JAY/20/05/030'; // untouched by the increment tests above
+    h.books['1Oj'].tabs.EmpSalary.values.push([code, 'Karate Teacher', 2]);
+    const applied = call('applyincrement', { month: '2026-09', codes: [code] });
+    assert.equal(applied.success, true, applied.error);
+    assert.deepEqual(applied.rosterSync, { success: true, updated: [code], notFound: [] });
+    assert.equal(h.books['1Oj'].tabs.EmpSalary.values.find((r) => r[0] === code)[2], 3, 'Increment count went 2 -> 3');
   });
 };

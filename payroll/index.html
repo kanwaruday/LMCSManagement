@@ -1068,7 +1068,8 @@ function wireViews_() {
       M = res;
       const rs = res.rosterSync || {};
       let note = 'Increment applied to ' + codes.length + ' employee(s) in Payroll.';
-      if (rs.success === false) note += ' Roster EmpSalary.Increment count was NOT updated (' + esc_(rs.error) + ') -- bump it there by hand.';
+      if (rs.skipped) note += ' Roster/Staff Master left untouched (sync is off while Payroll is still being tested -- turn on "Sync Roster Increment" in PayRoll Constants when ready).';
+      else if (rs.success === false) note += ' Roster EmpSalary.Increment count was NOT updated (' + esc_(rs.error) + ') -- bump it there by hand.';
       else if (rs.notFound && rs.notFound.length) note += ' Roster count updated for ' + rs.updated.length + '; not found in EmpSalary: ' + rs.notFound.join(', ') + '.';
       else note += ' Roster EmpSalary.Increment count updated too.';
       msg.innerHTML = '<div class="' + (rs.success === false ? 'err' : 'ok') + '">' + note + '</div>';

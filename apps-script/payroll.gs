@@ -111,7 +111,11 @@ const PAY_TABS = {
 
 // Payroll-only settings, appended to PayRoll Constants if missing.
 const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes)', 0],
-  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1], ['Annual Increment %', 3]];
+  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1], ['Annual Increment %', 3],
+  // Off by default while Payroll is still being tested against the ERP (2026-10-01, per
+  // Uday) -- an annual increment only touches Payroll's own Salary Master until this is
+  // flipped to 1, so the live Roster/Staff Master sheet stays untouched during testing.
+  ['Sync Roster Increment (1=Yes)', 0]];
 
 // Adjustment line-item types (Uday, 2026-09-30) -> Earning / Deduction.
 const PAY_ADJ_TYPES = {
@@ -329,6 +333,7 @@ function paySettings_(rs) {
     rrfTargetMonths: c['RRF Target Months'], rrfStopAtTarget: c['RRF Stop At Target (1=Yes)'] === 1,
     gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'], epsRate: c['EPF Rate %'] / 100,
     clAccrual: c['CL Accrual Per Month'], annualIncrementPct: c['Annual Increment %'],
+    syncRosterIncrement: c['Sync Roster Increment (1=Yes)'] === 1,
   };
 }
 
@@ -1150,6 +1155,8 @@ function payApplyIncrement_(ss, d, caller, idToken) {
   });
   payAppend_(ss.getSheetByName('Salary Master'), newRows);
   payAppend_(ss.getSheetByName('Increments'), incRows);
+  const settings = paySettings_(payOpenById_(PAY_RATES_SHEET_ID));
+  if (!settings.syncRosterIncrement) return { rosterSync: { success: true, skipped: true, updated: [], notFound: [] } };
   return { rosterSync: payBumpRosterIncrement_(appliedCodes, idToken) };
 }
 
