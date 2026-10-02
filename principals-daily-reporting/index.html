@@ -108,6 +108,11 @@ td{padding:6px 12px;vertical-align:middle}
 .pill.none{background:#fee2e2;color:var(--red)}
 .pill.ok{background:#dcfce7;color:var(--green)}
 .score-cell{font-weight:700}
+.apr-status-bar{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:7px 12px;border-radius:5px;margin:0 0 12px;background:var(--lgray);color:var(--gray);border:1px solid var(--border)}
+.apr-status-bar.ok{background:rgba(21,128,61,.08);color:#15803d;border-color:rgba(21,128,61,.3)}
+.apr-status-bar.err{background:#fdecec;color:var(--red);border-color:rgba(206,0,0,.3)}
+.apr-status-bar button{margin-left:auto;background:#fff;border:1px solid currentColor;color:inherit;border-radius:4px;padding:2px 9px;font-size:11px;cursor:pointer}
+.apr-status-bar .sp{width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
 .loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
 .loading-state .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
 .spinner-sm{width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
@@ -658,6 +663,7 @@ td{padding:6px 12px;vertical-align:middle}
           </button>
         </div>
       </div>
+      <div class="apr-status-bar" id="aprStatusBar"><span class="sp"></span><span>Loading approvals…</span></div>
       <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
     </div>
 
@@ -2212,7 +2218,15 @@ function aprOnCategoryChange() {
   }
 }
 
+function aprSetStatus_(state, text) {
+  const bar = document.getElementById('aprStatusBar');
+  bar.className = 'apr-status-bar' + (state === 'loading' ? '' : ' ' + state);
+  bar.innerHTML = (state === 'loading' ? '<span class="sp"></span>' : '') + '<span>' + text + '</span>' +
+    (state === 'err' ? '<button type="button" onclick="refreshApprovals()">Retry</button>' : '');
+}
+
 async function loadApprovals() {
+  aprSetStatus_('loading', 'Loading approvals…');
   const body = document.getElementById('aprListBody');
   if (!PDR_BACKEND_URL || PDR_BACKEND_URL.indexOf('PASTE_') === 0) {
     body.innerHTML = '<div class="notice">Backend not deployed yet.</div>';
@@ -2222,6 +2236,7 @@ async function loadApprovals() {
     const res = await fetch(PDR_BACKEND_URL + '?action=approvalslist&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
     if (!res.success) {
       body.innerHTML = '<div class="notice">Couldn’t load Approvals: ' + aprEsc_(res.error || 'unknown error') + '</div>';
+      aprSetStatus_('err', 'Couldn’t load approvals: ' + aprEsc_(res.error || 'unknown error'));
       pdrReportAuthFailureIfNeeded_(res);
       return;
     }
@@ -2229,8 +2244,11 @@ async function loadApprovals() {
     document.getElementById('aprNewRequestCard').style.display = LMCS.hasRole(SESSION, 'Principal') ? 'block' : 'none';
     aprRenderStatusFilter_();
     renderApprovalsForSelectedCampus();
+    const needs = res.requests.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; }).length;
+    aprSetStatus_('ok', '✓ Loaded ' + res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' · ' + needs + ' need action · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   } catch (err) {
     body.innerHTML = '<div class="notice">Couldn’t reach the Approvals backend: ' + aprEsc_(err.message) + '</div>';
+    aprSetStatus_('err', 'Couldn’t reach the Approvals backend: ' + aprEsc_(err.message));
   }
 }
 
@@ -2553,10 +2571,11 @@ async function decideApproval(id, decision) {
   if (!note) { alert('A note explaining the decision is required.'); return; }
   const btns = document.querySelectorAll('.apr-decide-bar button');
   btns.forEach(function (b) { b.disabled = true; });
+  aprSetStatus_('loading', 'Saving decision…');
   if (document.getElementById('aprRefer-' + id)) aprAddReferee(id); // a half-typed address still counts
   const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: (aprReferees_[id] || []).join(',') });
   btns.forEach(function (b) { b.disabled = false; });
-  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
   aprExpandedId = null;
   aprExpandedDetail = null;
   refreshApprovals();
