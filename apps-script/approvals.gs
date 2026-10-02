@@ -168,7 +168,7 @@ function aprRowToObj_(row) {
     linkedPlannedActivityId: String(row[9] || ''), evidenceLink: String(row[10] || ''),
     requestedBy: String(row[11]), requestedAt: aprISO_(row[12]),
     status: String(row[13]), decidedBy: String(row[14] || ''),
-    decidedAt: row[15] ? aprISO_(row[15]) : '', decisionNote: String(row[16] || ''),
+    decidedAt: row[15] ? aprISO_(row[15]) : '', decisionNote: String(row[16] || ''), referredTo: String(row[17] || ''),
   };
 }
 
@@ -391,7 +391,38 @@ function aprDecide_(caller, body) {
   sheet.getRange(row, 16).setValue(new Date());   // decidedAt
   sheet.getRange(row, 17).setValue(note);         // decisionNote
   aprNotifyRequester_(values[rowIdx], decision, note, caller);
+  // 2026-10-02, per Uday: an Approve can refer the work to up to 4 people.
+  // Column 18 "referredTo" (header self-created) is the audit trail.
+  if (decision === APR_STATUS.APPROVED && APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
+    const refs = aprParseReferees_(body.referTo);
+    if (refs.length) {
+      if (!sheet.getRange(1, 18).getValue()) sheet.getRange(1, 18).setValue('referredTo');
+      sheet.getRange(row, 18).setValue(refs.join(', '));
+      aprNotifyReferees_(values[rowIdx], refs, note, caller);
+    }
+  }
   return { success: true };
+}
+
+// Money/HR-sensitive categories never get referred onward.
+const APR_NO_REFER_CATEGORIES = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption'];
+// Up to 4 distinct @lms.org.in addresses (comma/space/semicolon separated).
+function aprParseReferees_(raw) {
+  const list = String(raw || '').toLowerCase().split(/[\s,;]+/).filter(function (e) { return /^[^@\s]+@lms\.org\.in$/.test(e); });
+  return list.filter(function (e, i) { return list.indexOf(e) === i; }).slice(0, 4);
+}
+// Deliberately NO amount in this email -- the referee needs to know what
+// to do, not what was sanctioned. (The Owner's note is included as written.)
+function aprNotifyReferees_(row, refs, note, caller) {
+  try {
+    const qty = row[8] !== '' ? ' x ' + row[8] : '';
+    MailApp.sendEmail(refs.join(','), 'Approved -- action needed: ' + row[4],
+      'The following request has been approved and referred to you to take forward.\n\n' +
+      'Title: ' + row[4] + '\nCategory: ' + row[2] + '\nSchool: ' + row[1] + '\n' +
+      (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
+      'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,
+      { cc: String(row[11]), replyTo: caller.email });
+  } catch (err) { /* best-effort */ }
 }
 
 // ── Email notifications (best-effort plain MailApp -- a mail failure

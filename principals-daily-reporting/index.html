@@ -2006,6 +2006,7 @@ const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New
 // gets sent from this form anymore, same treatment as Evidence Link/
 // Linked Activity below.
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
+const APR_NO_REFER_CATEGORIES = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
 // 2026-09-24, per Uday (information architecture pass): "Needs Action"
 // is a synthetic pill (Pending + Info Requested combined) and is now
 // the DEFAULT view -- what someone actually opens this tab to see day
@@ -2412,6 +2413,7 @@ function aprDetailHtml_(res) {
   if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) {
     decideBar = '<div class="apr-decide-bar">' +
       '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Note explaining the decision (required)">' +
+      (APR_NO_REFER_CATEGORIES.indexOf(r.category) === -1 ? '<input type="text" class="apr-decide-note" id="aprRefer-' + r.id + '" placeholder="Refer to (optional, max 4 @lms.org.in emails, comma-separated) — they are told to act, without the amount">' : '') +
       '<button type="button" class="approve" onclick="decideApproval(\'' + r.id + '\',\'Approved\')">Approve</button>' +
       '<button type="button" class="reject" onclick="decideApproval(\'' + r.id + '\',\'Rejected\')">Reject</button>' +
       '<button type="button" class="info" onclick="decideApproval(\'' + r.id + '\',\'Info Requested\')">Request Info</button>' +
@@ -2422,6 +2424,7 @@ function aprDetailHtml_(res) {
       '<button type="button" class="revoke" onclick="decideApproval(\'' + r.id + '\',\'Revoked\')">Revoke</button>' +
       '</div>';
   }
+  if (r.referredTo) decideBar = '<div class="apr-desc"><b>Referred to:</b> ' + aprEsc_(r.referredTo) + '</div>' + decideBar;
   if (r.decisionNote) decideBar = '<div class="apr-desc"><b>Decision note:</b> ' + aprEsc_(r.decisionNote) + '</div>' + decideBar;
 
   // The reply mechanism ISN'T new -- a requester's comment on an Info
@@ -2503,7 +2506,8 @@ async function decideApproval(id, decision) {
   if (!note) { alert('A note explaining the decision is required.'); return; }
   const btns = document.querySelectorAll('.apr-decide-bar button');
   btns.forEach(function (b) { b.disabled = true; });
-  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note });
+  const referEl = document.getElementById('aprRefer-' + id);
+  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: referEl ? referEl.value : '' });
   btns.forEach(function (b) { b.disabled = false; });
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
   aprExpandedId = null;
