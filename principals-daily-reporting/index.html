@@ -2596,6 +2596,15 @@ async function decideApproval(id, decision) {
   if (document.getElementById('aprRefer-' + id)) aprAddReferee(id); // a half-typed address still counts
   const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: (aprReferees_[id] || []).join(',') });
   btns.forEach(function (b) { b.disabled = false; });
+  if (!res.success && /JSON|DOCTYPE/.test(String(res.error || ''))) {
+    // The backend sometimes answers a slow POST with a Google HTML page even though the write
+    // went through -- so check the sheet before telling the Owner it failed.
+    aprSetStatus_('loading', 'Reply unreadable (backend slow) — checking whether it saved…');
+    try {
+      const chk = await fetch(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+      if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); aprExpandedId = null; aprExpandedDetail = null; refreshApprovals(); return; }
+    } catch (e) { /* fall through to the normal failure message */ }
+  }
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
   if (res.mailError) alert('Approved and saved, but the email to the referred people failed: ' + res.mailError);
   else if (res.referred && res.referred.length) alert('Approved. Email sent to ' + res.referred.join(', ') + '.');
