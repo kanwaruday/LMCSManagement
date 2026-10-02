@@ -2597,6 +2597,8 @@ async function decideApproval(id, decision) {
   const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: (aprReferees_[id] || []).join(',') });
   btns.forEach(function (b) { b.disabled = false; });
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  if (res.mailError) alert('Approved and saved, but the email to the referred people failed: ' + res.mailError);
+  else if (res.referred && res.referred.length) alert('Approved. Email sent to ' + res.referred.join(', ') + '.');
   aprExpandedId = null;
   aprExpandedDetail = null;
   refreshApprovals();

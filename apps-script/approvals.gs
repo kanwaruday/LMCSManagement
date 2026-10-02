@@ -391,6 +391,7 @@ function aprDecide_(caller, body) {
   sheet.getRange(row, 16).setValue(new Date());   // decidedAt
   sheet.getRange(row, 17).setValue(note);         // decisionNote
   aprNotifyRequester_(values[rowIdx], decision, note, caller);
+  let referral = {};
   // 2026-10-02, per Uday: an Approve can refer the work to up to 4 people.
   // Column 18 "referredTo" (header self-created) is the audit trail.
   if (decision === APR_STATUS.APPROVED && APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
@@ -398,10 +399,10 @@ function aprDecide_(caller, body) {
     if (refs.length) {
       if (!sheet.getRange(1, 18).getValue()) sheet.getRange(1, 18).setValue('referredTo');
       sheet.getRange(row, 18).setValue(refs.join(', '));
-      aprNotifyReferees_(values[rowIdx], refs, note, caller);
+      referral = { referred: refs, mailError: aprNotifyReferees_(values[rowIdx], refs, note, caller) };
     }
   }
-  return { success: true };
+  return Object.assign({ success: true }, referral);
 }
 
 // 2026-10-02: name search for the "Refer to" box. Emails are PII, so this
@@ -453,7 +454,8 @@ function aprNotifyReferees_(row, refs, note, caller) {
       (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
       'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,
       { cc: String(row[11]), replyTo: caller.email });
-  } catch (err) { /* best-effort */ }
+    return '';
+  } catch (err) { return String(err.message || err); } // surfaced to the Owner, not swallowed
 }
 
 // ── Email notifications (best-effort plain MailApp -- a mail failure
