@@ -152,6 +152,7 @@ function doGet(e) {
     if (action === 'dailyreport') return jsonOut_(principalDrGetDailyReport_(caller, e.parameter.campusId, e.parameter.date));
     if (action === 'approvalslist') return jsonOut_(aprList_(caller));
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
+    if (action === 'approvalreferees') return jsonOut_(aprReferees_(caller));
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));

@@ -404,6 +404,37 @@ function aprDecide_(caller, body) {
   return { success: true };
 }
 
+// 2026-10-02: name search for the "Refer to" box. Emails are PII, so this
+// is an authenticated, decider-only read (NOT added to the public roster
+// proxy). Same source as teacher-portal.gs's tpAuthEmailToCode_: the
+// EmpPersonal tab's AuthEmail column; names/status from EmpMaster.
+function aprReferees_(caller) {
+  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized' };
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('apr_referees');
+  if (hit) return { success: true, staff: JSON.parse(hit) };
+  const ss = SpreadsheetApp.openById(TP_EMP_SHEET_ID);
+  const master = ss.getSheetByName('EmpMaster').getDataRange().getValues();
+  const mh = master[0], mCode = mh.indexOf('EmployeeCode'), mName = mh.indexOf('Name'), mStatus = mh.indexOf('Status');
+  const names = {};
+  for (let i = 1; i < master.length; i++) {
+    const status = mStatus >= 0 ? String(master[i][mStatus] || '').trim().toLowerCase() : '';
+    if (status && status !== 'active') continue; // departed
+    names[String(master[i][mCode] || '').trim()] = String(master[i][mName] || '').trim();
+  }
+  const pers = ss.getSheetByName('EmpPersonal').getDataRange().getValues();
+  const ph = pers[0], pCode = ph.indexOf('EmployeeCode'), pEmail = ph.indexOf('AuthEmail');
+  const staff = [];
+  for (let i = 1; i < pers.length; i++) {
+    const email = String(pers[i][pEmail] || '').trim().toLowerCase();
+    const name = names[String(pers[i][pCode] || '').trim()];
+    if (name && /^[^@\s]+@lms\.org\.in$/.test(email)) staff.push({ name: name, email: email });
+  }
+  staff.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  cache.put('apr_referees', JSON.stringify(staff), 600);
+  return { success: true, staff: staff };
+}
+
 // Money/HR-sensitive categories never get referred onward.
 const APR_NO_REFER_CATEGORIES = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption'];
 // Up to 4 distinct @lms.org.in addresses (comma/space/semicolon separated).
