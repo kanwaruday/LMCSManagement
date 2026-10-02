@@ -607,7 +607,6 @@ td{padding:6px 12px;vertical-align:middle}
                    day field below is reason-specific. -->
               <input type="text" id="aprOutgoingEmployee" list="aprOutgoingEmployeeList" placeholder="Search by name…">
               <datalist id="aprOutgoingEmployeeList"></datalist>
-              <datalist id="aprRefereeList"></datalist>
             </div>
           </div>
           <div id="aprLastWorkingDayWrap" style="display:none;margin-top:10px;max-width:220px">
@@ -2524,26 +2523,47 @@ async function submitApprovalComment(id) {
 // public roster. A typed raw @lms.org.in address works too.
 let aprRefereeListLoaded_ = false;
 let aprRefereeNames_ = {}; // email -> name
+let aprRefereeStaff_ = []; // [{name,email}]
+let aprRefereeError_ = '';
 const aprReferees_ = {};   // approvalId -> [emails]
 async function aprLoadRefereeList_() {
   if (aprRefereeListLoaded_) return;
   aprRefereeListLoaded_ = true;
   try {
     const res = await fetch(PDR_BACKEND_URL + '?action=approvalreferees&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
-    if (!res.success) { aprRefereeListLoaded_ = false; return; }
+    if (!res.success || !res.staff) { aprRefereeListLoaded_ = false; aprRefereeError_ = res.error || 'backend not updated yet?'; return; }
+    aprRefereeError_ = '';
+    aprRefereeStaff_ = res.staff;
     res.staff.forEach(function (s) { aprRefereeNames_[s.email] = s.name; });
-    document.getElementById('aprRefereeList').innerHTML = res.staff
-      .map(function (s) { return '<option value="' + aprEsc_(s.name + ' — ' + s.email) + '">'; }).join('');
-  } catch (err) { aprRefereeListLoaded_ = false; console.warn('aprLoadRefereeList_ error:', err); }
+  } catch (err) { aprRefereeListLoaded_ = false; aprRefereeError_ = err.message; }
 }
 function aprReferHtml_(id) {
   aprLoadRefereeList_();
   aprReferees_[id] = aprReferees_[id] || [];
-  return '<div class="apr-refer" style="width:100%">' +
+  return '<div class="apr-refer" style="width:100%;position:relative">' +
     '<div id="aprChips-' + id + '">' + aprChipsHtml_(id) + '</div>' +
-    '<input type="text" class="apr-decide-note" id="aprRefer-' + id + '" list="aprRefereeList" onchange="aprAddReferee(\'' + id + '\')" ' +
-    'placeholder="Refer to (optional, up to 4) — search a name; they are told to act, without the amount">' +
+    '<input type="text" class="apr-decide-note" id="aprRefer-' + id + '" autocomplete="off" oninput="aprSearchReferee(\'' + id + '\')" onfocus="aprSearchReferee(\'' + id + '\')" ' +
+    'onkeydown="if(event.key===\'Enter\'){aprAddReferee(\'' + id + '\');event.preventDefault();}" ' +
+    'placeholder="Refer to (optional, up to 4) — start typing a name; they are told to act, without the amount">' +
+    '<div id="aprReferMenu-' + id + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div>' +
     '</div>';
+}
+function aprSearchReferee(id) {
+  const menu = document.getElementById('aprReferMenu-' + id);
+  const q = document.getElementById('aprRefer-' + id).value.trim().toLowerCase();
+  if (!q) { menu.style.display = 'none'; return; }
+  const hits = aprRefereeStaff_.filter(function (s) { return s.name.toLowerCase().indexOf(q) !== -1 || s.email.indexOf(q) !== -1; }).slice(0, 8);
+  const item = 'padding:7px 12px;cursor:pointer;font-size:13px';
+  menu.innerHTML = hits.length ? hits.map(function (s) {
+    return '<div style="' + item + '" onmousedown="aprPickReferee(\'' + id + '\',\'' + s.email + '\')">' + aprEsc_(s.name) + ' <span style="color:var(--gray);font-size:11.5px">' + aprEsc_(s.email) + '</span></div>';
+  }).join('') : '<div style="' + item + ';color:var(--gray)">' + (aprRefereeStaff_.length ? 'No match' : 'Staff list ' + (aprRefereeError_ ? 'unavailable: ' + aprEsc_(aprRefereeError_) : 'still loading…')) + '</div>';
+  menu.style.display = 'block';
+}
+function aprPickReferee(id, email) {
+  const input = document.getElementById('aprRefer-' + id);
+  input.value = email;
+  aprAddReferee(id);
+  input.focus();
 }
 function aprChipsHtml_(id) {
   return (aprReferees_[id] || []).map(function (e, i) {
@@ -2558,6 +2578,7 @@ function aprAddReferee(id) {
     if (aprReferees_[id].length >= 4) { alert('You can refer to at most 4 people.'); } else aprReferees_[id].push(m[0]);
   }
   input.value = '';
+  document.getElementById('aprReferMenu-' + id).style.display = 'none';
   document.getElementById('aprChips-' + id).innerHTML = aprChipsHtml_(id);
 }
 function aprRemoveReferee(id, i) {
