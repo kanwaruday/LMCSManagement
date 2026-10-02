@@ -378,7 +378,8 @@ function aprDecide_(caller, body) {
   // for exactly what it checks and why each half only applies to
   // Approved vs. either decision.
   const category = String(values[rowIdx][2]);
-  if (category === 'Salary Offer Approval' && (decision === APR_STATUS.APPROVED || decision === APR_STATUS.REJECTED)) {
+  // 2026-10-02, per Uday: the Owner can ALWAYS reject -- only an Approve waits for the MD Academics interview.
+  if (category === 'Salary Offer Approval' && decision === APR_STATUS.APPROVED) {
     const idMatch = String(values[rowIdx][7] || '').match(/T-\d{4}/);
     const gate = hirSalaryOfferGateCheck_(idMatch ? idMatch[0] : '', decision);
     if (!gate.ok) return { success: false, error: gate.error };
