@@ -664,7 +664,7 @@ td{padding:6px 12px;vertical-align:middle}
         </div>
       </div>
       <div class="apr-status-bar" id="aprStatusBar"><span class="sp"></span><span>Loading approvals…</span></div>
-      <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+      <div id="aprListBody"></div>
     </div>
 
   </div>
@@ -2255,7 +2255,7 @@ async function loadApprovals() {
 function refreshApprovals() {
   aprExpandedId = null;
   aprExpandedDetail = null;
-  document.getElementById('aprListBody').innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>';
+  document.getElementById('aprListBody').innerHTML = ''; // the status bar already shows loading
   loadApprovals();
 }
 
