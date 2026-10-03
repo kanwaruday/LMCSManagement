@@ -46,16 +46,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .field input:focus,.field select:focus{outline:none;border-color:var(--red)}
 .field input:disabled,.field select:disabled{background:var(--lgray);color:var(--gray)}
 .field-hint{font-size:10.5px;color:#9ca3af;margin-top:4px}
-.code-preview{font-size:12px;color:var(--gray);margin-top:4px}
-.code-preview b{color:var(--red);font-family:monospace}
-
-.cs-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
-.cs-remove{background:none;border:1px solid var(--border);border-radius:5px;color:var(--gray);cursor:pointer;padding:7px 10px;font-size:12px}
-.cs-remove:hover{border-color:var(--red);color:var(--red)}
-.add-row-btn{background:var(--lgray);border:1.5px dashed var(--border);border-radius:5px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer;width:100%;margin-top:4px}
-.add-row-btn:hover{border-color:var(--red);color:var(--red)}
-
-.sec-lbl{font-size:12px;font-weight:700;color:var(--dark);margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 
 .submit-btn{background:var(--red);color:#fff;border:none;border-radius:6px;padding:11px 22px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
 .submit-btn:hover{background:var(--red-h)}
@@ -168,8 +158,6 @@ td.name{font-weight:700}
       <button class="tab-btn active" data-tab="directory" onclick="switchTab('directory')">📋 Directory</button>
       <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
       <button class="tab-btn" data-tab="verify" onclick="switchTab('verify')">🔍 Needs Verification<span class="tab-badge" id="verifyBadge" style="display:none"></span></button>
-      <button class="tab-btn" data-tab="hire" disabled title="Temporarily disabled">➕ New Hire</button>
-      <button class="tab-btn" data-tab="transfer" disabled title="Temporarily disabled">🔁 Transfer</button>
       <button class="tab-btn" data-tab="inactive" disabled title="Temporarily disabled">⛔ Mark Inactive</button>
     </div>
 
@@ -202,80 +190,6 @@ td.name{font-weight:700}
       <div id="autoResolveMsg"></div>
       <datalist id="verifyEmployeeList"></datalist>
       <div id="verifyBody">Loading…</div>
-    </div>
-
-    <!-- ══════════════════ NEW HIRE ══════════════════ -->
-    <div class="tab-panel" id="panel-hire">
-      <div class="field">
-        <label>Name</label>
-        <input type="text" id="hireName" placeholder="Full name">
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Date of Joining</label>
-          <input type="date" id="hireDoj" onchange="previewCode('hire')">
-        </div>
-        <div class="field">
-          <label>School</label>
-          <select id="hireSchool" onchange="previewCode('hire');loadEmployeesFor('hire')"></select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Job Role / Title</label>
-          <input type="text" id="hireRole" placeholder="e.g. Subject Teacher">
-        </div>
-        <div class="field">
-          <label>Reports To</label>
-          <input type="text" id="hireReportsTo" list="hireReportsToList" placeholder="Search by name…">
-          <datalist id="hireReportsToList"></datalist>
-        </div>
-      </div>
-      <div class="field-hint" id="hireCodePreview"></div>
-
-      <div class="sec-lbl">Class &amp; Subject Assignments</div>
-      <div id="hireCsRows"></div>
-      <button class="add-row-btn" onclick="addCsRow('hire')">+ Add class/subject</button>
-
-      <div>
-        <button class="submit-btn" onclick="submitHire(event)">Add Employee</button>
-      </div>
-      <div id="hireResult"></div>
-    </div>
-
-    <!-- ══════════════════ TRANSFER ══════════════════ -->
-    <div class="tab-panel" id="panel-transfer">
-      <div class="field">
-        <label>Employee being transferred</label>
-        <input type="text" id="xferEmployee" list="xferEmployeeList" placeholder="Search by name…" onchange="onXferEmployeePicked()">
-        <datalist id="xferEmployeeList"></datalist>
-        <div class="field-hint" id="xferCurrentInfo"></div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>New School</label>
-          <select id="xferNewSchool" onchange="previewCode('xfer')"></select>
-        </div>
-        <div class="field">
-          <label>New Job Role / Title</label>
-          <input type="text" id="xferRole" placeholder="e.g. Subject Teacher">
-        </div>
-      </div>
-      <div class="field">
-        <label>Reports To (at new school)</label>
-        <input type="text" id="xferReportsTo" list="xferReportsToList" placeholder="Search by name…">
-        <datalist id="xferReportsToList"></datalist>
-      </div>
-      <div class="field-hint" id="xferCodePreview"></div>
-
-      <div class="sec-lbl">Class &amp; Subject Assignments (at new school)</div>
-      <div id="xferCsRows"></div>
-      <button class="add-row-btn" onclick="addCsRow('xfer')">+ Add class/subject</button>
-
-      <div>
-        <button class="submit-btn" onclick="submitTransfer(event)">Transfer Employee</button>
-      </div>
-      <div id="xferResult"></div>
     </div>
 
     <!-- ══════════════════ MARK INACTIVE ══════════════════ -->
@@ -340,12 +254,6 @@ const DOC_TYPES = [
   { full: 'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)', short: 'Prof. Degree' },
   { full: 'HIGHEST QUALIFICATION', short: 'Highest Qual.' },
 ];
-const CLASS_OPTIONS = ['M-I','M-II','M-III','Class 1','Class 2','Class 3','Class 4','Class 5',
-  'Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
-const SUBJECT_SUGGESTIONS = ['English','Hindi','Sanskrit','Math','Science','Social Science',
-  'E.V.S.','GK','Cognitive Activities','P.Ed','Physics','Chemistry','Biology','Accountancy',
-  'Business Studies','Economics','History','Political Science','Information Technology'];
-
 let SESSION = null;
 let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}
 
@@ -365,32 +273,11 @@ async function init() {
   }
 
   // Owner-only "data source" link (2026-09-20) -- ID duplicated from
-  // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID. All 3
-  // tabs here (New Hire/Transfer/Mark Inactive) write to the same
-  // "LMCSStaffMasters" sheet, so one static link covers all of them.
+  // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID.
   if (LMCS.hasRole(SESSION, 'Owner')) {
     document.getElementById('datasrcStaff').innerHTML =
       '📄 <a href="https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>';
   }
-
-  populateSchoolSelect('hireSchool');
-  populateSchoolSelect('xferNewSchool');
-  if (SESSION.campusId !== 'ALL') {
-    document.getElementById('hireSchool').value = SESSION.campusId;
-    document.getElementById('hireSchool').disabled = true;
-  }
-
-  addCsRow('hire');
-  document.getElementById('hireDoj').value = new Date().toISOString().slice(0, 10);
-
-  // Prefill from a deep link, e.g. Hiring Dashboard's "Complete hire" link
-  // (?name=...&school=LMS1) once a candidate is marked Hired there --
-  // same pattern as the old Salary Slip "Send to Salary Slip" deep link.
-  // school is only honored for Owner (campusId ALL); a locked Coordinator
-  // already has hireSchool forced+disabled to their own campus above.
-  const params = new URLSearchParams(location.search);
-  if (params.get('name')) document.getElementById('hireName').value = params.get('name');
-  if (params.get('school') && SESSION.campusId === 'ALL') document.getElementById('hireSchool').value = params.get('school');
 
   document.getElementById('formArea').style.display = 'block';
 
@@ -399,12 +286,6 @@ async function init() {
   // blocking the other, since each was already slow enough on its own
   // (see PERF note on doGet in staff-management-api.gs).
   await Promise.all([loadAllEmployees(), loadDirectory(), loadDocumentStatus(), loadUploadStatus(), loadVerificationQueue()]);
-}
-
-function populateSchoolSelect(id) {
-  const el = document.getElementById(id);
-  const schools = SESSION.campusId === 'ALL' ? Object.keys(CAMPUS_LABELS) : [SESSION.campusId];
-  el.innerHTML = schools.map(function (c) { return '<option value="' + c + '">' + esc(CAMPUS_LABELS[c]) + '</option>'; }).join('');
 }
 
 function switchTab(tab) {
@@ -422,17 +303,14 @@ async function loadAllEmployees() {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || 'proxy error');
     employeesByLabel = {};
-    const dl1 = document.getElementById('hireReportsToList');
-    const dl2 = document.getElementById('xferEmployeeList');
-    const dl3 = document.getElementById('xferReportsToList');
     const dl4 = document.getElementById('inactEmployeeList');
     const dl5 = document.getElementById('verifyEmployeeList');
-    [dl1, dl2, dl3, dl4, dl5].forEach(function (dl) { dl.innerHTML = ''; });
+    [dl4, dl5].forEach(function (dl) { dl.innerHTML = ''; });
     json.employees.forEach(function (e) {
       if (!e.employeeCode || !e.name) return;
       const label = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
       employeesByLabel[label] = e;
-      [dl1, dl2, dl3, dl4, dl5].forEach(function (dl) {
+      [dl4, dl5].forEach(function (dl) {
         const opt = document.createElement('option');
         opt.value = label;
         dl.appendChild(opt);
@@ -442,9 +320,6 @@ async function loadAllEmployees() {
     console.warn('Could not load employee list for search boxes:', e);
   }
 }
-
-function loadEmployeesFor() { /* datalist is already the full network-wide list; school filtering
-  isn't necessary for a search box, kept as a no-op hook in case per-school scoping is wanted later */ }
 
 /* ═══════════════════════════════════════════════════════════
    DIRECTORY (school-wise employee list, via the authenticated
@@ -821,76 +696,6 @@ function resolveEmployeeLabel(inputEl) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CLASS/SUBJECT ROWS
-═══════════════════════════════════════════════════════════ */
-function addCsRow(prefix) {
-  const container = document.getElementById(prefix + 'CsRows');
-  if (container.children.length >= 10) return;
-  const row = document.createElement('div');
-  row.className = 'cs-row';
-  const classOpts = CLASS_OPTIONS.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
-  const dlId = prefix + 'SubjList' + Date.now() + Math.floor(Math.random() * 1000);
-  row.innerHTML =
-    '<select class="cs-class">' + classOpts + '</select>' +
-    '<input class="cs-subject" list="' + dlId + '" placeholder="Subject">' +
-    '<datalist id="' + dlId + '">' + SUBJECT_SUGGESTIONS.map(function (s) { return '<option value="' + s + '">'; }).join('') + '</datalist>' +
-    '<button type="button" class="cs-remove" onclick="this.closest(\'.cs-row\').remove()">✕</button>';
-  container.appendChild(row);
-}
-
-function collectCsRows(prefix) {
-  const rows = document.querySelectorAll('#' + prefix + 'CsRows .cs-row');
-  const out = [];
-  rows.forEach(function (r) {
-    const cls = r.querySelector('.cs-class').value;
-    const subj = r.querySelector('.cs-subject').value.trim();
-    if (cls && subj) out.push({ class: cls, subject: subj });
-  });
-  return out;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   CODE PREVIEW
-═══════════════════════════════════════════════════════════ */
-async function previewCode(which) {
-  try {
-    let school, doj, targetEl;
-    if (which === 'hire') {
-      school = document.getElementById('hireSchool').value;
-      doj = document.getElementById('hireDoj').value;
-      targetEl = document.getElementById('hireCodePreview');
-      if (!school || !doj) { targetEl.textContent = ''; return; }
-      const json = await callStaffApi('nextcode', { school: school, dateOfJoining: doj });
-      targetEl.innerHTML = json.success ? 'Will be assigned: <b>' + esc(json.employeeCode) + '</b>' : '';
-    } else {
-      // No preview call here: the roster search (employeeCode/name/school
-      // only) doesn't carry the employee's original join date, and the real
-      // new code reuses THEIR join month from their actual old EmployeeCode
-      // -- something only the server can compute correctly, from the real
-      // record, at submit time. Guessing here would just be misleading.
-      const picked = resolveEmployeeLabel(document.getElementById('xferEmployee'));
-      school = document.getElementById('xferNewSchool').value;
-      targetEl = document.getElementById('xferCodePreview');
-      targetEl.textContent = (picked && school)
-        ? 'New code keeps their original join month (from ' + picked.employeeCode + ') with a fresh sequence number at the new school — shown after you submit.'
-        : '';
-    }
-  } catch (e) { /* preview is best-effort, ignore failures */ }
-}
-
-function onXferEmployeePicked() {
-  const picked = resolveEmployeeLabel(document.getElementById('xferEmployee'));
-  const info = document.getElementById('xferCurrentInfo');
-  // employee-roster.gs returns school as "LMS 1" (with a space); campusId
-  // convention everywhere else in the portal is "LMS1" -- normalize before
-  // the CAMPUS_LABELS lookup so this shows the full campus name, not a
-  // bare fallback string.
-  const normSchool = String(picked && picked.school || '').replace(/\s+/g, '');
-  info.textContent = picked ? ('Currently at ' + (CAMPUS_LABELS[normSchool] || picked.school) + ' — Code: ' + picked.employeeCode) : '';
-  previewCode('xfer');
-}
-
-/* ═══════════════════════════════════════════════════════════
    API CALL
 ═══════════════════════════════════════════════════════════ */
 async function callStaffApi(action, data, extraParams) {
@@ -917,48 +722,6 @@ function showResult(elId, json) {
 /* ═══════════════════════════════════════════════════════════
    SUBMIT HANDLERS
 ═══════════════════════════════════════════════════════════ */
-async function submitHire(event) {
-  const btn = event.target; btn.disabled = true;
-  try {
-    const reportsTo = resolveEmployeeLabel(document.getElementById('hireReportsTo'));
-    const data = {
-      name: document.getElementById('hireName').value.trim(),
-      dateOfJoining: document.getElementById('hireDoj').value,
-      school: document.getElementById('hireSchool').value,
-      role: document.getElementById('hireRole').value.trim(),
-      reportsTo: reportsTo ? reportsTo.employeeCode : '',
-      classSubjects: collectCsRows('hire'),
-    };
-    if (!data.name || !data.dateOfJoining || !data.school) throw new Error('Name, date of joining, and school are required');
-    const json = await callStaffApi('addnewhire', data);
-    showResult('hireResult', json);
-    if (json.success) { await loadAllEmployees(); }
-  } catch (e) {
-    showResult('hireResult', { success: false, error: e.message });
-  } finally { btn.disabled = false; }
-}
-
-async function submitTransfer(event) {
-  const btn = event.target; btn.disabled = true;
-  try {
-    const picked = resolveEmployeeLabel(document.getElementById('xferEmployee'));
-    if (!picked) throw new Error('Pick an existing employee from the list first');
-    const reportsTo = resolveEmployeeLabel(document.getElementById('xferReportsTo'));
-    const data = {
-      oldEmployeeCode: picked.employeeCode,
-      newSchool: document.getElementById('xferNewSchool').value,
-      role: document.getElementById('xferRole').value.trim(),
-      reportsTo: reportsTo ? reportsTo.employeeCode : '',
-      classSubjects: collectCsRows('xfer'),
-    };
-    const json = await callStaffApi('transfer', data);
-    showResult('xferResult', json);
-    if (json.success) { await loadAllEmployees(); }
-  } catch (e) {
-    showResult('xferResult', { success: false, error: e.message });
-  } finally { btn.disabled = false; }
-}
-
 async function submitInactive(event) {
   const btn = event.target; btn.disabled = true;
   try {
