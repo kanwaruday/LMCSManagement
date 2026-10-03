@@ -386,4 +386,18 @@ module.exports = function run(t) {
       assert.equal(drTotal, crTotal, v.company + ' balances');
     });
   });
+
+  t.test('offers awaiting joining: only Owner-approved ones, enforced on join too', () => {
+    const O = '2028-02', ap = h.books['1Tr'].tabs.Approvals.values;
+    ap.push(['2', '', 'Salary Offer Approval', '', '', '', '', 'T-0500 — Rejected Person', '', '', '', '', '', 'Rejected']);
+    ap.push(['3', '', 'Salary Offer Approval', '', '', '', '', 'T-0501 — Approved Person', '', '', '', '', '', 'Approved']);
+    [['T-0500', 'Rejected Person'], ['T-0501', 'Approved Person'], ['T-0502', 'Unsubmitted Person']].forEach(([id, name]) => {
+      const r = call('recordoffer', { applicantId: id, name, entity: 'LMS1', designation: 'PRT', fullBasic: 10000, epf: true, tuition: 0, cti: 15000, netY1: 12000 }, 'principal-token');
+      assert.equal(r.success, true, r.error);
+    });
+    const ids = call('month', { month: O }).staff.offers.map((x) => x.id);
+    assert.deepEqual(ids, ['T-0501'], 'Rejected and Not-submitted offers are hidden');
+    const bad = call('joinoffer', { month: O, applicantId: 'T-0500', code: 'KUL/28/02/900', doj: '2028-02-03' });
+    assert.match(bad.error, /not Owner-approved/);
+  });
 };

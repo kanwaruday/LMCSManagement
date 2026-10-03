@@ -972,6 +972,8 @@ function payApprovalStatus_() {
   return out;
 }
 
+function payOfferApproved_(status) { return /^approved$/i.test(String(status || '').trim()); }
+
 function payStaffChanges_(ss, month) {
   const ctx = payCheckMonth_(month);
   const latest = payMasterLatest_(ss);
@@ -995,7 +997,10 @@ function payStaffChanges_(ss, month) {
         subjects: String(o['Subjects'] || ''), fullBasic: payNum_(o['Full Basic']), epf: payYes_(o['EPF Member (Y/N)']),
         tuition: payNum_(o['Staff-Child Tuition']), cti: payNum_(o['CTI']), recordedBy: String(o['Recorded By'] || ''),
         recordedAt: payStamp_(o['Recorded At']), approval: approvals[id] || 'Not submitted' };
-    });
+    })
+    // Only Owner-approved offers are actionable here (2026-10-03, per Uday): the list has a live
+    // "Joined" button, so Pending / Rejected / Not-submitted offers must not appear at all.
+    .filter(function (o) { return payOfferApproved_(o.approval); });
 
   const transfers = [], left = [], newCodes = {};
   Object.keys(latest).forEach(function (code) {
@@ -1093,6 +1098,8 @@ function payJoinOffer_(ss, d, caller) {
     return String(x['Applicant ID']).trim() === d.applicantId && /^offered/i.test(String(x['Status (Offered/Joined/Dismissed)'] || 'Offered'));
   })[0];
   if (!o) throw new Error('Open offer not found: ' + d.applicantId);
+  const approval = payApprovalStatus_()[d.applicantId];
+  if (!payOfferApproved_(approval)) throw new Error(d.applicantId + ' is not Owner-approved (status: ' + (approval || 'Not submitted') + ') -- it cannot be joined');
   payNewMasterRow_(ss, { code: d.code, name: o['Name'], entity: o['Entity'], designation: o['Designation'], doj: d.doj, fullBasic: payNum_(o['Full Basic']),
     epf: payYes_(o['EPF Member (Y/N)']), rrf: true, tuition: payNum_(o['Staff-Child Tuition']), remarks: 'From offer ' + d.applicantId }, caller);
   payCloseOffer_(ss, d.applicantId, 'Joined', { 'Employee Code': String(d.code).trim(), 'Date of Joining': payDate_(d.doj) }, caller);
