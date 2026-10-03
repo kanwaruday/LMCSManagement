@@ -103,6 +103,18 @@ input.interview-input{padding:4px 6px;border:1px solid var(--border);border-radi
 .row-msg.err{color:#991b1b}
 .row-msg.ok{color:var(--green)}
 .empty{text-align:center;padding:40px;color:var(--gray)}
+
+#letterModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;overflow:auto;padding:16px}
+#letterBox{background:#fff;max-width:860px;margin:0 auto;border-radius:8px;padding:12px}
+#letterBar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+#letterSheet{font-family:'Times New Roman',serif;font-size:14px;line-height:1.35;padding:18px 28px;border:1px solid #ddd}
+#letterSheet [contenteditable]{outline:1px dashed #cbd5e1}
+#letterSheet table{width:100%;border-collapse:collapse;margin:12px 0}
+#letterSheet td,#letterSheet th{border:1px solid #000;padding:3px 6px;vertical-align:top}
+#letterSheet td.n{text-align:right}
+#letterSheet .lh{text-align:center;border-bottom:3px solid #000;padding-bottom:6px;margin-bottom:10px}
+#letterSheet ol{padding-left:22px}
+@media print{body>*:not(#letterModal){display:none!important}#letterModal{position:static;background:none;padding:0;display:block!important}#letterBar{display:none}#letterBox{padding:0;max-width:none}#letterSheet{border:0;padding:0}#letterSheet [contenteditable]{outline:none}}
 </style>
 </head>
 <body>
@@ -611,6 +623,7 @@ function renderRowActions_(tr) {
   const applicant = tr._applicant;
   const extra = [];
   if (applicant.status === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Mark Joined in Payroll</a>');
+  if (applicant.status === 'Hired') extra.push('<button type="button" class="mini-btn" onclick="showAppointmentLetter_(' + applicant.row + ')">📄 Appointment Letter</button>');
   if (applicant.status === 'Hired' && applicant.employeeCode) extra.push('<div class="sub" style="width:100%">Employee ID: <b>' + applicant.employeeCode + '</b></div>');
   tr.querySelector('.row-extra-actions').innerHTML = extra.join('');
 }
@@ -674,6 +687,66 @@ function renderRows() {
   });
 }
 
+// Appointment Letter (2026-10-03, per Uday): opens right after a successful
+// Hired save, prefilled from the applicant + the Salary Dashboard's recorded
+// breakdown; the Principal edits any dashed field, then prints / saves as PDF.
+// Address isn't stored anywhere (it's on the Interview Report PDF) -> typed in.
+function showAppointmentLetter_(row) {
+  const a = (APPLICANTS.applicants || []).filter(function (x) { return x.row === row; })[0];
+  if (!a) return;
+  const b = a.offerBreakdown || {};
+  const school = applicantCampusFor_(a);
+  const campus = school ? LMCS.campusLabel(school) : '';
+  const role = ROLES.filter(function (r) { return r.roleKey === selectedRoleKey; })[0];
+  const position = b.designation || (role && role.roleLevel) || '';
+  const d = a.dateOfJoining ? a.dateOfJoining.split('-').reverse().join('-') : '';
+  const t = new Date(), today = ('0' + t.getDate()).slice(-2) + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + t.getFullYear();
+  const e = function (v, ph) { return '<span contenteditable="true">' + (v === undefined || v === '' ? (ph || '_____') : v) + '</span>'; };
+  const n = function (v) { return '<span contenteditable="true">' + (v ? v : 0) + '</span>'; };
+  const row2 = function (l1, v1, l2, v2, l3, v3) {
+    return '<tr><td>' + l1 + '<span style="float:right">' + v1 + '</span></td><td>' + l2 + '<span style="float:right">' + v2 + '</span></td><td>' + l3 + '<span style="float:right">' + v3 + '</span></td></tr>';
+  };
+  const earn = [['Basic:', b.basic], ['DA:', b.da]];
+  if (b.ada) earn.push(['ADA:', b.ada]);
+  earn.push(['Employer Share (EPF):', b.epfE], ['Employer Share (PF):', b.pfE], ['Employer Share (ESI):', b.esiE]);
+  const ded = [['Total EPF (EPF):', b.totEpf], ['RRF:', b.rrf], ['ESI To ESIC:', b.totEsi]];
+  if (b.tuition) ded.push(['Staff-child tuition:', b.tuition]);
+  const ov = [['Cost to Institution:', b.cti]];
+  const rows = Math.max(earn.length, ded.length, ov.length);
+  let tbody = '';
+  for (let i = 0; i < rows; i++) {
+    const c = function (arr) { return arr[i] ? arr[i][0] + '<span style="float:right">' + n(arr[i][1]) + '</span>' : ''; };
+    tbody += '<tr><td>' + c(earn) + '</td><td>' + c(ded) + '</td><td>' + c(ov) + '</td></tr>';
+  }
+  tbody += '<tr><td>Total CTI:<span style="float:right">' + n(b.cti) + '</span></td><td>Total Deduction:<span style="float:right">' + n(b.cti != null && b.net != null ? b.cti - b.net : 0) + '</span></td><td>Bank Transfer:<span style="float:right">' + n(b.net) + '</span></td></tr>';
+  document.getElementById('letterSheet').innerHTML =
+    '<div class="lh"><div style="font-size:30px;font-weight:700;color:#0b2a6b">HIDIMBA EDUCATIONAL SOCIETY</div><div style="font-size:18px;font-weight:700;color:#0b2a6b">THE MALL, DHALPUR KULLU-175101</div>' +
+    '<div style="font-size:11px;font-weight:700;color:#0b2a6b">(Regd. Under Societies Act XXI, 1860 &amp; Amended Under H.P. Soc. Reg. Act 2006)</div>' +
+    '<div style="font-size:15px;font-weight:700;color:#e11d2e">Running &amp; Managing La Montessori Chain of Schools</div></div>' +
+    '<div style="text-align:center;font-weight:700;font-size:16px">By Hand</div>' +
+    '<p><b>Ref. No.:</b> <i>' + e(a.employeeCode || a.expectedEmployeeCode || '') + '</i></p>' +
+    '<p>' + e((a.name || '').toUpperCase()) + '<br>' + e('', 'ADDRESS (from the Interview Report / Aadhaar)') + '</p>' +
+    '<p>Dated: ' + e(today) + '<br><b>Reg.:</b> Appointment Letter.</p><p>Dear ' + e('Sir / Madam') + '</p>' +
+    '<p>I, on behalf of the administration would like to congratulate you on your appointment to the position of ' + e(position) + ' on a probation period of one complete academic year at ' + e(campus) + '. Your date of joining is ' + e(d) + '.</p>' +
+    '<p>Your salary details as on today are:</p>' +
+    '<table><tr><th>Earnings</th><th>Deductions</th><th>Overall</th></tr>' + tbody + '</table>' +
+    '<p>You will be regular after the completion of probation period subject to the completion of the minimum required qualifications as per the concerned Education Department or Education Boards. You also hereby agree to adhere to the following terms and conditions in full sense and under no pressure of any sorts.</p>' +
+    '<ol><li>A regular performance review will be conducted to assess your performance and suitability. On the successful completion of your probation period you could be hired as a regular employee.</li>' +
+    '<li>Service rules of a probationer shall be applicable till the employee is switched to regular status.</li>' +
+    '<li>You assure to serve for ' + e('', '_____') + ' years ' + e('', '____') + ' months. In case, of a change in intention to serve, you shall intimate your incharge in writing atleast 3 months prior to your leaving or the end of the session whichever is later.</li>' +
+    '<li>You shall receive your monthly salary after the completion of each months service, on 10th of the following month. The date may vary due to occurrence of public/gazetted holidays.</li>' +
+    '<li>In case of serious grievances or inadequate service standards, a meeting shall be held with your immediate senior and the salary can be withheld for no longer than 2 additional weeks. This must be treated as a warning/ notice from the School’s side. Three such instances can lead to immediate termination.</li>' +
+    '<li>Kindly speak to your respective in charge at the recieval of this letter in case they see the need of induction.</li>' +
+    '<li>Please submit attested copies of the following documents (Within one month of date of joining):<ol type="a"><li>All Certificates of Academic Qualifications</li><li>Police Verification</li><li>Photocopy of PAN Card</li><li>One Cancelled Cheque</li><li>Medical Certificate</li><li>Signed Service Contract</li><li>Photocopy of Aadhar Card</li><li>Old EPF Number, if any</li></ol></li>' +
+    '<li>The rules and regulations of the management are reviewed and issued from time to time, orally or in writing by the administration.</li>' +
+    '<li>Your appointment will be cancelled immediately, if any information provided by you is found to be incorrect.</li>' +
+    '<li>You are free to clear any doubt etc. before joining your duties.</li>' +
+    '<li>You can be transferred during your job period to any of the Institutions/ Schools run by the Society and you cannot deny for the same. In case, of your default, your services can be terminated without notice.</li></ol>' +
+    '<p>Your signing this appointment letter confirms your acceptance of the terms and conditions.<br>Wish you best of luck for your future endeavor.</p>' +
+    '<p>Yours Sincerely</p><br><br><p><b><i>Copy to :</i></b> Principal, ' + e(campus) + ', for information and necessary action please.</p>';
+  document.getElementById('letterModal').style.display = 'block';
+}
+
 function saveRow_(tr, applicant) {
   const btn = tr.querySelector('.save-btn');
   const msg = tr.querySelector('.row-msg');
@@ -696,6 +769,7 @@ function saveRow_(tr, applicant) {
       // revert here. The error just explains why nothing changed.
       if (!res.success) { msg.textContent = res.error; msg.className = 'row-msg err'; return; }
       APPLICANTS = res; msg.textContent = 'Saved'; msg.className = 'row-msg ok';
+      if (status === 'Hired') showAppointmentLetter_(applicant.row);
       setTimeout(function () { renderRows(); }, 400);
     })
     .catch(function () { btn.disabled = false; msg.textContent = 'Network error — try again'; msg.className = 'row-msg err'; });
@@ -766,5 +840,6 @@ if (cachedSession) {
   LMCS.requireSession('#authRoot').then(showApp);
 }
 </script>
+<div id="letterModal"><div id="letterBox"><div id="letterBar"><button type="button" class="mini-btn" onclick="window.print()">🖨 Print / Save as PDF</button><button type="button" class="mini-btn" onclick="document.getElementById('letterModal').style.display='none'">Close</button><span class="sub">Anything with a dashed outline can be edited before printing.</span></div><div id="letterSheet"></div></div></div>
 </body>
 </html>

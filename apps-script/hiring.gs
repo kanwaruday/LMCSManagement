@@ -83,6 +83,8 @@ const HIR_COL = {
   // 'yyyy-MM-dd') at 'Hiring Approved', BEFORE the Document Submission Form
   // -- the employee code's YY/MM comes from it. Column Q.
   DOJ: 17,
+  // Salary Dashboard's computed breakdown (JSON), for the Appointment Letter shown on Hired. Column R.
+  OFFER_BREAKDOWN: 18,
 };
 
 // 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
@@ -567,6 +569,7 @@ function hiringApplicants_(caller) {
       employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
       employeeCodePermanent: !!String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
       dateOfJoining: hirDojStr_(r[HIR_COL.DOJ - 1]),
+      offerBreakdown: hirParseJson_(r[HIR_COL.OFFER_BREAKDOWN - 1]),
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -1016,6 +1019,10 @@ function hirNextSeq_(prefix, codeLists) {
   return max + 1;
 }
 
+function hirParseJson_(v) {
+  try { const o = JSON.parse(String(v || '')); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
+}
+
 // 'yyyy-MM-dd' text (or a Date, if Sheets converted it anyway) -> 'yyyy-MM-dd', else ''.
 function hirDojStr_(v) {
   if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -1254,6 +1261,14 @@ function hiringUpdateStatus_(caller, body) {
     // Text format so Sheets keeps 'yyyy-MM-dd' as typed (no date coercion / timezone shift).
     sheet.getRange(row, HIR_COL.DOJ).setNumberFormat('@').setValue(body.dateOfJoining);
     if (!String(sheet.getRange(1, HIR_COL.DOJ).getValue() || '').trim()) sheet.getRange(1, HIR_COL.DOJ).setValue('Date of Joining');
+  }
+  if (body.offerBreakdown) {
+    const j = String(body.offerBreakdown);
+    if (hirParseJson_(j) && j.length < 2000) {
+      if (sheet.getMaxColumns() < HIR_COL.OFFER_BREAKDOWN) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.OFFER_BREAKDOWN - sheet.getMaxColumns());
+      sheet.getRange(row, HIR_COL.OFFER_BREAKDOWN).setValue(j);
+      if (!String(sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).getValue() || '').trim()) sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).setValue('Offer Breakdown (JSON)');
+    }
   }
   // Written by the Salary Dashboard module (salary/index.html's "Record
   // as Salary Offer"), same optional-write pattern as the two dates

@@ -608,6 +608,10 @@ function recordSalaryOffer_() {
     status: '',
     notes: notes,
     salaryOfferAt: new Date().toISOString(),
+    // The salary table of the Appointment Letter (Hiring Dashboard, on Hired).
+    offerBreakdown: JSON.stringify({ basic: r.nb, da: r.da, ada: r.ada, epfE: r.epfE, pfE: r.pfE, esiE: r.esiE, totEpf: r.totEpf,
+      totEsi: r.totEsi, rrf: r.rrf1, tuition: Number(document.getElementById('fTuiFee').value) || 0, cti: r.cti, net: r.netY1,
+      designation: designation, subjects: subjects }),
   }).then(function (res) {
     btn.disabled = false;
     if (!res.success) { hideLoading_(); msg.textContent = res.error; msg.className = 'record-msg err'; return; }
