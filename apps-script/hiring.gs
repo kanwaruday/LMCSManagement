@@ -378,6 +378,41 @@ function hirBackfillWalkInApplicants_() {
   return { added: newRows.length, skippedComplicated: skippedComplicated };
 }
 
+// 2026-10-03, per Uday (Preeti Sood, LMS 4, English -- interview report
+// submitted that day, never showed up on the dashboard): the backfill
+// above was only ever a one-time manual run, so every walk-in
+// interviewed AFTER Sep 25 was invisible. Now hiringApplicants_ calls
+// this on each load, so a new walk-in appears the next time anyone
+// opens the dashboard -- no trigger or manual run needed.
+//
+// Cheap when nothing's new: one getLastRow() on the Interview Reports
+// tab compared against the last row count we already swept (kept in
+// Script Properties), so an idle load costs a single small call, not
+// two full-sheet reads. The count is stored from BEFORE the sweep, so a
+// report that lands mid-sweep gets picked up next time instead of lost.
+// A script lock keeps two simultaneous dashboard loads from both
+// appending the same walk-in; whoever loses the lock just skips (the
+// winner is already doing the work). Any failure here is swallowed --
+// a backfill hiccup must never stop the dashboard itself from loading.
+function hirAutoBackfillWalkIns_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const irRows = hirIrSheet_().getLastRow();
+    if (String(irRows) === props.getProperty('HIR_BACKFILL_IR_ROWS')) return;
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(8000)) return;
+    try {
+      if (String(irRows) === props.getProperty('HIR_BACKFILL_IR_ROWS')) return; // the lock winner before us already swept this
+      hirBackfillWalkInApplicants_();
+      props.setProperty('HIR_BACKFILL_IR_ROWS', String(irRows));
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    Logger.log('hirAutoBackfillWalkIns_ skipped: ' + err.message);
+  }
+}
+
 // Guards against corrupted sheet cells (e.g. a Timestamp cell containing
 // stray text instead of a date, seen live 2026-09-25) -- new Date(v)
 // throws on .toISOString() for anything unparseable, which would
@@ -454,6 +489,7 @@ function hiringApplicants_(caller) {
     // consistent message instead of a bare empty table.
     return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
   }
+  hirAutoBackfillWalkIns_(); // before the read below, so a brand-new walk-in's row is in it
   const values = hirSheet_().getDataRange().getValues();
   const irPhones = hirInterviewReportPhones_(); // one sheet read, reused per-applicant below for the derived-stage check
   const salaryOfferDecisions = hirSalaryOfferDecisions_(); // ditto -- one Approvals sheet read, not one per applicant
