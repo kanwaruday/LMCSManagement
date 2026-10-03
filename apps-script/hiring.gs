@@ -74,6 +74,11 @@ const HIR_COL = {
   TIMESTAMP: 1, NAME: 2, PHONE: 3, AGE: 4, SUBJECTS: 5, BRANCHES: 6,
   QUALIFICATION: 7, BED: 8, GENDER: 9, CV: 10, STATUS: 11, NOTES: 12, INTERVIEW_AT: 13,
   MD_INTERVIEW_AT: 14, SALARY_OFFER_AT: 15,
+  // 2026-10-03, per Uday: the permanent employee code, written once a
+  // candidate at 'Hiring Approved' has every compulsory document on file
+  // (see hirAssignEmployeeCodes_). Column P, appended past the form's own
+  // columns like 13-15 before it.
+  EMP_CODE: 16,
 };
 
 // 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
@@ -553,6 +558,10 @@ function hiringApplicants_(caller) {
       // Direct link, not a per-click lookup -- see hirInterviewReportPhones_'s
       // own comment for why.
       interviewReportPdf: (irPhones[phone] && irPhones[phone].pdf) || '',
+      // Column P -- the permanent code, if hirAssignEmployeeCodes_ (below)
+      // has already locked one for this row.
+      employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
+      employeeCodePermanent: !!String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -584,7 +593,11 @@ function hiringApplicants_(caller) {
   // subject/qualification-weighted, recency only a minor tiebreaker
   // inside it) still decides order. This adds a recency gate on top of
   // that scoring rather than replacing it.
-  const applicants = order.map(function (k) { return byPhone[k]; })
+  const finalList = order.map(function (k) { return byPhone[k]; });
+  // Employee codes -- after the phone de-dupe above, so a superseded
+  // duplicate row can never get a code locked onto it.
+  hirAssignEmployeeCodes_(finalList, values.slice(1).map(function (r) { return String(r[HIR_COL.EMP_CODE - 1] || '').trim().toUpperCase(); }).filter(Boolean));
+  const applicants = finalList
     .sort(function (a, b) {
       const aStage = hirLadderIndex_(a.status);
       const bStage = hirLadderIndex_(b.status);
@@ -956,6 +969,157 @@ function hirIsHiringApproved_(applicantId) {
   return hirSalaryOfferDecisions_()[applicantId] === APR_STATUS.APPROVED;
 }
 
+// ── Employee codes ───────────────────────────────────────────────────
+// 2026-10-03, per Uday: once an Owner approves hiring, show the code the
+// new hire will get, and make it permanent once every compulsory
+// document is uploaded. The numbering rule is the Staff Portal's own
+// (staff-management-api.gs's nextSeqForPrefix_/buildEmployeeCode_ --
+// that file lives in the separate Roster Proxy project, so the prefix
+// map and the rule are duplicated here; keep them in sync):
+// PREFIX/YY/MM/SEQ, SEQ = highest number ever used for that prefix + 1.
+// Until it's locked the code is only an EXPECTED one, recomputed on every
+// load (two candidates at one campus can briefly show the same number);
+// locking writes it to column P of the applicant's own row, after which
+// it never changes. The Staff Portal's New Hire still has to be taught to
+// use a locked code -- until then it assigns its own.
+const HIR_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // = STAFF_EMP_SHEET_ID
+const HIR_SCHOOL_PREFIX = { LMS1: 'KUL', LMS2: 'KEL', LMS3: 'DUN', LMS4: 'NCM', LMS5: 'SAY', LMS6: 'JOG', HES: 'HES' };
+const HIR_EMPCODE_RE = /^([A-Z]{3})\/(\d{2})\/(\d{2})\/(\d{3,})$/;
+
+// Every EmployeeCode already in the Staff Portal's EmpMaster (departed
+// staff included -- a number is never reused), uppercased.
+function hirRosterCodes_() {
+  const rows = SpreadsheetApp.openById(HIR_ROSTER_SHEET_ID).getSheetByName('EmpMaster').getDataRange().getValues();
+  const col = rows[0].indexOf('EmployeeCode');
+  const out = [];
+  if (col === -1) return out;
+  for (let i = 1; i < rows.length; i++) {
+    const c = String(rows[i][col] || '').trim().toUpperCase();
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+function hirNextSeq_(prefix, codeLists) {
+  let max = 0;
+  codeLists.forEach(function (list) {
+    list.forEach(function (c) {
+      const m = c.match(HIR_EMPCODE_RE);
+      if (m && m[1] === prefix) { const s = parseInt(m[4], 10); if (s > max) max = s; }
+    });
+  });
+  return max + 1;
+}
+
+function hirNewCode_(prefix, codeLists) {
+  const ym = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yy/MM').split('/');
+  return prefix + '/' + ym[0] + '/' + ym[1] + '/' + String(hirNextSeq_(prefix, codeLists)).padStart(3, '0');
+}
+
+// applicantId -> the campus on the Salary Offer Approval request itself
+// (col B -- the Principal who ran the offer, i.e. the campus actually
+// hiring). Used instead of the applicant's own Branches tick-boxes,
+// which can name several campuses and would pick a different prefix
+// depending on who happened to be looking. 'ALL' (an Owner-filed
+// request) is skipped so the caller falls back to the branches.
+function hirSalaryOfferCampuses_() {
+  const values = aprValues_();
+  const map = {};
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[2]) !== 'Salary Offer Approval') continue;
+    const m = String(row[7] || '').match(/T-\d{4}/);
+    const campus = String(row[1] || '').trim().toUpperCase();
+    if (m && campus && campus !== 'ALL') map[m[0]] = campus; // later rows win
+  }
+  return map;
+}
+
+function hirHiringCampus_(applicantId, branches, offerCampuses) {
+  if (offerCampuses[applicantId]) return offerCampuses[applicantId];
+  const m = String(branches || '').match(/LMS-(\d)/);
+  return m ? 'LMS' + m[1] : '';
+}
+
+// Writes the permanent code into column P of `row`, under a script lock,
+// and returns { code, note }. `preferred` is the Employee ID found on the
+// candidate's own documents row (normally the expected code that form was
+// prefilled with) -- used as-is when it's a well-formed code for this
+// campus that nobody else holds, so the documents sheet and the roster
+// agree; otherwise the next free number is used instead and `note` says
+// why, so the bad documents row can be corrected. Returns null if the
+// lock couldn't be taken (another request is mid-write) -- the caller
+// just shows the expected code again and retries on the next load.
+function hirLockEmployeeCode_(sheet, row, prefix, preferred, rosterCodes) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return null;
+  try {
+    if (sheet.getMaxColumns() < HIR_COL.EMP_CODE) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.EMP_CODE - sheet.getMaxColumns());
+    const cell = sheet.getRange(row, HIR_COL.EMP_CODE);
+    const existing = String(cell.getValue() || '').trim();
+    if (existing) return { code: existing, note: '' };
+    const lastRow = sheet.getLastRow();
+    const locked = lastRow > 1
+      ? sheet.getRange(2, HIR_COL.EMP_CODE, lastRow - 1, 1).getValues().map(function (r) { return String(r[0] || '').trim().toUpperCase(); }).filter(Boolean)
+      : [];
+    const inUse = {};
+    rosterCodes.concat(locked).forEach(function (c) { inUse[c] = true; });
+    const pref = String(preferred || '').trim().toUpperCase();
+    const m = pref.match(HIR_EMPCODE_RE);
+    let code, note = '';
+    if (m && m[1] === prefix && !inUse[pref]) {
+      code = pref;
+    } else {
+      code = hirNewCode_(prefix, [rosterCodes, locked]);
+      if (pref) note = 'The documents sheet lists Employee ID "' + preferred + '", which ' + (m && m[1] === prefix ? 'is already in use' : 'is not a valid ' + prefix + ' code') + ' -- locked ' + code + ' instead. Please correct that documents row.';
+    }
+    cell.setValue(code);
+    if (!String(sheet.getRange(1, HIR_COL.EMP_CODE).getValue() || '').trim()) sheet.getRange(1, HIR_COL.EMP_CODE).setValue('Employee Code (locked)');
+    return { code: code, note: note };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// For every applicant at 'Hiring Approved' with no locked code yet:
+// check their documents; if complete, lock the code, otherwise attach
+// the expected one plus what's still missing. Deliberately limited to
+// 'Hiring Approved' -- people already Hired before this existed have real
+// codes in the roster, and must never get a second one assigned here.
+// allLocked = every locked code already in column P (any row, visible or
+// not), so an expected/locked code never collides with one. A failure
+// here must never stop the dashboard loading, so it's swallowed.
+function hirAssignEmployeeCodes_(applicants, allLocked) {
+  const pending = applicants.filter(function (a) { return a.status === 'Hiring Approved' && !a.employeeCode; });
+  if (!pending.length) return;
+  try {
+    const rosterCodes = hirRosterCodes_();
+    const offerCampuses = hirSalaryOfferCampuses_();
+    const docCache = {};
+    const sheet = hirSheet_();
+    pending.forEach(function (a) {
+      const campus = hirHiringCampus_(a.applicantId, a.branches, offerCampuses);
+      const prefix = HIR_SCHOOL_PREFIX[campus];
+      if (!prefix) return;
+      const notBefore = a.interviewAt ? new Date(new Date(a.interviewAt).getTime() - 86400000) : null;
+      const docs = hiringCheckDocuments_(campus, a.name, { notBefore: notBefore, cache: docCache });
+      a.docsComplete = !!(docs.found && docs.complete);
+      a.docsMissing = docs.found ? (docs.missing || []) : ['every document (no submission found yet)'];
+      if (a.docsComplete) {
+        const res = hirLockEmployeeCode_(sheet, a.row, prefix, docs.employeeId, rosterCodes);
+        if (res) {
+          a.employeeCode = res.code; a.employeeCodePermanent = true; a.employeeCodeNote = res.note;
+          allLocked.push(res.code);
+          return;
+        }
+      }
+      a.expectedEmployeeCode = hirNewCode_(prefix, [rosterCodes, allLocked]);
+    });
+  } catch (err) {
+    Logger.log('hirAssignEmployeeCodes_ skipped: ' + err.message);
+  }
+}
+
 // action=updatehiringstatus (doPost) -- Principal only, own DISTRICT
 // re-checked server-side (defense in depth, same as the client-side
 // filter). 2026-09-28, per Uday ("the Principal must get a feeling of a
@@ -1021,11 +1185,27 @@ function hiringUpdateStatus_(caller, body) {
     // Report already carries the candidate's bio-data, so a separate CV
     // upload is redundant, not a genuine missing-document risk.
     if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
-    const docs = hiringCheckDocuments_(applicantCampus, name);
-    if (!docs.found) missing.push('a Staff Document Submission on file');
+    // 2026-10-03: only submissions from just before the interview onward
+    // count -- see hiringCheckDocuments_'s own comment (Preeti Sood).
+    const interviewAt = sheet.getRange(row, HIR_COL.INTERVIEW_AT).getValue();
+    const notBefore = interviewAt instanceof Date ? new Date(interviewAt.getTime() - 86400000) : null;
+    const docs = hiringCheckDocuments_(applicantCampus, name, { notBefore: notBefore });
+    if (!docs.found) missing.push('a Staff Document Submission on file (dated on/after the interview)');
     else if (!docs.complete) missing.push('the missing document(s): ' + docs.missing.join(', '));
     if (missing.length) {
       throw new Error('Can\'t mark Hired yet -- still waiting on ' + missing.join('; and ') + '.');
+    }
+    // Hired implies a permanent employee code. Normally the dashboard
+    // already locked one the moment the documents completed; this covers
+    // a Hired click that beats that (or a load that couldn't take the
+    // lock). Never fails the hire itself.
+    try {
+      const applicantId = hirApplicantId_(row);
+      const campus = hirHiringCampus_(applicantId, branches, hirSalaryOfferCampuses_());
+      const prefix = HIR_SCHOOL_PREFIX[campus];
+      if (prefix) hirLockEmployeeCode_(sheet, row, prefix, docs.employeeId, hirRosterCodes_());
+    } catch (err) {
+      Logger.log('Hired: employee code lock skipped: ' + err.message);
     }
   }
 
@@ -1243,19 +1423,44 @@ function hirRefreshTrackerCore_() {
 // key -- best-effort, hence warn-only). Finds required documents by
 // header keyword rather than fixed column index, since the real sheets
 // have duplicate columns from merged form revisions.
-function hiringCheckDocuments_(campusId, name) {
+//
+// 2026-10-03, per Uday (Preeti Sood was allowed to be marked Hired with
+// no documents of her own): this matches by NAME only, and an unrelated
+// earlier submission under the same name (dated 9 days BEFORE her
+// interview) made it look complete. opts.notBefore (a Date) now ignores
+// any submission stamped before that moment -- callers pass the
+// candidate's interview date minus a day, since documents for a hire
+// can't predate the interview that led to it. Every remaining matching
+// row is considered together (a document counts as present if ANY of
+// them has it, so a partial resubmission can't hide an earlier upload),
+// and the most recent one's Employee ID is returned for
+// hirLockEmployeeCode_. opts.cache (a plain object) lets several
+// candidates at one campus share a single read of that campus's sheet.
+function hiringCheckDocuments_(campusId, name, opts) {
+  opts = opts || {};
   const sheetId = HIR_DOC_SHEET_IDS[campusId];
   if (!sheetId) return { found: false, reason: 'No document sheet configured for ' + campusId };
-  const values = SpreadsheetApp.openById(sheetId).getDataRange().getValues();
+  let values = opts.cache && opts.cache[sheetId];
+  if (!values) {
+    values = SpreadsheetApp.openById(sheetId).getDataRange().getValues();
+    if (opts.cache) opts.cache[sheetId] = values;
+  }
   if (!values.length) return { found: false };
   const header = values[0].map(function (h) { return String(h || '').toUpperCase(); });
+  let idCol = header.findIndex(function (h) { return h.indexOf('EMPLOYEE ID') !== -1; });
+  if (idCol === -1) idCol = 3; // col D in every campus sheet seen so far
 
   const target = hirNormalizeName_(name);
-  let row = null;
+  const rows = [];
   for (let i = 1; i < values.length; i++) {
-    if (hirNormalizeName_(values[i][2]) === target) { row = values[i]; break; } // col C = Employee Name
+    if (hirNormalizeName_(values[i][2]) !== target) continue; // col C = Employee Name
+    if (opts.notBefore) {
+      const ts = values[i][0] instanceof Date ? values[i][0] : new Date(values[i][0]);
+      if (!isNaN(ts.getTime()) && ts < opts.notBefore) continue; // predates the interview -- not this hire's paperwork
+    }
+    rows.push(values[i]);
   }
-  if (!row) return { found: false };
+  if (!rows.length) return { found: false };
 
   const missing = [];
   Object.keys(HIR_REQUIRED_DOC_KEYWORDS).forEach(function (label) {
@@ -1263,8 +1468,12 @@ function hiringCheckDocuments_(campusId, name) {
     const matchingCols = header
       .map(function (h, idx) { return keywords.some(function (k) { return h.indexOf(k) !== -1; }) ? idx : -1; })
       .filter(function (idx) { return idx !== -1; });
-    const present = matchingCols.some(function (idx) { return String(row[idx] || '').trim() !== ''; });
+    const present = rows.some(function (row) {
+      return matchingCols.some(function (idx) { return String(row[idx] || '').trim() !== ''; });
+    });
     if (!present) missing.push(label);
   });
-  return { found: true, complete: missing.length === 0, missing: missing };
+  let employeeId = '';
+  rows.forEach(function (row) { const v = String(row[idCol] || '').trim(); if (v) employeeId = v; });
+  return { found: true, complete: missing.length === 0, missing: missing, employeeId: employeeId };
 }

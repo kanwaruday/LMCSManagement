@@ -181,6 +181,21 @@ const DOC_FORM_URLS = {
   LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
 };
 
+// Prefilled Staff Document Submission Forms (2026-10-03, per Uday): Name,
+// Employee ID and Job Role. Each campus's form is a separate Google Form
+// with its OWN entry IDs (a copied form gets new ones), so a campus only
+// prefills once its IDs are listed here -- everyone else falls back to the
+// plain DOC_FORM_URLS link above. LMS4's came from its "Get pre-filled
+// link"; the other five are still to be added. A Job Role value that
+// doesn't match one of the form's option labels is simply ignored by
+// Google (the radio stays blank), so DOC_FORM_ROLE_LABEL only needs the
+// roles whose label we're sure of -- extend it from each form's full list.
+const DOC_FORM_PREFILL = {
+  LMS4: { url: 'https://docs.google.com/forms/d/e/1FAIpQLSdNTYssKiHvr3v0F-tbOZP5_DNJgHjvauts8ttt1h1mar9XLg/viewform',
+          name: 'entry.773686043', empId: 'entry.1648508931', role: 'entry.1017094729' },
+};
+const DOC_FORM_ROLE_LABEL = { PRT: 'PRT, TGT', TGT: 'PRT, TGT', PGT: 'PGT', NTT: 'NTT' };
+
 // Teacher Interview Report Form -- long viewform URL (not the forms.gle
 // shortlink) since Google Forms' own prefill query params (?usp=pp_url
 // plus entry.<id>=<value>) only apply on that URL. entry IDs pulled
@@ -350,6 +365,25 @@ function applicantCampusFor_(a) {
   return m ? 'LMS' + m[1] : '';
 }
 
+// The campus's Document Submission Form, prefilled where we know its
+// entry IDs (see DOC_FORM_PREFILL). The Employee ID is the permanent code
+// once locked, otherwise the expected one -- the documents sheet's own
+// row is what hiring.gs later reads to lock it, so what's prefilled here
+// is what ends up permanent when it's still valid.
+function docFormUrl_(a) {
+  const school = applicantCampusFor_(a);
+  const cfg = DOC_FORM_PREFILL[school];
+  if (!cfg) return DOC_FORM_URLS[school] || '';
+  const p = new URLSearchParams({ usp: 'pp_url' });
+  p.set(cfg.name, a.name);
+  const code = a.employeeCode || a.expectedEmployeeCode;
+  if (code) p.set(cfg.empId, code);
+  const role = ROLES.filter(function (r) { return r.roleKey === selectedRoleKey; })[0];
+  const label = role && DOC_FORM_ROLE_LABEL[String(role.roleLevel || '').toUpperCase()];
+  if (label) p.set(cfg.role, label);
+  return cfg.url + '?' + p.toString();
+}
+
 // Pre-fills the Teacher Interview Report Form's Name/Contact/Branch,
 // per Uday (2026-09-26) -- the Branch dropdown's own option text is
 // "LMS 2" (a space, confirmed from a real pre-filled link he pulled),
@@ -362,14 +396,13 @@ function submitReportFormUrl_(a) {
   return HIR_REPORT_FORM_URL + '?' + params.toString();
 }
 
-// Deep-links into the Staff Portal's New Hire tab with name + campus
-// pre-filled -- same "hand off via URL params" pattern the old Salary
-// Slip integration used, rather than duplicating the hire form here.
+// Points at Monthly Payroll's Staff changes step (its default panel), where
+// "Joined" now creates the Employee Master row itself once the offer is
+// recorded. The old Staff Portal New Hire tab this linked to is gone
+// (2026-10-03, per Uday) -- Hired -> Salary Offer -> Joined is now one
+// unbroken chain instead of a side trip to re-type the same name/role.
 function hireLinkUrl_(a) {
-  const school = applicantCampusFor_(a);
-  const params = new URLSearchParams({ name: a.name });
-  if (school) params.set('school', school);
-  return '../staff/add-employee.html?' + params.toString();
+  return '../payroll/index.html';
 }
 
 // Same hand-off pattern as hireLinkUrl_ above, into the Salary Dashboard
@@ -515,11 +548,22 @@ function reqBarHtml_(a) {
   // 6. Hiring Approved -- the Owner said yes. Back in the Principal's
   // hands: get every document in, then click Hired above.
   if (idx >= 4) {
-    const school = applicantCampusFor_(a);
     html += '<div class="req-hint">✓ Owner-approved. Next: get every compulsory document in, then click Hired above.</div>';
-    if (DOC_FORM_URLS[school]) {
-      html += '<div class="interview-label">Documents</div>' +
-        '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + DOC_FORM_URLS[school] + '" target="_blank">🔗 Document Submission Form</a>';
+    // Employee ID (2026-10-03, per Uday): expected until every document
+    // is uploaded, then locked for good (hiring.gs's hirAssignEmployeeCodes_).
+    if (a.employeeCode) {
+      html += '<div class="interview-label">Employee ID</div><div style="font-weight:700">' + a.employeeCode + ' <span class="sub">🔒 permanent</span></div>' +
+        (a.employeeCodeNote ? '<div class="req-hint" style="margin-top:3px">' + a.employeeCodeNote + '</div>' : '');
+    } else if (a.expectedEmployeeCode) {
+      html += '<div class="interview-label">Employee ID</div><div style="font-weight:700">' + a.expectedEmployeeCode + '</div>' +
+        '<div class="sub">Expected — becomes permanent once every document is uploaded.</div>';
+    }
+    const docUrl = docFormUrl_(a);
+    if (docUrl) {
+      html += '<div class="interview-label">Documents</div>';
+      if (a.docsMissing && a.docsMissing.length) html += '<div class="sub">Still waiting on: ' + a.docsMissing.join(', ') + '</div>';
+      else if (a.docsComplete) html += '<div class="sub">✓ All compulsory documents are in.</div>';
+      html += '<a class="mini-btn" style="text-decoration:none;display:inline-block;margin-top:4px" href="' + docUrl + '" target="_blank">🔗 Document Submission Form</a>';
     }
   }
 
@@ -564,7 +608,8 @@ function wireLadderClicks_(tr) {
 function renderRowActions_(tr) {
   const applicant = tr._applicant;
   const extra = [];
-  if (applicant.status === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Complete hire in Staff Portal</a>');
+  if (applicant.status === 'Hired') extra.push('<a class="mini-btn" style="text-decoration:none" href="' + hireLinkUrl_(applicant) + '" target="_blank">➕ Mark Joined in Payroll</a>');
+  if (applicant.status === 'Hired' && applicant.employeeCode) extra.push('<div class="sub" style="width:100%">Employee ID: <b>' + applicant.employeeCode + '</b></div>');
   tr.querySelector('.row-extra-actions').innerHTML = extra.join('');
 }
 
