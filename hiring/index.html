@@ -548,7 +548,9 @@ function reqBarHtml_(a) {
   // 6. Hiring Approved -- the Owner said yes. Back in the Principal's
   // hands: get every document in, then click Hired above.
   if (idx >= 4) {
-    html += '<div class="req-hint">✓ Owner-approved. Next: get every compulsory document in, then click Hired above.</div>';
+    html += '<div class="req-hint">✓ Owner-approved. Next: enter the Date of Joining and Save, then get every compulsory document in and click Hired above.</div>';
+    html += '<div class="interview-label">Date of Joining</div><input class="doj-input" type="date" value="' + (a.dateOfJoining || '') + '">';
+    if (!a.dateOfJoining) return html + '<div class="sub">The Employee ID and Document Submission Form appear once the Date of Joining is saved.</div></div>';
     // Employee ID (2026-10-03, per Uday): expected until every document
     // is uploaded, then locked for good (hiring.gs's hirAssignEmployeeCodes_).
     if (a.employeeCode) {
@@ -679,12 +681,13 @@ function saveRow_(tr, applicant) {
   const notes = tr.querySelector('.notes-input').value;
   const interviewAt = tr.querySelector('.interview-input').value;
   const mdInterviewAt = tr.querySelector('.md-interview-input').value;
+  const dojEl = tr.querySelector('.doj-input');
   // Blank status is the normal case now -- saving a date/Notes edit
   // without a Hired/Reject click. hiring.gs treats blank as "don't
   // touch Status, the stage is derived from evidence anyway."
   btn.disabled = true;
   msg.textContent = 'Saving…'; msg.className = 'row-msg';
-  gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt, mdInterviewAt: mdInterviewAt })
+  gasPost_('updatehiringstatus', { row: applicant.row, status: status, notes: notes, interviewAt: interviewAt, mdInterviewAt: mdInterviewAt, dateOfJoining: dojEl ? dojEl.value : '' })
     .then(function (res) {
       btn.disabled = false;
       // A rejected write (e.g. Hired without CV/Report/documents) leaves

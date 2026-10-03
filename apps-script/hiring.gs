@@ -79,6 +79,10 @@ const HIR_COL = {
   // (see hirAssignEmployeeCodes_). Column P, appended past the form's own
   // columns like 13-15 before it.
   EMP_CODE: 16,
+  // 2026-10-03, per Uday: the Principal enters the Date of Joining (text
+  // 'yyyy-MM-dd') at 'Hiring Approved', BEFORE the Document Submission Form
+  // -- the employee code's YY/MM comes from it. Column Q.
+  DOJ: 17,
 };
 
 // 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
@@ -562,6 +566,7 @@ function hiringApplicants_(caller) {
       // has already locked one for this row.
       employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
       employeeCodePermanent: !!String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
+      dateOfJoining: hirDojStr_(r[HIR_COL.DOJ - 1]),
     };
     const scored = hirScoreApplicant_(applicant, relevantReqs);
     applicant.matchScore = scored.total;
@@ -1011,8 +1016,17 @@ function hirNextSeq_(prefix, codeLists) {
   return max + 1;
 }
 
-function hirNewCode_(prefix, codeLists) {
-  const ym = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yy/MM').split('/');
+// 'yyyy-MM-dd' text (or a Date, if Sheets converted it anyway) -> 'yyyy-MM-dd', else ''.
+function hirDojStr_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const t = String(v || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : '';
+}
+
+// doj (optional 'yyyy-MM-dd') sets YY/MM, matching the Staff Portal's rule;
+// without it, the current month.
+function hirNewCode_(prefix, codeLists, doj) {
+  const ym = doj ? [doj.slice(2, 4), doj.slice(5, 7)] : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yy/MM').split('/');
   return prefix + '/' + ym[0] + '/' + ym[1] + '/' + String(hirNextSeq_(prefix, codeLists)).padStart(3, '0');
 }
 
@@ -1050,7 +1064,7 @@ function hirHiringCampus_(applicantId, branches, offerCampuses) {
 // why, so the bad documents row can be corrected. Returns null if the
 // lock couldn't be taken (another request is mid-write) -- the caller
 // just shows the expected code again and retries on the next load.
-function hirLockEmployeeCode_(sheet, row, prefix, preferred, rosterCodes) {
+function hirLockEmployeeCode_(sheet, row, prefix, preferred, rosterCodes, doj) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return null;
   try {
@@ -1070,7 +1084,7 @@ function hirLockEmployeeCode_(sheet, row, prefix, preferred, rosterCodes) {
     if (m && m[1] === prefix && !inUse[pref]) {
       code = pref;
     } else {
-      code = hirNewCode_(prefix, [rosterCodes, locked]);
+      code = hirNewCode_(prefix, [rosterCodes, locked], doj);
       if (pref) note = 'The documents sheet lists Employee ID "' + preferred + '", which ' + (m && m[1] === prefix ? 'is already in use' : 'is not a valid ' + prefix + ' code') + ' -- locked ' + code + ' instead. Please correct that documents row.';
     }
     cell.setValue(code);
@@ -1101,19 +1115,21 @@ function hirAssignEmployeeCodes_(applicants, allLocked) {
       const campus = hirHiringCampus_(a.applicantId, a.branches, offerCampuses);
       const prefix = HIR_SCHOOL_PREFIX[campus];
       if (!prefix) return;
+      // No joining date yet -> no code and no document form (see HIR_COL.DOJ).
+      if (!a.dateOfJoining) return;
       const notBefore = a.interviewAt ? new Date(new Date(a.interviewAt).getTime() - 86400000) : null;
       const docs = hiringCheckDocuments_(campus, a.name, { notBefore: notBefore, cache: docCache });
       a.docsComplete = !!(docs.found && docs.complete);
       a.docsMissing = docs.found ? (docs.missing || []) : ['every document (no submission found yet)'];
       if (a.docsComplete) {
-        const res = hirLockEmployeeCode_(sheet, a.row, prefix, docs.employeeId, rosterCodes);
+        const res = hirLockEmployeeCode_(sheet, a.row, prefix, docs.employeeId, rosterCodes, a.dateOfJoining);
         if (res) {
           a.employeeCode = res.code; a.employeeCodePermanent = true; a.employeeCodeNote = res.note;
           allLocked.push(res.code);
           return;
         }
       }
-      a.expectedEmployeeCode = hirNewCode_(prefix, [rosterCodes, allLocked]);
+      a.expectedEmployeeCode = hirNewCode_(prefix, [rosterCodes, allLocked], a.dateOfJoining);
     });
   } catch (err) {
     Logger.log('hirAssignEmployeeCodes_ skipped: ' + err.message);
@@ -1184,6 +1200,7 @@ function hiringUpdateStatus_(caller, body) {
     // 2026-09-28, per Uday: CV dropped from this gate -- the Interview
     // Report already carries the candidate's bio-data, so a separate CV
     // upload is redundant, not a genuine missing-document risk.
+    if (!hirDojStr_(sheet.getRange(row, HIR_COL.DOJ).getValue())) missing.push('the Date of Joining');
     if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
     // 2026-10-03: only submissions from just before the interview onward
     // count -- see hiringCheckDocuments_'s own comment (Preeti Sood).
@@ -1203,7 +1220,7 @@ function hiringUpdateStatus_(caller, body) {
       const applicantId = hirApplicantId_(row);
       const campus = hirHiringCampus_(applicantId, branches, hirSalaryOfferCampuses_());
       const prefix = HIR_SCHOOL_PREFIX[campus];
-      if (prefix) hirLockEmployeeCode_(sheet, row, prefix, docs.employeeId, hirRosterCodes_());
+      if (prefix) hirLockEmployeeCode_(sheet, row, prefix, docs.employeeId, hirRosterCodes_(), hirDojStr_(sheet.getRange(row, HIR_COL.DOJ).getValue()));
     } catch (err) {
       Logger.log('Hired: employee code lock skipped: ' + err.message);
     }
@@ -1231,6 +1248,12 @@ function hiringUpdateStatus_(caller, body) {
   if (body.mdInterviewAt) {
     const d = new Date(body.mdInterviewAt);
     if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).setValue(d);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(body.dateOfJoining || ''))) {
+    if (sheet.getMaxColumns() < HIR_COL.DOJ) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.DOJ - sheet.getMaxColumns());
+    // Text format so Sheets keeps 'yyyy-MM-dd' as typed (no date coercion / timezone shift).
+    sheet.getRange(row, HIR_COL.DOJ).setNumberFormat('@').setValue(body.dateOfJoining);
+    if (!String(sheet.getRange(1, HIR_COL.DOJ).getValue() || '').trim()) sheet.getRange(1, HIR_COL.DOJ).setValue('Date of Joining');
   }
   // Written by the Salary Dashboard module (salary/index.html's "Record
   // as Salary Offer"), same optional-write pattern as the two dates

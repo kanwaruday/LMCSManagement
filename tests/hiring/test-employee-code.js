@@ -70,7 +70,7 @@ T('docs: nothing after cutoff -> not found', () => assert.strictEqual(ctx.hiring
 
 T('assign: incomplete docs -> expected code + missing list, nothing written', () => {
   ctx.hirRosterCodes_ = () => ['NCM/26/07/103'];
-  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '' };
+  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2026-10-15' };
   const s2 = fakeSheet([['h'], [], [], [], []], 16); ctx.hirSheet_ = () => s2;
   ctx.hirAssignEmployeeCodes_([a], []);
   assert.strictEqual(a.expectedEmployeeCode, 'NCM/26/10/104'); assert.ok(a.docsMissing.length > 0);
@@ -78,11 +78,24 @@ T('assign: incomplete docs -> expected code + missing list, nothing written', ()
 });
 T('assign: complete docs -> locked & written; Hired rows untouched', () => {
   docVals.push([new Date('2026-10-05'), 'e', 'Preeti Sood', 'NCM/26/10/104', 'TGT', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']);
-  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '' };
-  const hired = { status: 'Hired', applicantId: 'T-0001', row: 3, name: 'Old Hire', branches: 'LMS-4', employeeCode: '' };
+  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2026-10-15' };
+  const hired = { status: 'Hired', applicantId: 'T-0001', row: 3, name: 'Old Hire', branches: 'LMS-4', employeeCode: '', dateOfJoining: '2026-10-15' };
   const s3 = fakeSheet([['h'], [], [], [], []], 16); ctx.hirSheet_ = () => s3;
   ctx.hirAssignEmployeeCodes_([a, hired], []);
   assert.strictEqual(a.employeeCode, 'NCM/26/10/104'); assert.strictEqual(a.employeeCodePermanent, true);
   assert.strictEqual(s3.rows[4][15], 'NCM/26/10/104'); assert.strictEqual(hired.employeeCode, '');
 });
 console.log('ALL PASSED');
+
+T('assign: no joining date -> no code offered', () => {
+  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '' };
+  ctx.hirAssignEmployeeCodes_([a], []);
+  assert.strictEqual(a.expectedEmployeeCode, undefined);
+});
+T('assign: joining date sets YY/MM of the code', () => {
+  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2027-01-05' };
+  const s4 = fakeSheet([['h'], [], [], [], []], 17); ctx.hirSheet_ = () => s4;
+  docVals.pop();
+  ctx.hirAssignEmployeeCodes_([a], []);
+  assert.strictEqual(a.expectedEmployeeCode, 'NCM/27/01/104');
+});
