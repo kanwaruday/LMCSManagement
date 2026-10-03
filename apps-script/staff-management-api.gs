@@ -254,7 +254,89 @@ function nextSeqForPrefix_(prefix) {
     const seq = parseInt(parts[3], 10);
     if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
   }
+  // Also counts every code already LOCKED in the Hiring Dashboard's
+  // Teaching Applicants sheet for a candidate who hasn't joined yet (see
+  // hirAllLockedCodes_ above) -- otherwise a different new hire at the
+  // same campus could be issued a number that's reserved for someone
+  // whose documents just haven't completed yet (per Uday, 2026-10-03,
+  // relayed via the Hiring Dashboard session). Swallows a failure here
+  // rather than blocking every new hire at this campus over an unrelated
+  // sheet being briefly unreachable.
+  try {
+    hirAllLockedCodes_().forEach(function (code) {
+      const parts = code.split('/');
+      if (parts[0] !== prefix || parts.length < 4) return;
+      const seq = parseInt(parts[3], 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    });
+  } catch (err) {
+    console.log('nextSeqForPrefix_: hirAllLockedCodes_ failed -- ' + err.message);
+  }
   return maxSeq + 1;
+}
+
+// ── Hiring Dashboard's locked employee codes (hiring.gs's own
+//    HIR_SHEET_ID/HIR_SHEET_GID -- same Teaching Applicants tab, read
+//    directly here rather than via that project's doGet since both
+//    files already read sheets directly by ID). Added 2026-10-03 per
+//    Uday (relayed via the Hiring Dashboard session): once an Owner
+//    approves a hire and every compulsory document is on file, hiring.gs
+//    permanently locks an employee code into column P ("Employee Code
+//    (locked)") for that candidate's row -- their documents form is
+//    prefilled with it, so it's the code the person is actually known
+//    by, and addNewHire_ below must use it as-is rather than minting a
+//    different one. ──────────────────────────────────────────────────
+const HIR_TEACHING_APPLICANTS_SHEET_ID_ = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ';
+const HIR_TEACHING_APPLICANTS_GID_ = 1181288827; // targets the exact tab regardless of its name
+const HIR_EMP_CODE_COL_ = 16; // column P, "Employee Code (locked)"
+const HIR_EMPCODE_RE_ = /^([A-Z]{3})\/(\d{2})\/(\d{2})\/(\d{3,})$/;
+
+function hirTeachingApplicantsSheet_() {
+  const sheet = SpreadsheetApp.openById(HIR_TEACHING_APPLICANTS_SHEET_ID_).getSheets()
+    .filter(function (s) { return s.getSheetId() === HIR_TEACHING_APPLICANTS_GID_; })[0];
+  if (!sheet) throw new Error('Teaching Applicants sheet tab not found');
+  return sheet;
+}
+
+// Every locked code in column P, any row -- same "a number is never
+// reused" guarantee nextSeqForPrefix_ already gives EmpMaster's own
+// codes, just extended to cover a hire that's locked but hasn't joined
+// (appeared in EmpMaster) yet.
+function hirAllLockedCodes_() {
+  const sheet = hirTeachingApplicantsSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  return sheet.getRange(2, HIR_EMP_CODE_COL_, lastRow - 1, 1).getValues()
+    .map(function (r) { return String(r[0] || '').trim().toUpperCase(); })
+    .filter(Boolean);
+}
+
+function empMasterHasCode_(code) {
+  const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
+  const codeCol = rows[0].indexOf('EmployeeCode');
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][codeCol] || '').trim().toUpperCase() === code) return true;
+  }
+  return false;
+}
+
+// applicantId e.g. "T-0943" -- the Teaching Applicants row is the digits
+// (943). Any failed check throws rather than silently falling back to a
+// freshly minted code: the candidate's documents are already filed under
+// the locked one, so issuing a different number here would leave those
+// documents pointing at a code nobody has.
+function lockedApplicantCode_(applicantId, prefix) {
+  const digits = String(applicantId).match(/\d+/);
+  const row = digits ? parseInt(digits[0], 10) : NaN;
+  if (!row || row < 2) throw new Error('Invalid applicantId: ' + applicantId);
+  const sheet = hirTeachingApplicantsSheet_();
+  const locked = String(sheet.getRange(row, HIR_EMP_CODE_COL_).getValue() || '').trim();
+  if (!locked) throw new Error('No employee code is locked for applicant ' + applicantId + ' yet');
+  const m = locked.toUpperCase().match(HIR_EMPCODE_RE_);
+  if (!m) throw new Error('Locked code "' + locked + '" for applicant ' + applicantId + ' is not a valid employee code');
+  if (m[1] !== prefix) throw new Error('Locked code ' + locked + ' for applicant ' + applicantId + ' does not match school prefix ' + prefix);
+  if (empMasterHasCode_(locked)) throw new Error('Employee code ' + locked + ' is already in use in EmpMaster');
+  return locked;
 }
 
 function buildEmployeeCode_(prefix, yy, mm) {
@@ -1152,7 +1234,14 @@ function salaryFullRecord_(data, caller) {
 // ── Actions ───────────────────────────────────────────────────────────
 
 /** data: {name, dateOfJoining ('YYYY-MM-DD'), school (campusId), role,
- *  reportsTo (EmployeeCode), classSubjects: [{class,subject}, ...]} */
+ *  reportsTo (EmployeeCode), classSubjects: [{class,subject}, ...],
+ *  applicantId?} -- applicantId (e.g. "T-0943", from the Hiring
+ *  Dashboard's Joined button) means this hire already has a code LOCKED
+ *  in the Teaching Applicants sheet (see lockedApplicantCode_ above);
+ *  that locked code is used as-is instead of minting a fresh one, and
+ *  its YY/MM segment is therefore the lock month, not dateOfJoining. No
+ *  applicantId (or any other caller of this action) behaves exactly as
+ *  before. */
 function addNewHire_(data, caller) {
   if (!data.name || !data.dateOfJoining || !data.school) {
     throw new Error('name, dateOfJoining, and school are required');
@@ -1165,7 +1254,7 @@ function addNewHire_(data, caller) {
   if (isNaN(doj.getTime())) throw new Error('Invalid dateOfJoining');
   const yy = String(doj.getFullYear()).slice(-2);
   const mm = String(doj.getMonth() + 1).padStart(2, '0');
-  const code = buildEmployeeCode_(prefix, yy, mm);
+  const code = data.applicantId ? lockedApplicantCode_(data.applicantId, prefix) : buildEmployeeCode_(prefix, yy, mm);
 
   const ss = openEmpWorkbook_();
   const master = ss.getSheetByName('EmpMaster');
