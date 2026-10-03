@@ -105,6 +105,7 @@ tr.cur td{background:#fef9c3}
       <div id="msgRoot"></div>
       <div id="monthRoot"></div>
       <datalist id="empList"></datalist>
+      <datalist id="reportsToList"></datalist>
     </div>
   </div>
 </div>
@@ -113,6 +114,20 @@ tr.cur td{background:#fef9c3}
 <script>
 // "LMCS Payroll Backend" -- its own Apps Script project (apps-script/payroll.gs).
 const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv/exec';
+// "Employee Roster Proxy" (apps-script/staff-management-api.gs) -- the same
+// backend staff/add-employee.html's New Hire/Transfer tabs wrote to. Folded in
+// here (2026-10-03, per Uday) since every hire now runs Hiring Dashboard ->
+// Salary Dashboard -> here, and this was the only step left asking someone to
+// go re-type the same name/role a second time. Calls the SAME addnewhire/transfer
+// actions, unchanged -- same code generation, same scope checks, same cache-bust
+// -- just from a new place, so no EmpMaster write path is new or less safe.
+const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+const CLASS_OPTIONS = ['M-I', 'M-II', 'M-III', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
+  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+const SUBJECT_SUGGESTIONS = ['English', 'Hindi', 'Sanskrit', 'Math', 'Science', 'Social Science',
+  'E.V.S.', 'GK', 'Cognitive Activities', 'P.Ed', 'Physics', 'Chemistry', 'Biology', 'Accountancy',
+  'Business Studies', 'Economics', 'History', 'Political Science', 'Information Technology'];
+let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}
 
 // 2026-09-30 redesign, per Uday: the month as a checklist of what actually
 // changes (leave, one-offs, holds), scoped to all schools or one -- the full
@@ -139,6 +154,55 @@ function payGet_(action, data) {
 function payPost_(action, data) {
   return fetch(PAYROLL_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: action, idToken: SESSION.idToken, data: data }) })
     .then(function (r) { return r.json(); });
+}
+function rosterPost_(action, data) {
+  const url = EMPLOYEE_ROSTER_URL + '?action=' + encodeURIComponent(action) + '&idToken=' + encodeURIComponent(SESSION.idToken) +
+    '&data=' + encodeURIComponent(JSON.stringify(data)) + '&_=' + Date.now();
+  return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).catch(function () { return { success: false, error: 'network error reaching the Staff Roster' }; });
+}
+function loadAllEmployees_() {
+  return fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
+    .then(function (json) {
+      if (!json.success) return;
+      employeesByLabel = {};
+      const dl = document.getElementById('reportsToList');
+      dl.innerHTML = '';
+      json.employees.forEach(function (e) {
+        if (!e.employeeCode || !e.name) return;
+        const label = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
+        employeesByLabel[label] = e;
+        const opt = document.createElement('option');
+        opt.value = label;
+        dl.appendChild(opt);
+      });
+    }).catch(function () { /* best-effort -- Reports to just stays free text */ });
+}
+function resolveEmployeeLabel_(value) { return employeesByLabel[String(value || '').trim()] || null; }
+
+// ── Class/subject rows (ported as-is from staff/add-employee.html) ────
+function addCsRow_(prefix) {
+  const container = document.getElementById(prefix + 'CsRows');
+  if (!container || container.children.length >= 10) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;align-items:center';
+  row.className = 'cs-row';
+  const classOpts = CLASS_OPTIONS.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  const dlId = prefix + 'SubjList' + Date.now() + Math.floor(Math.random() * 1000);
+  row.innerHTML =
+    '<select class="cs-class">' + classOpts + '</select>' +
+    '<input class="cs-subject" list="' + dlId + '" placeholder="Subject" style="width:140px">' +
+    '<datalist id="' + dlId + '">' + SUBJECT_SUGGESTIONS.map(function (s) { return '<option value="' + s + '">'; }).join('') + '</datalist>' +
+    '<button type="button" class="x-btn" onclick="this.closest(\'.cs-row\').remove()">✕</button>';
+  container.appendChild(row);
+}
+function collectCsRows_(prefix) {
+  const rows = document.querySelectorAll('#' + prefix + 'CsRows .cs-row');
+  const out = [];
+  rows.forEach(function (r) {
+    const cls = r.querySelector('.cs-class').value, subj = r.querySelector('.cs-subject').value.trim();
+    if (cls && subj) out.push({ class: cls, subject: subj });
+  });
+  return out;
 }
 // Every call returns the whole month -- one handler redraws everything.
 // Nothing here stops two requests being in flight at once (no button is disabled
@@ -338,14 +402,21 @@ function staffPanel_() {
   const school = function (e) { return ENTITY_LABEL[e] || e; };
 
   h += sec('Offers awaiting joining', offers.length);
-  h += offers.length ? '<div class="note">Recorded with “Record as Salary Offer” in the Offer Calculator. When the person joins, add them in the Staff Portal (New Hire) to get their employee code, then mark Joined here — the first month is prorated from the joining date.</div>' +
-    '<div class="wrap"><table><tr><th class="l">Applicant</th><th class="l">School</th><th class="l">Designation</th><th>Full basic</th><th>CTI</th><th class="l">Owner approval</th><th class="l">Employee code</th><th class="l">Joined on</th><th></th></tr>' +
+  h += offers.length ? '<div class="note">Recorded with “Record as Salary Offer” in the Offer Calculator. When the person joins, enter their joining date (and who they report to / what they\'ll teach, if known) and click Joined — their employee code is generated here, and the first month is prorated from the joining date.</div>' +
+    '<div class="wrap"><table><tr><th class="l">Applicant</th><th class="l">School</th><th class="l">Designation</th><th>Full basic</th><th>CTI</th><th class="l">Owner approval</th><th class="l">Reports to</th><th class="l">Class / Subjects</th><th class="l">Joined on</th><th></th></tr>' +
     offers.map(function (o) {
+      // A few offers may still have a code from before this was folded in here
+      // (created via the old Staff Portal New Hire form) -- for those, skip
+      // generating a new code and just join them with the one they already have.
       const m = nop.filter(function (x) { return x.offerId === o.id; })[0] || {};
+      const cid = 'jn' + o.id.replace(/[^A-Za-z0-9]/g, '');
       return '<tr><td class="l">' + esc_(o.id + ' — ' + o.name) + '<div class="muted">' + esc_(o.recordedBy + ' · ' + o.recordedAt) + '</div></td><td class="l">' + school(o.entity) + '</td><td class="l">' + esc_(o.designation) +
         '</td><td>' + inr_(o.fullBasic) + '</td><td>' + inr_(o.cti) + '</td><td class="l ' + (o.approval === 'Approved' ? 'pos' : '') + '">' + esc_(o.approval) +
-        '</td><td class="l"><input list="nopList" data-joincode="' + esc_(o.id) + '" value="' + esc_(m.code || '') + '" placeholder="e.g. KUL/26/10/110" style="width:140px"></td>' +
-        '<td class="l"><input type="date" data-joindoj="' + esc_(o.id) + '" value="' + esc_(m.doj || '') + '"></td><td><button class="btn" data-join="' + esc_(o.id) + '">Joined</button> <button class="x-btn" data-dismiss="' + esc_(o.id) + '" title="Dismiss offer">✕</button></td></tr>';
+        (m.code ? '</td><td class="l" colspan="2">Already in the Employee Master as <b>' + esc_(m.code) + '</b> — click Joined to add to payroll' :
+          '</td><td class="l"><input list="reportsToList" data-reportsto="' + esc_(o.id) + '" placeholder="Search by name…" style="width:160px"></td>' +
+          '<td class="l"><div id="' + cid + 'CsRows"></div><button class="mini-btn" type="button" onclick="addCsRow_(\'' + cid + '\')">+ class/subject</button>') +
+        '</td><td class="l"><input type="date" data-joindoj="' + esc_(o.id) + '" value="' + esc_(m.doj || '') + '"></td>' +
+        '<td><button class="btn" data-join="' + esc_(o.id) + '" data-joincid="' + cid + '" data-existingcode="' + esc_(m.code || '') + '">Joined</button> <button class="x-btn" data-dismiss="' + esc_(o.id) + '" title="Dismiss offer">✕</button></td></tr>';
     }).join('') + '</table></div>' : '<div class="muted">None.</div>';
 
   h += sec('In the Staff Portal but not on payroll', nop.length);
@@ -359,11 +430,17 @@ function staffPanel_() {
         '<td><input type="checkbox" data-nrrf="' + k + '" checked></td><td><input type="number" min="0" data-ntf="' + k + '" style="width:70px"></td><td><button class="btn" data-addemp="' + k + '">Add to payroll</button></td></tr>';
     }).join('') + '</table></div>' : '<div class="muted">None.</div>';
 
-  h += sec('Transfers in the Staff Portal', tr.length);
+  h += sec('Transfers', tr.length);
+  h += '<div class="addrow"><input list="empList" id="xfEmp" placeholder="Search employee to move…">' +
+    ' to <select id="xfNewSchool">' + Object.keys(ENTITY_LABEL).map(function (e) { return '<option value="' + e + '">' + ENTITY_LABEL[e] + '</option>'; }).join('') + '</select>' +
+    ' <input id="xfRole" placeholder="Role (optional)" style="width:140px">' +
+    ' <input list="reportsToList" id="xfReportsTo" placeholder="Reports to (optional)" style="width:160px">' +
+    ' <button class="mini-btn" type="button" onclick="addCsRow_(\'xf\')">+ class/subject</button>' +
+    ' <button class="btn" id="xfStart">Start transfer</button></div><div id="xfCsRows" style="margin:0 0 8px"></div>';
   h += tr.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">From</th><th class="l">To</th><th></th></tr>' + tr.map(function (x) {
     return '<tr><td class="l">' + esc_(x.name) + '</td><td class="l">' + esc_(x.oldCode) + ' (' + school(x.from) + ')</td><td class="l">' + esc_(x.newCode) + ' (' + school(x.to) + ')</td><td><button class="btn" data-transfer="' +
       esc_(x.oldCode) + '">Apply — paid at ' + school(x.to) + ' for all of ' + monthLabel_(M.month) + '</button></td></tr>';
-  }).join('') + '</table></div>' : '<div class="muted">None.</div>';
+  }).join('') + '</table></div>' : '<div class="muted">None yet to apply. Started transfers show here once created above.</div>';
 
   h += sec('Marked left in the Staff Portal', left.length);
   h += left.length ? '<div class="note">Paid up to the last working day. To hold their final salary for Full &amp; Final, add a hold in ④.</div><div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Staff Portal</th><th class="l">Last working day</th><th></th></tr>' +
@@ -702,9 +779,23 @@ function wire_() {
   });
   document.querySelectorAll('[data-join]').forEach(function (b) {
     b.onclick = function () {
-      const id = b.dataset.join, code = q('[data-joincode="' + id + '"]').value.trim(), doj = q('[data-joindoj="' + id + '"]').value;
-      if (!code || !doj) { alert('Enter the employee code (from the Staff Portal) and the joining date.'); return; }
-      post_('joinoffer', { applicantId: id, code: code, doj: doj }, 'Adding to payroll…', id + ' joined as ' + code + '.');
+      const id = b.dataset.join, doj = q('[data-joindoj="' + id + '"]').value;
+      if (!doj) { alert('Enter the joining date.'); return; }
+      if (b.dataset.existingcode) {
+        post_('joinoffer', { applicantId: id, code: b.dataset.existingcode, doj: doj }, 'Adding to payroll…', id + ' joined as ' + b.dataset.existingcode + '.');
+        return;
+      }
+      const offer = M.staff.offers.find(function (o) { return o.id === id; });
+      const reportsTo = resolveEmployeeLabel_(q('[data-reportsto="' + id + '"]').value);
+      // applicantId lets the roster's addnewhire use the employee code the Hiring Dashboard locked
+      // at Owner approval (and error rather than issue a different one) -- no locked code, same as before.
+      const hireData = { applicantId: id, name: offer.name, dateOfJoining: doj, school: offer.entity,
+        role: offer.designation + (offer.subjects ? ': ' + offer.subjects : ''),
+        reportsTo: reportsTo ? reportsTo.employeeCode : '', classSubjects: collectCsRows_(b.dataset.joincid) };
+      call_(rosterPost_('addnewhire', hireData).then(function (hireRes) {
+        if (!hireRes.success) return hireRes; // same error shape -- call_ shows it as-is
+        return payPost_('joinoffer', Object.assign({ month: M.month }, { applicantId: id, code: hireRes.employeeCode, doj: doj }));
+      }), 'Adding to payroll…', id + ' added to payroll.');
     };
   });
   document.querySelectorAll('[data-dismiss]').forEach(function (b) {
@@ -726,6 +817,18 @@ function wire_() {
         post_('applytransfer', { oldCode: x.oldCode, newCode: x.newCode, entity: x.to }, 'Applying transfer…', x.name + ' transferred.');
     };
   });
+  if (q('#xfStart')) q('#xfStart').onclick = function () {
+    const r = pick_('xfEmp');
+    if (!r) { alert('Pick an employee from the list.'); return; }
+    const newSchool = q('#xfNewSchool').value;
+    const reportsTo = resolveEmployeeLabel_(q('#xfReportsTo').value);
+    const data = { oldEmployeeCode: r.code, newSchool: newSchool, role: q('#xfRole').value.trim(),
+      reportsTo: reportsTo ? reportsTo.employeeCode : '', classSubjects: collectCsRows_('xf') };
+    call_(rosterPost_('transfer', data).then(function (res) {
+      if (!res.success) return res;
+      return payGet_('month', { month: M.month }); // re-fetch so the new row shows up to Apply below
+    }), 'Starting transfer…', r.name + ' moved to ' + ENTITY_LABEL[newSchool] + ' — click Apply below to redirect this month’s pay.');
+  };
   document.querySelectorAll('[data-left]').forEach(function (b) {
     b.onclick = function () {
       const code = b.dataset.left, d = q('[data-lwd="' + code + '"]').value;
@@ -1423,6 +1526,7 @@ function showApp(session) {
   document.getElementById('loadBtn').onclick = load_;
   document.getElementById('fMonth').onchange = load_;
   load_();
+  loadAllEmployees_(); // for the "Reports to" picker on Joined/transfer
 }
 
 const cachedSession = LMCS.getSession();
