@@ -2538,53 +2538,58 @@ async function aprLoadRefereeList_() {
     res.staff.forEach(function (s) { aprRefereeNames_[s.email] = s.name; });
   } catch (err) { aprRefereeListLoaded_ = false; aprRefereeError_ = err.message; }
 }
+const APR_REFER_KINDS = [['action', 'For Action'], ['accountability', 'For Accountability'], ['information', 'For Information']];
 function aprReferHtml_(id) {
   aprLoadRefereeList_();
-  aprReferees_[id] = aprReferees_[id] || [];
-  return '<div class="apr-refer" style="width:100%;position:relative">' +
-    '<div id="aprChips-' + id + '">' + aprChipsHtml_(id) + '</div>' +
-    '<input type="text" class="apr-decide-note" id="aprRefer-' + id + '" autocomplete="off" oninput="aprSearchReferee(\'' + id + '\')" onfocus="aprSearchReferee(\'' + id + '\')" ' +
-    'onkeydown="if(event.key===\'Enter\'){aprAddReferee(\'' + id + '\');event.preventDefault();}" ' +
-    'placeholder="Refer to (optional, up to 4) — start typing a name; they are told what was decided, without the amount">' +
-    '<div id="aprReferMenu-' + id + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div>' +
-    '</div>';
+  aprReferees_[id] = aprReferees_[id] || { action: [], accountability: [], information: [] };
+  return '<div class="apr-refer" style="width:100%">' + APR_REFER_KINDS.map(function (kv) {
+    const k = kv[0], sfx = k + '-' + id;
+    return '<div style="position:relative;margin-bottom:6px"><div style="font-size:11.5px;color:var(--gray);margin:2px 0">' + kv[1] + ' (max 2)</div>' +
+      '<div id="aprChips-' + sfx + '">' + aprChipsHtml_(id, k) + '</div>' +
+      '<input type="text" class="apr-decide-note" id="aprRefer-' + sfx + '" autocomplete="off" oninput="aprSearchReferee(\'' + id + '\',\'' + k + '\')" onfocus="aprSearchReferee(\'' + id + '\',\'' + k + '\')" ' +
+      'onkeydown="if(event.key===\'Enter\'){aprAddReferee(\'' + id + '\',\'' + k + '\');event.preventDefault();}" placeholder="Start typing a name…">' +
+      '<div id="aprReferMenu-' + sfx + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div></div>';
+  }).join('') + '<div style="font-size:11px;color:var(--gray)">Optional. Each group gets its own email, without the amount.</div></div>';
 }
-function aprSearchReferee(id) {
-  const menu = document.getElementById('aprReferMenu-' + id);
-  const q = document.getElementById('aprRefer-' + id).value.trim().toLowerCase();
+function aprSearchReferee(id, kind) {
+  const sfx = kind + '-' + id;
+  const menu = document.getElementById('aprReferMenu-' + sfx);
+  const q = document.getElementById('aprRefer-' + sfx).value.trim().toLowerCase();
   if (!q) { menu.style.display = 'none'; return; }
   const hits = aprRefereeStaff_.filter(function (s) { return s.name.toLowerCase().indexOf(q) !== -1 || s.email.indexOf(q) !== -1; }).slice(0, 8);
   const item = 'padding:7px 12px;cursor:pointer;font-size:13px';
   menu.innerHTML = hits.length ? hits.map(function (s) {
-    return '<div style="' + item + '" onmousedown="aprPickReferee(\'' + id + '\',\'' + s.email + '\')">' + aprEsc_(s.name) + ' <span style="color:var(--gray);font-size:11.5px">' + aprEsc_(s.email) + '</span></div>';
+    return '<div style="' + item + '" onmousedown="aprPickReferee(\'' + id + '\',\'' + kind + '\',\'' + s.email + '\')">' + aprEsc_(s.name) + ' <span style="color:var(--gray);font-size:11.5px">' + aprEsc_(s.email) + '</span></div>';
   }).join('') : '<div style="' + item + ';color:var(--gray)">' + (aprRefereeStaff_.length ? 'No match' : 'Staff list ' + (aprRefereeError_ ? 'unavailable: ' + aprEsc_(aprRefereeError_) : 'still loading…')) + '</div>';
   menu.style.display = 'block';
 }
-function aprPickReferee(id, email) {
-  const input = document.getElementById('aprRefer-' + id);
+function aprPickReferee(id, kind, email) {
+  const input = document.getElementById('aprRefer-' + kind + '-' + id);
   input.value = email;
-  aprAddReferee(id);
+  aprAddReferee(id, kind);
   input.focus();
 }
-function aprChipsHtml_(id) {
-  return (aprReferees_[id] || []).map(function (e, i) {
+function aprChipsHtml_(id, kind) {
+  return (aprReferees_[id][kind] || []).map(function (e, i) {
     return '<span class="apr-chip" style="display:inline-block;background:#eee;border-radius:12px;padding:2px 10px;margin:0 6px 6px 0">' +
-      aprEsc_(aprRefereeNames_[e] || e) + ' <a href="#" onclick="aprRemoveReferee(\'' + id + '\',' + i + ');return false" style="text-decoration:none">×</a></span>';
+      aprEsc_(aprRefereeNames_[e] || e) + ' <a href="#" onclick="aprRemoveReferee(\'' + id + '\',\'' + kind + '\',' + i + ');return false" style="text-decoration:none">×</a></span>';
   }).join('');
 }
-function aprAddReferee(id) {
-  const input = document.getElementById('aprRefer-' + id);
+function aprAddReferee(id, kind) {
+  const sfx = kind + '-' + id;
+  const input = document.getElementById('aprRefer-' + sfx);
   const m = input.value.toLowerCase().match(/[^\s<>—,;]+@lms\.org\.in/);
-  if (m && aprReferees_[id].indexOf(m[0]) === -1) {
-    if (aprReferees_[id].length >= 4) { alert('You can refer to at most 4 people.'); } else aprReferees_[id].push(m[0]);
+  const list = aprReferees_[id][kind];
+  if (m && list.indexOf(m[0]) === -1) {
+    if (list.length >= 2) alert('At most 2 people per group.'); else list.push(m[0]);
   }
   input.value = '';
-  document.getElementById('aprReferMenu-' + id).style.display = 'none';
-  document.getElementById('aprChips-' + id).innerHTML = aprChipsHtml_(id);
+  document.getElementById('aprReferMenu-' + sfx).style.display = 'none';
+  document.getElementById('aprChips-' + sfx).innerHTML = aprChipsHtml_(id, kind);
 }
-function aprRemoveReferee(id, i) {
-  aprReferees_[id].splice(i, 1);
-  document.getElementById('aprChips-' + id).innerHTML = aprChipsHtml_(id);
+function aprRemoveReferee(id, kind, i) {
+  aprReferees_[id][kind].splice(i, 1);
+  document.getElementById('aprChips-' + kind + '-' + id).innerHTML = aprChipsHtml_(id, kind);
 }
 
 async function decideApproval(id, decision) {
@@ -2594,8 +2599,12 @@ async function decideApproval(id, decision) {
   const btns = document.querySelectorAll('.apr-decide-bar button');
   btns.forEach(function (b) { b.disabled = true; });
   aprSetStatus_('loading', 'Saving decision…');
-  if (document.getElementById('aprRefer-' + id)) aprAddReferee(id); // a half-typed address still counts
-  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: (aprReferees_[id] || []).join(',') });
+  const referTo = {};
+  if (aprReferees_[id]) APR_REFER_KINDS.forEach(function (kv) {
+    if (document.getElementById('aprRefer-' + kv[0] + '-' + id)) aprAddReferee(id, kv[0]); // a half-typed address still counts
+    referTo[kv[0]] = aprReferees_[id][kv[0]].join(',');
+  });
+  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: referTo });
   btns.forEach(function (b) { b.disabled = false; });
   if (!res.success && /JSON|DOCTYPE/.test(String(res.error || ''))) {
     // The backend sometimes answers a slow POST with a Google HTML page even though the write
@@ -2608,7 +2617,7 @@ async function decideApproval(id, decision) {
   }
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
   if (res.mailError) alert('Approved and saved, but the email to the referred people failed: ' + res.mailError);
-  else if (res.referred && res.referred.length) alert(decision + ': email sent to ' + res.referred.join(', ') + '.');
+  else if (res.referred) alert(decision + ' — emails sent: ' + APR_REFER_KINDS.map(function (kv) { return res.referred[kv[0]].length ? kv[1] + ' (' + res.referred[kv[0]].join(', ') + ')' : ''; }).filter(Boolean).join('; ') + '.');
   aprExpandedId = null;
   aprExpandedDetail = null;
   refreshApprovals();

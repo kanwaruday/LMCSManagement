@@ -392,15 +392,18 @@ function aprDecide_(caller, body) {
   sheet.getRange(row, 17).setValue(note);         // decisionNote
   aprNotifyRequester_(values[rowIdx], decision, note, caller);
   let referral = {};
-  // 2026-10-02, per Uday: any decision can tell up to 4 people (Approvals only).
+  // 2026-10-02, per Uday: any decision can tell people in 3 groups -- For Action /
+  // For Accountability / For Information, max 2 each (Approvals only).
   // Column 18 "referredTo" (header self-created) is the audit trail.
   if (APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
-    const refs = aprParseReferees_(body.referTo);
-    if (refs.length) {
+    const groups = aprParseReferees_(body.referTo);
+    const parts = APR_REFER_KINDS.filter(function (k) { return groups[k].length; })
+      .map(function (k) { return APR_REFER_LABELS[k] + ': ' + groups[k].join(', '); });
+    if (parts.length) {
       if (!sheet.getRange(1, 18).getValue()) sheet.getRange(1, 18).setValue('referredTo');
       const prior = String(values[rowIdx][17] || '');
-      sheet.getRange(row, 18).setValue((prior ? prior + ' | ' : '') + decision + ': ' + refs.join(', '));
-      referral = { referred: refs, mailError: aprNotifyReferees_(values[rowIdx], refs, note, caller, decision) };
+      sheet.getRange(row, 18).setValue((prior ? prior + ' | ' : '') + decision + ' -- ' + parts.join('; '));
+      referral = { referred: groups, mailError: aprNotifyReferees_(values[rowIdx], groups, note, caller, decision) };
     }
   }
   return Object.assign({ success: true }, referral);
@@ -439,31 +442,48 @@ function aprReferees_(caller) {
 
 // Money/HR-sensitive categories never get referred onward.
 const APR_NO_REFER_CATEGORIES = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption'];
-// Up to 4 distinct @lms.org.in addresses (comma/space/semicolon separated).
+// Three groups, in priority order (a person typed in two groups keeps the
+// highest one), max 2 distinct @lms.org.in addresses each.
+const APR_REFER_KINDS = ['action', 'accountability', 'information'];
+const APR_REFER_LABELS = { action: 'For Action', accountability: 'For Accountability', information: 'For Information' };
 function aprParseReferees_(raw) {
-  const list = String(raw || '').toLowerCase().split(/[\s,;]+/).filter(function (e) { return /^[^@\s]+@lms\.org\.in$/.test(e); });
-  return list.filter(function (e, i) { return list.indexOf(e) === i; }).slice(0, 4);
+  const seen = {}, out = { action: [], accountability: [], information: [] };
+  APR_REFER_KINDS.forEach(function (k) {
+    const list = String((raw && raw[k]) || '').toLowerCase().split(/[\s,;]+/).filter(function (e) { return /^[^@\s]+@lms\.org\.in$/.test(e); });
+    list.forEach(function (e) { if (!seen[e] && out[k].length < 2) { seen[e] = 1; out[k].push(e); } });
+  });
+  return out;
 }
-// Deliberately NO amount in this email -- the referee needs to know what
-// to do, not what was sanctioned. (The Owner's note is included as written.)
-const APR_REFER_WORDING = {
-  'Approved': ['Approved -- action needed', 'has been approved and referred to you to take forward.'],
-  'Rejected': ['Rejected -- for your information', 'has been rejected. No action is needed unless the note says otherwise.'],
-  'Info Requested': ['More information requested', 'is on hold: the Owner has asked for more information.'],
-  'Revoked': ['Approval revoked -- please stop', 'was approved earlier but the approval has now been revoked. Please stop or hold any related work.'],
+// Deliberately NO amount in these emails -- people need to know what
+// happened / what to do, not what was sanctioned. (The Owner's note is
+// included as written.)
+const APR_REFER_WHAT = {
+  'Approved': 'has been approved.',
+  'Rejected': 'has been rejected.',
+  'Info Requested': 'is on hold: the Owner has asked for more information.',
+  'Revoked': 'was approved earlier, but the approval has now been revoked.',
 };
-function aprNotifyReferees_(row, refs, note, caller, decision) {
-  try {
-    const qty = row[8] !== '' ? ' x ' + row[8] : '';
-    const w = APR_REFER_WORDING[decision];
-    MailApp.sendEmail(refs.join(','), w[0] + ': ' + row[4],
-      'The following request ' + w[1] + '\n\n' +
-      'Title: ' + row[4] + '\nCategory: ' + row[2] + '\nSchool: ' + row[1] + '\n' +
-      (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
-      'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,
-      { cc: String(row[11]), replyTo: caller.email });
-    return '';
-  } catch (err) { return String(err.message || err); } // surfaced to the Owner, not swallowed
+const APR_REFER_ASK = {
+  action: 'ACTION NEEDED from you: please carry out whatever this decision requires (if it was rejected, put on hold or revoked, that means stopping or holding the related work).',
+  accountability: 'You are ACCOUNTABLE for this: please make sure it is carried out as decided and be ready to confirm to the Owner that it was.',
+  information: 'For your information only -- no action is needed from you.',
+};
+// One email per non-empty group, each with its own message. Returns '' or an error string.
+function aprNotifyReferees_(row, groups, note, caller, decision) {
+  const qty = row[8] !== '' ? ' x ' + row[8] : '';
+  const errors = [];
+  APR_REFER_KINDS.forEach(function (k) {
+    if (!groups[k].length) return;
+    try {
+      MailApp.sendEmail(groups[k].join(','), '[' + APR_REFER_LABELS[k] + '] ' + decision + ': ' + row[4],
+        APR_REFER_ASK[k] + '\n\nThe following request ' + APR_REFER_WHAT[decision] + '\n\n' +
+        'Title: ' + row[4] + '\nCategory: ' + row[2] + '\nSchool: ' + row[1] + '\n' +
+        (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
+        'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,
+        { replyTo: caller.email });
+    } catch (err) { errors.push(APR_REFER_LABELS[k] + ': ' + String(err.message || err)); } // surfaced, not swallowed
+  });
+  return errors.join('; ');
 }
 
 // ── Email notifications (best-effort plain MailApp -- a mail failure
