@@ -243,6 +243,11 @@ function call_(promise, label, okMsg) {
 function post_(action, data, label, okMsg) { return call_(payPost_(action, Object.assign({ month: M.month }, data)), label, okMsg); }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+// Same order as the backend (payCompareCodes_): by the serial at the end of the code, not as text.
+function codeCmp_(a, b) {
+  const n = function (c) { const m = String(c || '').split('/').pop().match(/^\d+/); return m ? Number(m[0]) : Infinity; };
+  return n(a) === n(b) ? (a < b ? -1 : a > b ? 1 : 0) : n(a) < n(b) ? -1 : 1;
+}
 function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function inr_(n) { return n == null ? '—' : n === 0 ? '-' : Math.round(n).toLocaleString('en-IN'); }
 function sum_(rows, fn) { return rows.reduce(function (a, r) { return a + (Number(fn(r)) || 0); }, 0); }
@@ -1040,7 +1045,7 @@ function accountsView_() {
   const cti = {};
   M.rows.forEach(function (r) { cti[r.code] = r.cti; });
   const target = M.settings.rrfTargetMonths;
-  const list = ACC.accounts.filter(accInScope_).sort(function (a, b) { return (a.former - b.former) || (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : a.code < b.code ? -1 : 1); });
+  const list = ACC.accounts.filter(accInScope_).sort(function (a, b) { return (a.former - b.former) || (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : codeCmp_(a.code, b.code)); });
   let h = '<h2>Accounts &amp; loans <span class="muted">— balances today (Ledger), gratuity as at ' + monthLabel_(M.month) + '</span></h2>';
   if (!ACC.openingImported) h += '<div class="warn">Opening balances (Tally, 31-Aug-2026) are not imported yet — see <b>Opening balances</b>. Until then RRF, Security and advances start from zero.</div>';
   h += '<div class="wrap" style="max-height:55vh"><table><tr><th class="l">Employee</th><th class="l">School</th><th class="l">Status</th><th>RRF</th><th>RRF target (' + target + '× CTI)</th><th>Security</th><th>Held salary</th>' +

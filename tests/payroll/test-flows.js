@@ -433,4 +433,17 @@ module.exports = function run(t) {
     const row = ok.rows.find((x) => x.code === 'KUL/28/03/900');
     assert.equal(row.paidDays, 28, 'prorated from 4 March (28 of 31 days), not from the typed 20th');
   });
+
+  t.test('staff are listed by the serial at the end of the code, not as text', () => {
+    const fn = (c) => h.run("payCompareCodes_('" + c[0] + "','" + c[1] + "')");
+    assert.equal(fn(['KUL/08/05/072', 'KUL/42/00/028']) > 0, true, '072 sorts after 028');
+    const codes = ['KUL/08/05/072', 'KUL/12/05/021', 'KUL/17/08/042', 'KUL/13/04/028', 'KUL/95/10/001', 'NCM/22/07/054#2', 'NCM/22/07/054', 'KUL/26/02/1994'];
+    const sorted = codes.slice().sort((a, b) => h.run("payCompareCodes_('" + a + "','" + b + "')"));
+    assert.deepEqual(sorted, ['KUL/95/10/001', 'KUL/12/05/021', 'KUL/13/04/028', 'KUL/17/08/042', 'NCM/22/07/054', 'NCM/22/07/054#2', 'KUL/08/05/072', 'KUL/26/02/1994']);
+    const rows = call('month', { month: '2028-04' }).rows.filter((r) => r.entity === 'LMS3' || r.entity === 'HES');
+    ['HES', 'LMS3'].forEach((e) => {
+      const ser = rows.filter((r) => r.entity === e).map((r) => Number(r.code.match(/(\d+)\D*$/)[1]));
+      assert.deepEqual(ser, ser.slice().sort((a, b) => a - b), e + ' rows come back in serial order');
+    });
+  });
 };

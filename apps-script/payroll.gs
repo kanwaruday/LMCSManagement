@@ -442,6 +442,22 @@ function payLedgerBalances_(ss, account, month) {
 // Open schools are computed live; locked schools are read back from the
 // Payroll Register exactly as locked. Adds the previous month's net (for the
 // review's month-on-month check) and the ERP comparison to every row.
+// Employees are listed in order of their number at the school, not as text: in KUL/08/05/072 the
+// serial is 072 (the last part), so it sorts after 021, 028, 042 ... (Uday, 2026-10-05). Ties
+// (a school's old and new codes, "...#2" duplicates) fall back to the whole code.
+function payCodeSerial_(code) {
+  // the part after the last "/", leading digits only ("054#2" -> 54)
+  const m = String(code || '').split('/').pop().match(/^\d+/);
+  return m ? Number(m[0]) : Infinity;
+}
+function payCompareCodes_(a, b) {
+  const x = payCodeSerial_(a), y = payCodeSerial_(b);
+  return x === y ? (a < b ? -1 : a > b ? 1 : 0) : x < y ? -1 : 1;
+}
+function payCompareStaff_(a, b) {
+  return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || payCompareCodes_(a.code, b.code);
+}
+
 function payMonth_(ss, month) {
   const ctx = payCheckMonth_(month);
   const locks = payLocks_(ss, month);
@@ -475,7 +491,7 @@ function payMonth_(ss, month) {
     // actual upload already on file for this month (r.leave).
     if (!r.leave && prevLeave[r.code]) r.leaveCarryOpening = prevLeave[r.code];
   });
-  rows.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
+  rows.sort(payCompareStaff_);
   return { month: month, daysInMonth: ctx.daysInMonth, settings: live.settings, rates: live.rates, rows: rows,
     warnings: live.warnings.filter(function (w) { return !locks[w.entity]; }), locked: locks,
     checklist: payChecklist_(ss, month), steps: PAY_STEPS, adjTypes: PAY_ADJ_TYPES, staff: payStaffSafe_(ss, month),
@@ -1237,7 +1253,7 @@ function payIncrementEligible_(ss, month, times) {
     }
     out.push(row);
   });
-  out.sort(function (a, b) { return (PAY_ENTITIES.indexOf(a.entity) - PAY_ENTITIES.indexOf(b.entity)) || (a.code < b.code ? -1 : 1); });
+  out.sort(payCompareStaff_);
   return out;
 }
 
