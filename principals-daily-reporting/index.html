@@ -650,25 +650,11 @@ td{padding:6px 12px;vertical-align:middle}
       </div>
 
       <div class="dash-toolbar" style="flex-wrap:wrap;gap:8px">
-        <div id="aprViewToggle" class="role-picker"></div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <input type="text" id="aprSearch" placeholder="Search…" oninput="aprSetSearch(this.value)" style="border:1.5px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11.5px;width:150px">
-          <select id="aprSchoolFilter" onchange="aprSetSchoolFilter(this.value)" style="display:none;border:1.5px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;color:var(--gray);background:var(--white)"></select>
-          <select id="aprSort" onchange="aprSetSort(this.value)" style="border:1.5px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;color:var(--gray);background:var(--white)">
-            <option value="default">Sort: Needs action first</option>
-            <option value="newest">Sort: Newest first</option>
-            <option value="oldest">Sort: Oldest first</option>
-            <option value="urgent">Sort: Urgent first</option>
-            <option value="school">Sort: School</option>
-            <option value="category">Sort: Category</option>
-            <option value="decided">Sort: Recently decided</option>
-          </select>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div id="aprViewToggle" class="role-picker"></div>
+          <div id="aprStatusFilter" class="role-picker"></div>
         </div>
-      </div>
-      <div class="dash-toolbar">
-        <div id="aprStatusFilter" class="role-picker"></div>
         <div style="display:flex;align-items:center;gap:8px">
-          <select id="aprCategoryFilter" onchange="aprSelectCategoryFilter(this.value)" style="border:1.5px solid var(--border);border-radius:20px;padding:5px 10px;font-size:11.5px;color:var(--gray);background:var(--white)"></select>
           <button type="button" class="date-refresh-btn" title="Refresh" onclick="refreshApprovals()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"></polyline>
@@ -2043,7 +2029,10 @@ let APR_CATEGORY_FILTER = 'All';
 let APR_VIEW = 'Requests'; // or 'Archive'
 let APR_SCHOOL_FILTER = 'All';
 let APR_SEARCH = '';
-let APR_SORT = 'default';
+let APR_SORT_KEY = null; // null = default (needs action first); else school|title|category|urgency|status|date
+let APR_SORT_DIR = 1;
+let APR_SELECTED = {};   // approval id -> true, for bulk archive/unarchive
+let APR_ELIGIBLE = {};   // ids selectable in the current view
 const APR_DECIDED_STATUSES = ['Approved', 'Rejected', 'Revoked'];
 let aprExpandedId = null;
 let aprExpandedDetail = null;   // {request, comments, canDecide} for the open row
@@ -2080,8 +2069,6 @@ function aprSelectCategory(c) {
 // including the init() call at the very end, so the whole portal
 // rendered blank, not just Approvals). Moved to just before init() --
 // see that call site.
-document.getElementById('aprCategoryFilter').innerHTML = '<option value="All">All categories</option>' +
-  APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 
 // Per-role-level subject lists -- 2026-09-14, per Uday: NTT is a
 // generalist (no subject picker at all); PRT/TGT/PGT each teach a
@@ -2273,6 +2260,7 @@ async function loadApprovals() {
 }
 
 function refreshApprovals() {
+  APR_SELECTED = {};
   aprExpandedId = null;
   aprExpandedDetail = null;
   document.getElementById('aprListBody').innerHTML = ''; // the status bar already shows loading
@@ -2291,28 +2279,35 @@ function aprRenderViewBar_(archivedCount) {
   document.getElementById('aprViewToggle').innerHTML = [['Requests', 'Requests'], ['Archive', 'Archive (' + archivedCount + ')']].map(function (v) {
     return '<button class="role-btn' + (v[0] === APR_VIEW ? ' active' : '') + '" onclick="aprSetView(\'' + v[0] + '\')">' + v[1] + '</button>';
   }).join('');
-  const sel = document.getElementById('aprSchoolFilter');
-  if (aprShowsCampusCol_()) {
-    if (!sel.options.length) sel.innerHTML = '<option value="All">All schools</option>' + ALL_CAMPUSES.map(function (c) { return '<option value="' + c + '">' + aprEsc_(LMCS.campusLabel(c)) + '</option>'; }).join('');
-    sel.style.display = '';
-    sel.value = APR_SCHOOL_FILTER;
-  }
 }
 function aprResetView_() { aprExpandedId = null; aprExpandedDetail = null; renderApprovalsForSelectedCampus(); }
-function aprSetView(v) { APR_VIEW = v; aprRenderStatusFilter_(); aprResetView_(); }
-function aprSetSearch(v) { APR_SEARCH = v.trim(); aprResetView_(); }
+function aprSetView(v) { APR_VIEW = v; APR_SELECTED = {}; aprRenderStatusFilter_(); aprResetView_(); }
+function aprSetSearch(v) {
+  APR_SEARCH = v.trim(); aprResetView_();
+  const el = document.getElementById('aprSearch'); // the header is re-rendered, so put the cursor back
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
 function aprSetSchoolFilter(v) { APR_SCHOOL_FILTER = v; aprResetView_(); }
-function aprSetSort(v) { APR_SORT = v; aprResetView_(); }
+function aprSortBy(key) { // asc, then desc, then back to the default order
+  if (APR_SORT_KEY !== key) { APR_SORT_KEY = key; APR_SORT_DIR = 1; }
+  else if (APR_SORT_DIR === 1) APR_SORT_DIR = -1;
+  else APR_SORT_KEY = null;
+  aprResetView_();
+}
+function aprToggleSel(id, on) { if (on) APR_SELECTED[id] = true; else delete APR_SELECTED[id]; renderApprovalsForSelectedCampus(); }
+function aprToggleAll(on) { APR_SELECTED = on ? Object.assign({}, APR_ELIGIBLE) : {}; renderApprovalsForSelectedCampus(); }
 async function aprArchive_(ids, archive) {
   aprSetStatus_('loading', archive ? 'Archiving…' : 'Restoring…');
   const res = await pdrPost_('archiveapproval', { ids: ids, archive: archive });
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t ' + (archive ? 'archive' : 'unarchive') + ': ' + aprEsc_(res.error || 'unknown error')); return; }
   refreshApprovals();
 }
-function aprArchiveShown_() {
-  const ids = Array.from(document.querySelectorAll('#aprListBody tr.apr-row')).map(function (tr) { return /'([^']+)'/.exec(tr.getAttribute('onclick'))[1]; })
-    .filter(function (id) { const r = aprRes.requests.filter(function (x) { return x.id === id; })[0]; return r && !r.archived && APR_DECIDED_STATUSES.indexOf(r.status) !== -1; });
-  if (ids.length && confirm('Archive ' + ids.length + ' decided request(s)? They move to the Archive view and can be restored.')) aprArchive_(ids, true);
+function aprArchiveSelected_() {
+  const ids = Object.keys(APR_SELECTED), archive = APR_VIEW === 'Requests';
+  if (!ids.length) return;
+  if (archive && !confirm('Archive ' + ids.length + ' request(s)? They move to the Archive view and can be restored.')) return;
+  APR_SELECTED = {};
+  aprArchive_(ids, archive);
 }
 function aprSelectStatusFilter(status) {
   APR_STATUS_FILTER = status;
@@ -2366,7 +2361,7 @@ function aprStatusPillClass_(status) {
 // detail row's colspan stay in sync without threading a param through
 // every call site.
 function aprShowsCampusCol_() { return SESSION.campusId === 'ALL'; }
-function aprColspan_() { return aprShowsCampusCol_() ? 6 : 5; }
+function aprColspan_() { return (aprShowsCampusCol_() ? 6 : 5) + (aprRes && aprRes.canDecide ? 1 : 0); }
 
 // Needs-action rows (Pending/Info Requested) always sort above decided
 // history, Urgent first within that, then oldest-first so nothing
@@ -2375,17 +2370,17 @@ function aprColspan_() { return aprShowsCampusCol_() ? 6 : 5; }
 // (aprList_) -- that's still the base order these build on, just
 // reordered client-side per the "what needs me vs history" split.
 function aprSortRows_(rows) {
-  if (APR_SORT !== 'default') {
-    const byDate = function (f) { return function (a, b) { return String(b[f] || b.requestedAt).localeCompare(String(a[f] || a.requestedAt)); }; };
-    const cmp = {
-      newest: byDate('requestedAt'),
-      oldest: function (a, b) { return a.requestedAt.localeCompare(b.requestedAt); },
-      urgent: function (a, b) { return ((b.urgency === 'Urgent') - (a.urgency === 'Urgent')) || byDate('requestedAt')(a, b); },
-      school: function (a, b) { return a.campusId.localeCompare(b.campusId) || byDate('requestedAt')(a, b); },
-      category: function (a, b) { return a.category.localeCompare(b.category) || byDate('requestedAt')(a, b); },
-      decided: byDate('decidedAt'),
-    }[APR_SORT];
-    return rows.sort(cmp);
+  if (APR_SORT_KEY) {
+    const val = {
+      school: function (r) { return r.campusId; }, title: function (r) { return r.title.toLowerCase(); },
+      category: function (r) { return r.category; }, urgency: function (r) { return r.urgency === 'Urgent' ? 0 : 1; },
+      status: function (r) { return r.status; },
+      date: function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1 ? r.requestedAt : (r.decidedAt || r.requestedAt); },
+    }[APR_SORT_KEY];
+    return rows.sort(function (a, b) {
+      const x = val(a), y = val(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * APR_SORT_DIR || b.requestedAt.localeCompare(a.requestedAt);
+    });
   }
   const needsAction = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; });
   const decided = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) === -1; });
@@ -2415,20 +2410,37 @@ function renderApprovalsForSelectedCampus() {
   aprRenderViewBar_(archivedCount);
   rows = aprSortRows_(rows);
 
-  if (!rows.length) {
+  // Header row doubles as the control bar: click a title to sort, the filters/search live in
+  // their own columns, and the checkbox column drives bulk Archive/Unarchive.
+  const canSel = !!aprRes.canDecide;
+  APR_ELIGIBLE = {};
+  if (canSel) rows.forEach(function (r) { if (APR_VIEW === 'Archive' || APR_DECIDED_STATUSES.indexOf(r.status) !== -1) APR_ELIGIBLE[r.id] = true; });
+  Object.keys(APR_SELECTED).forEach(function (id) { if (!APR_ELIGIBLE[id]) delete APR_SELECTED[id]; });
+  const selCount = Object.keys(APR_SELECTED).length, eligCount = Object.keys(APR_ELIGIBLE).length;
+  const box = 'display:block;margin-top:4px;font-size:11px;padding:2px 4px;border-radius:4px;border:0;max-width:100%;color:#333';
+  const th = function (key, label, extra) {
+    return '<th style="cursor:pointer;vertical-align:top" onclick="aprSortBy(\'' + key + '\')">' + label + (APR_SORT_KEY === key ? (APR_SORT_DIR > 0 ? ' ▲' : ' ▼') : '') + (extra || '') + '</th>';
+  };
+  const opts = function (list, cur, allLabel) {
+    return '<option value="All">' + allLabel + '</option>' + list.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + aprEsc_(o[1]) + '</option>'; }).join('');
+  };
+  const head = '<thead><tr>' +
+    (canSel ? '<th style="width:28px"><input type="checkbox" title="Select all" ' + (eligCount && selCount === eligCount ? 'checked ' : '') + (eligCount ? '' : 'disabled ') + 'onclick="event.stopPropagation();aprToggleAll(this.checked)"></th>' : '') +
+    (showAll ? th('school', 'School', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSetSchoolFilter(this.value)">' + opts(ALL_CAMPUSES.map(function (c) { return [c, LMCS.campusLabel(c)]; }), APR_SCHOOL_FILTER, 'All schools') + '</select>') : '') +
+    th('title', 'Title', '<input id="aprSearch" type="text" placeholder="Search…" value="' + aprEsc_(APR_SEARCH) + '" style="' + box + '" onclick="event.stopPropagation()" oninput="aprSetSearch(this.value)">') +
+    th('category', 'Category', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSelectCategoryFilter(this.value)">' + opts(APR_CATEGORIES.map(function (c) { return [c, c]; }), APR_CATEGORY_FILTER, 'All categories') + '</select>') +
+    th('urgency', 'Urgency') + th('status', 'Status') +
+    th('date', 'Age / Decided', selCount ? '<button type="button" style="' + box + ';cursor:pointer;font-weight:700" onclick="event.stopPropagation();aprArchiveSelected_()">' + (APR_VIEW === 'Archive' ? 'Unarchive ' : 'Archive ') + selCount + ' selected</button>' : '') +
+    '</tr></thead>';
+
+  let bodyRows;
+  if (rows.length) bodyRows = rows.map(aprRowHtml_).join('');
+  else {
     const statusLabel = APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ';
     const catLabel = APR_CATEGORY_FILTER === 'All' ? '' : ' in ' + APR_CATEGORY_FILTER;
-    body.innerHTML = '<div class="dash-empty">No ' + (APR_VIEW === 'Archive' ? 'archived ' : '') + statusLabel + 'requests' + catLabel + (showAll ? '' : ' for this school') + '.</div>';
-    return;
+    bodyRows = '<tr><td colspan="' + aprColspan_() + '" class="dash-empty">No ' + (APR_VIEW === 'Archive' ? 'archived ' : '') + statusLabel + 'requests' + catLabel + (showAll ? '' : ' for this school') + '.</td></tr>';
   }
-
-  const archivable = rows.filter(function (r) { return !r.archived && APR_DECIDED_STATUSES.indexOf(r.status) !== -1; });
-  const bulk = (aprRes.canDecide && APR_VIEW === 'Requests' && archivable.length)
-    ? '<div style="margin-bottom:8px"><button type="button" class="role-btn" onclick="aprArchiveShown_()">Archive all ' + archivable.length + ' decided request' + (archivable.length === 1 ? '' : 's') + ' shown</button></div>' : '';
-  body.innerHTML = bulk + '<div class="tbl-wrap"><table><thead><tr>' +
-    (showAll ? '<th>School</th>' : '') +
-    '<th>Title</th><th>Category</th><th>Urgency</th><th>Status</th><th>Age / Decided</th>' +
-    '</tr></thead><tbody>' + rows.map(aprRowHtml_).join('') + '</tbody></table></div>';
+  body.innerHTML = '<div class="tbl-wrap"><table>' + head + '<tbody>' + bodyRows + '</tbody></table></div>';
 }
 
 function aprRowHtml_(r) {
@@ -2444,6 +2456,7 @@ function aprRowHtml_(r) {
     ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
     : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+    (aprRes.canDecide ? '<td onclick="event.stopPropagation()">' + (APR_ELIGIBLE[r.id] ? '<input type="checkbox" ' + (APR_SELECTED[r.id] ? 'checked ' : '') + 'onchange="aprToggleSel(\'' + r.id + '\',this.checked)">' : '') + '</td>' : '') +
     (aprShowsCampusCol_() ? '<td>' + aprEsc_(LMCS.campusLabel(r.campusId)) + '</td>' : '') +
     '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
