@@ -943,8 +943,14 @@ function wire_() {
   };
   if (q('#lvEdSave')) q('#lvEdSave').onclick = function () {
     const up = lvEditorUpload_(), r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+    // The backend quietly skips a row with no counts and no record to clear, so say so instead of "Saved".
+    if (!Object.keys(up.rows[0].counts).length && !r.leave) { alert('Nothing to save: enter at least one leave count (or use \u201cSave paid days\u201d to set paid days directly).'); return; }
     LV_EDIT = null;
-    post_('uploadleave', up, 'Saving leave…', 'Saved leave for ' + r.name + ' and set their paid days.');
+    post_('uploadleave', up, 'Saving leave…', function (res) {
+      const now = res.rows.find(function (x) { return x.code === r.code; });
+      if (!now || !now.leave) return 'NOT saved for ' + r.name + ' \u2014 their school may be locked, or no counts were entered.';
+      return 'Saved leave for ' + r.name + ': ' + now.leave.charged + ' leave day(s) charged \u2192 ' + now.paidDays + ' paid days.';
+    });
   };
   if (q('#lvEdClear')) q('#lvEdClear').onclick = function () {
     const r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
