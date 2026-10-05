@@ -33,7 +33,7 @@ ap.add_argument('--sm'); ap.add_argument('--ledger'); ap.add_argument('--loans')
 a = ap.parse_args()
 Y, M = int(a.month[:4]), int(a.month[5:])
 data = {t: [] for t in B.HEADERS}
-data['PayRoll Constants'] = [['RRF Y1 %', 12], ['RRF Y2 %', 9], ['RRF Y3 %', 6], ['EPF Cap Salary', 15000], ['EPF Rate %', 8.33], ['PF Rate %', 3.67],
+data['PayRoll Constants'] = [['RRF Y1 %', 12], ['RRF Y2 %', 9], ['RRF Y3 %', 6], ['EPF Cap Salary', 25000], ['EPF Rate %', 8.33], ['PF Rate %', 3.67],
     ['ESI Threshold', 21000], ['ESI Employer %', 3.25], ['ESI Employee %', 0.75], ['RRF Target Months', 3], ['RRF Stop At Target (1=Yes)', 1],
     ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['EPF Mandatory Below Gross', 25000]]
 data['PayRoll Rates'] = [['HES', 5, 35, 'Y', 'Y'], ['LMS 1', 5, 35, 'Y', 'Y'], ['LMS 2', 5, 35, 'Y', 'Y'], ['LMS 3', 5, 25, 'Y', 'Y'],
