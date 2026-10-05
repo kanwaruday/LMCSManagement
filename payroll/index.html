@@ -1449,7 +1449,8 @@ function outputsView_() {
     (unlocked.length ? ' <span class="neg">Not locked yet: ' + unlocked.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') + ' — files will be drafts.</span>' : '') + '</div>' +
     '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button>' +
     ' <button class="btn" id="tallyBtn">⬇ Tally journal (.xml)</button>' +
-    ' <button class="btn" id="epfRepBtn">⬇ EPF report (.xlsx)</button> <button class="btn" id="esiRepBtn">⬇ ESI report, school-wise (.xlsx)</button></div>';
+    ' <button class="btn" id="epfRepBtn">⬇ EPF report (.xlsx)</button> <button class="btn" id="esiRepBtn">⬇ ESI report, school-wise (.xlsx)</button>' +
+    ' <button class="btn" id="salAllBtn">⬇ Salary sheets, all schools (.xlsx)</button></div>';
   if (SCOPE === 'ALL') {
     h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.map(function (e) {
       const rs = outRows_(e), lt = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
@@ -1520,14 +1521,20 @@ function sheetPrint_() {
     }).join('') + '<tr>' + cols.map(function (c, i) { return i === 1 ? '<td><b>Total</b></td>' : '<td class="n"><b>' + (num(c) && c[0] !== 'Present' && c[1] ? sum_(rs, c[1]) : '') + '</b></td>'; }).join('') + '</tr></table>' +
     '<p style="margin-top:40px">Prepared by: ____________________ &nbsp;&nbsp; Checked by: ____________________ &nbsp;&nbsp; Approved by: ____________________</p></div>', true);
 }
-function sheetXlsx_() {
+function sheetTab_(wb, e, name) {
+  const rs = outRows_(e), cols = sheetCols_(), ws = wb.addWorksheet(name);
+  ws.addRow([SCHOOL_NAME[e] + ' — ' + monthLabel_(M.month)]).font = { bold: true };
+  ws.addRow(cols.map(function (c) { return c[0]; })).font = { bold: true };
+  rs.forEach(function (r, i) { ws.addRow(cols.map(function (c) { return c[1] ? c[1](r) : i + 1; })); });
+  ws.getColumn(28).numFmt = '@';
+}
+// One school (SCOPE), or every school as its own tab when all = true.
+function sheetXlsx_(all) {
   loadExcelJs_().then(function () {
-    const rs = outRows_(SCOPE), cols = sheetCols_(), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('SalaryReport');
-    ws.addRow([SCHOOL_NAME[SCOPE] + ' — ' + monthLabel_(M.month)]).font = { bold: true };
-    ws.addRow(cols.map(function (c) { return c[0]; })).font = { bold: true };
-    rs.forEach(function (r, i) { ws.addRow(cols.map(function (c) { return c[1] ? c[1](r) : i + 1; })); });
-    ws.getColumn(28).numFmt = '@';
-    return wb.xlsx.writeBuffer().then(function (buf) { download_('Salary ' + ENTITY_LABEL[SCOPE] + ' ' + M.month + '.xlsx', new Blob([buf])); });
+    const wb = new ExcelJS.Workbook();
+    const es = all === true ? Object.keys(ENTITY_LABEL).filter(function (e) { return OUT.rows.some(function (r) { return r.entity === e; }); }) : [SCOPE];
+    es.forEach(function (e) { sheetTab_(wb, e, all === true ? ENTITY_LABEL[e] : 'SalaryReport'); });
+    return wb.xlsx.writeBuffer().then(function (buf) { download_(all === true ? 'Salary all schools ' + M.month + '.xlsx' : 'Salary ' + ENTITY_LABEL[SCOPE] + ' ' + M.month + '.xlsx', new Blob([buf])); });
   });
 }
 function download_(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
@@ -1698,7 +1705,8 @@ function wireOutputs_() {
   if (q('#esiRepBtn')) q('#esiRepBtn').onclick = esiReport_;
   if (q('#ltPrint')) q('#ltPrint').onclick = letterPrint_;
   if (q('#shPrint')) q('#shPrint').onclick = sheetPrint_;
-  if (q('#shXlsx')) q('#shXlsx').onclick = sheetXlsx_;
+  if (q('#shXlsx')) q('#shXlsx').onclick = function () { sheetXlsx_(); };
+  if (q('#salAllBtn')) q('#salAllBtn').onclick = function () { sheetXlsx_(true); };
   if (q('#psPrint')) q('#psPrint').onclick = slipsPrint_;
   if (q('#ltRecord')) q('#ltRecord').onclick = function () {
     const L = readLetter_(), rs = outRows_(SCOPE).filter(function (r) { return r.bankPayable > 0 && key_(r).account; });
