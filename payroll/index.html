@@ -466,6 +466,60 @@ function staffPanel_() {
   return h;
 }
 
+
+// ── Edit one person's leave in the portal (2026-10-05, per Uday) ─────────────────────────────
+// Same action as the Excel upload (previewleave / uploadleave, one row), so a Save here writes the
+// same Leave Records row, paid days and CL/Comp split the template would -- and "Save paid days"
+// is the same direct override as before. Both are refused by the backend for a locked school.
+let LV_EDIT = null; // {code, preview}
+function lvEditorOpen_(code) {
+  const r = M.rows.find(function (x) { return x.code === code; });
+  if (!r) { alert('That employee is not on this month’s payroll.'); return; }
+  if (isLocked_(r.entity)) { alert(ENTITY_LABEL[r.entity] + ' is locked for ' + monthLabel_(M.month) + ' — corrections go into next month as Adjustments.'); return; }
+  LV_EDIT = { code: code, preview: null };
+  OPEN = 'leave';
+  render_();
+}
+function lvEditorHtml_() {
+  const r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+  if (!r) return '';
+  let l = r.leave || {}, carry = r.leaveCarryOpening || {};
+  const bal = function (own, c) { return own !== '' && own != null ? own : (c != null ? c : ''); };
+  let counts = l.counts || {};
+  // After a Preview the page redraws: keep what was typed, not what was last saved.
+  const dr = LV_EDIT.draft;
+  if (dr) { const w = dr.rows[0]; counts = w.counts; l = { clBalance: w.clBalance, compBalance: w.compBalance, vacRule: w.vacRule, vacDays: dr.vacDays[r.entity], vacWorked: w.vacWorked }; carry = {}; }
+  let h = '<div class="warn" id="lvEditor"><b>Editing leave — ' + esc_(r.code + ' — ' + r.name) + ' (' + ENTITY_LABEL[r.entity] + ')</b>' +
+    (r.leave ? '' : ' <span class="muted">no leave on record this month' + (r.leaveCarryOpening ? ' · balances prefilled from last month’s leftovers' : '') + '</span>') +
+    '<div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:8px 14px">' +
+    M.leaveFields.map(function (f) {
+      return '<label style="font-size:12px">' + esc_(f[1]) + '<br><input type="number" min="0" max="99" step="1" data-lvc="' + f[0] + '" value="' + (counts[f[0]] != null ? counts[f[0]] : '') + '" style="width:74px"></label>';
+    }).join('') + '</div>' +
+    '<div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:8px 14px">' +
+    '<label style="font-size:12px">Opening CL balance<br><input type="number" min="0" step="0.01" id="lvEdCl" value="' + esc_(bal(l.clBalance, carry.cl)) + '" style="width:90px"></label>' +
+    '<label style="font-size:12px">Opening Comp balance<br><input type="number" min="0" step="0.01" id="lvEdComp" value="' + esc_(bal(l.compBalance, carry.comp)) + '" style="width:90px"></label>' +
+    '<label style="font-size:12px">Vacation rule<br><select id="lvEdRule"><option value="">(none)</option>' + (M.vacRules || []).map(function (v) { return '<option' + ((l.vacRule || r.vacRule) === v ? ' selected' : '') + '>' + esc_(v) + '</option>'; }).join('') + '</select></label>' +
+    '<label style="font-size:12px">Vacation working days<br><input type="number" min="0" max="' + M.daysInMonth + '" step="1" id="lvEdVacDays" value="' + esc_(l.vacDays != null ? l.vacDays : '') + '" style="width:90px"></label>' +
+    '<label style="font-size:12px">Vacation days worked<br><input type="number" min="0" step="1" id="lvEdVacWorked" value="' + esc_(l.vacWorked != null ? l.vacWorked : '') + '" style="width:90px"></label></div>' +
+    '<button class="mini-btn" id="lvEdPreview">Preview</button> <button class="btn" id="lvEdSave">Save leave counts</button>' +
+    (r.leave ? ' <button class="mini-btn" id="lvEdClear">Clear this leave record</button>' : '') + ' <button class="mini-btn" id="lvEdCancel">Cancel</button>';
+  const p = LV_EDIT.preview;
+  if (p) h += '<div style="margin-top:8px"><b>Result:</b> leave charged ' + p.charged + ' · Comp used ' + p.compUsed + ' · CL used ' + p.clUsed + ' · unpaid ' + p.unpaidLeave +
+    (p.vacUnpaid ? ' · vacation unpaid ' + p.vacUnpaid : '') + ' → <b>paid days ' + p.paidDays + ' of ' + M.daysInMonth + '</b>' + (p.notes.length ? '<div class="muted">' + esc_(p.notes.join('; ')) + '</div>' : '') + '</div>';
+  h += '<div style="margin-top:10px;border-top:1px solid #ddd;padding-top:8px"><b>Or enter paid days directly</b> <span class="muted">(overrides the counts above for the month)</span> ' +
+    'Paid days <input type="number" min="0" max="' + M.daysInMonth + '" step="0.5" id="lvEdPaid" value="' + esc_((r.input || {}).paidDays != null ? (r.input || {}).paidDays : '') + '" style="width:70px"> ' +
+    'CL days encashed <input type="number" min="0" step="0.5" id="lvEdCld" value="' + esc_((r.input || {}).clDays != null ? (r.input || {}).clDays : '') + '" style="width:70px"> <button class="mini-btn" id="lvEdDirect">Save paid days</button></div></div>';
+  return h;
+}
+function lvEditorUpload_() {
+  const r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+  const q = function (sel) { return document.querySelector(sel); }, counts = {};
+  document.querySelectorAll('[data-lvc]').forEach(function (i) { if (i.value !== '') counts[i.dataset.lvc] = Number(i.value); });
+  const row = { code: r.code, counts: counts, clBalance: q('#lvEdCl').value, compBalance: q('#lvEdComp').value, vacRule: q('#lvEdRule').value, vacWorked: q('#lvEdVacWorked').value };
+  const vd = {}; vd[r.entity] = q('#lvEdVacDays').value;
+  return { month: M.month, vacDays: vd, rows: [row] };
+}
+
 // ② Leave & paid days -- exceptions only, until the Excel leave template (next stage).
 function leavePanel_() {
   const rows = scopeRows_().filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment || r.leave; });
@@ -475,16 +529,18 @@ function leavePanel_() {
       ', with this month’s entries if any), fill in the counts, and upload it. Each count is converted by the bye-law leave norms, charged to Compensatory Leave → CL → unpaid, and becomes paid days. ' +
       'You see a preview before anything is saved. Everyone not listed below is paid the full month (' + M.daysInMonth + ' days).</div>' +
       '<div class="addrow"><button class="btn" id="lvTemplate">⬇ Download leave template</button> <button class="mini-btn" id="lvUpload">⬆ Upload filled template</button>' +
-      '<input type="file" id="lvFile" accept=".xlsx" style="display:none"> <span class="muted">Override one person:</span> <input list="empList" id="lvEmp" placeholder="Search employee…"> Paid days <input type="number" id="lvDays" min="0" max="' + M.daysInMonth + '" step="0.5" style="width:70px"> CL days encashed <input type="number" id="lvCl" min="0" step="0.5" style="width:70px"> <button class="mini-btn" id="lvAdd">Save</button></div>';
+      '<input type="file" id="lvFile" accept=".xlsx" style="display:none"> <span class="muted">Override one person:</span> <input list="empList" id="lvEmp" placeholder="Search employee…"> Paid days <input type="number" id="lvDays" min="0" max="' + M.daysInMonth + '" step="0.5" style="width:70px"> CL days encashed <input type="number" id="lvCl" min="0" step="0.5" style="width:70px"> <button class="mini-btn" id="lvAdd">Save</button> <button class="mini-btn" id="lvEdit">✎ Edit leave counts…</button></div>';
   }
   if (LEAVE_PREVIEW) return h + leavePreview_();
+  if (LV_EDIT) h += lvEditorHtml_();
   if (!rows.length) return h + '<div class="muted">No one yet.</div>';
-  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Leave days</th><th>Comp used</th><th>CL used</th><th>Unpaid</th><th>Paid days</th><th>CL encashed (₹)</th><th>Net pay</th><th class="l">Notes</th><th></th></tr>';
+  h += '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Leave days</th><th>Comp used</th><th>CL used</th><th>Unpaid</th><th>Paid days</th><th>CL encashed (₹)</th><th>Net pay</th><th class="l">Notes</th><th></th><th></th></tr>';
   rows.forEach(function (r) {
     const l = r.leave || {};
     h += '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + (r.leave ? l.charged : '') + '</td><td>' + (r.leave ? l.compUsed : '') +
       '</td><td>' + (r.leave ? l.clUsed : '') + '</td><td>' + (r.leave ? l.unpaidLeave + l.vacUnpaid : '') + '</td><td>' + r.paidDays + '</td><td>' + inr_(r.clEncashment) + '</td><td>' + inr_(r.net) +
-      '</td><td class="l muted">' + esc_(l.notes || (r.leave ? '' : 'entered directly')) + '</td><td>' + (r.input && !isLocked_(r.entity) && !r.leave ? '<button class="x-btn" data-clear="' + esc_(r.code) + '" title="Back to full month">✕</button>' : '') + '</td></tr>';
+      '</td><td class="l muted">' + esc_(l.notes || (r.leave ? '' : 'entered directly')) + '</td><td>' + (r.input && !isLocked_(r.entity) && !r.leave ? '<button class="x-btn" data-clear="' + esc_(r.code) + '" title="Back to full month">✕</button>' : '') + '</td>' +
+      '<td>' + (isLocked_(r.entity) ? '' : '<button class="mini-btn" data-lvedit="' + esc_(r.code) + '" title="Edit this person\u2019s leave">✎ Edit</button>') + '</td></tr>';
   });
   return h + '</table></div>';
 }
@@ -871,6 +927,35 @@ function wire_() {
   if (q('#lvAdd')) q('#lvAdd').onclick = function () {
     const r = pick_('lvEmp'); if (!r) { alert('Pick an employee from the list.'); return; }
     post_('saveinputs', { rows: [inputFor_(r, { paidDays: q('#lvDays').value, clDays: q('#lvCl').value })] }, 'Saving…', 'Saved ' + r.name + '.');
+  };
+  if (q('#lvEdit')) q('#lvEdit').onclick = function () { const r = pick_('lvEmp'); if (!r) { alert('Pick an employee from the list.'); return; } lvEditorOpen_(r.code); };
+  document.querySelectorAll('[data-lvedit]').forEach(function (b) { b.onclick = function () { lvEditorOpen_(b.dataset.lvedit); }; });
+  if (q('#lvEdCancel')) q('#lvEdCancel').onclick = function () { LV_EDIT = null; render_(); };
+  if (q('#lvEdPreview')) q('#lvEdPreview').onclick = function () {
+    const up = lvEditorUpload_();
+    LV_EDIT.draft = up;
+    payPost_('previewleave', up).then(function (res) {
+      if (!res.success) { document.getElementById('msgRoot').innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+      document.getElementById('msgRoot').innerHTML = '';
+      LV_EDIT.preview = (res.preview || [])[0] || { charged: 0, compUsed: 0, clUsed: 0, unpaidLeave: 0, vacUnpaid: 0, paidDays: M.daysInMonth, notes: ['nothing entered \u2014 a full month'] };
+      render_();
+    }).catch(function (e) { document.getElementById('msgRoot').innerHTML = '<div class="err">' + esc_(e.message) + '</div>'; });
+  };
+  if (q('#lvEdSave')) q('#lvEdSave').onclick = function () {
+    const up = lvEditorUpload_(), r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+    LV_EDIT = null;
+    post_('uploadleave', up, 'Saving leave…', 'Saved leave for ' + r.name + ' and set their paid days.');
+  };
+  if (q('#lvEdClear')) q('#lvEdClear').onclick = function () {
+    const r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+    if (!confirm('Clear ' + r.name + '\u2019s leave record for ' + monthLabel_(M.month) + '? They go back to a full month.')) return;
+    LV_EDIT = null;
+    post_('uploadleave', { month: M.month, vacDays: {}, rows: [{ code: r.code, counts: {} }] }, 'Clearing…', 'Cleared ' + r.name + '\u2019s leave record.');
+  };
+  if (q('#lvEdDirect')) q('#lvEdDirect').onclick = function () {
+    const r = M.rows.find(function (x) { return x.code === LV_EDIT.code; });
+    LV_EDIT = null;
+    post_('saveinputs', { rows: [inputFor_(r, { paidDays: q('#lvEdPaid').value, clDays: q('#lvEdCld').value })] }, 'Saving…', 'Saved paid days for ' + r.name + '.');
   };
   document.querySelectorAll('[data-clear]').forEach(function (b) {
     b.onclick = function () { const r = M.rows.find(function (x) { return x.code === b.dataset.clear; }); post_('saveinputs', { rows: [inputFor_(r, { paidDays: '', clDays: '' })] }, 'Saving…'); };
