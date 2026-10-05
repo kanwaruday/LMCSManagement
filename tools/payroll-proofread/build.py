@@ -40,7 +40,10 @@ data['PayRoll Rates'] = [['HES', 5, 35, 'Y', 'Y'], ['LMS 1', 5, 35, 'Y', 'Y'], [
     ['LMS 4', 5, 35, 'Y', 'Y'], ['LMS 5', 5, 35, 'Y', 'Y'], ['LMS 6', 5, 35, 'N', 'N']]
 if a.sm: data['Salary Master'] = load(a.sm)
 if a.ledger: data['Ledger'] = load(a.ledger, skip_header=False)
-if a.loans: data['Loans'] = load(a.loans, skip_header=False)
+if a.loans:
+    data['Loans'] = load(a.loans, skip_header=False)
+    # the 1-Oct import file has 11 columns (no 'Tally Ledger Name'); the tab now has 12, so insert a blank before 'Added By'
+    data['Loans'] = [r[:9] + [None] + r[9:] if len(r) == 11 else r for r in data['Loans']]
 banner = ('DATA STATUS: Salary Master / Ledger / Loans / Rates / Constants were loaded from the 1-Oct-2026 import files (September baseline). Monthly Inputs, '
           'Adjustments and Payroll Register are EMPTY -- paste your live tabs over every input tab before trusting a number (see Read Me).')
 meta = B.build(a.out, data, dt.date(Y, M, 1), banner)

@@ -187,7 +187,7 @@ LG = lambda acct: 'SUMIFS(%s,%s,{code},%s,"%s",%s,"<"&MS)' % (rng('Ledger', 'F')
 col('months', 'Months of service', W('IF({doj}>ME,0,DATEDIF({doj},ME,"m"))'), 'calc', '0', 'Complete months from joining to month end.', 'Date of Joining', 'payMonthsBetween_', 9)
 col('openRrf', 'RRF balance at start of month', W(LG('RRF')), 'input', '#,##0', 'Sum of RRF ledger entries dated before this month.', 'Ledger › Amount (col F) where Account = RRF and Month is before this month', 'payLedgerBalances_(ss,\'RRF\',month)', 11, ('Ledger', 'F', 'Amount (RRF rows)'))
 col('rrfTarget', 'RRF target', W('RRF_TGT*{cti}'), 'calc', '#,##0', 'Target months (3) × CTI. Only matters when "RRF Stop At Target" = 1.', 'Settings: RRF Target Months', 'payCalc_: target', 10)
-col('rrfRate', 'RRF rate', W('IF({rrfMem}=1,IF({months}<12,RRF1,IF({months}<24,RRF2,IF(OR({months}<36,AND(RRF_STOP=1,{openRrf}<{rrfTarget})),RRF3,0))),0)'), 'calc', '0%',
+col('rrfRate', 'RRF rate', W('IF({rrfMem}=1,IF({months}<12,RRF_Y1,IF({months}<24,RRF_Y2,IF(OR({months}<36,AND(RRF_STOP=1,{openRrf}<{rrfTarget})),RRF_Y3,0))),0)'), 'calc', '0%',
     '12% in year 1, 9% year 2, 6% year 3; after 36 months 0%, unless "Stop At Target" is on and the balance is below target (then 6%).', 'Settings: RRF Y1/Y2/Y3 %', 'payCalc_: rrfRate', 8)
 col('rrf', 'RRF deduction', W('IF(AND({rrfRate}>0,RRF_STOP=1),MIN(%s,MAX(0,%s)),%s)' % (rnd('{rrfRate}*{cti}'), rnd('{rrfTarget}-{openRrf}'), rnd('{rrfRate}*{cti}'))), 'calc', '#,##0',
     'Rate × CTI; with "Stop At Target" on it is capped at the gap to target.', '', 'payCalc_: rrf', 10)
@@ -349,9 +349,9 @@ def build(path, data, month, banner):
         ('ESI_EE', 'ESI employee %', '=%s/100' % pc('ESI Employee %'), '0.00%', 'PayRoll Constants: "ESI Employee %"', ['ESI Employee %']),
         ('ESI_ER', 'ESI employer %', '=%s/100' % pc('ESI Employer %'), '0.00%', 'PayRoll Constants: "ESI Employer %"', ['ESI Employer %']),
         ('ESI_THR', 'ESI wage threshold', '=' + pc('ESI Threshold'), '#,##0', 'PayRoll Constants: "ESI Threshold"', ['ESI Threshold']),
-        ('RRF1', 'RRF year 1', '=%s/100' % pc('RRF Y1 %'), '0%', 'PayRoll Constants: "RRF Y1 %"', ['RRF Y1 %']),
-        ('RRF2', 'RRF year 2', '=%s/100' % pc('RRF Y2 %'), '0%', 'PayRoll Constants: "RRF Y2 %"', ['RRF Y2 %']),
-        ('RRF3', 'RRF year 3 (and after, if below target)', '=%s/100' % pc('RRF Y3 %'), '0%', 'PayRoll Constants: "RRF Y3 %"', ['RRF Y3 %']),
+        ('RRF_Y1', 'RRF year 1', '=%s/100' % pc('RRF Y1 %'), '0%', 'PayRoll Constants: "RRF Y1 %"', ['RRF Y1 %']),
+        ('RRF_Y2', 'RRF year 2', '=%s/100' % pc('RRF Y2 %'), '0%', 'PayRoll Constants: "RRF Y2 %"', ['RRF Y2 %']),
+        ('RRF_Y3', 'RRF year 3 (and after, if below target)', '=%s/100' % pc('RRF Y3 %'), '0%', 'PayRoll Constants: "RRF Y3 %"', ['RRF Y3 %']),
         ('RRF_TGT', 'RRF target (months of CTI)', '=' + pc('RRF Target Months', 3), '0', 'PayRoll Constants: "RRF Target Months" (3 if the row is absent -- the backend adds it)', ['RRF Target Months']),
         ('RRF_STOP', 'RRF Stop At Target (1 = on)', '=IF(%s=1,1,0)' % pc('RRF Stop At Target (1=Yes)', 0), '0', 'PayRoll Constants: "RRF Stop At Target (1=Yes)" (only exactly 1 counts)', ['RRF Stop At Target (1=Yes)']),
         ('GRAT', 'Gratuity provision %', '=%s/100' % pc('Gratuity Provision %', 5), '0.0%', 'PayRoll Constants: "Gratuity Provision %"', ['Gratuity Provision %']),
@@ -522,6 +522,9 @@ def build(path, data, month, banner):
         f = fill(cd['formula'], FIRST) if cd['formula'] else '(typed)'
         for j, v in enumerate([i, cd['header'], LET[cd['key']], cd['desc'], cd['src'], cd['code'], f], 1):
             cc = guide.cell(3 + i, j, v)
+            if j == 7 and isinstance(v, str) and v.startswith('='):
+                cc.data_type = 's'  # literal text -- otherwise Excel evaluates it (#VALUE!)
+                cc.quotePrefix = True
             cc.alignment = Alignment(wrap_text=True, vertical='top')
     for j, w in enumerate([5, 28, 8, 60, 50, 46, 90], 1):
         guide.column_dimensions[L(j)].width = w
@@ -568,5 +571,7 @@ def build(path, data, month, banner):
     ws_help.sheet_properties.tabColor = '1F3864'
     calc.sheet_properties.tabColor = '00B050'
     summ.sheet_properties.tabColor = '00B050'
+    bad = [n for n in wb.defined_names if re.fullmatch(r'[A-Za-z]{1,3}\d+', n) or re.fullmatch(r'[Rr]\d*[Cc]?\d*', n)]
+    assert not bad, 'defined names that Excel reads as cell references: %s' % bad
     wb.save(path)
     return dict(first=FIRST, last=last, letters=LET, keys=KEYS, header_row=HDR_ROW)
