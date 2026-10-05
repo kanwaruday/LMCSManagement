@@ -211,6 +211,7 @@ function doPost(e) {
     if (action === 'addapprovalcomment') return jsonOut_(aprAddComment_(caller, body));
     if (action === 'deleteapprovalcomment') return jsonOut_(aprDeleteComment_(caller, body));
     if (action === 'decideapproval') return jsonOut_(aprDecide_(caller, body));
+    if (action === 'archiveapproval') return jsonOut_(aprArchive_(caller, body));
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
     if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
     if (action === 'hiringrefreshtracker') return jsonOut_(hiringRefreshTracker_(caller));

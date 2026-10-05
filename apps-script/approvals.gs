@@ -169,6 +169,7 @@ function aprRowToObj_(row) {
     requestedBy: String(row[11]), requestedAt: aprISO_(row[12]),
     status: String(row[13]), decidedBy: String(row[14] || ''),
     decidedAt: row[15] ? aprISO_(row[15]) : '', decisionNote: String(row[16] || ''), referredTo: String(row[17] || ''),
+    archived: String(row[18] || '').toUpperCase() === 'TRUE',
   };
 }
 
@@ -438,6 +439,31 @@ function aprReferees_(caller) {
   staff.sort(function (a, b) { return a.name.localeCompare(b.name); });
   cache.put('apr_referees', JSON.stringify(staff), 600);
   return { success: true, staff: staff };
+}
+
+// 2026-10-05, per Uday: archive/unarchive decided requests (Approved/Rejected/
+// Revoked) to keep the main list short. Column 19 "archived" (header self-created),
+// TRUE or blank. Display-only: Hiring/Salary/Payroll read status, never this flag.
+// Decider-only, same campus scoping as aprDecide_. body.ids = [id,...] (max 200),
+// body.archive = true|false.
+function aprArchive_(caller, body) {
+  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to archive approvals' };
+  const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200);
+  if (!ids.length) return { success: false, error: 'Nothing to archive' };
+  const archive = body.archive !== false;
+  const sheet = aprSheet_();
+  const values = sheet.getDataRange().getValues();
+  if (!sheet.getRange(1, 19).getValue()) sheet.getRange(1, 19).setValue('archived');
+  let count = 0;
+  ids.forEach(function (id) {
+    const i = aprFindRowIndex_(values, id);
+    if (i === -1) return;
+    if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) return;
+    if (archive && [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.REVOKED].indexOf(String(values[i][13])) === -1) return; // only decided ones
+    sheet.getRange(i + 1, 19).setValue(archive ? 'TRUE' : '');
+    count++;
+  });
+  return { success: true, count: count };
 }
 
 // Money/HR-sensitive categories never get referred onward.
