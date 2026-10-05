@@ -392,14 +392,15 @@ function aprDecide_(caller, body) {
   sheet.getRange(row, 17).setValue(note);         // decisionNote
   aprNotifyRequester_(values[rowIdx], decision, note, caller);
   let referral = {};
-  // 2026-10-02, per Uday: an Approve can refer the work to up to 4 people.
+  // 2026-10-02, per Uday: any decision can tell up to 4 people (Approvals only).
   // Column 18 "referredTo" (header self-created) is the audit trail.
-  if (decision === APR_STATUS.APPROVED && APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
+  if (APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
     const refs = aprParseReferees_(body.referTo);
     if (refs.length) {
       if (!sheet.getRange(1, 18).getValue()) sheet.getRange(1, 18).setValue('referredTo');
-      sheet.getRange(row, 18).setValue(refs.join(', '));
-      referral = { referred: refs, mailError: aprNotifyReferees_(values[rowIdx], refs, note, caller) };
+      const prior = String(values[rowIdx][17] || '');
+      sheet.getRange(row, 18).setValue((prior ? prior + ' | ' : '') + decision + ': ' + refs.join(', '));
+      referral = { referred: refs, mailError: aprNotifyReferees_(values[rowIdx], refs, note, caller, decision) };
     }
   }
   return Object.assign({ success: true }, referral);
@@ -445,11 +446,18 @@ function aprParseReferees_(raw) {
 }
 // Deliberately NO amount in this email -- the referee needs to know what
 // to do, not what was sanctioned. (The Owner's note is included as written.)
-function aprNotifyReferees_(row, refs, note, caller) {
+const APR_REFER_WORDING = {
+  'Approved': ['Approved -- action needed', 'has been approved and referred to you to take forward.'],
+  'Rejected': ['Rejected -- for your information', 'has been rejected. No action is needed unless the note says otherwise.'],
+  'Info Requested': ['More information requested', 'is on hold: the Owner has asked for more information.'],
+  'Revoked': ['Approval revoked -- please stop', 'was approved earlier but the approval has now been revoked. Please stop or hold any related work.'],
+};
+function aprNotifyReferees_(row, refs, note, caller, decision) {
   try {
     const qty = row[8] !== '' ? ' x ' + row[8] : '';
-    MailApp.sendEmail(refs.join(','), 'Approved -- action needed: ' + row[4],
-      'The following request has been approved and referred to you to take forward.\n\n' +
+    const w = APR_REFER_WORDING[decision];
+    MailApp.sendEmail(refs.join(','), w[0] + ': ' + row[4],
+      'The following request ' + w[1] + '\n\n' +
       'Title: ' + row[4] + '\nCategory: ' + row[2] + '\nSchool: ' + row[1] + '\n' +
       (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
       'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,

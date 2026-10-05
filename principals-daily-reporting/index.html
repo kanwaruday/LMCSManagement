@@ -2439,6 +2439,7 @@ function aprDetailHtml_(res) {
   } else if (res.canDecide && r.status === 'Approved') {
     decideBar = '<div class="apr-decide-bar">' +
       '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Reason for revoking (required)">' +
+      (APR_NO_REFER_CATEGORIES.indexOf(r.category) === -1 ? aprReferHtml_(r.id) : '') +
       '<button type="button" class="revoke" onclick="decideApproval(\'' + r.id + '\',\'Revoked\')">Revoke</button>' +
       '</div>';
   }
@@ -2544,7 +2545,7 @@ function aprReferHtml_(id) {
     '<div id="aprChips-' + id + '">' + aprChipsHtml_(id) + '</div>' +
     '<input type="text" class="apr-decide-note" id="aprRefer-' + id + '" autocomplete="off" oninput="aprSearchReferee(\'' + id + '\')" onfocus="aprSearchReferee(\'' + id + '\')" ' +
     'onkeydown="if(event.key===\'Enter\'){aprAddReferee(\'' + id + '\');event.preventDefault();}" ' +
-    'placeholder="Refer to (optional, up to 4) — start typing a name; they are told to act, without the amount">' +
+    'placeholder="Refer to (optional, up to 4) — start typing a name; they are told what was decided, without the amount">' +
     '<div id="aprReferMenu-' + id + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div>' +
     '</div>';
 }
@@ -2607,7 +2608,7 @@ async function decideApproval(id, decision) {
   }
   if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
   if (res.mailError) alert('Approved and saved, but the email to the referred people failed: ' + res.mailError);
-  else if (res.referred && res.referred.length) alert('Approved. Email sent to ' + res.referred.join(', ') + '.');
+  else if (res.referred && res.referred.length) alert(decision + ': email sent to ' + res.referred.join(', ') + '.');
   aprExpandedId = null;
   aprExpandedDetail = null;
   refreshApprovals();
