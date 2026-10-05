@@ -498,4 +498,19 @@ module.exports = function run(t) {
     assert.ok(issues.some((x) => x.code === code && /same Effective From/.test(x.text)), 'identical Effective From is flagged');
     sm.pop();
   });
+
+  t.test('data quality: a text date is flagged with how the portal reads it; real dates and blanks are not', () => {
+    const code = 'OWL/22/07/054';
+    const sm = h.books['1sal'].tabs['Salary Master'].values, hd = sm[0];
+    const row = sm.find((r) => r[0] === code), ci = hd.indexOf('Last Working Day'), di = hd.indexOf('Date of Joining');
+    const keep = [row[ci], row[di]];
+    const texts = () => call('dataquality', { month: '2030-01' }).issues.filter((x) => x.code === code && /is text, not a date/.test(x.text));
+    assert.equal(texts().length, 0);
+    row[ci] = '05/09/2031'; row[di] = '13/09/2020';
+    const got = texts();
+    assert.equal(got.length, 2);
+    assert.ok(got.some((x) => /Last Working Day "05\/09\/2031".*05 May 2031|09 May 2031/.test(x.text)), got.map((x) => x.text).join(' | '));
+    assert.ok(got.some((x) => /Date of Joining "13\/09\/2020".*cannot read/.test(x.text)));
+    row[ci] = keep[0]; row[di] = keep[1];
+  });
 };

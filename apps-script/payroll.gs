@@ -1873,6 +1873,18 @@ function payDataQuality_(ss, month) {
       flag(code, name, entity, 'No ESI number on file (wages ₹' + wages[code] + ' are at/under the ESI threshold)');
     }
   });
+  // Text dates: a real date cell is fine in any display format, but TEXT such as 05/09/2026 is read as
+  // month/day (9 May) and 13/09/2026 is rejected, so the row is mis-dated or skipped without warning.
+  payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
+    const code = String(r['Employee Code'] || '').trim();
+    if (!code) return;
+    ['Effective From', 'Date of Joining', 'Last Working Day'].forEach(function (col) {
+      const v = r[col];
+      if (v === '' || v === null || v === undefined || Object.prototype.toString.call(v) === '[object Date]') return;
+      const as = payDate_(v);
+      flag(code, r['Name'], r['Entity'], col + ' "' + v + '" is text, not a date -- ' + (as ? 'the portal reads it as ' + Utilities.formatDate(as, 'Asia/Kolkata', 'dd MMM yyyy') : 'the portal cannot read it, so this row is ignored'));
+    });
+  });
   return { month: month, issues: issues, checked: Object.keys(seen).length };
 }
 
