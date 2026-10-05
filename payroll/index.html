@@ -1302,7 +1302,8 @@ function outputsView_() {
   h += '<div class="note"><b>EPF (one establishment, all schools):</b> ' + epfRows.length + ' members · <b>ESI:</b> ' + esiRows.length + ' employees.' +
     (unlocked.length ? ' <span class="neg">Not locked yet: ' + unlocked.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') + ' — files will be drafts.</span>' : '') + '</div>' +
     '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button>' +
-    ' <button class="btn" id="tallyBtn">⬇ Tally journal (.xml)</button></div>';
+    ' <button class="btn" id="tallyBtn">⬇ Tally journal (.xml)</button>' +
+    ' <button class="btn" id="epfRepBtn">⬇ EPF report (.xlsx)</button> <button class="btn" id="esiRepBtn">⬇ ESI report, school-wise (.xlsx)</button></div>';
   if (SCOPE === 'ALL') {
     h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.map(function (e) {
       const rs = outRows_(e), lt = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
@@ -1483,11 +1484,72 @@ function tally_() {
   }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
 }
 
+
+// Monthly EPF and ESI working reports, laid out like the July 2026 sheets Pawan Sir uses.
+// EPF is ONE combined list across every EPF school (one establishment) plus a per-school summary;
+// ESI is school-wise, one tab per school that has ESI-covered staff. Figures are the locked/draft
+// register as shown -- same numbers as the ECR / ESIC files.
+function epfReport_() {
+  loadExcelJs_().then(function () {
+    const es = Object.keys(ENTITY_LABEL).filter(function (e) { return OUT.rows.some(function (r) { return r.entity === e && r.epf > 0; }); });
+    const wb = new ExcelJS.Workbook(), mon = monthLabel_(M.month);
+    const rowOf = function (r) { return [r.name.trim().toUpperCase() + ' ', r.paidDays, r.gross, Math.min(r.basic + r.ada + r.da, OUT.settings.epfCeiling), r.epf]; };
+    const master = wb.addWorksheet('EPF ' + M.month);
+    master.addRow(['', 'Regular']); master.addRow(['S.No', 'S.No', 'Name', 'Present', 'Gr Sal', 'EPF SAL', 'EPF']).font = { bold: true };
+    let n = 0; const sums = {};
+    es.forEach(function (e) {
+      const rs = outRows_(e).filter(function (r) { return r.epf > 0; });
+      const t = sums[e] = [0, 0, 0];
+      rs.forEach(function (r, i) { const v = rowOf(r); master.addRow([++n, i + 1].concat(v)); t[0] += v[2]; t[1] += v[3]; t[2] += v[4]; });
+      const sh = wb.addWorksheet(ENTITY_LABEL[e]);
+      sh.addRow(['Regular']); sh.addRow(['S.No', 'Name', 'Present', 'Gr Sal', 'EPF SAL', 'EPF']).font = { bold: true };
+      rs.forEach(function (r, i) { sh.addRow([i + 1].concat(rowOf(r))); });
+      sh.addRow(['TOTAL', '', '', t[0], t[1], t[2]]).font = { bold: true };
+    });
+    const tot = es.reduce(function (a, e) { return [a[0] + sums[e][0], a[1] + sums[e][1], a[2] + sums[e][2]]; }, [0, 0, 0]);
+    master.addRow(['TOTAL', '', '', '', tot[0], tot[1], tot[2]]).font = { bold: true };
+    master.addRow([]);
+    master.addRow(['', '', '', 'School', 'Gr Sal', 'EPF SAL', 'EPF', 'EPF (employee + employer)']).font = { bold: true };
+    es.forEach(function (e) { master.addRow(['', '', '', ENTITY_LABEL[e], sums[e][0], sums[e][1], sums[e][2], sums[e][2] * 2]); });
+    master.addRow(['', '', '', 'TOTAL', tot[0], tot[1], tot[2], tot[2] * 2]).font = { bold: true };
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      download_('EPF ' + M.month + '.xlsx', new Blob([buf]));
+      document.getElementById('msgRoot').innerHTML = '<div class="ok">EPF report for ' + mon + ': ' + n + ' members across ' + es.length + ' school(s) · EPF ₹' + inr_(tot[2]) + ' (employee) · ₹' + inr_(tot[2] * 2) + ' with employer share.</div>';
+    });
+  });
+}
+function esiReport_() {
+  loadExcelJs_().then(function () {
+    const es = Object.keys(ENTITY_LABEL).filter(function (e) { return OUT.rows.some(function (r) { return r.entity === e && r.esi > 0; }); });
+    if (!es.length) { document.getElementById('msgRoot').innerHTML = '<div class="warn">Nobody is ESI-covered this month, so there is no ESI report.</div>'; return; }
+    const wb = new ExcelJS.Workbook(), mon = new Date(M.month + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'short' });
+    let people = 0, ee = 0, er = 0;
+    es.forEach(function (e) {
+      const sh = wb.addWorksheet(ENTITY_LABEL[e]);
+      sh.addRow(['ESINo', 'Month', 'EmpCode', 'EmpName', 'PresentDays', 'GrossPay', 'ESISalary SAL.', 'EmployeeShare', 'EmployerShare', 'TotalEmployeeEmployerShare']).font = { bold: true };
+      const t = [0, 0, 0, 0, 0];
+      outRows_(e).filter(function (r) { return r.esi > 0; }).forEach(function (r) {
+        const wages = r.basic + r.ada + r.da, k = key_(r);
+        sh.addRow([k.esi || '-', mon, k.uan || '', r.name.trim().toUpperCase() + ' ( ' + (r.designation || '').toUpperCase() + ' )', r.paidDays, r.gross, wages, r.esi, r.esiEmployer, r.esi + r.esiEmployer]);
+        t[0] += r.gross; t[1] += wages; t[2] += r.esi; t[3] += r.esiEmployer; t[4] += r.esi + r.esiEmployer; people++;
+      });
+      sh.addRow(['', '', '', '', '', t[0], t[1], t[2], t[3], t[4]]).font = { bold: true };
+      ee += t[2]; er += t[3];
+    });
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      download_('ESI ' + M.month + ' school-wise.xlsx', new Blob([buf]));
+      document.getElementById('msgRoot').innerHTML = '<div class="ok">ESI report: ' + people + ' employees across ' + es.length + ' school tab(s) · employee ₹' + inr_(ee) + ' · employer ₹' + inr_(er) + '.</div>';
+    });
+  });
+}
+
 function wireOutputs_() {
   const q = function (s) { return document.querySelector(s); };
   if (q('#ecrBtn')) q('#ecrBtn').onclick = ecr_;
   if (q('#esiBtn')) q('#esiBtn').onclick = esiFile_;
   if (q('#tallyBtn')) q('#tallyBtn').onclick = tally_;
+  if (q('#epfRepBtn')) q('#epfRepBtn').onclick = epfReport_;
+  if (q('#esiRepBtn')) q('#esiRepBtn').onclick = esiReport_;
   if (q('#ltPrint')) q('#ltPrint').onclick = letterPrint_;
   if (q('#shPrint')) q('#shPrint').onclick = sheetPrint_;
   if (q('#shXlsx')) q('#shXlsx').onclick = sheetXlsx_;
