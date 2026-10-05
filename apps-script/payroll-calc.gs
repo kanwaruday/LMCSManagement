@@ -9,7 +9,7 @@
 //   Month Basic   = ROUND(Full Basic × Paid Days / Days in Month)
 //   ADA, DA       = ROUND(Month Basic × entity ADA% / DA%)
 //   Wages         = Basic + ADA + DA  (EPF/ESI base; tuition & CL encashment excluded)
-//   EPF           = 12% × MIN(Wages, EPF ceiling) if member AND entity registered;
+//   EPF           = 12% × MIN(Wages, EPF ceiling) if member (or gross < EPF Mandatory Below Gross) AND entity registered;
 //                   employer contribution = the same amount
 //   ESI           = 0.75% employee / 3.25% employer of Wages, if Wages <= threshold
 //                   AND entity registered
@@ -54,7 +54,12 @@ function payCalc_(emp, input, rates, s, ctx) {
   // EPF and ESI are both rounded UP to the next rupee (Uday, confirmed with Pawan Sir 2026-10-01 --
   // overrides the ERP's own normal rounding on EPF, which the September validation had matched).
   const up = function (x) { return Math.ceil(Math.round(x * 1e6) / 1e6); };
-  const epf = emp.epfMember && rates.epfRegistered ? up(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
+  // EPF is compulsory below a gross threshold whatever the Salary Master says (Uday, 2026-10-05): gross
+  // here = wages + tuition + other earnings, i.e. before CL encashment, which itself depends on EPF.
+  // The school must still be EPF-registered. Setting "EPF Mandatory Below Gross" (0 = switched off).
+  const preGross = wages + (Number(emp.tuition) || 0) + (Number(input.otherEarnings) || 0);
+  const epfMandatory = (Number(s.epfMandatoryBelow) || 0) > 0 && preGross < s.epfMandatoryBelow;
+  const epf = (emp.epfMember || epfMandatory) && rates.epfRegistered ? up(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
   // ESI: coverage is decided once per contribution period (Apr-Sep, Oct-Mar) -- someone covered at
   // its start stays covered even if wages cross the threshold mid-period.
   const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : wages <= s.esiThreshold);
@@ -227,6 +232,13 @@ function payrollCalcSelfTest_() {
   // EPF rounds up too (Uday, confirmed with Pawan Sir 2026-10-01) -- 7336 wages,
   // 12% = 880.32, which normal rounding would send to 880, not 881.
   eq(payCalc_(Object.assign({}, emp, { fullBasic: 5240 }), {}, rates, S, ctx).epf, 881, 'EPF rounds up (880.32 -> 881)');
+  // Compulsory EPF below the gross threshold, even for a non-member; not above it; not at an unregistered school.
+  const Sm = Object.assign({}, S, { epfMandatoryBelow: 25000 });
+  const nonMember = Object.assign({}, emp, { epfMember: false });
+  eq(payCalc_(nonMember, {}, rates, Sm, ctx).epf, 1680, 'non-member below 25,000 gross still pays EPF');
+  eq(payCalc_(Object.assign({}, nonMember, { fullBasic: 20000 }), {}, rates, Sm, ctx).epf, 0, 'non-member at/above 25,000 gross pays none');
+  eq(payCalc_(nonMember, {}, rates, S, ctx).epf, 0, 'rule off (0/undefined) -> Salary Master Y/N decides');
+  eq(payCalc_(nonMember, {}, Object.assign({}, rates, { epfRegistered: false }), Sm, ctx).epf, 0, 'unregistered school: never');
   r = payCalc_(emp, { loanRecovery: 5000 }, rates, S, ctx);
   eq(r.loanRecovery, 5000, 'loan recovery'); eq(r.net, 14000 - 1680 - 105 - 1936 - 5000, 'net after recovery');
   r = payCalc_(emp, { loanRecovery: 50000 }, rates, S, ctx);

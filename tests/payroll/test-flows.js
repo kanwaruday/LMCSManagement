@@ -400,4 +400,14 @@ module.exports = function run(t) {
     const bad = call('joinoffer', { month: O, applicantId: 'T-0500', code: 'KUL/28/02/900', doj: '2028-02-03' });
     assert.match(bad.error, /not Owner-approved/);
   });
+
+  t.test('EPF compulsory below the gross limit, whatever the Salary Master says', () => {
+    const code = 'JAY/19/07/014'; // EPF member N, LMS5 (EPF-registered), wages well under 25,000
+    const T = '2028-05', row = () => call('month', { month: T }).rows.find((r) => r.code === code);
+    assert.ok(row().epf > 0, 'non-member below the limit pays EPF');
+    const c = h.books['1d8'].tabs['PayRoll Constants'].values;
+    c.push(['EPF Mandatory Below Gross', 0]); // later row wins
+    assert.equal(row().epf, 0, 'rule switched off -> the Y/N decides again');
+    c.push(['EPF Mandatory Below Gross', 25000]);
+  });
 };

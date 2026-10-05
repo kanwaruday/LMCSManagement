@@ -151,8 +151,10 @@ col('daAmt', 'DA', W(rnd('{basic}*{daPct}')), 'calc', '#,##0', 'ROUND(Month Basi
 col('wages', 'Wages (Basic+ADA+DA)', W('{basic}+{adaAmt}+{daAmt}'), 'calc', '#,##0', 'EPF / ESI wage base. Tuition and CL encashment are NOT part of it.', '', 'payCalc_: wages', 11)
 
 # --- EPF / ESI ---------------------------------------------------------------------------------
-col('epf', 'EPF (employee = employer)', W('IF(AND({epfMem}=1,{epfReg}=1),%s,0)' % up('MIN({wages},EPF_CEIL)*EPF_RATE')), 'calc', '#,##0',
-    '12% of Wages capped at the EPF ceiling, rounded UP. Only EPF members at EPF-registered schools. Employer pays the same amount.', 'Settings: EPF Rate % + PF Rate %, EPF Cap Salary', 'payCalc_: epf = up(min(wages, epfCeiling) × epfRate)', 11)
+col('epfMand', 'EPF compulsory (gross below limit)', W('IF(AND(EPF_MAND>0,{wages}+{tuition}+{adjE}<EPF_MAND),1,0)'), 'calc', '0',
+    '1 when gross before CL encashment (wages + tuition + other earnings) is below "EPF Mandatory Below Gross" (25,000; 0 = rule off): EPF is then deducted even if Salary Master says N.', 'Settings: EPF Mandatory Below Gross', 'payCalc_: epfMandatory', 10)
+col('epf', 'EPF (employee = employer)', W('IF(AND(OR({epfMem}=1,{epfMand}=1),{epfReg}=1),%s,0)' % up('MIN({wages},EPF_CEIL)*EPF_RATE')), 'calc', '#,##0',
+    '12% of Wages capped at the EPF ceiling, rounded UP. EPF members, or anyone whose gross is below the compulsory limit, at EPF-registered schools. Employer pays the same amount.', 'Settings: EPF Rate % + PF Rate %, EPF Cap Salary', 'payCalc_: epf = up(min(wages, epfCeiling) × epfRate)', 11)
 col('esiEffMax', 'ESI: latest Salary Master date on/before period start', W('_xlfn.MAXIFS(%s,%s,{code},%s,"<="&PS)' % (rng('Salary Master', 'V'), rng('Salary Master', 'Y'), rng('Salary Master', 'V'))), 'calc', 'dd-mmm-yyyy',
     'ESI coverage is fixed for the 6-month period (Apr-Sep / Oct-Mar) by the pay in force at its start. This is the Effective From of that row (0 = joined after the period began).', 'Salary Master › Effective From (helper col V)', 'payEsiCovered_', 12)
 col('esiEff', 'ESI: Salary Master date used', W('IF({esiEffMax}=0,_xlfn.MINIFS(%s,%s,{code}),{esiEffMax})' % (rng('Salary Master', 'V'), rng('Salary Master', 'Y'))), 'calc', 'dd-mmm-yyyy',
@@ -342,6 +344,7 @@ def build(path, data, month, banner):
         return 'IF(ISNUMBER(MATCH("%s",%s,0)),%s,%s)' % (name, rng('PayRoll Constants', 'A'), look, default)
     settings = [
         ('EPF_RATE', 'EPF rate (employee = employer)', '=(%s+%s)/100' % (pc('EPF Rate %'), pc('PF Rate %')), '0.00%', 'PayRoll Constants: "EPF Rate %" (8.33, the EPS share) + "PF Rate %" (3.67) = 12%', ['EPF Rate %', 'PF Rate %']),
+        ('EPF_MAND', 'EPF compulsory if gross below (0 = off)', '=' + pc('EPF Mandatory Below Gross', 25000), '#,##0', 'PayRoll Constants: "EPF Mandatory Below Gross" (25,000 if the row is absent -- the backend adds it)', ['EPF Mandatory Below Gross']),
         ('EPF_CEIL', 'EPF wage ceiling', '=' + pc('EPF Cap Salary'), '#,##0', 'PayRoll Constants: "EPF Cap Salary"', ['EPF Cap Salary']),
         ('ESI_EE', 'ESI employee %', '=%s/100' % pc('ESI Employee %'), '0.00%', 'PayRoll Constants: "ESI Employee %"', ['ESI Employee %']),
         ('ESI_ER', 'ESI employer %', '=%s/100' % pc('ESI Employer %'), '0.00%', 'PayRoll Constants: "ESI Employer %"', ['ESI Employer %']),

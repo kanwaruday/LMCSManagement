@@ -114,7 +114,7 @@ const PAY_TABS = {
 
 // Payroll-only settings, appended to PayRoll Constants if missing.
 const PAY_NEW_CONSTANTS = [['RRF Target Months', 3], ['RRF Stop At Target (1=Yes)', 0],
-  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1], ['Annual Increment %', 3],
+  ['Gratuity Provision %', 5], ['CL Encashment Divisor', 30], ['CL Accrual Per Month', 1], ['Annual Increment %', 3], ['EPF Mandatory Below Gross', 25000],
   // Off by default while Payroll is still being tested against the ERP (2026-10-01, per
   // Uday) -- an annual increment only touches Payroll's own Salary Master until this is
   // flipped to 1, so the live Roster/Staff Master sheet stays untouched during testing.
@@ -341,7 +341,7 @@ function paySettings_(rs) {
     rrfY1: c['RRF Y1 %'] / 100, rrfY2: c['RRF Y2 %'] / 100, rrfY3: c['RRF Y3 %'] / 100,
     rrfTargetMonths: c['RRF Target Months'], rrfStopAtTarget: c['RRF Stop At Target (1=Yes)'] === 1,
     gratRate: c['Gratuity Provision %'] / 100, clDivisor: c['CL Encashment Divisor'], epsRate: c['EPF Rate %'] / 100,
-    clAccrual: c['CL Accrual Per Month'], annualIncrementPct: c['Annual Increment %'],
+    clAccrual: c['CL Accrual Per Month'], annualIncrementPct: c['Annual Increment %'], epfMandatoryBelow: c['EPF Mandatory Below Gross'],
     syncRosterIncrement: c['Sync Roster Increment (1=Yes)'] === 1,
   };
 }

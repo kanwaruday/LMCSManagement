@@ -35,6 +35,8 @@ def fake(seed):
               ['PF Rate %', 3.67], ['ESI Threshold', 21000], ['ESI Employer %', 3.25], ['ESI Employee %', 0.75]]
     if rnd.random() < .7:
         consts += [['RRF Target Months', rnd.choice([3, 2])], ['RRF Stop At Target (1=Yes)', rnd.choice([0, 1])]]
+    if rnd.random() < .75:
+        consts += [['EPF Mandatory Below Gross', rnd.choice([25000, 0, 18000])]]
     if rnd.random() < .7:
         consts += [['Gratuity Provision %', 5], ['CL Encashment Divisor', rnd.choice([30, 26])]]
     rates = [[e, rnd.choice([5, 10]), rnd.choice([25, 35]), 'N' if e == 'LMS 6' else 'Y', 'N' if e in ('LMS 6', 'HES') and rnd.random() < .6 else 'Y'] for e in ENT]
