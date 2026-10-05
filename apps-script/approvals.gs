@@ -458,15 +458,17 @@ function aprParseReferees_(raw) {
 // happened / what to do, not what was sanctioned. (The Owner's note is
 // included as written.)
 const APR_REFER_WHAT = {
-  'Approved': 'has been approved.',
-  'Rejected': 'has been rejected.',
-  'Info Requested': 'is on hold: the Owner has asked for more information.',
-  'Revoked': 'was approved earlier, but the approval has now been revoked.',
+  'Approved': 'has been approved by Management.',
+  'Rejected': 'has not been approved by Management at this time.',
+  'Info Requested': 'is on hold, as Management would like some further information.',
+  'Revoked': 'was approved earlier, but Management has since withdrawn that approval.',
 };
+const APR_REFER_SUBJECT = { 'Approved': 'Approved', 'Rejected': 'Not approved', 'Info Requested': 'On hold', 'Revoked': 'Approval withdrawn' };
+const APR_REFER_TAGS = { action: 'Action requested', accountability: 'For follow-up', information: 'For your information' };
 const APR_REFER_ASK = {
-  action: 'ACTION NEEDED from you: please carry out whatever this decision requires (if it was rejected, put on hold or revoked, that means stopping or holding the related work).',
-  accountability: 'You are ACCOUNTABLE for this: please make sure it is carried out as decided and be ready to confirm to the Owner that it was.',
-  information: 'For your information only -- no action is needed from you.',
+  action: 'You are kindly requested to take this forward and carry out what the decision involves. Please do reach out if you need any support.',
+  accountability: 'You are requested to follow up on this task and report back to Management on its completion.',
+  information: 'We are sharing this for your information. No action is needed from you.',
 };
 // One email per non-empty group, each with its own message. Returns '' or an error string.
 function aprNotifyReferees_(row, groups, note, caller, decision) {
@@ -475,11 +477,12 @@ function aprNotifyReferees_(row, groups, note, caller, decision) {
   APR_REFER_KINDS.forEach(function (k) {
     if (!groups[k].length) return;
     try {
-      MailApp.sendEmail(groups[k].join(','), '[' + APR_REFER_LABELS[k] + '] ' + decision + ': ' + row[4],
-        APR_REFER_ASK[k] + '\n\nThe following request ' + APR_REFER_WHAT[decision] + '\n\n' +
+      MailApp.sendEmail(groups[k].join(','), '[' + APR_REFER_TAGS[k] + '] ' + APR_REFER_SUBJECT[decision] + ': ' + row[4],
+        'Dear Colleague,\n\n' + APR_REFER_ASK[k] + '\n\nThe following request ' + APR_REFER_WHAT[decision] + '\n\n' +
         'Title: ' + row[4] + '\nCategory: ' + row[2] + '\nSchool: ' + row[1] + '\n' +
         (row[7] ? 'Item: ' + row[7] + qty + '\n' : '') +
-        'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nOwner\u2019s note: ' + note,
+        'Details: ' + row[5] + '\nRequested by: ' + row[11] + '\n\nNote from Management: ' + note +
+        '\n\nWith thanks,\nLMCS Management',
         { replyTo: caller.email });
     } catch (err) { errors.push(APR_REFER_LABELS[k] + ': ' + String(err.message || err)); } // surfaced, not swallowed
   });
