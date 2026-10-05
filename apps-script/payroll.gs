@@ -469,7 +469,8 @@ function payMonth_(ss, month) {
     const e = erp[r.code];
     r.erpNet = e ? e.net : null;
     r.erpCti = e ? e.cti : null;
-    r.prevNet = r.code in prev ? prev[r.code] : null;
+    r.prevNet = r.code in prev ? prev[r.code].net : null;
+    r.prevCti = r.code in prev ? prev[r.code].cti : null;
     // Only a suggestion for the downloaded template -- never overrides an
     // actual upload already on file for this month (r.leave).
     if (!r.leave && prevLeave[r.code]) r.leaveCarryOpening = prevLeave[r.code];
@@ -507,13 +508,14 @@ function payPrevLeaveClosing_(ss, month, clAccrual) {
   return out;
 }
 
-// code -> net for the previous month: locked schools from the Register,
-// the rest recomputed (so month-on-month works before anything is locked).
+// code -> {net, cti} for the previous month: locked schools from the Register,
+// the rest recomputed (so month-on-month works before anything is locked). Both figures always
+// travel together: Net Pay is what the employee receives, CTI is what the employer bears.
 function payPrevNets_(ss, month) {
   const out = {};
   const locks = payLocks_(ss, month);
-  payCompute_(ss, month).rows.forEach(function (r) { if (!locks[r.entity]) out[r.code] = r.net; });
-  payForMonth_(ss, 'Payroll Register', month).forEach(function (r) { out[String(r['Employee Code'])] = payNum_(r['Net Pay']); });
+  payCompute_(ss, month).rows.forEach(function (r) { if (!locks[r.entity]) out[r.code] = { net: r.net, cti: r.cti }; });
+  payForMonth_(ss, 'Payroll Register', month).forEach(function (r) { out[String(r['Employee Code'])] = { net: payNum_(r['Net Pay']), cti: payNum_(r['CTI']) }; });
   return out;
 }
 

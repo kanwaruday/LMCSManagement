@@ -93,6 +93,7 @@ module.exports = function run(t) {
     let ob = o.rows.find((r) => r.code === B.code);
     assert.equal(ob.heldBalance, b.withheld);
     assert.equal(ob.prevNet, b.net, 'prev month net read from the register, not recomputed');
+    assert.equal(ob.prevCti, b.cti, 'prev month CTI travels with it');
     const bad = call('saveinputs', { month: O, rows: [{ code: B.code, release: b.withheld + 1 }] });
     assert.match(bad.error, /not valid/);
     o = call('saveinputs', { month: O, rows: [{ code: B.code, release: b.withheld }] });

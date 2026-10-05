@@ -687,22 +687,27 @@ function holdsPanel_() {
 
 // ⑤ Review -- warnings, month-on-month changes, ERP comparison, full register.
 function bigChanges_() {
-  return scopeRows_().filter(function (r) { return r.prevNet && Math.abs(r.net - r.prevNet) / r.prevNet > 0.10; });
+  // Net Pay (the employee's side) AND CTI (the employer's side) are always watched together.
+  return scopeRows_().filter(function (r) {
+    return (r.prevNet && Math.abs(r.net - r.prevNet) / r.prevNet > 0.10) || (r.prevCti && Math.abs(r.cti - r.prevCti) / r.prevCti > 0.10);
+  });
 }
 function reviewPanel_() {
   const w = M.warnings.filter(function (x) { return SCOPE === 'ALL' || !x.entity || x.entity === SCOPE; });
   let h = '<h2>⑤ Review <span class="grow"></span>' + tick_('review') + '</h2>';
   if (w.length) h += '<div class="warn"><b>' + w.length + ' warning(s) — fix before locking:</b><br>' + w.map(function (x) { return esc_(x.text); }).join('<br>') + '</div>';
   const big = bigChanges_();
-  h += '<h2 style="font-size:12px">Net pay changed more than 10% vs last month (' + big.length + ')</h2>';
-  h += big.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Last month</th><th>This month</th><th>Change</th><th class="l">Why</th></tr>' + big.map(function (r) {
+  h += '<h2 style="font-size:12px">Net pay or CTI changed more than 10% vs last month (' + big.length + ')</h2>';
+  h += big.length ? '<div class="wrap"><table><tr><th class="l">Employee</th><th class="l">School</th><th>Net last month</th><th>Net this month</th><th>Net change</th><th>CTI last month</th><th>CTI this month</th><th>CTI change</th><th class="l">Why</th></tr>' + big.map(function (r) {
     const why = [];
     if (r.paidDays !== M.daysInMonth) why.push(r.paidDays + ' paid days');
     r.adjustments.forEach(function (a) { why.push(a.type + ' ₹' + inr_(a.amount)); });
     if (r.heldForFnF || r.withheld) why.push('held');
     if (r.released) why.push('released earlier hold');
     return '<tr><td class="l">' + esc_(r.code + ' — ' + r.name) + '</td><td class="l">' + ENTITY_LABEL[r.entity] + '</td><td>' + inr_(r.prevNet) + '</td><td>' + inr_(r.net) +
-      '</td><td class="' + cls_(r.net - r.prevNet) + '">' + inr_(r.net - r.prevNet) + '</td><td class="l">' + esc_(why.join(', ') || '—') + '</td></tr>';
+      '</td><td class="' + cls_(r.net - r.prevNet) + '">' + inr_(r.net - r.prevNet) + incPct_(r.prevNet, r.net) + '</td>' +
+      '<td>' + inr_(r.prevCti) + '</td><td>' + inr_(r.cti) + '</td><td class="' + cls_(r.cti - r.prevCti) + '">' + inr_(r.cti - r.prevCti) + incPct_(r.prevCti, r.cti) + '</td>' +
+      '<td class="l">' + esc_(why.join(', ') || '—') + '</td></tr>';
   }).join('') + '</table></div>' : '<div class="muted" style="margin-bottom:8px">' + (scopeRows_().some(function (r) { return r.prevNet != null; }) ? 'None.' : 'No previous month to compare with yet.') + '</div>';
 
   const hasErp = scopeRows_().some(function (r) { return r.erpNet != null; });
