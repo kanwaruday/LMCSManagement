@@ -20,6 +20,7 @@ function makeSheet(values, name, counter) {
   const s = {
     values,
     getName: () => name,
+    getSheetId: () => (name === 'Form Responses 1' ? 1181288827 : 0),
     getDataRange: () => ({
       getValues: () => { counter.read++; return values.map(pad); },
       getDisplayValues: () => { counter.read++; return values.map((r) => pad(r).map((v) => String(v))); },
@@ -116,4 +117,4 @@ function boot(fixture) {
   return { ctx, call, books, counter, run: (code) => vm.runInContext(code, ctx) };
 }
 
-module.exports = { boot, makeSheet };
+module.exports = { boot, makeSheet, makeBook };

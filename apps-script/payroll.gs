@@ -974,6 +974,31 @@ function payApprovalStatus_() {
   return out;
 }
 
+
+// ── Hiring Dashboard hand-off (2026-10-05, per Uday) ───────────────────
+// The Principal enters the Date of Joining in the Hiring Dashboard (Teaching Applicants workbook,
+// column Q, text yyyy-MM-dd; the locked employee code is column P; row = digits of the applicant id,
+// T-0943 -> row 943). Payroll reads it from there instead of asking again. Returns
+// {ok: false} when that sheet can't be read (callers then fall back to the typed date) and
+// {ok: true, doj: '' | 'yyyy-MM-dd', code} otherwise.
+const PAY_HIRING_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants"
+const PAY_HIRING_SHEET_GID = 1181288827;
+function payHiringInfo_(id) {
+  try {
+    const row = Number(String(id).replace(/\D/g, ''));
+    if (!row) return { ok: false };
+    const book = payOpenById_(PAY_HIRING_SHEET_ID);
+    const sh = book.getSheetByName('Form Responses 1') || null;
+    let sheet = sh;
+    if (!sheet && book.getSheets) sheet = book.getSheets().filter(function (x) { return x.getSheetId() === PAY_HIRING_SHEET_GID; })[0];
+    if (!sheet) return { ok: false };
+    const v = sheet.getRange(row, 16, 1, 2).getValues()[0];
+    const d = v[1];
+    const doj = d instanceof Date ? payIso_(d) : (/^\d{4}-\d{2}-\d{2}/.test(String(d)) ? String(d).slice(0, 10) : '');
+    return { ok: true, doj: doj, code: String(v[0] || '').trim() };
+  } catch (e) { return { ok: false }; }
+}
+
 function payOfferApproved_(status) { return /^approved$/i.test(String(status || '').trim()); }
 
 function payStaffChanges_(ss, month) {
@@ -998,7 +1023,7 @@ function payStaffChanges_(ss, month) {
       return { id: id, name: String(o['Name'] || ''), entity: payEntity_(o['Entity']), designation: String(o['Designation'] || ''),
         subjects: String(o['Subjects'] || ''), fullBasic: payNum_(o['Full Basic']), epf: payYes_(o['EPF Member (Y/N)']),
         tuition: payNum_(o['Staff-Child Tuition']), cti: payNum_(o['CTI']), recordedBy: String(o['Recorded By'] || ''),
-        recordedAt: payStamp_(o['Recorded At']), approval: approvals[id] || 'Not submitted' };
+        recordedAt: payStamp_(o['Recorded At']), approval: approvals[id] || 'Not submitted', hiring: payHiringInfo_(id) };
     })
     // Only Owner-approved offers are actionable here (2026-10-03, per Uday): the list has a live
     // "Joined" button, so Pending / Rejected / Not-submitted offers must not appear at all.
@@ -1100,6 +1125,13 @@ function payJoinOffer_(ss, d, caller) {
     return String(x['Applicant ID']).trim() === d.applicantId && /^offered/i.test(String(x['Status (Offered/Joined/Dismissed)'] || 'Offered'));
   })[0];
   if (!o) throw new Error('Open offer not found: ' + d.applicantId);
+  // The joining date comes from the Hiring Dashboard when that sheet is readable (it is authoritative);
+  // a missing date there blocks Joined, an unreadable sheet falls back to the date typed on the page.
+  const hiring = payHiringInfo_(d.applicantId);
+  if (hiring.ok) {
+    if (!hiring.doj) throw new Error(d.applicantId + ': the Principal has not entered the Date of Joining in the Hiring Dashboard yet');
+    d.doj = hiring.doj;
+  }
   const approval = payApprovalStatus_()[d.applicantId];
   if (!payOfferApproved_(approval)) throw new Error(d.applicantId + ' is not Owner-approved (status: ' + (approval || 'Not submitted') + ') -- it cannot be joined');
   payNewMasterRow_(ss, { code: d.code, name: o['Name'], entity: o['Entity'], designation: o['Designation'], doj: d.doj, fullBasic: payNum_(o['Full Basic']),

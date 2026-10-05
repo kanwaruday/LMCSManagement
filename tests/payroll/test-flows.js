@@ -4,7 +4,7 @@
 // and fixture codes/entities in place of the real Sep-2026 names.
 'use strict';
 const assert = require('assert');
-const { boot, makeSheet } = require('./harness');
+const { boot, makeSheet, makeBook } = require('./harness');
 const { buildFixture } = require('./fixtures');
 
 module.exports = function run(t) {
@@ -410,5 +410,27 @@ module.exports = function run(t) {
     c.push(['EPF Mandatory Below Gross', 0]); // later row wins
     assert.equal(row().epf, 0, 'rule switched off -> the Y/N decides again');
     c.push(['EPF Mandatory Below Gross', 25000]);
+  });
+
+  t.test('joining date comes from the Hiring Dashboard, and Joined waits for it', () => {
+    const O = '2028-03', ap = h.books['1Tr'].tabs.Approvals.values;
+    ap.push(['9', '', 'Salary Offer Approval', '', '', '', '', 'T-0600 — Hiring Person', '', '', '', '', '', 'Approved']);
+    const r = call('recordoffer', { applicantId: 'T-0600', name: 'Hiring Person', entity: 'LMS1', designation: 'PRT', fullBasic: 10000, epf: true, tuition: 0, cti: 15000, netY1: 12000 }, 'principal-token');
+    assert.equal(r.success, true, r.error);
+    // Teaching Applicants workbook: row 600, column P = locked code, column Q = Date of Joining (text yyyy-MM-dd).
+    const rows = [];
+    rows[599] = [];
+    rows[599][15] = 'KUL/28/03/900';
+    h.books['1aS'] = makeBook({ 'Form Responses 1': makeSheet(rows, 'Form Responses 1', h.counter) }, h.counter);
+    call('recordoffer', { applicantId: 'T-0600', name: 'Hiring Person', entity: 'LMS1', designation: 'PRT', fullBasic: 10001, epf: true, tuition: 0, cti: 15000, netY1: 12000 }, 'principal-token'); // bumps the staff cache
+    let offer = call('month', { month: O }).staff.offers.find((x) => x.id === 'T-0600');
+    assert.deepEqual(offer.hiring, { ok: true, doj: '', code: 'KUL/28/03/900' }, 'read from the hiring sheet, no date yet');
+    const early = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' });
+    assert.match(early.error, /has not entered the Date of Joining/);
+    rows[599][16] = '2028-03-04';
+    const ok = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' }); // typed date is ignored
+    assert.equal(ok.success, true, ok.error);
+    const row = ok.rows.find((x) => x.code === 'KUL/28/03/900');
+    assert.equal(row.paidDays, 28, 'prorated from 4 March (28 of 31 days), not from the typed 20th');
   });
 };

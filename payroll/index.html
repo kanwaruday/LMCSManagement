@@ -402,7 +402,7 @@ function staffPanel_() {
   const school = function (e) { return ENTITY_LABEL[e] || e; };
 
   h += sec('Offers awaiting joining', offers.length);
-  h += offers.length ? '<div class="note">Recorded with “Record as Salary Offer” in the Offer Calculator. When the person joins, enter their joining date (and who they report to / what they\'ll teach, if known) and click Joined — their employee code is generated here, and the first month is prorated from the joining date.</div>' +
+  h += offers.length ? '<div class="note">Recorded with “Record as Salary Offer” in the Offer Calculator. When the person joins, the joining date is the one the Principal entered in the Hiring Dashboard (add who they report to / what they\'ll teach, if known) and click Joined — their employee code is generated here, and the first month is prorated from the joining date.</div>' +
     '<div class="wrap"><table><tr><th class="l">Applicant</th><th class="l">School</th><th class="l">Designation</th><th>Full basic</th><th>CTI</th><th class="l">Owner approval</th><th class="l">Reports to</th><th class="l">Class / Subjects</th><th class="l">Joined on</th><th></th></tr>' +
     offers.map(function (o) {
       // A few offers may still have a code from before this was folded in here
@@ -410,13 +410,18 @@ function staffPanel_() {
       // generating a new code and just join them with the one they already have.
       const m = nop.filter(function (x) { return x.offerId === o.id; })[0] || {};
       const cid = 'jn' + o.id.replace(/[^A-Za-z0-9]/g, '');
+      // Joining date: entered once, in the Hiring Dashboard. Only if that sheet can't be read do we ask here.
+      const hi = o.hiring || {}, waiting = hi.ok && !hi.doj;
+      const dojCell = hi.ok && hi.doj ? '<b>' + esc_(hi.doj.split('-').reverse().join('-')) + '</b><div class="muted">from the Hiring Dashboard</div><input type="hidden" data-joindoj="' + esc_(o.id) + '" value="' + esc_(hi.doj) + '">' :
+        waiting ? '<span class="neg">Waiting — the Principal has not entered the Date of Joining in the Hiring Dashboard yet</span><input type="hidden" data-joindoj="' + esc_(o.id) + '" value="">' :
+        '<input type="date" data-joindoj="' + esc_(o.id) + '" value="' + esc_(m.doj || '') + '">';
       return '<tr><td class="l">' + esc_(o.id + ' — ' + o.name) + '<div class="muted">' + esc_(o.recordedBy + ' · ' + o.recordedAt) + '</div></td><td class="l">' + school(o.entity) + '</td><td class="l">' + esc_(o.designation) +
         '</td><td>' + inr_(o.fullBasic) + '</td><td>' + inr_(o.cti) + '</td><td class="l ' + (o.approval === 'Approved' ? 'pos' : '') + '">' + esc_(o.approval) +
         (m.code ? '</td><td class="l" colspan="2">Already in the Employee Master as <b>' + esc_(m.code) + '</b> — click Joined to add to payroll' :
           '</td><td class="l"><input list="reportsToList" data-reportsto="' + esc_(o.id) + '" placeholder="Search by name…" style="width:160px"></td>' +
           '<td class="l"><div id="' + cid + 'CsRows"></div><button class="mini-btn" type="button" onclick="addCsRow_(\'' + cid + '\')">+ class/subject</button>') +
-        '</td><td class="l"><input type="date" data-joindoj="' + esc_(o.id) + '" value="' + esc_(m.doj || '') + '"></td>' +
-        '<td><button class="btn" data-join="' + esc_(o.id) + '" data-joincid="' + cid + '" data-existingcode="' + esc_(m.code || '') + '">Joined</button> <button class="x-btn" data-dismiss="' + esc_(o.id) + '" title="Dismiss offer">✕</button></td></tr>';
+        '</td><td class="l">' + dojCell + '</td>' +
+        '<td><button class="btn" data-join="' + esc_(o.id) + '" data-joincid="' + cid + '" data-existingcode="' + esc_(m.code || '') + '"' + (waiting ? ' disabled title="Waiting for the Date of Joining in the Hiring Dashboard"' : '') + '>Joined</button> <button class="x-btn" data-dismiss="' + esc_(o.id) + '" title="Dismiss offer">✕</button></td></tr>';
     }).join('') + '</table></div>' : '<div class="muted">None.</div>';
 
   h += sec('In the Staff Portal but not on payroll', nop.length);
