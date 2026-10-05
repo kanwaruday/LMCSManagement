@@ -483,4 +483,19 @@ module.exports = function run(t) {
     assert.equal(call('undoincrement', { month: '2029-11', runId: third.runId }).success, true);
     assert.match(call('undoincrement', { month: '2029-11', runId: 'bogus' }).error, /no id/);
   });
+
+  t.test('data quality: an increment/raise row is not a duplicate; same Effective From is', () => {
+    const code = 'OWL/22/07/054';
+    const had = call('dataquality', { month: '2030-01' }).issues.some((x) => x.code === code && /same Effective From|more than once/.test(x.text));
+    assert.equal(had, false);
+    call('applyincrement', { month: '2030-01', codes: [code] }); // second Salary Master row for this code
+    let issues = call('dataquality', { month: '2030-01' }).issues;
+    assert.ok(!issues.some((x) => x.code === code && /same Effective From|more than once/.test(x.text)), 'a newer row for the same code is normal');
+    const sm = h.books['1sal'].tabs['Salary Master'].values, hd = sm[0];
+    const row = sm.filter((r) => r[0] === code).pop();
+    sm.push(row.slice()); // a true duplicate: identical Effective From
+    issues = call('dataquality', { month: '2030-01' }).issues;
+    assert.ok(issues.some((x) => x.code === code && /same Effective From/.test(x.text)), 'identical Effective From is flagged');
+    sm.pop();
+  });
 };

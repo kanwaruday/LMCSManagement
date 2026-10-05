@@ -1837,14 +1837,24 @@ function payDataQuality_(ss, month) {
   computed.rows.forEach(function (row) { wages[row.code] = row.wages; });
   const seen = {}, issues = [];
   const flag = function (code, name, entity, text) { issues.push({ code: code, name: name, entity: entity, text: text }); };
+  // One row per person: the latest Salary Master row in force this month (a raise, increment or transfer adds
+  // a newer row for the same code -- that is normal, not a duplicate). Only two rows sharing the SAME
+  // Effective From are a real duplicate.
+  const inForce = {};
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
     const code = String(r['Employee Code'] || '').trim();
     if (!code) return;
     const eff = payDate_(r['Effective From']);
     if (!eff || eff > ctx.monthEnd) return;
+    const cur = inForce[code];
+    if (!cur || eff > cur.eff) inForce[code] = { eff: eff, row: r, dup: false };
+    else if (eff.getTime() === cur.eff.getTime()) cur.dup = true;
+  });
+  Object.keys(inForce).forEach(function (code) {
+    const r = inForce[code].row;
     const lwd = payDate_(r['Last Working Day']);
     if (lwd ? lwd < ctx.start : /^left/i.test(String(r['Status (Active/Left)'] || ''))) return;
-    if (seen[code]) { flag(code, r['Name'], r['Entity'], 'Employee Code appears more than once in Salary Master'); return; }
+    if (inForce[code].dup) flag(code, r['Name'], r['Entity'], 'Two Salary Master rows have the same Effective From date');
     seen[code] = true;
     const name = String(r['Name'] || ''), entity = String(r['Entity'] || '');
     const k = keys[code];
