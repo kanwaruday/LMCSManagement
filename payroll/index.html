@@ -1063,14 +1063,14 @@ function dataQualityView_() {
 // this run without touching the others; Apply writes a new effective-dated
 // Salary Master row per person, same as a transfer does.
 let INC_TIMES = 1;
-function loadIncrement_() {
+function loadIncrement_(keepMsg) {
   const msg = document.getElementById('msgRoot');
   document.getElementById('loadingPill').classList.add('on');
   return payGet_('incrementpreview', { month: M ? M.month : document.getElementById('fMonth').value, times: INC_TIMES }).then(function (res) {
     document.getElementById('loadingPill').classList.remove('on');
     if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
     INC = res;
-    msg.innerHTML = '';
+    if (!keepMsg) msg.innerHTML = '';
     render_();
   }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
 }
@@ -1084,10 +1084,23 @@ function incPct_(a, b) {
   const p = (b - a) / a * 100;
   return ' <span class="muted">(' + (p >= 0 ? '+' : '') + p.toFixed(1) + '%)</span>';
 }
+// Runs already applied for this month, each with an Undo (removes exactly the Salary Master rows that run wrote).
+function incrementRunsHtml_() {
+  const runs = INC.runs || [];
+  if (!runs.length) return '';
+  return '<div class="note"><b>Increments already applied for ' + monthLabel_(M.month) + '</b>' +
+    '<table style="margin-top:6px"><tr><th class="l">Run</th><th class="l">When / by</th><th>People</th><th class="l">Increment</th><th class="l">Status</th><th></th></tr>' +
+    runs.map(function (r) {
+      const all = r.undone >= r.count;
+      return '<tr><td class="l">' + esc_(r.runId) + '</td><td class="l">' + esc_(r.appliedAt) + ' · ' + esc_(r.appliedBy) + '</td><td>' + r.count + '</td><td class="l">' + r.rate + '%' + (r.times > 1 ? ' x ' + r.times : '') +
+        '</td><td class="l">' + (all ? 'Undone' : r.undone ? r.undone + ' undone' : 'Applied') + '</td><td>' +
+        (all || r.runId === 'earlier' ? '' : '<button class="mini-btn" data-incundo="' + esc_(r.runId) + '">Undo this run</button>') + '</td></tr>';
+    }).join('') + '</table></div>';
+}
 function incrementView_() {
   const timesPicker = '<p>Increments to apply: <input type="number" id="incTimes" min="1" max="12" value="' + INC_TIMES + '" style="width:48px"> <span class="muted">(more than 1 compounds that many years at once -- Owner only)</span></p>';
-  if (!INC.eligible.length) return timesPicker + '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
-  return timesPicker + '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '%' + (INC_TIMES > 1 ? ' x ' + INC_TIMES : '') + ' in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
+  if (!INC.eligible.length) return timesPicker + incrementRunsHtml_() + '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
+  return timesPicker + incrementRunsHtml_() + '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '%' + (INC_TIMES > 1 ? ' x ' + INC_TIMES : '') + ' in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
     '<table class="reg"><tr><th></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th><th>Net Pay</th><th>CTI</th></tr>' +
     INC.eligible.map(function (e) {
       return '<tr><td><input type="checkbox" class="inc-pick" value="' + esc_(e.code) + '" checked></td><td>' + esc_(e.code) + '</td><td>' + esc_(e.name) +
@@ -1293,6 +1306,21 @@ function wireViews_() {
     INC_TIMES = n;
     loadIncrement_();
   };
+  document.querySelectorAll('[data-incundo]').forEach(function (b) {
+    b.onclick = function () {
+      const id = b.dataset.incundo;
+      if (!confirm('Undo run ' + id + '? Its new Salary Master rows are removed and everyone goes back to their previous Basic for ' + monthLabel_(M.month) + ' (the run stays in the Increments tab, marked undone).')) return;
+      const msg = document.getElementById('msgRoot');
+      document.getElementById('loadingPill').classList.add('on');
+      payPost_('undoincrement', { month: M.month, runId: id }).then(function (res) {
+        document.getElementById('loadingPill').classList.remove('on');
+        if (!res.success) { msg.innerHTML = '<div class="err">' + esc_(res.error) + '</div>'; return; }
+        M = res;
+        msg.innerHTML = '<div class="ok">Undone: ' + res.undone + ' employee(s) are back on their previous Basic.' + (res.undoNote ? ' ' + esc_(res.undoNote) : '') + '</div>';
+        loadIncrement_(true);
+      }).catch(function (e) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(e.message) + '</div>'; });
+    };
+  });
   if (q('#incApply')) q('#incApply').onclick = function () {
     const codes = Array.prototype.map.call(document.querySelectorAll('.inc-pick:checked'), function (c) { return c.value; });
     if (!codes.length) { alert('Nothing checked.'); return; }
@@ -1310,8 +1338,8 @@ function wireViews_() {
       else if (rs.success === false) note += ' Roster EmpSalary.Increment count was NOT updated (' + esc_(rs.error) + ') -- bump it there by hand.';
       else if (rs.notFound && rs.notFound.length) note += ' Roster count updated for ' + rs.updated.length + '; not found in EmpSalary: ' + rs.notFound.join(', ') + '.';
       else note += ' Roster EmpSalary.Increment count updated too.';
-      msg.innerHTML = '<div class="' + (rs.success === false ? 'err' : 'ok') + '">' + note + '</div>';
-      loadIncrement_();
+      msg.innerHTML = '<div class="' + (rs.success === false ? 'err' : 'ok') + '">' + note + (res.runId ? ' Run ' + esc_(res.runId) + ' \u2014 you can undo it from the list below.' : '') + '</div>';
+      loadIncrement_(true);
     });
   };
   if (q('#lnAdd')) q('#lnAdd').onclick = function () {

@@ -107,7 +107,10 @@ const PAY_TABS = {
   // Annual increments (2026-10-01, per Uday): flat Annual Increment % on Full
   // Basic, every September, once an employee has completed the RRF cycle
   // (36 months). One row per person per time this was applied.
-  'Increments': ['Month', 'Employee Code', 'Name', 'Entity', 'Old Basic', 'New Basic', 'Rate %', 'Times', 'Applied By', 'Applied At'],
+  // Run ID ties each person's row to the Salary Master rows one Apply wrote (it is also in their Remarks)
+  // so a whole run can be undone; Undone By/At keep the audit trail instead of deleting it (2026-10-05).
+  'Increments': ['Month', 'Employee Code', 'Name', 'Entity', 'Old Basic', 'New Basic', 'Rate %', 'Times', 'Applied By', 'Applied At',
+    'Run ID', 'Roster Synced (Y/N)', 'Undone By', 'Undone At'],
   // 'Leave Records' is added by payEnsureTabs_ at run time -- its headers come from
   // PAY_LEAVE_FIELDS in payroll-calc.gs, which loads AFTER this file.
 };
@@ -179,6 +182,7 @@ function payHandle_(action, idToken, data) {
       applytransfer: function (ss) { payApplyTransfer_(ss, data, caller) },
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
       applyincrement: function (ss) { extra = payApplyIncrement_(ss, data, caller, idToken); },
+      undoincrement: function (ss) { extra = payUndoIncrement_(ss, data, caller); },
       issueloan: function (ss) { payIssueLoan_(ss, data, caller); },
       settlefnf: function (ss) { paySettleFnf_(ss, data, caller); },
       issueletter: function (ss) { payIssueLetter_(ss, data, caller); },
@@ -189,7 +193,7 @@ function payHandle_(action, idToken, data) {
     else if (action === 'accounts') result = payAccounts_(payOpen_(), data.month);
     else if (action === 'outputs') result = payOutputs_(payOpen_(), data.month);
     else if (action === 'dataquality') result = payDataQuality_(payOpen_(), data.month);
-    else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month, data.times) };
+    else if (action === 'incrementpreview') result = { eligible: payIncrementEligible_(payOpen_(), data.month, data.times), runs: payIncrementRuns_(payOpen_(), data.month) };
     else if (action === 'tallyexport') result = payTallyVoucher_(payOpen_(), data.month);
     else if (action === 'fnfpreview') result = { statement: payFnfStatement_(payOpen_(), String(data.code || '').trim(), data.manual) };
     else if (writes[action]) result = payWrite_(data.month, writes[action]);
@@ -1227,7 +1231,7 @@ function payIncrementEligible_(ss, month, times) {
     if (!master[code] || eff >= master[code].eff) master[code] = { eff: eff, row: r };
   });
   const already = {};
-  payForMonth_(ss, 'Increments', month).forEach(function (r) { already[String(r['Employee Code']).trim()] = true; });
+  payForMonth_(ss, 'Increments', month).forEach(function (r) { if (!String(r['Undone At'] || '').trim()) already[String(r['Employee Code']).trim()] = true; });
   const live = payCompute_(ss, month);
   const byCode = {};
   live.rows.forEach(function (r) { byCode[r.code] = r; });
@@ -1266,6 +1270,8 @@ function payApplyIncrement_(ss, d, caller, idToken) {
   if (!eligible.length) throw new Error('Nothing eligible to increment for ' + d.month);
   const latest = payMasterLatest_(ss);
   const now = new Date();
+  const runId = 'R-' + Utilities.getUuid().slice(0, 6);
+  const settings = paySettings_(payOpenById_(PAY_RATES_SHEET_ID));
   const newRows = [], incRows = [], appliedCodes = [];
   eligible.forEach(function (e) {
     const src = latest[e.code] && latest[e.code].row;
@@ -1273,17 +1279,79 @@ function payApplyIncrement_(ss, d, caller, idToken) {
     const row = {};
     Object.keys(src).forEach(function (h) { row[h] = src[h]; });
     Object.assign(row, { 'Full Basic': e.newBasic, 'Effective From': ctx.start,
-      'Remarks': 'Annual Increment ' + d.month + ' (+' + e.rate + '%' + (e.times > 1 ? ' x ' + e.times : '') + ')' });
+      'Remarks': 'Annual Increment ' + d.month + ' (+' + e.rate + '%' + (e.times > 1 ? ' x ' + e.times : '') + ') [' + runId + ']' });
     newRows.push(row);
     incRows.push({ 'Month': ctx.start, 'Employee Code': e.code, 'Name': e.name, 'Entity': e.entity, 'Old Basic': e.basic,
-      'New Basic': e.newBasic, 'Rate %': e.rate, 'Times': e.times, 'Applied By': caller.email, 'Applied At': now });
+      'New Basic': e.newBasic, 'Rate %': e.rate, 'Times': e.times, 'Applied By': caller.email, 'Applied At': now,
+      'Run ID': runId, 'Roster Synced (Y/N)': settings.syncRosterIncrement ? 'Y' : 'N' });
     appliedCodes.push(e.code);
   });
   payAppend_(ss.getSheetByName('Salary Master'), newRows);
   payAppend_(ss.getSheetByName('Increments'), incRows);
-  const settings = paySettings_(payOpenById_(PAY_RATES_SHEET_ID));
-  if (!settings.syncRosterIncrement) return { rosterSync: { success: true, skipped: true, updated: [], notFound: [] } };
-  return { rosterSync: payBumpRosterIncrement_(appliedCodes, idToken) };
+  if (!settings.syncRosterIncrement) return { runId: runId, rosterSync: { success: true, skipped: true, updated: [], notFound: [] } };
+  return { runId: runId, rosterSync: payBumpRosterIncrement_(appliedCodes, idToken) };
+}
+
+// Runs applied for a month, newest first, for the Undo list.
+function payIncrementRuns_(ss, month) {
+  const runs = {}, order = [];
+  payForMonth_(ss, 'Increments', month).forEach(function (r) {
+    const id = String(r['Run ID'] || '').trim() || 'earlier';
+    if (!runs[id]) { runs[id] = { runId: id, count: 0, undone: 0, appliedBy: String(r['Applied By'] || ''), appliedAt: payStamp_(r['Applied At']), times: payNum_(r['Times']) || 1,
+      rate: payNum_(r['Rate %']), rosterSynced: payYes_(r['Roster Synced (Y/N)']) }; order.push(id); }
+    runs[id].count++;
+    if (String(r['Undone At'] || '').trim()) runs[id].undone++;
+  });
+  return order.reverse().map(function (id) { return runs[id]; });
+}
+
+// Undo one run: delete exactly the Salary Master rows it wrote (found by code + that month's Effective
+// From + the run id in Remarks) and mark its Increments rows undone (kept, not deleted). All-or-nothing:
+// nothing is touched unless every person can be undone cleanly. Refused when a school is locked for the
+// month (the locked register already holds the new pay -- unlock first) or the person has a LATER
+// Salary Master row (a transfer / newer raise sits on top of it -- undo that first).
+// d: {month, runId}
+function payUndoIncrement_(ss, d, caller) {
+  const ctx = payCheckMonth_(d.month);
+  const runId = String(d.runId || '').trim();
+  if (!/^R-/.test(runId)) throw new Error('This run has no id (it predates undo) -- delete its Salary Master rows by hand');
+  const inc = ss.getSheetByName('Increments'), iv = inc.getDataRange().getValues();
+  const ih = iv[0].map(function (h) { return String(h).trim(); });
+  const mine = [];
+  for (let i = 1; i < iv.length; i++) {
+    if (String(iv[i][ih.indexOf('Run ID')]).trim() === runId && payMonthKey_(iv[i][ih.indexOf('Month')]) === d.month) mine.push(i);
+  }
+  if (!mine.length) throw new Error('Run ' + runId + ' not found for ' + d.month);
+  if (mine.every(function (i) { return String(iv[i][ih.indexOf('Undone At')] || '').trim(); })) throw new Error('Run ' + runId + ' was already undone');
+  const locks = payLocks_(ss, d.month);
+  const sm = ss.getSheetByName('Salary Master'), sv = sm.getDataRange().getValues();
+  const sh = sv[0].map(function (h) { return String(h).trim(); });
+  const problems = [], deleteRows = [], undoIdx = [];
+  mine.forEach(function (i) {
+    if (String(iv[i][ih.indexOf('Undone At')] || '').trim()) return;
+    const code = String(iv[i][ih.indexOf('Employee Code')]).trim(), entity = payEntity_(iv[i][ih.indexOf('Entity')]);
+    if (locks[entity]) { problems.push(code + ': ' + entity + ' is locked for ' + d.month + ' -- unlock it first'); return; }
+    let found = -1, later = '';
+    for (let j = 1; j < sv.length; j++) {
+      if (String(sv[j][sh.indexOf('Employee Code')]).trim() !== code) continue;
+      const eff = payDate_(sv[j][sh.indexOf('Effective From')]);
+      if (eff && eff > ctx.start) later = payIso_(eff);
+      if (String(sv[j][sh.indexOf('Remarks')] || '').indexOf('[' + runId + ']') !== -1) found = j;
+    }
+    if (found === -1) { problems.push(code + ': the Salary Master row written by this run is gone'); return; }
+    if (later) { problems.push(code + ': has a later Salary Master row (effective ' + later + ') -- undo or remove that first'); return; }
+    deleteRows.push(found + 1);
+    undoIdx.push(i);
+  });
+  if (problems.length) throw new Error('Cannot undo ' + runId + ': ' + problems.slice(0, 12).join('; ') + (problems.length > 12 ? ' ...' : ''));
+  deleteRows.sort(function (a, b) { return b - a; }).forEach(function (r) { sm.deleteRow(r); });
+  const now = new Date();
+  undoIdx.forEach(function (i) {
+    inc.getRange(i + 1, ih.indexOf('Undone By') + 1).setValue(caller.email);
+    inc.getRange(i + 1, ih.indexOf('Undone At') + 1).setValue(now);
+  });
+  const synced = mine.some(function (i) { return payYes_(iv[i][ih.indexOf('Roster Synced (Y/N)')]); });
+  return { undone: undoIdx.length, undoNote: synced ? 'The Roster\'s EmpSalary.Increment counts were bumped when this run was applied -- reduce them by 1 there by hand (Payroll cannot do that yet).' : '' };
 }
 
 // Best-effort cross-project call: the Roster's own EmpSalary.Increment count

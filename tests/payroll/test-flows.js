@@ -446,4 +446,41 @@ module.exports = function run(t) {
       assert.deepEqual(ser, ser.slice().sort((a, b) => a - b), e + ' rows come back in serial order');
     });
   });
+
+  t.test('annual increment: a whole run can be undone, safely', () => {
+    const code = 'JAY/21/03/020'; // LMS6, untouched by earlier increment tests
+    const basicIn = (mo) => call('month', { month: mo }).rows.find((r) => r.code === code).basic;
+    const smRows = () => h.books['1sal'].tabs['Salary Master'].values.length;
+    const before = smRows(), b0 = basicIn('2029-09');
+    const a = call('applyincrement', { month: '2029-09', codes: [code] });
+    assert.equal(a.success, true, a.error);
+    assert.match(a.runId, /^R-/);
+    assert.ok(basicIn('2029-09') > b0, 'raised');
+    let runs = call('incrementpreview', { month: '2029-09' }).runs;
+    assert.deepEqual([runs[0].runId, runs[0].count, runs[0].undone], [a.runId, 1, 0]);
+    const u = call('undoincrement', { month: '2029-09', runId: a.runId });
+    assert.equal(u.success, true, u.error);
+    assert.equal(u.undone, 1);
+    assert.equal(smRows(), before, 'the Salary Master row it wrote is gone');
+    assert.equal(basicIn('2029-09'), b0, 'pay is back to what it was');
+    runs = call('incrementpreview', { month: '2029-09' }).runs;
+    assert.equal(runs[0].undone, 1, 'kept in the audit trail, marked undone');
+    assert.ok(call('incrementpreview', { month: '2029-09' }).eligible.some((e) => e.code === code), 'eligible again');
+    assert.match(call('undoincrement', { month: '2029-09', runId: a.runId }).error, /already undone/);
+    // A later Salary Master row on top blocks it until that one is undone first.
+    const first = call('applyincrement', { month: '2029-09', codes: [code] });
+    const second = call('applyincrement', { month: '2029-10', codes: [code] });
+    assert.match(call('undoincrement', { month: '2029-09', runId: first.runId }).error, /later Salary Master row/);
+    assert.equal(call('undoincrement', { month: '2029-10', runId: second.runId }).success, true);
+    assert.equal(call('undoincrement', { month: '2029-09', runId: first.runId }).success, true);
+    assert.equal(basicIn('2029-09'), b0);
+    // Locked school: refused until unlocked.
+    const third = call('applyincrement', { month: '2029-11', codes: [code] });
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((st) => call('markstep', { month: '2029-11', entity: 'LMS6', step: st, done: true }));
+    assert.equal(call('lock', { month: '2029-11', entity: 'LMS6' }).success, true);
+    assert.match(call('undoincrement', { month: '2029-11', runId: third.runId }).error, /LMS6 is locked/);
+    call('unlock', { month: '2029-11', entity: 'LMS6' });
+    assert.equal(call('undoincrement', { month: '2029-11', runId: third.runId }).success, true);
+    assert.match(call('undoincrement', { month: '2029-11', runId: 'bogus' }).error, /no id/);
+  });
 };
