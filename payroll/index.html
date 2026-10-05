@@ -1583,8 +1583,10 @@ function showApp(session) {
     return;
   }
   document.getElementById('mainRoot').style.display = '';
-  const now = new Date();
-  document.getElementById('fMonth').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  // Salary for a month is worked on until about the 15th of the next one, so up to the 15th the page
+  // opens on the PREVIOUS month (per Uday, 2026-10-05); from the 16th it opens on the current month.
+  const now = new Date(), open = now.getDate() <= 15 ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
+  document.getElementById('fMonth').value = open.getFullYear() + '-' + String(open.getMonth() + 1).padStart(2, '0');
   document.getElementById('loadBtn').onclick = load_;
   document.getElementById('fMonth').onchange = load_;
   load_();
