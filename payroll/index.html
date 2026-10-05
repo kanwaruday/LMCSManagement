@@ -1526,6 +1526,8 @@ function sheetTab_(wb, e, name) {
   ws.addRow([SCHOOL_NAME[e] + ' — ' + monthLabel_(M.month)]).font = { bold: true };
   ws.addRow(cols.map(function (c) { return c[0]; })).font = { bold: true };
   rs.forEach(function (r, i) { ws.addRow(cols.map(function (c) { return c[1] ? c[1](r) : i + 1; })); });
+  const text = ['S.No', 'Emp.Code', 'Name', 'Designation', 'Present', 'Pay Mode', 'Account No', 'IFSC Code', 'UAN No', 'Sign'];
+  ws.addRow(cols.map(function (c, i) { return i === 1 ? 'Total' : (text.indexOf(c[0]) === -1 && c[1] ? sum_(rs, c[1]) : ''); })).font = { bold: true };
   ws.getColumn(28).numFmt = '@';
 }
 // One school (SCOPE), or every school as its own tab when all = true.
