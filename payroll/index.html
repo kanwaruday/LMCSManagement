@@ -1101,13 +1101,13 @@ function incrementView_() {
   const timesPicker = '<p>Increments to apply: <input type="number" id="incTimes" min="1" max="12" value="' + INC_TIMES + '" style="width:48px"> <span class="muted">(more than 1 compounds that many years at once -- Owner only)</span></p>';
   if (!INC.eligible.length) return timesPicker + incrementRunsHtml_() + '<p>Nobody is eligible for an increment in ' + monthLabel_(M.month) + ' (36+ months tenure, not already given one this month).</p>';
   return timesPicker + incrementRunsHtml_() + '<p>' + INC.eligible.length + ' eligible for ' + INC.eligible[0].rate + '%' + (INC_TIMES > 1 ? ' x ' + INC_TIMES : '') + ' in ' + monthLabel_(M.month) + ' -- uncheck anyone to leave them out of this run.</p>' +
-    '<table class="reg"><tr><th></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th><th>Net Pay</th><th>CTI</th></tr>' +
+    '<table class="reg"><tr><th><input type="checkbox" id="incAll" checked title="Tick / untick everyone"></th><th>Code</th><th>Name</th><th>School</th><th>Months</th><th>Current Basic</th><th>New Basic</th><th>Net Pay</th><th>CTI</th></tr>' +
     INC.eligible.map(function (e) {
       return '<tr><td><input type="checkbox" class="inc-pick" value="' + esc_(e.code) + '" checked></td><td>' + esc_(e.code) + '</td><td>' + esc_(e.name) +
         '</td><td>' + esc_(e.entity) + '</td><td>' + e.months + '</td><td>' + inr_(e.basic) + '</td><td>' + inr_(e.newBasic) + '</td>' +
         '<td>' + (e.newNet != null ? inr_(e.oldNet) + ' → ' + inr_(e.newNet) + incPct_(e.oldNet, e.newNet) : '—') + '</td>' +
         '<td>' + (e.newCti != null ? inr_(e.oldCti) + ' → ' + inr_(e.newCti) + incPct_(e.oldCti, e.newCti) : '—') + '</td></tr>';
-    }).join('') + '</table><p><button class="btn" id="incApply">Apply to checked</button></p>';
+    }).join('') + '</table><p><button class="btn" id="incApply">Apply to checked</button> <span class="muted" id="incCount"></span></p>';
 }
 function loadAccounts_(okMsg) {
   const msg = document.getElementById('msgRoot');
@@ -1306,6 +1306,18 @@ function wireViews_() {
     INC_TIMES = n;
     loadIncrement_();
   };
+  // Header checkbox ticks / unticks everyone; it shows a dash when only some are ticked.
+  const incSync = function () {
+    const all = document.querySelectorAll('.inc-pick'), on = document.querySelectorAll('.inc-pick:checked');
+    const hdr = document.getElementById('incAll');
+    if (hdr) { hdr.checked = on.length === all.length; hdr.indeterminate = on.length > 0 && on.length < all.length; }
+    const c = document.getElementById('incCount'); if (c) c.textContent = on.length + ' of ' + all.length + ' ticked';
+  };
+  if (q('#incAll')) {
+    q('#incAll').onchange = function () { const v = this.checked; document.querySelectorAll('.inc-pick').forEach(function (c) { c.checked = v; }); incSync(); };
+    document.querySelectorAll('.inc-pick').forEach(function (c) { c.onchange = incSync; });
+    incSync();
+  }
   document.querySelectorAll('[data-incundo]').forEach(function (b) {
     b.onclick = function () {
       const id = b.dataset.incundo;
