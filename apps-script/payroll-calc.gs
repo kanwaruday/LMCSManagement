@@ -71,7 +71,8 @@ function payCalc_(emp, input, rates, s, ctx) {
   const gross = wages + clEnc + tuition + otherEarnings;
   const cti = gross + epf + esiEr;
 
-  const months = payMonthsBetween_(emp.doj, ctx.monthEnd);
+  // RRF tier counts from serviceStart when set (a rejoiner's credited service), else the Date of Joining.
+  const months = payMonthsBetween_(emp.serviceStart || emp.doj, ctx.monthEnd);
   const opening = Number(ctx.openingRrf) || 0;
   const target = s.rrfTargetMonths * cti;
   let rrfRate = 0;

@@ -514,6 +514,25 @@ module.exports = function run(t) {
     row[ci] = keep[0]; row[di] = keep[1];
   });
 
+  t.test('rejoiner: Service Start drives RRF tier and increment eligibility, RRF balance moves, gratuity date untouched', () => {
+    const M = '2026-06', code = 'ELK/25/04/100', old = 'FOX/23/09/104'; // joined 2025-04 => 14 months from Date of Joining
+    const get = () => call('month', { month: M }).rows.find((r) => r.code === code);
+    assert.equal(get().rrfRate, 0.09, 'year-2 tier from Date of Joining');
+    assert.ok(!call('incrementpreview', { month: M }).eligible.some((e) => e.code === code), 'not yet eligible');
+    h.books['1sal'].tabs['Ledger'].values.push(['2026-01-01', '2026-01', old, 'RRF', 'Opening', 50000, '', '', 'test', '']);
+    assert.match(call('rejoin', { month: M, newCode: code, oldCode: old, serviceStart: '2029-01-01' }).error, /after/);
+    const r = call('rejoin', { month: M, newCode: code, oldCode: old, serviceStart: '2022-01-01' });
+    assert.equal(r.success, true, r.error);
+    assert.equal(get().rrfRate, 0, 'past 36 months of credited service: RRF stops');
+    assert.equal(get().rrfBalance, 50000, 'old balance now on the new code');
+    assert.equal(call('month', { month: M }).rows.find((x) => x.code === old).rrfBalance, 0, 'and gone from the old code');
+    assert.ok(call('incrementpreview', { month: M }).eligible.some((e) => e.code === code), 'eligible for the increment');
+    assert.match(call('rejoin', { month: M, newCode: code, oldCode: old, serviceStart: '2022-01-01' }).error, /already linked/);
+    const sm = h.books['1sal'].tabs['Salary Master'].values, hd = sm[0];
+    assert.ok(sm.filter((x) => x[0] === code).every((x) => x[hd.indexOf('Service Start')]), 'written on every row of the code');
+    assert.ok(String(sm.find((x) => x[0] === code)[hd.indexOf('Date of Joining')]).indexOf('2025') !== -1, 'Date of Joining untouched (gratuity restarts there)');
+  });
+
   t.test('RRF: once the target is reached it stays stopped after an increment lifts the target', () => {
     const code = 'OWL/22/07/054', M1 = '2031-03', M2 = '2031-04';
     const cons = h.books['1d8'].tabs['PayRoll Constants'].values;

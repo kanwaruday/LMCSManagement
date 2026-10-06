@@ -69,7 +69,9 @@ const PAY_ENTITIES = ['HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 const PAY_TABS = {
   'Salary Master': ['Employee Code', 'Name', 'Entity', 'Designation', 'Date of Joining', 'Effective From', 'Full Basic',
     'EPF Member (Y/N)', 'RRF Member (Y/N)', 'Staff-Child Tuition', 'Pay Mode', 'Bank Account No', 'IFSC', 'UAN', 'PAN',
-    'Status (Active/Left)', 'Remarks', 'Last Working Day', 'Monthly TDS (₹)'],
+    'Status (Active/Left)', 'Remarks', 'Last Working Day', 'Monthly TDS (₹)',
+    // Optional (2026-10-06): when RRF tier and increment eligibility should count service from -- a rejoiner's original joining date less the break. Blank = Date of Joining. Gratuity and pay proration still use Date of Joining.
+    'Service Start'],
   // Structured offers from the Offer Calculator's "Record as Salary Offer" (stage c, 2026-09-30).
   'Salary Offers': ['Applicant ID', 'Name', 'Entity', 'Designation', 'Subjects', 'Full Basic', 'EPF Member (Y/N)', 'Staff-Child Tuition',
     'CTI', 'Net Y1', 'Recorded By', 'Recorded At', 'Status (Offered/Joined/Dismissed)', 'Employee Code', 'Date of Joining', 'Closed By', 'Closed At'],
@@ -180,6 +182,7 @@ function payHandle_(action, idToken, data) {
       addemployee: function (ss) { payNewMasterRow_(ss, data, caller) },
       markleft: function (ss) { payMarkLeft_(ss, data) },
       applytransfer: function (ss) { payApplyTransfer_(ss, data, caller) },
+      rejoin: function (ss) { payRejoin_(ss, data, caller); },
       importopening: function (ss) { payImportOpening_(ss, data, caller); },
       applyincrement: function (ss) { extra = payApplyIncrement_(ss, data, caller, idToken); },
       undoincrement: function (ss) { extra = payUndoIncrement_(ss, data, caller); },
@@ -624,7 +627,7 @@ function payCompute_(ss, month) {
       : /^g/i.test(String(inp['Hold (F&F/Grievance)'] || '')) ? 'grievance'
       : payYes_(inp['Hold for F&F (Y/N)']) ? 'fnf' : '';
     const empArg = { esiCovered: payEsiCovered_(history[code], rates, settings, ctx0), fullBasic: payNum_(r['Full Basic']), epfMember: payYes_(r['EPF Member (Y/N)']), rrfMember: payYes_(r['RRF Member (Y/N)']),
-      tuition: payNum_(r['Staff-Child Tuition']), doj: doj };
+      tuition: payNum_(r['Staff-Child Tuition']), doj: doj, serviceStart: payDate_(r['Service Start']) || doj };
     const inputArg = { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
       otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue, tds: tds };
     const ctxArg = Object.assign({ openingRrf: openingRrf[code] || 0,
@@ -1233,6 +1236,50 @@ function payApplyTransfer_(ss, d, caller) {
   payAppend_(ss.getSheetByName('Ledger'), ledger);
 }
 
+// d: {month, newCode, oldCode?, serviceStart}. A rejoiner has a NEW code and Date of Joining (so gratuity and pay
+// proration restart), but RRF tier and increment eligibility count from `serviceStart` (original date less the
+// break), and the old code's RRF balance moves to the new code (Uday, 2026-10-06). The Service Start is written
+// on every Salary Master row of the new code, so later raises/transfers (which copy the row) keep it.
+function payRejoin_(ss, d, caller) {
+  payStaffChanged_();
+  const ctx = payCheckMonth_(d.month);
+  const code = String(d.newCode || '').trim(), old = String(d.oldCode || '').trim();
+  const start = payDate_(d.serviceStart);
+  if (!code) throw new Error('Pick the employee');
+  if (!start) throw new Error('Service start date is required');
+  if (start > ctx.monthEnd) throw new Error('Service start cannot be after ' + d.month);
+  if (old === code) throw new Error('Old and new code are the same');
+  const sheet = ss.getSheetByName('Salary Master');
+  const values = sheet.getDataRange().getValues();
+  const hdr = values[0].map(function (h) { return String(h).trim(); });
+  const cc = hdr.indexOf('Employee Code'), sc = hdr.indexOf('Service Start');
+  if (sc === -1) throw new Error('Salary Master has no "Service Start" column yet -- reload and try again');
+  const mine = [];
+  let oldKnown = !old;
+  for (let i = 1; i < values.length; i++) {
+    const c = String(values[i][cc] || '').trim();
+    if (c === code) mine.push(i + 1);
+    if (old && c === old) oldKnown = true;
+  }
+  if (!mine.length) throw new Error(code + ': not on payroll');
+  if (!oldKnown) throw new Error(old + ': not in Salary Master');
+  const ref = 'Rejoin ' + old + ' -> ' + code;
+  let moved = 0;
+  if (old) {
+    if (payRows_(ss.getSheetByName('Ledger')).some(function (r) { return String(r['Reference'] || '') === ref; })) throw new Error('RRF from ' + old + ' was already linked to ' + code);
+    moved = payLedgerBalances_(ss, 'RRF', d.month)[old] || 0;
+  }
+  mine.forEach(function (rowNum) { sheet.getRange(rowNum, sc + 1).setValue(start); });
+  if (moved) {
+    const prevMonth = new Date(ctx.start.getFullYear(), ctx.start.getMonth() - 1, 1), now = new Date();
+    payAppend_(ss.getSheetByName('Ledger'), [[old, -moved], [code, moved]].map(function (x) {
+      return { 'Date': now, 'Month': prevMonth, 'Employee Code': x[0], 'Account (RRF/Security/Loan/Held Salary)': 'RRF',
+        'Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)': 'Adjustment', 'Amount': x[1],
+        'Reference': ref, 'Notes': 'RRF carried over on rejoining', 'Entered By': caller.email, 'Entered At': now };
+    }));
+  }
+}
+
 // ── Annual increment (2026-10-01, per Uday) ───────────────────────────
 // Flat Annual Increment % on Full Basic, every September, for anyone who's
 // completed 36 months -- the same cutoff as the RRF Y3 tier in payCalc_, so
@@ -1271,11 +1318,12 @@ function payIncrementEligible_(ss, month, times) {
     const r = master[code].row;
     const doj = payDate_(r['Date of Joining']);
     const basic = payNum_(r['Full Basic']);
-    if (!doj || !basic || payMonthsBetween_(doj, ctx.monthEnd) < 36) return;
+    const start = payDate_(r['Service Start']) || doj; // a rejoiner's credited start, else Date of Joining
+    if (!doj || !basic || payMonthsBetween_(start, ctx.monthEnd) < 36) return;
     let newBasic = basic;
     for (let i = 0; i < n; i++) newBasic = Math.round(newBasic * (1 + pct / 100));
     const row = { code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']), designation: String(r['Designation'] || ''),
-      doj: payIso_(doj), months: payMonthsBetween_(doj, ctx.monthEnd), basic: basic, newBasic: newBasic, rate: pct, times: n };
+      doj: payIso_(doj), months: payMonthsBetween_(start, ctx.monthEnd), basic: basic, newBasic: newBasic, rate: pct, times: n };
     // Projected Net Pay/CTI this month with the new Basic -- re-runs the REAL payCalc_
     // with everything else about this month unchanged (paid days, leave, adjustments,
     // loan recovery, holds), not a guess from the % alone.
@@ -1907,7 +1955,7 @@ function payDataQuality_(ss, month) {
   payRows_(ss.getSheetByName('Salary Master')).forEach(function (r) {
     const code = String(r['Employee Code'] || '').trim();
     if (!code) return;
-    ['Effective From', 'Date of Joining', 'Last Working Day'].forEach(function (col) {
+    ['Effective From', 'Date of Joining', 'Last Working Day', 'Service Start'].forEach(function (col) {
       const v = r[col];
       if (v === '' || v === null || v === undefined || Object.prototype.toString.call(v) === '[object Date]') return;
       const as = payDate_(v);
