@@ -393,3 +393,21 @@ function pdrAllowlistRows_() {
 function jsonOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
+
+// 2026-10-06, per Uday: keep-warm. Google drops this (large, 10+ file) project's web-app
+// instance when idle, and the next request then stalls for 20-60s or comes back as an HTML
+// error page. A timer that calls the web app's own URL every 5 minutes keeps it warm.
+// Run pdrInstallKeepWarmTrigger ONCE from the editor (it asks for the trigger permission);
+// re-running it is safe, it replaces the old trigger instead of adding a second.
+function pdrKeepWarm() {
+  try {
+    UrlFetchApp.fetch(ScriptApp.getService().getUrl() + '?action=ping', { muteHttpExceptions: true });
+  } catch (err) { /* best-effort: a missed ping just means one cold start later */ }
+}
+
+function pdrInstallKeepWarmTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'pdrKeepWarm') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('pdrKeepWarm').timeBased().everyMinutes(5).create();
+}
