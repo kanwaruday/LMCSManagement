@@ -21,8 +21,6 @@ those really do need copying from there.
 - `approvals.gs` — Principal-to-Owner approval requests (Approvals tab)
 - `hiring.gs` — Hiring Dashboard: browse Teaching Applicants, track status, gate the "Hired" write on Approvals (added 2026-09-14, ported+refined from `lmcs-salary-dashboard/apps-script/teaching-applicants.gs`, never deployed there)
 
-- `coordinator-tasks.gs` — Coordinator Portal follow-up engine (`coordinator/index.html`, added 2026-10-06): `coordinatortasks` (GET), `coordinatorresolvetask` (POST), Coordinator/Owner only. Uses a "Tasks" tab inside the existing LMCS Approvals workbook (creates itself, no setup). First adapter: SS compliance (one task per role+campus+month under 70% quota compliance, auto-resolves when it clears).
-
 **One deployment** ("LMCS Employee Roster Proxy" — `EMPLOYEE_ROSTER_URL`, `STAFF_API_URL`, **and**
 `ALLOWLIST_API_URL` are now all the same URL):
 - `employee-roster.gs` — public reads (`roster`/`employees`/`designations`, no token) used by PDR,
@@ -54,6 +52,9 @@ those really do need copying from there.
   editor or under `node`.
 - Deploy as Web app, Execute as **Me**, access **Anyone** (every call is still token-checked).
 - Salary data never goes in this repo — import CSVs are generated locally and imported into the sheet.
+
+**One deployment** ("LMCS Coordinator Backend" — `COORD_BACKEND_URL` in [`coordinator/index.html`](../coordinator/index.html), added 2026-10-06, deliberately NOT in the PDR project so Principals' backend is never touched):
+- `coordinator.gs` — `coordinatortasks` (GET), `coordinatorresolvetask` (POST), Coordinator/Owner only, own copy of the allowlist token check. Generic follow-up task store ("Tasks" tab inside the LMCS Approvals workbook, creates itself); adapters read other backends over HTTP with the caller's token. First adapter: SS compliance from PDR's `ssdashboard`.
 
 **Separate deployments**, one file each:
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)

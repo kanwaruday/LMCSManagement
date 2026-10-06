@@ -37,13 +37,15 @@ button:disabled{opacity:.5;cursor:default}
 
 <script src="../assets/auth.js"></script>
 <script>
-const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+// "LMCS Coordinator Backend" -- its own Apps Script project (apps-script/coordinator.gs); empty until deployed
+const COORD_BACKEND_URL = '';
 let SESSION = null;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 async function loadTasks() {
-  const res = await fetch(PDR_BACKEND_URL + '?action=coordinatortasks&idToken=' + encodeURIComponent(SESSION.idToken));
+  if (!COORD_BACKEND_URL) throw new Error('backend not deployed yet');
+  const res = await fetch(COORD_BACKEND_URL + '?action=coordinatortasks&idToken=' + encodeURIComponent(SESSION.idToken));
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Could not load tasks');
   return data.tasks;
@@ -55,7 +57,7 @@ async function resolveTask(taskId, btn) {
   btn.disabled = true;
   try {
     // plain-text body, no Content-Type: keeps the request CORS-safelisted (no preflight; main.gs has no doOptions)
-    const res = await fetch(PDR_BACKEND_URL, {
+    const res = await fetch(COORD_BACKEND_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'coordinatorresolvetask', idToken: SESSION.idToken, taskId: taskId, note: note }),
     });
