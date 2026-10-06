@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LMCS — Teacher Portal</title>
+<meta name="theme-color" content="#CE0000">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://kanwaruday.github.io">
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.08);--dark:#1a1a1a;--gray:#5b6472;--lgray:#f4f5f7;--border:#e6e8ec;--white:#fff;--green:#15803d;--green-lt:#dcfce7;--amber:#b45309;--amber-lt:#fef3c7;--blue:#1d4ed8;--blue-lt:#dbeafe;--purple:#6d28d9;--purple-lt:#ede9fe;--shadow:0 2px 10px rgba(20,20,30,.06);--shadow-lg:0 8px 28px rgba(20,20,30,.10)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);color:var(--dark);min-height:100vh;font-size:13.5px;line-height:1.55}
+
+/* ── App-shell header: compact, game-HUD flavored ── */
+.hdr{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,var(--red),#e01313);color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-top,0px));padding-top:calc(14px + env(safe-area-inset-top,0px));box-shadow:0 2px 14px rgba(206,0,0,.25)}
+.hdr-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hdr-hi{font-size:15px;font-weight:800}
+.hdr-sub{font-size:11px;opacity:.85;margin-top:2px}
+.hdr-signout{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 11px;font-size:11px;font-weight:700;cursor:pointer}
+.hdr-signout:hover{background:rgba(255,255,255,.28)}
+.streak-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:700;margin-top:10px}
+
+/* Owner Test Mode -- picker (always visible to Owner) + a loud,
+   unmissable banner once a target is actually selected, so there's
+   never ambiguity about whose data is on screen. */
+#viewAsBar{margin-top:10px}
+.viewas-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.viewas-picker select{flex:1;min-width:160px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 9px;font-size:12px;font-family:inherit}
+.viewas-picker select option{color:#000}
+.viewas-picker label{font-size:10.5px;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.03em;flex-shrink:0}
+.viewas-active{background:#1a1a1a;color:#ffd54a;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.viewas-active button{border:1px solid rgba(255,213,74,.5);background:none;color:#ffd54a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0}
+
+#appBody{max-width:520px;margin:0 auto;width:100%;padding:14px 14px calc(84px + env(safe-area-inset-bottom,0px))}
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+.denied .icon{font-size:38px;margin-bottom:10px}
+.denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
+.notice{background:#fff3cd;border:1px solid #ffc107;color:#92400e;padding:12px 16px;font-size:12px;border-radius:10px;margin-bottom:14px;line-height:1.6}
+
+/* ── Cards, HUD stat tiles ── */
+.card{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card-title{font-size:11.5px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
+.card-hint{font-size:11.5px;color:#8A96A6;margin:-4px 0 12px}
+.section-lead{font-size:19px;font-weight:800;margin-bottom:2px}
+.section-sub{font-size:12px;color:var(--gray);margin-bottom:14px}
+
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stat-tile{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;box-shadow:var(--shadow)}
+.stat-tile .num{font-size:26px;font-weight:800;line-height:1;color:var(--red)}
+.stat-tile .lbl{font-size:10.5px;color:var(--gray);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-top:5px}
+.stat-tile.green .num{color:var(--green)}
+.stat-tile.amber .num{color:var(--amber)}
+.stat-tile.blue .num{color:var(--blue)}
+
+.quick-link{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:var(--shadow);cursor:pointer;transition:transform .1s}
+.quick-link:active{transform:scale(.98)}
+.quick-link .ico{font-size:22px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;background:var(--red-lt);border-radius:10px;flex-shrink:0}
+.quick-link .txt{flex:1;min-width:0}
+.quick-link .txt b{font-size:13px;display:block}
+.quick-link .txt span{font-size:11px;color:var(--gray)}
+.quick-link .chev{color:#C6CDD6;font-size:16px}
+
+/* ── Compact scrollable list (Upcoming Events) — lighter than
+   .quick-link, which is sized for big tappable nav rows, not a dense
+   info list. ── */
+.scroll-list{max-height:220px;overflow-y:auto;margin:0 -4px;padding:0 4px}
+.event-row{display:flex;align-items:center;gap:9px;padding:7px 4px;border-bottom:1px solid var(--border)}
+.event-row:last-child{border-bottom:none}
+.event-row .ico{font-size:13px;flex-shrink:0}
+.event-row .txt{flex:1;min-width:0}
+.event-row .txt b{font-size:12px;display:block;line-height:1.3}
+.event-row .txt span{font-size:10.5px;color:var(--gray)}
+
+/* ── Bottom app nav ── */
+.bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--white);border-top:1px solid var(--border);display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px rgba(20,20,30,.06)}
+.nav-btn{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px;border-radius:12px;cursor:pointer;color:var(--gray)}
+.nav-btn .ico{font-size:19px}
+.nav-btn .lbl{font-size:9.5px;font-weight:700}
+.nav-btn.active{color:var(--red)}
+.nav-btn.active .ico{transform:translateY(-1px)}
+
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ── Forms / inputs ── */
+.row-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field-label{display:block;font-size:11px;font-weight:700;color:var(--gray);margin-bottom:5px}
+select,input[type=text],textarea{border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;font-size:13px;font-family:inherit;color:var(--dark);background:var(--white);width:100%}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
+.submit-bar{display:flex;justify-content:flex-end;margin-top:4px}
+.submit-btn{border:none;background:linear-gradient(135deg,var(--red),var(--red-h));color:#fff;font-size:13.5px;font-weight:800;padding:12px 24px;border-radius:12px;cursor:pointer;box-shadow:0 4px 14px rgba(206,0,0,.28)}
+.submit-btn:disabled{opacity:.6;cursor:default;box-shadow:none}
+
+.dash-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.role-picker{display:flex;gap:6px;flex-wrap:wrap}
+.role-btn{background:var(--white);border:1.5px solid var(--border);border-radius:20px;padding:6px 13px;font-size:11px;font-weight:700;color:var(--gray);cursor:pointer}
+.role-btn.active{background:var(--red-lt);border-color:var(--red);color:var(--red)}
+.icon-btn{border:1.5px solid var(--border);background:#fff;border-radius:10px;padding:7px 9px;display:flex;align-items:center;cursor:pointer;color:var(--gray)}
+.icon-btn:hover{color:var(--red);border-color:var(--red)}
+
+/* ── Request list ── */
+.req-card{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:9px;box-shadow:var(--shadow);cursor:pointer}
+.req-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.req-title{font-size:13px;font-weight:700}
+.req-meta{font-size:11px;color:var(--gray);margin-top:3px}
+.req-detail{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)}
+.apr-desc{font-size:12.5px;color:var(--dark);line-height:1.6;margin-bottom:8px;white-space:pre-wrap}
+.apr-meta-row{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:var(--gray);margin-bottom:10px}
+.apr-comments{margin:10px 0}
+.apr-comment{background:var(--lgray);border-radius:10px;padding:8px 11px;margin-bottom:6px;font-size:12px}
+.apr-comment .apr-comment-meta{font-size:10.5px;color:var(--gray);margin-bottom:3px}
+.apr-comment-del{color:#B7C0CC;text-decoration:none;font-weight:700}
+.apr-comment-del:hover{color:var(--red)}
+.apr-reply-hint{font-size:11.5px;color:var(--amber);font-weight:700;margin:8px 0 4px}
+.apr-reply-row input{border-color:var(--amber)}
+.apr-reply-row button{background:var(--amber)}
+.add-row{display:flex;gap:8px}
+.add-row input{flex:1}
+.add-row button{border:none;background:var(--red);color:#fff;border-radius:10px;padding:0 16px;height:38px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.add-row button:hover{background:var(--red-h)}
+
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;flex-shrink:0}
+.pill.none{background:#fee2e2;color:var(--red)}
+.pill.ok{background:var(--green-lt);color:var(--green)}
+.pill.amber{background:var(--amber-lt);color:var(--amber)}
+.pill.revoked{background:#e5e7eb;color:#4b5563}
+.pill.urgent{background:#fee2e2;color:var(--red)}
+.dash-empty{padding:26px 12px;text-align:center;color:var(--gray)}
+.detail-empty{font-size:11.5px;color:var(--gray);padding:6px 0}
+.loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
+.loading-state .spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Rubric bars (My Evaluations) ── */
+.rubric-row{margin-bottom:10px}
+.rubric-row .rr-top{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px}
+.rubric-row .rr-name{color:var(--dark);font-weight:600}
+.rubric-row .rr-val{color:var(--gray);font-weight:700}
+.rubric-bar{height:8px;border-radius:999px;background:var(--lgray);overflow:hidden}
+.rubric-bar>div{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--red),#ff6b6b)}
+
+/* ── Tag chip (Timetable's "Checking Period" is the only user now --
+   the CW/HW tag palette was removed 2026-09-21 along with tag display) ── */
+.tag-chip{font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;display:inline-block}
+.tag-checking{background:#f0fdf4;color:#16a34a}
+.day-strip{display:flex;gap:4px;margin-top:6px}
+.day-dot{flex:1;height:26px;border-radius:7px;background:var(--lgray)}
+.day-dot.hit{background:linear-gradient(135deg,var(--green),#22c55e)}
+
+/* My CW/HW Patterns — class-subject blocks of actual entries (2026-09-21) */
+.cwhw-entry{padding:10px 0;border-bottom:1px solid var(--border)}
+.cwhw-entry:last-child{border-bottom:none}
+.cwhw-entry-head{font-size:10.5px;font-weight:700;color:var(--gray);margin-bottom:5px}
+.cwhw-block{font-size:12px;color:var(--dark);line-height:1.6;margin-bottom:3px}
+.cwhw-block:last-child{margin-bottom:0}
+.cwhw-label{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.03em;border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:middle}
+.cwhw-label.cw{background:var(--purple-lt);color:var(--purple)}
+.cwhw-label.hw{background:var(--amber-lt);color:var(--amber)}
+</style>
+</head>
+<body>
+
+<!-- LMCS Portal auth gate — shared assets/auth.js (single session/allowlist
+     implementation for the whole portal; this page moved into LMCSManagement/teacher/
+     from the separate LMCSTeachers repo on 2026-10-06, see README.md). -->
+<style>
+  #lmcs-gate{position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center}
+  #lmcs-gate .auth-gate{max-width:380px;margin:0 auto;padding:32px 28px;border:1px solid #ddd;border-top:3px solid #CE0000;border-radius:6px;text-align:center;font-family:'Segoe UI',Arial,sans-serif}
+  #lmcs-gate .auth-gate p{color:#555;font-size:13px;line-height:1.6;margin:0 0 20px}
+  #lmcs-gate #lmcs-g-signin{display:flex;justify-content:center}
+  #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
+</style>
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js"></script>
+<script>
+(function () {
+  if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
+  LMCS.requireSession('#lmcs-gate-slot').then(function () { window.location.reload(); });
+})();
+</script>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-row">
+    <div>
+      <div class="hdr-hi" id="hdrGreeting">LMCS — Teacher Portal</div>
+      <div class="hdr-sub" id="hdrSub">Your requests, evaluations & CW/HW patterns</div>
+    </div>
+    <button type="button" class="hdr-signout" onclick="LMCS.signOut()">Sign out</button>
+  </div>
+  <div id="streakPillWrap"></div>
+  <div id="viewAsBar" style="display:none"></div>
+</div>
+
+<div id="appBody">
+  <div id="deniedBox" style="display:none"></div>
+  <div id="appArea" style="display:none">
+
+    <!-- ══════════════════ HOME ══════════════════ -->
+    <div class="tab-panel active" id="panel-home">
+      <div class="card" id="rankCard" style="background:linear-gradient(135deg,var(--red),#ff5b5b);color:#fff;border:none">
+        <p class="card-title" style="color:#fff">📊 My Score<span style="font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;font-size:10.5px">Draft — not yet your official incentive</span></p>
+        <div id="rankBody"><div class="loading-state"><div class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>Loading…</div></div>
+      </div>
+
+      <div class="card" id="eventsCard">
+        <p class="card-title">📅 Upcoming Events<span id="eventsCampusLabel" style="font-weight:600;color:var(--gray);text-transform:none;letter-spacing:0"></span></p>
+        <div id="eventsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+      </div>
+
+      <div class="card" id="timetableCard">
+        <p class="card-title">🗓️ Your Timetable</p>
+        <div id="ttDayPicker" class="role-picker" style="margin-bottom:10px"></div>
+        <div id="timetableBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+      </div>
+
+      <div class="quick-link" onclick="goTab('requests')">
+        <div class="ico">📝</div>
+        <div class="txt"><b>My Requests</b><span id="homeReqSub">Leave & other approvals</span></div>
+        <div class="chev">›</div>
+      </div>
+      <div class="quick-link" onclick="goTab('evals')">
+        <div class="ico">⭐</div>
+        <div class="txt"><b>My Evaluations</b><span id="homeEvalSub">Your Support Session scores</span></div>
+        <div class="chev">›</div>
+      </div>
+      <div class="quick-link" onclick="goTab('tags')">
+        <div class="ico">📚</div>
+        <div class="txt"><b>My CW/HW Patterns</b><span id="homeTagSub">Review what you've sent</span></div>
+        <div class="chev">›</div>
+      </div>
+      <div class="notice" style="margin-top:4px">More on the way: period adjustments (still needs the actual covering process designed — nothing formal exists today), a forms hub, and target-based coaching on your CW/HW patterns (needs Uday to define expected ranges per tag first — patterns below are real data, not yet compared against a target).</div>
+    </div>
+
+    <!-- ══════════════════ MY REQUESTS ══════════════════ -->
+    <div class="tab-panel" id="panel-requests">
+      <div class="section-lead">My Requests</div>
+      <div class="section-sub">Leave and other requests go to your Principal/Owner — same workflow they already use.</div>
+
+      <div class="card" id="aprNewRequestCard">
+        <p class="card-title">New Request</p>
+        <div class="row-2col">
+          <div>
+            <label class="field-label">Category</label>
+            <select id="aprCategory"></select>
+          </div>
+          <div>
+            <label class="field-label">Urgency</label>
+            <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Title</label>
+          <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;2 days CL — family event&quot;">
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Description</label>
+          <textarea id="aprDescription" rows="4" placeholder="Explain why, with dates and any relevant details"></textarea>
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">Evidence link (optional)</label>
+          <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link if relevant">
+        </div>
+        <div class="submit-bar">
+          <button type="button" class="submit-btn" id="aprSubmitBtn" onclick="submitApprovalRequest()">Submit Request</button>
+        </div>
+      </div>
+
+      <div class="dash-toolbar">
+        <p class="card-title" style="margin:0">History</p>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div id="aprStatusFilter" class="role-picker"></div>
+          <button type="button" class="icon-btn" title="Refresh" onclick="refreshApprovals()">↻</button>
+        </div>
+      </div>
+      <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+    <!-- ══════════════════ MY EVALUATIONS (SS) ══════════════════ -->
+    <div class="tab-panel" id="panel-evals">
+      <div class="section-lead">My Evaluations</div>
+      <div class="section-sub">Your own Teacher SS (Support Session) scores — visible only to you and your Principal, not compared to any colleague.</div>
+      <div id="evalsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+    <!-- ══════════════════ MY CW/HW TAGS ══════════════════ -->
+    <div class="tab-panel" id="panel-tags">
+      <div class="section-lead">My CW/HW Patterns</div>
+      <div class="section-sub">Review the CW/HW you've actually logged in the last 7 days — real entries, not yet checked against any target (that needs the tag rubric Uday hasn't defined yet).</div>
+      <div id="tagsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="bottom-nav" id="bottomNav" style="display:none">
+  <button type="button" class="nav-btn active" data-tab="home" onclick="goTab('home')"><span class="ico">🏠</span><span class="lbl">Home</span></button>
+  <button type="button" class="nav-btn" data-tab="requests" onclick="goTab('requests')"><span class="ico">📝</span><span class="lbl">Requests</span></button>
+  <button type="button" class="nav-btn" data-tab="evals" onclick="goTab('evals')"><span class="ico">⭐</span><span class="lbl">Evaluations</span></button>
+  <button type="button" class="nav-btn" data-tab="tags" onclick="goTab('tags')"><span class="ico">📚</span><span class="lbl">CW·HW</span></button>
+</div>
+
+<script>
+// ── PDR_BACKEND_URL: same "LMCS Principal's Daily Reporting Backend"
+// Apps Script project every other module in this portal family calls.
+// Keep in sync with LMCSManagement's principals-daily-reporting/index.html
+// and hiring/index.html if it's ever redeployed. ────────────────────
+const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+
+// Curriculum-progress's own proxy (apps-script/ChapterTracker.gs's
+// "CWHWTracker" project) -- already a fully public, unauthenticated
+// GET returning every campus's daily CW/HW log (confirmed: this is how
+// curriculum-progress/daily-progress.html itself already calls it, no
+// idToken, no new exposure introduced by reusing it here). We filter
+// to the signed-in teacher's own name client-side, same as every other
+// role viewing this data today.
+const CWHW_PROXY_URL = 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec';
+
+// This payload is large (~13MB, every campus's daily log, rebuilt on
+// every request as far as this repo can tell) -- a one-off failure
+// (Google returning an HTML error/redirect page instead of JSON, which
+// surfaces as a JSON.parse error here) is realistic under load, not
+// necessarily a real outage. One retry, short delay, before giving up
+// and showing an error.
+//
+// PERF (2026-09-20): cached in a module-level promise -- the raw data
+// is the same regardless of WHO's viewing (filtering by teacher/campus
+// happens after), so without this, switching Owner Test Mode targets
+// (or just re-opening this tab) re-downloaded the full 13MB every
+// single time. Only a SUCCESSFUL fetch is cached -- a failure clears
+// the cache so the next call retries fresh instead of replaying the
+// same failure for the rest of the page session.
+let cwhwDataPromise_ = null;
+function loadCwHwData_() {
+  if (cwhwDataPromise_) return cwhwDataPromise_;
+  cwhwDataPromise_ = fetchCwHwWithRetry_();
+  cwhwDataPromise_.catch(function () { cwhwDataPromise_ = null; });
+  return cwhwDataPromise_;
+}
+async function fetchCwHwWithRetry_() {
+  try {
+    return await fetch(CWHW_PROXY_URL, { cache: 'no-cache' }).then(function (r) { return r.json(); });
+  } catch (err) {
+    await new Promise(function (resolve) { setTimeout(resolve, 1500); });
+    return await fetch(CWHW_PROXY_URL, { cache: 'no-cache' }).then(function (r) { return r.json(); });
+  }
+}
+
+// Mirrors APR_TEACHER_CATEGORIES in apps-script/approvals.gs.
+const APR_CATEGORIES = ['Compensatory Leave', 'Other'];
+const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
+let APR_STATUS_FILTER = 'All';
+let aprRes = null;
+let aprExpandedId = null;
+let SESSION = null;
+let currentTab = 'home';
+
+function esc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function formatDDMMYYYY_(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return dd + '/' + mm + '/' + d.getFullYear();
+}
+function pdrReportAuthFailureIfNeeded_(res) {
+  if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) LMCS.notifyAuthFailure();
+}
+async function pdrPost_(action, body) {
+  try {
+    return await fetch(PDR_BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: SESSION.idToken }, body)) }).then(function (r) { return r.json(); });
+  } catch (err) {
+    console.warn('pdrPost_ error (' + action + '):', err);
+    return { success: false, error: String(err) };
+  }
+}
+// Owner Test Mode (2026-09-20) -- these 4 read-only actions are the
+// ones the backend actually honors viewAsCode for (see main.gs's
+// pdrResolveViewAsCaller_); auto-appended here so call sites don't
+// each need to remember it. Deliberately excludes approvalslist/
+// approvaldetail/submitapproval/etc -- My Requests always shows the
+// SIGNED-IN Owner's own requests, never impersonated.
+const VIEW_AS_ELIGIBLE_ACTIONS = ['myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
+let VIEW_AS_CODE = null; // an EmployeeCode, e.g. "KEL/14/08/041" -- resolved against the full roster, not the Allowlist
+async function pdrGet_(action, params) {
+  try {
+    let url = PDR_BACKEND_URL + '?action=' + action + '&idToken=' + encodeURIComponent(SESSION.idToken);
+    Object.keys(params || {}).forEach(function (k) { url += '&' + k + '=' + encodeURIComponent(params[k]); });
+    if (VIEW_AS_CODE && VIEW_AS_ELIGIBLE_ACTIONS.indexOf(action) !== -1) url += '&viewAsCode=' + encodeURIComponent(VIEW_AS_CODE);
+    return await fetch(url).then(function (r) { return r.json(); });
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ── Tab navigation ──────────────────────────────────────────────────
+function goTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+  document.getElementById('panel-' + tab).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  if (tab === 'requests' && !aprRes) loadApprovals();
+  if (tab === 'evals' && !evalsLoaded) loadEvals();
+  if (tab === 'tags' && !tagsLoaded) loadTags();
+}
+
+// ── MY REQUESTS (unchanged logic from Phase 1a, reskinned) ──────────
+function aprRenderStatusFilter_() {
+  document.getElementById('aprStatusFilter').innerHTML = APR_STATUS_PILLS.map(function (s) {
+    return '<button class="role-btn' + (s === APR_STATUS_FILTER ? ' active' : '') + '" onclick="aprSelectStatusFilter(\'' + s + '\')">' + s + '</button>';
+  }).join('');
+}
+function aprSelectStatusFilter(status) { APR_STATUS_FILTER = status; aprExpandedId = null; aprRenderStatusFilter_(); renderMyRequests_(); }
+function aprStatusPillClass_(status) {
+  if (status === 'Approved') return 'ok';
+  if (status === 'Rejected') return 'none';
+  if (status === 'Revoked') return 'revoked';
+  return 'amber';
+}
+async function loadApprovals() {
+  const body = document.getElementById('aprListBody');
+  const res = await pdrGet_('approvalslist', {});
+  if (!res.success) {
+    body.innerHTML = '<div class="notice">Couldn’t load your requests: ' + esc_(res.error || 'unknown error') + '</div>';
+    pdrReportAuthFailureIfNeeded_(res);
+    return;
+  }
+  aprRes = res;
+  document.getElementById('homeReqSub').textContent = res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' on file';
+  aprRenderStatusFilter_();
+  renderMyRequests_();
+}
+function refreshApprovals() { aprExpandedId = null; document.getElementById('aprListBody').innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>'; loadApprovals(); }
+function renderMyRequests_() {
+  if (!aprRes) return;
+  const body = document.getElementById('aprListBody');
+  let rows = aprRes.requests.slice();
+  if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
+  if (!rows.length) { body.innerHTML = '<div class="dash-empty">No ' + (APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ') + 'requests yet.</div>'; return; }
+  body.innerHTML = rows.map(aprCardHtml_).join('');
+}
+function aprCardHtml_(r) {
+  const isExpanded = aprExpandedId === r.id;
+  let html = '<div class="req-card" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+    '<div class="req-top"><span class="req-title">' + esc_(r.title) + '</span><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></div>' +
+    '<div class="req-meta">' + esc_(r.category) + (r.urgency === 'Urgent' ? ' · <span class="pill urgent">Urgent</span>' : '') + ' · ' + formatDDMMYYYY_(r.requestedAt) + '</div>';
+  if (isExpanded) html += '<div class="req-detail" id="aprDetailWrap"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>';
+  html += '</div>';
+  return html;
+}
+async function toggleApprovalRow(id) {
+  if (aprExpandedId === id) { aprExpandedId = null; renderMyRequests_(); return; }
+  aprExpandedId = id;
+  renderMyRequests_();
+  const res = await pdrGet_('approvaldetail', { id: id });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); const wrap = document.getElementById('aprDetailWrap'); if (wrap) wrap.innerHTML = '<div class="notice">Couldn’t load this request: ' + esc_(res.error || 'unknown error') + '</div>'; return; }
+  const wrap = document.getElementById('aprDetailWrap');
+  if (wrap) wrap.outerHTML = aprDetailInnerHtml_(res);
+}
+function aprDetailInnerHtml_(res) {
+  const r = res.request;
+  const meta = [];
+  if (r.evidenceLink) meta.push('Evidence: <a href="' + esc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+  meta.push('Requested ' + formatDDMMYYYY_(r.requestedAt));
+  if (r.decidedBy) meta.push(r.status + ' by ' + esc_(r.decidedBy) + ' on ' + formatDDMMYYYY_(r.decidedAt));
+  if (r.decisionNote) meta.push('Note: ' + esc_(r.decisionNote));
+  const isReplyMoment = r.status === 'Info Requested';
+  const commentBoxHtml = (isReplyMoment ? '<div class="apr-reply-hint">More information was requested — your reply below sends this back to Pending.</div>' : '') +
+    '<div class="add-row' + (isReplyMoment ? ' apr-reply-row' : '') + '">' +
+    '<input type="text" id="aprCommentInput-' + r.id + '" placeholder="' + (isReplyMoment ? 'Reply with the info requested' : 'Add a comment') + '">' +
+    '<button type="button" id="aprCommentPostBtn-' + r.id + '" onclick="submitApprovalComment(\'' + r.id + '\')">' + (isReplyMoment ? 'Reply' : 'Post') + '</button></div>';
+  return '<div class="req-detail" id="aprDetailWrap">' +
+    '<div class="apr-desc">' + esc_(r.description) + '</div>' +
+    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' +
+    '<div class="apr-comments">' + aprCommentsHtml_(res.comments, r.id) + '</div>' +
+    commentBoxHtml + '</div>';
+}
+function aprCommentsHtml_(comments, approvalId) {
+  if (!comments.length) return '<div class="detail-empty">No comments yet.</div>';
+  return comments.map(function (c) {
+    const canDelete = c.authorEmail === SESSION.email;
+    return '<div class="apr-comment"><div class="apr-comment-meta">' + esc_(c.authorEmail) + ' (' + esc_(c.authorRole || '—') + ') · ' + formatDDMMYYYY_(c.postedAt) +
+      (canDelete ? ' · <a href="#" class="apr-comment-del" onclick="deleteApprovalComment(\'' + c.id + '\',\'' + approvalId + '\');return false;">Delete</a>' : '') +
+      '</div>' + esc_(c.body) + '</div>';
+  }).join('');
+}
+async function deleteApprovalComment(commentId, approvalId) {
+  if (!confirm('Delete this comment?')) return;
+  const res = await pdrPost_('deleteapprovalcomment', { id: commentId });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t delete that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  toggleApprovalRow(approvalId); toggleApprovalRow(approvalId);
+}
+async function submitApprovalComment(id) {
+  const input = document.getElementById('aprCommentInput-' + id);
+  const btn = document.getElementById('aprCommentPostBtn-' + id);
+  if (btn.disabled) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.disabled = true; btn.disabled = true;
+  const res = await pdrPost_('addapprovalcomment', { approvalId: id, body: text });
+  input.disabled = false; btn.disabled = false;
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t post that comment' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  input.value = '';
+  if (res.status && aprRes) { const cachedRow = aprRes.requests.filter(function (r) { return r.id === id; })[0]; if (cachedRow) cachedRow.status = res.status; }
+  toggleApprovalRow(id); toggleApprovalRow(id);
+}
+async function submitApprovalRequest() {
+  const btn = document.getElementById('aprSubmitBtn');
+  if (btn.disabled) return;
+  const category = document.getElementById('aprCategory').value;
+  const title = document.getElementById('aprTitle').value.trim();
+  const description = document.getElementById('aprDescription').value.trim();
+  if (!title || !description) { alert('Title and description are both required.'); return; }
+  btn.disabled = true; const originalLabel = btn.textContent; btn.textContent = 'Submitting…';
+  try {
+    const res = await pdrPost_('submitapproval', { category: category, urgency: document.getElementById('aprUrgency').value, title: title, description: description, evidenceLink: document.getElementById('aprEvidenceLink').value.trim() });
+    if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.'); return; }
+    document.getElementById('aprTitle').value = ''; document.getElementById('aprDescription').value = ''; document.getElementById('aprEvidenceLink').value = '';
+    alert('Request submitted.');
+    refreshApprovals();
+  } finally { btn.disabled = false; btn.textContent = originalLabel; }
+}
+
+// ── MY EVALUATIONS (SS) — new, reads action=myssstats ───────────────
+let evalsLoaded = false;
+async function loadEvals() {
+  const body = document.getElementById('evalsBody');
+  const res = await pdrGet_('myssstats', {});
+  evalsLoaded = true;
+  if (!res.success) { body.innerHTML = '<div class="notice">Couldn’t load your evaluations: ' + esc_(res.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(res); return; }
+  if (!res.found) {
+    body.innerHTML = '<div class="dash-empty">No Teacher SS submissions found under your name yet (' + esc_(res.name || 'your account') + '). If your Principal has already evaluated you and this looks wrong, it may be a name-spelling mismatch — flag it so it can be fixed.</div>';
+    document.getElementById('homeEvalSub').textContent = 'No submissions yet';
+    return;
+  }
+  const s = res.stats;
+  document.getElementById('homeEvalSub').textContent = s.submissionCount + ' submission' + (s.submissionCount === 1 ? '' : 's') + ' · avg ' + s.avgTotal + '/100';
+  const rubricHtml = res.rubricParams.map(function (name, i) {
+    const val = s.avgPerParam[i]; // out of 10
+    const pct = Math.max(0, Math.min(100, val * 10));
+    return '<div class="rubric-row"><div class="rr-top"><span class="rr-name">' + esc_(name) + '</span><span class="rr-val">' + val + '/10</span></div><div class="rubric-bar"><div style="width:' + pct + '%"></div></div></div>';
+  }).join('');
+  body.innerHTML =
+    '<div class="stat-grid">' +
+      '<div class="stat-tile"><div class="num">' + s.avgTotal + '</div><div class="lbl">Avg Score / 100</div></div>' +
+      '<div class="stat-tile green"><div class="num">' + s.submissionCount + '</div><div class="lbl">Submissions</div></div>' +
+    '</div>' +
+    '<div class="card"><p class="card-title">Rubric Breakdown<span style="font-weight:600;color:var(--gray);text-transform:none;letter-spacing:0">Last submitted ' + formatDDMMYYYY_(s.lastSubmission) + '</span></p>' + rubricHtml + '</div>';
+}
+
+// ── EmployeeCode resolution (2026-09-20, per Uday) — Timetable and
+// CW/HW Patterns both used to match by SESSION.name directly against
+// their data source, same fragility already fixed for My Score/My
+// Evaluations on the backend. Neither of those two sources is
+// reachable server-side without a new round trip, so instead: resolve
+// MY OWN code once via action=myemployeecode (AuthEmail-first,
+// same as the backend), then resolve every OTHER name found in the
+// public CW/HW proxy against the public roster (employee-roster.gs) --
+// that side still can't avoid name-matching, since neither source
+// captures a code at all, but at least "who am I" is no longer a
+// guess. A shared promise so whichever of loadTimetable_/loadTags
+// runs first does the one fetch, and the other reuses it. ──────────
+const EMPLOYEE_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+let MY_EMPLOYEE_CODE = null;
+// The identity these features actually match against -- SESSION's own
+// campus normally, but under Owner Test Mode (see VIEW_AS_CODE below)
+// this becomes the VIEWED teacher's real campus instead, since Owner's
+// own campusId ('ALL') isn't a valid per-campus lookup key. Set inside
+// ensureMyEmployeeCode_'s response, which is the one call that already
+// resolves the effective identity server-side.
+let EFFECTIVE_CAMPUS_ID = null;
+let myEmployeeCodePromise_ = null;
+function ensureMyEmployeeCode_() {
+  if (!myEmployeeCodePromise_) {
+    myEmployeeCodePromise_ = pdrGet_('myemployeecode', {}).then(function (res) {
+      if (res.success) { MY_EMPLOYEE_CODE = res.found ? res.employeeCode : null; EFFECTIVE_CAMPUS_ID = res.campusId || SESSION.campusId; }
+      return res;
+    });
+  }
+  return myEmployeeCodePromise_;
+}
+// Owner Test Mode: forces every cached identity/roster resolution to
+// re-run against the newly selected (or cleared) view-as target --
+// without this, switching targets would keep showing the FIRST
+// person's cached code/roster/campus forever.
+function resetViewAsCaches_() {
+  myEmployeeCodePromise_ = null;
+  myCampusRosterPromise_ = null;
+  MY_EMPLOYEE_CODE = null;
+  EFFECTIVE_CAMPUS_ID = null;
+}
+// Mirrors apps-script/teacher-portal.gs's tpNormalizeName_ -- keep in
+// sync if that changes.
+function normalizeNameForMatch_(name) {
+  return String(name || '').trim().toLowerCase()
+    .replace(/\s+(maam|ma'am|mam|madam|sir)\s*$/i, '')
+    .replace(/\s+/g, ' ').trim();
+}
+let myCampusRosterPromise_ = null;
+function loadMyCampusRoster_() {
+  if (!myCampusRosterPromise_) {
+    myCampusRosterPromise_ = fetch(EMPLOYEE_ROSTER_URL + '?action=employees', { cache: 'no-cache' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.success || !Array.isArray(res.employees)) return [];
+        const campusId = EFFECTIVE_CAMPUS_ID || SESSION.campusId;
+        const wantSchool = 'LMS ' + campusId.replace('LMS', '');
+        return res.employees.filter(function (e) { return e.school === wantSchool; })
+          .map(function (e) { return { employeeCode: e.employeeCode, nameNorm: normalizeNameForMatch_(e.name) }; });
+      })
+      .catch(function () { return []; });
+  }
+  return myCampusRosterPromise_;
+}
+function resolveCodeFromName_(rawName, roster) {
+  const wanted = normalizeNameForMatch_(rawName);
+  if (!wanted) return null;
+  for (let i = 0; i < roster.length; i++) { if (roster[i].nameNorm === wanted) return roster[i].employeeCode; }
+  return null;
+}
+
+// ── MY CW/HW TAGS — reads the existing public CWHW proxy (same
+// exposure level the proxy already has for every other viewer of this
+// data), now matched by resolving each record's teacher name against
+// the roster and comparing EmployeeCode to MY_EMPLOYEE_CODE, not by
+// comparing raw name strings directly. ─────────────────────────────
+let tagsLoaded = false;
+// FIXED 2026-09-20: cwRecords carries NO `school` field at all --
+// confirmed by fetching the live proxy directly (26,317 real records
+// inspected, `school` key present on zero of them). The ORIGINAL
+// version of this function checked r.school, which is always
+// undefined, so it silently rejected EVERY record for EVERY campus --
+// "My CW/HW Patterns" and My Score's Regularity number have both been
+// reading as empty/0% for everyone since they shipped, not a
+// name-matching edge case. The real per-record campus field is
+// `lmsIdx`, a 0-based numeric index (0=LMS1..5=LMS6) matching
+// daily-progress.html's DAILY_SCHOOL_NAMES order -- confirmed against
+// the live data (lmsIdx 0-5 all present, correct distribution). Also
+// mirrored server-side in apps-script/teacher-portal.gs's
+// TP_LMS_IDX_TO_CAMPUS_ID -- keep both in sync.
+const LMS_IDX_TO_CAMPUS_ID = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+function recordMatchesMyCampus_(record) {
+  const campusId = EFFECTIVE_CAMPUS_ID || SESSION.campusId;
+  return LMS_IDX_TO_CAMPUS_ID[record.lmsIdx] === campusId;
+}
+async function loadTags() {
+  const body = document.getElementById('tagsBody');
+  tagsLoaded = true;
+  const codeRes = await ensureMyEmployeeCode_();
+  if (!codeRes.success) { body.innerHTML = '<div class="notice">Couldn’t resolve your Employee Code: ' + esc_(codeRes.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(codeRes); return; }
+  if (!MY_EMPLOYEE_CODE) {
+    body.innerHTML = '<div class="dash-empty">Your account doesn’t resolve to an Employee Code yet (checked by your sign-in email, then by name) — CW/HW patterns can’t be reliably matched until that’s fixed at the source. Flag this so it can be corrected.</div>';
+    return;
+  }
+  const roster = await loadMyCampusRoster_();
+  let data;
+  try {
+    data = await loadCwHwData_();
+  } catch (err) {
+    body.innerHTML = '<div class="notice">Couldn’t reach the CW/HW data source (tried twice): ' + esc_(err.message) + '</div>';
+    return;
+  }
+  if (!data || !Array.isArray(data.cwRecords)) {
+    body.innerHTML = '<div class="notice">CW/HW data source returned something unexpected — try again shortly.</div>';
+    return;
+  }
+  const mine = data.cwRecords.filter(function (r) { return recordMatchesMyCampus_(r) && resolveCodeFromName_(r.teacher, roster) === MY_EMPLOYEE_CODE; });
+  if (!mine.length) {
+    body.innerHTML = '<div class="dash-empty">No CW/HW log entries resolved to your Employee Code yet. If you have been logging and this looks wrong, the log’s typed name likely isn’t matching your roster entry — flag it so it can be fixed.</div>';
+    return;
+  }
+  // Single 7-day window (2026-09-20, per Uday: "stick to just 1 option,
+  // that is 7 days" -- was 7/14/30 side by side, simplified back to one).
+  // Note this doesn't shrink the actual CW/HW proxy fetch above -- that
+  // returns the full multi-campus log regardless of display window --
+  // it only trims what gets computed/rendered afterward.
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recent = mine.filter(function (r) { return r.timeMs >= cutoff; }).sort(function (a, b) { return b.timeMs - a.timeMs; });
+
+  // Real logging streak (7-day window) -- consecutive most-recent days
+  // with at least one CW or HW entry, computed from actual timestamps,
+  // not simulated.
+  const daySet = {};
+  mine.forEach(function (r) { const d = new Date(r.timeMs); daySet[d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()] = true; });
+  const dayDots = [];
+  let streak = 0, streakBroken = false;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    const hit = !!daySet[key];
+    dayDots.unshift(hit);
+    if (!streakBroken) { if (hit) streak++; else streakBroken = true; }
+  }
+  renderStreak_(streak);
+  document.getElementById('homeTagSub').textContent = recent.length + ' log' + (recent.length === 1 ? '' : 's') + ' in the last 7 days';
+
+  const dotsHtml = dayDots.map(function (hit) { return '<div class="day-dot' + (hit ? ' hit' : '') + '"></div>'; }).join('');
+
+  // Class-Subject groups (2026-09-21, per Uday) -- grouped from the
+  // FULL `mine` array, not the 7-day-windowed `recent`: "past 7
+  // entries" is an entry-count cap per class-subject, not a day
+  // window, so a class taught only twice a week still shows a real
+  // 7-entry history instead of getting clipped by a day cutoff. Cached
+  // module-level (cwhwGroups_/cwhwGroupKeys_) so clicking one to
+  // expand -- while every other combination stays visible as its own
+  // clickable row, per Uday -- just re-renders from what's already
+  // here, no re-fetch. No tags shown -- removed per Uday, raw tag text
+  // isn't meaningful without the rubric that would define what a
+  // "good" pattern looks like.
+  cwhwGroups_ = {};
+  mine.forEach(function (r) {
+    const key = (r.classMapped || '—') + ' · ' + (r.subject || '—');
+    (cwhwGroups_[key] = cwhwGroups_[key] || []).push(r);
+  });
+  cwhwGroupKeys_ = Object.keys(cwhwGroups_);
+  cwhwGroupKeys_.forEach(function (k) { cwhwGroups_[k].sort(function (a, b) { return b.timeMs - a.timeMs; }); });
+  cwhwGroupKeys_.sort(function (a, b) { return cwhwGroups_[b][0].timeMs - cwhwGroups_[a][0].timeMs; });
+  cwhwExpandedKey_ = null; // collapse everything on a fresh load (view-as switch, refresh, etc.)
+
+  body.innerHTML =
+    '<div class="card"><p class="card-title">Last 7 Days<span style="font-weight:600;color:var(--gray);text-transform:none;letter-spacing:0">' + recent.length + ' log' + (recent.length === 1 ? '' : 's') + '</span></p><div class="day-strip">' + dotsHtml + '</div></div>' +
+    '<div id="cwhwGroupsBody"></div>';
+  renderCwHwGroups_();
+}
+
+// Accordion state (2026-09-21) -- every class-subject combination
+// always shows as its own row (per Uday: "still being able to see all
+// of the tabs"); clicking one expands its own last-7-entries detail in
+// place, click again to collapse. Only one open at a time, matching
+// the same pattern My Requests already uses (toggleApprovalRow).
+let cwhwGroups_ = {};
+let cwhwGroupKeys_ = [];
+let cwhwExpandedKey_ = null;
+
+function renderCwHwGroups_() {
+  const wrap = document.getElementById('cwhwGroupsBody');
+  if (!wrap) return;
+  if (!cwhwGroupKeys_.length) { wrap.innerHTML = '<div class="dash-empty">No CW/HW log entries yet.</div>'; return; }
+  wrap.innerHTML = cwhwGroupKeys_.map(function (key) {
+    const isOpen = cwhwExpandedKey_ === key;
+    let html = '<div class="req-card" onclick="toggleCwHwGroup_(\'' + key.replace(/'/g, "\\'") + '\')">' +
+      '<div class="req-top"><span class="req-title">' + esc_(key) + '</span><span class="req-meta">' + (isOpen ? '▲' : '▼') + '</span></div>';
+    if (isOpen) {
+      const top7 = cwhwGroups_[key].slice(0, 7).slice().reverse();
+      html += '<div class="req-detail">' + top7.map(cwhwEntryHtml_).join('') + '</div>';
+    }
+    return html + '</div>';
+  }).join('');
+}
+
+function toggleCwHwGroup_(key) {
+  cwhwExpandedKey_ = (cwhwExpandedKey_ === key) ? null : key;
+  renderCwHwGroups_();
+}
+
+function cwhwEntryHtml_(r) {
+  const when = formatDDMMYYYY_(r.timeMs) + ' · ' + new Date(r.timeMs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const hwHtml = (r.hwDesc || r.hwChapter)
+    ? '<div class="cwhw-block"><span class="cwhw-label hw">HW</span>' + esc_(r.hwChapter ? r.hwChapter + ' — ' : '') + esc_(r.hwDesc || '') + '</div>'
+    : '';
+  return '<div class="cwhw-entry">' +
+    '<div class="cwhw-entry-head">' + esc_(when) + '</div>' +
+    '<div class="cwhw-block"><span class="cwhw-label cw">CW</span>' + esc_(r.cwChapter ? r.cwChapter + ' — ' : '') + esc_(r.cwDesc || '') + '</div>' +
+    hwHtml +
+    '</div>';
+}
+
+// ── UPCOMING EVENTS — action=myupcomingevents, campus official
+// Calendar, next 14 days (server-side window, see principal-dr.gs). ──
+async function loadEvents_() {
+  const body = document.getElementById('eventsBody');
+  const res = await pdrGet_('myupcomingevents', {});
+  if (!res.success) { body.innerHTML = '<div class="notice">Couldn’t load events: ' + esc_(res.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(res); return; }
+  document.getElementById('eventsCampusLabel').textContent = LMCS.campusLabel(res.campusId);
+  if (!res.events.length) { body.innerHTML = '<div class="dash-empty">Nothing on the school calendar in the next 14 days.</div>'; return; }
+  const todayStr = new Date().toDateString();
+  const tomorrowStr = new Date(Date.now() + 86400000).toDateString();
+  const rowsHtml = res.events.map(function (e) {
+    const d = new Date(e.start);
+    let when = d.toDateString() === todayStr ? 'Today' : (d.toDateString() === tomorrowStr ? 'Tomorrow' : formatDDMMYYYY_(e.start));
+    if (!e.allDay) when += ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return '<div class="event-row"><span class="ico">📌</span><div class="txt"><b>' + esc_(e.title) + '</b><span>' + esc_(when) + '</span></div></div>';
+  }).join('');
+  body.innerHTML = '<div class="scroll-list">' + rowsHtml + '</div>';
+}
+
+// ── YOUR TIMETABLE — static data/timetable.json (see this repo's
+// README), re-keyed 2026-09-20 by TeacherEmployeeCode instead of name
+// -- matched via MY_EMPLOYEE_CODE (see the resolution block above),
+// same honest not-found pattern as everywhere else here. No LMS1 data
+// yet -- source timetable extraction hasn't covered that campus. Note
+// the code-keying tradeoff: 562 of the original 3,144 timetable rows
+// had an assigned teacher but no EmployeeCode the extractor could
+// resolve -- those periods are simply absent now rather than shown
+// under a guessed name. ─────────────────────────────────────────────
+const TIMETABLE_URL = 'data/timetable.json';
+const TT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let myTimetable_ = null; // {periods:[...]} once loaded
+let ttSelectedDay = TT_DAYS[Math.max(0, Math.min(5, new Date().getDay() - 1))]; // Sun(0) clamps to Mon
+
+async function loadTimetable_() {
+  const body = document.getElementById('timetableBody');
+  const codeRes = await ensureMyEmployeeCode_();
+  if (!codeRes.success) { body.innerHTML = '<div class="notice">Couldn’t resolve your Employee Code: ' + esc_(codeRes.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(codeRes); return; }
+  if (!MY_EMPLOYEE_CODE) {
+    body.innerHTML = '<div class="dash-empty">Your account doesn’t resolve to an Employee Code yet (checked by your sign-in email, then by name) — timetable can’t be matched until that’s fixed at the source. Flag this so it can be corrected.</div>';
+    document.getElementById('ttDayPicker').innerHTML = '';
+    return;
+  }
+  let data;
+  try {
+    data = await fetch(TIMETABLE_URL, { cache: 'no-cache' }).then(function (r) { return r.json(); });
+  } catch (err) {
+    body.innerHTML = '<div class="notice">Couldn’t load timetable data: ' + esc_(err.message) + '</div>';
+    return;
+  }
+  const campusId = EFFECTIVE_CAMPUS_ID || SESSION.campusId;
+  const campusData = data.campuses[campusId];
+  if (!campusData) {
+    body.innerHTML = '<div class="dash-empty">Timetable data for ' + esc_(LMCS.campusLabel(campusId)) + ' isn’t available yet — it hasn’t been digitized for this campus.</div>';
+    document.getElementById('ttDayPicker').innerHTML = '';
+    return;
+  }
+  myTimetable_ = campusData[MY_EMPLOYEE_CODE] || null;
+  if (!myTimetable_) {
+    body.innerHTML = '<div class="dash-empty">No timetable entries resolved to your Employee Code. Either you don’t teach regular periods, or the timetable extraction couldn’t resolve a code for your rows — flag it if this looks wrong.</div>';
+    document.getElementById('ttDayPicker').innerHTML = '';
+    return;
+  }
+  document.getElementById('ttDayPicker').innerHTML = TT_DAYS.map(function (d) {
+    return '<button class="role-btn' + (d === ttSelectedDay ? ' active' : '') + '" onclick="ttSelectDay_(\'' + d + '\')">' + d + '</button>';
+  }).join('');
+  renderTimetableDay_();
+}
+function ttSelectDay_(day) { ttSelectedDay = day; document.querySelectorAll('#ttDayPicker .role-btn').forEach(function (b) { b.classList.toggle('active', b.textContent === day); }); renderTimetableDay_(); }
+// Full canonical period grid (2026-09-20, per Uday) -- every school
+// runs a fixed-count period day (9 at most campuses, 8 at LMS6 --
+// genuinely absent in the source data, not a bug, see README), with
+// predefined timing derived from the majority time seen per period at
+// that campus. Every period shows, whether this teacher has a class
+// in it or not -- an unassigned slot is a real "Checking Period" (free
+// period, commonly used for notebook checking), tagged rather than
+// just left blank. No scroll-list wrapper here (unlike Upcoming
+// Events) -- a day's periods are a small, bounded list; showing all of
+// them without scrolling is the point of this change.
+function renderTimetableDay_() {
+  const body = document.getElementById('timetableBody');
+  if (!myTimetable_) return;
+  const rows = myTimetable_.periods.filter(function (p) { return p.day === ttSelectedDay; }).sort(function (a, b) { return a.period - b.period; });
+  if (!rows.length) { body.innerHTML = '<div class="dash-empty">No periods on ' + ttSelectedDay + '.</div>'; return; }
+  body.innerHTML = rows.map(function (p) {
+    const sub = p.free ? '<span class="tag-chip tag-checking">Checking Period</span>' : esc_(p.class || '—');
+    return '<div class="event-row"><span class="ico" style="font-weight:800;width:44px;flex-shrink:0">' + esc_(p.start) + '</span><div class="txt"><b>' + (p.free ? 'Free' : esc_(p.subject || '—')) + '</b><span>' + sub + '</span></div></div>';
+  }).join('');
+}
+
+// ── MY RANK — action=myrankscore, 50% SS + 50% CW/HW Regularity,
+// ranked within the caller's own campus. Explicitly labeled "draft" in
+// the card itself (see the HTML) -- this is not wired to actual
+// payroll, which still runs off a separate Excel workbook; see
+// apps-script/teacher-portal.gs's header for the full reasoning. ────
+async function loadRank_() {
+  const body = document.getElementById('rankBody');
+  const res = await pdrGet_('myrankscore', {});
+  if (!res.success) { body.innerHTML = '<div class="notice" style="background:rgba(255,255,255,.92)">Couldn’t load your score: ' + esc_(res.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(res); return; }
+  if (!res.found) {
+    body.innerHTML = '<div style="font-size:12.5px;line-height:1.6;opacity:.95">Not enough data yet to compute your score — this needs your name to resolve to an Employee Code, plus at least some SS or CW/HW activity. If you know you have both and this looks wrong, it may be a name-matching gap worth flagging.</div>';
+    return;
+  }
+  body.innerHTML =
+    '<div style="font-size:38px;font-weight:800;line-height:1">' + res.total + '<span style="font-size:16px;font-weight:600;opacity:.85">/100</span></div>' +
+    '<div style="font-size:12px;opacity:.9;margin:2px 0 14px">at ' + esc_(LMCS.campusLabel(res.campusId)) + ' — no ranking yet, just your own numbers</div>' +
+    '<div style="display:flex;gap:10px">' +
+      '<div style="flex:1;background:rgba(255,255,255,.18);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.ssScore + '</div><div style="font-size:10px;opacity:.9">SS Score (50%)</div></div>' +
+      '<div style="flex:1;background:rgba(255,255,255,.18);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.regularityPct + '%</div><div style="font-size:10px;opacity:.9">Regularity, ' + res.windowDays + 'd (50%)</div></div>' +
+    '</div>';
+}
+
+// ── Home helpers ─────────────────────────────────────────────────
+function renderStreak_(streak) {
+  const wrap = document.getElementById('streakPillWrap');
+  if (!streak) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = '<div class="streak-pill">🔥 ' + streak + '-day CW/HW logging streak</div>';
+}
+
+// ── Owner Test Mode — view the read-only display features AS ANY
+// employee in the Employee Master roster (~173 people, every campus),
+// not just someone already entered on this portal's own Allowlist --
+// searched by name or code via a native <input list> datalist (no
+// custom autocomplete JS needed), resolved to an EmployeeCode. Only
+// ever fetched/shown to a caller whose OWN session already has Owner
+// -- the actual security boundary is server-side in main.gs's
+// pdrResolveViewAsCaller_, this is just the UI for it. ──────────────
+let viewAsRosterPromise_ = null;
+function loadViewAsRoster_() {
+  if (!viewAsRosterPromise_) {
+    viewAsRosterPromise_ = fetch(EMPLOYEE_ROSTER_URL + '?action=employees', { cache: 'no-cache' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.success || !Array.isArray(res.employees)) return [];
+        return res.employees.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+      })
+      .catch(function () { return []; });
+  }
+  return viewAsRosterPromise_;
+}
+function viewAsOptionLabel_(emp) {
+  return (emp.name || '(no name)') + ' — ' + emp.employeeCode + ' — ' + LMCS.campusLabel('LMS' + String(emp.school || '').replace('LMS', '').trim());
+}
+
+// Single render for both states (plain picker vs. active banner) so
+// there's one source of truth for the bar's DOM instead of two
+// functions fighting over the same container.
+async function renderViewAsBar_() {
+  if (!LMCS.hasRole(SESSION, 'Owner')) return;
+  const bar = document.getElementById('viewAsBar');
+  bar.style.display = 'block';
+  const roster = await loadViewAsRoster_();
+  const active = VIEW_AS_CODE ? roster.filter(function (e) { return e.employeeCode === VIEW_AS_CODE; })[0] : null;
+  const datalistHtml = roster.map(function (e) { return '<option value="' + esc_(viewAsOptionLabel_(e)) + '">'; }).join('');
+  bar.innerHTML =
+    (VIEW_AS_CODE ? '<div class="viewas-active">👁️ Viewing as: ' + esc_(active ? active.name : VIEW_AS_CODE) + '<button type="button" onclick="exitViewAs_()">Exit</button></div>' : '') +
+    '<div class="viewas-picker" style="margin-top:' + (VIEW_AS_CODE ? '6px' : '0') + '">' +
+      '<label>Owner test mode</label>' +
+      '<input type="text" id="viewAsInput" list="viewAsDatalist" placeholder="Search any employee by name or code…" value="' + (active ? esc_(viewAsOptionLabel_(active)) : '') + '" oninput="onViewAsInput_()">' +
+      '<datalist id="viewAsDatalist">' + datalistHtml + '</datalist>' +
+    '</div>';
+}
+
+// Fires on every keystroke (native datalist behavior) -- only acts
+// once the typed text EXACTLY matches one option's label (true whether
+// the user clicked a suggestion or finished typing it themselves), so
+// mid-typing keystrokes are harmless no-ops rather than firing a
+// reload per character.
+async function onViewAsInput_() {
+  const typed = document.getElementById('viewAsInput').value;
+  if (!typed) { if (VIEW_AS_CODE) exitViewAs_(); return; }
+  const roster = await loadViewAsRoster_();
+  const match = roster.filter(function (e) { return viewAsOptionLabel_(e) === typed; })[0];
+  if (!match) return;
+  VIEW_AS_CODE = match.employeeCode;
+  resetViewAsCaches_();
+  renderViewAsBar_();
+  reloadForViewAs_();
+}
+function exitViewAs_() {
+  VIEW_AS_CODE = null;
+  resetViewAsCaches_();
+  renderViewAsBar_();
+  reloadForViewAs_();
+}
+// Re-runs every read-only display feature after the view-as target
+// changes. Deliberately excludes loadApprovals -- My Requests always
+// shows the signed-in Owner's OWN requests, never impersonated (see
+// pdrResolveViewAsCaller_'s comment for why).
+function reloadForViewAs_() {
+  loadRank_();
+  loadEvals();
+  tagsLoaded = false; loadTags();
+  loadEvents_();
+  loadTimetable_();
+}
+
+function showDenied_(message) {
+  document.getElementById('deniedBox').style.display = 'block';
+  document.getElementById('deniedBox').innerHTML = '<div class="denied"><div class="icon">🔒</div><h3>Not available</h3><p>' + esc_(message) + '</p></div>';
+}
+
+function init() {
+  SESSION = LMCS.getSession();
+  // Owner admitted even without Teacher on their own row (2026-09-20)
+  // -- Owner Test Mode is the point of entry for them, not their own
+  // personal data. An Owner who ALSO has Teacher (e.g. "Owner,Teacher")
+  // still sees their own real data by default until they pick someone
+  // to view as.
+  if (!SESSION || (!LMCS.hasRole(SESSION, 'Teacher') && !LMCS.hasRole(SESSION, 'Owner'))) {
+    showDenied_('The Teacher Portal is for Teacher accounts. Principals/Coordinators already have the full Approvals workflow on the Principal’s Daily Reporting page.');
+    return;
+  }
+  document.getElementById('hdrGreeting').textContent = 'Hey, ' + (SESSION.name ? SESSION.name.split(' ')[0] : 'there') + ' 👋';
+  document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  document.getElementById('appArea').style.display = '';
+  document.getElementById('bottomNav').style.display = 'flex';
+  renderViewAsBar_();
+  loadApprovals();
+  loadEvals();
+  loadTags();
+  loadEvents_();
+  loadTimetable_();
+  loadRank_();
+}
+init();
+</script>
+
+</body>
+</html>
