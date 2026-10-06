@@ -265,11 +265,37 @@ function aprSubmit_(caller, body) {
   const showsAmount = APR_AMOUNT_CATEGORIES.indexOf(category) !== -1;
   const showsItem = APR_ITEM_CATEGORIES.indexOf(category) !== -1;
   const showsQty = APR_ITEM_QTY_CATEGORIES.indexOf(category) !== -1;
+  const amountVal = showsAmount && body.amount !== undefined && body.amount !== '' ? Number(body.amount) : '';
+
+  // 2026-10-06, per Uday: principals double-submitted because saves are slow (or the reply was
+  // lost) and the page looked like it had failed. Refuse a copy of a request that is still open,
+  // or was filed in the last 10 minutes -- the lock stops two simultaneous clicks racing past the
+  // check. Same campus + requester + category + title + description + amount = the same request.
+  const norm = function (v) { return String(v || '').trim().toLowerCase().replace(/\s+/g, ' '); };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const existing = aprValues_();
+    for (let i = 1; i < existing.length; i++) {
+      const r = existing[i];
+      if (!r[0] || String(r[1]).trim() !== caller.campusId || norm(r[11]) !== norm(caller.email)) continue;
+      if (norm(r[2]) !== norm(category) || norm(r[4]) !== norm(title) || norm(r[5]) !== norm(description)) continue;
+      if (String(r[6]) !== String(amountVal)) continue;
+      if (norm(r[10]) !== norm(body.evidenceLink) || norm(r[7]) !== norm(showsItem ? body.itemName : '')) continue; // e.g. hiring: a different outgoing employee is a different request
+      const open = String(r[13]) === APR_STATUS.PENDING || String(r[13]) === APR_STATUS.INFO_REQUESTED;
+      const recent = r[12] && (new Date().getTime() - new Date(r[12]).getTime()) < 10 * 60 * 1000;
+      if (open || recent) return { success: true, id: String(r[0]), duplicate: true, status: String(r[13]) };
+    }
+    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty);
+  } finally { lock.releaseLock(); }
+}
+
+function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty) {
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
     id, caller.campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
     title, description,
-    showsAmount && body.amount !== undefined && body.amount !== '' ? Number(body.amount) : '',
+    amountVal,
     showsItem ? String(body.itemName || '').trim() : '',
     showsQty && body.quantity !== undefined && body.quantity !== '' ? Number(body.quantity) : '',
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),

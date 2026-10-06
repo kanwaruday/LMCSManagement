@@ -2779,8 +2779,11 @@ async function submitApprovalRequest() {
   btn.disabled = true;
   const originalLabel = btn.textContent;
   btn.textContent = 'Submitting…';
+  const slowTimer = setTimeout(function () { btn.textContent = 'Still working — please don’t click again…'; }, 4000);
   try {
-    const res = await pdrPost_('submitapproval', {
+    // The server refuses a copy of a request that is already open, so retrying an unreadable
+    // (Google error page) reply is safe -- the reply is what gets lost, not necessarily the save.
+    let res, payload = {
       category: category,
       urgency: document.getElementById('aprUrgency').value,
       title: title,
@@ -2790,7 +2793,12 @@ async function submitApprovalRequest() {
       quantity: document.getElementById('aprQuantity').value,
       evidenceLink: evidenceLink,
       linkedPlannedActivityId: isHiring ? '' : document.getElementById('aprLinkedActivity').value,
-    });
+    };
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      res = await pdrPost_('submitapproval', payload);
+      if (res.success || !/JSON|DOCTYPE/.test(String(res.error || ''))) break;
+      await new Promise(function (ok) { setTimeout(ok, 2000); });
+    }
     if (!res.success) {
       pdrReportAuthFailureIfNeeded_(res);
       alert('Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.');
@@ -2813,9 +2821,10 @@ async function submitApprovalRequest() {
       document.getElementById('aprLastWorkingDayWrap').style.display = 'none';
       renderAprSubjectsMsOptions();
     }
-    alert('Request submitted.');
+    alert(res.duplicate ? 'This request was already submitted (status: ' + (res.status || 'Pending') + '). No second copy was created.' : 'Request submitted.');
     refreshApprovals();
   } finally {
+    clearTimeout(slowTimer);
     btn.disabled = false;
     btn.textContent = originalLabel;
   }
