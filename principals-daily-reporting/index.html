@@ -2248,6 +2248,7 @@ async function loadApprovals() {
       return;
     }
     aprRes = res;
+    if (res.canDecide) aprLoadRefereeList_(); // warm the staff list now so the Refer-to search is instant later
     document.getElementById('aprNewRequestCard').style.display = LMCS.hasRole(SESSION, 'Principal') ? 'block' : 'none';
     aprRenderStatusFilter_();
     renderApprovalsForSelectedCampus();
@@ -2616,16 +2617,19 @@ let aprRefereeNames_ = {}; // email -> name
 let aprRefereeStaff_ = []; // [{name,email}]
 let aprRefereeError_ = '';
 const aprReferees_ = {};   // approvalId -> [emails]
+let aprRefereeLoading_ = false;
 async function aprLoadRefereeList_() {
-  if (aprRefereeListLoaded_) return;
-  aprRefereeListLoaded_ = true;
+  if (aprRefereeListLoaded_ || aprRefereeLoading_) return;
+  aprRefereeLoading_ = true;
   try {
     const res = await fetch(PDR_BACKEND_URL + '?action=approvalreferees&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
-    if (!res.success || !res.staff) { aprRefereeListLoaded_ = false; aprRefereeError_ = res.error || 'backend not updated yet?'; return; }
+    if (!res.success || !res.staff) { aprRefereeError_ = res.error || 'backend not updated yet?'; return; }
+    aprRefereeListLoaded_ = true;
     aprRefereeError_ = '';
     aprRefereeStaff_ = res.staff;
     res.staff.forEach(function (s) { aprRefereeNames_[s.email] = s.name; });
-  } catch (err) { aprRefereeListLoaded_ = false; aprRefereeError_ = err.message; }
+  } catch (err) { aprRefereeError_ = err.message; }
+  finally { aprRefereeLoading_ = false; }
 }
 const APR_REFER_KINDS = [['action', 'For Action'], ['accountability', 'For Accountability'], ['information', 'For Information']];
 function aprReferHtml_(id) {
@@ -2640,7 +2644,15 @@ function aprReferHtml_(id) {
       '<div id="aprReferMenu-' + sfx + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div></div>';
   }).join('') + '<div style="font-size:11px;color:var(--gray)">Optional. Each group gets its own email, without the amount.</div></div>';
 }
-function aprSearchReferee(id, kind) {
+async function aprSearchReferee(id, kind) {
+  if (!aprRefereeListLoaded_ && !aprRefereeLoading_) { // not loaded (or failed earlier): try again now, then redo this search
+    const p = aprLoadRefereeList_();
+    aprSearchReferee_(id, kind);
+    await p;
+  }
+  aprSearchReferee_(id, kind);
+}
+function aprSearchReferee_(id, kind) {
   const sfx = kind + '-' + id;
   const menu = document.getElementById('aprReferMenu-' + sfx);
   const q = document.getElementById('aprRefer-' + sfx).value.trim().toLowerCase();
@@ -2649,7 +2661,7 @@ function aprSearchReferee(id, kind) {
   const item = 'padding:7px 12px;cursor:pointer;font-size:13px';
   menu.innerHTML = hits.length ? hits.map(function (s) {
     return '<div style="' + item + '" onmousedown="aprPickReferee(\'' + id + '\',\'' + kind + '\',\'' + s.email + '\')">' + aprEsc_(s.name) + ' <span style="color:var(--gray);font-size:11.5px">' + aprEsc_(s.email) + '</span></div>';
-  }).join('') : '<div style="' + item + ';color:var(--gray)">' + (aprRefereeStaff_.length ? 'No match' : 'Staff list ' + (aprRefereeError_ ? 'unavailable: ' + aprEsc_(aprRefereeError_) : 'still loading…')) + '</div>';
+  }).join('') : '<div style="' + item + ';color:var(--gray)">' + (aprRefereeStaff_.length ? 'No match' : (aprRefereeLoading_ ? 'Loading the staff list (the backend can be slow)…' : 'Couldn’t load the staff list (' + aprEsc_(aprRefereeError_ || 'unknown') + '). Keep typing to retry, or type the full @lms.org.in address and press Enter.')) + '</div>';
   menu.style.display = 'block';
 }
 function aprPickReferee(id, kind, email) {

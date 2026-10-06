@@ -437,7 +437,7 @@ function aprReferees_(caller) {
     if (name && /^[^@\s]+@lms\.org\.in$/.test(email)) staff.push({ name: name, email: email });
   }
   staff.sort(function (a, b) { return a.name.localeCompare(b.name); });
-  cache.put('apr_referees', JSON.stringify(staff), 600);
+  cache.put('apr_referees', JSON.stringify(staff), 21600); // 6h (CacheService max); staff emails change rarely
   return { success: true, staff: staff };
 }
 
