@@ -21,6 +21,8 @@ those really do need copying from there.
 - `approvals.gs` — Principal-to-Owner approval requests (Approvals tab)
 - `hiring.gs` — Hiring Dashboard: browse Teaching Applicants, track status, gate the "Hired" write on Approvals (added 2026-09-14, ported+refined from `lmcs-salary-dashboard/apps-script/teaching-applicants.gs`, never deployed there)
 
+- `coordinator-tasks.gs` — Coordinator Portal follow-up engine (`coordinator/index.html`, added 2026-10-06): `coordinatortasks` (GET), `coordinatorresolvetask` (POST), Coordinator/Owner only. Uses a "Tasks" tab inside the existing LMCS Approvals workbook (creates itself, no setup). First adapter: SS compliance (one task per role+campus+month under 70% quota compliance, auto-resolves when it clears).
+
 **One deployment** ("LMCS Employee Roster Proxy" — `EMPLOYEE_ROSTER_URL`, `STAFF_API_URL`, **and**
 `ALLOWLIST_API_URL` are now all the same URL):
 - `employee-roster.gs` — public reads (`roster`/`employees`/`designations`, no token) used by PDR,

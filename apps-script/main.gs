@@ -159,6 +159,7 @@ function doGet(e) {
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'hiringrownotes') return jsonOut_(hiringRowNotes_(e.parameter.row));
+    if (action === 'coordinatortasks') return jsonOut_(coordTasksList_(caller));
     if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
     if (action === 'salaryconfig') return jsonOut_(salaryConfig_());
     // TEMPORARY diagnostic (2026-09-28) -- remove once the PayScale Table
@@ -215,6 +216,7 @@ function doPost(e) {
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
     if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
     if (action === 'hiringrefreshtracker') return jsonOut_(hiringRefreshTracker_(caller));
+    if (action === 'coordinatorresolvetask') return jsonOut_(coordTaskResolve_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

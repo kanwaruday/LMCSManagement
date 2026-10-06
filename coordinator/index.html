@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Coordinator Portal</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--amber:#b45309;--amber-bg:#fef3c7}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6}
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--red-h)}
+.hdr h1{font-size:14px;font-weight:700}
+.hdr a{color:rgba(255,255,255,.92);font-size:11px;font-weight:600;text-decoration:none}
+#appBody{padding:24px;max-width:1000px;margin:0 auto}
+#authRoot{max-width:420px;margin:60px auto}
+.welcome{display:flex;justify-content:space-between;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px;gap:10px;flex-wrap:wrap}
+.signout{font-size:11px;color:var(--gray);text-decoration:none}
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+h2{font-size:15px;margin:18px 0 8px}
+.status{color:var(--gray);padding:12px 0}
+.task{border:1px solid var(--border);border-left:4px solid var(--amber);border-radius:6px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.task.high{border-left-color:var(--red)}
+.task .t{font-weight:600}
+.task .d{color:var(--gray);font-size:12px}
+.chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:3px;background:var(--amber-bg);color:var(--amber);margin-right:6px;text-transform:uppercase}
+.task.high .chip{background:#fee2e2;color:var(--red)}
+button{border:1px solid var(--border);background:var(--white);border-radius:4px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--red);color:var(--red)}
+button:disabled{opacity:.5;cursor:default}
+</style>
+</head>
+<body>
+<header class="hdr"><h1>LMCS — Coordinator Portal</h1><a href="../index.html">&larr; Portal home</a></header>
+<div id="authRoot"></div>
+<main id="appBody" style="display:none"></main>
+
+<script src="../assets/auth.js"></script>
+<script>
+const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+let SESSION = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+async function loadTasks() {
+  const res = await fetch(PDR_BACKEND_URL + '?action=coordinatortasks&idToken=' + encodeURIComponent(SESSION.idToken));
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Could not load tasks');
+  return data.tasks;
+}
+
+async function resolveTask(taskId, btn) {
+  const note = prompt('Resolution note (optional):');
+  if (note === null) return;
+  btn.disabled = true;
+  try {
+    // plain-text body, no Content-Type: keeps the request CORS-safelisted (no preflight; main.gs has no doOptions)
+    const res = await fetch(PDR_BACKEND_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'coordinatorresolvetask', idToken: SESSION.idToken, taskId: taskId, note: note }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Could not resolve');
+    render();
+  } catch (err) {
+    btn.disabled = false;
+    alert('Could not resolve: ' + err.message);
+  }
+}
+
+async function render() {
+  const list = document.getElementById('taskList');
+  list.innerHTML = '<div class="status">Loading follow-ups...</div>';
+  try {
+    const tasks = await loadTasks();
+    if (!tasks.length) { list.innerHTML = '<div class="status">Nothing to follow up on right now.</div>'; return; }
+    list.innerHTML = tasks.map(t =>
+      '<div class="task ' + esc(t.severity) + '"><div>' +
+        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + esc(t.title) + '</div>' +
+        '<div class="d">' + esc(t.detail) + '</div>' +
+      '</div><button data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
+    ).join('');
+    list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolveTask(b.dataset.id, b)));
+  } catch (err) {
+    list.innerHTML = '<div class="status">Could not load follow-ups: ' + esc(err.message) +
+      ' <button id="retry">Retry</button></div>';
+    document.getElementById('retry').addEventListener('click', render);
+  }
+}
+
+function showApp(session) {
+  SESSION = session;
+  document.getElementById('authRoot').style.display = 'none';
+  const body = document.getElementById('appBody');
+  body.style.display = '';
+  if (!LMCS.canViewCoordinatorPortal(session)) {
+    body.innerHTML = '<div class="denied">The Coordinator Portal is only available to Coordinators and the Owner.</div>';
+    return;
+  }
+  body.innerHTML =
+    '<div class="welcome"><div>Signed in as <b>' + esc(session.name) + '</b> &middot; ' + esc(session.campusName) +
+    '</div><a href="#" class="signout" id="signout">Sign out</a></div>' +
+    '<h2>Follow-ups</h2><div id="taskList"></div>';
+  document.getElementById('signout').addEventListener('click', e => { e.preventDefault(); LMCS.signOut(); });
+  render();
+}
+
+const cached = LMCS.getSession();
+if (cached) showApp(cached); else LMCS.requireSession('#authRoot').then(showApp);
+</script>
+</body>
+</html>

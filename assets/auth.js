@@ -219,6 +219,14 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // Coordinator Portal (coordinator/index.html): Owner or Coordinator only --
+  // deliberately a separate name from canManageStaff even though the rule
+  // matches today, so either can change without touching the other.
+  function canViewCoordinatorPortal(session) {
+    if (!session) return false;
+    return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+  }
+
   /**
    * Renders a Google Sign-In gate into `container` (an element or selector)
    * and resolves with the session once the visitor signs in successfully
@@ -322,5 +330,5 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, CAMPUS_NAMES };
 })();
