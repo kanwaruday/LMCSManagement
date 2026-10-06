@@ -7,7 +7,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/coordinator.gs',
 const now = new Date('2026-10-20T10:00:00Z');
 const emp = [['EmployeeCode', 'Name', 'SchoolCode', 'Status'],
   ['K1', 'Complete One', 'LMS1', 'Active'], ['K2', 'No Medical', 'LMS1', 'Active'], ['K3', 'Left Person', 'LMS1', 'Inactive'],
-  ['K4', 'Hidden Dept', 'LMS1', 'Active'], ['E1', 'All Good', 'LMS2', 'Active']];
+  ['K4', 'Hidden Dept', 'LMS1', 'Active'], ['K5', 'Nothing On File', 'LMS1', 'Active'], ['E1', 'All Good', 'LMS2', 'Active']];
 const sal = [['EmployeeCode', 'Department'], ['K4', 'AdminTM']];
 const cert = [['Employee Code', 'Employee Name', 'School', 'Document Type', 'Filename', 'Drive Link', 'Status'],
   ['K1', 'a', 'LMS 1', 'MEDICAL CERTIFICATE', 'f', 'http://x', 'Matched (confident)'],
@@ -20,10 +20,15 @@ const cert = [['Employee Code', 'Employee Name', 'School', 'Document Type', 'Fil
   ['', '', 'LMS 1', 'MEDICAL CERTIFICATE', 'f', '', 'Unmatched']];            // no link: not reviewable, ignored
 const w = ctx.coordDocumentWanted_(emp, sal, cert, now), by = {};
 w.forEach((t) => { by[t.taskId] = t; });
-assert.deepStrictEqual(Object.keys(by).sort(), ['doc_missing|LMS1|2026-10', 'doc_verify|LMS1|2026-10']);
+assert.strictEqual(JSON.stringify(Object.keys(by).sort()), JSON.stringify(['doc_missing|LMS1|2026-10', 'doc_none|LMS1|2026-10', 'doc_verify|LMS1|2026-10']));
 const m = by['doc_missing|LMS1|2026-10'];
-assert.ok(m.title.startsWith('LMS1: 1 of 2 staff'), m.title);   // K1 ok, K2 lacks, K3 left, K4 hidden dept
+assert.ok(m.title.startsWith('LMS1: 1 of 3 staff'), m.title);   // K1 ok, K2 partial, K5 none (own task), K3 left, K4 hidden dept
 assert.ok(m.detail.includes('No Medical (medical, qualification)'), m.detail);
-assert.strictEqual(m.severity, 'high');                           // 1 of 2 = 50%
+assert.ok(!m.detail.includes('Nothing On File'));               // no-documents-at-all people are not in the missing list
+assert.strictEqual(m.severity, 'high');                           // 1 of 3 = 33%
+const n = by['doc_none|LMS1|2026-10'];
+assert.ok(n.title.startsWith('LMS1: 1 of 3 staff have no certificates'), n.title);
+assert.ok(n.detail.includes('Nothing On File'));
+assert.strictEqual(n.severity, 'low');                            // always low, however many
 assert.strictEqual(by['doc_verify|LMS1|2026-10'].severity, 'low'); // 1 file
 console.log('coordinator documents: ok');

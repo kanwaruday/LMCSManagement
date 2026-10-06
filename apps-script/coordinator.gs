@@ -398,8 +398,12 @@ function coordRefreshHiring_() {
 }
 
 // ── Adapter: document compliance (Employee Master workbook, read-only) ──
-// Two roll-up tasks per campus per month (a task per person would be hundreds):
-//  - doc_missing: active staff lacking a required document (see COORD_DOC_REQUIRED).
+// Three roll-up tasks per campus per month (a task per person would be hundreds):
+//  - doc_missing: staff who have SOME certificates on file but lack a required one (see
+//    COORD_DOC_REQUIRED) -- the fixable, recent kind of gap.
+//  - doc_none: staff with no certificates on file at all. Certificate Links only covers people
+//    who used the upload form, so this is a long-standing backlog; always low severity so it
+//    never drowns out the real gaps.
 //  - doc_verify: certificate files the importer could not attribute with confidence, still
 //    waiting in the Staff Portal's Needs Verification tab.
 // The month is in the TaskId, so "resolved" only silences a campus for that month.
@@ -432,7 +436,7 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
   }
 
   const eCode = col(empRows, 'EmployeeCode'), eName = col(empRows, 'Name'), eSchool = col(empRows, 'SchoolCode'), eStatus = col(empRows, 'Status');
-  const staff = {}, missing = {}; // campus -> active count / [{name, lacks[]}]
+  const staff = {}, missing = {}, none = {}; // campus -> active count / [{name, lacks[]}] / [name]
   for (let i = 1; i < empRows.length; i++) {
     const r = empRows[i];
     const code = String(r[eCode] || '').trim();
@@ -443,6 +447,7 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
     if (!campus) continue;
     staff[campus] = (staff[campus] || 0) + 1;
     const have = docs[code] || {};
+    if (!Object.keys(have).length) { (none[campus] = none[campus] || []).push(String(r[eName] || code).trim()); continue; }
     const lacks = COORD_DOC_REQUIRED.filter(function (t) { return !have[t]; }).map(function (t) { return t.split(' ')[0].toLowerCase(); });
     if (!COORD_DOC_QUALIFICATION_ANY.some(function (t) { return have[t]; })) lacks.push('qualification');
     if (lacks.length) { (missing[campus] = missing[campus] || []).push({ name: String(r[eName] || code).trim(), lacks: lacks }); }
@@ -457,6 +462,15 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
       title: campus + ': ' + list.length + ' of ' + staff[campus] + ' staff missing required documents',
       detail: shown + (list.length > 6 ? '; and ' + (list.length - 6) + ' more' : ''),
       severity: share >= COORD_DOC_HIGH_SHARE ? 'high' : (share >= COORD_DOC_MEDIUM_SHARE ? 'medium' : 'low'),
+    });
+  });
+  Object.keys(none).forEach(function (campus) {
+    const list = none[campus];
+    wanted.push({
+      taskId: 'doc_none|' + campus + '|' + month, domain: 'doc_none', campus: campus,
+      title: campus + ': ' + list.length + ' of ' + staff[campus] + ' staff have no certificates on file',
+      detail: list.slice(0, 6).join(', ') + (list.length > 6 ? ', and ' + (list.length - 6) + ' more' : '') + '. Not on the upload form yet, so nothing is linked for them',
+      severity: 'low',
     });
   });
   Object.keys(verify).forEach(function (campus) {
@@ -490,6 +504,7 @@ function coordRefreshDocuments_() {
     const live = {};
     wanted.forEach(function (t) { live[t.taskId] = true; coordTaskUpsert_(sh, rows, t); });
     coordTasksAutoResolve_(sh, rows, 'doc_missing', null, live);
+    coordTasksAutoResolve_(sh, rows, 'doc_none', null, live);
     coordTasksAutoResolve_(sh, rows, 'doc_verify', null, live);
   } finally { lock.releaseLock(); }
   cache.put('coord_docs_refreshed', '1', COORD_DOCS_REFRESH_CACHE_SECONDS);
