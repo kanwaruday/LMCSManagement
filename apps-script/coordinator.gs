@@ -12,7 +12,8 @@
 // caller's own ID token where one has an endpoint, or (the Approvals tab, which sits in the
 // same workbook as Tasks) straight from the sheet. Adapters: SS compliance (PDR's
 // action=ssdashboard), approvals bottleneck (Approvals tab), hiring stalls and
-// complete-hire (Teaching Applicants + Approvals + Employee Master, read-only).
+// complete-hire (Teaching Applicants + Approvals + Employee Master, read-only), and
+// document compliance (Employee Master workbook, read-only).
 //
 // Actions: GET action=coordinatortasks, POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
@@ -66,6 +67,19 @@ const COORD_HIRE_OVERDUE_HIGH_DAYS = 3; // ... and high once joining was this ma
 const COORD_STALL_MEDIUM_DAYS = 3;    // approved to hire but not yet marked Hired
 const COORD_STALL_HIGH_DAYS = 7;
 const COORD_HIRING_REFRESH_CACHE_SECONDS = 300;
+
+// Document compliance (Employee Master workbook: EmpMaster, EmpSalary, Certificate Links tabs).
+// Required = what the Hiring Dashboard already insists on for every new hire, restricted to the
+// types Certificate Links tracks: medical, police verification, and at least one qualification.
+const COORD_DOC_REQUIRED = ['MEDICAL CERTIFICATE', 'POLICE VERIFICATION CHARACTER CERTIFICATE'];
+const COORD_DOC_QUALIFICATION_ANY = ['BACHELORS CERTIFICATE', 'MASTER CERTIFICATE',
+  'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)', 'HIGHEST QUALIFICATION'];
+const COORD_DOC_HIDDEN_DEPARTMENTS = ['admintm']; // hidden from the Staff Portal too (staff-management-api.gs)
+const COORD_DOC_MEDIUM_SHARE = 0.10; // share of a campus's active staff missing something -> medium
+const COORD_DOC_HIGH_SHARE = 0.30;   // ... -> high
+const COORD_VERIFY_MEDIUM_FILES = 5; // files awaiting verification at one campus -> medium
+const COORD_VERIFY_HIGH_FILES = 15;  // ... -> high
+const COORD_DOCS_REFRESH_CACHE_SECONDS = 600;
 
 function coordJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -374,12 +388,111 @@ function coordRefreshHiring_() {
   cache.put('coord_hiring_refreshed', '1', COORD_HIRING_REFRESH_CACHE_SECONDS);
 }
 
+// ── Adapter: document compliance (Employee Master workbook, read-only) ──
+// Two roll-up tasks per campus per month (a task per person would be hundreds):
+//  - doc_missing: active staff lacking a required document (see COORD_DOC_REQUIRED).
+//  - doc_verify: certificate files the importer could not attribute with confidence, still
+//    waiting in the Staff Portal's Needs Verification tab.
+// The month is in the TaskId, so "resolved" only silences a campus for that month.
+// empRows/salaryRows/certRows include their header row.
+function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
+  const month = Utilities.formatDate(now, 'Asia/Kolkata', 'yyyy-MM');
+  const col = function (rows, name) { return rows[0].indexOf(name); };
+
+  const dept = {};
+  const sCode = col(salaryRows, 'EmployeeCode'), sDept = col(salaryRows, 'Department');
+  for (let i = 1; i < salaryRows.length && sCode !== -1 && sDept !== -1; i++) {
+    dept[String(salaryRows[i][sCode] || '').trim()] = String(salaryRows[i][sDept] || '').trim().toLowerCase();
+  }
+
+  const docs = {}; // code -> { type: true }
+  const cCode = col(certRows, 'Employee Code'), cType = col(certRows, 'Document Type'), cLink = col(certRows, 'Drive Link');
+  const cStatus = col(certRows, 'Status'), cSchool = col(certRows, 'School');
+  const verify = {}; // campus -> files awaiting verification
+  for (let i = 1; i < certRows.length; i++) {
+    const r = certRows[i];
+    const link = cLink >= 0 ? String(r[cLink] || '').trim() : '';
+    if (!link) continue;
+    const code = cCode >= 0 ? String(r[cCode] || '').trim() : '';
+    if (code) { docs[code] = docs[code] || {}; docs[code][String(r[cType] || '').trim()] = true; }
+    const status = cStatus >= 0 ? String(r[cStatus] || '') : '';
+    if (status.indexOf('submitter-based') !== -1 || status.indexOf('Ambiguous') !== -1 || status.indexOf('Unmatched') !== -1) {
+      const campus = String(r[cSchool] || '').replace(/\s+/g, '').toUpperCase();
+      if (campus) verify[campus] = (verify[campus] || 0) + 1;
+    }
+  }
+
+  const eCode = col(empRows, 'EmployeeCode'), eName = col(empRows, 'Name'), eSchool = col(empRows, 'SchoolCode'), eStatus = col(empRows, 'Status');
+  const staff = {}, missing = {}; // campus -> active count / [{name, lacks[]}]
+  for (let i = 1; i < empRows.length; i++) {
+    const r = empRows[i];
+    const code = String(r[eCode] || '').trim();
+    if (!code) continue;
+    if ((eStatus >= 0 ? String(r[eStatus] || '').trim() : '') && String(r[eStatus]).trim() !== 'Active') continue;
+    if (COORD_DOC_HIDDEN_DEPARTMENTS.indexOf(dept[code] || '') !== -1) continue;
+    const campus = String(r[eSchool] || '').trim().toUpperCase();
+    if (!campus) continue;
+    staff[campus] = (staff[campus] || 0) + 1;
+    const have = docs[code] || {};
+    const lacks = COORD_DOC_REQUIRED.filter(function (t) { return !have[t]; }).map(function (t) { return t.split(' ')[0].toLowerCase(); });
+    if (!COORD_DOC_QUALIFICATION_ANY.some(function (t) { return have[t]; })) lacks.push('qualification');
+    if (lacks.length) { (missing[campus] = missing[campus] || []).push({ name: String(r[eName] || code).trim(), lacks: lacks }); }
+  }
+
+  const wanted = [];
+  Object.keys(missing).forEach(function (campus) {
+    const list = missing[campus], share = list.length / staff[campus];
+    const shown = list.slice(0, 6).map(function (m) { return m.name + ' (' + m.lacks.join(', ') + ')'; }).join('; ');
+    wanted.push({
+      taskId: 'doc_missing|' + campus + '|' + month, domain: 'doc_missing', campus: campus,
+      title: campus + ': ' + list.length + ' of ' + staff[campus] + ' staff missing required documents',
+      detail: shown + (list.length > 6 ? '; and ' + (list.length - 6) + ' more' : ''),
+      severity: share >= COORD_DOC_HIGH_SHARE ? 'high' : (share >= COORD_DOC_MEDIUM_SHARE ? 'medium' : 'low'),
+    });
+  });
+  Object.keys(verify).forEach(function (campus) {
+    const n = verify[campus];
+    wanted.push({
+      taskId: 'doc_verify|' + campus + '|' + month, domain: 'doc_verify', campus: campus,
+      title: campus + ': ' + n + ' certificate files need verification',
+      detail: 'Files the importer could not attribute with confidence; review them in the Staff Portal, Needs Verification tab',
+      severity: n >= COORD_VERIFY_HIGH_FILES ? 'high' : (n >= COORD_VERIFY_MEDIUM_FILES ? 'medium' : 'low'),
+    });
+  });
+  return wanted;
+}
+
+function coordRefreshDocuments_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('coord_docs_refreshed')) return;
+  const ss = SpreadsheetApp.openById(COORD_ROSTER_SHEET_ID);
+  const emp = ss.getSheetByName('EmpMaster'), sal = ss.getSheetByName('EmpSalary'), cert = ss.getSheetByName('Certificate Links');
+  if (!emp || !sal || !cert) return;
+  const certRows = cert.getDataRange().getValues();
+  const empRows = emp.getDataRange().getValues();
+  if (certRows.length < 2 || empRows.length < 2) return; // an unreadable/empty source must never look like "all clear" or "everyone is missing"
+  const wanted = coordDocumentWanted_(empRows, sal.getDataRange().getValues(), certRows, new Date());
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = coordSheet_();
+    const rows = sh.getDataRange().getValues();
+    const live = {};
+    wanted.forEach(function (t) { live[t.taskId] = true; coordTaskUpsert_(sh, rows, t); });
+    coordTasksAutoResolve_(sh, rows, 'doc_missing', null, live);
+    coordTasksAutoResolve_(sh, rows, 'doc_verify', null, live);
+  } finally { lock.releaseLock(); }
+  cache.put('coord_docs_refreshed', '1', COORD_DOCS_REFRESH_CACHE_SECONDS);
+}
+
 // ── Actions ──────────────────────────────────────────────────────────
 function coordTasksList_(caller, idToken) {
   // one adapter failing must not hide the others' tasks
   try { coordRefreshSsCompliance_(idToken); } catch (err) { console.error('SS adapter: ' + err.message); }
   try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
   try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
+  try { coordRefreshDocuments_(); } catch (err) { console.error('Documents adapter: ' + err.message); }
   const visible = coordVisibleCampuses_(caller);
   const rows = coordSheet_().getDataRange().getValues();
   const rank = { high: 0, medium: 1, low: 2 };

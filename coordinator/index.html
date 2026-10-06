@@ -43,7 +43,7 @@ button:disabled{opacity:.5;cursor:default}
 const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
 let SESSION = null;
 // where a Coordinator acts on each kind of follow-up
-const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html', hiring_stall: '../hiring/index.html', complete_hire: '../staff/add-employee.html' };
+const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html', hiring_stall: '../hiring/index.html', complete_hire: '../staff/add-employee.html', doc_missing: '../staff/add-employee.html', doc_verify: '../staff/add-employee.html' };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
