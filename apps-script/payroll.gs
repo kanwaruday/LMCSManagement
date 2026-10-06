@@ -1255,19 +1255,18 @@ function payRejoin_(ss, d, caller) {
   const cc = hdr.indexOf('Employee Code'), sc = hdr.indexOf('Service Start');
   if (sc === -1) throw new Error('Salary Master has no "Service Start" column yet -- reload and try again');
   const mine = [];
-  let oldKnown = !old;
   for (let i = 1; i < values.length; i++) {
     const c = String(values[i][cc] || '').trim();
     if (c === code) mine.push(i + 1);
-    if (old && c === old) oldKnown = true;
   }
   if (!mine.length) throw new Error(code + ': not on payroll');
-  if (!oldKnown) throw new Error(old + ': not in Salary Master');
   const ref = 'Rejoin ' + old + ' -> ' + code;
   let moved = 0;
   if (old) {
     if (payRows_(ss.getSheetByName('Ledger')).some(function (r) { return String(r['Reference'] || '') === ref; })) throw new Error('RRF from ' + old + ' was already linked to ' + code);
+    // The old code need not be in Salary Master (past staff are not all loaded) -- only its Ledger balance matters.
     moved = payLedgerBalances_(ss, 'RRF', d.month)[old] || 0;
+    if (!moved) throw new Error(old + ' has no RRF balance to move. If the balance already sits on ' + code + ' (the Tally opening import may have put it there), leave the old code blank.');
   }
   mine.forEach(function (rowNum) { sheet.getRange(rowNum, sc + 1).setValue(start); });
   if (moved) {

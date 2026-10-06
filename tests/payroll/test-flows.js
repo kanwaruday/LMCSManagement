@@ -527,7 +527,11 @@ module.exports = function run(t) {
     assert.equal(get().rrfBalance, 50000, 'old balance now on the new code');
     assert.equal(call('month', { month: M }).rows.find((x) => x.code === old).rrfBalance, 0, 'and gone from the old code');
     assert.ok(call('incrementpreview', { month: M }).eligible.some((e) => e.code === code), 'eligible for the increment');
-    assert.match(call('rejoin', { month: M, newCode: code, oldCode: old, serviceStart: '2022-01-01' }).error, /already linked/);
+    assert.match(call('rejoin', { month: M, newCode: code, oldCode: old, serviceStart: '2022-01-01' }).error, /no RRF balance|already linked/);
+    assert.match(call('rejoin', { month: M, newCode: code, oldCode: 'NOT/IN/MASTER/1', serviceStart: '2022-01-01' }).error, /no RRF balance/, 'an old code missing from Salary Master is fine, but needs a balance');
+    h.books['1sal'].tabs['Ledger'].values.push(['2026-01-01', '2026-01', 'PAST/20/02/066', 'RRF', 'Opening', 7000, '', '', 'test', '']);
+    assert.equal(call('rejoin', { month: M, newCode: code, oldCode: 'PAST/20/02/066', serviceStart: '2022-01-01' }).success, true, 'past employee not in Salary Master');
+    assert.equal(get().rrfBalance, 57000);
     const sm = h.books['1sal'].tabs['Salary Master'].values, hd = sm[0];
     assert.ok(sm.filter((x) => x[0] === code).every((x) => x[hd.indexOf('Service Start')]), 'written on every row of the code');
     assert.ok(String(sm.find((x) => x[0] === code)[hd.indexOf('Date of Joining')]).indexOf('2025') !== -1, 'Date of Joining untouched (gratuity restarts there)');
