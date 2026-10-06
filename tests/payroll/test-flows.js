@@ -519,6 +519,10 @@ module.exports = function run(t) {
     const cons = h.books['1d8'].tabs['PayRoll Constants'].values;
     cons.push(['RRF Stop At Target (1=Yes)', 1]); // later row wins
     const get = (mo) => call('month', { month: mo }).rows.find((r) => r.code === code);
+    // The real case: the old row and the increment row share the same Effective From (the month's first day).
+    const sm = h.books['1sal'].tabs['Salary Master'].values, effCol = sm[0].indexOf('Effective From');
+    for (let i = sm.length - 1; i > 0; i--) if (sm[i][0] === code && sm.findIndex((r) => r[0] === code) !== i) sm.splice(i, 1); // one clean row
+    sm.find((r) => r[0] === code)[effCol] = h.run('new Date(2031, 2, 1)');
     const c0 = get(M1).cti;
     h.books['1sal'].tabs['Ledger'].values.push(['2031-01-01', '2031-01', code, 'RRF', 'Opening', 3 * c0 + 10, '', '', 'test', '']);
     assert.equal(get(M1).rrf, 0, 'at target: nothing deducted');

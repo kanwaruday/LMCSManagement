@@ -446,7 +446,9 @@ function payRrfFlags_(ss, month) {
 // at the target under the previous Salary Master row? Then the latest raise alone is what lifted the target.
 function payRrfReachedBefore_(hist, empArg, inputArg, rates, settings, ctx, opening) {
   if (!settings.rrfStopAtTarget || !empArg.rrfMember || !(opening > 0)) return false;
-  const rows = (hist || []).filter(function (h) { return h.eff <= ctx.monthEnd; }).sort(function (a, b) { return b.eff - a.eff; });
+  // Newest first; an increment row usually has the SAME Effective From as the row it replaces, so ties go to the later sheet row
+  // (reverse first, then a stable sort) -- the same row payCompute_ treats as in force.
+  const rows = (hist || []).filter(function (h) { return h.eff <= ctx.monthEnd; }).reverse().sort(function (a, b) { return b.eff - a.eff; });
   if (rows.length < 2) return false;
   const prevBasic = payNum_(rows[1].row['Full Basic']);
   if (!(prevBasic > 0) || prevBasic >= empArg.fullBasic) return false;
