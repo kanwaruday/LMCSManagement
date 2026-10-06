@@ -40,6 +40,8 @@ button:disabled{opacity:.5;cursor:default}
 // "LMCS Coordinator Backend" -- its own Apps Script project (apps-script/coordinator.gs)
 const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
 let SESSION = null;
+// where a Coordinator acts on each kind of follow-up
+const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html' };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -79,7 +81,7 @@ async function render() {
     list.innerHTML = tasks.map(t =>
       '<div class="task ' + esc(t.severity) + '"><div>' +
         '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + esc(t.title) + '</div>' +
-        '<div class="d">' + esc(t.detail) + '</div>' +
+        '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
       '</div><button data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
     ).join('');
     list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolveTask(b.dataset.id, b)));

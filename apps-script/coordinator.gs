@@ -8,9 +8,10 @@
 // ONE generic task store, many "adapters": an adapter reads some source
 // data, upserts one task per problem (deterministic TaskId, so a re-run
 // never duplicates), and auto-resolves tasks whose problem has cleared.
-// Source data is READ from the other backends over HTTP with the
-// caller's own ID token (this project never opens their sheets, never
-// writes to them). v1 adapter: SS compliance, from PDR's action=ssdashboard.
+// Source data is only ever READ, never written: from other backends over HTTP with the
+// caller's own ID token where one has an endpoint, or (the Approvals tab, which sits in the
+// same workbook as Tasks) straight from the sheet. Adapters: SS compliance (PDR's
+// action=ssdashboard), approvals bottleneck (Approvals tab).
 //
 // Actions: GET action=coordinatortasks, POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
@@ -45,6 +46,15 @@ const COORD_SS_MEDIUM_BELOW_PCT = 70; // campus+role quota compliance under this
 const COORD_SS_HIGH_BELOW_PCT = 40;   // ... under this -> high
 const COORD_SS_GRACE_DAYS = 10;       // first N days of a month: nobody can have met a 2/month quota yet, so don't flag or resolve
 const COORD_SS_REFRESH_CACHE_SECONDS = 600;
+
+// Approvals bottleneck, in whole days. Pending = waiting on the decider; Info Requested = waiting on the requester.
+const COORD_APR_PENDING_MEDIUM_DAYS = 3;
+const COORD_APR_PENDING_HIGH_DAYS = 7;
+const COORD_APR_URGENT_MEDIUM_DAYS = 1; // requests marked Urgent get tighter limits
+const COORD_APR_URGENT_HIGH_DAYS = 3;
+const COORD_APR_INFO_MEDIUM_DAYS = 5;
+const COORD_APR_INFO_HIGH_DAYS = 10;
+const COORD_APR_REFRESH_CACHE_SECONDS = 300;
 
 function coordJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -147,13 +157,13 @@ function coordTaskUpsert_(sh, rows, t) {
   rows.push(row);
 }
 
-/** Open tasks of `domain` on a campus in `covered` whose TaskId is not in `liveIds` get resolved
- *  by the system. Only campuses the source data actually covered are touched, so a refresh that
- *  saw a narrower scope never closes tasks it couldn't see. */
+/** Open tasks of `domain` on a campus in `covered` (null = every campus) whose TaskId is not in
+ *  `liveIds` get resolved by the system. Only campuses the source data actually covered are
+ *  touched, so a refresh that saw a narrower scope never closes tasks it couldn't see. */
 function coordTasksAutoResolve_(sh, rows, domain, covered, liveIds) {
   const now = new Date();
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][1] !== domain || rows[i][5] !== 'open' || !covered[rows[i][2]] || liveIds[rows[i][0]]) continue;
+    if (rows[i][1] !== domain || rows[i][5] !== 'open' || (covered && !covered[rows[i][2]]) || liveIds[rows[i][0]]) continue;
     sh.getRange(i + 1, 6).setValue('resolved');
     sh.getRange(i + 1, 10, 1, 2).setValues([[now, 'system (condition cleared)']]);
     rows[i][5] = 'resolved';
@@ -205,9 +215,63 @@ function coordRefreshSsCompliance_(idToken) {
   cache.put('coord_ss_refreshed', '1', COORD_SS_REFRESH_CACHE_SECONDS);
 }
 
+// ── Adapter: approvals bottleneck (reads the Approvals tab directly) ──
+// The Approvals tab sits in the same workbook as the Tasks tab, so it is read here directly
+// (read-only, every campus) instead of through PDR's caller-scoped approvalslist -- no PDR
+// load, no PDR change. Column positions follow approvals.gs's own layout.
+// One task per request still waiting: TaskId includes the status, so a request that moves
+// Pending -> Info Requested gets a fresh task, and the old one auto-resolves.
+function coordApprovalWanted_(rows, now) {
+  const wanted = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const status = String(r[13] || '');
+    const waitingOn = status === 'Pending' ? 'a decision' : status === 'Info Requested' ? 'the requester' : '';
+    if (!waitingOn || String(r[18] || '').toUpperCase() === 'TRUE') continue;
+    const since = new Date(status === 'Pending' ? r[12] : (r[15] || r[12]));
+    if (isNaN(since.getTime())) continue;
+    const days = Math.floor((now.getTime() - since.getTime()) / 86400000);
+    const urgent = String(r[3] || '') === 'Urgent';
+    const med = status === 'Pending' ? (urgent ? COORD_APR_URGENT_MEDIUM_DAYS : COORD_APR_PENDING_MEDIUM_DAYS) : COORD_APR_INFO_MEDIUM_DAYS;
+    const high = status === 'Pending' ? (urgent ? COORD_APR_URGENT_HIGH_DAYS : COORD_APR_PENDING_HIGH_DAYS) : COORD_APR_INFO_HIGH_DAYS;
+    if (days < med) continue;
+    const campus = String(r[1] || '').trim();
+    wanted.push({
+      taskId: 'approval|' + r[0] + '|' + status,
+      domain: 'approval',
+      campus: campus,
+      title: String(r[2]) + ' request waiting ' + days + ' days for ' + waitingOn + ' (' + campus + ')',
+      detail: '"' + String(r[4]) + '" - ' + status + (urgent ? ', marked Urgent' : '') + ' since ' + Utilities.formatDate(since, 'Asia/Kolkata', 'd MMM'),
+      severity: days >= high ? 'high' : 'medium',
+    });
+  }
+  return wanted;
+}
+
+function coordRefreshApprovals_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('coord_apr_refreshed')) return;
+  const src = SpreadsheetApp.openById(COORD_SHEET_ID).getSheetByName('Approvals');
+  if (!src) return;
+  const wanted = coordApprovalWanted_(src.getDataRange().getValues(), new Date());
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = coordSheet_();
+    const rows = sh.getDataRange().getValues();
+    const live = {};
+    wanted.forEach(function (t) { live[t.taskId] = true; coordTaskUpsert_(sh, rows, t); });
+    coordTasksAutoResolve_(sh, rows, 'approval', null, live);
+  } finally { lock.releaseLock(); }
+  cache.put('coord_apr_refreshed', '1', COORD_APR_REFRESH_CACHE_SECONDS);
+}
+
 // ── Actions ──────────────────────────────────────────────────────────
 function coordTasksList_(caller, idToken) {
-  coordRefreshSsCompliance_(idToken);
+  // one adapter failing must not hide the others' tasks
+  try { coordRefreshSsCompliance_(idToken); } catch (err) { console.error('SS adapter: ' + err.message); }
+  try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
   const visible = coordVisibleCampuses_(caller);
   const rows = coordSheet_().getDataRange().getValues();
   const rank = { high: 0, medium: 1, low: 2 };
