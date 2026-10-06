@@ -37,7 +37,7 @@
       <div class="welcome" id="welcome-strip"></div>
 
       <section class="block" id="modules">
-        <h2>Follow-ups and analysis</h2>
+        <h2>Departments</h2>
         <div class="modules" id="modules-grid"></div>
       </section>
 
@@ -54,26 +54,25 @@
   <script src="../assets/auth.js"></script>
   <script src="shared.js"></script>
   <script>
-    // key = Coord.SECTIONS key (follow-up count shown on the card) or null (no count)
-    const CARDS = [
-      { key: 'followups', name: 'All follow-ups', url: 'followups/index.html', desc: 'Everything that needs a Coordinator, most urgent first.' },
-      { key: 'compliance', name: 'Compliance', url: 'compliance/index.html', desc: 'Campuses and roles behind their Support Session quota this month.' },
-      { key: 'approvals', name: 'Approvals', url: 'approvals/index.html', desc: 'Requests waiting too long for a decision, or for the requester to reply.' },
-      { key: 'hiring', name: 'Hiring', url: 'hiring/index.html', desc: 'Approved candidates not yet marked Hired, and hires still to be added in the Staff Portal.' },
-      { key: 'documents', name: 'Documents', url: 'documents/index.html', desc: 'Staff missing required documents, and certificate files waiting to be verified.' },
-      { key: null, name: 'Academics', url: 'academics/index.html', desc: 'CW/HW tag analysis: how each teacher uses the classwork and homework tags.' },
-    ];
-
+    // The inbox first, then one card per department (Coord.DEPARTMENTS). A department with no page yet is a
+    // non-clickable "To be built" card.
     function renderCards(counts) {
-      document.getElementById('modules-grid').innerHTML = CARDS.map(function (c) {
-        let pill = '<span class="status live">Live</span>';
-        if (c.key) {
-          if (!counts) pill = '<span class="status planned">&hellip;</span>';
-          else if (counts === 'error') pill = '<span class="status planned">n/a</span>';
-          else pill = counts.n[c.key] ? '<span class="status building">' + counts.n[c.key] + ' open</span>' : '<span class="status live">All clear</span>';
+      const pill = function (c) {
+        if (!counts) return '<span class="status planned">&hellip;</span>';
+        if (counts === 'error') return '<span class="status planned">n/a</span>';
+        return c.n ? '<span class="status building">' + c.n + ' open</span>' : '<span class="status live">All clear</span>';
+      };
+      let html = '<div class="card"><div class="card-top"><h3><a href="followups/index.html">All follow-ups</a></h3>' +
+        pill(counts && counts !== 'error' ? counts.all : null) + '</div><p>Everything that needs a Coordinator, across every department, most urgent first.</p></div>';
+      Coord.DEPARTMENTS.forEach(function (d) {
+        if (!d.page) {
+          html += '<div class="card"><div class="card-top"><h3>' + d.name + '</h3><span class="status planned">To be built</span></div><p>' + d.desc + '</p></div>';
+          return;
         }
-        return '<div class="card"><div class="card-top"><h3><a href="' + c.url + '">' + c.name + '</a></h3>' + pill + '</div><p>' + c.desc + '</p></div>';
-      }).join('');
+        html += '<div class="card"><div class="card-top"><h3><a href="' + d.page + '/index.html">' + d.name + '</a></h3>' +
+          pill(counts && counts !== 'error' ? counts.byDept[d.name] : null) + '</div><p>' + d.desc + '</p></div>';
+      });
+      document.getElementById('modules-grid').innerHTML = html;
     }
 
     function showApp(session) {

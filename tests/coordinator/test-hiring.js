@@ -35,4 +35,5 @@ assert.strictEqual(by['hiring_stall|T-0006'].severity, 'medium');
 assert.strictEqual(by['hiring_stall|T-0007'].severity, 'high');
 assert.strictEqual(by['hiring_stall|T-0006'].campus, 'LMS3');   // offer campus wins
 assert.strictEqual(by['complete_hire|T-0002'].campus, 'LMS2');  // falls back to the applicant's branch tick
+assert.ok(w.every((t) => t.department === 'HR & Staff'));
 console.log('coordinator hiring: ok');

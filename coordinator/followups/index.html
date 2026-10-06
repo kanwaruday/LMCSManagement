@@ -14,7 +14,9 @@
 <script src="../../assets/auth.js"></script>
 <script src="../shared.js"></script>
 <script>
-Coord.boot(function (body) { Coord.tasksView(body, { section: 'followups', title: 'All follow-ups', sub: 'Everything that needs a Coordinator, most urgent first.' }); });
+Coord.boot(function (body) {
+  Coord.tasksView(body, { dept: null, title: 'All follow-ups', sub: 'Everything that needs a Coordinator, across every department, most urgent first.' });
+});
 </script>
 </body>
 </html>

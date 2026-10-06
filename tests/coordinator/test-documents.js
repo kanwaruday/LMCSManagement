@@ -31,4 +31,5 @@ assert.ok(n.title.startsWith('LMS1: 1 of 3 staff have no certificates'), n.title
 assert.ok(n.detail.includes('Nothing On File'));
 assert.strictEqual(n.severity, 'low');                            // always low, however many
 assert.strictEqual(by['doc_verify|LMS1|2026-10'].severity, 'low'); // 1 file
+assert.ok(w.every((t) => t.department === 'HR & Staff'));
 console.log('coordinator documents: ok');

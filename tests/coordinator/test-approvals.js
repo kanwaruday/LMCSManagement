@@ -23,6 +23,14 @@ assert.strictEqual(by['approval|a3|Pending'].severity, 'high');
 assert.strictEqual(by['approval|a4|Pending'].severity, 'medium');
 assert.ok(by['approval|a5|Info Requested'].title.includes('the requester'));
 
+// departments follow the request category
+assert.strictEqual(by['approval|a2|Pending'].department, 'HR & Staff');          // Compensatory Leave
+const fin = row('f1', 'LMS1', 'Pending', 'Normal', day(5)); fin[2] = 'Financial / Purchase';
+const oth = row('o1', 'LMS1', 'Pending', 'Normal', day(5)); oth[2] = 'Other';
+const evt = row('e1', 'LMS1', 'Pending', 'Normal', day(5)); evt[2] = 'Off-Campus Trip / Excursion';
+const dep = ctx.coordApprovalWanted_([['h'], fin, oth, evt], now).map((t) => t.department);
+assert.strictEqual(JSON.stringify(dep), JSON.stringify(['Fees & Finance', 'School Operations', 'Events & House System']));
+
 // upsert / auto-resolve against a fake sheet
 const store = [['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity']];
 const sh = { appendRow: () => {}, /* the real coordTaskUpsert_ also pushes into the in-memory rows (here: store) */ getRange: (r, c, nr, nc) => ({

@@ -33,7 +33,21 @@
 const COORD_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals" workbook; only the Tasks tab is used
 const COORD_TAB = 'Tasks';
 const COORD_HEADERS = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity',
-  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes'];
+  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes', 'Department'];
+
+// Departments follow the vault's Departments hubs, plus Systems. Every follow-up carries one so the
+// landing page can group by department; adapters set it, approvals by request category.
+const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examination', COORD_DEPT_FINANCE = 'Fees & Finance',
+  COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations';
+const COORD_APPROVAL_DEPT = {
+  'New/ Backup Position': COORD_DEPT_HR, 'Salary Offer Approval': COORD_DEPT_HR, 'Compensation Change': COORD_DEPT_HR,
+  'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
+  'Financial / Purchase': COORD_DEPT_FINANCE, 'Academic Change': COORD_DEPT_ACADEMICS,
+  'Event / Invitation': COORD_DEPT_EVENTS, 'Off-Campus Trip / Excursion': COORD_DEPT_EVENTS, 'Holiday / Calendar': COORD_DEPT_EVENTS,
+}; // anything else ('Other', new categories) lands in School Operations
+// Fallback for tasks created before the Department column existed.
+const COORD_DOMAIN_DEPT = { ss_compliance: COORD_DEPT_HR, hiring_stall: COORD_DEPT_HR, complete_hire: COORD_DEPT_HR,
+  doc_missing: COORD_DEPT_HR, doc_none: COORD_DEPT_HR, doc_verify: COORD_DEPT_HR };
 
 const COORD_ALLOWLIST_SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist" (same as PDR's ALLOWLIST_SHEET_ID)
 const COORD_GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com'; // same as assets/auth.js
@@ -165,6 +179,8 @@ function coordSheet_() {
     sh = ss.insertSheet(COORD_TAB);
     sh.getRange(1, 1, 1, COORD_HEADERS.length).setValues([COORD_HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (!sh.getRange(1, COORD_HEADERS.length).getValue()) {
+    sh.getRange(1, COORD_HEADERS.length).setValue(COORD_HEADERS[COORD_HEADERS.length - 1]).setFontWeight('bold'); // tab made before the Department column
   }
   return sh;
 }
@@ -184,9 +200,10 @@ function coordTaskUpsert_(sh, rows, t) {
     sh.getRange(i + 1, 4, 1, 2).setValues([[t.title, t.detail]]);
     sh.getRange(i + 1, 7).setValue(t.severity);
     sh.getRange(i + 1, 9).setValue(now);
+    sh.getRange(i + 1, 13).setValue(t.department);
     return;
   }
-  const row = [t.taskId, t.domain, t.campus, t.title, t.detail, 'open', t.severity, now, now, '', '', ''];
+  const row = [t.taskId, t.domain, t.campus, t.title, t.detail, 'open', t.severity, now, now, '', '', '', t.department];
   sh.appendRow(row);
   rows.push(row);
 }
@@ -228,7 +245,7 @@ function coordRefreshSsCompliance_(idToken) {
       if (!c.totalEmployees || c.compliancePct >= COORD_SS_MEDIUM_BELOW_PCT) return;
       wanted.push({
         taskId: 'ss_compliance|' + roleKey + '|' + campus + '|' + d.monthLabel,
-        domain: 'ss_compliance',
+        domain: 'ss_compliance', department: COORD_DEPT_HR,
         campus: campus,
         title: d.label + ' SS behind quota at ' + c.formKey,
         detail: c.metQuota + ' of ' + c.totalEmployees + ' met ' + d.quotaPerMonth + '/month (' + c.compliancePct + '%) - ' + d.monthLabel,
@@ -272,7 +289,7 @@ function coordApprovalWanted_(rows, now) {
     const campus = String(r[1] || '').trim();
     wanted.push({
       taskId: 'approval|' + r[0] + '|' + status,
-      domain: 'approval',
+      domain: 'approval', department: COORD_APPROVAL_DEPT[String(r[2])] || COORD_DEPT_OPS,
       campus: campus,
       title: String(r[2]) + ' request waiting ' + days + ' days for ' + waitingOn + ' (' + campus + ')',
       detail: '"' + String(r[4]) + '" - ' + status + (urgent ? ', marked Urgent' : '') + ' since ' + Utilities.formatDate(since, 'Asia/Kolkata', 'd MMM'),
@@ -345,7 +362,7 @@ function coordHiringWanted_(applicantRows, approvalRows, rosterCodes, now) {
         severity = -daysTo >= COORD_HIRE_OVERDUE_HIGH_DAYS ? 'high' : (daysTo <= COORD_HIRE_SOON_DAYS ? 'medium' : 'low');
       } else { dojText = 'no joining date recorded'; }
       wanted.push({
-        taskId: 'complete_hire|' + id, domain: 'complete_hire', campus: campus,
+        taskId: 'complete_hire|' + id, domain: 'complete_hire', department: COORD_DEPT_HR, campus: campus,
         title: 'Complete hire in Staff Portal: ' + name + ' (' + campus + ')',
         detail: 'Marked Hired, ' + (code || 'no employee code') + ' not in Employee Master yet; ' + dojText,
         severity: severity,
@@ -357,7 +374,7 @@ function coordHiringWanted_(applicantRows, approvalRows, rosterCodes, now) {
       const days = Math.floor((now.getTime() - approvedAt[id].getTime()) / 86400000);
       if (days < COORD_STALL_MEDIUM_DAYS) continue;
       wanted.push({
-        taskId: 'hiring_stall|' + id, domain: 'hiring_stall', campus: campus,
+        taskId: 'hiring_stall|' + id, domain: 'hiring_stall', department: COORD_DEPT_HR, campus: campus,
         title: name + ' approved to hire ' + days + ' days ago, still not marked Hired (' + campus + ')',
         detail: 'Salary offer approved ' + fmt(approvedAt[id]) + '; waiting on documents or the Principal marking Hired',
         severity: days >= COORD_STALL_HIGH_DAYS ? 'high' : 'medium',
@@ -458,7 +475,7 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
     const list = missing[campus], share = list.length / staff[campus];
     const shown = list.slice(0, 6).map(function (m) { return m.name + ' (' + m.lacks.join(', ') + ')'; }).join('; ');
     wanted.push({
-      taskId: 'doc_missing|' + campus + '|' + month, domain: 'doc_missing', campus: campus,
+      taskId: 'doc_missing|' + campus + '|' + month, domain: 'doc_missing', department: COORD_DEPT_HR, campus: campus,
       title: campus + ': ' + list.length + ' of ' + staff[campus] + ' staff missing required documents',
       detail: shown + (list.length > 6 ? '; and ' + (list.length - 6) + ' more' : ''),
       severity: share >= COORD_DOC_HIGH_SHARE ? 'high' : (share >= COORD_DOC_MEDIUM_SHARE ? 'medium' : 'low'),
@@ -467,7 +484,7 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
   Object.keys(none).forEach(function (campus) {
     const list = none[campus];
     wanted.push({
-      taskId: 'doc_none|' + campus + '|' + month, domain: 'doc_none', campus: campus,
+      taskId: 'doc_none|' + campus + '|' + month, domain: 'doc_none', department: COORD_DEPT_HR, campus: campus,
       title: campus + ': ' + list.length + ' of ' + staff[campus] + ' staff have no certificates on file',
       detail: list.slice(0, 6).join(', ') + (list.length > 6 ? ', and ' + (list.length - 6) + ' more' : '') + '. Not on the upload form yet, so nothing is linked for them',
       severity: 'low',
@@ -476,7 +493,7 @@ function coordDocumentWanted_(empRows, salaryRows, certRows, now) {
   Object.keys(verify).forEach(function (campus) {
     const n = verify[campus];
     wanted.push({
-      taskId: 'doc_verify|' + campus + '|' + month, domain: 'doc_verify', campus: campus,
+      taskId: 'doc_verify|' + campus + '|' + month, domain: 'doc_verify', department: COORD_DEPT_HR, campus: campus,
       title: campus + ': ' + n + ' certificate files need verification',
       detail: 'Files the importer could not attribute with confidence; review them in the Staff Portal, Needs Verification tab',
       severity: n >= COORD_VERIFY_HIGH_FILES ? 'high' : (n >= COORD_VERIFY_MEDIUM_FILES ? 'medium' : 'low'),
@@ -636,6 +653,7 @@ function coordTasksList_(caller, idToken) {
     if (visible && visible.indexOf(r[2]) === -1) continue;
     tasks.push({
       taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: r[6],
+      department: r[12] || COORD_DOMAIN_DEPT[r[1]] || COORD_DEPT_OPS,
       createdAt: r[7] instanceof Date ? r[7].toISOString() : r[7], notes: r[11] || '',
     });
   }

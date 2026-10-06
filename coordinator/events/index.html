@@ -3,18 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Coordinator · Compliance</title>
+<title>LMCS — Coordinator · Events & House System</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css">
 </head>
 <body>
-<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Compliance</p></div><a href="../index.html">&larr; Coordinator home</a></header>
+<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Events & House System</p></div><a href="../index.html">&larr; Coordinator home</a></header>
 <div id="authRoot"></div>
 <main id="appBody" style="display:none"></main>
 <script src="../../assets/auth.js"></script>
 <script src="../shared.js"></script>
 <script>
-Coord.boot(function (body) { Coord.tasksView(body, { section: 'compliance', title: 'Compliance', sub: 'Campuses and roles behind their Support Session quota this month.' }); });
+Coord.boot(function (body) {
+  Coord.tasksView(body, { dept: 'Events & House System', title: 'Events & House System', sub: 'Event, trip, invitation and calendar approvals.' });
+});
 </script>
 </body>
 </html>

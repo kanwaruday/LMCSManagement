@@ -3,18 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Coordinator · Documents</title>
+<title>LMCS — Coordinator · Fees & Finance</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css">
 </head>
 <body>
-<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Documents</p></div><a href="../index.html">&larr; Coordinator home</a></header>
+<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Fees & Finance</p></div><a href="../index.html">&larr; Coordinator home</a></header>
 <div id="authRoot"></div>
 <main id="appBody" style="display:none"></main>
 <script src="../../assets/auth.js"></script>
 <script src="../shared.js"></script>
 <script>
-Coord.boot(function (body) { Coord.tasksView(body, { section: 'documents', title: 'Documents', sub: 'Staff missing required documents, and certificate files waiting to be verified.' }); });
+Coord.boot(function (body) {
+  Coord.tasksView(body, { dept: 'Fees & Finance', title: 'Fees & Finance', sub: 'Financial and purchase approvals.' });
+});
 </script>
 </body>
 </html>
