@@ -75,7 +75,10 @@ function payCalc_(emp, input, rates, s, ctx) {
   const opening = Number(ctx.openingRrf) || 0;
   const target = s.rrfTargetMonths * cti;
   let rrfRate = 0;
-  if (emp.rrfMember) {
+  // Once the target has been reached, RRF stays stopped for good: a later increment that lifts the
+  // target above the balance does not restart it (Uday, 2026-10-06; ctx.rrfReached comes from payroll.gs).
+  const reached = !!s.rrfStopAtTarget && !!ctx.rrfReached;
+  if (emp.rrfMember && !reached) {
     if (months < 12) rrfRate = s.rrfY1;
     else if (months < 24) rrfRate = s.rrfY2;
     else if (months < 36 || (s.rrfStopAtTarget && opening < target)) rrfRate = s.rrfY3;
@@ -102,6 +105,7 @@ function payCalc_(emp, input, rates, s, ctx) {
     heldForFnF: hold === 'fnf' ? net : 0, withheld: hold === 'grievance' ? net : 0,
     epfEmployer: epf, esiEmployer: esiEr, cti: cti, gratuityProvision: R((basic + da) * s.gratRate),
     closingRrf: opening + rrf,
+    rrfTargetReached: !!emp.rrfMember && !!s.rrfStopAtTarget && (reached || (target > 0 && opening + rrf >= target)),
   };
 }
 
@@ -216,6 +220,8 @@ function payrollCalcSelfTest_() {
   const Son = Object.assign({}, S, { rrfStopAtTarget: true });
   eq(payCalc_(old, {}, rates, Son, Object.assign({}, ctx, { openingRrf: 10000 })).rrfRate, 0.06, 'resumes 6% past 36 months while short of target');
   eq(payCalc_(emp, {}, rates, Son, Object.assign({}, ctx, { openingRrf: 3 * 16135 - 100 })).rrf, 100, 'capped at the gap to target');
+  eq(payCalc_(old, {}, rates, Son, Object.assign({}, ctx, { openingRrf: 10000, rrfReached: true })).rrf, 0, 'target reached earlier: stays stopped after the target rises');
+  eq(payCalc_(emp, {}, rates, Son, Object.assign({}, ctx, { openingRrf: 3 * 16135 - 100 })).rrfTargetReached, true, 'hitting the target this month marks it reached');
 
   r = payCalc_(emp, { hold: true, clDays: 3 }, rates, S, ctx);
   eq(r.clEncashment, 1222, 'CL encashment = 3 × 12215 / 30');

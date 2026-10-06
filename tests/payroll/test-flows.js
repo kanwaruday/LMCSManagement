@@ -513,4 +513,26 @@ module.exports = function run(t) {
     assert.ok(got.some((x) => /Date of Joining "13\/09\/2020".*cannot read/.test(x.text)));
     row[ci] = keep[0]; row[di] = keep[1];
   });
+
+  t.test('RRF: once the target is reached it stays stopped after an increment lifts the target', () => {
+    const code = 'OWL/22/07/054', M1 = '2031-03', M2 = '2031-04';
+    const cons = h.books['1d8'].tabs['PayRoll Constants'].values;
+    cons.push(['RRF Stop At Target (1=Yes)', 1]); // later row wins
+    const get = (mo) => call('month', { month: mo }).rows.find((r) => r.code === code);
+    const c0 = get(M1).cti;
+    h.books['1sal'].tabs['Ledger'].values.push(['2031-01-01', '2031-01', code, 'RRF', 'Opening', 3 * c0 + 10, '', '', 'test', '']);
+    assert.equal(get(M1).rrf, 0, 'at target: nothing deducted');
+    const a = call('applyincrement', { month: M1, codes: [code] });
+    assert.equal(a.success, true, a.error);
+    const after = get(M1);
+    assert.ok(after.cti > c0 && 3 * after.cti > 3 * c0 + 10, 'the raise lifted the target above the balance');
+    assert.equal(after.rrf, 0, 'RRF does not restart');
+    ['staff', 'leave', 'adjustments', 'holds', 'review'].forEach((st) => call('markstep', { month: M1, entity: 'LMS3', step: st, done: true }));
+    assert.equal(call('lock', { month: M1, entity: 'LMS3' }).success, true);
+    const led = h.books['1sal'].tabs['Ledger'].values;
+    assert.ok(led.some((r) => r[2] === code && r[4] === 'Target Reached' && r[5] === 0), 'marker written at lock ' + JSON.stringify(led.filter((r) => r[2] === code)));
+    assert.equal(get(M2).rrf, 0, 'still stopped next month');
+    call('unlock', { month: M1, entity: 'LMS3' });
+    assert.ok(!led.some((r) => r[2] === code && r[4] === 'Target Reached'), 'unlock removes the marker');
+  });
 };

@@ -431,6 +431,29 @@ function payErp_(ss, month) {
 }
 
 // code -> sum of Ledger amounts for one account, over months before `month`.
+// "RRF target reached" markers (zero-amount Ledger rows, written at lock): once someone has reached their
+// target, RRF stays stopped even if a later increment raises the target (Uday, 2026-10-06).
+function payRrfFlags_(ss, month) {
+  const out = {};
+  payRows_(ss.getSheetByName('Ledger')).forEach(function (r) {
+    if (String(r['Type (Opening/Deduction/Payout/Loan Issued/Loan Repaid/Adjustment)'] || '').trim() !== 'Target Reached') return;
+    if (payMonthKey_(r['Month']) >= month) return;
+    out[String(r['Employee Code']).trim()] = true;
+  });
+  return out;
+}
+// No marker yet (the target was reached before the portal, or before this month's lock): was the balance already
+// at the target under the previous Salary Master row? Then the latest raise alone is what lifted the target.
+function payRrfReachedBefore_(hist, empArg, inputArg, rates, settings, ctx, opening) {
+  if (!settings.rrfStopAtTarget || !empArg.rrfMember || !(opening > 0)) return false;
+  const rows = (hist || []).filter(function (h) { return h.eff <= ctx.monthEnd; }).sort(function (a, b) { return b.eff - a.eff; });
+  if (rows.length < 2) return false;
+  const prevBasic = payNum_(rows[1].row['Full Basic']);
+  if (!(prevBasic > 0) || prevBasic >= empArg.fullBasic) return false;
+  const prev = payCalc_(Object.assign({}, empArg, { fullBasic: prevBasic }), inputArg, rates, settings, Object.assign({ openingRrf: opening }, ctx));
+  return opening >= settings.rrfTargetMonths * prev.cti;
+}
+
 function payLedgerBalances_(ss, account, month) {
   const out = {};
   payRows_(ss.getSheetByName('Ledger')).forEach(function (r) {
@@ -567,6 +590,7 @@ function payCompute_(ss, month) {
       direction: String(a['Direction']), amount: payNum_(a['Amount']), note: String(a['Note'] || '') });
   });
   const openingRrf = payLedgerBalances_(ss, 'RRF', month);
+  const rrfFlags = payRrfFlags_(ss, month);
   const roleOf = payJobRoles_(rs);
   const leave = {};
   payForMonth_(ss, 'Leave Records', month).forEach(function (l) { leave[String(l['Employee Code']).trim()] = payLeaveRecord_(l); });
@@ -601,7 +625,8 @@ function payCompute_(ss, month) {
       tuition: payNum_(r['Staff-Child Tuition']), doj: doj };
     const inputArg = { paidDays: paidDays, clDays: inp['CL Days Encashed'], hold: hold, release: inp['Release Held (₹)'],
       otherEarnings: sumDir('Earning'), otherDeductions: sumDir('Deduction'), loanRecovery: skipLoan ? 0 : loanDue, tds: tds };
-    const ctxArg = Object.assign({ openingRrf: openingRrf[code] || 0 }, ctx0);
+    const ctxArg = Object.assign({ openingRrf: openingRrf[code] || 0,
+      rrfReached: !!rrfFlags[code] || payRrfReachedBefore_(history[code], empArg, inputArg, rates[entity], settings, ctx0, openingRrf[code] || 0) }, ctx0);
     const calc = payCalc_(empArg, inputArg, rates[entity], settings, ctxArg);
     calcArgs[code] = { emp: empArg, input: inputArg, rates: rates[entity], settings: settings, ctx: ctxArg };
     if (!payNum_(r['Full Basic'])) warnings.push({ entity: entity, text: code + ': Full Basic is 0' });
@@ -790,6 +815,7 @@ function payLock_(ss, month, entity, caller) {
       'Net Pay': sum('net'), 'CTI': sum('cti'), 'Settings Snapshot': JSON.stringify({ settings: d.settings, rates: d.rates[e] }),
       'Locked By': caller.email, 'Locked At': now };
   }));
+  const rrfFlagged = payRrfFlags_(ss, month);
   const ledger = [];
   const entry = function (r, account, type, amount, notes) {
     ledger.push({ 'Date': now, 'Month': ctx.start, 'Employee Code': r.code, 'Account (RRF/Security/Loan/Held Salary)': account,
@@ -798,6 +824,7 @@ function payLock_(ss, month, entity, caller) {
   };
   rows.forEach(function (r) {
     if (r.rrf) entry(r, 'RRF', 'Deduction', r.rrf, '');
+    if (r.rrfTargetReached && !rrfFlagged[r.code]) entry(r, 'RRF', 'Target Reached', 0, 'RRF target reached -- no further RRF deductions');
     if (r.heldForFnF) entry(r, 'Held Salary', 'Deduction', r.heldForFnF, 'Salary held for F&F');
     if (r.withheld) entry(r, 'Held Salary', 'Deduction', r.withheld, 'Withheld (grievance) -- release within 2 weeks of the 10th');
     if (r.released) entry(r, 'Held Salary', 'Payout', -r.released, 'Earlier held salary released');
