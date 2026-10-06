@@ -25,6 +25,8 @@ h2{font-size:15px;margin:18px 0 8px}
 .task .d{color:var(--gray);font-size:12px}
 .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:3px;background:var(--amber-bg);color:var(--amber);margin-right:6px;text-transform:uppercase}
 .task.high .chip{background:#fee2e2;color:var(--red)}
+.task.low{border-left-color:var(--border)}
+.task.low .chip{background:var(--lgray);color:var(--gray)}
 button{border:1px solid var(--border);background:var(--white);border-radius:4px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--red);color:var(--red)}
 button:disabled{opacity:.5;cursor:default}
@@ -41,7 +43,7 @@ button:disabled{opacity:.5;cursor:default}
 const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
 let SESSION = null;
 // where a Coordinator acts on each kind of follow-up
-const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html' };
+const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html', hiring_stall: '../hiring/index.html', complete_hire: '../staff/add-employee.html' };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 

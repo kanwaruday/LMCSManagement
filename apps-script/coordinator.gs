@@ -11,7 +11,8 @@
 // Source data is only ever READ, never written: from other backends over HTTP with the
 // caller's own ID token where one has an endpoint, or (the Approvals tab, which sits in the
 // same workbook as Tasks) straight from the sheet. Adapters: SS compliance (PDR's
-// action=ssdashboard), approvals bottleneck (Approvals tab).
+// action=ssdashboard), approvals bottleneck (Approvals tab), hiring stalls and
+// complete-hire (Teaching Applicants + Approvals + Employee Master, read-only).
 //
 // Actions: GET action=coordinatortasks, POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
@@ -55,6 +56,16 @@ const COORD_APR_URGENT_HIGH_DAYS = 3;
 const COORD_APR_INFO_MEDIUM_DAYS = 5;
 const COORD_APR_INFO_HIGH_DAYS = 10;
 const COORD_APR_REFRESH_CACHE_SECONDS = 300;
+
+// Hiring. Sheet IDs/columns mirror hiring.gs (HIR_SHEET_ID, HIR_SHEET_GID, HIR_COL, HIR_ROSTER_SHEET_ID).
+const COORD_HIRING_SHEET_ID = '1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ'; // "Teaching Applicants"
+const COORD_HIRING_SHEET_GID = 1181288827;
+const COORD_ROSTER_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // Employee Master workbook; EmpMaster tab
+const COORD_HIRE_SOON_DAYS = 3;       // complete-hire task turns medium once joining is this close (or past)
+const COORD_HIRE_OVERDUE_HIGH_DAYS = 3; // ... and high once joining was this many days ago
+const COORD_STALL_MEDIUM_DAYS = 3;    // approved to hire but not yet marked Hired
+const COORD_STALL_HIGH_DAYS = 7;
+const COORD_HIRING_REFRESH_CACHE_SECONDS = 300;
 
 function coordJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -267,11 +278,108 @@ function coordRefreshApprovals_() {
   cache.put('coord_apr_refreshed', '1', COORD_APR_REFRESH_CACHE_SECONDS);
 }
 
+// ── Adapter: hiring (Teaching Applicants + Approvals + Employee Master, read-only) ──
+// Two kinds of task, both keyed by the applicant's T-0000 id (the sheet row, as hiring.gs does):
+//  - hiring_stall: the Owner approved the salary offer (after the MD interview) days ago, yet the
+//    candidate is still not marked Hired -- documents or the Principal's final click are pending.
+//  - complete_hire: marked Hired, but the permanent employee code is not in the Employee Master
+//    yet -- the Coordinator still has to add the person in the Staff Portal. Due by the joining date.
+// applicantRows/approvalRows include their header row; rosterCodes is every EmployeeCode, uppercased.
+function coordHiringWanted_(applicantRows, approvalRows, rosterCodes, now) {
+  const offerCampus = {}, approvedAt = {};
+  for (let i = 1; i < approvalRows.length; i++) {
+    const r = approvalRows[i];
+    if (String(r[2]) !== 'Salary Offer Approval') continue;
+    const m = String(r[7] || '').match(/T-\d{4}/);
+    if (!m) continue;
+    const campus = String(r[1] || '').trim().toUpperCase();
+    if (campus && campus !== 'ALL') offerCampus[m[0]] = campus;
+    if (String(r[13]) === 'Approved' && r[15]) approvedAt[m[0]] = new Date(r[15]);
+  }
+  const have = {};
+  rosterCodes.forEach(function (c) { have[c] = true; });
+  const fmt = function (d) { return Utilities.formatDate(d, 'Asia/Kolkata', 'd MMM'); };
+
+  const wanted = [];
+  for (let i = 1; i < applicantRows.length; i++) {
+    const r = applicantRows[i];
+    const status = String(r[10] || '').trim();
+    if (status === 'Rejected') continue;
+    const id = 'T-' + String(i + 1).padStart(4, '0');
+    const name = String(r[1] || '').trim() || id;
+    const branches = String(r[5] || '').match(/LMS-(\d)/);
+    const campus = offerCampus[id] || (branches ? 'LMS' + branches[1] : 'ALL');
+
+    if (status === 'Hired') {
+      const code = String(r[15] || '').trim().toUpperCase();
+      if (code && have[code]) continue;
+      let dojText = '', severity = 'medium';
+      const dojRaw = r[16];
+      const doj = dojRaw instanceof Date ? dojRaw : (/^\d{4}-\d{2}-\d{2}$/.test(String(dojRaw || '').trim()) ? new Date(String(dojRaw).trim() + 'T00:00:00+05:30') : null);
+      if (doj && !isNaN(doj.getTime())) {
+        const daysTo = Math.ceil((doj.getTime() - now.getTime()) / 86400000);
+        dojText = daysTo >= 0 ? 'joining ' + fmt(doj) + ' (in ' + daysTo + ' days)' : 'joined ' + fmt(doj) + ' (' + (-daysTo) + ' days ago)';
+        severity = -daysTo >= COORD_HIRE_OVERDUE_HIGH_DAYS ? 'high' : (daysTo <= COORD_HIRE_SOON_DAYS ? 'medium' : 'low');
+      } else { dojText = 'no joining date recorded'; }
+      wanted.push({
+        taskId: 'complete_hire|' + id, domain: 'complete_hire', campus: campus,
+        title: 'Complete hire in Staff Portal: ' + name + ' (' + campus + ')',
+        detail: 'Marked Hired, ' + (code || 'no employee code') + ' not in Employee Master yet; ' + dojText,
+        severity: severity,
+      });
+      continue;
+    }
+
+    if (approvedAt[id] && r[13]) { // approved to hire after the MD interview, but not Hired yet
+      const days = Math.floor((now.getTime() - approvedAt[id].getTime()) / 86400000);
+      if (days < COORD_STALL_MEDIUM_DAYS) continue;
+      wanted.push({
+        taskId: 'hiring_stall|' + id, domain: 'hiring_stall', campus: campus,
+        title: name + ' approved to hire ' + days + ' days ago, still not marked Hired (' + campus + ')',
+        detail: 'Salary offer approved ' + fmt(approvedAt[id]) + '; waiting on documents or the Principal marking Hired',
+        severity: days >= COORD_STALL_HIGH_DAYS ? 'high' : 'medium',
+      });
+    }
+  }
+  return wanted;
+}
+
+function coordRefreshHiring_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('coord_hiring_refreshed')) return;
+  const tab = SpreadsheetApp.openById(COORD_HIRING_SHEET_ID).getSheets().find(function (t) { return t.getSheetId() === COORD_HIRING_SHEET_GID; });
+  const approvals = SpreadsheetApp.openById(COORD_SHEET_ID).getSheetByName('Approvals');
+  const empMaster = SpreadsheetApp.openById(COORD_ROSTER_SHEET_ID).getSheetByName('EmpMaster');
+  if (!tab || !approvals || !empMaster) return;
+  const emp = empMaster.getDataRange().getValues();
+  const codeCol = emp[0].indexOf('EmployeeCode');
+  const codes = [];
+  for (let i = 1; i < emp.length && codeCol !== -1; i++) {
+    const c = String(emp[i][codeCol] || '').trim().toUpperCase();
+    if (c) codes.push(c);
+  }
+  if (!codes.length) return; // an unreadable roster must never look like "nobody has been added"
+  const wanted = coordHiringWanted_(tab.getDataRange().getValues(), approvals.getDataRange().getValues(), codes, new Date());
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = coordSheet_();
+    const rows = sh.getDataRange().getValues();
+    const live = {};
+    wanted.forEach(function (t) { live[t.taskId] = true; coordTaskUpsert_(sh, rows, t); });
+    coordTasksAutoResolve_(sh, rows, 'complete_hire', null, live);
+    coordTasksAutoResolve_(sh, rows, 'hiring_stall', null, live);
+  } finally { lock.releaseLock(); }
+  cache.put('coord_hiring_refreshed', '1', COORD_HIRING_REFRESH_CACHE_SECONDS);
+}
+
 // ── Actions ──────────────────────────────────────────────────────────
 function coordTasksList_(caller, idToken) {
   // one adapter failing must not hide the others' tasks
   try { coordRefreshSsCompliance_(idToken); } catch (err) { console.error('SS adapter: ' + err.message); }
   try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
+  try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
   const visible = coordVisibleCampuses_(caller);
   const rows = coordSheet_().getDataRange().getValues();
   const rank = { high: 0, medium: 1, low: 2 };
