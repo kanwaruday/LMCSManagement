@@ -1167,7 +1167,7 @@ function accountsView_() {
 
   h += '<h2 style="font-size:12px;margin-top:10px">Rejoined staff — service start and RRF carry-over</h2><div class="note">For someone who rejoined under a <b>new code</b>: RRF tier and increment eligibility then count from the <b>service start</b> you give (original joining date, less the break); gratuity and pay still start from the new Date of Joining. The old code’s RRF balance moves to the new code. Leave the old code blank to set only the service start.</div>' +
     '<div class="addrow"><input list="empList" id="rjNew" placeholder="Employee (new code)…"> old code <input list="rjOldList" id="rjOld" placeholder="e.g. KUL/12/05/021" style="width:150px"><datalist id="rjOldList">' +
-    ACC.accounts.map(function (a) { return '<option value="' + esc_(a.code) + '">' + esc_(a.name) + '</option>'; }).join('') + '</datalist> service start <input type="date" id="rjStart"> <button class="btn" id="rjGo">Apply</button></div>';
+    ACC.accounts.map(function (a) { return '<option value="' + esc_(a.code) + '">' + esc_(a.name) + '</option>'; }).join('') + '</datalist> service start (the OLDER date) <input type="date" id="rjStart"> <button class="btn" id="rjGo">Apply</button></div>';
   h += '<h2 style="font-size:12px;margin-top:10px">Give a salary advance or RRF loan</h2><div class="note">Recovered automatically from salary each month from the start month (shown in ③ Adjustments; a skip needs the employee’s application). RRF loan: at most 70% of the RRF balance, once every 2 years.</div>' +
     '<div class="addrow"><input list="empList" id="lnEmp" placeholder="Search employee…"> <select id="lnType"><option>Salary Advance</option><option>RRF Loan</option></select> ₹ <input type="number" id="lnAmt" min="1" placeholder="Amount" style="width:90px">' +
     ' recover ₹ <input type="number" id="lnMonthly" min="1" placeholder="per month" style="width:90px"> given on <input type="date" id="lnDate"> from <input type="month" id="lnStart"> <input id="lnNote" placeholder="Note" style="width:160px"> <button class="btn" id="lnAdd">Record</button></div>';
@@ -1357,11 +1357,17 @@ function wireViews_() {
       loadIncrement_(true);
     });
   };
+  if (q('#rjOld')) q('#rjOld').oninput = function () { // suggest the old code's own joining date; deduct the break by hand
+    const a = ACC.accounts.find(function (x) { return x.code === q('#rjOld').value.trim(); });
+    if (a && a.doj && !q('#rjStart').value) q('#rjStart').value = a.doj;
+  };
   if (q('#rjGo')) q('#rjGo').onclick = function () {
     const r = pick_('rjNew'); if (!r) { alert('Pick the employee from the list.'); return; }
     const old = q('#rjOld').value.trim(), start = q('#rjStart').value;
     if (!start) { alert('Enter the service start date.'); return; }
-    if (!confirm('Count ' + r.name + ' (' + r.code + ') as in service from ' + start + ' for RRF and increments' + (old ? ', and move the RRF balance of ' + old + ' to ' + r.code : '') + '?')) return;
+    const acc = ACC.accounts.find(function (x) { return x.code === r.code; }) || {};
+    if (acc.doj && start >= acc.doj) { alert('The service start (' + start + ') must be EARLIER than the new Date of Joining (' + acc.doj + ') — use the original joining date, less the break.'); return; }
+    if (!confirm('RRF and increments: count ' + r.name + ' as in service from ' + start + ' (the older date).\nGratuity and pay: stay with the new Date of Joining' + (acc.doj ? ' (' + acc.doj + ')' : '') + '.' + (old ? '\n\nAlso move the RRF balance of ' + old + ' to ' + r.code + '.' : ''))) return;
     postAcc_('rejoin', { newCode: r.code, oldCode: old, serviceStart: start }, 'Saving…', 'Service start saved for ' + r.name + (old ? '; RRF balance moved from ' + old + '.' : '.'));
   };
   if (q('#lnAdd')) q('#lnAdd').onclick = function () {
