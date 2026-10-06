@@ -2225,6 +2225,22 @@ function aprOnCategoryChange() {
   }
 }
 
+// GETs are safe to repeat. Google's backend now and then answers with an HTML error page
+// ("unable to open the file", slow cold start) instead of JSON -- retry a few times quietly.
+async function aprGetJson_(url, tries) {
+  tries = tries || 3;
+  for (let i = 1; ; i++) {
+    try {
+      const text = await fetch(url).then(function (r) { return r.text(); });
+      return JSON.parse(text);
+    } catch (err) {
+      if (i >= tries) throw err;
+      aprSetStatus_('loading', 'Backend is slow — retrying (' + (i + 1) + '/' + tries + ')…');
+      await new Promise(function (ok) { setTimeout(ok, 1500 * i); });
+    }
+  }
+}
+
 function aprSetStatus_(state, text) {
   const bar = document.getElementById('aprStatusBar');
   bar.className = 'apr-status-bar' + (state === 'loading' ? '' : ' ' + state);
@@ -2240,7 +2256,7 @@ async function loadApprovals() {
     return;
   }
   try {
-    const res = await fetch(PDR_BACKEND_URL + '?action=approvalslist&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+    const res = await aprGetJson_(PDR_BACKEND_URL + '?action=approvalslist&idToken=' + encodeURIComponent(SESSION.idToken));
     if (!res.success) {
       body.innerHTML = '<div class="notice">Couldn’t load Approvals: ' + aprEsc_(res.error || 'unknown error') + '</div>';
       aprSetStatus_('err', 'Couldn’t load approvals: ' + aprEsc_(res.error || 'unknown error'));
@@ -2480,7 +2496,7 @@ async function toggleApprovalRow(id) {
   aprExpandedId = id;
   aprExpandedDetail = null;
   renderApprovalsForSelectedCampus(); // shows the spinner row immediately
-  const res = await fetch(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+  const res = await aprGetJson_(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken));
   if (!res.success) {
     pdrReportAuthFailureIfNeeded_(res);
     const wrap = document.getElementById('aprDetailWrap');
@@ -2622,7 +2638,7 @@ async function aprLoadRefereeList_() {
   if (aprRefereeListLoaded_ || aprRefereeLoading_) return;
   aprRefereeLoading_ = true;
   try {
-    const res = await fetch(PDR_BACKEND_URL + '?action=approvalreferees&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+    const res = await aprGetJson_(PDR_BACKEND_URL + '?action=approvalreferees&idToken=' + encodeURIComponent(SESSION.idToken));
     if (!res.success || !res.staff) { aprRefereeError_ = res.error || 'backend not updated yet?'; return; }
     aprRefereeListLoaded_ = true;
     aprRefereeError_ = '';
@@ -2712,7 +2728,7 @@ async function decideApproval(id, decision) {
     // went through -- so check the sheet before telling the Owner it failed.
     aprSetStatus_('loading', 'Reply unreadable (backend slow) — checking whether it saved…');
     try {
-      const chk = await fetch(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+      const chk = await aprGetJson_(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken));
       if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); aprExpandedId = null; aprExpandedDetail = null; refreshApprovals(); return; }
     } catch (e) { /* fall through to the normal failure message */ }
   }
