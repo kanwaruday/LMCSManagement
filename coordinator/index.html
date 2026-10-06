@@ -10,30 +10,56 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6}
 .hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--red-h)}
-.hdr h1{font-size:14px;font-weight:700}
-.hdr a{color:rgba(255,255,255,.92);font-size:11px;font-weight:600;text-decoration:none}
-#appBody{padding:24px;max-width:1000px;margin:0 auto}
+.hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr p{font-size:9.5px;opacity:.75}
+.hdr a{color:rgba(255,255,255,.92);font-size:11px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);padding:5px 12px;border-radius:4px}
+#appBody{padding:24px;max-width:1200px;margin:0 auto}
 #authRoot{max-width:420px;margin:60px auto}
-.welcome{display:flex;justify-content:space-between;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px;gap:10px;flex-wrap:wrap}
+.welcome{display:flex;justify-content:space-between;align-items:center;background:var(--lgray);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px;gap:10px;flex-wrap:wrap}
 .signout{font-size:11px;color:var(--gray);text-decoration:none}
+.signout:hover{color:var(--red)}
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
-h2{font-size:15px;margin:18px 0 8px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:2px solid var(--border)}
+.tab-btn{background:none;border:none;border-radius:0;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab-btn:hover{color:var(--red)}
+.tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
+.badge{display:inline-block;min-width:18px;padding:0 6px;margin-left:6px;border-radius:9px;background:var(--lgray);color:var(--gray);font-size:10px;font-weight:700;text-align:center}
+.badge.hot{background:var(--red);color:#fff}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 .status{color:var(--gray);padding:12px 0}
 .task{border:1px solid var(--border);border-left:4px solid var(--amber);border-radius:6px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .task.high{border-left-color:var(--red)}
+.task.low{border-left-color:var(--border)}
 .task .t{font-weight:600}
 .task .d{color:var(--gray);font-size:12px}
 .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:3px;background:var(--amber-bg);color:var(--amber);margin-right:6px;text-transform:uppercase}
 .task.high .chip{background:#fee2e2;color:var(--red)}
-.task.low{border-left-color:var(--border)}
 .task.low .chip{background:var(--lgray);color:var(--gray)}
-button{border:1px solid var(--border);background:var(--white);border-radius:4px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
-button:hover{border-color:var(--red);color:var(--red)}
-button:disabled{opacity:.5;cursor:default}
+button,select,input{font:inherit}
+button.btn{border:1px solid var(--border);background:var(--white);border-radius:4px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+button.btn:hover{border-color:var(--red);color:var(--red)}
+button.btn:disabled{opacity:.5;cursor:default}
+.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.ctl select,.ctl input{border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.seg button{border:none;background:var(--white);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--gray)}
+.seg button.on{background:var(--red);color:#fff}
+.note{color:var(--gray);font-size:11.5px;margin:6px 0 12px}
+.tw{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{background:var(--lgray);cursor:pointer;font-size:11px;user-select:none}
+th:hover{color:var(--red)}
+tr.row{cursor:pointer}
+tr.row:hover td{background:#fff5f5}
+tr.sub td{background:var(--lgray);font-size:11.5px}
+.unm{color:var(--amber);font-size:10.5px;margin-left:6px}
 </style>
 </head>
 <body>
-<header class="hdr"><h1>LMCS — Coordinator Portal</h1><a href="../index.html">&larr; Portal home</a></header>
+<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Follow-ups, and academics (CW/HW) analysis.</p></div><a href="../index.html">&larr; Portal home</a></header>
 <div id="authRoot"></div>
 <main id="appBody" style="display:none"></main>
 
@@ -44,15 +70,59 @@ const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_
 let SESSION = null;
 // where a Coordinator acts on each kind of follow-up
 const WORK_LINKS = { ss_compliance: '../principals-daily-reporting/index.html', approval: '../principals-daily-reporting/index.html', hiring_stall: '../hiring/index.html', complete_hire: '../staff/add-employee.html', doc_missing: '../staff/add-employee.html', doc_verify: '../staff/add-employee.html' };
+// follow-up tabs: which task domains each one shows (null = everything)
+const TABS = [
+  { id: 'all', label: 'All follow-ups', domains: null },
+  { id: 'compliance', label: 'Compliance', domains: ['ss_compliance'] },
+  { id: 'approvals', label: 'Approvals', domains: ['approval'] },
+  { id: 'hiring', label: 'Hiring', domains: ['hiring_stall', 'complete_hire'] },
+  { id: 'documents', label: 'Documents', domains: ['doc_missing', 'doc_verify'] },
+];
+let TASKS = [];
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-async function loadTasks() {
+async function api(params) {
   if (!COORD_BACKEND_URL) throw new Error('backend not deployed yet');
-  const res = await fetch(COORD_BACKEND_URL + '?action=coordinatortasks&idToken=' + encodeURIComponent(SESSION.idToken));
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Could not load tasks');
-  return data.tasks;
+  const q = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+  const data = await (await fetch(COORD_BACKEND_URL + '?' + q + '&idToken=' + encodeURIComponent(SESSION.idToken))).json();
+  if (!data.success) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ── Follow-ups ──────────────────────────────────────────────────────
+function tabTasks(tab) { return tab.domains ? TASKS.filter(t => tab.domains.indexOf(t.domain) !== -1) : TASKS; }
+
+function renderBadges() {
+  TABS.forEach(tab => {
+    const list = tabTasks(tab), el = document.getElementById('badge-' + tab.id);
+    el.textContent = list.length;
+    el.className = 'badge' + (list.some(t => t.severity === 'high') ? ' hot' : '');
+  });
+}
+
+function renderTasks(tab) {
+  const list = document.getElementById('list-' + tab.id), tasks = tabTasks(tab);
+  if (!tasks.length) { list.innerHTML = '<div class="status">Nothing to follow up on here right now.</div>'; return; }
+  list.innerHTML = tasks.map(t =>
+    '<div class="task ' + esc(t.severity) + '"><div>' +
+      '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + esc(t.title) + '</div>' +
+      '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
+    '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
+  ).join('');
+  list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolveTask(b.dataset.id, b)));
+}
+
+async function loadTasks() {
+  TABS.forEach(tab => { document.getElementById('list-' + tab.id).innerHTML = '<div class="status">Loading follow-ups...</div>'; });
+  try {
+    TASKS = (await api({ action: 'coordinatortasks' })).tasks;
+    renderBadges();
+    TABS.forEach(renderTasks);
+  } catch (err) {
+    TABS.forEach(tab => { document.getElementById('list-' + tab.id).innerHTML = '<div class="status">Could not load follow-ups: ' + esc(err.message) + ' <button class="btn retry">Retry</button></div>'; });
+    document.querySelectorAll('.retry').forEach(b => b.addEventListener('click', loadTasks));
+  }
 }
 
 async function resolveTask(taskId, btn) {
@@ -60,38 +130,99 @@ async function resolveTask(taskId, btn) {
   if (note === null) return;
   btn.disabled = true;
   try {
-    // plain-text body, no Content-Type: keeps the request CORS-safelisted (no preflight; main.gs has no doOptions)
+    // plain-text body, no Content-Type: keeps the request CORS-safelisted (no preflight; the backend has no doOptions)
     const res = await fetch(COORD_BACKEND_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'coordinatorresolvetask', idToken: SESSION.idToken, taskId: taskId, note: note }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Could not resolve');
-    render();
+    loadTasks();
   } catch (err) {
     btn.disabled = false;
     alert('Could not resolve: ' + err.message);
   }
 }
 
-async function render() {
-  const list = document.getElementById('taskList');
-  list.innerHTML = '<div class="status">Loading follow-ups...</div>';
+// ── Academics: CW/HW tag analysis ───────────────────────────────────
+const AC = { window: 'ay', side: 'cw', campus: '', q: '', sortKey: 'entries', sortDir: -1, open: null, data: {}, loaded: false };
+
+async function loadAcademics() {
+  const box = document.getElementById('acBody');
+  box.innerHTML = '<div class="status">Loading CW/HW analysis (the first load after a few hours can take up to a minute)...</div>';
   try {
-    const tasks = await loadTasks();
-    if (!tasks.length) { list.innerHTML = '<div class="status">Nothing to follow up on right now.</div>'; return; }
-    list.innerHTML = tasks.map(t =>
-      '<div class="task ' + esc(t.severity) + '"><div>' +
-        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + esc(t.title) + '</div>' +
-        '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
-      '</div><button data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
-    ).join('');
-    list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolveTask(b.dataset.id, b)));
+    AC.data[AC.window] = AC.data[AC.window] || await api({ action: 'coordinatoracademics', window: AC.window });
+    renderAcademics();
   } catch (err) {
-    list.innerHTML = '<div class="status">Could not load follow-ups: ' + esc(err.message) +
-      ' <button id="retry">Retry</button></div>';
-    document.getElementById('retry').addEventListener('click', render);
+    box.innerHTML = '<div class="status">Could not load the analysis: ' + esc(err.message) + ' <button class="btn" id="acRetry">Retry</button></div>';
+    document.getElementById('acRetry').addEventListener('click', loadAcademics);
   }
+}
+
+// average number of tags per entry on one side -- a teacher ticking every tag every time has no usable pattern
+function avgTags(o, side) { const n = o[side + 'N']; return n ? Object.keys(o[side]).reduce((a, k) => a + o[side][k], 0) / n : 0; }
+function pct(n, d) { return d ? Math.round(100 * (n || 0) / d) : null; }
+
+function renderAcademics() {
+  const d = AC.data[AC.window], side = AC.side, tags = d.tags[side];
+  const campuses = Array.from(new Set(d.teachers.map(t => t.campus))).sort();
+  const rows = d.teachers.filter(t => (!AC.campus || t.campus === AC.campus) && (!AC.q || t.name.toLowerCase().indexOf(AC.q.toLowerCase()) !== -1));
+  const val = t => {
+    if (AC.sortKey === 'avg') return avgTags(t, side);
+    if (AC.sortKey.indexOf('tag:') === 0) { const p = pct(t[side][AC.sortKey.slice(4)], t[side + 'N']); return p == null ? -1 : p; }
+    return t[AC.sortKey];
+  };
+  rows.sort((a, b) => { const x = val(a), y = val(b); return (x > y ? 1 : x < y ? -1 : 0) * AC.sortDir; });
+
+  const cell = (n, total) => {
+    const p = pct(n, total);
+    return p == null ? '<td>-</td>' : '<td style="background:rgba(206,0,0,' + (p / 100 * 0.55).toFixed(2) + ')">' + p + '%</td>';
+  };
+  const head = (key, label) => '<th data-sort="' + esc(key) + '">' + esc(label) + (AC.sortKey === key ? (AC.sortDir < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+
+  let html = '<div class="ctl">' +
+    '<span class="seg"><button data-win="ay" class="' + (AC.window === 'ay' ? 'on' : '') + '">Since ' + esc(d.ayStart || '') + '</button><button data-win="d30" class="' + (AC.window === 'd30' ? 'on' : '') + '">Last 30 days</button></span>' +
+    '<span class="seg"><button data-side="cw" class="' + (side === 'cw' ? 'on' : '') + '">Classwork tags</button><button data-side="hw" class="' + (side === 'hw' ? 'on' : '') + '">Homework tags</button></span>' +
+    '<select id="acCampus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (AC.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
+    '<input id="acQ" placeholder="Search teacher" value="' + esc(AC.q) + '"></div>' +
+    '<div class="note">' + rows.length + ' teachers. Each % is the share of that teacher\'s ' + (side === 'cw' ? 'classwork' : 'homework') +
+    ' entries carrying the tag (an entry can carry several, so a row can add up to more than 100%). "Tags / entry" is the average number of tags ticked per entry; at 5 or more the percentages say little about how the teacher actually teaches. Click a teacher for the class and subject breakdown. Feed generated ' + esc((d.generated || '').slice(0, 16).replace('T', ' ')) + ' UTC.</div>' +
+    '<div class="tw"><table><thead><tr>' + head('name', 'Teacher') + head('campus', 'Campus') + head('entries', 'Entries') + head('days', 'Days logged') + head('lastDate', 'Last entry') + head('avg', 'Tags / entry') +
+    tags.map(t => head('tag:' + t, t)).join('') + '</tr></thead><tbody>';
+  rows.forEach(t => {
+    html += '<tr class="row" data-key="' + esc(t.key) + '"><td>' + esc(t.name) + (t.matched ? '' : '<span class="unm">not in roster</span>') + '</td><td>' + esc(t.campus) + '</td><td>' + t.entries + '</td><td>' + t.days + '</td><td>' + esc(t.lastDate) + '</td><td>' + avgTags(t, side).toFixed(1) + (avgTags(t, side) >= 5 ? '<span class="unm">ticks most tags</span>' : '') + '</td>' +
+      tags.map(x => cell(t[side][x], t[side + 'N'])).join('') + '</tr>';
+    if (AC.open === t.key) {
+      Object.keys(t.groups).sort((a, b) => t.groups[b].n - t.groups[a].n).forEach(g => {
+        const gr = t.groups[g];
+        html += '<tr class="sub"><td>' + esc(g.replace(' | ', ' · ')) + '</td><td></td><td>' + gr.n + '</td><td></td><td></td><td>' + avgTags(gr, side).toFixed(1) + '</td>' + tags.map(x => cell(gr[side][x], gr[side + 'N'])).join('') + '</tr>';
+      });
+    }
+  });
+  html += '</tbody></table></div>';
+  const box = document.getElementById('acBody');
+  box.innerHTML = html;
+
+  box.querySelectorAll('[data-win]').forEach(b => b.addEventListener('click', () => { AC.window = b.dataset.win; AC.open = null; loadAcademics(); }));
+  box.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click', () => { AC.side = b.dataset.side; if (AC.sortKey.indexOf('tag:') === 0) AC.sortKey = 'entries'; renderAcademics(); }));
+  document.getElementById('acCampus').addEventListener('change', e => { AC.campus = e.target.value; renderAcademics(); });
+  document.getElementById('acQ').addEventListener('input', e => {
+    AC.q = e.target.value; renderAcademics();
+    const i = document.getElementById('acQ'); i.focus(); i.setSelectionRange(AC.q.length, AC.q.length);
+  });
+  box.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    AC.sortDir = AC.sortKey === k ? -AC.sortDir : (k === 'name' || k === 'campus' ? 1 : -1);
+    AC.sortKey = k; renderAcademics();
+  }));
+  box.querySelectorAll('tr.row').forEach(tr => tr.addEventListener('click', () => { AC.open = AC.open === tr.dataset.key ? null : tr.dataset.key; renderAcademics(); }));
+}
+
+// ── Shell ───────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
+  if (id === 'academics' && !AC.loaded) { AC.loaded = true; loadAcademics(); }
 }
 
 function showApp(session) {
@@ -106,9 +237,14 @@ function showApp(session) {
   body.innerHTML =
     '<div class="welcome"><div>Signed in as <b>' + esc(session.name) + '</b> &middot; ' + esc(session.campusName) +
     '</div><a href="#" class="signout" id="signout">Sign out</a></div>' +
-    '<h2>Follow-ups</h2><div id="taskList"></div>';
+    '<div class="tabs">' +
+      TABS.map(t => '<button class="tab-btn' + (t.id === 'all' ? ' active' : '') + '" data-tab="' + t.id + '">' + esc(t.label) + '<span class="badge" id="badge-' + t.id + '">&middot;</span></button>').join('') +
+      '<button class="tab-btn" data-tab="academics">Academics</button></div>' +
+    TABS.map(t => '<div class="tab-panel' + (t.id === 'all' ? ' active' : '') + '" id="panel-' + t.id + '"><div id="list-' + t.id + '"></div></div>').join('') +
+    '<div class="tab-panel" id="panel-academics"><div id="acBody"></div></div>';
   document.getElementById('signout').addEventListener('click', e => { e.preventDefault(); LMCS.signOut(); });
-  render();
+  document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  loadTasks();
 }
 
 const cached = LMCS.getSession();

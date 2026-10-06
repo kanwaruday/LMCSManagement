@@ -15,7 +15,8 @@
 // complete-hire (Teaching Applicants + Approvals + Employee Master, read-only), and
 // document compliance (Employee Master workbook, read-only).
 //
-// Actions: GET action=coordinatortasks, POST action=coordinatorresolvetask.
+// Actions: GET action=coordinatortasks, GET action=coordinatoracademics (CW/HW tag analysis),
+// POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
 //
 // SETUP:
@@ -81,6 +82,13 @@ const COORD_VERIFY_MEDIUM_FILES = 5; // files awaiting verification at one campu
 const COORD_VERIFY_HIGH_FILES = 15;  // ... -> high
 const COORD_DOCS_REFRESH_CACHE_SECONDS = 600;
 
+// Academics (CW/HW tag analysis). The public CW/HW feed is ~14 MB, so it is fetched, reduced to
+// a per-teacher table and cached (gzipped) -- the page never downloads the raw feed.
+const COORD_CWHW_URL = 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec'; // same feed the Teacher portal reads
+const COORD_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // Employee Roster Proxy, public action=employees
+const COORD_LMS_IDX = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']; // cwRecords' lmsIdx -> campus (same map as teacher-portal.gs)
+const COORD_ACADEMICS_CACHE_SECONDS = 10800; // 3 h
+
 function coordJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -91,6 +99,7 @@ function doGet(e) {
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
+    if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -484,6 +493,115 @@ function coordRefreshDocuments_() {
     coordTasksAutoResolve_(sh, rows, 'doc_verify', null, live);
   } finally { lock.releaseLock(); }
   cache.put('coord_docs_refreshed', '1', COORD_DOCS_REFRESH_CACHE_SECONDS);
+}
+
+// ── Academics: CW/HW tag analysis (descriptive; the "ideal pattern" comparison comes later) ──
+// Same name rule as the Teacher portal / teacher-portal.gs's tpNormalizeName_.
+function coordNormName_(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+(maam|ma'am|mam|madam|sir)\s*$/i, '').replace(/\s+/g, ' ').trim();
+}
+
+function coordSplitTags_(v) {
+  return String(v || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+}
+
+/** feed = the CW/HW feed ({cwRecords, ayStart}); employees = roster [{employeeCode, name, school:'LMS 1'}].
+ *  Returns, per window ('ay' = since the academic year start, 'd30' = last 30 days):
+ *  {teachers:[{key, code, name, campus, matched, entries, days, lastDate, cwN, hwN, cw:{tag:n}, hw:{tag:n},
+ *  groups:{'Class 5 | Math': {n, cwN, hwN, cw, hw}}}], tags:{cw:[...], hw:[...]}}.
+ *  A tag count is the number of entries carrying that tag (an entry may carry several); cwN/hwN are the
+ *  entries that carry any tag on that side, so cw[tag]/cwN is the share of that teacher's CW work.
+ *  Names that don't match the roster are kept as their own unmatched rows, never dropped. */
+function coordAcademicsAggregate_(feed, employees, now) {
+  const roster = {};
+  employees.forEach(function (e) {
+    const k = String(e.school).replace(/\s+/g, '') + '|' + coordNormName_(e.name);
+    if (!roster[k]) roster[k] = { code: e.employeeCode, name: e.name };
+  });
+  const ayStart = new Date(String(feed.ayStart) + 'T00:00:00+05:30').getTime();
+  const cutoffs = { ay: ayStart, d30: now.getTime() - 30 * 86400000 };
+  const out = {}, seenTags = { ay: { cw: {}, hw: {} }, d30: { cw: {}, hw: {} } };
+  Object.keys(cutoffs).forEach(function (w) { out[w] = {}; });
+
+  feed.cwRecords.forEach(function (r) {
+    const campus = COORD_LMS_IDX[r.lmsIdx];
+    if (!campus) return;
+    const hit = roster[campus + '|' + coordNormName_(r.teacher)];
+    const key = hit ? hit.code : 'unmatched|' + campus + '|' + coordNormName_(r.teacher);
+    const cw = coordSplitTags_(r.cwTag), hw = coordSplitTags_(r.hwTag);
+    const group = (r.classMapped || '-') + ' | ' + (r.subject || '-');
+    Object.keys(cutoffs).forEach(function (w) {
+      if (r.timeMs < cutoffs[w]) return;
+      const t = out[w][key] || (out[w][key] = {
+        key: key, code: hit ? hit.code : '', name: hit ? hit.name : String(r.teacher || '').trim(), campus: campus, matched: !!hit,
+        entries: 0, days: 0, lastDate: '', cwN: 0, hwN: 0, cw: {}, hw: {}, groups: {}, _days: {},
+      });
+      const g = t.groups[group] || (t.groups[group] = { n: 0, cwN: 0, hwN: 0, cw: {}, hw: {} });
+      t.entries++; g.n++;
+      if (!t._days[r.dateStr]) { t._days[r.dateStr] = true; t.days++; }
+      if (r.dateStr > t.lastDate) t.lastDate = r.dateStr;
+      if (cw.length) { t.cwN++; g.cwN++; }
+      if (hw.length) { t.hwN++; g.hwN++; }
+      cw.forEach(function (x) { t.cw[x] = (t.cw[x] || 0) + 1; g.cw[x] = (g.cw[x] || 0) + 1; seenTags[w].cw[x] = true; });
+      hw.forEach(function (x) { t.hw[x] = (t.hw[x] || 0) + 1; g.hw[x] = (g.hw[x] || 0) + 1; seenTags[w].hw[x] = true; });
+    });
+  });
+
+  const result = {};
+  Object.keys(cutoffs).forEach(function (w) {
+    const teachers = Object.keys(out[w]).map(function (k) { const t = out[w][k]; delete t._days; return t; });
+    teachers.sort(function (a, b) { return b.entries - a.entries; });
+    result[w] = { teachers: teachers, tags: { cw: Object.keys(seenTags[w].cw).sort(), hw: Object.keys(seenTags[w].hw).sort() } };
+  });
+  return result;
+}
+
+// CacheService values are capped at 100 KB, so the gzipped JSON is stored in chunks.
+function coordCachePutBig_(key, obj, seconds) {
+  const b64 = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(obj), 'application/json')).getBytes());
+  const parts = Math.ceil(b64.length / 90000), m = {};
+  m[key + '_n'] = String(parts);
+  for (let i = 0; i < parts; i++) m[key + '_' + i] = b64.slice(i * 90000, (i + 1) * 90000);
+  CacheService.getScriptCache().putAll(m, seconds);
+}
+
+function coordCacheGetBig_(key) {
+  const cache = CacheService.getScriptCache();
+  const n = parseInt(cache.get(key + '_n'), 10);
+  if (!n) return null;
+  const keys = [];
+  for (let i = 0; i < n; i++) keys.push(key + '_' + i);
+  const got = cache.getAll(keys);
+  let b64 = '';
+  for (let i = 0; i < n; i++) { if (!got[keys[i]]) return null; b64 += got[keys[i]]; }
+  return JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(b64), 'application/x-gzip')).getDataAsString());
+}
+
+function coordFetchJson_(url) {
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode() + ' from ' + url.slice(0, 60));
+  return JSON.parse(res.getContentText());
+}
+
+// action=coordinatoracademics&window=ay|d30
+function coordAcademics_(caller, win) {
+  win = win === 'd30' ? 'd30' : 'ay';
+  let all = coordCacheGetBig_('coord_academics');
+  if (!all) {
+    const feed = coordFetchJson_(COORD_CWHW_URL);
+    const roster = coordFetchJson_(COORD_ROSTER_URL + '?action=employees');
+    if (!feed || !Array.isArray(feed.cwRecords) || !roster.success || !Array.isArray(roster.employees)) throw new Error('CW/HW or roster source returned something unexpected');
+    all = coordAcademicsAggregate_(feed, roster.employees, new Date());
+    all.generated = feed.generated;
+    all.ayStart = feed.ayStart;
+    coordCachePutBig_('coord_academics', all, COORD_ACADEMICS_CACHE_SECONDS);
+  }
+  const visible = coordVisibleCampuses_(caller);
+  const w = all[win];
+  return {
+    success: true, window: win, generated: all.generated, ayStart: all.ayStart, tags: w.tags,
+    teachers: w.teachers.filter(function (t) { return !visible || visible.indexOf(t.campus) !== -1; }),
+  };
 }
 
 // ── Actions ──────────────────────────────────────────────────────────
