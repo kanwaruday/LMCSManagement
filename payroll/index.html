@@ -803,7 +803,7 @@ function registerCols_() {
     ['School', function (r) { return ENTITY_LABEL[r.entity]; }, true], ['Designation', function (r) { return r.designation; }, true],
     ['Days', function (r) { return r.paidDays; }], ['Basic', function (r) { return r.basic; }, false, true], ['ADA', function (r) { return r.ada; }, false, true],
     ['DA', function (r) { return r.da; }, false, true], ['Gross', function (r) { return r.gross; }, false, true],
-    ['EPF', function (r) { return r.epf; }, false, true], ['ESI', function (r) { return r.esi; }, false, true],
+    ['EPF', function (r) { return r.epf; }, false, true], ['ESI (Ee)', function (r) { return r.esi; }, false, true], ['ESI (Er)', function (r) { return r.esiEmployer; }, false, true],
     ['RRF', function (r) { return r.rrf; }, false, true], ['TDS', function (r) { return r.tds || 0; }, false, true], ['Loan Rec', function (r) { return r.loanRecovery; }, false, true], ['Deductions', function (r) { return r.totalDeductions; }, false, true],
     ['Net Pay', function (r) { return r.net; }, false, true], ['Bank', function (r) { return r.bankPayable; }, false, true],
     ['CTI', function (r) { return r.cti; }, false, true], ['Gratuity Prov', function (r) { return r.gratuityProvision; }, false, true],
