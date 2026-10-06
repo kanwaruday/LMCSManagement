@@ -1673,7 +1673,20 @@ function payAccounts_(ss, month) {
     return { id: String(l['Loan ID']), code: String(l['Employee Code']).trim(), type: String(l['Type (Salary Advance/RRF Loan)']), givenOn: payIso_(payDate_(l['Given On'])),
       amount: payNum_(l['Amount']), monthly: payNum_(l['Monthly Recovery']), start: payMonthKey_(l['Start Month']), status: String(l['Status (Active/Closed)']), notes: String(l['Notes'] || '') };
   });
-  return { month: month, accounts: rows, loans: loans, openingImported: payLedgerAll_(ss).some(function (e) { return e.reference === PAY_OPENING_REF; }) };
+  // Rejoined staff on record: anyone whose latest Salary Master row carries a Service Start, and the RRF moved to them.
+  const carried = {};
+  payLedgerAll_(ss).forEach(function (e) {
+    const m = /^Rejoin (.+) -> (.+)$/.exec(e.reference);
+    if (m && e.amount > 0 && e.code === m[2]) { const c = carried[m[2]] || { from: '', amount: 0 }; carried[m[2]] = { from: c.from ? c.from + ', ' + m[1] : m[1], amount: c.amount + e.amount }; }
+  });
+  const rejoins = [];
+  Object.keys(latest).forEach(function (code) {
+    const r = latest[code].row, ss0 = payDate_(r['Service Start']);
+    if (!ss0) return;
+    rejoins.push({ code: code, name: String(r['Name'] || ''), entity: payEntity_(r['Entity']), doj: payIso_(payDate_(r['Date of Joining'])),
+      serviceStart: payIso_(ss0), from: (carried[code] || {}).from || '', moved: (carried[code] || {}).amount || 0 });
+  });
+  return { month: month, accounts: rows, loans: loans, rejoins: rejoins, openingImported: payLedgerAll_(ss).some(function (e) { return e.reference === PAY_OPENING_REF; }) };
 }
 
 // ── Full & Final settlement ──────────────────────────────────────────

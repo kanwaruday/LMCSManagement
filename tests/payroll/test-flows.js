@@ -532,6 +532,8 @@ module.exports = function run(t) {
     h.books['1sal'].tabs['Ledger'].values.push(['2026-01-01', '2026-01', 'PAST/20/02/066', 'RRF', 'Opening', 7000, '', '', 'test', '']);
     assert.equal(call('rejoin', { month: M, newCode: code, oldCode: 'PAST/20/02/066', serviceStart: '2022-01-01' }).success, true, 'past employee not in Salary Master');
     assert.equal(get().rrfBalance, 57000);
+    const rj = call('accounts', { month: M }).rejoins.find((x) => x.code === code);
+    assert.deepEqual([rj.serviceStart, rj.from, rj.moved], ['2022-01-01', 'FOX/23/09/104, PAST/20/02/066', 57000], 'listed with where the RRF came from');
     const sm = h.books['1sal'].tabs['Salary Master'].values, hd = sm[0];
     assert.ok(sm.filter((x) => x[0] === code).every((x) => x[hd.indexOf('Service Start')]), 'written on every row of the code');
     assert.ok(String(sm.find((x) => x[0] === code)[hd.indexOf('Date of Joining')]).indexOf('2025') !== -1, 'Date of Joining untouched (gratuity restarts there)');
