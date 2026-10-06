@@ -337,7 +337,16 @@ function paySettings_(rs) {
   values.slice(1).forEach(function (r) { if (r[0]) c[String(r[0]).trim()] = payNum_(r[1]); });
   const missing = PAY_NEW_CONSTANTS.filter(function (kv) { return !(kv[0] in c); });
   if (missing.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, missing.length, 2).setValues(missing);
+    // Several requests load at once and each saw the same gap, so rows were added more than once (2026-10-06).
+    // Take the lock and re-read the sheet fresh before appending (writes already hold the lock).
+    const lock = LockService.getScriptLock(), had = lock.hasLock();
+    if (!had) lock.waitLock(30000);
+    try {
+      const now = {};
+      sh.getDataRange().getValues().forEach(function (r) { if (r[0]) now[String(r[0]).trim()] = true; });
+      const add = missing.filter(function (kv) { return !now[kv[0]]; });
+      if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 2).setValues(add);
+    } finally { if (!had) lock.releaseLock(); }
     missing.forEach(function (kv) { c[kv[0]] = kv[1]; });
   }
   const need = ['EPF Rate %', 'PF Rate %', 'EPF Cap Salary', 'ESI Threshold', 'ESI Employee %', 'ESI Employer %', 'RRF Y1 %', 'RRF Y2 %', 'RRF Y3 %'];

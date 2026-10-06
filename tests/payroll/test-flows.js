@@ -539,6 +539,13 @@ module.exports = function run(t) {
     assert.ok(String(sm.find((x) => x[0] === code)[hd.indexOf('Date of Joining')]).indexOf('2025') !== -1, 'Date of Joining untouched (gratuity restarts there)');
   });
 
+  t.test('constants: two loads that both see a missing setting add it only once', () => {
+    const rows = h.books['1d8'].tabs['PayRoll Constants'].values;
+    for (let i = rows.length - 1; i > 0; i--) if (rows[i][0] === 'RRF Stop-At-Target Until Month') rows.splice(i, 1);
+    h.run("PAY_MEMO = new Map(); const rs = SpreadsheetApp.openById('1d8'); paySettings_(rs); paySettings_(rs); PAY_MEMO = null;"); // same stale memo, second call still 'sees' the gap
+    assert.equal(rows.filter((r) => r[0] === 'RRF Stop-At-Target Until Month').length, 1);
+  });
+
   t.test('RRF: once the target is reached it stays stopped after an increment lifts the target', () => {
     const code = 'OWL/22/07/054', M1 = '2031-03', M2 = '2031-04';
     const cons = h.books['1d8'].tabs['PayRoll Constants'].values;

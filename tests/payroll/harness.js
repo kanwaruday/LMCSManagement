@@ -70,7 +70,7 @@ function boot(fixture) {
       flush() {},
     },
     CacheService: { getScriptCache: () => ({ get: (k) => (store.has(k) ? store.get(k) : null), put: (k, v) => store.set(k, v), remove: (k) => store.delete(k), removeAll: (ks) => ks.forEach((k) => store.delete(k)) }) },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {}, hasLock: () => false }) },
     Utilities: {
       DigestAlgorithm: { MD5: 'md5' },
       computeDigest: (a, x) => Array.from(crypto.createHash('md5').update(String(x)).digest()).map((b) => (b > 127 ? b - 256 : b)),
