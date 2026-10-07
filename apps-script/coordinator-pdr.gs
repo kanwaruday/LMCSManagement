@@ -21,6 +21,7 @@ const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parse
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
 const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what coordinators did with each issue: acknowledged / assigned / resolved
 const COORD_PDR_REPEATS_TAB = 'PDR Repeats'; // how much of each report repeats the campus's previous one (push from the Mac)
+const COORD_PDR_MERGES_TAB = 'PDR Issue Merges'; // 'this issue is the same problem as that one': source id -> target id, applied by the page
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
 // action=coordinatorpdr
@@ -67,7 +68,9 @@ function coordPdr_(caller) {
   });
   const repeats = [], rsh = ss.getSheetByName(COORD_PDR_REPEATS_TAB), n = function (v) { return v === '' ? null : +v; };
   if (rsh && rsh.getLastRow() > 1) rsh.getDataRange().getDisplayValues().slice(1).forEach(function (r) { if (ok(r[1])) repeats.push({ date: r[0], campus: r[1], tasks: n(r[2]), message: n(r[3]), prev: r[4], sample: r[5] }); });
-  return { success: true, repeats: repeats, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  const merges = {}, msh = ss.getSheetByName(COORD_PDR_MERGES_TAB);
+  if (msh && msh.getLastRow() > 1) msh.getDataRange().getDisplayValues().slice(1).forEach(function (r) { if (ok(r[4])) merges[r[0]] = r[1]; });
+  return { success: true, merges: merges, repeats: repeats, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -200,7 +203,7 @@ function coordPdrSyncTask_(issue, status, who, caller, note) {
       }
     } else if (row > 0 && rows[row - 1][5] === 'open') { // resolved or reset
       sh.getRange(row, 6).setValue('resolved');
-      sh.getRange(row, 10, 1, 2).setValues([[now, caller.email + ' (Systems issue ' + (status === 'resolved' ? 'resolved' : 'reset') + ')']]);
+      sh.getRange(row, 10, 1, 2).setValues([[now, caller.email + ' (Systems issue ' + (status === 'resolved' ? 'resolved' : status === 'merged' ? 'merged into another issue' : 'reset') + ')']]);
     }
   } finally { lock.releaseLock(); }
 }
@@ -211,4 +214,49 @@ function coordPdrResolveFromTask_(issueId, caller, note) {
   const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === issueId; })[0] : null;
   if (!issue) return;
   coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]]);
+}
+
+/** POST action=coordinatorpdrmerge {idToken, source, target}: the source issue is the same problem as the target (same campus only). Empty target = undo.
+ *  Merges never chain: the target is followed to its root, and anything already merged into the source is re-pointed to it. */
+function coordPdrMerge_(caller, body) {
+  const src = String(body.source || ''), tgt = String(body.target || '');
+  const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), visible = coordVisibleCampuses_(caller);
+  const ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
+  const all = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1) : [];
+  const find = function (id) { return all.filter(function (r) { return r[0] === id; })[0]; };
+  const s = find(src);
+  if (!s) return { success: false, error: 'Issue not found (it may have been regrouped by the latest sync); refresh the page' };
+  if (visible && visible.indexOf(s[1]) === -1) return { success: false, error: 'Not authorized' };
+  let t = null;
+  if (tgt) {
+    t = find(tgt);
+    if (!t) return { success: false, error: 'The issue to merge into was not found; refresh the page' };
+    if (t[1] !== s[1]) return { success: false, error: 'Only issues from the same campus can be merged' };
+    if (tgt === src) return { success: false, error: 'An issue cannot be merged into itself' };
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    let sh = ss.getSheetByName(COORD_PDR_MERGES_TAB);
+    if (!sh) {
+      sh = ss.insertSheet(COORD_PDR_MERGES_TAB);
+      sh.getRange(1, 1, 1, 5).setValues([['Source id', 'Target id', 'Updated by', 'Updated at', 'CampusId']]).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    }
+    const rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues() : [], map = {};
+    rows.forEach(function (r) { map[r[0]] = r[1]; });
+    let root = tgt;
+    while (root && map[root]) root = map[root];
+    if (tgt && root === src) return { success: false, error: 'That would merge the issues into each other' };
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const out = rows.filter(function (r) { return r[0] !== src; }).map(function (r) { return tgt && r[1] === src ? [r[0], root, r[2], r[3], r[4]] : r; });
+    if (tgt) out.push([src, root, caller.email, stamp, s[1]]);
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).clearContent();
+    if (out.length) sh.getRange(2, 1, out.length, 5).setNumberFormat('@').setValues(out);
+    const merges = {};
+    out.forEach(function (r) { merges[r[0]] = r[1]; });
+    var result = { success: true, merges: merges };
+  } finally { lock.releaseLock(); }
+  if (tgt) { try { coordPdrSyncTask_(s, 'merged', null, caller, ''); } catch (err) { result.taskError = err.message; } } // an open follow-up for the merged-away issue closes
+  return result;
 }

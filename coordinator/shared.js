@@ -454,7 +454,19 @@ window.Coord = (function () {
       // ponytail: a day counts as a reporting day when any campus reported and it is not a Sunday; a campus closed on its own
       // (no school calendar here) shows as missed. Add the school calendar if that becomes noisy.
       const days = [...new Set(Object.keys(has).map(k => k.slice(0, 10)))].filter(x => new Date(x + 'T00:00:00').getDay() !== 0).sort();
-      const issues = (d.issues || []).map(i => Object.assign({ age: ago(i.last), span: ago(i.first) - ago(i.last) }, i));
+      // Merges ("this is the same problem as that one", set by a coordinator): the merged-away issue's mentions move onto the one it was merged into.
+      const mergeMap = d.merges || {}, raw = (d.issues || []).map(i => Object.assign({ kids: [] }, i)), byId = {};
+      raw.forEach(i => { byId[i.id] = i; });
+      const rootOf = id => { let x = id, n = 0; while (mergeMap[x] && n++ < 5) x = mergeMap[x]; return x; };
+      const kept = raw.filter(i => { const r = byId[rootOf(i.id)]; if (r && r !== i) { r.kids.push(i); return false; } return true; });
+      kept.forEach(t => t.kids.forEach(k => {
+        const shared = t.items.filter(a => k.items.some(b => b.date === a.date)).length; // days both were mentioned, so they are not counted twice
+        t.count = t.count + k.count - shared;
+        if (k.first < t.first) t.first = k.first;
+        if (k.last > t.last) { t.last = k.last; t.needsAction = k.needsAction; }
+        t.items = t.items.concat(k.items.map(x => Object.assign({ from: k.subject }, x))).sort((a, b) => a.date.localeCompare(b.date)).slice(-10);
+      }));
+      const issues = kept.map(i => Object.assign({ age: ago(i.last), span: ago(i.first) - ago(i.last) }, i));
       const acts = d.actions || {}, people = d.coordinators || [], me = (SESSION && SESSION.email || '').toLowerCase();
       issues.forEach(i => {
         i.open = i.age <= QUIET_DAYS; i.act = acts[i.id] || null;
@@ -514,10 +526,14 @@ window.Coord = (function () {
       const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
         '<select class="pd-as">' + [['acknowledged', 'Acknowledge'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select> ' +
         '<select class="pd-who">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select><br>' +
-        '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '"> <button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span></details>';
+        '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '"> <button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span>' +
+        '<div class="pd-mrg"><span class="sm">Same problem as:</span> <select class="pd-mt"><option value="">pick another issue...</option>' +
+        issues.filter(o => o.id !== i.id && o.campus === i.campus).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 40).map(o => '<option value="' + o.id + '">' + esc(o.subject) + ' (' + esc(o.type) + ', ' + fmt(o.last) + ')</option>').join('') +
+        '</select> <button class="btn pd-merge">Merge this into it</button>' +
+        (i.kids.length ? '<div class="sm">Includes: ' + i.kids.map(k => esc(k.subject) + ' <a href="#" class="pd-unmerge" data-src="' + k.id + '">undo</a>').join(', ') + '</div>' : '') + '</div></details>';
       const issueRow = i => '<tr data-id="' + i.id + '"><td><b>' + i.campus + '</b></td><td>' + esc(i.type) + '</td><td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
         (i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
-        i.items.map(t => fmt(t.date) + ': ' + esc(t.text)).join('<br>') + '</details></td><td class="sm">' + editor(i) + '</td></tr>';
+        i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm">' + editor(i) + '</td></tr>';
       const issueTable = list => '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Type</th><th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
         (list.map(issueRow).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
       const byAge = (a, b) => (a.handled - b.handled) || (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
@@ -652,6 +668,19 @@ window.Coord = (function () {
       on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
       on('.pd-rep', 'change', e => { P.repeat = e.target.checked; render(); });
       on('.pd-whof', 'change', e => { P.who = e.target.value; render(); });
+      const mergeCall = async (source, target, msg) => {
+        try {
+          const res = await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorpdrmerge', idToken: SESSION.idToken, source: source, target: target }) })).json();
+          if (!res.success) throw new Error(res.error || 'Could not merge');
+          P.data.merges = res.merges; render();
+        } catch (err) { if (msg) msg.textContent = 'Not merged: ' + err.message; else alert('Could not undo the merge: ' + err.message); }
+      };
+      box.querySelectorAll('.pd-merge').forEach(btn => btn.addEventListener('click', () => {
+        const ed = btn.closest('.pd-edit'), to = ed.querySelector('.pd-mt').value, msg = ed.querySelector('.pd-msg');
+        if (!to) { msg.textContent = 'Pick the issue it is the same as first'; return; }
+        btn.disabled = true; msg.textContent = 'Merging...'; mergeCall(ed.dataset.id, to, msg);
+      }));
+      box.querySelectorAll('.pd-unmerge').forEach(a => a.addEventListener('click', e => { e.preventDefault(); mergeCall(a.dataset.src, '', null); }));
       on('.pd-copy', 'click', e => { const b = e.target; navigator.clipboard.writeText(box.dataset.digest || '').then(() => { b.textContent = 'Copied'; }, () => { b.textContent = 'Could not copy'; }); setTimeout(() => { b.textContent = 'Copy digest'; }, 2000); });
       box.querySelectorAll('.pd-save').forEach(btn => btn.addEventListener('click', async () => {
         const ed = btn.closest('.pd-edit'), msg = ed.querySelector('.pd-msg'), id = ed.dataset.id;
