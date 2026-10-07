@@ -378,6 +378,9 @@ window.LMCS = (function () {
   // already duplicates them) -- keys only match if these are identical.
   const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
   const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+  // Must match BACKEND_URL in coordinator/shared.js (if that is redeployed to a new URL, update this
+  // too -- a mismatch only means the Coordinator warm-up fetches are wasted, nothing breaks).
+  const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
 
   // action -> ttl (fresh seconds), stale (extra seconds it may be served
   // while a background refresh runs; omit for volatile data).
@@ -397,10 +400,27 @@ window.LMCS = (function () {
     myssstats:          { ttl: 120 },
     myupcomingevents:   { ttl: 120 },
     myrankscore:        { ttl: 120 },
+    coordinatortasks:     { ttl: 60 },
+    coordinatorpdr:       { ttl: 120 },
+    coordinatortransport: { ttl: 300 },
+    coordinatordocuments: { ttl: 300 },
+    coordinatoracademics: { ttl: 300 },
   };
   // GET actions that change data (staff + allowlist writes are GETs).
   // Over-matching only costs an extra cache clear, never stale data.
   const WRITE_GET = /^(addnewhire|transfer|markinactive|allowlist_(add|edit|delete)|(add|update|save|set|mark|delete|submit|resolve|reassign|autoresolve|decide|import|apply|issue|settle|lock|unlock|record|join|dismiss)\w*)$/i;
+
+  // Freshness rules that keep Refresh buttons honest:
+  //  - the FIRST fetch of a given request in a page's lifetime may come from the cache (that's the
+  //    cross-page speed-up); a REPEAT of the same request in the same page (a Refresh button, a
+  //    re-render after an action) always goes to the network.
+  //  - a browser reload (F5 / location.reload()) skips the cache for the first 10s of the page.
+  //  - localStorage.lmcs_fc_off = '1' turns the whole cache + warm-up off (handy while changing a backend).
+  const seenThisPage = {};
+  const PAGE_START = Date.now();
+  let IS_RELOAD = false;
+  try { IS_RELOAD = performance.getEntriesByType('navigation')[0].type === 'reload'; } catch (_) { /* older browser -- treat as normal load */ }
+  function cacheOff() { try { return localStorage.getItem('lmcs_fc_off') === '1'; } catch (_) { return false; } }
 
   const epochs = {};   // scriptId -> bumped on every write
   const inflight = {}; // storage key -> shared network promise
@@ -484,10 +504,14 @@ window.LMCS = (function () {
     }
     const cfg = CACHEABLE[action];
     const email = userEmail();
-    if (!cfg || !email) return origFetch(input, init);
+    if (!cfg || !email || cacheOff()) return origFetch(input, init);
 
     const key = storageKey(email, sid, u);
-    const hit = init && init.cache === 'reload' ? null : readEntry(key);
+    const forced = !!(init && init.cache === 'reload'); // the warm-up's own fetches: always network, don't count as the page's request
+    const repeat = !forced && seenThisPage[key];
+    if (!forced) seenThisPage[key] = true;
+    const skipRead = forced || repeat || (IS_RELOAD && Date.now() - PAGE_START < 10000);
+    const hit = skipRead ? null : readEntry(key);
     const age = hit ? (Date.now() - hit.t) / 1000 : Infinity;
     if (hit && age <= cfg.ttl) return Promise.resolve(toResponse(hit.body));
     if (hit && age <= cfg.ttl + (cfg.stale || 0)) {
@@ -506,10 +530,19 @@ window.LMCS = (function () {
   }
   function warmTargets(s) {
     const L = window.LMCS, out = [];
-    const add = function (label, base, query) { out.push({ label: label, url: base + '?action=' + query, tokenised: base === PDR_URL }); };
+    const add = function (label, base, query) { out.push({ label: label, url: base + '?action=' + query, tokenised: base !== ROSTER_URL }); };
+    if (L.canViewCoordinatorPortal(s)) { // Coordinator/Owner: their own portal's reads first
+      add('Follow-ups', COORD_URL, 'coordinatortasks');
+      add('Transport', COORD_URL, 'coordinatortransport');
+      add('Documents', COORD_URL, 'coordinatordocuments');
+      add('Academics', COORD_URL, 'coordinatoracademics&window=ay');
+      add('Systems', COORD_URL, 'coordinatorpdr');
+    }
     add('Staff list', ROSTER_URL, 'employees');
     if (L.canViewTeacherSS(s)) {
-      const campus = s.campusId === 'ALL' ? 'LMS1' : s.campusId; // Principal DR opens on the first school for network-wide sessions
+      // School-specific reads only for a session locked to one school (a Principal): a network-wide
+      // session could open any of the six, so guessing one would mostly be wasted requests.
+      const campus = s.campusId;
       if (/^LMS[1-6]$/.test(campus)) {
         add("Today's report", PDR_URL, 'principaldrload&campusId=' + campus + '&date=' + todayISO());
         add('Calendar', PDR_URL, 'monthactivities&campusId=' + campus);
@@ -584,7 +617,7 @@ window.LMCS = (function () {
   async function warmUp(session) {
     if (warming || !session || !session.email) return;
     try {
-      if (navigator.connection && navigator.connection.saveData) return;
+      if (cacheOff() || (navigator.connection && navigator.connection.saveData)) return;
       const todo = warmTargets(session).filter(function (t) { return !isFresh(t.url, session.email); });
       if (!todo.length) return;
       warming = true;
