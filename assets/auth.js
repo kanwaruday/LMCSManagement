@@ -179,6 +179,7 @@ window.LMCS = (function () {
 
   function signOut() {
     localStorage.removeItem(SESSION_KEY);
+    if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // cached data belongs to the signed-out user
     window.location.reload();
   }
 
@@ -300,8 +301,12 @@ window.LMCS = (function () {
             idToken: response.credential,
           };
           setSession(session);
+          if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // fresh login starts from clean data
           startExpiryWatch_();
           resolve(session);
+          // Pages that reload after sign-in restart this on their next load;
+          // pages that don't (the home screens) get it right away.
+          if (window.LMCS && window.LMCS.warmUp) window.LMCS.warmUp(session);
         };
 
         function initButton() {
@@ -331,4 +336,288 @@ window.LMCS = (function () {
   }
 
   return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, CAMPUS_NAMES };
+})();
+
+
+/* ── Client-side fetch cache + post-login warm-up (2026-10-07) ─────────
+   Why: every Apps Script call costs ~2s minimum and 10-20s on a server
+   cache miss, and this is a multi-page site, so nothing in memory
+   survives a click. Two layers, both transparent to the pages (they keep
+   calling fetch() exactly as before; no page edits needed):
+
+   1. fetch cache. window.fetch is wrapped for GET calls to Apps Script
+      web apps whose ?action= is listed in CACHEABLE below. The response
+      text is kept in localStorage, keyed by user + script + sorted query
+      (idToken and the pages' `_=Date.now()` cache-busters are ignored).
+        - fresh (age <= ttl): returned instantly, no network.
+        - stale-but-allowed (rarely-changing data only, e.g. the roster):
+          returned instantly AND refreshed in the background.
+        - otherwise: network, then stored. Failures ({success:false}, e.g.
+          "Not authorized") are never stored.
+      Concurrent identical requests share one network call, so a page that
+      asks for something the warm-up is already fetching just joins it.
+      Any POST, or a GET whose action looks like a write, clears that
+      script's entries (before AND after the call, plus an epoch guard so
+      a read that started before the write can't store pre-write data).
+      Sign-out and a fresh sign-in clear everything.
+      Staleness trade-off: data another person changed can show up to
+      `ttl` seconds late (60-120s for dashboards/approvals).
+
+   2. warm-up. Shortly after load (so the page's own requests go first),
+      and right after a fresh sign-in, the role's likely-needed reads are
+      fetched two at a time and a small non-blocking chip shows progress.
+      Entries that are still fresh are skipped, so page-hopping doesn't
+      re-fetch. */
+(function () {
+  if (typeof window === 'undefined' || !window.fetch || !window.LMCS) return;
+  const origFetch = window.fetch.bind(window);
+  const PREFIX = 'lmcs_fc|';
+  const MAX_ENTRY_CHARS = 400000;
+
+  // The same deployed URLs the pages use (duplicated, like every page
+  // already duplicates them) -- keys only match if these are identical.
+  const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+  const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+
+  // action -> ttl (fresh seconds), stale (extra seconds it may be served
+  // while a background refresh runs; omit for volatile data).
+  const CACHEABLE = {
+    employees:          { ttl: 600,  stale: 21600 },
+    roster:             { ttl: 600,  stale: 21600 },
+    approvalreferees:   { ttl: 600,  stale: 3600 },
+    monthactivities:    { ttl: 600,  stale: 3600 },
+    myemployeecode:     { ttl: 3600, stale: 86400 },
+    ssdashboard:        { ttl: 90 },
+    approvalslist:      { ttl: 60 },
+    approvaldetail:     { ttl: 60 },
+    hiringapplicants:   { ttl: 90 },
+    hiringapprovalstatus: { ttl: 90 },
+    principaldrload:    { ttl: 120 },
+    plannedactivities:  { ttl: 120 },
+    myssstats:          { ttl: 120 },
+    myupcomingevents:   { ttl: 120 },
+    myrankscore:        { ttl: 120 },
+  };
+  // GET actions that change data (staff + allowlist writes are GETs).
+  // Over-matching only costs an extra cache clear, never stale data.
+  const WRITE_GET = /^(addnewhire|transfer|markinactive|allowlist_(add|edit|delete)|(add|update|save|set|mark|delete|submit|resolve|reassign|autoresolve|decide|import|apply|issue|settle|lock|unlock|record|join|dismiss)\w*)$/i;
+
+  const epochs = {};   // scriptId -> bumped on every write
+  const inflight = {}; // storage key -> shared network promise
+
+  function parseUrl(input) {
+    try { return new URL(typeof input === 'string' ? input : (input && input.url) || String(input), location.href); }
+    catch (_) { return null; }
+  }
+  function scriptId(u) {
+    if (u.hostname !== 'script.google.com') return null;
+    const m = u.pathname.match(/\/s\/([^/]+)\/exec/);
+    return m ? m[1] : null;
+  }
+  function queryKey(u) {
+    const p = [];
+    u.searchParams.forEach(function (v, k) { if (k !== 'idToken' && k !== '_') p.push(k + '=' + v); });
+    p.sort();
+    return p.join('&');
+  }
+  function userEmail() {
+    try { return (JSON.parse(localStorage.getItem('lmcs_session')) || {}).email || null; } catch (_) { return null; }
+  }
+  function storageKey(email, sid, u) { return PREFIX + email + '|' + sid + '?' + queryKey(u); }
+
+  function readEntry(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch (_) { return null; }
+  }
+  function removeWhere(pred) {
+    const doomed = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf(PREFIX) === 0 && pred(k)) doomed.push(k);
+      }
+      doomed.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (_) { /* storage unavailable -- nothing cached, nothing to clear */ }
+  }
+  function clearAll() { removeWhere(function () { return true; }); }
+  function bust(sid) {
+    epochs[sid] = (epochs[sid] || 0) + 1;
+    removeWhere(function (k) { return k.indexOf('|' + sid + '?') !== -1; });
+    Object.keys(inflight).forEach(function (k) { if (k.indexOf('|' + sid + '?') !== -1) delete inflight[k]; });
+  }
+  function storable(text) {
+    if (text.length > MAX_ENTRY_CHARS) return false;
+    try { const j = JSON.parse(text); return !!j && typeof j === 'object' && j.success !== false; } catch (_) { return false; }
+  }
+  function writeEntry(key, text) {
+    try { localStorage.setItem(key, JSON.stringify({ t: Date.now(), body: text })); }
+    catch (_) { clearAll(); } // quota -- drop our entries rather than fight for space
+  }
+  function toResponse(text, status) {
+    return new Response(text, { status: status || 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  function network(key, sid, input, init) {
+    if (inflight[key]) return inflight[key];
+    const epoch = epochs[sid] || 0;
+    const p = origFetch(input, init).then(function (res) {
+      return res.text().then(function (text) {
+        if (res.ok && storable(text) && (epochs[sid] || 0) === epoch) writeEntry(key, text);
+        return { text: text, status: res.status };
+      });
+    });
+    inflight[key] = p;
+    const done = function () { if (inflight[key] === p) delete inflight[key]; };
+    p.then(done, done);
+    return p;
+  }
+
+  window.fetch = function (input, init) {
+    const u = parseUrl(input);
+    const sid = u && scriptId(u);
+    if (!sid) return origFetch(input, init);
+    const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    const action = u.searchParams.get('action') || '';
+    if (method !== 'GET' || WRITE_GET.test(action)) {
+      bust(sid);
+      const clear = function () { bust(sid); };
+      return origFetch(input, init).then(function (r) { clear(); return r; }, function (e) { clear(); throw e; });
+    }
+    const cfg = CACHEABLE[action];
+    const email = userEmail();
+    if (!cfg || !email) return origFetch(input, init);
+
+    const key = storageKey(email, sid, u);
+    const hit = init && init.cache === 'reload' ? null : readEntry(key);
+    const age = hit ? (Date.now() - hit.t) / 1000 : Infinity;
+    if (hit && age <= cfg.ttl) return Promise.resolve(toResponse(hit.body));
+    if (hit && age <= cfg.ttl + (cfg.stale || 0)) {
+      network(key, sid, input, init).catch(function () { /* background refresh failed -- keep serving what we have */ });
+      return Promise.resolve(toResponse(hit.body));
+    }
+    return network(key, sid, input, init).then(function (r) { return toResponse(r.text, r.status); });
+  };
+
+  window.__lmcsClearFetchCache = clearAll;
+
+  // ── warm-up ─────────────────────────────────────────────────────────
+  function todayISO() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function warmTargets(s) {
+    const L = window.LMCS, out = [];
+    const add = function (label, base, query) { out.push({ label: label, url: base + '?action=' + query, tokenised: base === PDR_URL }); };
+    add('Staff list', ROSTER_URL, 'employees');
+    if (L.canViewTeacherSS(s)) {
+      const campus = s.campusId === 'ALL' ? 'LMS1' : s.campusId; // Principal DR opens on the first school for network-wide sessions
+      if (/^LMS[1-6]$/.test(campus)) {
+        add("Today's report", PDR_URL, 'principaldrload&campusId=' + campus + '&date=' + todayISO());
+        add('Calendar', PDR_URL, 'monthactivities&campusId=' + campus);
+        add('Planned activities', PDR_URL, 'plannedactivities&campusId=' + campus);
+      }
+      add('Approvals', PDR_URL, 'approvalslist');
+      add('Approval contacts', PDR_URL, 'approvalreferees');
+      add('Support-session dashboard', PDR_URL, 'ssdashboard');
+      add('Hiring pipeline', PDR_URL, 'hiringapplicants');
+      add('Hiring approvals', PDR_URL, 'hiringapprovalstatus');
+    }
+    if (L.hasRole(s, 'Teacher')) {
+      add('Your sessions', PDR_URL, 'myssstats');
+      add('Upcoming events', PDR_URL, 'myupcomingevents');
+      add('Your rank', PDR_URL, 'myrankscore');
+      add('Your profile', PDR_URL, 'myemployeecode');
+    }
+    return out;
+  }
+  function isFresh(url, email) {
+    const u = parseUrl(url), sid = u && scriptId(u), cfg = u && CACHEABLE[u.searchParams.get('action')];
+    if (!sid || !cfg) return false;
+    const hit = readEntry(storageKey(email, sid, u));
+    return !!hit && (Date.now() - hit.t) / 1000 <= cfg.ttl;
+  }
+
+  function makeChip() {
+    let el = null, bar = null, txt = null, timer = null;
+    const calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function ensure() {
+      if (el || !document.body) return !!el;
+      el = document.createElement('div');
+      el.id = 'lmcs-warm-chip';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9000;background:#1a1a1a;color:#fff;' +
+        'font:600 12px/1.3 system-ui,sans-serif;padding:9px 12px 8px;border-radius:10px;min-width:200px;max-width:280px;' +
+        'box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;' + (calm ? '' : 'transition:opacity .25s;');
+      txt = document.createElement('div');
+      const track = document.createElement('div');
+      track.style.cssText = 'height:3px;border-radius:2px;background:rgba(255,255,255,.2);margin-top:6px;overflow:hidden';
+      bar = document.createElement('div');
+      bar.style.cssText = 'height:100%;width:0;background:#e53935;' + (calm ? '' : 'transition:width .3s;');
+      track.appendChild(bar); el.appendChild(txt); el.appendChild(track);
+      document.body.appendChild(el);
+      return true;
+    }
+    return {
+      update: function (done, total) {
+        if (!ensure()) return;
+        clearTimeout(timer);
+        el.style.opacity = '1';
+        txt.textContent = 'Getting things ready… ' + done + ' of ' + total;
+        bar.style.width = Math.round((done / total) * 100) + '%';
+      },
+      finish: function (done, total, labelsFailed) {
+        if (!ensure()) return;
+        bar.style.width = '100%';
+        const names = labelsFailed.length > 2 ? labelsFailed.slice(0, 2).join(', ') + ' +' + (labelsFailed.length - 2) + ' more' : labelsFailed.join(', ');
+        txt.textContent = labelsFailed.length
+          ? done + ' of ' + total + ' ready — ' + names + ' will load when you open it'
+          : 'All set ✓';
+        timer = setTimeout(function () {
+          el.style.opacity = '0';
+          setTimeout(function () { if (el && el.parentNode) el.parentNode.removeChild(el); el = null; }, 300);
+        }, labelsFailed.length ? 4500 : 1500);
+      },
+    };
+  }
+
+  let warming = false;
+  async function warmUp(session) {
+    if (warming || !session || !session.email) return;
+    try {
+      if (navigator.connection && navigator.connection.saveData) return;
+      const todo = warmTargets(session).filter(function (t) { return !isFresh(t.url, session.email); });
+      if (!todo.length) return;
+      warming = true;
+      const chip = makeChip(), failed = [];
+      let done = 0, i = 0;
+      chip.update(0, todo.length);
+      const worker = async function () {
+        while (i < todo.length) {
+          const t = todo[i++];
+          try {
+            // 'reload' skips our own cache read so this always refreshes, and
+            // routes through the wrapper so the result is stored + shared.
+            const res = await window.fetch(t.url + (t.tokenised ? '&idToken=' + encodeURIComponent(session.idToken) : ''), { cache: 'reload' });
+            const j = await res.json();
+            if (j && j.success === false) failed.push(t.label); else done++;
+          } catch (_) { failed.push(t.label); }
+          chip.update(done + failed.length, todo.length);
+        }
+      };
+      await Promise.all([worker(), worker()]); // two at a time -- bursts make Apps Script throttle
+      chip.finish(done, todo.length, failed);
+    } catch (_) { /* warm-up is best-effort -- never let it break a page */ }
+    finally { warming = false; }
+  }
+  window.LMCS.warmUp = warmUp;
+  window.LMCS.clearCache = clearAll;
+
+  function scheduleWarmUp() {
+    const s = window.LMCS.getSession();
+    if (!s) return;
+    const go = function () { setTimeout(function () { warmUp(s); }, 1500); }; // let the page's own requests start first
+    if (document.hidden) document.addEventListener('visibilitychange', function once() { if (!document.hidden) { document.removeEventListener('visibilitychange', once); go(); } });
+    else go();
+  }
+  if (document.readyState === 'complete') scheduleWarmUp(); else window.addEventListener('load', scheduleWarmUp);
 })();
