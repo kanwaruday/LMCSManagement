@@ -29,6 +29,7 @@ const COORD_TRANSPORT_FORM_GID = 1365845375;                                   /
 const COORD_TRANSPORT_TAB_FLEET = 'LM Studio Fleet';
 const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
 const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
+const COORD_TRANSPORT_TAB_PNL = 'Transport P&L'; // per bus per month money, from the transport workbook (push)
 const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
 const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness'], ['mv_tax', 'MV tax'],
   ['pollution', 'Pollution'], ['route_permit', 'Route permit'], ['speed_governor', 'Speed governor']];
@@ -120,6 +121,10 @@ function coordTransportPush_(body) {
     const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year'], fleet);
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
+    if (Array.isArray(p.pnl) && p.pnl.length) {
+      coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
+        p.pnl.map(function (r) { return [r.reg, r.campus, r.month, r.fee, r.fuel, r.loan, r.fixed, r.pay, r.note || '']; }));
+    }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_SYNC, ['Key', 'Value'], [
       ['syncedAt', p.syncedAt], ['pushedAt', new Date().toISOString()], ['vehicles', String(fleet.length)],
       ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')]]);
@@ -156,7 +161,12 @@ function coordTransportBase_() {
     else if (status === 'n/a') b.docs[key] = { na: true, date: '', src: 'override', note: String(r[7]), file: '', link: '' };
     else b.docs[key] = { date: coordTransportDate_(r[2], tz), src: status === 'override' ? 'override' : 'drive', file: String(r[5]), link: String(r[6]), note: String(r[7]) };
   });
-  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet };
+  const pnlSheet = ss.getSheetByName(COORD_TRANSPORT_TAB_PNL); // optional: older pushes had no money
+  const pnl = pnlSheet ? pnlSheet.getDataRange().getValues().slice(1).map(function (r) {
+    return { reg: String(r[0]), campus: String(r[1]), month: String(r[2]), fee: Number(r[3]) || 0, fuel: Number(r[4]) || 0, loan: Number(r[5]) || 0,
+      fixed: Number(r[6]) || 0, pay: Number(r[7]) || 0, note: String(r[8] || '') };
+  }) : [];
+  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl };
   coordCachePutBig_('coord_transport_base', base, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return base;
 }
@@ -200,6 +210,7 @@ function coordTransport_(caller) {
   return {
     success: true, generated: new Date().toISOString(), formRows: all.live.rows, unknown: all.unknown,
     syncedAt: all.base.syncedAt, warnings: all.base.warnings,
+    pnl: (all.base.pnl || []).filter(function (r) { return !visible || visible.indexOf('LMS' + r.campus.replace(/\D/g, '')) !== -1; }),
     docs: COORD_TRANSPORT_DOCS.map(function (d) { return { key: d[0], label: d[1] }; }),
     fleet: all.fleet.filter(function (b) { return !visible || visible.indexOf(b.campusId) !== -1; }),
   };

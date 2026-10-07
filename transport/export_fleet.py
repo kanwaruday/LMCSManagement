@@ -10,7 +10,7 @@ top. This is what makes scan-read dates reach the Transport page. Called at the 
 The secret is the value of TRANSPORT_PUSH_SECRET in the Coordinator Apps Script project's Script properties.
 No employee codes or salaries are sent; the payload holds driver names and bus papers only.
 """
-import argparse, json, re, sqlite3, subprocess, sys
+import argparse, difflib, json, re, sqlite3, subprocess, sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 import openpyxl
@@ -67,6 +67,37 @@ def push(body):
     if not res.get("success"):
         sys.exit(f"backend refused the push: {res.get('error')}")
     return f"backend ({res['vehicles']} vehicles, {res['documents']} document rows stored)"
+
+
+def pnl(wb, mapping):
+    """Per bus per month money from the workbook's Transport Monthly tab: fee, fuel, loan interest, fixed costs (insurance, taxes,
+    service, parking, challan), plus the monthly driver (and helper) pay. Matches the workbook's own Bus P&L tab to the rupee.
+    Pay comes from Transport Mapping; where that cell is an error (#N/A) it falls back to the driver's CTI in Man Power Info and
+    the row is noted, so a bus is never shown as costing nothing just because a lookup failed."""
+    people = sheet(wb, "Man Power Info.")
+    def pay(reg, campus):
+        m = mapping.get(reg, {})
+        v = m.get("Overall Sal Expense")
+        if isinstance(v, (int, float)):
+            return v, ""
+        name = norm(m.get("Driver Name"))
+        pool = {norm(p["Name"]): p for p in people if p["School"] == campus}
+        hit = difflib.get_close_matches(name, pool, n=1, cutoff=0.8) if name else []
+        if hit:
+            return pool[hit[0]]["CTI"] or 0, "driver pay from Man Power Info (the Transport Mapping cell is an error)"
+        return 0, "no driver pay recorded" if not m else "no driver pay found"
+    rows, notes, monthly = [], {}, {}
+    for r in sheet(wb, "Transport Monthly"):
+        reg = norm(r["Bus No."]).upper()
+        if not reg or not r["Start Date"]:
+            continue
+        campus = str(r["School"] or "")
+        if reg not in monthly:
+            monthly[reg], notes[reg] = pay(reg, campus)
+        num = lambda k: r[k] if isinstance(r[k], (int, float)) else 0
+        rows.append({"reg": reg, "campus": campus, "month": str(r["Start Date"])[:7], "fee": num("Fee Collected"), "fuel": num("Fuel Expense"),
+                     "loan": num("Loan Interest"), "fixed": num("Total Fix Expense"), "pay": monthly[reg], "note": notes[reg]})
+    return rows
 
 
 def overrides(known):
@@ -138,7 +169,7 @@ def main():
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "fleet": fleet}, separators=(",", ":"))
+                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
         dest = a.out
