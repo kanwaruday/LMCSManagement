@@ -448,7 +448,7 @@ window.Coord = (function () {
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
       const issueRow = i => '<tr><td><b>' + i.campus + '</b></td><td>' + esc(i.type) + '</td><td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
@@ -489,6 +489,19 @@ window.Coord = (function () {
         }).join('');
         html += '<div class="note">From the daily fee emails of the school\'s fee system (CSM), refreshed each morning. "Outstanding" is the defaulter total up to the current month, so it steps up when a new month\'s fee falls due. "Follow-ups" is what the fee system logged, which can differ from what a principal reports doing.' + (d.fees && d.fees.error ? ' <b class="stale">Could not read the fee sheet: ' + esc(d.fees.error) + '</b>' : '') + '</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Outstanding now</th><th>Change over 30 days</th><th>Collected, 7 days</th><th>Collected, 30 days</th><th>Follow-ups logged, 30 days</th><th>Last email</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      } else if (P.tab === 'admissions') {
+        const ad = d.admissions || [], MONT = ['M-I', 'M-II', 'M-III'];
+        const rows = CAMPUSES.map(c => {
+          const xs = ad.filter(x => x.campus === c).sort((a, b) => a.date.localeCompare(b.date));
+          if (!xs.length) return '<tr><td><b>' + c + '</b></td><td colspan="7" class="sm">No admission status posts from this campus</td></tr>';
+          const f = xs[0], l = xs[xs.length - 1], by = k => (l.byClass[k] ? l.byClass[k].admitted + l.byClass[k].registered : 0);
+          const mont = MONT.reduce((t, k) => t + by(k), 0), weeks = Math.max(1, (new Date(l.date) - new Date(f.date)) / 604800000);
+          return '<tr><td><b>' + c + '</b></td><td>' + l.total + '</td><td>' + mont + ' <span class="sm">(' + by('M-II') + ' in M-II)</span></td><td>' + (l.total - mont) + '</td><td>' + (l.registered || 0) + '</td><td>' + (l.tc === null ? '-' : l.tc) + '</td><td>' + ((l.total - f.total) / weeks).toFixed(1) + '<span class="sm"> a week</span></td><td class="sm">' + fmt(f.date) + ' to ' + fmt(l.date) + '</td></tr>';
+        }).join('');
+        const adIssues = issues.filter(i => i.type === 'Admissions').sort((a, b) => b.last.localeCompare(a.last)).slice(0, 12);
+        html += '<div class="note">Admission session 2026-27, from the daily status posts the campuses made in the WhatsApp admissions group (counts only). Posts ran 1 Apr to 2 Jul and most campuses stopped by early May, so these are the position at each campus\'s last post, not today. The next session\'s admissions need a structured field in the principals\' report (on the form to-do list).</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Admitted (last post)</th><th>Montessori wing</th><th>Classes</th><th>Registered, not yet admitted</th><th>TCs issued</th><th>Pace</th><th>Posts covered</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Admission items in the principals\' reports (latest 12, all year)</h3>' + issueTable(adIssues);
       } else if (P.tab === 'messages') {
         const shown = msgs.filter(m => (!P.topic || m.t.topics.indexOf(P.topic) !== -1) && (!P.act || m.t.action) && (!P.campus || m.r.campus === P.campus));
         html += '<div class="note">Form reports since 23 Sep, with the local model\'s topics and one-line summary (refreshed when the Mac syncs' + (d.taggedAt ? '; last ' + esc(d.taggedAt.slice(0, 10)) : '') + '); the principal\'s own words are in the last column.</div>' +

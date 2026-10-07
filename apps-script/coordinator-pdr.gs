@@ -18,6 +18,7 @@ const COORD_PDR_REAL_FROM = '2026-09-23';
 const COORD_FEES_SHEET_ID = '1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4'; // "LMCS Fee Defaulter Emails", written daily by the UK Data Sync Apps Script project (fee-mail-capture.gs)
 const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', NerChowk: 'LMS4', Sayoli: 'LMS5', Jogindernagar: 'LMS6' }; // campus name in the email subject -> id
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
+const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
 // action=coordinatorpdr
@@ -53,7 +54,9 @@ function coordPdr_(caller) {
   }
   let fees = null;
   try { fees = coordFees_(ok); } catch (e) { fees = { error: e.message, series: [] }; } // a fee-sheet problem must not blank the rest of the page
-  return { success: true, fees: fees, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  const admissions = [], ash = ss.getSheetByName(COORD_PDR_ADMISSIONS_TAB);
+  if (ash && ash.getLastRow() > 1) ash.getDataRange().getDisplayValues().slice(1).forEach(function (a) { if (ok(a[1])) admissions.push({ date: a[0], campus: a[1], total: +a[2], registered: +a[3], tc: a[4] === '' ? null : +a[4], byClass: JSON.parse(a[5] || '{}') }); });
+  return { success: true, fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -83,7 +86,11 @@ function coordPdrPush_(body) {
     coordTransportWriteTab_(ss, COORD_PDR_ISSUES_TAB, ['Id', 'CampusId', 'Type', 'Subject', 'First seen', 'Last seen', 'Days raised', 'Needs action', 'Items (JSON)', 'Pushed at'],
       body.issues.map(function (i) { return [i.id, i.campus, i.type, i.subject, i.first, i.last, i.count, i.needsAction ? 'yes' : 'no', JSON.stringify(i.items), now]; }));
   } finally { lock.releaseLock(); }
-  return { success: true, issues: body.issues.length, history: body.history.length };
+  if (Array.isArray(body.admissions) && body.admissions.length) {
+    coordTransportWriteTab_(ss, COORD_PDR_ADMISSIONS_TAB, ['Date', 'CampusId', 'Total', 'Registered', 'TC issued', 'By class (JSON)'],
+      body.admissions.map(function (a) { return [a.Date, a.Campus, a.Total, a.Registered, a.TCIssued, JSON.stringify(a.ByClass)]; }));
+  }
+  return { success: true, issues: body.issues.length, history: body.history.length, admissions: (body.admissions || []).length };
 }
 
 /** Daily fee figures per campus, read from the body text of the CSM "Defaulters Followup Summary" emails the capture script saved.
