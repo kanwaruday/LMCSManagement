@@ -507,7 +507,7 @@ window.Coord = (function () {
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
       const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
@@ -572,6 +572,18 @@ window.Coord = (function () {
           camps.map(c => '<tr><td><b>' + c + '</b></td>' + mons.map(m => { const n = days.filter(x => x.slice(0, 7) === m && has[x + '|' + c]).length, tot = days.filter(x => x.slice(0, 7) === m).length; return '<td class="dt ' + (n === 0 ? 'expired' : n < tot / 2 ? 'soon' : '') + '">' + n + '<span class="sm"> / ' + tot + '</span></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Last ' + last.length + ' reporting days</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + last.map(x => '<th>' + fmt(x) + '</th>').join('') + '<th>Missed since Jan</th></tr></thead><tbody>' +
           camps.map(c => '<tr><td><b>' + c + '</b></td>' + last.map(x => has[x + '|' + c] ? '<td>&#10003;</td>' : '<td class="dt expired">-</td>').join('') + '<td class="' + (missed(c) > days.length / 4 ? 'miss' : '') + '">' + missed(c) + ' of ' + days.length + '</td></tr>').join('') + '</tbody></table></div>';
+      } else if (P.tab === 'repeats') {
+        const rp = (d.repeats || []).filter(x => x.tasks !== null), THR = 70;
+        const rows = camps.map(c => {
+          const xs = rp.filter(x => x.campus === c), hit = xs.filter(x => x.tasks >= THR), rec = xs.filter(x => ago(x.date) <= 30), recHit = rec.filter(x => x.tasks >= THR), lastHit = hit.length ? hit[hit.length - 1].date : '';
+          return '<tr><td><b>' + c + '</b></td><td>' + xs.length + '</td><td>' + hit.length + ' <span class="sm">(' + (xs.length ? Math.round(100 * hit.length / xs.length) : 0) + '%)</span></td><td class="' + (recHit.length >= 3 ? 'miss' : '') + '">' + recHit.length + ' of ' + rec.length + '</td><td class="sm">' + (lastHit ? fmt(lastHit) : '-') + '</td></tr>';
+        }).join('');
+        const recent = rp.filter(x => ago(x.date) <= 30 && x.tasks >= THR).sort((a, b) => b.date.localeCompare(a.date) || a.campus.localeCompare(b.campus));
+        html += '<div class="note">How much of a report\'s "tasks completed" wording also appears in the same campus\'s <b>previous report</b> (a run of three words counts as shared, so reordering does not hide a copy). ' + THR + '% or more is shown as copied. ' +
+          'This cannot tell a lazy copy from a legitimate repeat, for example exam duty every day during exams, so treat it as a prompt to look, not a verdict. ' + (d.pushedAt ? 'Refreshed with the Mac sync.' : '') + '</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Reports compared</th><th>' + THR + '%+ copied (since Jan)</th><th>Last 30 days</th><th>Last copied</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Copied reports in the last 30 days (' + recent.length + ')</h3><div class="tw"><table class="l"><thead><tr><th>Date</th><th>Campus</th><th>Tasks the same as</th><th>Message the same</th><th>Tasks written</th></tr></thead><tbody>' +
+          (recent.map(x => '<tr><td>' + fmt(x.date) + '</td><td>' + x.campus + '</td><td class="' + (x.tasks >= 90 ? 'miss' : '') + '">' + x.tasks + '% of ' + fmt(x.prev) + '</td><td>' + (x.message === null ? '-' : x.message + '%') + '</td><td class="sm">' + esc(x.sample) + '</td></tr>').join('') || '<tr><td colspan="5">None in the last 30 days.</td></tr>') + '</tbody></table></div>';
       } else if (P.tab === 'fees') {
         const cyc = CAMPUSES.map(feeCycle), day = cyc.find(Boolean) ? cyc.find(Boolean).day : 0, ym = fsAll.length ? fsAll[fsAll.length - 1][0].slice(0, 7) : '';
         const rows = CAMPUSES.map((c, i) => {

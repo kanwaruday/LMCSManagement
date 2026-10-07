@@ -20,6 +20,7 @@ const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', Ner
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
 const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what coordinators did with each issue: acknowledged / assigned / resolved
+const COORD_PDR_REPEATS_TAB = 'PDR Repeats'; // how much of each report repeats the campus's previous one (push from the Mac)
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
 // action=coordinatorpdr
@@ -64,7 +65,9 @@ function coordPdr_(caller) {
   if (acsh && acsh.getLastRow() > 1) acsh.getDataRange().getDisplayValues().slice(1).forEach(function (a) {
     if (ok(a[7])) actions[a[0]] = { status: a[1], assignee: a[2], assigneeName: a[3], note: a[4], by: a[5], at: a[6], lastAtAction: a[8] };
   });
-  return { success: true, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  const repeats = [], rsh = ss.getSheetByName(COORD_PDR_REPEATS_TAB), n = function (v) { return v === '' ? null : +v; };
+  if (rsh && rsh.getLastRow() > 1) rsh.getDataRange().getDisplayValues().slice(1).forEach(function (r) { if (ok(r[1])) repeats.push({ date: r[0], campus: r[1], tasks: n(r[2]), message: n(r[3]), prev: r[4], sample: r[5] }); });
+  return { success: true, repeats: repeats, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -98,7 +101,11 @@ function coordPdrPush_(body) {
     coordTransportWriteTab_(ss, COORD_PDR_ADMISSIONS_TAB, ['Date', 'CampusId', 'Total', 'Registered', 'TC issued', 'By class (JSON)'],
       body.admissions.map(function (a) { return [a.Date, a.Campus, a.Total, a.Registered, a.TCIssued, JSON.stringify(a.ByClass)]; }));
   }
-  return { success: true, issues: body.issues.length, history: body.history.length, admissions: (body.admissions || []).length };
+  if (Array.isArray(body.repeats) && body.repeats.length) {
+    coordTransportWriteTab_(ss, COORD_PDR_REPEATS_TAB, ['Date', 'CampusId', 'Tasks % repeated', 'Message % repeated', 'Previous report', 'Sample'],
+      body.repeats.map(function (r) { return [r.Date, r.Campus, r.Tasks, r.Message, r.Prev, r.Sample]; }));
+  }
+  return { success: true, issues: body.issues.length, history: body.history.length, admissions: (body.admissions || []).length, repeats: (body.repeats || []).length };
 }
 
 /** Daily fee figures per campus, read from the body text of the CSM "Defaulters Followup Summary" emails the capture script saved.
