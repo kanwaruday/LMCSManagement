@@ -55,6 +55,7 @@ those really do need copying from there.
 
 **One deployment** ("LMCS Coordinator Backend" — `COORD_BACKEND_URL` in [`coordinator/index.html`](../coordinator/index.html), added 2026-10-06, deliberately NOT in the PDR project so Principals' backend is never touched):
 - `coordinator.gs` — `coordinatortasks` (GET), `coordinatorresolvetask` (POST), Coordinator/Owner only, own copy of the allowlist token check. Generic follow-up task store ("Tasks" tab inside the LMCS Approvals workbook, creates itself); adapters read other backends over HTTP with the caller's token. First adapter: SS compliance from PDR's `ssdashboard`.
+- `coordinator-transport.gs` + generated `coordinator-transport-data.gs` — Transport department: `coordinatortransport` (GET) and the transport adapter (tasks `transport_expired` / `transport_due` / `transport_missing`, one per campus per month). Fleet roster + expiry baseline come from `transport/export_to_coordinator.py`; the Transport Document Submission form responses are read live and override the baseline when newer. Same Apps Script project as `coordinator.gs` (add both files, redeploy).
 
 **Separate deployments**, one file each:
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)

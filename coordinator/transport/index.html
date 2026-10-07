@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Coordinator · Transport</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body>
+<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Transport</p></div><a href="../index.html">&larr; Coordinator home</a></header>
+<div id="authRoot"></div>
+<main id="appBody" style="display:none"></main>
+<script src="../../assets/auth.js"></script>
+<script src="../shared.js"></script>
+<script>
+Coord.boot(function (body) {
+  const follow = document.createElement('div'), fleet = document.createElement('div');
+  fleet.style.marginTop = '28px';
+  body.appendChild(follow); body.appendChild(fleet);
+  Coord.tasksView(follow, { dept: 'Transport', title: 'Transport', sub: 'Vehicle documents that have expired, are about to, or have never been uploaded.' });
+  Coord.transportView(fleet);
+});
+</script>
+</body>
+</html>

@@ -12,10 +12,12 @@
 // caller's own ID token where one has an endpoint, or (the Approvals tab, which sits in the
 // same workbook as Tasks) straight from the sheet. Adapters: SS compliance (PDR's
 // action=ssdashboard), approvals bottleneck (Approvals tab), hiring stalls and
-// complete-hire (Teaching Applicants + Approvals + Employee Master, read-only), and
-// document compliance (Employee Master workbook, read-only).
+// complete-hire (Teaching Applicants + Approvals + Employee Master, read-only),
+// document compliance (Employee Master workbook, read-only), and transport fleet documents
+// (coordinator-transport.gs: generated roster + the Transport Document Submission form, read-only).
 //
 // Actions: GET action=coordinatortasks, GET action=coordinatoracademics (CW/HW tag analysis),
+// GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
 //
@@ -38,7 +40,7 @@ const COORD_HEADERS = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status'
 // Departments follow the vault's Departments hubs, plus Systems. Every follow-up carries one so the
 // landing page can group by department; adapters set it, approvals by request category.
 const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examination', COORD_DEPT_FINANCE = 'Fees & Finance',
-  COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations';
+  COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations', COORD_DEPT_TRANSPORT = 'Transport';
 const COORD_APPROVAL_DEPT = {
   'New/ Backup Position': COORD_DEPT_HR, 'Salary Offer Approval': COORD_DEPT_HR, 'Compensation Change': COORD_DEPT_HR,
   'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
@@ -47,7 +49,8 @@ const COORD_APPROVAL_DEPT = {
 }; // anything else ('Other', new categories) lands in School Operations
 // Fallback for tasks created before the Department column existed.
 const COORD_DOMAIN_DEPT = { ss_compliance: COORD_DEPT_HR, hiring_stall: COORD_DEPT_HR, complete_hire: COORD_DEPT_HR,
-  doc_missing: COORD_DEPT_HR, doc_none: COORD_DEPT_HR, doc_verify: COORD_DEPT_HR };
+  doc_missing: COORD_DEPT_HR, doc_none: COORD_DEPT_HR, doc_verify: COORD_DEPT_HR,
+  transport_expired: COORD_DEPT_TRANSPORT, transport_due: COORD_DEPT_TRANSPORT, transport_missing: COORD_DEPT_TRANSPORT };
 
 const COORD_ALLOWLIST_SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Principal Allowlist" (same as PDR's ALLOWLIST_SHEET_ID)
 const COORD_GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com'; // same as assets/auth.js
@@ -114,6 +117,7 @@ function doGet(e) {
     const action = String(e.parameter.action || '').toLowerCase();
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
+    if (action === 'coordinatortransport') return coordJson_(coordTransport_(caller));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -643,6 +647,7 @@ function coordTasksList_(caller, idToken) {
   try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
   try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
   try { coordRefreshDocuments_(); } catch (err) { console.error('Documents adapter: ' + err.message); }
+  try { coordRefreshTransport_(); } catch (err) { console.error('Transport adapter: ' + err.message); }
   const visible = coordVisibleCampuses_(caller);
   const rows = coordSheet_().getDataRange().getValues();
   const rank = { high: 0, medium: 1, low: 2 };
