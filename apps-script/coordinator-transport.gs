@@ -226,3 +226,11 @@ function coordRefreshTransport_() {
   } finally { lock.releaseLock(); }
   cache.put('coord_transport_refreshed', '1', COORD_TRANSPORT_REFRESH_CACHE_SECONDS);
 }
+
+/** Run once from the Apps Script editor (Run > coordTransportCheck): grants the Drive/Sheets access this file needs
+ *  and prints what the Transport page would load. Private (trailing _) functions cannot be run from the editor. */
+function coordTransportCheck() {
+  const all = coordTransportFleet_();
+  console.log('fleet file synced at ' + all.base.syncedAt + ': ' + all.fleet.length + ' vehicles, ' + all.live.rows + ' form rows, unknown vehicles in form: ' + (all.unknown.join(', ') || 'none'));
+  console.log('pending uploads: ' + coordTransportPending_(all.base, all.live).files.length);
+}
