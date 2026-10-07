@@ -9,7 +9,7 @@ scan-read dates reach the Transport page. Called at the end of drive-index/sync.
 
 No employee codes or salaries go in the file; it holds driver names and bus papers only.
 """
-import argparse, json, sqlite3, sys
+import argparse, json, re, sqlite3, sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 import openpyxl
@@ -19,6 +19,10 @@ from build_master import XLSX, DB, DB_TYPES, norm, sheet
 
 DRIVE = Path("/Users/udaykanwar/Library/CloudStorage/GoogleDrive-uday.kanwar@lms.org.in/My Drive")
 TARGET = DRIVE / "LMCS_Transport_Fleet.json"  # root, outside "SCHOOL RELATED/LMS Central Repository" so the summariser never ingests it
+OVERRIDES = Path("/Users/udaykanwar/Library/CloudStorage/OneDrive-Personal/2. Areas/Uday Obsidian KMS/Uday's KMS/work/Transport Overrides.md")
+DOC_NAMES = {"insurance": "insurance", "fitness": "fitness", "mvtax": "mv_tax", "roadtax": "mv_tax", "tax": "mv_tax",
+             "pollution": "pollution", "puc": "pollution", "routepermit": "route_permit", "permit": "route_permit",
+             "speedgovernor": "speed_governor", "governor": "speed_governor"}
 MIN_FLEET = 15  # fewer vehicles than this means the workbook read went wrong; never overwrite good data with it
 LO, HI = date(2015, 1, 1), date(2040, 12, 31)  # a read date outside this is a misread, treated as unreadable
 
@@ -46,6 +50,42 @@ def scans():
     return out
 
 
+def overrides(known):
+    """Hand-entered dates from the vault note: a markdown table (Vehicle | Document | Valid to | Note), lines in code fences ignored.
+    Valid to is YYYY-MM-DD, DD/MM/YYYY (day first) or n/a (this vehicle does not need that paper).
+    Returns ({(reg, key): {date|na, note}}, [warning]); a bad row is skipped with a warning, never guessed."""
+    out, warn, fence = {}, [], False
+    if not OVERRIDES.exists():
+        return out, ["overrides note not found, none applied"]
+    for n, line in enumerate(OVERRIDES.read_text().splitlines(), 1):
+        if line.strip().startswith("```"):
+            fence = not fence
+            continue
+        if fence or not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or set("".join(cells[:3])) <= set("-: ") or cells[0].lower() == "vehicle":
+            continue
+        reg, key, val = norm(cells[0]).upper(), DOC_NAMES.get(norm(cells[1])), cells[2].lower().replace(" ", "")
+        note = cells[3] if len(cells) > 3 else ""
+        if not reg and not key and not val:
+            continue  # an empty template row
+        if reg not in known:
+            warn.append(f"line {n}: vehicle '{cells[0]}' is not in the fleet"); continue
+        if not key:
+            warn.append(f"line {n}: unknown document '{cells[1]}'"); continue
+        if val in ("n/a", "na"):
+            out[(reg, key)] = {"na": True, "note": note}; continue
+        m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})", val)
+        try:
+            d = date(int(m[1]), int(m[2]), int(m[3])) if m[1] else date(int(m[6]), int(m[5]), int(m[4]))
+            assert LO <= d <= HI
+        except (TypeError, ValueError, AssertionError):
+            warn.append(f"line {n}: '{cells[2]}' is not a usable date (use YYYY-MM-DD or DD/MM/YYYY)"); continue
+        out[(reg, key)] = {"date": d.isoformat(), "note": note}
+    return out, warn
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
@@ -68,10 +108,18 @@ def main():
                       "year": r["Year of Purchase"], "operational": "not op" not in str(r["Status"] or "").lower(),
                       "route": m.get("Route") or "", "start": m.get("Start Point") or "", "driver": str(m.get("Driver Name") or "").strip(),
                       "docs": s.get(reg, {}).get("docs", {}), "unreadable": s.get(reg, {}).get("unreadable", [])})
+    ov, warnings = overrides({v["reg"] for v in fleet})
+    for v in fleet:
+        for (reg, key), o in ov.items():
+            if reg != v["reg"]:
+                continue
+            v["docs"][key] = {"date": o.get("date", ""), "na": o.get("na", False), "src": "override", "note": o["note"],
+                              "file": "Transport overrides note", "link": ""}
+            v["unreadable"] = [u for u in v["unreadable"] if u["key"] != key]  # a person has settled that paper
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "source": "transport workbook + drive-index/records.db", "fleet": fleet}, separators=(",", ":"))
+                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
         dest = a.out
@@ -81,7 +129,9 @@ def main():
         TARGET.write_text(body)
         dest = TARGET
     print(f"{len(fleet)} vehicles, {sum(len(v['docs']) for v in fleet)} dated documents, "
-          f"{sum(len(v['unreadable']) for v in fleet)} unreadable scans -> {dest}")
+          f"{sum(len(v['unreadable']) for v in fleet)} unreadable scans, {len(ov)} overrides -> {dest}")
+    for w in warnings:
+        print("override warning:", w)
 
 
 if __name__ == "__main__":

@@ -184,8 +184,8 @@ window.Coord = (function () {
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
-    const LABEL = { expired: 'Expired', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid' };
-    const RANK = { expired: 0, check: 1, missing: 2, soon: 3, later: 4, ok: 5 };
+    const LABEL = { expired: 'Expired', check: 'Scan, date unread', missing: 'No record', na: 'Not needed', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid' };
+    const RANK = { expired: 0, check: 1, missing: 2, soon: 3, later: 4, ok: 5, na: 6 };
 
     async function load() {
       box.innerHTML = '<div class="status">Loading fleet documents...</div>';
@@ -199,7 +199,7 @@ window.Coord = (function () {
     function render() {
       const d = T.data, now = new Date(); now.setHours(0, 0, 0, 0);
       const days = iso => Math.round((new Date(iso + 'T00:00:00') - now) / 86400000);
-      const tier = e => { if (!e.date) return e.unread.length ? 'check' : 'missing'; const n = days(e.date); return n < 0 ? 'expired' : n <= 30 ? 'soon' : n <= 90 ? 'later' : 'ok'; };
+      const tier = e => { if (e.na) return 'na'; if (!e.date) return e.unread.length ? 'check' : 'missing'; const n = days(e.date); return n < 0 ? 'expired' : n <= 30 ? 'soon' : n <= 90 ? 'later' : 'ok'; };
       const when = (iso, t) => !iso ? '-' : days(iso) < 0 ? -days(iso) + ' days ago' : days(iso) === 0 ? 'Today' : 'in ' + days(iso) + ' days';
       const running = d.fleet.filter(b => b.operational), idle = d.fleet.filter(b => !b.operational);
       const items = [];
@@ -211,10 +211,10 @@ window.Coord = (function () {
       const campuses = Array.from(new Set(running.map(b => b.campus))).sort();
       const pick = i => (!T.campus || i.b.campus === T.campus) && (T.tier === 'all' || i.t === T.tier) &&
         (!T.q || (i.b.reg + ' ' + i.b.driver + ' ' + i.b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
-      const rows = items.filter(i => i.t !== 'ok' && pick(i)).sort((a, b) => RANK[a.t] - RANK[b.t] || a.n - b.n || a.b.reg.localeCompare(b.b.reg));
+      const rows = items.filter(i => i.t !== 'ok' && i.t !== 'na' && pick(i)).sort((a, b) => RANK[a.t] - RANK[b.t] || a.n - b.n || a.b.reg.localeCompare(b.b.reg));
       const pl = t => '<span class="pl ' + t + '">' + LABEL[t] + '</span>';
       const a = (u, txt) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>';
-      const srcNote = i => (i.src === 'form' ? 'from the form' : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
+      const srcNote = i => (i.src === 'form' ? 'from the form' : i.src === 'override' ? 'from the overrides note' : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
         (i.unread.length ? (i.src ? ' &middot; ' : '') + i.unread.map((u, n) => a(u.link, (i.src ? 'unread scan' : 'View scan') + (i.unread.length > 1 ? ' #' + (n + 1) : ''))).join(' ') : '');
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
@@ -222,6 +222,7 @@ window.Coord = (function () {
       let html = '<div class="note">' + (synced ? 'Dates read from Drive scans were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
         ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
       (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') + '</div>' +
+      (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
       '<div class="tiles">' +
         '<div class="tile"><b>' + running.length + '</b>vehicles running</div>' +
         '<div class="tile bad"><b>' + count('expired') + '</b>documents expired</div>' +
@@ -248,7 +249,7 @@ window.Coord = (function () {
         html += '<div class="note">Expiry date of the newest paper on file. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
           fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + '</td>' +
-            d.docs.map(x => { const e = b.docs[x.key], t = tier(e); return '<td class="dt ' + t + '" title="' + (e.src ? 'Source: ' + (e.src === 'form' ? 'submission form' : 'Drive scan') : e.unread.length ? 'Scan on file, date unread' : 'No record') + '">' + (e.date ? fmt(e.date) : t === 'check' ? 'unread' : '-') + '</td>'; }).join('') + '</tr>').join('') +
+            d.docs.map(x => { const e = b.docs[x.key], t = tier(e); return '<td class="dt ' + t + '" title="' + (e.src ? 'Source: ' + (e.src === 'form' ? 'submission form' : e.src === 'override' ? 'Transport Overrides note' : 'Drive scan') : e.unread.length ? 'Scan on file, date unread' : 'No record') + '">' + (e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-') + '</td>'; }).join('') + '</tr>').join('') +
           '</tbody></table></div>';
       }
       if (idle.length) html += '<div class="note"><b>Not running</b> (marked not operational in the Transport Management System, excluded above): ' +

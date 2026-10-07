@@ -50,3 +50,4 @@ td.dt.expired{background:#fee2e2;color:var(--red);font-weight:600}td.dt.soon{bac
 .stale{color:var(--amber);font-weight:700}
 .pl.check{background:#e0f2fe;color:#075985}
 td.dt.check{background:#e0f2fe;color:#075985}
+td.dt.na{background:var(--lgray);color:var(--gray);font-style:italic}

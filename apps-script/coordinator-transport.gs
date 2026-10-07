@@ -8,7 +8,8 @@
 //           read off the Drive scans. Written by transport/export_fleet.py at the end of every
 //           drive-index sync on Uday's Mac, so it is only as fresh as that sync (its syncedAt is shown).
 //   form  = the "LMCS Transport Document Submission Form" responses sheet, read live (about 5 min).
-// The newer date wins; on a tie the form wins. Scans uploaded to the Transport folder since the last
+// A date typed in the vault's "Transport Overrides" note replaces the scan-read date (src 'override'); "n/a" there
+// means the vehicle does not need that paper. The newer date wins; on a tie the form wins. Scans uploaded to the Transport folder since the last
 // sync are listed as "waiting to be read" so a new upload is visible before its date is known.
 //
 // Powers GET action=coordinatortransport (the Transport page) and the transport adapter
@@ -86,7 +87,7 @@ function coordTransportFleet_() {
     COORD_TRANSPORT_DOCS.forEach(function (d) {
       const sc = (b.docs || {})[d[0]], l = live.docs[b.reg + '|' + d[0]] || '';
       const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: '' }
-        : sc ? { date: sc.date, src: 'drive', link: sc.link } : { date: '', src: '', link: '' };
+        : sc ? { date: sc.date, src: sc.src || 'drive', link: sc.link, na: !!sc.na, note: sc.note || '' } : { date: '', src: '', link: '' };
       // scans of this type whose date LM Studio could not read; one of them may be the renewal
       doc.unread = (b.unreadable || []).filter(function (u) { return u.key === d[0]; }).map(function (u) { return { file: u.file, link: u.link }; });
       docs[d[0]] = doc;
@@ -100,8 +101,9 @@ function coordTransportFleet_() {
   return { fleet: fleet, base: base, live: live, unknown: live.regs.filter(function (r) { return !known[r]; }) };
 }
 
-// 'expired' | 'check' (a scan exists but no date could be read) | 'missing' | 'due' (within the soon window) | 'ok'
+// 'na' | 'expired' | 'check' (a scan exists but no date could be read) | 'missing' | 'due' (within the soon window) | 'ok'
 function coordTransportState_(doc, today) {
+  if (doc.na) return 'na';
   if (!doc.date) return doc.unread.length ? 'check' : 'missing';
   if (doc.date < today) return 'expired';
   const days = Math.round((Date.parse(doc.date + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
@@ -158,7 +160,7 @@ function coordTransport_(caller) {
   const visible = coordVisibleCampuses_(caller);
   return {
     success: true, generated: new Date().toISOString(), formRows: all.live.rows, unknown: all.unknown,
-    syncedAt: all.base.syncedAt, pending: coordTransportPending_(all.base, all.live),
+    syncedAt: all.base.syncedAt, warnings: all.base.warnings || [], pending: coordTransportPending_(all.base, all.live),
     docs: COORD_TRANSPORT_DOCS.map(function (d) { return { key: d[0], label: d[1] }; }),
     fleet: all.fleet.filter(function (b) { return !visible || visible.indexOf(b.campusId) !== -1; }),
   };
@@ -171,7 +173,7 @@ function coordTransportWanted_(fleet, now) {
   fleet.filter(function (b) { return b.operational; }).forEach(function (b) {
     COORD_TRANSPORT_DOCS.forEach(function (d) {
       const st = coordTransportState_(b.docs[d[0]], today);
-      if (st === 'ok') return;
+      if (st === 'ok' || st === 'na') return;
       const c = by[b.campusId] = by[b.campusId] || { campus: b.campus, expired: [], due: [], missing: [] };
       c[st === 'check' ? 'missing' : st].push({ reg: b.reg, key: d[0], label: d[1] + (st === 'check' ? ' [scan, date unread]' : '') });
     });
