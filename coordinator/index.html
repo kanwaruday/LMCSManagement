@@ -70,7 +70,7 @@
           return;
         }
         html += '<div class="card"><div class="card-top"><h3><a href="' + d.page + '/index.html">' + d.name + '</a></h3>' +
-          pill(counts && counts !== 'error' ? counts.byDept[d.name] : null) + '</div><p>' + d.desc + '</p></div>';
+          (d.live ? '<span class="status live">Live</span>' : pill(counts && counts !== 'error' ? counts.byDept[d.name] : null)) + '</div><p>' + d.desc + '</p></div>';
       });
       document.getElementById('modules-grid').innerHTML = html;
     }

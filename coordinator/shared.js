@@ -15,7 +15,7 @@ window.Coord = (function () {
     { name: 'Fees & Finance', page: 'finance', desc: 'Financial and purchase approvals. Payroll exceptions to follow.' },
     { name: 'School Operations', page: 'operations', desc: 'Everything not covered elsewhere, such as other approvals.' },
     { name: 'Events & House System', page: 'events', desc: 'Events, trips, invitations and calendar approvals.' },
-    { name: 'Transport', page: 'transport', desc: 'Bus document compliance: insurance, fitness, MV tax, pollution, route permit and speed governor.' },
+    { name: 'Transport', page: 'transport', live: true, desc: 'Bus document compliance: insurance, fitness, MV tax, pollution, route permit and speed governor.' },
     { name: 'Student Life', page: null, desc: 'Student welfare and incidents.' },
     { name: 'Systems', page: null, desc: 'IT and systems follow-ups.' },
   ];
@@ -24,7 +24,6 @@ window.Coord = (function () {
     ss_compliance: '../../principals-daily-reporting/index.html', approval: '../../principals-daily-reporting/index.html',
     hiring_stall: '../../hiring/index.html', complete_hire: '../../staff/add-employee.html',
     doc_missing: '../../staff/add-employee.html', doc_none: '../../staff/add-employee.html', doc_verify: '../../staff/add-employee.html',
-    transport_expired: '../transport/index.html', transport_due: '../transport/index.html', transport_missing: '../transport/index.html',
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

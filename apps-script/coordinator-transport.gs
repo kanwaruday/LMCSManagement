@@ -13,8 +13,8 @@
 // The newer date wins; on a tie the form wins. A date typed in the overrides note replaces the scan-read
 // date (Status "override"); "n/a" there means the vehicle does not need that paper.
 //
-// Powers GET action=coordinatortransport (the Transport page) and the transport adapter
-// (follow-up tasks: expired / due soon / no date on file, one per campus per month).
+// Powers GET action=coordinatortransport (the Transport page) and POST action=transportpush. No follow-up tasks: they were
+// built and switched off (see coordTransportRetireTasks_).
 // No Drive access is needed anywhere in here (the Workspace blocks DriveApp for scripts).
 //
 // SETUP: Project Settings > Script properties > add TRANSPORT_PUSH_SECRET (the same value as
@@ -35,10 +35,8 @@ const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness']
 // Form "Document Type" -> key. RC is collected by the form but has no expiry worth tracking; passenger tax is not on the form.
 const COORD_TRANSPORT_FORM_TYPES = { 'FITNESS': 'fitness', 'ROUTE PERMIT': 'route_permit', 'INSURANCE': 'insurance',
   'MV TAX': 'mv_tax', 'POLLUTION': 'pollution', 'SPEED GOVERNOR': 'speed_governor' };
-const COORD_TRANSPORT_LEGAL = ['insurance', 'fitness', 'mv_tax', 'route_permit']; // expired = the bus should not be on the road -> high
 const COORD_TRANSPORT_SOON_DAYS = 30;
 const COORD_TRANSPORT_LIVE_CACHE_SECONDS = 300;
-const COORD_TRANSPORT_REFRESH_CACHE_SECONDS = 600;
 
 function coordTransportDate_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
@@ -127,7 +125,7 @@ function coordTransportPush_(body) {
       ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')]]);
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
-  ['coord_transport_base', 'coord_transport_refreshed'].forEach(function (k) { cache.remove(k); });
+  ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
   return { success: true, vehicles: fleet.length, documents: docs.length };
 }
 
@@ -206,65 +204,24 @@ function coordTransport_(caller) {
   };
 }
 
-// ── Adapter: follow-up tasks, one per campus per month per problem kind ──
-function coordTransportWanted_(fleet, now) {
-  const today = Utilities.formatDate(now, 'Asia/Kolkata', 'yyyy-MM-dd'), month = today.slice(0, 7);
-  const by = {}; // campusId -> { campus, expired: [], due: [], missing: [] }; 'check' items ride in missing
-  fleet.filter(function (b) { return b.operational; }).forEach(function (b) {
-    COORD_TRANSPORT_DOCS.forEach(function (d) {
-      const st = coordTransportState_(b.docs[d[0]], today);
-      if (st === 'ok' || st === 'na') return;
-      const c = by[b.campusId] = by[b.campusId] || { campus: b.campus, expired: [], due: [], missing: [] };
-      c[st === 'check' ? 'missing' : st].push({ reg: b.reg, key: d[0], label: d[1] + (st === 'check' ? ' [scan, date unread]' : '') });
-    });
-  });
-  const regs = function (items) { // 'HP34B6082 (Pollution, Speed governor)'
-    const per = {};
-    items.forEach(function (i) { (per[i.reg] = per[i.reg] || []).push(i.label); });
-    return Object.keys(per).map(function (r) { return r + ' (' + per[r].join(', ') + ')'; });
-  };
-  const shown = function (items) {
-    const list = regs(items);
-    return list.slice(0, 6).join('; ') + (list.length > 6 ? '; and ' + (list.length - 6) + ' more' : '');
-  };
-  const wanted = [];
-  Object.keys(by).forEach(function (id) {
-    const c = by[id];
-    const base = { department: COORD_DEPT_TRANSPORT, campus: id };
-    if (c.expired.length) wanted.push(Object.assign({}, base, {
-      taskId: 'transport_expired|' + id + '|' + month, domain: 'transport_expired',
-      title: c.campus + ': ' + c.expired.length + ' vehicle document' + (c.expired.length > 1 ? 's' : '') + ' expired',
-      detail: shown(c.expired),
-      severity: c.expired.some(function (i) { return COORD_TRANSPORT_LEGAL.indexOf(i.key) !== -1; }) ? 'high' : 'medium',
-    }));
-    if (c.due.length) wanted.push(Object.assign({}, base, {
-      taskId: 'transport_due|' + id + '|' + month, domain: 'transport_due',
-      title: c.campus + ': ' + c.due.length + ' vehicle document' + (c.due.length > 1 ? 's' : '') + ' due within ' + COORD_TRANSPORT_SOON_DAYS + ' days',
-      detail: shown(c.due), severity: 'medium',
-    }));
-    if (c.missing.length) wanted.push(Object.assign({}, base, {
-      taskId: 'transport_missing|' + id + '|' + month, domain: 'transport_missing',
-      title: c.campus + ': ' + c.missing.length + ' vehicle document' + (c.missing.length > 1 ? 's' : '') + ' with no date on file',
-      detail: shown(c.missing) + '. Upload through the Transport Document Submission form, or confirm they are current', severity: 'low',
-    }));
-  });
-  return wanted;
-}
-
-function coordRefreshTransport_() {
-  const cache = CacheService.getScriptCache();
-  if (cache.get('coord_transport_refreshed')) return;
-  const wanted = coordTransportWanted_(coordTransportFleet_().fleet, new Date());
+// ── Follow-ups switched off (2026-10-07): the Transport page's tables carry everything, and alerts will come back in a different
+// form. The adapter that raised transport_expired / transport_due / transport_missing tasks is in git history (commit 1a192f9).
+// The first task listing after this deploy resolves the ones still open, then never runs again; delete this once that has happened.
+function coordTransportRetireTasks_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('TRANSPORT_TASKS_RETIRED')) return;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const sh = coordSheet_();
-    const rows = sh.getDataRange().getValues();
-    const live = {};
-    wanted.forEach(function (t) { live[t.taskId] = true; coordTaskUpsert_(sh, rows, t); });
-    ['transport_expired', 'transport_due', 'transport_missing'].forEach(function (d) { coordTasksAutoResolve_(sh, rows, d, null, live); });
+    const rows = sh.getDataRange().getValues(), now = new Date();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][1]).indexOf('transport_') !== 0 || rows[i][5] !== 'open') continue;
+      sh.getRange(i + 1, 6).setValue('resolved');
+      sh.getRange(i + 1, 10, 1, 2).setValues([[now, 'system (transport follow-ups switched off)']]);
+    }
+    props.setProperty('TRANSPORT_TASKS_RETIRED', '1');
   } finally { lock.releaseLock(); }
-  cache.put('coord_transport_refreshed', '1', COORD_TRANSPORT_REFRESH_CACHE_SECONDS);
 }
 
 /** Run from the Apps Script editor (Run > coordTransportCheck) after a push to see what the Transport page would load.
