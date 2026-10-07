@@ -35,7 +35,7 @@
 const COORD_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals" workbook; only the Tasks tab is used
 const COORD_TAB = 'Tasks';
 const COORD_HEADERS = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity',
-  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes', 'Department'];
+  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes', 'Department', 'Assignee'];
 
 // Departments follow the vault's Departments hubs, plus Systems. Every follow-up carries one so the
 // landing page can group by department; adapters set it, approvals by request category.
@@ -794,9 +794,9 @@ function coordTasksList_(caller, idToken) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (r[5] !== 'open') continue;
-    if (visible && visible.indexOf(r[2]) === -1) continue;
+    if (visible && visible.indexOf(r[2]) === -1 && r[13] !== caller.email) continue; // an assignee always sees what was assigned to them
     tasks.push({
-      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: r[6],
+      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: r[6], assignee: r[13] || '',
       department: r[12] || COORD_DOMAIN_DEPT[r[1]] || COORD_DEPT_OPS,
       createdAt: r[7] instanceof Date ? r[7].toISOString() : r[7], notes: r[11] || '',
     });
@@ -805,8 +805,16 @@ function coordTasksList_(caller, idToken) {
   return { success: true, tasks: tasks };
 }
 
-// POST action=coordinatorresolvetask {taskId, note}
+// POST action=coordinatorresolvetask {taskId, note}. A follow-up raised from a Systems issue (pdr_issue|<id>) also marks that issue resolved.
 function coordTaskResolve_(caller, body) {
+  const res = coordTaskResolveCore_(caller, body);
+  if (res.success && String(body.taskId || '').indexOf('pdr_issue|') === 0) {
+    try { coordPdrResolveFromTask_(String(body.taskId).slice(10), caller, body.note); } catch (err) { console.error('PDR issue sync: ' + err.message); }
+  }
+  return res;
+}
+
+function coordTaskResolveCore_(caller, body) {
   const taskId = String(body.taskId || '');
   const visible = coordVisibleCampuses_(caller);
   const lock = LockService.getScriptLock();
@@ -816,7 +824,7 @@ function coordTaskResolve_(caller, body) {
     const rows = sh.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][0] !== taskId) continue;
-      if (visible && visible.indexOf(rows[i][2]) === -1) return { success: false, error: 'Not authorized' };
+      if (visible && visible.indexOf(rows[i][2]) === -1 && rows[i][13] !== caller.email) return { success: false, error: 'Not authorized' };
       if (rows[i][5] !== 'open') return { success: true, alreadyResolved: true };
       sh.getRange(i + 1, 6).setValue('resolved');
       sh.getRange(i + 1, 10, 1, 2).setValues([[new Date(), caller.email]]);

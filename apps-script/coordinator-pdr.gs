@@ -28,6 +28,9 @@ function coordPdr_(caller) {
   const visible = coordVisibleCampuses_(caller);
   const ok = function (campus) { return !visible || visible.indexOf(campus) !== -1; };
   const rows = ss.getSheetByName(COORD_PDR_TAB).getDataRange().getDisplayValues(); // dates are stored as ISO text
+  let latestReportAt = '';
+  const stamps = ss.getSheetByName(COORD_PDR_TAB).getRange(2, 1, Math.max(1, rows.length - 1), 1).getValues();
+  stamps.forEach(function (r) { if (r[0] instanceof Date && r[0].toISOString() > latestReportAt) latestReportAt = r[0].toISOString(); });
   const reports = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -61,7 +64,7 @@ function coordPdr_(caller) {
   if (acsh && acsh.getLastRow() > 1) acsh.getDataRange().getDisplayValues().slice(1).forEach(function (a) {
     if (ok(a[7])) actions[a[0]] = { status: a[1], assignee: a[2], assigneeName: a[3], note: a[4], by: a[5], at: a[6], lastAtAction: a[8] };
   });
-  return { success: true, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  return { success: true, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -139,6 +142,14 @@ function coordPdrIssueAction_(caller, body) {
     if (!who) return { success: false, error: 'Pick a coordinator to assign this to' };
   }
   const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]];
+  coordPdrWriteAction_(ss, rec);
+  let taskError = '';
+  try { coordPdrSyncTask_(issue, status, who, caller, rec[4]); } catch (err) { taskError = err.message; } // the action is saved either way
+  return { success: true, taskError: taskError, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
+}
+
+/** One row per issue in the actions tab (insert or replace). Takes the script lock, so callers must not hold it. */
+function coordPdrWriteAction_(ss, rec) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -150,9 +161,47 @@ function coordPdrIssueAction_(caller, body) {
     }
     const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
     let row = -1;
-    for (let i = 0; i < ids.length; i++) if (ids[i][0] === id) { row = i + 2; break; }
+    for (let i = 0; i < ids.length; i++) if (ids[i][0] === rec[0]) { row = i + 2; break; }
     if (row < 0) row = sh.getLastRow() + 1;
     sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([rec]);
   } finally { lock.releaseLock(); }
-  return { success: true, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
+}
+
+/** Keeps the All follow-ups page in step with an issue action. Assigned -> an open follow-up for the assignee (reopened if it was resolved);
+ *  resolved or reset -> the follow-up is closed; acknowledged -> left as it is. issue = the row of the PDR Issues tab. */
+function coordPdrSyncTask_(issue, status, who, caller, note) {
+  const taskId = 'pdr_issue|' + issue[0];
+  if (status === 'acknowledged') return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = coordSheet_(), rows = sh.getDataRange().getValues(), now = new Date();
+    let row = -1;
+    for (let i = 1; i < rows.length; i++) if (rows[i][0] === taskId) { row = i + 1; break; }
+    if (status === 'assigned') {
+      const items = JSON.parse(issue[8] || '[]'), lastItem = items[items.length - 1] || { date: issue[5], text: '' };
+      const daysOpen = Math.round((new Date(now.toISOString().slice(0, 10)) - new Date(issue[4])) / 86400000);
+      const title = 'Systems: ' + issue[1] + ' ' + issue[3] + ' (' + issue[2] + ')';
+      const detail = 'Open ' + daysOpen + ' days, raised on ' + issue[6] + ' days. Principal wrote (' + lastItem.date + '): ' + String(lastItem.text).slice(0, 220).replace(/[.\s]+$/, '') +
+        '. Assigned by ' + caller.email.split('@')[0] + (note ? '. Note: ' + note : '.');
+      const severity = issue[7] === 'yes' && daysOpen >= 7 ? 'high' : 'medium';
+      if (row < 0) sh.appendRow([taskId, 'pdr_issue', issue[1], title, detail, 'open', severity, now, now, '', '', '', 'Systems', who.email]);
+      else {
+        sh.getRange(row, 4, 1, 4).setValues([[title, detail, 'open', severity]]);
+        sh.getRange(row, 9, 1, 3).setValues([[now, '', '']]);
+        sh.getRange(row, 13, 1, 2).setValues([['Systems', who.email]]);
+      }
+    } else if (row > 0 && rows[row - 1][5] === 'open') { // resolved or reset
+      sh.getRange(row, 6).setValue('resolved');
+      sh.getRange(row, 10, 1, 2).setValues([[now, caller.email + ' (Systems issue ' + (status === 'resolved' ? 'resolved' : 'reset') + ')']]);
+    }
+  } finally { lock.releaseLock(); }
+}
+
+/** A follow-up raised from an issue was resolved on the All follow-ups page: mark the issue resolved too. */
+function coordPdrResolveFromTask_(issueId, caller, note) {
+  const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
+  const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === issueId; })[0] : null;
+  if (!issue) return;
+  coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]]);
 }

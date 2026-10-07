@@ -24,6 +24,7 @@ window.Coord = (function () {
     ss_compliance: '../../principals-daily-reporting/index.html', approval: '../../principals-daily-reporting/index.html',
     hiring_stall: '../../hiring/index.html', complete_hire: '../../staff/add-employee.html',
     doc_missing: '../../staff/add-employee.html', doc_none: '../../staff/add-employee.html', doc_verify: '../../staff/add-employee.html',
+    pdr_issue: '../systems/index.html',
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -60,11 +61,12 @@ window.Coord = (function () {
     async function load() {
       list.innerHTML = '<div class="status">Loading follow-ups...</div>';
       try {
-        const tasks = (await api({ action: 'coordinatortasks' })).tasks.filter(t => !opts.dept || t.department === opts.dept);
+        const me = (SESSION.email || '').toLowerCase();
+        const tasks = (await api({ action: 'coordinatortasks' })).tasks.filter(t => !opts.dept || t.department === opts.dept).sort((a, b) => (b.assignee === me) - (a.assignee === me)); // what is assigned to you first
         if (!tasks.length) { list.innerHTML = '<div class="status">Nothing to follow up on here right now.</div>'; return; }
         list.innerHTML = tasks.map(t =>
           '<div class="task ' + esc(t.severity) + '"><div>' +
-            '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + esc(t.title) + '</div>' +
+            '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + esc(t.title) + '</div>' +
             '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
           '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
         ).join('');
@@ -450,13 +452,23 @@ window.Coord = (function () {
       const issueTypes = [...new Set(issues.map(i => i.type))].sort();
       const sinceNote = d.pushedAt ? 'History and issues were last refreshed ' + esc(d.pushedAt.slice(0, 10)) + ' by the sync on the Mac.' : 'History and issues have not been pushed from the Mac yet.';
 
-      let html = '<div class="tiles">' +
+      const hrs = iso => iso ? (Date.now() - new Date(iso).getTime()) / 3600000 : null, tm = iso => { const t = new Date(iso); return t.getDate() + ' ' + MONTHS[t.getMonth()] + ' ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2); };
+      const agoTxt = h => h < 1 ? 'under an hour ago' : h < 48 ? Math.round(h) + ' h ago' : Math.round(h / 24) + ' days ago';
+      const fsAll = (d.fees && d.fees.series) || [], feeLast = fsAll.length ? fsAll[fsAll.length - 1][0] : '', admLast = (d.admissions || []).reduce((m, a) => a.date > m ? a.date : m, '');
+      const fresh = [
+        [d.latestReportAt ? 'Latest form report ' + tm(d.latestReportAt) : 'No form reports', false],
+        [d.pushedAt ? 'Issues refreshed ' + agoTxt(hrs(d.pushedAt)) : 'Issues not pushed from the Mac yet', !d.pushedAt || hrs(d.pushedAt) > 5],
+        [feeLast ? 'Fee emails through ' + fmt(feeLast) : 'No fee emails', !feeLast || ago(feeLast) >= 2],
+        [admLast ? 'Admission posts through ' + fmt(admLast) : 'No admission posts', false]];
+      let html = '<div class="note pd-fresh">' + fresh.map(f => f[1] ? '<b class="stale">' + esc(f[0]) + '</b>' : esc(f[0])).join(' &middot; ') +
+        (fresh.some(f => f[1]) ? '<br><span class="stale">A source looks out of date: the Mac sync (every 2 hours) or the fee email capture may have stopped.</span>' : '') + '</div>' +
+        '<div class="tiles">' +
         '<div class="tile ' + (todo.length ? 'warn' : '') + '"><b>' + todo.length + '</b>need action, not yet acknowledged</div>' +
         '<div class="tile"><b>' + openAct.filter(i => i.handled).length + '</b>acknowledged or assigned</div>' +
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
       const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
@@ -477,6 +489,40 @@ window.Coord = (function () {
           '<h3 style="font-size:13px;margin:16px 0 6px">Did not report on ' + (lastDay ? fmt(lastDay) : '-') + (lastDay === today ? ' (today so far; reports come in through the day)' : ' (latest reporting day)') + '</h3><p>' + (silent.length ? silent.map(c => '<span class="pl expired">' + c + '</span> ').join('') : 'All campuses reported.') + '</p>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Open and needing action (' + openAct.length + ')</h3>' + issueTable(openAct.slice().sort(byAge).slice(0, 15)) +
           (openAct.length > 15 ? '<div class="note">Showing the 15 oldest. The Issues tab has the rest.</div>' : '');
+      } else if (P.tab === 'digest') {
+        const inWk = iso => ago(iso) >= 1 && ago(iso) <= 7, inPrev = iso => ago(iso) >= 8 && ago(iso) <= 14; // completed days only: today's reports are still coming in
+        const yday = (() => { const y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1); return y.getFullYear() + '-' + ('0' + (y.getMonth() + 1)).slice(-2) + '-' + ('0' + y.getDate()).slice(-2); })();
+        const wkDays = days.filter(inWk), prevDays = days.filter(inPrev);
+        const filedIn = ds => ds.reduce((t, x) => t + camps.filter(c => has[x + '|' + c]).length, 0), pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '-';
+        const filedWk = filedIn(wkDays), expWk = wkDays.length * camps.length, filedPrev = filedIn(prevDays), expPrev = prevDays.length * camps.length;
+        const missedWk = camps.map(c => [c, wkDays.filter(x => !has[x + '|' + c]).length]).filter(x => x[1] >= 2).sort((a, b) => b[1] - a[1]);
+        const lk = n => '₹' + (n / 100000).toFixed(2) + ' L', sumF = (xs, a, b, i) => xs.filter(x => ago(x[0]) >= a && ago(x[0]) <= b).reduce((t, x) => t + x[i], 0);
+        const feeRows = CAMPUSES.map(c => {
+          const xs = fsAll.filter(x => x[1] === c); if (!xs.length) return null;
+          const l = xs[xs.length - 1], ref = xs.filter(x => ago(x[0]) >= 8).pop() || xs[0];
+          return { c: c, got: sumF(xs, 1, 7, 2), prev: sumF(xs, 8, 14, 2), fol: sumF(xs, 1, 7, 3), out: l[4], delta: l[4] - ref[4] };
+        }).filter(Boolean);
+        const newWk = issues.filter(i => ago(i.first) <= 7 && i.open).sort(byAge);
+        const resolvedWk = issues.filter(i => i.act && i.act.status === 'resolved' && ago(i.act.at.slice(0, 10)) <= 7);
+        const stuck = open.filter(i => i.stuck).sort((a, b) => (b.span + b.age) - (a.span + a.age));
+        const focus = openAct.filter(i => !i.handled && i.type !== 'Events' && (i.count >= 2 || i.age <= 3)).sort((a, b) => (b.span + b.age) - (a.span + a.age)).slice(0, 6);
+        const line = i => i.campus + ' ' + i.subject + ' (' + i.type + '): open ' + (i.span + i.age) + ' days, raised on ' + i.count + (i.count === 1 ? ' day' : ' days') + (i.act && i.act.status === 'assigned' ? ', assigned to ' + (i.act.assigneeName || i.act.assignee) : i.handled ? ', acknowledged' : ', not yet acknowledged');
+        const totWk = fsAll.length ? feeRows.reduce((t, r) => t + r.got, 0) : 0, totPrev = feeRows.reduce((t, r) => t + r.prev, 0), totOut = feeRows.reduce((t, r) => t + r.out, 0), totD = feeRows.reduce((t, r) => t + r.delta, 0);
+        const txt = ['Principals\' reports: week to ' + fmt(yday), '',
+          'Reports filed: ' + filedWk + ' of ' + expWk + ' (' + pct(filedWk, expWk) + '), last week ' + pct(filedPrev, expPrev) + '.' + (missedWk.length ? ' Missed 2+ days: ' + missedWk.map(x => x[0] + ' (' + x[1] + ')').join(', ') + '.' : ''),
+          'Issues: ' + newWk.length + ' new, ' + resolvedWk.length + ' resolved, ' + todo.length + ' open and not yet acknowledged, ' + stuck.length + ' open for ' + STUCK_DAYS + '+ days.', '',
+          'Needs attention first:'].concat(focus.map(i => '- ' + line(i)), focus.length ? [] : ['- nothing unacknowledged'], ['',
+          fsAll.length ? 'Fees: ' + lk(totWk) + ' collected this week (' + lk(totPrev) + ' last week); outstanding ' + lk(totOut) + ' (' + (totD > 0 ? 'up ' : 'down ') + lk(Math.abs(totD)) + ' on the week, which includes the new month\'s dues once a month starts); ' + feeRows.reduce((t, r) => t + r.fol, 0) + ' follow-ups logged.' : 'Fees: no fee emails.']).concat(feeRows.map(r => '  ' + r.c + ': collected ' + lk(r.got) + ', outstanding ' + lk(r.out) + ', ' + r.fol + ' follow-ups'));
+        html += '<div class="ctl"><button class="btn pd-copy">Copy digest</button> <span class="sm">The 7 completed days to ' + fmt(yday) + ', compared with the 7 before. Every figure is calculated from the data on this page. Outstanding fees step up when a new month\'s dues start, so a rise on 1 Oct and similar dates is not slippage.</span></div>' +
+          '<div class="tiles"><div class="tile"><b>' + pct(filedWk, expWk) + '</b>of expected reports filed<span class="sm"> (last week ' + pct(filedPrev, expPrev) + ')</span></div>' +
+          '<div class="tile"><b>' + newWk.length + '</b>new issues</div><div class="tile"><b>' + resolvedWk.length + '</b>resolved</div>' +
+          (fsAll.length ? '<div class="tile"><b>' + lk(totWk) + '</b>fees collected<span class="sm"> (last week ' + lk(totPrev) + ')</span></div>' : '') + '</div>' +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (open, needs action, not yet acknowledged)</h3>' + issueTable(focus) +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Reporting gaps this week</h3><p>' + (missedWk.length ? missedWk.map(x => '<span class="pl expired">' + x[0] + ': missed ' + x[1] + ' of ' + wkDays.length + ' days</span> ').join('') : 'No campus missed more than one reporting day.') + '</p>' +
+          '<h3 style="font-size:13px;margin:16px 0 6px">New this week (' + newWk.length + ')</h3>' + issueTable(newWk.slice(0, 8)) +
+          (feeRows.length ? '<h3 style="font-size:13px;margin:16px 0 6px">Fees</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Collected, 7 days</th><th>Last week</th><th>Outstanding now</th><th>Change on the week</th><th>Follow-ups logged</th></tr></thead><tbody>' +
+            feeRows.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + lk(r.got) + '</td><td>' + lk(r.prev) + '</td><td>' + lk(r.out) + '</td><td class="' + (r.delta > 0 ? 'miss' : '') + '">' + (r.delta > 0 ? '+' : r.delta < 0 ? '-' : '') + lk(Math.abs(r.delta)) + '</td><td>' + r.fol + '</td></tr>').join('') + '</tbody></table></div>' : '');
+        box.dataset.digest = txt.join('\n');
       } else if (P.tab === 'issues') {
         const shown = issues.filter(i => (P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!P.act || i.needsAction) && (!P.repeat || i.count >= 3) && (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(byAge);
         html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice.</div>' +
@@ -548,6 +594,7 @@ window.Coord = (function () {
       on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
       on('.pd-rep', 'change', e => { P.repeat = e.target.checked; render(); });
       on('.pd-whof', 'change', e => { P.who = e.target.value; render(); });
+      on('.pd-copy', 'click', e => { const b = e.target; navigator.clipboard.writeText(box.dataset.digest || '').then(() => { b.textContent = 'Copied'; }, () => { b.textContent = 'Could not copy'; }); setTimeout(() => { b.textContent = 'Copy digest'; }, 2000); });
       box.querySelectorAll('.pd-save').forEach(btn => btn.addEventListener('click', async () => {
         const ed = btn.closest('.pd-edit'), msg = ed.querySelector('.pd-msg'), id = ed.dataset.id;
         btn.disabled = true; msg.textContent = 'Saving...';
@@ -556,6 +603,7 @@ window.Coord = (function () {
           if (!res.success) throw new Error(res.error || 'Could not save');
           P.data.actions = P.data.actions || {}; P.data.actions[id] = res.action;
           render();
+          if (res.taskError) alert('Saved, but the follow-up could not be created: ' + res.taskError);
         } catch (err) { msg.textContent = 'Not saved: ' + err.message; btn.disabled = false; }
       }));
     }
