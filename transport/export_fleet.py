@@ -49,8 +49,11 @@ def scans():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
+    ap.add_argument("--synced-at", help="UTC start of the sync that produced the scan data (default: now); files created after it show as waiting to be read")
     ap.add_argument("--xlsx", default=XLSX)
     a = ap.parse_args()
+    if a.synced_at:
+        datetime.strptime(a.synced_at, "%Y-%m-%dT%H:%M:%SZ")  # the backend compares it as text in a Drive query; fail loudly on a malformed value
     wb = openpyxl.load_workbook(a.xlsx, data_only=True)
     mapping = {norm(r["Reg. No."]).upper(): r for r in sheet(wb, "Transport Mapping")}
     s = scans()
@@ -67,7 +70,7 @@ def main():
                       "docs": s.get(reg, {}).get("docs", {}), "unreadable": s.get(reg, {}).get("unreadable", [])})
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
-    body = json.dumps({"syncedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        "source": "transport workbook + drive-index/records.db", "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
