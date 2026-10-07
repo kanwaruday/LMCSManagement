@@ -15,11 +15,7 @@
 <script src="../shared.js"></script>
 <script>
 Coord.boot(function (body) {
-  const follow = document.createElement('div'), fleet = document.createElement('div');
-  fleet.style.marginTop = '28px';
-  body.appendChild(follow); body.appendChild(fleet);
-  Coord.tasksView(follow, { dept: 'Transport', title: 'Transport', sub: 'Vehicle documents that have expired, are about to, or have never been uploaded.' });
-  Coord.transportView(fleet);
+  Coord.transportView(body);
 });
 </script>
 </body>
