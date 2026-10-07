@@ -19,6 +19,7 @@ const COORD_FEES_SHEET_ID = '1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4'; // "
 const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', NerChowk: 'LMS4', Sayoli: 'LMS5', Jogindernagar: 'LMS6' }; // campus name in the email subject -> id
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
+const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what coordinators did with each issue: acknowledged / assigned / resolved
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
 // action=coordinatorpdr
@@ -56,7 +57,11 @@ function coordPdr_(caller) {
   try { fees = coordFees_(ok); } catch (e) { fees = { error: e.message, series: [] }; } // a fee-sheet problem must not blank the rest of the page
   const admissions = [], ash = ss.getSheetByName(COORD_PDR_ADMISSIONS_TAB);
   if (ash && ash.getLastRow() > 1) ash.getDataRange().getDisplayValues().slice(1).forEach(function (a) { if (ok(a[1])) admissions.push({ date: a[0], campus: a[1], total: +a[2], registered: +a[3], tc: a[4] === '' ? null : +a[4], byClass: JSON.parse(a[5] || '{}') }); });
-  return { success: true, fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  const actions = {}, acsh = ss.getSheetByName(COORD_PDR_ACTIONS_TAB);
+  if (acsh && acsh.getLastRow() > 1) acsh.getDataRange().getDisplayValues().slice(1).forEach(function (a) {
+    if (ok(a[7])) actions[a[0]] = { status: a[1], assignee: a[2], assigneeName: a[3], note: a[4], by: a[5], at: a[6], lastAtAction: a[8] };
+  });
+  return { success: true, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -107,4 +112,47 @@ function coordFees_(ok) {
   });
   series.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
   return { series: series };
+}
+
+/** People an issue can be assigned to: Coordinators and the Owner in the allowlist. */
+function coordPdrCoordinators_() {
+  const out = [];
+  SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues().slice(1).forEach(function (r) {
+    const roles = String(r[3] || '').split(',').map(function (x) { return x.trim(); });
+    if (r[0] && (roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1)) out.push({ email: String(r[0]).trim().toLowerCase(), name: String(r[1] || '').trim() });
+  });
+  return out;
+}
+
+/** POST action=coordinatorpdrissue {idToken, id, status: open|acknowledged|assigned|resolved, assignee: email, note}: one row per issue in the actions tab. */
+function coordPdrIssueAction_(caller, body) {
+  const id = String(body.id || ''), status = String(body.status || '');
+  if (['open', 'acknowledged', 'assigned', 'resolved'].indexOf(status) === -1) return { success: false, error: 'Unknown status' };
+  const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), visible = coordVisibleCampuses_(caller);
+  const ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
+  const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === id; })[0] : null;
+  if (!issue) return { success: false, error: 'Issue not found (it may have been regrouped by the latest sync); refresh the page' };
+  if (visible && visible.indexOf(issue[1]) === -1) return { success: false, error: 'Not authorized' };
+  let who = null;
+  if (status === 'assigned') {
+    who = coordPdrCoordinators_().filter(function (c) { return c.email === String(body.assignee || '').toLowerCase(); })[0];
+    if (!who) return { success: false, error: 'Pick a coordinator to assign this to' };
+  }
+  const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    let sh = ss.getSheetByName(COORD_PDR_ACTIONS_TAB);
+    if (!sh) {
+      sh = ss.insertSheet(COORD_PDR_ACTIONS_TAB);
+      sh.getRange(1, 1, 1, 9).setValues([['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated']]).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    }
+    const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
+    let row = -1;
+    for (let i = 0; i < ids.length; i++) if (ids[i][0] === id) { row = i + 2; break; }
+    if (row < 0) row = sh.getLastRow() + 1;
+    sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([rec]);
+  } finally { lock.releaseLock(); }
+  return { success: true, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
 }

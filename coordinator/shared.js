@@ -406,7 +406,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, data: null };
+    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -433,8 +433,15 @@ window.Coord = (function () {
       // (no school calendar here) shows as missed. Add the school calendar if that becomes noisy.
       const days = [...new Set(Object.keys(has).map(k => k.slice(0, 10)))].filter(x => new Date(x + 'T00:00:00').getDay() !== 0).sort();
       const issues = (d.issues || []).map(i => Object.assign({ age: ago(i.last), span: ago(i.first) - ago(i.last) }, i));
-      issues.forEach(i => { i.open = i.age <= QUIET_DAYS; i.stuck = i.open && i.span >= STUCK_DAYS; });
-      const open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction);
+      const acts = d.actions || {}, people = d.coordinators || [], me = (SESSION && SESSION.email || '').toLowerCase();
+      issues.forEach(i => {
+        i.open = i.age <= QUIET_DAYS; i.act = acts[i.id] || null;
+        i.reopened = !!i.act && i.act.status === 'resolved' && i.last > i.act.lastAtAction; // resolved, then a principal raised it again
+        if (i.act && i.act.status === 'resolved' && !i.reopened) i.open = false;
+        i.stuck = i.open && i.span >= STUCK_DAYS;
+        i.handled = !!i.act && !i.reopened && i.act.status !== 'open' && i.act.status !== 'resolved'; // acknowledged or assigned
+      });
+      const open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction), todo = openAct.filter(i => !i.handled);
       const msgs = reps.filter(r => r.message.trim()).map(r => ({ r, t: tags[r.date + '|' + r.campus] || { topics: [], action: false, summary: '' } }))
         .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.r.campus.localeCompare(b.r.campus));
       const topics = [...new Set(msgs.flatMap(m => m.t.topics))].sort();
@@ -444,19 +451,25 @@ window.Coord = (function () {
       const sinceNote = d.pushedAt ? 'History and issues were last refreshed ' + esc(d.pushedAt.slice(0, 10)) + ' by the sync on the Mac.' : 'History and issues have not been pushed from the Mac yet.';
 
       let html = '<div class="tiles">' +
-        '<div class="tile ' + (openAct.length ? 'warn' : '') + '"><b>' + openAct.length + '</b>open issues that need action</div>' +
+        '<div class="tile ' + (todo.length ? 'warn' : '') + '"><b>' + todo.length + '</b>need action, not yet acknowledged</div>' +
+        '<div class="tile"><b>' + openAct.filter(i => i.handled).length + '</b>acknowledged or assigned</div>' +
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
         '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
-      const issueRow = i => '<tr><td><b>' + i.campus + '</b></td><td>' + esc(i.type) + '</td><td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
+      const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
+      const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
+        '<select class="pd-as">' + [['acknowledged', 'Acknowledge'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select> ' +
+        '<select class="pd-who">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select><br>' +
+        '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '"> <button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span></details>';
+      const issueRow = i => '<tr data-id="' + i.id + '"><td><b>' + i.campus + '</b></td><td>' + esc(i.type) + '</td><td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
         (i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
-        i.items.map(t => fmt(t.date) + ': ' + esc(t.text)).join('<br>') + '</details></td></tr>';
-      const issueTable = list => '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Type</th><th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th></tr></thead><tbody>' +
-        (list.map(issueRow).join('') || '<tr><td colspan="8">Nothing matches.</td></tr>') + '</tbody></table></div>';
-      const byAge = (a, b) => (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
+        i.items.map(t => fmt(t.date) + ': ' + esc(t.text)).join('<br>') + '</details></td><td class="sm">' + editor(i) + '</td></tr>';
+      const issueTable = list => '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Type</th><th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
+        (list.map(issueRow).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
+      const byAge = (a, b) => (a.handled - b.handled) || (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
 
       if (P.tab === 'today') {
         const silent = lastDay ? camps.filter(c => !has[lastDay + '|' + c]) : [];
@@ -465,12 +478,12 @@ window.Coord = (function () {
           '<h3 style="font-size:13px;margin:16px 0 6px">Open and needing action (' + openAct.length + ')</h3>' + issueTable(openAct.slice().sort(byAge).slice(0, 15)) +
           (openAct.length > 15 ? '<div class="note">Showing the 15 oldest. The Issues tab has the rest.</div>' : '');
       } else if (P.tab === 'issues') {
-        const shown = issues.filter(i => (P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!P.act || i.needsAction) && (!P.repeat || i.count >= 3)).sort(byAge);
+        const shown = issues.filter(i => (P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!P.act || i.needsAction) && (!P.repeat || i.count >= 3) && (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(byAge);
         html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice.</div>' +
           '<div class="ctl"><select class="pd-campus"><option value="">All campuses</option>' + camps.map(c => '<option' + (P.campus === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>' +
           '<select class="pd-itype"><option value="">All types</option>' + issueTypes.map(t => '<option' + (P.itype === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select>' +
           '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
-          '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> <label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>' + issueTable(shown);
+          '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not yet handled</option></select> <label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> <label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>' + issueTable(shown);
       } else if (P.tab === 'compliance') {
         const mons = [...new Set(days.map(x => x.slice(0, 7)))];
         html += '<div class="note">Reports filed per month (Google Spaces group until 22 Sep, the form after). A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed.</div>' +
@@ -534,6 +547,17 @@ window.Coord = (function () {
       on('.pd-itype', 'change', e => { P.itype = e.target.value; render(); });
       on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
       on('.pd-rep', 'change', e => { P.repeat = e.target.checked; render(); });
+      on('.pd-whof', 'change', e => { P.who = e.target.value; render(); });
+      box.querySelectorAll('.pd-save').forEach(btn => btn.addEventListener('click', async () => {
+        const ed = btn.closest('.pd-edit'), msg = ed.querySelector('.pd-msg'), id = ed.dataset.id;
+        btn.disabled = true; msg.textContent = 'Saving...';
+        try {
+          const res = await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorpdrissue', idToken: SESSION.idToken, id: id, status: ed.querySelector('.pd-as').value, assignee: ed.querySelector('.pd-who').value, note: ed.querySelector('.pd-note').value }) })).json();
+          if (!res.success) throw new Error(res.error || 'Could not save');
+          P.data.actions = P.data.actions || {}; P.data.actions[id] = res.action;
+          render();
+        } catch (err) { msg.textContent = 'Not saved: ' + err.message; btn.disabled = false; }
+      }));
     }
     load();
   }

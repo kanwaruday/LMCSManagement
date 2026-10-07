@@ -162,6 +162,7 @@ function doPost(e) {
     const caller = coordVerifyCaller_(body.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();
+    if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
