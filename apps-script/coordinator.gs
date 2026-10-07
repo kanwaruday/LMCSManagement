@@ -128,6 +128,8 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
+    if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
     const caller = coordVerifyCaller_(body.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();

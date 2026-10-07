@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Write LMCS_Transport_Fleet.json: the fleet roster (from the transport workbook on OneDrive) plus the
-document dates LM Studio read from the Drive scans (drive-index/records.db). The Coordinator backend reads
-it from Google Drive by name and merges the live submission-form rows on top, so this is what makes
-scan-read dates reach the Transport page. Called at the end of drive-index/sync.sh; safe to run by hand.
+"""Push the fleet roster (from the transport workbook on OneDrive) plus the document dates LM Studio read
+from the Drive scans (drive-index/records.db) and the vault overrides note to the Coordinator backend, which
+keeps them in the "LM Studio ..." tabs of the transport form-responses sheet and merges the live form rows on
+top. This is what makes scan-read dates reach the Transport page. Called at the end of drive-index/sync.sh.
 
-  python3 transport/export_fleet.py                 # write to Google Drive (My Drive root)
-  python3 transport/export_fleet.py --out x.json    # dry run to a local file
+  python3 transport/export_fleet.py                 # push to the backend (needs ~/.lmcs/transport_push_secret)
+  python3 transport/export_fleet.py --out x.json    # dry run to a local file, nothing sent
 
-No employee codes or salaries go in the file; it holds driver names and bus papers only.
+The secret is the value of TRANSPORT_PUSH_SECRET in the Coordinator Apps Script project's Script properties.
+No employee codes or salaries are sent; the payload holds driver names and bus papers only.
 """
-import argparse, json, re, sqlite3, sys
+import argparse, json, re, sqlite3, subprocess, sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 import openpyxl
@@ -17,8 +18,8 @@ import openpyxl
 sys.path.insert(0, str(Path(__file__).parent))
 from build_master import XLSX, DB, DB_TYPES, norm, sheet
 
-DRIVE = Path("/Users/udaykanwar/Library/CloudStorage/GoogleDrive-uday.kanwar@lms.org.in/My Drive")
-TARGET = DRIVE / "LMCS_Transport_Fleet.json"  # root, outside "SCHOOL RELATED/LMS Central Repository" so the summariser never ingests it
+SECRET_FILE = Path.home() / ".lmcs" / "transport_push_secret"
+SHARED_JS = Path(__file__).parent.parent / "coordinator" / "shared.js"  # holds BACKEND_URL, the one place the backend URL lives
 OVERRIDES = Path("/Users/udaykanwar/Library/CloudStorage/OneDrive-Personal/2. Areas/Uday Obsidian KMS/Uday's KMS/work/Transport Overrides.md")
 DOC_NAMES = {"insurance": "insurance", "fitness": "fitness", "mvtax": "mv_tax", "roadtax": "mv_tax", "tax": "mv_tax",
              "pollution": "pollution", "puc": "pollution", "routepermit": "route_permit", "permit": "route_permit",
@@ -48,6 +49,24 @@ def scans():
         elif key not in e["docs"] or vt > e["docs"][key]["date"]:
             e["docs"][key] = {"date": vt, **f}
     return out
+
+
+def push(body):
+    """POST the payload to the Coordinator backend; exits non-zero (so sync.sh logs it) on any failure."""
+    if not SECRET_FILE.exists():
+        sys.exit(f"{SECRET_FILE} not found; create it with the TRANSPORT_PUSH_SECRET value, or use --out for a dry run")
+    url = re.search(r"BACKEND_URL = '([^']+)'", SHARED_JS.read_text())[1]
+    payload = json.dumps({"action": "transportpush", "secret": SECRET_FILE.read_text().strip(), "payload": json.loads(body)})
+    # curl, not urllib: this Python has no CA certs; -L because Apps Script answers a POST with a redirect to the result
+    r = subprocess.run(["curl", "-sSL", "-m", "120", "-H", "Content-Type: text/plain", "--data-binary", "@-", url],
+                       input=payload, capture_output=True, text=True)
+    try:
+        res = json.loads(r.stdout)
+    except ValueError:
+        sys.exit(f"backend did not return JSON (curl exit {r.returncode}): {r.stdout[:200]!r} {r.stderr[:200]}")
+    if not res.get("success"):
+        sys.exit(f"backend refused the push: {res.get('error')}")
+    return f"backend ({res['vehicles']} vehicles, {res['documents']} document rows stored)"
 
 
 def overrides(known):
@@ -124,10 +143,7 @@ def main():
         Path(a.out).write_text(body)
         dest = a.out
     else:
-        if not DRIVE.is_dir():
-            sys.exit("Google Drive is not mounted; not writing")
-        TARGET.write_text(body)
-        dest = TARGET
+        dest = push(body)
     print(f"{len(fleet)} vehicles, {sum(len(v['docs']) for v in fleet)} dated documents, "
           f"{sum(len(v['unreadable']) for v in fleet)} unreadable scans, {len(ov)} overrides -> {dest}")
     for w in warnings:

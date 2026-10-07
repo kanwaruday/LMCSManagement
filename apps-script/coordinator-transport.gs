@@ -4,26 +4,32 @@
 //
 // Fleet document compliance: for every running school vehicle, the newest expiry date of
 // insurance, fitness, MV tax, pollution, route permit and speed governor, from two sources:
-//   scans = LMCS_Transport_Fleet.json in Google Drive (My Drive root): fleet roster + the dates LM Studio
-//           read off the Drive scans. Written by transport/export_fleet.py at the end of every
-//           drive-index sync on Uday's Mac, so it is only as fresh as that sync (its syncedAt is shown).
-//   form  = the "LMCS Transport Document Submission Form" responses sheet, read live (about 5 min).
-// A date typed in the vault's "Transport Overrides" note replaces the scan-read date (src 'override'); "n/a" there
-// means the vehicle does not need that paper. The newer date wins; on a tie the form wins. Scans uploaded to the Transport folder since the last
-// sync are listed as "waiting to be read" so a new upload is visible before its date is known.
+//   scans = three "LM Studio ..." tabs in the form-responses workbook: fleet roster + the dates LM Studio
+//           read off the Drive scans + dates typed in the vault's "Transport Overrides" note. The drive-index
+//           sync on Uday's Mac pushes them here over HTTPS (action=transportpush, shared secret) after every
+//           run, so they are only as fresh as that sync; the sync time is shown on the page.
+//   form  = the "LMCS Transport Document Submission Form" responses tab of the same workbook, read live
+//           (about 5 min).
+// The newer date wins; on a tie the form wins. A date typed in the overrides note replaces the scan-read
+// date (Status "override"); "n/a" there means the vehicle does not need that paper.
 //
 // Powers GET action=coordinatortransport (the Transport page) and the transport adapter
 // (follow-up tasks: expired / due soon / no date on file, one per campus per month).
+// No Drive access is needed anywhere in here (the Workspace blocks DriveApp for scripts).
+//
+// SETUP: Project Settings > Script properties > add TRANSPORT_PUSH_SECRET (the same value as
+// ~/.lmcs/transport_push_secret on the Mac). Without it every push is refused.
 //
 // ponytail: the roster comes from the transport workbook on the Mac via the sync, so a campus or driver change
 // shows up after the next sync. If the Mac is off for days the page says how old the scan data is.
 // ═══════════════════════════════════════════════════════════════════
 
-const COORD_TRANSPORT_FORM_ID = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // "LMCS TRANSPORT DOCUMENT SUBMISSION FORM (Responses)"
-const COORD_TRANSPORT_FORM_GID = 1365845375;                                   // its responses tab
-const COORD_TRANSPORT_FLEET_FILE = 'LMCS_Transport_Fleet.json';
-const COORD_TRANSPORT_ROOT_FOLDER = 'Important Documents Transport'; // Drive folder holding every bus folder and the form uploads
-const COORD_TRANSPORT_PENDING_MAX = 80; // files examined for "waiting to be read" before giving up
+const COORD_TRANSPORT_FORM_ID = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // "LMCS TRANSPORT DOCUMENT SUBMISSION FORM (Responses)"; also holds the LM Studio tabs
+const COORD_TRANSPORT_FORM_GID = 1365845375;                                   // its form-responses tab
+const COORD_TRANSPORT_TAB_FLEET = 'LM Studio Fleet';
+const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
+const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
+const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
 const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness'], ['mv_tax', 'MV tax'],
   ['pollution', 'Pollution'], ['route_permit', 'Route permit'], ['speed_governor', 'Speed governor']];
 // Form "Document Type" -> key. RC is collected by the form but has no expiry worth tracking; passenger tax is not on the form.
@@ -36,11 +42,13 @@ const COORD_TRANSPORT_REFRESH_CACHE_SECONDS = 600;
 
 function coordTransportDate_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
-  const m = String(v || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // form sheet text: m/d/yyyy
+  const s = String(v || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // form sheet text: m/d/yyyy
   return m ? m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2) : '';
 }
 
-/** {docs: {'REG|type': 'yyyy-MM-dd'}, regs, ids, rows}: newest valid-till per bus and document in the form responses. */
+/** {docs: {'REG|type': 'yyyy-MM-dd'}, regs, rows}: newest valid-till per bus and document in the form responses. */
 function coordTransportLive_() {
   const hit = coordCacheGetBig_('coord_transport_live');
   if (hit) return hit;
@@ -48,10 +56,8 @@ function coordTransportLive_() {
   const sh = ss.getSheets().filter(function (s) { return s.getSheetId() === COORD_TRANSPORT_FORM_GID; })[0];
   if (!sh) throw new Error('Transport form responses tab not found'); // never mistake an unreadable source for "nothing uploaded"
   const rows = sh.getDataRange().getValues(), tz = ss.getSpreadsheetTimeZone();
-  const docs = {}, regs = {}, ids = {};
+  const docs = {}, regs = {};
   for (let i = 1; i < rows.length; i++) {
-    const up = String(rows[i][4] || '').match(/[-\w]{25,}/);
-    if (up) ids[up[0]] = true; // files the form itself uploaded: their dates arrive as form rows, so they are never "pending"
     const reg = String(rows[i][1] || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const type = COORD_TRANSPORT_FORM_TYPES[String(rows[i][2] || '').trim().toUpperCase()];
     const date = coordTransportDate_(rows[i][3], tz);
@@ -60,21 +66,87 @@ function coordTransportLive_() {
     if (!type || !date) continue;
     if (!docs[reg + '|' + type] || date > docs[reg + '|' + type]) docs[reg + '|' + type] = date;
   }
-  const live = { docs: docs, regs: Object.keys(regs), ids: Object.keys(ids), rows: rows.length - 1 };
+  const live = { docs: docs, regs: Object.keys(regs), rows: rows.length - 1 };
   coordCachePutBig_('coord_transport_live', live, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return live;
 }
 
-/** LMCS_Transport_Fleet.json from Drive (newest copy by name). Throws if absent: an unreadable source must never look like "no vehicles". */
+// ── The LM Studio tabs: written by the push, read back as the "scans" source ──
+function coordTransportWriteTab_(ss, name, header, rows) {
+  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  sh.clear();
+  const all = [header].concat(rows);
+  sh.getRange(1, 1, all.length, header.length).setNumberFormat('@').setValues(all); // text, so Sheets never turns 2027-03-04 into a date
+  sh.getRange(1, 1, 1, header.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+}
+
+/** POST action=transportpush {secret, payload:{syncedAt, warnings, fleet:[...]}} from transport/export_fleet.py. No ID token: the shared secret is the gate. */
+function coordTransportPush_(body) {
+  const secret = PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET');
+  if (!secret || String(body.secret || '') !== secret) return { success: false, error: 'Not authorized' };
+  const p = body.payload;
+  if (!p || !Array.isArray(p.fleet) || p.fleet.length < COORD_TRANSPORT_MIN_FLEET || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(String(p.syncedAt))) {
+    return { success: false, error: 'Payload rejected: expected syncedAt and at least ' + COORD_TRANSPORT_MIN_FLEET + ' vehicles' };
+  }
+  const label = {};
+  COORD_TRANSPORT_DOCS.forEach(function (d) { label[d[0]] = d[1]; });
+  const fleet = [], docs = [];
+  p.fleet.forEach(function (b) {
+    fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '']);
+    Object.keys(b.docs || {}).forEach(function (k) {
+      const d = b.docs[k];
+      if (!label[k]) return;
+      docs.push([b.reg, label[k], d.na ? '' : d.date, d.na ? 'n/a' : (d.src === 'override' ? 'override' : 'read'),
+        d.src === 'override' ? 'overrides note' : 'drive scan', d.file || '', d.link || '', d.note || '']);
+    });
+    (b.unreadable || []).forEach(function (u) {
+      if (label[u.key]) docs.push([b.reg, label[u.key], '', 'unread', 'drive scan', u.file || '', u.link || '', 'LM Studio could not read a date']);
+    });
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year'], fleet);
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_SYNC, ['Key', 'Value'], [
+      ['syncedAt', p.syncedAt], ['pushedAt', new Date().toISOString()], ['vehicles', String(fleet.length)],
+      ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')]]);
+  } finally { lock.releaseLock(); }
+  const cache = CacheService.getScriptCache();
+  ['coord_transport_base', 'coord_transport_refreshed'].forEach(function (k) { cache.remove(k); });
+  return { success: true, vehicles: fleet.length, documents: docs.length };
+}
+
+/** The scans source rebuilt from the LM Studio tabs. Throws if they are missing: an unreadable source must never look like "no vehicles". */
 function coordTransportBase_() {
   const hit = coordCacheGetBig_('coord_transport_base');
   if (hit) return hit;
-  const it = DriveApp.getFilesByName(COORD_TRANSPORT_FLEET_FILE);
-  let file = null;
-  while (it.hasNext()) { const f = it.next(); if (!file || f.getLastUpdated() > file.getLastUpdated()) file = f; }
-  if (!file) throw new Error(COORD_TRANSPORT_FLEET_FILE + ' is not in Google Drive yet. transport/export_fleet.py writes it at the end of the drive-index sync.');
-  const base = JSON.parse(file.getBlob().getDataAsString());
-  if (!base.fleet || !base.fleet.length) throw new Error(COORD_TRANSPORT_FLEET_FILE + ' has no vehicles in it');
+  const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID), tz = ss.getSpreadsheetTimeZone();
+  const read = function (name) {
+    const sh = ss.getSheetByName(name);
+    if (!sh) throw new Error('Tab "' + name + '" is missing. It is created by the drive-index sync pushing to this backend (transport/export_fleet.py).');
+    return sh.getDataRange().getValues().slice(1);
+  };
+  const fleetRows = read(COORD_TRANSPORT_TAB_FLEET), docRows = read(COORD_TRANSPORT_TAB_DOCS), syncRows = read(COORD_TRANSPORT_TAB_SYNC);
+  if (!fleetRows.length) throw new Error('Tab "' + COORD_TRANSPORT_TAB_FLEET + '" has no vehicles in it');
+  const meta = {};
+  syncRows.forEach(function (r) { meta[String(r[0])] = String(r[1]); });
+  const fleet = fleetRows.map(function (r) {
+    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], docs: {}, unreadable: [] };
+  });
+  const byReg = {}, keyOf = {};
+  fleet.forEach(function (b) { byReg[b.reg] = b; });
+  COORD_TRANSPORT_DOCS.forEach(function (d) { keyOf[d[1]] = d[0]; });
+  docRows.forEach(function (r) {
+    const b = byReg[String(r[0])], key = keyOf[String(r[1])], status = String(r[3]);
+    if (!b || !key) return;
+    if (status === 'unread') b.unreadable.push({ key: key, file: String(r[5]), link: String(r[6]) });
+    else if (status === 'n/a') b.docs[key] = { na: true, date: '', src: 'override', note: String(r[7]), file: '', link: '' };
+    else b.docs[key] = { date: coordTransportDate_(r[2], tz), src: status === 'override' ? 'override' : 'drive', file: String(r[5]), link: String(r[6]), note: String(r[7]) };
+  });
+  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet };
   coordCachePutBig_('coord_transport_base', base, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return base;
 }
@@ -110,57 +182,13 @@ function coordTransportState_(doc, today) {
   return days <= COORD_TRANSPORT_SOON_DAYS ? 'due' : 'ok';
 }
 
-/** Files created in the Transport folder tree since the last sync that nothing has read yet. Garnish: any failure returns an empty list. */
-function coordTransportPending_(base, live) {
-  const hit = coordCacheGetBig_('coord_transport_pending');
-  if (hit) return hit;
-  const out = { files: [], capped: false };
-  try {
-    const known = {}, idOf = function (link) { const m = String(link || '').match(/[-\w]{25,}/); return m ? m[0] : ''; };
-    live.ids.forEach(function (i) { known[i] = true; });
-    let anchor = '';
-    base.fleet.forEach(function (b) {
-      Object.keys(b.docs || {}).forEach(function (k) { const id = idOf(b.docs[k].link); if (id) { known[id] = true; anchor = anchor || id; } });
-      (b.unreadable || []).forEach(function (u) { const id = idOf(u.link); if (id) known[id] = true; });
-    });
-    // find the Transport root by walking up from any scanned file
-    let node = anchor ? DriveApp.getFileById(anchor) : null, root = '';
-    for (let i = 0; node && i < 10 && !root; i++) {
-      const ps = node.getParents();
-      if (!ps.hasNext()) break;
-      node = ps.next();
-      if (node.getName() === COORD_TRANSPORT_ROOT_FOLDER) root = node.getId();
-    }
-    if (!root) return out;
-    const under = function (f) {
-      let cur = f;
-      for (let i = 0; i < 10; i++) {
-        const ps = cur.getParents();
-        if (!ps.hasNext()) return false;
-        cur = ps.next();
-        if (cur.getId() === root) return true;
-      }
-      return false;
-    };
-    const it = DriveApp.searchFiles("createdDate > '" + base.syncedAt + "' and trashed = false and mimeType != 'application/vnd.google-apps.folder'");
-    for (let n = 0; it.hasNext(); n++) {
-      if (n >= COORD_TRANSPORT_PENDING_MAX) { out.capped = true; break; }
-      const f = it.next();
-      if (known[f.getId()] || !under(f)) continue;
-      out.files.push({ name: f.getName(), created: f.getDateCreated().toISOString(), url: f.getUrl() });
-    }
-  } catch (err) { console.error('Transport pending: ' + err.message); }
-  coordCachePutBig_('coord_transport_pending', out, 600);
-  return out;
-}
-
 // action=coordinatortransport
 function coordTransport_(caller) {
   const all = coordTransportFleet_();
   const visible = coordVisibleCampuses_(caller);
   return {
     success: true, generated: new Date().toISOString(), formRows: all.live.rows, unknown: all.unknown,
-    syncedAt: all.base.syncedAt, warnings: all.base.warnings || [], pending: coordTransportPending_(all.base, all.live),
+    syncedAt: all.base.syncedAt, warnings: all.base.warnings,
     docs: COORD_TRANSPORT_DOCS.map(function (d) { return { key: d[0], label: d[1] }; }),
     fleet: all.fleet.filter(function (b) { return !visible || visible.indexOf(b.campusId) !== -1; }),
   };
@@ -227,10 +255,10 @@ function coordRefreshTransport_() {
   cache.put('coord_transport_refreshed', '1', COORD_TRANSPORT_REFRESH_CACHE_SECONDS);
 }
 
-/** Run once from the Apps Script editor (Run > coordTransportCheck): grants the Drive/Sheets access this file needs
- *  and prints what the Transport page would load. Private (trailing _) functions cannot be run from the editor. */
+/** Run from the Apps Script editor (Run > coordTransportCheck) after a push to see what the Transport page would load.
+ *  Private (trailing _) functions cannot be run from the editor. */
 function coordTransportCheck() {
   const all = coordTransportFleet_();
-  console.log('fleet file synced at ' + all.base.syncedAt + ': ' + all.fleet.length + ' vehicles, ' + all.live.rows + ' form rows, unknown vehicles in form: ' + (all.unknown.join(', ') || 'none'));
-  console.log('pending uploads: ' + coordTransportPending_(all.base, all.live).files.length);
+  console.log('scan data synced at ' + all.base.syncedAt + ': ' + all.fleet.length + ' vehicles, ' + all.live.rows + ' form rows, unknown vehicles in form: ' + (all.unknown.join(', ') || 'none'));
+  console.log('override warnings: ' + (all.base.warnings.join('; ') || 'none'));
 }
