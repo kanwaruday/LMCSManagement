@@ -214,7 +214,7 @@ window.Coord = (function () {
       const rows = items.filter(i => i.t !== 'ok' && i.t !== 'na' && pick(i)).sort((a, b) => RANK[a.t] - RANK[b.t] || a.n - b.n || a.b.reg.localeCompare(b.b.reg));
       const pl = t => '<span class="pl ' + t + '">' + LABEL[t] + '</span>';
       const a = (u, txt) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>';
-      const srcNote = i => (i.src === 'form' ? 'from the form' : i.src === 'override' ? 'from the overrides note' : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
+      const srcNote = i => (i.src === 'form' ? (i.link ? a(i.link, 'from the form (view upload)') : 'from the form') : i.src === 'override' ? 'from the overrides note' : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
         (i.unread.length ? (i.src ? ' &middot; ' : '') + i.unread.map((u, n) => a(u.link, (i.src ? 'unread scan' : 'View scan') + (i.unread.length > 1 ? ' #' + (n + 1) : ''))).join(' ') : '');
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
@@ -246,10 +246,13 @@ window.Coord = (function () {
       } else {
         const fleet = running.filter(b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
           .sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
-        html += '<div class="note">Expiry date of the newest paper on file. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
+        html += '<div class="note">Expiry date of the newest paper on file; click a date to open its scan (or the form upload) and check it. A small +1 means another scan of that paper exists whose date could not be read. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
           fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + '</td>' +
-            d.docs.map(x => { const e = b.docs[x.key], t = tier(e); return '<td class="dt ' + t + '" title="' + (e.src ? 'Source: ' + (e.src === 'form' ? 'submission form' : e.src === 'override' ? 'Transport Overrides note' : 'Drive scan') : e.unread.length ? 'Scan on file, date unread' : 'No record') + '">' + (e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-') + '</td>'; }).join('') + '</tr>').join('') +
+            d.docs.map(x => { const e = b.docs[x.key], t = tier(e); const txt = e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-', first = e.link || (e.unread[0] && e.unread[0].link) || '';
+              const src = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '') : e.unread.length ? 'Scan on file, date unread. Click to open it.' : 'No record';
+              const extra = e.date && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
+              return '<td class="dt ' + t + '" title="' + esc(src + (extra ? '. +' + e.unread.length + ' more scan(s) whose date could not be read.' : '')) + '">' + (first ? a(first, txt) : txt) + extra + '</td>'; }).join('') + '</tr>').join('') +
           '</tbody></table></div>';
       }
       if (idle.length) html += '<div class="note"><b>Not running</b> (marked not operational in the Transport Management System, excluded above): ' +

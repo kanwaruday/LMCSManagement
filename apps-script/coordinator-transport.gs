@@ -48,7 +48,7 @@ function coordTransportDate_(v, tz) {
   return m ? m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2) : '';
 }
 
-/** {docs: {'REG|type': 'yyyy-MM-dd'}, regs, rows}: newest valid-till per bus and document in the form responses. */
+/** {docs: {'REG|type': 'yyyy-MM-dd'}, links: {'REG|type': url of the uploaded certificate}, regs, rows}: newest valid-till per bus and document in the form responses. */
 function coordTransportLive_() {
   const hit = coordCacheGetBig_('coord_transport_live');
   if (hit) return hit;
@@ -56,7 +56,7 @@ function coordTransportLive_() {
   const sh = ss.getSheets().filter(function (s) { return s.getSheetId() === COORD_TRANSPORT_FORM_GID; })[0];
   if (!sh) throw new Error('Transport form responses tab not found'); // never mistake an unreadable source for "nothing uploaded"
   const rows = sh.getDataRange().getValues(), tz = ss.getSpreadsheetTimeZone();
-  const docs = {}, regs = {};
+  const docs = {}, links = {}, regs = {};
   for (let i = 1; i < rows.length; i++) {
     const reg = String(rows[i][1] || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const type = COORD_TRANSPORT_FORM_TYPES[String(rows[i][2] || '').trim().toUpperCase()];
@@ -64,9 +64,10 @@ function coordTransportLive_() {
     if (!reg) continue;
     regs[reg] = true;
     if (!type || !date) continue;
-    if (!docs[reg + '|' + type] || date > docs[reg + '|' + type]) docs[reg + '|' + type] = date;
+    const k = reg + '|' + type, url = (String(rows[i][4] || '').match(/https?:\/\/[^\s,;]+/) || [''])[0]; // the form's 'Upload certificate' column
+    if (!docs[k] || date > docs[k]) { docs[k] = date; links[k] = url; } else if (date === docs[k] && !links[k]) links[k] = url;
   }
-  const live = { docs: docs, regs: Object.keys(regs), rows: rows.length - 1 };
+  const live = { docs: docs, links: links, regs: Object.keys(regs), rows: rows.length - 1 };
   coordCachePutBig_('coord_transport_live', live, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return live;
 }
@@ -169,7 +170,7 @@ function coordTransportFleet_() {
     const docs = {};
     COORD_TRANSPORT_DOCS.forEach(function (d) {
       const sc = (b.docs || {})[d[0]], l = live.docs[b.reg + '|' + d[0]] || '';
-      const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: '' }
+      const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: live.links[b.reg + '|' + d[0]] || '' }
         : sc ? { date: sc.date, src: sc.src || 'drive', link: sc.link, na: !!sc.na, note: sc.note || '' } : { date: '', src: '', link: '' };
       // scans of this type whose date LM Studio could not read; one of them may be the renewal
       doc.unread = (b.unreadable || []).filter(function (u) { return u.key === d[0]; }).map(function (u) { return { file: u.file, link: u.link }; });
