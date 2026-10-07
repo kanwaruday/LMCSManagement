@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from build_master import XLSX, DB, DB_TYPES, norm, sheet
 
 SECRET_FILE = Path.home() / ".lmcs" / "transport_push_secret"
+COORDINATOR_GS = Path(__file__).parent.parent / "apps-script" / "coordinator.gs"  # holds COORD_ROSTER_URL, the public staff-roster endpoint
 SHARED_JS = Path(__file__).parent.parent / "coordinator" / "shared.js"  # holds BACKEND_URL, the one place the backend URL lives
 OVERRIDES = Path("/Users/udaykanwar/Library/CloudStorage/OneDrive-Personal/2. Areas/Uday Obsidian KMS/Uday's KMS/work/Transport Overrides.md")
 DOC_NAMES = {"insurance": "insurance", "fitness": "fitness", "mvtax": "mv_tax", "roadtax": "mv_tax", "tax": "mv_tax",
@@ -100,6 +101,52 @@ def pnl(wb, mapping):
     return rows
 
 
+def staff_roster():
+    """{normalised employee code: {employeeCode, name, school}} of active staff, from the public Employee Roster Proxy (the staff master).
+    Returns None if it cannot be read; the caller then marks everyone 'not checked' instead of failing the push."""
+    url = re.search(r"COORD_ROSTER_URL = '([^']+)'", COORDINATOR_GS.read_text())[1]
+    r = subprocess.run(["curl", "-sSL", "-m", "90", url + "?action=employees"], capture_output=True, text=True)
+    try:
+        d = json.loads(r.stdout)
+        return {norm(e["employeeCode"]): e for e in d["employees"]} if d.get("success") else None
+    except (ValueError, KeyError):
+        return None
+
+
+def link_staff(wb, mapping, fleet):
+    """Link every person on the transport Man Power sheet, and every bus driver, to the staff master by employee code.
+    Status per person: verified | campus differs | name differs | code not in staff master | no employee code | not checked.
+    Adds driverCode / driverStatus / driverRosterName to each vehicle. Returns the people list (no pay figures)."""
+    roster = staff_roster()
+    people = []
+    for r in sheet(wb, "Man Power Info."):
+        code = str(r["Employee Code"] or "").strip()
+        e = roster.get(norm(code)) if roster and code else None
+        if roster is None:
+            status = "not checked"
+        elif not code:
+            status = "no employee code"
+        elif not e:
+            status = "code not in staff master"
+        elif norm(e["school"]) != norm(r["School"]):
+            status = "campus differs"
+        elif difflib.SequenceMatcher(None, norm(r["Name"]), norm(e["name"])).ratio() < 0.6:
+            status = "name differs"
+        else:
+            status = "verified"
+        people.append({"name": str(r["Name"]).strip(), "campus": str(r["School"]).strip(), "designation": r["Designation"] or "", "code": code,
+                       "status": status, "rosterName": e["name"].strip() if e else "", "rosterCampus": e["school"].strip() if e else "", "vehicles": []})
+    for v in fleet:
+        name = norm(mapping.get(v["reg"], {}).get("Driver Name"))
+        pool = {norm(p["name"]): p for p in people if norm(p["campus"]) == norm(v["campus"])}
+        hit = name if name in pool else next(iter(difflib.get_close_matches(name, pool, n=1, cutoff=0.8)), "") if name else ""
+        p = pool.get(hit)
+        v["driverCode"], v["driverStatus"], v["driverRosterName"] = (p["code"], p["status"], p["rosterName"]) if p else ("", "", "")
+        if p:
+            p["vehicles"].append(v["reg"])
+    return people
+
+
 def overrides(known):
     """Hand-entered dates from the vault note: a markdown table (Vehicle | Document | Valid to | Note), lines in code fences ignored.
     Valid to is YYYY-MM-DD, DD/MM/YYYY (day first) or n/a (this vehicle does not need that paper).
@@ -158,6 +205,7 @@ def main():
                       "year": r["Year of Purchase"], "operational": "not op" not in str(r["Status"] or "").lower(),
                       "route": m.get("Route") or "", "start": m.get("Start Point") or "", "driver": str(m.get("Driver Name") or "").strip(),
                       "docs": s.get(reg, {}).get("docs", {}), "unreadable": s.get(reg, {}).get("unreadable", [])})
+    people = link_staff(wb, mapping, fleet)
     ov, warnings = overrides({v["reg"] for v in fleet})
     for v in fleet:
         for (reg, key), o in ov.items():
@@ -169,14 +217,15 @@ def main():
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "fleet": fleet}, separators=(",", ":"))
+                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "people": people, "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
         dest = a.out
     else:
         dest = push(body)
     print(f"{len(fleet)} vehicles, {sum(len(v['docs']) for v in fleet)} dated documents, "
-          f"{sum(len(v['unreadable']) for v in fleet)} unreadable scans, {len(ov)} overrides -> {dest}")
+          f"{sum(len(v['unreadable']) for v in fleet)} unreadable scans, {len(ov)} overrides, "
+          f"{sum(p['status'] == 'verified' for p in people)}/{len(people)} staff verified -> {dest}")
     for w in warnings:
         print("override warning:", w)
 

@@ -251,11 +251,15 @@ window.Coord = (function () {
       const pth = (k, label) => '<th data-psort="' + k + '">' + label + (T.pk === k ? (T.pd < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
       const period = pnlMonths.length ? fmt(pnlMonths[0] + '-01').slice(3) + ' to ' + fmt(pnlMonths[pnlMonths.length - 1] + '-01').slice(3) : '';
 
+      const drvNote = b => b.driverCode || b.driverStatus ? '<div class="sm">' + esc(b.driverCode || 'no code') + (b.driverStatus && b.driverStatus !== 'verified' ? ' &middot; <span class="miss">' + esc(b.driverStatus) + '</span>' : ' &middot; in staff master') + '</div>' : '';
+      const staff = (d.people || []).filter(p => (!T.campus || p.campus === T.campus) && (!T.q || (p.name + ' ' + p.code + ' ' + p.rosterName + ' ' + p.vehicles.join(' ')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
+        .sort((a, b) => (a.status === 'verified') - (b.status === 'verified') || a.campus.localeCompare(b.campus) || a.name.localeCompare(b.name));
+      const bad = staff.filter(p => p.status !== 'verified').length;
       let html = '<div class="note">' + (synced ? 'Scan dates and workbook figures were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
         ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
       (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') + '</div>' +
       (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
-      (T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
+      (T.tab === 'drivers' ? '<div class="tiles"><div class="tile"><b>' + staff.length + '</b>people on the transport staff list</div><div class="tile"><b>' + (staff.length - bad) + '</b>verified against the staff master</div><div class="tile ' + (bad ? 'warn' : '') + '"><b>' + bad + '</b>need checking</div></div>' : T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
         '<div class="tile"><b>' + lakh(sum(pRows, 'cost')) + '</b>' + (T.pay === 'after' ? 'total cost' : 'cost before driver pay') + '</div>' +
         '<div class="tile ' + (sum(pRows, 'result') < 0 ? 'bad' : '') + '"><b>' + lakh(sum(pRows, 'result')) + '</b>result over ' + pnlMonths.length + ' months</div>' +
         '<div class="tile ' + (pRows.some(o => o.result < 0) ? 'warn' : '') + '"><b>' + pRows.filter(o => o.result < 0).length + ' of ' + pRows.length + '</b>vehicles losing money</div></div>' : '<div class="tiles">' +
@@ -264,21 +268,26 @@ window.Coord = (function () {
         '<div class="tile warn"><b>' + count('soon') + '</b>due within 30 days</div>' +
         '<div class="tile"><b>' + count('check') + '</b>scan on file, date unread</div>' +
         '<div class="tile"><b>' + count('missing') + '</b>with no record</div></div>') +
-        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : []).map(x =>
+        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : [], d.people && d.people.length ? [['drivers', 'Drivers']] : []).map(x =>
           '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
         '<select class="tr-campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         (T.tab === 'list' ? '<span class="seg">' + [['all', 'All'], ['expired', 'Expired'], ['soon', 'Due in 30 days'], ['later', 'Due in 90 days'], ['check', 'Scan, date unread'], ['missing', 'No record']].map(x =>
           '<button data-tier="' + x[0] + '" class="' + (T.tier === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         (T.tab === 'pnl' ? '<span class="seg">' + [['after', 'After driver pay'], ['before', 'Before driver pay']].map(x => '<button data-pay="' + x[0] + '" class="' + (T.pay === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         '<input class="tr-q" placeholder="Search vehicle, driver or route" value="' + esc(T.q) + '">' +
-        (T.tab === 'pnl' ? '' : '<button class="btn tr-copy">Copy digest</button>') + '</div>';
+        (T.tab === 'pnl' || T.tab === 'drivers' ? '' : '<button class="btn tr-copy">Copy digest</button>') + '</div>';
 
       if (T.tab === 'list') {
         html += '<div class="note">' + rows.length + ' documents. Most overdue first, then scans whose date could not be read, then no record, then the next renewals. A renewal submitted through the Transport Document Submission form shows here within about 5 minutes; a Drive upload shows as waiting until the next sync reads it.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Status</th><th>Vehicle</th><th>Campus</th><th>Route</th><th>Driver</th><th>Document</th><th>Valid to</th><th>When</th></tr></thead><tbody>' +
           (rows.length ? rows.map(i => '<tr><td>' + pl(i.t) + '</td><td>' + esc(i.b.reg) + '<div class="sm">' + esc(i.b.bus) + nr(i.b) + '</div></td><td>' + esc(i.b.campus) + '</td><td>' + esc(i.b.route || '-') +
-            '</td><td>' + esc(i.b.driver || '-') + '</td><td>' + esc(i.doc.label) + '</td><td>' + fmt(i.date) + '<div class="sm">' + srcNote(i) + '</div></td><td>' + when(i.date, i.t) + '</td></tr>').join('')
+            '</td><td>' + esc(i.b.driver || '-') + drvNote(i.b) + '</td><td>' + esc(i.doc.label) + '</td><td>' + fmt(i.date) + '<div class="sm">' + srcNote(i) + '</div></td><td>' + when(i.date, i.t) + '</td></tr>').join('')
             : '<tr><td colspan="8" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
+      } else if (T.tab === 'drivers') {
+        html += '<div class="note">Everyone on the transport Man Power sheet, linked to the staff master by employee code. "Verified" means the code is an active employee at the same campus with a matching name. Anything else needs a look: fix the code in the Man Power sheet, or check whether the person has left.</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Link</th><th>Name (transport sheet)</th><th>Campus</th><th>Role</th><th>Employee code</th><th>Staff master says</th><th>Buses</th></tr></thead><tbody>' +
+          (staff.length ? staff.map(p => '<tr><td>' + (p.status === 'verified' ? '<span class="pl ok">Verified</span>' : '<span class="pl expired">' + esc(p.status) + '</span>') + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.campus) + '</td><td>' + esc(p.designation) + '</td><td>' + esc(p.code || '-') + '</td><td>' + (p.rosterName ? esc(p.rosterName) + (p.rosterCampus && p.rosterCampus !== p.campus ? ' (' + esc(p.rosterCampus) + ')' : '') : '-') + '</td><td>' + (p.vehicles.map(esc).join(', ') || '<span class="sm">none</span>') + '</td></tr>').join('')
+            : '<tr><td colspan="7" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       } else if (T.tab === 'pnl') {
         const camp = {};
         pRows.forEach(o => { const c = camp[o.campus] = camp[o.campus] || { campus: o.campus, fee: 0, cost: 0, n: 0, lose: 0 }; c.fee += o.fee; c.cost += o.cost; c.n++; if (o.result < 0) c.lose++; });
@@ -295,7 +304,7 @@ window.Coord = (function () {
           .sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
         html += '<div class="note">Expiry date of the newest paper on file; click a date to open its scan (or the form upload) and check it. A small +1 means another scan of that paper exists whose date could not be read. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
-          fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + nr(b) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + '</td>' +
+          fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + nr(b) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + drvNote(b) + '</td>' +
             d.docs.map(x => { const e = b.docs[x.key], t = tier(e); const txt = e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-', first = e.link || (e.unread[0] && e.unread[0].link) || '';
               const src = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '') : e.unread.length ? 'Scan on file, date unread. Click to open it.' : 'No record';
               const extra = e.date && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';

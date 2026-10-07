@@ -52,3 +52,4 @@ td.dt.expired{background:#fee2e2;color:var(--red);font-weight:600}td.dt.soon{bac
 td.dt.check{background:#e0f2fe;color:#075985}
 td.dt.na{background:var(--lgray);color:var(--gray);font-style:italic}
 td.dt a{color:inherit;text-decoration:underline dotted}td.dt a:hover{text-decoration:underline}td.dt sup a{font-size:9px}
+.pl.ok{background:#dcfce7;color:#15803d}

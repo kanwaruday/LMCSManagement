@@ -29,6 +29,7 @@ const COORD_TRANSPORT_FORM_GID = 1365845375;                                   /
 const COORD_TRANSPORT_TAB_FLEET = 'LM Studio Fleet';
 const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
 const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
+const COORD_TRANSPORT_TAB_PEOPLE = 'Transport Staff'; // every person on the transport Man Power sheet, linked to the staff master by employee code
 const COORD_TRANSPORT_TAB_PNL = 'Transport P&L'; // per bus per month money, from the transport workbook (push)
 const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
 const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness'], ['mv_tax', 'MV tax'],
@@ -104,7 +105,7 @@ function coordTransportPush_(body) {
   COORD_TRANSPORT_DOCS.forEach(function (d) { label[d[0]] = d[1]; });
   const fleet = [], docs = [];
   p.fleet.forEach(function (b) {
-    fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '']);
+    fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '', b.driverCode || '', b.driverStatus || '', b.driverRosterName || '']);
     Object.keys(b.docs || {}).forEach(function (k) {
       const d = b.docs[k];
       if (!label[k]) return;
@@ -119,7 +120,11 @@ function coordTransportPush_(body) {
   lock.waitLock(20000);
   try {
     const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
-    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year'], fleet);
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name'], fleet);
+    if (Array.isArray(p.people) && p.people.length) {
+      coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PEOPLE, ['Name', 'Campus', 'Designation', 'Employee code', 'Link to staff master', 'Staff master name', 'Staff master campus', 'Buses'],
+        p.people.map(function (q) { return [q.name, q.campus, q.designation, q.code, q.status, q.rosterName || '', q.rosterCampus || '', (q.vehicles || []).join(', ')]; }));
+    }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
     if (Array.isArray(p.pnl) && p.pnl.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
@@ -149,7 +154,7 @@ function coordTransportBase_() {
   const meta = {};
   syncRows.forEach(function (r) { meta[String(r[0])] = String(r[1]); });
   const fleet = fleetRows.map(function (r) {
-    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], docs: {}, unreadable: [] };
+    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], driverCode: String(r[9] || ''), driverStatus: String(r[10] || ''), driverRosterName: String(r[11] || ''), docs: {}, unreadable: [] };
   });
   const byReg = {}, keyOf = {};
   fleet.forEach(function (b) { byReg[b.reg] = b; });
@@ -166,7 +171,11 @@ function coordTransportBase_() {
     return { reg: String(r[0]), campus: String(r[1]), month: String(r[2]), fee: Number(r[3]) || 0, fuel: Number(r[4]) || 0, loan: Number(r[5]) || 0,
       fixed: Number(r[6]) || 0, pay: Number(r[7]) || 0, note: String(r[8] || '') };
   }) : [];
-  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl };
+  const peopleSheet = ss.getSheetByName(COORD_TRANSPORT_TAB_PEOPLE); // optional, like the P&L tab
+  const people = peopleSheet ? peopleSheet.getDataRange().getValues().slice(1).map(function (r) {
+    return { name: String(r[0]), campus: String(r[1]), designation: String(r[2]), code: String(r[3]), status: String(r[4]), rosterName: String(r[5]), rosterCampus: String(r[6]), vehicles: String(r[7]).split(', ').filter(String) };
+  }) : [];
+  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl, people: people };
   coordCachePutBig_('coord_transport_base', base, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return base;
 }
@@ -187,7 +196,7 @@ function coordTransportFleet_() {
     });
     const n = String(b.campus).replace(/\D/g, ''); // roster says 'LMS-5' in one row
     return { reg: b.reg, bus: b.bus, campus: 'LMS ' + n, campusId: 'LMS' + n, operational: b.operational,
-      route: b.route, driver: b.driver, docs: docs };
+      route: b.route, driver: b.driver, driverCode: b.driverCode || '', driverStatus: b.driverStatus || '', driverRosterName: b.driverRosterName || '', docs: docs };
   });
   const known = {};
   base.fleet.forEach(function (b) { known[b.reg] = true; });
@@ -210,6 +219,7 @@ function coordTransport_(caller) {
   return {
     success: true, generated: new Date().toISOString(), formRows: all.live.rows, unknown: all.unknown,
     syncedAt: all.base.syncedAt, warnings: all.base.warnings,
+    people: (all.base.people || []).filter(function (q) { return !visible || visible.indexOf('LMS' + q.campus.replace(/\D/g, '')) !== -1; }),
     pnl: (all.base.pnl || []).filter(function (r) { return !visible || visible.indexOf('LMS' + r.campus.replace(/\D/g, '')) !== -1; }),
     docs: COORD_TRANSPORT_DOCS.map(function (d) { return { key: d[0], label: d[1] }; }),
     fleet: all.fleet.filter(function (b) { return !visible || visible.indexOf(b.campusId) !== -1; }),
