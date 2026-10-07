@@ -156,6 +156,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
+    if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     const caller = coordVerifyCaller_(body.idToken);

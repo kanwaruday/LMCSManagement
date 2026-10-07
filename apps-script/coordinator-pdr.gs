@@ -15,6 +15,8 @@ const COORD_PDR_SHEET_ID = '1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y';
 const COORD_PDR_TAB = 'Daily Reports';
 const COORD_PDR_TAGS_TAB = 'LM Studio Tags';
 const COORD_PDR_REAL_FROM = '2026-09-23';
+const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
+const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
 // action=coordinatorpdr
 function coordPdr_(caller) {
@@ -36,7 +38,18 @@ function coordPdr_(caller) {
       if (t[6] > taggedAt) taggedAt = t[6];
     });
   }
-  return { success: true, reports: reports, tags: tags, taggedAt: taggedAt };
+  const history = [], issues = [];
+  const hsh = ss.getSheetByName(COORD_PDR_HISTORY_TAB), ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
+  let pushedAt = '';
+  if (hsh && hsh.getLastRow() > 1) hsh.getDataRange().getDisplayValues().slice(1).forEach(function (h) { if (ok(h[1])) history.push({ date: h[0], campus: h[1] }); });
+  if (ish && ish.getLastRow() > 1) {
+    ish.getDataRange().getDisplayValues().slice(1).forEach(function (r) {
+      if (!ok(r[1])) return;
+      if (r[9] > pushedAt) pushedAt = r[9];
+      issues.push({ id: r[0], campus: r[1], type: r[2], subject: r[3], first: r[4], last: r[5], count: +r[6], needsAction: r[7] === 'yes', items: JSON.parse(r[8] || '[]') });
+    });
+  }
+  return { success: true, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -51,4 +64,20 @@ function coordPdrTagPush_(body) {
     coordTransportWriteTab_(SpreadsheetApp.openById(COORD_PDR_SHEET_ID), COORD_PDR_TAGS_TAB, ['Date', 'CampusId', 'Topics', 'Needs action', 'Summary', 'Message hash', 'Tagged at'], rows);
   } finally { lock.releaseLock(); }
   return { success: true, written: rows.length };
+}
+
+/** POST action=pdrpush {secret, issues:[...], history:[...]} from drive-index/pdr/pdr_push.py: replaces the two tabs. */
+function coordPdrPush_(body) {
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
+  if (!Array.isArray(body.issues) || !Array.isArray(body.history) || body.history.length < 100) return { success: false, error: 'Payload rejected: expected issues and at least 100 history rows' };
+  const now = new Date().toISOString(), ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    coordTransportWriteTab_(ss, COORD_PDR_HISTORY_TAB, ['Date', 'CampusId', 'Source', 'Posts', 'TasksCompleted', 'TasksForTomorrow', 'Registers', 'ImportantMessage', 'Principal'],
+      body.history.map(function (h) { return [h.Date, h.CampusId, h.Source, h.Posts, h.TasksCompleted, h.TasksForTomorrow, h.Registers, h.ImportantMessage, h.Principal]; }));
+    coordTransportWriteTab_(ss, COORD_PDR_ISSUES_TAB, ['Id', 'CampusId', 'Type', 'Subject', 'First seen', 'Last seen', 'Days raised', 'Needs action', 'Items (JSON)', 'Pushed at'],
+      body.issues.map(function (i) { return [i.id, i.campus, i.type, i.subject, i.first, i.last, i.count, i.needsAction ? 'yes' : 'no', JSON.stringify(i.items), now]; }));
+  } finally { lock.releaseLock(); }
+  return { success: true, issues: body.issues.length, history: body.history.length };
 }
