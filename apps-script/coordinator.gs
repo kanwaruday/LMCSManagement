@@ -309,7 +309,7 @@ function coordRefreshSsCompliance_(idToken) {
 // One task per request still waiting: TaskId includes the status, so a request that moves
 // Pending -> Info Requested gets a fresh task, and the old one auto-resolves.
 function coordApprovalWanted_(rows, now) {
-  const wanted = [];
+  const wanted = [], byKey = {};
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const status = String(r[13] || '');
@@ -323,15 +323,26 @@ function coordApprovalWanted_(rows, now) {
     const high = status === 'Pending' ? (urgent ? COORD_APR_URGENT_HIGH_DAYS : COORD_APR_PENDING_HIGH_DAYS) : COORD_APR_INFO_HIGH_DAYS;
     if (days < med) continue;
     const campus = String(r[1] || '').trim();
-    wanted.push({
+    // The same request submitted several times (same campus, category, text, status and day) is one follow-up, not one per copy.
+    const key = [campus, r[2], r[4], status, since.toISOString().slice(0, 10)].join('|');
+    const sev = days >= high ? 'high' : 'medium';
+    if (byKey[key]) { byKey[key].ids.push(r[0]); if (sev === 'high') byKey[key].task.severity = 'high'; continue; }
+    const task = {
       taskId: 'approval|' + r[0] + '|' + status,
       domain: 'approval', department: COORD_APPROVAL_DEPT[String(r[2])] || COORD_DEPT_OPS,
-      campus: campus,
-      title: String(r[2]) + ' request waiting ' + days + ' days for ' + waitingOn + ' (' + campus + ')',
+      campus: campus, category: String(r[2]), days: days, waitingOn: waitingOn,
       detail: '"' + String(r[4]) + '" - ' + status + (urgent ? ', marked Urgent' : '') + ' since ' + Utilities.formatDate(since, 'Asia/Kolkata', 'd MMM'),
-      severity: days >= high ? 'high' : 'medium',
-    });
+      severity: sev,
+    };
+    byKey[key] = { task: task, ids: [r[0]] };
+    wanted.push(task);
   }
+  wanted.forEach(function (t) {
+    const g = byKey[Object.keys(byKey).filter(function (k) { return byKey[k].task === t; })[0]], copies = g.ids.length;
+    t.title = t.category + ' request' + (copies > 1 ? ' (' + copies + ' identical copies)' : '') + ' waiting ' + t.days + (t.days === 1 ? ' day' : ' days') + ' for ' + t.waitingOn + ' (' + t.campus + ')';
+    if (copies > 1) t.detail += '. Submitted ' + copies + ' times (' + g.ids.join(', ') + '): decide one and withdraw the rest.';
+    delete t.category; delete t.days; delete t.waitingOn;
+  });
   return wanted;
 }
 

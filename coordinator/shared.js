@@ -480,6 +480,25 @@ window.Coord = (function () {
         [d.pushedAt ? 'Issues refreshed ' + agoTxt(hrs(d.pushedAt)) : 'Issues not pushed from the Mac yet', !d.pushedAt || hrs(d.pushedAt) > 5],
         [feeLast ? 'Fee emails through ' + fmt(feeLast) : 'No fee emails', !feeLast || ago(feeLast) >= 2],
         [admLast ? 'Admission posts through ' + fmt(admLast) : 'No admission posts', false]];
+      // Fee cycle: fees fall due on the 1st and the 1st-10th are "fee days", so outstanding jumps to its monthly high on day 1 and falls through the
+      // fee days; the last day of the month is the true defaulter figure. So compare against the last month-end, never against a few days ago.
+      const lk = n => '₹' + (n / 100000).toFixed(2) + ' L';
+      const feeCycle = c => {
+        const xs = fsAll.filter(x => x[1] === c); if (!xs.length) return null;
+        const last = xs[xs.length - 1], monthStart = last[0].slice(0, 7) + '-01', inMonth = xs.filter(x => x[0] >= monthStart);
+        const before = xs.filter(x => x[0] < monthStart).pop(), prev = before && (new Date(monthStart) - new Date(before[0])) / 86400000 <= 4 ? before : null; // an email from the last days of the previous month
+        return { c: c, xs: xs, last: last, prev: prev, high: inMonth.reduce((m, x) => x[4] > m ? x[4] : m, 0), got: inMonth.reduce((t, x) => t + x[2], 0), fol: inMonth.reduce((t, x) => t + x[3], 0), day: +last[0].slice(8, 10) };
+      };
+      // What a principal wrote about fees left ("19 lakh left"), newest report first, from the form reports
+      const principalFee = c => {
+        const hit = reps.filter(r => r.campus === c).sort((a, b) => b.date.localeCompare(a.date)).map(r => {
+          const m = (r.message + ' ' + r.done).match(/(\d+(?:\.\d+)?)\s*(?:lakh|lakhs|lac)\s+(?:left|pending|remaining|balance|outstanding|still)/i);
+          return m ? { date: r.date, amount: parseFloat(m[1]) * 100000 } : null;
+        }).filter(Boolean)[0];
+        if (!hit) return null;
+        const sys = fsAll.filter(x => x[1] === c && x[0] <= hit.date).pop();
+        return { date: hit.date, amount: hit.amount, sys: sys ? sys[4] : null };
+      };
       let html = '<div class="note pd-fresh">' + fresh.map(f => f[1] ? '<b class="stale">' + esc(f[0]) + '</b>' : esc(f[0])).join(' &middot; ') +
         (fresh.some(f => f[1]) ? '<br><span class="stale">A source looks out of date: the Mac sync (every 2 hours) or the fee email capture may have stopped.</span>' : '') + '</div>' +
         '<div class="tiles">' +
@@ -516,32 +535,28 @@ window.Coord = (function () {
         const filedIn = ds => ds.reduce((t, x) => t + camps.filter(c => has[x + '|' + c]).length, 0), pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '-';
         const filedWk = filedIn(wkDays), expWk = wkDays.length * camps.length, filedPrev = filedIn(prevDays), expPrev = prevDays.length * camps.length;
         const missedWk = camps.map(c => [c, wkDays.filter(x => !has[x + '|' + c]).length]).filter(x => x[1] >= 2).sort((a, b) => b[1] - a[1]);
-        const lk = n => '₹' + (n / 100000).toFixed(2) + ' L', sumF = (xs, a, b, i) => xs.filter(x => ago(x[0]) >= a && ago(x[0]) <= b).reduce((t, x) => t + x[i], 0);
-        const feeRows = CAMPUSES.map(c => {
-          const xs = fsAll.filter(x => x[1] === c); if (!xs.length) return null;
-          const l = xs[xs.length - 1], ref = xs.filter(x => ago(x[0]) >= 8).pop() || xs[0];
-          return { c: c, got: sumF(xs, 1, 7, 2), prev: sumF(xs, 8, 14, 2), fol: sumF(xs, 1, 7, 3), out: l[4], delta: l[4] - ref[4] };
-        }).filter(Boolean);
+        const sumF = (xs, a, b, i) => xs.filter(x => ago(x[0]) >= a && ago(x[0]) <= b).reduce((t, x) => t + x[i], 0);
+        const feeRows = CAMPUSES.map(feeCycle).filter(Boolean).map(f => ({ c: f.c, got: sumF(f.xs, 1, 7, 2), prev: sumF(f.xs, 8, 14, 2), fol: sumF(f.xs, 1, 7, 3), out: f.last[4], vsEnd: f.prev ? f.last[4] - f.prev[4] : null }));
         const newWk = issues.filter(i => ago(i.first) <= 7 && i.open).sort(byAge);
         const resolvedWk = issues.filter(i => i.act && i.act.status === 'resolved' && ago(i.act.at.slice(0, 10)) <= 7);
         const stuck = open.filter(i => i.stuck).sort((a, b) => (b.span + b.age) - (a.span + a.age));
         const focus = openAct.filter(i => !i.handled && i.type !== 'Events' && (i.count >= 2 || i.age <= 3)).sort((a, b) => (b.span + b.age) - (a.span + a.age)).slice(0, 6);
         const line = i => i.campus + ' ' + i.subject + ' (' + i.type + '): open ' + (i.span + i.age) + ' days, raised on ' + i.count + (i.count === 1 ? ' day' : ' days') + (i.act && i.act.status === 'assigned' ? ', assigned to ' + (i.act.assigneeName || i.act.assignee) : i.handled ? ', acknowledged' : ', not yet acknowledged');
-        const totWk = fsAll.length ? feeRows.reduce((t, r) => t + r.got, 0) : 0, totPrev = feeRows.reduce((t, r) => t + r.prev, 0), totOut = feeRows.reduce((t, r) => t + r.out, 0), totD = feeRows.reduce((t, r) => t + r.delta, 0);
+        const totWk = fsAll.length ? feeRows.reduce((t, r) => t + r.got, 0) : 0, totPrev = feeRows.reduce((t, r) => t + r.prev, 0), totOut = feeRows.reduce((t, r) => t + r.out, 0), totD = feeRows.reduce((t, r) => t + (r.vsEnd || 0), 0), feeDay = feeRows.length ? feeCycle(feeRows[0].c).day : 0;
         const txt = ['Principals\' reports: week to ' + fmt(yday), '',
           'Reports filed: ' + filedWk + ' of ' + expWk + ' (' + pct(filedWk, expWk) + '), last week ' + pct(filedPrev, expPrev) + '.' + (missedWk.length ? ' Missed 2+ days: ' + missedWk.map(x => x[0] + ' (' + x[1] + ')').join(', ') + '.' : ''),
           'Issues: ' + newWk.length + ' new, ' + resolvedWk.length + ' resolved, ' + todo.length + ' open and not yet acknowledged, ' + stuck.length + ' open for ' + STUCK_DAYS + '+ days.', '',
           'Needs attention first:'].concat(focus.map(i => '- ' + line(i)), focus.length ? [] : ['- nothing unacknowledged'], ['',
-          fsAll.length ? 'Fees: ' + lk(totWk) + ' collected this week (' + lk(totPrev) + ' last week); outstanding ' + lk(totOut) + ' (' + (totD > 0 ? 'up ' : 'down ') + lk(Math.abs(totD)) + ' on the week, which includes the new month\'s dues once a month starts); ' + feeRows.reduce((t, r) => t + r.fol, 0) + ' follow-ups logged.' : 'Fees: no fee emails.']).concat(feeRows.map(r => '  ' + r.c + ': collected ' + lk(r.got) + ', outstanding ' + lk(r.out) + ', ' + r.fol + ' follow-ups'));
-        html += '<div class="ctl"><button class="btn pd-copy">Copy digest</button> <span class="sm">The 7 completed days to ' + fmt(yday) + ', compared with the 7 before. Every figure is calculated from the data on this page. Outstanding fees step up when a new month\'s dues start, so a rise on 1 Oct and similar dates is not slippage.</span></div>' +
+          fsAll.length ? 'Fees: ' + lk(totWk) + ' collected this week (' + lk(totPrev) + ' last week); outstanding ' + lk(totOut) + ', ' + lk(Math.abs(totD)) + (totD > 0 ? ' above' : ' below') + ' the last month-end (the true defaulters)' + (feeDay <= 10 ? '; fee days, day ' + feeDay + ' of 10, so it is expected to fall' : '') + '; ' + feeRows.reduce((t, r) => t + r.fol, 0) + ' follow-ups logged.' : 'Fees: no fee emails.']).concat(feeRows.map(r => '  ' + r.c + ': collected ' + lk(r.got) + ', outstanding ' + lk(r.out) + ', ' + r.fol + ' follow-ups'));
+        html += '<div class="ctl"><button class="btn pd-copy">Copy digest</button> <span class="sm">The 7 completed days to ' + fmt(yday) + ', compared with the 7 before. Every figure is calculated from the data on this page. Fees: outstanding jumps to a monthly high on the 1st and falls through the fee days (1st-10th), so it is compared with the last month-end.</span></div>' +
           '<div class="tiles"><div class="tile"><b>' + pct(filedWk, expWk) + '</b>of expected reports filed<span class="sm"> (last week ' + pct(filedPrev, expPrev) + ')</span></div>' +
           '<div class="tile"><b>' + newWk.length + '</b>new issues</div><div class="tile"><b>' + resolvedWk.length + '</b>resolved</div>' +
           (fsAll.length ? '<div class="tile"><b>' + lk(totWk) + '</b>fees collected<span class="sm"> (last week ' + lk(totPrev) + ')</span></div>' : '') + '</div>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (open, needs action, not yet acknowledged)</h3>' + issueTable(focus) +
           '<h3 style="font-size:13px;margin:16px 0 6px">Reporting gaps this week</h3><p>' + (missedWk.length ? missedWk.map(x => '<span class="pl expired">' + x[0] + ': missed ' + x[1] + ' of ' + wkDays.length + ' days</span> ').join('') : 'No campus missed more than one reporting day.') + '</p>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">New this week (' + newWk.length + ')</h3>' + issueTable(newWk.slice(0, 8)) +
-          (feeRows.length ? '<h3 style="font-size:13px;margin:16px 0 6px">Fees</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Collected, 7 days</th><th>Last week</th><th>Outstanding now</th><th>Change on the week</th><th>Follow-ups logged</th></tr></thead><tbody>' +
-            feeRows.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + lk(r.got) + '</td><td>' + lk(r.prev) + '</td><td>' + lk(r.out) + '</td><td class="' + (r.delta > 0 ? 'miss' : '') + '">' + (r.delta > 0 ? '+' : r.delta < 0 ? '-' : '') + lk(Math.abs(r.delta)) + '</td><td>' + r.fol + '</td></tr>').join('') + '</tbody></table></div>' : '');
+          (feeRows.length ? '<h3 style="font-size:13px;margin:16px 0 6px">Fees</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Collected, 7 days</th><th>Last week</th><th>Outstanding now</th><th>Vs last month-end</th><th>Follow-ups logged</th></tr></thead><tbody>' +
+            feeRows.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + lk(r.got) + '</td><td>' + lk(r.prev) + '</td><td>' + lk(r.out) + '</td><td>' + (r.vsEnd === null ? '-' : (r.vsEnd > 0 ? '+' : r.vsEnd < 0 ? '-' : '') + lk(Math.abs(r.vsEnd))) + '</td><td>' + r.fol + '</td></tr>').join('') + '</tbody></table></div>' : '');
         box.dataset.digest = txt.join('\n');
       } else if (P.tab === 'issues') {
         const shown = issues.filter(i => (P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!P.act || i.needsAction) && (!P.repeat || i.count >= 3) && (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(byAge);
@@ -558,16 +573,27 @@ window.Coord = (function () {
           '<h3 style="font-size:13px;margin:16px 0 6px">Last ' + last.length + ' reporting days</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + last.map(x => '<th>' + fmt(x) + '</th>').join('') + '<th>Missed since Jan</th></tr></thead><tbody>' +
           camps.map(c => '<tr><td><b>' + c + '</b></td>' + last.map(x => has[x + '|' + c] ? '<td>&#10003;</td>' : '<td class="dt expired">-</td>').join('') + '<td class="' + (missed(c) > days.length / 4 ? 'miss' : '') + '">' + missed(c) + ' of ' + days.length + '</td></tr>').join('') + '</tbody></table></div>';
       } else if (P.tab === 'fees') {
-        const fs = (d.fees && d.fees.series) || [], lakh = n => '₹' + (n / 100000).toFixed(2) + ' L';
-        const rows = CAMPUSES.map(c => {
-          const xs = fs.filter(x => x[1] === c);
-          if (!xs.length) return '<tr><td><b>' + c + '</b></td><td colspan="6" class="sm">No fee emails received from this campus</td></tr>';
-          const l = xs[xs.length - 1], ref = xs.filter(x => ago(x[0]) >= 30)[xs.filter(x => ago(x[0]) >= 30).length - 1] || xs[0];
-          const sum = (days, i) => xs.filter(x => ago(x[0]) < days).reduce((t, x) => t + x[i], 0), delta = l[4] - ref[4];
-          return '<tr><td><b>' + c + '</b></td><td>' + lakh(l[4]) + '</td><td class="' + (delta > 0 ? 'miss' : '') + '">' + (delta > 0 ? '+' : delta < 0 ? '-' : '') + lakh(Math.abs(delta)) + '<span class="sm"> since ' + fmt(ref[0]) + '</span></td><td>' + lakh(sum(7, 2)) + '</td><td>' + lakh(sum(30, 2)) + '</td><td class="' + (sum(30, 3) < 20 ? 'miss' : '') + '">' + sum(30, 3) + '</td><td class="sm">' + fmt(l[0]) + '</td></tr>';
+        const cyc = CAMPUSES.map(feeCycle), day = cyc.find(Boolean) ? cyc.find(Boolean).day : 0, ym = fsAll.length ? fsAll[fsAll.length - 1][0].slice(0, 7) : '';
+        const rows = CAMPUSES.map((c, i) => {
+          const f = cyc[i];
+          if (!f) return '<tr><td><b>' + c + '</b></td><td colspan="7" class="sm">No fee emails received from this campus</td></tr>';
+          const pf = principalFee(c), recovered = f.high - f.last[4];
+          return '<tr><td><b>' + c + '</b></td><td>' + lk(f.last[4]) + '</td><td>' + (f.prev ? lk(f.prev[4]) + ' <span class="sm">(' + fmt(f.prev[0]) + ')</span>' : '-') + '</td><td>' + lk(f.high) + '</td><td>' +
+            lk(recovered) + ' <span class="sm">(' + (f.high ? Math.round(100 * recovered / f.high) : 0) + '%)</span></td><td>' + lk(f.got) + '</td><td class="' + (f.fol < 5 && day > 10 ? 'miss' : '') + '">' + f.fol + '</td><td>' +
+            (pf ? lk(pf.amount) + ' <span class="sm">(' + fmt(pf.date) + ')</span>' + (pf.sys !== null ? '<br><span class="sm">system that day: ' + lk(pf.sys) + '</span>' : '') : '<span class="sm">-</span>') + '</td></tr>';
         }).join('');
-        html += '<div class="note">From the daily fee emails of the school\'s fee system (CSM), refreshed each morning. "Outstanding" is the defaulter total up to the current month, so it steps up when a new month\'s fee falls due. "Follow-ups" is what the fee system logged, which can differ from what a principal reports doing.' + (d.fees && d.fees.error ? ' <b class="stale">Could not read the fee sheet: ' + esc(d.fees.error) + '</b>' : '') + '</div>' +
-          '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Outstanding now</th><th>Change over 30 days</th><th>Collected, 7 days</th><th>Collected, 30 days</th><th>Follow-ups logged, 30 days</th><th>Last email</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        // true defaulters at each completed month-end: the last email of the month, if it is from its final days
+        const months = [...new Set(fsAll.map(x => x[0].slice(0, 7)))].filter(m => m < ym);
+        const endVal = (c, m) => { const e = fsAll.filter(x => x[1] === c && x[0].slice(0, 7) === m).pop(); return e && +e[0].slice(8, 10) >= 27 ? e[4] : null; };
+        const trend = CAMPUSES.map(c => { if (!cyc[CAMPUSES.indexOf(c)]) return ''; const vals = months.map(m => endVal(c, m));
+          return '<tr><td><b>' + c + '</b></td>' + vals.map((v, i) => '<td>' + (v === null ? '<span class="sm">no email</span>' : lk(v) + (i && vals[i - 1] !== null ? ' <span class="' + (v > vals[i - 1] ? 'miss' : 'sm') + '">(' + (v > vals[i - 1] ? '+' : '-') + lk(Math.abs(v - vals[i - 1])) + ')</span>' : '')) + '</td>').join('') + '</tr>'; }).join('');
+        html += '<div class="note">Fees follow a monthly cycle: they fall due on the 1st, the 1st to the 10th are fee days, so <b>outstanding jumps to its monthly high on day 1 and falls through the fee days</b>. ' +
+          'The last day of the month is the true defaulter figure, so that is what to compare. ' + (day && day <= 10 ? 'Today is day ' + day + ' of the fee days, so outstanding is expected to be falling.' : 'The fee days are over, so outstanding now should be close to the true defaulters.') +
+          ' "Follow-ups" is what the fee system logged, which can differ from what a principal reports doing. "Principal says" is the latest figure a principal wrote in the form, next to the fee system\'s figure the same day.' +
+          (d.fees && d.fees.error ? ' <b class="stale">Could not read the fee sheet: ' + esc(d.fees.error) + '</b>' : '') + '</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Outstanding now</th><th>Last month-end (true defaulters)</th><th>Highest this month</th><th>Recovered since the high</th><th>Collected this month</th><th>Follow-ups this month</th><th>Principal says</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+          (months.length ? '<h3 style="font-size:13px;margin:16px 0 6px">True defaulters at each month-end</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + months.map(m => '<th>' + MONTHS[+m.slice(5) - 1] + ' ' + m.slice(0, 4) + '</th>').join('') + '</tr></thead><tbody>' + trend + '</tbody></table></div>' +
+            '<div class="note">Red means higher than the month before. A month shows "no email" when the fee system sent nothing in its last days.</div>' : '');
       } else if (P.tab === 'admissions') {
         const ad = d.admissions || [], MONT = ['M-I', 'M-II', 'M-III'];
         const rows = CAMPUSES.map(c => {

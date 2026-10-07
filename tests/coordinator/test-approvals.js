@@ -45,4 +45,13 @@ delete live['approval|a2|Pending'];                            // a2 got decided
 ctx.coordTasksAutoResolve_(sh, store, 'approval', null, live);
 assert.strictEqual(store.find((r) => r[0] === 'approval|a2|Pending')[5], 'resolved');
 assert.strictEqual(store.find((r) => r[0] === 'approval|a3|Pending')[5], 'open');
+
+// the same request submitted three times is one follow-up, and "1 day" is singular
+const dup = (id) => row(id, 'LMS4', 'Pending', 'Urgent', day(1)); // urgent: medium at 1 day
+const d3 = ctx.coordApprovalWanted_([['h'], dup('d1'), dup('d2'), dup('d3'), row('d4', 'LMS4', 'Pending', 'Urgent', day(1))].map((r, i) => (i && i < 4) ? Object.assign(r.slice(), { 4: 'PRT: Hindi, Math' }) : r), now);
+d3.forEach((t) => { /* rows d1..d3 share text; d4 differs */ });
+assert.strictEqual(d3.length, 2);
+assert.ok(d3[0].title.includes('3 identical copies') && d3[0].title.includes('waiting 1 day for'), d3[0].title);
+assert.ok(d3[0].detail.includes('d1, d2, d3'));
+assert.strictEqual(d3[1].title.includes('identical'), false);
 console.log('coordinator approvals: ok');
