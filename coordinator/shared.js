@@ -178,8 +178,8 @@ window.Coord = (function () {
 
   // ── Transport: fleet document compliance ──────────────────────────
   function transportView(body) {
-    const T = { campus: '', tier: 'all', q: '', tab: 'list', data: null };
-    body.innerHTML = '<h2 class="pagetitle">Fleet document compliance</h2><p class="pagesub">The newest insurance, fitness, MV tax, pollution, route permit and speed governor on file for every running vehicle.</p><div class="tr-body"></div>';
+    const T = { campus: '', tier: 'all', q: '', tab: 'list', pay: 'after', pk: 'result', pd: 1, data: null };
+    body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every running vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
@@ -187,10 +187,10 @@ window.Coord = (function () {
     const RANK = { expired: 0, check: 1, missing: 2, soon: 3, later: 4, ok: 5, na: 6 };
 
     async function load() {
-      box.innerHTML = '<div class="status">Loading fleet documents...</div>';
+      box.innerHTML = '<div class="status">Loading the transport fleet...</div>';
       try { T.data = await api({ action: 'coordinatortransport' }); render(); }
       catch (err) {
-        box.innerHTML = '<div class="status">Could not load fleet documents: ' + esc(err.message) + ' <button class="btn tr-retry">Retry</button></div>';
+        box.innerHTML = '<div class="status">Could not load the transport fleet: ' + esc(err.message) + ' <button class="btn tr-retry">Retry</button></div>';
         box.querySelector('.tr-retry').addEventListener('click', load);
       }
     }
@@ -218,23 +218,60 @@ window.Coord = (function () {
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
 
-      let html = '<div class="note">' + (synced ? 'Dates read from Drive scans were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
+
+      // ── Bus P&L: per bus totals from the monthly rows the sync pushed (Transport P&L tab) ──
+      const rupee = n => (n < 0 ? '-' : '') + '₹' + Math.abs(Math.round(n)).toLocaleString('en-IN');
+      const lakh = n => (n < 0 ? '-' : '') + '₹' + (Math.abs(n) / 100000).toFixed(2) + ' lakh';
+      const metaOf = reg => d.fleet.find(b => b.reg === reg);
+      const pnlMonths = Array.from(new Set((d.pnl || []).map(r => r.month))).sort();
+      const byBus = {};
+      (d.pnl || []).forEach(r => {
+        const o = byBus[r.reg] = byBus[r.reg] || { reg: r.reg, campus: r.campus, fee: 0, fuel: 0, loan: 0, fixed: 0, pay: 0, net: {}, note: r.note };
+        o.fee += r.fee; o.fuel += r.fuel; o.loan += r.loan; o.fixed += r.fixed; o.pay += r.pay;
+        o.net[r.month] = r.fee - r.fuel - r.loan - r.fixed - (T.pay === 'after' ? r.pay : 0);
+      });
+      const buses = Object.keys(byBus).map(k => {
+        const o = byBus[k], m = metaOf(k), cost = o.fuel + o.loan + o.fixed + (T.pay === 'after' ? o.pay : 0), flags = [];
+        if (m && !m.operational) flags.push('Not running');
+        if (!o.fee && !(m && !m.operational)) flags.push('No fee collected');
+        if (!o.pay && !(m && !m.operational) && !o.note) flags.push('No driver pay recorded');
+        if (o.note) flags.push(o.note);
+        return Object.assign(o, { m: m, cost: cost, result: o.fee - cost, margin: o.fee ? (o.fee - cost) / o.fee : null, flags: flags });
+      });
+      const pfilter = o => (!T.campus || o.campus === T.campus) && (!T.q || (o.reg + ' ' + (o.m ? o.m.driver + ' ' + o.m.route : '')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
+      const pRows = buses.filter(pfilter).sort((a, b) => ((a[T.pk] == null ? -1e12 : a[T.pk]) - (b[T.pk] == null ? -1e12 : b[T.pk])) * T.pd || a.reg.localeCompare(b.reg));
+      const sum = (list, k) => list.reduce((x, o) => x + o[k], 0);
+      const spark = o => {
+        const v = pnlMonths.map(mo => o.net[mo] || 0), lo = Math.min(0, ...v), hi = Math.max(0, ...v), span = hi - lo || 1;
+        const pts = v.map((x, i) => (i * 56 / Math.max(1, v.length - 1) + 2).toFixed(1) + ',' + (16 - (x - lo) / span * 14).toFixed(1)).join(' ');
+        const zero = (16 - (0 - lo) / span * 14).toFixed(1);
+        return '<svg width="60" height="18" viewBox="0 0 60 18" aria-hidden="true"><line x1="2" x2="58" y1="' + zero + '" y2="' + zero + '" stroke="#ccc"/><polyline fill="none" stroke="' +
+          (v[v.length - 1] < 0 ? '#CE0000' : '#15803d') + '" stroke-width="1.5" points="' + pts + '"/></svg>';
+      };
+      const pth = (k, label) => '<th data-psort="' + k + '">' + label + (T.pk === k ? (T.pd < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+      const period = pnlMonths.length ? fmt(pnlMonths[0] + '-01').slice(3) + ' to ' + fmt(pnlMonths[pnlMonths.length - 1] + '-01').slice(3) : '';
+
+      let html = '<div class="note">' + (synced ? 'Scan dates and workbook figures were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
         ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
       (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') + '</div>' +
       (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
-      '<div class="tiles">' +
+      (T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
+        '<div class="tile"><b>' + lakh(sum(pRows, 'cost')) + '</b>' + (T.pay === 'after' ? 'total cost' : 'cost before driver pay') + '</div>' +
+        '<div class="tile ' + (sum(pRows, 'result') < 0 ? 'bad' : '') + '"><b>' + lakh(sum(pRows, 'result')) + '</b>result over ' + pnlMonths.length + ' months</div>' +
+        '<div class="tile ' + (pRows.some(o => o.result < 0) ? 'warn' : '') + '"><b>' + pRows.filter(o => o.result < 0).length + ' of ' + pRows.length + '</b>vehicles losing money</div></div>' : '<div class="tiles">' +
         '<div class="tile"><b>' + running.length + '</b>vehicles running</div>' +
         '<div class="tile bad"><b>' + count('expired') + '</b>documents expired</div>' +
         '<div class="tile warn"><b>' + count('soon') + '</b>due within 30 days</div>' +
         '<div class="tile"><b>' + count('check') + '</b>scan on file, date unread</div>' +
-        '<div class="tile"><b>' + count('missing') + '</b>with no record</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].map(x =>
+        '<div class="tile"><b>' + count('missing') + '</b>with no record</div></div>') +
+        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : []).map(x =>
           '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
         '<select class="tr-campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         (T.tab === 'list' ? '<span class="seg">' + [['all', 'All'], ['expired', 'Expired'], ['soon', 'Due in 30 days'], ['later', 'Due in 90 days'], ['check', 'Scan, date unread'], ['missing', 'No record']].map(x =>
           '<button data-tier="' + x[0] + '" class="' + (T.tier === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        (T.tab === 'pnl' ? '<span class="seg">' + [['after', 'After driver pay'], ['before', 'Before driver pay']].map(x => '<button data-pay="' + x[0] + '" class="' + (T.pay === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         '<input class="tr-q" placeholder="Search vehicle, driver or route" value="' + esc(T.q) + '">' +
-        '<button class="btn tr-copy">Copy digest</button></div>';
+        (T.tab === 'pnl' ? '' : '<button class="btn tr-copy">Copy digest</button>') + '</div>';
 
       if (T.tab === 'list') {
         html += '<div class="note">' + rows.length + ' documents. Most overdue first, then scans whose date could not be read, then no record, then the next renewals. A renewal submitted through the Transport Document Submission form shows here within about 5 minutes; a Drive upload shows as waiting until the next sync reads it.</div>' +
@@ -242,6 +279,17 @@ window.Coord = (function () {
           (rows.length ? rows.map(i => '<tr><td>' + pl(i.t) + '</td><td>' + esc(i.b.reg) + '<div class="sm">' + esc(i.b.bus) + '</div></td><td>' + esc(i.b.campus) + '</td><td>' + esc(i.b.route || '-') +
             '</td><td>' + esc(i.b.driver || '-') + '</td><td>' + esc(i.doc.label) + '</td><td>' + fmt(i.date) + '<div class="sm">' + srcNote(i) + '</div></td><td>' + when(i.date, i.t) + '</td></tr>').join('')
             : '<tr><td colspan="8" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
+      } else if (T.tab === 'pnl') {
+        const camp = {};
+        pRows.forEach(o => { const c = camp[o.campus] = camp[o.campus] || { campus: o.campus, fee: 0, cost: 0, n: 0, lose: 0 }; c.fee += o.fee; c.cost += o.cost; c.n++; if (o.result < 0) c.lose++; });
+        html += '<div class="note">' + period + '. Money from the transport workbook (Transport Monthly tab), totalled per vehicle; fee collected against fuel, loan interest, fixed costs (insurance, taxes, service, parking, challan) and, in "after driver pay", the monthly driver and helper pay. Click a column heading to sort.</div>' +
+          '<div class="tw" style="margin-bottom:14px"><table><thead><tr><th>Campus</th><th>Vehicles</th><th>Fee collected</th><th>Cost</th><th>Result</th><th>Losing money</th></tr></thead><tbody>' +
+          Object.keys(camp).sort().map(k => { const c = camp[k]; return '<tr><td>' + esc(c.campus) + '</td><td>' + c.n + '</td><td>' + rupee(c.fee) + '</td><td>' + rupee(c.cost) + '</td><td class="' + (c.fee - c.cost < 0 ? 'miss' : '') + '">' + rupee(c.fee - c.cost) + '</td><td>' + c.lose + ' of ' + c.n + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+          '<div class="tw"><table><thead><tr><th>Vehicle</th><th>Campus</th>' + pth('fee', 'Fee collected') + pth('fuel', 'Fuel') + pth('loan', 'Loan interest') + pth('fixed', 'Fixed costs') +
+          (T.pay === 'after' ? pth('pay', 'Driver pay') : '') + pth('cost', 'Total cost') + pth('result', 'Result') + pth('margin', 'Margin') + '<th>Monthly result</th><th>Flags</th></tr></thead><tbody>' +
+          (pRows.length ? pRows.map(o => '<tr><td>' + esc(o.reg) + '<div class="sm">' + esc(o.m ? (o.m.route || o.m.bus) : '') + (o.m && o.m.driver ? ' &middot; ' + esc(o.m.driver) : '') + '</div></td><td>' + esc(o.campus) + '</td><td>' + rupee(o.fee) + '</td><td>' + rupee(o.fuel) + '</td><td>' + rupee(o.loan) + '</td><td>' + rupee(o.fixed) + '</td>' +
+            (T.pay === 'after' ? '<td>' + rupee(o.pay) + '</td>' : '') + '<td>' + rupee(o.cost) + '</td><td class="' + (o.result < 0 ? 'miss' : 'okc') + '"><b>' + rupee(o.result) + '</b></td><td>' + (o.margin == null ? '-' : Math.round(o.margin * 100) + '%') + '</td><td>' + spark(o) + '</td><td class="wrap">' + (o.flags.map(esc).join('<br>') || '<span class="sm">-</span>') + '</td></tr>').join('')
+            : '<tr><td colspan="13" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       } else {
         const fleet = running.filter(b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
           .sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
@@ -261,10 +309,13 @@ window.Coord = (function () {
       box.innerHTML = html;
 
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { T.tab = b.dataset.tab; render(); }));
+      box.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { T.pay = b.dataset.pay; if (T.pay === 'before' && T.pk === 'pay') T.pk = 'result'; render(); }));
+      box.querySelectorAll('[data-psort]').forEach(th => th.addEventListener('click', () => { const k = th.dataset.psort; T.pd = T.pk === k ? -T.pd : (k === 'fee' ? -1 : 1); T.pk = k; render(); }));
       box.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { T.tier = b.dataset.tier; render(); }));
       box.querySelector('.tr-campus').addEventListener('change', e => { T.campus = e.target.value; render(); });
       box.querySelector('.tr-q').addEventListener('input', e => { T.q = e.target.value; render(); const i = box.querySelector('.tr-q'); i.focus(); i.setSelectionRange(T.q.length, T.q.length); });
-      box.querySelector('.tr-copy').addEventListener('click', e => {
+      const copyBtn = box.querySelector('.tr-copy');
+      if (copyBtn) copyBtn.addEventListener('click', e => {
         const lines = ['Transport documents: expired or due within 30 days (' + fmt(now.toISOString().slice(0, 10)) + ')'];
         campuses.forEach(c => {
           const per = {};
