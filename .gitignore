@@ -2,4 +2,3 @@
 # Transport: generated files carry driver names, employee codes, salaries and fees; repo is public
 transport/master_bus_table.csv
 transport/master_flags.txt
-apps-script/coordinator-transport-data.gs
