@@ -81,10 +81,21 @@ function coordTransportWriteTab_(ss, name, header, rows) {
   sh.setFrozenRows(1);
 }
 
+// Trimmed on both sides: a pasted Script property often carries a trailing newline.
+function coordTransportSecretOk_(given) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  return !!secret && String(given || '').trim() === secret;
+}
+
+/** POST action=transportpushcheck {secret}: says whether this deployment has the push code, whether the Script property is set and whether the secret matches. Changes nothing. */
+function coordTransportPushCheck_(body) {
+  const set = !!String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  return { success: true, pushCode: true, secretConfigured: set, secretMatches: coordTransportSecretOk_(body.secret) };
+}
+
 /** POST action=transportpush {secret, payload:{syncedAt, warnings, fleet:[...]}} from transport/export_fleet.py. No ID token: the shared secret is the gate. */
 function coordTransportPush_(body) {
-  const secret = PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET');
-  if (!secret || String(body.secret || '') !== secret) return { success: false, error: 'Not authorized' };
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
   const p = body.payload;
   if (!p || !Array.isArray(p.fleet) || p.fleet.length < COORD_TRANSPORT_MIN_FLEET || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(String(p.syncedAt))) {
     return { success: false, error: 'Payload rejected: expected syncedAt and at least ' + COORD_TRANSPORT_MIN_FLEET + ' vehicles' };
