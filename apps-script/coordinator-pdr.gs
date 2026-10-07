@@ -15,6 +15,8 @@ const COORD_PDR_SHEET_ID = '1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y';
 const COORD_PDR_TAB = 'Daily Reports';
 const COORD_PDR_TAGS_TAB = 'LM Studio Tags';
 const COORD_PDR_REAL_FROM = '2026-09-23';
+const COORD_FEES_SHEET_ID = '1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4'; // "LMCS Fee Defaulter Emails", written daily by the UK Data Sync Apps Script project (fee-mail-capture.gs)
+const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', NerChowk: 'LMS4', Sayoli: 'LMS5', Jogindernagar: 'LMS6' }; // campus name in the email subject -> id
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
 
@@ -49,7 +51,9 @@ function coordPdr_(caller) {
       issues.push({ id: r[0], campus: r[1], type: r[2], subject: r[3], first: r[4], last: r[5], count: +r[6], needsAction: r[7] === 'yes', items: JSON.parse(r[8] || '[]') });
     });
   }
-  return { success: true, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+  let fees = null;
+  try { fees = coordFees_(ok); } catch (e) { fees = { error: e.message, series: [] }; } // a fee-sheet problem must not blank the rest of the page
+  return { success: true, fees: fees, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */
@@ -80,4 +84,20 @@ function coordPdrPush_(body) {
       body.issues.map(function (i) { return [i.id, i.campus, i.type, i.subject, i.first, i.last, i.count, i.needsAction ? 'yes' : 'no', JSON.stringify(i.items), now]; }));
   } finally { lock.releaseLock(); }
   return { success: true, issues: body.issues.length, history: body.history.length };
+}
+
+/** Daily fee figures per campus, read from the body text of the CSM "Defaulters Followup Summary" emails the capture script saved.
+ *  series rows: [date, campus id, fees received that day, follow-ups logged that day, total outstanding defaulter amount]. */
+function coordFees_(ok) {
+  const sh = SpreadsheetApp.openById(COORD_FEES_SHEET_ID).getSheetByName('Emails');
+  const num = function (m) { return m ? parseInt(String(m[1]).replace(/[^\d]/g, ''), 10) || 0 : 0; };
+  const series = [];
+  if (sh && sh.getLastRow() > 1) sh.getDataRange().getDisplayValues().slice(1).forEach(function (r) {
+    const campus = COORD_FEES_CAMPUS[r[1]];
+    if (!campus || !ok(campus) || !r[0]) return;
+    const b = r[4];
+    series.push([r[0], campus, num(b.match(/Total Fees Received Today\*?\s*:\s*\**\u20B9?([\d,]+)/)), num(b.match(/Total Followups Done Today\s*:\*?\s*\**(\d+)/)), num(b.match(/Outstanding Fee Defaulter Amount\s*:\s*\**\u20B9?([\d,]+)/))]);
+  });
+  series.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+  return { series: series };
 }
