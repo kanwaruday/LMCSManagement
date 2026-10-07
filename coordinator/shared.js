@@ -55,22 +55,42 @@ window.Coord = (function () {
   // ── Follow-ups ────────────────────────────────────────────────────
   // body: element; opts: {dept (a department name, or null for everything), title, sub}
   function tasksView(body, opts) {
-    body.innerHTML = '<h2 class="pagetitle">' + esc(opts.title) + '</h2><p class="pagesub">' + esc(opts.sub || '') + '</p><div class="task-list"></div>';
+    let view = 'urgency', all = [];
+    body.innerHTML = '<h2 class="pagetitle">' + esc(opts.title) + '</h2><p class="pagesub">' + esc(opts.sub || '') + '</p>' +
+      '<div class="ctl"><span class="seg"><button data-v="urgency" class="on">By urgency</button><button data-v="school">By school</button></span></div><div class="task-list"></div>';
     const list = body.querySelector('.task-list');
+    body.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
+      view = b.dataset.v;
+      body.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b));
+      render();
+    }));
+    const me = () => (SESSION.email || '').toLowerCase();
+    const card = t =>
+      '<div class="task ' + esc(t.severity) + '"><div>' +
+        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me() ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + esc(t.title) + '</div>' +
+        '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
+      '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>';
+
+    function render() {
+      if (!all.length) { list.innerHTML = '<div class="status">Nothing to follow up on here right now.</div>'; return; }
+      if (view === 'school') {
+        // the same follow-ups, grouped under the school they belong to (LMS1..LMS6 first, anything without a school last)
+        const groups = {};
+        all.forEach(t => { (groups[t.campus || ''] = groups[t.campus || ''] || []).push(t); });
+        const order = Object.keys(groups).sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, undefined, { numeric: true }));
+        list.innerHTML = order.map(c => {
+          const g = groups[c], hot = g.filter(t => t.severity === 'high').length;
+          return '<h3 style="font-size:14px;margin:22px 0 8px">' + esc(c || 'No school') + ' <span class="sm" style="font-weight:400">' + g.length + ' follow-up' + (g.length > 1 ? 's' : '') + (hot ? ', ' + hot + ' high' : '') + '</span></h3>' + g.map(card).join('');
+        }).join('');
+      } else list.innerHTML = all.map(card).join('');
+      list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolve(b.dataset.id, b)));
+    }
 
     async function load() {
       list.innerHTML = '<div class="status">Loading follow-ups...</div>';
       try {
-        const me = (SESSION.email || '').toLowerCase();
-        const tasks = (await api({ action: 'coordinatortasks' })).tasks.filter(t => !opts.dept || t.department === opts.dept).sort((a, b) => (b.assignee === me) - (a.assignee === me)); // what is assigned to you first
-        if (!tasks.length) { list.innerHTML = '<div class="status">Nothing to follow up on here right now.</div>'; return; }
-        list.innerHTML = tasks.map(t =>
-          '<div class="task ' + esc(t.severity) + '"><div>' +
-            '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + esc(t.title) + '</div>' +
-            '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
-          '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>'
-        ).join('');
-        list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolve(b.dataset.id, b)));
+        all = (await api({ action: 'coordinatortasks' })).tasks.filter(t => !opts.dept || t.department === opts.dept).sort((a, b) => (b.assignee === me()) - (a.assignee === me())); // what is assigned to you first
+        render();
       } catch (err) {
         list.innerHTML = '<div class="status">Could not load follow-ups: ' + esc(err.message) + ' <button class="btn retry">Retry</button></div>';
         list.querySelector('.retry').addEventListener('click', load);
