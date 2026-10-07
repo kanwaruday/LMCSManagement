@@ -48,7 +48,7 @@ function coordTransportDate_(v, tz) {
 
 /** {docs: {'REG|type': 'yyyy-MM-dd'}, links: {'REG|type': url of the uploaded certificate}, regs, rows}: newest valid-till per bus and document in the form responses. */
 function coordTransportLive_() {
-  const hit = coordCacheGetBig_('coord_transport_live');
+  const hit = coordCacheGetBig_('coord_transport_live_v2');
   if (hit) return hit;
   const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
   const sh = ss.getSheets().filter(function (s) { return s.getSheetId() === COORD_TRANSPORT_FORM_GID; })[0];
@@ -66,7 +66,7 @@ function coordTransportLive_() {
     if (!docs[k] || date > docs[k]) { docs[k] = date; links[k] = url; } else if (date === docs[k] && !links[k]) links[k] = url;
   }
   const live = { docs: docs, links: links, regs: Object.keys(regs), rows: rows.length - 1 };
-  coordCachePutBig_('coord_transport_live', live, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
+  coordCachePutBig_('coord_transport_live_v2', live, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return live;
 }
 
@@ -164,11 +164,12 @@ function coordTransportBase_() {
 /** The fleet with each document resolved to {date, src, link, unread}: the form if it is at least as new as the scan-read date, else the scan. */
 function coordTransportFleet_() {
   const base = coordTransportBase_(), live = coordTransportLive_();
+  const formDocs = live.docs || {}, formLinks = live.links || {}; // tolerate an entry cached in an older shape
   const fleet = base.fleet.map(function (b) {
     const docs = {};
     COORD_TRANSPORT_DOCS.forEach(function (d) {
-      const sc = (b.docs || {})[d[0]], l = live.docs[b.reg + '|' + d[0]] || '';
-      const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: live.links[b.reg + '|' + d[0]] || '' }
+      const sc = (b.docs || {})[d[0]], l = formDocs[b.reg + '|' + d[0]] || '';
+      const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: formLinks[b.reg + '|' + d[0]] || '' }
         : sc ? { date: sc.date, src: sc.src || 'drive', link: sc.link, na: !!sc.na, note: sc.note || '' } : { date: '', src: '', link: '' };
       // scans of this type whose date LM Studio could not read; one of them may be the renewal
       doc.unread = (b.unreadable || []).filter(function (u) { return u.key === d[0]; }).map(function (u) { return { file: u.file, link: u.link }; });
@@ -180,7 +181,7 @@ function coordTransportFleet_() {
   });
   const known = {};
   base.fleet.forEach(function (b) { known[b.reg] = true; });
-  return { fleet: fleet, base: base, live: live, unknown: live.regs.filter(function (r) { return !known[r]; }) };
+  return { fleet: fleet, base: base, live: live, unknown: (live.regs || []).filter(function (r) { return !known[r]; }) };
 }
 
 // 'na' | 'expired' | 'check' (a scan exists but no date could be read) | 'missing' | 'due' (within the soon window) | 'ok'
