@@ -17,7 +17,7 @@ window.Coord = (function () {
     { name: 'Events & House System', page: 'events', desc: 'Events, trips, invitations and calendar approvals.' },
     { name: 'Transport', page: 'transport', live: true, desc: 'Bus document compliance: insurance, fitness, MV tax, pollution, route permit and speed governor.' },
     { name: 'Student Life', page: null, desc: 'Student welfare and incidents.' },
-    { name: 'Systems', page: null, desc: 'IT and systems follow-ups.' },
+    { name: 'Systems', page: 'systems', live: true, desc: 'Principals\' daily report analysis: who reported, what they flagged, and register checks.' },
   ];
   // Paths are relative to coordinator/<page>/, i.e. two levels below the repo root.
   const WORK_LINKS = {
@@ -172,6 +172,72 @@ window.Coord = (function () {
         AC.sortKey = k; render();
       }));
       box.querySelectorAll('tr.row').forEach(tr => tr.addEventListener('click', () => { AC.open = AC.open === tr.dataset.key ? null : tr.dataset.key; render(); }));
+    }
+    load();
+  }
+
+  // ── Document compliance: every scan, and every gap ────────────────
+  function documentsView(body) {
+    const D = { campus: '', status: 'all', q: '', sortKey: 'missing', sortDir: -1, data: null };
+    body.innerHTML = '<h2 class="pagetitle">Document compliance</h2><p class="pagesub">Every uploaded document with its scanned link, and what is still missing, for each active employee.</p><div class="doc-body"></div>';
+    const box = body.querySelector('.doc-body');
+
+    async function load() {
+      box.innerHTML = '<div class="status">Loading documents (the first load can take a few seconds)...</div>';
+      try { D.data = await api({ action: 'coordinatordocuments' }); render(); }
+      catch (err) {
+        box.innerHTML = '<div class="status">Could not load documents: ' + esc(err.message) + ' <button class="btn doc-retry">Retry</button></div>';
+        box.querySelector('.doc-retry').addEventListener('click', load);
+      }
+    }
+
+    const links = urls => urls.map((u, i) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (i ? '#' + (i + 1) : 'View') + '</a>').join(' ');
+
+    function render() {
+      const d = D.data, req = d.required;
+      const all = d.employees;
+      const state = e => e.missing.length === 0 ? 'complete' : (e.missing.length === req.length ? 'nothing' : 'partial');
+      const tiles = { total: all.length, complete: all.filter(e => state(e) === 'complete').length,
+        partial: all.filter(e => state(e) === 'partial').length, nothing: all.filter(e => state(e) === 'nothing').length };
+      const campuses = Array.from(new Set(all.map(e => e.campus))).sort();
+      const rows = all.filter(e => (!D.campus || e.campus === D.campus) && (D.status === 'all' || (D.status === 'missing' ? e.missing.length : state(e) === D.status)) &&
+        (!D.q || (e.name + ' ' + e.code).toLowerCase().indexOf(D.q.toLowerCase()) !== -1));
+      const val = e => D.sortKey === 'missing' ? e.missing.length : (D.sortKey === 'name' ? e.name.toLowerCase() : e.campus);
+      rows.sort((a, b) => { const x = val(a), y = val(b); return ((x > y ? 1 : x < y ? -1 : 0) * D.sortDir) || a.name.localeCompare(b.name); });
+      const head = (key, label) => '<th data-sort="' + key + '">' + label + (D.sortKey === key ? (D.sortDir < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+
+      let html = '<div class="tiles">' +
+        '<div class="tile"><b>' + tiles.total + '</b>active employees</div><div class="tile"><b>' + tiles.complete + '</b>have every required document</div>' +
+        '<div class="tile warn"><b>' + tiles.partial + '</b>missing some</div><div class="tile bad"><b>' + tiles.nothing + '</b>nothing uploaded</div></div>' +
+        '<div class="ctl"><select class="doc-campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (D.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
+        '<span class="seg">' + [['all', 'All'], ['missing', 'Missing something'], ['complete', 'Complete'], ['nothing', 'Nothing uploaded']].map(x =>
+          '<button data-status="' + x[0] + '" class="' + (D.status === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
+        '<input class="doc-q" placeholder="Search name or code" value="' + esc(D.q) + '"></div>' +
+        '<div class="note">' + rows.length + ' employees. Required (the Hiring Dashboard\'s bar for every new hire): ' + esc(req.join(', ')) +
+        '; a qualification slot is met by any one of Bachelors, Master, Professional degree or Highest qualification. Uploads are matched to people by the Employee ID typed on the form; where someone uploaded twice, the newest file is first. Generated ' + esc((d.generated || '').slice(0, 16).replace('T', ' ')) + ' UTC.' +
+        (d.noTab && d.noTab.length ? ' ' + esc(d.noTab.join(', ')) + ' has staff but no upload tab, so everyone there shows as missing.' : '') +
+        (d.missingTabs && d.missingTabs.length ? ' <b>Tab not found in the responses workbook: ' + esc(d.missingTabs.join(', ')) + '.</b>' : '') + '</div>' +
+        '<div class="tw"><table><thead><tr>' + head('name', 'Employee') + head('campus', 'Campus') + head('missing', 'Missing') + req.map(r => '<th>' + esc(r) + '</th>').join('') + '<th>Other documents</th></tr></thead><tbody>';
+      rows.forEach(e => {
+        html += '<tr><td>' + esc(e.name) + '<div class="sm">' + esc(e.code) + '</div></td><td>' + esc(e.campus) + '</td><td>' + (e.missing.length ? '<span class="miss">' + e.missing.length + ' of ' + req.length + '</span>' : '<span class="okc">none</span>') + '</td>' +
+          req.map(r => '<td>' + (e.required[r].length ? '<span class="okc">' + links(e.required[r]) + '</span>' : '<span class="miss">Missing</span>') + '</td>').join('') +
+          '<td class="wrap">' + (Object.keys(e.other).map(t => esc(t) + ' ' + links(e.other[t])).join('<br>') || '<span class="sm">-</span>') + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      const un = d.unlinked;
+      html += '<h3 class="pagetitle" style="margin-top:22px">Uploads not linked to an employee (' + un.length + ')</h3>' +
+        '<p class="pagesub">Form submissions with a blank or unrecognised Employee ID. Fix the ID in the responses sheet and they will attach to the right person.</p>' +
+        (un.length ? '<div class="tw"><table><thead><tr><th>Campus</th><th>Name typed</th><th>ID typed</th><th>Submitted</th><th>Files</th><th>Types</th></tr></thead><tbody>' +
+          un.map(u => '<tr><td>' + esc(u.campus) + '</td><td>' + esc(u.name || '(blank)') + '</td><td>' + esc(u.id || '(blank)') + '</td><td>' + esc((u.timestamp || '').slice(0, 10)) + '</td><td>' + u.files + '</td><td class="wrap">' + esc(u.types.join(', ')) + '</td></tr>').join('') + '</tbody></table></div>'
+          : '<div class="status">None.</div>');
+      box.innerHTML = html;
+
+      box.querySelector('.doc-campus').addEventListener('change', e => { D.campus = e.target.value; render(); });
+      box.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => { D.status = b.dataset.status; render(); }));
+      box.querySelector('.doc-q').addEventListener('input', e => { D.q = e.target.value; render(); const i = box.querySelector('.doc-q'); i.focus(); i.setSelectionRange(D.q.length, D.q.length); });
+      box.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+        const k = th.dataset.sort; D.sortDir = D.sortKey === k ? -D.sortDir : (k === 'missing' ? -1 : 1); D.sortKey = k; render();
+      }));
     }
     load();
   }
@@ -338,5 +404,83 @@ window.Coord = (function () {
     load();
   }
 
-  return { boot, tasksView, academicsView, transportView, counts, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse };
+  // ── Systems: principals' daily report analysis ────────────────────
+  function pdrView(body) {
+    const P = { tab: 'compliance', topic: '', act: false, campus: '', data: null };
+    body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what they flagged, and which registers get checked. Coordinator view only.</p><div class="pd-body"></div>';
+    const box = body.querySelector('.pd-body');
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const fmt = iso => +iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1];
+    const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+
+    async function load() {
+      box.innerHTML = '<div class="status">Loading the principals\' reports...</div>';
+      try { P.data = await api({ action: 'coordinatorpdr' }); render(); }
+      catch (err) {
+        box.innerHTML = '<div class="status">Could not load the reports: ' + esc(err.message) + ' <button class="btn pd-retry">Retry</button></div>';
+        box.querySelector('.pd-retry').addEventListener('click', load);
+      }
+    }
+
+    function render() {
+      const d = P.data, reps = d.reports, tags = d.tags;
+      const camps = CAMPUSES.filter(c => reps.some(r => r.campus === c));
+      // ponytail: a day counts as a reporting day when any campus reported and it is not a Sunday; a campus closed on its own
+      // (no school calendar here) shows as missed. Add the school calendar if that becomes noisy.
+      const days = [...new Set(reps.map(r => r.date))].filter(x => new Date(x + 'T00:00:00').getDay() !== 0).sort();
+      const has = {}; reps.forEach(r => { has[r.date + '|' + r.campus] = r; });
+      const msgs = reps.filter(r => r.message.trim()).map(r => ({ r, t: tags[r.date + '|' + r.campus] || { topics: [], action: false, summary: '' } }))
+        .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.r.campus.localeCompare(b.r.campus));
+      const topics = [...new Set(msgs.flatMap(m => m.t.topics))].sort();
+      const untagged = msgs.filter(m => !m.t.topics.length).length;
+      const missed = c => days.filter(x => !has[x + '|' + c]).length;
+      const last = days.slice(-14);
+
+      let html = '<div class="tiles"><div class="tile"><b>' + days.length + '</b>reporting days since ' + (days.length ? fmt(days[0]) : '-') + '</div>' +
+        '<div class="tile"><b>' + Math.round(100 * reps.length / (days.length * camps.length || 1)) + '%</b>of expected reports filed</div>' +
+        '<div class="tile ' + (msgs.some(m => m.t.action) ? 'warn' : '') + '"><b>' + msgs.filter(m => m.t.action).length + '</b>messages that need action</div>' +
+        '<div class="tile"><b>' + msgs.length + '</b>messages in all</div></div>' +
+        '<div class="ctl"><span class="seg">' + [['compliance', 'Who reported'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+          '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
+
+      if (P.tab === 'compliance') {
+        html += '<div class="note">Last ' + last.length + ' reporting days. A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed. Reports before 23 Sep were form testing and are left out.</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Campus</th>' + last.map(x => '<th>' + fmt(x) + '</th>').join('') + '<th>Missed (all)</th></tr></thead><tbody>' +
+          camps.map(c => '<tr><td><b>' + c + '</b></td>' + last.map(x => has[x + '|' + c] ? '<td>&#10003;</td>' : '<td class="dt expired">-</td>').join('') + '<td class="' + (missed(c) > days.length / 4 ? 'miss' : '') + '">' + missed(c) + ' of ' + days.length + '</td></tr>').join('') +
+          '</tbody></table></div>';
+      } else if (P.tab === 'messages') {
+        const shown = msgs.filter(m => (!P.topic || m.t.topics.indexOf(P.topic) !== -1) && (!P.act || m.t.action) && (!P.campus || m.r.campus === P.campus));
+        html += '<div class="note">Topics and the one-line summary are tagged by the local model (refreshed when the Mac syncs' + (d.taggedAt ? '; last ' + esc(d.taggedAt.slice(0, 10)) : '') + '); the principal\'s own words are in the last column. ' +
+          (untagged ? untagged + ' newer message' + (untagged > 1 ? 's are' : ' is') + ' not tagged yet.' : '') + '</div>' +
+          '<div class="ctl"><select class="pd-campus"><option value="">All campuses</option>' + camps.map(c => '<option' + (P.campus === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>' +
+          '<select class="pd-topic"><option value="">All topics</option>' + topics.map(t => '<option' + (P.topic === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select>' +
+          '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label></div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Campus</th><th>Topics</th><th>Summary</th><th>Principal wrote</th></tr></thead><tbody>' +
+          (shown.map(m => '<tr><td>' + fmt(m.r.date) + '</td><td>' + m.r.campus + '</td><td>' + (m.t.action ? '<span class="miss">Action</span> ' : '') + esc(m.t.topics.join(', ')) + '</td><td>' + esc(m.t.summary) + '</td><td class="sm">' + esc(m.r.message) + '</td></tr>').join('') || '<tr><td colspan="5">Nothing matches.</td></tr>') +
+          '</tbody></table></div>';
+      } else if (P.tab === 'registers') {
+        const all = {}; reps.forEach(r => r.registers.split(/,\s*/).filter(Boolean).forEach(x => { all[x] = (all[x] || 0) + 1; }));
+        const names = Object.keys(all).sort((a, b) => all[b] - all[a]);
+        const n = {}; camps.forEach(c => { n[c] = reps.filter(r => r.campus === c).length; });
+        const pct = (x, c) => n[c] ? Math.round(100 * reps.filter(r => r.campus === c && r.registers.split(/,\s*/).indexOf(x) !== -1).length / n[c]) : 0;
+        html += '<div class="note">Share of each campus\'s reports in which the principal ticked the register as crosschecked. The list is every register seen in any report, so one nobody has ever ticked cannot appear.</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Register</th>' + camps.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>' +
+          '<tr><td class="sm">Reports filed</td>' + camps.map(c => '<td class="sm">' + n[c] + '</td>').join('') + '</tr>' +
+          names.map(x => '<tr><td>' + esc(x) + '</td>' + camps.map(c => { const p = pct(x, c); return '<td class="dt ' + (p === 0 ? 'expired' : p < 25 ? 'soon' : '') + '">' + p + '%</td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+      } else {
+        html += '<div class="note">How often the morning assembly mark is filled, and the average when it is. Many reports carry only a class or house with no mark, and some principals type the mark into the class/house box.</div>' +
+          '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Reports</th><th>With a mark</th><th>Average mark</th><th>Class/house given</th></tr></thead><tbody>' +
+          camps.map(c => { const rs = reps.filter(r => r.campus === c), m = rs.filter(r => r.maScore !== '' && !isNaN(+r.maScore)); return '<tr><td><b>' + c + '</b></td><td>' + rs.length + '</td><td class="' + (m.length < rs.length / 2 ? 'miss' : '') + '">' + m.length + '</td><td>' + (m.length ? (m.reduce((s, r) => s + +r.maScore, 0) / m.length).toFixed(1) : '-') + '</td><td class="sm">' + esc([...new Set(rs.map(r => r.maClass).filter(Boolean))].join(', ')) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      }
+      box.innerHTML = html;
+      box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { P.tab = b.dataset.tab; render(); }));
+      const on = (sel, ev, fn) => { const el = box.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+      on('.pd-campus', 'change', e => { P.campus = e.target.value; render(); });
+      on('.pd-topic', 'change', e => { P.topic = e.target.value; render(); });
+      on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
+    }
+    load();
+  }
+
+  return { boot, tasksView, academicsView, documentsView, transportView, pdrView, counts, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse };
 })();

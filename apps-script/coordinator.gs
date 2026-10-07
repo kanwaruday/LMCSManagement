@@ -16,6 +16,7 @@
 // and document compliance (Employee Master workbook, read-only). Transport has a page but no adapter (coordinator-transport.gs).
 //
 // Actions: GET action=coordinatortasks, GET action=coordinatoracademics (CW/HW tag analysis),
+// GET action=coordinatordocuments (document compliance page),
 // GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
@@ -97,6 +98,31 @@ const COORD_VERIFY_MEDIUM_FILES = 5; // files awaiting verification at one campu
 const COORD_VERIFY_HIGH_FILES = 15;  // ... -> high
 const COORD_DOCS_REFRESH_CACHE_SECONDS = 600;
 
+// Document compliance PAGE (coordinatordocuments): every uploaded scan and every missing required document,
+// per employee. Reads the consolidated "Staff Document Submission" responses workbook directly (one tab per campus;
+// same workbook staff-management-api.gs's RESPONSE_WORKBOOK_ID_ points at), not the 8-type Certificate Links tab.
+const COORD_DOCS_WORKBOOK_ID = '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg';
+const COORD_DOCS_TABS = ['LMS 1', 'LMS 2', 'LMS 3', 'LMS 4', 'LMS 5', 'LMS 6'];
+// Response-sheet header -> document type. The sheet repeats its document columns (teacher form and non-teacher form), so
+// several headers map to one type and a type counts as uploaded if ANY of them holds a link. First match wins.
+const COORD_DOCS_TYPE_RULES = [
+  [/SIGNED JOB ROLE/, 'Signed job roles'], [/SERVICE CONTRACT/, 'Service contract'],
+  [/BIODATA/, 'Bio-Data'], [/HIRING SLIP/, 'Hiring Slip'],
+  [/CLASS 10/, 'Class 10 result'], [/CLASS 12/, 'Class 12 result'],
+  [/BACHELOR/, 'Bachelors certificate'], [/MASTER CERT/, 'Master certificate'],
+  [/PROFESSIONAL DEGREE/, 'Professional degree'], [/HIGHEST QUALIFICATION/, 'Highest qualification'],
+  [/PAN CARD/, 'PAN card'], [/AADHAR/, 'Aadhar card'], [/CANCELLED CHEQUE|BANK COPY/, 'Bank / cancelled cheque'],
+  [/POLICE VERIFICATION|CHARACTER CERT/, 'Police verification'], [/MEDICAL CERT/, 'Medical certificate'],
+  [/TET DOCUMENT/, 'TET document'], [/EXPERIENCE CERT/, 'Experience certificate'],
+  [/LAST SALARY/, 'Last salary certificate'], [/DRIVING LICEN/, 'Driving licence'],
+];
+// Required = what the Hiring Dashboard already insists on for every new hire (hiring.gs HIR_REQUIRED_DOC_KEYWORDS);
+// the qualification slot is met by any one of the four qualification types.
+const COORD_DOCS_QUALIFICATION = ['Bachelors certificate', 'Master certificate', 'Professional degree', 'Highest qualification'];
+const COORD_DOCS_REQUIRED = ['Bio-Data', 'Hiring Slip', 'PAN card', 'Aadhar card', 'Bank / cancelled cheque',
+  'Qualification certificate', 'Police verification', 'Medical certificate'];
+const COORD_DOCS_PAGE_CACHE_SECONDS = 600;
+
 // Academics (CW/HW tag analysis). The public CW/HW feed is ~14 MB, so it is fetched, reduced to
 // a per-teacher table and cached (gzipped) -- the page never downloads the raw feed.
 const COORD_CWHW_URL = 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec'; // same feed the Teacher portal reads
@@ -115,7 +141,9 @@ function doGet(e) {
     const action = String(e.parameter.action || '').toLowerCase();
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
+    if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
     if (action === 'coordinatortransport') return coordJson_(coordTransport_(caller));
+    if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -128,6 +156,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
+    if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     const caller = coordVerifyCaller_(body.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
@@ -638,6 +667,113 @@ function coordAcademics_(caller, win) {
   return {
     success: true, window: win, generated: all.generated, ayStart: all.ayStart, tags: w.tags,
     teachers: w.teachers.filter(function (t) { return !visible || visible.indexOf(t.campus) !== -1; }),
+  };
+}
+
+// ── Document compliance page: per-employee scans and gaps ──
+function coordDocType_(header) {
+  const h = String(header || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < COORD_DOCS_TYPE_RULES.length; i++) if (COORD_DOCS_TYPE_RULES[i][0].test(h)) return COORD_DOCS_TYPE_RULES[i][1];
+  return '';
+}
+
+function coordLinks_(cell) { return String(cell == null ? '' : cell).match(/https?:\/\/[^\s,;]+/g) || []; }
+
+/** empRows/salaryRows include their header row; responses = {'LMS1': rows incl. header, ...} (campus ids, no space).
+ *  Returns {employees:[{code, name, campus, required:{label:[urls]}, other:{type:[urls]}, missing:[labels]}],
+ *  unlinked:[{campus, name, id, timestamp, types:[...], files}], required:[labels], noTab:[campuses with active staff but no tab]}.
+ *  An employee is matched to uploads by the typed Employee ID; newest submission's links come first. */
+function coordDocumentMatrix_(empRows, salaryRows, responses) {
+  const dept = {};
+  const sCode = salaryRows[0].indexOf('EmployeeCode'), sDept = salaryRows[0].indexOf('Department');
+  for (let i = 1; i < salaryRows.length && sCode !== -1 && sDept !== -1; i++) dept[String(salaryRows[i][sCode] || '').trim()] = String(salaryRows[i][sDept] || '').trim().toLowerCase();
+
+  const eCode = empRows[0].indexOf('EmployeeCode'), eName = empRows[0].indexOf('Name'), eSchool = empRows[0].indexOf('SchoolCode'), eStatus = empRows[0].indexOf('Status');
+  const allCodes = {}, active = [];
+  for (let i = 1; i < empRows.length; i++) {
+    const r = empRows[i], code = String(r[eCode] || '').trim();
+    if (!code) continue;
+    allCodes[code.toUpperCase()] = true;
+    const status = eStatus >= 0 ? String(r[eStatus] || '').trim() : '';
+    if (status && status !== 'Active') continue;
+    if (COORD_DOC_HIDDEN_DEPARTMENTS.indexOf(dept[code] || '') !== -1) continue;
+    active.push({ code: code, name: String(r[eName] || code).trim(), campus: String(r[eSchool] || '').trim().toUpperCase() });
+  }
+
+  const byCode = {}, unlinked = [];
+  Object.keys(responses).forEach(function (campus) {
+    const rows = responses[campus];
+    if (!rows || rows.length < 2) return;
+    const head = rows[0], iId = head.indexOf('Employee ID'), iName = head.indexOf('Employee Name'), iTs = head.indexOf('Timestamp');
+    if (iId === -1) return;
+    const typeOf = head.map(coordDocType_);
+    const sorted = rows.slice(1).sort(function (a, b) { return (new Date(b[iTs]).getTime() || 0) - (new Date(a[iTs]).getTime() || 0); }); // newest first
+    sorted.forEach(function (r) {
+      const id = String(r[iId] || '').trim().toUpperCase();
+      const docs = {};
+      typeOf.forEach(function (t, c) {
+        if (!t) return;
+        coordLinks_(r[c]).forEach(function (u) { (docs[t] = docs[t] || []).indexOf(u) === -1 && docs[t].push(u); });
+      });
+      const types = Object.keys(docs);
+      if (!types.length) return;
+      if (id && allCodes[id]) {
+        const e = byCode[id] = byCode[id] || {};
+        types.forEach(function (t) { e[t] = e[t] || []; docs[t].forEach(function (u) { if (e[t].indexOf(u) === -1) e[t].push(u); }); });
+      } else {
+        const ts = new Date(r[iTs]);
+        unlinked.push({ campus: campus, name: String(r[iName] || '').trim(), id: String(r[iId] || '').trim(),
+          timestamp: isNaN(ts.getTime()) ? '' : ts.toISOString(), types: types, files: types.reduce(function (n, t) { return n + docs[t].length; }, 0) });
+      }
+    });
+  });
+
+  const employees = active.map(function (a) {
+    const have = byCode[a.code.toUpperCase()] || {};
+    const required = {}, other = {}, missing = [];
+    COORD_DOCS_REQUIRED.forEach(function (label) {
+      let links = [];
+      if (label === 'Qualification certificate') COORD_DOCS_QUALIFICATION.forEach(function (t) { links = links.concat(have[t] || []); });
+      else links = have[label] || [];
+      required[label] = links;
+      if (!links.length) missing.push(label);
+    });
+    Object.keys(have).forEach(function (t) {
+      if (COORD_DOCS_REQUIRED.indexOf(t) === -1 && COORD_DOCS_QUALIFICATION.indexOf(t) === -1) other[t] = have[t];
+    });
+    return { code: a.code, name: a.name, campus: a.campus, required: required, other: other, missing: missing };
+  });
+  const tabbed = {};
+  Object.keys(responses).forEach(function (c) { tabbed[c] = true; });
+  const noTab = [];
+  active.forEach(function (a) { if (!tabbed[a.campus] && noTab.indexOf(a.campus) === -1) noTab.push(a.campus); });
+  return { employees: employees, unlinked: unlinked, required: COORD_DOCS_REQUIRED, noTab: noTab };
+}
+
+// action=coordinatordocuments
+function coordDocuments_(caller) {
+  let all = coordCacheGetBig_('coord_docpage');
+  if (!all) {
+    const wb = SpreadsheetApp.openById(COORD_DOCS_WORKBOOK_ID);
+    const responses = {};
+    COORD_DOCS_TABS.forEach(function (tab) {
+      const sh = wb.getSheetByName(tab);
+      if (sh) responses[tab.replace(/\s+/g, '')] = sh.getDataRange().getValues();
+    });
+    const ss = SpreadsheetApp.openById(COORD_ROSTER_SHEET_ID);
+    const emp = ss.getSheetByName('EmpMaster').getDataRange().getValues();
+    if (emp.length < 2) throw new Error('Employee Master looks empty');
+    all = coordDocumentMatrix_(emp, ss.getSheetByName('EmpSalary').getDataRange().getValues(), responses);
+    all.generated = new Date().toISOString();
+    all.missingTabs = COORD_DOCS_TABS.filter(function (t) { return !responses[t.replace(/\s+/g, '')]; });
+    coordCachePutBig_('coord_docpage', all, COORD_DOCS_PAGE_CACHE_SECONDS);
+  }
+  const visible = coordVisibleCampuses_(caller);
+  const ok = function (c) { return !visible || visible.indexOf(c) !== -1; };
+  return {
+    success: true, generated: all.generated, required: all.required, noTab: all.noTab, missingTabs: all.missingTabs,
+    employees: all.employees.filter(function (e) { return ok(e.campus); }),
+    unlinked: all.unlinked.filter(function (u) { return ok(u.campus); }),
   };
 }
 
