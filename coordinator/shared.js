@@ -428,7 +428,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', data: null };
+    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: '', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -538,12 +538,53 @@ window.Coord = (function () {
         (list.map(issueRow).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
       const byAge = (a, b) => (a.handled - b.handled) || (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
 
+      // Filters, sort and grouping shared by Today and Issues
+      const SORTS = { age: ['Longest open first', byAge], recent: ['Most recently mentioned', (a, b) => b.last.localeCompare(a.last) || byAge(a, b)],
+        repeat: ['Most repeated', (a, b) => b.count - a.count || byAge(a, b)], campus: ['School', (a, b) => a.campus.localeCompare(b.campus, undefined, { numeric: true }) || byAge(a, b)],
+        type: ['Type', (a, b) => a.type.localeCompare(b.type) || byAge(a, b)] };
+      const sel = (cls, label, opts, cur) => '<select class="' + cls + '"><option value="">' + label + '</option>' + opts.map(o => '<option' + (Array.isArray(o) ? ' value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + esc(o[1]) : (cur === o ? ' selected' : '') + '>' + esc(o)) + '</option>').join('') + '</select>';
+      const filterBar = full => '<div class="ctl">' + sel('pd-campus', 'All schools', camps, P.campus) + sel('pd-itype', 'All types', issueTypes, P.itype) +
+        (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not yet handled</option></select>' +
+        '<label>Sort <select class="pd-sort">' + Object.keys(SORTS).map(k => '<option value="' + k + '"' + (P.sort === k ? ' selected' : '') + '>' + SORTS[k][0] + '</option>').join('') + '</select></label>' +
+        '<label>Group by <select class="pd-group"><option value="">Nothing</option><option value="campus"' + (P.group === 'campus' ? ' selected' : '') + '>School</option><option value="type"' + (P.group === 'type' ? ' selected' : '') + '>Type</option></select></label>' +
+        (full ? '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> ' : '') + '<label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>';
+      const applyFilters = (list, full) => list.filter(i => (!full || P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || i.needsAction) && (!P.repeat || i.count >= 3) &&
+        (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(SORTS[P.sort][1]);
+      const grouped = list => {
+        if (!list.length) return issueTable(list);
+        if (!P.group) return issueTable(list.slice(0, 150)) + (list.length > 150 ? '<div class="note">Showing the first 150 of ' + list.length + '. Narrow it with the filters above.</div>' : '');
+        const g = {}; list.forEach(i => { const k = P.group === 'campus' ? i.campus : i.type; (g[k] = g[k] || []).push(i); });
+        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + ', ' + g[k].filter(i => !i.handled).length + ' not yet handled</span></h3>' + issueTable(g[k])).join('');
+      };
+      // One day's reports (full text), loaded on request; the page itself only carries counts
+      const dayKey = P.day || lastDay;
+      let dayRep = P.days[dayKey];
+      if (P.tab === 'today' && dayKey && dayRep === undefined) {
+        P.days[dayKey] = dayRep = null; // null = loading
+        api({ action: 'coordinatorpdrday', date: dayKey }).then(r => { P.days[dayKey] = r.reports || []; render(); }).catch(err => { P.days[dayKey] = { error: err.message }; render(); });
+      }
+      const dayView = () => {
+        if (!dayKey) return '';
+        const i = days.indexOf(dayKey), prev = days.filter(x => x < dayKey).pop(), next = days.filter(x => x > dayKey)[0];
+        const doneC = camps.filter(c => has[dayKey + '|' + c]), silentC = camps.filter(c => !has[dayKey + '|' + c]);
+        const lines = t => esc(t).split(/;\s*/).filter(Boolean).join('<br>');
+        const field = (label, t) => t && String(t).trim() ? '<div style="margin-top:6px"><b>' + label + '</b><div>' + lines(t) + '</div></div>' : '';
+        const cards = Array.isArray(dayRep) ? dayRep.map(r => '<details class="pd-edit" open><summary><b>' + r.campus + '</b> <span class="sm">' + esc(r.principal.indexOf('users/') === 0 ? '' : r.principal.split('@')[0]) + (r.principal.indexOf('users/') === 0 ? '' : ' &middot; ') + esc(r.source) + (r.at ? ' &middot; ' + esc(r.at) : '') + '</span></summary><div style="padding:6px 0 10px 14px;font-size:12px">' +
+          field('Tasks completed', r.done) + field('Tasks for tomorrow', r.tomorrow) + field('Registers crosschecked', r.registers) + field('Important message', r.message) + (r.maClass || r.maScore ? field('Morning assembly', (r.maClass || '') + (r.maScore ? ', mark ' + r.maScore : '')) : '') + '</div></details>').join('') : '';
+        return '<h3 style="font-size:13px;margin:16px 0 6px">Reports for a day</h3><div class="ctl">' +
+          '<button class="btn pd-dprev"' + (prev ? '' : ' disabled') + '>&larr; ' + (prev ? fmt(prev) : '') + '</button><input type="date" class="pd-dayin" value="' + dayKey + '" min="' + (days[0] || '') + '" max="' + today + '">' +
+          '<button class="btn pd-dnext"' + (next ? '' : ' disabled') + '>' + (next ? fmt(next) : '') + ' &rarr;</button>' + (P.day && P.day !== lastDay ? '<button class="btn pd-dlatest">Latest day</button>' : '') +
+          '<span class="sm">' + fmt(dayKey) + (dayKey === today ? ' (today so far; reports come in through the day)' : '') + '</span></div>' +
+          (days.indexOf(dayKey) === -1 && !doneC.length ? '<p class="sm">No reports were filed on this day (a Sunday, a holiday, or before the first report).</p>' :
+            '<p>' + doneC.map(c => '<span class="pl later">&#10003; ' + c + '</span> ').join('') + silentC.map(c => '<span class="pl expired">' + c + ' did not report</span> ').join('') + '</p>' +
+            (dayRep === null ? '<div class="status">Loading the reports...</div>' : dayRep && dayRep.error ? '<div class="status">Could not load that day: ' + esc(dayRep.error) + '</div>' : cards || '<p class="sm">No report text on file for this day.</p>'));
+      };
+
       if (P.tab === 'today') {
-        const silent = lastDay ? camps.filter(c => !has[lastDay + '|' + c]) : [];
-        html += '<div class="note">' + sinceNote + ' An issue stays open while a principal keeps mentioning it, and goes quiet after ' + QUIET_DAYS + ' days without a mention.</div>' +
-          '<h3 style="font-size:13px;margin:16px 0 6px">Did not report on ' + (lastDay ? fmt(lastDay) : '-') + (lastDay === today ? ' (today so far; reports come in through the day)' : ' (latest reporting day)') + '</h3><p>' + (silent.length ? silent.map(c => '<span class="pl expired">' + c + '</span> ').join('') : 'All campuses reported.') + '</p>' +
-          '<h3 style="font-size:13px;margin:16px 0 6px">Open and needing action (' + openAct.length + ')</h3>' + issueTable(openAct.slice().sort(byAge).slice(0, 15)) +
-          (openAct.length > 15 ? '<div class="note">Showing the 15 oldest. The Issues tab has the rest.</div>' : '');
+        const list = applyFilters(openAct, false);
+        html += '<div class="note">' + sinceNote + ' An issue stays open while a principal keeps mentioning it, and goes quiet after ' + QUIET_DAYS + ' days without a mention.</div>' + dayView() +
+          '<h3 style="font-size:13px;margin:22px 0 6px">Open and needing action (' + list.length + (list.length !== openAct.length ? ' of ' + openAct.length : '') + ')</h3>' + filterBar(false) + grouped(list);
       } else if (P.tab === 'digest') {
         const inWk = iso => ago(iso) >= 1 && ago(iso) <= 7, inPrev = iso => ago(iso) >= 8 && ago(iso) <= 14; // completed days only: today's reports are still coming in
         const yday = (() => { const y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1); return y.getFullYear() + '-' + ('0' + (y.getMonth() + 1)).slice(-2) + '-' + ('0' + y.getDate()).slice(-2); })();
@@ -575,12 +616,9 @@ window.Coord = (function () {
             feeRows.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + lk(r.got) + '</td><td>' + lk(r.prev) + '</td><td>' + lk(r.out) + '</td><td>' + (r.vsEnd === null ? '-' : (r.vsEnd > 0 ? '+' : r.vsEnd < 0 ? '-' : '') + lk(Math.abs(r.vsEnd))) + '</td><td>' + r.fol + '</td></tr>').join('') + '</tbody></table></div>' : '');
         box.dataset.digest = txt.join('\n');
       } else if (P.tab === 'issues') {
-        const shown = issues.filter(i => (P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!P.act || i.needsAction) && (!P.repeat || i.count >= 3) && (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(byAge);
-        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice.</div>' +
-          '<div class="ctl"><select class="pd-campus"><option value="">All campuses</option>' + camps.map(c => '<option' + (P.campus === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>' +
-          '<select class="pd-itype"><option value="">All types</option>' + issueTypes.map(t => '<option' + (P.itype === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select>' +
-          '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
-          '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not yet handled</option></select> <label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> <label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>' + issueTable(shown);
+        const shown = applyFilters(issues, true);
+        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
+          filterBar(true) + grouped(shown);
       } else if (P.tab === 'compliance') {
         const mons = [...new Set(days.map(x => x.slice(0, 7)))];
         html += '<div class="note">Reports filed per month (Google Spaces group until 22 Sep, the form after). A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed.</div>' +
@@ -668,6 +706,12 @@ window.Coord = (function () {
       on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
       on('.pd-rep', 'change', e => { P.repeat = e.target.checked; render(); });
       on('.pd-whof', 'change', e => { P.who = e.target.value; render(); });
+      on('.pd-sort', 'change', e => { P.sort = e.target.value; render(); });
+      on('.pd-group', 'change', e => { P.group = e.target.value; render(); });
+      on('.pd-dayin', 'change', e => { P.day = e.target.value; render(); });
+      on('.pd-dprev', 'click', () => { P.day = days.filter(x => x < dayKey).pop() || dayKey; render(); });
+      on('.pd-dnext', 'click', () => { P.day = days.filter(x => x > dayKey)[0] || dayKey; render(); });
+      on('.pd-dlatest', 'click', () => { P.day = ''; render(); });
       const mergeCall = async (source, target, msg) => {
         try {
           const res = await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorpdrmerge', idToken: SESSION.idToken, source: source, target: target }) })).json();

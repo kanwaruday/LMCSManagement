@@ -42,6 +42,15 @@ tr.sub td{background:var(--lgray);font-size:11.5px}
 #appBody{padding:24px;max-width:1200px;margin:0 auto}
 .pagetitle{font-size:16px;font-weight:700;margin:0 0 4px}
 .pagesub{color:var(--gray);font-size:12px;margin-bottom:14px}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.tile{border:1px solid var(--border);border-radius:6px;padding:8px 14px;min-width:150px;font-size:12px;color:var(--gray)}
+.tile b{display:block;font-size:20px;color:var(--dark)}
+.tile.warn b{color:var(--amber)}
+.tile.bad b{color:var(--red)}
+.miss{color:var(--red);font-weight:600}
+.okc a{color:#15803d;font-weight:600}
+.sm{color:var(--gray);font-size:10.5px}
+td.wrap{white-space:normal;min-width:160px;text-align:left}
 table.l th,table.l td{text-align:left}
 .pl{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:3px;text-transform:uppercase;white-space:nowrap}
 .pl.expired{background:#fee2e2;color:var(--red)}.pl.soon{background:var(--amber-bg);color:var(--amber)}.pl.later{background:#fef9c3;color:#854d0e}.pl.missing{background:var(--lgray);color:var(--gray)}
@@ -53,3 +62,4 @@ td.dt.check{background:#e0f2fe;color:#075985}
 td.dt.na{background:var(--lgray);color:var(--gray);font-style:italic}
 td.dt a{color:inherit;text-decoration:underline dotted}td.dt a:hover{text-decoration:underline}td.dt sup a{font-size:9px}
 .pl.ok{background:#dcfce7;color:#15803d}
+

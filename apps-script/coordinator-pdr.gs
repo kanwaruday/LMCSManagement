@@ -260,3 +260,25 @@ function coordPdrMerge_(caller, body) {
   if (tgt) { try { coordPdrSyncTask_(s, 'merged', null, caller, ''); } catch (err) { result.taskError = err.message; } } // an open follow-up for the merged-away issue closes
   return result;
 }
+
+/** action=coordinatorpdrday&date=yyyy-mm-dd: every report filed for one day, full text, for the "view a previous day" picker.
+ *  The form (Daily Reports) from 23 Sep, the old Google Spaces reports (PDR History) before that. Loaded on request, so the page itself stays small. */
+function coordPdrDay_(caller, date) {
+  date = String(date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: 'Pick a date' };
+  const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), visible = coordVisibleCampuses_(caller);
+  const ok = function (campus) { return !visible || visible.indexOf(campus) !== -1; };
+  const out = [], have = {};
+  ss.getSheetByName(COORD_PDR_TAB).getDataRange().getDisplayValues().slice(1).forEach(function (r) {
+    if (r[1] !== date || r[1] < COORD_PDR_REAL_FROM || !ok(r[2])) return;
+    have[r[2]] = true;
+    out.push({ campus: r[2], source: 'form', principal: r[3], at: r[0], maClass: r[4], maScore: r[5], done: r[6], tomorrow: r[7], registers: r[8], message: r[9] });
+  });
+  const hsh = ss.getSheetByName(COORD_PDR_HISTORY_TAB);
+  if (hsh && hsh.getLastRow() > 1) hsh.getDataRange().getDisplayValues().slice(1).forEach(function (h) {
+    if (h[0] !== date || !ok(h[1]) || have[h[1]]) return;
+    out.push({ campus: h[1], source: 'old Google Space', principal: h[8], at: '', maClass: '', maScore: '', done: h[4], tomorrow: h[5], registers: h[6], message: h[7] });
+  });
+  out.sort(function (a, b) { return a.campus < b.campus ? -1 : 1; });
+  return { success: true, date: date, reports: out };
+}

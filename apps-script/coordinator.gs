@@ -144,6 +144,7 @@ function doGet(e) {
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
     if (action === 'coordinatortransport') return coordJson_(coordTransport_(caller));
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
+    if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
