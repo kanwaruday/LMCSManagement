@@ -21,7 +21,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);c
 .hdr-signout:hover{background:rgba(255,255,255,.28)}
 .streak-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:700;margin-top:10px}
 
-/* Owner Test Mode -- picker (always visible to Owner) + a loud,
+/* "View as" picker (Owner/Coordinator: any employee; Principal: their school) + a loud,
    unmissable banner once a target is actually selected, so there's
    never ambiguity about whose data is on screen. */
 #viewAsBar{margin-top:10px}
@@ -430,6 +430,10 @@ async function loadApprovals() {
     pdrReportAuthFailureIfNeeded_(res);
     return;
   }
+  // "My Requests" means the signed-in person's own. A Teacher's list is already scoped to that server-side;
+  // a Principal/Coordinator/Owner's list is every request they can see, so narrow it here.
+  const myEmail = String(SESSION.email || '').toLowerCase();
+  res.requests = (res.requests || []).filter(function (r) { return String(r.requestedBy || '').toLowerCase() === myEmail; });
   aprRes = res;
   document.getElementById('homeReqSub').textContent = res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' on file';
   aprRenderStatusFilter_();
@@ -578,6 +582,9 @@ let myEmployeeCodePromise_ = null;
 function ensureMyEmployeeCode_() {
   if (!myEmployeeCodePromise_) {
     myEmployeeCodePromise_ = pdrGet_('myemployeecode', {}).then(function (res) {
+      // The backend refuses a view-as target outside the caller's scope (or an old backend ignores view-as
+      // entirely) by quietly answering as the caller -- never leave the banner claiming otherwise.
+      if (VIEW_AS_CODE && res.success && (!res.found || res.employeeCode !== VIEW_AS_CODE)) { viewAsRejected_(); return res; }
       if (res.success) { MY_EMPLOYEE_CODE = res.found ? res.employeeCode : null; EFFECTIVE_CAMPUS_ID = res.campusId || SESSION.campusId; }
       return res;
     });
@@ -909,6 +916,18 @@ function loadViewAsRoster_() {
   }
   return viewAsRosterPromise_;
 }
+// A Principal locked to one school only sees that school's employees (the backend enforces the same).
+async function getViewAsRoster_() {
+  const roster = await loadViewAsRoster_();
+  if (LMCS.viewAsScope(SESSION) !== 'school') return roster;
+  const school = 'LMS ' + String(SESSION.campusId).replace('LMS', '').trim();
+  return roster.filter(function (e) { return String(e.school || '').trim() === school; });
+}
+let viewAsNotice_ = '';
+function viewAsRejected_() {
+  viewAsNotice_ = 'That person is outside your access, so you’re seeing your own data instead.';
+  exitViewAs_();
+}
 function viewAsOptionLabel_(emp) {
   return (emp.name || '(no name)') + ' — ' + emp.employeeCode + ' — ' + LMCS.campusLabel('LMS' + String(emp.school || '').replace('LMS', '').trim());
 }
@@ -917,17 +936,19 @@ function viewAsOptionLabel_(emp) {
 // there's one source of truth for the bar's DOM instead of two
 // functions fighting over the same container.
 async function renderViewAsBar_() {
-  if (!LMCS.hasRole(SESSION, 'Owner')) return;
+  const scope = LMCS.viewAsScope(SESSION);
+  if (!scope) return;
   const bar = document.getElementById('viewAsBar');
   bar.style.display = 'block';
-  const roster = await loadViewAsRoster_();
+  const roster = await getViewAsRoster_();
   const active = VIEW_AS_CODE ? roster.filter(function (e) { return e.employeeCode === VIEW_AS_CODE; })[0] : null;
   const datalistHtml = roster.map(function (e) { return '<option value="' + esc_(viewAsOptionLabel_(e)) + '">'; }).join('');
   bar.innerHTML =
+    (viewAsNotice_ ? '<div class="viewas-active" style="color:#fff;background:#8a1c1c;margin-bottom:6px">' + esc_(viewAsNotice_) + '</div>' : '') +
     (VIEW_AS_CODE ? '<div class="viewas-active">👁️ Viewing as: ' + esc_(active ? active.name : VIEW_AS_CODE) + '<button type="button" onclick="exitViewAs_()">Exit</button></div>' : '') +
     '<div class="viewas-picker" style="margin-top:' + (VIEW_AS_CODE ? '6px' : '0') + '">' +
-      '<label>Owner test mode</label>' +
-      '<input type="text" id="viewAsInput" list="viewAsDatalist" placeholder="Search any employee by name or code…" value="' + (active ? esc_(viewAsOptionLabel_(active)) : '') + '" oninput="onViewAsInput_()">' +
+      '<label>View as</label>' +
+      '<input type="text" id="viewAsInput" list="viewAsDatalist" placeholder="' + (scope === 'network' ? 'Search any employee by name or code…' : 'Search a teacher at your school…') + '" value="' + (active ? esc_(viewAsOptionLabel_(active)) : '') + '" oninput="onViewAsInput_()">' +
       '<datalist id="viewAsDatalist">' + datalistHtml + '</datalist>' +
     '</div>';
 }
@@ -940,7 +961,8 @@ async function renderViewAsBar_() {
 async function onViewAsInput_() {
   const typed = document.getElementById('viewAsInput').value;
   if (!typed) { if (VIEW_AS_CODE) exitViewAs_(); return; }
-  const roster = await loadViewAsRoster_();
+  const roster = await getViewAsRoster_();
+  viewAsNotice_ = '';
   const match = roster.filter(function (e) { return viewAsOptionLabel_(e) === typed; })[0];
   if (!match) return;
   VIEW_AS_CODE = match.employeeCode;
@@ -973,13 +995,12 @@ function showDenied_(message) {
 
 function init() {
   SESSION = LMCS.getSession();
-  // Owner admitted even without Teacher on their own row (2026-09-20)
-  // -- Owner Test Mode is the point of entry for them, not their own
-  // personal data. An Owner who ALSO has Teacher (e.g. "Owner,Teacher")
-  // still sees their own real data by default until they pick someone
-  // to view as.
-  if (!SESSION || (!LMCS.hasRole(SESSION, 'Teacher') && !LMCS.hasRole(SESSION, 'Owner'))) {
-    showDenied_('The Teacher Portal is for Teacher accounts. Principals/Coordinators already have the full Approvals workflow on the Principal’s Daily Reporting page.');
+  // Open to every tier above Teacher too (2026-10-08, per Uday): Principal, Coordinator, Owner. "View as"
+  // is how they see what a teacher sees -- Owner/Coordinator for any employee, a Principal for their
+  // own school (LMCS.viewAsScope; enforced server-side). Someone who ALSO has Teacher (e.g.
+  // "Owner,Teacher") sees their own real data by default until they pick someone to view as.
+  if (!SESSION || !LMCS.canViewTeacherPortal(SESSION)) {
+    showDenied_('The Teacher Portal is open to Teachers, Principals, Coordinators and the Owner.');
     return;
   }
   document.getElementById('hdrGreeting').textContent = 'Hey, ' + (SESSION.name ? SESSION.name.split(' ')[0] : 'there') + ' 👋';

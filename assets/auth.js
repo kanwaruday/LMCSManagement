@@ -228,6 +228,23 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // Teacher Portal (teacher/index.html) is the lowest tier, so every tier above it can open it too
+  // (2026-10-08, per Uday): Teacher, Principal, Coordinator, Owner.
+  function canViewTeacherPortal(session) {
+    return hasRole(session, 'Teacher') || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+  }
+
+  // How far a session may "view as" a teacher inside the Teacher Portal: 'network' = any employee on the
+  // roster (Owner, Coordinator, or a Principal whose campus is ALL); 'school' = only employees of the
+  // session's own school (a Principal locked to one school); null = no view-as (a plain Teacher).
+  // UI only -- the real boundary is pdrViewAsScope_ in apps-script/main.gs; keep the two in sync.
+  function viewAsScope(session) {
+    if (!session) return null;
+    if (hasRole(session, 'Owner') || hasRole(session, 'Coordinator')) return 'network';
+    if (hasRole(session, 'Principal')) return session.campusId === 'ALL' ? 'network' : 'school';
+    return null;
+  }
+
   /**
    * Renders a Google Sign-In gate into `container` (an element or selector)
    * and resolves with the session once the visitor signs in successfully
@@ -335,7 +352,7 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, canViewTeacherPortal, viewAsScope, CAMPUS_NAMES };
 })();
 
 
@@ -504,7 +521,8 @@ window.LMCS = (function () {
     }
     const cfg = CACHEABLE[action];
     const email = userEmail();
-    if (!cfg || !email || cacheOff()) return origFetch(input, init);
+    // viewAsCode requests (Teacher Portal "view as") are never cached: a rejected one must not stick after the backend changes.
+    if (!cfg || !email || cacheOff() || u.searchParams.has('viewAsCode')) return origFetch(input, init);
 
     const key = storageKey(email, sid, u);
     const forced = !!(init && init.cache === 'reload'); // the warm-up's own fetches: always network, don't count as the page's request

@@ -326,7 +326,20 @@ function pdrIsTeacherOnly_(caller) {
     && !callerHasRole_(caller, 'Owner');
 }
 
-// "Owner Test Mode" (2026-09-20, per Uday) -- lets an Owner view the
+// Who may "view as" an employee in the Teacher Portal, and how far (2026-10-08, per Uday -- the
+// Teacher Portal is the lowest tier, so every tier above it can open it):
+//   'network' -- Owner, Coordinator, or a Principal whose campusId is 'ALL': any employee.
+//   'school'  -- a Principal locked to one school: employees of THAT school only.
+//   null      -- everyone else (a plain Teacher): nobody.
+// Mirrors LMCS.viewAsScope in assets/auth.js (UI only) -- keep the two in sync; this one is the boundary.
+function pdrViewAsScope_(caller) {
+  if (callerHasRole_(caller, 'Owner') || callerHasRole_(caller, 'Coordinator')) return 'network';
+  if (callerHasRole_(caller, 'Principal')) return caller.campusId === 'ALL' ? 'network' : 'school';
+  return null;
+}
+
+// "Owner Test Mode" (2026-09-20, per Uday; widened 2026-10-08 to Coordinator + Principal, see
+// pdrViewAsScope_ above) -- lets an Owner view the
 // Teacher Portal's READ-ONLY display data (Rank/Evaluations/CW-HW
 // Patterns/Timetable, via myrankscore/myssstats/myupcomingevents/
 // myemployeecode) AS a specific EMPLOYEE, for QA without ever touching
@@ -339,8 +352,10 @@ function pdrIsTeacherOnly_(caller) {
 //
 // viewAsCode is client-supplied but is ONLY ever honored once `caller`
 // has already been verified via a real Google ID token AND found to
-// hold the Owner role server-side -- a non-Owner passing this param is
-// simply ignored, never trusted on its own; this is the one place in
+// hold a role pdrViewAsScope_ allows, and (for a school-scoped
+// Principal) the viewed employee is at the caller's own school -- anyone
+// else passing this param is simply ignored, never trusted on its own
+// (the caller just gets their own data back); this is the one place in
 // the whole project where the returned "effective caller" can differ
 // from the actual verified caller, and it's deliberately narrow:
 // read-only actions only. Never wired into submitapproval/
@@ -360,7 +375,8 @@ function pdrIsTeacherOnly_(caller) {
 // below, not the viewed person's, specifically so nothing downstream
 // can mistake this for a real sign-in as them).
 function pdrResolveViewAsCaller_(caller, viewAsCode) {
-  if (!viewAsCode || !callerHasRole_(caller, 'Owner')) return caller;
+  const scope = viewAsCode ? pdrViewAsScope_(caller) : null;
+  if (!scope) return caller;
   const code = String(viewAsCode).trim();
   try {
     const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees', { muteHttpExceptions: true });
@@ -370,6 +386,7 @@ function pdrResolveViewAsCaller_(caller, viewAsCode) {
     const emp = data.employees.filter(function (e) { return e.employeeCode === code; })[0];
     if (!emp || !emp.school) return caller;
     const campusId = 'LMS' + String(emp.school).replace('LMS', '').trim(); // 'LMS 2' -> 'LMS2'
+    if (scope === 'school' && campusId !== caller.campusId) return caller; // a school-scoped Principal can't view another school
     return {
       email: caller.email, campusId: campusId, role: 'Teacher', roles: ['Teacher'],
       name: emp.name, employeeCode: emp.employeeCode, canApprove: false, viewedAsBy: caller.email,

@@ -12,8 +12,13 @@ self-contained and can be split out again. The old `LMCSTeachers/` URL redirects
 - **Auth:** loads the shared `../assets/auth.js` (one session/allowlist implementation).
 - **Backend:** calls the same "LMCS Principal's Daily Reporting Backend" Apps Script Web App every
   other module calls (see `apps-script/main.gs` / `apps-script/approvals.gs`). No separate project.
-- **Access:** gated to the `Teacher` role specifically (see `init()` in `index.html`) —
-  Principals/Coordinators/Owner keep using the full Approvals tab on Principal's Daily Reporting.
+- **Access (changed 2026-10-08, per Uday):** the lowest tier, so open to Teacher, Principal, Coordinator
+  and Owner (`LMCS.canViewTeacherPortal`, gate in `init()`). "View as" a teacher is scoped by
+  `LMCS.viewAsScope` and enforced server-side in `apps-script/main.gs`'s `pdrViewAsScope_`: Owner and
+  Coordinator any employee network-wide, a Principal their own school only (a Principal whose campus is
+  ALL is network-wide), a plain Teacher nobody. "My Requests" always lists only the signed-in person's
+  own requests. The card lives under "Teacher" on the role chooser (`/index.html`), not on the Principal
+  home. Test: `node tests/teacher-portal/test-view-as.js`.
 
 ## Status
 
