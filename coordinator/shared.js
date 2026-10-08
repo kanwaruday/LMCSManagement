@@ -428,7 +428,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: '', day: '', days: {}, data: null };
+    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -524,18 +524,21 @@ window.Coord = (function () {
 
       const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
       const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
-        '<select class="pd-as">' + [['acknowledged', 'Acknowledge'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select> ' +
-        '<select class="pd-who">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select><br>' +
-        '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '"> <button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span>' +
-        '<div class="pd-mrg"><span class="sm">Same problem as:</span> <select class="pd-mt"><option value="">pick another issue...</option>' +
-        issues.filter(o => o.id !== i.id && o.campus === i.campus).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 40).map(o => '<option value="' + o.id + '">' + esc(o.subject) + ' (' + esc(o.type) + ', ' + fmt(o.last) + ')</option>').join('') +
-        '</select> <button class="btn pd-merge">Merge this into it</button>' +
-        (i.kids.length ? '<div class="sm">Includes: ' + i.kids.map(k => esc(k.subject) + ' <a href="#" class="pd-unmerge" data-src="' + k.id + '">undo</a>').join(', ') + '</div>' : '') + '</div></details>';
-      const issueRow = i => '<tr data-id="' + i.id + '"><td><b>' + i.campus + '</b></td><td>' + esc(i.type) + '</td><td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;width:230px;padding:8px 0 4px">' +
+        '<select class="pd-as" style="width:100%">' + [['acknowledged', 'Acknowledge'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
+        '<select class="pd-who" style="width:100%">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select>' +
+        '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '" style="width:100%;box-sizing:border-box">' +
+        '<div><button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span></div>' +
+        '<div class="pd-mrg" style="border-top:1px solid #e5e7eb;padding-top:8px"><div class="sm" style="margin-bottom:4px">Same problem as:</div>' +
+        '<select class="pd-mt" style="width:100%;margin-bottom:6px"><option value="">pick another issue...</option>' +
+        issues.filter(o => o.id !== i.id && o.campus === i.campus).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 40).map(o => '<option value="' + o.id + '">' + esc(o.subject) + ' (' + esc(o.type) + ', ' + fmt(o.last) + ')</option>').join('') + '</select>' +
+        '<button class="btn pd-merge">Merge this into it</button>' +
+        (i.kids.length ? '<div class="sm" style="margin-top:6px">Includes: ' + i.kids.map(k => esc(k.subject) + ' <a href="#" class="pd-unmerge" data-src="' + k.id + '">undo</a>').join(', ') + '</div>' : '') + '</div></div></details>';
+      const issueRow = (i, hide) => '<tr data-id="' + i.id + '">' + (hide === 'campus' ? '' : '<td><b>' + i.campus + '</b></td>') + (hide === 'type' ? '' : '<td>' + esc(i.type) + '</td>') + '<td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
         (i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
-        i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm">' + editor(i) + '</td></tr>';
-      const issueTable = list => '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Type</th><th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
-        (list.map(issueRow).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
+        i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm" style="vertical-align:top">' + editor(i) + '</td></tr>';
+      const issueTable = (list, hide) => '<div class="tw"><table class="l"><thead><tr>' + (hide === 'campus' ? '' : '<th>Campus</th>') + (hide === 'type' ? '' : '<th>Type</th>') + '<th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
+        (list.map(i => issueRow(i, hide)).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
       const byAge = (a, b) => (a.handled - b.handled) || (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
 
       // Filters, sort and grouping shared by Today and Issues
@@ -555,7 +558,7 @@ window.Coord = (function () {
         if (!list.length) return issueTable(list);
         if (!P.group) return issueTable(list.slice(0, 150)) + (list.length > 150 ? '<div class="note">Showing the first 150 of ' + list.length + '. Narrow it with the filters above.</div>' : '');
         const g = {}; list.forEach(i => { const k = P.group === 'campus' ? i.campus : i.type; (g[k] = g[k] || []).push(i); });
-        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + ', ' + g[k].filter(i => !i.handled).length + ' not yet handled</span></h3>' + issueTable(g[k])).join('');
+        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + ', ' + g[k].filter(i => !i.handled).length + ' not yet handled</span></h3>' + issueTable(g[k], P.group)).join('');
       };
       // One day's reports (full text), loaded on request; the page itself only carries counts
       const dayKey = P.day || lastDay;
