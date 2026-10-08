@@ -178,10 +178,9 @@ function coordPdrWriteAction_(ss, rec) {
 }
 
 /** Keeps the All follow-ups page in step with an issue action. Assigned -> an open follow-up for the assignee (reopened if it was resolved);
- *  resolved or reset -> the follow-up is closed; acknowledged -> left as it is. issue = the row of the PDR Issues tab. */
+ *  resolved, acknowledged ("no action needed"), reset or merged -> the follow-up is closed. issue = the row of the PDR Issues tab. */
 function coordPdrSyncTask_(issue, status, who, caller, note) {
   const taskId = 'pdr_issue|' + issue[0];
-  if (status === 'acknowledged') return;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -203,7 +202,7 @@ function coordPdrSyncTask_(issue, status, who, caller, note) {
       }
     } else if (row > 0 && rows[row - 1][5] === 'open') { // resolved or reset
       sh.getRange(row, 6).setValue('resolved');
-      sh.getRange(row, 10, 1, 2).setValues([[now, caller.email + ' (Systems issue ' + (status === 'resolved' ? 'resolved' : status === 'merged' ? 'merged into another issue' : 'reset') + ')']]);
+      sh.getRange(row, 10, 1, 2).setValues([[now, caller.email + ' (Systems issue ' + (status === 'resolved' ? 'resolved' : status === 'acknowledged' ? 'noted, no action needed' : status === 'merged' ? 'merged into another issue' : 'reset') + ')']]);
     }
   } finally { lock.releaseLock(); }
 }

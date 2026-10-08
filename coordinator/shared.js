@@ -480,12 +480,14 @@ window.Coord = (function () {
       const acts = d.actions || {}, people = d.coordinators || [], me = (SESSION && SESSION.email || '').toLowerCase();
       issues.forEach(i => {
         i.open = i.age <= QUIET_DAYS; i.act = acts[i.id] || null;
-        i.reopened = !!i.act && i.act.status === 'resolved' && i.last > i.act.lastAtAction; // resolved, then a principal raised it again
-        if (i.act && i.act.status === 'resolved' && !i.reopened) i.open = false;
+        const closed = !!i.act && (i.act.status === 'resolved' || i.act.status === 'acknowledged'); // acknowledged = "noted, no action needed"
+        i.reopened = closed && i.last > i.act.lastAtAction; // a principal raised it again after it was filed away: it comes back
+        i.archived = closed && !i.reopened;                 // filed away: out of the main lists, in the Archive view
+        if (i.archived) i.open = false;
         i.stuck = i.open && i.span >= STUCK_DAYS;
-        i.handled = !!i.act && !i.reopened && i.act.status !== 'open' && i.act.status !== 'resolved'; // acknowledged or assigned
+        i.handled = !!i.act && !i.reopened && i.act.status === 'assigned'; // someone owns it
       });
-      const open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction), todo = openAct.filter(i => !i.handled);
+      const open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction), todo = openAct.filter(i => !i.handled), archive = issues.filter(i => i.archived);
       const msgs = reps.filter(r => r.message.trim()).map(r => ({ r, t: tags[r.date + '|' + r.campus] || { topics: [], action: false, summary: '' } }))
         .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.r.campus.localeCompare(b.r.campus));
       const topics = [...new Set(msgs.flatMap(m => m.t.topics))].sort();
@@ -524,18 +526,18 @@ window.Coord = (function () {
       let html = '<div class="note pd-fresh">' + fresh.map(f => f[1] ? '<b class="stale">' + esc(f[0]) + '</b>' : esc(f[0])).join(' &middot; ') +
         (fresh.some(f => f[1]) ? '<br><span class="stale">A source looks out of date: the Mac sync (every 2 hours) or the fee email capture may have stopped.</span>' : '') + '</div>' +
         '<div class="tiles">' +
-        '<div class="tile ' + (todo.length ? 'warn' : '') + '"><b>' + todo.length + '</b>need action, not yet acknowledged</div>' +
-        '<div class="tile"><b>' + openAct.filter(i => i.handled).length + '</b>acknowledged or assigned</div>' +
+        '<div class="tile ' + (todo.length ? 'warn' : '') + '"><b>' + todo.length + '</b>need action, not assigned</div>' +
+        '<div class="tile"><b>' + openAct.filter(i => i.handled).length + '</b>assigned, in progress</div>' +
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
         '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['approvals', 'Approvals'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
-      const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
+      const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">' + (i.act.status === 'acknowledged' ? 'Raised again since you noted it' : 'Raised again after resolved') + '</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
       const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
         '<div style="display:flex;flex-direction:column;gap:6px;width:230px;padding:8px 0 4px">' +
-        '<select class="pd-as" style="width:100%">' + [['acknowledged', 'Acknowledge'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
+        '<select class="pd-as" style="width:100%">' + [['acknowledged', 'Acknowledge (no action needed)'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
         '<select class="pd-who" style="width:100%">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select>' +
         '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '" style="width:100%;box-sizing:border-box">' +
         '<div><button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span></div>' +
@@ -544,8 +546,9 @@ window.Coord = (function () {
         issues.filter(o => o.id !== i.id && o.campus === i.campus).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 40).map(o => '<option value="' + o.id + '">' + esc(o.subject) + ' (' + esc(o.type) + ', ' + fmt(o.last) + ')</option>').join('') + '</select>' +
         '<button class="btn pd-merge">Merge this into it</button>' +
         (i.kids.length ? '<div class="sm" style="margin-top:6px">Includes: ' + i.kids.map(k => esc(k.subject) + ' <a href="#" class="pd-unmerge" data-src="' + k.id + '">undo</a>').join(', ') + '</div>' : '') + '</div></div></details>';
+      const archNote = i => '<span class="sm">' + (i.act.status === 'acknowledged' ? 'Noted, no action needed' : 'Resolved') + ' by ' + esc((i.act.by || '').split('@')[0]) + ', ' + esc((i.act.at || '').slice(0, 10)) + (i.act.note ? '<br>' + esc(i.act.note) : '') + '</span>';
       const issueRow = (i, hide) => '<tr data-id="' + i.id + '">' + (hide === 'campus' ? '' : '<td><b>' + i.campus + '</b></td>') + (hide === 'type' ? '' : '<td>' + esc(i.type) + '</td>') + '<td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
-        (i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
+        (i.archived ? archNote(i) : i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
         i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm" style="vertical-align:top">' + editor(i) + '</td></tr>';
       const issueTable = (list, hide) => '<div class="tw"><table class="l"><thead><tr>' + (hide === 'campus' ? '' : '<th>Campus</th>') + (hide === 'type' ? '' : '<th>Type</th>') + '<th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
         (list.map(i => issueRow(i, hide)).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
@@ -557,18 +560,18 @@ window.Coord = (function () {
         type: ['Type', (a, b) => a.type.localeCompare(b.type) || byAge(a, b)] };
       const sel = (cls, label, opts, cur) => '<select class="' + cls + '"><option value="">' + label + '</option>' + opts.map(o => '<option' + (Array.isArray(o) ? ' value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + esc(o[1]) : (cur === o ? ' selected' : '') + '>' + esc(o)) + '</option>').join('') + '</select>';
       const filterBar = full => '<div class="ctl">' + sel('pd-campus', 'All schools', camps, P.campus) + sel('pd-itype', 'All types', issueTypes, P.itype) +
-        (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
-        '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not yet handled</option></select>' +
+        (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet'], ['archive', 'Archive (' + archive.length + ')']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not assigned</option></select>' +
         '<label>Sort <select class="pd-sort">' + Object.keys(SORTS).map(k => '<option value="' + k + '"' + (P.sort === k ? ' selected' : '') + '>' + SORTS[k][0] + '</option>').join('') + '</select></label>' +
         '<label>Group by <select class="pd-group"><option value="">Nothing</option><option value="campus"' + (P.group === 'campus' ? ' selected' : '') + '>School</option><option value="type"' + (P.group === 'type' ? ' selected' : '') + '>Type</option></select></label>' +
         (full ? '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> ' : '') + '<label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>';
-      const applyFilters = (list, full) => list.filter(i => (!full || P.istatus === 'all' || i.open) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || i.needsAction) && (!P.repeat || i.count >= 3) &&
+      const applyFilters = (list, full) => list.filter(i => (!full || (P.istatus === 'archive' ? i.archived : P.istatus === 'all' ? !i.archived : i.open)) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || i.needsAction) && (!P.repeat || i.count >= 3) &&
         (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(SORTS[P.sort][1]);
       const grouped = list => {
         if (!list.length) return issueTable(list);
         if (!P.group) return issueTable(list.slice(0, 150)) + (list.length > 150 ? '<div class="note">Showing the first 150 of ' + list.length + '. Narrow it with the filters above.</div>' : '');
         const g = {}; list.forEach(i => { const k = P.group === 'campus' ? i.campus : i.type; (g[k] = g[k] || []).push(i); });
-        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + ', ' + g[k].filter(i => !i.handled).length + ' not yet handled</span></h3>' + issueTable(g[k], P.group)).join('');
+        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + (P.istatus === 'archive' && P.tab === 'issues' ? '' : ', ' + g[k].filter(i => !i.handled).length + ' not assigned') + '</span></h3>' + issueTable(g[k], P.group)).join('');
       };
       // One day's reports (full text), loaded on request; the page itself only carries counts
       const dayKey = P.day || lastDay;
@@ -608,21 +611,21 @@ window.Coord = (function () {
         const sumF = (xs, a, b, i) => xs.filter(x => ago(x[0]) >= a && ago(x[0]) <= b).reduce((t, x) => t + x[i], 0);
         const feeRows = CAMPUSES.map(feeCycle).filter(Boolean).map(f => ({ c: f.c, got: sumF(f.xs, 1, 7, 2), prev: sumF(f.xs, 8, 14, 2), fol: sumF(f.xs, 1, 7, 3), out: f.last[4], vsEnd: f.prev ? f.last[4] - f.prev[4] : null }));
         const newWk = issues.filter(i => ago(i.first) <= 7 && i.open).sort(byAge);
-        const resolvedWk = issues.filter(i => i.act && i.act.status === 'resolved' && ago(i.act.at.slice(0, 10)) <= 7);
+        const resolvedWk = issues.filter(i => i.act && i.act.status === 'resolved' && ago(i.act.at.slice(0, 10)) <= 7), notedWk = issues.filter(i => i.act && i.act.status === 'acknowledged' && ago(i.act.at.slice(0, 10)) <= 7);
         const stuck = open.filter(i => i.stuck).sort((a, b) => (b.span + b.age) - (a.span + a.age));
         const focus = openAct.filter(i => !i.handled && i.type !== 'Events' && (i.count >= 2 || i.age <= 3)).sort((a, b) => (b.span + b.age) - (a.span + a.age)).slice(0, 6);
-        const line = i => i.campus + ' ' + i.subject + ' (' + i.type + '): open ' + (i.span + i.age) + ' days, raised on ' + i.count + (i.count === 1 ? ' day' : ' days') + (i.act && i.act.status === 'assigned' ? ', assigned to ' + (i.act.assigneeName || i.act.assignee) : i.handled ? ', acknowledged' : ', not yet acknowledged');
+        const line = i => i.campus + ' ' + i.subject + ' (' + i.type + '): open ' + (i.span + i.age) + ' days, raised on ' + i.count + (i.count === 1 ? ' day' : ' days') + (i.act && i.act.status === 'assigned' ? ', assigned to ' + (i.act.assigneeName || i.act.assignee) : ', not assigned');
         const totWk = fsAll.length ? feeRows.reduce((t, r) => t + r.got, 0) : 0, totPrev = feeRows.reduce((t, r) => t + r.prev, 0), totOut = feeRows.reduce((t, r) => t + r.out, 0), totD = feeRows.reduce((t, r) => t + (r.vsEnd || 0), 0), feeDay = feeRows.length ? feeCycle(feeRows[0].c).day : 0;
         const txt = ['Principals\' reports: week to ' + fmt(yday), '',
           'Reports filed: ' + filedWk + ' of ' + expWk + ' (' + pct(filedWk, expWk) + '), last week ' + pct(filedPrev, expPrev) + '.' + (missedWk.length ? ' Missed 2+ days: ' + missedWk.map(x => x[0] + ' (' + x[1] + ')').join(', ') + '.' : ''),
-          'Issues: ' + newWk.length + ' new, ' + resolvedWk.length + ' resolved, ' + todo.length + ' open and not yet acknowledged, ' + stuck.length + ' open for ' + STUCK_DAYS + '+ days.', '',
+          'Issues: ' + newWk.length + ' new, ' + resolvedWk.length + ' resolved, ' + notedWk.length + ' noted as no action needed, ' + todo.length + ' open and not assigned, ' + stuck.length + ' open for ' + STUCK_DAYS + '+ days.', '',
           'Needs attention first:'].concat(focus.map(i => '- ' + line(i)), focus.length ? [] : ['- nothing unacknowledged'], ['',
           fsAll.length ? 'Fees: ' + lk(totWk) + ' collected this week (' + lk(totPrev) + ' last week); outstanding ' + lk(totOut) + ', ' + lk(Math.abs(totD)) + (totD > 0 ? ' above' : ' below') + ' the last month-end (the true defaulters)' + (feeDay <= 10 ? '; fee days, day ' + feeDay + ' of 10, so it is expected to fall' : '') + '; ' + feeRows.reduce((t, r) => t + r.fol, 0) + ' follow-ups logged.' : 'Fees: no fee emails.']).concat(feeRows.map(r => '  ' + r.c + ': collected ' + lk(r.got) + ', outstanding ' + lk(r.out) + ', ' + r.fol + ' follow-ups'));
         html += '<div class="ctl"><button class="btn pd-copy">Copy digest</button> <span class="sm">The 7 completed days to ' + fmt(yday) + ', compared with the 7 before. Every figure is calculated from the data on this page. Fees: outstanding jumps to a monthly high on the 1st and falls through the fee days (1st-10th), so it is compared with the last month-end.</span></div>' +
           '<div class="tiles"><div class="tile"><b>' + pct(filedWk, expWk) + '</b>of expected reports filed<span class="sm"> (last week ' + pct(filedPrev, expPrev) + ')</span></div>' +
           '<div class="tile"><b>' + newWk.length + '</b>new issues</div><div class="tile"><b>' + resolvedWk.length + '</b>resolved</div>' +
           (fsAll.length ? '<div class="tile"><b>' + lk(totWk) + '</b>fees collected<span class="sm"> (last week ' + lk(totPrev) + ')</span></div>' : '') + '</div>' +
-          '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (open, needs action, not yet acknowledged)</h3>' + issueTable(focus) +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (open, needs action, not assigned)</h3>' + issueTable(focus) +
           '<h3 style="font-size:13px;margin:16px 0 6px">Reporting gaps this week</h3><p>' + (missedWk.length ? missedWk.map(x => '<span class="pl expired">' + x[0] + ': missed ' + x[1] + ' of ' + wkDays.length + ' days</span> ').join('') : 'No campus missed more than one reporting day.') + '</p>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">New this week (' + newWk.length + ')</h3>' + issueTable(newWk.slice(0, 8)) +
           (feeRows.length ? '<h3 style="font-size:13px;margin:16px 0 6px">Fees</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Collected, 7 days</th><th>Last week</th><th>Outstanding now</th><th>Vs last month-end</th><th>Follow-ups logged</th></tr></thead><tbody>' +
@@ -630,7 +633,7 @@ window.Coord = (function () {
         box.dataset.digest = txt.join('\n');
       } else if (P.tab === 'issues') {
         const shown = applyFilters(issues, true);
-        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
+        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. Issues you acknowledge (no action needed) or resolve move to the <b>Archive</b> view and come back if a principal raises them again. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
           filterBar(true) + grouped(shown);
       } else if (P.tab === 'approvals') {
         html += '<div class="note">Every school\'s approval requests, for the Owner and for Coordinators. Only the Owner (and a Coordinator you have given decision rights in the allowlist) can approve, reject, refer or archive; everyone else here can read and comment. Principals file and follow their requests on their own page.</div><div class="pd-apr-slot"></div>';
