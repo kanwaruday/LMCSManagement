@@ -468,7 +468,7 @@ td{padding:6px 12px;vertical-align:middle}
           </div>
 
           <div class="card">
-            <p class="card-title">Tasks for Tomorrow</p>
+            <p class="card-title">Tasks for Tomorrow <span style="color:var(--red)" title="Required">*</span></p>
             <ul class="numbered-list" id="tasksTomorrowList"></ul>
             <div class="add-row">
               <input type="text" id="tasksTomorrowInput" placeholder="Add a task and press Enter">
@@ -1858,6 +1858,16 @@ async function addPlannedActivityHandler() {
 async function submitReport() {
   var btn = document.getElementById('submitReportBtn');
   if (btn.disabled) return; // already submitting -- ignore the extra click(s) instead of firing another save
+  // Tasks for Tomorrow is mandatory (2026-10-08): it feeds the next working
+  // day's "Tasks Completed" suggestions, so an empty list breaks that chain.
+  if (!listToArray('tasksTomorrowList').length) {
+    var typed = document.getElementById('tasksTomorrowInput').value.trim();
+    alert(typed
+      ? 'You typed a task for tomorrow but haven\'t added it — press Add (or Enter) first.'
+      : 'Please add at least one task under "Tasks for Tomorrow" before submitting.');
+    document.getElementById('tasksTomorrowInput').focus();
+    return;
+  }
   btn.disabled = true;
   var originalLabel = btn.textContent;
   btn.textContent = 'Submitting…';
