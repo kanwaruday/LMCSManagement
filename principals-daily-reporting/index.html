@@ -418,7 +418,11 @@ td{padding:6px 12px;vertical-align:middle}
         <div class="main-col">
 
           <div class="card">
-            <p class="card-title">Morning Assembly Marking</p>
+            <p class="card-title" style="justify-content:flex-start;gap:18px">Morning Assembly Marking
+              <label style="font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--dark);cursor:pointer;display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="maNone" onchange="syncMaNone()"> No Morning Assembly
+              </label>
+            </p>
             <div class="row-2col">
               <div>
                 <label class="field-label">Class / House on duty</label>
@@ -1874,7 +1878,9 @@ async function submitReport() {
   try {
     var payload = {
       date: document.getElementById('reportDate').value,
-      morningAssembly: { classHouse: document.getElementById('maClass').value, score: document.getElementById('maScore').value },
+      morningAssembly: document.getElementById('maNone').checked
+        ? { classHouse: MA_NONE, score: '' }
+        : { classHouse: document.getElementById('maClass').value, score: document.getElementById('maScore').value },
       tasksCompleted: listToArray('tasksCompletedList'),
       supportSessions: { teachers: currentSSTeachers, count: currentSSTeachers.length },
       registersCrosschecked: selectedRegisters,
@@ -1915,6 +1921,15 @@ async function bootPrincipalReport(campusId) {
 // "view a past report" capability Uday asked for 2026-09-02 ("Is there
 // a way I can see a past report that I have submitted?"); otherwise
 // the form is left blank for a fresh entry, same as before.
+// "No Morning Assembly" (2026-10-08): saved in the existing MA_ClassOrHouse
+// column as this marker with an empty score -- no backend/schema change.
+var MA_NONE = 'No Morning Assembly';
+function syncMaNone() {
+  var none = document.getElementById('maNone').checked;
+  document.getElementById('maClass').disabled = none;
+  document.getElementById('maScore').disabled = none;
+  if (none) document.getElementById('maScore').value = '';
+}
 async function loadReportForDate() {
   var myToken = ++principalLoadToken; // see its declaration for why
   var campusId = principalCampusId;
@@ -1922,6 +1937,8 @@ async function loadReportForDate() {
 
   document.getElementById('maClass').value = CLASS_HOUSE_OPTIONS[0];
   document.getElementById('maScore').value = '';
+  document.getElementById('maNone').checked = false;
+  syncMaNone();
   selectedRegisters = ['Teachers TRR'];
 
   // Clear free-text entries left over from a previously-viewed
@@ -1964,8 +1981,13 @@ async function loadReportForDate() {
   if (dayLabel) dayHolidayNotice.textContent = '📅 ' + friendlyDate(dateISO) + ' is ' + dayLabel + ' -- reports can still be filed as usual.';
 
   if (existing.exists) {
-    if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
-    document.getElementById('maScore').value = existing.maScore || '';
+    if (existing.maClassOrHouse === MA_NONE) {
+      document.getElementById('maNone').checked = true;
+      syncMaNone();
+    } else {
+      if (existing.maClassOrHouse) document.getElementById('maClass').value = existing.maClassOrHouse;
+      document.getElementById('maScore').value = existing.maScore || '';
+    }
     (existing.tasksCompleted || []).forEach(function (t) { addItemDirect('tasksCompletedList', t); });
     (existing.tasksForTomorrow || []).forEach(function (t) { addItemDirect('tasksTomorrowList', t); });
     (existing.importantMessage || []).forEach(function (t) { addItemDirect('importantMsgList', t); });
