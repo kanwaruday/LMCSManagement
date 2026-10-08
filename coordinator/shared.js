@@ -21,7 +21,7 @@ window.Coord = (function () {
   ];
   // Paths are relative to coordinator/<page>/, i.e. two levels below the repo root.
   const WORK_LINKS = {
-    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../../principals-daily-reporting/index.html',
+    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../systems/index.html#approvals',
     hiring_stall: '../../hiring/index.html', complete_hire: '../../staff/add-employee.html',
     doc_missing: '../../staff/add-employee.html', doc_none: '../../staff/add-employee.html', doc_verify: '../../staff/add-employee.html',
     pdr_issue: '../systems/index.html',
@@ -428,7 +428,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
+    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -519,7 +519,7 @@ window.Coord = (function () {
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['approvals', 'Approvals'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
       const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">Raised again after resolved</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
@@ -622,6 +622,8 @@ window.Coord = (function () {
         const shown = applyFilters(issues, true);
         html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
           filterBar(true) + grouped(shown);
+      } else if (P.tab === 'approvals') {
+        html += '<div class="note">Every school\'s approval requests, for the Owner and for Coordinators. Only the Owner (and a Coordinator you have given decision rights in the allowlist) can approve, reject, refer or archive; everyone else here can read and comment. Principals file and follow their requests on their own page.</div><div class="pd-apr-slot"></div>';
       } else if (P.tab === 'compliance') {
         const mons = [...new Set(days.map(x => x.slice(0, 7)))];
         html += '<div class="note">Reports filed per month (Google Spaces group until 22 Sep, the form after). A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed.</div>' +
@@ -700,6 +702,11 @@ window.Coord = (function () {
           camps.map(c => { const rs = reps.filter(r => r.campus === c), m = rs.filter(r => r.maScore !== '' && !isNaN(+r.maScore)); return '<tr><td><b>' + c + '</b></td><td>' + rs.length + '</td><td class="' + (m.length < rs.length / 2 ? 'miss' : '') + '">' + m.length + '</td><td>' + (m.length ? (m.reduce((s, r) => s + +r.maScore, 0) / m.length).toFixed(1) : '-') + '</td><td class="sm">' + esc([...new Set(rs.map(r => r.maClass).filter(Boolean))].join(', ')) + '</td></tr>'; }).join('') + '</tbody></table></div>';
       }
       box.innerHTML = html;
+      const aprSlot = box.querySelector('.pd-apr-slot');
+      if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
+        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl); }
+        aprSlot.appendChild(P.aprEl);
+      }
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { P.tab = b.dataset.tab; render(); }));
       box.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => { P.istatus = b.dataset.st; render(); }));
       const on = (sel, ev, fn) => { const el = box.querySelector(sel); if (el) el.addEventListener(ev, fn); };

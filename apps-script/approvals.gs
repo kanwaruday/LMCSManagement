@@ -100,7 +100,7 @@ const APR_AMOUNT_CATEGORIES = ['Financial / Purchase', 'Compensation Change'];
 // The Salary Dashboard's "Record as Salary Offer" always formats it
 // correctly; a manual submit via this portal's own form must start the
 // Item with that same ID or the request will never resolve for anyone.
-// Frontend copy of this array (principals-daily-reporting/index.html)
+// Frontend copy of this array (coordinator/approvals.js, the deciders' view; the principals' page only files requests)
 // updated the same way -- keep both in sync.
 const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New/ Backup Position', 'EPF Exemption', 'Salary Offer Approval'];
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
@@ -257,6 +257,15 @@ function aprSubmit_(caller, body) {
   if (!canFullSubmit && APR_TEACHER_CATEGORIES.indexOf(category) === -1) {
     return { success: false, error: 'Teachers can only submit ' + APR_TEACHER_CATEGORIES.join('/') + ' requests' };
   }
+  // 2026-10-08, per Uday: the Approvals tab on the principals' page is now the Principal's own interface for everyone, so an Owner or Coordinator
+  // (network-wide, campusId 'ALL') files a request FOR the school picked on the page. A Principal stays locked to their own school; the param is
+  // only read for 'ALL' callers, so it still cannot be used to file under another school.
+  // No school sent (e.g. the Salary Dashboard's "Record as Salary Offer") keeps the old behaviour: filed under 'ALL'.
+  let campusId = caller.campusId;
+  if (caller.campusId === 'ALL') {
+    const picked = String(body.campusId || '').trim().toUpperCase();
+    if (/^LMS[1-6]$/.test(picked)) campusId = picked;
+  }
   const title = String(body.title || '').trim();
   if (!title) return { success: false, error: 'Title required' };
   const description = String(body.description || '').trim();
@@ -278,7 +287,7 @@ function aprSubmit_(caller, body) {
     const existing = aprValues_();
     for (let i = 1; i < existing.length; i++) {
       const r = existing[i];
-      if (!r[0] || String(r[1]).trim() !== caller.campusId || norm(r[11]) !== norm(caller.email)) continue;
+      if (!r[0] || String(r[1]).trim() !== campusId || norm(r[11]) !== norm(caller.email)) continue;
       if (norm(r[2]) !== norm(category) || norm(r[4]) !== norm(title) || norm(r[5]) !== norm(description)) continue;
       if (String(r[6]) !== String(amountVal)) continue;
       if (norm(r[10]) !== norm(body.evidenceLink) || norm(r[7]) !== norm(showsItem ? body.itemName : '')) continue; // e.g. hiring: a different outgoing employee is a different request
@@ -286,14 +295,14 @@ function aprSubmit_(caller, body) {
       const recent = r[12] && (new Date().getTime() - new Date(r[12]).getTime()) < 10 * 60 * 1000;
       if (open || recent) return { success: true, id: String(r[0]), duplicate: true, status: String(r[13]) };
     }
-    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty);
+    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId);
   } finally { lock.releaseLock(); }
 }
 
-function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty) {
+function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId) {
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
-    id, caller.campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
+    id, campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
     title, description,
     amountVal,
     showsItem ? String(body.itemName || '').trim() : '',
@@ -301,7 +310,7 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
   ]);
-  aprNotifyDeciders_(caller, title, category);
+  aprNotifyDeciders_(caller, title, category, campusId);
   return { success: true, id: id };
 }
 
@@ -544,7 +553,7 @@ function aprNotifyReferees_(row, groups, note, caller, decision) {
 // ── Email notifications (best-effort plain MailApp -- a mail failure
 // must never fail the underlying submit/comment/decide, so every
 // caller here is wrapped and swallows its own error). ────────────────
-function aprNotifyDeciders_(caller, title, category) {
+function aprNotifyDeciders_(caller, title, category, campusId) {
   try {
     const rows = pdrAllowlistRows_(); // shared cache from main.gs
     const to = [];
@@ -557,8 +566,8 @@ function aprNotifyDeciders_(caller, title, category) {
     }
     if (!to.length) return;
     MailApp.sendEmail(to.join(','), 'New approval request: ' + title,
-      caller.email + ' (' + caller.campusId + ') requested approval for "' + title + '" [' + category +
-      ']. Review it in the Approvals tab of the Principal’s Daily Reporting portal.');
+      caller.email + ' (' + campusId + ') requested approval for "' + title + '" [' + category +
+      ']. Review it in the Approvals tab of the Coordinator Portal (Systems): https://kanwaruday.github.io/LMCSManagement/coordinator/systems/#approvals');
   } catch (err) { /* best-effort */ }
 }
 
