@@ -538,7 +538,7 @@ window.Coord = (function () {
       const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
         '<div style="display:flex;flex-direction:column;gap:6px;width:230px;padding:8px 0 4px">' +
         '<select class="pd-as" style="width:100%">' + [['acknowledged', 'Acknowledge (no action needed)'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
-        '<select class="pd-who" style="width:100%">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select>' +
+        '<select class="pd-who" style="width:100%' + (i.act && i.act.status === 'assigned' && !i.reopened ? '' : ';display:none') + '">' + people.map(c => '<option value="' + esc(c.email) + '"' + (i.act && i.act.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select>' +
         '<input class="pd-note" placeholder="Note (optional)" value="' + esc(i.act ? i.act.note : '') + '" style="width:100%;box-sizing:border-box">' +
         '<div><button class="btn pd-save">Save</button> <span class="sm pd-msg">' + (i.act && i.act.by ? 'last by ' + esc(i.act.by.split('@')[0]) + ', ' + esc(i.act.at) : '') + '</span></div>' +
         '<div class="pd-mrg" style="border-top:1px solid #e5e7eb;padding-top:8px"><div class="sm" style="margin-bottom:4px">Same problem as:</div>' +
@@ -715,6 +715,7 @@ window.Coord = (function () {
           camps.map(c => { const rs = reps.filter(r => r.campus === c), m = rs.filter(r => r.maScore !== '' && !isNaN(+r.maScore)); return '<tr><td><b>' + c + '</b></td><td>' + rs.length + '</td><td class="' + (m.length < rs.length / 2 ? 'miss' : '') + '">' + m.length + '</td><td>' + (m.length ? (m.reduce((s, r) => s + +r.maScore, 0) / m.length).toFixed(1) : '-') + '</td><td class="sm">' + esc([...new Set(rs.map(r => r.maClass).filter(Boolean))].join(', ')) + '</td></tr>'; }).join('') + '</tbody></table></div>';
       }
       box.innerHTML = html;
+      box.querySelectorAll('.pd-as').forEach(sel => sel.addEventListener('change', () => { sel.closest('.pd-edit').querySelector('.pd-who').style.display = sel.value === 'assigned' ? '' : 'none'; })); // the name only matters for "Assign to"
       const aprSlot = box.querySelector('.pd-apr-slot');
       if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
         if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl); }

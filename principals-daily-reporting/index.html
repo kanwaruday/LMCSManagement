@@ -236,13 +236,6 @@ td{padding:6px 12px;vertical-align:middle}
 .apr-comment .apr-comment-meta{font-size:10.5px;color:var(--gray);margin-bottom:3px}
 .apr-comment-del{color:#B7C0CC;text-decoration:none;font-weight:600}
 .apr-comment-del:hover{color:var(--red)}
-.apr-decide-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
-.apr-decide-bar button{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
-.apr-decide-bar button.approve{background:var(--green)}
-.apr-decide-bar button.reject{background:var(--red)}
-.apr-decide-bar button.info{background:var(--amber)}
-.apr-decide-bar button.revoke{background:#4b5563}
-.apr-decide-note{width:100%;margin-bottom:8px}
 .apr-reply-hint{font-size:11.5px;color:var(--amber);font-weight:600;margin:8px 0 4px}
 .apr-reply-row input{border-color:var(--amber)}
 .apr-reply-row button{background:var(--amber)}
@@ -933,6 +926,8 @@ async function init() {
         }, 0);
       }
     }
+    // A link ending in #approvals (the Hiring dashboard's Approvals button, for one) opens the Approvals tab straight away.
+    if (!restore && location.hash === '#approvals') switchTab('approvals');
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
@@ -2046,7 +2041,6 @@ const APR_ITEM_CATEGORIES = ['Financial / Purchase', 'Compensation Change', 'New
 // gets sent from this form anymore, same treatment as Evidence Link/
 // Linked Activity below.
 const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
-const APR_NO_REFER_CATEGORIES = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
 // 2026-09-24, per Uday (information architecture pass): "Needs Action"
 // is a synthetic pill (Pending + Info Requested combined) and is now
 // the DEFAULT view -- what someone actually opens this tab to see day
@@ -2059,15 +2053,12 @@ let aprRes = null;              // full action=approvalslist response, fetched o
 let APR_STATUS_FILTER = 'Needs Action';
 let APR_CATEGORY_FILTER = 'All';
 let APR_VIEW = 'Requests'; // or 'Archive'
-let APR_SCHOOL_FILTER = 'All';
 let APR_SEARCH = '';
-let APR_SORT_KEY = null; // null = default (needs action first); else school|title|category|urgency|status|date
+let APR_SORT_KEY = null; // null = default (needs action first); else title|category|urgency|status|date
 let APR_SORT_DIR = 1;
-let APR_SELECTED = {};   // approval id -> true, for bulk archive/unarchive
-let APR_ELIGIBLE = {};   // ids selectable in the current view
 const APR_DECIDED_STATUSES = ['Approved', 'Rejected', 'Revoked'];
 let aprExpandedId = null;
-let aprExpandedDetail = null;   // {request, comments, canDecide} for the open row
+let aprExpandedDetail = null;   // {request, comments} for the open row
 
 // Free text a Principal/Owner/Coordinator typed (title, description,
 // comment body, decision note) goes through this before landing in an
@@ -2296,8 +2287,7 @@ async function loadApprovals() {
       return;
     }
     aprRes = res;
-    if (res.canDecide) aprLoadRefereeList_(); // warm the staff list now so the Refer-to search is instant later
-    document.getElementById('aprNewRequestCard').style.display = LMCS.hasRole(SESSION, 'Principal') ? 'block' : 'none';
+    document.getElementById('aprNewRequestCard').style.display = 'block'; // everyone files from here; the Owner's / deciders' view is in the Coordinator Portal (Systems > Approvals)
     aprRenderStatusFilter_();
     renderApprovalsForSelectedCampus();
     const needs = res.requests.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; }).length;
@@ -2309,7 +2299,6 @@ async function loadApprovals() {
 }
 
 function refreshApprovals() {
-  APR_SELECTED = {};
   aprExpandedId = null;
   aprExpandedDetail = null;
   document.getElementById('aprListBody').innerHTML = ''; // the status bar already shows loading
@@ -2330,33 +2319,17 @@ function aprRenderViewBar_(archivedCount) {
   }).join('');
 }
 function aprResetView_() { aprExpandedId = null; aprExpandedDetail = null; renderApprovalsForSelectedCampus(); }
-function aprSetView(v) { APR_VIEW = v; APR_SELECTED = {}; aprRenderStatusFilter_(); aprResetView_(); }
+function aprSetView(v) { APR_VIEW = v; aprRenderStatusFilter_(); aprResetView_(); }
 function aprSetSearch(v) {
   APR_SEARCH = v.trim(); aprResetView_();
   const el = document.getElementById('aprSearch'); // the header is re-rendered, so put the cursor back
   if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
 }
-function aprSetSchoolFilter(v) { APR_SCHOOL_FILTER = v; aprResetView_(); }
 function aprSortBy(key) { // asc, then desc, then back to the default order
   if (APR_SORT_KEY !== key) { APR_SORT_KEY = key; APR_SORT_DIR = 1; }
   else if (APR_SORT_DIR === 1) APR_SORT_DIR = -1;
   else APR_SORT_KEY = null;
   aprResetView_();
-}
-function aprToggleSel(id, on) { if (on) APR_SELECTED[id] = true; else delete APR_SELECTED[id]; renderApprovalsForSelectedCampus(); }
-function aprToggleAll(on) { APR_SELECTED = on ? Object.assign({}, APR_ELIGIBLE) : {}; renderApprovalsForSelectedCampus(); }
-async function aprArchive_(ids, archive) {
-  aprSetStatus_('loading', archive ? 'Archiving…' : 'Restoring…');
-  const res = await pdrPost_('archiveapproval', { ids: ids, archive: archive });
-  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t ' + (archive ? 'archive' : 'unarchive') + ': ' + aprEsc_(res.error || 'unknown error')); return; }
-  refreshApprovals();
-}
-function aprArchiveSelected_() {
-  const ids = Object.keys(APR_SELECTED), archive = APR_VIEW === 'Requests';
-  if (!ids.length) return;
-  if (archive && !confirm('Archive ' + ids.length + ' request(s)? They move to the Archive view and can be restored.')) return;
-  APR_SELECTED = {};
-  aprArchive_(ids, archive);
 }
 function aprSelectStatusFilter(status) {
   APR_STATUS_FILTER = status;
@@ -2399,18 +2372,9 @@ function aprStatusPillClass_(status) {
   return 'amber'; // Pending, Info Requested
 }
 
-// Owner (campusId 'ALL') sees every school's requests on this one tab
-// at once -- per Uday 2026-09-10, this is the one tab that breaks from
-// the portal's usual "pick a school, browse within it" convention,
-// specifically because cross-school oversight IS the point of
-// Approvals for an Owner. A Principal's own list only ever contains
-// their own campus anyway, so this only changes anything for Owner/
-// Coordinator sessions. aprColspan_()/aprShowsCampusCol_() are read by
-// aprRowHtml_/aprDetailHtml_ too, so the extra School column and the
-// detail row's colspan stay in sync without threading a param through
-// every call site.
-function aprShowsCampusCol_() { return SESSION.campusId === 'ALL'; }
-function aprColspan_() { return (aprShowsCampusCol_() ? 6 : 5) + (aprRes && aprRes.canDecide ? 1 : 0); }
+// This tab is the Principal's own interface for everyone (2026-10-08, per Uday): the request form plus the selected school's requests. The Owner's
+// all-schools table, decisions, referrals and bulk archive moved to the Coordinator Portal (coordinator/approvals.js, the Systems page's Approvals tab).
+function aprColspan_() { return 5; }
 
 // Needs-action rows (Pending/Info Requested) always sort above decided
 // history, Urgent first within that, then oldest-first so nothing
@@ -2421,7 +2385,7 @@ function aprColspan_() { return (aprShowsCampusCol_() ? 6 : 5) + (aprRes && aprR
 function aprSortRows_(rows) {
   if (APR_SORT_KEY) {
     const val = {
-      school: function (r) { return r.campusId; }, title: function (r) { return r.title.toLowerCase(); },
+      title: function (r) { return r.title.toLowerCase(); },
       category: function (r) { return r.category; }, urgency: function (r) { return r.urgency === 'Urgent' ? 0 : 1; },
       status: function (r) { return r.status; },
       date: function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1 ? r.requestedAt : (r.decidedAt || r.requestedAt); },
@@ -2444,28 +2408,21 @@ function aprSortRows_(rows) {
 function renderApprovalsForSelectedCampus() {
   if (!aprRes || !SELECTED_CAMPUS_ID) return; // loadApprovals() hasn't resolved yet, or no school picked -- it/selectSchool() calls this again once true
   const body = document.getElementById('aprListBody');
-  const showAll = aprShowsCampusCol_();
-  let rows = showAll ? aprRes.requests.slice() : aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
+  // A Principal's list only ever holds their own school; an Owner or Coordinator opening this page sees the school picked in the school bar.
+  let rows = aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID; });
   if (APR_STATUS_FILTER === 'Needs Action') rows = rows.filter(function (r) { return APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1; });
   else if (APR_STATUS_FILTER !== 'All') rows = rows.filter(function (r) { return r.status === APR_STATUS_FILTER; });
   if (APR_CATEGORY_FILTER !== 'All') rows = rows.filter(function (r) { return r.category === APR_CATEGORY_FILTER; });
-  if (APR_SCHOOL_FILTER !== 'All') rows = rows.filter(function (r) { return r.campusId === APR_SCHOOL_FILTER; });
-  const archivedCount = aprRes.requests.filter(function (r) { return r.archived; }).length;
+  const archivedCount = aprRes.requests.filter(function (r) { return r.campusId === SELECTED_CAMPUS_ID && r.archived; }).length;
   rows = rows.filter(function (r) { return APR_VIEW === 'Archive' ? r.archived : !r.archived; });
   if (APR_SEARCH) {
     const q = APR_SEARCH.toLowerCase();
-    rows = rows.filter(function (r) { return (r.title + ' ' + r.category + ' ' + r.requestedBy + ' ' + r.itemName + ' ' + r.description + ' ' + LMCS.campusLabel(r.campusId)).toLowerCase().indexOf(q) !== -1; });
+    rows = rows.filter(function (r) { return (r.title + ' ' + r.category + ' ' + r.requestedBy + ' ' + r.itemName + ' ' + r.description).toLowerCase().indexOf(q) !== -1; });
   }
   aprRenderViewBar_(archivedCount);
   rows = aprSortRows_(rows);
 
-  // Header row doubles as the control bar: click a title to sort, the filters/search live in
-  // their own columns, and the checkbox column drives bulk Archive/Unarchive.
-  const canSel = !!aprRes.canDecide;
-  APR_ELIGIBLE = {};
-  if (canSel) rows.forEach(function (r) { if (APR_VIEW === 'Archive' || APR_DECIDED_STATUSES.indexOf(r.status) !== -1) APR_ELIGIBLE[r.id] = true; });
-  Object.keys(APR_SELECTED).forEach(function (id) { if (!APR_ELIGIBLE[id]) delete APR_SELECTED[id]; });
-  const selCount = Object.keys(APR_SELECTED).length, eligCount = Object.keys(APR_ELIGIBLE).length;
+  // Header row doubles as the control bar: click a title to sort, the filters/search live in their own columns.
   const box = 'display:block;margin-top:4px;font-size:11px;padding:2px 4px;border-radius:4px;border:0;max-width:100%;color:#333';
   const th = function (key, label, extra) {
     return '<th style="cursor:pointer;vertical-align:top" onclick="aprSortBy(\'' + key + '\')">' + label + (APR_SORT_KEY === key ? (APR_SORT_DIR > 0 ? ' ▲' : ' ▼') : '') + (extra || '') + '</th>';
@@ -2474,12 +2431,9 @@ function renderApprovalsForSelectedCampus() {
     return '<option value="All">' + allLabel + '</option>' + list.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + aprEsc_(o[1]) + '</option>'; }).join('');
   };
   const head = '<thead><tr>' +
-    (canSel ? '<th style="width:28px"><input type="checkbox" title="Select all" ' + (eligCount && selCount === eligCount ? 'checked ' : '') + (eligCount ? '' : 'disabled ') + 'onclick="event.stopPropagation();aprToggleAll(this.checked)"></th>' : '') +
-    (showAll ? th('school', 'School', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSetSchoolFilter(this.value)">' + opts(ALL_CAMPUSES.map(function (c) { return [c, LMCS.campusLabel(c)]; }), APR_SCHOOL_FILTER, 'All schools') + '</select>') : '') +
     th('title', 'Title', '<input id="aprSearch" type="text" placeholder="Search…" value="' + aprEsc_(APR_SEARCH) + '" style="' + box + '" onclick="event.stopPropagation()" oninput="aprSetSearch(this.value)">') +
     th('category', 'Category', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSelectCategoryFilter(this.value)">' + opts(APR_CATEGORIES.map(function (c) { return [c, c]; }), APR_CATEGORY_FILTER, 'All categories') + '</select>') +
-    th('urgency', 'Urgency') + th('status', 'Status') +
-    th('date', 'Age / Decided', selCount ? '<button type="button" style="' + box + ';cursor:pointer;font-weight:700" onclick="event.stopPropagation();aprArchiveSelected_()">' + (APR_VIEW === 'Archive' ? 'Unarchive ' : 'Archive ') + selCount + ' selected</button>' : '') +
+    th('urgency', 'Urgency') + th('status', 'Status') + th('date', 'Age / Decided') +
     '</tr></thead>';
 
   let bodyRows;
@@ -2487,7 +2441,7 @@ function renderApprovalsForSelectedCampus() {
   else {
     const statusLabel = APR_STATUS_FILTER === 'All' ? '' : APR_STATUS_FILTER.toLowerCase() + ' ';
     const catLabel = APR_CATEGORY_FILTER === 'All' ? '' : ' in ' + APR_CATEGORY_FILTER;
-    bodyRows = '<tr><td colspan="' + aprColspan_() + '" class="dash-empty">No ' + (APR_VIEW === 'Archive' ? 'archived ' : '') + statusLabel + 'requests' + catLabel + (showAll ? '' : ' for this school') + '.</td></tr>';
+    bodyRows = '<tr><td colspan="' + aprColspan_() + '" class="dash-empty">No ' + (APR_VIEW === 'Archive' ? 'archived ' : '') + statusLabel + 'requests' + catLabel + ' for this school.</td></tr>';
   }
   body.innerHTML = '<div class="tbl-wrap"><table>' + head + '<tbody>' + bodyRows + '</tbody></table></div>';
 }
@@ -2496,17 +2450,13 @@ function aprRowHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
   const needsAction = APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1;
   const stale = needsAction && aprIsStale_(r.requestedAt);
-  // Needs-action rows show age ("4d ago", stale-tinted past 3 days) --
-  // that's the actionable date here. Decided rows show when it was
-  // decided (falling back to requestedAt for the rare pre-decision
-  // row), since "when did this get settled" is what matters once it's
+  // Needs-action rows show age ("4d ago", stale-tinted past 3 days) -- that's the actionable date here. Decided rows show when it was
+  // decided (falling back to requestedAt for the rare pre-decision row), since "when did this get settled" is what matters once it's
   // no longer awaiting anyone.
   const dateCell = needsAction
     ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
     : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
-    (aprRes.canDecide ? '<td onclick="event.stopPropagation()">' + (APR_ELIGIBLE[r.id] ? '<input type="checkbox" ' + (APR_SELECTED[r.id] ? 'checked ' : '') + 'onchange="aprToggleSel(\'' + r.id + '\',this.checked)">' : '') + '</td>' : '') +
-    (aprShowsCampusCol_() ? '<td>' + aprEsc_(LMCS.campusLabel(r.campusId)) + '</td>' : '') +
     '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></td>' +
@@ -2562,25 +2512,8 @@ function aprDetailHtml_(res) {
   meta.push('Requested by ' + aprEsc_(r.requestedBy) + ' on ' + formatDDMMYYYY_(r.requestedAt));
   if (r.decidedBy) meta.push((r.status) + ' by ' + aprEsc_(r.decidedBy) + ' on ' + formatDDMMYYYY_(r.decidedAt));
 
+  // What was decided stays visible to the requester; making the decision happens in the Coordinator Portal.
   let decideBar = '';
-  if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) {
-    decideBar = '<div class="apr-decide-bar">' +
-      '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Note explaining the decision (required)">' +
-      (APR_NO_REFER_CATEGORIES.indexOf(r.category) === -1 ? aprReferHtml_(r.id) : '') +
-      '<button type="button" class="approve" onclick="decideApproval(\'' + r.id + '\',\'Approved\')">Approve</button>' +
-      '<button type="button" class="reject" onclick="decideApproval(\'' + r.id + '\',\'Rejected\')">Reject</button>' +
-      '<button type="button" class="info" onclick="decideApproval(\'' + r.id + '\',\'Info Requested\')">Request Info</button>' +
-      '</div>';
-  } else if (res.canDecide && r.status === 'Approved') {
-    decideBar = '<div class="apr-decide-bar">' +
-      '<input type="text" class="apr-decide-note" id="aprNote-' + r.id + '" placeholder="Reason for revoking (required)">' +
-      (APR_NO_REFER_CATEGORIES.indexOf(r.category) === -1 ? aprReferHtml_(r.id) : '') +
-      '<button type="button" class="revoke" onclick="decideApproval(\'' + r.id + '\',\'Revoked\')">Revoke</button>' +
-      '</div>';
-  }
-  if (res.canDecide && APR_DECIDED_STATUSES.indexOf(r.status) !== -1) {
-    decideBar += '<div class="apr-decide-bar"><button type="button" class="revoke" onclick="aprArchive_([\'' + r.id + '\'], ' + (r.archived ? 'false' : 'true') + ')">' + (r.archived ? 'Unarchive' : 'Archive') + '</button></div>';
-  }
   if (r.referredTo) decideBar = '<div class="apr-desc"><b>Referred to:</b> ' + aprEsc_(r.referredTo) + '</div>' + decideBar;
   if (r.decisionNote) decideBar = '<div class="apr-desc"><b>Decision note:</b> ' + aprEsc_(r.decisionNote) + '</div>' + decideBar;
 
@@ -2657,121 +2590,6 @@ async function submitApprovalComment(id) {
   toggleApprovalRow(id); // reopen -- cheapest way to pull the fresh comment thread
 }
 
-// "Refer to" picker: search staff by name (datalist), pick up to 4 as chips.
-// Emails come from the decider-only action=approvalreferees, never the
-// public roster. A typed raw @lms.org.in address works too.
-let aprRefereeListLoaded_ = false;
-let aprRefereeNames_ = {}; // email -> name
-let aprRefereeStaff_ = []; // [{name,email}]
-let aprRefereeError_ = '';
-const aprReferees_ = {};   // approvalId -> [emails]
-let aprRefereeLoading_ = false;
-async function aprLoadRefereeList_() {
-  if (aprRefereeListLoaded_ || aprRefereeLoading_) return;
-  aprRefereeLoading_ = true;
-  try {
-    const res = await aprGetJson_(PDR_BACKEND_URL + '?action=approvalreferees&idToken=' + encodeURIComponent(SESSION.idToken));
-    if (!res.success || !res.staff) { aprRefereeError_ = res.error || 'backend not updated yet?'; return; }
-    aprRefereeListLoaded_ = true;
-    aprRefereeError_ = '';
-    aprRefereeStaff_ = res.staff;
-    res.staff.forEach(function (s) { aprRefereeNames_[s.email] = s.name; });
-  } catch (err) { aprRefereeError_ = err.message; }
-  finally { aprRefereeLoading_ = false; }
-}
-const APR_REFER_KINDS = [['action', 'For Action'], ['accountability', 'For Accountability'], ['information', 'For Information']];
-function aprReferHtml_(id) {
-  aprLoadRefereeList_();
-  aprReferees_[id] = aprReferees_[id] || { action: [], accountability: [], information: [] };
-  return '<div class="apr-refer" style="width:100%">' + APR_REFER_KINDS.map(function (kv) {
-    const k = kv[0], sfx = k + '-' + id;
-    return '<div style="position:relative;margin-bottom:6px"><div style="font-size:11.5px;color:var(--gray);margin:2px 0">' + kv[1] + ' (max 2)</div>' +
-      '<div id="aprChips-' + sfx + '">' + aprChipsHtml_(id, k) + '</div>' +
-      '<input type="text" class="apr-decide-note" id="aprRefer-' + sfx + '" autocomplete="off" oninput="aprSearchReferee(\'' + id + '\',\'' + k + '\')" onfocus="aprSearchReferee(\'' + id + '\',\'' + k + '\')" ' +
-      'onkeydown="if(event.key===\'Enter\'){aprAddReferee(\'' + id + '\',\'' + k + '\');event.preventDefault();}" placeholder="Start typing a name…">' +
-      '<div id="aprReferMenu-' + sfx + '" style="display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto"></div></div>';
-  }).join('') + '<div style="font-size:11px;color:var(--gray)">Optional. Each group gets its own email, without the amount.</div></div>';
-}
-async function aprSearchReferee(id, kind) {
-  if (!aprRefereeListLoaded_ && !aprRefereeLoading_) { // not loaded (or failed earlier): try again now, then redo this search
-    const p = aprLoadRefereeList_();
-    aprSearchReferee_(id, kind);
-    await p;
-  }
-  aprSearchReferee_(id, kind);
-}
-function aprSearchReferee_(id, kind) {
-  const sfx = kind + '-' + id;
-  const menu = document.getElementById('aprReferMenu-' + sfx);
-  const q = document.getElementById('aprRefer-' + sfx).value.trim().toLowerCase();
-  if (!q) { menu.style.display = 'none'; return; }
-  const hits = aprRefereeStaff_.filter(function (s) { return s.name.toLowerCase().indexOf(q) !== -1 || s.email.indexOf(q) !== -1; }).slice(0, 8);
-  const item = 'padding:7px 12px;cursor:pointer;font-size:13px';
-  menu.innerHTML = hits.length ? hits.map(function (s) {
-    return '<div style="' + item + '" onmousedown="aprPickReferee(\'' + id + '\',\'' + kind + '\',\'' + s.email + '\')">' + aprEsc_(s.name) + ' <span style="color:var(--gray);font-size:11.5px">' + aprEsc_(s.email) + '</span></div>';
-  }).join('') : '<div style="' + item + ';color:var(--gray)">' + (aprRefereeStaff_.length ? 'No match' : (aprRefereeLoading_ ? 'Loading the staff list (the backend can be slow)…' : 'Couldn’t load the staff list (' + aprEsc_(aprRefereeError_ || 'unknown') + '). Keep typing to retry, or type the full @lms.org.in address and press Enter.')) + '</div>';
-  menu.style.display = 'block';
-}
-function aprPickReferee(id, kind, email) {
-  const input = document.getElementById('aprRefer-' + kind + '-' + id);
-  input.value = email;
-  aprAddReferee(id, kind);
-  input.focus();
-}
-function aprChipsHtml_(id, kind) {
-  return (aprReferees_[id][kind] || []).map(function (e, i) {
-    return '<span class="apr-chip" style="display:inline-block;background:#eee;border-radius:12px;padding:2px 10px;margin:0 6px 6px 0">' +
-      aprEsc_(aprRefereeNames_[e] || e) + ' <a href="#" onclick="aprRemoveReferee(\'' + id + '\',\'' + kind + '\',' + i + ');return false" style="text-decoration:none">×</a></span>';
-  }).join('');
-}
-function aprAddReferee(id, kind) {
-  const sfx = kind + '-' + id;
-  const input = document.getElementById('aprRefer-' + sfx);
-  const m = input.value.toLowerCase().match(/[^\s<>—,;]+@lms\.org\.in/);
-  const list = aprReferees_[id][kind];
-  if (m && list.indexOf(m[0]) === -1) {
-    if (list.length >= 2) alert('At most 2 people per group.'); else list.push(m[0]);
-  }
-  input.value = '';
-  document.getElementById('aprReferMenu-' + sfx).style.display = 'none';
-  document.getElementById('aprChips-' + sfx).innerHTML = aprChipsHtml_(id, kind);
-}
-function aprRemoveReferee(id, kind, i) {
-  aprReferees_[id][kind].splice(i, 1);
-  document.getElementById('aprChips-' + kind + '-' + id).innerHTML = aprChipsHtml_(id, kind);
-}
-
-async function decideApproval(id, decision) {
-  const noteInput = document.getElementById('aprNote-' + id);
-  const note = noteInput.value.trim();
-  if (!note) { alert('A note explaining the decision is required.'); return; }
-  const btns = document.querySelectorAll('.apr-decide-bar button');
-  btns.forEach(function (b) { b.disabled = true; });
-  aprSetStatus_('loading', 'Saving decision…');
-  const referTo = {};
-  if (aprReferees_[id]) APR_REFER_KINDS.forEach(function (kv) {
-    if (document.getElementById('aprRefer-' + kv[0] + '-' + id)) aprAddReferee(id, kv[0]); // a half-typed address still counts
-    referTo[kv[0]] = aprReferees_[id][kv[0]].join(',');
-  });
-  const res = await pdrPost_('decideapproval', { id: id, decision: decision, note: note, referTo: referTo });
-  btns.forEach(function (b) { b.disabled = false; });
-  if (!res.success && /JSON|DOCTYPE/.test(String(res.error || ''))) {
-    // The backend sometimes answers a slow POST with a Google HTML page even though the write
-    // went through -- so check the sheet before telling the Owner it failed.
-    aprSetStatus_('loading', 'Reply unreadable (backend slow) — checking whether it saved…');
-    try {
-      const chk = await aprGetJson_(PDR_BACKEND_URL + '?action=approvaldetail&id=' + encodeURIComponent(id) + '&idToken=' + encodeURIComponent(SESSION.idToken));
-      if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); aprExpandedId = null; aprExpandedDetail = null; refreshApprovals(); return; }
-    } catch (e) { /* fall through to the normal failure message */ }
-  }
-  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); aprSetStatus_('err', 'Couldn’t record that decision' + (res.error ? ': ' + aprEsc_(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); return; }
-  if (res.mailError) alert('Approved and saved, but the email to the referred people failed: ' + res.mailError);
-  else if (res.referred) alert(decision + ' — emails sent: ' + APR_REFER_KINDS.map(function (kv) { return res.referred[kv[0]].length ? kv[1] + ' (' + res.referred[kv[0]].join(', ') + ')' : ''; }).filter(Boolean).join('; ') + '.');
-  aprExpandedId = null;
-  aprExpandedDetail = null;
-  refreshApprovals();
-}
-
 // Guarded against double-submission the same way submitReport()/
 // addPlannedActivityHandler() are (see submitReport()'s comment).
 async function submitApprovalRequest() {
@@ -2817,6 +2635,7 @@ async function submitApprovalRequest() {
     // (Google error page) reply is safe -- the reply is what gets lost, not necessarily the save.
     let res, payload = {
       category: category,
+      campusId: SELECTED_CAMPUS_ID, // read by the backend only for an Owner/Coordinator; a Principal is always filed under their own school
       urgency: document.getElementById('aprUrgency').value,
       title: title,
       description: description,
