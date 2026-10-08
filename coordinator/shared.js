@@ -36,6 +36,16 @@ window.Coord = (function () {
     return data;
   }
 
+  // POST that survives the backend's habit of answering a cold or slow request with a Google error page (HTML) instead of JSON. Only for actions that are
+  // safe to repeat (saving an acknowledgement or assignment, merging, undoing a merge): each is an upsert, so a retry cannot double anything.
+  async function postJson(body) {
+    for (let i = 0; i < 3; i++) {
+      try { return JSON.parse(await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: SESSION.idToken }, body)) })).text()); }
+      catch (err) { if (i < 2) await new Promise(ok => setTimeout(ok, 1500 * (i + 1))); }
+    }
+    throw new Error('the server was slow and answered with an error page three times. It is probably waking up: wait a minute and try again');
+  }
+
   function canUse(session) { return LMCS.canViewCoordinatorPortal(session); }
 
   // Section pages: sign-in gate, access check, then render(body, session).
@@ -724,7 +734,7 @@ window.Coord = (function () {
       on('.pd-dlatest', 'click', () => { P.day = ''; render(); });
       const mergeCall = async (source, target, msg) => {
         try {
-          const res = await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorpdrmerge', idToken: SESSION.idToken, source: source, target: target }) })).json();
+          const res = await postJson({ action: 'coordinatorpdrmerge', source: source, target: target });
           if (!res.success) throw new Error(res.error || 'Could not merge');
           P.data.merges = res.merges; render();
         } catch (err) { if (msg) msg.textContent = 'Not merged: ' + err.message; else alert('Could not undo the merge: ' + err.message); }
@@ -740,7 +750,7 @@ window.Coord = (function () {
         const ed = btn.closest('.pd-edit'), msg = ed.querySelector('.pd-msg'), id = ed.dataset.id;
         btn.disabled = true; msg.textContent = 'Saving...';
         try {
-          const res = await (await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorpdrissue', idToken: SESSION.idToken, id: id, status: ed.querySelector('.pd-as').value, assignee: ed.querySelector('.pd-who').value, note: ed.querySelector('.pd-note').value }) })).json();
+          const res = await postJson({ action: 'coordinatorpdrissue', id: id, status: ed.querySelector('.pd-as').value, assignee: ed.querySelector('.pd-who').value, note: ed.querySelector('.pd-note').value });
           if (!res.success) throw new Error(res.error || 'Could not save');
           P.data.actions = P.data.actions || {}; P.data.actions[id] = res.action;
           render();

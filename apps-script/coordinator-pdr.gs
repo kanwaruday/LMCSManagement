@@ -282,3 +282,20 @@ function coordPdrDay_(caller, date) {
   out.sort(function (a, b) { return a.campus < b.campus ? -1 : 1; });
   return { success: true, date: date, reports: out };
 }
+
+// ── Keep the backend warm ────────────────────────────────────────────
+// A request that reaches a cold web app can take ~30 s, and Google then answers with an HTML error page instead of JSON (the page now retries, but a
+// warm backend avoids the wait altogether). coordKeepWarm() calls this project's own web app with a harmless request every 5 minutes; the call is
+// refused as "Not authorized" (no token) but it runs doGet, which is what keeps the instance alive. SETUP: run coordInstallKeepWarm() once from the
+// editor (Run > coordInstallKeepWarm). It only touches its own trigger, so any other triggers in this project are left alone.
+const COORD_SELF_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // same as BACKEND_URL in coordinator/shared.js
+
+function coordKeepWarm() {
+  UrlFetchApp.fetch(COORD_SELF_URL + '?action=ping', { muteHttpExceptions: true, followRedirects: true });
+}
+
+function coordInstallKeepWarm() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'coordKeepWarm') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('coordKeepWarm').timeBased().everyMinutes(5).create();
+  Logger.log('Keep-warm trigger installed: coordKeepWarm every 5 minutes');
+}
