@@ -21,7 +21,7 @@ window.Coord = (function () {
   ];
   // Paths are relative to coordinator/<page>/, i.e. two levels below the repo root.
   const WORK_LINKS = {
-    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../systems/index.html#approvals',
+    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../systems/index.html#approvals', apr_follow: '../systems/index.html#approvals',
     hiring_stall: '../../hiring/index.html', complete_hire: '../../staff/add-employee.html',
     doc_missing: '../../staff/add-employee.html', doc_none: '../../staff/add-employee.html', doc_verify: '../../staff/add-employee.html',
     pdr_issue: '../systems/index.html',
@@ -75,9 +75,11 @@ window.Coord = (function () {
       render();
     }));
     const me = () => (SESSION.email || '').toLowerCase();
+    const isoToday = () => { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+    const dueTxt = iso => { const d = new Date(iso + 'T00:00:00'); return d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; };
     const card = t =>
       '<div class="task ' + esc(t.severity) + '"><div>' +
-        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me() ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + esc(t.title) + '</div>' +
+        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me() ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + (t.due ? '<span class="chip"' + (t.due < isoToday() ? ' style="color:#CE0000;font-weight:700"' : '') + '>' + (t.due < isoToday() ? 'overdue, due ' : 'due ') + dueTxt(t.due) + '</span>' : '') + esc(t.title) + '</div>' +
         '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
       '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>';
 
@@ -718,7 +720,7 @@ window.Coord = (function () {
       box.querySelectorAll('.pd-as').forEach(sel => sel.addEventListener('change', () => { sel.closest('.pd-edit').querySelector('.pd-who').style.display = sel.value === 'assigned' ? '' : 'none'; })); // the name only matters for "Assign to"
       const aprSlot = box.querySelector('.pd-apr-slot');
       if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
-        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl); }
+        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson }); }
         aprSlot.appendChild(P.aprEl);
       }
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { P.tab = b.dataset.tab; render(); }));

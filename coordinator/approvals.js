@@ -13,6 +13,13 @@ window.CoordApprovals = (function () {
   const NEEDS = ['Pending', 'Info Requested'], DECIDED = ['Approved', 'Rejected', 'Revoked'];
   const REFER_KINDS = [['action', 'For Action'], ['accountability', 'For Accountability'], ['information', 'For Information']];
   const STALE_DAYS = 3;
+  const FOLLOW_SKIP = ['New/ Backup Position', 'Salary Offer Approval']; // tracked in the Hiring dashboard, so no second follow-up here
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const isoDay = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const plusDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return isoDay(d); };
+  const dueLabel = iso => { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return d.getDate() + ' ' + MON[d.getMonth()]; };
+  // where an approved request's follow-up stands: hiring (tracked elsewhere), na (not approved), none (nobody allocated), open, overdue, done
+  const fuState = r => FOLLOW_SKIP.indexOf(r.category) !== -1 ? 'hiring' : r.status !== 'Approved' ? 'na' : !r.followUp ? 'none' : r.followUp.status === 'done' ? 'done' : (r.followUp.due && r.followUp.due < isoDay(new Date()) ? 'overdue' : 'open');
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ddmmyyyy = d => { if (!d) return '—'; const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); };
@@ -68,18 +75,22 @@ window.CoordApprovals = (function () {
 .apro .note{width:100%;margin-bottom:8px}
 .apro .hint{font-size:11.5px;color:var(--amber);font-weight:600;margin:8px 0 4px}
 .apro .chip{display:inline-block;background:#eee;border-radius:12px;padding:2px 10px;margin:0 6px 6px 0}
+.apro .fu{margin:10px 0;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:6px;font-size:12px}
+.apro .fu .addrow{margin-top:6px;flex-wrap:wrap}.apro .fu .addrow input[type=date]{flex:0 0 auto}.apro .fu a{color:var(--red);margin-left:8px}
+.apro .late{color:var(--red);font-weight:700}
 .apro .menu{display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto}
 .apro .menu div{padding:7px 12px;cursor:pointer;font-size:13px}.apro .menu div:hover{background:var(--lgray)}
 `;
 
-  function mount(root) {
+  function mount(root, ctx) {
+    ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply)
     if (!document.getElementById('apro-css')) { const st = document.createElement('style'); st.id = 'apro-css'; st.textContent = CSS; document.head.appendChild(st); }
     root.className = 'apro';
     root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div>' +
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
       '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
-    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, selected: {}, eligible: {}, openId: null, detail: null,
+    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null,
       refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
 
@@ -107,9 +118,12 @@ window.CoordApprovals = (function () {
         if (res.canDecide) loadReferees();
         renderPickers(); renderList();
         const needs = res.requests.filter(r => NEEDS.indexOf(r.status) !== -1).length;
-        setBar('ok', '✓ Loaded ' + res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' · ' + needs + ' need action · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (res.canDecide ? '' : ' · view only: you do not have decision rights'));
+        const unallocated = res.requests.filter(r => !r.archived && fuState(r) === 'none').length;
+        setBar('ok', '✓ Loaded ' + res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' · ' + needs + ' need action' + (unallocated ? ' · ' + unallocated + ' approved with no follow-up' : '') + ' · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (res.canDecide ? '' : ' · view only: you do not have decision rights'));
       } catch (err) { $('list').innerHTML = '<div class="dash-empty">Couldn’t reach the Approvals backend: ' + esc(err.message) + '</div>'; setBar('err', 'Couldn’t reach the Approvals backend: ' + esc(err.message), true); }
     }
+    // reload the list, then reopen the request the person was working on so they see the result
+    async function refreshKeepOpen(id) { await load(); S.openId = null; S.detail = null; await toggleRow(id); }
     function refresh() { S.selected = {}; S.openId = null; S.detail = null; $('list').innerHTML = ''; load(); }
 
     function renderPickers() {
@@ -138,6 +152,7 @@ window.CoordApprovals = (function () {
       if (S.status === 'Needs Action') rows = rows.filter(r => NEEDS.indexOf(r.status) !== -1); else if (S.status !== 'All') rows = rows.filter(r => r.status === S.status);
       if (S.cat !== 'All') rows = rows.filter(r => r.category === S.cat);
       if (S.school !== 'All') rows = rows.filter(r => r.campusId === S.school);
+      if (S.fu !== 'All') rows = rows.filter(r => fuState(r) === S.fu);
       rows = rows.filter(r => S.view === 'Archive' ? r.archived : !r.archived);
       if (S.search) { const q = S.search.toLowerCase(); rows = rows.filter(r => (r.title + ' ' + r.category + ' ' + r.requestedBy + ' ' + r.itemName + ' ' + r.description + ' ' + school(r.campusId)).toLowerCase().indexOf(q) !== -1); }
       renderPickers();
@@ -146,13 +161,14 @@ window.CoordApprovals = (function () {
       S.eligible = {};
       if (canSel) rows.forEach(r => { if (S.view === 'Archive' || DECIDED.indexOf(r.status) !== -1) S.eligible[r.id] = true; });
       Object.keys(S.selected).forEach(id => { if (!S.eligible[id]) delete S.selected[id]; });
-      const sel = Object.keys(S.selected).length, elig = Object.keys(S.eligible).length, cols = 6 + (canSel ? 1 : 0);
+      const sel = Object.keys(S.selected).length, elig = Object.keys(S.eligible).length, cols = 7 + (canSel ? 1 : 0);
       const th = (key, label, extra) => '<th data-act="sort" data-v="' + key + '">' + label + (S.sortKey === key ? (S.sortDir > 0 ? ' ▲' : ' ▼') : '') + (extra || '') + '</th>';
       const opts = (list, cur, all) => '<option value="All">' + all + '</option>' + list.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('');
       const head = '<thead><tr>' + (canSel ? '<th style="width:28px;cursor:default"><input type="checkbox" data-act="selall" title="Select all" ' + (elig && sel === elig ? 'checked ' : '') + (elig ? '' : 'disabled') + '></th>' : '') +
         th('school', 'School', '<select class="hsel" data-f="school">' + opts(CAMPUSES.map(c => [c, school(c)]), S.school, 'All schools') + '</select>') +
         th('title', 'Title', '<input class="hsel" data-f="search" type="text" placeholder="Search…" value="' + esc(S.search) + '" style="width:100%">') +
         th('category', 'Category', '<select class="hsel" data-f="cat">' + opts(CATEGORIES.map(c => [c, c]), S.cat, 'All categories') + '</select>') + th('urgency', 'Urgency') + th('status', 'Status') +
+        '<th style="cursor:default;vertical-align:top">Follow-up<select class="hsel" data-f="fu">' + opts([['none', 'Not allocated'], ['open', 'Open'], ['overdue', 'Overdue'], ['done', 'Done']], S.fu, 'All follow-ups') + '</select></th>' +
         th('date', 'Age / Decided', sel ? '<button type="button" class="hsel" style="cursor:pointer;font-weight:700" data-act="archsel">' + (S.view === 'Archive' ? 'Unarchive ' : 'Archive ') + sel + ' selected</button>' : '') + '</tr></thead>';
       let body;
       if (rows.length) body = rows.map(rowHtml).join('');
@@ -162,13 +178,21 @@ window.CoordApprovals = (function () {
       if (keepSearch) { const el = root.querySelector('[data-f="search"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
     }
 
+    function fuCell(r) {
+      const st = fuState(r), f = r.followUp;
+      if (st === 'hiring') return r.status === 'Approved' ? '<span class="sm">In Hiring</span>' : '\u2014';
+      if (st === 'na') return '\u2014';
+      if (st === 'none') return '<span class="pill amber">Not allocated</span>';
+      const who = esc((f.assigneeName || f.assignee).split(' ')[0]);
+      return st === 'done' ? '<span class="pill ok">Done</span> <span class="sm">' + who + '</span>' : '<span class="' + (st === 'overdue' ? 'late' : '') + '">' + who + ' \u00b7 due ' + dueLabel(f.due) + (st === 'overdue' ? ' (overdue)' : '') + '</span>';
+    }
     function rowHtml(r) {
-      const open = S.openId === r.id, needs = NEEDS.indexOf(r.status) !== -1, stale = needs && isStale(r.requestedAt), canSel = !!S.res.canDecide, cols = 6 + (canSel ? 1 : 0);
+      const open = S.openId === r.id, needs = NEEDS.indexOf(r.status) !== -1, stale = needs && isStale(r.requestedAt), canSel = !!S.res.canDecide, cols = 7 + (canSel ? 1 : 0);
       const date = needs ? '<span' + (stale ? ' class="stalet"' : '') + '>' + age(r.requestedAt) + '</span>' : ddmmyyyy(r.decidedAt || r.requestedAt);
       let h = '<tr class="row' + (open ? ' open' : '') + (stale ? ' stale' : '') + '" data-act="row" data-id="' + esc(r.id) + '">' +
         (canSel ? '<td data-stop="1">' + (S.eligible[r.id] ? '<input type="checkbox" data-act="sel" data-id="' + esc(r.id) + '" ' + (S.selected[r.id] ? 'checked' : '') + '>' : '') + '</td>' : '') +
         '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + '</td><td>' + esc(r.category) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
-        '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + date + '</td></tr>';
+        '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + fuCell(r) + '</td><td>' + date + '</td></tr>';
       if (open) h += '<tr class="detail"><td colspan="' + cols + '"><div class="dwrap" data-slot="detail">' + (S.detail ? detailInner(S.detail) : '<div class="empty">Loading…</div>') + '</div></td></tr>';
       return h;
     }
@@ -184,6 +208,18 @@ window.CoordApprovals = (function () {
     }
     const reopen = id => { S.openId = null; S.detail = null; return toggleRow(id); };
 
+    function followHtml(r, canDecide) {
+      if (FOLLOW_SKIP.indexOf(r.category) !== -1) return r.status === 'Approved' ? '<div class="fu"><b>Follow-up:</b> <span class="sm">tracked in the Hiring dashboard</span></div>' : '';
+      if (r.status !== 'Approved') return '';
+      const f = r.followUp, st = fuState(r);
+      const form = canDecide && ctx.post ? '<div class="addrow"><select data-fu-who="' + esc(r.id) + '">' + (ctx.people ? ctx.people() : []).map(c => '<option value="' + esc(c.email) + '"' + (f && f.assignee === c.email ? ' selected' : '') + '>' + esc(c.name || c.email) + '</option>').join('') + '</select>' +
+        '<input type="date" data-fu-due="' + esc(r.id) + '" value="' + esc(f && f.due >= isoDay(new Date()) ? f.due : plusDays(7)) + '" min="' + isoDay(new Date()) + '"><input type="text" data-fu-note="' + esc(r.id) + '" placeholder="Note (optional)" value="' + esc(f && st !== 'done' ? f.note : '') + '">' +
+        '<button type="button" data-act="alloc" data-id="' + esc(r.id) + '">' + (f ? 'Save' : 'Allocate follow-up') + '</button></div>' : '';
+      if (!f) return '<div class="fu"><b>Follow-up:</b> <span class="pill amber">Not allocated</span> <span class="sm">nobody is accountable for making this happen yet</span>' + (form || '') + '</div>';
+      const status = st === 'done' ? '<span class="pill ok">Done</span>' + (f.doneAt ? ' <span class="sm">' + esc(f.doneAt.slice(0, 10)) + '</span>' : '') + (f.note ? ' \u2014 ' + esc(f.note) : '') : '<span class="' + (st === 'overdue' ? 'late' : '') + '">' + (st === 'overdue' ? 'Overdue, was due ' : 'Due ') + dueLabel(f.due) + '</span>' + (f.note ? ' \u00b7 <span class="sm">' + esc(f.note) + '</span>' : '');
+      return '<div class="fu"><b>Follow-up:</b> ' + esc(f.assigneeName || f.assignee) + ' \u00b7 ' + status +
+        (canDecide && ctx.post ? ' <a href="#" data-act="fuedit" data-id="' + esc(r.id) + '">change</a><a href="#" data-act="fucancel" data-id="' + esc(r.id) + '">remove</a>' : '') + (S.fuEdit === r.id ? form : '') + '</div>';
+    }
     function detailInner(res) {
       const r = res.request, meta = [];
       if (r.itemName) {
@@ -196,7 +232,9 @@ window.CoordApprovals = (function () {
       if (r.decidedBy) meta.push(esc(r.status) + ' by ' + esc(r.decidedBy) + ' on ' + ddmmyyyy(r.decidedAt));
       const refer = NO_REFER.indexOf(r.category) === -1 ? referHtml(r.id) : '';
       let bar = '';
-      if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) bar = '<div class="bar"><input type="text" class="note" data-note="' + esc(r.id) + '" placeholder="Note explaining the decision (required)">' + refer +
+      const allocNow = ctx.post && FOLLOW_SKIP.indexOf(r.category) === -1 ? '<div style="width:100%;margin-bottom:8px"><span class="sm">Optional: if you approve, also allocate the follow-up to</span> <select data-fa-who="' + esc(r.id) + '"><option value="">nobody yet</option>' +
+        (ctx.people ? ctx.people() : []).map(c => '<option value="' + esc(c.email) + '">' + esc(c.name || c.email) + '</option>').join('') + '</select> <span class="sm">due</span> <input type="date" data-fa-due="' + esc(r.id) + '" value="' + plusDays(7) + '" min="' + isoDay(new Date()) + '" style="width:auto"></div>' : '';
+      if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) bar = '<div class="bar"><input type="text" class="note" data-note="' + esc(r.id) + '" placeholder="Note explaining the decision (required)">' + allocNow + refer +
         ['Approved|approve|Approve', 'Rejected|reject|Reject', 'Info Requested|info|Request Info'].map(x => { const p = x.split('|'); return '<button type="button" class="' + p[1] + '" data-act="decide" data-id="' + esc(r.id) + '" data-v="' + p[0] + '">' + p[2] + '</button>'; }).join('') + '</div>';
       else if (res.canDecide && r.status === 'Approved') bar = '<div class="bar"><input type="text" class="note" data-note="' + esc(r.id) + '" placeholder="Reason for revoking (required)">' + refer + '<button type="button" class="revoke" data-act="decide" data-id="' + esc(r.id) + '" data-v="Revoked">Revoke</button></div>';
       if (res.canDecide && DECIDED.indexOf(r.status) !== -1) bar += '<div class="bar"><button type="button" class="revoke" data-act="archone" data-id="' + esc(r.id) + '" data-v="' + (r.archived ? 'false' : 'true') + '">' + (r.archived ? 'Unarchive' : 'Archive') + '</button></div>';
@@ -205,7 +243,7 @@ window.CoordApprovals = (function () {
       const reply = r.status === 'Info Requested' && sess().email === r.requestedBy;
       const comments = res.comments.length ? res.comments.map(c => '<div class="cm"><div class="cmm">' + esc(c.authorEmail) + ' (' + esc(c.authorRole || '—') + ') · ' + ddmmyyyy(c.postedAt) +
         (c.authorEmail === sess().email ? ' · <a href="#" data-act="cdel" data-id="' + esc(c.id) + '" data-ap="' + esc(r.id) + '">Delete</a>' : '') + '</div>' + esc(c.body) + '</div>').join('') : '<div class="empty">No comments yet.</div>';
-      return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div><div style="margin:10px 0">' + comments + '</div>' +
+      return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div>' + followHtml(r, res.canDecide) + '<div style="margin:10px 0">' + comments + '</div>' +
         (reply ? '<div class="hint">The Owner asked for more before deciding — your reply below sends this back to Pending.</div>' : '') +
         '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + bar;
     }
@@ -263,8 +301,13 @@ window.CoordApprovals = (function () {
     }
 
     // ── decisions and archiving ──
+    // The Coordinator backend call for allocating (or removing) a follow-up. Returns {success, error}.
+    async function allocate(body) { if (!ctx.post) return { success: false, error: 'not available here' }; try { return await ctx.post(Object.assign({ action: 'coordinatorallocate' }, body)); } catch (err) { return { success: false, error: err.message }; } }
     async function decide(id, decision) {
       const note = (root.querySelector('[data-note="' + id + '"]').value || '').trim();
+      const faWho = root.querySelector('[data-fa-who="' + id + '"]'), faDue = root.querySelector('[data-fa-due="' + id + '"]');
+      const allocNow = decision === 'Approved' && faWho && faWho.value ? { approvalId: id, assignee: faWho.value, due: faDue ? faDue.value : plusDays(7) } : null;
+      const hadFollow = decision === 'Revoked' && S.res && S.res.requests.some(r => r.id === id && r.followUp);
       if (!note) { alert('A note explaining the decision is required.'); return; }
       const btns = root.querySelectorAll('.bar button'); btns.forEach(b => { b.disabled = true; });
       setBar('loading', 'Saving decision…');
@@ -277,6 +320,8 @@ window.CoordApprovals = (function () {
         try { const chk = await get('action=approvaldetail&id=' + encodeURIComponent(id)); if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); refresh(); return; } } catch (e) { /* fall through */ }
       }
       if (!res.success) { authFail(res); setBar('err', 'Couldn’t record that decision' + (res.error ? ': ' + esc(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); renderList(); return; }
+      if (allocNow) { const a = await allocate(allocNow); if (!a.success) alert('Approved, but the follow-up could not be allocated: ' + a.error + '. You can allocate it from the request.'); }
+      if (hadFollow) await allocate({ approvalId: id, cancel: true }); // the approval is withdrawn, so its follow-up goes too
       if (res.mailError) alert('Saved, but the email to the referred people failed: ' + res.mailError);
       else if (res.referred) alert(decision + ' — emails sent: ' + REFER_KINDS.map(kv => res.referred[kv[0]].length ? kv[1] + ' (' + res.referred[kv[0]].join(', ') + ')' : '').filter(Boolean).join('; ') + '.');
       refresh();
@@ -301,6 +346,14 @@ window.CoordApprovals = (function () {
       else if (a === 'archsel') { e.stopPropagation(); const ids = Object.keys(S.selected), on = S.view === 'Requests'; if (!ids.length) return; if (on && !confirm('Archive ' + ids.length + ' request(s)? They move to the Archive view and can be restored.')) return; S.selected = {}; archive(ids, on); }
       else if (a === 'archone') archive([id], v === 'true');
       else if (a === 'decide') decide(id, v);
+      else if (a === 'alloc') {
+        const who = root.querySelector('[data-fu-who="' + id + '"]'), due = root.querySelector('[data-fu-due="' + id + '"]'), note = root.querySelector('[data-fu-note="' + id + '"]');
+        if (!who || !who.value) { alert('Pick who is accountable for this.'); return; }
+        t.disabled = true; t.textContent = 'Saving\u2026';
+        allocate({ approvalId: id, assignee: who.value, due: due.value, note: note.value }).then(a2 => { if (!a2.success) { alert('Could not allocate: ' + a2.error); t.disabled = false; t.textContent = 'Allocate follow-up'; return; } S.fuEdit = null; refreshKeepOpen(id); });
+      }
+      else if (a === 'fuedit') { e.preventDefault(); S.fuEdit = S.fuEdit === id ? null : id; const w = root.querySelector('[data-slot="detail"]'); if (w && S.detail) w.innerHTML = detailInner(S.detail); }
+      else if (a === 'fucancel') { e.preventDefault(); if (!confirm('Remove the follow-up? The coordinator\u2019s task is closed.')) return; allocate({ approvalId: id, cancel: true }).then(a2 => { if (!a2.success) alert('Could not remove it: ' + a2.error); else refreshKeepOpen(id); }); }
       else if (a === 'cpost') postComment(id, t);
       else if (a === 'cdel') { e.preventDefault(); delComment(id, t.getAttribute('data-ap')); }
       else if (a === 'rdel') { e.preventDefault(); const k = t.getAttribute('data-k'); S.refs[id][k].splice(+t.getAttribute('data-i'), 1); root.querySelector('[data-chips="' + k + '-' + id + '"]').innerHTML = chips(id, k); }
@@ -312,6 +365,7 @@ window.CoordApprovals = (function () {
       else if (a === 'selall') { S.selected = t.checked ? Object.assign({}, S.eligible) : {}; renderList(); }
       else if (f === 'school') { S.school = t.value; S.openId = null; S.detail = null; renderList(); }
       else if (f === 'cat') { S.cat = t.value; S.openId = null; S.detail = null; renderList(); }
+      else if (f === 'fu') { S.fu = t.value; S.openId = null; S.detail = null; renderList(); }
     });
     root.addEventListener('input', e => {
       const t = e.target;

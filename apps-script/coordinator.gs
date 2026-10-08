@@ -35,7 +35,7 @@
 const COORD_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals" workbook; only the Tasks tab is used
 const COORD_TAB = 'Tasks';
 const COORD_HEADERS = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity',
-  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes', 'Department', 'Assignee'];
+  'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Notes', 'Department', 'Assignee', 'Due'];
 
 // Departments follow the vault's Departments hubs, plus Systems. Every follow-up carries one so the
 // landing page can group by department; adapters set it, approvals by request category.
@@ -165,6 +165,7 @@ function doPost(e) {
     const action = String(body.action || '').toLowerCase();
     if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));
     if (action === 'coordinatorpdrmerge') return coordJson_(coordPdrMerge_(caller, body));
+    if (action === 'coordinatorallocate') return coordJson_(coordAprAllocate_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -194,7 +195,8 @@ function coordVerifyCaller_(idToken) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
       const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean);
       if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1) return null;
-      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles };
+      const canDecide = roles.indexOf('Owner') !== -1 || (roles.indexOf('Coordinator') !== -1 && String(rows[i][4] || '').trim().toUpperCase() === 'TRUE'); // same rule as aprCanDecide_ in approvals.gs
+      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, canDecide: canDecide };
       cache.put(key, JSON.stringify(caller), 300);
       return caller;
     }
@@ -802,6 +804,7 @@ function coordTasksList_(caller, idToken) {
   try { coordTransportRetireTasks_(); } catch (err) { console.error('Transport retire: ' + err.message); } // one-shot, see coordinator-transport.gs
   const visible = coordVisibleCampuses_(caller);
   const rows = coordSheet_().getDataRange().getValues();
+  const today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); // a follow-up past its due date counts as high
   const rank = { high: 0, medium: 1, low: 2 };
   const tasks = [];
   for (let i = 1; i < rows.length; i++) {
@@ -809,7 +812,7 @@ function coordTasksList_(caller, idToken) {
     if (r[5] !== 'open') continue;
     if (visible && visible.indexOf(r[2]) === -1 && r[13] !== caller.email) continue; // an assignee always sees what was assigned to them
     tasks.push({
-      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: r[6], assignee: r[13] || '',
+      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: coordDueSeverity_(r[6], String(r[14] || ''), today), assignee: r[13] || '', due: String(r[14] || ''),
       department: r[12] || COORD_DOMAIN_DEPT[r[1]] || COORD_DEPT_OPS,
       createdAt: r[7] instanceof Date ? r[7].toISOString() : r[7], notes: r[11] || '',
     });
@@ -823,6 +826,9 @@ function coordTaskResolve_(caller, body) {
   const res = coordTaskResolveCore_(caller, body);
   if (res.success && String(body.taskId || '').indexOf('pdr_issue|') === 0) {
     try { coordPdrResolveFromTask_(String(body.taskId).slice(10), caller, body.note); } catch (err) { console.error('PDR issue sync: ' + err.message); }
+  }
+  if (res.success && String(body.taskId || '').indexOf('apr_follow|') === 0) { // an allocated approval follow-up: mark the approval's follow-up done
+    try { coordAprFollowDone_(String(body.taskId).slice(11), caller, body.note); } catch (err) { console.error('Approval follow-up sync: ' + err.message); }
   }
   return res;
 }

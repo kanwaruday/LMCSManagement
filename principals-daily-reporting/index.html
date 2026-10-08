@@ -2446,6 +2446,31 @@ function renderApprovalsForSelectedCampus() {
   body.innerHTML = '<div class="tbl-wrap"><table>' + head + '<tbody>' + bodyRows + '</tbody></table></div>';
 }
 
+// An approved request may have someone allocated to make it happen (set by the Owner in the Coordinator Portal): who, due when, and whether it is done.
+function aprDueLabel_(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? parseInt(m[3], 10) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m[2], 10) - 1] : '';
+}
+function aprFollowUpOverdue_(f) {
+  const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return f.status !== 'done' && f.due && f.due < today;
+}
+function aprFollowUpLine_(r) {
+  const f = r.followUp;
+  if (!f) return '';
+  const who = aprEsc_((f.assigneeName || f.assignee).split(' ')[0]);
+  return '<div style="font-size:10.5px;margin-top:3px;color:' + (aprFollowUpOverdue_(f) ? 'var(--red)' : 'var(--gray)') + '">' +
+    (f.status === 'done' ? 'Follow-up done (' + who + ')' : 'Follow-up: ' + who + ', due ' + aprDueLabel_(f.due) + (aprFollowUpOverdue_(f) ? ' — overdue' : '')) + '</div>';
+}
+function aprFollowUpDetail_(r) {
+  const f = r.followUp;
+  if (!f) return '';
+  const who = aprEsc_(f.assigneeName || f.assignee);
+  return '<div class="apr-desc"><b>Follow-up:</b> ' + (f.status === 'done'
+    ? 'done by ' + who + (f.note ? ' — ' + aprEsc_(f.note) : '')
+    : who + ' is following this up, due ' + aprDueLabel_(f.due) + (aprFollowUpOverdue_(f) ? ' (<b style="color:var(--red)">overdue</b>)' : '') + (f.note ? ' — ' + aprEsc_(f.note) : '')) + '</div>';
+}
+
 function aprRowHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
   const needsAction = APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1;
@@ -2459,7 +2484,7 @@ function aprRowHtml_(r) {
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
     '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
-    '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></td>' +
+    '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span>' + aprFollowUpLine_(r) + '</td>' +
     '<td>' + dateCell + '</td></tr>';
   if (isExpanded) {
     html += '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
@@ -2532,7 +2557,7 @@ function aprDetailHtml_(res) {
 
   return '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
     '<div class="apr-desc">' + aprEsc_(r.description) + '</div>' +
-    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' +
+    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' + aprFollowUpDetail_(r) +
     '<div class="apr-comments">' + aprCommentsHtml_(res.comments, r.id) + '</div>' +
     commentBoxHtml +
     decideBar +
