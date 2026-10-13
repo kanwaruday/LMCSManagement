@@ -46,6 +46,6 @@ function hirReportFormPlan_(apply) {
   const keep = cb.getChoices().map(function (c) { return c.getValue(); }).filter(function (v) { return HIRF_ROLE_STYLE_SUBJECTS.indexOf(v) === -1; });
   if (keep.indexOf('Economics') === -1) keep.push('Economics');
   log('Subject options become: ' + keep.join(', ') + '  (removed: ' + HIRF_ROLE_STYLE_SUBJECTS.join(', ') + ')');
-  if (apply) { cb.setChoiceValues(keep); subjectItem.setRequired(false); }
+  if (apply) { cb.setChoiceValues(keep); cb.setRequired(false); }
   Logger.log(apply ? 'Form updated.' : 'Preview only -- nothing changed. Run hirApplyReportForm to apply.');
 }
