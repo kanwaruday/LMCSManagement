@@ -397,6 +397,67 @@ function principalDrLoadBundle_(caller, campusIdParam, dateParam) {
   };
 }
 
+// ── Home tab (2026-10-13) ────────────────────────────────────────────
+// action=principaldrhome: everything the Home tab's "Today" and "My track record" cards need, in ONE request (one auth check, one Daily Reports
+// read, two Calendar range queries). Read-only. Window = the last PDR_HOME_DAYS_BACK days up to today, plus PDR_HOME_DAYS_AHEAD days of school events.
+//   filedDates  ISO dates in the window with a Daily Reports row for this campus (any row counts as filed, same as the compliance report)
+//   nonWorking  { iso: label } for Sundays, 2nd Saturdays and school-Calendar events titled "GH..." -- the same working-day rule as pdrDayLabel_
+//   ssByDay     { iso: n } SS-tagged events on the Principal's PERSONAL calendar for this month so far; null if that calendar isn't shared
+//   upcoming    [{ iso, endIso, title }] school-Calendar events from today to today + PDR_HOME_DAYS_AHEAD (GH holidays included)
+const PDR_HOME_DAYS_BACK = 45;
+const PDR_HOME_DAYS_AHEAD = 14;
+function principalDrHome_(caller, campusIdParam) {
+  const campusId = String(campusIdParam || '').trim().toUpperCase();
+  if (caller.campusId !== 'ALL' && campusId !== caller.campusId) return { success: false, error: 'Not authorized for that campus' };
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const addDays = function (d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); };
+  const winStart = addDays(today, -PDR_HOME_DAYS_BACK), tomorrow = addDays(today, 1), winEnd = addDays(today, PDR_HOME_DAYS_AHEAD);
+
+  const filed = {};
+  const values = pdrDailyReportsSheet_().getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][2]).trim() !== campusId) continue;
+    const iso = pdrCellDateToISO_(values[i][1]);
+    if (iso >= pdrFormatISO_(winStart) && iso < pdrFormatISO_(tomorrow)) filed[iso] = true;
+  }
+
+  const events = pdrSchoolCalendarEvents_(campusId, winStart, winEnd);
+  const gh = events.filter(function (ev) { return ev.getTitle().indexOf('GH') === 0; });
+  const nonWorking = {};
+  for (let d = winStart; d < tomorrow; d = addDays(d, 1)) {
+    let label = null;
+    if (d.getDay() === 0) label = 'Sunday';
+    else if (d.getDay() === 6 && Math.ceil(d.getDate() / 7) === 2) label = '2nd Saturday';
+    else {
+      const next = addDays(d, 1);
+      const hit = gh.filter(function (ev) { return ev.getStartTime() < next && ev.getEndTime() > d; })[0];
+      if (hit) label = hit.getTitle();
+    }
+    if (label) nonWorking[pdrFormatISO_(d)] = label;
+  }
+
+  let ssByDay = null;
+  const personal = PDR_PRINCIPAL_PERSONAL_CALENDARS[campusId];
+  const cal = personal ? CalendarApp.getCalendarById(personal) : null;
+  if (cal) {
+    ssByDay = {};
+    const ssTag = /\bSS\b/;
+    cal.getEvents(new Date(now.getFullYear(), now.getMonth(), 1), tomorrow).forEach(function (ev) {
+      if (!ssTag.test(ev.getTitle())) return;
+      const iso = pdrFormatISO_(ev.getStartTime());
+      ssByDay[iso] = (ssByDay[iso] || 0) + 1;
+    });
+  }
+
+  const upcoming = events.filter(function (ev) { return ev.getEndTime() > today; }).map(function (ev) {
+    const end = ev.isAllDayEvent() ? new Date(ev.getEndTime().getTime() - 1) : ev.getEndTime(); // all-day end is exclusive
+    return { iso: pdrFormatISO_(ev.getStartTime() < today ? today : ev.getStartTime()), endIso: pdrFormatISO_(end), title: ev.getTitle() };
+  }).sort(function (a, b) { return a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0; });
+
+  return { success: true, today: pdrFormatISO_(today), filedDates: Object.keys(filed).sort(), nonWorking: nonWorking, ssByDay: ssByDay, upcoming: upcoming };
+}
+
 /** null for an ordinary working day, else a short label for why the
  *  SELECTED report date is a holiday: "Sunday", "2nd Saturday", or the
  *  GH Calendar event's own title (e.g. "GH-Janmashtami"). Purely

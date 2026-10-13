@@ -28,6 +28,31 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 /* Owner-only "data source" links (2026-09-20) -- jump straight to the
    Form/Sheet/Calendar backing whatever's on screen. Hidden entirely
    for anyone who isn't an Owner (see LMCS.hasRole in renderDataSourceLinks_). */
+
+/* Home tab (2026-10-13) */
+.home-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.home-head h2{margin:0;font-size:17px;color:var(--dark)}
+.home-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin-bottom:9px}
+.home-stat{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:11px 14px}
+.home-stat .lbl{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--gray)}
+.home-stat .val{font-size:19px;font-weight:700;margin-top:3px}
+.home-stat .sub{font-size:11.5px;color:var(--gray);margin-top:2px}
+.home-stat.ok .val{color:var(--green)} .home-stat.bad .val{color:var(--red)} .home-stat.warn .val{color:var(--amber)}
+.home-stat button{margin-top:7px;border:none;background:var(--red);color:#fff;font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:6px;cursor:pointer}
+.home-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:12px;align-items:start}
+@media (max-width:820px){.home-grid{grid-template-columns:1fr}}
+.home-count{font-size:11px;font-weight:700;color:var(--gray);text-transform:none;letter-spacing:0}
+.home-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:12.5px}
+.home-row:last-child{border-bottom:none}
+.home-row .main{flex:1;min-width:0;overflow-wrap:anywhere}
+.home-row .when{font-size:11px;color:var(--gray);white-space:nowrap}
+.home-row .when.late{color:var(--red);font-weight:700}
+.home-row.link{cursor:pointer}
+.home-row.link:hover .main{color:var(--red)}
+.home-empty{font-size:12px;color:#8A96A6;margin:2px 0 4px}
+.home-add{margin-top:10px}
+.home-add input[type=date]{flex:0 0 auto;width:auto}
+.home-sub-hdr{font-size:11px;font-weight:700;color:var(--gray);margin:8px 0 2px}
 .datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;margin-bottom:14px}
 .datasrc-links a{color:#8A96A6;text-decoration:underline}
 .datasrc-links a:hover{color:var(--red)}
@@ -288,14 +313,48 @@ td{padding:6px 12px;vertical-align:middle}
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="support" onclick="switchTab('support')">🧾 Support Sessions</button>
+      <button class="tab-btn active" data-tab="home" onclick="switchTab('home')">🏠 Home</button>
+      <button class="tab-btn" data-tab="support" onclick="switchTab('support')">🧾 Support Sessions</button>
       <button class="tab-btn" data-tab="principal" onclick="switchTab('principal')">🏫 Principal DR</button>
       <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">📊 SS Dashboard</button>
       <button class="tab-btn" data-tab="approvals" onclick="switchTab('approvals')">✅ Approvals</button>
     </div>
 
+    <!-- ══════════════════ HOME (2026-10-13) -- today at a glance + what needs me ══════════════════ -->
+    <div class="tab-panel active" id="panel-home">
+      <div class="home-head">
+        <div><h2 id="homeTitle">Home</h2><p class="fetched-note" id="homeSub"></p></div>
+        <button type="button" class="date-refresh-btn" title="Refresh Home" onclick="homeReload_()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        </button>
+      </div>
+      <div class="home-stats" id="homeStats"></div>
+      <div class="home-grid">
+        <div class="home-col">
+          <div class="card">
+            <p class="card-title">My tasks <span class="home-count" id="homeTaskCount"></span></p>
+            <div id="homeTasks"></div>
+            <div class="add-row home-add">
+              <input type="text" id="homeNewTask" placeholder="Add a task for yourself and press Enter" onkeydown="if(event.key==='Enter')homeAddTask_()">
+              <input type="date" id="homeNewDue" title="Due date (optional)">
+              <button type="button" id="homeAddBtn" onclick="homeAddTask_()">Add</button>
+            </div>
+          </div>
+          <div class="card">
+            <p class="card-title">Waiting on others</p>
+            <div id="homeWaiting"></div>
+          </div>
+        </div>
+        <div class="home-col">
+          <div class="card"><p class="card-title">Coming up — next 14 days</p><div id="homeUpcoming"></div></div>
+          <div class="card"><p class="card-title">Staff behind on SS <span class="home-count" id="homeSsCount"></span></p><div id="homeStaffSs"></div></div>
+          <div class="card"><p class="card-title">My track record</p><div id="homeRecord"></div></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══════════════════ SUPPORT SESSIONS (all 6 SS forms, one level below this top tab) ══════════════════ -->
-    <div class="tab-panel active" id="panel-support">
+    <div class="tab-panel" id="panel-support">
       <div class="subtabs">
         <button class="subtab-btn active" data-subtab="submit" onclick="switchSubTab('submit')">📝 Teacher SS</button>
         <button class="subtab-btn" data-subtab="itss" onclick="switchSubTab('itss')">💻 IT SS</button>
@@ -981,6 +1040,7 @@ function selectSchool(campusId) {
   renderDashboardForSelectedCampus();
   renderApprovalsForSelectedCampus();
   renderAllDataSourceLinks_();
+  homeLoad_(campusId); // Home tab -- cached per school
 }
 
 // ── Support Sessions sub-tab iframes: loaded lazily ─────────────────
@@ -1081,6 +1141,7 @@ async function loadDashboard() {
     dashSSRes = res;
     renderRolePicker();
     renderDashboardForSelectedCampus();
+    renderHome_();
   } catch (err) {
     body.innerHTML = '<div class="notice">Couldn’t reach the dashboard proxy: ' + err.message + '</div>';
   }
@@ -1384,10 +1445,15 @@ async function fetchPlannedActivities_(campusId) {
     return [];
   }
 }
+// One in-flight fetch per campus, shared by every caller (the Daily Report and the Home tab both ask at page load): two separate fetches used to
+// leave each view holding its OWN copy of the list, so ticking a task in one never showed in the other.
+var plannedLoading_ = {};
 async function loadPlannedActivitiesForCampus_(campusId) {
-  if (!(campusId in plannedActivitiesCache_)) {
-    plannedActivitiesCache_[campusId] = await fetchPlannedActivities_(campusId);
-  }
+  if (campusId in plannedActivitiesCache_) return;
+  var inflight = plannedLoading_[campusId] = plannedLoading_[campusId] || fetchPlannedActivities_(campusId);
+  var acts = await inflight;
+  if (!(campusId in plannedActivitiesCache_)) plannedActivitiesCache_[campusId] = acts;
+  delete plannedLoading_[campusId];
 }
 
 // Shared POST helper for every write action (Planned Activities CRUD +
@@ -1884,6 +1950,7 @@ async function submitReport() {
     var result = await saveDailyReport(principalCampusId, payload);
     if (result && result.success) {
       alert('Report submitted.');
+      homeLoad_(principalCampusId, true); // Home's "Daily Report" card flips to Filed
     } else {
       pdrReportAuthFailureIfNeeded_(result);
       alert('Something went wrong submitting the report' + (result && result.error ? ': ' + result.error : '') + ' — please try again.');
@@ -2275,6 +2342,7 @@ async function loadApprovals() {
       return;
     }
     aprRes = res;
+    renderHome_();
     document.getElementById('aprNewRequestCard').style.display = 'block'; // everyone files from here; the Owner's / deciders' view is in the Coordinator Portal (Systems > Approvals)
     aprRenderStatusFilter_();
     renderApprovalsForSelectedCampus();
@@ -2763,6 +2831,257 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HOME TAB (2026-10-13). Everything here is read from data the page already holds (aprRes, dashSSRes, plannedActivitiesCache_) plus ONE new
+// request per school, action=principaldrhome (filed dates, working days, SS per day this month, school events). Each card renders on its own:
+// "Loading…" until its source arrives, a short note if it failed -- one slow source never blocks the rest.
+// "My tasks" = approvals waiting on a reply from me + my own tasks. Own tasks ARE the Planned Activities (same sheet, same checkbox as the
+// Daily Report's "Other Activities Planned"), so a task added here shows there and vice versa.
+// ═══════════════════════════════════════════════════════════════════
+var homeCache_ = {}; // campusId -> { res } | { error } | { loading: true }
+function homeEsc_(x) { return aprEsc_(x == null ? '' : String(x)); }
+
+async function homeLoad_(campusId, force) {
+  if (!force && homeCache_[campusId]) return;
+  homeCache_[campusId] = { loading: true };
+  renderHome_();
+  try {
+    var res = await fetch(PDR_BACKEND_URL + '?action=principaldrhome&campusId=' + encodeURIComponent(campusId) + '&idToken=' + encodeURIComponent(SESSION.idToken)).then(function (r) { return r.json(); });
+    if (res.success) homeCache_[campusId] = { res: res };
+    else { homeCache_[campusId] = { error: res.error || 'unknown error' }; pdrReportAuthFailureIfNeeded_(res); }
+  } catch (err) {
+    homeCache_[campusId] = { error: err.message };
+  }
+  await loadPlannedActivitiesForCampus_(campusId); // my own tasks
+  renderHome_();
+}
+function homeReload_() {
+  if (!SELECTED_CAMPUS_ID) return;
+  homeLoad_(SELECTED_CAMPUS_ID, true);
+  loadApprovals();
+  loadDashboard();
+}
+
+function homeStat_(cls, label, val, sub, btn) {
+  return '<div class="home-stat ' + cls + '"><div class="lbl">' + label + '</div><div class="val">' + val + '</div><div class="sub">' + sub + '</div>' + (btn || '') + '</div>';
+}
+function homeFmtDate_(iso) {
+  var d = parseISODate(iso);
+  return d ? d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : iso;
+}
+function homeNote_(msg) { return '<p class="home-empty">' + msg + '</p>'; }
+
+// working-day arithmetic over the window the backend sent (nonWorking = Sundays, 2nd Saturdays, GH holidays)
+function homeRecord_(res) {
+  var filed = {}; res.filedDates.forEach(function (d) { filed[d] = true; });
+  var today = parseISODate(res.today), iso = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  var isWorking = function (i) { return !res.nonWorking[i]; };
+  var out = { streak: 0, capped: false, drFiled: 0, drDue: 0, ssTotal: 0, ssMet: 0, ssDue: 0 };
+  // streak: back from today; a working day today that is not filed YET is skipped, not counted as a miss
+  var d = new Date(today), limit = new Date(today); limit.setDate(limit.getDate() - 44);
+  for (; d >= limit; d.setDate(d.getDate() - 1)) {
+    var i = iso(d);
+    if (!isWorking(i)) continue;
+    if (filed[i]) out.streak++;
+    else if (i === res.today) continue;
+    else break;
+    if (d.getTime() === limit.getTime()) out.capped = true;
+  }
+  // this month: today only counts once it is achieved, so nobody is marked down before the day ends
+  var m = new Date(today.getFullYear(), today.getMonth(), 1);
+  for (; m <= today; m.setDate(m.getDate() + 1)) {
+    var k = iso(m);
+    if (!isWorking(k)) continue;
+    var isToday = k === res.today;
+    if (!isToday || filed[k]) { out.drDue++; if (filed[k]) out.drFiled++; }
+    if (res.ssByDay) {
+      var n = res.ssByDay[k] || 0;
+      out.ssTotal += n;
+      if (!isToday || n >= MIN_SS_PER_DAY) { out.ssDue++; if (n >= MIN_SS_PER_DAY) out.ssMet++; }
+    }
+  }
+  return out;
+}
+
+function renderHome_() {
+  if (!document.getElementById('homeStats') || !SELECTED_CAMPUS_ID) return;
+  var campusId = SELECTED_CAMPUS_ID, entry = homeCache_[campusId] || { loading: true };
+  var res = entry.res;
+  var first = String((SESSION && SESSION.name) || '').split(' ')[0];
+  var hr = new Date().getHours();
+  document.getElementById('homeTitle').textContent = LMCS.campusLabel(campusId);
+  document.getElementById('homeSub').textContent = (hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first : '') + '.';
+
+  // ── Today strip ──
+  var stats;
+  if (entry.error) {
+    stats = '<div class="notice" style="grid-column:1/-1;margin:0">Couldn’t load today’s status: ' + homeEsc_(entry.error) + '</div>';
+  } else if (!res) {
+    stats = '<div class="home-stat"><div class="lbl">Today</div><div class="sub">Loading…</div></div>';
+  } else {
+    var holiday = res.nonWorking[res.today], filedToday = res.filedDates.indexOf(res.today) > -1;
+    var ssToday = res.ssByDay ? (res.ssByDay[res.today] || 0) : null;
+    stats = homeStat_(holiday ? 'warn' : '', 'Today', homeFmtDate_(res.today), holiday ? 'Holiday — ' + homeEsc_(holiday) : 'Working day');
+    stats += holiday
+      ? homeStat_('', 'Daily Report', 'Not needed', 'No report expected today')
+      : filedToday
+        ? homeStat_('ok', 'Daily Report', '✓ Filed', 'You can still edit it today', '<button type="button" onclick="switchTab(\'principal\')">Open report</button>')
+        : homeStat_('bad', 'Daily Report', 'Not filed yet', 'Due before the day ends', '<button type="button" onclick="switchTab(\'principal\')">File today’s report</button>');
+    stats += ssToday === null
+      ? homeStat_('', 'SS today', '—', 'Your calendar isn’t shared with the portal yet')
+      : homeStat_(holiday ? '' : (ssToday >= MIN_SS_PER_DAY ? 'ok' : 'warn'), 'SS today', ssToday + ' / ' + MIN_SS_PER_DAY, ssToday >= MIN_SS_PER_DAY ? 'Target met' : 'Minimum ' + MIN_SS_PER_DAY + ' a day');
+  }
+  var tasks = homeTasks_(campusId);
+  stats += homeStat_(tasks.late ? 'bad' : (tasks.rows.length ? 'warn' : 'ok'), 'My tasks', tasks.rows.length, tasks.late ? tasks.late + ' overdue' : (tasks.rows.length ? 'Open' : 'All clear'));
+  document.getElementById('homeStats').innerHTML = stats;
+
+  // ── My tasks ──
+  document.getElementById('homeTaskCount').textContent = tasks.rows.length ? '(' + tasks.rows.length + ')' : '';
+  document.getElementById('homeTasks').innerHTML = tasks.rows.join('') || (tasks.loading ? homeNote_('Loading…') : homeNote_('Nothing open. Add a task below.'));
+
+  // ── Waiting on others ──
+  document.getElementById('homeWaiting').innerHTML = homeWaiting_(campusId);
+
+  // ── Coming up ──
+  var up;
+  if (entry.error) up = homeNote_('Couldn’t load the school calendar.');
+  else if (!res) up = homeNote_('Loading…');
+  else if (!res.upcoming.length) up = homeNote_('Nothing on the school calendar for the next 14 days.');
+  else {
+    up = res.upcoming.slice(0, 10).map(function (ev) {
+      var when = ev.iso === ev.endIso ? homeFmtDate_(ev.iso) : homeFmtDate_(ev.iso) + ' → ' + homeFmtDate_(ev.endIso);
+      return '<div class="home-row"><span class="main">' + homeEsc_(ev.title) + '</span><span class="when">' + when + '</span></div>';
+    }).join('') + (res.upcoming.length > 10 ? homeNote_('+ ' + (res.upcoming.length - 10) + ' more on the Principal DR tab') : '');
+  }
+  document.getElementById('homeUpcoming').innerHTML = up;
+
+  // ── Staff behind on SS ──
+  homeRenderStaffSs_(campusId);
+
+  // ── My track record ──
+  var rec;
+  if (entry.error) rec = homeNote_('Couldn’t load your history.');
+  else if (!res) rec = homeNote_('Loading…');
+  else {
+    var r = homeRecord_(res), pct = function (a, b) { return b ? Math.round(a * 100 / b) + '%' : '—'; };
+    rec = '<div class="home-row"><span class="main">Daily Report streak</span><b>' + r.streak + (r.capped ? '+' : '') + ' working day' + (r.streak === 1 ? '' : 's') + '</b></div>' +
+      '<div class="home-row"><span class="main">Reports filed this month</span><b>' + r.drFiled + ' of ' + r.drDue + ' (' + pct(r.drFiled, r.drDue) + ')</b></div>' +
+      (res.ssByDay
+        ? '<div class="home-row"><span class="main">SS taken this month</span><b>' + r.ssTotal + '</b></div>' +
+          '<div class="home-row"><span class="main">Days with ' + MIN_SS_PER_DAY + '+ SS</span><b>' + r.ssMet + ' of ' + r.ssDue + ' (' + pct(r.ssMet, r.ssDue) + ')</b></div>'
+        : '') +
+      homeNote_('Today counts once it’s done, so you’re never marked down before the day ends.');
+  }
+  document.getElementById('homeRecord').innerHTML = rec;
+}
+
+// approvals waiting on a reply from me + my open Planned Activities, overdue first
+function homeTasks_(campusId) {
+  var out = { rows: [], late: 0, loading: false };
+  var items = [];
+  if (!aprRes) out.loading = true;
+  else aprRes.requests.forEach(function (r) {
+    if (r.campusId !== campusId || r.archived || r.status !== 'Info Requested') return;
+    var mine = String(r.requestedBy).toLowerCase() === String(SESSION.email).toLowerCase();
+    items.push({ sort: '0', html: '<div class="home-row link" onclick="switchTab(\'approvals\')"><span class="pill amber">Reply needed</span><span class="main">' + homeEsc_(r.title) +
+      (mine ? '' : ' <span class="when">(asked by ' + homeEsc_(r.requestedBy.split('@')[0]) + ')</span>') + '</span><span class="when">' + aprAgeLabel_(r.requestedAt) + '</span></div>' });
+  });
+  var planned = plannedActivitiesCache_[campusId];
+  if (!planned) out.loading = out.loading || !items.length;
+  else planned.filter(function (a) { return !a.completed; }).forEach(function (a) {
+    var left = a.date ? daysUntil(a.date) : null, late = left !== null && left < 0;
+    if (late) out.late++;
+    var when = !a.date ? 'No date' : late ? Math.abs(left) + 'd overdue' : left === 0 ? 'Today' : left === 1 ? 'Tomorrow' : friendlyDate(a.date);
+    items.push({ sort: '1' + (a.date || '9999-99-99'), html: '<label class="home-row"><input type="checkbox" onchange="homeToggleTask_(\'' + homeEsc_(a.id) + '\', this)"><span class="main">' + homeEsc_(a.activity) +
+      (a.assignee ? ' <span class="when">· ' + homeEsc_(a.assignee) + '</span>' : '') + '</span><span class="when' + (late ? ' late' : '') + '">' + when + '</span></label>' });
+  });
+  items.sort(function (x, y) { return x.sort < y.sort ? -1 : x.sort > y.sort ? 1 : 0; });
+  out.rows = items.map(function (i) { return i.html; });
+  return out;
+}
+
+function homeWaiting_(campusId) {
+  if (!aprRes) return homeNote_('Loading…');
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var mine = aprRes.requests.filter(function (r) { return r.campusId === campusId && !r.archived; });
+  var pending = mine.filter(function (r) { return r.status === 'Pending'; });
+  var follow = mine.filter(function (r) { return r.status === 'Approved' && r.followUp && r.followUp.status === 'open'; });
+  var html = '';
+  if (pending.length) {
+    html += '<div class="home-sub-hdr">Awaiting a decision (' + pending.length + ')</div>' + pending.slice(0, 5).map(function (r) {
+      return '<div class="home-row link" onclick="switchTab(\'approvals\')"><span class="main">' + homeEsc_(r.title) + ' <span class="when">· ' + homeEsc_(r.category) + '</span></span><span class="when' + (aprIsStale_(r.requestedAt) ? ' late' : '') + '">' + aprAgeLabel_(r.requestedAt) + '</span></div>';
+    }).join('') + (pending.length > 5 ? homeNote_('+ ' + (pending.length - 5) + ' more in Approvals') : '');
+  }
+  if (follow.length) {
+    html += '<div class="home-sub-hdr">Approved — being followed up (' + follow.length + ')</div>' + follow.slice(0, 5).map(function (r) {
+      var due = parseISODate(r.followUp.due), late = due && due < today;
+      return '<div class="home-row link" onclick="switchTab(\'approvals\')"><span class="main">' + homeEsc_(r.title) + ' <span class="when">· ' + homeEsc_(r.followUp.assigneeName || r.followUp.assignee) + '</span></span><span class="when' + (late ? ' late' : '') + '">' + (due ? (late ? 'was due ' : 'due ') + friendlyDate(r.followUp.due) : '') + '</span></div>';
+    }).join('');
+  }
+  return html || homeNote_('Nothing waiting. Requests you raise will show here until they’re decided and delivered.');
+}
+
+function homeRenderStaffSs_(campusId) {
+  var box = document.getElementById('homeStaffSs'), cnt = document.getElementById('homeSsCount');
+  if (!dashSSRes) { cnt.textContent = ''; box.innerHTML = homeNote_('Loading…'); return; }
+  var school = campusId.replace('LMS', 'LMS ');
+  var behind = [], total = 0, meta = null;
+  Object.keys(dashSSRes.roles || {}).forEach(function (k) {
+    var rd = dashSSRes.roles[k]; if (!rd) return;
+    meta = meta || rd;
+    rd.roster.filter(function (r) { return r.school === school; }).forEach(function (r) {
+      total++;
+      if (!r.quotaMetThisMonth) behind.push({ name: r.employee, role: rd.label, done: r.submissionsThisMonth, quota: rd.quotaPerMonth });
+    });
+  });
+  var now = new Date(), left = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+  cnt.textContent = total ? '(' + behind.length + ' of ' + total + ')' : '';
+  if (!total) { box.innerHTML = homeNote_('No staff found for this school in the SS roster.'); return; }
+  if (!behind.length) { box.innerHTML = homeNote_('✓ Everyone has met this month’s SS quota.'); return; }
+  behind.sort(function (a, b) { return a.done - b.done || a.name.localeCompare(b.name); });
+  box.innerHTML = '<p class="home-empty">' + (meta ? homeEsc_(meta.monthLabel) + ' · ' : '') + left + ' day' + (left === 1 ? '' : 's') + ' left this month</p>' +
+    behind.slice(0, 8).map(function (b) {
+      return '<div class="home-row"><span class="main">' + homeEsc_(b.name) + ' <span class="when">· ' + homeEsc_(b.role) + '</span></span><span class="pill ' + (b.done ? 'amber' : 'none') + '">' + b.done + '/' + b.quota + '</span></div>';
+    }).join('') +
+    (behind.length > 8 ? homeNote_('+ ' + (behind.length - 8) + ' more') : '') +
+    '<p class="home-empty"><a href="#" onclick="switchTab(\'dashboard\');return false">Full list on the SS Dashboard →</a></p>';
+}
+
+async function homeToggleTask_(id, cb) {
+  var campusId = SELECTED_CAMPUS_ID, list = plannedActivitiesCache_[campusId] || [];
+  var item = list.filter(function (a) { return a.id === id; })[0];
+  if (!item) return;
+  cb.disabled = true;
+  item.completed = true;
+  renderHome_();
+  if (principalCampusId === campusId) renderPlannedActivities(); // keep the Daily Report's own list in step (same objects)
+  var res = await setPlannedActivityCompleted(campusId, id, true);
+  if (!res || !res.success) {
+    item.completed = false;
+    renderHome_();
+    if (principalCampusId === campusId) renderPlannedActivities();
+    alert('Couldn’t mark that task done — please try again.');
+  }
+}
+
+async function homeAddTask_() {
+  var text = document.getElementById('homeNewTask'), due = document.getElementById('homeNewDue'), btn = document.getElementById('homeAddBtn');
+  if (!text.value.trim() || btn.disabled) return;
+  btn.disabled = true;
+  try {
+    var campusId = SELECTED_CAMPUS_ID;
+    var created = await addPlannedActivity(campusId, due.value, text.value.trim(), '');
+    if (!created || String(created.id).indexOf('local-') === 0) { alert('Couldn’t save that task — please try again.'); return; }
+    var list = plannedActivitiesCache_[campusId] = plannedActivitiesCache_[campusId] || [];
+    list.push(created);
+    if (principalCampusId === campusId) { if (currentPlannedActivities !== list) currentPlannedActivities.push(created); renderPlannedActivities(); }
+    text.value = ''; due.value = '';
+    renderHome_();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Second-level tab switch, within the "Support Sessions" top tab only
