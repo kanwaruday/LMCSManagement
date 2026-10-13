@@ -115,3 +115,22 @@ T('Mother Teacher C-1 & 2 requisition matches MW to C-2 applicants (not English-
   assert.strictEqual(ctx.hirSubjectsMatch_('English, Mother Teacher C-1 & 2', 'English'), true);
   assert.strictEqual(ctx.hirSubjectsMatch_('NTT, MW to C-2', 'MW to C-2'), true);
 });
+T('position label matches the dashboard role (campus + role + subjects)', () => {
+  assert.strictEqual(ctx.hirPositionLabel_('LMS4', { roleLevel: 'PRT', subjects: 'Mother Teacher C-1 & 2' }), 'LMS 4 - PRT: Mother Teacher C-1 & 2');
+  assert.strictEqual(ctx.hirPositionLabel_('LMS1', { roleLevel: 'LIBRARIAN', subjects: '' }), 'LMS 1 - LIBRARIAN');
+});
+T('hiringApplicants_: a position picked on the report form wins over subject mismatch', () => {
+  const hdr = ['ts', 'Name', 'Phone', 'Age', 'Subjects', 'Branches', 'Qual', 'BEd', 'G', 'CV', 'Status', 'Notes', 'IntAt'];
+  const rows = [hdr, [new Date(), 'Simar', '7876160890', '', 'MW to C-2', 'LMS-4', 'Bachelors', 'No', '', '', '', '', '']];
+  ctx.hirSheet_ = () => ({ getDataRange: () => ({ getValues: () => rows }) });
+  ctx.hirAutoBackfillWalkIns_ = () => {};
+  ctx.hirSalaryOfferDecisions_ = () => ({});
+  ctx.hirAssignEmployeeCodes_ = () => {};
+  ctx.hirApprovedRequisitions_ = () => ({ LMS4: [{ subjects: 'English', matchSubjects: 'English', roleLevel: 'TGT', openings: null }] });
+  ctx.hirInterviewReportPhones_ = () => ({ '7876160890': { pdf: '', remarks: '', position: 'LMS 4 - TGT: English' } });
+  let res = ctx.hiringApplicants_({ campusId: 'ALL' });
+  assert.strictEqual(res.applicants.length, 1);
+  ctx.hirInterviewReportPhones_ = () => ({ '7876160890': { pdf: '', remarks: '', position: 'Not for any open role' } });
+  res = ctx.hiringApplicants_({ campusId: 'ALL' });
+  assert.strictEqual(res.applicants.length, 0); // MW to C-2 alone matches no English requisition
+});

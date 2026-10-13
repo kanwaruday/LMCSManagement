@@ -49,3 +49,66 @@ function hirReportFormPlan_(apply) {
   if (apply) { cb.setChoiceValues(keep); cb.setRequired(false); }
   Logger.log(apply ? 'Form updated.' : 'Preview only -- nothing changed. Run hirApplyReportForm to apply.');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Position dropdown (2026-10-13, per Uday: "make the form comparable to the hiring dashboard and
+// approvals"). The form's "Position interviewed for" lists every OPEN requisition exactly as the
+// dashboard's role chips do (hirPositionLabel_), plus "Other open role" / "Not for any open role".
+// The Principal's pick WINS in hiringApplicants_. Replaces the interim "Role interviewed for" question.
+//
+//   hirPreviewPositionDropdown  -> logs what it would set
+//   hirSyncPositionDropdown     -> does it (also what the timers run)
+//   hirInstallPositionSync      -> run ONCE: hourly refresh. Approving/closing a New/ Backup Position
+//                                  also queues a refresh ~1 minute later (hirQueuePositionSync_).
+// ═══════════════════════════════════════════════════════════════════
+const HIRF_POSITION_TITLE = 'Position interviewed for';
+
+function hirOpenPositionLabels_() {
+  const reqs = hirApprovedRequisitions_('New/ Backup Position');
+  const seen = {}, out = [];
+  Object.keys(reqs).sort().forEach(function (c) {
+    reqs[c].forEach(function (r) { const l = hirPositionLabel_(c, r); if (!seen[l]) { seen[l] = true; out.push(l); } });
+  });
+  return out;
+}
+
+function hirPreviewPositionDropdown() { hirPositionPlan_(false); }
+function hirSyncPositionDropdown() { hirPositionPlan_(true); }
+
+function hirPositionPlan_(apply) {
+  const labels = hirOpenPositionLabels_().concat(HIR_POSITION_NONE);
+  Logger.log((apply ? 'SETTING' : 'WOULD SET') + ' ' + labels.length + ' options: ' + labels.join(' | '));
+  if (!apply) return;
+  let form, items;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try { form = FormApp.openById(HIRA_IR_FORM_ID); items = form.getItems(); break; }
+    catch (e) { Logger.log('attempt ' + attempt + ' failed: ' + e.message); if (attempt === 4) throw e; Utilities.sleep(3000 * attempt); }
+  }
+  let pos = items.filter(function (it) { return it.getTitle() === HIRF_POSITION_TITLE; })[0];
+  if (!pos) {
+    const subjectItem = items.filter(function (it) { return /^subject/i.test(it.getTitle()); })[0];
+    pos = form.addListItem().setTitle(HIRF_POSITION_TITLE).setRequired(true);
+    if (subjectItem) form.moveItem(pos.getIndex(), subjectItem.getIndex());
+    // the interim role question is superseded
+    items.filter(function (it) { return it.getTitle() === HIRF_ROLE_TITLE; }).forEach(function (it) { form.deleteItem(it); Logger.log('removed the interim "' + HIRF_ROLE_TITLE + '" question'); });
+  }
+  pos.asListItem().setChoiceValues(labels);
+}
+
+function hirInstallPositionSync() {
+  ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'hirSyncPositionDropdown'; }).forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('hirSyncPositionDropdown').timeBased().everyHours(1).create();
+  Logger.log('Hourly position-dropdown refresh installed.');
+}
+
+// Called (best-effort) when a New/ Backup Position is approved or closed: a one-off refresh a minute
+// later, so the approval request itself never waits on Google Forms.
+function hirQueuePositionSync_() {
+  const h = 'hirSyncPositionOnce_';
+  if (ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === h; })) return; // already queued
+  ScriptApp.newTrigger(h).timeBased().after(60 * 1000).create();
+}
+function hirSyncPositionOnce_() {
+  ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'hirSyncPositionOnce_'; }).forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  hirSyncPositionDropdown();
+}

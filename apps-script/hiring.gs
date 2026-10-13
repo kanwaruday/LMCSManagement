@@ -536,6 +536,20 @@ function hiringApplicants_(caller) {
         if (hirSubjectsMatch_(req.matchSubjects, subjects)) relevantReqs.push(Object.assign({ campusId: c }, req));
       });
     });
+    // 2026-10-13, per Uday: the position a Principal picked on the Interview Report form WINS -- the
+    // candidate shows under that requisition even if subjects/branches wouldn't have matched.
+    const reported = irPhones[hirNormalizePhone_(r[HIR_COL.PHONE - 1])];
+    if (reported && reported.position && HIR_POSITION_NONE.indexOf(reported.position) === -1) {
+      Object.keys(requisitions).forEach(function (c) {
+        if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return;
+        requisitions[c].forEach(function (req) {
+          const key = hirRoleKey_(c, req.roleLevel, req.subjects);
+          if (hirPositionLabel_(c, req) === reported.position && !relevantReqs.some(function (x) { return hirRoleKey_(x.campusId, x.roleLevel, x.subjects) === key; })) {
+            relevantReqs.push(Object.assign({ campusId: c }, req));
+          }
+        });
+      });
+    }
     if (!relevantReqs.length) continue;
 
     const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
@@ -965,6 +979,14 @@ function hirScoreApplicant_(applicant, relevantReqs) {
   return best || { total: 0, breakdown: {}, remarks: [] };
 }
 
+// The text of one open position as the Interview Report form's "Position interviewed for" dropdown
+// shows it, e.g. "LMS 4 - PRT: Mother Teacher C-1 & 2" -- built from the SAME approved requisition
+// the dashboard's role chip comes from, so a report names a requisition exactly.
+const HIR_POSITION_NONE = ['Other open role', 'Not for any open role'];
+function hirPositionLabel_(campusId, req) {
+  return campusId.replace(/^LMS(\d)/, 'LMS $1') + ' - ' + (req.roleLevel || 'ROLE') + (req.subjects ? ': ' + req.subjects : '');
+}
+
 // Approved-requisition check for one specific campus -- used by
 // hirSalaryOfferGateCheck_ below, which always cares about one
 // applicant's own campus rather than the whole set.
@@ -1374,9 +1396,11 @@ function hiringCheckInterviewReport_(phone) {
 function hirInterviewReportPhones_() {
   const values = hirIrSheet_().getDataRange().getValues();
   const set = {};
+  // "Position interviewed for" (added by hirSyncPositionDropdown) -- found by header, a column at the end.
+  const posCol = values[0].map(function (h) { return String(h).toLowerCase(); }).findIndex(function (h) { return h.indexOf('position interviewed') !== -1; });
   for (let i = 1; i < values.length; i++) {
     const phone = hirNormalizePhone_(values[i][HIR_IR_COL.PHONE]);
-    if (phone) set[phone] = { pdf: String(values[i][HIR_IR_COL.PDF] || '').trim(), remarks: String(values[i][HIR_IR_COL.REMARKS] || '').trim() };
+    if (phone) set[phone] = { pdf: String(values[i][HIR_IR_COL.PDF] || '').trim(), remarks: String(values[i][HIR_IR_COL.REMARKS] || '').trim(), position: posCol === -1 ? '' : String(values[i][posCol] || '').trim() };
   }
   return set;
 }
