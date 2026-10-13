@@ -530,8 +530,7 @@ td{padding:6px 12px;vertical-align:middle}
              needed to change. -->
         <div>
           <label class="field-label">Category</label>
-          <div class="role-picker" id="aprCategoryButtons"></div>
-          <select id="aprCategory" style="display:none"></select>
+          <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
         </div>
         <div style="margin-top:10px;max-width:220px">
           <label class="field-label">Urgency</label>
@@ -2072,17 +2071,6 @@ function aprEsc_(s) {
 }
 
 document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
-function aprRenderCategoryButtons_() {
-  const current = document.getElementById('aprCategory').value;
-  document.getElementById('aprCategoryButtons').innerHTML = APR_CATEGORIES.map(function (c) {
-    return '<button type="button" class="role-btn' + (c === current ? ' active' : '') + '" onclick="aprSelectCategory(\'' + c + '\')">' + c + '</button>';
-  }).join('');
-}
-function aprSelectCategory(c) {
-  document.getElementById('aprCategory').value = c;
-  aprRenderCategoryButtons_();
-  aprOnCategoryChange();
-}
 // NOT called here -- aprOnCategoryChange() (default category is
 // New/ Backup Position) calls renderAprSubjectsMsOptions(), which
 // needs APR_HIRING_SUBJECTS_BY_ROLE, a `const` declared further down
@@ -2792,7 +2780,6 @@ function switchSubTab(tab) {
 // at aprSelectCategory()'s definition for why this has to run down
 // here, after APR_HIRING_SUBJECTS_BY_ROLE is actually declared, not
 // right after the button/select markup gets populated.
-aprRenderCategoryButtons_();
 aprOnCategoryChange();
 
 init();
