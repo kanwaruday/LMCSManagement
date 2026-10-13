@@ -109,3 +109,9 @@ T('NTT requisition matches "MW to C-2" but not a plain English applicant', () =>
   assert.strictEqual(ctx.hirSubjectsMatch_(m.LIBRARIAN, 'English'), false);
   assert.strictEqual(ctx.hirSubjectsMatch_(m.ACTIVITY, 'Music'), true);
 });
+T('Mother Teacher C-1 & 2 requisition matches MW to C-2 applicants (not English-only); NTT matches them too', () => {
+  assert.strictEqual(ctx.hirSubjectsMatch_('Mother Teacher C-1 & 2', 'MW to C-2, English'), true);
+  assert.strictEqual(ctx.hirSubjectsMatch_('Mother Teacher C-1 & 2', 'English, Maths'), false);
+  assert.strictEqual(ctx.hirSubjectsMatch_('English, Mother Teacher C-1 & 2', 'English'), true);
+  assert.strictEqual(ctx.hirSubjectsMatch_('NTT, MW to C-2', 'MW to C-2'), true);
+});

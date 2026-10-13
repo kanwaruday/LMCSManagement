@@ -767,7 +767,11 @@ const HIR_SUBJECT_CANON = {
   // 2026-10-13 (Mapping Audit): the Interview Report / applicant forms offer role-style "subjects"
   // the Approvals form has no equivalent for -- each is folded into the role it really means, and
   // HIR_ROLE_DEFAULT_SUBJECTS below points a subject-less requisition for that role at them.
-  ntt: ['NTT', 'NTT teacher', 'MW to C-2'],            // Montessori Wing to Class 2
+  ntt: ['NTT', 'NTT teacher'],
+  // Class 1-2 "mother teachers" (all subjects) are PRTs, per Uday 2026-10-13. The report/applicant forms'
+  // "MW to C-2" (Montessori Wing to Class 2) covers both them and NTT, so it maps here AND NTT's default
+  // subjects below include it. ("&" in the Approvals label is protected in hirSplitSubjects_.)
+  mothertchr: ['Mother Teacher C-1 to 2', 'MW to C-2'],
   librarian: ['Librarian'], clerk: ['Clerk', 'Senior clerk'], helper: ['Helping staff'],
   drawing: ['Drawing', 'Fine Arts'],
   activity: ['Dance', 'Music', 'Martial Arts', 'Yoga', 'Self defence', 'Pipe band instructor'],
@@ -799,7 +803,8 @@ function hirCanonicalSubjectKey_(phrase) {
   return norm ? (HIR_SUBJECT_LOOKUP_[norm] || norm) : '';
 }
 function hirSplitSubjects_(s) {
-  return String(s || '').split(/,|&|\band\b/i).map(hirCanonicalSubjectKey_).filter(Boolean);
+  // "Mother Teacher C-1 & 2" contains the "&" separator -- rewrite it to "...C-1 to 2" first.
+  return String(s || '').replace(/c-?\s*1\s*&\s*2/gi, 'C-1 to 2').split(/,|&|\band\b/i).map(hirCanonicalSubjectKey_).filter(Boolean);
 }
 
 // "Adjoining" subjects -- per Uday: "a Geography teacher is usually

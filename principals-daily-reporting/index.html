@@ -2173,7 +2173,8 @@ document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (
 // multiselect widget, just nothing to actually pick.
 const APR_HIRING_SUBJECTS_BY_ROLE = {
   NTT: [], // generalist -- no subject picker shown at all
-  PRT: ['English', 'Hindi', 'Math', 'Science', 'Social Science'],
+  // 2026-10-13, per Uday: Class 1-2 teachers are PRTs ("mother teachers", all subjects), not NTT.
+  PRT: ['Mother Teacher C-1 & 2', 'English', 'Hindi', 'Math', 'Science', 'Social Science'],
   TGT: ['English', 'Hindi', 'Sanskrit', 'Math', 'Science', 'Social Science', 'Information Technology', 'P.Ed', 'E.V.S.'],
   PGT: ['English', 'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science'],
   COMPUTER: ['Information Technology'],
