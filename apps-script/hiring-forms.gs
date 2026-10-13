@@ -21,8 +21,12 @@ function hirPreviewReportForm() { hirReportFormPlan_(false); }
 function hirApplyReportForm() { hirReportFormPlan_(true); }
 
 function hirReportFormPlan_(apply) {
-  const form = FormApp.openById(HIRA_IR_FORM_ID);
-  const items = form.getItems();
+  // Forms from Apps Script intermittently throws "An unknown error has occurred" / Drive timeouts -- retry.
+  let form, items;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try { form = FormApp.openById(HIRA_IR_FORM_ID); items = form.getItems(); break; }
+    catch (e) { Logger.log('attempt ' + attempt + ' failed: ' + e.message); if (attempt === 4) throw e; Utilities.sleep(3000 * attempt); }
+  }
   const subjectItem = items.filter(function (it) { return /^subject/i.test(it.getTitle()) && it.getType() === FormApp.ItemType.CHECKBOX; })[0];
   if (!subjectItem) throw new Error('Could not find the Subject checkbox question');
   const log = function (m) { Logger.log((apply ? 'DONE: ' : 'WOULD: ') + m); };
