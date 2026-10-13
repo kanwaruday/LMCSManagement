@@ -346,6 +346,8 @@ function hirBackfillWalkInApplicants_() {
   }
 
   const irValues = hirIrSheet_().getDataRange().getValues();
+  // "Role interviewed for" is appended by hirApplyReportForm (a new column at the end) -- found by header text.
+  const roleCol = irValues[0].map(function (h) { return String(h).toLowerCase(); }).findIndex(function (h) { return h.indexOf('role interviewed') !== -1; });
   const newRows = [];
   let skippedComplicated = 0;
   for (let i = 1; i < irValues.length; i++) {
@@ -373,7 +375,9 @@ function hirBackfillWalkInApplicants_() {
     row[HIR_COL.TIMESTAMP - 1] = ts;
     row[HIR_COL.NAME - 1] = name;
     row[HIR_COL.PHONE - 1] = rawPhone;
-    row[HIR_COL.SUBJECTS - 1] = String(r[HIR_IR_COL.SUBJECT] || '').trim();
+    const roleLabel = roleCol === -1 ? '' : String(r[roleCol] || '').trim();
+    const roleHit = HIR_FORM_ROLES.filter(function (x) { return x.label === roleLabel; })[0];
+    row[HIR_COL.SUBJECTS - 1] = [roleHit && roleHit.token, String(r[HIR_IR_COL.SUBJECT] || '').trim()].filter(Boolean).join(', ');
     row[HIR_COL.BRANCHES - 1] = branchTag;
     row[HIR_COL.NOTES - 1] = 'Walk-in interviewee -- backfilled from Interview Reports ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') +
       (dupRow ? ' | same name as T-' + String(dupRow).padStart(4, '0') + ' under a different phone -- check it is not the same person' : '');
@@ -774,13 +778,35 @@ const HIR_SUBJECT_CANON = {
   mothertchr: ['Mother Teacher C-1 to 2', 'MW to C-2'],
   librarian: ['Librarian'], clerk: ['Clerk', 'Senior clerk'], helper: ['Helping staff'],
   drawing: ['Drawing', 'Fine Arts'],
-  activity: ['Dance', 'Music', 'Martial Arts', 'Yoga', 'Self defence', 'Pipe band instructor'],
+  activity: ['Activity Teacher', 'Dance', 'Music', 'Martial Arts', 'Yoga', 'Self defence', 'Pipe band instructor'],
   driver: ['Driver', 'School driver', 'Bus driver'],
   psychology: ['Psychology'], sociology: ['Sociology'],
 };
 // A requisition with no subjects (NTT, Librarian, ...) used to match EVERY applicant at the campus.
 // For roles with a recognisable applicant-side wording it now matches only those; Sweeper/Technician/
 // Gardener have none on either form, so they stay "anyone".
+// 2026-10-13: the Interview Report form's "Role interviewed for" question (hirApplyReportForm in
+// hiring-forms.gs builds it from this list). token = the subject word hirBackfillWalkInApplicants_
+// puts on a walk-in so it matches the same requisition Approvals files for that role ('' = none
+// needed: TGT/PGT/PRT 3-5 match on their real subjects; Sweeper/Technician/Gardener match anyone).
+const HIR_FORM_ROLES = [
+  { label: 'NTT - Montessori Wing (M-I to M-III)', token: 'NTT' },
+  { label: 'PRT - Mother Teacher (Classes 1-2, all subjects)', token: 'Mother Teacher C-1 & 2' },
+  { label: 'PRT - Primary subject teacher (Classes 3-5)', token: '' },
+  { label: 'TGT - up to Class 10', token: '' },
+  { label: 'PGT - up to Class 12', token: '' },
+  { label: 'Computer Teacher', token: 'Computer' },
+  { label: 'PTI / Games Teacher (incl. Classes 11-12)', token: 'Physical Education' },
+  { label: 'Activity Teacher (Dance / Music / Martial Arts / Yoga)', token: 'Activity Teacher' },
+  { label: 'Drawing Teacher', token: 'Drawing' },
+  { label: 'Librarian', token: 'Librarian' },
+  { label: 'Clerk + PRO', token: 'Clerk' },
+  { label: 'Driver Cum Peon', token: 'Driver' },
+  { label: 'Helper', token: 'Helping staff' },
+  { label: 'Sweeper', token: '' },
+  { label: 'Technician', token: '' },
+  { label: 'Gardener', token: '' },
+];
 const HIR_ROLE_DEFAULT_SUBJECTS = {
   NTT: 'NTT, MW to C-2', LIBRARIAN: 'Librarian', CLERK: 'Clerk', HELPER: 'Helping staff', DRAWING: 'Drawing',
   ACTIVITY: 'Dance, Music, Martial Arts, Yoga', DRIVER: 'Driver',
