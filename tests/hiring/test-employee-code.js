@@ -99,3 +99,13 @@ T('assign: joining date sets YY/MM of the code', () => {
   ctx.hirAssignEmployeeCodes_([a], []);
   assert.strictEqual(a.expectedEmployeeCode, 'NCM/27/01/104');
 });
+
+// Mapping Audit (2026-10-13): subject-less requisitions are role-aware.
+T('NTT requisition matches "MW to C-2" but not a plain English applicant', () => {
+  const m = ctx.HIR_ROLE_DEFAULT_SUBJECTS || vm.runInContext('HIR_ROLE_DEFAULT_SUBJECTS', ctx);
+  assert.strictEqual(ctx.hirSubjectsMatch_(m.NTT, 'MW to C-2, English'), true);
+  assert.strictEqual(ctx.hirSubjectsMatch_(m.NTT, 'English, Maths'), false);
+  assert.strictEqual(ctx.hirSubjectsMatch_(m.LIBRARIAN, 'Librarian'), true);
+  assert.strictEqual(ctx.hirSubjectsMatch_(m.LIBRARIAN, 'English'), false);
+  assert.strictEqual(ctx.hirSubjectsMatch_(m.ACTIVITY, 'Music'), true);
+});

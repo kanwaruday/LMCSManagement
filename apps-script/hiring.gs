@@ -342,7 +342,7 @@ function hirBackfillWalkInApplicants_() {
     const p = hirNormalizePhone_(appValues[i][HIR_COL.PHONE - 1]);
     if (p) existingPhones[p] = true;
     const n = hirNormalizeName_(appValues[i][HIR_COL.NAME - 1]);
-    if (n) existingNames[n] = true;
+    if (n) existingNames[n] = i + 1;
   }
 
   const irValues = hirIrSheet_().getDataRange().getValues();
@@ -355,8 +355,12 @@ function hirBackfillWalkInApplicants_() {
     if (!name) continue;
     const normPhone = hirNormalizePhone_(rawPhone);
     if (normPhone && existingPhones[normPhone]) continue; // already a real match, nothing to do
-    if (rawPhone.replace(/\D/g, '').length !== 10) { skippedComplicated++; continue; } // not a clean 10-digit number
-    if (existingNames[hirNormalizeName_(name)]) { skippedComplicated++; continue; } // same name, different phone elsewhere -- ambiguous, skip
+    // 2026-10-13 (Mapping Audit): was "skip unless a clean 10-digit phone AND a never-seen name" --
+    // that silently hid ~20 interviewees (common names like "Rajesh Kumar", a 9-digit typo). Phone
+    // matching uses the same digits on both sides, so any usable number links fine; a name already
+    // on file is now added anyway, with a note, rather than dropped.
+    if (rawPhone.replace(/\D/g, '').length < 6) { skippedComplicated++; continue; }
+    const dupRow = existingNames[hirNormalizeName_(name)];
 
     // "LMS 6" (Interview Reports' own wording) -> "LMS-6" -- only needs
     // to contain the substring hirSheet_-reading code already matches
@@ -371,7 +375,8 @@ function hirBackfillWalkInApplicants_() {
     row[HIR_COL.PHONE - 1] = rawPhone;
     row[HIR_COL.SUBJECTS - 1] = String(r[HIR_IR_COL.SUBJECT] || '').trim();
     row[HIR_COL.BRANCHES - 1] = branchTag;
-    row[HIR_COL.NOTES - 1] = 'Walk-in interviewee -- backfilled from Interview Reports ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    row[HIR_COL.NOTES - 1] = 'Walk-in interviewee -- backfilled from Interview Reports ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') +
+      (dupRow ? ' | same name as T-' + String(dupRow).padStart(4, '0') + ' under a different phone -- check it is not the same person' : '');
     // They WERE interviewed -- use the report's own timestamp as the
     // Interview Scheduled date too, so the ladder correctly derives
     // past that rung instead of showing zero progress for someone who
@@ -524,7 +529,7 @@ function hiringApplicants_(caller) {
       const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
       if (branches.indexOf(campusTag) === -1) return;
       requisitions[c].forEach(function (req) {
-        if (hirSubjectsMatch_(req.subjects, subjects)) relevantReqs.push(Object.assign({ campusId: c }, req));
+        if (hirSubjectsMatch_(req.matchSubjects, subjects)) relevantReqs.push(Object.assign({ campusId: c }, req));
       });
     });
     if (!relevantReqs.length) continue;
@@ -717,7 +722,7 @@ function hirApprovedRequisitions_(category) {
     const campusId = String(row[1]).trim();
     const parsed = hirParseRequisitionItem_(row[7]);
     if (!byCampus[campusId]) byCampus[campusId] = [];
-    byCampus[campusId].push({ subjects: parsed.subjectsRaw, roleLevel: parsed.roleLevel, openings: row[8] === '' ? null : Number(row[8]) });
+    byCampus[campusId].push({ subjects: parsed.subjectsRaw, matchSubjects: parsed.subjectsRaw || HIR_ROLE_DEFAULT_SUBJECTS[parsed.roleLevel] || '', roleLevel: parsed.roleLevel, openings: row[8] === '' ? null : Number(row[8]) });
   }
   return byCampus;
 }
@@ -758,7 +763,23 @@ const HIR_SUBJECT_CANON = {
   bstudies: ['Business Studies', 'Commerce'],
   physics: ['Physics'], chemistry: ['Chemistry'], biology: ['Biology'],
   evs: ['E.V.S.', 'EVS'], gk: ['GK', 'General Knowledge'],
-  cogact: ['Cognitive Activities'], ntt: ['NTT'],
+  cogact: ['Cognitive Activities'],
+  // 2026-10-13 (Mapping Audit): the Interview Report / applicant forms offer role-style "subjects"
+  // the Approvals form has no equivalent for -- each is folded into the role it really means, and
+  // HIR_ROLE_DEFAULT_SUBJECTS below points a subject-less requisition for that role at them.
+  ntt: ['NTT', 'NTT teacher', 'MW to C-2'],            // Montessori Wing to Class 2
+  librarian: ['Librarian'], clerk: ['Clerk', 'Senior clerk'], helper: ['Helping staff'],
+  drawing: ['Drawing', 'Fine Arts'],
+  activity: ['Dance', 'Music', 'Martial Arts', 'Yoga', 'Self defence', 'Pipe band instructor'],
+  driver: ['Driver', 'School driver', 'Bus driver'],
+  psychology: ['Psychology'], sociology: ['Sociology'],
+};
+// A requisition with no subjects (NTT, Librarian, ...) used to match EVERY applicant at the campus.
+// For roles with a recognisable applicant-side wording it now matches only those; Sweeper/Technician/
+// Gardener have none on either form, so they stay "anyone".
+const HIR_ROLE_DEFAULT_SUBJECTS = {
+  NTT: 'NTT, MW to C-2', LIBRARIAN: 'Librarian', CLERK: 'Clerk', HELPER: 'Helping staff', DRAWING: 'Drawing',
+  ACTIVITY: 'Dance, Music, Martial Arts, Yoga', DRIVER: 'Driver',
 };
 function hirNormalizeSubjectPhrase_(s) {
   return String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim().replace(/\s+/g, ' ');
@@ -890,7 +911,7 @@ function hirRecencyScore_(timestampISO) {
 function hirScoreApplicant_(applicant, relevantReqs) {
   let best = null;
   relevantReqs.forEach(function (req) {
-    const reqKeys = hirSplitSubjects_(req.subjects);
+    const reqKeys = hirSplitSubjects_(req.matchSubjects);
     const appKeys = hirSplitSubjects_(applicant.subjects);
     const evalKeys = reqKeys.length ? reqKeys : [''];
     const strengths = evalKeys.map(function (rk) { return hirSubjectMatchStrength_(rk, applicant.subjects); });
@@ -1386,7 +1407,7 @@ function hirRefreshTrackerCore_() {
       const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
       if (branches.indexOf(campusTag) === -1) return;
       requisitions[c].forEach(function (req) {
-        if (hirSubjectsMatch_(req.subjects, subjects)) { relevantReqs.push(req); matchedCampus = c; }
+        if (hirSubjectsMatch_(req.matchSubjects, subjects)) { relevantReqs.push(req); matchedCampus = c; }
       });
     });
 

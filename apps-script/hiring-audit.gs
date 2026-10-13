@@ -129,7 +129,7 @@ function hirMappingAudit() {
     else {
       const cs = Object.keys(reqs).filter(function (c) { return branches.indexOf('LMS-' + c.replace(/[^0-9]/g, '')) !== -1; });
       if (!cs.length) { result = 'NOT VISIBLE'; why = 'no APPROVED requisition at any campus this person applied to (' + branches + ')'; }
-      else if (!cs.some(function (c) { return reqs[c].some(function (q) { return hirSubjectsMatch_(q.subjects, subjects); }); })) {
+      else if (!cs.some(function (c) { return reqs[c].some(function (q) { return hirSubjectsMatch_(q.matchSubjects, subjects); }); })) {
         result = 'NOT VISIBLE';
         why = 'subjects "' + subjects + '" match none of the approved requisitions: ' + cs.map(function (c) { return c + ' [' + reqs[c].map(function (q) { return q.roleLevel + (q.subjects ? ': ' + q.subjects : ''); }).join(' ; ') + ']'; }).join(' / ');
       }
