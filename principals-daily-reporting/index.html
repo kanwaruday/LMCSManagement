@@ -341,6 +341,10 @@ td{padding:6px 12px;vertical-align:middle}
             </div>
           </div>
           <div class="card">
+            <p class="card-title">Open hiring positions <span class="home-count" id="homeHiringCount"></span></p>
+            <div id="homeHiring"></div>
+          </div>
+          <div class="card">
             <p class="card-title">Waiting on others</p>
             <div id="homeWaiting"></div>
           </div>
@@ -2941,6 +2945,9 @@ function renderHome_() {
   document.getElementById('homeTaskCount').textContent = tasks.rows.length ? '(' + tasks.rows.length + ')' : '';
   document.getElementById('homeTasks').innerHTML = tasks.rows.join('') || (tasks.loading ? homeNote_('Loading…') : homeNote_('Nothing open. Add a task below.'));
 
+  // ── Open hiring positions ──
+  homeRenderHiring_(campusId);
+
   // ── Waiting on others ──
   document.getElementById('homeWaiting').innerHTML = homeWaiting_(campusId);
 
@@ -3002,11 +3009,34 @@ function homeTasks_(campusId) {
   return out;
 }
 
+// Positions = "New/ Backup Position" requests: Approved means the post is open and being hired for; Pending / Info Requested means it is still waiting to be approved.
+// Closing a position sets it to Revoked (see approvals.gs aprCloseHiring_), so it drops off here by itself.
+var HOME_HIRING_CATEGORY_ = 'New/ Backup Position';
+function homeRenderHiring_(campusId) {
+  var box = document.getElementById('homeHiring'), cnt = document.getElementById('homeHiringCount');
+  if (!aprRes) { cnt.textContent = ''; box.innerHTML = homeNote_('Loading…'); return; }
+  var open = aprRes.requests.filter(function (r) {
+    return r.campusId === campusId && !r.archived && r.category === HOME_HIRING_CATEGORY_ && ['Approved', 'Pending', 'Info Requested'].indexOf(r.status) !== -1;
+  });
+  cnt.textContent = open.length ? '(' + open.length + ')' : '';
+  if (!open.length) { box.innerHTML = homeNote_('No open positions. Raise one from the Approvals tab when someone resigns or you need cover.'); return; }
+  var rank = { Approved: 0, 'Info Requested': 1, Pending: 2 };
+  open.sort(function (a, b) { return rank[a.status] - rank[b.status] || String(a.requestedAt).localeCompare(String(b.requestedAt)); });
+  box.innerHTML = open.slice(0, 8).map(function (r) {
+    var role = homeEsc_(r.itemName || r.title) + (r.quantity > 1 ? ' × ' + r.quantity : '');
+    var reason = aprReasonLine_(r); // already escaped
+    var since = r.status === 'Approved' ? 'open ' + aprAgeLabel_(r.decidedAt || r.requestedAt).replace(' ago', '') : null;
+    var right = since ? '<span class="when">' + since + '</span>' : '<span class="pill amber">' + (r.status === 'Pending' ? 'Awaiting approval' : 'Reply needed') + '</span>';
+    return '<div class="home-row link" onclick="switchTab(\'approvals\')"><span class="main">' + role + (reason ? '<div class="when" style="white-space:normal">' + reason + '</div>' : '') + '</span>' + right + '</div>';
+  }).join('') + (open.length > 8 ? homeNote_('+ ' + (open.length - 8) + ' more in Approvals') : '') +
+    '<p class="home-empty"><a href="../hiring/index.html">Applicants on the Hiring Dashboard →</a></p>';
+}
+
 function homeWaiting_(campusId) {
   if (!aprRes) return homeNote_('Loading…');
   var today = new Date(); today.setHours(0, 0, 0, 0);
   var mine = aprRes.requests.filter(function (r) { return r.campusId === campusId && !r.archived; });
-  var pending = mine.filter(function (r) { return r.status === 'Pending'; });
+  var pending = mine.filter(function (r) { return r.status === 'Pending' && r.category !== HOME_HIRING_CATEGORY_; });
   var follow = mine.filter(function (r) { return r.status === 'Approved' && r.followUp && r.followUp.status === 'open'; });
   var html = '';
   if (pending.length) {
