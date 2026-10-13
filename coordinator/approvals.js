@@ -18,6 +18,21 @@ window.CoordApprovals = (function () {
   const isoDay = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const plusDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return isoDay(d); };
   const dueLabel = iso => { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return d.getDate() + ' ' + MON[d.getMonth()]; };
+  // WHY a hiring position is open, read from the sentence the principal's form stores in the Evidence Link column
+  const hiringReason = r => {
+    if (r.category !== 'New/ Backup Position') return null;
+    const t = String(r.evidenceLink || ''); let m;
+    if ((m = t.match(/^Received Resignation from:\s*(.*?)\s*[\u2014-]\s*last working day\s*(\d{4}-\d{2}-\d{2})(?:\s*\(changed from backup on ([^)]+)\))?/i))) return { kind: 'resignation', name: m[1], lwd: m[2], changed: m[3] || '' };
+    if ((m = t.match(/^Looking for Backup for:\s*(.*)$/i))) return { kind: 'backup', name: m[1].trim() };
+    return null;
+  };
+  const reasonLine = r => {
+    const x = hiringReason(r); if (!x) return '';
+    if (x.kind === 'backup') return 'Backup for ' + esc(x.name);
+    const days = Math.round((new Date(x.lwd + 'T00:00:00') - new Date(isoDay(new Date()) + 'T00:00:00')) / 86400000);
+    const when = days >= 0 ? ' (in ' + days + ' day' + (days === 1 ? '' : 's') + ')' : ' (passed)';
+    return 'Resignation: ' + esc(x.name) + ' \u00b7 last day <span class="' + (days <= 7 ? 'late' : '') + '">' + dueLabel(x.lwd) + when + '</span>' + (x.changed ? ' \u00b7 changed from backup ' + esc(x.changed) : '');
+  };
   // where an approved request's follow-up stands: hiring (tracked elsewhere), na (not approved), none (nobody allocated), open, overdue, done
   const fuState = r => FOLLOW_SKIP.indexOf(r.category) !== -1 ? 'hiring' : r.status !== 'Approved' ? 'na' : !r.followUp ? 'none' : r.followUp.status === 'done' ? 'done' : (r.followUp.due && r.followUp.due < isoDay(new Date()) ? 'overdue' : 'open');
 
@@ -191,7 +206,7 @@ window.CoordApprovals = (function () {
       const date = needs ? '<span' + (stale ? ' class="stalet"' : '') + '>' + age(r.requestedAt) + '</span>' : ddmmyyyy(r.decidedAt || r.requestedAt);
       let h = '<tr class="row' + (open ? ' open' : '') + (stale ? ' stale' : '') + '" data-act="row" data-id="' + esc(r.id) + '">' +
         (canSel ? '<td data-stop="1">' + (S.eligible[r.id] ? '<input type="checkbox" data-act="sel" data-id="' + esc(r.id) + '" ' + (S.selected[r.id] ? 'checked' : '') + '>' : '') + '</td>' : '') +
-        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + '</td><td>' + esc(r.category) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
+        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + '</td><td>' + esc(r.category) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
         '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + fuCell(r) + '</td><td>' + date + '</td></tr>';
       if (open) h += '<tr class="detail"><td colspan="' + cols + '"><div class="dwrap" data-slot="detail">' + (S.detail ? detailInner(S.detail) : '<div class="empty">Loading…</div>') + '</div></td></tr>';
       return h;
@@ -243,7 +258,7 @@ window.CoordApprovals = (function () {
       const reply = r.status === 'Info Requested' && sess().email === r.requestedBy;
       const comments = res.comments.length ? res.comments.map(c => '<div class="cm"><div class="cmm">' + esc(c.authorEmail) + ' (' + esc(c.authorRole || '—') + ') · ' + ddmmyyyy(c.postedAt) +
         (c.authorEmail === sess().email ? ' · <a href="#" data-act="cdel" data-id="' + esc(c.id) + '" data-ap="' + esc(r.id) + '">Delete</a>' : '') + '</div>' + esc(c.body) + '</div>').join('') : '<div class="empty">No comments yet.</div>';
-      return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div>' + followHtml(r, res.canDecide) + '<div style="margin:10px 0">' + comments + '</div>' +
+      return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div>' + (reasonLine(r) ? '<div class="fu"><b>Reason:</b> ' + reasonLine(r) + '</div>' : '') + followHtml(r, res.canDecide) + '<div style="margin:10px 0">' + comments + '</div>' +
         (reply ? '<div class="hint">The Owner asked for more before deciding — your reply below sends this back to Pending.</div>' : '') +
         '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + bar;
     }

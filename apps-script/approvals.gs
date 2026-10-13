@@ -588,3 +588,74 @@ function aprNotifyThread_(caller, row, text) {
     MailApp.sendEmail(requesterEmail, 'New comment on "' + row[4] + '"', caller.email + ' commented: ' + text);
   } catch (err) { /* best-effort */ }
 }
+
+// ── Hiring requests: change the reason, or close the position ────────
+// 2026-10-13, per Uday. A "New/ Backup Position" request records WHY the position is open as a sentence in the Evidence Link column
+// ("Looking for Backup for: <name>" or "Received Resignation from: <name> — last working day <yyyy-mm-dd>"). Two things a principal needs to do:
+//   changehiringreason -- a backup turned into a resignation (needs the last working day), or a resignation's last working day moved. The request
+//                         stays approved (no re-approval); the change is written into the sentence and added to the comment thread.
+//   closehiring        -- the resignation was withdrawn / the cover is no longer needed. The request is closed (status Revoked), which is what takes the
+//                         position off the Hiring dashboard (it lists only APPROVED requests), and a follow-up is raised for the coordinators so any
+//                         candidate already in the pipeline for it is not left hanging.
+// Allowed for the principal who raised the request, or a decider (Owner / delegated Coordinator).
+const APR_HIRING_CATEGORY = 'New/ Backup Position';
+const APR_HIRING_OPEN_STATUSES = [APR_STATUS.PENDING, APR_STATUS.INFO_REQUESTED, APR_STATUS.APPROVED];
+
+function aprHiringRow_(caller, id) {
+  const sheet = aprSheet_(), values = sheet.getDataRange().getValues(), idx = aprFindRowIndex_(values, id);
+  if (idx === -1) return { error: 'Request not found' };
+  const row = values[idx];
+  if (String(row[2]) !== APR_HIRING_CATEGORY) return { error: 'This only applies to New/ Backup Position requests' };
+  if (String(row[11]).trim().toLowerCase() !== caller.email && !aprCanDecide_(caller)) return { error: 'Only the principal who raised this request can change it' };
+  if (APR_HIRING_OPEN_STATUSES.indexOf(String(row[13])) === -1) return { error: 'This request is already ' + String(row[13]).toLowerCase() };
+  return { sheet: sheet, idx: idx, row: row };
+}
+
+function aprChangeHiringReason_(caller, body) {
+  const h = aprHiringRow_(caller, body.id);
+  if (h.error) return { success: false, error: h.error };
+  const lwd = String(body.lastWorkingDay || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(lwd) || isNaN(new Date(lwd + 'T00:00:00').getTime())) return { success: false, error: 'Enter the last working day' };
+  const cur = String(h.row[10] || '');
+  const backup = cur.match(/^Looking for Backup for:\s*(.*)$/i);
+  const resig = cur.match(/^Received Resignation from:\s*(.*?)\s*[—-]\s*last working day\s*\d{4}-\d{2}-\d{2}(.*)$/i);
+  let name, tail, text;
+  if (backup) {
+    name = backup[1].trim(); tail = ' (changed from backup on ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', 'd MMM') + ')';
+    text = 'Reason changed from backup to resignation. Last working day: ' + lwd + '.';
+  } else if (resig) {
+    name = resig[1].trim(); tail = resig[2]; // keeps an earlier "(changed from backup ...)" note
+    text = 'Last working day changed to ' + lwd + '.';
+  } else return { success: false, error: 'This request has no backup or resignation reason to change' };
+  h.sheet.getRange(h.idx + 1, 11).setValue('Received Resignation from: ' + name + ' — last working day ' + lwd + tail);
+  aprCommentsSheet_().appendRow(['cmt-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), String(h.row[0]), caller.email, caller.role, text, new Date()]);
+  return { success: true, evidenceLink: 'Received Resignation from: ' + name + ' — last working day ' + lwd + tail };
+}
+
+function aprCloseHiring_(caller, body) {
+  const h = aprHiringRow_(caller, body.id);
+  if (h.error) return { success: false, error: h.error };
+  const note = String(body.note || '').trim();
+  if (!note) return { success: false, error: 'Say why the position is being closed (for example: resignation withdrawn)' };
+  const wasApproved = String(h.row[13]) === APR_STATUS.APPROVED, row = h.idx + 1, who = caller.email.split('@')[0];
+  h.sheet.getRange(row, 14).setValue(APR_STATUS.REVOKED);
+  h.sheet.getRange(row, 15).setValue(caller.email);
+  h.sheet.getRange(row, 16).setValue(new Date());
+  h.sheet.getRange(row, 17).setValue('Closed by ' + who + ': ' + note);
+  aprCommentsSheet_().appendRow(['cmt-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), String(h.row[0]), caller.email, caller.role, 'Position closed: ' + note, new Date()]);
+  if (wasApproved) { try { aprRaiseClosedHiringTask_(h.row, who, note); } catch (err) { /* best-effort: the position is closed either way */ } }
+  return { success: true };
+}
+
+// A follow-up for the coordinators (the Coordinator Portal's Tasks tab lives in this same workbook; layout: see coordinator.gs COORD_HEADERS):
+// the position stops showing as open in the Hiring dashboard, so anyone already in the pipeline for it needs a reply.
+function aprRaiseClosedHiringTask_(row, who, note) {
+  const tasks = aprWorkbook_().getSheetByName('Tasks');
+  if (!tasks) return;
+  const id = 'hiring_closed|' + String(row[0]), now = new Date();
+  const existing = tasks.getLastRow() > 1 ? tasks.getRange(2, 1, tasks.getLastRow() - 1, 1).getValues() : [];
+  for (let i = 0; i < existing.length; i++) if (existing[i][0] === id) return;
+  tasks.appendRow([id, 'hiring_closed', String(row[1]).trim(), 'Hiring closed: ' + String(row[4]) + ' (' + String(row[1]).trim() + ')',
+    who + ' closed this position (' + note + '). It no longer shows as open in the Hiring dashboard: check for applicants already in the pipeline for it and let them know.',
+    'open', 'medium', now, now, '', '', '', 'HR & Staff', '', '']);
+}

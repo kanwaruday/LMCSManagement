@@ -21,7 +21,7 @@ window.Coord = (function () {
   ];
   // Paths are relative to coordinator/<page>/, i.e. two levels below the repo root.
   const WORK_LINKS = {
-    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../systems/index.html#approvals', apr_follow: '../systems/index.html#approvals',
+    ss_compliance: '../../principals-daily-reporting/index.html', approval: '../systems/index.html#approvals', apr_follow: '../systems/index.html#approvals', hiring_closed: '../../hiring/index.html',
     hiring_stall: '../../hiring/index.html', complete_hire: '../../staff/add-employee.html',
     doc_missing: '../../staff/add-employee.html', doc_none: '../../staff/add-employee.html', doc_verify: '../../staff/add-employee.html',
     pdr_issue: '../systems/index.html',

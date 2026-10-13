@@ -2471,6 +2471,55 @@ function aprFollowUpDetail_(r) {
     : who + ' is following this up, due ' + aprDueLabel_(f.due) + (aprFollowUpOverdue_(f) ? ' (<b style="color:var(--red)">overdue</b>)' : '') + (f.note ? ' — ' + aprEsc_(f.note) : '')) + '</div>';
 }
 
+// WHY a hiring position is open, from the sentence the request form stores in the Evidence Link column (see submitApprovalRequest).
+function aprHiringReason_(r) {
+  if (r.category !== 'New/ Backup Position') return null;
+  const t = String(r.evidenceLink || ''); let m;
+  if ((m = t.match(/^Received Resignation from:\s*(.*?)\s*[\u2014-]\s*last working day\s*(\d{4}-\d{2}-\d{2})(?:\s*\(changed from backup on ([^)]+)\))?/i))) return { kind: 'resignation', name: m[1], lwd: m[2], changed: m[3] || '' };
+  if ((m = t.match(/^Looking for Backup for:\s*(.*)$/i))) return { kind: 'backup', name: m[1].trim() };
+  return null;
+}
+function aprReasonLine_(r) {
+  const x = aprHiringReason_(r);
+  if (!x) return '';
+  if (x.kind === 'backup') return 'Backup for ' + aprEsc_(x.name);
+  const d = new Date(), today = new Date(d.getFullYear(), d.getMonth(), d.getDate()), days = Math.round((new Date(x.lwd + 'T00:00:00') - today) / 86400000);
+  return 'Resignation: ' + aprEsc_(x.name) + ' · last day ' + aprDueLabel_(x.lwd) + (days >= 0 ? ' (in ' + days + ' day' + (days === 1 ? '' : 's') + ')' : ' (passed)') + (x.changed ? ' · changed from backup ' + aprEsc_(x.changed) : '');
+}
+// The principal who raised a hiring request (or a decider acting for them) can turn a backup into a resignation, move the last working day, or close the
+// position (resignation withdrawn / cover no longer needed). No re-approval: the request stays approved.
+function aprHiringActionsHtml_(r, res) {
+  if (r.category !== 'New/ Backup Position' || ['Pending', 'Info Requested', 'Approved'].indexOf(r.status) === -1) return '';
+  if (String(r.requestedBy).toLowerCase() !== String(SESSION.email).toLowerCase() && !res.canDecide) return '';
+  const x = aprHiringReason_(r), d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return '<div class="apr-desc" style="border-top:1px solid var(--border);padding-top:8px"><b>Reason:</b> ' + (aprReasonLine_(r) || '—') +
+    (x ? '<div class="add-row" style="margin-top:6px;flex-wrap:wrap"><span style="font-size:11.5px;color:var(--gray);align-self:center">' + (x.kind === 'backup' ? 'Last working day, if this is now a resignation:' : 'Last working day:') + '</span>' +
+      '<input type="date" id="aprLwd-' + r.id + '" ' + (x.kind === 'backup' ? 'min="' + today + '" ' : '') + 'value="' + (x.kind === 'resignation' ? x.lwd : '') + '" style="width:auto;flex:0 0 auto">' +
+      '<button type="button" onclick="aprHiringReasonSave(\'' + r.id + '\')">' + (x.kind === 'backup' ? 'Change to resignation' : 'Change last working day') + '</button></div>' : '') +
+    '<div class="add-row" style="margin-top:6px"><input type="text" id="aprClose-' + r.id + '" placeholder="' + (x && x.kind === 'resignation' ? 'Why close it? e.g. resignation withdrawn' : 'Why is the position no longer needed?') + '">' +
+    '<button type="button" style="background:#4b5563" onclick="aprHiringClose(\'' + r.id + '\')">Close this position</button></div></div>';
+}
+async function aprHiringReasonSave(id) {
+  const v = document.getElementById('aprLwd-' + id).value;
+  if (!v) { alert('Enter the last working day.'); return; }
+  const res = await pdrPost_('changehiringreason', { id: id, lastWorkingDay: v });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t save that' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  const cached = aprRes.requests.filter(function (x) { return x.id === id; })[0];
+  if (cached) cached.evidenceLink = res.evidenceLink;
+  aprExpandedId = null; aprExpandedDetail = null;
+  renderApprovalsForSelectedCampus();
+  toggleApprovalRow(id); // reopen with the new reason and the note this added to the thread
+}
+async function aprHiringClose(id) {
+  const note = document.getElementById('aprClose-' + id).value.trim();
+  if (!note) { alert('Say why the position is being closed (for example: resignation withdrawn).'); return; }
+  if (!confirm('Close this position? It stops showing as open in the Hiring dashboard, and the coordinators are told so they can reply to anyone already in the pipeline.')) return;
+  const res = await pdrPost_('closehiring', { id: id, note: note });
+  if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Couldn’t close it' + (res.error ? ': ' + res.error : '') + '.'); return; }
+  aprExpandedId = null; aprExpandedDetail = null;
+  refreshApprovals();
+}
+
 function aprRowHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
   const needsAction = APR_NEEDS_ACTION_STATUSES.indexOf(r.status) !== -1;
@@ -2482,7 +2531,7 @@ function aprRowHtml_(r) {
     ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
     : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
-    '<td>' + aprEsc_(r.title) + '</td><td>' + aprEsc_(r.category) + '</td>' +
+    '<td>' + aprEsc_(r.title) + (aprReasonLine_(r) ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprReasonLine_(r) + '</div>' : '') + '</td><td>' + aprEsc_(r.category) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span>' + aprFollowUpLine_(r) + '</td>' +
     '<td>' + dateCell + '</td></tr>';
@@ -2557,7 +2606,7 @@ function aprDetailHtml_(res) {
 
   return '<tr class="detail-row"><td colspan="' + aprColspan_() + '"><div class="apr-detail-wrap" id="aprDetailWrap">' +
     '<div class="apr-desc">' + aprEsc_(r.description) + '</div>' +
-    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' + aprFollowUpDetail_(r) +
+    '<div class="apr-meta-row"><span>' + meta.join('</span><span>') + '</span></div>' + aprFollowUpDetail_(r) + aprHiringActionsHtml_(r, res) +
     '<div class="apr-comments">' + aprCommentsHtml_(res.comments, r.id) + '</div>' +
     commentBoxHtml +
     decideBar +
