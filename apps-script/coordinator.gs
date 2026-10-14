@@ -262,7 +262,7 @@ function coordTasksAutoResolve_(sh, rows, domain, covered, liveIds) {
 }
 
 // ── Adapter: SS compliance (reads PDR's action=ssdashboard) ──────────
-// One task per (role, campus, month) whose quota compliance is under threshold.
+// One task per (campus, month) with any role under the quota threshold; the detail lists the roles.
 function coordRefreshSsCompliance_(idToken) {
   const cache = CacheService.getScriptCache();
   if (cache.get('coord_ss_refreshed')) return;
@@ -277,20 +277,28 @@ function coordRefreshSsCompliance_(idToken) {
 
   const wanted = [];
   const covered = {};
+  const byCampus = {}; // one task per (campus, month) listing every role behind quota, not one per role
   Object.keys(dash.roles).forEach(function (roleKey) {
     const d = dash.roles[roleKey];
     d.campusCompliance.forEach(function (c) {
       const campus = coordCampusId_(c.formKey);
       covered[campus] = true;
       if (!c.totalEmployees || c.compliancePct >= COORD_SS_MEDIUM_BELOW_PCT) return;
-      wanted.push({
-        taskId: 'ss_compliance|' + roleKey + '|' + campus + '|' + d.monthLabel,
-        domain: 'ss_compliance', department: COORD_DEPT_HR,
-        campus: campus,
-        title: d.label + ' SS behind quota at ' + c.formKey,
-        detail: c.metQuota + ' of ' + c.totalEmployees + ' met ' + d.quotaPerMonth + '/month (' + c.compliancePct + '%) - ' + d.monthLabel,
-        severity: c.compliancePct < COORD_SS_HIGH_BELOW_PCT ? 'high' : 'medium',
-      });
+      const key = campus + '|' + d.monthLabel;
+      const g = byCampus[key] = byCampus[key] || { campus: campus, formKey: c.formKey, month: d.monthLabel, high: false, parts: [] };
+      if (c.compliancePct < COORD_SS_HIGH_BELOW_PCT) g.high = true;
+      g.parts.push(d.label + ' ' + c.metQuota + '/' + c.totalEmployees + ' (' + c.compliancePct + '%)');
+    });
+  });
+  Object.keys(byCampus).forEach(function (key) {
+    const g = byCampus[key];
+    wanted.push({
+      taskId: 'ss_compliance|' + key,
+      domain: 'ss_compliance', department: COORD_DEPT_HR,
+      campus: g.campus,
+      title: 'Support Sessions behind quota at ' + g.formKey,
+      detail: g.parts.join('; ') + ' met quota - ' + g.month,
+      severity: g.high ? 'high' : 'medium',
     });
   });
 
