@@ -440,7 +440,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: false, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
+    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -533,7 +533,7 @@ window.Coord = (function () {
         '<div class="tile ' + (open.some(i => i.stuck) ? 'bad' : '') + '"><b>' + open.filter(i => i.stuck).length + '</b>open for ' + STUCK_DAYS + '+ days</div>' +
         '<div class="tile"><b>' + open.filter(i => ago(i.first) <= 7).length + '</b>new this week</div>' +
         '<div class="tile"><b>' + (lastDay ? camps.filter(c => !has[lastDay + '|' + c]).length : 0) + '</b>campuses silent on ' + (lastDay ? fmt(lastDay) : '-') + '</div></div>' +
-        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['issues', 'Issues'], ['approvals', 'Approvals'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
+        '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['approvals', 'Approvals'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
       const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">' + (i.act.status === 'acknowledged' ? 'Raised again since you noted it' : 'Raised again after resolved') + '</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
@@ -573,12 +573,12 @@ window.Coord = (function () {
         if (!list.length) return issueTable(list);
         if (!P.group) return issueTable(list.slice(0, 150)) + (list.length > 150 ? '<div class="note">Showing the first 150 of ' + list.length + '. Narrow it with the filters above.</div>' : '');
         const g = {}; list.forEach(i => { const k = P.group === 'campus' ? i.campus : i.type; (g[k] = g[k] || []).push(i); });
-        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + (P.istatus === 'archive' && P.tab === 'issues' ? '' : ', ' + g[k].filter(i => !i.handled).length + ' not assigned') + '</span></h3>' + issueTable(g[k], P.group)).join('');
+        return Object.keys(g).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(k => '<h3 style="font-size:14px;margin:20px 0 6px">' + esc(k) + ' <span class="sm" style="font-weight:400">' + g[k].length + ' issue' + (g[k].length > 1 ? 's' : '') + (P.istatus === 'archive' ? '' : ', ' + g[k].filter(i => !i.handled).length + ' not assigned') + '</span></h3>' + issueTable(g[k], P.group)).join('');
       };
       // One day's reports (full text), loaded on request; the page itself only carries counts
       const dayKey = P.day || lastDay;
       let dayRep = P.days[dayKey];
-      if (P.tab === 'today' && dayKey && dayRep === undefined) {
+      if (P.tab === 'compliance' && dayKey && dayRep === undefined) {
         P.days[dayKey] = dayRep = null; // null = loading
         api({ action: 'coordinatorpdrday', date: dayKey }).then(r => { P.days[dayKey] = r.reports || []; render(); }).catch(err => { P.days[dayKey] = { error: err.message }; render(); });
       }
@@ -600,9 +600,9 @@ window.Coord = (function () {
       };
 
       if (P.tab === 'today') {
-        const list = applyFilters(openAct, false);
-        html += '<div class="note">' + sinceNote + ' An issue stays open while a principal keeps mentioning it, and goes quiet after ' + QUIET_DAYS + ' days without a mention.</div>' + dayView() +
-          '<h3 style="font-size:13px;margin:22px 0 6px">Open and needing action (' + list.length + (list.length !== openAct.length ? ' of ' + openAct.length : '') + ')</h3>' + filterBar(false) + grouped(list);
+        const shown = applyFilters(issues, true);
+        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. It opens on issues that need action; use Open and quiet, or Archive, to see the rest. An issue stays open while a principal keeps mentioning it, and goes quiet after ' + QUIET_DAYS + ' days. Issues you acknowledge (no action needed) or resolve move to the <b>Archive</b> and come back if a principal raises them again. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
+          filterBar(true) + grouped(shown);
       } else if (P.tab === 'digest') {
         const inWk = iso => ago(iso) >= 1 && ago(iso) <= 7, inPrev = iso => ago(iso) >= 8 && ago(iso) <= 14; // completed days only: today's reports are still coming in
         const yday = (() => { const y = new Date(today + 'T00:00:00'); y.setDate(y.getDate() - 1); return y.getFullYear() + '-' + ('0' + (y.getMonth() + 1)).slice(-2) + '-' + ('0' + y.getDate()).slice(-2); })();
@@ -627,21 +627,16 @@ window.Coord = (function () {
           '<div class="tiles"><div class="tile"><b>' + pct(filedWk, expWk) + '</b>of expected reports filed<span class="sm"> (last week ' + pct(filedPrev, expPrev) + ')</span></div>' +
           '<div class="tile"><b>' + newWk.length + '</b>new issues</div><div class="tile"><b>' + resolvedWk.length + '</b>resolved</div>' +
           (fsAll.length ? '<div class="tile"><b>' + lk(totWk) + '</b>fees collected<span class="sm"> (last week ' + lk(totPrev) + ')</span></div>' : '') + '</div>' +
-          '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (open, needs action, not assigned)</h3>' + issueTable(focus) +
+          '<h3 style="font-size:13px;margin:16px 0 6px">Needs attention first (top ' + focus.length + ' of ' + todo.length + ' open, needs action, not assigned)</h3>' + issueTable(focus) + '<p class="sm">The rest are on the <a href="#" data-tab="today">Today</a> tab.</p>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Reporting gaps this week</h3><p>' + (missedWk.length ? missedWk.map(x => '<span class="pl expired">' + x[0] + ': missed ' + x[1] + ' of ' + wkDays.length + ' days</span> ').join('') : 'No campus missed more than one reporting day.') + '</p>' +
-          '<h3 style="font-size:13px;margin:16px 0 6px">New this week (' + newWk.length + ')</h3>' + issueTable(newWk.slice(0, 8)) +
           (feeRows.length ? '<h3 style="font-size:13px;margin:16px 0 6px">Fees</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Collected, 7 days</th><th>Last week</th><th>Outstanding now</th><th>Vs last month-end</th><th>Follow-ups logged</th></tr></thead><tbody>' +
             feeRows.map(r => '<tr><td><b>' + r.c + '</b></td><td>' + lk(r.got) + '</td><td>' + lk(r.prev) + '</td><td>' + lk(r.out) + '</td><td>' + (r.vsEnd === null ? '-' : (r.vsEnd > 0 ? '+' : r.vsEnd < 0 ? '-' : '') + lk(Math.abs(r.vsEnd))) + '</td><td>' + r.fol + '</td></tr>').join('') + '</tbody></table></div>' : '');
         box.dataset.digest = txt.join('\n');
-      } else if (P.tab === 'issues') {
-        const shown = applyFilters(issues, true);
-        html += '<div class="note">' + sinceNote + ' Issues are grouped by campus, type and subject from the principals\' Important Messages; the same subject raised again after ' + QUIET_DAYS + '+ quiet days counts as a new issue. Issues you acknowledge (no action needed) or resolve move to the <b>Archive</b> view and come back if a principal raises them again. The grouping is by wording, so the same problem described differently can appear twice (use "Same problem as" to merge them). Showing ' + shown.length + ' of ' + issues.length + '.</div>' +
-          filterBar(true) + grouped(shown);
       } else if (P.tab === 'approvals') {
         html += '<div class="note">Every school\'s approval requests, for the Owner and for Coordinators. Only the Owner (and a Coordinator you have given decision rights in the allowlist) can approve, reject, refer or archive; everyone else here can read and comment. Principals file and follow their requests on their own page.</div><div class="pd-apr-slot"></div>';
       } else if (P.tab === 'compliance') {
         const mons = [...new Set(days.map(x => x.slice(0, 7)))];
-        html += '<div class="note">Reports filed per month (Google Spaces group until 22 Sep, the form after). A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed.</div>' +
+        html += dayView() + '<div class="note">Reports filed per month (Google Spaces group until 22 Sep, the form after). A reporting day is any non-Sunday on which at least one campus filed; a campus closed on its own would show as missed.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Campus</th>' + mons.map(m => '<th>' + MONTHS[+m.slice(5) - 1] + '</th>').join('') + '</tr></thead><tbody>' +
           camps.map(c => '<tr><td><b>' + c + '</b></td>' + mons.map(m => { const n = days.filter(x => x.slice(0, 7) === m && has[x + '|' + c]).length, tot = days.filter(x => x.slice(0, 7) === m).length; return '<td class="dt ' + (n === 0 ? 'expired' : n < tot / 2 ? 'soon' : '') + '">' + n + '<span class="sm"> / ' + tot + '</span></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Last ' + last.length + ' reporting days</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + last.map(x => '<th>' + fmt(x) + '</th>').join('') + '<th>Missed since Jan</th></tr></thead><tbody>' +
@@ -723,7 +718,7 @@ window.Coord = (function () {
         if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson }); }
         aprSlot.appendChild(P.aprEl);
       }
-      box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { P.tab = b.dataset.tab; render(); }));
+      box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); P.tab = b.dataset.tab; render(); }));
       box.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => { P.istatus = b.dataset.st; render(); }));
       const on = (sel, ev, fn) => { const el = box.querySelector(sel); if (el) el.addEventListener(ev, fn); };
       on('.pd-campus', 'change', e => { P.campus = e.target.value; render(); });
