@@ -63,3 +63,6 @@ td.dt.na{background:var(--lgray);color:var(--gray);font-style:italic}
 td.dt a{color:inherit;text-decoration:underline dotted}td.dt a:hover{text-decoration:underline}td.dt sup a{font-size:9px}
 .pl.ok{background:#dcfce7;color:#15803d}
 
+.tw.stick th{position:sticky;top:0;z-index:2;background:var(--lgray);box-shadow:0 1px 0 var(--border)}
+.tw.stick{overflow-x:clip;overflow-y:visible}
+@media (max-width:1149px){.tw.stick{overflow:auto;max-height:80vh}}

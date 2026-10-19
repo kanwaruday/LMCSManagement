@@ -278,7 +278,7 @@ window.Coord = (function () {
 
   // ── Transport: fleet document compliance ──────────────────────────
   function transportView(body) {
-    const T = { campus: '', tier: 'all', q: '', tab: 'list', pay: 'after', pk: 'result', pd: 1, data: null };
+    const T = { campus: '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null };
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -403,7 +403,7 @@ window.Coord = (function () {
         const fleet = tracked.filter(b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
           .sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
         html += '<div class="note">Expiry date of the newest paper on file; click a date to open its scan (or the form upload) and check it. A small +1 means another scan of that paper exists whose date could not be read. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
-          '<div class="tw"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
+          '<div class="tw stick"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
           fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + nr(b) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + drvNote(b) + '</td>' +
             d.docs.map(x => { const e = b.docs[x.key], t = tier(e); const txt = e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-', first = e.link || (e.unread[0] && e.unread[0].link) || '';
               const src = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '') : e.unread.length ? 'Scan on file, date unread. Click to open it.' : 'No record';
