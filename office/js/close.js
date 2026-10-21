@@ -3,7 +3,7 @@ import { h, setKids } from './dom.js';
 import { cashToPaise } from './report.js';
 import { formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, balancesTable } from './daybook.js';
-import { explainCode } from './attention.js';
+import { entryReason } from './attention.js';
 import { reconLines, queueNotes, loadRecon, loadDeposits, mergeDeposits, depositItem, viewProof, closeProof } from './deposits.js';
 
 const addDays = (iso, n) => new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -74,7 +74,7 @@ export async function showClose(root, session, api, outbox) {
     const sign = (x) => {
       if (x.queued || x.signed || closed) return null;
       const e = signQ.get(x.id);
-      return e ? h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + (WHYSIGN[e.code] || e.error || e.code) : 'Signature waiting to sync') : signBtn(x.id);
+      return e ? h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + (WHYSIGN[e.code || e.error] || e.error || e.code) : 'Signature waiting to sync') : signBtn(x.id);
     };
     if (!recon.success) setKids(info, h('p', { class: 'flag bad' }, 'Could not load the reconciliation (offline or unavailable).'));
     else setKids(info, h('h3', {}, 'Reconciliation for ' + isoToDmy(d)), h('ul', {}, reconLines(recon).map((l) => h('li', {}, l))),
@@ -123,7 +123,7 @@ export async function showClose(root, session, api, outbox) {
       const id = await outbox.enqueue('opening.set', r.data);
       await outbox.flush().catch(() => {});
       const e = (await outbox.entries()).find((x) => x.id === id);
-      opMsg.textContent = !e ? 'Opening balances synced.' : e.status === 'attention' ? explainCode(e.code) : 'Saved on this device, will sync when online.';
+      opMsg.textContent = !e ? 'Opening balances synced.' : e.status === 'attention' ? entryReason(e) : 'Saved on this device, will sync when online.';
     } catch (err) { opMsg.textContent = 'Could not save on this device: ' + (err && err.message || err); }
     opBtn.disabled = false;
   }) }, 'Set opening balances');

@@ -19,6 +19,8 @@ const CODES = {
   ALREADY_SIGNED: 'This deposit was already signed.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');
+// The backend throws plain errors, so the outbox often stores {code:null, error:'OPENING_LOCKED'}: use either.
+export const entryReason = (e) => explainCode(e && (e.code || e.error));
 
 const date = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? isoToDmy(d) : '');
 const money = (p) => (Number.isFinite(p) ? formatInr(p) : '');
@@ -57,7 +59,7 @@ export function createAttentionPanel(outbox) {
         retry.disabled = discard.disabled = true;
         await outbox.discard(e.id); await refresh();
       }) }, 'Discard');
-      return h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: 'flag bad' }, explainCode(e.code)), h('div', { class: 'row' }, retry, discard));
+      return h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: 'flag bad' }, entryReason(e)), h('div', { class: 'row' }, retry, discard));
     })));
   }
   return { el: panel, refresh, open: async () => { panel.hidden = false; await refresh(); panel.scrollIntoView && panel.scrollIntoView(); } };

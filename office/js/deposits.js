@@ -37,7 +37,7 @@ const LABEL = { 'file.upload': 'Slip photo', 'deposit.add': 'Deposit', 'erp.set'
 // Outbox entries of this screen's actions -> [{text, bad}] (waiting = sending, attention = needs a person).
 export function queueNotes(entries, actions = Object.keys(LABEL)) {
   return (entries || []).filter((e) => actions.includes(e.action)).map((e) => e.status === 'attention'
-    ? { bad: true, text: (LABEL[e.action] || e.action) + ' needs attention: ' + (WHY[e.code] || e.error || e.code || 'refused') }
+    ? { bad: true, text: (LABEL[e.action] || e.action) + ' needs attention: ' + (WHY[e.code || e.error] || e.error || e.code || 'refused') }
     : { bad: false, text: (LABEL[e.action] || e.action) + ' saved on this device, waiting to sync.' });
 }
 
@@ -61,7 +61,7 @@ export const loadDeposits = (api, campus, date, key) => api.read('deposit.list',
 export function mergeDeposits(serverList, entries, date) {
   const have = new Set((serverList || []).map((d) => d.id));
   const queued = (entries || []).filter((e) => e.action === 'deposit.add' && e.data && e.data.covers_date === date && !have.has(e.id))
-    .map((e) => ({ ...e.data, id: e.id, signed: false, queued: true, status: e.status, error: e.status === 'attention' ? (WHY[e.code] || e.error || e.code || 'Needs attention') : '' }));
+    .map((e) => ({ ...e.data, id: e.id, signed: false, queued: true, status: e.status, error: e.status === 'attention' ? (WHY[e.code || e.error] || e.error || e.code || 'Needs attention') : '' }));
   return (serverList || []).map((d) => ({ ...d, queued: false })).concat(queued);
 }
 

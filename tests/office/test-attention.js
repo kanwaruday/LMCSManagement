@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { describeEntry, explainCode } = await import('../../office/js/attention.js');
+  const { describeEntry, explainCode, entryReason } = await import('../../office/js/attention.js');
   const { openingPayload } = await import('../../office/js/close.js');
   assert.strictEqual(describeEntry({ action: 'daybook.add', data: { amount_paise: 120000, entry_date: '2026-10-21' } }), 'Day book entry ₹1,200.00 on 21/10/2026');
   assert.strictEqual(describeEntry({ action: 'deposit.add', data: { amount_paise: 500000 } }), 'Deposit ₹5,000.00');
@@ -17,7 +17,9 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(explainCode('OPENING_LOCKED').includes('locked because day book entries already exist'));
   assert.strictEqual(explainCode('SOMETHING_ELSE'), 'SOMETHING_ELSE');
   assert.strictEqual(explainCode(null), 'The server refused it.');
-  console.log('  ok  - describeEntry and explainCode');
+  assert.ok(entryReason({ status: 'attention', code: null, error: 'OPENING_LOCKED' }).includes('locked because day book entries already exist'));
+  assert.strictEqual(entryReason({ code: 'DAY_CLOSED', error: 'x' }), explainCode('DAY_CLOSED'));
+  console.log('  ok  - describeEntry, explainCode, entryReason (uncoded error)');
 
   const r = openingPayload('LMS1', ['1,000', '', '0', '₹2500.50', '10']);
   assert.deepStrictEqual(r, { ok: true, data: { campus: 'LMS1', balances: [

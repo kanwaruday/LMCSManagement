@@ -21,7 +21,7 @@ The backend runs as you, so every book and file is owned by your account. Do not
 ### 1.2 Create the Apps Script project
 
 1. script.google.com > New project > rename to `LMCS Office Backend`.
-2. Project Settings: tick "Show appsscript.json manifest file in editor". Open `appsscript.json` and make sure it has `"timeZone": "Asia/Kolkata"`, `"runtimeVersion": "V8"` and these `oauthScopes` (the same list as [`apps-script/appsscript.json`](../apps-script/appsscript.json)):
+2. Project Settings: tick "Show appsscript.json manifest file in editor". Open `appsscript.json` and make sure it has `"timeZone": "Asia/Kolkata"`, `"runtimeVersion": "V8"` and these `oauthScopes` (the subset of [`apps-script/appsscript.json`](../apps-script/appsscript.json)):
    - `https://www.googleapis.com/auth/spreadsheets`
    - `https://www.googleapis.com/auth/drive`
    - `https://www.googleapis.com/auth/script.external_request` (token check against Google)
@@ -45,7 +45,7 @@ Project Settings > Script Properties > Add. All are required unless marked.
 | `OFFICE_SS_LMS1_2026-27` | Spreadsheet ID of the LMS 1 book for FY 2026-27. Pattern: `OFFICE_SS_<CAMPUS>_<FY>`, campus upper case, FY like `2026-27` (April to March). One key per campus per year. |
 | `OFFICE_DRIVE_ROOT` | Folder ID of `LMCS Office` (uploads go in sub-folders campus / FY / category, created on demand). |
 | `OFFICE_BACKUP_FOLDER` | Folder ID of `Backups`. Must be a folder used only for backups (see known limits). |
-| `OFFICE_ALERT_EMAIL` | Who is mailed when the nightly backup fails. If missing, the script owner is mailed and the run records a failure. |
+| `OFFICE_ALERT_EMAIL` | Optional but recommended. Who is mailed when the nightly backup fails. If missing, the script owner is mailed and the run records a failure. |
 
 The nightly backup copies every key that starts with `OFFICE_SS_` plus `OFFICE_CONFIG_SS`.
 
@@ -74,7 +74,7 @@ From the repo root, once: `npx @google/clasp@3 login`.
 ### 1.6 Point the portal at the backend
 
 1. `office/js/config.js`: set `OFFICE_BACKEND_URL` to the `/exec` URL. It is not a secret (the other portals hardcode theirs).
-2. `office/sw.js`: bump `CACHE` (currently `lmcs-office-v3`, make it `lmcs-office-v4`). The shell is cached first, so without the bump a returning device keeps the old empty `config.js`.
+2. `office/sw.js`: bump `CACHE` to the next name (for example v4 to v5; check the current name in the file). The shell is cached first, so without the bump a returning device keeps the old empty `config.js`.
 3. `tests/verify.mjs`: add `'office/'` to the `pages` list inside the `--live` block.
 4. Commit, push to main, wait for GitHub Pages (a minute or two).
 
@@ -110,7 +110,7 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 - [ ] Second device closing the day while the first still has unsynced entries for it: the first device's entries are refused with `DAY_CLOSED` and show "Needs attention", they are not dropped.
 - [ ] Backup: next morning the `Backups` folder has a copy of each book dated that day, and no failure email arrived.
 - [ ] Restore drill: open the backup copy of the LMS 1 book, open the same closing day in the portal, compare the closing totals (cash by bucket, bank, UPI) with what the portal shows live. They must match to the paisa. Note the result in the vault.
-- [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, cache `lmcs-office-v4` (or whatever the current name is) holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
+- [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, cache `lmcs-office-v4` (or whatever the current name in `office/sw.js` is) holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
 - [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4).
 - [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real opening balances on the Close Day screen, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
 
