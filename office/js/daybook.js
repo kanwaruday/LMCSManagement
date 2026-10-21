@@ -36,7 +36,11 @@ export function inflightGuard() {
   return async (key, fn) => { if (busy.has(key)) return false; busy.add(key); try { await fn(); return true; } finally { busy.delete(key); } };
 }
 
-export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued;
+// Deposit legs are written only by deposit.add and never reversed alone (R37).
+const LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
+const isLeg = (item) => /:(out|in)$/.test(item.id) || LEG_CATEGORIES.includes(item.category);
+export const entryCategories = (cats) => (cats || []).filter((c) => !LEG_CATEGORIES.includes(c.id));
+export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued && !isLeg(item);
 
 // form: {date, category, mode, bucket, amount, payee, narration}; categories: config.get categories.
 // Returns {ok, data, errors:{category,mode,bucket,amount}}; direction comes from the chosen category.
@@ -103,7 +107,7 @@ export async function showDayBook(root, session, api, outbox) {
   const balEl = h('div', {});
 
   const paintCats = () => {
-    catSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...categories.map((c) => h('option', { value: c.id }, c.label + ' (' + c.direction + ')')));
+    catSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...entryCategories(categories).map((c) => h('option', { value: c.id }, c.label + ' (' + c.direction + ')')));
   };
   const syncBucket = () => { bucketF.root.hidden = modeSel.value !== 'cash'; };
   const syncDir = () => { const c = categories.find((x) => x.id === catSel.value); dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : ''; };

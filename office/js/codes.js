@@ -27,6 +27,8 @@ export const CODES = {
   BUCKET_REQUIRED: 'Choose the cash bucket (petty, fee or other).',
   BUCKET_NOT_ALLOWED: 'A cash bucket applies only to cash entries.',
   DIRECTION_MISMATCH: 'The category does not match money in or out. Choose the category again.',
+  DEPOSIT_LEG_CATEGORY: 'Bank deposits are recorded on the Deposits screen, not in the day book.',
+  DEPOSIT_LEG: 'This is part of a bank deposit and cannot be reversed on its own. Tell Uday if the deposit is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
   ALREADY_SIGNED: 'This deposit was already signed.',
   NOT_FOUND: 'The record was not found.',

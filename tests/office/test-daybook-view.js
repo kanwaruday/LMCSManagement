@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, inflightGuard, entryFromForm, fyEnd, todayIst } = await import('../../office/js/daybook.js');
+  const { mergeQueued, canReverse, entryCategories, inflightGuard, entryFromForm, fyEnd, todayIst } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -21,6 +21,10 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(m.map(canReverse), [false, false, false, false]);
   assert.strictEqual(canReverse(mergeQueued([row('z')], [], '2026-10-21')[0]), true);
   assert.strictEqual(canReverse({ ...row('r'), synced: true, reverses: 'x' }), false);
+  // R37: deposit legs never get a Reverse button, and their categories are not offered in the form
+  assert.strictEqual(canReverse(mergeQueued([row('dep1:out', { category: 'deposit_cash_out' })], [], '2026-10-21')[0]), false);
+  assert.strictEqual(canReverse(mergeQueued([row('dep1:in', { mode: 'bank', bucket: '', category: 'deposit_bank_in' })], [], '2026-10-21')[0]), false);
+  assert.deepStrictEqual(entryCategories([...cats, { id: 'deposit_cash_out' }, { id: 'deposit_bank_in' }]).map((c) => c.id), ['fee_collection', 'petty_expense']);
   // a queued entry that the server already has (flushed between reads) is not shown twice
   assert.strictEqual(mergeQueued([row('n1')], [q('n1', 'waiting', { entry_date: '2026-10-21' })], '2026-10-21').length, 1);
   console.log('  ok  - mergeQueued marks unsynced, dates, reversals');
@@ -54,7 +58,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   // reportQueueState
   const sub = (id, status, date, seq = 1) => ({ id, seq, action: 'report.submit', status, error: status === 'attention' ? 'DAY_CLOSED' : null, data: { report_date: date } });
   assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-21')], '2026-10-21', null, 'r1').state, 'waiting');
-  assert.deepStrictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21')], '2026-10-21', null, null), { state: 'attention', id: 'r1', error: 'That day is closed. Ask the Owner to reopen it, then enter it again.' });
+  assert.deepStrictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21')], '2026-10-21', null, null), { state: 'attention', id: 'r1', error: (await import('../../office/js/codes.js')).CODES.DAY_CLOSED });
   assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-20')], '2026-10-21', null, null).state, 'none'); // other date
   assert.strictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21', 1), sub('r2', 'waiting', '2026-10-21', 2)], '2026-10-21').state, 'waiting'); // newest wins
   assert.strictEqual(reportQueueState([], '2026-10-21', { id: 'r1' }, 'r1').state, 'synced');

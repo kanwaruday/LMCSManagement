@@ -223,4 +223,15 @@ module.exports = function run(t) {
     assert.deepEqual([r.success, r.duplicate], [true, true]);
     assert.equal(g.ctx.officeRows_(g.ctx.officeOpen_('LMS1', '2027-28'), 'Opening').length, 0);
   });
+  // I1 / R37: deposit legs are written only by deposit.add and never split (probe).
+  t.test('daybook.add refuses deposit leg categories; daybook.reverse refuses a leg', () => {
+    const h = fresh(); fee(h, 8000, '2026-10-21');
+    ['deposit_cash_out', 'deposit_bank_in'].forEach((c) => {
+      const r = fee(h, 700, '2026-10-21', { category: c, direction: c === 'deposit_cash_out' ? 'OUT' : 'IN', mode: c === 'deposit_cash_out' ? 'cash' : 'bank', bucket: c === 'deposit_cash_out' ? 'fee' : '' });
+      assert.equal(r.code, 'DEPOSIT_LEG_CATEGORY', c);
+    });
+    assert.equal(dep(h, { id: 'dep1', covers_date: '2026-10-21' }).success, true);
+    ['dep1:out', 'dep1:in'].forEach((leg) => assert.equal(h.call('daybook.reverse', { id: 'rv-' + leg, campus: 'LMS1', reverses: leg }, 'clerk-token').code, 'DEPOSIT_LEG', leg));
+    assert.equal(rows(h, 'DayBook').filter((r) => r.reverses).length, 0);
+  });
 };

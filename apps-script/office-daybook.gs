@@ -11,6 +11,7 @@ function officeDaybookActions_() {
 }
 
 var OFFICE_BUCKETS = ['petty', 'fee', 'other'];
+var OFFICE_DEPOSIT_LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
 
 // Strict ISO calendar date: shape and a real day (rejects 2026-02-30).
 function officeIsoDate_(s) {
@@ -27,6 +28,7 @@ function officeDaybookAdd_(ctx, data) {
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
   const cat = officeRows_(officeConfigBook_(), 'Categories').filter(function (c) { return c.id === data.category; })[0];
   if (!cat) throw new Error('BAD_CATEGORY');
+  if (OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(cat.id) !== -1) throw officeCoded_('DEPOSIT_LEG_CATEGORY'); // only deposit.add writes legs (R37)
   if (data.direction !== 'IN' && data.direction !== 'OUT') throw new Error('DIRECTION_MISMATCH');
   if (cat.direction !== data.direction) throw new Error('DIRECTION_MISMATCH');
   officeCheckModeBucket_(data.mode, data.bucket);
@@ -60,6 +62,8 @@ function officeDaybookReverse_(ctx, data) {
   if (all.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
   const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
   if (!orig) throw new Error('NOT_FOUND');
+  // A leg reversed alone would split a deposit; correcting a deposit is a later feature (R37).
+  if (/:(out|in)$/.test(orig.id) || OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(orig.category) !== -1) throw officeCoded_('DEPOSIT_LEG');
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
   officeAssertOpen_(ss, officeToday_()); // defence in depth: day.close refuses today, but a closed today must never take a row
   return officeDaybookWrite_(ss, ctx, {
