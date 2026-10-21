@@ -73,7 +73,8 @@
     "scriptId": null,
     "deploymentId": null,
     "files": [
-      "office"
+      "office",
+      "office-store"
     ]
   }
 }

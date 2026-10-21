@@ -8,13 +8,12 @@
 var officeClock_ = null; // tests set a Date here (see officeNow_)
 
 function doGet(e) {
-  return officeHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data ? JSON.parse(e.parameter.data) : {});
+  return officeHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data || {});
 }
 
 // Writes are POST with a text/plain JSON body (no CORS preflight).
 function doPost(e) {
-  const body = JSON.parse((e.postData && e.postData.contents) || '{}');
-  return officeHandle_(body.action, body.idToken, body.data || {});
+  return officeHandle_(null, null, null, (e.postData && e.postData.contents) || '{}');
 }
 
 function officeAllActions_() {
@@ -29,8 +28,12 @@ function officeAllActions_() {
 }
 
 // Verify the token on every call (cached 5 min), then check role and campus, then run.
-function officeHandle_(action, idToken, data) {
+// JSON is parsed inside the try so malformed input returns {success:false}: `data` may be a JSON
+// string (GET), and `rawBody` (POST) carries the whole {action, idToken, data} envelope.
+function officeHandle_(action, idToken, data, rawBody) {
   try {
+    if (rawBody !== undefined) { const b = JSON.parse(rawBody); action = b.action; idToken = b.idToken; data = b.data; }
+    if (typeof data === 'string') data = JSON.parse(data);
     const caller = officeCaller_(idToken);
     if (!caller) return officeJson_({ success: false, error: 'Not authorized' });
     data = data || {};
@@ -38,7 +41,10 @@ function officeHandle_(action, idToken, data) {
     if (!def) return officeJson_({ success: false, error: 'Unknown action: ' + action });
     if (!def.roles.some(function (r) { return caller.roles.indexOf(r) !== -1; })) return officeJson_({ success: false, error: 'FORBIDDEN_ROLE' });
     // Enforced here so no module can forget it: any action naming a campus must be one the caller holds.
-    if (data.campus !== undefined && data.campus !== null && data.campus !== '') officeAssertCampus_(caller, data.campus);
+    if (data.campus !== undefined && data.campus !== null && data.campus !== '') {
+      officeAssertCampus_(caller, data.campus);
+      data.campus = String(data.campus).trim().toUpperCase(); // canonical form: officeOpen_ builds its property key from it
+    }
     const ctx = { caller: caller, now: officeNow_() };
     if (!def.write) return officeJson_(Object.assign({ success: true }, def.run(ctx, data)));
     const lock = LockService.getScriptLock();

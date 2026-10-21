@@ -47,6 +47,7 @@ function boot(fixture, opts) {
     LockService: { getScriptLock: () => ({ waitLock() { locks.acquired++; }, releaseLock() { locks.released++; } }) },
     Utilities: {
       DigestAlgorithm: { MD5: 'md5' },
+      getUuid: () => crypto.randomUUID(),
       computeDigest: (a, x) => Array.from(crypto.createHash('md5').update(String(x)).digest()).map((b) => (b > 127 ? b - 256 : b)),
       // Only the format the backend uses; Asia/Kolkata is UTC+5:30, anything else is UTC.
       formatDate: (d, tz, f) => {
@@ -69,7 +70,9 @@ function boot(fixture, opts) {
   if (opts.extraSource) vm.runInContext(opts.extraSource, ctx, { filename: 'test-module.gs' });
   const call = (action, data, token) => JSON.parse(ctx.officeHandle_(action, token === undefined ? 'owner-token' : token, data || {}));
   return {
-    ctx, call, books, counter, locks,
+    ctx, call, books, counter, locks, props,
+    // Registers an empty fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it.
+    addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeBook({}, counter)); },
     setNow: (d) => { ctx.officeClock_ = d; },
     run: (code) => vm.runInContext(code, ctx),
   };

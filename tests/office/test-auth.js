@@ -71,6 +71,21 @@ module.exports = function run(t) {
     assert.equal(h.counter.fetch, n, 'no further tokeninfo calls');
   });
 
+  t.test('campus is canonicalised (trimmed, upper-case) before the action runs', () => {
+    const r = call('test.clerk', { campus: ' lms1 ' }, 'clerk1-token');
+    assert.equal(r.success, true);
+    assert.equal(r.campus, 'LMS1');
+  });
+
+  t.test('malformed JSON returns success:false from doGet and doPost', () => {
+    const g = JSON.parse(h.ctx.doGet({ parameter: { action: 'test.clerk', idToken: 'clerk1-token', data: '{bad' } }));
+    assert.equal(g.success, false);
+    const p = JSON.parse(h.ctx.doPost({ postData: { contents: '{bad' } }));
+    assert.equal(p.success, false);
+    const ok = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'test.clerk', idToken: 'clerk1-token', data: { campus: 'LMS1' } }) } }));
+    assert.equal(ok.success, true);
+  });
+
   t.test('clock helpers: Asia/Kolkata date and Apr-Mar financial year', () => {
     h.setNow(new Date('2026-10-21T20:00:00Z')); // 01:30 on 22 Oct in India
     assert.equal(h.ctx.officeToday_(), '2026-10-22');
