@@ -1,6 +1,6 @@
 # Transport papers: upload from the Coordinator Transport page and the Fee Clerk Portal (design)
 
-Date: 2026-10-21. Status: for Uday's approval. Owner of the shared upload action and the Coordinator page: the
+Date: 2026-10-21. Status: approved; Coordinator side and shared backend built and live (commit 1b3293f), Fee Clerk Portal screen handed to its session. Owner of the shared upload action and the Coordinator page: the
 "Transport and buses overview" session. Owner of the Fee Clerk Portal screen: the "Fee Clerk portal design" session
 (module 9, "Transport documents", in `2026-10-21-campus-office-portal-design.md`).
 
