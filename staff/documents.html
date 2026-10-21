@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Staff Documents</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<style>
+:root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#92400e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:13px;line-height:1.6}
+.hdr{background:var(--red);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--red-h)}
+.hdr h1{font-size:14px;font-weight:700;letter-spacing:.3px}
+.hdr p{font-size:9.5px;opacity:.75;margin-top:1px}
+.hdr-btn{display:inline-flex;align-items:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.92);padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap}
+.hdr-btn:hover{background:rgba(255,255,255,.22)}
+main{padding:24px 16px;max-width:820px;margin:0 auto}
+.denied{text-align:center;padding:60px 20px;color:var(--gray)}
+.denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
+.pick{display:grid;grid-template-columns:200px 1fr;gap:14px;margin-bottom:18px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.field select,.field input,.field textarea{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:5px;font-size:13px;font-family:inherit;color:var(--dark);background:#fff}
+.field select:focus,.field input:focus,.field textarea:focus{outline:none;border-color:var(--red)}
+.field .fixed{padding:8px 0;font-weight:700}
+.summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.summary .count{font-size:14px;font-weight:700}
+.summary label{font-size:12px;color:var(--gray);display:flex;align-items:center;gap:6px;margin-left:auto}
+.bar{height:6px;background:var(--lgray);border-radius:3px;overflow:hidden;margin-bottom:16px}
+.bar div{height:100%;background:var(--green)}
+.doc{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px}
+.doc.has{background:#fafdfb}
+.doc .name{font-weight:700}
+.doc .links{font-size:11.5px}
+.doc .links a{color:var(--green);font-weight:600;margin-right:10px}
+.doc input[type=file]{font-size:12px;max-width:240px}
+.doc .state{grid-column:1/-1;font-size:11.5px}
+.state.err{color:var(--red)} .state.ok{color:var(--green)} .state.busy{color:var(--amber)}
+.pill{display:inline-flex;padding:1px 8px;border-radius:20px;font-size:10.5px;font-weight:600;border:1px solid}
+.pill.yes{background:#dcfce7;border-color:#bbf7d0;color:var(--green)}
+.pill.no{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.actions{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--border);padding:12px 0;margin-top:8px;display:flex;align-items:center;gap:12px}
+.btn{background:var(--red);color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer}
+.btn:hover{background:var(--red-h)}
+.btn:disabled{background:#e5b8b8;cursor:not-allowed}
+.btn.light{background:#fff;color:var(--dark);border:1.5px solid var(--border)}
+.btn.light:hover{border-color:var(--red);color:var(--red)}
+.msg{font-size:12px}
+.msg.err{color:var(--red)} .msg.ok{color:var(--green)}
+.answers{border:1px solid var(--border);border-radius:6px;padding:12px;margin:16px 0;display:grid;grid-template-columns:160px 1fr auto;gap:12px;align-items:end}
+.empty{text-align:center;padding:40px;color:var(--gray)}
+.hint{font-size:11px;color:#9ca3af;margin-bottom:14px}
+@media (max-width:600px){
+  .pick,.answers{grid-template-columns:1fr}
+  .doc{grid-template-columns:1fr}
+  .doc input[type=file]{max-width:100%}
+}
+</style>
+</head>
+<body>
+
+<!-- LMCS Portal auth gate -->
+<style>
+  #lmcs-gate{position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center}
+  #lmcs-gate .auth-gate{max-width:380px;margin:0 auto;padding:32px 28px;border:1px solid #ddd;border-top:3px solid #CE0000;border-radius:6px;text-align:center;font-family:'Segoe UI',Arial,sans-serif}
+  #lmcs-gate .auth-gate p{color:#555;font-size:13px;line-height:1.6;margin:0 0 20px}
+  #lmcs-gate #lmcs-g-signin{display:flex;justify-content:center}
+  #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
+</style>
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js"></script>
+<script src="../assets/datasrc.js"></script>
+<script>
+(function () {
+  if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
+  LMCS.requireSession('#lmcs-gate-slot').then(function () { window.location.reload(); });
+})();
+</script>
+
+<div class="hdr">
+  <div>
+    <h1>LMCS — Staff Documents</h1>
+    <p id="hdrCtx">Upload certificates and ID documents for staff</p>
+  </div>
+  <a href="add-employee.html" class="hdr-btn" id="backLink">← Back</a>
+</div>
+
+<main>
+  <div id="denied" style="display:none"></div>
+  <div id="app" style="display:none">
+    <div class="pick">
+      <div class="field">
+        <label>School</label>
+        <div id="campusSlot"></div>
+      </div>
+      <div class="field">
+        <label for="empSelect">Employee</label>
+        <select id="empSelect" disabled><option value="">Loading staff list…</option></select>
+      </div>
+    </div>
+    <p class="hint">Pick the person the documents belong to. PDF or photo, up to 10 MB each. Uploading again for a document that's already on file adds a second copy; it doesn't replace the first.</p>
+    <div id="docArea"></div>
+  </div>
+</main>
+
+<script>
+const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+const CAMPUSES = { LMS1: 'LMS 1 — Dhalpur', LMS2: 'LMS 2 — Kelheli', LMS3: 'LMS 3 — Dunkhra', LMS4: 'LMS 4 — Ner Chowk', LMS5: 'LMS 5 — Sayoli', LMS6: 'LMS 6 — Jogindernagar' };
+const MAX_BYTES = 10 * 1024 * 1024;
+const EXT_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+
+let SESSION = null, employees = [], current = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function $(id) { return document.getElementById(id); }
+
+async function api(params) {
+  const q = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]); }).join('&');
+  const res = await fetch(ROSTER_URL + '?' + q + '&idToken=' + encodeURIComponent(SESSION.idToken) + '&_=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function post(body) {
+  const res = await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: SESSION.idToken }, body)) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function init() {
+  SESSION = LMCS.getSession();
+  if (!SESSION) return;
+  const isClerk = LMCS.hasRole(SESSION, 'FeeClerk');
+  if (!LMCS.canManageStaff(SESSION) && !isClerk) {
+    $('denied').style.display = 'block';
+    $('denied').innerHTML = '<div class="denied"><h3>You don\'t have access to staff documents</h3><p>This page is for campus clerks, Coordinators and the Owner. Ask the Owner to add you to the portal access list with the role "FeeClerk".</p></div>';
+    return;
+  }
+  if (!LMCS.canManageStaff(SESSION)) $('backLink').href = '../index.html';
+  $('app').style.display = 'block';
+
+  // campusId is ALL, one campus, or (for FeeClerk) a comma list -- the server re-checks every call.
+  const mine = SESSION.campusId === 'ALL' ? Object.keys(CAMPUSES)
+    : String(SESSION.campusId || '').split(',').map(function (c) { return c.trim(); }).filter(function (c) { return CAMPUSES[c]; });
+  if (mine.length > 1) {
+    $('campusSlot').innerHTML = '<select id="campusSelect">' + mine.map(function (c) { return '<option value="' + c + '">' + esc(CAMPUSES[c]) + '</option>'; }).join('') + '</select>';
+    $('campusSelect').addEventListener('change', fillEmployees);
+  } else if (mine.length === 1) {
+    $('campusSlot').innerHTML = '<div class="fixed" data-campus="' + mine[0] + '">' + esc(CAMPUSES[mine[0]]) + '</div>';
+  } else {
+    $('campusSlot').innerHTML = '<div class="fixed">' + esc(SESSION.campusId || '—') + '</div>';
+    $('empSelect').innerHTML = '<option>No document sheet for this campus</option>';
+    return;
+  }
+
+  try {
+    const json = await fetch(ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); });
+    if (!json.success) throw new Error(json.error || 'roster error');
+    employees = json.employees.filter(function (e) { return e.employeeCode && e.name; });
+    fillEmployees();
+  } catch (e) {
+    $('empSelect').innerHTML = '<option>Could not load staff list: ' + esc(e.message) + '</option>';
+  }
+}
+
+function campus() { return $('campusSelect') ? $('campusSelect').value : $('campusSlot').firstChild.dataset.campus; }
+
+function fillEmployees() {
+  const school = CAMPUSES[campus()].split(' — ')[0];
+  const list = employees.filter(function (e) { return e.school === school; })
+    .sort(function (a, b) { return a.name.localeCompare(b.name); });
+  $('empSelect').innerHTML = '<option value="">Choose an employee (' + list.length + ')…</option>' +
+    list.map(function (e) { return '<option value="' + esc(e.employeeCode) + '">' + esc(e.name) + ' — ' + esc(e.employeeCode) + '</option>'; }).join('');
+  $('empSelect').disabled = false;
+  $('docArea').innerHTML = '';
+  current = null;
+}
+
+$('empSelect').addEventListener('change', function () { if (this.value) loadStatus(this.value); else $('docArea').innerHTML = ''; });
+
+let statusSeq = 0;
+async function loadStatus(code) {
+  const seq = ++statusSeq; // a newer pick or reload wins; an older reply is dropped
+  $('docArea').innerHTML = '<div class="empty">Checking what\'s already on file…</div>';
+  try {
+    const json = await api({ action: 'docentry', employeeCode: code });
+    if (!json.success) throw new Error(json.error || 'failed');
+    if (seq !== statusSeq) return;
+    current = json;
+    render();
+  } catch (e) {
+    if (seq !== statusSeq) return;
+    $('docArea').innerHTML = '<div class="empty">Could not load documents: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render() {
+  const onFile = current.types.filter(function (t) { return current.docs[t.key].length; }).length;
+  const total = current.types.length;
+  const onlyMissing = $('onlyMissing') && $('onlyMissing').checked;
+  $('docArea').innerHTML =
+    '<div class="summary"><span class="count">' + onFile + ' of ' + total + ' documents on file</span>' +
+    '<span class="msg">' + esc(current.employee.name) + ' · ' + esc(current.employee.code) + '</span>' +
+    '<label><input type="checkbox" id="onlyMissing"' + (onlyMissing ? ' checked' : '') + '> Show missing only</label></div>' +
+    '<div class="bar"><div style="width:' + Math.round(onFile / total * 100) + '%"></div></div>' +
+    current.types.map(function (t) {
+      const links = current.docs[t.key];
+      const has = links.length > 0;
+      return '<div class="doc' + (has ? ' has' : '') + '" data-key="' + esc(t.key) + '"' + (onlyMissing && has ? ' hidden' : '') + '>' +
+        '<div><div class="name">' + esc(t.label) + ' ' + (has ? '<span class="pill yes">On file</span>' : '<span class="pill no">Missing</span>') + '</div>' +
+        (has ? '<div class="links">' + links.map(function (l, i) { return '<a href="' + esc(l) + '" target="_blank" rel="noopener">View' + (links.length > 1 ? ' ' + (i + 1) : '') + ' ↗</a>'; }).join('') + '</div>' : '') +
+        '</div>' +
+        '<input type="file" accept="application/pdf,image/*" aria-label="File for ' + esc(t.label) + '">' +
+        '<div class="state"></div></div>';
+    }).join('') +
+    '<div class="answers">' +
+      '<div class="field"><label for="tetQ">TET qualified?</label><select id="tetQ"><option value="">—</option><option>Yes</option><option>No</option></select></div>' +
+      '<div class="field"><label for="remarks">Remarks</label><input id="remarks" type="text" maxlength="500"></div>' +
+      '<button type="button" class="btn light" id="saveAnswers">Save</button>' +
+    '</div>' +
+    '<div class="actions"><button type="button" class="btn" id="uploadBtn" disabled>Upload selected files</button><span class="msg" id="actionMsg"></span></div>';
+  $('tetQ').value = current.tetQualified || '';
+  $('remarks').value = current.remarks || '';
+  $('onlyMissing').addEventListener('change', render);
+  $('docArea').querySelectorAll('input[type=file]').forEach(function (inp) { inp.addEventListener('change', onPick); });
+  $('uploadBtn').addEventListener('click', uploadAll);
+  $('saveAnswers').addEventListener('click', saveAnswers);
+}
+
+function mimeOf(file) {
+  if (file.type && Object.values(EXT_MIME).indexOf(file.type) !== -1) return file.type;
+  return EXT_MIME[(file.name.split('.').pop() || '').toLowerCase()] || '';
+}
+
+function onPick(e) {
+  const row = e.target.closest('.doc');
+  const state = row.querySelector('.state');
+  const file = e.target.files[0];
+  state.className = 'state';
+  state.textContent = '';
+  if (file && !mimeOf(file)) { state.className = 'state err'; state.textContent = 'Only PDF or photo files (JPG, PNG, HEIC, WEBP).'; e.target.value = ''; }
+  else if (file && file.size > MAX_BYTES) { state.className = 'state err'; state.textContent = 'This file is over 10 MB. Scan at a lower resolution or compress it.'; e.target.value = ''; }
+  else if (file) { state.textContent = 'Ready: ' + file.name + ' (' + Math.ceil(file.size / 1024) + ' KB)'; }
+  refreshUploadBtn();
+}
+
+function refreshUploadBtn() {
+  const n = picked().length;
+  $('uploadBtn').disabled = n === 0;
+  $('uploadBtn').textContent = n ? 'Upload ' + n + ' file' + (n > 1 ? 's' : '') : 'Upload selected files';
+}
+
+function picked() {
+  return Array.prototype.filter.call($('docArea').querySelectorAll('.doc'), function (row) { return row.querySelector('input[type=file]').files.length; });
+}
+
+function toBase64(file) {
+  return new Promise(function (resolve, reject) {
+    const r = new FileReader();
+    r.onload = function () { resolve(String(r.result).split(',')[1]); };
+    r.onerror = function () { reject(new Error('Could not read the file')); };
+    r.readAsDataURL(file);
+  });
+}
+
+async function uploadAll() {
+  const rows = picked();
+  const code = current.employee.code;
+  $('uploadBtn').disabled = true;
+  $('empSelect').disabled = true;
+  let ok = 0, failed = 0;
+  for (const row of rows) {
+    const input = row.querySelector('input[type=file]');
+    const state = row.querySelector('.state');
+    const file = input.files[0];
+    state.className = 'state busy';
+    state.textContent = 'Uploading ' + file.name + '…';
+    try {
+      const json = await post({ action: 'uploaddocument', employeeCode: code, typeKey: row.dataset.key, fileName: file.name, mimeType: mimeOf(file), base64: await toBase64(file) });
+      if (!json.success) throw new Error(json.error || 'upload failed');
+      state.className = 'state ok';
+      state.textContent = 'Uploaded ✓';
+      input.value = '';
+      ok++;
+    } catch (e) {
+      state.className = 'state err';
+      state.textContent = 'Not uploaded: ' + e.message;
+      failed++;
+    }
+  }
+  $('empSelect').disabled = false;
+  $('actionMsg').className = 'msg ' + (failed ? 'err' : 'ok');
+  $('actionMsg').textContent = ok + ' uploaded' + (failed ? ', ' + failed + ' failed (they\'re still selected, try again)' : '.');
+  if (!failed) await loadStatus(code);
+  else refreshUploadBtn();
+}
+
+async function saveAnswers() {
+  const btn = $('saveAnswers');
+  btn.disabled = true;
+  try {
+    const json = await post({ action: 'uploaddocument', employeeCode: current.employee.code, tetQualified: $('tetQ').value, remarks: $('remarks').value.trim() });
+    if (!json.success) throw new Error(json.error || 'save failed');
+    $('actionMsg').className = 'msg ok';
+    $('actionMsg').textContent = 'Saved.';
+  } catch (e) {
+    $('actionMsg').className = 'msg err';
+    $('actionMsg').textContent = 'Not saved: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

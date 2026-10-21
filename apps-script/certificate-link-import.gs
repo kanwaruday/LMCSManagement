@@ -4974,7 +4974,7 @@ function importCertificateLinks() {
 // ── Live refresh, no local script step (Uday, 2026-09-24) ─────────────
 // Supersedes CERT_LINKS_DATA/importCertificateLinks() above for day-to-
 // day use: reads the same 6 "Staff Document Submission form (Responses)"
-// sheets (RESPONSE_SHEET_IDS_, declared in staff-management-api.gs, same
+// sheets (RESPONSE_WORKBOOK_ID_, declared in staff-management-api.gs, same
 // project) directly at run time instead of a Python-regenerated static
 // snapshot that had to be pasted in by hand. Column matching mirrors
 // drive-index/build_employee_cert_links.py's CANONICAL_CATEGORY_KEYWORDS
@@ -5002,10 +5002,10 @@ const CERT_MANUAL_FLAGS_ = {
 
 function refreshCertificateLinksFromResponseSheets() {
   const rows = [];
-  Object.keys(RESPONSE_SHEET_IDS_).forEach(function (campus) {
+  RESPONSE_CAMPUSES_.forEach(function (campus) {
     let sheet;
     try {
-      sheet = SpreadsheetApp.openById(RESPONSE_SHEET_IDS_[campus]).getSheets()[0];
+      sheet = openResponseSheet_(campus);
     } catch (err) {
       Logger.log(campus + ': could not open response sheet -- ' + err.message);
       return;

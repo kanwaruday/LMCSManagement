@@ -152,7 +152,9 @@ function staffDoGet_(e) {
 //    from the allowlist sheet every call (never trusts client-passed
 //    role/campusId). Returns null if the token doesn't verify, or the
 //    email isn't on the list, or their role isn't Coordinator/Owner. ──
-function verifyStaffManagerToken_(idToken) {
+// extraRoles: further allowlist roles accepted for this one call (e.g. ['FeeClerk'] for the document
+// upload form in staff-documents.gs) -- every existing caller passes none, so nothing else changes.
+function verifyStaffManagerToken_(idToken, extraRoles) {
   // TEMPORARY diagnostic logging (2026-09-24) -- every return path below
   // logs WHY, so the Execution log shows the real cause instead of just
   // "Not authorized" everywhere. Safe to leave (Stackdriver logs cost
@@ -188,7 +190,8 @@ function verifyStaffManagerToken_(idToken) {
       // gets Staff Portal access via the Coordinator half.
       const role = String(rows[i][3] || '').trim();
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL') {
+      const extra = (extraRoles || []).some(function (r) { return roles.indexOf(r) !== -1; });
+      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL' && !extra) {
         console.log('verifyStaffManagerToken_: ' + email + ' is on the allowlist but role="' + role + '" campusId="' + campusId + '" -- not Coordinator/Owner/ALL');
         return null;
       }
@@ -867,18 +870,18 @@ function reassignCertificate_(data, caller) {
 // for it. A row is only resolved if the response sheet's Employee ID
 // also matches a REAL, current EmpMaster row -- a typo'd/stale ID in the
 // response sheet is skipped rather than trusted blindly.
-const RESPONSE_SHEET_IDS_ = {
-  LMS1: '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg',
-  LMS2: '10xxFM1li1-6xzWEBEEPkZIF4MJcilddoVJkEfVbkScM',
-  // Uday pasted this same as LMS2's on 2026-09-24 -- using the value
-  // already in hiring/index.html's DATASRC_DOC_SHEET_IDS instead, which
-  // is a DIFFERENT id and was already working there. Worth confirming
-  // with him which is actually correct if this campus resolves nothing.
-  LMS3: '1qdQnXrWWTrgnCt82MSk_fN6Fqaox-EoenuF_XToypAc',
-  LMS4: '1x8eFlnFcEKaCwF9HMRan_EQwTgSPq9xHubZ7n5vyR8k',
-  LMS5: '1-bhS4eu4OHFhRzllsALtWLRWiGFt-KutbNke3nNlCk8',
-  LMS6: '1-3_3BT7zHVJXy7UqxwZuZmpzUJp4uaibHNaA7onI0jU',
-};
+// One consolidated workbook (Uday, 2026-10-07) with one tab per campus,
+// named "LMS 1".."LMS 6" -- read by tab NAME, never by position.
+const RESPONSE_WORKBOOK_ID_ = '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg';
+const RESPONSE_CAMPUSES_ = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+
+// Throws if the campus tab is missing (callers already catch per campus).
+function openResponseSheet_(campus) {
+  const name = STAFF_CAMPUS_SHEET_LABEL_[campus];
+  const sheet = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_).getSheetByName(name);
+  if (!sheet) throw new Error('Tab "' + name + '" not found in response workbook');
+  return sheet;
+}
 
 // Drive file IDs are long (25+ char) alphanumeric/-/_ tokens -- matches
 // them the same way regardless of URL shape (.../open?id=X or
@@ -899,12 +902,12 @@ function extractDriveFileId_(url) {
 // resolved count that can't explain a partial result.
 function buildFileIdOwnerMap_(diagnostics) {
   const map = {};
-  Object.keys(RESPONSE_SHEET_IDS_).forEach(function (campus) {
+  RESPONSE_CAMPUSES_.forEach(function (campus) {
     const diag = { opened: false, rows: 0, fileIdsFound: 0, error: null };
     if (diagnostics) diagnostics[campus] = diag;
     let sheet;
     try {
-      sheet = SpreadsheetApp.openById(RESPONSE_SHEET_IDS_[campus]).getSheets()[0];
+      sheet = openResponseSheet_(campus);
       diag.opened = true;
     } catch (err) {
       diag.error = err.message;

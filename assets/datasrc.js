@@ -55,6 +55,7 @@
     '/coordinator/events/':      ['approvals'],
     '/coordinator/transport/':   ['transport'],
     '/coordinator/documents/':   ['docs', 'staff'],
+    '/staff/documents.html':     ['docs', 'staff'],
     '/coordinator/systems/':     ['dailyreports', 'fees', 'allowlist'],
   };
 

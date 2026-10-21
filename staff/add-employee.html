@@ -176,6 +176,7 @@ td.name{font-weight:700}
       <div id="docUploadBanner"></div>
       <div class="dir-toolbar">
         <span class="dir-count" id="docCount"></span>
+        <a href="documents.html" class="mini-btn" style="text-decoration:none">📤 Upload documents</a>
       </div>
       <div class="dir-school-tabs" id="docSchoolTabs"></div>
       <div id="docBody">Loading…</div>
@@ -425,7 +426,7 @@ async function loadDocumentStatus() {
 // how many rows the Certificate Links sheet currently has for that
 // school. A positive delta means files have been uploaded since the
 // sheet was last refreshed (that refresh is still a manual local step,
-// see apps-script/certificate-links-import.gs -- this banner only tells
+// see apps-script/certificate-link-import.gs -- this banner only tells
 // you it's worth running, it doesn't run it). Silently does nothing on
 // failure -- this is a nice-to-have signal, not worth showing an error
 // banner over if e.g. a folder got renamed.

@@ -190,6 +190,7 @@ function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
   if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);
+  if (action === 'docentry') return staffJsonOut_(sdocStatusAction_(e)); // staff-documents.gs
   try {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
@@ -197,6 +198,18 @@ function doGet(e) {
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });
+  }
+}
+
+// Only POST in this project: file uploads from staff/documents.html (too big for a GET URL).
+// Sent as text/plain JSON so the browser skips the CORS preflight Apps Script can't answer.
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
+    return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
+  } catch (err) {
+    return staffJsonOut_({ success: false, error: err.message });
   }
 }
 

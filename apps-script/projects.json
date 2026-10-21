@@ -28,7 +28,8 @@
       "staff-management-api",
       "principal-allowlist",
       "salary-payscale-sync",
-      "certificate-links-import"
+      "certificate-link-import",
+      "staff-documents"
     ]
   },
   "payroll": {
