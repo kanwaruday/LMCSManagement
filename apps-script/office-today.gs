@@ -73,15 +73,17 @@ function officeTodayDepositTasks_(ctx) {
     if (r.overdue) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: officeAddDays_(date, 1), status: 'overdue', action: 'deposits' });
     else if (i === 0 && r.deposited < r.daybook_fee_cash) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
   });
-  // Older than the window, this financial year only (M7): one summary task, so nothing is forgotten.
-  const cutoff = officeAddDays_(ctx.today, -7), days = {};
-  officeRows_(ctx.ss, 'DayBook').forEach(function (r) {
-    if (r.campus === ctx.campus && r.entry_date < cutoff && r.category === 'fee_collection' && r.mode === 'cash') days[r.entry_date] = true;
-  });
-  const short = Object.keys(days).sort().filter(function (date) {
-    const r = officeReconGet_({ caller: ctx.caller }, { campus: ctx.campus, date: date });
-    return r.deposited < r.daybook_fee_cash;
-  });
+  // Older than the window, this financial year only (M7): one summary task, so nothing is forgotten. One pass over
+  // DayBook + Deposits across the recent books, the same totals recon.get gives per day (R43: not a recon per day).
+  const cutoff = officeAddDays_(ctx.today, -7), fy = officeFy_(ctx.today);
+  const rows = function (tab) {
+    return officeRecentBooks_(ctx.campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, tab)); }, []).filter(function (r) { return r.campus === ctx.campus; });
+  };
+  const cash = officeFeeCashByDate_(rows('DayBook')), deposited = {};
+  rows('Deposits').forEach(function (d) { deposited[d.covers_date] = (deposited[d.covers_date] || 0) + d.amount_paise; });
+  const short = Object.keys(cash).filter(function (date) {
+    return date < cutoff && officeFy_(date) === fy && (deposited[date] || 0) < cash[date];
+  }).sort();
   if (short.length) out.push({ id: 'deposit:older', title: 'Fee cash not fully deposited for ' + short.length + ' older day' + (short.length > 1 ? 's' : '') + ', oldest ' + short[0], due: officeAddDays_(short[0], 1), status: 'overdue', action: 'deposits' });
   return out;
 }

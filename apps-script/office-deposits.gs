@@ -116,6 +116,19 @@ function officeErpSet_(ctx, data) {
   return { id: res.id, duplicate: res.duplicate };
 }
 
+// Day-book fee cash per entry_date: fee_collection cash receipts less their reversals (which are dated later,
+// possibly in a later book, so a second pass). The one rule for recon.get and Today's older-cash task (R43).
+function officeFeeCashByDate_(rows) {
+  const dateOf = {}, out = {};
+  rows.forEach(function (r) {
+    if (r.category !== 'fee_collection' || r.direction !== 'IN' || r.mode !== 'cash' || r.reverses) return;
+    dateOf[r.id] = r.entry_date;
+    out[r.entry_date] = (out[r.entry_date] || 0) + r.amount_paise;
+  });
+  rows.forEach(function (r) { if (r.reverses && dateOf[r.reverses] !== undefined) out[dateOf[r.reverses]] -= r.amount_paise; });
+  return out;
+}
+
 function officeReconGet_(ctx, data) {
   const date = data.date;
   if (!officeIsoDate_(date)) throw new Error('BAD_DATE');
@@ -128,15 +141,7 @@ function officeReconGet_(ctx, data) {
   const erpRows = officeRows_(dateBook, 'ErpTotals').filter(function (r) { return r.campus === data.campus && r.total_date === date; });
   const latest = erpRows.reduce(function (m, r) { return !m || r.created_at >= m.created_at ? r : m; }, null);
   const erp = latest ? latest.amount_paise : null;
-  // Day-book fee cash for the date: its fee_collection cash receipts less their reversals (which are dated later).
-  const book = all('DayBook');
-  const orig = book.filter(function (r) {
-    return r.entry_date === date && r.category === 'fee_collection' && r.direction === 'IN' && r.mode === 'cash' && !r.reverses;
-  });
-  const ids = {};
-  let daybook = 0;
-  orig.forEach(function (r) { ids[r.id] = true; daybook += r.amount_paise; });
-  book.forEach(function (r) { if (r.reverses && ids[r.reverses]) daybook -= r.amount_paise; });
+  const daybook = officeFeeCashByDate_(all('DayBook'))[date] || 0;
   const deps = all('Deposits').filter(function (d) { return d.covers_date === date; });
   const signed = {};
   all('DepositSigns').forEach(function (s) { signed[s.deposit_id] = true; });

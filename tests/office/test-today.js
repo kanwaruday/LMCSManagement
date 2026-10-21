@@ -135,4 +135,30 @@ module.exports = function run(t) {
     assert.ok(!ids(get(g)).includes('deposit:older'), 'nothing older: no task');
     assert.ok(!ids(get(g, 'fh-token')).includes('deposit:older'), 'Finance Head does not get deposit tasks');
   });
+  // R43: the older-cash task is one pass over DayBook + Deposits, not one recon per day.
+  t.test('older undeposited cash over ~300 days matches per-day recon, without a recon per day, in under 1 s', () => {
+    const h = boot(fixture, { extraSource: 'var RECON_CALLS = 0, reconOrig_ = officeReconGet_; officeReconGet_ = function (c, d) { RECON_CALLS++; return reconOrig_(c, d); };' });
+    h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26');
+    h.setNow(new Date('2027-02-20T10:00:00Z'));
+    h.call('file.upload', { id: 'slip', campus: 'LMS1', category: 'deposit_proof', mime: 'application/pdf', base64: PDF, name: 's.pdf' }, 'clerk-token');
+    const dates = []; for (let d = new Date('2026-04-01T00:00:00Z'); d < new Date('2027-02-20T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) dates.push(d.toISOString().slice(0, 10));
+    let k = 0; const add = (date, extra) => assert.equal(h.call('daybook.add', Object.assign({ id: 'b' + (++k), campus: 'LMS1', entry_date: date, direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 1000 }, extra), 'clerk-token').success, true);
+    dates.forEach((date, i) => {
+      add(date);
+      if (i % 5 === 0) add(date, { mode: 'upi', bucket: '' }); // not cash
+      if (i % 7 === 0) h.call('deposit.add', { id: 'dp' + i, campus: 'LMS1', covers_date: date, amount_paise: 1000, bank_ref: 'R' + i, file_id: 'slip' }, 'clerk-token');
+      if (i % 11 === 0) h.call('deposit.add', { id: 'dh' + i, campus: 'LMS1', covers_date: date, amount_paise: 500, bank_ref: 'H' + i, file_id: 'slip' }, 'clerk-token'); // part-deposited
+      if (i % 13 === 0) assert.equal(h.call('daybook.reverse', { id: 'rv' + i, campus: 'LMS1', reverses: 'b' + k }, 'clerk-token').success, true, 'reversed in full');
+    });
+    assert.ok(dates.length >= 300, dates.length);
+    const cutoff = '2027-02-13';
+    const expected = dates.filter((d) => d < cutoff).filter((d) => { const r = h.call('recon.get', { campus: 'LMS1', date: d }, 'clerk-token'); return r.deposited < r.daybook_fee_cash; });
+    h.run('RECON_CALLS = 0');
+    const t0 = Date.now(); const r = get(h); const ms = Date.now() - t0;
+    assert.equal(r.success, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(one(r, 'deposit:older'))), { id: 'deposit:older', title: 'Fee cash not fully deposited for ' + expected.length + ' older days, oldest ' + expected[0], due: new Date(Date.parse(expected[0] + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10), status: 'overdue', action: 'deposits' });
+    assert.ok(expected.length > 100 && expected.length < dates.length - 30, 'mix of short and settled days: ' + expected.length);
+    assert.ok(h.run('RECON_CALLS') <= 7, 'recon only for the 7-day window, got ' + h.run('RECON_CALLS'));
+    assert.ok(ms < 1000, 'today.get took ' + ms + ' ms');
+  });
 };
