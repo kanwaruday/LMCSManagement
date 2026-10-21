@@ -85,11 +85,12 @@ function boot(fixture, opts) {
   const props = { OFFICE_GOOGLE_CLIENT_ID: CLIENT_ID, OFFICE_ALLOWLIST_SHEET_ID: ALLOWLIST_ID };
   const locks = { acquired: 0, released: 0 };
   const store = new Map();
+  const mail = { sent: [] }, triggers = [];
   const drive = makeDrive(); props.OFFICE_DRIVE_ROOT = drive.root.id;
   const g = {
     console,
     DriveApp: drive.app,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), getProperties: () => Object.assign({}, props) }) },
     SpreadsheetApp: {
       openById: (id) => { counter.open++; if (!books[id]) throw new Error('No fake workbook for ' + id); return books[id]; },
       flush() {},
@@ -117,6 +118,13 @@ function boot(fixture, opts) {
         return { getResponseCode: () => (who ? 200 : 400), getContentText: () => JSON.stringify(who ? { aud: CLIENT_ID, email_verified: true, email: who } : {}) };
       },
     },
+    // Recording fakes: mail.sent = [{to, subject, body}]; triggers = live fake triggers (handler, hour, days).
+    MailApp: { sendEmail: (to, subject, body) => { if (mail.fail) throw new Error('mail down'); mail.sent.push({ to, subject, body }); } },
+    ScriptApp: {
+      getProjectTriggers: () => triggers.map((t) => ({ getHandlerFunction: () => t.handler, _t: t })),
+      deleteTrigger: (tr) => { triggers.splice(triggers.indexOf(tr._t), 1); },
+      newTrigger: (handler) => { const t = { handler }; const b = { timeBased: () => b, everyDays: (n) => { t.days = n; return b; }, atHour: (h) => { t.hour = h; return b; }, create: () => { triggers.push(t); return t; } }; return b; },
+    },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => s }) },
   };
   const ctx = vm.createContext(g);
@@ -125,7 +133,7 @@ function boot(fixture, opts) {
   if (opts.extraSource) vm.runInContext(opts.extraSource, ctx, { filename: 'test-module.gs' });
   const call = (action, data, token) => JSON.parse(ctx.officeHandle_(action, token === undefined ? 'owner-token' : token, data || {}));
   return {
-    ctx, call, books, counter, locks, props, drive,
+    ctx, call, books, counter, locks, props, drive, mail, triggers,
     // Registers an empty fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it.
     addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeOfficeBook(counter)); },
     // Registers an empty fake Office Config book as OFFICE_CONFIG_SS; returns it.
