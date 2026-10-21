@@ -39,13 +39,18 @@ function officeHandle_(action, idToken, data, rawBody) {
     data = data || {};
     const def = officeAllActions_()[String(action || '')];
     if (!def) return officeJson_({ success: false, error: 'Unknown action: ' + action });
-    if (!def.roles.some(function (r) { return caller.roles.indexOf(r) !== -1; })) return officeJson_({ success: false, error: 'FORBIDDEN_ROLE' });
+    let viaSubstitute = false;
+    if (!def.roles.some(function (r) { return caller.roles.indexOf(r) !== -1; })) {
+      // Only actions that declare `substitute: true` honour a Substitutes grant (active for data.campus on data.report_date).
+      viaSubstitute = !!def.substitute && officeIsSubstitute_(caller, data);
+      if (!viaSubstitute) return officeJson_({ success: false, error: 'FORBIDDEN_ROLE' });
+    }
     // Enforced here so no module can forget it: any action naming a campus must be one the caller holds.
     if (data.campus !== undefined && data.campus !== null && data.campus !== '') {
       officeAssertCampus_(caller, data.campus);
       data.campus = String(data.campus).trim().toUpperCase(); // canonical form: officeOpen_ builds its property key from it
     }
-    const ctx = { caller: caller, now: officeNow_() };
+    const ctx = { caller: caller, now: officeNow_(), viaSubstitute: viaSubstitute };
     if (!def.write) return officeJson_(Object.assign({ success: true }, def.run(ctx, data)));
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
@@ -58,6 +63,14 @@ function officeHandle_(action, idToken, data, rawBody) {
     // A thrown error with a `code` (e.g. DAY_CLOSED) returns both, so clients can branch on code.
     return officeJson_(err.code ? { success: false, code: err.code, error: err.message } : { success: false, error: err.message });
   }
+}
+
+// Substitute grant lookup for the role check; any failure (bad date, no book, no helper) means no access.
+function officeIsSubstitute_(caller, data) {
+  try {
+    if (typeof officeSubstitute_ !== 'function' || !data.campus || !officeIsoDate_(data.report_date)) return false;
+    return officeSubstitute_(officeOpen_(String(data.campus).trim().toUpperCase(), officeFy_(data.report_date)), caller.email, data.report_date);
+  } catch (err) { return false; }
 }
 
 function officeJson_(obj) {

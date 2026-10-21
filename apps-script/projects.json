@@ -77,7 +77,8 @@
       "office-store",
       "office-config",
       "office-daybook",
-      "office-close"
+      "office-close",
+      "office-report"
     ]
   }
 }

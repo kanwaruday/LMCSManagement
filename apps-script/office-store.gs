@@ -41,7 +41,7 @@ function officeConfig_() {
 // All rows of a tab as objects keyed by the header row. Cells are text; *_paise and size read as Number, late as boolean.
 function officeCell_(col, v) {
   if (/_paise$/.test(col) || col === 'size') return v === '' ? '' : Number(v);
-  if (col === 'late') return v === true || v === 'true';
+  if (col === 'late') return v === true || String(v).toLowerCase() === 'true';
   return v === null || v === undefined ? '' : String(v);
 }
 
