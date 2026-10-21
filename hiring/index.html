@@ -42,7 +42,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 
 .getting-started{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
 
-/* Owner-only "data source" links (2026-09-20) -- same pattern as
+/* Owner/Coordinator "data source" links (2026-09-20) -- same pattern as
    principals-daily-reporting/index.html's, kept file-local rather than
    a shared module since every page here is already self-contained. */
 .datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;margin-bottom:14px}
@@ -216,7 +216,7 @@ const DOC_FORM_ROLE_LABEL = { PRT: 'PRT, TGT', TGT: 'PRT, TGT', PGT: 'PGT', NTT:
 // entry.1130683531=Branch.
 const HIR_REPORT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSempUF_QhWrQ8AfoYdXs7o2ACgcec78RyT7ZtuFlFv7pD_cuQ/viewform';
 
-// Owner-only "data source" links (2026-09-20) -- IDs duplicated from
+// Owner/Coordinator "data source" links (2026-09-20) -- IDs duplicated from
 // apps-script/hiring.gs (HIR_SHEET_ID / HIR_IR_SHEET_ID / HIR_DOC_SHEET_IDS),
 // same as DOC_FORM_URLS above is already duplicated from that file's
 // per-campus Form links. Keep both in sync if a sheet/form is ever recreated.
@@ -252,7 +252,7 @@ function refreshTracker_() {
 
 function renderDataSourceLinks_() {
   const el = document.getElementById('datasrcHiring');
-  if (!LMCS.hasRole(SESSION, 'Owner')) { el.innerHTML = ''; return; }
+  if (!LMCS.canViewDataSources(SESSION)) { el.innerHTML = ''; return; }
   const sheetUrl = function (id, gid) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit' + (gid ? '#gid=' + gid : ''); };
   const links = [
     { label: 'Teaching Applicants sheet', url: sheetUrl(DATASRC_APPLICANTS_SHEET_ID, DATASRC_APPLICANTS_GID) },

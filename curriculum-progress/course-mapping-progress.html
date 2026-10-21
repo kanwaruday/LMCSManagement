@@ -13,7 +13,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 /* ── HEADER ── */
 .hdr{background:var(--red);color:var(--white);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h)}
 
-/* Owner-only "data source" links (2026-09-20) -- same pattern as
+/* Owner/Coordinator "data source" links (2026-09-20) -- same pattern as
    principals-daily-reporting/index.html's, kept file-local. */
 .datasrc-links{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:10.5px;color:#8A96A6;padding:8px 24px 0}
 .datasrc-links a{color:#8A96A6;text-decoration:underline}
@@ -448,7 +448,7 @@ function loadConfig() {
 
 const CFG = loadConfig();
 
-// Owner-only "data source" links (2026-09-20) -- reads the live CFG.schools
+// Owner/Coordinator "data source" links (2026-09-20) -- reads the live CFG.schools
 // above (already correctly resolved from Admin Panel config or its
 // defaults), not a separately hardcoded guess. Each school has its own
 // Course Mapping sheet -- links every enabled one, since there's no
@@ -456,7 +456,7 @@ const CFG = loadConfig();
 // down) and Owner sessions see every campus anyway.
 (function () {
   const session = LMCS.getSession();
-  if (!session || !LMCS.hasRole(session, 'Owner')) return;
+  if (!session || !LMCS.canViewDataSources(session)) return;
   document.addEventListener('DOMContentLoaded', function () {
     const el = document.getElementById('datasrcLinks');
     if (!el) return;

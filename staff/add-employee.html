@@ -272,9 +272,9 @@ async function init() {
     return;
   }
 
-  // Owner-only "data source" link (2026-09-20) -- ID duplicated from
+  // Owner/Coordinator "data source" links (2026-09-20; Coordinators added 2026-10-21) -- IDs duplicated from
   // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID.
-  if (LMCS.hasRole(SESSION, 'Owner')) {
+  if (LMCS.canViewDataSources(SESSION)) {
     // Doc Submission = the response workbook the Documents tab / Certificate Links are built from; Teaching
     // Applicants = where "complete hire" candidates come from (IDs from apps-script/staff-management-api.gs).
     document.getElementById('datasrcStaff').innerHTML =

@@ -7,6 +7,20 @@ const assert = require('assert');
 const root = path.join(__dirname, '../..');
 const src = fs.readFileSync(path.join(root, 'assets/datasrc.js'), 'utf8');
 
+// The real auth.js, so the visibility rule under test is the shipped one, not a stub.
+const authCtx = vm.createContext({
+  localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 }, URL, Response, console, setTimeout: () => 0, clearTimeout() {},
+  atob: (x) => Buffer.from(x, 'base64').toString('binary'), navigator: {}, performance: { getEntriesByType: () => [] }, location: { href: 'https://portal.test/' },
+  document: { readyState: 'loading', hidden: false, body: null, addEventListener() {}, getElementById: () => null }, fetch: async () => new Response('{}'),
+});
+authCtx.window = authCtx; authCtx.addEventListener = () => {};
+vm.runInContext(fs.readFileSync(path.join(root, 'assets/auth.js'), 'utf8'), authCtx);
+const realLMCS = authCtx.window.LMCS;
+for (const [role, expected] of [['Owner', true], ['Coordinator', true], ['Coordinator,Teacher', true], ['Owner,Teacher', true], ['Principal', false], ['Teacher', false], ['', false]]) {
+  assert.strictEqual(realLMCS.canViewDataSources({ role, campusId: 'LMS1' }), expected, 'canViewDataSources(' + role + ')');
+}
+assert.strictEqual(realLMCS.canViewDataSources(null), false);
+
 // ── 1. coverage: every page is covered, has its own strip, or is exempt on purpose ──────────
 const NO_SOURCES = {
   'index.html': 'role chooser, public, no data',
@@ -35,6 +49,7 @@ for (const rel of pages(root)) {
   const own = /class="datasrc-links"/.test(html);
   const registered = Object.keys(PAGES).some((k) => folder === k || folder.endsWith(k));
   if (!own && !registered && !(rel in NO_SOURCES)) uncovered.push(rel);
+  if (own && !/canViewDataSources\(/.test(html)) uncovered.push(rel + ' (draws its own strip but does not use LMCS.canViewDataSources -- it would drift from the shared rule)');
   if (own && registered) uncovered.push(rel + ' (has its own strip AND an entry in datasrc.js -- remove one)');
 }
 assert.deepStrictEqual(uncovered, [], 'pages with no data-source links:\n  ' + uncovered.join('\n  '));
@@ -91,7 +106,7 @@ function run(pathname, session, { own = false, home = false } = {}) {
   };
   const ctx = vm.createContext({ document: doc, location: { pathname: pathname }, console });
   ctx.window = ctx;
-  ctx.LMCS = { getSession: () => session, hasRole: (s, r) => !!s && String(s.role).split(',').map((x) => x.trim()).includes(r) };
+  ctx.LMCS = { getSession: () => session, hasRole: realLMCS.hasRole, canViewDataSources: realLMCS.canViewDataSources };
   vm.runInContext(src, ctx);
   return { strip: doc.getElementById('lmcs-datasrc'), hdr, body, app, ctx };
 }
@@ -106,8 +121,10 @@ assert.ok(r.strip.innerHTML.startsWith('📄 '));
 r = run('/LMCSManagement/coordinator/transport/index.html', owner);
 assert.ok(r.strip, 'index.html in the URL works too');
 
-assert.strictEqual(run('/LMCSManagement/coordinator/transport/', { role: 'Coordinator', campusId: 'LMS2' }).strip, null, 'Owner only');
-assert.strictEqual(run('/LMCSManagement/coordinator/transport/', { role: 'Principal', campusId: 'LMS2' }).strip, null);
+assert.ok(run('/LMCSManagement/coordinator/transport/', { role: 'Coordinator', campusId: 'LMS2' }).strip, 'Coordinators see it too');
+assert.ok(run('/LMCSManagement/teacher/', { role: 'Coordinator,Teacher', campusId: 'LMS2' }).strip, 'a Coordinator who is also a Teacher');
+assert.strictEqual(run('/LMCSManagement/coordinator/transport/', { role: 'Principal', campusId: 'LMS2' }).strip, null, 'Principals do not');
+assert.strictEqual(run('/LMCSManagement/teacher/', { role: 'Teacher', campusId: 'LMS2' }).strip, null, 'Teachers do not');
 assert.strictEqual(run('/LMCSManagement/coordinator/transport/', null).strip, null, 'signed out: nothing');
 assert.strictEqual(run('/LMCSManagement/coordinator/transport/', owner, { own: true }).strip, null, 'a page that draws its own strip is left alone');
 assert.strictEqual(run('/LMCSManagement/hiring/', owner).strip, null, 'unlisted page: nothing');

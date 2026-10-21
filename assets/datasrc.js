@@ -1,7 +1,7 @@
 /* LMCS Portal -- "data source" links for pages that don't draw their own (2026-10-21, per Uday).
    Same look and rule as the strips already on the curriculum / hiring / staff / Principal DR pages:
    a small grey "📄 <name> sheet ↗" row of links to the Google Sheets (and calendars) the page reads,
-   shown to the Owner only. Loaded by assets/auth.js, which every page already includes, so a page
+   shown to the Owner and Coordinators (LMCS.canViewDataSources). Loaded by assets/auth.js, which every page already includes, so a page
    needs no script tag of its own. A page that already has a .datasrc-links row is left alone.
 
    Adding a page: add one line to PAGES below. tests/datasrc/test-datasrc.js fails if a page in the
@@ -69,7 +69,7 @@
     const old = document.getElementById('lmcs-datasrc');
     if (old && old.parentNode) old.parentNode.removeChild(old);
     const session = window.LMCS.getSession();
-    if (!session || !window.LMCS.hasRole(session, 'Owner')) return;
+    if (!session || !window.LMCS.canViewDataSources(session)) return;
     if (document.querySelector('.datasrc-links')) return; // the page draws its own
     const key = pageKey();
     if (!key) return;

@@ -259,6 +259,13 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // Who sees the small "data source" rows of Google Sheet links under each page's header (assets/datasrc.js and the
+  // pages that draw their own): Owner and Coordinator (2026-10-21, per Uday; was Owner only). One rule so every
+  // page agrees. Google still decides who can actually open each sheet.
+  function canViewDataSources(session) {
+    return hasRole(session, 'Owner') || hasRole(session, 'Coordinator');
+  }
+
   // Teacher Portal (teacher/index.html) is the lowest tier, so every tier above it can open it too
   // (2026-10-08, per Uday): Teacher, Principal, Coordinator, Owner.
   function canViewTeacherPortal(session) {
@@ -423,7 +430,7 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, canViewTeacherPortal, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 
