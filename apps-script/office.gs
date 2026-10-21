@@ -31,10 +31,11 @@ function officeAllActions_() {
 // JSON is parsed inside the try so malformed input returns {success:false}: `data` may be a JSON
 // string (GET), and `rawBody` (POST) carries the whole {action, idToken, data} envelope.
 function officeHandle_(action, idToken, data, rawBody) {
+  let caller = null;
   try {
     if (rawBody !== undefined) { const b = JSON.parse(rawBody); action = b.action; idToken = b.idToken; data = b.data; }
     if (typeof data === 'string') data = JSON.parse(data);
-    const caller = officeCaller_(idToken);
+    caller = officeCaller_(idToken);
     if (!caller) return officeJson_({ success: false, error: 'Not authorized' });
     data = data || {};
     const def = officeAllActions_()[String(action || '')];
@@ -60,9 +61,25 @@ function officeHandle_(action, idToken, data, rawBody) {
       lock.releaseLock();
     }
   } catch (err) {
+    if (err.message === 'FORBIDDEN_CAMPUS' && action === 'file.view') officeAuditRefusal_(caller, action, data);
     // A thrown error with a `code` (e.g. DAY_CLOSED) returns both, so clients can branch on code.
     return officeJson_(err.code ? { success: false, code: err.code, error: err.message } : { success: false, error: err.message });
   }
+}
+
+// Records a refused cross-campus file.view in the caller's own campus book (skipped if they have none);
+// takes the lock itself because the refusal happens before the action's write lock. Never changes the response.
+function officeAuditRefusal_(caller, action, data) {
+  try {
+    const home = caller && caller.campuses.filter(function (c) { return c !== 'ALL'; })[0];
+    if (!home) return;
+    const lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      officeAuditWrite_(officeOpen_(home, officeFy_(officeToday_())), caller, action, String((data && data.id) || ''), home,
+        { refused: 'FORBIDDEN_CAMPUS', requested: String((data && data.campus) || '') });
+    } finally { lock.releaseLock(); }
+  } catch (err) { /* audit failure must not change the response */ }
 }
 
 // Substitute grant lookup for the role check; any failure (bad date, no book, no helper) means no access.

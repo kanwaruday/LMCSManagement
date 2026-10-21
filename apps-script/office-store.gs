@@ -81,3 +81,11 @@ function officeAppend_(ss, tab, row, caller, opts) {
   });
   return { id: id, duplicate: false };
 }
+
+// One Audit row for an event that is not an appended record (e.g. file.view). Caller holds the lock.
+function officeAuditWrite_(ss, caller, action, rowId, campus, after) {
+  officeWriteRow_(ss, 'Audit', {
+    id: Utilities.getUuid(), ts: officeNow_().toISOString(), who: caller.email, action: action,
+    tab: 'Files', row_id: rowId, campus: campus, after: JSON.stringify(after),
+  });
+}

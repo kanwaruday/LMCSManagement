@@ -78,7 +78,8 @@
       "office-config",
       "office-daybook",
       "office-close",
-      "office-report"
+      "office-report",
+      "office-files"
     ]
   }
 }
