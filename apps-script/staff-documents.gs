@@ -130,7 +130,7 @@ function sdocUpload_(body) {
 // Keeps the "Certificate Links" tab (what the Staff Portal's Documents / Needs Verification tabs read)
 // current with no trigger to install: rebuilt when those tabs are opened and it's over an hour old,
 // or straight away after an upload here. tryLock: two tabs loading at once rebuild it only once.
-const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at';
+const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at_v2'; // bump the suffix to force a rebuild after the document types change
 const SDOC_MAX_AGE_MS_ = 60 * 60 * 1000;
 
 function sdocMarkStale_() { PropertiesService.getScriptProperties().deleteProperty(SDOC_REFRESHED_AT_); }
