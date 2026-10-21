@@ -116,7 +116,7 @@ module.exports = function run(t) {
     add(h, { id: 'old', entry_date: '2027-03-31', amount_paise: 500 });
     h.setNow(new Date('2027-04-02T10:00:00Z'));
     assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
-    assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-04-01' }, 'clerk-token').entries.map((x) => x.id), ['r']);
+    assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-04-01', to: '2027-04-02' }, 'clerk-token').entries.map((x) => x.id), ['r']);
     assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-03-31' }, 'clerk-token').entries.map((x) => x.id), ['old']);
     assert.equal(h.call('daybook.reverse', { id: 'r2', campus: 'LMS1', reverses: 'old' }, 'clerk-token').error, 'ALREADY_REVERSED');
     assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').duplicate, true);
