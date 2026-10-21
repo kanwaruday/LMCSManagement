@@ -64,6 +64,11 @@ function officeOpeningSet_(ctx, data) {
     if (!Number.isInteger(b.amount_paise) || b.amount_paise < 0) throw new Error('BAD_AMOUNT');
     return { id: id + ':' + i, campus: data.campus, mode: b.mode, bucket: b.bucket || '', amount_paise: b.amount_paise };
   });
+  // A retry (same id) is a duplicate wherever it landed, even in last year's book after 1 April (R41).
+  const prior = officeRecentBooks_(data.campus).filter(function (b) {
+    return officeRows_(b, 'Opening').some(function (r) { return r.id.indexOf(id + ':') === 0; });
+  })[0];
+  if (prior) return { opening: officeOpening_(prior), duplicate: true };
   const ss = officeOpen_(data.campus, officeFy_(officeToday_()));
   // Opening feeds every day's balance: locked once any entry exists or any day is closed (R36).
   if (officeRows_(ss, 'DayBook').length || officeRows_(ss, 'Closes').length) throw new Error('OPENING_LOCKED');

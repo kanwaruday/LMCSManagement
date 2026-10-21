@@ -31,7 +31,7 @@ function officeTodayLastDays_(today) {
 
 // A date whose financial-year book was never created has no data: providers skip it instead of throwing.
 function officeTodayHasBook_(campus, isoDate) {
-  return !!PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + campus + '_' + officeFy_(isoDate));
+  return officeHasBook_(campus, officeFy_(isoDate));
 }
 
 function officeTodayGet_(ctx, data) {

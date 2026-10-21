@@ -18,9 +18,27 @@ var OFFICE_TABLES = {
   Audit: ['id', 'ts', 'who', 'action', 'tab', 'row_id', 'campus', 'after'],
 };
 
+// Script Property naming a campus's book for a financial year, and whether it is configured.
+function officeBookKey_(campus, fy) { return 'OFFICE_SS_' + String(campus).toUpperCase() + '_' + fy; }
+function officeHasBook_(campus, fy) { return !!PropertiesService.getScriptProperties().getProperty(officeBookKey_(campus, fy)); }
+
+// The financial year before `fy`: '2026-27' -> '2025-26'.
+function officePrevFy_(fy) {
+  const start = Number(fy.slice(0, 4)) - 1;
+  return start + '-' + String((start + 1) % 100).padStart(2, '0');
+}
+
+// Books holding records for a campus: this financial year's, then the previous one's if it exists (R15 pattern).
+function officeRecentBooks_(campus) {
+  const prevFy = officePrevFy_(officeFy_(officeToday_()));
+  const books = [officeOpen_(campus, officeFy_(officeToday_()))];
+  if (officeHasBook_(campus, prevFy)) books.push(officeOpen_(campus, prevFy));
+  return books;
+}
+
 // The campus's book for a financial year, with any missing tab created (existing headers are never rewritten).
 function officeOpen_(campus, fy) {
-  const id = PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + String(campus).toUpperCase() + '_' + fy);
+  const id = PropertiesService.getScriptProperties().getProperty(officeBookKey_(campus, fy));
   if (!id) throw new Error('NO_BOOK');
   const ss = SpreadsheetApp.openById(id);
   Object.keys(OFFICE_TABLES).forEach(function (tab) {

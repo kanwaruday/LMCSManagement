@@ -51,18 +51,13 @@ function officeDaybookWrite_(ss, ctx, row, action) {
   return { id: res.id, duplicate: res.duplicate };
 }
 
-// Reversal is dated today and written to today's book. The original is looked up in today's book, then in the
-// previous financial year's book (only if that book exists); reversals of it are searched in both.
+// Reversal is dated today and written to today's book. The original, its reversals and a retry of this same
+// request are all looked up in today's book and the previous financial year's (if configured; R15, R41).
 function officeDaybookReverse_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
-  const fy = officeFy_(officeToday_());
-  const ss = officeOpen_(data.campus, fy);
-  const rows = officeRows_(ss, 'DayBook');
-  if (rows.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry of the same request
-  const prevStart = Number(fy.slice(0, 4)) - 1;
-  const prevFy = prevStart + '-' + String((prevStart + 1) % 100).padStart(2, '0');
-  const prevExists = PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + data.campus + '_' + prevFy);
-  const all = prevExists ? rows.concat(officeRows_(officeOpen_(data.campus, prevFy), 'DayBook')) : rows;
+  const books = officeRecentBooks_(data.campus), ss = books[0];
+  const all = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  if (all.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
   const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
   if (!orig) throw new Error('NOT_FOUND');
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');

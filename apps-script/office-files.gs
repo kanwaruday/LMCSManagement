@@ -55,13 +55,10 @@ function officeFileUpload_(ctx, data) {
 function officeFileView_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (!data.campus) throw new Error('BAD_CAMPUS');
-  const fy = officeFy_(officeToday_());
-  const prevStart = Number(fy.slice(0, 4)) - 1;
-  const prevFy = prevStart + '-' + String((prevStart + 1) % 100).padStart(2, '0'); // year-end lookups, as daybook.reverse (R15)
-  const ss = officeOpen_(data.campus, fy);
+  const books = officeRecentBooks_(data.campus), ss = books[0]; // year-end lookups, as daybook.reverse (R15)
   const pick = function (book) { return officeRows_(book, 'Files').filter(function (r) { return r.id === String(data.id) && r.campus === data.campus; })[0]; };
   let row = pick(ss);
-  if (!row && PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + data.campus + '_' + prevFy)) row = pick(officeOpen_(data.campus, prevFy));
+  if (!row && books[1]) row = pick(books[1]);
   if (!row) throw new Error('NOT_FOUND');
   const blob = DriveApp.getFileById(row.drive_id).getBlob();
   officeAuditWrite_(ss, ctx.caller, 'file.view', row.id, data.campus, { name: row.name });

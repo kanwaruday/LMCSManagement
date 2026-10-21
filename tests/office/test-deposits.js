@@ -181,4 +181,46 @@ module.exports = function run(t) {
     assert.equal(h.call('erp.set', { id: 'z', campus: 'LMS1', total_date: '2026-10-20', amount_paise: 1 }, 'other-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(h.call('deposit.add', { id: 'z', campus: 'LMS1' }, 'fh-token').error, 'FORBIDDEN_ROLE');
   });
+  // I2 / R41: a retry that lands after 1 April finds the original in the previous year's book (probe2).
+  const yearEnd = () => {
+    const h = boot(fixture);
+    h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2027-28');
+    h.setNow(new Date('2027-03-31T06:00:00Z'));
+    h.call('file.upload', { id: 'slip', campus: 'LMS1', category: 'deposit_proof', mime: 'application/pdf', base64: PDF, name: 's.pdf' }, 'clerk-token');
+    fee(h, 10000, '2027-03-31');
+    return h;
+  };
+  const book = (h, fy, tab) => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', fy), tab);
+
+  t.test('deposit.add retried on 1 April is a duplicate, not a second deposit', () => {
+    const h = yearEnd();
+    const d = { id: 'dep1', covers_date: '2027-03-31', amount_paise: 10000, bank_ref: 'X' };
+    assert.equal(dep(h, d).success, true);
+    h.setNow(new Date('2027-04-01T06:00:00Z'));
+    fee(h, 20000, '2027-04-01');
+    const r = dep(h, d);
+    assert.equal(r.success, true); assert.equal(r.duplicate, true);
+    assert.equal(book(h, '2027-28', 'Deposits').length, 0);
+    assert.equal(book(h, '2027-28', 'DayBook').filter((x) => /^dep1:/.test(x.id)).length, 0);
+    assert.equal(recon(h, '2027-03-31').deposited, 10000);
+  });
+
+  t.test('opening.set and daybook.reverse retried across 1 April are duplicates', () => {
+    const h = yearEnd();
+    h.setNow(new Date('2027-03-31T07:00:00Z'));
+    const rev = { id: 'rv1', campus: 'LMS1', reverses: 'f' + n };
+    assert.equal(h.call('daybook.reverse', rev, 'clerk-token').success, true);
+    h.setNow(new Date('2027-04-01T06:00:00Z'));
+    const again = h.call('daybook.reverse', rev, 'clerk-token');
+    assert.deepEqual([again.success, again.duplicate], [true, true], 'not ALREADY_REVERSED (M4)');
+    // opening.set saved on the last day of a fresh year book, retried after 1 April.
+    const g = boot(fixture); g.addConfig(); g.addBook('LMS1', '2026-27'); g.addBook('LMS1', '2027-28');
+    g.setNow(new Date('2027-03-31T06:00:00Z'));
+    const op = { id: 'op1', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 700 }] };
+    assert.equal(g.call('opening.set', op, 'fh-token').success, true);
+    g.setNow(new Date('2027-04-01T06:00:00Z'));
+    const r = g.call('opening.set', op, 'fh-token');
+    assert.deepEqual([r.success, r.duplicate], [true, true]);
+    assert.equal(g.ctx.officeRows_(g.ctx.officeOpen_('LMS1', '2027-28'), 'Opening').length, 0);
+  });
 };

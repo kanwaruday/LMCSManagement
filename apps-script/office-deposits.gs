@@ -23,16 +23,6 @@ function officeAddDays_(iso, n) {
   return new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
 }
 
-// Books holding records for a campus: this financial year's, and the previous one's if it exists (R15 pattern).
-function officeRecentBooks_(campus) {
-  const fy = officeFy_(officeToday_());
-  const prevStart = Number(fy.slice(0, 4)) - 1;
-  const prevFy = prevStart + '-' + String((prevStart + 1) % 100).padStart(2, '0');
-  const books = [officeOpen_(campus, fy)];
-  if (PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + campus + '_' + prevFy)) books.push(officeOpen_(campus, prevFy));
-  return books;
-}
-
 function officeDepositAdd_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
@@ -46,7 +36,8 @@ function officeDepositAdd_(ctx, data) {
   if (!books.some(function (b) {
     return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
   })) throw officeCoded_('FILE_MISSING');
-  const prior = officeRows_(ss, 'Deposits').filter(function (r) { return r.id === String(data.id); })[0];
+  // A retry may arrive after 1 April: look in both recent books (R41).
+  const prior = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Deposits')); }, []).filter(function (r) { return r.id === String(data.id); })[0];
   if (prior) return officeDepositRepair_(ctx, prior); // retry: complete any leg a crash left behind (R21)
   officeAssertOpen_(ss, today); // covers_date may be a closed day; the deposit itself lands today
   const book = officeRows_(ss, 'DayBook');
