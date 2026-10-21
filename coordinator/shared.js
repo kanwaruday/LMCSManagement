@@ -279,8 +279,10 @@ window.Coord = (function () {
   }
 
   // ── Transport: fleet document compliance ──────────────────────────
-  function transportView(body) {
-    const T = { campus: '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
+  // opts (optional): {via: upload source label, campus: initial campus filter} -- the Fee Clerk Portal reuses this view.
+  function transportView(body, opts) {
+    opts = opts || {};
+    const T = { campus: opts.campus || '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
     const UP_MAX = 10 * 1024 * 1024, UP_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
     const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
@@ -532,7 +534,7 @@ window.Coord = (function () {
       T.busy[k] = true; render();
       try {
         const base64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => no(new Error('could not read the file')); r.readAsDataURL(file); });
-        const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'transportupload', idToken: SESSION.idToken, reg: reg, paper: paper, mimeType: mime, base64: base64, via: 'Coordinator page' }) })).text();
+        const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'transportupload', idToken: SESSION.idToken, reg: reg, paper: paper, mimeType: mime, base64: base64, via: opts.via || 'Coordinator page' }) })).text();
         let res;
         try { res = JSON.parse(text); } catch (e) { throw new Error('no clear answer from the server. Reload the page in a minute to see whether it arrived before uploading again'); }
         if (!res.success) throw new Error(res.error || 'upload failed');

@@ -33,6 +33,7 @@ const NO_SOURCES = {
   'office/deposits.html': OFFICE_REASON,
   'office/index.html': OFFICE_REASON,
   'office/report.html': OFFICE_REASON,
+  'office/transport.html': OFFICE_REASON,
 };
 function pages(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
