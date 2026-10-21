@@ -279,10 +279,11 @@ window.Coord = (function () {
   }
 
   // ── Transport: fleet document compliance ──────────────────────────
-  // opts (optional): {via: upload source label, campus: initial campus filter} -- the Fee Clerk Portal reuses this view.
+  // opts (optional): {via: upload source label, campus: initial campus filter, tabs: the only tabs shown, first
+  // one opened} -- the Fee Clerk Portal reuses this view with tabs: ['matrix'].
   function transportView(body, opts) {
     opts = opts || {};
-    const T = { campus: opts.campus || '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
+    const T = { campus: opts.campus || '', tier: 'all', q: '', tab: (opts.tabs && opts.tabs[0]) || 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
     const UP_MAX = 10 * 1024 * 1024, UP_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
     const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
@@ -389,7 +390,7 @@ window.Coord = (function () {
         '<div class="tile ' + (cnt('wrong') ? 'warn' : '') + '"><b>' + cnt('wrong') + '</b>wrong papers uploaded</div>' +
         '<div class="tile"><b>' + (cnt('missing') + cnt('check')) + '</b>papers missing or unreadable</div>' +
         '<div class="tile warn"><b>' + cnt('soon') + '</b>due within 30 days</div></div>') +
-        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : [], d.people && d.people.length ? [['drivers', 'Drivers']] : []).map(x =>
+        '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : [], d.people && d.people.length ? [['drivers', 'Drivers']] : []).filter(x => !opts.tabs || opts.tabs.indexOf(x[0]) !== -1).map(x =>
           '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (T.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' +
         '<select class="tr-campus" aria-label="Filter by campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         (T.tab === 'list' ? '<span class="seg">' + [['all', 'All'], ['none', 'No documents'], ['expired', 'Expired'], ['wrong', 'Wrong paper'], ['missing', 'No record'], ['check', 'Scan, date unread'], ['soon', 'Due in 30 days'], ['later', 'Due in 90 days']].map(x =>
