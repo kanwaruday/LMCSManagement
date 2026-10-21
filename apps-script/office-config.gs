@@ -70,7 +70,7 @@ function officeOpeningSet_(ctx, data) {
   })[0];
   if (prior) return { opening: officeOpening_(prior), duplicate: true };
   const ss = officeOpen_(data.campus, officeFy_(officeToday_()));
-  // Opening feeds every day's balance: locked once any entry exists or any day is closed (R36).
+  // Opening feeds every day's balance: locked once any entry exists or any day has ever been closed (R36).
   if (officeRows_(ss, 'DayBook').length || officeRows_(ss, 'Closes').length) throw new Error('OPENING_LOCKED');
   rows.forEach(function (r) { officeAppend_(ss, 'Opening', r, ctx.caller, { action: 'opening.set', campus: data.campus }); });
   return { opening: officeOpening_(ss) };
