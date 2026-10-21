@@ -15,6 +15,7 @@ export function createApi({ fetch, getToken, backendUrl, sleep = (ms) => new Pro
 
   async function request(action, data, method) {
     let last;
+    try { await getToken(); } catch (e) { return { success: false, code: 'AUTH', error: 'Not authorized: ' + (e && e.message || e) }; }
     for (let i = 0; i <= DELAYS.length; i++) {
       try {
         const out = await attempt(action, data, method);

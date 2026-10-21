@@ -5,7 +5,7 @@
 import { isAuthFailure } from './api.js';
 
 export function createOutbox({ store, api, newId = () => crypto.randomUUID(), onChange = () => {} }) {
-  let running = null;
+  let running = null, dirty = false, chain = Promise.resolve(), seq = null;
   const sorted = async () => (await store.getAll()).sort((a, b) => a.seq - b.seq);
   const counts = async () => {
     const all = await store.getAll();
@@ -26,14 +26,23 @@ export function createOutbox({ store, api, newId = () => crypto.randomUUID(), on
     await notify(authRequired ? { authRequired: true } : undefined);
   }
 
-  const flush = () => (running = running || run().finally(() => { running = null; }));
+  // A flush requested during a run marks it dirty; the run loops (re-reading the store) until clean.
+  const flush = () => {
+    if (running) { dirty = true; return running; }
+    return (running = (async () => { do { dirty = false; await run(); } while (dirty); })().finally(() => { running = null; }));
+  };
   return {
-    async enqueue(action, data) {
-      const id = newId();
-      const seq = Math.max(0, ...(await store.getAll()).map((e) => e.seq)) + 1;
-      await store.put({ id, seq, action, data, status: 'waiting', code: null, error: null });
-      await notify();
-      return id;
+    // Serialised so concurrent enqueues get distinct, ordered seq numbers (counter seeded from the store).
+    enqueue(action, data) {
+      const job = chain.then(async () => {
+        if (seq === null) seq = Math.max(0, ...(await store.getAll()).map((e) => e.seq));
+        const id = newId();
+        await store.put({ id, seq: ++seq, action, data, status: 'waiting', code: null, error: null });
+        await notify();
+        return id;
+      });
+      chain = job.catch(() => {});
+      return job;
     },
     flush,
     counts,

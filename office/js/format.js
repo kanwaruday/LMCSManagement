@@ -13,7 +13,7 @@ export function formatInr(paise) {
 
 // '₹ 1,234.50' -> 123450. Digits only (no float maths), > 0, at most 2 decimals; otherwise null.
 export function parseRupeesToPaise(text) {
-  const m = /^\s*₹?\s*(\d{1,3}(?:,\d{2,3})*|\d+)(?:\.(\d{1,2}))?\s*$/.exec(String(text));
+  const m = /^\s*₹?\s*(\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}|\d+)(?:\.(\d{1,2}))?\s*$/.exec(String(text));
   if (!m) return null;
   const paise = Number(m[1].replace(/,/g, '')) * 100 + Number((m[2] || '').padEnd(2, '0'));
   return paise > 0 && Number.isSafeInteger(paise) ? paise : null;

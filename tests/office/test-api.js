@@ -48,6 +48,12 @@ const done = () => process.exit(failed ? 1 : 0);
     assert.deepStrictEqual([r.success, r.error], [false, 'Not authorized']);
     assert.strictEqual(calls.length, 1);
   });
+  await test('getToken rejection maps to AUTH without fetching or retrying', async () => {
+    const { api, calls, delays } = mk([ok], { getToken: async () => { throw new Error('no session'); } });
+    const r = await api.write('a', {});
+    assert.deepStrictEqual([r.success, r.code], [false, 'AUTH']);
+    assert.deepStrictEqual([calls.length, delays.length], [0, 0]);
+  });
   await test('failed response surfaces its code without retry', async () => {
     const { api, calls } = mk([res('{"success":false,"error":"closed","code":"DAY_CLOSED"}')]);
     assert.strictEqual((await api.write('a', {})).code, 'DAY_CLOSED');

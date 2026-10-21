@@ -103,5 +103,31 @@ const done = () => process.exit(failed ? 1 : 0);
     await ob.flush();
     assert.deepStrictEqual(changes[changes.length - 1], { waiting: 0, attention: 1 });
   });
+  await test('enqueue + flush during a running flush is still sent (no lost wake-up)', async () => {
+    let release; const gate = new Promise((r) => { release = r; });
+    const api = mkApi(); const real = api.write;
+    api.write = async (a, d) => { if (a === 'slow') await gate; return real(a, d); };
+    const { ob } = mk(api);
+    await ob.enqueue('slow', {});
+    const first = ob.flush();
+    await ob.enqueue('late', {});
+    const second = ob.flush();
+    release();
+    await Promise.all([first, second]);
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['slow', 'late']);
+    assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 0 });
+  });
+  await test('concurrent enqueues keep call order (FIFO)', async () => {
+    const api = mkApi(); const { ob } = mk(api);
+    await Promise.all([ob.enqueue('file.upload', {}), ob.enqueue('deposit.add', {}), ob.enqueue('third', {})]);
+    await ob.flush();
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['file.upload', 'deposit.add', 'third']);
+  });
+  await test('AUTH code from api raises authRequired', async () => {
+    const api = mkApi(() => ({ success: false, code: 'AUTH', error: 'x' })); const { ob, changes } = mk(api);
+    await ob.enqueue('a', {}); await ob.flush();
+    assert.strictEqual(changes[changes.length - 1].authRequired, true);
+    assert.strictEqual((await ob.counts()).waiting, 1);
+  });
   done();
 })();

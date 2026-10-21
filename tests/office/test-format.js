@@ -23,9 +23,11 @@ const done = () => process.exit(failed ? 1 : 0);
     assert.strictEqual(p('₹ 1,23,456.5'), 12345650);
     assert.strictEqual(p(' 250 '), 25000);
     assert.strictEqual(p('0.29'), 29);
+    assert.strictEqual(p('1,234,567'), 123456700);
+    assert.strictEqual(p('12,34,567'), 123456700);
   });
   await test('parseRupeesToPaise rejects zero, negatives, >2 decimals, junk', () => {
-    for (const bad of ['0', '0.00', '-5', '1.234', '', 'abc', '1,2,3', '1e3', '.5', '1.'])
+    for (const bad of ['0', '0.00', '-5', '1.234', '', 'abc', '1,2,3', '12,50', '1,00', '1,2345', '12,34,56', '1e3', '.5', '1.'])
       assert.strictEqual(p(bad), null, bad);
   });
   await test('date conversion', () => {
