@@ -1,7 +1,8 @@
-// App-shell cache only. Cache-first for the files below; everything else (including every
+// App-shell cache only, for working offline. Network-first for the files below (revalidated, so a release
+// shows at once; the cached copy is used only when the network fails); everything else (including every
 // script.google.com / googleusercontent.com request and file.view response) goes straight to the network.
-// Bump CACHE when any shell file changes. Later tasks add their screens (report/deposits/close/daybook) to SHELL.
-const CACHE = 'lmcs-office-v8';
+// Bumping CACHE is no longer needed for updates; bump it only to drop old cached copies.
+const CACHE = 'lmcs-office-v9';
 const SHELL = [
   './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'office.css', 'manifest.webmanifest',
   'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
@@ -26,5 +27,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const href = shellHref(e.request);
   if (!href) return;
-  e.respondWith(caches.match(href).then((hit) => hit || fetch(e.request)));
+  e.respondWith(fetch(e.request, { cache: 'no-cache' })
+    .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(href, copy)); } return res; })
+    .catch(() => caches.open(CACHE).then((c) => c.match(href)).then((hit) => hit || Response.error())));
 });

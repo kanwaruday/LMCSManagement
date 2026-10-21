@@ -54,6 +54,10 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(!el.innerHTML.includes('<img'), el.innerHTML);
   assert.ok(el.innerHTML.includes('&lt;img'));
   console.log('  ok  - task titles and notes are escaped');
+  const { dueLabel } = await import('../../office/js/today.js');
+  assert.strictEqual(dueLabel('2026-10-21 18:00'), '21/10/2026 18:00');
+  assert.strictEqual(dueLabel('2026-10-21'), '21/10/2026');
+  console.log('  ok  - due times read DD/MM/YYYY HH:MM');
 
   // Service worker: load sw.js with a fake self and probe the fetch filter.
   const vm = require('vm'), fs = require('fs');
@@ -67,4 +71,20 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(h('https://x.github.io/LMCSManagement/office/other.json'), null);
   assert.strictEqual(h('https://x.github.io/LMCSManagement/office/index.html', 'POST'), null);
   console.log('  ok  - service worker caches only same-origin shell files');
+
+  // Network-first: a release is served at once when online; the cached copy only when the network fails.
+  const handlers = {}, swStore = new Map([['https://x.github.io/LMCSManagement/office/index.html', 'OLD']]);
+  let online = true;
+  const net = { url: 'https://x.github.io/LMCSManagement/office/index.html', method: 'GET' };
+  const sb2 = { URL, Response: { error: () => 'ERR' }, self: { location: new URL('https://x.github.io/LMCSManagement/office/sw.js'), addEventListener: (k, f) => { handlers[k] = f; } },
+    fetch: async () => { if (!online) throw new Error('offline'); return { ok: true, body: 'NEW', clone() { return 'NEW'; } }; },
+    caches: { open: async () => ({ put: async (k, v) => swStore.set(k, v), match: async (k) => swStore.get(k) }) } };
+  vm.runInNewContext(fs.readFileSync(__dirname + '/../../office/sw.js', 'utf8'), sb2);
+  const serve = async () => { let p; handlers.fetch({ request: net, respondWith: (x) => { p = x; } }); return p; };
+  assert.strictEqual((await serve()).body, 'NEW', 'online: the network copy, not the stale cache');
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(swStore.get(net.url), 'NEW', 'cache refreshed for offline use');
+  online = false;
+  assert.strictEqual(await serve(), 'NEW', 'offline: the cached copy');
+  console.log('  ok  - service worker is network-first with an offline fallback');
 })().catch((e) => { console.log('  FAIL -', e.message); process.exit(1); });
