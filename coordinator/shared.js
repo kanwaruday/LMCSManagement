@@ -283,6 +283,7 @@ window.Coord = (function () {
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
+    const fmtD = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '-'; // DD/MM/YYYY in tables
     const LABEL = { none: 'No documents', expired: 'Expired', wrong: 'Wrong paper', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid', noexp: 'No expiry printed', onfile: 'On file', na: 'Not needed' };
 
     // what a coordinator can do about each failure; the raw message stays underneath for whoever fixes it
@@ -392,7 +393,7 @@ window.Coord = (function () {
         html += '<div class="note">' + rows.length + ' items, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and the next renewals. Buses past their service life are left out; see them at the bottom of Vehicle by document. A renewal submitted through the Transport Document Submission form shows here within about 5 minutes; a Drive upload shows as waiting until the next sync reads it.</div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Status</th><th>Vehicle</th><th>Campus</th><th>Route</th><th>Driver</th><th>Document</th><th>Valid to</th><th>When</th></tr></thead><tbody>' +
           (rows.length ? rows.map(i => '<tr><td>' + pl(i.v.tier === 'none' ? 'none' : i.t) + '</td><td>' + esc(i.b.reg) + '<div class="sm">' + esc(i.b.bus) + nr(i.b) + '</div></td><td>' + esc(i.b.campus) + '</td><td>' + esc(i.b.route || '-') +
-            '</td><td>' + esc(i.b.driver || '-') + drvNote(i.b) + '</td><td>' + esc(i.doc.label) + '</td><td>' + fmt(i.date) + '<div class="sm">' + srcNote(i) + '</div></td><td>' + when(i.date, i.t) + '</td></tr>').join('')
+            '</td><td>' + esc(i.b.driver || '-') + drvNote(i.b) + '</td><td>' + esc(i.doc.label) + '</td><td>' + fmtD(i.date) + '<div class="sm">' + srcNote(i) + '</div></td><td>' + when(i.date, i.t) + '</td></tr>').join('')
             : '<tr><td colspan="8" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       } else if (T.tab === 'drivers') {
         html += '<div class="note">Everyone on the transport Man Power sheet, linked to the staff master by employee code. "Verified" means the code is an active employee at the same campus with a matching name. Anything else needs a look: fix the code in the Man Power sheet, or check whether the person has left.</div>' +
@@ -421,10 +422,13 @@ window.Coord = (function () {
           ok: ['All current', 'Nothing to do.'], eol: ['Past service life', 'Kept for the record. No action needed.'] };
         const vs = rk.vehicles.filter(v => vmatch(v.b));
         const act = v => v.lines.length ? v.lines.map((l, n) => n === 0 ? '<span class="act ' + l.kind + '">' + esc(l.text) + '</span>' : '<div class="sm">' + esc(l.text) + '</div>').join('') : '<span class="sm">Nothing to do</span>';
+        const act1 = v => v.lines.length ? '<span class="act ' + v.lines[0].kind + '">' + esc(v.lines[0].text) + '</span>' : '';
+        const drvLine = b => b.driver ? '<div class="sm">' + esc(b.driver) + (b.driverCode ? ' &middot; <span class="nw">' + esc(b.driverCode) + '</span>' : '') +
+          (b.driverStatus && b.driverStatus !== 'verified' ? ' &middot; <span class="miss">' + esc(b.driverStatus) + '</span>' : '') + '</div>' : '';
         const cell = (v, x) => {
           const b = v.b, e = b.docs[x.key], c = v.cells[x.key], nx = e.noexp || [], ot = e.other || [], one = x.key === 'speed_governor';
           const bw = ot.find(o => TransportRank.fid(o.link) === TransportRank.fid(e.link)) || ot[0] || {};
-          const txt = c.t === 'onfile' ? 'on file' : e.date && !one ? fmt(e.date) : c.t === 'na' ? 'n/a' : c.t === 'noexp' ? 'no expiry' : c.t === 'check' ? 'unread' : c.t === 'wrong' ? 'wrong paper' : '-';
+          const txt = c.t === 'onfile' ? 'on file' : e.date && !one ? fmtD(e.date) : c.t === 'na' ? 'n/a' : c.t === 'noexp' ? 'no expiry' : c.t === 'check' ? 'unread' : c.t === 'wrong' ? 'wrong paper' : '-';
           const first = e.link || (e.unread[0] && e.unread[0].link) || (nx[0] && nx[0].link) || (ot[0] && ot[0].link) || '';
           let tip = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : e.src === 'reread' ? 'Drive scan, re-read by LM Studio' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '') : 'No record';
           if (one && c.t === 'onfile') tip = 'A one-time fitment certificate: it does not expire' + (e.date ? ' (dated ' + fmt(e.date) + ' on the document)' : '') + '. Click to open it.';
@@ -436,13 +440,13 @@ window.Coord = (function () {
           const extra = e.date && !one && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
           return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + (c.bad ? ' bad' : '') + '" title="' + esc(tip) + '">' + (first ? a(first, txt) : txt) + extra + badge + '</td>';
         };
-        const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (4 + cols.length) + '">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + ' &middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
+        const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (2 + cols.length) + '"><span class="grp-l">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + '</span></span> <span class="sm grp-d">&middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
         let prev = '';
-        const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td>' + esc(v.b.reg) + '<div class="sm">' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div></td><td>' + esc(v.b.campus) +
-          '</td><td>' + esc(v.b.driver || '-') + drvNote(v.b) + '</td><td>' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
+        const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td class="id"><b>' + esc(v.b.reg) + '</b><div class="sm">' + esc(v.b.campus) + ' &middot; ' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div>' +
+          drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div></td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
         html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document.</details>' +
-          '<div class="tw stick"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th><th>Action needed</th>' + cols.map(x => '<th>' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time, no expiry</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
-          (vs.length ? body : '<tr><td colspan="' + (4 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
+          '<div class="twwrap"><div class="tw stick"><table class="l grid"><thead><tr><th class="id">Vehicle</th><th class="acol">Action needed</th>' + cols.map(x => '<th class="pp">' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
+          (vs.length ? body : '<tr><td colspan="' + (2 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div></div>';
       }
       html += '<div class="note">A pollution entry shown as expired or missing may be a paper that exists but was never uploaded; confirm with the driver or transport in-charge before treating it as lapsed. Passenger tax and RC are not tracked here.' +
         (d.unknown.length ? ' <b>Uploads for vehicles not in the fleet list: ' + esc(d.unknown.join(', ')) + '.</b>' : '') + '</div>';
@@ -452,6 +456,22 @@ window.Coord = (function () {
         pnl: ['Bus P&L by campus', 'Bus P&L by vehicle'], drivers: ['Transport staff linked to the staff master'] };
       box.querySelectorAll('table').forEach((t, i) => { const c = document.createElement('caption'); c.className = 'sr'; c.textContent = (CAP[T.tab] || [])[i] || 'Transport table'; t.prepend(c); });
       box.querySelectorAll('th').forEach(th => th.setAttribute('scope', 'col'));
+      // tiles: one row with as many columns as tiles (6 here, 4 on the P&L, 3 on Drivers); two rows when narrower
+      box.querySelectorAll('.tiles').forEach(tl => { const n = tl.children.length; tl.style.setProperty('--n', n); tl.style.setProperty('--n2', n > 3 ? Math.ceil(n / 2) : n); });
+      // Vehicle by document: if the table fits its box the header sticks to the page; if not, the box scrolls sideways with the
+      // vehicle column and the header pinned, and a shadow marks the side with more. Measured after every render and resize.
+      const fit = () => {
+        const tw = box.querySelector('.tw.stick');
+        if (!tw) return;
+        tw.classList.remove('scrollx');
+        tw.classList.toggle('scrollx', tw.scrollWidth > tw.clientWidth + 1);
+        const more = () => tw.parentNode.classList.toggle('more', tw.classList.contains('scrollx') && tw.scrollLeft + tw.clientWidth < tw.scrollWidth - 2);
+        more();
+        tw.onscroll = more;
+      };
+      fit();
+      // watch the box itself, not the window: its width also changes when fonts load or a scrollbar appears
+      if (!T.fitHooked && window.ResizeObserver) { T.fitHooked = true; let raf = 0; new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(fit); }).observe(box); }
 
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { T.tab = b.dataset.tab; render(); }));
       box.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { T.pay = b.dataset.pay; if (T.pay === 'before' && T.pk === 'pay') T.pk = 'result'; render(); }));
