@@ -120,9 +120,12 @@ function staffDoGet_(e) {
   try {
     const action = (e.parameter.action || '').toLowerCase();
     const caller = STAFF_READ_ACTIONS_.indexOf(action) !== -1
-      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken); })
-      : verifyStaffManagerToken_(e.parameter.idToken);
+      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken, ['FeeClerk']); })
+      : verifyStaffManagerToken_(e.parameter.idToken, ['FeeClerk']);
     if (!caller) return staffJsonOut_({ success: false, error: 'Not authorized' });
+    // A FeeClerk (not also Coordinator/Owner/ALL) only gets the Documents matrix, for their own campus(es).
+    // `=== false` so a caller cached before this field existed (always a manager then) still passes.
+    if (caller.manager === false && action !== 'documentstatus') return staffJsonOut_({ success: false, error: 'Not authorized' });
 
     const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
     if (action === 'documentstatus' || action === 'verificationqueue') refreshCertificateLinksIfStale_(); // staff-documents.gs
@@ -191,13 +194,14 @@ function verifyStaffManagerToken_(idToken, extraRoles) {
       // gets Staff Portal access via the Coordinator half.
       const role = String(rows[i][3] || '').trim();
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+      const manager = roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1 || campusId === 'ALL';
       const extra = (extraRoles || []).some(function (r) { return roles.indexOf(r) !== -1; });
-      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1 && campusId !== 'ALL' && !extra) {
+      if (!manager && !extra) {
         console.log('verifyStaffManagerToken_: ' + email + ' is on the allowlist but role="' + role + '" campusId="' + campusId + '" -- not Coordinator/Owner/ALL');
         return null;
       }
       console.log('verifyStaffManagerToken_: OK -- ' + email + ' campusId=' + campusId + ' role=' + role);
-      return { email: email, campusId: campusId, role: role, roles: roles };
+      return { email: email, campusId: campusId, role: role, roles: roles, manager: manager };
     }
     console.log('verifyStaffManagerToken_: ' + email + ' verified by Google but NOT found on the allowlist sheet');
     return null; // not on the allowlist at all
@@ -668,6 +672,8 @@ function computeNewUploads_() {
 // on reassigncertificate/autoresolvequeue (see bustStaffListCache_).
 function listDocumentStatus_(caller) {
   if (caller.campusId === 'ALL') return buildDocumentStatus_(caller);
+  // A comma-list campus (FeeClerk) isn't one of the per-campus keys bustStaffListCache_ clears, so it's not cached.
+  if (caller.campusId.indexOf(',') !== -1) return buildDocumentStatus_(caller);
   return cachedStaff_('doc_status_' + caller.campusId, function () { return buildDocumentStatus_(caller); });
 }
 
@@ -683,7 +689,7 @@ function buildDocumentStatus_(caller) {
     const code = String(rows[i][idx.EmployeeCode] || '').trim();
     if (!code) continue;
     const school = String(rows[i][idx.SchoolCode] || '').trim().toUpperCase();
-    if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    if (!callerCovers_(caller, school)) continue;
     const status = (idx.Status >= 0 ? String(rows[i][idx.Status] || '').trim() : '') || 'Active';
     if (status !== 'Active') continue; // departed/transferred staff aren't tracked for document compliance
     const salary = salaryByCode[code] || { designation: '', department: '' };
