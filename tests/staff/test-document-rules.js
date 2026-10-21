@@ -31,7 +31,7 @@ const letters = (r) => types.map((t) => (r.R.includes(t) ? 'R' : r.N.includes(t)
 // every built-in rule names only real document types, and never marks one both required and n/a
 for (const [k, r] of Object.entries(ctx.D)) {
   r.R.concat(r.N).forEach((t) => assert.ok(types.includes(t), k + ': unknown type ' + t));
-  assert.deepStrictEqual(r.R.filter((t) => r.N.includes(t)), [], k + ': required and n/a at once');
+  assert.strictEqual(r.R.filter((t) => r.N.includes(t)).length, 0, k + ': required and n/a at once');
 }
 assert.strictEqual(letters(ctx.read().NTT), letters(ctx.D.NTT)); // no sheet yet -> built-in rules
 
