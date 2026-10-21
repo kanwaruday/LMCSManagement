@@ -21,18 +21,30 @@ if (require.main !== module) { module.exports = () => {}; return; }
   ['text/html', 'image/svg+xml', 'image/gif', '', undefined, 'IMAGE/JPEG '].forEach((m) => assert.strictEqual(canRenderMime(m), false));
   console.log('  ok  - render mime allowlist');
 
-  assert.strictEqual(closeBlockedReason({ waiting: 2, isPast: true }).blocked, true);
-  assert.match(closeBlockedReason({ waiting: 2, isPast: true }).message, /2 entries on this device are not synced yet.*other devices/);
-  assert.strictEqual(closeBlockedReason({ waiting: 1 }).message.startsWith('1 entry on this device is not synced yet'), true);
-  let w = closeBlockedReason({ waiting: 0, unsigned: 1 });
+  // R41: entries (not bare counts) decide; this campus only; attention dated on/before the close date blocks.
+  const q = (id, action, status, data) => ({ id, seq: 1, action, status, code: status === 'attention' ? 'DAY_CLOSED' : null, error: null, data: { campus: 'LMS1', ...data } });
+  const cb = (entries, o = {}) => closeBlockedReason({ entries, campus: 'LMS1', closeDate: '2026-10-20', unsigned: 0, isPast: true, ...o });
+  assert.strictEqual(cb([q('a', 'daybook.add', 'waiting', { entry_date: '2026-10-21' }), q('b', 'erp.set', 'waiting', {})]).blocked, true, 'any waiting entry of the campus blocks');
+  assert.match(cb([q('a', 'daybook.add', 'waiting', {}), q('b', 'daybook.add', 'waiting', {})]).message, /2 entries on this device are not synced yet.*other devices/);
+  assert.ok(cb([q('a', 'daybook.add', 'waiting', {})]).message.startsWith('1 entry on this device is not synced yet'));
+  assert.strictEqual(cb([q('a', 'daybook.add', 'waiting', { campus: 'LMS2' })]).blocked, false, 'another campus does not block');
+  assert.strictEqual(cb([q('c', 'day.close', 'waiting', { close_date: '2026-10-20' })]).blocked, false, 'the close itself does not block');
+  for (const [k, d] of [['entry_date', '2026-10-20'], ['report_date', '2026-10-19'], ['covers_date', '2026-10-20']]) {
+    const r = cb([q('x', 'any', 'attention', { [k]: d })]);
+    assert.strictEqual(r.blocked, true, k); assert.match(r.message, /1 entry on this device for this day or earlier needs attention/);
+  }
+  assert.strictEqual(cb([q('x', 'daybook.add', 'attention', { entry_date: '2026-10-21' })]).blocked, false, 'a later attention entry only warns');
+  assert.match(cb([q('x', 'daybook.add', 'attention', { entry_date: '2026-10-21' })]).message, /needs attention/);
+  assert.strictEqual(cb([q('x', 'daybook.reverse', 'attention', { reverses: 'z' })]).blocked, false);
+  const up = q('up', 'file.upload', 'attention', {}), dp = q('dp', 'deposit.add', 'attention', { covers_date: '2026-10-20', file_id: 'up' });
+  assert.match(cb([up, dp]).message, /2 entries on this device for this day or earlier need attention/, 'the slip upload of a blocking deposit blocks too');
+  assert.strictEqual(cb([up]).blocked, false, 'an upload nobody refers to only warns');
+  assert.strictEqual(cb(null).blocked, true, 'outbox could not be read: blocked');
+  assert.match(cb(null).message, /could not check/i);
+  let w = cb([], { unsigned: 1 });
   assert.strictEqual(w.blocked, false); assert.match(w.message, /1 deposit/);
-  assert.strictEqual(closeBlockedReason({ waiting: 0, unsigned: 0, isPast: false }).blocked, true); // today/future
-  assert.deepStrictEqual(closeBlockedReason({ waiting: 0, unsigned: 0, attention: 0, isPast: true }), { blocked: false, message: '' });
-  assert.strictEqual(closeBlockedReason({ waiting: 0, attention: 1, isPast: true }).blocked, false);
-  assert.match(closeBlockedReason({ waiting: 0, attention: 1, isPast: true }).message, /needs attention/);
-  // click-time re-check: the same helper fed fresh counts blocks even when the render-time view had waiting 0
-  assert.strictEqual(closeBlockedReason({ waiting: 0, isPast: true }).blocked, false);
-  assert.strictEqual(closeBlockedReason({ waiting: 1, isPast: true }).blocked, true);
+  assert.strictEqual(cb([], { isPast: false }).blocked, true); // today/future
+  assert.deepStrictEqual(cb([]), { blocked: false, message: '' });
   console.log('  ok  - closeBlockedReason');
 
   const d = depositFromForm({ campus: 'LMS1', covers_date: '2026-10-20', amount: '1,500.50', bank_ref: ' UTR1 ', hasFile: true });

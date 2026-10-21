@@ -111,7 +111,8 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 - [ ] Backup: next morning the `Backups` folder has a copy of each book dated that day, and no failure email arrived.
 - [ ] Restore drill: open the backup copy of the LMS 1 book, open the same closing day in the portal, compare the closing totals (cash by bucket, bank, UPI) with what the portal shows live. They must match to the paisa. Note the result in the vault.
 - [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, the cache named by the `CACHE` constant in `office/sw.js` holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
-- [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4).
+- [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4); entries another user queued on the same device are kept.
+- [ ] Shared PC: clerk A queues an entry offline and signs out without syncing is not possible without deleting it, so instead: A queues offline, closes the tab, B signs in online. B's header shows "1 from another user", the entry is not sent; when A signs in again it syncs and the `DayBook` row's `created_by` is A.
 - [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real opening balances on the Close Day screen, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
 
 ---
@@ -156,10 +157,11 @@ Before 1 April: create the next-year spreadsheet (`LMS1 Office 2027-28`) and add
 
 An entry sits in the device's outbox, marked "Needs attention", when the backend refused it with a reason (for example `DAY_CLOSED`, `FILE_MISSING`, `INSUFFICIENT_CASH`, `LEGS_MISSING`, `ALREADY_REVERSED`). Network trouble or a lapsed sign-in is not this: those stay "waiting" and retry by themselves; for a lapsed sign-in, sign in again.
 
-- The header shows "N need attention". The Close screen warns and blocks closing while entries are waiting or need attention on that device.
+- The header shows "N need attention". The Close screen blocks closing a day while, on that device and for that campus: any entry is still waiting to sync; or an entry needing attention is dated on or before that day (a day book entry, daily report or deposit for that day or earlier, and the slip upload such a deposit needs); or the device's queue could not be read. Other entries needing attention, and unsigned deposits, only warn.
+- Entries belong to the person who entered them. On a shared PC, another user's queued entries are not sent under your sign-in: they show as "Waiting for <email> to sign in on this device" in the panel (and "from another user" in the header) until that person signs in on this device. They still block closing a day, because they have not reached the server.
 - Click "Needs attention (N)" (or the sync indicator) in the header, on any office page. The panel lists each entry in plain words (for example "Day book entry ₹1,200.00 on 21/10/2026") with the reason. Retry sends it again (use after fixing the cause). Discard asks for confirmation, then deletes it from this device and it is never sent.
 - For `DAY_CLOSED`, ask the Owner to reopen the day first (with a reason), then Retry (or Discard and re-enter), and have the Finance Head close it again.
-- Sign-out also deletes unsynced entries, but use Discard for a single entry instead.
+- Sign-out also deletes your own unsynced entries (another user's are kept for them), but use Discard for a single entry instead.
 - Entries are never silently dropped; one stuck entry does not block the ones after it.
 
 ### 4.5 Read the Audit tab
@@ -190,7 +192,7 @@ Not built. ERP totals are entered by hand (the ERP screen on the deposits page) 
 - Only the Owner can reopen a closed day, and a day can be closed only after it is over (not today). An April correction of a March entry goes into the new year's book.
 - Opening balances lock after the first DayBook row.
 - Files: one upload at a time, up to about 3 MB (larger PDFs are not supported yet); duplicates are detected by fingerprint within the current FY book.
-- Sign-out deletes unsynced entries and the offline cache on that device.
+- Sign-out deletes the signed-in user's unsynced entries and the offline cache on that device; other users' queued entries stay until they sign in.
 - The allowlist change window is about 5 minutes (cached caller).
 - Backup folder must contain only backups: the retention step trashes any file with a dated name in it that falls outside the 30-day / 12-month window.
 - A backup that misses a book (property missing, file deleted) emails the alert address; no email on a missing `OFFICE_CONFIG_SS` while books exist.

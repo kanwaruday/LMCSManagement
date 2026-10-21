@@ -23,13 +23,27 @@ export function openingPayload(campus, texts) {
 }
 const OTHER = ' Entries on other devices cannot be checked from here; make sure the other clerks have synced.';
 
-// {waiting, attention, unsigned, isPast} -> {blocked, message}. isPast === false (today/future) blocks; undefined does not.
-export function closeBlockedReason({ waiting = 0, attention = 0, unsigned = 0, isPast } = {}) {
+// The business date an entry is for (R41): its day book, report or deposit-covered date; '' when it has none.
+const entryDate = (e) => (e.data && (e.data.entry_date || e.data.report_date || e.data.covers_date)) || '';
+
+// {entries (outbox.entries(), null when it could not be read), campus, closeDate, unsigned, isPast} -> {blocked, message}.
+// Blocks: isPast === false (today/future); an unreadable outbox; any waiting entry of this campus (except this close
+// itself); an attention entry of this campus dated on/before closeDate, and the slip upload such a deposit refers to.
+// Other attention entries and unsigned deposits only warn.
+export function closeBlockedReason({ entries, campus, closeDate, unsigned = 0, isPast } = {}) {
   if (isPast === false) return { blocked: true, message: 'Only a day that is over can be closed. Choose yesterday or earlier.' };
+  if (!Array.isArray(entries)) return { blocked: true, message: 'Could not check this device for unsynced entries. Reload the page and try again.' };
+  const here = entries.filter((e) => e.data && e.data.campus === campus && !(e.action === 'day.close' && e.data.close_date === closeDate));
+  const waiting = here.filter((e) => e.status === 'waiting').length;
   if (waiting > 0) return { blocked: true, message: waiting + (waiting === 1 ? ' entry on this device is' : ' entries on this device are') + ' not synced yet. Sync them first.' + OTHER };
+  const att = here.filter((e) => e.status === 'attention');
+  const dated = att.filter((e) => entryDate(e) && entryDate(e) <= closeDate);
+  const slips = new Set(here.filter((e) => e.action === 'deposit.add' && entryDate(e) <= closeDate).map((e) => e.data.file_id));
+  const blocking = att.filter((e) => dated.includes(e) || (e.action === 'file.upload' && slips.has(e.id))).length;
+  if (blocking > 0) return { blocked: true, message: blocking + (blocking === 1 ? ' entry on this device for this day or earlier needs' : ' entries on this device for this day or earlier need') + ' attention. Open "Needs attention" and retry or discard them first.' + OTHER };
   const warn = [];
   if (unsigned > 0) warn.push(unsigned + ' deposit' + (unsigned === 1 ? ' is' : 's are') + ' not signed yet.');
-  if (attention > 0) warn.push(attention + (attention === 1 ? ' entry on this device needs' : ' entries on this device need') + ' attention.');
+  if (att.length > 0) warn.push(att.length + (att.length === 1 ? ' other entry on this device needs' : ' other entries on this device need') + ' attention.');
   return { blocked: false, message: warn.join(' ') + (warn.length ? OTHER : '') };
 }
 
@@ -46,8 +60,8 @@ export async function showClose(root, session, api, outbox) {
   const closeBtn = h('button', { type: 'button', onclick: () => guard('close', async () => {
     closeBtn.disabled = true;
     // Re-check at click time: the page may be stale (an entry queued in another tab since the last render).
-    const counts = await outbox.counts().catch(() => ({ waiting: 0, attention: 0 }));
-    const why = closeBlockedReason({ waiting: counts.waiting, attention: counts.attention, unsigned: lastUnsigned, isPast: date <= yesterdayIst() });
+    const entries = await outbox.entries().catch(() => null); // unreadable blocks (R41)
+    const why = closeBlockedReason({ entries, campus, closeDate: date, unsigned: lastUnsigned, isPast: date <= yesterdayIst() });
     if (why.blocked) { msg.textContent = why.message; check(); return; }
     try {
       closeId = await outbox.enqueue('day.close', { campus, close_date: date });
@@ -60,7 +74,8 @@ export async function showClose(root, session, api, outbox) {
 
   async function check() {
     const d = date;
-    const [recon, ds, entries, counts] = await Promise.all([loadRecon(api, campus, d, 'clrecon'), loadDeposits(api, campus, d, 'cldeps'), outbox.entries().catch(() => []), outbox.counts().catch(() => ({ waiting: 0, attention: 0 }))]);
+    const [recon, ds, queued] = await Promise.all([loadRecon(api, campus, d, 'clrecon'), loadDeposits(api, campus, d, 'cldeps'), outbox.entries().catch(() => null)]);
+    const entries = queued || [];
     if (recon.stale || ds.stale || d !== date) return;
     const mine = entries.filter((e) => e.action === 'day.close' && e.data.close_date === d);
     const signQ = new Map(entries.filter((e) => e.action === 'deposit.sign').map((e) => [e.data.deposit_id, e]));
@@ -68,7 +83,7 @@ export async function showClose(root, session, api, outbox) {
     const unsigned = items.filter((x) => !x.queued && !x.signed && !signQ.has(x.id));
     const closed = recon.success && recon.closed === true;
     lastUnsigned = unsigned.length;
-    const why = closeBlockedReason({ waiting: counts.waiting, attention: counts.attention, unsigned: unsigned.length, isPast: d <= yesterdayIst() });
+    const why = closeBlockedReason({ entries: queued, campus, closeDate: d, unsigned: unsigned.length, isPast: d <= yesterdayIst() });
     closeBtn.disabled = closed || why.blocked || mine.some((e) => e.status === 'waiting');
     const sign = (x) => {
       if (x.queued || x.signed || closed) return null;
