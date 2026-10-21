@@ -9,14 +9,21 @@ const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'];
 const CAMPUS_KEY = 'lmcs-office-campus';
 const CACHE_PREFIX = 'lmcs-office-cache:';
 
-export function syncLabel({ waiting = 0, attention = 0, online = true }) {
-  if (attention > 0) return attention + ' need attention';
-  if (!online) return 'Offline';
-  if (waiting > 0) return waiting + ' waiting';
-  return 'All synced';
+export function syncLabel({ waiting = 0, attention = 0, others = 0, online = true }) {
+  const tail = others > 0 ? ' · ' + others + ' from another user' : ''; // queued here by someone else (R38)
+  if (attention > 0) return attention + ' need attention' + tail;
+  if (!online) return 'Offline' + tail;
+  if (waiting > 0) return waiting + ' waiting' + tail;
+  return 'All synced' + tail;
 }
 // Anything still in the outbox (waiting or needing attention) would be lost on sign-out.
 export const canSignOut = ({ waiting = 0, attention = 0 }) => waiting + attention === 0;
+// Sign-out deletes only the signed-in user's queued entries; other people's stay for them (R38).
+// -> {ids: entries to delete, waiting, attention, kept: entries of other users left on the device}.
+export function signOutPlan(entries, owned) {
+  const mine = (entries || []).filter(owned);
+  return { ids: mine.map((e) => e.id), waiting: mine.filter((e) => e.status === 'waiting').length, attention: mine.filter((e) => e.status === 'attention').length, kept: (entries || []).length - mine.length };
+}
 
 // Read cache (last good answer per key) so screens still show something offline. localStorage may throw.
 export function cacheGet(key) { try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key)); } catch (_) { return null; } }
@@ -58,18 +65,18 @@ export async function bootOffice({ onReady }) {
     backendUrl: OFFICE_BACKEND_URL,
   });
   const store = createIdbStore();
-  let state = { waiting: 0, attention: 0 };
+  let state = { waiting: 0, attention: 0, others: 0 };
   let panel = null; // set once the outbox exists
   const attLink = document.createElement('a');
   attLink.href = '#'; attLink.hidden = true;
   $('sync-indicator').after(attLink);
-  const openAtt = (e) => { e.preventDefault(); if (state.attention > 0 && panel) panel.open(); };
+  const openAtt = (e) => { e.preventDefault(); if (state.attention + state.others > 0 && panel) panel.open(); };
   attLink.onclick = openAtt;
   $('sync-indicator').onclick = openAtt;
   const paint = (extra = {}) => {
-    attLink.hidden = !state.attention;
-    attLink.textContent = 'Needs attention (' + state.attention + ')';
-    $('sync-indicator').style.cursor = state.attention ? 'pointer' : '';
+    attLink.hidden = !(state.attention + state.others);
+    attLink.textContent = state.attention ? 'Needs attention (' + state.attention + ')' : 'Other users\' entries (' + state.others + ')';
+    $('sync-indicator').style.cursor = state.attention + state.others ? 'pointer' : '';
     if (panel) panel.refresh().catch(() => {});
     $('sync-indicator').textContent = syncLabel({ ...state, online: navigator.onLine });
     $('sync-indicator').dataset.state = state.attention ? 'attention' : state.waiting ? 'waiting' : 'ok';
@@ -77,7 +84,8 @@ export async function bootOffice({ onReady }) {
   };
   const outbox = createOutbox({
     store, api,
-    onChange: (c) => { state = { waiting: c.waiting, attention: c.attention }; paint(c); if (c.authRequired) L.notifyAuthFailure(); },
+    who: () => { const s = L.getSession(); return s && s.email ? String(s.email).toLowerCase() : null; },
+    onChange: (c) => { state = { waiting: c.waiting, attention: c.attention, others: c.others || 0 }; paint(c); if (c.authRequired) L.notifyAuthFailure(); },
   });
   panel = createAttentionPanel(outbox);
   $('auth-notice').after(panel.el);
@@ -93,15 +101,16 @@ export async function bootOffice({ onReady }) {
   $('signout-link').onclick = async (e) => {
     e.preventDefault();
     const seen = await store.getAll(); // snapshot: only what the user is told about gets deleted
-    const c = { waiting: seen.filter((x) => x.status === 'waiting').length, attention: seen.filter((x) => x.status === 'attention').length };
+    const c = signOutPlan(seen, outbox.owned);
     const n = c.waiting + c.attention;
-    const msg = !canSignOut(c)
-      ? n + ' entries are not yet synced (' + c.attention + ' need attention). Signing out will DELETE them, along with all other saved offline data and cached screens on this device. Sign out anyway?'
-      : 'Sign out? Saved offline data and cached screens on this device will be cleared.';
+    const kept = c.kept ? ' ' + c.kept + ' entries queued here by another user are kept for them.' : '';
+    const msg = (!canSignOut(c)
+      ? n + ' of your entries are not yet synced (' + c.attention + ' need attention). Signing out will DELETE them, along with cached screens on this device. Sign out anyway?'
+      : 'Sign out? Cached screens on this device will be cleared.') + kept;
     if (!confirm(msg)) return;
     const ids = new Set(seen.map((x) => x.id));
     if ((await store.getAll()).some((x) => !ids.has(x.id))) { alert('New entries arrived while this dialog was open. Nothing was deleted; please sign out again.'); return; }
-    for (const id of ids) await store.delete(id);
+    for (const id of c.ids) await store.delete(id);
     cacheClear();
     L.signOut();
   };

@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { syncLabel, canSignOut, esc } = await import('../../office/js/shell.js');
+  const { syncLabel, canSignOut, signOutPlan, esc } = await import('../../office/js/shell.js');
   assert.strictEqual(syncLabel({ waiting: 0, attention: 0, online: true }), 'All synced');
   assert.strictEqual(syncLabel({ waiting: 3, attention: 0, online: true }), '3 waiting');
   assert.strictEqual(syncLabel({ waiting: 3, attention: 0, online: false }), 'Offline');
@@ -12,6 +12,15 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(canSignOut({ waiting: 1, attention: 0 }), false);
   assert.strictEqual(canSignOut({ waiting: 0, attention: 1 }), false);
   console.log('  ok  - shell pure parts, sign-out blocked by waiting and attention');
+  // R38: sign-out deletes only the signed-in user's entries; other users' are kept and shown in the label.
+  const es = [{ id: '1', status: 'waiting', owner: 'a@x.org' }, { id: '2', status: 'attention', owner: 'a@x.org' }, { id: '3', status: 'waiting', owner: 'b@x.org' }];
+  assert.deepStrictEqual(signOutPlan(es, (e) => e.owner === 'a@x.org'), { ids: ['1', '2'], waiting: 1, attention: 1, kept: 1 });
+  assert.deepStrictEqual(signOutPlan(es, (e) => e.owner === 'c@x.org'), { ids: [], waiting: 0, attention: 0, kept: 3 });
+  assert.strictEqual(syncLabel({ waiting: 0, attention: 0, others: 2, online: true }), 'All synced · 2 from another user');
+  const { waitingFor } = await import('../../office/js/attention.js');
+  assert.strictEqual(waitingFor({ owner: 'b@x.org', status: 'waiting' }), 'Waiting for b@x.org to sign in on this device.');
+  assert.ok(waitingFor({ owner: 'b@x.org', status: 'attention', code: 'DAY_CLOSED' }).includes('Needs attention: That day is closed'));
+  console.log('  ok  - sign-out keeps other users\' entries; their entries say who they wait for');
 
   const evil = '<img src=x onerror=alert(1)>';
   assert.ok(!esc(evil).includes('<'));

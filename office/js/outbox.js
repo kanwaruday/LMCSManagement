@@ -2,21 +2,27 @@
 // backend accepts it (success, including duplicate). Status: 'waiting' (will be sent) or 'attention'
 // (backend refused it, e.g. DAY_CLOSED; kept until retry() or an explicit discard()).
 // Flush is strictly FIFO (R7): a network failure stops it; an attention entry does not block later ones.
+// Each entry carries `owner`, the email of the session that queued it (R38): only that person's session sends,
+// retries or discards it, so created_by and the audit trail stay right on a shared PC. `who` returns the current
+// session email (null when signed out: nothing is sent). An entry without an owner goes with whoever is signed in.
+// Without a `who` option every entry counts as the current user's.
 import { isAuthFailure } from './api.js';
 
-export function createOutbox({ store, api, newId = () => crypto.randomUUID(), onChange = () => {} }) {
+export function createOutbox({ store, api, newId = () => crypto.randomUUID(), onChange = () => {}, who = null }) {
   let running = null, dirty = false, chain = Promise.resolve(), seq = null;
+  const me = () => (who ? who() : null);
+  const owned = (e) => !who || (me() !== null && (!e.owner || e.owner === me()));
   const sorted = async () => (await store.getAll()).sort((a, b) => a.seq - b.seq);
   const counts = async () => {
-    const all = await store.getAll();
-    return { waiting: all.filter((e) => e.status === 'waiting').length, attention: all.filter((e) => e.status === 'attention').length };
+    const all = await store.getAll(), mine = all.filter(owned);
+    return { waiting: mine.filter((e) => e.status === 'waiting').length, attention: mine.filter((e) => e.status === 'attention').length, ...(who ? { others: all.length - mine.length } : {}) };
   };
   const notify = async (extra) => onChange({ ...(await counts()), ...extra });
 
   async function run() {
     let authRequired = false;
     for (const e of await sorted()) {
-      if (e.status !== 'waiting') continue;
+      if (e.status !== 'waiting' || !owned(e)) continue;
       const r = await api.write(e.action, { ...e.data, id: e.id });
       if (r && r.success === true) { await store.delete(e.id); continue; }
       if (isAuthFailure(r)) { authRequired = true; break; }
@@ -37,7 +43,7 @@ export function createOutbox({ store, api, newId = () => crypto.randomUUID(), on
       const job = chain.then(async () => {
         if (seq === null) seq = Math.max(0, ...(await store.getAll()).map((e) => e.seq));
         const id = newId();
-        await store.put({ id, seq: ++seq, action, data, status: 'waiting', code: null, error: null });
+        await store.put({ id, seq: ++seq, action, data, status: 'waiting', code: null, error: null, owner: me() });
         await notify();
         return id;
       });
@@ -46,13 +52,19 @@ export function createOutbox({ store, api, newId = () => crypto.randomUUID(), on
     },
     flush,
     counts,
-    entries: sorted, // every queued entry (waiting and attention), oldest first, for screens that show unsynced work
-    attention: async () => (await sorted()).filter((e) => e.status === 'attention'),
+    entries: sorted, // every queued entry (waiting and attention, any owner), oldest first, for screens that show unsynced work
+    attention: async () => (await sorted()).filter((e) => e.status === 'attention' && owned(e)),
+    others: async () => (await sorted()).filter((e) => !owned(e)), // queued by someone else on this device
+    owned,
     async retry(id) {
       const e = (await store.getAll()).find((x) => x.id === id);
-      if (e) await store.put({ ...e, status: 'waiting', code: null, error: null });
+      if (e && owned(e)) await store.put({ ...e, status: 'waiting', code: null, error: null });
       return flush();
     },
-    async discard(id) { await store.delete(id); await notify(); },
+    async discard(id) {
+      const e = (await store.getAll()).find((x) => x.id === id);
+      if (e && owned(e)) await store.delete(id);
+      await notify();
+    },
   };
 }

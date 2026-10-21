@@ -26,7 +26,11 @@ export function describeEntry(e) {
   }
 }
 
-// Panel: open() shows it, refresh() redraws if open. onChange (optional) runs after retry/discard.
+// Another user's queued entry: who it waits for, and why it was refused if it was.
+export const waitingFor = (e) => 'Waiting for ' + (e.owner || 'another user') + ' to sign in on this device' + (e.status === 'attention' ? '. Needs attention: ' + entryReason(e) : '.');
+
+// Panel: open() shows it, refresh() redraws if open. Lists the signed-in user's attention entries (Retry, Discard)
+// and, without buttons, entries another user queued on this device: they wait for that person to sign in (R38).
 export function createAttentionPanel(outbox) {
   const guard = inflightGuard();
   const list = h('div', {});
@@ -36,8 +40,9 @@ export function createAttentionPanel(outbox) {
   async function refresh() {
     if (panel.hidden) return;
     const es = await outbox.attention();
-    if (!es.length) { panel.hidden = true; return; }
-    setKids(list, h('ul', { class: 'office-list' }, es.map((e) => {
+    const others = outbox.others ? await outbox.others() : [];
+    if (!es.length && !others.length) { panel.hidden = true; return; }
+    const own = es.map((e) => {
       const retry = h('button', { type: 'button', onclick: () => guard('retry:' + e.id, async () => { retry.disabled = discard.disabled = true; await outbox.retry(e.id).catch(() => {}); await refresh(); }) }, 'Retry');
       const discard = h('button', { type: 'button', class: 'secondary', onclick: () => guard('discard:' + e.id, async () => {
         if (!confirm('Discard "' + describeEntry(e) + '"? It will be deleted from this device and never sent.')) return;
@@ -45,7 +50,9 @@ export function createAttentionPanel(outbox) {
         await outbox.discard(e.id); await refresh();
       }) }, 'Discard');
       return h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: 'flag bad' }, entryReason(e)), h('div', { class: 'row' }, retry, discard));
-    })));
+    });
+    const theirs = others.map((e) => h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, waitingFor(e))));
+    setKids(list, h('ul', { class: 'office-list' }, own.concat(theirs)));
   }
   return { el: panel, refresh, open: async () => { panel.hidden = false; await refresh(); panel.scrollIntoView && panel.scrollIntoView(); } };
 }

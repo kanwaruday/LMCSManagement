@@ -129,5 +129,31 @@ const done = () => process.exit(failed ? 1 : 0);
     assert.strictEqual(changes[changes.length - 1].authRequired, true);
     assert.strictEqual((await ob.counts()).waiting, 1);
   });
+  // I4 / R38: entries belong to the person who queued them; only that person's session sends them.
+  await test('entries carry their author; flush sends only the signed-in user\'s, others wait for them', async () => {
+    const api = mkApi(); let me = 'a@example.org'; const store = memStore();
+    const ob = createOutbox({ store, api, newId: (() => { let n = 0; return () => 'id' + (++n); })(), who: () => me });
+    await ob.enqueue('x', { n: 1 }); me = 'b@example.org'; await ob.enqueue('y', { n: 2 });
+    assert.deepStrictEqual((await store.getAll()).map((e) => e.owner), ['a@example.org', 'b@example.org']);
+    await ob.flush();
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['y'], 'b does not send a\'s entry');
+    assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 0, others: 1 });
+    assert.deepStrictEqual((await ob.others()).map((e) => [e.action, e.owner]), [['x', 'a@example.org']]);
+    await ob.retry('id1'); await ob.discard('id1');
+    assert.strictEqual((await store.getAll()).length, 1, 'b can neither retry nor discard a\'s entry');
+    me = 'a@example.org'; await ob.flush();
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['y', 'x']);
+    assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 0, others: 0 });
+  });
+  await test('without a session nothing is sent; entries from before authors were stamped count as the current user\'s', async () => {
+    const api = mkApi(); let me = null; const store = memStore();
+    await store.put({ id: 'old', seq: 1, action: 'legacy', data: {}, status: 'waiting', code: null, error: null });
+    const ob = createOutbox({ store, api, who: () => me });
+    await ob.enqueue('x', {});
+    await ob.flush();
+    assert.strictEqual(api.sent.length, 0);
+    me = 'a@example.org'; await ob.flush();
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['legacy', 'x'], 'an entry with no author goes with whoever signs in');
+  });
   done();
 })();
