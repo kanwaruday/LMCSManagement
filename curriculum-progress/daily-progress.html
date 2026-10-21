@@ -498,7 +498,15 @@ const CM_CACHE_TTL = ((_earlyCfg?.cacheTtlMinutes) || 30) * 60 * 1000;
   ];
   document.addEventListener('DOMContentLoaded', function () {
     const el = document.getElementById('datasrcLinks');
-    if (el) el.innerHTML = '📄 ' + links.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('');
+    if (!el) return;
+    // Everything else this page reads -- resolved here (not above) because CM_SCHOOLS/TRACKER_SHEET_ID are
+    // declared further down the script, and still the live config values, not separately hardcoded guesses.
+    const all = links.concat([{ label: 'Chapter Tracker sheet', url: sheetUrl(TRACKER_SHEET_ID) }])
+      .concat((CM_SCHOOLS || []).filter(function (s) { return s.enabled !== false && s.id; }).map(function (s) {
+        return { label: s.name + ' mapping sheet', url: sheetUrl(s.id) };
+      }))
+      .concat([{ label: 'LMCSStaffMasters sheet', url: sheetUrl('1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0') }]);
+    el.innerHTML = '📄 ' + all.map(function (l) { return '<a href="' + l.url + '" target="_blank" rel="noopener">' + l.label + ' ↗</a>'; }).join('');
   });
 })();
 

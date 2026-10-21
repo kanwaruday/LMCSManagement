@@ -275,8 +275,12 @@ async function init() {
   // Owner-only "data source" link (2026-09-20) -- ID duplicated from
   // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID.
   if (LMCS.hasRole(SESSION, 'Owner')) {
+    // Doc Submission = the response workbook the Documents tab / Certificate Links are built from; Teaching
+    // Applicants = where "complete hire" candidates come from (IDs from apps-script/staff-management-api.gs).
     document.getElementById('datasrcStaff').innerHTML =
-      '📄 <a href="https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>';
+      '📄 <a href="https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>' +
+      '<a href="https://docs.google.com/spreadsheets/d/1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg/edit" target="_blank" rel="noopener" style="margin-left:14px">Doc Submission sheet ↗</a>' +
+      '<a href="https://docs.google.com/spreadsheets/d/1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ/edit#gid=1181288827" target="_blank" rel="noopener" style="margin-left:14px">Teaching Applicants sheet ↗</a>';
   }
 
   document.getElementById('formArea').style.display = 'block';

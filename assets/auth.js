@@ -335,6 +335,7 @@ window.LMCS = (function () {
           // Pages that reload after sign-in restart this on their next load;
           // pages that don't (the home screens) get it right away.
           if (window.LMCS && window.LMCS.warmUp) window.LMCS.warmUp(session);
+          if (window.LMCS_renderDataSources) window.LMCS_renderDataSources(); // home screens don't reload after sign-in
         }
 
         // Shows elapsed time + what's happening instead of a silent wait; returns a function that stops it.
@@ -741,4 +742,17 @@ window.LMCS = (function () {
     else go();
   }
   if (document.readyState === 'complete') scheduleWarmUp(); else window.addEventListener('load', scheduleWarmUp);
+})();
+
+// Owner-only "data source" links (assets/datasrc.js) for pages that don't draw their own. Loaded from here so
+// no page needs a script tag of its own; the path is derived from this file's own URL so it works from any folder.
+(function () {
+  try {
+    const me = document.currentScript && document.currentScript.src;
+    if (!me) return;
+    const s = document.createElement('script');
+    s.src = me.replace(/auth\.js(\?.*)?$/, 'datasrc.js');
+    s.async = true;
+    document.head.appendChild(s);
+  } catch (_) { /* purely cosmetic -- never let it break a page */ }
 })();
