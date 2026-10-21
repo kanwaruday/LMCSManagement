@@ -15,7 +15,8 @@ var OFFICE_BUCKETS = ['petty', 'fee', 'other'];
 // Strict ISO calendar date: shape and a real day (rejects 2026-02-30).
 function officeIsoDate_(s) {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  return new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; // invalid month/day gives Invalid Date, which has no ISO string
 }
 
 function officeDaybookAdd_(ctx, data) {
@@ -48,15 +49,21 @@ function officeDaybookWrite_(ss, ctx, row, action) {
   return { id: res.id, duplicate: res.duplicate };
 }
 
-// Reversal is dated today and written to today's book; the original must be in that book.
+// Reversal is dated today and written to today's book. The original is looked up in today's book, then in the
+// previous financial year's book (only if that book exists); reversals of it are searched in both.
 function officeDaybookReverse_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
-  const ss = officeOpen_(data.campus, officeFy_(officeToday_()));
+  const fy = officeFy_(officeToday_());
+  const ss = officeOpen_(data.campus, fy);
   const rows = officeRows_(ss, 'DayBook');
   if (rows.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry of the same request
-  const orig = rows.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
+  const prevStart = Number(fy.slice(0, 4)) - 1;
+  const prevFy = prevStart + '-' + String((prevStart + 1) % 100).padStart(2, '0');
+  const prevExists = PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + data.campus + '_' + prevFy);
+  const all = prevExists ? rows.concat(officeRows_(officeOpen_(data.campus, prevFy), 'DayBook')) : rows;
+  const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
   if (!orig) throw new Error('NOT_FOUND');
-  if (orig.reverses || rows.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
+  if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
   return officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,

@@ -87,6 +87,10 @@ module.exports = function run(t) {
     assert.equal(add(h, { entry_date: '2026-10-22' }).error, 'FUTURE_DATE');
     assert.equal(add(h, { entry_date: '2026-02-30' }).error, 'BAD_DATE');
     assert.equal(add(h, { entry_date: '21/10/2026' }).error, 'BAD_DATE');
+    ['2026-13-01', '2026-00-10', '2026-01-32'].forEach((d) => assert.equal(add(h, { entry_date: d }).error, 'BAD_DATE', d));
+    assert.equal(h.call('daybook.list', { campus: 'LMS1', from: '2026-13-01' }, 'clerk-token').error, 'BAD_DATE');
+    assert.equal(h.call('daybook.list', { campus: 'LMS1', from: '2026-10-01', to: '2026-10-32' }, 'clerk-token').error, 'BAD_DATE');
+    assert.equal(h.call('daybook.balances', { campus: 'LMS1', date: '2026-00-10' }, 'clerk-token').error, 'BAD_DATE');
   });
 
   t.test('same id twice yields one row; entries land in the book of their financial year', () => {
@@ -104,5 +108,22 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.list', { campus: 'LMS2', from: '2026-10-20' }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(h.call('daybook.add', e({ campus: 'LMS2' }), 'clerk-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(h.call('daybook.balances', { campus: 'LMS2', date: '2026-10-20' }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
+  });
+
+  t.test('reverse across the year boundary writes to the new book; NOT_FOUND when neither book has it', () => {
+    const h = fresh(); h.addBook('LMS1', '2027-28');
+    add(h, { id: 'old', entry_date: '2027-03-31', amount_paise: 500 });
+    h.setNow(new Date('2027-04-02T10:00:00Z'));
+    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
+    assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-04-01' }, 'clerk-token').entries.map((x) => x.id), ['r']);
+    assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-03-31' }, 'clerk-token').entries.map((x) => x.id), ['old']);
+    assert.equal(h.call('daybook.reverse', { id: 'r2', campus: 'LMS1', reverses: 'old' }, 'clerk-token').error, 'ALREADY_REVERSED');
+    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').duplicate, true);
+    assert.equal(h.call('daybook.reverse', { id: 'r3', campus: 'LMS1', reverses: 'nope' }, 'clerk-token').error, 'NOT_FOUND');
+  });
+
+  t.test('reverse with no previous-year book is NOT_FOUND, not an error', () => {
+    const h = boot(fixture); h.addConfig(); h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-21T10:00:00Z'));
+    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'x' }, 'clerk-token').error, 'NOT_FOUND');
   });
 };
