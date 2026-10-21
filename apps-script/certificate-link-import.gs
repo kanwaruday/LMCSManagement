@@ -5000,6 +5000,7 @@ const CERT_CATEGORY_KEYWORDS_ = {
   'AADHAAR CARD': ['AADHAR', 'AADHAAR'],
   'CANCELLED CHEQUE / BANK COPY': ['CHEQUE'],
   'DRIVING LICENCE': ['DRIVING LICEN'],
+  'NTT / JBT CERTIFICATE': ['NTT / JBT', 'JBT CERTIFICATE'], // portal-only: no Google Form column asks for it
 };
 
 // Employee Code -> a known data-quality problem with that person's row,

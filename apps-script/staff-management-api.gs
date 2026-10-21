@@ -135,7 +135,7 @@ function staffDoGet_(e) {
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
     else if (action === 'installjobrolesync') result = installJobRolePayScaleSyncTriggerAction_(data, caller);
-    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller) };
+    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller), rules: STAFF_DOC_RULES_ };
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_(e.parameter.force === '1') };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
     else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
@@ -528,6 +528,7 @@ const STAFF_DOCUMENT_TYPES = [
   'AADHAAR CARD',
   'CANCELLED CHEQUE / BANK COPY',
   'DRIVING LICENCE',
+  'NTT / JBT CERTIFICATE',
 ];
 
 // EmployeeCode -> { documentType: [{filename, driveLink}, ...] } -- only
@@ -708,6 +709,7 @@ function buildDocumentStatus_(caller) {
       documents[t] = files && files.length ? { count: files.length, driveLink: files[0].driveLink } : null;
     });
     out.push({
+      rule: staffDocRuleKey_(salary.designation), // which STAFF_DOC_RULES_ entry applies (staff-documents.gs)
       employeeCode: code,
       name: String(rows[i][idx.Name] || '').trim(),
       school: school,

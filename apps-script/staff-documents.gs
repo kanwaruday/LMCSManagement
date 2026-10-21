@@ -214,3 +214,55 @@ function refreshCertificateLinksIfStale_() {
     lock.releaseLock();
   }
 }
+
+// ── Which documents each designation must have (Uday, 2026-10-21) ──────────────────────────────
+// Keyed by EmpSalary.Designation (normalized). R = required (shows Missing), N = not applicable
+// (hidden); every other type is optional (uploadable, never counted missing). Hiring Slip is N/A
+// for everyone. A designation not listed gets STAFF_DOC_RULES_[''] -- the core documents only.
+const DT_ = {
+  bio: 'BIODATA + PROFICIENCY', hs: 'HIRING SLIP', sc: 'SERVICE CONTRACT', sjr: 'SIGNED JOB ROLE', pan: 'PAN CARD',
+  aad: 'AADHAAR CARD', chq: 'CANCELLED CHEQUE / BANK COPY', pol: 'POLICE VERIFICATION CHARACTER CERTIFICATE',
+  med: 'MEDICAL CERTIFICATE', c10: 'CLASS 10 BOARD RESULT SHEET', c12: 'CLASS 12 BOARD RESULT SHEET',
+  ba: 'BACHELORS CERTIFICATE', ma: 'MASTER CERTIFICATE', jbt: 'NTT / JBT CERTIFICATE',
+  pd: 'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)', hq: 'HIGHEST QUALIFICATION',
+  tet: 'TET DOCUMENT', dl: 'DRIVING LICENCE',
+};
+const STAFF_DOC_RULES_ = (function () {
+  const core = ['bio', 'sc', 'sjr', 'pan', 'aad', 'chq', 'pol', 'med'];
+  const rule = function (req, na) {
+    return { R: core.concat(req).map(function (k) { return DT_[k]; }), N: ['hs'].concat(na).map(function (k) { return DT_[k]; }) };
+  };
+  const teacherPrt = rule(['c10', 'c12', 'ba', 'pd', 'tet'], ['dl']);
+  const senior = rule(['c10', 'c12', 'ba', 'ma', 'pd'], ['jbt', 'dl']);
+  const artsy = rule(['c10', 'c12', 'hq'], ['jbt', 'tet', 'dl']);
+  const support = rule([], ['c12', 'ba', 'ma', 'jbt', 'pd', 'hq', 'tet', 'dl']);
+  return {
+    'NTT': rule(['c10', 'c12', 'jbt', 'pd'], ['dl']),
+    'PRT': teacherPrt,
+    'PRT COORDINATOR': teacherPrt,
+    'TGT': rule(['c10', 'c12', 'ba', 'pd', 'tet'], ['jbt', 'dl']),
+    'PGT': senior,
+    'VICE PRINCIPAL': senior,
+    'HEAD MASTER/ PRINCIPAL': senior,
+    'COMPUTER TEACHER': rule(['c10', 'c12', 'ba'], ['jbt', 'tet', 'dl']),
+    'GAMES TEACHER (PTI)': rule(['c10', 'c12', 'ba', 'pd'], ['jbt', 'tet', 'dl']),
+    'DRAWING TEACHER': artsy,
+    'ACTIVITY TEACHER': artsy,
+    'LIBRARIAN': rule(['c10', 'c12', 'ba'], ['jbt', 'tet', 'dl']),
+    'CLERK + PRO': rule(['c10', 'c12', 'ba'], ['jbt', 'pd', 'tet', 'dl']),
+    'DRIVER CUM PEON': rule(['c10', 'dl'], ['ba', 'ma', 'jbt', 'pd', 'hq', 'tet']),
+    'TECHNICIAN': rule(['c10'], ['ba', 'ma', 'jbt', 'tet', 'dl']),
+    'HELPER': support,
+    'SWEEPER': support,
+    'GARDENER': support,
+    '': rule([], []),
+  };
+})();
+// Same job, different wording in EmpSalary.
+const STAFF_DOC_RULE_ALIASES_ = { 'ADMIN CLERK + PRO': 'CLERK + PRO', 'PTI (11, 12)': 'GAMES TEACHER (PTI)' };
+
+function staffDocRuleKey_(designation) {
+  const d = sdocNorm_(designation);
+  const k = STAFF_DOC_RULE_ALIASES_[d] || d;
+  return STAFF_DOC_RULES_[k] ? k : '';
+}
