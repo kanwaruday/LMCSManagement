@@ -18,7 +18,7 @@ function backupDrive(h, existing) {
 
 module.exports = function run(t) {
   const fresh = (existing) => {
-    const h = boot();
+    const h = boot(); h.ctx.console = { error() {} }; // keep expected failure logs out of the test output
     h.props.OFFICE_SS_LMS1_2026_27 = 'BOOK-A'; h.props.OFFICE_CONFIG_SS = 'BOOK-CFG'; h.props.OFFICE_BACKUP_FOLDER = 'BK'; h.props.OFFICE_ALERT_EMAIL = 'uday@example.org';
     h.setNow(new Date('2026-10-21T21:00:00Z')); // 02:30 IST on the 22nd
     return { h, d: backupDrive(h, existing) };
