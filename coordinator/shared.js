@@ -283,8 +283,8 @@ window.Coord = (function () {
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
-    const LABEL = { expired: 'Expired', check: 'Scan, date unread', missing: 'No record', na: 'Not needed', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid' };
-    const RANK = { expired: 0, check: 1, missing: 2, soon: 3, later: 4, ok: 5, na: 6 };
+    const LABEL = { expired: 'Expired', check: 'Scan, date unread', missing: 'No record', noexp: 'On file, no expiry printed', na: 'Not needed', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid' };
+    const RANK = { expired: 0, check: 1, missing: 2, soon: 3, later: 4, ok: 5, noexp: 6, na: 7 };
 
     async function load() {
       box.innerHTML = '<div class="status">Loading the transport fleet...</div>';
@@ -298,23 +298,24 @@ window.Coord = (function () {
     function render() {
       const d = T.data, now = new Date(); now.setHours(0, 0, 0, 0);
       const days = iso => Math.round((new Date(iso + 'T00:00:00') - now) / 86400000);
-      const tier = e => { if (e.na) return 'na'; if (!e.date) return e.unread.length ? 'check' : 'missing'; const n = days(e.date); return n < 0 ? 'expired' : n <= 30 ? 'soon' : n <= 90 ? 'later' : 'ok'; };
+      const tier = e => { if (e.na) return 'na'; if (!e.date) return (e.noexp || []).length ? 'noexp' : e.unread.length ? 'check' : 'missing'; const n = days(e.date); return n < 0 ? 'expired' : n <= 30 ? 'soon' : n <= 90 ? 'later' : 'ok'; };
       const when = (iso, t) => !iso ? '-' : days(iso) < 0 ? -days(iso) + ' days ago' : days(iso) === 0 ? 'Today' : 'in ' + days(iso) + ' days';
       const tracked = d.fleet, idle = d.fleet.filter(b => !b.operational), nr = b => b.operational ? '' : ' &middot; not running'; // every vehicle is tracked, running or not
       const items = [];
       tracked.forEach(b => d.docs.forEach(doc => {
         const e = b.docs[doc.key], t = tier(e);
-        items.push({ b: b, doc: doc, date: e.date, src: e.src, link: e.link, unread: e.unread, t: t, n: e.date ? days(e.date) : 0 });
+        items.push({ b: b, doc: doc, date: e.date, src: e.src, link: e.link, unread: e.unread, other: e.other || [], t: t, n: e.date ? days(e.date) : 0 });
       }));
       const count = t => items.filter(i => i.t === t).length;
       const campuses = Array.from(new Set(tracked.map(b => b.campus))).sort();
       const pick = i => (!T.campus || i.b.campus === T.campus) && (T.tier === 'all' || i.t === T.tier) &&
         (!T.q || (i.b.reg + ' ' + i.b.driver + ' ' + i.b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
-      const rows = items.filter(i => i.t !== 'ok' && i.t !== 'na' && pick(i)).sort((a, b) => RANK[a.t] - RANK[b.t] || a.n - b.n || a.b.reg.localeCompare(b.b.reg));
+      const rows = items.filter(i => ['ok', 'na', 'noexp'].indexOf(i.t) === -1 && pick(i)).sort((a, b) => RANK[a.t] - RANK[b.t] || a.n - b.n || a.b.reg.localeCompare(b.b.reg));
       const pl = t => '<span class="pl ' + t + '">' + LABEL[t] + '</span>';
       const a = (u, txt) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>';
-      const srcNote = i => (i.src === 'form' ? (i.link ? a(i.link, 'from the form (view upload)') : 'from the form') : i.src === 'override' ? 'from the overrides note' : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
-        (i.unread.length ? (i.src ? ' &middot; ' : '') + i.unread.map((u, n) => a(u.link, (i.src ? 'unread scan' : 'View scan') + (i.unread.length > 1 ? ' #' + (n + 1) : ''))).join(' ') : '');
+      const srcNote = i => (i.src === 'form' ? (i.link ? a(i.link, 'from the form (view upload)') : 'from the form') : i.src === 'override' ? 'from the overrides note' : i.src === 'reread' ? a(i.link, 'from the Drive scan (re-read)') : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
+        (i.unread.length ? (i.src ? ' &middot; ' : '') + i.unread.map((u, n) => a(u.link, (i.src ? 'unread scan' : 'View scan') + (i.unread.length > 1 ? ' #' + (n + 1) : ''))).join(' ') : '') +
+        (!i.date && i.other.length ? i.other.map(o => a(o.link, 'the scan on file is: ' + (o.note || 'a different document'))).join(' ') : '');
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
 
@@ -400,16 +401,39 @@ window.Coord = (function () {
             (T.pay === 'after' ? '<td>' + rupee(o.pay) + '</td>' : '') + '<td>' + rupee(o.cost) + '</td><td class="' + (o.result < 0 ? 'miss' : 'okc') + '"><b>' + rupee(o.result) + '</b></td><td>' + (o.margin == null ? '-' : Math.round(o.margin * 100) + '%') + '</td><td>' + spark(o) + '</td><td class="wrap">' + (o.flags.map(esc).join('<br>') || '<span class="sm">-</span>') + '</td></tr>').join('')
             : '<tr><td colspan="13" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       } else {
-        const fleet = tracked.filter(b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
-          .sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
-        html += '<div class="note">Expiry date of the newest paper on file; click a date to open its scan (or the form upload) and check it. A small +1 means another scan of that paper exists whose date could not be read. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, grey has no record.</div>' +
-          '<div class="tw stick"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th>' + d.docs.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
-          fleet.map(b => '<tr><td>' + esc(b.reg) + '<div class="sm">' + esc(b.route || b.bus) + nr(b) + '</div></td><td>' + esc(b.campus) + '</td><td>' + esc(b.driver || '-') + drvNote(b) + '</td>' +
-            d.docs.map(x => { const e = b.docs[x.key], t = tier(e); const txt = e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'check' ? 'unread' : '-', first = e.link || (e.unread[0] && e.unread[0].link) || '';
-              const src = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '') : e.unread.length ? 'Scan on file, date unread. Click to open it.' : 'No record';
-              const extra = e.date && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
-              return '<td class="dt ' + t + '" title="' + esc(src + (extra ? '. +' + e.unread.length + ' more scan(s) whose date could not be read.' : '')) + '">' + (first ? a(first, txt) : txt) + extra + '</td>'; }).join('') + '</tr>').join('') +
-          '</tbody></table></div>';
+        // Order: campus by campus; inside a campus the vehicles that need the most attention come first and vehicles that are not
+        // running come last. Columns run from the papers that make a bus illegal to run to the rest.
+        const ORDER = ['insurance', 'fitness', 'route_permit', 'mv_tax', 'pollution', 'speed_governor'], LEGAL = ['insurance', 'fitness', 'route_permit', 'mv_tax'];
+        const cols = ORDER.map(k => d.docs.find(x => x.key === k)).filter(Boolean).concat(d.docs.filter(x => ORDER.indexOf(x.key) < 0));
+        const WEIGHT = { expired: 10, missing: 3, check: 2, soon: 2, later: 1 }, SEV = ['expired', 'check', 'missing', 'soon', 'later'];
+        const SHORT = { expired: 'expired', check: 'unread', missing: 'missing', soon: 'due in 30 days', later: 'due in 90 days' };
+        const weigh = b => { const n = {}; let score = 0; cols.forEach(x => { const t = tier(b.docs[x.key]); n[t] = (n[t] || 0) + 1; score += (WEIGHT[t] || 0) * (t === 'expired' && LEGAL.indexOf(x.key) >= 0 ? 2 : 1); }); return { b: b, n: n, score: score }; };
+        const vs = tracked.filter(b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1)).map(weigh);
+        const groups = {};
+        vs.forEach(v => (groups[v.b.campus] = groups[v.b.campus] || []).push(v));
+        const status = v => { const w = SEV.find(t => v.n[t]); return w ? '<span class="pl ' + w + '">' + v.n[w] + ' ' + SHORT[w] + '</span>' +
+          (SEV.filter(t => t !== w && v.n[t]).map(t => '<div class="sm">' + v.n[t] + ' ' + SHORT[t] + '</div>').join('')) : '<span class="pl ok">All current</span>'; };
+        const cell = (b, x) => {
+          const e = b.docs[x.key], t = tier(e), nx = e.noexp || [], ot = e.other || [];
+          const wrong = !e.date && !nx.length && !e.unread.length && ot.length;
+          const txt = e.date ? fmt(e.date) : t === 'na' ? 'n/a' : t === 'noexp' ? 'no expiry' : t === 'check' ? 'unread' : wrong ? 'wrong paper' : '-';
+          const first = e.link || (e.unread[0] && e.unread[0].link) || (nx[0] && nx[0].link) || (ot[0] && ot[0].link) || '';
+          const tip = e.src ? 'Source: ' + (e.src === 'form' ? 'submission form upload' : e.src === 'override' ? 'Transport Overrides note' + (e.note ? ' (' + e.note + ')' : '') : e.src === 'reread' ? 'Drive scan, re-read by LM Studio' + (e.note ? ' (' + e.note + ')' : '') : 'Drive scan') + (e.link ? '. Click to open it.' : '')
+            : nx.length ? 'The scan on file (' + (nx[0].note || x.label) + ') prints no expiry date. Click to open it.'
+            : e.unread.length ? 'Scan on file, date unread. Click to open it.'
+            : wrong ? 'The scan filed here is "' + (ot[0].note || 'a different document') + '", not a ' + x.label.toLowerCase() + ' certificate. Click to open it.' : 'No record';
+          const extra = e.date && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
+          return '<td class="dt ' + (wrong ? 'other' : t) + '" title="' + esc(tip + (extra ? '. +' + e.unread.length + ' more scan(s) whose date could not be read.' : '')) + '">' + (first ? a(first, txt) : txt) + extra + '</td>';
+        };
+        const groupRows = c => {
+          const list = groups[c].sort((x, y) => (y.b.operational - x.b.operational) || y.score - x.score || x.b.reg.localeCompare(y.b.reg));
+          const tot = t => list.reduce((k, v) => k + (v.n[t] || 0), 0), idleN = list.filter(v => !v.b.operational).length;
+          return '<tr class="grp"><td colspan="' + (3 + cols.length) + '">' + esc(c) + ' <span class="sm">' + list.length + (list.length === 1 ? ' vehicle' : ' vehicles') + (idleN ? ' (' + (list.length - idleN) + ' running)' : '') + ' &middot; ' + tot('expired') + ' expired &middot; ' + (tot('missing') + tot('check')) + ' missing or unread</span></td></tr>' +
+            list.map(v => '<tr><td>' + esc(v.b.reg) + '<div class="sm">' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div></td><td>' + esc(v.b.driver || '-') + drvNote(v.b) + '</td><td>' + status(v) + '</td>' + cols.map(x => cell(v.b, x)).join('') + '</tr>').join('');
+        };
+        html += '<div class="note">Grouped by campus. Inside each campus the vehicles that need the most attention come first, and vehicles that are not running come last. Papers run from the ones that make a bus illegal to run (insurance, fitness, route permit, road tax) to pollution and speed governor. Click a date to open its scan (or the form upload) and check it. A small +1 means another scan of that paper exists whose date could not be read. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper that prints no expiry, orange is a scan that is not the right paper, grey has no record.</div>' +
+          '<div class="tw stick"><table class="l"><thead><tr><th>Vehicle</th><th>Driver</th><th>Status</th>' + cols.map(x => '<th>' + esc(x.label) + '</th>').join('') + '</tr></thead><tbody>' +
+          (Object.keys(groups).length ? Object.keys(groups).sort().map(groupRows).join('') : '<tr><td colspan="' + (3 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       }
       html += '<div class="note">A pollution or speed governor entry shown as expired or missing may be a paper that exists but was never uploaded; confirm with the driver or transport in-charge before treating it as lapsed. Passenger tax and RC are not tracked here.' +
         (d.unknown.length ? ' <b>Uploads for vehicles not in the fleet list: ' + esc(d.unknown.join(', ')) + '.</b>' : '') + '</div>';

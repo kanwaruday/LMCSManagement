@@ -66,3 +66,5 @@ td.dt a{color:inherit;text-decoration:underline dotted}td.dt a:hover{text-decora
 .tw.stick th{position:sticky;top:0;z-index:2;background:var(--lgray);box-shadow:0 1px 0 var(--border)}
 .tw.stick{overflow-x:clip;overflow-y:visible}
 @media (max-width:1149px){.tw.stick{overflow:auto;max-height:80vh}}
+.grp td{background:var(--lgray);font-weight:700;border-top:2px solid var(--border)}.grp .sm{font-weight:400}
+td.dt.noexp{background:#ecfdf5;color:#047857}td.dt.other{background:#fff7ed;color:#9a3412}

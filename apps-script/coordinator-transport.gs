@@ -37,7 +37,6 @@ const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness']
 // Form "Document Type" -> key. RC is collected by the form but has no expiry worth tracking; passenger tax is not on the form.
 const COORD_TRANSPORT_FORM_TYPES = { 'FITNESS': 'fitness', 'ROUTE PERMIT': 'route_permit', 'INSURANCE': 'insurance',
   'MV TAX': 'mv_tax', 'POLLUTION': 'pollution', 'SPEED GOVERNOR': 'speed_governor' };
-const COORD_TRANSPORT_SOON_DAYS = 30;
 const COORD_TRANSPORT_LIVE_CACHE_SECONDS = 300;
 
 function coordTransportDate_(v, tz) {
@@ -109,12 +108,15 @@ function coordTransportPush_(body) {
     Object.keys(b.docs || {}).forEach(function (k) {
       const d = b.docs[k];
       if (!label[k]) return;
-      docs.push([b.reg, label[k], d.na ? '' : d.date, d.na ? 'n/a' : (d.src === 'override' ? 'override' : 'read'),
-        d.src === 'override' ? 'overrides note' : 'drive scan', d.file || '', d.link || '', d.note || '']);
+      docs.push([b.reg, label[k], d.na ? '' : d.date, d.na ? 'n/a' : (d.src === 'override' ? 'override' : d.src === 'reread' ? 'reread' : 'read'),
+        d.src === 'override' ? 'overrides note' : d.src === 'reread' ? 'drive scan (re-read)' : 'drive scan', d.file || '', d.link || '', d.note || '']);
     });
     (b.unreadable || []).forEach(function (u) {
       if (label[u.key]) docs.push([b.reg, label[u.key], '', 'unread', 'drive scan', u.file || '', u.link || '', 'LM Studio could not read a date']);
     });
+    // second-pass outcomes: the right paper with no expiry printed, and scans that are not the paper their folder says
+    (b.noexpiry || []).forEach(function (u) { if (label[u.key]) docs.push([b.reg, label[u.key], '', 'no expiry', 'drive scan', u.file || '', u.link || '', u.note || '']); });
+    (b.other || []).forEach(function (u) { if (label[u.key]) docs.push([b.reg, label[u.key], '', 'other document', 'drive scan', u.file || '', u.link || '', u.note || '']); });
   });
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -154,7 +156,7 @@ function coordTransportBase_() {
   const meta = {};
   syncRows.forEach(function (r) { meta[String(r[0])] = String(r[1]); });
   const fleet = fleetRows.map(function (r) {
-    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], driverCode: String(r[9] || ''), driverStatus: String(r[10] || ''), driverRosterName: String(r[11] || ''), docs: {}, unreadable: [] };
+    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], driverCode: String(r[9] || ''), driverStatus: String(r[10] || ''), driverRosterName: String(r[11] || ''), docs: {}, unreadable: [], noexpiry: [], other: [] };
   });
   const byReg = {}, keyOf = {};
   fleet.forEach(function (b) { byReg[b.reg] = b; });
@@ -163,8 +165,10 @@ function coordTransportBase_() {
     const b = byReg[String(r[0])], key = keyOf[String(r[1])], status = String(r[3]);
     if (!b || !key) return;
     if (status === 'unread') b.unreadable.push({ key: key, file: String(r[5]), link: String(r[6]) });
+    else if (status === 'no expiry') b.noexpiry.push({ key: key, file: String(r[5]), link: String(r[6]), note: String(r[7]) });
+    else if (status === 'other document') b.other.push({ key: key, file: String(r[5]), link: String(r[6]), note: String(r[7]) });
     else if (status === 'n/a') b.docs[key] = { na: true, date: '', src: 'override', note: String(r[7]), file: '', link: '' };
-    else b.docs[key] = { date: coordTransportDate_(r[2], tz), src: status === 'override' ? 'override' : 'drive', file: String(r[5]), link: String(r[6]), note: String(r[7]) };
+    else b.docs[key] = { date: coordTransportDate_(r[2], tz), src: status === 'override' ? 'override' : status === 'reread' ? 'reread' : 'drive', file: String(r[5]), link: String(r[6]), note: String(r[7]) };
   });
   const pnlSheet = ss.getSheetByName(COORD_TRANSPORT_TAB_PNL); // optional: older pushes had no money
   const pnl = pnlSheet ? pnlSheet.getDataRange().getValues().slice(1).map(function (r) {
@@ -191,7 +195,10 @@ function coordTransportFleet_() {
       const doc = l && (!sc || l >= sc.date) ? { date: l, src: 'form', link: formLinks[b.reg + '|' + d[0]] || '' }
         : sc ? { date: sc.date, src: sc.src || 'drive', link: sc.link, na: !!sc.na, note: sc.note || '' } : { date: '', src: '', link: '' };
       // scans of this type whose date LM Studio could not read; one of them may be the renewal
-      doc.unread = (b.unreadable || []).filter(function (u) { return u.key === d[0]; }).map(function (u) { return { file: u.file, link: u.link }; });
+      const of = function (list) { return (list || []).filter(function (u) { return u.key === d[0]; }).map(function (u) { return { file: u.file, link: u.link, note: u.note || '' }; }); };
+      doc.unread = of(b.unreadable);
+      doc.noexp = of(b.noexpiry);  // the right paper, but it prints no expiry (a speed governor fitment certificate, say)
+      doc.other = of(b.other);     // a scan whose content is not the paper its folder says (a refusal letter, an initial compliance certificate...)
       docs[d[0]] = doc;
     });
     const n = String(b.campus).replace(/\D/g, ''); // roster says 'LMS-5' in one row
@@ -201,15 +208,6 @@ function coordTransportFleet_() {
   const known = {};
   base.fleet.forEach(function (b) { known[b.reg] = true; });
   return { fleet: fleet, base: base, live: live, unknown: (live.regs || []).filter(function (r) { return !known[r]; }) };
-}
-
-// 'na' | 'expired' | 'check' (a scan exists but no date could be read) | 'missing' | 'due' (within the soon window) | 'ok'
-function coordTransportState_(doc, today) {
-  if (doc.na) return 'na';
-  if (!doc.date) return doc.unread.length ? 'check' : 'missing';
-  if (doc.date < today) return 'expired';
-  const days = Math.round((Date.parse(doc.date + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
-  return days <= COORD_TRANSPORT_SOON_DAYS ? 'due' : 'ok';
 }
 
 // action=coordinatortransport

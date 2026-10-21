@@ -17,6 +17,7 @@ import openpyxl
 
 sys.path.insert(0, str(Path(__file__).parent))
 from build_master import XLSX, DB, DB_TYPES, norm, sheet
+from reread_unread import SIDECAR, file_id
 
 SECRET_FILE = Path.home() / ".lmcs" / "transport_push_secret"
 COORDINATOR_GS = Path(__file__).parent.parent / "apps-script" / "coordinator.gs"  # holds COORD_ROSTER_URL, the public staff-roster endpoint
@@ -27,6 +28,33 @@ DOC_NAMES = {"insurance": "insurance", "fitness": "fitness", "mvtax": "mv_tax", 
              "speedgovernor": "speed_governor", "governor": "speed_governor"}
 MIN_FLEET = 15  # fewer vehicles than this means the workbook read went wrong; never overwrite good data with it
 LO, HI = date(2015, 1, 1), date(2040, 12, 31)  # a read date outside this is a misread, treated as unreadable
+
+
+def apply_reread(out):
+    """Fold the second-pass outcomes (reread_unread.py, drive-index/transport_reread.json) into the scan data. A scan that was
+    unreadable becomes: a dated document (if a date was read), `noexpiry` (the right paper, no expiry printed), `other`
+    (not the paper its folder says) or stays `unreadable` (illegible / not read yet)."""
+    try:
+        state = json.loads(SIDECAR.read_text())
+    except (OSError, ValueError):
+        return
+    for e in out.values():
+        keep = []
+        for u in e["unreadable"]:
+            r = state.get(file_id(u["link"]))
+            o = r["outcome"] if r else ""
+            if o == "date":
+                cur = e["docs"].get(u["key"])
+                if not cur or r["date"] > cur["date"]:
+                    e["docs"][u["key"]] = {"date": r["date"], "file": u["file"], "link": u["link"], "src": "reread",
+                                           "note": f'LM Studio re-read: "{r.get("quote", "")}"'}
+            elif o == "no_expiry":
+                e.setdefault("noexpiry", []).append({**u, "note": r.get("doc_type_seen", "")})
+            elif o == "other_document":
+                e.setdefault("other", []).append({**u, "note": r.get("doc_type_seen", "")})
+            else:
+                keep.append(u)
+        e["unreadable"] = keep
 
 
 def scans():
@@ -49,6 +77,7 @@ def scans():
             e["unreadable"].append({"key": key, **f})
         elif key not in e["docs"] or vt > e["docs"][key]["date"]:
             e["docs"][key] = {"date": vt, **f}
+    apply_reread(out)
     return out
 
 
@@ -204,7 +233,8 @@ def main():
         fleet.append({"reg": reg, "bus": r["Bus No."], "campus": campus, "seats": r["Seating Capacity"],
                       "year": r["Year of Purchase"], "operational": "not op" not in str(r["Status"] or "").lower(),
                       "route": m.get("Route") or "", "start": m.get("Start Point") or "", "driver": str(m.get("Driver Name") or "").strip(),
-                      "docs": s.get(reg, {}).get("docs", {}), "unreadable": s.get(reg, {}).get("unreadable", [])})
+                      "docs": s.get(reg, {}).get("docs", {}), "unreadable": s.get(reg, {}).get("unreadable", []),
+                      "noexpiry": s.get(reg, {}).get("noexpiry", []), "other": s.get(reg, {}).get("other", [])})
     people = link_staff(wb, mapping, fleet)
     ov, warnings = overrides({v["reg"] for v in fleet})
     for v in fleet:
@@ -213,7 +243,8 @@ def main():
                 continue
             v["docs"][key] = {"date": o.get("date", ""), "na": o.get("na", False), "src": "override", "note": o["note"],
                               "file": "Transport overrides note", "link": ""}
-            v["unreadable"] = [u for u in v["unreadable"] if u["key"] != key]  # a person has settled that paper
+            for k in ("unreadable", "noexpiry", "other"):  # a person has settled that paper
+                v[k] = [u for u in v[k] if u["key"] != key]
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
