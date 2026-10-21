@@ -1,0 +1,148 @@
+// Deposits, signing, ERP totals and reconciliation (apps-script/office-deposits.gs).
+'use strict';
+const assert = require('assert');
+const { boot } = require('./harness');
+
+const fixture = {
+  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'other-token': 'other@example.org' },
+  allowlist: [
+    ['Email', 'Name', 'Campuses', 'Roles'],
+    ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
+    ['fh@example.org', 'Finance Head', 'ALL', 'FinanceHead'],
+    ['owner@example.org', 'Owner', 'ALL', 'Owner'],
+    ['other@example.org', 'Other Clerk', 'LMS2', 'FeeClerk'],
+  ],
+};
+const PDF = Buffer.from('%PDF-1.4 fake').toString('base64');
+
+module.exports = function run(t) {
+  const fresh = () => {
+    const h = boot(fixture);
+    h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26');
+    h.setNow(new Date('2026-10-21T10:00:00Z')); // 15:30 IST on 2026-10-21
+    h.call('file.upload', { id: 'slip', campus: 'LMS1', category: 'deposit_proof', mime: 'application/pdf', base64: PDF, name: 's.pdf' }, 'clerk-token');
+    return h;
+  };
+  let n = 0;
+  const fee = (h, amt, date, o) => h.call('daybook.add', Object.assign({ id: 'f' + (++n), campus: 'LMS1', entry_date: date || '2026-10-20', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: amt }, o), 'clerk-token');
+  const dep = (h, o, tok) => h.call('deposit.add', Object.assign({ id: 'd' + (++n), campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' }, o), tok || 'clerk-token');
+  const recon = (h, date) => h.call('recon.get', { campus: 'LMS1', date: date || '2026-10-20' }, 'clerk-token');
+  const rows = (h, tab) => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), tab);
+
+  t.test('deposit without file_id refused; unknown file is FILE_MISSING', () => {
+    const h = fresh(); fee(h, 5000);
+    const a = dep(h, { file_id: '' });
+    assert.equal(a.success, false); assert.equal(a.code, 'FILE_REQUIRED');
+    const b = dep(h, { file_id: 'nope' });
+    assert.equal(b.code, 'FILE_MISSING');
+    assert.equal(rows(h, 'Deposits').length, 0);
+  });
+
+  t.test('deposit creates both day-book legs and balances stay consistent', () => {
+    const h = fresh(); fee(h, 8000);
+    const r = dep(h, { id: 'dep1' });
+    assert.equal(r.success, true);
+    const e = h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries;
+    assert.deepEqual(e.map((x) => [x.id, x.category, x.direction, x.mode, x.bucket, x.amount_paise, x.narration]), [
+      ['dep1:out', 'deposit_cash_out', 'OUT', 'cash', 'fee', 5000, 'Deposit CH-1 for 2026-10-20'],
+      ['dep1:in', 'deposit_bank_in', 'IN', 'bank', '', 5000, 'Deposit CH-1 for 2026-10-20'],
+    ]);
+    const b = h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-21' }, 'clerk-token');
+    assert.equal(b.closing.cash.fee, 3000); assert.equal(b.closing.bank, 5000);
+    assert.equal(dep(h, { id: 'dep1' }).duplicate, true);
+    assert.equal(rows(h, 'DayBook').length, 3, 'retry adds nothing');
+  });
+
+  t.test('validation: amount, bank_ref, dates, cash available', () => {
+    const h = fresh(); fee(h, 5000);
+    assert.equal(dep(h, { amount_paise: 0 }).error, 'BAD_AMOUNT');
+    assert.equal(dep(h, { amount_paise: 10.5 }).error, 'BAD_AMOUNT');
+    assert.equal(dep(h, { amount_paise: '50' }).error, 'BAD_AMOUNT');
+    assert.equal(dep(h, { bank_ref: '  ' }).error, 'BANK_REF_REQUIRED');
+    assert.equal(dep(h, { covers_date: '2026-10-22' }).error, 'FUTURE_DATE');
+    assert.equal(dep(h, { covers_date: '2026-02-30' }).error, 'BAD_DATE');
+    assert.equal(dep(h, { amount_paise: 5001 }).code, 'INSUFFICIENT_CASH');
+    assert.equal(dep(h, { amount_paise: 5000 }).success, true);
+    assert.equal(dep(h, { amount_paise: 1 }).code, 'INSUFFICIENT_CASH', 'cash already deposited');
+  });
+
+  t.test('covers_date may be a closed day only because the deposit itself lands today', () => {
+    const h = fresh(); fee(h, 5000);
+    assert.equal(h.call('day.close', { id: 'c1', campus: 'LMS1', close_date: '2026-10-20' }, 'fh-token').success, true);
+    assert.equal(dep(h, { id: 'ok' }).success, true);
+    // a deposit while today is closed is refused (closed after the fact via a test-side Closes row)
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Closes', { id: 'cx', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}' }, { email: 'x' }, {});
+    const r = dep(h, { id: 'no', amount_paise: 1 });
+    assert.equal(r.code, 'DAY_CLOSED');
+  });
+
+  t.test('overdue false on D+1 23:59 IST and true after', () => {
+    const h = fresh(); fee(h, 5000);
+    h.setNow(new Date('2026-10-21T18:29:00Z')); // 23:59 IST on D+1
+    assert.equal(recon(h).overdue, false);
+    h.setNow(new Date('2026-10-21T18:30:00Z')); // 00:00 IST D+2
+    assert.equal(recon(h).overdue, true);
+  });
+
+  t.test('partial deposit leaves overdue true with delta; full deposit clears it', () => {
+    const h = fresh(); fee(h, 5000);
+    dep(h, { id: 'p', amount_paise: 2000 });
+    h.setNow(new Date('2026-10-22T18:30:00Z'));
+    let r = recon(h);
+    assert.equal(r.overdue, true); assert.equal(r.deposited, 2000); assert.equal(r.daybook_fee_cash, 5000);
+    assert.deepEqual(r.differences, [{ a: 'daybook_fee_cash', b: 'deposited', delta_paise: 3000 }]);
+    dep(h, { id: 'q', amount_paise: 3000 });
+    r = recon(h);
+    assert.equal(r.overdue, false); assert.deepEqual(r.differences, []);
+  });
+
+  t.test('reversed collection reduces day-book fee cash; non-cash and other dates ignored', () => {
+    const h = fresh(); fee(h, 5000, '2026-10-20', { id: 'a' }); fee(h, 700, '2026-10-20', { id: 'b' });
+    fee(h, 900, '2026-10-20', { mode: 'upi', bucket: undefined }); fee(h, 400, '2026-10-19');
+    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'b' }, 'clerk-token');
+    assert.equal(recon(h).daybook_fee_cash, 5000);
+  });
+
+  t.test('ERP total differing from day book fee cash is listed; latest per date wins', () => {
+    const h = fresh(); fee(h, 5000);
+    assert.equal(recon(h).erp, null);
+    const set = (id, amt, tok) => h.call('erp.set', { id, campus: 'LMS1', total_date: '2026-10-20', amount_paise: amt }, tok || 'clerk-token');
+    set('e1', 6000);
+    h.setNow(new Date('2026-10-21T10:05:00Z'));
+    assert.equal(set('e2', 0).success, true);
+    assert.equal(recon(h).erp, 0);
+    set('e3', 5500);
+    assert.equal(set('e3', 1).duplicate, true);
+    let r = recon(h);
+    assert.equal(r.erp, 5500);
+    assert.deepEqual(r.differences[0], { a: 'erp', b: 'daybook_fee_cash', delta_paise: 500 });
+    set('e4', 5000);
+    assert.deepEqual(recon(h).differences.filter((d) => d.a === 'erp'), []);
+    assert.equal(set('e5', -1).error, 'BAD_AMOUNT');
+    assert.equal(set('e6', 1.5).error, 'BAD_AMOUNT');
+  });
+
+  t.test('sign by clerk refused, by FinanceHead derives signed and audits; second sign is ALREADY_SIGNED', () => {
+    const h = fresh(); fee(h, 5000); dep(h, { id: 'dx' });
+    const sign = (id, tok) => h.call('deposit.sign', { id, campus: 'LMS1', deposit_id: 'dx' }, tok);
+    assert.equal(sign('s0', 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.deepEqual(recon(h).unsigned, ['dx']);
+    assert.equal(sign('s1', 'fh-token').success, true);
+    const s = rows(h, 'DepositSigns');
+    assert.equal(s.length, 1); assert.equal(s[0].created_by, 'fh@example.org'); assert.equal(s[0].deposit_id, 'dx');
+    assert.ok(rows(h, 'Audit').some((a) => a.action === 'deposit.sign' && a.row_id === 's1'));
+    assert.deepEqual(recon(h).unsigned, []);
+    assert.equal(sign('s1', 'fh-token').duplicate, true);
+    assert.equal(sign('s2', 'owner-token').code, 'ALREADY_SIGNED');
+    assert.equal(h.call('deposit.sign', { id: 's3', campus: 'LMS1', deposit_id: 'ghost' }, 'fh-token').error, 'NOT_FOUND');
+    assert.equal(rows(h, 'Deposits')[0].signed_by, undefined);
+  });
+
+  t.test('campus and role enforced', () => {
+    const h = fresh(); fee(h, 5000);
+    assert.equal(dep(h, {}, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(h.call('recon.get', { campus: 'LMS1', date: '2026-10-20' }, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(h.call('erp.set', { id: 'z', campus: 'LMS1', total_date: '2026-10-20', amount_paise: 1 }, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(h.call('deposit.add', { id: 'z', campus: 'LMS1' }, 'fh-token').error, 'FORBIDDEN_ROLE');
+  });
+};
