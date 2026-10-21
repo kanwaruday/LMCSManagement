@@ -43,6 +43,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(todayIst(new Date('2026-10-21T19:00:00Z')), '2026-10-22'); // 00:30 IST next day
   console.log('  ok  - fyEnd and IST date');
 
+  // I8 / R41: a page left open past midnight IST moves the shown date on only if it still shows the auto date.
+  const { rollForward, rolledNote } = await import('../../office/js/daybook.js');
+  const at = (iso) => new Date(iso);
+  assert.deepStrictEqual(rollForward('2026-10-21', '2026-10-21', at('2026-10-21T18:00:00Z')), { date: '2026-10-21', auto: '2026-10-21', max: '2026-10-21', rolled: false }); // 23:30 IST
+  assert.deepStrictEqual(rollForward('2026-10-21', '2026-10-21', at('2026-10-21T19:00:00Z')), { date: '2026-10-22', auto: '2026-10-22', max: '2026-10-22', rolled: true }); // 00:30 IST
+  assert.deepStrictEqual(rollForward('2026-10-19', '2026-10-21', at('2026-10-21T19:00:00Z')), { date: '2026-10-19', auto: '2026-10-22', max: '2026-10-22', rolled: false }, 'a date the user chose stays');
+  assert.strictEqual(rollForward('2026-10-21', '2026-10-22', at('2026-10-21T19:00:00Z')).rolled, false, 'yesterday picked after a roll stays');
+  assert.match(rolledNote('2026-10-22'), /22\/10\/2026/);
+  console.log('  ok  - rollForward moves the auto date past midnight, leaves a chosen date');
+
   // reportDraftToPayload
   const rep = { campus: 'LMS1', report_date: '2026-10-21', hourly: ['9: opened', '  ', '10: calls'], footfall: '12', feedback_pos: ' good ', feedback_neg: '', leave_status: 'none', external_docs: '', cash: { petty: '', fee: '1,234.50', other: '0' } };
   let p = reportDraftToPayload(rep);

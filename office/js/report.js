@@ -2,7 +2,7 @@
 import { h, field, setKids } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
-import { todayIst, BUCKETS } from './daybook.js';
+import { todayIst, BUCKETS, rollForward, rolledNote } from './daybook.js';
 
 // Report cash may legitimately be zero (blank or 0), unlike a day-book amount.
 export function cashToPaise(text) {
@@ -77,8 +77,19 @@ export async function showReport(root, session, api, outbox) {
   const msg = h('p', { role: 'status' });
   const statusEl = h('div', { role: 'status' });
 
+  let auto = date;
+  // Past midnight with the report still on the load day: move it to today and stop the submit (R41).
+  const roll = () => {
+    const r = rollForward(dateIn.value, auto); auto = r.auto; dateIn.max = r.max;
+    if (!r.rolled) return false;
+    date = dateIn.value = r.date; msg.textContent = rolledNote(date); check();
+    return true;
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
+
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
+    if (roll()) return;
     [footF, dateF, ...Object.values(cashF)].forEach((f) => { f.err.textContent = ''; });
     const r = reportDraftToPayload({
       campus, report_date: dateIn.value, hourly: [...hourlyBox.querySelectorAll('input')].map((i) => i.value), footfall: footIn.value,

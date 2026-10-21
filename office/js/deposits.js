@@ -2,7 +2,7 @@
 // Writes go through the FIFO outbox (file.upload first, then deposit.add, R7); viewing a proof is a direct audited call.
 import { h, field, setKids } from './dom.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
-import { todayIst, inflightGuard } from './daybook.js';
+import { todayIst, inflightGuard, rollForward, rolledNote } from './daybook.js';
 import { entryReason } from './codes.js';
 import { resizeImage } from './image.js';
 
@@ -95,8 +95,19 @@ export async function showDeposits(root, session, api, outbox) {
   const msg = h('p', { role: 'status' });
   const saveBtn = h('button', { type: 'submit' }, 'Save deposit');
 
+  let auto = date;
+  // Past midnight with the covered day still the load day: move it to today and stop the save (R41).
+  const roll = (note) => {
+    const r = rollForward(coversIn.value, auto); auto = r.auto; coversIn.max = r.max;
+    if (!r.rolled) return false;
+    date = coversIn.value = r.date; note.textContent = rolledNote(date); check();
+    return true;
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(msg); });
+
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: (e) => {
     e.preventDefault();
+    if (roll(msg)) return;
     guard('deposit', async () => {
       [coversF, amtF, refF, fileF].forEach((f) => { f.err.textContent = ''; });
       const file = fileIn.files && fileIn.files[0];
@@ -123,6 +134,7 @@ export async function showDeposits(root, session, api, outbox) {
   const erpBtn = h('button', { type: 'submit' }, 'Save ERP total');
   const erpForm = h('form', { class: 'office-form', novalidate: true, onsubmit: (e) => {
     e.preventDefault();
+    if (roll(erpMsg)) return;
     guard('erp', async () => {
       erpF.err.textContent = '';
       const t = erpIn.value.trim();

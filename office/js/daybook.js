@@ -11,6 +11,16 @@ export const MODES = { cash: 'Cash', bank: 'Bank', upi: 'UPI' };
 // Today's business date in Asia/Kolkata (UTC+5:30, no DST).
 export const todayIst = (now = new Date()) => new Date(now.getTime() + 19800000).toISOString().slice(0, 10);
 
+// A screen dated "today" at load must not keep posting to that day after midnight IST (R41). shown: the date in
+// use; auto: the IST day the screen last set itself to. Rolls only when shown is still that auto day.
+// -> {date, auto, max (for the date input), rolled}.
+export function rollForward(shown, auto, now = new Date()) {
+  const today = todayIst(now);
+  const rolled = shown === auto && today > auto;
+  return { date: rolled ? today : shown, auto: today > auto ? today : auto, max: today, rolled };
+}
+export const rolledNote = (iso) => 'It is past midnight: the date has moved on to ' + isoToDmy(iso) + '. Check it, then save again.';
+
 // Rows from daybook.list may span several dates (the range runs on to today so that a reversal dated
 // later still marks its original). Result: the rows of `date` plus queued daybook.add entries for `date`.
 // Each item: {id, entry_date, direction, mode, bucket, category, amount_paise, payee, narration, reverses,
@@ -115,8 +125,19 @@ export async function showDayBook(root, session, api, outbox) {
   catSel.addEventListener('change', syncDir);
   paintCats(); syncBucket();
 
+  let auto = date;
+  // Past midnight with the page still on the load day: move to today and stop this save so the clerk sees it.
+  const roll = () => {
+    const r = rollForward(date, auto); auto = r.auto; dateIn.max = r.max;
+    if (!r.rolled) return false;
+    date = r.date; dateIn.value = date; saveMsg.textContent = rolledNote(date); refresh();
+    return true;
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
+
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
+    if (roll()) return;
     [catF, modeF, bucketF, amountF].forEach((f) => { f.err.textContent = ''; });
     const r = entryFromForm({ campus, date, category: catSel.value, mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value }, categories);
     if (!r.ok) {
