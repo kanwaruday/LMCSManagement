@@ -16,3 +16,5 @@
 .bal { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .bal th, .bal td { text-align: right; padding: 6px 4px; border-bottom: 1px solid #e3e7eb; }
 .bal th:first-child, .bal td:first-child { text-align: left; }
+#attention-panel[hidden] { display: none; }
+#attention-panel { border: 2px solid #b00020; padding: 12px; margin: 12px 0; }

@@ -4,7 +4,7 @@ import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, BUCKETS } from './daybook.js';
 
 // Report cash may legitimately be zero (blank or 0), unlike a day-book amount.
-function cashToPaise(text) {
+export function cashToPaise(text) {
   const t = String(text == null ? '' : text).trim();
   if (t === '' || /^₹?\s*0+(\.0{1,2})?$/.test(t)) return 0;
   return parseRupeesToPaise(t);

@@ -2,6 +2,7 @@
 import { createApi } from './api.js';
 import { createOutbox } from './outbox.js';
 import { createIdbStore } from './idb-store.js';
+import { createAttentionPanel } from './attention.js';
 import { OFFICE_BACKEND_URL } from './config.js';
 
 const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'];
@@ -58,7 +59,18 @@ export async function bootOffice({ onReady }) {
   });
   const store = createIdbStore();
   let state = { waiting: 0, attention: 0 };
+  let panel = null; // set once the outbox exists
+  const attLink = document.createElement('a');
+  attLink.href = '#'; attLink.hidden = true;
+  $('sync-indicator').after(attLink);
+  const openAtt = (e) => { e.preventDefault(); if (state.attention > 0 && panel) panel.open(); };
+  attLink.onclick = openAtt;
+  $('sync-indicator').onclick = openAtt;
   const paint = (extra = {}) => {
+    attLink.hidden = !state.attention;
+    attLink.textContent = 'Needs attention (' + state.attention + ')';
+    $('sync-indicator').style.cursor = state.attention ? 'pointer' : '';
+    if (panel) panel.refresh().catch(() => {});
     $('sync-indicator').textContent = syncLabel({ ...state, online: navigator.onLine });
     $('sync-indicator').dataset.state = state.attention ? 'attention' : state.waiting ? 'waiting' : 'ok';
     $('auth-notice').hidden = !extra.authRequired;
@@ -67,6 +79,8 @@ export async function bootOffice({ onReady }) {
     store, api,
     onChange: (c) => { state = { waiting: c.waiting, attention: c.attention }; paint(c); if (c.authRequired) L.notifyAuthFailure(); },
   });
+  panel = createAttentionPanel(outbox);
+  $('auth-notice').after(panel.el);
   const refresh = async () => { state = await outbox.counts(); paint(); };
 
   $('who').textContent = session.name + ' · ' + L.campusLabel(session.campus);

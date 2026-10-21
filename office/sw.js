@@ -1,10 +1,10 @@
 // App-shell cache only. Cache-first for the files below; everything else (including every
 // script.google.com / googleusercontent.com request and file.view response) goes straight to the network.
 // Bump CACHE when any shell file changes. Later tasks add their screens (report/deposits/close/daybook) to SHELL.
-const CACHE = 'lmcs-office-v3';
+const CACHE = 'lmcs-office-v4';
 const SHELL = [
   './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'office.css', 'manifest.webmanifest',
-  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
+  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/attention.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
   '../assets/style.css', '../assets/auth.js', '../assets/img/lms-logo.png',
 ];
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));

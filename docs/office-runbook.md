@@ -15,7 +15,7 @@ The backend runs as you, so every book and file is owned by your account. Do not
 1. Drive: create folder `LMCS Office` (the Drive root, for uploaded slips and bills) and inside it a folder `Backups`. Note both folder IDs (the part after `/folders/` in the URL).
 2. Sheets: create a blank spreadsheet `LMCS Office Config`. Note its ID (between `/d/` and `/edit`). The backend creates and seeds its tabs (`Categories`, `Limits`) on first use.
 3. Sheets: create a blank spreadsheet `LMS1 Office 2026-27` (the book name is what the backup copies are named after, so keep it unique per campus and year). Note its ID. The backend creates all its tabs on first use; do not add tabs, formulas or merged cells.
-4. Opening balances: before the first entry, the Opening tab must hold the balances at the start of the pilot. There is no screen for this. Open the book once through the portal (any sign-in creates the tabs), then in the `Opening` tab add one row per balance: `id` (unique, e.g. `open-lms1-1`), `campus` (`LMS1`), `mode` (`cash`, `bank` or `upi`), `bucket` (`petty`, `fee` or `other` for cash; empty for bank and upi), `amount_paise` (integer paise: Rs 1,234.50 is `123450`), `created_at` (ISO timestamp), `created_by` (your email). Missing rows count as zero. This is locked in code once the DayBook has any row (`OPENING_LOCKED`), so do it first. If the legacy import (section 3) is used, put the starting balances in the importer mapping's `opening` instead.
+4. Opening balances: before the first entry, sign in as the Finance Head or Owner, open Close Day, and fill the Opening balances section (cash petty, fee, other, bank, UPI, in rupees; blank means 0), then press "Set opening balances". It says "Opening balances are locked because day book entries already exist" if any DayBook row exists (`OPENING_LOCKED`), so do it first. Missing balances count as zero. If the legacy import (section 3) is used, put the starting balances in the importer mapping's `opening` instead.
 5. The allowlist sheet: the Office backend reads its own allowlist sheet (first tab, header in row 1). You can point `OFFICE_ALLOWLIST_SHEET_ID` at the existing Principal Allowlist sheet, or make a copy. Columns used: A email, B name, C campuses (comma separated, e.g. `LMS1`, or `ALL`), D roles (comma separated). Matching is on lowercase email. Using the shared one means adding office roles there too; a separate sheet keeps office access independent. Decide which, and say so in the vault note.
 
 ### 1.2 Create the Apps Script project
@@ -112,7 +112,7 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 - [ ] Restore drill: open the backup copy of the LMS 1 book, open the same closing day in the portal, compare the closing totals (cash by bucket, bank, UPI) with what the portal shows live. They must match to the paisa. Note the result in the vault.
 - [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, cache `lmcs-office-v4` (or whatever the current name is) holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
 - [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4).
-- [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real Opening rows, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
+- [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real opening balances on the Close Day screen, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
 
 ---
 
@@ -129,7 +129,7 @@ Tool: [`tools/office-import-daybook.mjs`](../tools/office-import-daybook.mjs), l
    - Per-day total differences against the legacy closing column are listed, never "fixed". Resolve each before loading.
 5. Large CSVs: `officeAppend_` re-reads the tab for every row, so cost grows with the square of the row count and the editor run is cut at 6 minutes. Split `daybook.csv` into chunks of a few hundred rows (keep the header line in each chunk) and run one chunk at a time. Re-running is safe: each row id is accepted once.
 6. In the Apps Script editor, run `officeImportRows_('LMS1', '2025-26', 'DayBook', '<csv text>')` for each chunk, then `'Closes'` the same way. Do it once per financial year (rows dated in another year are counted as `otherFy` and left for that year's run, so use the matching `OFFICE_SS_LMS1_<FY>` property). Paste the CSV text as a string constant in a temporary function and delete it afterwards (the text holds real data). The return value shows `appended` / `duplicates` / `otherFy`.
-7. Verify: compare closing totals of a few closed days and the latest day with the legacy sheet. Imported rows are written with `created_by` `import`. Opening balances are set via the mapping's `opening` (or the Opening tab, section 1.1 item 4) before the first DayBook row exists.
+7. Verify: compare closing totals of a few closed days and the latest day with the legacy sheet. Imported rows are written with `created_by` `import`. Opening balances are set via the mapping's `opening` (or the Close Day screen, section 1.1 item 4) before the first DayBook row exists.
 
 ---
 
@@ -139,7 +139,7 @@ Tool: [`tools/office-import-daybook.mjs`](../tools/office-import-daybook.mjs), l
 
 1. Create a spreadsheet `LMS<N> Office 2026-27` (or the current FY) in Drive (same folder rules as 1.1).
 2. Script Properties: add `OFFICE_SS_LMS<N>_<FY>` with its ID. The nightly backup picks it up automatically.
-3. Add opening balances in its `Opening` tab before the first entry (1.1 item 4).
+3. Add opening balances in its `Opening` tab before the first entry (Close Day screen, 1.1 item 4).
 4. Allowlist rows with the campus in column C for its clerk and manager. Campus codes in use: LMS1 to LMS6.
 
 ### 4.2 Add or change a user
@@ -155,8 +155,9 @@ Before 1 April: create the next-year spreadsheet (`LMS1 Office 2027-28`) and add
 An entry sits in the device's outbox, marked "Needs attention", when the backend refused it with a reason (for example `DAY_CLOSED`, `FILE_MISSING`, `INSUFFICIENT_CASH`, `LEGS_MISSING`, `ALREADY_REVERSED`). Network trouble or a lapsed sign-in is not this: those stay "waiting" and retry by themselves; for a lapsed sign-in, sign in again.
 
 - The header shows "N need attention". The Close screen warns and blocks closing while entries are waiting or need attention on that device.
-- The outbox has retry and discard functions, but there is no button for them on any screen yet. What an operator can do today: read the reason on the entry; fix the cause; then re-enter the correct entry as a new entry. For `DAY_CLOSED`, ask the Owner to reopen the day first (with a reason), re-enter, and have the Finance Head close it again.
-- To get rid of an entry that should never be sent, sign out on that device. Sign-out asks for confirmation and then deletes every unsynced entry and the cached screens on that device. Confirm no valid entry is in the list first.
+- Click "Needs attention (N)" (or the sync indicator) in the header, on any office page. The panel lists each entry in plain words (for example "Day book entry ₹1,200.00 on 21/10/2026") with the reason. Retry sends it again (use after fixing the cause). Discard asks for confirmation, then deletes it from this device and it is never sent.
+- For `DAY_CLOSED`, ask the Owner to reopen the day first (with a reason), then Retry (or Discard and re-enter), and have the Finance Head close it again.
+- Sign-out also deletes unsynced entries, but use Discard for a single entry instead.
 - Entries are never silently dropped; one stuck entry does not block the ones after it.
 
 ### 4.5 Read the Audit tab
@@ -185,9 +186,8 @@ Not built. ERP totals are entered by hand (the ERP screen on the deposits page) 
 - Every write takes a script-wide lock (20 s wait); at LMS 1 volumes this is fine. Apps Script runs stop at 6 minutes, which matters for the legacy import (chunk it) and the nightly backup (a trigger timeout cannot email, hence the Apps Script failure notice in 1.7).
 - One row append reads the whole tab each time, so very large tabs get slow; a year of LMS 1 day book is well within Sheets limits (10 million cells per spreadsheet), but if a book gets sluggish, tell Uday.
 - Only the Owner can reopen a closed day, and a day can be closed only after it is over (not today). An April correction of a March entry goes into the new year's book.
-- Opening balances have no screen and lock after the first DayBook row.
+- Opening balances lock after the first DayBook row.
 - Files: one upload at a time, up to about 3 MB (larger PDFs are not supported yet); duplicates are detected by fingerprint within the current FY book.
-- Needs-attention entries have no on-screen retry or discard (4.4).
 - Sign-out deletes unsynced entries and the offline cache on that device.
 - The allowlist change window is about 5 minutes (cached caller).
 - Backup folder must contain only backups: the retention step trashes any file with a dated name in it that falls outside the 30-day / 12-month window.

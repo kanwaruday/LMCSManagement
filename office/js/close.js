@@ -1,13 +1,26 @@
 // Day close screen (FinanceHead / Owner). A close freezes the day; entries still queued on this device must reach the server first.
 import { h, setKids } from './dom.js';
+import { cashToPaise } from './report.js';
 import { formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, balancesTable } from './daybook.js';
+import { explainCode } from './attention.js';
 import { reconLines, queueNotes, loadRecon, loadDeposits, mergeDeposits, depositItem, viewProof, closeProof } from './deposits.js';
 
 const addDays = (iso, n) => new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
 export const yesterdayIst = () => addDays(todayIst(), -1);
 const CLOSE_ROLES = ['FinanceHead', 'Owner'];
 const hasRole = (session, roles) => String(session.role || '').split(',').map((r) => r.trim()).some((r) => roles.includes(r));
+const OPENING_FIELDS = [['cash', 'petty', 'Cash: petty'], ['cash', 'fee', 'Cash: fee'], ['cash', 'other', 'Cash: other'], ['bank', '', 'Bank'], ['upi', '', 'UPI']];
+// texts: typed rupees, one per OPENING_FIELDS row (blank = 0). -> {ok, data:{campus, balances}} or {ok:false, errors:{index: text}}.
+export function openingPayload(campus, texts) {
+  const errors = {}, balances = [];
+  OPENING_FIELDS.forEach(([mode, bucket, label], i) => {
+    const p = cashToPaise((texts || [])[i]);
+    if (p === null) errors[i] = 'Enter ' + label.toLowerCase() + ' in rupees, like 1234.50 (or 0).';
+    else balances.push(bucket ? { mode, bucket, amount_paise: p } : { mode, amount_paise: p });
+  });
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, data: { campus, balances } };
+}
 const OTHER = ' Entries on other devices cannot be checked from here; make sure the other clerks have synced.';
 
 // {waiting, attention, unsigned, isPast} -> {blocked, message}. isPast === false (today/future) blocks; undefined does not.
@@ -99,6 +112,23 @@ export async function showClose(root, session, api, outbox) {
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= yesterdayIst()) { date = dateIn.value; closeId = null; closeProof(); setKids(result); setKids(proofEl); msg.textContent = ''; check(); } else dateIn.value = date; });
   window.addEventListener('pagehide', closeProof);
   window.addEventListener('online', () => { outbox.flush().then(check).catch(() => {}); });
-  root.replaceChildren(h('h2', {}, 'Close Day'), form);
+  const opIn = OPENING_FIELDS.map(([, , label], i) => h('input', { type: 'text', inputmode: 'decimal', id: 'op-' + i, 'aria-label': label + ' opening balance' }));
+  const opMsg = h('p', { role: 'status' });
+  const opBtn = h('button', { type: 'button', onclick: () => guard('opening', async () => {
+    const r = openingPayload(campus, opIn.map((i) => i.value));
+    if (!r.ok) { opMsg.textContent = Object.values(r.errors)[0]; return; }
+    if (!confirm('Set opening balances for ' + campus + '? This can only be done before any day book entry exists.')) return;
+    opBtn.disabled = true; opMsg.textContent = '';
+    try {
+      const id = await outbox.enqueue('opening.set', r.data);
+      await outbox.flush().catch(() => {});
+      const e = (await outbox.entries()).find((x) => x.id === id);
+      opMsg.textContent = !e ? 'Opening balances synced.' : e.status === 'attention' ? explainCode(e.code) : 'Saved on this device, will sync when online.';
+    } catch (err) { opMsg.textContent = 'Could not save on this device: ' + (err && err.message || err); }
+    opBtn.disabled = false;
+  }) }, 'Set opening balances');
+  const opening = h('div', { class: 'office-form' }, h('h3', {}, 'Opening balances'), h('p', {}, 'Amounts in rupees at the start of the pilot; blank means 0. Only possible before the first day book entry.'),
+    OPENING_FIELDS.map(([, , label], i) => h('div', {}, h('label', { for: 'op-' + i }, label), opIn[i])), opBtn, opMsg);
+  root.replaceChildren(h('h2', {}, 'Close Day'), form, opening);
   await check();
 }
