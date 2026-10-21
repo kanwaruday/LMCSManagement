@@ -1,0 +1,15 @@
+Date,Receipt,Payment,Mode,Head,Category,Party,Narration,Closing Balance
+01/04/2026,"12,500.50",,Cash,Fees,Fees,Test Student A,Fee April,"12,500.50"
+01/04/2026,,300,Cash,Petty,Petty cash,Test Vendor A,Stationery,"12,200.50"
+02/04/2026,1000,,UPI,,Fees,Test Student B,Fee via UPI,"13,200.50"
+02/04/2026,,"1,50,000",Bank,,Bills,Test Vendor B,Electricity,"-136,799.50"
+02/04/2026,0.1,,Cash,Fees,Mystery,Test Donor C,Uncategorised receipt,"-136,799.40"
+03/04/2026,abc,,Cash,Fees,Fees,Test Student D,Bad amount,
+31/02/2026,100,,Cash,Fees,Fees,Test Student E,Impossible date,
+03/04/2026,100,,Barter,,Fees,Test Student F,Unknown mode,
+03/04/2026,100,50,Cash,Fees,Fees,Test Student G,Both columns filled,
+03/04/2026,,0,Cash,Petty,Petty cash,Test Vendor C,Zero row,
+03/04/2026,,"1,2,3",Cash,Petty,Petty cash,Test Vendor D,Bad grouping,
+03/04/2026,250,,Cash,Fees,Donation,Test Donor D,"Note with, comma and ""quote""","-136,549.40"
+03/04/2026,-300,,Cash,Fees,Fees,Test Student H,Negative receipt,
+03/04/2026,,-300,Cash,Petty,Petty cash,Test Vendor E,Negative payment,

@@ -22,11 +22,17 @@ for (const [role, expected] of [['Owner', true], ['Coordinator', true], ['Coordi
 assert.strictEqual(realLMCS.canViewDataSources(null), false);
 
 // ── 1. coverage: every page is covered, has its own strip, or is exempt on purpose ──────────
+const OFFICE_REASON = 'Office portal: data sits behind the Office backend; sheet IDs live in Script Properties and never appear in page source';
 const NO_SOURCES = {
   'index.html': 'role chooser, public, no data',
   'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',
   'curriculum-progress/course-mapping-admin.html': 'Admin Panel: an "↗ Open" link sits beside every sheet ID it configures (each school, Daily, Allocation)',
+  'office/close.html': OFFICE_REASON,
+  'office/daybook.html': OFFICE_REASON,
+  'office/deposits.html': OFFICE_REASON,
+  'office/index.html': OFFICE_REASON,
+  'office/report.html': OFFICE_REASON,
 };
 function pages(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

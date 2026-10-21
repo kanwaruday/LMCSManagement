@@ -1,0 +1,15 @@
+{
+  "_comment": "FAKE column names. Copy to a file OUTSIDE the repo, rename the columns to match the real legacy export, and pass it with --mapping. Every value map is matched case-insensitively after trimming.",
+  "dateColumn": "Date",
+  "dateFormat": "DD/MM/YYYY",
+  "amount": { "receipt": "Receipt", "payment": "Payment" },
+  "modeColumn": "Mode",
+  "modeMap": { "Cash": "cash", "Bank": "bank", "Cheque": "bank", "UPI": "upi", "Online": "upi" },
+  "bucket": { "column": "Head", "map": { "Petty": "petty", "Fees": "fee" }, "default": "other" },
+  "categoryColumn": "Category",
+  "categoryMap": { "Fees": "fee_collection", "Petty cash": "petty_expense", "Bills": "bill_payment", "Donation": "donation" },
+  "payeeColumn": "Party",
+  "narrationColumn": "Narration",
+  "closingColumn": "Closing Balance",
+  "opening": { "cash": { "petty": 0, "fee": 0, "other": 0 }, "bank": 0, "upi": 0 }
+}

@@ -1,0 +1,20 @@
+/* Office forms: mobile first (375 px), large tap targets. */
+.office-nav { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.btn-lg, .office-form button { display: inline-block; min-height: 48px; padding: 12px 18px; font-size: 1rem; border-radius: 8px; border: 1px solid #1f3a5f; background: #1f3a5f; color: #fff; text-decoration: none; cursor: pointer; }
+.office-form button.secondary, button.linklike { background: #fff; color: #1f3a5f; }
+.office-form button:disabled { opacity: .5; }
+.office-form label { display: block; margin: 12px 0 4px; font-weight: 600; }
+.office-form input, .office-form select, .office-form textarea { display: block; width: 100%; box-sizing: border-box; min-height: 48px; padding: 10px; font-size: 1rem; border: 1px solid #9aa5b1; border-radius: 8px; }
+.office-form .err { color: #b00020; margin: 4px 0 0; min-height: 0; }
+.office-form .row { display: flex; gap: 8px; align-items: flex-start; }
+.office-form .row input { flex: 1; }
+.office-list { list-style: none; padding: 0; margin: 0; }
+.office-list li { border: 1px solid #d5dbe1; border-radius: 8px; padding: 10px; margin: 8px 0; }
+.office-list .meta { color: #55606b; font-size: .9rem; }
+.office-list .flag { font-weight: 600; color: #8a5a00; }
+.office-list .flag.bad { color: #b00020; }
+.bal { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.bal th, .bal td { text-align: right; padding: 6px 4px; border-bottom: 1px solid #e3e7eb; }
+.bal th:first-child, .bal td:first-child { text-align: left; }
+#attention-panel[hidden] { display: none; }
+#attention-panel { border: 2px solid #b00020; padding: 12px; margin: 12px 0; }
