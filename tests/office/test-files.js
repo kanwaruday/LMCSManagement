@@ -14,7 +14,7 @@ const fixture = {
     ['owner@example.org', 'Owner', 'ALL', 'Owner'],
   ],
 };
-const b64 = (s) => Buffer.from(s).toString('base64');
+const b64 = (s) => Buffer.from('%PDF-' + s).toString('base64'); // valid PDF header + payload
 
 module.exports = function run(t) {
   const fresh = () => {
@@ -35,7 +35,7 @@ module.exports = function run(t) {
     assert.equal(h.drive.pathOf(row.drive_id), 'LMS1/2026-27/deposit_proof');
     assert.equal(h.drive.files[row.drive_id].name, 'u1-my slip _1_.pdf');
     assert.equal(row.belongs_to, 'dep9'); assert.equal(row.size, Buffer.from(b64('bytes-1'), 'base64').length);
-    assert.equal(row.fingerprint, require('crypto').createHash('sha256').update('bytes-1').digest('hex'));
+    assert.equal(row.fingerprint, require('crypto').createHash('sha256').update('%PDF-bytes-1').digest('hex'));
     assert.equal(h.locks.acquired, 1);
   });
 
@@ -53,8 +53,8 @@ module.exports = function run(t) {
 
   t.test('4 MB file rejected with TOO_LARGE; exactly 3 MB accepted', () => {
     const h = fresh();
-    assert.equal(up(h, { base64: Buffer.alloc(4 * 1024 * 1024, 1).toString('base64') }).error, 'TOO_LARGE');
-    assert.equal(up(h, { base64: Buffer.alloc(3 * 1024 * 1024, 2).toString('base64') }).success, true);
+    assert.equal(up(h, { base64: Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024, 1)]).toString('base64') }).error, 'TOO_LARGE');
+    assert.equal(up(h, { base64: Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(3 * 1024 * 1024 - 5, 2)]).toString('base64') }).success, true);
     assert.equal(Object.keys(h.drive.files).length, 1);
   });
 
@@ -65,6 +65,19 @@ module.exports = function run(t) {
     assert.equal(up(h, { base64: '%%%not base64' }).error, 'BAD_FILE');
     assert.equal(up(h, { base64: '' }).error, 'BAD_FILE');
     assert.equal(Object.keys(h.drive.files).length, 0);
+  });
+
+  t.test('bytes must match the declared mime (magic bytes)', () => {
+    const h = fresh();
+    const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]), jpg = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10]);
+    const send = (buf, mime) => up(h, { mime: mime, base64: buf.toString('base64') });
+    assert.equal(send(Buffer.from('<html><script>alert(1)</script>'), 'application/pdf').error, 'BAD_MIME');
+    assert.equal(send(png, 'image/jpeg').error, 'BAD_MIME');
+    assert.equal(send(jpg, 'image/png').error, 'BAD_MIME');
+    assert.equal(Object.keys(h.drive.files).length, 0);
+    assert.equal(send(png, 'image/png').success, true);
+    assert.equal(send(jpg, 'image/jpeg').success, true);
+    assert.equal(send(Buffer.from('%PDF-1.4'), 'application/pdf').success, true);
   });
 
   t.test('upload to another campus is FORBIDDEN_CAMPUS', () => {
@@ -93,7 +106,7 @@ module.exports = function run(t) {
     up(h, { id: 'v2', base64: b64('pdf-bytes'), name: 'slip.pdf' });
     const r = h.call('file.view', { id: 'v2', campus: 'LMS1' }, 'clerk-token');
     assert.equal(r.success, true); assert.equal(r.name, 'slip.pdf'); assert.equal(r.mime, 'application/pdf');
-    assert.equal(Buffer.from(r.base64, 'base64').toString(), 'pdf-bytes');
+    assert.equal(Buffer.from(r.base64, 'base64').toString(), '%PDF-pdf-bytes');
     const a = audit(h).filter((x) => x.action === 'file.view');
     assert.equal(a.length, 1); assert.equal(a[0].who, 'clerk@example.org'); assert.equal(a[0].row_id, 'v2');
     assert.equal(h.call('file.view', { id: 'nope', campus: 'LMS1' }, 'clerk-token').error, 'NOT_FOUND');
@@ -106,7 +119,7 @@ module.exports = function run(t) {
     up(h, { id: 'old', base64: b64('last-year') });
     h.setNow(new Date('2026-04-02T10:00:00Z')); // FY 2026-27
     const r = h.call('file.view', { id: 'old', campus: 'LMS1' }, 'clerk-token');
-    assert.equal(Buffer.from(r.base64, 'base64').toString(), 'last-year');
+    assert.equal(Buffer.from(r.base64, 'base64').toString(), '%PDF-last-year');
   });
 
   t.test('source has no setSharing call', () => {

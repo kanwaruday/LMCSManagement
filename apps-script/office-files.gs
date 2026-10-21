@@ -4,6 +4,8 @@
 
 var OFFICE_FILE_MAX_BYTES = 3 * 1024 * 1024; // chunked upload for larger PDFs is deferred
 var OFFICE_FILE_MIMES = ['image/jpeg', 'image/png', 'application/pdf'];
+// Leading bytes (unsigned) each allowed type must start with: the declared mime is never trusted alone.
+var OFFICE_FILE_MAGIC = { 'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2D], 'image/jpeg': [0xFF, 0xD8, 0xFF], 'image/png': [0x89, 0x50, 0x4E, 0x47] };
 var OFFICE_FILE_CATEGORIES = ['deposit_proof', 'bill', 'document'];
 
 function officeFilesActions_() {
@@ -26,6 +28,7 @@ function officeFileUpload_(ctx, data) {
   let bytes;
   try { bytes = Utilities.base64Decode(String(data.base64 || '')); } catch (err) { throw new Error('BAD_FILE'); }
   if (!bytes || !bytes.length) throw new Error('BAD_FILE');
+  if (!OFFICE_FILE_MAGIC[data.mime].every(function (m, i) { return (bytes[i] + 256) % 256 === m; })) throw new Error('BAD_MIME');
   if (bytes.length > OFFICE_FILE_MAX_BYTES) throw new Error('TOO_LARGE');
   const fy = officeFy_(officeToday_());
   const ss = officeOpen_(data.campus, fy);
