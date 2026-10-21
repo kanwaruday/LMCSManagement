@@ -324,7 +324,11 @@ function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt
 async function init() {
   SESSION = LMCS.getSession();
   // A FeeClerk gets only the Documents tab, for their own school(s) -- the server enforces the same.
-  const docsOnly = !LMCS.canManageStaff(SESSION) && LMCS.hasRole(SESSION, 'FeeClerk');
+  // Opened from the Fee Clerk + PRO Portal (?view=documents): Documents tab only for everyone, and the
+  // header link goes back there. Display only -- what each role may see and upload is still the server's call.
+  const fromOffice = new URLSearchParams(location.search).get('view') === 'documents';
+  if (fromOffice) { const back = document.querySelector('.hdr-btn'); if (back) { back.href = '../office/index.html'; back.textContent = '← Fee Clerk + PRO'; } }
+  const docsOnly = (!LMCS.canManageStaff(SESSION) && LMCS.hasRole(SESSION, 'FeeClerk')) || (fromOffice && LMCS.canManageStaff(SESSION));
   if (!LMCS.canManageStaff(SESSION) && !docsOnly) {
     document.getElementById('deniedBox').style.display = 'block';
     document.getElementById('deniedBox').innerHTML =
