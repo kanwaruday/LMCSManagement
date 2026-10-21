@@ -76,6 +76,8 @@ assert.deepStrictEqual(p1.pollution.pending, { at: '2026-10-21T05:00:00.000Z', b
 assert.strictEqual(p2.fitness.pending, undefined, 'an upload the push has seen is no longer pending');
 assert.strictEqual(p2.insurance.pending, undefined, 'a withdrawn upload is not pending');
 assert.strictEqual(p1.fitness.pending, undefined);
+const fc = JSON.parse(JSON.stringify(run('coordTransport_({feeClerkOnly:true})')));
+assert.ok(fc.fleet.length && !fc.pnl.length && !fc.people.length, 'Fee Clerks get the papers but no bus money or staff list');
 // Fee Clerks see only their own campus or comma list, never a whole district
 const cg = fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8');
 const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + cg.match(/function coordVisibleCampuses_[\s\S]*?\n\}/)[0] + '; return coordVisibleCampuses_;')();
