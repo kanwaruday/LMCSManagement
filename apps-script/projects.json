@@ -74,7 +74,8 @@
     "deploymentId": null,
     "files": [
       "office",
-      "office-store"
+      "office-store",
+      "office-config"
     ]
   }
 }

@@ -96,6 +96,8 @@ function boot(fixture, opts) {
     ctx, call, books, counter, locks, props,
     // Registers an empty fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it.
     addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeOfficeBook(counter)); },
+    // Registers an empty fake Office Config book as OFFICE_CONFIG_SS; returns it.
+    addConfig: () => { props.OFFICE_CONFIG_SS = 'CONFIG-FAKE'; return (books['CONFIG-FAKE'] = makeOfficeBook(counter)); },
     setNow: (d) => { ctx.officeClock_ = d; },
     run: (code) => vm.runInContext(code, ctx),
   };
