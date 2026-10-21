@@ -293,7 +293,7 @@ window.Coord = (function () {
     const LABEL = { none: 'No documents', expired: 'Expired', wrong: 'Wrong paper', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid', noexp: 'No expiry printed', onfile: 'On file', na: 'Not needed', pending: 'Uploaded, reading' };
 
     // what a coordinator can do about each failure; the raw message stays underneath for whoever fixes it
-    const friendly = m => /not authori[sz]ed/i.test(m) ? 'Your account is not allowed to see the transport data. Sign in with your LMS Coordinator account.'
+    const friendly = m => /not authori[sz]ed/i.test(m) ? 'Your account is not allowed to see the transport data. Sign in with the LMS account that has access to your campus transport (Coordinator, Owner or Fee Clerk).'
       : /missing|no vehicles/i.test(m) ? 'The transport data has not been synced yet. It arrives with the next AI Coordinator run (every 2 hours).'
       : /failed to fetch|networkerror|load failed/i.test(m) ? 'Could not reach the server. Check the internet connection and try again.'
       : 'Could not load the transport fleet. Try again in a minute; if it keeps failing, the server may be being updated.';
