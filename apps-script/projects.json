@@ -75,7 +75,8 @@
     "files": [
       "office",
       "office-store",
-      "office-config"
+      "office-config",
+      "office-daybook"
     ]
   }
 }
