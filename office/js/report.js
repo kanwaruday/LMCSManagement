@@ -36,13 +36,24 @@ export function reportDraftToPayload(form) {
   };
 }
 
+// What the outbox says about the report for `date`: the newest queued report.submit decides.
+// 'waiting' | 'attention' (with error) | 'synced' (nothing queued, server holds knownId) |
+// 'missing' (we submitted knownId this session, it is no longer queued and the server does not hold it) | 'none'.
+export function reportQueueState(entries, date, serverReport, knownId) {
+  const mine = (entries || []).filter((e) => e.action === 'report.submit' && e.data && e.data.report_date === date).sort((a, b) => a.seq - b.seq);
+  const e = mine[mine.length - 1];
+  if (e) return e.status === 'attention' ? { state: 'attention', id: e.id, error: e.error || e.code || 'Refused' } : { state: 'waiting', id: e.id };
+  if (!knownId) return { state: 'none' };
+  return serverReport && serverReport.id === knownId ? { state: 'synced', id: knownId } : { state: 'missing', id: knownId };
+}
+
 // report.get cashMismatch -> plain sentences.
 export const mismatchLines = (list) => (list || []).map((m) => (BUCKETS[m.bucket] || m.bucket) + ': report ' + formatInr(m.report_paise) + ', day book ' + formatInr(m.daybook_paise));
 
 export async function showReport(root, session, api, outbox) {
   const campus = session.campus;
   let date = todayIst();
-  let pendingId = null, timer = null;
+  let knownId = null, pendingShown = false, timer = null;
 
   const dateIn = h('input', { type: 'date', value: date, max: date });
   const dateF = field('rp-date', 'Report date', dateIn);
@@ -80,7 +91,7 @@ export async function showReport(root, session, api, outbox) {
     }
     saveBtn.disabled = true;
     try {
-      pendingId = await outbox.enqueue('report.submit', r.payload);
+      knownId = await outbox.enqueue('report.submit', r.payload);
       msg.textContent = 'Saved — will sync';
       outbox.flush().then(check).catch(() => {});
       watch();
@@ -93,16 +104,27 @@ export async function showReport(root, session, api, outbox) {
   field('rp-leave', 'Leave status', leaveIn).root, field('rp-docs', 'External documents received', docsIn).root,
   ...Object.values(cashF).map((f) => f.root), saveBtn, msg);
 
-  // Shows what the server holds for the date; "synced" means the latest server report is the one we just queued.
+  // Queued state comes from the outbox; the server's latest id only confirms a sync.
   async function check() {
     const d = dateIn.value;
-    const r = await api.read('report.get', { campus, report_date: d }, 'rpget');
+    const [r, entries] = await Promise.all([api.read('report.get', { campus, report_date: d }, 'rpget'), outbox.entries().catch(() => [])]);
     if (r.stale || d !== dateIn.value) return;
-    if (!r.success) { if (!pendingId) statusEl.textContent = 'Could not load the saved report (offline or unavailable).'; return; }
-    if (pendingId && r.report && r.report.id === pendingId) { pendingId = null; msg.textContent = 'Saved and synced.'; clearInterval(timer); timer = null; }
+    const q = reportQueueState(entries, d, r.success ? r.report : null, knownId);
+    if (q.state === 'waiting') { msg.textContent = 'Saved — will sync'; watch(); }
+    else {
+      clearInterval(timer); timer = null;
+      if (q.state === 'attention') msg.textContent = 'Needs attention: ' + q.error;
+      else if (q.state === 'synced') { msg.textContent = 'Saved and synced.'; knownId = null; }
+      else if (q.state === 'missing') msg.textContent = 'The report is no longer waiting to send, but the server does not show it. Check the saved report below and submit again if needed.';
+      else if (!pendingShown) msg.textContent = '';
+    }
+    pendingShown = q.state === 'waiting' || q.state === 'attention';
+    if (!r.success) { statusEl.textContent = 'Could not load the saved report (offline or unavailable).'; return; }
     const lines = r.report ? mismatchLines(r.cashMismatch) : [];
     statusEl.replaceChildren(
-      r.report ? h('p', {}, 'Report for ' + isoToDmy(d) + ' saved' + (r.report.late === 'true' ? ' (late)' : '') + '.') : h('p', {}, pendingId ? 'Waiting for the report to sync…' : 'No report saved for ' + isoToDmy(d) + ' yet.'),
+      r.report ? h('p', {}, 'Report for ' + isoToDmy(d) + ' saved on the server' + (r.report.late === 'true' ? ' (late)' : '') + '.') : h('p', {}, 'No report on the server for ' + isoToDmy(d) + ' yet.'),
+      q.state === 'waiting' ? h('p', {}, 'A newer report is waiting to sync.') : null,
+      q.state === 'attention' ? h('p', { class: 'flag bad' }, 'A newer report needs attention: ' + q.error) : null,
       lines.length ? h('div', {}, h('p', { class: 'flag bad' }, 'Cash does not match the day book:'), h('ul', {}, lines.map((l) => h('li', {}, l)))) : (r.report ? h('p', {}, 'Cash matches the day book.') : null));
   }
   const watch = () => { if (!timer) timer = setInterval(check, 10000); };

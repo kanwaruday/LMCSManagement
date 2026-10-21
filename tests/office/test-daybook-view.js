@@ -3,8 +3,8 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, entryFromForm, fyEnd, todayIst } = await import('../../office/js/daybook.js');
-  const { reportDraftToPayload, mismatchLines } = await import('../../office/js/report.js');
+  const { mergeQueued, canReverse, inflightGuard, entryFromForm, fyEnd, todayIst } = await import('../../office/js/daybook.js');
+  const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
   const q = (id, status, data, action = 'daybook.add') => ({ id, seq: 1, action, status, code: null, error: status === 'attention' ? 'DAY_CLOSED' : null, data });
@@ -50,6 +50,27 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(!p.ok); assert.ok(p.errors.cash_petty && p.errors.cash_fee && p.errors.footfall && !p.errors.cash_other);
   assert.deepStrictEqual(mismatchLines([{ bucket: 'fee', report_paise: 100000, daybook_paise: 50000 }]), ['Fee cash: report ₹1,000.00, day book ₹500.00']);
   console.log('  ok  - reportDraftToPayload converts rupees to paise and hourly rows; mismatch in plain words');
+
+  // reportQueueState
+  const sub = (id, status, date, seq = 1) => ({ id, seq, action: 'report.submit', status, error: status === 'attention' ? 'DAY_CLOSED' : null, data: { report_date: date } });
+  assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-21')], '2026-10-21', null, 'r1').state, 'waiting');
+  assert.deepStrictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21')], '2026-10-21', null, null), { state: 'attention', id: 'r1', error: 'DAY_CLOSED' });
+  assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-20')], '2026-10-21', null, null).state, 'none'); // other date
+  assert.strictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21', 1), sub('r2', 'waiting', '2026-10-21', 2)], '2026-10-21').state, 'waiting'); // newest wins
+  assert.strictEqual(reportQueueState([], '2026-10-21', { id: 'r1' }, 'r1').state, 'synced');
+  assert.strictEqual(reportQueueState([], '2026-10-21', { id: 'someone-else' }, 'r1').state, 'missing'); // not queued, not on server: no endless Waiting
+  assert.strictEqual(reportQueueState([], '2026-10-21', null, 'r1').state, 'missing');
+  assert.strictEqual(reportQueueState([], '2026-10-21', { id: 'x' }, null).state, 'none');
+  console.log('  ok  - reportQueueState: waiting, attention, synced, missing, none');
+
+  // inflightGuard (double-tap on Reverse)
+  const g = inflightGuard(); let calls = 0, release;
+  const slow = () => new Promise((res) => { calls++; release = res; });
+  const first = g('a', slow); const second = await g('a', slow);
+  assert.strictEqual(second, false); assert.strictEqual(calls, 1);
+  release(); assert.strictEqual(await first, true);
+  assert.strictEqual(await g('a', async () => { calls++; }), true); assert.strictEqual(calls, 2); // free again after it resolves
+  console.log('  ok  - inflightGuard ignores a second call while the first is pending');
 
   // outbox.entries lists waiting and attention entries for the screens
   const m2 = new Map(); const store = { put: async (e) => { m2.set(e.id, e); }, getAll: async () => [...m2.values()], delete: async (id) => { m2.delete(id); } };

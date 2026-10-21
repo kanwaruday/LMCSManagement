@@ -29,6 +29,12 @@ export function mergeQueued(rows, outboxEntries, date) {
   return synced.concat(queued); // stable: server rows keep their append order, queued ones follow in outbox order
 }
 
+// run(key, fn): while a call for `key` is unresolved, further calls for it are ignored (double-tap guard, R28).
+export function inflightGuard() {
+  const busy = new Set();
+  return async (key, fn) => { if (busy.has(key)) return false; busy.add(key); try { await fn(); return true; } finally { busy.delete(key); } };
+}
+
 export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued;
 
 // form: {date, category, mode, bucket, amount, payee, narration}; categories: config.get categories.
@@ -127,11 +133,16 @@ export async function showDayBook(root, session, api, outbox) {
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
-  async function reverse(item) {
-    if (!confirm('Reverse this entry of ' + formatInr(item.amount_paise) + ' (' + catLabel(categories, item.category) + ')? A new opposite entry dated today will be added. The original stays.')) return;
-    await outbox.enqueue('daybook.reverse', { campus, reverses: item.id });
-    await refresh();
-    outbox.flush().then(refresh).catch(() => {});
+  const guard = inflightGuard();
+  async function reverse(item, btn) {
+    btn.disabled = true; // until the enqueue resolves; the list repaint then replaces the button
+    const ran = await guard(item.id, async () => {
+      if (!confirm('Reverse this entry of ' + formatInr(item.amount_paise) + ' (' + catLabel(categories, item.category) + ')? A new opposite entry dated today will be added. The original stays.')) return;
+      await outbox.enqueue('daybook.reverse', { campus, reverses: item.id });
+      await refresh();
+      outbox.flush().then(refresh).catch(() => {});
+    }).catch(() => {});
+    if (!ran || btn.isConnected) btn.disabled = false;
   }
 
   function paintList() {
@@ -142,7 +153,7 @@ export async function showDayBook(root, session, api, outbox) {
       it.synced ? null : h('div', { class: 'flag' + (it.status === 'attention' ? ' bad' : '') }, it.status === 'attention' ? 'Needs attention: ' + it.error : 'Not yet synced'),
       it.reversed ? h('div', { class: 'meta' }, 'Reversed') : null,
       it.reversalQueued ? h('div', { class: 'flag' + (it.reversalError ? ' bad' : '') }, it.reversalError ? 'Reversal needs attention: ' + it.reversalError : 'Reversal not yet synced') : null,
-      canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: () => reverse(it) }, 'Reverse') : null,
+      canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null,
     )) : [h('li', {}, 'No entries for ' + isoToDmy(date) + '.')]));
   }
 
