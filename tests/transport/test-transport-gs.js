@@ -54,6 +54,7 @@ assert.strictEqual(v1.docs.speed_governor.noexp.length, 1, 'no-expiry scan is ca
 assert.strictEqual(v1.docs.route_permit.other.length, 1, 'wrong-paper scan is carried');
 assert.strictEqual(v2.docs.fitness.date, '2027-01-01'); assert.strictEqual(v2.docs.mv_tax.na, true, 'n/a override survives the round trip');
 assert.deepStrictEqual(out.unknown, ['HP999'], 'form uploads for vehicles not in the fleet are reported');
+assert.strictEqual(typeof out.serverMs, 'number', 'the page shows how long the server took');
 assert.strictEqual(out.people.length, 1); assert.strictEqual(out.pnl.length, 1); assert.deepStrictEqual(out.warnings, ['bad row']);
 assert.strictEqual(out.fleet.find(b => b.reg === 'HP3').driverCode, 'C3');
 const sheetNames = sheets.map(s => s.name);

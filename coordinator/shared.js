@@ -285,11 +285,20 @@ window.Coord = (function () {
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
     const LABEL = { none: 'No documents', expired: 'Expired', wrong: 'Wrong paper', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid', noexp: 'No expiry printed', onfile: 'On file', na: 'Not needed' };
 
+    // what a coordinator can do about each failure; the raw message stays underneath for whoever fixes it
+    const friendly = m => /not authori[sz]ed/i.test(m) ? 'Your account is not allowed to see the transport data. Sign in with your LMS Coordinator account.'
+      : /missing|no vehicles/i.test(m) ? 'The transport data has not been synced yet. It arrives with the next AI Coordinator run (every 2 hours).'
+      : /failed to fetch|networkerror|load failed/i.test(m) ? 'Could not reach the server. Check the internet connection and try again.'
+      : 'Could not load the transport fleet. Try again in a minute; if it keeps failing, the server may be being updated.';
+
     async function load() {
-      box.innerHTML = '<div class="status">Loading the transport fleet...</div>';
-      try { T.data = await api({ action: 'coordinatortransport' }); render(); }
+      box.setAttribute('aria-busy', 'true');
+      box.innerHTML = '<div class="status" role="status"><span class="spin" aria-hidden="true"></span>Loading the transport fleet...</div>';
+      const t0 = performance.now();
+      try { T.data = await api({ action: 'coordinatortransport' }); T.loadMs = performance.now() - t0; box.removeAttribute('aria-busy'); render(); }
       catch (err) {
-        box.innerHTML = '<div class="status">Could not load the transport fleet: ' + esc(err.message) + ' <button class="btn tr-retry">Retry</button></div>';
+        box.removeAttribute('aria-busy');
+        box.innerHTML = '<div class="status" role="alert">' + esc(friendly(err.message)) + ' <button class="btn tr-retry">Retry</button><div class="sm">Details: ' + esc(err.message) + '</div></div>';
         box.querySelector('.tr-retry').addEventListener('click', load);
       }
     }
@@ -349,7 +358,7 @@ window.Coord = (function () {
         return '<svg width="60" height="18" viewBox="0 0 60 18" aria-hidden="true"><line x1="2" x2="58" y1="' + zero + '" y2="' + zero + '" stroke="#ccc"/><polyline fill="none" stroke="' +
           (v[v.length - 1] < 0 ? '#CE0000' : '#15803d') + '" stroke-width="1.5" points="' + pts + '"/></svg>';
       };
-      const pth = (k, label) => '<th data-psort="' + k + '">' + label + (T.pk === k ? (T.pd < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+      const pth = (k, label) => '<th aria-sort="' + (T.pk === k ? (T.pd < 0 ? 'descending' : 'ascending') : 'none') + '"><button type="button" class="thb" data-psort="' + k + '">' + label + (T.pk === k ? (T.pd < 0 ? ' &#9660;' : ' &#9650;') : '') + '</button></th>';
       const period = pnlMonths.length ? fmt(pnlMonths[0] + '-01').slice(3) + ' to ' + fmt(pnlMonths[pnlMonths.length - 1] + '-01').slice(3) : '';
 
       const drvNote = b => b.driverCode || b.driverStatus ? '<div class="sm">' + esc(b.driverCode || 'no code') + (b.driverStatus && b.driverStatus !== 'verified' ? ' &middot; <span class="miss">' + esc(b.driverStatus) + '</span>' : ' &middot; in staff master') + '</div>' : '';
@@ -357,7 +366,7 @@ window.Coord = (function () {
         .sort((a, b) => (a.status === 'verified') - (b.status === 'verified') || a.campus.localeCompare(b.campus) || a.name.localeCompare(b.name));
       const bad = staff.filter(p => p.status !== 'verified').length;
       let html = '<div class="note">' + (synced ? 'Scan dates and workbook figures were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
-        ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
+        ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (T.loadMs ? ' Loaded in ' + (T.loadMs / 1000).toFixed(1) + ' s' + (d.serverMs ? ' (server ' + (d.serverMs / 1000).toFixed(1) + ' s)' : '') + '.' : '') + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
       (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') + '</div>' +
       (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
       (T.tab === 'drivers' ? '<div class="tiles"><div class="tile"><b>' + staff.length + '</b>people on the transport staff list</div><div class="tile"><b>' + (staff.length - bad) + '</b>verified against the staff master</div><div class="tile ' + (bad ? 'warn' : '') + '"><b>' + bad + '</b>need checking</div></div>' : T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
@@ -371,12 +380,12 @@ window.Coord = (function () {
         '<div class="tile"><b>' + (cnt('missing') + cnt('check')) + '</b>papers missing or unreadable</div>' +
         '<div class="tile warn"><b>' + cnt('soon') + '</b>due within 30 days</div></div>') +
         '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : [], d.people && d.people.length ? [['drivers', 'Drivers']] : []).map(x =>
-          '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' +
-        '<select class="tr-campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
+          '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (T.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' +
+        '<select class="tr-campus" aria-label="Filter by campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         (T.tab === 'list' ? '<span class="seg">' + [['all', 'All'], ['none', 'No documents'], ['expired', 'Expired'], ['wrong', 'Wrong paper'], ['missing', 'No record'], ['check', 'Scan, date unread'], ['soon', 'Due in 30 days'], ['later', 'Due in 90 days']].map(x =>
-          '<button data-tier="' + x[0] + '" class="' + (T.tier === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
-        (T.tab === 'pnl' ? '<span class="seg">' + [['after', 'After driver pay'], ['before', 'Before driver pay']].map(x => '<button data-pay="' + x[0] + '" class="' + (T.pay === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
-        '<input class="tr-q" placeholder="Search vehicle, driver or route" value="' + esc(T.q) + '">' +
+          '<button data-tier="' + x[0] + '" class="' + (T.tier === x[0] ? 'on' : '') + '" aria-pressed="' + (T.tier === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        (T.tab === 'pnl' ? '<span class="seg">' + [['after', 'After driver pay'], ['before', 'Before driver pay']].map(x => '<button data-pay="' + x[0] + '" class="' + (T.pay === x[0] ? 'on' : '') + '" aria-pressed="' + (T.pay === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        '<input class="tr-q" type="search" aria-label="Search vehicle, driver or route" placeholder="Search vehicle, driver or route" value="' + esc(T.q) + '">' +
         (T.tab === 'pnl' || T.tab === 'drivers' ? '' : '<button class="btn tr-copy">Copy digest</button>') + '</div>';
 
       if (T.tab === 'list') {
@@ -431,13 +440,18 @@ window.Coord = (function () {
         let prev = '';
         const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td>' + esc(v.b.reg) + '<div class="sm">' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div></td><td>' + esc(v.b.campus) +
           '</td><td>' + esc(v.b.driver || '-') + drvNote(v.b) + '</td><td>' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
-        html += '<div class="note">One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document.</div>' +
+        html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document.</details>' +
           '<div class="tw stick"><table class="l"><thead><tr><th>Vehicle</th><th>Campus</th><th>Driver</th><th>Action needed</th>' + cols.map(x => '<th>' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time, no expiry</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
           (vs.length ? body : '<tr><td colspan="' + (4 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div>';
       }
       html += '<div class="note">A pollution entry shown as expired or missing may be a paper that exists but was never uploaded; confirm with the driver or transport in-charge before treating it as lapsed. Passenger tax and RC are not tracked here.' +
         (d.unknown.length ? ' <b>Uploads for vehicles not in the fleet list: ' + esc(d.unknown.join(', ')) + '.</b>' : '') + '</div>';
       box.innerHTML = html;
+      // screen readers: every table gets a caption and its headers a scope
+      const CAP = { list: ['Action list: each paper that needs action, in the order to work through it'], matrix: ['Vehicle by document: every vehicle ranked by the action it needs, with the expiry of each paper'],
+        pnl: ['Bus P&L by campus', 'Bus P&L by vehicle'], drivers: ['Transport staff linked to the staff master'] };
+      box.querySelectorAll('table').forEach((t, i) => { const c = document.createElement('caption'); c.className = 'sr'; c.textContent = (CAP[T.tab] || [])[i] || 'Transport table'; t.prepend(c); });
+      box.querySelectorAll('th').forEach(th => th.setAttribute('scope', 'col'));
 
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { T.tab = b.dataset.tab; render(); }));
       box.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { T.pay = b.dataset.pay; if (T.pay === 'before' && T.pk === 'pay') T.pk = 'result'; render(); }));
@@ -450,8 +464,11 @@ window.Coord = (function () {
         const lines = ['Transport documents: action needed (' + fmt(todayIso) + ')'];
         campuses.forEach(c => {
           const vs2 = rk.vehicles.filter(v => v.b.campus === c && ['ok', 'later', 'eol'].indexOf(v.tier) === -1);
-          if (vs2.length) { lines.push('', c); vs2.forEach(v => lines.push('  ' + v.b.reg + ': ' + v.lines.map(l => l.text).join('; '))); }
+          if (vs2.length) { lines.push('', c); vs2.forEach(v => lines.push('  ' + v.b.reg + ': ' + v.lines.filter(l => l.kind !== 'later').map(l => l.text).join('; '))); }
         });
+        const up = {};
+        items.filter(i => i.kind === 'later').forEach(i => { const u = up[i.label] = up[i.label] || { n: 0, first: i.date }; u.n++; if (i.date < u.first) u.first = i.date; });
+        if (Object.keys(up).length) lines.push('', 'Coming up within 90 days: ' + Object.keys(up).map(k => k + ' for ' + up[k].n + (up[k].n === 1 ? ' vehicle' : ' vehicles') + ' (from ' + fmt(up[k].first) + ')').join('; ') + '.');
         lines.push('', 'Please upload anything missing through the Transport Document Submission form.');
         const btn = e.target;
         navigator.clipboard.writeText(lines.join('\n')).then(() => { btn.textContent = 'Copied'; }, () => { btn.textContent = 'Could not copy'; });

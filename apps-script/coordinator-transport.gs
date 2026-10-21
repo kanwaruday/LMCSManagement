@@ -212,10 +212,11 @@ function coordTransportFleet_() {
 
 // action=coordinatortransport
 function coordTransport_(caller) {
+  const t0 = Date.now();
   const all = coordTransportFleet_();
   const visible = coordVisibleCampuses_(caller);
   return {
-    success: true, generated: new Date().toISOString(), formRows: all.live.rows, unknown: all.unknown,
+    success: true, generated: new Date().toISOString(), serverMs: Date.now() - t0, formRows: all.live.rows, unknown: all.unknown, // serverMs: shown on the page so slow loads are visible
     syncedAt: all.base.syncedAt, warnings: all.base.warnings,
     people: (all.base.people || []).filter(function (q) { return !visible || visible.indexOf('LMS' + q.campus.replace(/\D/g, '')) !== -1; }),
     pnl: (all.base.pnl || []).filter(function (r) { return !visible || visible.indexOf('LMS' + r.campus.replace(/\D/g, '')) !== -1; }),
