@@ -20,13 +20,18 @@ function officeIsClosed_(ss, isoDate) {
   return c !== r ? c > r : closes.length > reopens.length;
 }
 
-// Shared guard for every write dated to a day (daybook.add now; Reports and Deposits later).
+// Frozen (R36): `isoDate` or any later date of the book is currently closed. Balances run forward, so a
+// row dated on or before a closed day would change that day's closing; such a date takes no writes.
+function officeIsFrozen_(ss, isoDate) {
+  const later = {};
+  officeRows_(ss, 'Closes').forEach(function (r) { if (r.close_date >= isoDate) later[r.close_date] = true; });
+  return Object.keys(later).some(function (d) { return officeIsClosed_(ss, d); });
+}
+
+// Shared guard for every write dated to a day (daybook.add, report.submit, deposit.add, daybook.reverse).
 // The thrown error carries `code`, which officeHandle_ returns alongside `error`.
 function officeAssertOpen_(ss, isoDate) {
-  if (!officeIsClosed_(ss, isoDate)) return;
-  const err = new Error('DAY_CLOSED');
-  err.code = 'DAY_CLOSED';
-  throw err;
+  if (officeIsFrozen_(ss, isoDate)) throw officeCoded_('DAY_CLOSED');
 }
 
 function officeCloseDate_(data) {
@@ -41,11 +46,11 @@ function officeDayClose_(ctx, data) {
   if (date === officeToday_()) throw new Error('CANNOT_CLOSE_TODAY'); // reversals post to today, so today must stay open
   const ss = officeOpen_(data.campus, officeFy_(date));
   if (officeRows_(ss, 'Closes').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry
-  if (officeIsClosed_(ss, date)) throw new Error('ALREADY_CLOSED');
+  if (officeIsFrozen_(ss, date)) throw new Error('ALREADY_CLOSED'); // a day before a closed day is closed too
   const book = officeRows_(ss, 'DayBook');
   // Most recent earlier day with entries (this book only: the year's first day has no predecessor).
   const prev = book.reduce(function (m, r) { return r.entry_date < date && r.entry_date > m ? r.entry_date : m; }, '');
-  if (prev && !officeIsClosed_(ss, prev)) throw new Error('PREVIOUS_DAY_OPEN');
+  if (prev && !officeIsFrozen_(ss, prev)) throw new Error('PREVIOUS_DAY_OPEN');
   const closing = officeBalances_(officeOpening_(ss), book, date);
   const res = officeAppend_(ss, 'Closes', { id: data.id, campus: data.campus, close_date: date, closing_json: JSON.stringify(closing) },
     ctx.caller, { action: 'day.close', campus: data.campus });
@@ -58,6 +63,9 @@ function officeDayReopen_(ctx, data) {
   if (!reason) throw new Error('REASON_REQUIRED');
   const ss = officeOpen_(data.campus, officeFy_(date));
   if (officeRows_(ss, 'Reopens').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry
+  // Latest-first (R36): reopening D under a later closed day would let D's new rows change that day's closing.
+  const later = officeRows_(ss, 'Closes').some(function (r) { return r.close_date > date && officeIsClosed_(ss, r.close_date); });
+  if (later) throw officeCoded_('LATER_DAY_CLOSED');
   if (!officeIsClosed_(ss, date)) throw new Error('NOT_CLOSED');
   const res = officeAppend_(ss, 'Reopens', { id: data.id, campus: data.campus, close_date: date, reason: reason },
     ctx.caller, { action: 'day.reopen', campus: data.campus });

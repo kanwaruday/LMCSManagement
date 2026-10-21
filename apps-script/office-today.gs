@@ -84,7 +84,7 @@ function officeTodayCloseTasks_(ctx) {
     officeRows_(b, 'DayBook').forEach(function (r) { if (r.campus === ctx.campus && r.entry_date < ctx.today) dates[r.entry_date] = true; });
   });
   const open = Object.keys(dates).sort().filter(function (d) {
-    return !officeIsClosed_(officeOpen_(ctx.campus, officeFy_(d)), d);
+    return !officeIsFrozen_(officeOpen_(ctx.campus, officeFy_(d)), d);
   })[0];
   return open ? [{ id: 'close:' + open, title: 'Close the day ' + open, due: ctx.today, status: 'due', action: 'close' }] : [];
 }

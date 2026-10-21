@@ -1,6 +1,7 @@
 // Plain-words explanations of backend refusal codes. Leaf module (no imports) so every screen can use it.
 export const CODES = {
-  DAY_CLOSED: 'That day is closed. Ask the Owner to reopen it, then enter it again.',
+  DAY_CLOSED: 'That day is closed, or a later day is (a closed day freezes every day before it). Ask the Owner to reopen the closed days, latest first, then enter it again.',
+  LATER_DAY_CLOSED: 'A later day is closed. Reopen the latest closed day first, then this one.',
   ALREADY_CLOSED: 'That day is already closed.',
   NOT_CLOSED: 'That day is not closed.',
   PREVIOUS_DAY_OPEN: 'An earlier day is still open. Close the oldest open day first.',

@@ -130,7 +130,50 @@ module.exports = function run(t) {
     const h = fresh();
     close(h, '2026-10-20');
     ['', '   ', undefined].forEach((r) => assert.equal(reopen(h, '2026-10-20', { reason: r }).error, 'REASON_REQUIRED'));
-    assert.equal(reopen(h, '2026-10-19').error, 'NOT_CLOSED');
+    assert.equal(reopen(h, '2026-10-21').error, 'NOT_CLOSED');
+    assert.equal(reopen(h, '2026-10-19').error, 'LATER_DAY_CLOSED', 'an older day sits under the closed 20th');
     assert.equal(h.ctx.officeIsClosed_(h.book, '2026-10-20'), true);
+  });
+  // C1 / R36: a date is frozen while any later closed day exists; reopen goes latest-first.
+  t.test('back-dated entry before closed days is refused; closed balances stay fixed (probe)', () => {
+    const h = fresh();
+    add(h, { entry_date: '2026-10-19' }); add(h, { entry_date: '2026-10-20' });
+    assert.equal(close(h, '2026-10-19').success, true);
+    const c20 = close(h, '2026-10-20');
+    assert.equal(c20.closing.closing.cash.fee, 2000);
+    const r = add(h, { entry_date: '2026-10-18', amount_paise: 50000 });
+    assert.deepEqual(J(r), { success: false, code: 'DAY_CLOSED', error: 'DAY_CLOSED' });
+    assert.equal(h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-20' }, 'fh-token').closing.cash.fee, 2000);
+    assert.equal(add(h, { entry_date: '2026-10-21' }).success, true, 'today stays open');
+  });
+
+  t.test('an empty day before a closed day is frozen for reports too', () => {
+    const h = fresh();
+    add(h, { entry_date: '2026-10-20' }); close(h, '2026-10-20');
+    const rep = h.call('report.submit', { id: 'rp', campus: 'LMS1', report_date: '2026-10-19', hourly: [], footfall: 0, cash: { petty: 0, fee: 0, other: 0 } }, 'clerk-token');
+    assert.equal(rep.code, 'DAY_CLOSED');
+    assert.equal(close(h, '2026-10-19').error, 'ALREADY_CLOSED', 'a frozen day reads as closed');
+  });
+
+  t.test('reopen of an older day is refused while a later day is closed (LATER_DAY_CLOSED); latest-first works', () => {
+    const h = fresh();
+    add(h, { entry_date: '2026-10-19' }); add(h, { entry_date: '2026-10-20' });
+    tick(h, '2026-10-21T10:01:00Z'); close(h, '2026-10-19');
+    tick(h, '2026-10-21T10:02:00Z'); close(h, '2026-10-20');
+    tick(h, '2026-10-21T10:03:00Z');
+    assert.deepEqual(J(reopen(h, '2026-10-19')), { success: false, code: 'LATER_DAY_CLOSED', error: 'LATER_DAY_CLOSED' });
+    assert.equal(h.ctx.officeRows_(h.book, 'Reopens').length, 0);
+    assert.equal(reopen(h, '2026-10-20').success, true);
+    assert.equal(add(h, { entry_date: '2026-10-19' }).code, 'DAY_CLOSED', '19 itself is still closed');
+    tick(h, '2026-10-21T10:04:00Z');
+    assert.equal(reopen(h, '2026-10-19').success, true);
+    assert.equal(add(h, { entry_date: '2026-10-18' }).success, true, 'nothing later is closed now');
+  });
+
+  t.test('opening.set is locked once any day is closed, even with no entries', () => {
+    const h = fresh();
+    close(h, '2026-10-20');
+    const r = h.call('opening.set', { id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 5 }] }, 'fh-token');
+    assert.equal(r.error, 'OPENING_LOCKED');
   });
 };

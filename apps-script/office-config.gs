@@ -65,7 +65,8 @@ function officeOpeningSet_(ctx, data) {
     return { id: id + ':' + i, campus: data.campus, mode: b.mode, bucket: b.bucket || '', amount_paise: b.amount_paise };
   });
   const ss = officeOpen_(data.campus, officeFy_(officeToday_()));
-  if (officeRows_(ss, 'DayBook').length) throw new Error('OPENING_LOCKED');
+  // Opening feeds every day's balance: locked once any entry exists or any day is closed (R36).
+  if (officeRows_(ss, 'DayBook').length || officeRows_(ss, 'Closes').length) throw new Error('OPENING_LOCKED');
   rows.forEach(function (r) { officeAppend_(ss, 'Opening', r, ctx.caller, { action: 'opening.set', campus: data.campus }); });
   return { opening: officeOpening_(ss) };
 }

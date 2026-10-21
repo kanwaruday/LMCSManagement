@@ -77,7 +77,7 @@ function officeDepositRepair_(ctx, dep) {
   const ss = officeOpen_(dep.campus, officeFy_(date));
   const have = officeRows_(ss, 'DayBook').map(function (r) { return r.id; });
   if (have.indexOf(dep.id + ':out') !== -1 && have.indexOf(dep.id + ':in') !== -1) return { id: dep.id, duplicate: true };
-  if (officeIsClosed_(ss, date)) throw officeCoded_('LEGS_MISSING');
+  if (officeIsFrozen_(ss, date)) throw officeCoded_('LEGS_MISSING');
   officeDepositLegs_(ctx, ss, dep.id, dep.campus, date, dep.amount_paise, dep.bank_ref, dep.covers_date, dep.file_id);
   return { id: dep.id, duplicate: true };
 }
@@ -156,7 +156,7 @@ function officeReconGet_(ctx, data) {
   return {
     erp: erp, daybook_fee_cash: daybook, deposited: deposited,
     unsigned: deps.filter(function (d) { return !signed[d.id]; }).map(function (d) { return d.id; }),
-    closed: officeIsClosed_(dateBook, date),
+    closed: officeIsFrozen_(dateBook, date), // closed itself or under a later closed day (R36)
     overdue: officeToday_() > officeAddDays_(date, 1) && deposited < daybook, // due by the end of the next IST day
     differences: differences,
   };
