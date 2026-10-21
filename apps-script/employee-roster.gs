@@ -200,6 +200,29 @@ function doGet(e) {
   }
 }
 
+// 2026-10-08: keep-warm, same fix main.gs (pdrKeepWarm) and coordinator-pdr.gs (coordKeepWarm) already
+// have. This project (roster + staff + allowlist, 190+ KB of source) goes cold when idle, and the next
+// request then stalls 20-60s or comes back as an HTML error page -- and EVERY sign-in waits on its
+// allowlist_list call, so a cold start here is the first thing each person experiences. Every 5 minutes
+// this pings the two reads people hit first (which also keeps their CacheService entries filled).
+// SETUP: run rosterInstallKeepWarmTrigger ONCE from the editor (it asks for the trigger permission);
+// re-running replaces the old trigger rather than adding a second.
+function rosterKeepWarm() {
+  const base = ScriptApp.getService().getUrl();
+  ['allowlist_list', 'employees'].forEach(function (action) {
+    try { UrlFetchApp.fetch(base + '?action=' + action, { muteHttpExceptions: true }); }
+    catch (err) { /* best-effort: a missed ping just means one cold start later */ }
+  });
+}
+
+function rosterInstallKeepWarmTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'rosterKeepWarm') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('rosterKeepWarm').timeBased().everyMinutes(5).create();
+  Logger.log('Keep-warm trigger installed: rosterKeepWarm every 5 minutes');
+}
+
 // Thin CacheService wrapper -- `key` is the cache key, `compute` is the
 // (no-arg) function that builds the real result on a miss. See PERF note.
 function cached_(key, compute) {

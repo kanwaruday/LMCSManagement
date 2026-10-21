@@ -142,10 +142,23 @@ window.LMCS = (function () {
   // for a network blip), fail with an honest "couldn't verify, try
   // again" message for a brand-new sign-in (never silently grant OR deny
   // access based on data we know is incomplete).
-  let allowlistPromise = null;
-  function loadAllowlist() {
-    if (allowlistPromise) return allowlistPromise;
-    allowlistPromise = fetch(ALLOWLIST_API_URL + '?action=allowlist_list', { cache: 'no-store' })
+  // 2026-10-08: the Apps Script project behind this call goes cold when idle and then stalls for
+  // 20-60s or answers with an HTML error page (which is what "bad response" below usually is), and sign-in
+  // waits on it. So: each attempt gets 30s, a failed one is retried (the retry usually lands on the by-
+  // then-warm instance), and every success leaves a copy in localStorage for readCachedAllowlist_().
+  const ALLOWLIST_CACHE_KEY = 'lmcs_allowlist_v1';
+  const ALLOWLIST_CACHE_MAX_AGE_MS = 14 * 24 * 3600 * 1000;
+  function readCachedAllowlist_() {
+    try {
+      const c = JSON.parse(localStorage.getItem(ALLOWLIST_CACHE_KEY));
+      if (c && c.map && Date.now() - c.t < ALLOWLIST_CACHE_MAX_AGE_MS) return c.map;
+    } catch (_) { /* storage unavailable or corrupt -- behave as if there is no copy */ }
+    return null;
+  }
+  function fetchAllowlistOnce_() {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : null;
+    return fetch(ALLOWLIST_API_URL + '?action=allowlist_list', { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
       .then((res) => res.json())
       .then((data) => {
         if (!data.success || !Array.isArray(data.entries)) throw new Error('bad response');
@@ -155,11 +168,29 @@ window.LMCS = (function () {
         });
         return map;
       })
-      .catch((err) => {
-        console.warn('LMCS auth: live allowlist fetch failed.', err);
-        allowlistPromise = null; // don't cache the failure -- let the next call retry
-        throw err;
-      });
+      .finally(function () { clearTimeout(timer); });
+  }
+  let allowlistPromise = null;
+  function loadAllowlist() {
+    if (allowlistPromise) return allowlistPromise;
+    allowlistPromise = (async function () {
+      let lastErr;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const map = await fetchAllowlistOnce_();
+          try { localStorage.setItem(ALLOWLIST_CACHE_KEY, JSON.stringify({ t: Date.now(), map: map })); } catch (_) { /* best-effort */ }
+          return map;
+        } catch (err) {
+          lastErr = err;
+          console.warn('LMCS auth: allowlist fetch attempt ' + (attempt + 1) + ' failed.', err);
+          if (attempt < 2) await new Promise(function (r) { setTimeout(r, 1000); });
+        }
+      }
+      throw lastErr;
+    })().catch((err) => {
+      allowlistPromise = null; // don't cache the failure -- let the next call start over
+      throw err;
+    });
     return allowlistPromise;
   }
 
@@ -281,31 +312,11 @@ window.LMCS = (function () {
           '<div id="lmcs-auth-status"></div>' +
           '</div>';
 
-        window.onGoogleSignIn = async function (response) {
-          const payload = decodeJwtPayload(response.credential);
-          const email = (payload.email || '').toLowerCase();
-          const statusEl = document.getElementById('lmcs-auth-status');
+        // Prefetch while the visitor is still choosing their Google account, so the list is usually
+        // already here (or at least in flight) by the time they finish.
+        loadAllowlist().catch(function () { /* retried for real inside onGoogleSignIn */ });
 
-          let allowlist;
-          try {
-            allowlist = await loadAllowlist();
-          } catch (err) {
-            // Never silently deny (or grant) access on data we know is
-            // incomplete -- see loadAllowlist()'s comment.
-            statusEl.innerHTML =
-              '<div class="auth-denied">Couldn’t verify the access list right now (network or server issue) — please try again in a moment.</div>';
-            return;
-          }
-          const match = allowlist[email];
-
-          if (!match || !payload.email_verified) {
-            statusEl.innerHTML =
-              '<div class="auth-denied">This portal is only available to LMS staff on the access list. Signed in as <b>' +
-              (payload.email || 'unknown') +
-              '</b>, which isn’t on it yet. Contact the admin if this is wrong.</div>';
-            return;
-          }
-
+        function enterWith_(match, email, response) {
           const now = Date.now();
           const session = {
             email,
@@ -324,6 +335,65 @@ window.LMCS = (function () {
           // Pages that reload after sign-in restart this on their next load;
           // pages that don't (the home screens) get it right away.
           if (window.LMCS && window.LMCS.warmUp) window.LMCS.warmUp(session);
+        }
+
+        // Shows elapsed time + what's happening instead of a silent wait; returns a function that stops it.
+        function showChecking_(statusEl) {
+          const t0 = Date.now();
+          statusEl.innerHTML = '<div id="lmcs-auth-checking" style="margin-top:16px;font-size:12px;line-height:1.6;color:#555"></div>';
+          const el = document.getElementById('lmcs-auth-checking');
+          const tick = function () {
+            const sec = Math.round((Date.now() - t0) / 1000);
+            el.textContent = 'Checking the access list… ' + sec + 's' + (sec >= 8 ? ' — the server is waking up, this can take up to a minute.' : '');
+          };
+          tick();
+          const iv = setInterval(tick, 1000);
+          return function () { clearInterval(iv); };
+        }
+
+        window.onGoogleSignIn = async function (response) {
+          const payload = decodeJwtPayload(response.credential);
+          const email = (payload.email || '').toLowerCase();
+          const statusEl = document.getElementById('lmcs-auth-status');
+
+          // Fast path: a previous successful sign-in on this browser left a copy of the access list. If this
+          // person is on it, let them in now and re-check against the live list behind -- the live call can
+          // take a minute when the backend has gone idle, and the backend re-checks every request anyway.
+          const cached = readCachedAllowlist_();
+          const cachedMatch = cached && cached[email];
+          if (cachedMatch && payload.email_verified) {
+            enterWith_(cachedMatch, email, response);
+            loadAllowlist().then(function (live) {
+              if (!live[email]) { localStorage.removeItem(SESSION_KEY); window.location.reload(); } // removed since the copy was taken
+            }).catch(function () { /* live check unavailable -- keep the session, the backend still enforces */ });
+            return;
+          }
+
+          const stopChecking = showChecking_(statusEl);
+          let allowlist;
+          try {
+            allowlist = await loadAllowlist();
+          } catch (err) {
+            // Never silently deny (or grant) access on data we know is incomplete -- see loadAllowlist().
+            stopChecking();
+            statusEl.innerHTML =
+              '<div class="auth-denied">Couldn’t reach the access list (the server may be waking up) — your Google sign-in worked, we just couldn’t check it.' +
+              '<br><button type="button" id="lmcs-auth-retry" style="margin-top:8px;background:#CE0000;color:#fff;border:none;border-radius:6px;padding:6px 14px;font:700 12px system-ui,sans-serif;cursor:pointer">Try again</button></div>';
+            document.getElementById('lmcs-auth-retry').onclick = function () { window.onGoogleSignIn(response); };
+            return;
+          }
+          stopChecking();
+          const match = allowlist[email];
+
+          if (!match || !payload.email_verified) {
+            statusEl.innerHTML =
+              '<div class="auth-denied">This portal is only available to LMS staff on the access list. Signed in as <b>' +
+              (payload.email || 'unknown') +
+              '</b>, which isn’t on it yet. Contact the admin if this is wrong.</div>';
+            return;
+          }
+
+          enterWith_(match, email, response);
         };
 
         function initButton() {

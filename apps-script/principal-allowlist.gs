@@ -52,7 +52,7 @@ const SHEET_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58'; // "LMCS Princi
 const ADMIN_EMAILS = ['uday.kanwar@lms.org.in'];
 const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
 const CACHE_KEY = 'allowlist_entries';
-const CACHE_TTL_SECONDS = 300; // 5 min
+const CACHE_TTL_SECONDS = 600; // 10 min (was 5) -- rosterKeepWarm() in employee-roster.gs pings every 5, so it never expires between pings; writes still bust it immediately
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs/staff-management-api.gs --
