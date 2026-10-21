@@ -81,6 +81,23 @@ module.exports = function run(t) {
     assert.ok(one(r, 'report:2026-10-21'));
   });
 
+  t.test('day close targets the oldest open past day, then the next', () => {
+    const h = fresh(); fee(h, 100, '2026-10-18'); fee(h, 100, '2026-10-20');
+    const close = (d) => h.call('day.close', { id: 'c' + d, campus: 'LMS1', close_date: d }, 'fh-token');
+    assert.deepEqual(ids(get(h, 'fh-token')).filter((i) => /^close:/.test(i)), ['close:2026-10-18']);
+    assert.equal(close('2026-10-18').success, true);
+    assert.deepEqual(ids(get(h, 'fh-token')).filter((i) => /^close:/.test(i)), ['close:2026-10-20']);
+  });
+
+  t.test('window crossing 1 April with no previous-year book returns normal tasks, no waiting task', () => {
+    const h = boot(fixture);
+    h.addConfig(); h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-04-03T10:00:00Z'));
+    const r = get(h);
+    assert.equal(r.success, true);
+    assert.deepEqual(ids(r), ['report:2026-04-03']);
+    assert.deepEqual(ids(get(h, 'fh-token')), []);
+  });
+
   t.test('campus required and enforced', () => {
     const h = fresh();
     assert.equal(h.call('today.get', {}, 'clerk-token').error, 'MISSING_CAMPUS');

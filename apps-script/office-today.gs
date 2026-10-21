@@ -29,6 +29,11 @@ function officeTodayLastDays_(today) {
   return out;
 }
 
+// A date whose financial-year book was never created has no data: providers skip it instead of throwing.
+function officeTodayHasBook_(campus, isoDate) {
+  return !!PropertiesService.getScriptProperties().getProperty('OFFICE_SS_' + campus + '_' + officeFy_(isoDate));
+}
+
 function officeTodayGet_(ctx, data) {
   if (!data.campus) throw new Error('MISSING_CAMPUS');
   const today = officeToday_();
@@ -63,6 +68,7 @@ function officeTodayDepositTasks_(ctx) {
   if (!officeTodayHas_(ctx, ['FeeClerk', 'AdminManager', 'Owner'])) return [];
   const out = [];
   officeTodayLastDays_(ctx.today).forEach(function (date, i) {
+    if (!officeTodayHasBook_(ctx.campus, date)) return;
     const r = officeReconGet_({ caller: ctx.caller }, { campus: ctx.campus, date: date });
     if (r.overdue) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: officeAddDays_(date, 1), status: 'overdue', action: 'deposits' });
     else if (i === 0 && r.deposited < r.daybook_fee_cash) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
@@ -70,14 +76,14 @@ function officeTodayDepositTasks_(ctx) {
   return out;
 }
 
-// Day close (R16): the most recent past day with Day Book rows that is not closed.
+// Day close (R16/R22): the OLDEST past day with Day Book rows that is not closed, the only one day.close accepts.
 function officeTodayCloseTasks_(ctx) {
   if (!officeTodayHas_(ctx, ['FinanceHead', 'Owner'])) return [];
   const dates = {};
   officeRecentBooks_(ctx.campus).forEach(function (b) {
     officeRows_(b, 'DayBook').forEach(function (r) { if (r.campus === ctx.campus && r.entry_date < ctx.today) dates[r.entry_date] = true; });
   });
-  const open = Object.keys(dates).sort().reverse().filter(function (d) {
+  const open = Object.keys(dates).sort().filter(function (d) {
     return !officeIsClosed_(officeOpen_(ctx.campus, officeFy_(d)), d);
   })[0];
   return open ? [{ id: 'close:' + open, title: 'Close the day ' + open, due: ctx.today, status: 'due', action: 'close' }] : [];
@@ -88,6 +94,7 @@ function officeTodaySignTasks_(ctx) {
   if (!officeTodayHas_(ctx, ['FinanceHead', 'Owner'])) return [];
   const out = [];
   officeTodayLastDays_(ctx.today).forEach(function (date) {
+    if (!officeTodayHasBook_(ctx.campus, date)) return;
     const n = officeReconGet_({ caller: ctx.caller }, { campus: ctx.campus, date: date }).unsigned.length;
     if (n) out.push({ id: 'sign:' + date, title: 'Sign ' + n + ' deposit' + (n > 1 ? 's' : '') + ' for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
   });
