@@ -124,4 +124,15 @@ module.exports = function run(t) {
     assert.equal(one(get(h), 'report:2026-10-21').status, 'done', 'a row written outside a request is read by the next one');
     assert.strictEqual(h.ctx.OFFICE_MEMO, null, 'memo is off outside a request');
   });
+  // M7 / R41: cash older than the 7-day window still surfaces, as one task.
+  t.test('one "older undeposited cash" task for days older than 7 days in this FY', () => {
+    const h = fresh();
+    fee(h, 100, '2026-10-01'); fee(h, 100, '2026-10-05'); fee(h, 100, '2026-10-10');
+    h.call('deposit.add', { id: 'dold', campus: 'LMS1', covers_date: '2026-10-10', amount_paise: 100, bank_ref: 'R', file_id: 'slip' }, 'clerk-token');
+    const t1 = one(get(h), 'deposit:older');
+    assert.deepEqual(JSON.parse(JSON.stringify(t1)), { id: 'deposit:older', title: 'Fee cash not fully deposited for 2 older days, oldest 2026-10-01', due: '2026-10-02', status: 'overdue', action: 'deposits' });
+    const g = fresh(); fee(g, 100, '2026-10-20');
+    assert.ok(!ids(get(g)).includes('deposit:older'), 'nothing older: no task');
+    assert.ok(!ids(get(g, 'fh-token')).includes('deposit:older'), 'Finance Head does not get deposit tasks');
+  });
 };
