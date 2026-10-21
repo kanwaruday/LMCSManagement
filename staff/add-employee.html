@@ -87,22 +87,34 @@ td.name{font-weight:700}
 .doc-yes{color:var(--green);text-decoration:none;font-weight:700;white-space:nowrap}
 .doc-yes:hover{text-decoration:underline}
 /* "Missing" cell is the upload button (2026-10-21) */
-.upload-cell{cursor:pointer;white-space:nowrap}
-.pill.optional{background:var(--white);border-color:#e5e7eb;color:#9ca3af}
-td.doc-na{color:#c7cbd1;text-align:center}
+/* Compact document grids (Documents + Document rules): full width, vertical headers, symbol chips */
+body.wide-tab #appBody{max-width:none}
+.dm-grid th.dm-vert{vertical-align:bottom;padding:6px 2px;text-align:center;white-space:nowrap}
+.dm-grid th.dm-vert span{writing-mode:vertical-rl;transform:rotate(180deg);display:inline-block;max-height:120px;overflow:hidden;text-overflow:ellipsis}
+.dm-grid td{padding:4px 2px;text-align:center;vertical-align:middle}
+.dm-grid .dm-name{text-align:left;padding-left:9px;padding-right:12px;min-width:150px;vertical-align:bottom}
+.dm-grid td.dm-name{vertical-align:middle}
+.dm-grid .dm-name .name{font-weight:700;display:block;line-height:1.3}
+.dm-grid .dm-name .sub{display:block;font-weight:400;color:#9ca3af;font-size:10.5px}
+.dm{display:inline-flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:5px;font-size:12px;font-weight:700;border:1px solid transparent;text-decoration:none;line-height:1;font-family:inherit;padding:0}
+.dm-ok{color:var(--green);background:#f0fdf4;border-color:#bbf7d0}
+.dm-req{color:#991b1b;background:#fef2f2;border-color:#fecaca}
+.dm-opt{color:#9ca3af;background:var(--white);border-color:#e5e7eb}
+.dm-na{color:#d1d5db;font-weight:400}
+.dm-busy{color:#92400e;background:#fffbeb;border-color:#fde68a;cursor:wait}
+.dm-count{color:#fff;background:#b91c1c;width:auto;min-width:24px;padding:0 5px}
+.dm-err{outline:2px solid var(--red);outline-offset:1px}
+label.dm,button.dm{cursor:pointer}
+label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);background:var(--red);color:#fff}
+.doc-legend{font-size:11.5px;color:var(--gray);margin-bottom:10px;line-height:2}
+.doc-legend .dm{margin:0 3px 0 10px;vertical-align:middle}
+.doc-errors{font-size:11.5px;color:var(--red);margin-bottom:10px}
 /* Document rules editor */
 #rulesBody{overflow-x:auto}
 #rulesBody table{border-collapse:separate;border-spacing:0}
 #rulesBody th:first-child,#rulesBody td:first-child{position:sticky;left:0;z-index:1;background:var(--white)}
 #rulesBody th:first-child{background:var(--lgray)}
-.rule-cell{cursor:pointer;font-family:inherit;min-width:64px;justify-content:center}
 .rule-cell.changed{outline:2px solid #fbbf24;outline-offset:1px}
-.rule-na{color:#c7cbd1;font-weight:600;font-size:10.5px}
-#rulesBody td .sub{display:block;font-weight:400;color:#9ca3af;font-size:10.5px}
-.upload-cell:hover,.upload-cell:focus-within{background:var(--red);border-color:var(--red);color:#fff}
-.upload-cell:hover::after{content:' ↑'}
-.upload-cell.busy{cursor:wait;background:#fffbeb;border-color:#fde68a;color:#92400e}
-.upload-err{display:block;color:var(--red);font-size:10.5px;margin-top:3px;white-space:normal;max-width:140px}
 
 /* Needs Verification queue */
 .verify-item{border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px}
@@ -218,7 +230,7 @@ td.doc-na{color:#c7cbd1;text-align:center}
     <!-- ══════════════════ DOCUMENT RULES (Owner) ══════════════════ -->
     <div class="tab-panel" id="panel-rules">
       <div class="dir-toolbar">
-        <span class="dir-count">Which documents each designation needs. Click a cell to change it: <span class="pill inactive">Required</span> counts as Missing, <span class="pill optional">Optional</span> can be uploaded but isn't counted, <span class="rule-na">N/A</span> is hidden.</span>
+        <span class="dir-count doc-legend">Which documents each designation needs. Click a cell to cycle it: <span class="dm dm-req">R</span> required (counts as missing) <span class="dm dm-opt">O</span> optional (can be uploaded, never counted) <span class="dm dm-na">–</span> not needed (hidden). Hover a cell to see its document.</span>
       </div>
       <div class="dir-toolbar">
         <span class="dir-count" id="rulesMsg"></span>
@@ -351,6 +363,8 @@ async function init() {
 }
 
 function switchTab(tab) {
+  // The two document grids are 20 columns wide -- give them the whole window so nothing hides off to the right.
+  document.body.classList.toggle('wide-tab', tab === 'documents' || tab === 'rules');
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
@@ -549,8 +563,10 @@ function renderDocumentStatus() {
     return list.some(function (r) { return r.documents[t.full] || docNeed(r, t.full) !== 'N'; });
   });
   document.getElementById('docBody').innerHTML =
-    '<table><thead><tr><th>Name</th><th>Code</th><th title="Required documents still missing">Missing</th>' +
-    types.map(function (t) { return '<th title="' + esc(t.full) + '">' + esc(t.short) + '</th>'; }).join('') +
+    '<div class="doc-legend"><span class="dm dm-ok">✓</span> uploaded (opens the file) <span class="dm dm-req">✗</span> required, missing <span class="dm dm-opt">+</span> optional, not uploaded <span class="dm dm-na">·</span> not needed for this role &nbsp;— click ✗ or + to upload</div>' +
+    docErrorsHtml(list) +
+    '<table class="dm-grid"><thead><tr><th class="dm-name">Name</th><th class="dm-vert"><span>Missing</span></th>' +
+    types.map(function (t) { return '<th class="dm-vert" title="' + esc(t.full) + '"><span>' + esc(t.short) + '</span></th>'; }).join('') +
     '</tr></thead><tbody>' +
     list.map(function (r) {
       let missing = 0;
@@ -558,19 +574,17 @@ function renderDocumentStatus() {
         const info = r.documents[t.full];
         const need = docNeed(r, t.full);
         if (!info) {
-          if (need === 'N') return '<td class="doc-na" title="Not needed for this role">—</td>';
+          if (need === 'N') return '<td><span class="dm dm-na" title="' + esc(t.short) + ': not needed for this role">·</span></td>';
           if (need === 'R') missing++;
           const key = r.employeeCode + '|' + t.full;
-          if (docUploading[key]) return '<td><span class="pill upload-cell busy">Uploading…</span></td>';
-          return '<td><label class="pill ' + (need === 'R' ? 'inactive' : 'optional') + ' upload-cell" title="Upload ' + esc(t.full) + ' for ' + esc(r.name) + ' (PDF or photo, up to 10 MB)' + (need === 'O' ? ' -- optional for this role' : '') + '">' + (need === 'R' ? 'Missing' : 'Optional') +
-            '<input type="file" accept="application/pdf,image/*" hidden data-code="' + esc(r.employeeCode) + '" data-type="' + esc(t.full) + '"></label>' +
-            (docUploadErrors[key] ? '<span class="upload-err">' + esc(docUploadErrors[key]) + '</span>' : '') + '</td>';
+          if (docUploading[key]) return '<td><span class="dm dm-busy" title="Uploading…">…</span></td>';
+          return '<td><label class="dm ' + (need === 'R' ? 'dm-req' : 'dm-opt') + (docUploadErrors[key] ? ' dm-err' : '') + '" title="' + esc(t.short) + ' — ' + (need === 'R' ? 'required, missing' : 'optional') + '. Click to upload for ' + esc(r.name) + ' (PDF or photo, up to 10 MB)">' + (need === 'R' ? '✗' : '+') +
+            '<input type="file" accept="application/pdf,image/*" hidden data-code="' + esc(r.employeeCode) + '" data-type="' + esc(t.full) + '"></label></td>';
         }
-        const extra = info.count > 1 ? ' (+' + (info.count - 1) + ')' : '';
-        return '<td><a class="doc-yes" href="' + esc(info.driveLink) + '" target="_blank" rel="noopener">✓' + extra + '</a></td>';
+        return '<td><a class="dm dm-ok" href="' + esc(info.driveLink) + '" target="_blank" rel="noopener" title="' + esc(t.short) + (info.count > 1 ? ' — ' + info.count + ' files, opens the first' : ' — open') + '">✓</a></td>';
       }).join('');
-      return '<tr><td class="name">' + esc(r.name) + '</td><td>' + esc(r.employeeCode) + '</td>' +
-        '<td>' + (missing ? '<span class="pill inactive">' + missing + '</span>' : '<span class="pill active">0</span>') + '</td>' + cells + '</tr>';
+      return '<tr><td class="dm-name"><span class="name">' + esc(r.name) + '</span><span class="sub">' + esc(r.employeeCode) + '</span></td>' +
+        '<td>' + (missing ? '<span class="dm dm-count">' + missing + '</span>' : '<span class="dm dm-ok" title="Nothing required is missing">✓</span>') + '</td>' + cells + '</tr>';
     }).join('') +
     '</tbody></table>';
 }
@@ -621,16 +635,16 @@ function renderDocRules() {
   DOC_TYPES.forEach(function (t) { shortOf[t.full] = t.short; });
   const word = { R: 'Required', O: 'Optional', N: 'N/A' };
   document.getElementById('rulesBody').innerHTML =
-    '<table><thead><tr><th>Designation</th>' +
-    rulesData.types.map(function (t) { return '<th title="' + esc(t) + '">' + esc(shortOf[t] || t) + '</th>'; }).join('') +
+    '<table class="dm-grid"><thead><tr><th class="dm-name">Designation</th>' +
+    rulesData.types.map(function (t) { return '<th class="dm-vert" title="' + esc(t) + '"><span>' + esc(shortOf[t] || t) + '</span></th>'; }).join('') +
     '</tr></thead><tbody>' +
     rulesData.designations.map(function (d) {
       const saved = rulesSaved[d.key];
-      return '<tr><td class="name">' + esc(d.label) + '<span class="sub">' + (d.key ? d.count + (d.count === 1 ? ' person' : ' people') : 'anyone not listed above') + '</span></td>' +
+      return '<tr><td class="dm-name"><span class="name">' + esc(d.label) + '</span><span class="sub">' + (d.key ? d.count + (d.count === 1 ? ' person' : ' people') : 'anyone not listed above') + '</span></td>' +
         rulesEdit[d.key].map(function (v, i) {
-          const cls = v === 'R' ? 'pill inactive' : (v === 'O' ? 'pill optional' : 'pill rule-na');
+          const cls = v === 'R' ? 'dm dm-req' : (v === 'O' ? 'dm dm-opt' : 'dm dm-na');
           return '<td><button type="button" class="' + cls + ' rule-cell' + (v !== saved[i] ? ' changed' : '') + '" data-key="' + esc(d.key) + '" data-i="' + i + '" ' +
-            'aria-label="' + esc(d.label + ', ' + rulesData.types[i] + ': ' + word[v]) + '">' + word[v] + '</button></td>';
+            'title="' + esc((shortOf[rulesData.types[i]] || rulesData.types[i]) + ': ' + word[v]) + '" aria-label="' + esc(d.label + ', ' + rulesData.types[i] + ': ' + word[v]) + '">' + { R: 'R', O: 'O', N: '–' }[v] + '</button></td>';
         }).join('') + '</tr>';
     }).join('') +
     '</tbody></table>';
@@ -676,6 +690,18 @@ const docUploading = {};
 const docUploadErrors = {};
 const DOC_MAX_BYTES = 10 * 1024 * 1024;
 const DOC_EXT_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+
+// Upload problems for people in this list, one line each (a message under a 24px chip would push the columns apart).
+function docErrorsHtml(list) {
+  const names = {};
+  list.forEach(function (r) { names[r.employeeCode] = r.name; });
+  const lines = Object.keys(docUploadErrors).filter(function (k) { return names[k.split('|')[0]]; }).map(function (k) {
+    const code = k.split('|')[0], type = k.slice(code.length + 1);
+    const t = DOC_TYPES.find(function (d) { return d.full === type; });
+    return esc(names[code]) + ', ' + esc(t ? t.short : type) + ': ' + esc(docUploadErrors[k]);
+  });
+  return lines.length ? '<div class="doc-errors">' + lines.join('<br>') + '</div>' : '';
+}
 
 function docMime(file) {
   if (file.type && Object.values(DOC_EXT_MIME).indexOf(file.type) !== -1) return file.type;
