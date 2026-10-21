@@ -3,24 +3,9 @@
 import { h, setKids } from './dom.js';
 import { formatInr, isoToDmy } from './format.js';
 import { inflightGuard } from './daybook.js';
+import { CODES, explainCode, entryReason } from './codes.js';
 
-const CODES = {
-  DAY_CLOSED: 'That day was already closed. Ask the Owner to reopen it, then enter it again.',
-  FILE_MISSING: 'The attached file did not reach the server. Discard this and enter it again with the file.',
-  LEGS_MISSING: 'The deposit could not be recorded in the day book. Ask Uday before retrying.',
-  INSUFFICIENT_CASH: 'There is not enough cash in that bucket for this amount.',
-  OPENING_LOCKED: 'Opening balances are locked because day book entries already exist.',
-  FORBIDDEN_CAMPUS: 'You do not have access to this campus.',
-  FORBIDDEN_ROLE: 'Your role is not allowed to do this.',
-  BAD_AMOUNT: 'The amount was not accepted.',
-  BAD_DATE: 'The date was not accepted.',
-  CANNOT_CLOSE_TODAY: 'Only a day that is over can be closed.',
-  ALREADY_REVERSED: 'This entry was already reversed.',
-  ALREADY_SIGNED: 'This deposit was already signed.',
-};
-export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');
-// The backend throws plain errors, so the outbox often stores {code:null, error:'OPENING_LOCKED'}: use either.
-export const entryReason = (e) => explainCode(e && (e.code || e.error));
+export { CODES, explainCode, entryReason };
 
 const date = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? isoToDmy(d) : '');
 const money = (p) => (Number.isFinite(p) ? formatInr(p) : '');

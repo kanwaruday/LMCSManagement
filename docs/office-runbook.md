@@ -74,7 +74,7 @@ From the repo root, once: `npx @google/clasp@3 login`.
 ### 1.6 Point the portal at the backend
 
 1. `office/js/config.js`: set `OFFICE_BACKEND_URL` to the `/exec` URL. It is not a secret (the other portals hardcode theirs).
-2. `office/sw.js`: bump `CACHE` to the next name (for example v4 to v5; check the current name in the file). The shell is cached first, so without the bump a returning device keeps the old empty `config.js`.
+2. `office/sw.js`: bump `CACHE` to the next cache name (see the `CACHE` constant in `office/sw.js`). The shell is cached first, so without the bump a returning device keeps the old empty `config.js`.
 3. `tests/verify.mjs`: add `'office/'` to the `pages` list inside the `--live` block.
 4. Commit, push to main, wait for GitHub Pages (a minute or two).
 
@@ -110,7 +110,7 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 - [ ] Second device closing the day while the first still has unsynced entries for it: the first device's entries are refused with `DAY_CLOSED` and show "Needs attention", they are not dropped.
 - [ ] Backup: next morning the `Backups` folder has a copy of each book dated that day, and no failure email arrived.
 - [ ] Restore drill: open the backup copy of the LMS 1 book, open the same closing day in the portal, compare the closing totals (cash by bucket, bank, UPI) with what the portal shows live. They must match to the paisa. Note the result in the vault.
-- [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, cache `lmcs-office-v4` (or whatever the current name in `office/sw.js` is) holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
+- [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, the cache named by the `CACHE` constant in `office/sw.js` holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
 - [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4).
 - [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real opening balances on the Close Day screen, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
 

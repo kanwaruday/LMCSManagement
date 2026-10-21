@@ -1,5 +1,6 @@
 // Daily Report screen. A re-submit for a date is a new row; the latest wins (backend R5).
 import { h, field, setKids } from './dom.js';
+import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, BUCKETS } from './daybook.js';
 
@@ -42,7 +43,7 @@ export function reportDraftToPayload(form) {
 export function reportQueueState(entries, date, serverReport, knownId) {
   const mine = (entries || []).filter((e) => e.action === 'report.submit' && e.data && e.data.report_date === date).sort((a, b) => a.seq - b.seq);
   const e = mine[mine.length - 1];
-  if (e) return e.status === 'attention' ? { state: 'attention', id: e.id, error: e.error || e.code || 'Refused' } : { state: 'waiting', id: e.id };
+  if (e) return e.status === 'attention' ? { state: 'attention', id: e.id, error: entryReason(e) } : { state: 'waiting', id: e.id };
   if (!knownId) return { state: 'none' };
   return serverReport && serverReport.id === knownId ? { state: 'synced', id: knownId } : { state: 'missing', id: knownId };
 }

@@ -3,7 +3,7 @@ import { h, setKids } from './dom.js';
 import { cashToPaise } from './report.js';
 import { formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, balancesTable } from './daybook.js';
-import { entryReason } from './attention.js';
+import { entryReason } from './codes.js';
 import { reconLines, queueNotes, loadRecon, loadDeposits, mergeDeposits, depositItem, viewProof, closeProof } from './deposits.js';
 
 const addDays = (iso, n) => new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -40,7 +40,6 @@ export async function showClose(root, session, api, outbox) {
   }
   const campus = session.campus;
   let date = yesterdayIst(), closeId = null, timer = null, lastUnsigned = 0;
-  const WHYSIGN = { ALREADY_SIGNED: 'already signed', NOT_FOUND: 'deposit not found' };
   const guard = inflightGuard();
   const dateIn = h('input', { type: 'date', value: date, max: date, 'aria-label': 'Day to close' });
   const proofEl = h('div', {}), info = h('div', { role: 'status' }), notes = h('div', { role: 'status' }), result = h('div', { role: 'status' }), msg = h('p', { role: 'status' });
@@ -74,7 +73,7 @@ export async function showClose(root, session, api, outbox) {
     const sign = (x) => {
       if (x.queued || x.signed || closed) return null;
       const e = signQ.get(x.id);
-      return e ? h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + (WHYSIGN[e.code || e.error] || e.error || e.code) : 'Signature waiting to sync') : signBtn(x.id);
+      return e ? h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + entryReason(e) : 'Signature waiting to sync') : signBtn(x.id);
     };
     if (!recon.success) setKids(info, h('p', { class: 'flag bad' }, 'Could not load the reconciliation (offline or unavailable).'));
     else setKids(info, h('h3', {}, 'Reconciliation for ' + isoToDmy(d)), h('ul', {}, reconLines(recon).map((l) => h('li', {}, l))),

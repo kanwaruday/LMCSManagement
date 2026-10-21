@@ -15,7 +15,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   let m = mergeQueued(rows, [q('n1', 'waiting', { entry_date: '2026-10-21', amount_paise: 7 }), q('n2', 'attention', { entry_date: '2026-10-21' }), q('n3', 'waiting', { entry_date: '2026-10-20' }), q('r1', 'waiting', { reverses: 'a' }, 'daybook.reverse')], '2026-10-21');
   assert.deepStrictEqual(m.map((x) => x.id), ['a', 'b', 'n1', 'n2']); // only that date, synced first, queued after in order
   assert.deepStrictEqual(m.map((x) => x.synced), [true, true, false, false]);
-  assert.strictEqual(m[3].error, 'DAY_CLOSED');
+  assert.ok(m[3].error.startsWith('That day is closed'));
   assert.strictEqual(m[1].reversed, true); // reversal row dated later still marks the original
   assert.strictEqual(m[0].reversalQueued, true);
   assert.deepStrictEqual(m.map(canReverse), [false, false, false, false]);
@@ -54,7 +54,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   // reportQueueState
   const sub = (id, status, date, seq = 1) => ({ id, seq, action: 'report.submit', status, error: status === 'attention' ? 'DAY_CLOSED' : null, data: { report_date: date } });
   assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-21')], '2026-10-21', null, 'r1').state, 'waiting');
-  assert.deepStrictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21')], '2026-10-21', null, null), { state: 'attention', id: 'r1', error: 'DAY_CLOSED' });
+  assert.deepStrictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21')], '2026-10-21', null, null), { state: 'attention', id: 'r1', error: 'That day is closed. Ask the Owner to reopen it, then enter it again.' });
   assert.strictEqual(reportQueueState([sub('r1', 'waiting', '2026-10-20')], '2026-10-21', null, null).state, 'none'); // other date
   assert.strictEqual(reportQueueState([sub('r1', 'attention', '2026-10-21', 1), sub('r2', 'waiting', '2026-10-21', 2)], '2026-10-21').state, 'waiting'); // newest wins
   assert.strictEqual(reportQueueState([], '2026-10-21', { id: 'r1' }, 'r1').state, 'synced');

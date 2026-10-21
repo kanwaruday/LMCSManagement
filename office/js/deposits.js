@@ -3,6 +3,7 @@
 import { h, field, setKids } from './dom.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard } from './daybook.js';
+import { entryReason } from './codes.js';
 import { resizeImage } from './image.js';
 
 const RENDER_MIMES = ['image/jpeg', 'image/png', 'application/pdf']; // R19: nothing else is ever shown
@@ -21,23 +22,11 @@ export function depositFromForm(form) {
   return { ok: true, errors, data: { campus: form.campus, covers_date: form.covers_date, amount_paise: amount, bank_ref: ref } };
 }
 
-// Plain-words explanation of a refusal code.
-const WHY = {
-  LEGS_MISSING: 'This deposit was saved, but part of its day book entry is missing and that day is now closed. Ask the Owner to reopen the day to repair it.',
-  FILE_MISSING: 'The slip photo did not reach the server, so the deposit was not recorded. Discard this and record the deposit again with the photo.',
-  FILE_REQUIRED: 'The deposit has no slip photo.',
-  INSUFFICIENT_CASH: 'The day book does not show this much fee cash yet. Record the fee collection first, then deposit.',
-  DAY_CLOSED: 'That day is closed.',
-  ALREADY_SIGNED: 'This deposit was already signed.',
-  ALREADY_CLOSED: 'That day is already closed.',
-  PREVIOUS_DAY_OPEN: 'An earlier day is still open. Close the oldest open day first.',
-  CANNOT_CLOSE_TODAY: 'Only a day that is over can be closed.',
-};
 const LABEL = { 'file.upload': 'Slip photo', 'deposit.add': 'Deposit', 'erp.set': 'ERP total', 'deposit.sign': 'Signature', 'day.close': 'Day close' };
 // Outbox entries of this screen's actions -> [{text, bad}] (waiting = sending, attention = needs a person).
 export function queueNotes(entries, actions = Object.keys(LABEL)) {
   return (entries || []).filter((e) => actions.includes(e.action)).map((e) => e.status === 'attention'
-    ? { bad: true, text: (LABEL[e.action] || e.action) + ' needs attention: ' + (WHY[e.code || e.error] || e.error || e.code || 'refused') }
+    ? { bad: true, text: (LABEL[e.action] || e.action) + ' needs attention: ' + entryReason(e) }
     : { bad: false, text: (LABEL[e.action] || e.action) + ' saved on this device, waiting to sync.' });
 }
 
@@ -61,7 +50,7 @@ export const loadDeposits = (api, campus, date, key) => api.read('deposit.list',
 export function mergeDeposits(serverList, entries, date) {
   const have = new Set((serverList || []).map((d) => d.id));
   const queued = (entries || []).filter((e) => e.action === 'deposit.add' && e.data && e.data.covers_date === date && !have.has(e.id))
-    .map((e) => ({ ...e.data, id: e.id, signed: false, queued: true, status: e.status, error: e.status === 'attention' ? (WHY[e.code || e.error] || e.error || e.code || 'Needs attention') : '' }));
+    .map((e) => ({ ...e.data, id: e.id, signed: false, queued: true, status: e.status, error: e.status === 'attention' ? entryReason(e) : '' }));
   return (serverList || []).map((d) => ({ ...d, queued: false })).concat(queued);
 }
 

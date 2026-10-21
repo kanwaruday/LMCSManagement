@@ -27,5 +27,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
     { mode: 'bank', amount_paise: 250050 }, { mode: 'upi', amount_paise: 1000 }] } });
   assert.strictEqual(openingPayload('LMS1', []).ok, true); // all blank = all zero
   for (const bad of ['-5', 'abc', '1.234', '0.1+0.2']) assert.strictEqual(openingPayload('LMS1', [bad]).ok, false, bad);
+  // Every plain ALL_CAPS literal in the office backend is explained, or listed here as never reaching a user.
+  const fs = require('fs'), path = require('path');
+  const dir = path.join(__dirname, '../../apps-script');
+  const { CODES } = await import('../../office/js/codes.js');
+  const IGNORE = /^OFFICE_/; // Script Property names
+  const used = new Set();
+  fs.readdirSync(dir).filter((f) => /^office.*\.gs$/.test(f)).forEach((f) => (fs.readFileSync(path.join(dir, f), 'utf8').match(/'[A-Z][A-Z_]{5,}'/g) || []).forEach((m) => used.add(m.slice(1, -1))));
+  assert.ok(used.has('OPENING_LOCKED') && used.size > 20, 'scan found the codes');
+  const missing = [...used].filter((c) => !IGNORE.test(c) && !CODES[c]);
+  assert.deepStrictEqual(missing, [], 'unexplained backend codes: ' + missing);
+  console.log('  ok  - every backend error code has plain words');
   console.log('  ok  - openingPayload: five balances, blank/0 allowed, bad input rejected');
 })().catch((e) => { console.error(e); process.exit(1); });

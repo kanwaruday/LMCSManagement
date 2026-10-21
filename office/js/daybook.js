@@ -2,6 +2,7 @@
 // Append-only: there is no edit and no delete; a correction is a reversing entry (daybook.reverse).
 import { cacheGet, cacheSet } from './shell.js';
 import { h, field } from './dom.js';
+import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 
 export const BUCKETS = { petty: 'Petty cash', fee: 'Fee cash', other: 'Other cash' };
@@ -21,11 +22,11 @@ export function mergeQueued(rows, outboxEntries, date) {
   entries.filter((e) => e.action === 'daybook.reverse' && e.data).forEach((e) => pendingRev.set(e.data.reverses, e));
   const synced = rows.filter((r) => r.entry_date === date).map((r) => {
     const rev = pendingRev.get(r.id);
-    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, reversalError: rev && rev.status === 'attention' ? (rev.error || rev.code || 'Needs attention') : '' };
+    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, reversalError: rev && rev.status === 'attention' ? entryReason(rev) : '' };
   });
   const have = new Set(rows.map((r) => r.id));
   const queued = entries.filter((e) => e.action === 'daybook.add' && e.data && e.data.entry_date === date && !have.has(e.id))
-    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? (e.error || e.code || 'Needs attention') : '', reversed: false, reversalQueued: false, reversalError: '' }));
+    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? entryReason(e) : '', reversed: false, reversalQueued: false, reversalError: '' }));
   return synced.concat(queued); // stable: server rows keep their append order, queued ones follow in outbox order
 }
 
