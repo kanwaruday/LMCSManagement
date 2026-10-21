@@ -103,4 +103,25 @@ module.exports = function run(t) {
     assert.equal(h.call('today.get', {}, 'clerk-token').error, 'MISSING_CAMPUS');
     assert.equal(h.call('today.get', { campus: 'LMS2' }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
   });
+  // I7 / R41: one request opens each book once and reads each tab once (per-request memo).
+  t.test('today.get opens each book once and reads each tab once', () => {
+    const h = fresh();
+    for (let d = 14; d <= 20; d++) fee(h, 100, '2026-10-' + d);
+    get(h, 'owner-token');
+    const before = Object.assign({}, h.counter);
+    const r = get(h, 'owner-token');
+    assert.equal(r.success, true);
+    assert.ok(h.counter.open - before.open <= 2, 'opens: ' + (h.counter.open - before.open));
+    assert.ok(h.counter.read - before.read <= 14, 'reads: ' + (h.counter.read - before.read));
+  });
+
+  t.test('memo never serves stale rows: a write in the same request is seen, and the next request reads fresh', () => {
+    const h = fresh(); fee(h, 5000, '2026-10-21');
+    // deposit.add reads DayBook (balance), then writes Deposits + legs; a second deposit then sees the legs.
+    assert.equal(h.call('deposit.add', { id: 'd1', campus: 'LMS1', covers_date: '2026-10-21', amount_paise: 5000, bank_ref: 'R', file_id: 'slip' }, 'clerk-token').success, true);
+    assert.equal(h.call('deposit.add', { id: 'd2', campus: 'LMS1', covers_date: '2026-10-21', amount_paise: 1, bank_ref: 'R', file_id: 'slip' }, 'clerk-token').code, 'INSUFFICIENT_CASH');
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Reports', { id: 'x', campus: 'LMS1', report_date: '2026-10-21', json: '{}', late: 'false' });
+    assert.equal(one(get(h), 'report:2026-10-21').status, 'done', 'a row written outside a request is read by the next one');
+    assert.strictEqual(h.ctx.OFFICE_MEMO, null, 'memo is off outside a request');
+  });
 };

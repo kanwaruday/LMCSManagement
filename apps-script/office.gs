@@ -32,6 +32,7 @@ function officeAllActions_() {
 // string (GET), and `rawBody` (POST) carries the whole {action, idToken, data} envelope.
 function officeHandle_(action, idToken, data, rawBody) {
   let caller = null;
+  officeMemoStart_();
   try {
     if (rawBody !== undefined) { const b = JSON.parse(rawBody); action = b.action; idToken = b.idToken; data = b.data; }
     if (typeof data === 'string') data = JSON.parse(data);
@@ -64,6 +65,8 @@ function officeHandle_(action, idToken, data, rawBody) {
     if (err.message === 'FORBIDDEN_CAMPUS' && action === 'file.view') officeAuditRefusal_(caller, action, data);
     // A thrown error with a `code` (e.g. DAY_CLOSED) returns both, so clients can branch on code.
     return officeJson_(err.code ? { success: false, code: err.code, error: err.message } : { success: false, error: err.message });
+  } finally {
+    OFFICE_MEMO = null;
   }
 }
 

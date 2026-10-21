@@ -18,6 +18,12 @@ var OFFICE_TABLES = {
   Audit: ['id', 'ts', 'who', 'action', 'tab', 'row_id', 'campus', 'after'],
 };
 
+// Per-request memo (payroll.gs PAY_MEMO pattern): officeHandle_ starts it for each call and drops it at the end;
+// books opened and tab values read are reused within the call, and every row write forgets the values read.
+// null (outside a request: editor runs, nightly backup) means no memo.
+var OFFICE_MEMO = null;
+function officeMemoStart_() { OFFICE_MEMO = { books: {}, values: new Map() }; }
+
 // Script Property naming a campus's book for a financial year, and whether it is configured.
 function officeBookKey_(campus, fy) { return 'OFFICE_SS_' + String(campus).toUpperCase() + '_' + fy; }
 function officeHasBook_(campus, fy) { return !!PropertiesService.getScriptProperties().getProperty(officeBookKey_(campus, fy)); }
@@ -38,9 +44,12 @@ function officeRecentBooks_(campus) {
 
 // The campus's book for a financial year, with any missing tab created (existing headers are never rewritten).
 function officeOpen_(campus, fy) {
-  const id = PropertiesService.getScriptProperties().getProperty(officeBookKey_(campus, fy));
+  const key = officeBookKey_(campus, fy);
+  if (OFFICE_MEMO && OFFICE_MEMO.books[key]) return OFFICE_MEMO.books[key];
+  const id = PropertiesService.getScriptProperties().getProperty(key);
   if (!id) throw new Error('NO_BOOK');
   const ss = SpreadsheetApp.openById(id);
+  if (OFFICE_MEMO) OFFICE_MEMO.books[key] = ss;
   Object.keys(OFFICE_TABLES).forEach(function (tab) {
     if (ss.getSheetByName(tab)) return;
     const sh = ss.insertSheet(tab);
@@ -53,7 +62,10 @@ function officeOpen_(campus, fy) {
 function officeConfig_() {
   const id = PropertiesService.getScriptProperties().getProperty('OFFICE_CONFIG_SS');
   if (!id) throw new Error('NO_BOOK');
-  return SpreadsheetApp.openById(id);
+  if (OFFICE_MEMO && OFFICE_MEMO.books.OFFICE_CONFIG_SS) return OFFICE_MEMO.books.OFFICE_CONFIG_SS;
+  const ss = SpreadsheetApp.openById(id);
+  if (OFFICE_MEMO) OFFICE_MEMO.books.OFFICE_CONFIG_SS = ss;
+  return ss;
 }
 
 // All rows of a tab as objects keyed by the header row. Cells are text; *_paise and size read as Number, late as boolean.
@@ -64,9 +76,14 @@ function officeCell_(col, v) {
 }
 
 function officeRows_(ss, tab) {
-  const sh = ss.getSheetByName(tab);
-  if (!sh) throw new Error('NO_TAB: ' + tab);
-  const v = sh.getDataRange().getValues();
+  const seen = OFFICE_MEMO && OFFICE_MEMO.values.get(ss);
+  let v = seen && seen[tab];
+  if (!v) {
+    const sh = ss.getSheetByName(tab);
+    if (!sh) throw new Error('NO_TAB: ' + tab);
+    v = sh.getDataRange().getValues();
+    if (OFFICE_MEMO) { if (!seen) OFFICE_MEMO.values.set(ss, {}); OFFICE_MEMO.values.get(ss)[tab] = v; }
+  }
   const head = v[0] || [];
   return v.slice(1).map(function (r) {
     const o = {};
@@ -80,6 +97,7 @@ function officeWriteRow_(ss, tab, obj) {
   const sh = ss.getSheetByName(tab);
   // '@' = plain text, so Sheets never turns ISO dates into Dates or '=...' text into formulas.
   sh.getRange(sh.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@').setValues([cols.map(function (c) { return obj[c] === undefined ? '' : obj[c]; })]);
+  if (OFFICE_MEMO) OFFICE_MEMO.values = new Map(); // reads after a write see it
 }
 
 // Appends `row` to `tab` once per row.id and audits it. Caller must hold the script lock (officeHandle_ does
