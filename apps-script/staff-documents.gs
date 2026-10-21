@@ -196,7 +196,7 @@ function sdocTypeFolder_(formRoot, docType, keywords) {
 // Keeps "Certificate Links" (what the Staff Portal's Documents / Needs Verification tabs read) and the
 // Documents table current: rebuilt when those tabs are opened and it's over an hour old, straight after
 // a portal upload, and on every form submission. tryLock: two tabs loading at once rebuild it only once.
-const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at_v3'; // bump the suffix to force a rebuild after a format change
+const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at_v4'; // bump the suffix to force a rebuild after a format change
 const SDOC_MAX_AGE_MS_ = 60 * 60 * 1000;
 
 function sdocMarkStale_() { PropertiesService.getScriptProperties().deleteProperty(SDOC_REFRESHED_AT_); }
