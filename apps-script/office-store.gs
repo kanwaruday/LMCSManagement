@@ -26,7 +26,7 @@ function officeOpen_(campus, fy) {
   Object.keys(OFFICE_TABLES).forEach(function (tab) {
     if (ss.getSheetByName(tab)) return;
     const sh = ss.insertSheet(tab);
-    sh.getRange(1, 1, 1, OFFICE_TABLES[tab].length).setValues([OFFICE_TABLES[tab]]);
+    sh.getRange(1, 1, 1, OFFICE_TABLES[tab].length).setNumberFormat('@').setValues([OFFICE_TABLES[tab]]);
     sh.setFrozenRows(1);
   });
   return ss;
@@ -38,7 +38,13 @@ function officeConfig_() {
   return SpreadsheetApp.openById(id);
 }
 
-// All rows of a tab as objects keyed by the header row.
+// All rows of a tab as objects keyed by the header row. Cells are text; *_paise and size read as Number, late as boolean.
+function officeCell_(col, v) {
+  if (/_paise$/.test(col) || col === 'size') return v === '' ? '' : Number(v);
+  if (col === 'late') return v === true || v === 'true';
+  return v === null || v === undefined ? '' : String(v);
+}
+
 function officeRows_(ss, tab) {
   const sh = ss.getSheetByName(tab);
   if (!sh) throw new Error('NO_TAB: ' + tab);
@@ -46,7 +52,7 @@ function officeRows_(ss, tab) {
   const head = v[0] || [];
   return v.slice(1).map(function (r) {
     const o = {};
-    head.forEach(function (h, i) { o[h] = r[i]; });
+    head.forEach(function (h, i) { o[h] = officeCell_(h, r[i]); });
     return o;
   });
 }
@@ -54,7 +60,8 @@ function officeRows_(ss, tab) {
 function officeWriteRow_(ss, tab, obj) {
   const cols = OFFICE_TABLES[tab];
   const sh = ss.getSheetByName(tab);
-  sh.getRange(sh.getLastRow() + 1, 1, 1, cols.length).setValues([cols.map(function (c) { return obj[c] === undefined ? '' : obj[c]; })]);
+  // '@' = plain text, so Sheets never turns ISO dates into Dates or '=...' text into formulas.
+  sh.getRange(sh.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@').setValues([cols.map(function (c) { return obj[c] === undefined ? '' : obj[c]; })]);
 }
 
 // Appends `row` to `tab` once per row.id and audits it. Caller must hold the script lock (officeHandle_ does

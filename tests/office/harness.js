@@ -26,6 +26,29 @@ const DEFAULT_FIXTURE = {
   ],
 };
 
+// Makes a fake sheet's setValues coerce like Google Sheets does for a range NOT formatted '@' (plain text):
+// ISO dates/datetimes become Date, '='-prefixed text becomes a formula marker, numeric text becomes a Number.
+function sheetsLike(sheet) {
+  const getRange = sheet.getRange;
+  sheet.getRange = (...a) => {
+    const r = getRange(...a); let fmt = null; const setValues = r.setValues;
+    r.setNumberFormat = (f) => { fmt = f; return r; };
+    r.setValues = (v) => setValues(fmt === '@' ? v : v.map((row) => row.map((x) => {
+      if (typeof x !== 'string') return x;
+      if (/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(x)) return new Date(x);
+      if (x[0] === '=') return { formula: x };
+      return /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x;
+    })));
+    return r;
+  };
+  return sheet;
+}
+function makeOfficeBook(counter) {
+  const book = makeBook({}, counter); const ins = book.insertSheet;
+  book.insertSheet = (n) => sheetsLike(ins(n));
+  return book;
+}
+
 // boot(fixture?, {extraSource?}) -> {ctx, call(action, data, token), books, counter, locks, setNow(date), run(code)}
 // extraSource: test-only module code evaluated after the real files (e.g. an officeTestActions_ function).
 function boot(fixture, opts) {
@@ -72,7 +95,7 @@ function boot(fixture, opts) {
   return {
     ctx, call, books, counter, locks, props,
     // Registers an empty fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it.
-    addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeBook({}, counter)); },
+    addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeOfficeBook(counter)); },
     setNow: (d) => { ctx.officeClock_ = d; },
     run: (code) => vm.runInContext(code, ctx),
   };

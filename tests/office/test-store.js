@@ -68,4 +68,30 @@ module.exports = function run(t) {
     const h = fresh(); const ss = open(h);
     Object.keys(h.ctx.OFFICE_TABLES).forEach((tab) => assert.deepEqual(Array.from(ss.getSheetByName(tab).values[0]), Array.from(h.ctx.OFFICE_TABLES[tab]), tab));
   });
+
+  t.test('ISO dates and "=" text read back as the identical strings', () => {
+    const h = fresh(); const ss = open(h);
+    h.ctx.officeAppend_(ss, 'DayBook', entry('a1', { narration: '=SUM(1)', payee: '007' }), caller, {});
+    const r = rows(h, ss, 'DayBook')[0];
+    assert.strictEqual(r.entry_date, '2026-10-21');
+    assert.strictEqual(r.narration, '=SUM(1)');
+    assert.strictEqual(r.payee, '007');
+    assert.match(r.created_at, /^2\d{3}-\d\d-\d\dT/);
+    assert.strictEqual(typeof ss.getSheetByName('DayBook').values[1][2], 'string', 'stored as text, not Date');
+  });
+
+  t.test('amount_paise reads back as a Number, late as boolean', () => {
+    const h = fresh(); const ss = open(h);
+    h.ctx.officeAppend_(ss, 'DayBook', entry('a1'), caller, {});
+    h.ctx.officeAppend_(ss, 'Reports', { id: 'r1', campus: 'LMS1', report_date: '2026-10-21', late: true }, caller, {});
+    assert.strictEqual(rows(h, ss, 'DayBook')[0].amount_paise, 12345);
+    assert.strictEqual(rows(h, ss, 'Reports')[0].late, true);
+  });
+
+  t.test('fake proves the risk: a range without @ coerces', () => {
+    const h = fresh(); const sh = open(h).getSheetByName('DayBook');
+    sh.getRange(5, 1, 1, 3).setValues([['2026-10-21', '=SUM(1)', '12']]);
+    const v = sh.values[4];
+    assert.ok(v[0] instanceof Date); assert.ok(v[1].formula); assert.strictEqual(v[2], 12);
+  });
 };
