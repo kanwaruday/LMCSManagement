@@ -69,6 +69,11 @@ th{text-align:left;padding:7px 9px;background:var(--lgray);border-bottom:2px sol
 td{padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:top}
 tr:hover td{background:var(--red-lt)}
 td.name{font-weight:700}
+/* Documents matrix is 19 types wide: scroll sideways inside its own box, name column stays put */
+#docBody{overflow-x:auto}
+#docBody table{border-collapse:separate;border-spacing:0}
+#docBody th:first-child,#docBody td:first-child{position:sticky;left:0;z-index:1;background:var(--white)}
+#docBody th:first-child{background:var(--lgray)}
 .pill{display:inline-flex;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;border:1px solid var(--border);background:var(--lgray);color:var(--gray)}
 .pill.active{background:#dcfce7;border-color:#bbf7d0;color:var(--green)}
 .pill.inactive,.pill.transferred{background:#fef2f2;border-color:#fecaca;color:#991b1b}
@@ -259,6 +264,17 @@ const DOC_TYPES = [
   { full: 'POLICE VERIFICATION CHARACTER CERTIFICATE', short: 'Police Verif.' },
   { full: 'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)', short: 'Prof. Degree' },
   { full: 'HIGHEST QUALIFICATION', short: 'Highest Qual.' },
+  { full: 'BIODATA + PROFICIENCY', short: 'Biodata' },
+  { full: 'HIRING SLIP', short: 'Hiring Slip' },
+  { full: 'SERVICE CONTRACT', short: 'Contract' },
+  { full: 'SIGNED JOB ROLE', short: 'Signed Job Role' },
+  { full: 'TET DOCUMENT', short: 'TET' },
+  { full: 'EXPERIENCE CERTIFICATE', short: 'Experience' },
+  { full: 'LAST SALARY DRAWN CERTIFICATE', short: 'Last Salary' },
+  { full: 'PAN CARD', short: 'PAN' },
+  { full: 'AADHAAR CARD', short: 'Aadhaar' },
+  { full: 'CANCELLED CHEQUE / BANK COPY', short: 'Cheque' },
+  { full: 'DRIVING LICENCE', short: 'Licence' },
 ];
 let SESSION = null;
 let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}

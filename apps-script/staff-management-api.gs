@@ -503,7 +503,7 @@ function bustStaffListCache_() {
 // tab, confirmed against a live export 2026-09-24 -- the sheet has NO
 // placeholder row for a document that was never uploaded (every single
 // row already has a Drive Link), so "missing" can only be worked out by
-// checking, per employee, which of these 8 types have zero rows at all.
+// checking, per employee, which of these types have zero rows at all.
 // If a 9th type is ever added in the sheet, it just won't show up as a
 // column here until this list is updated -- there's no way to discover
 // new types automatically without also inventing a false "missing" state
@@ -517,6 +517,17 @@ const STAFF_DOCUMENT_TYPES = [
   'POLICE VERIFICATION CHARACTER CERTIFICATE',
   'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)',
   'HIGHEST QUALIFICATION',
+  'BIODATA + PROFICIENCY',
+  'HIRING SLIP',
+  'SERVICE CONTRACT',
+  'SIGNED JOB ROLE',
+  'TET DOCUMENT',
+  'EXPERIENCE CERTIFICATE',
+  'LAST SALARY DRAWN CERTIFICATE',
+  'PAN CARD',
+  'AADHAAR CARD',
+  'CANCELLED CHEQUE / BANK COPY',
+  'DRIVING LICENCE',
 ];
 
 // EmployeeCode -> { documentType: [{filename, driveLink}, ...] } -- only
@@ -583,21 +594,17 @@ function countFilesRecursive_(folder, depth) {
   return count;
 }
 
-// Only counts files under subfolders whose name matches one of
-// STAFF_DOCUMENT_TYPES -- the Staff Document Submission form also
-// collects Aadhar/PAN/driving licence/bank cheque/biodata/hiring slip,
-// which the Certificate Links importer deliberately excludes (those
-// aren't certificates), so counting them here would show a permanent
-// false "drift" even with zero real gap.
+// Only counts files under subfolders that hold one of the tracked document types (same keywords
+// Certificate Links is built with, certificate-link-import.gs) -- anything else in there would
+// show as a permanent false "drift".
 function countCertFilesInFormRoot_(formRoot) {
   let count = 0;
   const subs = formRoot.getFolders();
   while (subs.hasNext()) {
     const sub = subs.next();
-    const base = sub.getName().replace(/\s*\(\d+\)$/, '').replace(' (File responses)', '').trim().toUpperCase();
-    const isCertType = STAFF_DOCUMENT_TYPES.some(function (t) {
-      const tu = t.toUpperCase();
-      return base === tu || base.indexOf(tu) !== -1 || tu.indexOf(base) !== -1;
+    const base = sub.getName().toUpperCase().replace(/\s+/g, ' ');
+    const isCertType = Object.keys(CERT_CATEGORY_KEYWORDS_).some(function (t) {
+      return CERT_CATEGORY_KEYWORDS_[t].some(function (kw) { return base.indexOf(kw) !== -1; });
     });
     if (isCertType) count += countFilesRecursive_(sub, 0);
   }

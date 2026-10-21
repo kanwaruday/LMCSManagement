@@ -4988,6 +4988,18 @@ const CERT_CATEGORY_KEYWORDS_ = {
   'POLICE VERIFICATION CHARACTER CERTIFICATE': ['POLICE VERIFICATION', 'CHARACTER CERTIFICATE'],
   'Professional Degrees (D.El.Ed, B.Ed, B.P.Ed, M.P.Ed, Technical, etc.)': ['PROFESSIONAL DEGREE'],
   'HIGHEST QUALIFICATION': ['HIGHEST QUALIFICATION'],
+  // ID / employment documents, added 2026-10-21 per Uday (Documents matrix shows all 19).
+  'BIODATA + PROFICIENCY': ['BIODATA'],
+  'HIRING SLIP': ['HIRING SLIP'],
+  'SERVICE CONTRACT': ['SERVICE CONTRACT'],
+  'SIGNED JOB ROLE': ['SIGNED JOB ROLE'],
+  'TET DOCUMENT': ['TET DOCUMENT'],
+  'EXPERIENCE CERTIFICATE': ['EXPERIENCE CERTIFICATE'],
+  'LAST SALARY DRAWN CERTIFICATE': ['LAST SALARY'],
+  'PAN CARD': ['PAN CARD'],
+  'AADHAAR CARD': ['AADHAR', 'AADHAAR'],
+  'CANCELLED CHEQUE / BANK COPY': ['CHEQUE'],
+  'DRIVING LICENCE': ['DRIVING LICEN'],
 };
 
 // Employee Code -> a known data-quality problem with that person's row,
@@ -5014,7 +5026,7 @@ function refreshCertificateLinksFromResponseSheets() {
     const header = grid[0];
     const colCategory = {};
     header.forEach(function (colName, i) {
-      const upper = String(colName || '').toUpperCase();
+      const upper = String(colName || '').toUpperCase().replace(/\s+/g, ' '); // LMS 6 has "SIGNED  JOB ROLE"
       Object.keys(CERT_CATEGORY_KEYWORDS_).some(function (canonical) {
         const hit = CERT_CATEGORY_KEYWORDS_[canonical].some(function (kw) { return upper.indexOf(kw) !== -1; });
         if (hit) colCategory[i] = canonical;
