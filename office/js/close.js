@@ -1,8 +1,8 @@
 // Day close screen (FinanceHead / Owner). A close freezes the day; entries still queued on this device must reach the server first.
-import { h } from './dom.js';
+import { h, setKids } from './dom.js';
 import { formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, balancesTable } from './daybook.js';
-import { reconLines, queueNotes, loadRecon } from './deposits.js';
+import { reconLines, queueNotes, loadRecon, loadDeposits, mergeDeposits, depositItem, viewProof } from './deposits.js';
 
 const addDays = (iso, n) => new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
 export const yesterdayIst = () => addDays(todayIst(), -1);
@@ -26,10 +26,11 @@ export async function showClose(root, session, api, outbox) {
     return;
   }
   const campus = session.campus;
-  let date = yesterdayIst(), closeId = null, timer = null;
+  let date = yesterdayIst(), closeId = null, timer = null, closeView = null;
+  const WHYSIGN = { ALREADY_SIGNED: 'already signed', NOT_FOUND: 'deposit not found' };
   const guard = inflightGuard();
   const dateIn = h('input', { type: 'date', value: date, max: date, 'aria-label': 'Day to close' });
-  const info = h('div', { role: 'status' }), notes = h('div', { role: 'status' }), result = h('div', { role: 'status' }), msg = h('p', { role: 'status' });
+  const proofEl = h('div', {}), info = h('div', { role: 'status' }), notes = h('div', { role: 'status' }), result = h('div', { role: 'status' }), msg = h('p', { role: 'status' });
   const closeBtn = h('button', { type: 'button', onclick: () => guard('close', async () => {
     closeBtn.disabled = true;
     try {
@@ -38,44 +39,60 @@ export async function showClose(root, session, api, outbox) {
       outbox.flush().then(check).catch(() => {}); watch();
     } catch (err) { msg.textContent = 'Could not save on this device: ' + (err && err.message || err); closeBtn.disabled = false; }
   }) }, 'Close day');
-  const form = h('div', { class: 'office-form' }, h('label', { for: 'cl-date' }, 'Day to close'), dateIn, info, notes, closeBtn, msg, result);
+  const form = h('div', { class: 'office-form' }, h('label', { for: 'cl-date' }, 'Day to close'), dateIn, info, notes, closeBtn, msg, result, proofEl);
   dateIn.id = 'cl-date';
 
   async function check() {
     const d = date;
-    const [recon, entries, counts] = await Promise.all([loadRecon(api, campus, d, 'clrecon'), outbox.entries().catch(() => []), outbox.counts().catch(() => ({ waiting: 0, attention: 0 }))]);
-    if (recon.stale || d !== date) return;
+    const [recon, ds, entries, counts] = await Promise.all([loadRecon(api, campus, d, 'clrecon'), loadDeposits(api, campus, d, 'cldeps'), outbox.entries().catch(() => []), outbox.counts().catch(() => ({ waiting: 0, attention: 0 }))]);
+    if (recon.stale || ds.stale || d !== date) return;
     const mine = entries.filter((e) => e.action === 'day.close' && e.data.close_date === d);
     const signQ = new Map(entries.filter((e) => e.action === 'deposit.sign').map((e) => [e.data.deposit_id, e]));
-    const unsigned = recon.success ? recon.unsigned.filter((id) => !signQ.has(id)) : [];
+    const items = mergeDeposits(ds.success ? ds.deposits : [], entries, d);
+    const unsigned = items.filter((x) => !x.queued && !x.signed && !signQ.has(x.id));
+    const closed = recon.success && recon.closed === true;
     const why = closeBlockedReason({ waiting: counts.waiting, attention: counts.attention, unsigned: unsigned.length, isPast: d <= yesterdayIst() });
-    closeBtn.disabled = why.blocked || mine.some((e) => e.status === 'waiting');
-    if (!recon.success) info.replaceChildren(h('p', { class: 'flag bad' }, 'Could not load the reconciliation (offline or unavailable).'));
-    else info.replaceChildren(h('div', {},
-      h('h3', {}, 'Reconciliation for ' + isoToDmy(d)), h('ul', {}, reconLines(recon).map((l) => h('li', {}, l))),
-      unsigned.length || signQ.size ? h('h3', {}, 'Deposits to sign') : null,
-      h('ul', { class: 'office-list' }, [...unsigned.map((id) => h('li', {}, 'Deposit ' + id.slice(0, 8), ' ', signBtn(id))),
-        ...recon.unsigned.filter((id) => signQ.has(id)).map((id) => { const e = signQ.get(id); return h('li', {}, 'Deposit ' + id.slice(0, 8), ' ', h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + (e.error || e.code) : 'Signature waiting to sync')); })])));
-    notes.replaceChildren(h('div', {}, why.message ? h('p', { class: why.blocked ? 'flag bad' : 'flag' }, why.message) : null), ...queueNotes(entries.filter((e) => e.action === 'day.close')).map((n) => h('p', { class: n.bad ? 'flag bad' : 'flag' }, n.text)));
-    // Closed state: the close entry synced (no longer queued) and the day book now reports it.
-    if (closeId && !mine.length) {
+    closeBtn.disabled = closed || why.blocked || mine.some((e) => e.status === 'waiting');
+    const sign = (x) => {
+      if (x.queued || x.signed) return null;
+      const e = signQ.get(x.id);
+      return e ? h('span', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, e.status === 'attention' ? 'Signing needs attention: ' + (WHYSIGN[e.code] || e.error || e.code) : 'Signature waiting to sync') : signBtn(x.id);
+    };
+    if (!recon.success) setKids(info, h('p', { class: 'flag bad' }, 'Could not load the reconciliation (offline or unavailable).'));
+    else setKids(info, h('h3', {}, 'Reconciliation for ' + isoToDmy(d)), h('ul', {}, reconLines(recon).map((l) => h('li', {}, l))),
+      h('h3', {}, 'Deposits for this day'),
+      !ds.success ? h('p', { class: 'flag bad' }, 'Could not load the deposit list.') : null,
+      items.length ? h('ul', { class: 'office-list' }, items.map((x) => depositItem(x, viewBtn(x), sign(x)))) : (ds.success ? h('p', {}, 'No deposits for this day.') : null));
+    setKids(notes, why.message && !closed ? h('p', { class: why.blocked ? 'flag bad' : 'flag' }, why.message) : null, queueNotes(entries.filter((e) => e.action === 'day.close')).map((n) => h('p', { class: n.bad ? 'flag bad' : 'flag' }, n.text)));
+    // Closed: the server says so (also after a reload), or our close just synced. Show that day's balances.
+    if (closed || (closeId && !mine.length)) {
       const bal = await api.read('daybook.balances', { campus, date: d }, 'clbal');
       if (!bal.stale && bal.success && d === date) {
         clearInterval(timer); timer = null; closeId = null; closeBtn.disabled = true;
         msg.textContent = 'Day closed.';
-        result.replaceChildren(h('h3', {}, 'Closing balances for ' + isoToDmy(d)), balancesTable(bal));
+        setKids(result, h('h3', {}, 'Closing balances for ' + isoToDmy(d)), balancesTable(bal));
         return;
       }
-    }
+    } else setKids(result);
     if (mine.some((e) => e.status === 'waiting')) watch(); else if (timer) { clearInterval(timer); timer = null; }
   }
+  const viewBtn = (x) => {
+    const b = h('button', { type: 'button', class: 'secondary', onclick: () => guard('view:' + x.file_id, async () => {
+      b.disabled = true;
+      try { if (closeView) closeView(); closeView = await viewProof(api, campus, x.file_id, proofEl); }
+      catch (err) { setKids(proofEl, h('p', { class: 'flag bad' }, err && err.message || String(err))); }
+      b.disabled = false;
+    }) }, 'View slip');
+    return b;
+  };
   const signBtn = (id) => { const b = h('button', { type: 'button', onclick: () => guard('sign:' + id, async () => {
     b.disabled = true;
     try { await outbox.enqueue('deposit.sign', { campus, deposit_id: id }); outbox.flush().then(check).catch(() => {}); await check(); }
     catch (err) { msg.textContent = 'Could not save on this device: ' + (err && err.message || err); b.disabled = false; }
   }) }, 'Sign'); return b; };
   const watch = () => { if (!timer) timer = setInterval(check, 10000); };
-  dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= yesterdayIst()) { date = dateIn.value; closeId = null; result.replaceChildren(); msg.textContent = ''; check(); } else dateIn.value = date; });
+  dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= yesterdayIst()) { date = dateIn.value; closeId = null; if (closeView) closeView(); setKids(result); setKids(proofEl); msg.textContent = ''; check(); } else dateIn.value = date; });
+  window.addEventListener('pagehide', () => { if (closeView) closeView(); });
   window.addEventListener('online', () => { outbox.flush().then(check).catch(() => {}); });
   root.replaceChildren(h('h2', {}, 'Close Day'), form);
   await check();

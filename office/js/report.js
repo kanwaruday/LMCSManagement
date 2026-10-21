@@ -1,5 +1,5 @@
 // Daily Report screen. A re-submit for a date is a new row; the latest wins (backend R5).
-import { h, field } from './dom.js';
+import { h, field, setKids } from './dom.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, BUCKETS } from './daybook.js';
 
@@ -121,7 +121,7 @@ export async function showReport(root, session, api, outbox) {
     pendingShown = q.state === 'waiting' || q.state === 'attention';
     if (!r.success) { statusEl.textContent = 'Could not load the saved report (offline or unavailable).'; return; }
     const lines = r.report ? mismatchLines(r.cashMismatch) : [];
-    statusEl.replaceChildren(
+    setKids(statusEl, 
       r.report ? h('p', {}, 'Report for ' + isoToDmy(d) + ' saved on the server' + (r.report.late === 'true' ? ' (late)' : '') + '.') : h('p', {}, 'No report on the server for ' + isoToDmy(d) + ' yet.'),
       q.state === 'waiting' ? h('p', {}, 'A newer report is waiting to sync.') : null,
       q.state === 'attention' ? h('p', { class: 'flag bad' }, 'A newer report needs attention: ' + q.error) : null,

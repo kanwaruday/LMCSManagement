@@ -16,3 +16,7 @@ export function field(id, label, control, hint) {
   control.setAttribute('aria-describedby', id + '-err');
   return { root: h('div', {}, h('label', { for: id }, label), control, hint ? h('div', { class: 'meta' }, hint) : null, err), err, control };
 }
+// replaceChildren that skips null/false children (a bare replaceChildren(null) would insert the text "null").
+export function setKids(el, ...kids) {
+  el.replaceChildren(...kids.flat().filter((c) => c != null && c !== false));
+}

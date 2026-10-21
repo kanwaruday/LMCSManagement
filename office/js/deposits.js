@@ -1,6 +1,6 @@
 // Deposits screen: record a bank deposit with its slip photo, enter the day's ERP total, see the reconciliation.
 // Writes go through the FIFO outbox (file.upload first, then deposit.add, R7); viewing a proof is a direct audited call.
-import { h, field } from './dom.js';
+import { h, field, setKids } from './dom.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard } from './daybook.js';
 import { resizeImage } from './image.js';
@@ -54,9 +54,26 @@ export function reconLines(r) {
   return out;
 }
 export const loadRecon = (api, campus, date, key) => api.read('recon.get', { campus, date }, key);
+export const loadDeposits = (api, campus, date, key) => api.read('deposit.list', { campus, covers_date: date }, key);
+
+// Server deposits first, then deposit.add entries still in the outbox for that date (not yet on the server).
+// Each: {id, amount_paise, bank_ref, file_id, covers_date, signed, queued, status, error}.
+export function mergeDeposits(serverList, entries, date) {
+  const have = new Set((serverList || []).map((d) => d.id));
+  const queued = (entries || []).filter((e) => e.action === 'deposit.add' && e.data && e.data.covers_date === date && !have.has(e.id))
+    .map((e) => ({ ...e.data, id: e.id, signed: false, queued: true, status: e.status, error: e.status === 'attention' ? (WHY[e.code] || e.error || e.code || 'Needs attention') : '' }));
+  return (serverList || []).map((d) => ({ ...d, queued: false })).concat(queued);
+}
+
+// One list item per deposit: amount, bank ref, state, View slip (synced only), and extra (e.g. a Sign button).
+export function depositItem(d, viewBtn, extra) {
+  return h('li', {}, formatInr(d.amount_paise) + ' · ' + d.bank_ref + ' · covers ' + isoToDmy(d.covers_date) + ' ',
+    h('span', { class: d.status === 'attention' ? 'flag bad' : 'meta' }, d.queued ? (d.status === 'attention' ? 'Needs attention: ' + d.error : 'waiting to sync') : (d.signed ? 'signed' : 'not signed')),
+    ' ', d.queued ? null : viewBtn, extra ? ' ' : null, extra);
+}
 
 // Fetch a proof (audited, never queued) and show it from a Blob URL only. Returns a close function.
-async function viewProof(api, campus, fileId, slot) {
+export async function viewProof(api, campus, fileId, slot) {
   const r = await api.write('file.view', { id: fileId, campus });
   if (!r.success) throw new Error(r.error || 'Could not load the file');
   if (!canRenderMime(r.mime)) throw new Error('This file type cannot be shown.');
@@ -72,7 +89,6 @@ async function viewProof(api, campus, fileId, slot) {
 export async function showDeposits(root, session, api, outbox) {
   const campus = session.campus;
   let date = todayIst(), timer = null, closeView = null;
-  const sent = []; // {covers_date, amount_paise, bank_ref, file_id} saved on this device this session (proof can be viewed)
   const guard = inflightGuard();
 
   const coversIn = h('input', { type: 'date', value: date, max: date });
@@ -98,8 +114,7 @@ export async function showDeposits(root, session, api, outbox) {
         msg.textContent = 'Preparing the photo…';
         const img = await resizeImage(file);
         const fileId = await outbox.enqueue('file.upload', { campus, category: 'deposit_proof', belongs_to: '', name: file.name || 'deposit-slip', mime: img.mime, base64: img.base64 });
-        const depId = await outbox.enqueue('deposit.add', { ...r.data, file_id: fileId });
-        sent.push({ ...r.data, file_id: fileId, id: depId });
+        await outbox.enqueue('deposit.add', { ...r.data, file_id: fileId });
         msg.textContent = 'Saved — will sync';
         amtIn.value = ''; refIn.value = ''; fileIn.value = '';
         outbox.flush().then(check).catch(() => {}); watch(); await check();
@@ -134,25 +149,27 @@ export async function showDeposits(root, session, api, outbox) {
 
   async function check() {
     const d = coversIn.value;
-    const [r, entries] = await Promise.all([loadRecon(api, campus, d, 'dprecon'), outbox.entries().catch(() => [])]);
-    if (r.stale || d !== coversIn.value) return;
+    const [r, ds, entries] = await Promise.all([loadRecon(api, campus, d, 'dprecon'), loadDeposits(api, campus, d, 'dplist'), outbox.entries().catch(() => [])]);
+    if (r.stale || ds.stale || d !== coversIn.value) return;
     const notes = queueNotes(entries);
-    notesEl.replaceChildren(...notes.map((n) => h('p', { class: n.bad ? 'flag bad' : 'flag' }, n.text)));
+    setKids(notesEl, notes.map((n) => h('p', { class: n.bad ? 'flag bad' : 'flag' }, n.text)));
     if (!notes.some((n) => !n.bad)) { clearInterval(timer); timer = null; if (msg.textContent === 'Saved — will sync') msg.textContent = 'Saved and synced.'; } else watch();
-    reconEl.replaceChildren(r.success
+    setKids(reconEl, r.success
       ? h('div', {}, h('h3', {}, 'Reconciliation for ' + isoToDmy(d)), h('ul', {}, reconLines(r).map((l) => h('li', {}, l))), r.unsigned.length ? h('p', {}, r.unsigned.length + ' deposit(s) not signed yet by the Finance Head.') : null)
       : h('p', { class: 'flag bad' }, 'Could not load the reconciliation (offline or unavailable).'));
-    const queuedIds = new Set(entries.filter((e) => e.action === 'deposit.add').map((e) => e.id));
-    sentEl.replaceChildren(h('div', {}, sent.length ? h('div', {}, h('h3', {}, 'Deposits saved on this device'), h('ul', { class: 'office-list' }, sent.map((s) => {
-      const b = h('button', { type: 'button', class: 'secondary', onclick: () => guard('view:' + s.file_id, async () => {
-        b.disabled = true;
-        try { if (closeView) closeView(); closeView = await viewProof(api, campus, s.file_id, proofEl); }
-        catch (err) { proofEl.replaceChildren(h('p', { class: 'flag bad' }, err && err.message || String(err))); }
-        b.disabled = false;
-      }) }, 'View slip');
-      return h('li', {}, formatInr(s.amount_paise) + ' · ' + s.bank_ref + ' · covers ' + isoToDmy(s.covers_date) + ' ', h('span', { class: 'meta' }, queuedIds.has(s.id) ? 'waiting to sync' : 'synced'), ' ', b);
-    }))) : null));
+    const items = mergeDeposits(ds.success ? ds.deposits : [], entries, d);
+    setKids(sentEl, h('h3', {}, 'Deposits for ' + isoToDmy(d)), ds.success || items.length ? null : h('p', { class: 'flag bad' }, 'Could not load the deposit list (offline or unavailable).'),
+      items.length ? h('ul', { class: 'office-list' }, items.map((x) => depositItem(x, viewBtn(x)))) : (ds.success ? h('p', {}, 'No deposits for this day yet.') : null));
   }
+  const viewBtn = (x) => {
+    const b = h('button', { type: 'button', class: 'secondary', onclick: () => guard('view:' + x.file_id, async () => {
+      b.disabled = true;
+      try { if (closeView) closeView(); closeView = await viewProof(api, campus, x.file_id, proofEl); }
+      catch (err) { setKids(proofEl, h('p', { class: 'flag bad' }, err && err.message || String(err))); }
+      b.disabled = false;
+    }) }, 'View slip');
+    return b;
+  };
   const watch = () => { if (!timer) timer = setInterval(check, 10000); };
   coversIn.addEventListener('change', () => { if (coversIn.value && coversIn.value <= todayIst()) { date = coversIn.value; check(); } else coversIn.value = date; });
   window.addEventListener('online', () => { outbox.flush().then(check).catch(() => {}); });

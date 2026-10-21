@@ -122,6 +122,18 @@ module.exports = function run(t) {
     assert.equal(set('e6', 1.5).error, 'BAD_AMOUNT');
   });
 
+  t.test('deposit.list returns amount, bank_ref, file_id; signed flips after deposit.sign; other campus refused', () => {
+    const h = fresh(); fee(h, 9000); dep(h, { id: 'l1', amount_paise: 4000, bank_ref: 'R-7' }); dep(h, { id: 'l2', covers_date: '2026-10-19', amount_paise: 100 });
+    const list = () => h.call('deposit.list', { campus: 'LMS1', covers_date: '2026-10-20' }, 'clerk-token');
+    let r = list();
+    assert.equal(r.success, true); assert.equal(r.deposits.length, 1);
+    assert.deepEqual([r.deposits[0].id, r.deposits[0].amount_paise, r.deposits[0].bank_ref, r.deposits[0].file_id, r.deposits[0].signed, r.deposits[0].created_by], ['l1', 4000, 'R-7', 'slip', false, 'clerk@example.org']);
+    h.call('deposit.sign', { id: 'ls', campus: 'LMS1', deposit_id: 'l1' }, 'fh-token');
+    assert.equal(list().deposits[0].signed, true);
+    assert.equal(h.call('deposit.list', { campus: 'LMS1', covers_date: '2026-10-20' }, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(recon(h).closed, false);
+  });
+
   t.test('sign by clerk refused, by FinanceHead derives signed and audits; second sign is ALREADY_SIGNED', () => {
     const h = fresh(); fee(h, 5000); dep(h, { id: 'dx' });
     const sign = (id, tok) => h.call('deposit.sign', { id, campus: 'LMS1', deposit_id: 'dx' }, tok);

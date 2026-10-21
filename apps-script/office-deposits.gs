@@ -7,6 +7,7 @@ function officeDepositsActions_() {
     'deposit.add': { roles: ['FeeClerk', 'AdminManager', 'Owner'], write: true, run: officeDepositAdd_ },
     'deposit.sign': { roles: ['FinanceHead', 'Owner'], write: true, run: officeDepositSign_ },
     'erp.set': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeErpSet_ },
+    'deposit.list': { roles: OFFICE_ALL_ROLES, write: false, run: officeDepositList_ },
     'recon.get': { roles: OFFICE_ALL_ROLES, write: false, run: officeReconGet_ },
   };
 }
@@ -97,6 +98,23 @@ function officeDepositSign_(ctx, data) {
   return { id: res.id, duplicate: res.duplicate };
 }
 
+// Deposits covering a date (R30). A deposit lands in the book of the day it was recorded, so look in the
+// recent books like recon.get does, not only the covers_date's year. signed is derived from DepositSigns.
+function officeDepositList_(ctx, data) {
+  if (!officeIsoDate_(data.covers_date)) throw new Error('BAD_DATE');
+  const books = officeRecentBooks_(data.campus);
+  const all = function (tab) {
+    return books.reduce(function (acc, b) { return acc.concat(officeRows_(b, tab)); }, []).filter(function (r) { return r.campus === data.campus; });
+  };
+  const signed = {};
+  all('DepositSigns').forEach(function (s) { signed[s.deposit_id] = true; });
+  return {
+    deposits: all('Deposits').filter(function (d) { return d.covers_date === data.covers_date; }).map(function (d) {
+      return { id: d.id, covers_date: d.covers_date, amount_paise: d.amount_paise, bank_ref: d.bank_ref, file_id: d.file_id, created_at: d.created_at, created_by: d.created_by, signed: !!signed[d.id] };
+    }),
+  };
+}
+
 function officeErpSet_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (!officeIsoDate_(data.total_date)) throw new Error('BAD_DATE');
@@ -138,6 +156,7 @@ function officeReconGet_(ctx, data) {
   return {
     erp: erp, daybook_fee_cash: daybook, deposited: deposited,
     unsigned: deps.filter(function (d) { return !signed[d.id]; }).map(function (d) { return d.id; }),
+    closed: officeIsClosed_(dateBook, date),
     overdue: officeToday_() > officeAddDays_(date, 1) && deposited < daybook, // due by the end of the next IST day
     differences: differences,
   };

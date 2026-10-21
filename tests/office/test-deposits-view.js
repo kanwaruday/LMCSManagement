@@ -4,7 +4,7 @@ const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
   const { resizeDims, pdfTooBig, PDF_MAX_BYTES } = await import('../../office/js/image.js');
-  const { canRenderMime, depositFromForm, queueNotes, reconLines } = await import('../../office/js/deposits.js');
+  const { canRenderMime, depositFromForm, queueNotes, reconLines, mergeDeposits } = await import('../../office/js/deposits.js');
   const { closeBlockedReason } = await import('../../office/js/close.js');
 
   assert.deepStrictEqual(resizeDims(4000, 3000, 1600), { w: 1600, h: 1200 });
@@ -43,6 +43,12 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(notes.length, 3);
   assert.match(notes[0].text, /closed/i); assert.match(notes[1].text, /photo|file/i); assert.strictEqual(notes[2].bad, false);
   console.log('  ok  - queueNotes');
+
+  const srv = [{ id: 'a', covers_date: '2026-10-20', amount_paise: 1, bank_ref: 'x', file_id: 'f', signed: false }];
+  const md = mergeDeposits(srv, [{ id: 'a', action: 'deposit.add', status: 'waiting', data: { covers_date: '2026-10-20' } }, { id: 'q', action: 'deposit.add', status: 'attention', code: 'FILE_MISSING', data: { covers_date: '2026-10-20', amount_paise: 2, bank_ref: 'y', file_id: 'g' } }, { id: 'o', action: 'deposit.add', status: 'waiting', data: { covers_date: '2026-10-19' } }], '2026-10-20');
+  assert.deepStrictEqual(md.map((x) => [x.id, x.queued]), [['a', false], ['q', true]]); // synced not doubled, other dates skipped
+  assert.match(md[1].error, /photo/);
+  console.log('  ok  - mergeDeposits');
 
   const L = reconLines({ erp: null, daybook_fee_cash: 100000, deposited: 90000, unsigned: [], overdue: true, differences: [{ a: 'daybook_fee_cash', b: 'deposited', delta_paise: 10000 }] });
   assert.ok(L.some((x) => x.includes('₹1,000.00')) && L.some((x) => /overdue/i.test(x)) && L.some((x) => x.includes('₹100.00')));
