@@ -30,6 +30,9 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(closeBlockedReason({ waiting: 0, unsigned: 0, attention: 0, isPast: true }), { blocked: false, message: '' });
   assert.strictEqual(closeBlockedReason({ waiting: 0, attention: 1, isPast: true }).blocked, false);
   assert.match(closeBlockedReason({ waiting: 0, attention: 1, isPast: true }).message, /needs attention/);
+  // click-time re-check: the same helper fed fresh counts blocks even when the render-time view had waiting 0
+  assert.strictEqual(closeBlockedReason({ waiting: 0, isPast: true }).blocked, false);
+  assert.strictEqual(closeBlockedReason({ waiting: 1, isPast: true }).blocked, true);
   console.log('  ok  - closeBlockedReason');
 
   const d = depositFromForm({ campus: 'LMS1', covers_date: '2026-10-20', amount: '1,500.50', bank_ref: ' UTR1 ', hasFile: true });

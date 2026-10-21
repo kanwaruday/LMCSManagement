@@ -73,6 +73,9 @@ export function depositItem(d, viewBtn, extra) {
 }
 
 // Fetch a proof (audited, never queued) and show it from a Blob URL only. Returns a close function.
+// Only one proof is open at a time (module-level): opening another, or closeProof(), revokes the previous Blob URL.
+let activeClose = null;
+export function closeProof() { if (activeClose) { const c = activeClose; activeClose = null; c(); } }
 export async function viewProof(api, campus, fileId, slot) {
   const r = await api.write('file.view', { id: fileId, campus });
   if (!r.success) throw new Error(r.error || 'Could not load the file');
@@ -81,14 +84,15 @@ export async function viewProof(api, campus, fileId, slot) {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   const url = URL.createObjectURL(new Blob([bytes], { type: r.mime }));
   const view = r.mime === 'application/pdf' ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Open the PDF') : h('img', { src: url, alt: 'Deposit slip', style: 'max-width:100%' });
+  closeProof();
   const close = () => { URL.revokeObjectURL(url); slot.replaceChildren(); };
+  activeClose = close;
   slot.replaceChildren(view, h('button', { type: 'button', class: 'secondary', onclick: close }, 'Close the file'));
-  return close;
 }
 
 export async function showDeposits(root, session, api, outbox) {
   const campus = session.campus;
-  let date = todayIst(), timer = null, closeView = null;
+  let date = todayIst(), timer = null;
   const guard = inflightGuard();
 
   const coversIn = h('input', { type: 'date', value: date, max: date });
@@ -162,9 +166,9 @@ export async function showDeposits(root, session, api, outbox) {
       items.length ? h('ul', { class: 'office-list' }, items.map((x) => depositItem(x, viewBtn(x)))) : (ds.success ? h('p', {}, 'No deposits for this day yet.') : null));
   }
   const viewBtn = (x) => {
-    const b = h('button', { type: 'button', class: 'secondary', onclick: () => guard('view:' + x.file_id, async () => {
+    const b = h('button', { type: 'button', class: 'secondary', onclick: () => guard('view', async () => {
       b.disabled = true;
-      try { if (closeView) closeView(); closeView = await viewProof(api, campus, x.file_id, proofEl); }
+      try { await viewProof(api, campus, x.file_id, proofEl); }
       catch (err) { setKids(proofEl, h('p', { class: 'flag bad' }, err && err.message || String(err))); }
       b.disabled = false;
     }) }, 'View slip');
@@ -173,7 +177,7 @@ export async function showDeposits(root, session, api, outbox) {
   const watch = () => { if (!timer) timer = setInterval(check, 10000); };
   coversIn.addEventListener('change', () => { if (coversIn.value && coversIn.value <= todayIst()) { date = coversIn.value; check(); } else coversIn.value = date; });
   window.addEventListener('online', () => { outbox.flush().then(check).catch(() => {}); });
-  window.addEventListener('pagehide', () => { if (closeView) closeView(); });
+  window.addEventListener('pagehide', closeProof);
 
   root.replaceChildren(h('h2', {}, 'Deposits'), reconEl, notesEl, h('h3', {}, 'New deposit'), form, h('h3', {}, 'ERP total'), erpForm, sentEl, proofEl);
   await check();
