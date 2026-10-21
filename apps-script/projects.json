@@ -82,7 +82,8 @@
       "office-files",
       "office-deposits",
       "office-today",
-      "office-backup"
+      "office-backup",
+      "office-import"
     ]
   }
 }
