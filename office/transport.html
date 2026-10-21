@@ -11,6 +11,10 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../coordinator/shared.css?v=be0c99dc" />
   <link rel="stylesheet" href="office.css" />
+  <style>
+    /* Clerks need the grid only: no Coordinator title, data-freshness line or summary tiles. */
+    #today .pagetitle, #today .pagesub, #today .tiles, #today .tr-body > .note:first-child { display: none; }
+  </style>
 </head>
 <body>
   <header class="site">
