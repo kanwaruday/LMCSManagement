@@ -112,6 +112,7 @@ module.exports = function run(t) {
 
   t.test('reverse across the year boundary writes to the new book; NOT_FOUND when neither book has it', () => {
     const h = fresh(); h.addBook('LMS1', '2027-28');
+    h.setNow(new Date('2027-03-31T10:00:00Z'));
     add(h, { id: 'old', entry_date: '2027-03-31', amount_paise: 500 });
     h.setNow(new Date('2027-04-02T10:00:00Z'));
     assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
