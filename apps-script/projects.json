@@ -67,5 +67,13 @@
     "files": [
       "fee-mail-capture"
     ]
+  },
+  "office": {
+    "name": "LMCS Office Backend (Fee Clerk + PRO Portal)",
+    "scriptId": null,
+    "deploymentId": null,
+    "files": [
+      "office"
+    ]
   }
 }
