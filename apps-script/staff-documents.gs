@@ -111,7 +111,14 @@ function sdocSyncDocumentsTable_() {
   const sheet = wb.getSheetByName(SDOC_TABLE_TAB_) || wb.insertSheet(SDOC_TABLE_TAB_, 0);
   const n = SDOC_TABLE_HEADER_.length;
   const old = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, n).getValues() : [];
-  const rows = sdocFormRows_().concat(old.filter(function (r) { return r[SDOC_COL_.source] === 'Portal'; }));
+  const formRows = sdocFormRows_();
+  const inForms = {};
+  formRows.forEach(function (r) { const id = extractDriveFileId_(r[SDOC_COL_.link]); if (id) inForms[id] = true; });
+  // Keep Portal uploads, and the "No form record" Drive files the upload check added (computeNewUploads_)
+  // until a form row turns up for them.
+  const rows = formRows.concat(old.filter(function (r) {
+    return r[SDOC_COL_.source] === 'Portal' || (r[SDOC_COL_.source] === 'Drive' && !inForms[extractDriveFileId_(r[SDOC_COL_.link])]);
+  }));
   const key = function (r) { return [r[SDOC_COL_.school], r[SDOC_COL_.name], r[SDOC_COL_.type]].join('|').toUpperCase(); };
   rows.sort(function (a, b) { return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0; });
 

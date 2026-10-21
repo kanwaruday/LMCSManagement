@@ -505,18 +505,11 @@ async function loadDocumentStatus() {
   }
 }
 
-// New-upload detection banner (Uday, 2026-09-24): live-compares actual
-// file counts in each campus's Staff Document Submission folders against
-// how many rows the Certificate Links sheet currently has for that
-// school. A positive delta means files have been uploaded since the
-// sheet was last refreshed (that refresh is still a manual local step,
-// see apps-script/certificate-link-import.gs -- this banner only tells
-// you it's worth running, it doesn't run it). Silently does nothing on
-// failure -- this is a nice-to-have signal, not worth showing an error
-// banner over if e.g. a folder got renamed.
-// Cached server-side 1 hour as of 2026-09-30 (PayRoll session's perf
-// audit) -- pass force=true (the "Check now" link below) to bypass that
-// and get the live number right after uploading.
+// Upload check banner (2026-09-24; reworked 2026-10-21). The server walks every campus upload folder,
+// adds any file missing from the Documents table (ID Check "No form record"), and returns, per school,
+// how many files can't be linked to a person yet. Those need a human to fix the Employee ID in the
+// Documents table -- the list below refreshes itself, so there is nothing to re-run. Cached server-side
+// 1 hour; "Check now" bypasses that. Silent on failure: a hint, not worth an error box.
 async function loadUploadStatus(force) {
   const el = document.getElementById('docUploadBanner');
   try {
@@ -524,14 +517,19 @@ async function loadUploadStatus(force) {
     if (!json.success) return;
     const checkNow = ' <a href="#" class="upload-check-now" onclick="loadUploadStatus(true);return false;">Check now</a>';
     const schools = json.schools || {};
-    const withNew = Object.keys(schools).filter(function (s) { return schools[s] && schools[s].delta > 0; });
-    if (!withNew.length) {
-      el.innerHTML = '<div class="upload-banner ok">✓ No new uploads detected since the Certificate Links sheet was last refreshed.' + checkNow + '</div>';
+    const label = { 'Blank ID': 'blank Employee ID', 'Not on roster': 'Employee ID not on the roster', 'No form record': 'no form record' };
+    let total = 0;
+    const parts = Object.keys(schools).filter(function (sc) { return schools[sc]; }).map(function (sc) {
+      const bits = Object.keys(label).filter(function (k) { return schools[sc][k]; }).map(function (k) { total += schools[sc][k]; return schools[sc][k] + ' ' + label[k]; });
+      return bits.length ? '<b>' + esc(sc) + '</b>: ' + esc(bits.join(', ')) : '';
+    }).filter(Boolean);
+    if (!total) {
+      el.innerHTML = '<div class="upload-banner ok">✓ Every uploaded file is in the list below.' + checkNow + '</div>';
       return;
     }
-    const parts = withNew.map(function (s) { return esc(CAMPUS_LABELS[s] || s) + ' (+' + schools[s].delta + ')'; });
-    el.innerHTML = '<div class="upload-banner info">📤 New documents uploaded, not yet in the list below — ' +
-      parts.join(', ') + '. Re-run the Certificate Links importer to pick them up.' + checkNow + '</div>';
+    el.innerHTML = '<div class="upload-banner info"><span>📤 ' + total + ' uploaded files aren\'t in the list below because they can\'t be matched to a staff member — ' +
+      parts.join('; ') + '. Fix the Employee ID on those rows in the <a href="https://docs.google.com/spreadsheets/d/1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg/edit" target="_blank" rel="noopener">Documents table</a> ' +
+      '(filter the ID Check column); they\'ll show up here within the hour.</span>' + checkNow + '</div>';
   } catch (e) {
     el.innerHTML = '';
   }

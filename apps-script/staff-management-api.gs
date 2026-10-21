@@ -561,21 +561,15 @@ function readCertificatesByCode_() {
   return map;
 }
 
-// ── New-upload detection (Uday, 2026-09-24) ──────────────────────────
-// Lightweight, read-only signal for whether employees have uploaded
-// documents since the "Certificate Links" sheet was last refreshed (that
-// refresh itself stays a local, manual step -- drive-index/build_employee
-// _cert_links.py + generate_appscript_import.py + re-running
-// importCertificateLinks() -- this only tells you WHEN a refresh is
-// worth doing, it doesn't automate the refresh itself).
-//
-// Cached 1 hour as of 2026-09-30 (PayRoll session's perf audit) -- six
-// DriveApp folder walks turned out NOT cheap in practice on the live
-// Drive tree, and this only needs to answer "roughly how stale is the
-// sheet" -- an hour of staleness on a freshness CHECK is fine, unlike
-// the document/verification data itself. `forceCheck` (the portal's
-// "Check now" button) bypasses and refreshes the cache for when someone
-// really does need the live number right after uploading.
+// ── Upload check (Uday, 2026-09-24; reworked 2026-10-21) ─────────────
+// Every file in each campus's "Staff Document Submission form (File responses)" folders is compared,
+// by Drive file ID, with the Documents table (staff-documents.gs). Any file the table doesn't have --
+// its form response was deleted, or it came from another form -- is ADDED to the table as Source
+// "Drive", ID Check "No form record", so nothing uploaded is ever invisible. The banner then reports
+// what still needs a person: files whose Employee ID is blank / not on the roster / missing a form
+// record (all filterable in the table's ID Check column). Certificate Links itself refreshes on its
+// own (refreshCertificateLinksIfStale_), so there's nothing to "re-run".
+// Cached 1 hour: walking six Drive trees isn't cheap. "Check now" (force) bypasses the cache.
 const CENTRAL_REPO_FOLDER_ID_ = '1ogMId6iUIA2WTnnSsEKqj5eDOxqaZeWJ';
 const SCHOOL_TO_CAMPUS_DIR_ = {
   'LMS 1': 'LMS 1 - Dhalpur', 'LMS 2': 'LMS 2 - Kelheli', 'LMS 3': 'LMS 3 - Dunkhra',
@@ -587,37 +581,15 @@ function getSubfolder_(parent, name) {
   return it.hasNext() ? it.next() : null;
 }
 
-function countFilesRecursive_(folder, depth) {
-  if (depth > 6) return 0; // guard against an unexpectedly deep/looping tree
-  let count = 0;
+// Every file under `folder` (depth-guarded), as [file, top-level subfolder name].
+function filesUnder_(folder, depth, top, out) {
+  if (depth > 6) return out; // guard against an unexpectedly deep/looping tree
   const files = folder.getFiles();
-  while (files.hasNext()) { files.next(); count++; }
+  while (files.hasNext()) out.push([files.next(), top]);
   const subs = folder.getFolders();
-  while (subs.hasNext()) { count += countFilesRecursive_(subs.next(), depth + 1); }
-  return count;
+  while (subs.hasNext()) { const f = subs.next(); filesUnder_(f, depth + 1, top || f.getName(), out); }
+  return out;
 }
-
-// Only counts files under subfolders that hold one of the tracked document types (same keywords
-// Certificate Links is built with, certificate-link-import.gs) -- anything else in there would
-// show as a permanent false "drift".
-function countCertFilesInFormRoot_(formRoot) {
-  let count = 0;
-  const subs = formRoot.getFolders();
-  while (subs.hasNext()) {
-    const sub = subs.next();
-    const base = sub.getName().toUpperCase().replace(/\s+/g, ' ');
-    const isCertType = Object.keys(CERT_CATEGORY_KEYWORDS_).some(function (t) {
-      return CERT_CATEGORY_KEYWORDS_[t].some(function (kw) { return base.indexOf(kw) !== -1; });
-    });
-    if (isCertType) count += countFilesRecursive_(sub, 0);
-  }
-  return count;
-}
-
-// Returns { 'LMS 1': {driveFileCount, sheetRowCount, delta} | null, ... }
-// -- null for a school whose folder chain isn't found (renamed/moved)
-// rather than throwing and breaking the whole response for every school.
-const UPLOAD_STATUS_CACHE_TTL_SECONDS_ = 3600; // 1 hour -- see comment above
 
 function checkNewUploads_(forceCheck) {
   const cache = CacheService.getScriptCache();
@@ -631,39 +603,50 @@ function checkNewUploads_(forceCheck) {
 }
 
 function computeNewUploads_() {
-  const root = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+  const C = SDOC_COL_;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const wb = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_);
+    if (!wb.getSheetByName(SDOC_TABLE_TAB_)) sdocSyncDocumentsTable_();
+    const table = wb.getSheetByName(SDOC_TABLE_TAB_);
+    const rows = table.getLastRow() > 1 ? table.getRange(2, 1, table.getLastRow() - 1, SDOC_TABLE_HEADER_.length).getValues() : [];
+    const known = {};
+    rows.forEach(function (r) { const id = extractDriveFileId_(r[C.link]); if (id) known[id] = true; });
 
-  const sheet = openEmpWorkbook_().getSheetByName('Certificate Links');
-  const sheetCounts = {};
-  if (sheet) {
-    const rows = sheet.getDataRange().getValues();
-    const header = rows[0];
-    const schoolCol = header.indexOf('School');
-    const linkCol = header.indexOf('Drive Link');
-    for (let i = 1; i < rows.length; i++) {
-      const link = linkCol >= 0 ? String(rows[i][linkCol] || '').trim() : '';
-      if (!link) continue;
-      const school = schoolCol >= 0 ? String(rows[i][schoolCol] || '').trim() : '';
-      if (!school) continue;
-      sheetCounts[school] = (sheetCounts[school] || 0) + 1;
-    }
+    const root = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+    const added = [];
+    const result = {};
+    Object.keys(SCHOOL_TO_CAMPUS_DIR_).forEach(function (school) {
+      try {
+        const campusFolder = getSubfolder_(root, SCHOOL_TO_CAMPUS_DIR_[school]);
+        const empFile = campusFolder && getSubfolder_(campusFolder, 'Employee File - ' + school);
+        const formRoot = empFile && getSubfolder_(empFile, school + ' Staff Document Submission form (File responses)');
+        if (!formRoot) { result[school] = null; return; }
+        filesUnder_(formRoot, 0, '', []).forEach(function (pair) {
+          const file = pair[0];
+          if (known[file.getId()]) return;
+          const folder = String(pair[1] || '').replace(/\s*\(\d+\)$/, '').replace(/\s*\(File responses\)$/i, '').trim();
+          added.push([file.getDateCreated(), '', '', school, sdocTypeOfHeader_(folder) || folder || '(no folder)',
+            'https://drive.google.com/open?id=' + file.getId(), '', 'Drive', 'No form record']);
+          known[file.getId()] = true;
+        });
+        result[school] = {};
+      } catch (err) {
+        result[school] = null;
+      }
+    });
+    if (added.length) table.getRange(table.getLastRow() + 1, 1, added.length, SDOC_TABLE_HEADER_.length).setValues(added);
+
+    rows.concat(added).forEach(function (r) {
+      const s = result[r[C.school]];
+      if (!s || !r[C.check]) return;
+      s[r[C.check]] = (s[r[C.check]] || 0) + 1;
+    });
+    return result; // {'LMS 1': {'Blank ID': n, 'Not on roster': n, 'No form record': n} | null, ...}
+  } finally {
+    lock.releaseLock();
   }
-
-  const result = {};
-  Object.keys(SCHOOL_TO_CAMPUS_DIR_).forEach(function (school) {
-    try {
-      const campusFolder = getSubfolder_(root, SCHOOL_TO_CAMPUS_DIR_[school]);
-      const empFile = campusFolder && getSubfolder_(campusFolder, 'Employee File - ' + school);
-      const formRoot = empFile && getSubfolder_(empFile, school + ' Staff Document Submission form (File responses)');
-      if (!formRoot) { result[school] = null; return; }
-      const driveFileCount = countCertFilesInFormRoot_(formRoot);
-      const sheetRowCount = sheetCounts[school] || 0;
-      result[school] = { driveFileCount: driveFileCount, sheetRowCount: sheetRowCount, delta: driveFileCount - sheetRowCount };
-    } catch (err) {
-      result[school] = null;
-    }
-  });
-  return result;
 }
 
 // School-wise document-compliance table (Uday, 2026-09-24): every ACTIVE
