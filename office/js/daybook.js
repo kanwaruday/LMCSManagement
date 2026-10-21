@@ -66,7 +66,7 @@ export function fyEnd(iso) {
 
 const catLabel = (cats, id) => (cats.find((c) => c.id === id) || {}).label || id;
 
-function balancesTable(b) {
+export function balancesTable(b) {
   const rows = [['Cash — Petty', (x) => x.cash.petty], ['Cash — Fee', (x) => x.cash.fee], ['Cash — Other', (x) => x.cash.other], ['Bank', (x) => x.bank], ['UPI', (x) => x.upi]];
   return h('table', { class: 'bal' },
     h('thead', {}, h('tr', {}, ['', 'Opening', 'In', 'Out', 'Closing'].map((t) => h('th', {}, t)))),
