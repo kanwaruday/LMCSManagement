@@ -40,6 +40,7 @@ const lookup = (map, v) => { const k = Object.keys(map || {}).find((x) => norm(x
 
 // RFC-4180 reader: quoted fields, "" escapes, CRLF/LF. Returns array of arrays.
 export function parseCsv(text) {
+  text = text.replace(/^\uFEFF/, '');
   const rows = []; let row = [], f = '', q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -86,6 +87,7 @@ export function mapLegacyRow(row, mapping, ctx) {
     amount = p.paise; direction = p.neg ? 'OUT' : 'IN';
   } else {
     const r = parseAmount(row[a.receipt]), p = parseAmount(row[a.payment]);
+    if (r?.neg || p?.neg) return { skip: true, reason: 'negative amount in receipt/payment column' };
     if (!r || !p) return { skip: true, reason: `unparseable amount "${!r ? row[a.receipt] : row[a.payment]}"` };
     if (!r.empty && !p.empty) return { skip: true, reason: 'both receipt and payment filled' };
     if (r.empty && p.empty) return { skip: true, reason: 'zero or empty amount' };
@@ -126,35 +128,47 @@ const rupees = (p) => (p < 0 ? '-' : '') + Math.floor(Math.abs(p) / 100) + '.' +
 // Whole import in memory: {daybook, closes, report} as CSV/text strings plus counts.
 export function buildImport(csvText, mapping, campus, at) {
   const [head, ...lines] = parseCsv(csvText);
-  const rows = [], skipped = [], legacyTotals = {};
+  const rows = [], skipped = [], notes = [], legacyTotals = {}, openDays = new Set();
+  let undated = 0;
   lines.forEach((cells, i) => {
     if (cells.every((c) => c.trim() === '')) return;
     const rowNumber = i + 2; // spreadsheet row: header is row 1
     const obj = Object.fromEntries(head.map((h, j) => [h, cells[j] ?? '']));
     const r = mapLegacyRow(obj, mapping, { campus, rowNumber });
-    if (r.skip) return skipped.push({ rowNumber, reason: r.reason });
+    if (r.skip) {
+      skipped.push({ rowNumber, reason: r.reason });
+      const d = parseDate(obj[mapping.dateColumn], mapping.dateFormat);
+      if (d) openDays.add(d); else undated++;
+      return;
+    }
     r.created_at = at; r.created_by = 'import';
     rows.push(r);
     if (mapping.closingColumn && String(obj[mapping.closingColumn]).trim() !== '') {
       const c = parseAmount(obj[mapping.closingColumn]);
       if (c && !c.empty) legacyTotals[r.entry_date] = c.neg ? -c.paise : c.paise; // last row of the day wins
       else if (c && c.empty) legacyTotals[r.entry_date] = 0;
-      else skipped.push({ rowNumber, reason: `row imported, but closing balance "${obj[mapping.closingColumn]}" unreadable` });
+      else notes.push(`row ${rowNumber}: imported, but closing balance "${obj[mapping.closingColumn]}" unreadable`);
     }
   });
   const opening = mapping.opening || ZERO_OPENING();
   const dates = [...new Set(rows.map((r) => r.entry_date))].sort();
-  const closes = dates.map((d) => ({ id: `impclose-${campus}-${d}`, campus, close_date: d, closing_json: JSON.stringify(balances(opening, rows, d)), created_at: at, created_by: 'import' }));
+  const closeDates = dates.filter((d) => !openDays.has(d));
+  const heldOpen = dates.filter((d) => openDays.has(d));
+  for (const d of Object.keys(legacyTotals)) if (!closeDates.includes(d)) delete legacyTotals[d];
+  const closes = closeDates.map((d) => ({ id: `impclose-${campus}-${d}`, campus, close_date: d, closing_json: JSON.stringify(balances(opening, rows, d)), created_at: at, created_by: 'import' }));
   const v = verifyTotals(rows, legacyTotals, opening);
   const report = [
     `Legacy day book import, campus ${campus}, run at ${at}`,
-    `Data rows read: ${rows.length + skipped.filter((s) => !s.reason.startsWith('row imported')).length}`,
-    `Imported: ${rows.length} rows, ${closes.length} closed days${dates.length ? ` (${dates[0]} to ${dates[dates.length - 1]})` : ''}`,
+    `Data rows read: ${rows.length + skipped.length}`,
+    `Imported: ${rows.length} rows, ${closes.length} closed days, ${heldOpen.length} days left open${dates.length ? ` (${dates[0]} to ${dates[dates.length - 1]})` : ''}`,
     `Skipped: ${skipped.length}`, ...skipped.map((s) => `  row ${s.rowNumber}: ${s.reason}`),
+    ...(undated ? [`WARNING: ${undated} skipped row(s) have no readable date, so totals are partial and no day can be proven complete; check every day before closing it.`] : []),
+    `Days left open (they have skipped rows; fix them in the portal, then close): ${heldOpen.length}`, ...heldOpen.map((d) => `  ${d}`),
+    ...(notes.length ? ['Notes:', ...notes.map((n) => '  ' + n)] : []),
     `Days checked against legacy closing: ${Object.keys(legacyTotals).length}, differing: ${v.diffs.length}`,
     ...v.diffs.map((d) => `  ${d.date}: legacy ${rupees(d.legacy)}, computed ${rupees(d.computed)}, diff ${rupees(d.diff)}`),
   ].join('\n') + '\n';
-  return { daybook: toCsv(DAYBOOK_COLS, rows), closes: toCsv(CLOSES_COLS, closes), report, rows, skipped, diffs: v.diffs };
+  return { daybook: toCsv(DAYBOOK_COLS, rows), closes: toCsv(CLOSES_COLS, closes), report, rows, skipped, heldOpen, diffs: v.diffs };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

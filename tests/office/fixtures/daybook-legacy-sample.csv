@@ -11,3 +11,5 @@ Date,Receipt,Payment,Mode,Head,Category,Party,Narration,Closing Balance
 03/04/2026,,0,Cash,Petty,Petty cash,Test Vendor C,Zero row,
 03/04/2026,,"1,2,3",Cash,Petty,Petty cash,Test Vendor D,Bad grouping,
 03/04/2026,250,,Cash,Fees,Donation,Test Donor D,"Note with, comma and ""quote""","-136,549.40"
+03/04/2026,-300,,Cash,Fees,Fees,Test Student H,Negative receipt,
+03/04/2026,,-300,Cash,Petty,Petty cash,Test Vendor E,Negative payment,

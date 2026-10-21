@@ -31,12 +31,34 @@ module.exports = function run(t) {
 
   t.test('unparseable rows are skipped with a reason, never guessed', () => {
     const b = build();
-    assert.deepStrictEqual(b.skipped.map((s) => s.rowNumber), [7, 8, 9, 10, 11, 12]);
-    assert.deepStrictEqual(b.skipped.map((s) => s.reason.split(' ')[0]), ['unparseable', 'unreadable', 'unmapped', 'both', 'zero', 'unparseable']);
+    assert.deepStrictEqual(b.skipped.map((s) => s.rowNumber), [7, 8, 9, 10, 11, 12, 14, 15]);
+    assert.deepStrictEqual(b.skipped.map((s) => s.reason.split(' ')[0]), ['unparseable', 'unreadable', 'unmapped', 'both', 'zero', 'unparseable', 'negative', 'negative']);
     assert.ok(b.report.includes('row 7: unparseable amount "abc"'));
     assert.strictEqual(b.rows.length, 6);
     const noDefault = imp.mapLegacyRow({ Date: '01/04/2026', Receipt: '5', Mode: 'Cash', Head: 'Nope' }, Object.assign({}, mapping, { bucket: { column: 'Head', map: {} } }), { campus: 'LMS1', rowNumber: 2 });
     assert.ok(noDefault.skip && /bucket/.test(noDefault.reason));
+  });
+
+  t.test('days with a skipped row are not closed; they are listed, and undated skips warn that totals are partial', () => {
+    const b = build();
+    assert.deepStrictEqual(b.heldOpen, ['2026-04-03']);
+    assert.deepStrictEqual(imp.parseCsv(b.closes).slice(1).map((r) => r[2]), ['2026-04-01', '2026-04-02']);
+    assert.strictEqual(b.rows.length, 6, 'the rows themselves are still imported');
+    assert.ok(b.report.includes('Days left open') && b.report.includes('  2026-04-03'));
+    assert.ok(b.report.includes('totals are partial'), 'row 8 has no readable date');
+    const dated = imp.buildImport(csv.split('\n').filter((l) => !l.startsWith('31/02')).join('\n'), mapping, 'LMS1', AT);
+    assert.ok(!dated.report.includes('totals are partial'));
+  });
+
+  t.test('negative receipt or payment is skipped, not sign-dropped', () => {
+    const m = (row) => imp.mapLegacyRow(Object.assign({ Date: '01/04/2026', Mode: 'Cash', Head: 'Fees' }, row), mapping, { campus: 'LMS1', rowNumber: 2 });
+    assert.strictEqual(m({ Receipt: '-300' }).reason, 'negative amount in receipt/payment column');
+    assert.strictEqual(m({ Payment: '-300' }).reason, 'negative amount in receipt/payment column');
+    assert.strictEqual(m({ Payment: '300' }).direction, 'OUT');
+  });
+
+  t.test('a leading BOM does not corrupt the first header', () => {
+    assert.deepStrictEqual(imp.parseCsv('\uFEFFDate,Receipt\n1,2')[0], ['Date', 'Receipt']);
   });
 
   t.test('totals per day match the legacy totals; a wrong legacy total is reported', () => {
@@ -64,8 +86,8 @@ module.exports = function run(t) {
     const cols = (n) => JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES[n]));
     assert.deepStrictEqual(imp.parseCsv(b.daybook)[0], cols('DayBook'));
     assert.deepStrictEqual(imp.parseCsv(b.closes)[0], cols('Closes'));
-    const last = JSON.parse(imp.parseCsv(b.closes)[3][3]);
-    assert.strictEqual(last.closing.cash.fee, 1250050 + 10 + 25000);
+    const last = JSON.parse(imp.parseCsv(b.closes)[2][3]);
+    assert.strictEqual(last.closing.cash.fee, 1250050 + 10);
     assert.strictEqual(imp.parseCsv(b.daybook)[1][12] + imp.parseCsv(b.daybook)[1][13], AT + 'import');
   });
 
@@ -76,7 +98,7 @@ module.exports = function run(t) {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(r1)), { tab: 'DayBook', rows: 6, appended: 6, duplicates: 0, otherFy: 0 });
     const r2 = h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.daybook);
     assert.deepStrictEqual([r2.appended, r2.duplicates], [0, 6]);
-    assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Closes', b.closes).appended, 3);
+    assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Closes', b.closes).appended, 2);
     assert.strictEqual(h.locks.acquired, 3); assert.strictEqual(h.locks.released, 3);
     const rows = h.ctx.officeRows_(book, 'DayBook');
     assert.strictEqual(rows.length, 6); assert.strictEqual(rows[0].amount_paise, 1250050); assert.strictEqual(rows[0].created_by, 'import');
