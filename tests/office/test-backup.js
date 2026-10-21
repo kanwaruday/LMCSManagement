@@ -66,7 +66,41 @@ module.exports = function run(t) {
     assert.equal(d.copies.length, 0);
     assert.equal(h.mail.sent.length, 1);
     assert.ok(h.mail.sent[0].body.includes('OFFICE_BACKUP_FOLDER'));
-    h.mail.fail = true; h.ctx.officeBackupNightly(); // a dead mail service must not throw either
+  });
+
+  t.test('missing OFFICE_ALERT_EMAIL still alerts the effective user and names the property', () => {
+    const { h } = fresh();
+    delete h.props.OFFICE_ALERT_EMAIL; h.failIds = ['BOOK-A'];
+    h.ctx.officeBackupNightly();
+    assert.equal(h.mail.sent.length, 1);
+    assert.equal(h.mail.sent[0].to, 'owner-fake@example.org');
+    assert.ok(h.mail.sent[0].body.includes('OFFICE_ALERT_EMAIL'));
+  });
+
+  t.test('a throwing sendEmail is logged, failures are logged, nothing throws', () => {
+    const { h } = fresh(); const logged = [];
+    h.ctx.console = { error: (m) => logged.push(m) };
+    h.failIds = ['BOOK-A']; h.mail.fail = true;
+    h.ctx.officeBackupNightly();
+    assert.equal(h.mail.sent.length, 0);
+    assert.ok(logged.some((m) => m.includes('quota BOOK-A')));
+    assert.ok(logged.some((m) => m.includes('mail down')));
+  });
+
+  t.test('zero configured books is a failure, emails, and does not prune', () => {
+    const { h, d } = fresh(Array.from({ length: 31 }, (_, i) => 'X 2026-09-' + String(i % 30 + 1).padStart(2, '0') + (i > 29 ? '' : '')));
+    delete h.props.OFFICE_SS_LMS1_2026_27; delete h.props.OFFICE_CONFIG_SS;
+    h.ctx.officeBackupNightly();
+    assert.equal(h.mail.sent.length, 1);
+    assert.ok(h.mail.sent[0].body.includes('no books configured'));
+    assert.deepEqual(d.trashed, []); assert.equal(d.copies.length, 0);
+  });
+
+  t.test('running twice on the same day leaves one copy per book', () => {
+    const { h, d } = fresh();
+    h.ctx.officeBackupNightly(); h.ctx.officeBackupNightly();
+    assert.equal(d.copies.length, 2);
+    assert.equal(h.mail.sent.length, 0);
   });
 
   t.test('officeInstallTriggers leaves one daily 02:00 backup trigger and keeps others', () => {

@@ -125,6 +125,7 @@ function boot(fixture, opts) {
       deleteTrigger: (tr) => { triggers.splice(triggers.indexOf(tr._t), 1); },
       newTrigger: (handler) => { const t = { handler }; const b = { timeBased: () => b, everyDays: (n) => { t.days = n; return b; }, atHour: (h) => { t.hour = h; return b; }, create: () => { triggers.push(t); return t; } }; return b; },
     },
+    Session: { getEffectiveUser: () => ({ getEmail: () => 'owner-fake@example.org' }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => s }) },
   };
   const ctx = vm.createContext(g);

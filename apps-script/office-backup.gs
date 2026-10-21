@@ -5,33 +5,41 @@
 
 // Time-trigger target. Never throws; at most one failure email per run.
 function officeBackupNightly() {
-  const failures = [];
+  const failures = [], today = officeToday_();
+  const msg = function (err) { return String(err && err.message || err); };
   try {
     const props = PropertiesService.getScriptProperties();
     const folderId = props.getProperty('OFFICE_BACKUP_FOLDER');
     let folder = null;
     if (!folderId) failures.push({ key: 'OFFICE_BACKUP_FOLDER', error: 'Script Property is missing' });
     else {
-      try { folder = DriveApp.getFolderById(folderId); } catch (err) { failures.push({ key: 'OFFICE_BACKUP_FOLDER', error: String(err && err.message || err) }); }
+      try { folder = DriveApp.getFolderById(folderId); } catch (err) { failures.push({ key: 'OFFICE_BACKUP_FOLDER', error: msg(err) }); }
     }
-    if (folder) {
-      const today = officeToday_();
-      officeBackupKeys_().forEach(function (key) {
+    const keys = officeBackupKeys_();
+    if (!keys.length) failures.push({ key: 'OFFICE_SS_*', error: 'no books configured' });
+    if (folder && keys.length) {
+      // A same-day re-run skips books already copied today (idempotent).
+      const have = {}, it = folder.getFiles();
+      while (it.hasNext()) have[it.next().getName()] = true;
+      keys.forEach(function (key) {
         try {
           const file = DriveApp.getFileById(props.getProperty(key));
-          file.makeCopy(file.getName() + ' ' + today, folder);
-        } catch (err) { failures.push({ key: key, error: String(err && err.message || err) }); }
+          const name = file.getName() + ' ' + today;
+          if (!have[name]) file.makeCopy(name, folder);
+        } catch (err) { failures.push({ key: key, error: msg(err) }); }
       });
-      try { officeBackupPrune_(folder); } catch (err) { failures.push({ key: 'retention', error: String(err && err.message || err) }); }
+      try { officeBackupPrune_(folder); } catch (err) { failures.push({ key: 'retention', error: msg(err) }); }
     }
-  } catch (err) { failures.push({ key: 'backup', error: String(err && err.message || err) }); }
-  if (failures.length) {
-    try {
-      MailApp.sendEmail(PropertiesService.getScriptProperties().getProperty('OFFICE_ALERT_EMAIL'),
-        'LMCS Office backup failed ' + officeToday_(),
-        failures.map(function (f) { return f.key + ': ' + f.error; }).join('\n'));
-    } catch (err) { /* nothing left to report to */ }
-  }
+    if (!props.getProperty('OFFICE_ALERT_EMAIL')) failures.push({ key: 'OFFICE_ALERT_EMAIL', error: 'Script Property is missing, alert sent to the script owner' });
+  } catch (err) { failures.push({ key: 'backup', error: msg(err) }); }
+  if (!failures.length) return;
+  const body = failures.map(function (f) { return f.key + ': ' + f.error; }).join('\n');
+  console.error('LMCS Office backup failed ' + today + '\n' + body);
+  try {
+    let to = PropertiesService.getScriptProperties().getProperty('OFFICE_ALERT_EMAIL');
+    if (!to) to = Session.getEffectiveUser().getEmail();
+    MailApp.sendEmail(to, 'LMCS Office backup failed ' + today, body);
+  } catch (err) { console.error('LMCS Office backup alert email failed: ' + msg(err)); }
 }
 
 // Script Property keys whose values are book ids to back up.
