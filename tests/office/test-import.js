@@ -94,12 +94,14 @@ module.exports = function run(t) {
   t.test('officeImportRows_ appends once, idempotently, and imported days read as closed', () => {
     const h = boot(); h.addConfig(); const book = h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-21T10:00:00Z'));
     const b = build();
+    assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.daybook), /OPENING_FIRST/, 'opening must be loaded first');
+    assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Opening', b.openings['2026-27']).appended, 5);
     const r1 = h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.daybook);
     assert.deepStrictEqual(JSON.parse(JSON.stringify(r1)), { tab: 'DayBook', rows: 6, appended: 6, duplicates: 0, otherFy: 0 });
     const r2 = h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.daybook);
     assert.deepStrictEqual([r2.appended, r2.duplicates], [0, 6]);
     assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Closes', b.closes).appended, 2);
-    assert.strictEqual(h.locks.acquired, 3); assert.strictEqual(h.locks.released, 3);
+    assert.strictEqual(h.locks.acquired, 4); assert.strictEqual(h.locks.released, 4);
     const rows = h.ctx.officeRows_(book, 'DayBook');
     assert.strictEqual(rows.length, 6); assert.strictEqual(rows[0].amount_paise, 1250050); assert.strictEqual(rows[0].created_by, 'import');
     assert.strictEqual(h.ctx.officeIsClosed_(book, '2026-04-02'), true);
@@ -110,11 +112,46 @@ module.exports = function run(t) {
   t.test('officeImportRows_ refuses other tabs, bad headers, other campuses, and skips other-year rows', () => {
     const h = boot(); h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26'); h.setNow(new Date('2026-10-21T10:00:00Z'));
     const b = build();
-    for (const tab of ['Audit', 'Opening', 'Reopens', 'Nope']) assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', tab, b.daybook), /BAD_TAB/);
+    for (const tab of ['Audit', 'Reopens', 'Nope']) assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', tab, b.daybook), /BAD_TAB/);
     assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.closes), /BAD_HEADER/);
     assert.throws(() => h.ctx.officeImportRows_('LMS2', '2026-27', 'DayBook', b.daybook), /WRONG_CAMPUS/);
     assert.strictEqual(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook').length, 0, 'nothing written by refused imports');
+    h.ctx.officeImportRows_('LMS1', '2025-26', 'Opening', b.openings['2026-27']);
     const prev = h.ctx.officeImportRows_('LMS1', '2025-26', 'DayBook', b.daybook);
     assert.deepStrictEqual([prev.appended, prev.otherFy], [0, 6]);
+  });
+  // I5 / R39: opening balances per financial year, carried forward from the import's own 31 March closing.
+  const MULTI = ['Date,Receipt,Payment,Mode,Head,Category,Party,Narration,Closing Balance',
+    '30/03/2026,1000,,Cash,Fees,Fees,A,x,', '31/03/2026,,200,Bank,,Bills,B,y,', '01/04/2026,50,,UPI,,Fees,C,z,', '02/04/2026,5,,Cash,Fees,Nope,D,w,'].join('\n') + '\n';
+  const withOpening = Object.assign({}, mapping, { opening: { cash: { petty: 0, fee: 100, other: 0 }, bank: 5000, upi: 0 } });
+
+  t.test('importer writes opening-<fy>.csv per year; later years carry the previous 31 March closing', () => {
+    const b = imp.buildImport(MULTI, withOpening, 'LMS1', AT);
+    assert.deepStrictEqual(Object.keys(b.openings), ['2025-26', '2026-27']);
+    const amounts = (fy) => imp.parseCsv(b.openings[fy]).slice(1).map((r) => [r[2], r[3], r[4]].join(':'));
+    const h = boot();
+    assert.deepStrictEqual(imp.parseCsv(b.openings['2025-26'])[0], JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES.Opening)));
+    assert.deepStrictEqual(amounts('2025-26'), ['cash:petty:0', 'cash:fee:100', 'cash:other:0', 'bank::5000', 'upi::0']);
+    assert.deepStrictEqual(amounts('2026-27'), ['cash:petty:0', 'cash:fee:100100', 'cash:other:0', 'bank::-15000', 'upi::0']);
+    assert.ok(b.report.includes('Load order') && b.report.indexOf('opening-2025-26.csv') < b.report.indexOf('opening-2026-27.csv'));
+    assert.strictEqual(b.defaulted, 1);
+    assert.ok(b.report.includes('Category defaulted to other_in/other_out: 1 row'), 'M6 counts defaulted categories');
+  });
+
+  t.test('loading opening then day book per year gives the same closings as the import computed', () => {
+    const h = boot(); h.addConfig(); h.addBook('LMS1', '2025-26'); h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-21T10:00:00Z'));
+    const b = imp.buildImport(MULTI, withOpening, 'LMS1', AT);
+    for (const fy of ['2025-26', '2026-27']) {
+      h.ctx.officeImportRows_('LMS1', fy, 'Opening', b.openings[fy]);
+      h.ctx.officeImportRows_('LMS1', fy, 'DayBook', b.daybook);
+      h.ctx.officeImportRows_('LMS1', fy, 'Closes', b.closes);
+    }
+    const bal = (d) => JSON.parse(JSON.stringify(h.call('daybook.balances', { campus: 'LMS1', date: d }).closing));
+    const closes = imp.parseCsv(b.closes).slice(1);
+    for (const c of closes) assert.deepStrictEqual(bal(c[2]), JSON.parse(c[3]).closing, c[2]);
+    assert.strictEqual(bal('2026-04-02').cash.fee, 100100 + 500);
+    assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Opening', b.openings['2026-27']).duplicates, 5, 're-run is safe');
+    const other = b.openings['2026-27'].replace(/impopen-LMS1-2026-27-bank/, 'impopen-LMS1-2026-27-bank2');
+    assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', 'Opening', other), /OPENING_LOCKED/, 'no new opening under existing day book rows');
   });
 };

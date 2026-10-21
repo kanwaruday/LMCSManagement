@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Legacy day book importer (Office portal, Task 15).
 //   node tools/office-import-daybook.mjs <legacy.csv> --campus LMS1 --mapping <mapping.json> --out <dir> [--at <ISO timestamp>]
-// Reads a CSV export of the legacy day book and writes <dir>/daybook.csv, <dir>/closes.csv (exact DayBook/Closes
-// column order of OFFICE_TABLES, created_by 'import') and <dir>/report.txt (counts, skipped rows with reasons,
-// per-day total diffs). Nothing is ever guessed: a row that cannot be read exactly is skipped with its reason.
+// Reads a CSV export of the legacy day book and writes <dir>/opening-<FY>.csv (one per financial year),
+// <dir>/daybook.csv, <dir>/closes.csv (exact Opening/DayBook/Closes column order of OFFICE_TABLES, created_by
+// 'import') and <dir>/report.txt (counts, skipped rows with reasons, per-day total diffs, load order).
+// Nothing is ever guessed: a row that cannot be read exactly is skipped with its reason.
 // The CSV and the real mapping stay OUTSIDE the repo (public repo; they name real people). Load the output with
-// officeImportRows_ (apps-script/office-import.gs), once per file, once per financial year.
+// officeImportRows_ (apps-script/office-import.gs), per financial year: Opening first, then DayBook, then Closes.
 //
 // Filling a real mapping: copy tools/office-import-mapping.example.json outside the repo and set
 //   dateColumn + dateFormat ('DD/MM/YYYY' or 'YYYY-MM-DD')
@@ -16,7 +17,8 @@
 //   payeeColumn, narrationColumn (optional)
 //   closingColumn (optional): the legacy balance after that day, summed over all modes, in rupees. Checked against the
 //     balance computed by the backend's own officeBalances_; differences are listed in report.txt (never "fixed").
-//   opening (optional, officeOpening_ shape, paise): balances before the first imported day; default zero.
+//   opening (optional, officeOpening_ shape, paise): balances before the first imported day; default zero. It is the
+//     first year's Opening; each later year's Opening is the import's own 31 March closing of the year before.
 // A row is identified by campus + its row number in the CSV (header = row 1), so re-running gives identical ids.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -28,6 +30,7 @@ import { parseRupeesToPaise } from '../office/js/format.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const DAYBOOK_COLS = ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'reverses', 'created_at', 'created_by'];
 const CLOSES_COLS = ['id', 'campus', 'close_date', 'closing_json', 'created_at', 'created_by'];
+const OPENING_COLS = ['id', 'campus', 'mode', 'bucket', 'amount_paise', 'created_at', 'created_by'];
 
 // officeBalances_ from the real backend file (pure function), so the closing figures cannot drift from the backend's.
 const gs = vm.createContext({});
@@ -123,13 +126,23 @@ export function verifyTotals(rows, legacyTotals, opening = ZERO_OPENING()) {
   return { ok: diffs.length === 0, diffs };
 }
 
+// Financial year (Apr-Mar) of an ISO date, as officeFy_: '2026-04-01' -> '2026-27'.
+const fyOf = (iso) => { const y = Number(iso.slice(0, 4)), s = Number(iso.slice(5, 7)) >= 4 ? y : y - 1; return s + '-' + String((s + 1) % 100).padStart(2, '0'); };
+const nextFy = (fy) => fyOf(String(Number(fy.slice(0, 4)) + 1) + '-04-01');
+
+// One Opening row per mode/bucket (zeros included, so every year's book gets a full set).
+function openingRows(campus, fy, o, at) {
+  const r = (mode, bucket, amount) => ({ id: `impopen-${campus}-${fy}-${mode}${bucket ? '-' + bucket : ''}`, campus, mode, bucket, amount_paise: amount, created_at: at, created_by: 'import' });
+  return [r('cash', 'petty', o.cash.petty), r('cash', 'fee', o.cash.fee), r('cash', 'other', o.cash.other), r('bank', '', o.bank), r('upi', '', o.upi)];
+}
+
 const rupees = (p) => (p < 0 ? '-' : '') + Math.floor(Math.abs(p) / 100) + '.' + String(Math.abs(p) % 100).padStart(2, '0');
 
 // Whole import in memory: {daybook, closes, report} as CSV/text strings plus counts.
 export function buildImport(csvText, mapping, campus, at) {
   const [head, ...lines] = parseCsv(csvText);
   const rows = [], skipped = [], notes = [], legacyTotals = {}, openDays = new Set();
-  let undated = 0;
+  let undated = 0, defaulted = 0;
   lines.forEach((cells, i) => {
     if (cells.every((c) => c.trim() === '')) return;
     const rowNumber = i + 2; // spreadsheet row: header is row 1
@@ -142,6 +155,7 @@ export function buildImport(csvText, mapping, campus, at) {
       return;
     }
     r.created_at = at; r.created_by = 'import';
+    if (!(mapping.categoryColumn && lookup(mapping.categoryMap, obj[mapping.categoryColumn]))) defaulted++; // fell back to other_in/other_out
     rows.push(r);
     if (mapping.closingColumn && String(obj[mapping.closingColumn]).trim() !== '') {
       const c = parseAmount(obj[mapping.closingColumn]);
@@ -157,6 +171,16 @@ export function buildImport(csvText, mapping, campus, at) {
   for (const d of Object.keys(legacyTotals)) if (!closeDates.includes(d)) delete legacyTotals[d];
   const closes = closeDates.map((d) => ({ id: `impclose-${campus}-${d}`, campus, close_date: d, closing_json: JSON.stringify(balances(opening, rows, d)), created_at: at, created_by: 'import' }));
   const v = verifyTotals(rows, legacyTotals, opening);
+  // Opening per financial year: the first from the mapping, each later one the previous 31 March closing.
+  const openings = {};
+  if (dates.length) {
+    for (let fy = fyOf(dates[0]), o = opening; ; fy = nextFy(fy)) {
+      openings[fy] = toCsv(OPENING_COLS, openingRows(campus, fy, o, at));
+      if (fy === fyOf(dates[dates.length - 1])) break;
+      o = balances(opening, rows, fy.slice(0, 2) + fy.slice(5, 7) + '-03-31').closing;
+    }
+  }
+  const fys = Object.keys(openings);
   const report = [
     `Legacy day book import, campus ${campus}, run at ${at}`,
     `Data rows read: ${rows.length + skipped.length}`,
@@ -165,10 +189,13 @@ export function buildImport(csvText, mapping, campus, at) {
     ...(undated ? [`WARNING: ${undated} skipped row(s) have no readable date, so totals are partial and no day can be proven complete; check every day before closing it.`] : []),
     `Days left open (they have skipped rows; fix them in the portal, then close): ${heldOpen.length}`, ...heldOpen.map((d) => `  ${d}`),
     ...(notes.length ? ['Notes:', ...notes.map((n) => '  ' + n)] : []),
+    `Category defaulted to other_in/other_out: ${defaulted} row${defaulted === 1 ? '' : 's'} (no category mapped; check them)`,
     `Days checked against legacy closing: ${Object.keys(legacyTotals).length}, differing: ${v.diffs.length}`,
     ...v.diffs.map((d) => `  ${d.date}: legacy ${rupees(d.legacy)}, computed ${rupees(d.computed)}, diff ${rupees(d.diff)}`),
+    'Load order (officeImportRows_, in this order, each into that year\'s OFFICE_SS_' + campus + '_<FY> book):',
+    ...fys.map((fy, i) => `  ${i + 1}. ${fy}: opening-${fy}.csv as 'Opening', then daybook.csv as 'DayBook', then closes.csv as 'Closes'`),
   ].join('\n') + '\n';
-  return { daybook: toCsv(DAYBOOK_COLS, rows), closes: toCsv(CLOSES_COLS, closes), report, rows, skipped, heldOpen, diffs: v.diffs };
+  return { daybook: toCsv(DAYBOOK_COLS, rows), closes: toCsv(CLOSES_COLS, closes), openings, report, rows, skipped, heldOpen, diffs: v.diffs, defaulted };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -182,5 +209,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const res = buildImport(readFileSync(src, 'utf8'), JSON.parse(readFileSync(opt('mapping'), 'utf8')), opt('campus'), opt('at') || new Date().toISOString());
   mkdirSync(opt('out'), { recursive: true });
   for (const [f, k] of [['daybook.csv', 'daybook'], ['closes.csv', 'closes'], ['report.txt', 'report']]) writeFileSync(join(opt('out'), f), res[k]);
+  for (const [fy, text] of Object.entries(res.openings)) writeFileSync(join(opt('out'), `opening-${fy}.csv`), text);
   process.stdout.write(res.report);
 }
