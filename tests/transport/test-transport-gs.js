@@ -63,6 +63,28 @@ const sheetNames = sheets.map(s => s.name);
 // a district-limited caller only sees their campuses
 const lim = JSON.parse(JSON.stringify(run('coordTransport_({only:["LMS1"]})')));
 assert.ok(lim.fleet.every(b => b.campusId === 'LMS1') && lim.pnl.length === 1 && lim.people.length === 1, 'campus visibility');
+// uploads from the portals: the newest one per bus and paper is "pending" until the AI Coordinator's push says it has seen the file
+const up = (d, reg, paper, id, status) => [new Date(d), reg, paper, id, 'https://drive.google.com/file/d/' + id + '/view', 'clerk@lms.org.in', 'FeeClerk', 'LMS1', 'Fee Clerk Portal', status || ''];
+const uploads = sheet('Portal Uploads', 900); sheets.push(uploads);
+uploads._set([['Uploaded On'], up('2026-10-20T05:00:00Z', 'HP1', 'pollution', 'OLDUP'), up('2026-10-21T05:00:00Z', 'HP1', 'pollution', 'NEWUP'),
+  up('2026-10-21T05:00:00Z', 'HP2', 'fitness', 'SEENUP'), up('2026-10-21T05:00:00Z', 'HP2', 'insurance', 'GONEUP', 'Withdrawn')]);
+payload.seen = ['SEENUP', 'OLDUP'];
+run('coordTransportPush_({secret:"S3CRET",payload:payload})');
+const pu = JSON.parse(JSON.stringify(run('coordTransport_({})')));
+const p1 = pu.fleet.find(b => b.reg === 'HP1').docs, p2 = pu.fleet.find(b => b.reg === 'HP2').docs;
+assert.deepStrictEqual(p1.pollution.pending, { at: '2026-10-21T05:00:00.000Z', by: 'clerk@lms.org.in', link: 'https://drive.google.com/file/d/NEWUP/view' }, 'the newer of two uploads is the pending one');
+assert.strictEqual(p2.fitness.pending, undefined, 'an upload the push has seen is no longer pending');
+assert.strictEqual(p2.insurance.pending, undefined, 'a withdrawn upload is not pending');
+assert.strictEqual(p1.fitness.pending, undefined);
+// Fee Clerks see only their own campus or comma list, never a whole district
+const cg = fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8');
+const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + cg.match(/function coordVisibleCampuses_[\s\S]*?\n\}/)[0] + '; return coordVisibleCampuses_;')();
+assert.deepStrictEqual(vis({ campusId: 'LMS1,LMS2', feeClerkOnly: true }), ['LMS1', 'LMS2']);
+assert.deepStrictEqual(vis({ campusId: 'LMS1', feeClerkOnly: true }), ['LMS1'], 'a Fee Clerk of LMS1 does not see LMS2 and LMS3');
+assert.deepStrictEqual(vis({ campusId: 'LMS1' }), ['LMS1', 'LMS2', 'LMS3'], 'a Coordinator still sees their district');
+assert.match(cg, /caller\.feeClerkOnly && action !== 'coordinatortransport'/, 'Fee Clerks are refused every other read');
+assert.match(cg, /!caller \|\| caller\.feeClerkOnly\) return coordJson_/, 'Fee Clerks are refused every write');
+
 // an old-shaped cached form entry (no links) must not break the page
 run('coordTransportLive_ = function(){ return { docs: { "HP1|pollution": "2027-09-01" }, regs: ["HP1"], rows: 1 }; }');
 assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape tolerated');

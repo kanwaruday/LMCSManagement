@@ -22,7 +22,8 @@ const fleet = [
   bus('EOL', { insurance: dated('2021-03-08'), fitness: dated('2021-02-05') }, { operational: false }),
   bus('SG_OLD', { speed_governor: dated('2019-03-04') }),
   bus('NO_EXPIRY_INS', { insurance: Object.assign(none(), { noexp: [{ link: 'l', note: 'policy' }] }) }),
-  bus('BADPROOF', { fitness: dated('2026-12-18', { link: 'https://drive.google.com/open?id=' + 'p'.repeat(28), src: 'form', other: [{ link: 'https://drive.google.com/file/d/' + 'p'.repeat(28) + '/view', note: 'fitness refused form' }] }) }),
+  bus('PENDING', { pollution: dated('2025-08-01', { pending: { at: '2026-10-21T09:00:00Z', by: 'Asha', link: 'https://drive.google.com/file/d/' + 'n'.repeat(28) + '/view' } }) }),
+  bus('BADPROOF',{ fitness: dated('2026-12-18', { link: 'https://drive.google.com/open?id=' + 'p'.repeat(28), src: 'form', other: [{ link: 'https://drive.google.com/file/d/' + 'p'.repeat(28) + '/view', note: 'fitness refused form' }] }) }),
 ];
 const out = R.analyse(fleet, DOCS, TODAY);
 const order = out.vehicles.map((v) => v.b.reg), tier = Object.fromEntries(out.vehicles.map((v) => [v.b.reg, v.tier]));
@@ -47,6 +48,13 @@ const bp = out.vehicles.find((v) => v.b.reg === 'BADPROOF');
 assert.strictEqual(bp.cells.fitness.bad, true, 'a typed date whose own proof is the wrong paper is flagged'); assert.strictEqual(bp.tier, 'wrong');
 assert.strictEqual(out.vehicles.find((v) => v.b.reg === 'WRONG').cells.pollution.t, 'wrong');
 assert.strictEqual(out.vehicles.find((v) => v.b.reg === 'OK1').cells.fitness.bad, false);
+
+const pv = out.vehicles.find((v) => v.b.reg === 'PENDING');
+assert.strictEqual(pv.cells.pollution.t, 'pending', 'an uploaded paper waiting to be read is its own state, whatever the old date says');
+assert.strictEqual(pv.tier, 'pending');
+assert.ok(order.indexOf('SOON') < order.indexOf('PENDING') && order.indexOf('PENDING') < order.indexOf('OK1'), 'pending sorts after due-soon work and before all current');
+assert.ok(out.items.every((i) => i.b.reg !== 'PENDING'), 'a pending paper is not open work');
+assert.ok(pv.lines.some((l) => l.kind === 'pending' && /waiting to be read: pollution/.test(l.text)), 'pending action line');
 
 const first = out.items[0];
 assert.ok(['NODOCS', 'ALLWRONG'].includes(first.b.reg), 'the action list starts with the no-documents vehicles');

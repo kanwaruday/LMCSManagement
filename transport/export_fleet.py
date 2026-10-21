@@ -2,7 +2,7 @@
 """Push the fleet roster (from the transport workbook on OneDrive) plus the document dates LM Studio read
 from the Drive scans (drive-index/records.db) and the vault overrides note to the Coordinator backend, which
 keeps them in the "LM Studio ..." tabs of the transport form-responses sheet and merges the live form rows on
-top. This is what makes scan-read dates reach the Transport page. Called at the end of drive-index/sync.sh.
+top. This is what makes scan-read dates reach the Transport page. Called from the AI Coordinator (ai-coordinator/run.sh).
 
   python3 transport/export_fleet.py                 # push to the backend (needs ~/.lmcs/transport_push_secret)
   python3 transport/export_fleet.py --out x.json    # dry run to a local file, nothing sent
@@ -81,8 +81,14 @@ def scans():
     return out
 
 
+def seen_ids():
+    """Every bus scan file id in records.db, whatever LM Studio made of it: a portal upload whose id is here has been read."""
+    q = "select drive_link from documents where entity_type='bus'"
+    return sorted({m[1] for (link,) in sqlite3.connect(DB).execute(q) if (m := re.search(r"/d/([-\w]{20,})", link or ""))})
+
+
 def push(body):
-    """POST the payload to the Coordinator backend; exits non-zero (so sync.sh logs it) on any failure."""
+    """POST the payload to the Coordinator backend; exits non-zero (so the AI Coordinator logs it) on any failure."""
     if not SECRET_FILE.exists():
         sys.exit(f"{SECRET_FILE} not found; create it with the TRANSPORT_PUSH_SECRET value, or use --out for a dry run")
     url = re.search(r"BACKEND_URL = '([^']+)'", SHARED_JS.read_text())[1]
@@ -299,7 +305,7 @@ def main():
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "people": people, "fleet": fleet}, separators=(",", ":"))
+                       "source": "transport workbook + drive-index/records.db + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "people": people, "seen": seen_ids(), "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
         dest = a.out

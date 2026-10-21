@@ -206,6 +206,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
+    if (body.action === 'transportupload') return staffJsonOut_(tupUpload_(body)); // transport-uploads.gs
     return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
   } catch (err) {
     return staffJsonOut_({ success: false, error: err.message });

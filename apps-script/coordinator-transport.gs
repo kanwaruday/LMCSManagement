@@ -38,6 +38,8 @@ const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness']
 const COORD_TRANSPORT_FORM_TYPES = { 'FITNESS': 'fitness', 'ROUTE PERMIT': 'route_permit', 'INSURANCE': 'insurance',
   'MV TAX': 'mv_tax', 'POLLUTION': 'pollution', 'SPEED GOVERNOR': 'speed_governor' };
 const COORD_TRANSPORT_LIVE_CACHE_SECONDS = 300;
+const COORD_TRANSPORT_FORM_CACHE_SECONDS = 60; // form rows + portal uploads: short, so a reload soon after an upload shows it
+const COORD_TRANSPORT_TAB_UPLOADS = 'Portal Uploads'; // written by transport-uploads.gs (Roster project): Uploaded On | Reg | Paper | File ID | Link | Uploaded By | ... | Status
 
 function coordTransportDate_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
@@ -47,9 +49,10 @@ function coordTransportDate_(v, tz) {
   return m ? m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2) : '';
 }
 
-/** {docs: {'REG|type': 'yyyy-MM-dd'}, links: {'REG|type': url of the uploaded certificate}, regs, rows}: newest valid-till per bus and document in the form responses. */
+/** {docs: {'REG|type': 'yyyy-MM-dd'}, links: {'REG|type': url of the uploaded certificate}, regs, rows, uploads}: newest valid-till per bus and
+ *  document in the form responses, and the newest portal upload per bus and document ({'REG|type': {at, by, link, id}}). */
 function coordTransportLive_() {
-  const hit = coordCacheGetBig_('coord_transport_live_v2');
+  const hit = coordCacheGetBig_('coord_transport_live_v3');
   if (hit) return hit;
   const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
   const sh = ss.getSheets().filter(function (s) { return s.getSheetId() === COORD_TRANSPORT_FORM_GID; })[0];
@@ -66,8 +69,14 @@ function coordTransportLive_() {
     const k = reg + '|' + type, url = (String(rows[i][4] || '').match(/https?:\/\/[^\s,;]+/) || [''])[0]; // the form's 'Upload certificate' column
     if (!docs[k] || date > docs[k]) { docs[k] = date; links[k] = url; } else if (date === docs[k] && !links[k]) links[k] = url;
   }
-  const live = { docs: docs, links: links, regs: Object.keys(regs), rows: rows.length - 1 };
-  coordCachePutBig_('coord_transport_live_v2', live, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
+  const uploads = {}, up = ss.getSheetByName(COORD_TRANSPORT_TAB_UPLOADS); // optional: no tab until the first portal upload
+  (up ? up.getDataRange().getValues().slice(1) : []).forEach(function (r) {
+    const at = r[0] instanceof Date ? r[0].toISOString() : '', k = String(r[1]) + '|' + String(r[2]);
+    if (!at || String(r[9]).trim().toLowerCase() === 'withdrawn') return;
+    if (!uploads[k] || at > uploads[k].at) uploads[k] = { at: at, by: String(r[5]), link: String(r[4]), id: String(r[3]) };
+  });
+  const live = { docs: docs, links: links, regs: Object.keys(regs), rows: rows.length - 1, uploads: uploads };
+  coordCachePutBig_('coord_transport_live_v3', live, COORD_TRANSPORT_FORM_CACHE_SECONDS);
   return live;
 }
 
@@ -134,7 +143,8 @@ function coordTransportPush_(body) {
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_SYNC, ['Key', 'Value'], [
       ['syncedAt', p.syncedAt], ['pushedAt', new Date().toISOString()], ['vehicles', String(fleet.length)],
-      ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')]]);
+      ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')],
+      ['seen', (p.seen || []).join(',')]]); // every bus scan file id the AI Coordinator has read: clears "waiting to be read". ponytail: one cell (50k chars) holds ~1,400 ids; split it when the bus scans pass ~1,200
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
   ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
@@ -179,7 +189,9 @@ function coordTransportBase_() {
   const people = peopleSheet ? peopleSheet.getDataRange().getValues().slice(1).map(function (r) {
     return { name: String(r[0]), campus: String(r[1]), designation: String(r[2]), code: String(r[3]), status: String(r[4]), rosterName: String(r[5]), rosterCampus: String(r[6]), vehicles: String(r[7]).split(', ').filter(String) };
   }) : [];
-  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl, people: people };
+  const seen = meta.seen ? meta.seen.split(',') : [];
+  docRows.forEach(function (r) { const id = (String(r[6]).match(/[-\w]{25,}/) || [''])[0]; if (id) seen.push(id); }); // pushes from before the seen list
+  const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl, people: people, seen: seen };
   coordCachePutBig_('coord_transport_base', base, COORD_TRANSPORT_LIVE_CACHE_SECONDS);
   return base;
 }
@@ -187,7 +199,9 @@ function coordTransportBase_() {
 /** The fleet with each document resolved to {date, src, link, unread}: the form if it is at least as new as the scan-read date, else the scan. */
 function coordTransportFleet_() {
   const base = coordTransportBase_(), live = coordTransportLive_();
-  const formDocs = live.docs || {}, formLinks = live.links || {}; // tolerate an entry cached in an older shape
+  const formDocs = live.docs || {}, formLinks = live.links || {}, uploads = live.uploads || {}; // tolerate an entry cached in an older shape
+  const seen = {};
+  (base.seen || []).forEach(function (id) { seen[id] = true; });
   const fleet = base.fleet.map(function (b) {
     const docs = {};
     COORD_TRANSPORT_DOCS.forEach(function (d) {
@@ -199,6 +213,8 @@ function coordTransportFleet_() {
       doc.unread = of(b.unreadable);
       doc.noexp = of(b.noexpiry);  // the right paper, but it prints no expiry (a speed governor fitment certificate, say)
       doc.other = of(b.other);     // a scan whose content is not the paper its folder says (a refusal letter, an initial compliance certificate...)
+      const u = uploads[b.reg + '|' + d[0]];
+      if (u && !seen[u.id]) doc.pending = { at: u.at, by: u.by, link: u.link }; // uploaded from a portal, not read by LM Studio yet
       docs[d[0]] = doc;
     });
     const n = String(b.campus).replace(/\D/g, ''); // roster says 'LMS-5' in one row

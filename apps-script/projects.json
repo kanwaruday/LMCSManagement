@@ -29,7 +29,8 @@
       "principal-allowlist",
       "salary-payscale-sync",
       "certificate-link-import",
-      "staff-documents"
+      "staff-documents",
+      "transport-uploads"
     ]
   },
   "payroll": {

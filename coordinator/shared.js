@@ -4,6 +4,8 @@
 window.Coord = (function () {
   // "LMCS Coordinator Backend" -- its own Apps Script project (apps-script/coordinator.gs)
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
+  // "LMCS Employee Roster Proxy": the shared transport paper upload (apps-script/transport-uploads.gs), also used by the Fee Clerk Portal
+  const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
   let SESSION = null;
 
   // Departments follow the vault's Departments hubs, plus Systems. `name` must match the Department the
@@ -278,13 +280,15 @@ window.Coord = (function () {
 
   // ── Transport: fleet document compliance ──────────────────────────
   function transportView(body) {
-    const T = { campus: '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null };
+    const T = { campus: '', tier: 'all', q: '', tab: 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
+    const UP_MAX = 10 * 1024 * 1024, UP_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+    const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
     const box = body.querySelector('.tr-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
     const fmtD = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '-'; // DD/MM/YYYY in tables
-    const LABEL = { none: 'No documents', expired: 'Expired', wrong: 'Wrong paper', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid', noexp: 'No expiry printed', onfile: 'On file', na: 'Not needed' };
+    const LABEL = { none: 'No documents', expired: 'Expired', wrong: 'Wrong paper', check: 'Scan, date unread', missing: 'No record', soon: 'Due in 30 days', later: 'Due in 90 days', ok: 'Valid', noexp: 'No expiry printed', onfile: 'On file', na: 'Not needed', pending: 'Uploaded, reading' };
 
     // what a coordinator can do about each failure; the raw message stays underneath for whoever fixes it
     const friendly = m => /not authori[sz]ed/i.test(m) ? 'Your account is not allowed to see the transport data. Sign in with your LMS Coordinator account.'
@@ -328,6 +332,8 @@ window.Coord = (function () {
         (i.t === 'wrong' ? (i.date || i.src ? ' &middot; ' : '') + '<b class="miss">wrong paper:</b> ' + i.other.map(o => a(o.link, 'the upload is ' + (o.note || 'a different document'))).join(' ') : '');
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
+      const hrs = iso => (Date.now() - Date.parse(iso)) / 3600000;
+      const late = []; d.fleet.forEach(b => Object.keys(b.docs).forEach(k => { const p = b.docs[k].pending; if (p && hrs(p.at) > LATE_H) late.push(b.reg); }));
 
 
       // ── Bus P&L: per bus totals from the monthly rows the sync pushed (Transport P&L tab) ──
@@ -368,7 +374,8 @@ window.Coord = (function () {
       const bad = staff.filter(p => p.status !== 'verified').length;
       let html = '<div class="note">' + (synced ? 'Scan dates and workbook figures were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
         ' (' + (ageH < 1 ? 'under an hour' : Math.round(ageH) + ' hours') + ' ago)</b>. Form uploads are live.' + (T.loadMs ? ' Loaded in ' + (T.loadMs / 1000).toFixed(1) + ' s' + (d.serverMs ? ' (server ' + (d.serverMs / 1000).toFixed(1) + ' s)' : '') + '.' : '') + (ageH > 6 ? ' The sync on the Mac may be off, so scan-read dates could be out of date.' : '') : 'Drive scan data has no refresh time.') +
-      (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') + '</div>' +
+      (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') +
+      (late.length ? '<br><b class="stale">Uploaded more than ' + LATE_H + ' hours ago and not read yet (' + esc(Array.from(new Set(late)).join(', ')) + '):</b> the AI Coordinator on the Mac may be off.' : '') + '</div>' +
       (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
       (T.tab === 'drivers' ? '<div class="tiles"><div class="tile"><b>' + staff.length + '</b>people on the transport staff list</div><div class="tile"><b>' + (staff.length - bad) + '</b>verified against the staff master</div><div class="tile ' + (bad ? 'warn' : '') + '"><b>' + bad + '</b>need checking</div></div>' : T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
         '<div class="tile"><b>' + lakh(sum(pRows, 'cost')) + '</b>' + (T.pay === 'after' ? 'total cost' : 'cost before driver pay') + '</div>' +
@@ -419,7 +426,7 @@ window.Coord = (function () {
         const SEC = { none: ['No documents on file', 'Collect every paper for these vehicles and upload it. This is the biggest red flag.'], expired: ['Papers expired', 'Renew now. A bus with an expired paper should not be on the road.'],
           wrong: ['Wrong paper uploaded', 'The upload is not the right document. Replace it with the real one.'], missing: ['Papers missing', 'Upload the missing paper.'],
           check: ['Scan on file, date not readable', 'Open the scan and type its date into the overrides note.'], soon: ['Due within 30 days', 'Renew soon.'], later: ['Due within 90 days', 'Plan the renewal.'],
-          ok: ['All current', 'Nothing to do.'], eol: ['Past service life', 'Kept for the record. No action needed.'] };
+          pending: ['Uploaded, waiting to be read', 'New papers uploaded here or in the Fee Clerk Portal. LM Studio reads their dates on the next AI Coordinator run (every 2 hours).'], ok: ['All current', 'Nothing to do.'], eol: ['Past service life', 'Kept for the record. No action needed.'] };
         const vs = rk.vehicles.filter(v => vmatch(v.b));
         const act = v => v.lines.length ? v.lines.map((l, n) => n === 0 ? '<span class="act ' + l.kind + '">' + esc(l.text) + '</span>' : '<div class="sm">' + esc(l.text) + '</div>').join('') : '<span class="sm">Nothing to do</span>';
         const act1 = v => v.lines.length ? '<span class="act ' + v.lines[0].kind + '">' + esc(v.lines[0].text) + '</span>' : '';
@@ -436,15 +443,28 @@ window.Coord = (function () {
           else if (c.t === 'check') tip = 'Scan on file, date unread. Click to open it.';
           else if (c.t === 'wrong') tip = 'The scan filed here is "' + (ot[0].note || 'a different document') + '", not a ' + x.label.toLowerCase() + ' paper. Click to open it.';
           if (c.bad && c.t !== 'wrong') tip += ' The upload behind this date is "' + (bw.note || 'a different document') + '", not the right paper.';
+          const k = b.reg + '|' + x.key;
+          if (T.busy[k]) return '<td class="dt busy" aria-live="polite">Uploading...</td>';
+          if (c.t === 'pending') {
+            const h = hrs(e.pending.at), late1 = h > LATE_H;
+            const who = String(e.pending.by || '').split('@')[0];
+            return '<td class="dt pending' + (late1 ? ' late' : '') + '" title="Uploaded ' + esc(new Date(e.pending.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })) + (who ? ' by ' + esc(who) : '') + ', waiting for LM Studio to read its date. Click to open it.">' +
+              a(e.pending.link, late1 ? 'uploaded ' + Math.round(h) + ' h ago, not read yet' : 'uploaded, reading') + '</td>';
+          }
+          const needs = v.tier !== 'eol' && (['expired', 'wrong', 'missing', 'check', 'soon', 'later'].indexOf(c.t) !== -1 || c.bad); // only cells needing action take an upload
+          const err = T.upErr[k] ? '<span class="uperr" role="alert">' + esc(T.upErr[k]) + '</span>' : '';
+          const ub = (lbl, cls) => '<button type="button" class="' + cls + '" data-up="' + esc(k) + '" aria-label="' + esc(lbl + ': ' + x.label + ' for ' + b.reg) + '">' + lbl + '</button>';
+          if (needs && !first) return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + '">' + ub('Upload', 'upcell') + err + '</td>';
+          const upNew = needs ? ub('Upload new', 'upnew') + err : '';
           const badge = c.bad && c.t !== 'wrong' ? '<span class="wp">' + a(bw.link, 'wrong paper') + '</span>' : '';
           const extra = e.date && !one && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
-          return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + (c.bad ? ' bad' : '') + '" title="' + esc(tip) + '">' + (first ? a(first, txt) : txt) + extra + badge + '</td>';
+          return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + (c.bad ? ' bad' : '') + '" title="' + esc(tip) + '">' + (first ? a(first, txt) : txt) + extra + badge + upNew + '</td>';
         };
         const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (2 + cols.length) + '"><span class="grp-l">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + '</span></span> <span class="sm grp-d">&middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
         let prev = '';
         const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td class="id"><b>' + esc(v.b.reg) + '</b><div class="sm">' + esc(v.b.campus) + ' &middot; ' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div>' +
           drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div></td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
-        html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document.</details>' +
+        html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document. Every paper that needs action has an Upload button: pick the renewed paper (PDF or photo, up to 10 MB) and it goes into the bus folder in Drive; the cell turns light blue, "uploaded, reading", until LM Studio reads its date on the next AI Coordinator run.</details>' +
           '<div class="twwrap"><div class="tw stick"><table class="l grid"><thead><tr><th class="id">Vehicle</th><th class="acol">Action needed</th>' + cols.map(x => '<th class="pp">' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
           (vs.length ? body : '<tr><td colspan="' + (2 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div></div>';
       }
@@ -479,12 +499,18 @@ window.Coord = (function () {
       box.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { T.tier = b.dataset.tier; render(); }));
       box.querySelector('.tr-campus').addEventListener('change', e => { T.campus = e.target.value; render(); });
       box.querySelector('.tr-q').addEventListener('input', e => { T.q = e.target.value; render(); const i = box.querySelector('.tr-q'); i.focus(); i.setSelectionRange(T.q.length, T.q.length); });
+      box.querySelectorAll('[data-up]').forEach(btn => btn.addEventListener('click', () => {
+        const pick = document.createElement('input');
+        pick.type = 'file'; pick.accept = '.pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*';
+        pick.addEventListener('change', () => pick.files[0] && upload(btn.dataset.up, pick.files[0]));
+        pick.click();
+      }));
       const copyBtn = box.querySelector('.tr-copy');
       if (copyBtn) copyBtn.addEventListener('click', e => {
         const lines = ['Transport documents: action needed (' + fmt(todayIso) + ')'];
         campuses.forEach(c => {
-          const vs2 = rk.vehicles.filter(v => v.b.campus === c && ['ok', 'later', 'eol'].indexOf(v.tier) === -1);
-          if (vs2.length) { lines.push('', c); vs2.forEach(v => lines.push('  ' + v.b.reg + ': ' + v.lines.filter(l => l.kind !== 'later').map(l => l.text).join('; '))); }
+          const vs2 = rk.vehicles.filter(v => v.b.campus === c && ['ok', 'later', 'pending', 'eol'].indexOf(v.tier) === -1);
+          if (vs2.length) { lines.push('', c); vs2.forEach(v => lines.push('  ' + v.b.reg + ': ' + v.lines.filter(l => l.kind !== 'later' && l.kind !== 'pending').map(l => l.text).join('; '))); }
         });
         const up = {};
         items.filter(i => i.kind === 'later').forEach(i => { const u = up[i.label] = up[i.label] || { n: 0, first: i.date }; u.n++; if (i.date < u.first) u.first = i.date; });
@@ -495,6 +521,31 @@ window.Coord = (function () {
         setTimeout(() => { btn.textContent = 'Copy digest'; }, 2000);
       });
     }
+    // One upload per click, never retried: a retry after a slow answer could file the paper twice.
+    async function upload(k, file) {
+      const reg = k.split('|')[0], paper = k.split('|')[1];
+      delete T.upErr[k];
+      const mime = file.type && Object.values(UP_MIME).indexOf(file.type) !== -1 ? file.type : UP_MIME[(file.name.split('.').pop() || '').toLowerCase()] || '';
+      if (!mime) T.upErr[k] = 'Not uploaded: PDF or photo only';
+      else if (file.size > UP_MAX) T.upErr[k] = 'Not uploaded: over 10 MB, scan it smaller';
+      if (T.upErr[k]) return render();
+      T.busy[k] = true; render();
+      try {
+        const base64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => no(new Error('could not read the file')); r.readAsDataURL(file); });
+        const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'transportupload', idToken: SESSION.idToken, reg: reg, paper: paper, mimeType: mime, base64: base64, via: 'Coordinator page' }) })).text();
+        let res;
+        try { res = JSON.parse(text); } catch (e) { throw new Error('no clear answer from the server. Reload the page in a minute to see whether it arrived before uploading again'); }
+        if (!res.success) throw new Error(res.error || 'upload failed');
+        const b = T.data.fleet.find(x => x.reg === reg);
+        if (b) b.docs[paper].pending = { at: new Date().toISOString(), by: SESSION.email || '', link: res.link };
+      } catch (err) {
+        T.upErr[k] = 'Not uploaded: ' + err.message;
+      } finally {
+        delete T.busy[k];
+        render();
+      }
+    }
+
     load();
   }
 

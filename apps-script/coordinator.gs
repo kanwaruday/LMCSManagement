@@ -139,6 +139,7 @@ function doGet(e) {
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
+    if (caller.feeClerkOnly && action !== 'coordinatortransport') return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
@@ -161,7 +162,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     const caller = coordVerifyCaller_(body.idToken);
-    if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
+    if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();
     if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));
     if (action === 'coordinatorpdrmerge') return coordJson_(coordPdrMerge_(caller, body));
@@ -194,9 +195,11 @@ function coordVerifyCaller_(idToken) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
       const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      if (roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1) return null;
+      // A FeeClerk (Fee Clerk Portal) may read the transport data of their own campus or comma list, nothing else (2026-10-21).
+      const feeClerkOnly = roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1;
+      if (feeClerkOnly && roles.indexOf('FeeClerk') === -1) return null;
       const canDecide = roles.indexOf('Owner') !== -1 || (roles.indexOf('Coordinator') !== -1 && String(rows[i][4] || '').trim().toUpperCase() === 'TRUE'); // same rule as aprCanDecide_ in approvals.gs
-      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, canDecide: canDecide };
+      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, canDecide: canDecide, feeClerkOnly: feeClerkOnly };
       cache.put(key, JSON.stringify(caller), 300);
       return caller;
     }
@@ -208,7 +211,9 @@ function coordVerifyCaller_(idToken) {
 
 // null = every campus (Owner / ALL); otherwise the campuses the caller may see
 function coordVisibleCampuses_(caller) {
-  return caller.campusId === 'ALL' ? null : (COORD_DISTRICTS[caller.campusId] || [caller.campusId]);
+  if (caller.campusId === 'ALL') return null;
+  if (caller.feeClerkOnly) return caller.campusId.split(',').map(function (c) { return c.trim(); }); // own campus or comma list, never a district
+  return COORD_DISTRICTS[caller.campusId] || [caller.campusId];
 }
 
 // ── Task store ───────────────────────────────────────────────────────
