@@ -46,6 +46,7 @@ export function createOutbox({ store, api, newId = () => crypto.randomUUID(), on
     },
     flush,
     counts,
+    entries: sorted, // every queued entry (waiting and attention), oldest first, for screens that show unsynced work
     attention: async () => (await sorted()).filter((e) => e.status === 'attention'),
     async retry(id) {
       const e = (await store.getAll()).find((x) => x.id === id);
