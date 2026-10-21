@@ -9,6 +9,14 @@ const SHELL = [
 ];
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));
 
+// The cache key for a request the shell may serve, or null (cross-origin, non-GET, not a shell file).
+function shellHref(req) {
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return null;
+  const href = url.origin + url.pathname; // ignore ?query on shell files
+  return shellUrls.has(href) ? href : null;
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -16,9 +24,7 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  const href = url.origin + url.pathname; // ignore ?query on shell files
-  if (!shellUrls.has(href)) return;
+  const href = shellHref(e.request);
+  if (!href) return;
   e.respondWith(caches.match(href).then((hit) => hit || fetch(e.request)));
 });
