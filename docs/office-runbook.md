@@ -16,7 +16,7 @@ The backend runs as you, so every book and file is owned by your account. Do not
 2. Sheets: create a blank spreadsheet `LMCS Office Config`. Note its ID (between `/d/` and `/edit`). The backend creates and seeds its tabs (`Categories`, `Limits`) on first use.
 3. Sheets: create a blank spreadsheet `LMS1 Office 2026-27` (the book name is what the backup copies are named after, so keep it unique per campus and year). Note its ID. The backend creates all its tabs on first use; do not add tabs, formulas or merged cells.
 4. Opening balances: before the first entry, sign in as the Finance Head or Owner, open Close Day, and fill the Opening balances section (cash petty, fee, other, bank, UPI, in rupees; blank means 0), then press "Set opening balances". It says "Opening balances are locked because day book entries already exist" if any DayBook row exists (`OPENING_LOCKED`), so do it first. Missing balances count as zero. It is also locked once any day has been closed. If the legacy import (section 3) is used, do not use this form: put the starting balances in the importer mapping's `opening`; the importer writes them as `opening-<FY>.csv`, loaded before the day book.
-5. The allowlist sheet: the Office backend reads its own allowlist sheet (first tab, header in row 1). You can point `OFFICE_ALLOWLIST_SHEET_ID` at the existing Principal Allowlist sheet, or make a copy. Columns used: A email, B name, C campuses (comma separated, e.g. `LMS1`, or `ALL`), D roles (comma separated). Matching is on lowercase email. Using the shared one means adding office roles there too; a separate sheet keeps office access independent. Decide which, and say so in the vault note.
+5. The allowlist sheet: use the shared **LMCS Principal Allowlist** sheet and point `OFFICE_ALLOWLIST_SHEET_ID` at it. A separate copy does not work: the office pages sign in through `assets/auth.js`, which always reads the shared sheet (via its allowlist API), so anyone not on the shared sheet cannot even reach the office pages. Columns: A email, B name, C campus, D roles (comma separated). Column C must hold **exactly one campus code** (`LMS1` ... `LMS6`, `HES`) **or `ALL`**: never a comma list. `auth.js` takes column C as one value, so `LMS1,LMS2` becomes campus "LMS1,LMS2" and every office call is refused with `FORBIDDEN_CAMPUS`. Someone who works at two campuses gets `ALL` or works on one. Matching is on lowercase email.
 
 ### 1.2 Create the Apps Script project
 
@@ -51,7 +51,7 @@ The nightly backup copies every key that starts with `OFFICE_SS_` plus `OFFICE_C
 
 ### 1.4 Allowlist rows (test accounts first)
 
-Add rows to the allowlist sheet. Use test Google accounts first (a colleague or a second account of yours), real staff only after the checklist in section 2 passes.
+Add rows to the shared Principal Allowlist sheet (section 1.1 item 5; one campus code or `ALL` in column C). Use test Google accounts first (a colleague or a second account of yours), real staff only after the checklist in section 2 passes.
 
 | Who | Roles (col D) | Campus (col C) |
 |---|---|---|
@@ -60,7 +60,7 @@ Add rows to the allowlist sheet. Use test Google accounts first (a colleague or 
 | Finance Head | `FinanceHead` | `ALL` (or `LMS1`) |
 | You | `Owner` | `ALL` |
 
-Roles used by the office backend: `FeeClerk`, `AdminManager`, `FinanceHead`, `Principal`, `Coordinator`, `Owner`. What each may do: day book entry and reverse (FeeClerk, AdminManager, FinanceHead, Owner); daily report (FeeClerk, AdminManager, Owner; plus a substitute granted by AdminManager or Owner); deposit (FeeClerk, AdminManager, Owner); sign a deposit, close a day, set opening (FinanceHead, Owner); reopen a closed day (Owner only); read-only views (all six roles). A user with several roles lists them comma separated. A campus the user is not listed for is refused on every action.
+Roles used by the office backend: `FeeClerk`, `AdminManager`, `FinanceHead`, `Principal`, `Coordinator`, `Owner`. What each may do: day book entry and reverse (FeeClerk, AdminManager, FinanceHead, Owner); daily report (FeeClerk, AdminManager, Owner; plus a substitute granted by AdminManager or Owner); deposit (FeeClerk, AdminManager, Owner); sign a deposit, close a day, set opening (FinanceHead, Owner); reopen a closed day (Owner only); read-only views (all six roles). A user with several roles lists them comma separated (roles only; the campus column takes one value). A campus the user is not listed for is refused on every action. Office-only roles (`FeeClerk`, `AdminManager`, `FinanceHead`) give nothing in the other portals, which check for `Owner`, `Coordinator`, `Principal` or `Teacher`; the pilot checklist confirms this.
 
 ### 1.5 Fill the IDs, dry run, deploy
 
@@ -98,6 +98,7 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 
 - [ ] Sign in with the clerk test account; the Today screen loads with no "backend not configured" message.
 - [ ] Sign in with an account not in the allowlist: refused.
+- [ ] Sign in with the FeeClerk-only test account and open the Principal, Coordinator, Teacher and salary pages (and the other portals' home pages): none of them shows data or management controls for it. If one does, remove the row and tell Uday before any real staff are added.
 - [ ] Day book: switch the device offline, add an entry; it shows "Not yet synced". Go online; it syncs and the indicator returns to ok.
 - [ ] Day book: reverse an entry; the original shows Reversed, the reversal is a new row.
 - [ ] Daily report submitted before 18:00 (a test date, or by day): not flagged late.
@@ -112,7 +113,7 @@ Do in real Chrome on a phone or laptop (the built-in browser could not verify th
 - [ ] Restore drill: open the backup copy of the LMS 1 book, open the same closing day in the portal, compare the closing totals (cash by bucket, bank, UPI) with what the portal shows live. They must match to the paisa. Note the result in the vault.
 - [ ] Service worker in real Chrome: DevTools > Application > Service Workers shows `sw.js` activated, the cache named by the `CACHE` constant in `office/sw.js` holds the shell files. Turn Network to Offline, reload `office/`: the shell loads from cache and the Today screen shows cached content or an offline notice. Confirm after a deploy that a returning device picks up the new cache name.
 - [ ] Sign-out with unsynced entries warns that sign-out deletes them (this is expected; section 4.4); entries another user queued on the same device are kept.
-- [ ] Shared PC: clerk A queues an entry offline and signs out without syncing is not possible without deleting it, so instead: A queues offline, closes the tab, B signs in online. B's header shows "1 from another user", the entry is not sent; when A signs in again it syncs and the `DayBook` row's `created_by` is A.
+- [ ] Shared PC: clerk A adds an entry while the PC is offline and closes the tab without signing out; clerk B then signs in on the same PC while online. B's header shows "1 from another user" and the entry is not sent; when A signs in again it syncs and the `DayBook` row's `created_by` is A.
 - [ ] After all this, replace test data: new LMS 1 book, update `OFFICE_SS_LMS1_2026-27`, set real opening balances on the Close Day screen, add real allowlist rows, remove the test rows. Only then start the one-month parallel run beside the paper day book.
 
 ---
@@ -141,17 +142,17 @@ Tool: [`tools/office-import-daybook.mjs`](../tools/office-import-daybook.mjs), l
 ### 4.1 Add a campus
 
 1. Create a spreadsheet `LMS<N> Office 2026-27` (or the current FY) in Drive (same folder rules as 1.1).
-2. Script Properties: add `OFFICE_SS_LMS<N>_<FY>` with its ID. The nightly backup picks it up automatically.
+2. Script Properties: add `OFFICE_SS_LMS<N>_<FY>` with its ID. The nightly backup picks it up automatically. Then open the Today screen once as the Owner for that campus before any clerk starts, so the tabs are created by one call (see 4.3).
 3. Add opening balances in its `Opening` tab before the first entry (Close Day screen, 1.1 item 4).
 4. Allowlist rows with the campus in column C for its clerk and manager. Campus codes in use: LMS1 to LMS6.
 
 ### 4.2 Add or change a user
 
-Edit the allowlist sheet: email, name, campuses (comma separated or `ALL`), roles (comma separated). Changes take effect within about 5 minutes (the backend caches a verified caller for 300 seconds). To remove access, delete the row; the same 5-minute window applies. Rotating the allowlist means editing that sheet, nothing else.
+Edit the shared Principal Allowlist sheet: email, name, one campus code or `ALL`, roles (comma separated). Changes take effect within about 5 minutes (the backend caches a verified caller for 300 seconds). To remove access, delete the row; the same 5-minute window applies. Rotating the allowlist means editing that sheet, nothing else.
 
 ### 4.3 Year end (new FY book)
 
-Before 1 April: create the next-year spreadsheet (`LMS1 Office 2027-28`) and add `OFFICE_SS_LMS1_2027-28`, for every campus. Set its Opening rows to the closing balances of 31 March. Until the new key exists, every call for a date in the new year returns `NO_BOOK`. Corrections in April can still reverse an entry of the previous year (the reversal is written to the new year's book; the previous year's book must stay configured). Keep the old property: Today, deposits and file views read it.
+Before 1 April: create the next-year spreadsheet (`LMS1 Office 2027-28`) and add `OFFICE_SS_LMS1_2027-28`, for every campus. Then, before any clerk works on 1 April, sign in as the Owner and open the Today screen once for each campus (switch campus in the header): the first call creates the new book's tabs, and doing it once alone avoids two first calls racing to create the same tab. Set its Opening rows to the closing balances of 31 March. Until the new key exists, every call for a date in the new year returns `NO_BOOK`. Corrections in April can still reverse an entry of the previous year (the reversal is written to the new year's book; the previous year's book must stay configured). Keep the old property: Today, deposits and file views read it.
 
 ### 4.4 "Needs attention" entries
 
@@ -175,6 +176,10 @@ Each book has an `Audit` tab: `id`, `ts` (ISO timestamp), `who` (email), `action
 3. Set the matching Script Property (`OFFICE_SS_<CAMPUS>_<FY>`) to that ID. Do not rename tabs or edit rows. Entries made after the backup time are gone from the book. Devices have already cleared those from their outbox, so re-enter them from the paper day book.
 4. Open the portal and compare the latest closing totals with the paper day book.
 
+### 4.6a Deposit slips and other uploads (Drive)
+
+The nightly backup copies the Sheets only, not the uploaded slips and bills. Their backup method: Google Drive for Desktop on Uday's Mac, set (once, during setup 1.1) to sync the `LMCS Office` Drive root folder with "Mirror files", so the Mac holds a full local copy. A slip deleted by mistake is restored from Drive's Trash within 30 days (drive.google.com > Trash > Restore); a restored file keeps its file id, so the book's `Files` row and "View slip" work again.
+
 ### 4.7 ERP export import
 
 Not built. ERP totals are entered by hand (the ERP screen on the deposits page) until Uday supplies the export format.
@@ -194,6 +199,7 @@ Not built. ERP totals are entered by hand (the ERP screen on the deposits page) 
 - Files: one upload at a time, up to about 3 MB (larger PDFs are not supported yet); duplicates are detected by fingerprint within the current FY book.
 - Sign-out deletes the signed-in user's unsynced entries and the offline cache on that device; other users' queued entries stay until they sign in.
 - The allowlist change window is about 5 minutes (cached caller).
+- The nightly backup covers the Sheets only; uploaded slips rely on Drive for Desktop on Uday's Mac and Drive Trash (4.6a).
 - Backup folder must contain only backups: the retention step trashes any file with a dated name in it that falls outside the 30-day / 12-month window.
 - A backup that misses a book (property missing, file deleted) emails the alert address; no email on a missing `OFFICE_CONFIG_SS` while books exist.
 - Parent access, modules 4 to 12, admissions, communications and approval limits (placeholder rows only) are not part of the pilot.

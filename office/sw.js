@@ -1,7 +1,7 @@
 // App-shell cache only. Cache-first for the files below; everything else (including every
 // script.google.com / googleusercontent.com request and file.view response) goes straight to the network.
 // Bump CACHE when any shell file changes. Later tasks add their screens (report/deposits/close/daybook) to SHELL.
-const CACHE = 'lmcs-office-v5';
+const CACHE = 'lmcs-office-v6';
 const SHELL = [
   './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'office.css', 'manifest.webmanifest',
   'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',

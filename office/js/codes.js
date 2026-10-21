@@ -11,7 +11,7 @@ export const CODES = {
   BAD_RANGE: 'The date range was not accepted.',
   RANGE_SPANS_YEARS: 'The dates fall in two financial years. Choose dates within one year (April to March).',
   LEGS_MISSING: 'This deposit was saved, but part of its day book entry is missing and that day is now closed. Ask the Owner to reopen the day to repair it.',
-  FILE_MISSING: 'The slip photo did not reach the server, so the deposit was not recorded. Discard this and record the deposit again with the photo.',
+  FILE_MISSING: 'The slip photo did not reach the server, so the deposit was not recorded. Retry the slip upload first, then retry this.',
   FILE_REQUIRED: 'The deposit has no slip photo.',
   BAD_FILE: 'The file was not accepted. Take the photo again.',
   BAD_MIME: 'That file type is not accepted. Use a photo or a PDF.',

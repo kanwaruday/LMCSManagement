@@ -3,7 +3,8 @@
 // {name: {roles, write, run(ctx, data)}}; officeAllActions_() below merges them, so a module
 // file needs no registration beyond its line there. Script Properties (read at call time):
 // OFFICE_GOOGLE_CLIENT_ID, OFFICE_ALLOWLIST_SHEET_ID. No IDs live in source (public repo).
-// Allowlist (first tab): A email, B name, C campuses (comma list or ALL), D roles (comma list).
+// Allowlist (first tab; the shared Principal Allowlist, R40): A email, B name, C campus (one code or ALL: the
+// pages' assets/auth.js reads C as one value, so a comma list here would break them), D roles (comma list).
 
 var officeClock_ = null; // tests set a Date here (see officeNow_)
 
