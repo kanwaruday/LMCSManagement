@@ -312,7 +312,7 @@ window.Coord = (function () {
       const pick = i => vmatch(i.b) && (T.tier === 'all' || (T.tier === 'none' ? i.v.tier === 'none' : i.kind === T.tier));
       const rows = items.filter(pick); // already in the order the work should be done
       const pl = t => '<span class="pl ' + t + '">' + LABEL[t] + '</span>';
-      const a = (u, txt) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>';
+      const a = (u, txt) => /^https?:\/\//i.test(u) ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>' : esc(txt); // only http(s) links; anything else is shown as plain text
       const srcNote = i => (i.src === 'form' ? (i.link ? a(i.link, 'from the form (view upload)') : 'from the form') : i.src === 'override' ? 'from the overrides note' : i.src === 'reread' ? a(i.link, 'from the Drive scan (re-read)') : i.src === 'drive' ? a(i.link, 'from the Drive scan') : '') +
         (i.unread.length ? (i.src ? ' &middot; ' : '') + i.unread.map((u, n) => a(u.link, (i.src ? 'unread scan' : 'View scan') + (i.unread.length > 1 ? ' #' + (n + 1) : ''))).join(' ') : '') +
         (i.t === 'wrong' ? (i.date || i.src ? ' &middot; ' : '') + '<b class="miss">wrong paper:</b> ' + i.other.map(o => a(o.link, 'the upload is ' + (o.note || 'a different document'))).join(' ') : '');

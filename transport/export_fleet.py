@@ -10,7 +10,7 @@ top. This is what makes scan-read dates reach the Transport page. Called at the 
 The secret is the value of TRANSPORT_PUSH_SECRET in the Coordinator Apps Script project's Script properties.
 No employee codes or salaries are sent; the payload holds driver names and bus papers only.
 """
-import argparse, difflib, json, re, sqlite3, subprocess, sys
+import argparse, difflib, json, re, sqlite3, subprocess, sys, time
 from datetime import date, datetime, timezone
 from pathlib import Path
 import openpyxl
@@ -130,16 +130,39 @@ def pnl(wb, mapping):
     return rows
 
 
+ROSTER_CACHE = Path(__file__).parent.parent / "drive-index" / "staff_roster_cache.json"  # last good copy of the roster
+ROSTER_TRIES, ROSTER_WAIT, ROSTER_CACHE_DAYS = 3, 4, 7
+
+
 def staff_roster():
     """{normalised employee code: {employeeCode, name, school}} of active staff, from the public Employee Roster Proxy (the staff master).
-    Returns None if it cannot be read; the caller then marks everyone 'not checked' instead of failing the push."""
+    The proxy sometimes answers with an error page, so it is tried ROSTER_TRIES times; if it still fails, the last good copy (saved on every
+    success, at most ROSTER_CACHE_DAYS old) is used, so one bad reply never turns 28 verified people into "not checked" for 2 hours.
+    Returns None only when there is neither a fresh answer nor a recent copy."""
     url = re.search(r"COORD_ROSTER_URL = '([^']+)'", COORDINATOR_GS.read_text())[1]
-    r = subprocess.run(["curl", "-sSL", "-m", "90", url + "?action=employees"], capture_output=True, text=True)
-    try:
-        d = json.loads(r.stdout)
-        return {norm(e["employeeCode"]): e for e in d["employees"]} if d.get("success") else None
-    except (ValueError, KeyError):
-        return None
+    emps = None
+    for n in range(ROSTER_TRIES):
+        r = subprocess.run(["curl", "-sSL", "-m", "90", url + "?action=employees"], capture_output=True, text=True)
+        try:
+            d = json.loads(r.stdout)
+            if d.get("success") and d.get("employees"):
+                emps = d["employees"]
+                break
+        except ValueError:
+            pass
+        if n < ROSTER_TRIES - 1:
+            time.sleep(ROSTER_WAIT)
+    if emps:
+        ROSTER_CACHE.write_text(json.dumps({"savedAt": time.time(), "employees": emps}))
+    else:
+        try:
+            c = json.loads(ROSTER_CACHE.read_text())
+            if time.time() - c["savedAt"] < ROSTER_CACHE_DAYS * 86400:
+                emps = c["employees"]
+                print("staff roster unreachable; using the copy saved " + datetime.fromtimestamp(c["savedAt"]).strftime("%d %b %H:%M"), file=sys.stderr)
+        except (OSError, ValueError, KeyError):
+            pass
+    return {norm(e["employeeCode"]): e for e in emps} if emps else None
 
 
 def link_staff(wb, mapping, fleet):
@@ -212,12 +235,40 @@ def overrides(known):
     return out, warn
 
 
+def selftest():
+    """The roster fallback, with the network and the clock faked. No files outside a temp folder are touched."""
+    import tempfile
+    global ROSTER_CACHE, ROSTER_WAIT
+    ROSTER_CACHE, ROSTER_WAIT = Path(tempfile.mkdtemp()) / "cache.json", 0
+    good = json.dumps({"success": True, "employees": [{"employeeCode": "KUL/1", "name": "A", "school": "LMS 1"}]})
+    bad = "<html>Sorry, unable to open the file at this time.</html>"
+    replies, real = [], subprocess.run
+    subprocess.run = lambda *a, **k: type("R", (), {"stdout": replies.pop(0), "returncode": 0})()
+    try:
+        replies[:] = [bad, bad, good]
+        assert staff_roster() is not None, "should succeed on the third try"
+        replies[:] = [bad, bad, bad]
+        assert "kul1" in staff_roster(), "should fall back to the last good copy"
+        ROSTER_CACHE.write_text(json.dumps({"savedAt": time.time() - 9 * 86400, "employees": []}))
+        replies[:] = [bad, bad, bad]
+        assert staff_roster() is None, "a copy older than 7 days must not be trusted"
+        ROSTER_CACHE.unlink()
+        replies[:] = [bad, bad, bad]
+        assert staff_roster() is None, "no answer and no copy means unknown, not verified"
+    finally:
+        subprocess.run = real
+    print("export_fleet selftest: 4 checks passed")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
+    ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--synced-at", help="UTC start of the sync that produced the scan data (default: now); files created after it show as waiting to be read")
     ap.add_argument("--xlsx", default=XLSX)
     a = ap.parse_args()
+    if a.selftest:
+        return selftest()
     if a.synced_at:
         datetime.strptime(a.synced_at, "%Y-%m-%dT%H:%M:%SZ")  # the backend compares it as text in a Drive query; fail loudly on a malformed value
     wb = openpyxl.load_workbook(a.xlsx, data_only=True)
