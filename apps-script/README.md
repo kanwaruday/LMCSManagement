@@ -8,6 +8,14 @@ these into script.google.com directly — until someone does a real re-sync in t
 The files below marked "separate deployment" were built and still live only in `lmcs-salary-dashboard`;
 those really do need copying from there.
 
+## Deploying (clasp, since 2026-10-21)
+
+`node apps-script/deploy.mjs <project>` is a dry run against the live project; add `--push` to push and
+`--deploy "message"` to also move the live /exec deployment to the new version (URL unchanged). Project ->
+files -> scriptId/deploymentId lives in [`projects.json`](projects.json). One-time: `npx @google/clasp@3 login`
+and fill each `scriptId`. The remote `appsscript.json` and any remote-only files are kept, never overwritten.
+`node tests/verify.mjs` checks everything before and `--live` after.
+
 ## Which file backs which URL
 
 **One deployment** ("LMCS Principal's Daily Reporting Backend" — `PDR_BACKEND_URL` in

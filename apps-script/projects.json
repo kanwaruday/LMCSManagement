@@ -1,0 +1,71 @@
+{
+  "_note": "One entry per Apps Script project. scriptId = Apps Script editor > Project Settings > Script ID (fill in once). deploymentId = the AKfycb... id inside the live /exec URL, so redeploys keep the URL the HTML pages hardcode. See README.md and deploy.mjs.",
+  "pdr": {
+    "name": "LMCS Principal's Daily Reporting Backend",
+    "scriptId": "1tjSRL43kWdbxlw-4wWlVzsd-tmg4iifo-HiyOoEwLWywu05yHZ3bxmSR",
+    "deploymentId": "AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg",
+    "files": [
+      "main",
+      "principal-dr",
+      "teacher-ss",
+      "teacher-portal",
+      "ss-forms-sync",
+      "ss-tracker",
+      "approvals",
+      "hiring",
+      "hiring-audit",
+      "hiring-forms",
+      "compliance-report",
+      "salary"
+    ]
+  },
+  "roster": {
+    "name": "LMCS Employee Roster Proxy",
+    "scriptId": "1flgKvH2lQJv32amMAQ8F7WNGVhSAUBUM8tAJTbqtmmhfqyKRUijxjbTt",
+    "deploymentId": "AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf",
+    "files": [
+      "employee-roster",
+      "staff-management-api",
+      "principal-allowlist",
+      "salary-payscale-sync",
+      "certificate-links-import"
+    ]
+  },
+  "payroll": {
+    "name": "LMCS Payroll Backend",
+    "scriptId": "1DIe12A-3V6tJyOj_EXJL5CBhVxEgC42pRJQ5QxFuBkHaV8D4jlX99JHQ",
+    "deploymentId": "AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv",
+    "files": [
+      "payroll",
+      "payroll-calc",
+      "gratuity-liability"
+    ]
+  },
+  "coordinator": {
+    "name": "LMCS Coordinator Backend",
+    "scriptId": "1_jUW7uMW7wur1-xYIVO9vFeokpkcj1wIDQ9UhQG0W4ekAA5nneBsk2uJ",
+    "deploymentId": "AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6",
+    "files": [
+      "coordinator",
+      "coordinator-transport",
+      "coordinator-pdr",
+      "coordinator-approvals"
+    ]
+  },
+  "chapter": {
+    "name": "CWHWTracker (ChapterTracker)",
+    "scriptId": "1t4uhZItgKlzdaGkx6G0ZtKKP-1No57GP20lhsbcqViWppSd3FT0rqWhk",
+    "deploymentId": null,
+    "files": [
+      "ChapterTracker"
+    ]
+  },
+  "feemail": {
+    "name": "Fee mail capture (standalone, Uday's account)",
+    "scriptId": null,
+    "deploymentId": null,
+    "files": [
+      "fee-mail-capture"
+    ]
+  }
+}
