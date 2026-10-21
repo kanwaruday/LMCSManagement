@@ -9,6 +9,7 @@ const TEST_MODULE = `
 function officeConfigActions_() {
   return {
     'test.clerk': { roles: ['FeeClerk'], write: false, run: function (ctx, data) { return { who: ctx.caller.email, campus: data.campus || null }; } },
+    'test.coded': { roles: ['FeeClerk'], write: false, run: function () { var e = new Error('DAY_CLOSED'); e.code = 'DAY_CLOSED'; throw e; } },
     'test.write': { roles: ['FeeClerk', 'Owner'], write: true, run: function () { return { locked: true }; } },
   };
 }`;
@@ -47,6 +48,11 @@ module.exports = function run(t) {
   t.test('Owner with campus ALL may use any campus', () => {
     const r = call('test.write', { campus: 'LMS6' }, 'owner-token');
     assert.equal(r.success, true);
+  });
+
+  t.test('a thrown error with a code returns both code and error', () => {
+    assert.deepEqual(call('test.coded', {}, 'clerk1-token'), { success: false, code: 'DAY_CLOSED', error: 'DAY_CLOSED' });
+    assert.equal('code' in call('nope', {}, 'clerk1-token'), false, 'plain errors carry no code');
   });
 
   t.test('role not in the action\'s roles is refused', () => {

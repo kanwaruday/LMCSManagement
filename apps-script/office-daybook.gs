@@ -31,6 +31,8 @@ function officeDaybookAdd_(ctx, data) {
   if (cat.direction !== data.direction) throw new Error('DIRECTION_MISMATCH');
   officeCheckModeBucket_(data.mode, data.bucket);
   const ss = officeOpen_(data.campus, officeFy_(data.entry_date));
+  // A retry of an entry already saved stays a duplicate even if its day has since been closed.
+  if (!officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) officeAssertOpen_(ss, data.entry_date);
   return officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: data.mode,
     bucket: data.mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,

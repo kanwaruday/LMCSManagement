@@ -55,7 +55,8 @@ function officeHandle_(action, idToken, data, rawBody) {
       lock.releaseLock();
     }
   } catch (err) {
-    return officeJson_({ success: false, error: err.message });
+    // A thrown error with a `code` (e.g. DAY_CLOSED) returns both, so clients can branch on code.
+    return officeJson_(err.code ? { success: false, code: err.code, error: err.message } : { success: false, error: err.message });
   }
 }
 
