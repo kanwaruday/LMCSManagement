@@ -139,6 +139,8 @@ function boot(fixture, opts) {
     addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeOfficeBook(counter)); },
     // Registers an empty fake Office Config book as OFFICE_CONFIG_SS; returns it.
     addConfig: () => { props.OFFICE_CONFIG_SS = 'CONFIG-FAKE'; return (books['CONFIG-FAKE'] = makeOfficeBook(counter)); },
+    // Registers an empty fake book under an id only (for fakes of SpreadsheetApp.create).
+    addBookById: (id) => (books[id] = makeOfficeBook(counter)),
     setNow: (d) => { ctx.officeClock_ = d; },
     run: (code) => vm.runInContext(code, ctx),
   };

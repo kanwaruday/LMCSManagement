@@ -71,8 +71,8 @@
   },
   "office": {
     "name": "LMCS Office Backend (Fee Clerk + PRO Portal)",
-    "scriptId": null,
-    "deploymentId": null,
+    "scriptId": "11FcmgHBXcVdIQbTvSQqA-LvIg8E4nfoqlSXQUvO9hHzd9HXvFG-FicDv",
+    "deploymentId": "AKfycbzdVhCwnTnMybe6cdcDC87PbINCFG1n6U7UncMHDvk9eHFG6hC4dn7oEiqJKki4-lULEw",
     "files": [
       "office",
       "office-store",
@@ -84,7 +84,8 @@
       "office-deposits",
       "office-today",
       "office-backup",
-      "office-import"
+      "office-import",
+      "office-setup"
     ]
   }
 }

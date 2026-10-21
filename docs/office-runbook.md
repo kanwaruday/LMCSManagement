@@ -10,6 +10,8 @@ Never put a Sheet, folder or secret ID in the repo; they live in Script Properti
 
 The backend runs as you, so every book and file is owned by your account. Do not share any of the folders or Sheets below.
 
+> **Done for you (2026-10-21):** the project "LMCS Office Backend" exists and is deployed (ids in `apps-script/projects.json`), and the portal points at it (`office/js/config.js`). Sections 1.1, 1.3 and 1.7 are now one step: open the project, pick `officeSetup` in the function list, click **Run** and accept the permission screen. It creates the Config book, one book per campus for this financial year, the files and backups folders, every Script Property and the nightly trigger; running it again changes nothing. What is left by hand: allowlist rows (1.4) and Apps Script's own failure-email notices (1.7). Later backend changes deploy with `node apps-script/deploy.mjs office --push --deploy "msg"`.
+
 ### 1.1 Create the Google files
 
 1. Drive: create folder `LMCS Office` (the Drive root, for uploaded slips and bills) and inside it a folder `Backups`. Note both folder IDs (the part after `/folders/` in the URL).
