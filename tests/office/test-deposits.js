@@ -138,6 +138,30 @@ module.exports = function run(t) {
     assert.equal(rows(h, 'Deposits')[0].signed_by, undefined);
   });
 
+  t.test('retry repairs a deposit whose legs were lost; closed day gives LEGS_MISSING; intact retry writes nothing', () => {
+    const h = fresh(); fee(h, 8000);
+    // crash after the Deposits row (no legs), and after :out only
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'c1', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 3000, bank_ref: 'R1', file_id: 'slip' }, { email: 'clerk@example.org' }, {});
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'c2', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 2000, bank_ref: 'R2', file_id: 'slip' }, { email: 'clerk@example.org' }, {});
+    h.setNow(new Date('2026-10-21T10:30:00Z'));
+    h.ctx.officeDaybookWrite_(h.ctx.officeOpen_('LMS1', '2026-27'), { caller: { email: 'x' } }, { id: 'c2:out', campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', mode: 'cash', bucket: 'fee', category: 'deposit_cash_out', amount_paise: 2000 }, 'deposit.add');
+    assert.equal(dep(h, { id: 'c1', amount_paise: 3000 }).duplicate, true);
+    assert.equal(dep(h, { id: 'c2', amount_paise: 2000 }).duplicate, true);
+    const ids = rows(h, 'DayBook').map((r) => r.id).filter((x) => /^c\d:/.test(x)).sort();
+    assert.deepEqual(ids, ['c1:in', 'c1:out', 'c2:in', 'c2:out']);
+    const b = h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-21' }, 'clerk-token');
+    assert.equal(b.closing.cash.fee, 3000); assert.equal(b.closing.bank, 5000);
+    const before = rows(h, 'DayBook').length;
+    assert.equal(dep(h, { id: 'c1' }).duplicate, true);
+    assert.equal(rows(h, 'DayBook').length, before, 'intact retry writes nothing');
+    // closed deposit day with a leg missing
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'c3', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 100, bank_ref: 'R3', file_id: 'slip' }, { email: 'clerk@example.org' }, {});
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Closes', { id: 'cx', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}' }, { email: 'x' }, {});
+    const r = dep(h, { id: 'c3' });
+    assert.equal(r.success, false); assert.equal(r.code, 'LEGS_MISSING');
+    assert.equal(rows(h, 'DayBook').length, before);
+  });
+
   t.test('campus and role enforced', () => {
     const h = fresh(); fee(h, 5000);
     assert.equal(dep(h, {}, 'other-token').error, 'FORBIDDEN_CAMPUS');
