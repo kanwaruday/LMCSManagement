@@ -68,3 +68,8 @@ td.dt a{color:inherit;text-decoration:underline dotted}td.dt a:hover{text-decora
 @media (max-width:1149px){.tw.stick{overflow:auto;max-height:80vh}}
 .grp td{background:var(--lgray);font-weight:700;border-top:2px solid var(--border)}.grp .sm{font-weight:400}
 td.dt.noexp{background:#ecfdf5;color:#047857}td.dt.other{background:#fff7ed;color:#9a3412}
+.act{font-weight:600}.act.none,.act.expired{color:var(--red);font-weight:700}.act.wrong{color:#9a3412;font-weight:700}
+.grp.none td{background:#fee2e2;color:#991b1b}.grp.expired td{background:#fef2f2}.grp.wrong td{background:#fff7ed}.grp.eol td{background:#f1f5f9;color:var(--gray)}
+tr.eol td{opacity:.65}tr.eol td.dt a{opacity:1}
+td.dt.onfile{background:#ecfdf5;color:#047857}td.dt.bad{box-shadow:inset 0 0 0 2px #ea580c}
+.wp{display:inline-block;margin-left:4px;padding:0 5px;border-radius:3px;background:#ea580c;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;white-space:nowrap}.wp a{color:#fff;text-decoration:none}
