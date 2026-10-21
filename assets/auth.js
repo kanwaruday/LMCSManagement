@@ -763,3 +763,96 @@ window.LMCS = (function () {
     document.head.appendChild(s);
   } catch (_) { /* purely cosmetic -- never let it break a page */ }
 })();
+
+/* ── Wide content (2026-10-21, per Uday): nothing on any portal page may sit off to the right unnoticed.
+   Every portal page loads this file, so no page needs changing. After each render (DOM change, debounced)
+   and on resize, for every table wider than the space it has:
+     1. lift the width cap (max-width) of the boxes around it, so it gets the whole window;
+     2. if it still doesn't fit, its scroll box gets a right-edge shadow and a "More columns -- scroll right"
+        note above it, both gone once scrolled to the end.
+   Narrow pages stay narrow -- only a box whose own table overflows is widened, and print layouts never are. */
+(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || !window.MutationObserver) return;
+  const HINT = 'lmcs-scroll-hint';
+  let queued = false;
+
+  function addCss() {
+    if (document.getElementById('lmcs-wide-css')) return;
+    const st = document.createElement('style');
+    st.id = 'lmcs-wide-css';
+    st.textContent = '.lmcs-more-right{box-shadow:inset -22px 0 16px -14px rgba(0,0,0,.30)}' +
+      '.' + HINT + '{text-align:right;font:600 12px/1.6 "Segoe UI",Arial,sans-serif;color:#CE0000;margin:4px 0}';
+    document.head.appendChild(st);
+  }
+
+  function scroller(el) {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const ox = getComputedStyle(p).overflowX;
+      if (ox === 'auto' || ox === 'scroll' || ox === 'hidden') return p;
+    }
+    return null;
+  }
+
+  // Print layouts (offer letter, salary slip) keep their width; any box can opt out with data-lmcs-keep-width.
+  function keepsWidth(el) {
+    return el.hasAttribute('data-lmcs-keep-width') || /letter|print|slip/i.test((el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : ''));
+  }
+
+  function widen(table) {
+    for (let p = table.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      if (keepsWidth(p)) return;
+      const mw = getComputedStyle(p).maxWidth;
+      if (mw !== 'none' && parseFloat(mw) < window.innerWidth) { p.style.maxWidth = 'none'; p.dataset.lmcsWidened = '1'; }
+    }
+  }
+
+  function markScroll(box) {
+    const more = box.scrollWidth - box.clientWidth - box.scrollLeft > 2;
+    box.classList.toggle('lmcs-more-right', more);
+    const hint = box.previousElementSibling && box.previousElementSibling.classList.contains(HINT) ? box.previousElementSibling : null;
+    if (hint) hint.style.visibility = more ? 'visible' : 'hidden';
+  }
+
+  function check() {
+    queued = false;
+    addCss();
+    document.querySelectorAll('table').forEach(function (table) {
+      if (!table.offsetParent) return; // hidden tab
+      const box = scroller(table) || table.parentElement;
+      if (!box || table.offsetWidth <= box.clientWidth + 2) return;
+      widen(table);
+      const sbox = scroller(table);
+      if (!sbox || sbox.scrollWidth <= sbox.clientWidth + 2) return;
+      if (!(sbox.previousElementSibling && sbox.previousElementSibling.classList.contains(HINT))) {
+        const hint = document.createElement('div');
+        hint.className = HINT;
+        hint.textContent = 'More columns → scroll right';
+        sbox.parentNode.insertBefore(hint, sbox);
+      }
+      if (!sbox.dataset.lmcsScrollWatch) {
+        sbox.dataset.lmcsScrollWatch = '1';
+        sbox.addEventListener('scroll', function () { markScroll(sbox); }, { passive: true });
+      }
+      markScroll(sbox);
+    });
+  }
+
+  function queue() {
+    if (queued) return;
+    queued = true;
+    setTimeout(check, 150); // not requestAnimationFrame: it never fires in a background tab
+  }
+
+  function start() {
+    try {
+      new MutationObserver(function (muts) {
+        // ignore our own hint nodes, or every check would schedule another
+        if (muts.every(function (m) { return m.target.classList && m.target.classList.contains(HINT); })) return;
+        queue();
+      }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+      window.addEventListener('resize', queue);
+      queue();
+    } catch (_) { /* layout nicety -- never let it break a page */ }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
