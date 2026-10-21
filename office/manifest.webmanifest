@@ -1,0 +1,10 @@
+{
+  "name": "LMCS Fee Clerk + PRO",
+  "short_name": "LMCS Office",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f3a5f",
+  "icons": [{ "src": "../assets/img/lms-logo.png", "sizes": "any", "type": "image/png" }]
+}
