@@ -177,6 +177,7 @@ function sdocUpload_(body) {
     if (file) {
       link = 'https://drive.google.com/open?id=' + file.getId();
       setFirst(type.match, link, true);
+      sdocMarkStale_();
     }
     if (body.tetQualified !== undefined) setFirst(SDOC_TEXT_FIELDS_.tetQualified, String(body.tetQualified), false);
     if (body.remarks !== undefined) setFirst(SDOC_TEXT_FIELDS_.remarks, String(body.remarks), false);
@@ -193,5 +194,27 @@ function sdocStatusAction_(e) {
     return Object.assign({ success: true }, sdocStatus_(caller, e.parameter.employeeCode));
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+// Keeps the "Certificate Links" tab (what the Staff Portal's Documents / Needs Verification tabs read)
+// current with no trigger to install: rebuilt when those tabs are opened and it's over an hour old,
+// or straight away after an upload here. tryLock: two tabs loading at once rebuild it only once.
+const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at';
+const SDOC_MAX_AGE_MS_ = 60 * 60 * 1000;
+
+function sdocMarkStale_() { PropertiesService.getScriptProperties().deleteProperty(SDOC_REFRESHED_AT_); }
+
+function refreshCertificateLinksIfStale_() {
+  const props = PropertiesService.getScriptProperties();
+  if (Date.now() - Number(props.getProperty(SDOC_REFRESHED_AT_) || 0) < SDOC_MAX_AGE_MS_) return;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try {
+    refreshCertificateLinksFromResponseSheets();
+    bustStaffListCache_(); // Documents / Needs Verification answers are cached per campus
+    props.setProperty(SDOC_REFRESHED_AT_, String(Date.now()));
+  } finally {
+    lock.releaseLock();
   }
 }

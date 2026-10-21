@@ -5048,13 +5048,34 @@ function refreshCertificateLinksFromResponseSheets() {
   const ss = SpreadsheetApp.openById(STAFF_EMP_SHEET_ID);
   let sheet = ss.getSheetByName(CERT_LINKS_TAB);
   if (!sheet) sheet = ss.insertSheet(CERT_LINKS_TAB);
+
+  // Keep the human decisions made in the Needs Verification queue ("Reassigned ..."/"Resolved ...")
+  // -- otherwise every refresh would undo them. Matched by Drive file ID + document type.
+  const kept = {};
+  if (sheet.getLastRow() > 1) {
+    const old = sheet.getDataRange().getValues();
+    const h = old[0];
+    const c = { code: h.indexOf('Employee Code'), name: h.indexOf('Employee Name'), school: h.indexOf('School'),
+      type: h.indexOf('Document Type'), link: h.indexOf('Drive Link'), status: h.indexOf('Status') };
+    old.slice(1).forEach(function (r) {
+      const status = String(r[c.status] || '');
+      if (!/^(Reassigned|Resolved)/.test(status)) return;
+      const id = extractDriveFileId_(r[c.link]);
+      if (id) kept[id + '|' + r[c.type]] = [r[c.code], r[c.name], r[c.school], status];
+    });
+  }
+  rows.forEach(function (row) {
+    const k = kept[extractDriveFileId_(row[5]) + '|' + row[3]];
+    if (k) { row[0] = k[0]; row[1] = k[1]; row[2] = k[2]; row[6] = k[3]; }
+  });
+
   sheet.clearContents();
   const header = ['Employee Code', 'Employee Name', 'School', 'Document Type', 'Filename', 'Drive Link', 'Status'];
   sheet.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
   if (rows.length) sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, header.length);
-  Logger.log('Refreshed ' + rows.length + ' certificate link rows into "' + CERT_LINKS_TAB + '" directly from Response sheets.');
+  Logger.log('Refreshed ' + rows.length + ' certificate link rows into "' + CERT_LINKS_TAB + '" directly from Response sheets (' + Object.keys(kept).length + ' manual decisions kept).');
 }
 
 // One-time setup -- Uday runs this once from the Apps Script editor: it

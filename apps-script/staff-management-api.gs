@@ -125,6 +125,7 @@ function staffDoGet_(e) {
     if (!caller) return staffJsonOut_({ success: false, error: 'Not authorized' });
 
     const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
+    if (action === 'documentstatus' || action === 'verificationqueue') refreshCertificateLinksIfStale_(); // staff-documents.gs
     let result;
     if (action === 'nextcode') result = { employeeCode: previewNextCode_(data) };
     else if (action === 'list') result = { employees: listEmployees_(caller) };
