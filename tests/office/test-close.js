@@ -49,6 +49,15 @@ module.exports = function run(t) {
     assert.deepEqual(e.map((x) => [x.id, x.entry_date]), [['rv', '2026-10-21']]);
   });
 
+  t.test('a closed today (hand-written Closes row) makes reverse return DAY_CLOSED', () => {
+    const h = fresh();
+    add(h, { id: 'orig' });
+    h.ctx.officeWriteRow_(h.book, 'Closes', { id: 'x', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}', created_at: '2026-10-21T09:00:00.000Z' });
+    const r = h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
+    assert.equal(r.code, 'DAY_CLOSED');
+    assert.equal(h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries.length, 0);
+  });
+
   t.test('close by FeeClerk refused', () => {
     const h = fresh();
     assert.equal(h.call('day.close', { id: 'c', campus: 'LMS1', close_date: '2026-10-20' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
@@ -80,6 +89,7 @@ module.exports = function run(t) {
     assert.equal(close(h, '2026-02-30').error, 'BAD_DATE');
     assert.equal(close(h, '21/10/2026').error, 'BAD_DATE');
     assert.equal(close(h, '2026-10-22').error, 'FUTURE_DATE');
+    assert.equal(close(h, '2026-10-21').error, 'CANNOT_CLOSE_TODAY');
     assert.equal(h.call('day.close', { campus: 'LMS1', close_date: '2026-10-20' }, 'fh-token').error, 'MISSING_ID');
   });
 

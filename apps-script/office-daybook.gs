@@ -66,6 +66,7 @@ function officeDaybookReverse_(ctx, data) {
   const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
   if (!orig) throw new Error('NOT_FOUND');
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
+  officeAssertOpen_(ss, officeToday_()); // defence in depth: day.close refuses today, but a closed today must never take a row
   return officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,

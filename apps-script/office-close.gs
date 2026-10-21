@@ -38,6 +38,7 @@ function officeCloseDate_(data) {
 function officeDayClose_(ctx, data) {
   const date = officeCloseDate_(data);
   if (date > officeToday_()) throw new Error('FUTURE_DATE');
+  if (date === officeToday_()) throw new Error('CANNOT_CLOSE_TODAY'); // reversals post to today, so today must stay open
   const ss = officeOpen_(data.campus, officeFy_(date));
   if (officeRows_(ss, 'Closes').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry
   if (officeIsClosed_(ss, date)) throw new Error('ALREADY_CLOSED');
