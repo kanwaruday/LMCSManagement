@@ -77,8 +77,23 @@ module.exports = function run(t) {
     assert.equal(submit(h, {}, 'sub-token').error, 'FORBIDDEN_ROLE');
     grant(h, { from_date: '2026-10-10', to_date: '2026-10-20', email: 'SUB@example.org' });
     assert.equal(submit(h, {}, 'sub-token').error, 'FORBIDDEN_ROLE');
-    grant(h, { from_date: '2026-10-21', to_date: '2026-10-21', campus: 'LMS2' }); // wrong campus: sub is not LMS2 either
-    assert.equal(submit(h, {}, 'sub-token').error, 'FORBIDDEN_ROLE');
+  });
+
+  t.test('a substitute grant never crosses campuses', () => {
+    const h = fresh();
+    h.addBook('LMS2', '2026-27'); // sub is allowlisted for LMS1 only
+    assert.equal(grant(h, { campus: 'LMS2' }).success, true, 'LMS2 grant is written');
+    assert.equal(submit(h, { campus: 'LMS2' }, 'sub-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(submit(h, {}, 'sub-token').error, 'FORBIDDEN_ROLE', 'LMS2 grant gives nothing on LMS1');
+    assert.equal(grant(h, { campus: 'LMS1' }).success, true);
+    assert.equal(submit(h, { campus: 'LMS2' }, 'sub-token').error, 'FORBIDDEN_CAMPUS', 'LMS1 grant gives nothing on LMS2');
+    assert.equal(submit(h, {}, 'sub-token').success, true);
+  });
+
+  t.test('report.submit is the only action that declares substitute access', () => {
+    const h = fresh();
+    const acts = h.ctx.officeAllActions_();
+    assert.deepEqual(Object.keys(acts).filter((k) => acts[k].substitute), ['report.submit']);
   });
 
   t.test('grant validation and roles', () => {
