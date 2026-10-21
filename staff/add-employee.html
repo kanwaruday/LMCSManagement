@@ -90,6 +90,15 @@ td.name{font-weight:700}
 .upload-cell{cursor:pointer;white-space:nowrap}
 .pill.optional{background:var(--white);border-color:#e5e7eb;color:#9ca3af}
 td.doc-na{color:#c7cbd1;text-align:center}
+/* Document rules editor */
+#rulesBody{overflow-x:auto}
+#rulesBody table{border-collapse:separate;border-spacing:0}
+#rulesBody th:first-child,#rulesBody td:first-child{position:sticky;left:0;z-index:1;background:var(--white)}
+#rulesBody th:first-child{background:var(--lgray)}
+.rule-cell{cursor:pointer;font-family:inherit;min-width:64px;justify-content:center}
+.rule-cell.changed{outline:2px solid #fbbf24;outline-offset:1px}
+.rule-na{color:#c7cbd1;font-weight:600;font-size:10.5px}
+#rulesBody td .sub{display:block;font-weight:400;color:#9ca3af;font-size:10.5px}
 .upload-cell:hover,.upload-cell:focus-within{background:var(--red);border-color:var(--red);color:#fff}
 .upload-cell:hover::after{content:' ↑'}
 .upload-cell.busy{cursor:wait;background:#fffbeb;border-color:#fde68a;color:#92400e}
@@ -172,6 +181,7 @@ td.doc-na{color:#c7cbd1;text-align:center}
       <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
       <button class="tab-btn" data-tab="verify" onclick="switchTab('verify')">🔍 Needs Verification<span class="tab-badge" id="verifyBadge" style="display:none"></span></button>
       <button class="tab-btn" data-tab="inactive" disabled title="Temporarily disabled">⛔ Mark Inactive</button>
+      <button class="tab-btn" data-tab="rules" id="rulesTabBtn" onclick="switchTab('rules')" style="display:none">⚙️ Document rules</button>
     </div>
 
     <!-- ══════════════════ DIRECTORY ══════════════════ -->
@@ -203,6 +213,18 @@ td.doc-na{color:#c7cbd1;text-align:center}
       <div id="autoResolveMsg"></div>
       <datalist id="verifyEmployeeList"></datalist>
       <div id="verifyBody">Loading…</div>
+    </div>
+
+    <!-- ══════════════════ DOCUMENT RULES (Owner) ══════════════════ -->
+    <div class="tab-panel" id="panel-rules">
+      <div class="dir-toolbar">
+        <span class="dir-count">Which documents each designation needs. Click a cell to change it: <span class="pill inactive">Required</span> counts as Missing, <span class="pill optional">Optional</span> can be uploaded but isn't counted, <span class="rule-na">N/A</span> is hidden.</span>
+      </div>
+      <div class="dir-toolbar">
+        <span class="dir-count" id="rulesMsg"></span>
+        <button type="button" class="verify-btn" id="rulesSave" disabled>Save rules</button>
+      </div>
+      <div id="rulesBody">Loading…</div>
     </div>
 
     <!-- ══════════════════ MARK INACTIVE ══════════════════ -->
@@ -324,6 +346,7 @@ async function init() {
   // the authenticated Staff API) -- run in parallel instead of one
   // blocking the other, since each was already slow enough on its own
   // (see PERF note on doGet in staff-management-api.gs).
+  if (LMCS.hasRole(SESSION, 'Owner')) { document.getElementById('rulesTabBtn').style.display = ''; loadDocRules(); }
   await Promise.all([loadAllEmployees(), loadDirectory(), loadDocumentStatus(), loadUploadStatus(), loadVerificationQueue()]);
 }
 
@@ -555,6 +578,95 @@ function renderDocumentStatus() {
 document.getElementById('docSchoolTabs').addEventListener('click', function (e) {
   const btn = e.target.closest('.dir-school-tab');
   if (btn) selectDocSchool(btn.dataset.school);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   DOCUMENT RULES (Owner, 2026-10-21) -- designation x document grid of
+   Required / Optional / N/A, saved to the "Document Rules" sheet tab via
+   'savedocrules' (apps-script/staff-documents.gs). The Documents tab
+   reads the same rules.
+═══════════════════════════════════════════════════════════ */
+let rulesData = null;   // {types, rules, designations} from 'docrules'
+let rulesEdit = {};     // designation key -> array of 'R'|'O'|'N' (one per rulesData.types)
+let rulesSaved = {};    // same, as last loaded/saved -- to show what changed
+const RULE_NEXT = { R: 'O', O: 'N', N: 'R' };
+
+function ruleLetters(rule, types) {
+  return types.map(function (t) { return rule.R.indexOf(t) !== -1 ? 'R' : (rule.N.indexOf(t) !== -1 ? 'N' : 'O'); });
+}
+
+async function loadDocRules() {
+  try {
+    const json = await callStaffApi('docrules', {});
+    if (!json.success) throw new Error(json.error || 'docrules failed');
+    rulesData = json;
+    rulesEdit = {}; rulesSaved = {};
+    json.designations.forEach(function (d) {
+      const letters = ruleLetters(json.rules[d.key] || json.rules[''], json.types);
+      rulesEdit[d.key] = letters.slice();
+      rulesSaved[d.key] = letters.join('');
+    });
+    renderDocRules();
+  } catch (e) {
+    document.getElementById('rulesBody').innerHTML = '<div class="dir-empty">Could not load document rules: ' + esc(e.message) + '</div>';
+  }
+}
+
+function rulesChangedCount() {
+  return Object.keys(rulesEdit).filter(function (k) { return rulesEdit[k].join('') !== rulesSaved[k]; }).length;
+}
+
+function renderDocRules() {
+  const shortOf = {};
+  DOC_TYPES.forEach(function (t) { shortOf[t.full] = t.short; });
+  const word = { R: 'Required', O: 'Optional', N: 'N/A' };
+  document.getElementById('rulesBody').innerHTML =
+    '<table><thead><tr><th>Designation</th>' +
+    rulesData.types.map(function (t) { return '<th title="' + esc(t) + '">' + esc(shortOf[t] || t) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+    rulesData.designations.map(function (d) {
+      const saved = rulesSaved[d.key];
+      return '<tr><td class="name">' + esc(d.label) + '<span class="sub">' + (d.key ? d.count + (d.count === 1 ? ' person' : ' people') : 'anyone not listed above') + '</span></td>' +
+        rulesEdit[d.key].map(function (v, i) {
+          const cls = v === 'R' ? 'pill inactive' : (v === 'O' ? 'pill optional' : 'pill rule-na');
+          return '<td><button type="button" class="' + cls + ' rule-cell' + (v !== saved[i] ? ' changed' : '') + '" data-key="' + esc(d.key) + '" data-i="' + i + '" ' +
+            'aria-label="' + esc(d.label + ', ' + rulesData.types[i] + ': ' + word[v]) + '">' + word[v] + '</button></td>';
+        }).join('') + '</tr>';
+    }).join('') +
+    '</tbody></table>';
+  const n = rulesChangedCount();
+  document.getElementById('rulesSave').disabled = n === 0;
+  document.getElementById('rulesMsg').className = 'dir-count';
+  document.getElementById('rulesMsg').textContent = n ? n + (n === 1 ? ' designation' : ' designations') + ' changed, not saved yet' : '';
+}
+
+document.getElementById('rulesBody').addEventListener('click', function (e) {
+  const b = e.target.closest('.rule-cell');
+  if (!b) return;
+  const row = rulesEdit[b.dataset.key];
+  row[+b.dataset.i] = RULE_NEXT[row[+b.dataset.i]];
+  renderDocRules();
+});
+
+document.getElementById('rulesSave').addEventListener('click', async function () {
+  const btn = this, msg = document.getElementById('rulesMsg');
+  btn.disabled = true;
+  msg.textContent = 'Saving…';
+  const rules = {}, labels = {};
+  rulesData.designations.forEach(function (d) { rules[d.key] = rulesEdit[d.key].join(''); labels[d.key] = d.label; });
+  try {
+    const json = await callStaffApi('savedocrules', { rules: rules, labels: labels });
+    if (!json.success) throw new Error(json.error || 'save failed');
+    Object.keys(rulesEdit).forEach(function (k) { rulesSaved[k] = rulesEdit[k].join(''); });
+    renderDocRules();
+    msg.className = 'dir-count';
+    msg.textContent = 'Saved. The Documents tab now follows these rules.';
+    loadDocumentStatus();
+  } catch (err) {
+    msg.className = 'dir-count verify-msg err';
+    msg.textContent = 'Not saved: ' + err.message;
+    btn.disabled = false;
+  }
 });
 
 // Upload straight from a "Missing" cell (2026-10-21, per Uday) -- the cell already says whose

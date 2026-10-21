@@ -261,8 +261,90 @@ const STAFF_DOC_RULES_ = (function () {
 // Same job, different wording in EmpSalary.
 const STAFF_DOC_RULE_ALIASES_ = { 'ADMIN CLERK + PRO': 'CLERK + PRO', 'PTI (11, 12)': 'GAMES TEACHER (PTI)' };
 
-function staffDocRuleKey_(designation) {
+// `rules` = staffDocRules_() (pass it in when resolving many people at once).
+function staffDocRuleKey_(designation, rules) {
   const d = sdocNorm_(designation);
   const k = STAFF_DOC_RULE_ALIASES_[d] || d;
-  return STAFF_DOC_RULES_[k] ? k : '';
+  return (rules || staffDocRules_())[k] ? k : '';
+}
+
+// ── Rules editor (Uday, 2026-10-21): the Owner edits the rules in the Staff Portal's "Document rules"
+// tab; they're stored in a "Document Rules" tab of the response workbook (one row per designation,
+// one column per document type, cells Required / Optional / N/A), so they can be read -- or edited --
+// as a plain sheet too. No tab yet = STAFF_DOC_RULES_ above, which stay as the starting point.
+const SDOC_RULES_TAB_ = 'Document Rules';
+const SDOC_ANY_DESIGNATION_ = '(any other designation)';
+
+function staffDocRules_() {
+  return cachedStaff_('doc_rules', function () {
+    const sheet = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_).getSheetByName(SDOC_RULES_TAB_);
+    if (!sheet || sheet.getLastRow() < 2) return STAFF_DOC_RULES_;
+    const g = sheet.getDataRange().getValues();
+    const types = g[0].slice(1).map(function (t) { return String(t).trim(); });
+    const out = {};
+    g.slice(1).forEach(function (r) {
+      const label = String(r[0] || '').trim();
+      if (!label) return;
+      const rule = { R: [], N: [] };
+      types.forEach(function (t, i) {
+        const v = sdocNorm_(r[i + 1]);
+        if (v === 'REQUIRED') rule.R.push(t); else if (v === 'N/A') rule.N.push(t);
+      });
+      out[label === SDOC_ANY_DESIGNATION_ ? '' : sdocNorm_(label)] = rule;
+    });
+    if (!out['']) out[''] = STAFF_DOC_RULES_[''];
+    return out;
+  });
+}
+
+// GET action=docrules -> what the editor needs: the document types (column order), the current rules,
+// and every designation on the roster (aliases folded in) with how many people hold it.
+function sdocRulesForEditor_() {
+  const rules = staffDocRules_();
+  const salary = readEmpSalaryByCode_();
+  const seen = {};
+  Object.keys(salary).forEach(function (code) {
+    const s = salary[code];
+    if (!s.designation || STAFF_HIDDEN_DEPARTMENTS.indexOf(s.department) !== -1) return;
+    const d = sdocNorm_(s.designation);
+    const key = STAFF_DOC_RULE_ALIASES_[d] || d;
+    if (key === 'N/A') return; // a blank-ish designation; covered by "(any other designation)"
+    seen[key] = seen[key] || { key: key, label: s.designation.trim(), count: 0 };
+    seen[key].count++;
+  });
+  Object.keys(rules).forEach(function (k) { if (k && !seen[k]) seen[k] = { key: k, label: k, count: 0 }; });
+  const designations = Object.keys(seen).map(function (k) { return seen[k]; })
+    .sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
+  designations.push({ key: '', label: SDOC_ANY_DESIGNATION_, count: 0 });
+  return { types: STAFF_DOCUMENT_TYPES, rules: rules, designations: designations };
+}
+
+// data: {rules: {designationKey: "RON..." -- one letter per STAFF_DOCUMENT_TYPES entry, in order},
+//        labels: {designationKey: label shown in the sheet}}. Owner only.
+function sdocSaveRules_(data, caller) {
+  if (caller.roles.indexOf('Owner') === -1) throw new Error('Only the Owner can change document rules');
+  const word = { R: 'Required', O: 'Optional', N: 'N/A' };
+  const rows = Object.keys(data.rules || {}).map(function (key) {
+    const code = String(data.rules[key]);
+    if (code.length !== STAFF_DOCUMENT_TYPES.length || /[^RON]/.test(code)) throw new Error('Bad rule for ' + (key || 'any other designation'));
+    const label = key ? String((data.labels || {})[key] || key) : SDOC_ANY_DESIGNATION_;
+    return [label].concat(code.split('').map(function (c) { return word[c]; }));
+  });
+  if (!rows.length) throw new Error('No rules sent');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const wb = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_);
+    const sheet = wb.getSheetByName(SDOC_RULES_TAB_) || wb.insertSheet(SDOC_RULES_TAB_);
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, STAFF_DOCUMENT_TYPES.length + 1).setValues([['Designation'].concat(STAFF_DOCUMENT_TYPES)]).setFontWeight('bold');
+    sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+    sheet.setFrozenRows(1);
+    sheet.setFrozenColumns(1);
+  } finally {
+    lock.releaseLock();
+  }
+  CacheService.getScriptCache().remove('doc_rules');
+  bustStaffListCache_(); // cached Documents rows carry their resolved rule key
+  return { saved: rows.length };
 }

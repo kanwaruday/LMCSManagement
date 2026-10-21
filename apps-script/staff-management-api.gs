@@ -108,7 +108,7 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // staleness on a read carries no real risk. Write actions always verify
 // live, uncached, so a just-revoked access can never slip a mutation
 // through during the cache window.
-const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord'];
+const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord', 'docrules'];
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
@@ -135,7 +135,9 @@ function staffDoGet_(e) {
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
     else if (action === 'installjobrolesync') result = installJobRolePayScaleSyncTriggerAction_(data, caller);
-    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller), rules: STAFF_DOC_RULES_ };
+    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller), rules: staffDocRules_() };
+    else if (action === 'docrules') result = sdocRulesForEditor_();
+    else if (action === 'savedocrules') result = sdocSaveRules_(data, caller);
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_(e.parameter.force === '1') };
     else if (action === 'verificationqueue') result = { rows: listVerificationQueue_(caller) };
     else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
@@ -690,6 +692,7 @@ function buildDocumentStatus_(caller) {
   const header = rows[0];
   const idx = {};
   header.forEach(function (h, i) { idx[h] = i; });
+  const docRules = staffDocRules_();
   const salaryByCode = readEmpSalaryByCode_();
   const certsByCode = readCertificatesByCode_();
   const out = [];
@@ -709,7 +712,7 @@ function buildDocumentStatus_(caller) {
       documents[t] = files && files.length ? { count: files.length, driveLink: files[0].driveLink } : null;
     });
     out.push({
-      rule: staffDocRuleKey_(salary.designation), // which STAFF_DOC_RULES_ entry applies (staff-documents.gs)
+      rule: staffDocRuleKey_(salary.designation, docRules), // which document-rules entry applies (staff-documents.gs)
       employeeCode: code,
       name: String(rows[i][idx.Name] || '').trim(),
       school: school,
