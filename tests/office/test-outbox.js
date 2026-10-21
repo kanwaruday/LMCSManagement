@@ -145,15 +145,38 @@ const done = () => process.exit(failed ? 1 : 0);
     assert.deepStrictEqual(api.sent.map((s) => s.action), ['y', 'x']);
     assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 0, others: 0 });
   });
-  await test('without a session nothing is sent; entries from before authors were stamped count as the current user\'s', async () => {
+  await test('without a session nothing is sent', async () => {
     const api = mkApi(); let me = null; const store = memStore();
-    await store.put({ id: 'old', seq: 1, action: 'legacy', data: {}, status: 'waiting', code: null, error: null });
     const ob = createOutbox({ store, api, who: () => me });
     await ob.enqueue('x', {});
     await ob.flush();
     assert.strictEqual(api.sent.length, 0);
     me = 'a@example.org'; await ob.flush();
-    assert.deepStrictEqual(api.sent.map((s) => s.action), ['legacy', 'x'], 'an entry with no author goes with whoever signs in');
+    assert.deepStrictEqual(api.sent.map((s) => s.action), [], 'an entry queued with no user belongs to nobody');
+  });
+  // R42: an ownerless entry is never sent under whoever is signed in; Retry by the signed-in user claims it.
+  await test('an ownerless entry is not sent by flush; it shows as another\'s until Retry claims it or Discard drops it', async () => {
+    const api = mkApi(); const store = memStore();
+    await store.put({ id: 'old', seq: 1, action: 'legacy', data: {}, status: 'waiting', code: null, error: null, owner: null });
+    await store.put({ id: 'old2', seq: 2, action: 'legacy2', data: {}, status: 'waiting', code: null, error: null });
+    const ob = createOutbox({ store, api, who: () => 'a@example.org' });
+    await ob.enqueue('x', {});
+    await ob.flush();
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['x']);
+    assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 0, others: 2 });
+    assert.deepStrictEqual((await ob.others()).map((e) => e.id), ['old', 'old2']);
+    await ob.retry('old');
+    assert.deepStrictEqual(api.sent.map((s) => s.action), ['x', 'legacy'], 'Retry sends it as the signed-in user');
+    await ob.discard('old2');
+    assert.deepStrictEqual(await store.getAll(), []);
+  });
+  await test('a claimed ownerless entry that is refused again stays with the claimer', async () => {
+    const api = mkApi(() => CLOSED); const store = memStore();
+    await store.put({ id: 'old', seq: 1, action: 'legacy', data: {}, status: 'attention', code: 'DAY_CLOSED', error: 'x', owner: null });
+    const ob = createOutbox({ store, api, who: () => 'a@example.org' });
+    await ob.retry('old');
+    assert.deepStrictEqual((await store.getAll()).map((e) => [e.owner, e.status]), [['a@example.org', 'attention']]);
+    assert.deepStrictEqual(await ob.counts(), { waiting: 0, attention: 1, others: 0 });
   });
   done();
 })();

@@ -22,6 +22,30 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(waitingFor({ owner: 'b@x.org', status: 'attention', code: 'DAY_CLOSED' }).includes('Needs attention: That day is closed'));
   console.log('  ok  - sign-out keeps other users\' entries; their entries say who they wait for');
 
+  // R42: the page's user is the session it booted with, even after the Google token lapses (getSession() -> null).
+  const { pageUser } = await import('../../office/js/shell.js');
+  const { createOutbox } = await import('../../office/js/outbox.js');
+  let live = { email: 'A@x.org', idToken: 't1' };
+  const L = { getSession: () => live };
+  const u = pageUser(L, live);
+  const m = new Map(), store = { put: async (e) => { m.set(e.id, { ...e }); }, getAll: async () => [...m.values()], delete: async (id) => { m.delete(id); } };
+  const ob = createOutbox({ store, api: { write: async () => ({ success: false, code: 'AUTH' }) }, who: u.who });
+  live = null; // token expired: auth.js drops the stored session
+  await ob.enqueue('daybook.add', {});
+  assert.deepStrictEqual([...m.values()].map((e) => e.owner), ['a@x.org'], 'stamped with the boot email');
+  assert.deepStrictEqual(await ob.counts(), { waiting: 1, attention: 0, others: 0 }, 'own entries stay theirs during a lapse');
+  await assert.rejects(u.token(), 'no token while lapsed');
+  live = { email: 'b@x.org', idToken: 't2' };
+  await assert.rejects(u.token(), 'another user\'s token is never used for this page\'s entries');
+  live = { email: 'a@x.org', idToken: 't3' };
+  assert.strictEqual(await u.token(), 't3');
+  assert.strictEqual(u.otherUserSignedIn({ key: 'lmcs_session', newValue: JSON.stringify({ email: 'B@x.org' }) }), true);
+  assert.strictEqual(u.otherUserSignedIn({ key: 'lmcs_session', newValue: JSON.stringify({ email: 'a@x.org' }) }), false);
+  assert.strictEqual(u.otherUserSignedIn({ key: 'lmcs_session', newValue: null }), false, 'a lapse elsewhere is not a new user');
+  assert.strictEqual(u.otherUserSignedIn({ key: 'other', newValue: '{}' }), false);
+  assert.ok(waitingFor({ owner: null, status: 'waiting' }).includes('Retry'), 'ownerless entries say how to claim them');
+  console.log('  ok  - entries keep the boot user through a token lapse; another user\'s sign-in is detected');
+
   const evil = '<img src=x onerror=alert(1)>';
   assert.ok(!esc(evil).includes('<'));
   const { renderTasks } = await import('../../office/js/today.js');

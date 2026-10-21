@@ -3,15 +3,17 @@
 // (backend refused it, e.g. DAY_CLOSED; kept until retry() or an explicit discard()).
 // Flush is strictly FIFO (R7): a network failure stops it; an attention entry does not block later ones.
 // Each entry carries `owner`, the email of the session that queued it (R38): only that person's session sends,
-// retries or discards it, so created_by and the audit trail stay right on a shared PC. `who` returns the current
-// session email (null when signed out: nothing is sent). An entry without an owner goes with whoever is signed in.
-// Without a `who` option every entry counts as the current user's.
+// retries or discards it, so created_by and the audit trail stay right on a shared PC. `who` returns the page's
+// user email (the shell passes the session the page booted with, R42; null: nothing is sent). An entry without an
+// owner belongs to nobody: it is never flushed, shows among others(), and only an explicit retry() (which claims it
+// for the current user) or discard() moves it. Without a `who` option every entry counts as the current user's.
 import { isAuthFailure } from './api.js';
 
 export function createOutbox({ store, api, newId = () => crypto.randomUUID(), onChange = () => {}, who = null }) {
   let running = null, dirty = false, chain = Promise.resolve(), seq = null;
   const me = () => (who ? who() : null);
-  const owned = (e) => !who || (me() !== null && (!e.owner || e.owner === me()));
+  const owned = (e) => !who || (me() !== null && e.owner === me());
+  const claimable = (e) => owned(e) || (!e.owner && me() !== null); // ownerless: the signed-in user may claim or drop it
   const sorted = async () => (await store.getAll()).sort((a, b) => a.seq - b.seq);
   const counts = async () => {
     const all = await store.getAll(), mine = all.filter(owned);
@@ -56,14 +58,15 @@ export function createOutbox({ store, api, newId = () => crypto.randomUUID(), on
     attention: async () => (await sorted()).filter((e) => e.status === 'attention' && owned(e)),
     others: async () => (await sorted()).filter((e) => !owned(e)), // queued by someone else on this device
     owned,
+    claimable,
     async retry(id) {
       const e = (await store.getAll()).find((x) => x.id === id);
-      if (e && owned(e)) await store.put({ ...e, status: 'waiting', code: null, error: null });
+      if (e && claimable(e)) await store.put({ ...e, status: 'waiting', code: null, error: null, ...(who ? { owner: me() } : {}) });
       return flush();
     },
     async discard(id) {
       const e = (await store.getAll()).find((x) => x.id === id);
-      if (e && owned(e)) await store.delete(id);
+      if (e && claimable(e)) await store.delete(id);
       await notify();
     },
   };

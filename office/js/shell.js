@@ -25,6 +25,23 @@ export function signOutPlan(entries, owned) {
   return { ids: mine.map((e) => e.id), waiting: mine.filter((e) => e.status === 'waiting').length, attention: mine.filter((e) => e.status === 'attention').length, kept: (entries || []).length - mine.length };
 }
 
+// R42: the page's user is the session it booted with, captured once. auth.js drops the stored session when the
+// Google token lapses (~1 h), but entries queued meanwhile still belong to this user. A change of user in this tab
+// always reloads (sign-out / "Sign in again" both reload); a sign-in in another tab is caught by the storage event
+// (otherUserSignedIn -> reload). token() refuses any token but this user's, so no entry goes out under someone else.
+export function pageUser(L, session0) {
+  const email = String((session0 && session0.email) || '').toLowerCase() || null;
+  const emailOf = (s) => String((s && s.email) || '').toLowerCase();
+  return {
+    who: () => email,
+    token: async () => { const s = L.getSession(); if (!s || !s.idToken || emailOf(s) !== email) throw new Error('Not signed in'); return s.idToken; },
+    otherUserSignedIn: (ev) => {
+      if (!ev || ev.key !== 'lmcs_session' || !ev.newValue) return false;
+      try { return emailOf(JSON.parse(ev.newValue)) !== email; } catch (_) { return false; }
+    },
+  };
+}
+
 // Read cache (last good answer per key) so screens still show something offline. localStorage may throw.
 export function cacheGet(key) { try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key)); } catch (_) { return null; } }
 export function cacheSet(key, value) { try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value)); } catch (_) {} }
@@ -59,9 +76,11 @@ export async function bootOffice({ onReady }) {
     return;
   }
 
+  const user = pageUser(L, session0);
+  window.addEventListener('storage', (ev) => { if (user.otherUserSignedIn(ev)) location.reload(); });
   const api = createApi({
     fetch: (...a) => fetch(...a),
-    getToken: async () => { const s = L.getSession(); if (!s || !s.idToken) throw new Error('Not signed in'); return s.idToken; },
+    getToken: user.token,
     backendUrl: OFFICE_BACKEND_URL,
   });
   const store = createIdbStore();
@@ -84,7 +103,7 @@ export async function bootOffice({ onReady }) {
   };
   const outbox = createOutbox({
     store, api,
-    who: () => { const s = L.getSession(); return s && s.email ? String(s.email).toLowerCase() : null; },
+    who: user.who,
     onChange: (c) => { state = { waiting: c.waiting, attention: c.attention, others: c.others || 0 }; paint(c); if (c.authRequired) L.notifyAuthFailure(); },
   });
   panel = createAttentionPanel(outbox);

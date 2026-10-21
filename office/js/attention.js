@@ -27,10 +27,14 @@ export function describeEntry(e) {
 }
 
 // Another user's queued entry: who it waits for, and why it was refused if it was.
-export const waitingFor = (e) => 'Waiting for ' + (e.owner || 'another user') + ' to sign in on this device' + (e.status === 'attention' ? '. Needs attention: ' + entryReason(e) : '.');
+// An ownerless entry (queued with no signed-in user, R42) is sent by nobody until someone retries it (it then goes as them).
+export const waitingFor = (e) => (e.owner
+  ? 'Waiting for ' + e.owner + ' to sign in on this device' + (e.status === 'attention' ? '. Needs attention: ' + entryReason(e) : '.')
+  : 'Queued while nobody was signed in, so it has not been sent. Retry sends it as you; Discard deletes it.' + (e.status === 'attention' ? ' Needs attention: ' + entryReason(e) : ''));
 
 // Panel: open() shows it, refresh() redraws if open. Lists the signed-in user's attention entries (Retry, Discard)
 // and, without buttons, entries another user queued on this device: they wait for that person to sign in (R38).
+// Ownerless entries (R42) are listed with the others but keep Retry (claims it) and Discard.
 export function createAttentionPanel(outbox) {
   const guard = inflightGuard();
   const list = h('div', {});
@@ -42,16 +46,18 @@ export function createAttentionPanel(outbox) {
     const es = await outbox.attention();
     const others = outbox.others ? await outbox.others() : [];
     if (!es.length && !others.length) { panel.hidden = true; return; }
-    const own = es.map((e) => {
+    const row = (e, note, cls) => {
       const retry = h('button', { type: 'button', onclick: () => guard('retry:' + e.id, async () => { retry.disabled = discard.disabled = true; await outbox.retry(e.id).catch(() => {}); await refresh(); }) }, 'Retry');
       const discard = h('button', { type: 'button', class: 'secondary', onclick: () => guard('discard:' + e.id, async () => {
         if (!confirm('Discard "' + describeEntry(e) + '"? It will be deleted from this device and never sent.')) return;
         retry.disabled = discard.disabled = true;
         await outbox.discard(e.id); await refresh();
       }) }, 'Discard');
-      return h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: 'flag bad' }, entryReason(e)), h('div', { class: 'row' }, retry, discard));
-    });
-    const theirs = others.map((e) => h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, waitingFor(e))));
+      return h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: cls }, note), h('div', { class: 'row' }, retry, discard));
+    };
+    const own = es.map((e) => row(e, entryReason(e), 'flag bad'));
+    const theirs = others.map((e) => (outbox.claimable && outbox.claimable(e) ? row(e, waitingFor(e), 'flag bad')
+      : h('li', {}, h('div', {}, describeEntry(e)), h('div', { class: e.status === 'attention' ? 'flag bad' : 'flag' }, waitingFor(e)))));
     setKids(list, h('ul', { class: 'office-list' }, own.concat(theirs)));
   }
   return { el: panel, refresh, open: async () => { panel.hidden = false; await refresh(); panel.scrollIntoView && panel.scrollIntoView(); } };
