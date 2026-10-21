@@ -39,7 +39,7 @@ const COORD_HEADERS = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status'
 
 // Departments follow the vault's Departments hubs, plus Systems. Every follow-up carries one so the
 // landing page can group by department; adapters set it, approvals by request category.
-const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examination', COORD_DEPT_FINANCE = 'Fees & Finance',
+const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examination', COORD_DEPT_FINANCE = 'School Financials',
   COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations';
 const COORD_APPROVAL_DEPT = {
   'New/ Backup Position': COORD_DEPT_HR, 'Salary Offer Approval': COORD_DEPT_HR, 'Compensation Change': COORD_DEPT_HR,
@@ -99,8 +99,8 @@ const COORD_VERIFY_HIGH_FILES = 15;  // ... -> high
 const COORD_DOCS_REFRESH_CACHE_SECONDS = 600;
 
 // Document compliance PAGE (coordinatordocuments): every uploaded scan and every missing required document,
-// per employee. Reads the consolidated "Staff Document Submission" responses workbook directly (one tab per campus;
-// same workbook staff-management-api.gs's RESPONSE_WORKBOOK_ID_ points at), not the 8-type Certificate Links tab.
+// per employee. Reads the consolidated "Staff Document Submission" responses workbook's one-row-per-file "Documents"
+// tab (coordDocsFromTable_; falls back to the per-campus tabs if it doesn't exist yet), not Certificate Links.
 const COORD_DOCS_WORKBOOK_ID = '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg';
 const COORD_DOCS_TABS = ['LMS 1', 'LMS 2', 'LMS 3', 'LMS 4', 'LMS 5', 'LMS 6'];
 // Response-sheet header -> document type. The sheet repeats its document columns (teacher form and non-teacher form), so
@@ -775,13 +775,44 @@ function coordDocumentMatrix_(empRows, salaryRows, responses) {
   return { employees: employees, unlinked: unlinked, required: COORD_DOCS_REQUIRED, noTab: noTab };
 }
 
+// Since 2026-10-21 every staff document is one row of the workbook's "Documents" tab (kept in sync by the
+// Roster Proxy's staff-documents.gs from the LMS n form tabs plus Staff Portal uploads, with Employee Codes
+// already matched to the roster). Regrouped here into one row per person per campus -- the shape
+// coordDocumentMatrix_ reads -- each document type a column of comma-joined links.
+function coordDocsFromTable_(rows) {
+  const h = rows[0];
+  const iAt = h.indexOf('Uploaded On'), iCode = h.indexOf('Employee Code'), iName = h.indexOf('Employee Name'),
+    iSchool = h.indexOf('School'), iType = h.indexOf('Document Type'), iLink = h.indexOf('Drive Link');
+  const typeName = function (r) { return String(r[iType] || '').replace('AADHAAR', 'AADHAR'); }; // COORD_DOCS_TYPE_RULES spelling
+  const types = [];
+  rows.slice(1).forEach(function (r) { if (types.indexOf(typeName(r)) === -1) types.push(typeName(r)); });
+  const head = ['Timestamp', 'Employee ID', 'Employee Name'].concat(types);
+  const out = {}, byPerson = {};
+  rows.slice(1).forEach(function (r) {
+    const campus = String(r[iSchool] || '').replace(/\s+/g, '');
+    const key = campus + '|' + String(r[iCode] || '').trim().toUpperCase() + '|' + String(r[iName] || '').trim().toUpperCase();
+    let row = byPerson[key];
+    if (!row) {
+      row = byPerson[key] = new Array(head.length).fill('');
+      row[1] = r[iCode]; row[2] = r[iName];
+      (out[campus] = out[campus] || [head]).push(row);
+    }
+    if (!row[0] || new Date(r[iAt]) > new Date(row[0])) row[0] = r[iAt];
+    const c = 3 + types.indexOf(typeName(r));
+    row[c] = row[c] ? row[c] + ', ' + r[iLink] : r[iLink];
+  });
+  return out;
+}
+
 // action=coordinatordocuments
 function coordDocuments_(caller) {
   let all = coordCacheGetBig_('coord_docpage');
   if (!all) {
     const wb = SpreadsheetApp.openById(COORD_DOCS_WORKBOOK_ID);
-    const responses = {};
-    COORD_DOCS_TABS.forEach(function (tab) {
+    const table = wb.getSheetByName('Documents');
+    let responses = {};
+    if (table && table.getLastRow() > 1) responses = coordDocsFromTable_(table.getDataRange().getValues());
+    else COORD_DOCS_TABS.forEach(function (tab) {
       const sh = wb.getSheetByName(tab);
       if (sh) responses[tab.replace(/\s+/g, '')] = sh.getDataRange().getValues();
     });
@@ -790,7 +821,7 @@ function coordDocuments_(caller) {
     if (emp.length < 2) throw new Error('Employee Master looks empty');
     all = coordDocumentMatrix_(emp, ss.getSheetByName('EmpSalary').getDataRange().getValues(), responses);
     all.generated = new Date().toISOString();
-    all.missingTabs = COORD_DOCS_TABS.filter(function (t) { return !responses[t.replace(/\s+/g, '')]; });
+    all.missingTabs = table ? [] : COORD_DOCS_TABS.filter(function (t) { return !responses[t.replace(/\s+/g, '')]; });
     coordCachePutBig_('coord_docpage', all, COORD_DOCS_PAGE_CACHE_SECONDS);
   }
   const visible = coordVisibleCampuses_(caller);

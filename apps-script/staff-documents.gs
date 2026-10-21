@@ -1,24 +1,31 @@
 // ═══════════════════════════════════════════════════════════════════
-// staff-documents.gs -- 2026-10-21, per Uday: upload a staff document straight from a "Missing" cell
-// of the Staff Portal's Documents matrix (staff/add-employee.html), replacing the Google Form's data
-// entry. Same project as staff-management-api.gs.
+// staff-documents.gs -- 2026-10-21, per Uday: staff documents as ONE TABLE, one row per file.
+// Same project as staff-management-api.gs.
 //
-// Why: the Google Form made people TYPE the Employee ID -- 17 blank IDs and 13 that match nobody
-// (KUL/13/04/28 vs the real KUL/13/04/028, "krel/", serial 104 used three times), and its document
-// questions were duplicated by a later revision. Here the employee is picked from the roster and
-// every document type is asked once.
+// The "Documents" tab of the response workbook (RESPONSE_WORKBOOK_ID_) holds every staff document:
+//   Uploaded On | Employee Code | Employee Name | School | Document Type | Drive Link | Uploaded By | Source | ID Check
+//   Source "Portal" -- uploaded from a "Missing" cell of the Staff Portal's Documents matrix
+//     (staff/add-employee.html); these rows live only here and are never rebuilt.
+//   Source "Form"   -- converted from the old LMS 1..6 tabs, where the six Google Forms still write (one
+//     row per person, a column of links per type). Rebuilt from those tabs on every sync, so new form
+//     submissions show up; the LMS n tabs themselves are never changed. Drop this half once the Clerk
+//     Portal's forms replace the Google Forms.
+//   Employee Code is the ROSTER code when the typed ID matches one (KUL/13/04/28 -> KUL/13/04/028);
+//   otherwise ID Check says "Blank ID" or "Not on roster" and the code is left as typed.
+// Synced: on every form submission (installable trigger, set up automatically on the first sync),
+// and whenever Certificate Links is rebuilt (certificate-link-import.gs), which reads this table.
 //
-// Who: Owner (any campus); Coordinator, or FeeClerk (the office role from the Fee Clerk portal), for their own
-// campus -- a FeeClerk's campus column may be a comma list ("LMS1,LMS2") or ALL.
-// Where it writes -- the SAME places the Google Form does, so Certificate Links refresh, auto-resolve
-// and the upload-status banner keep working unchanged:
-//   file -> <campus>/Employee File - LMS n/LMS n Staff Document Submission form (File responses)/<type> (File responses)/
-//   link -> that employee's row on the campus tab ("LMS n") of the response workbook (RESPONSE_WORKBOOK_ID_),
-//           first column whose header matches the type; an existing link is kept, the new one appended ", ".
+// Who may upload: Owner (any campus); Coordinator, or FeeClerk (the office role from the Fee Clerk
+// portal), for their own campus -- a FeeClerk's campus column may be a comma list ("LMS1,LMS2") or ALL.
+// The file itself goes where the Google Form puts it:
+//   <campus>/Employee File - LMS n/LMS n Staff Document Submission form (File responses)/<type> (File responses)/
 // ═══════════════════════════════════════════════════════════════════
 
 const SDOC_MAX_BYTES_ = 10 * 1024 * 1024;
 const SDOC_MIME_EXT_ = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/webp': 'webp' };
+const SDOC_TABLE_TAB_ = 'Documents';
+const SDOC_TABLE_HEADER_ = ['Uploaded On', 'Employee Code', 'Employee Name', 'School', 'Document Type', 'Drive Link', 'Uploaded By', 'Source', 'ID Check'];
+const SDOC_COL_ = { at: 0, code: 1, name: 2, school: 3, type: 4, link: 5, by: 6, source: 7, check: 8 };
 
 // campusId is ALL, one campus, or (FeeClerk) a comma list like "LMS1,LMS2".
 function callerCovers_(caller, campus) {
@@ -34,13 +41,14 @@ function sdocNormCode_(c) {
   return p.join('/');
 }
 
-function sdocCols_(header, keywords) {
-  const out = [];
-  header.forEach(function (h, i) {
-    const n = sdocNorm_(h);
-    if (keywords.some(function (k) { return n.indexOf(k) !== -1; })) out.push(i);
-  });
-  return out;
+// Header of an LMS n tab -> canonical Document Type (STAFF_DOCUMENT_TYPES), '' if it isn't a document column.
+function sdocTypeOfHeader_(header) {
+  const h = sdocNorm_(header);
+  const types = Object.keys(CERT_CATEGORY_KEYWORDS_);
+  for (let i = 0; i < types.length; i++) {
+    if (CERT_CATEGORY_KEYWORDS_[types[i]].some(function (k) { return h.indexOf(k) !== -1; })) return types[i];
+  }
+  return '';
 }
 
 // Employee must be a real roster row the caller may act on; returns {code, name, campus ("LMS1"), tab ("LMS 1")}.
@@ -52,6 +60,117 @@ function sdocEmployee_(caller, code) {
   const tab = STAFF_CAMPUS_SHEET_LABEL_[campus];
   if (!tab || RESPONSE_CAMPUSES_.indexOf(campus) === -1) throw new Error('No document sheet for campus ' + campus);
   return { code: String(emp.EmployeeCode).trim(), name: String(emp.Name || '').trim(), campus: campus, tab: tab };
+}
+
+// normalized code -> {code, name} for every EmpMaster row (any status -- a departed person's files are still theirs).
+function sdocRosterCodes_() {
+  const rows = openEmpWorkbook_().getSheetByName('EmpMaster').getDataRange().getValues();
+  const iCode = rows[0].indexOf('EmployeeCode'), iName = rows[0].indexOf('Name');
+  const map = {};
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][iCode] || '').trim();
+    if (code) map[sdocNormCode_(code)] = { code: code, name: String(rows[i][iName] || '').trim() };
+  }
+  return map;
+}
+
+// One table row per file found in the LMS 1..6 form tabs.
+function sdocFormRows_() {
+  const roster = sdocRosterCodes_();
+  const out = [];
+  RESPONSE_CAMPUSES_.forEach(function (campus) {
+    let grid;
+    try { grid = openResponseSheet_(campus).getDataRange().getValues(); }
+    catch (err) { console.log('sdocFormRows_: ' + campus + ' -- ' + err.message); return; }
+    const h = grid[0].map(sdocNorm_);
+    const iTs = h.indexOf('TIMESTAMP'), iEmail = h.indexOf('EMAIL ADDRESS'), iName = h.indexOf('EMPLOYEE NAME'), iId = h.indexOf('EMPLOYEE ID');
+    const typeOf = grid[0].map(sdocTypeOfHeader_);
+    const school = STAFF_CAMPUS_SHEET_LABEL_[campus];
+    for (let r = 1; r < grid.length; r++) {
+      const row = grid[r];
+      const typed = String(row[iId] || '').trim();
+      const match = typed ? roster[sdocNormCode_(typed)] : null;
+      const code = match ? match.code : typed;
+      const name = match ? match.name : String(row[iName] || '').trim();
+      const check = !typed ? 'Blank ID' : (match ? '' : 'Not on roster');
+      typeOf.forEach(function (type, c) {
+        if (!type) return;
+        (String(row[c] || '').match(/https?:\/\/[^\s,;]+/g) || []).forEach(function (link) {
+          out.push([row[iTs], code, name, school, type, link, String(row[iEmail] || '').trim(), 'Form', check]);
+        });
+      });
+    }
+  });
+  return out;
+}
+
+// Rebuilds the Form half of the Documents table, keeps every Portal row, returns all rows (no header).
+// Callers hold the script lock.
+function sdocSyncDocumentsTable_() {
+  const wb = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_);
+  const sheet = wb.getSheetByName(SDOC_TABLE_TAB_) || wb.insertSheet(SDOC_TABLE_TAB_, 0);
+  const n = SDOC_TABLE_HEADER_.length;
+  const old = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, n).getValues() : [];
+  const rows = sdocFormRows_().concat(old.filter(function (r) { return r[SDOC_COL_.source] === 'Portal'; }));
+  const key = function (r) { return [r[SDOC_COL_.school], r[SDOC_COL_.name], r[SDOC_COL_.type]].join('|').toUpperCase(); };
+  rows.sort(function (a, b) { return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0; });
+
+  if (sheet.getFilter()) sheet.getFilter().remove();
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, n).setValues([SDOC_TABLE_HEADER_]).setFontWeight('bold');
+  if (rows.length) sheet.getRange(2, 1, rows.length, n).setValues(rows);
+  sheet.getRange(2, SDOC_COL_.at + 1, Math.max(rows.length, 1), 1).setNumberFormat('dd-mmm-yyyy hh:mm');
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, rows.length + 1, n).createFilter();
+  sdocEnsureFormTrigger_();
+  return rows;
+}
+
+// Installs, once, the trigger that re-syncs whenever any of the six Google Forms is submitted.
+function sdocEnsureFormTrigger_() {
+  try {
+    const has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'sdocOnFormSubmit'; });
+    if (!has) ScriptApp.newTrigger('sdocOnFormSubmit').forSpreadsheet(RESPONSE_WORKBOOK_ID_).onFormSubmit().create();
+  } catch (err) {
+    console.log('sdocEnsureFormTrigger_: ' + err.message); // the hourly rebuild still catches new submissions
+  }
+}
+
+function sdocOnFormSubmit() {
+  sdocMarkStale_();
+  refreshCertificateLinksIfStale_();
+}
+
+// POST {action:'uploaddocument', idToken, employeeCode, documentType, mimeType, base64}
+// documentType is one of STAFF_DOCUMENT_TYPES (the matrix columns); CERT_CATEGORY_KEYWORDS_
+// (certificate-link-import.gs) says which Drive folder it belongs in.
+function sdocUpload_(body) {
+  const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']);
+  if (!caller) return { success: false, error: 'Not authorized' };
+  const emp = sdocEmployee_(caller, body.employeeCode);
+  const keywords = CERT_CATEGORY_KEYWORDS_[body.documentType];
+  if (!keywords) throw new Error('Unknown document type: ' + body.documentType);
+  const ext = SDOC_MIME_EXT_[body.mimeType];
+  if (!ext) throw new Error('Only PDF or photo files (JPG, PNG, HEIC, WEBP) are accepted');
+  const bytes = Utilities.base64Decode(String(body.base64 || ''));
+  if (!bytes.length) throw new Error('Empty file');
+  if (bytes.length > SDOC_MAX_BYTES_) throw new Error('File is larger than 10 MB');
+  const name = body.documentType + ' - ' + emp.name + ' (' + emp.code.replace(/\//g, '-') + ').' + ext;
+  const file = sdocTypeFolder_(sdocFormFolder_(emp.campus), body.documentType, keywords)
+    .createFile(Utilities.newBlob(bytes, body.mimeType, name));
+  const link = 'https://drive.google.com/open?id=' + file.getId();
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const wb = SpreadsheetApp.openById(RESPONSE_WORKBOOK_ID_);
+    if (!wb.getSheetByName(SDOC_TABLE_TAB_)) sdocSyncDocumentsTable_(); // first ever upload: build the table first
+    wb.getSheetByName(SDOC_TABLE_TAB_).appendRow([new Date(), emp.code, emp.name, emp.tab, body.documentType, link, caller.email, 'Portal', '']);
+  } finally {
+    lock.releaseLock();
+  }
+  sdocMarkStale_();
+  return { success: true, link: link };
 }
 
 function sdocFormFolder_(campus) {
@@ -74,63 +193,10 @@ function sdocTypeFolder_(formRoot, docType, keywords) {
   return formRoot.createFolder(docType + ' (File responses)');
 }
 
-// The employee's newest row on the campus tab; appends one (Timestamp, Email, Name, ID) if they have none.
-function sdocRow_(sheet, header, emp, callerEmail) {
-  const values = sheet.getDataRange().getValues();
-  const idCol = sdocCols_(header, ['EMPLOYEE ID'])[0];
-  const want = sdocNormCode_(emp.code);
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (sdocNormCode_(values[i][idCol]) === want) return i + 1;
-  }
-  const row = new Array(header.length).fill('');
-  row[sdocCols_(header, ['TIMESTAMP'])[0]] = new Date();
-  row[sdocCols_(header, ['EMAIL'])[0]] = callerEmail;
-  row[sdocCols_(header, ['EMPLOYEE NAME'])[0]] = emp.name;
-  row[idCol] = emp.code;
-  sheet.appendRow(row);
-  return sheet.getLastRow();
-}
-
-// POST {action:'uploaddocument', idToken, employeeCode, documentType, mimeType, base64}
-// documentType is one of STAFF_DOCUMENT_TYPES (the matrix columns); CERT_CATEGORY_KEYWORDS_
-// (certificate-link-import.gs) says which response-sheet column and Drive folder it belongs to.
-function sdocUpload_(body) {
-  const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']);
-  if (!caller) return { success: false, error: 'Not authorized' };
-  const emp = sdocEmployee_(caller, body.employeeCode);
-  const keywords = CERT_CATEGORY_KEYWORDS_[body.documentType];
-  if (!keywords) throw new Error('Unknown document type: ' + body.documentType);
-  const ext = SDOC_MIME_EXT_[body.mimeType];
-  if (!ext) throw new Error('Only PDF or photo files (JPG, PNG, HEIC, WEBP) are accepted');
-  const bytes = Utilities.base64Decode(String(body.base64 || ''));
-  if (!bytes.length) throw new Error('Empty file');
-  if (bytes.length > SDOC_MAX_BYTES_) throw new Error('File is larger than 10 MB');
-  const name = body.documentType + ' - ' + emp.name + ' (' + emp.code.replace(/\//g, '-') + ').' + ext;
-  const file = sdocTypeFolder_(sdocFormFolder_(emp.campus), body.documentType, keywords)
-    .createFile(Utilities.newBlob(bytes, body.mimeType, name));
-  const link = 'https://drive.google.com/open?id=' + file.getId();
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const sheet = openResponseSheet_(emp.campus);
-    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const col = sdocCols_(header, keywords)[0];
-    if (col === undefined) throw new Error('No column for ' + body.documentType + ' on tab ' + emp.tab);
-    const cell = sheet.getRange(sdocRow_(sheet, header, emp, caller.email), col + 1);
-    const old = String(cell.getValue() || '').trim();
-    cell.setValue(old ? old + ', ' + link : link);
-  } finally {
-    lock.releaseLock();
-  }
-  sdocMarkStale_();
-  return { success: true, link: link };
-}
-
-// Keeps the "Certificate Links" tab (what the Staff Portal's Documents / Needs Verification tabs read)
-// current with no trigger to install: rebuilt when those tabs are opened and it's over an hour old,
-// or straight away after an upload here. tryLock: two tabs loading at once rebuild it only once.
-const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at_v2'; // bump the suffix to force a rebuild after the document types change
+// Keeps "Certificate Links" (what the Staff Portal's Documents / Needs Verification tabs read) and the
+// Documents table current: rebuilt when those tabs are opened and it's over an hour old, straight after
+// a portal upload, and on every form submission. tryLock: two tabs loading at once rebuild it only once.
+const SDOC_REFRESHED_AT_ = 'certlinks_refreshed_at_v3'; // bump the suffix to force a rebuild after a format change
 const SDOC_MAX_AGE_MS_ = 60 * 60 * 1000;
 
 function sdocMarkStale_() { PropertiesService.getScriptProperties().deleteProperty(SDOC_REFRESHED_AT_); }

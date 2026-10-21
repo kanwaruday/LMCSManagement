@@ -5009,52 +5009,21 @@ const CERT_CATEGORY_KEYWORDS_ = {
 // what the sheet says -- the sheet itself is what's in question here,
 // not something the matching logic can catch on its own.
 const CERT_MANUAL_FLAGS_ = {
-  'KUL/23/04/82': 'Every filename on this row says "Shailly/Shaily/Shelly" but the sheet keys the row to Neerja Prashar -- likely Jai Chand picked the wrong row while submitting on her behalf. Confirm the real owner before trusting.',
+  'KUL/23/04/082': 'Every filename on this row says "Shailly/Shaily/Shelly" but the sheet keys the row to Neerja Prashar -- likely Jai Chand picked the wrong row while submitting on her behalf. Confirm the real owner before trusting.',
 };
 
 function refreshCertificateLinksFromResponseSheets() {
-  const rows = [];
-  RESPONSE_CAMPUSES_.forEach(function (campus) {
-    let sheet;
-    try {
-      sheet = openResponseSheet_(campus);
-    } catch (err) {
-      Logger.log(campus + ': could not open response sheet -- ' + err.message);
-      return;
-    }
-    const grid = sheet.getDataRange().getValues();
-    const header = grid[0];
-    const colCategory = {};
-    header.forEach(function (colName, i) {
-      const upper = String(colName || '').toUpperCase().replace(/\s+/g, ' '); // LMS 6 has "SIGNED  JOB ROLE"
-      Object.keys(CERT_CATEGORY_KEYWORDS_).some(function (canonical) {
-        const hit = CERT_CATEGORY_KEYWORDS_[canonical].some(function (kw) { return upper.indexOf(kw) !== -1; });
-        if (hit) colCategory[i] = canonical;
-        return hit;
-      });
-    });
-    const nameCol = header.indexOf('Employee Name');
-    const idCol = header.indexOf('Employee ID');
-    const school = STAFF_CAMPUS_SHEET_LABEL_[campus] || campus;
-    for (let r = 1; r < grid.length; r++) {
-      const row = grid[r];
-      if (!row.some(function (c) { return c; })) continue;
-      const empName = nameCol >= 0 ? String(row[nameCol] || '').trim() : '';
-      const empId = idCol >= 0 ? String(row[idCol] || '').trim() : '';
-      if (!empName && !empId) continue;
-      if (!empId) {
-        rows.push(['', empName, school, '', '(blank Employee ID in Response sheet)', '', 'Unmatched -- blank Employee ID in Response sheet, needs data entry']);
-        continue;
-      }
-      const flag = CERT_MANUAL_FLAGS_[empId];
-      Object.keys(colCategory).forEach(function (i) {
-        const cell = String(row[i] || '').trim();
-        if (cell.indexOf('http') !== 0) return;
-        const category = colCategory[i];
-        rows.push([empId, empName, school, category, category + ' (' + empName + ')', cell,
-          flag ? ('Ambiguous -- manually flagged: ' + flag) : 'Matched (from Response sheet)']);
-      });
-    }
+  // Built from the one-row-per-file Documents table (staff-documents.gs), which this also re-syncs.
+  // Files whose typed Employee ID is blank or not on the roster are left out: they'd flood Needs
+  // Verification one file at a time. They stay in the Documents table (filter "ID Check") to fix per person.
+  const C = SDOC_COL_;
+  const rows = sdocSyncDocumentsTable_().filter(function (r) { return !r[C.check]; }).map(function (r) {
+    const code = String(r[C.code] || '').trim(), name = String(r[C.name] || '').trim();
+    const flag = CERT_MANUAL_FLAGS_[sdocNormCode_(code)];
+    const status = flag ? 'Ambiguous -- manually flagged: ' + flag
+      : r[C.source] === 'Portal' ? 'Uploaded via Staff Portal by ' + r[C.by]
+      : 'Matched (from Response sheet)';
+    return [code, name, r[C.school], r[C.type], r[C.type] + ' (' + name + ')', r[C.link], status];
   });
 
   const ss = SpreadsheetApp.openById(STAFF_EMP_SHEET_ID);
