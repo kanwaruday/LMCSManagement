@@ -73,6 +73,18 @@ function apptForPerson_(all, row, phone) {
   return all.filter(function (a) { return phone ? a.phone === phone : a.row === row; });
 }
 
+// The declined proposals that are still the person's latest (non-cancelled) one for their kind -- what a proposer
+// is shown as "declined, propose again". A newer proposal of the same kind retires it. Later proposedAt wins.
+function apptLatestDeclined_(all) {
+  const latest = {};
+  all.forEach(function (a) {
+    if (a.status === 'cancelled') return;
+    const k = (a.phone || 'r' + a.row) + '|' + a.kind;
+    if (!latest[k] || hirMs_(a.proposedAt) >= hirMs_(latest[k].proposedAt)) latest[k] = a;
+  });
+  return Object.keys(latest).map(function (k) { return latest[k]; }).filter(function (a) { return a.status === 'declined'; });
+}
+
 function apptRowState_(sheet, row) {
   const get = function (c) { return sheet.getRange(row, c).getValue(); };
   const status = String(get(HIR_COL.STATUS) || '');
@@ -202,7 +214,7 @@ function apptCalendarRetry_(caller, body) {
   hirWithLock_(function () {
     const cur = apptById_(body.id);
     const acceptor = apptDeciderEmail_(cur);
-    if (acceptor !== caller.email && !hirElevated_(caller)) throw new Error('Only the acceptor or a Principal, Coordinator or the Owner can retry this');
+    if (acceptor.toLowerCase() !== String(caller.email || '').toLowerCase() && !hirElevated_(caller)) throw new Error('Only the acceptor or a Principal, Coordinator or the Owner can retry this');
     hirScopedRow_(caller, hirSheet_(), cur.row);
     if (cur.status !== 'accepted' || cur.calendarMode !== 'none') throw new Error('This appointment is already on the calendar (or not accepted)');
     apptStoreCalendar_(cur, apptCalendarWrite_(cur, acceptor.indexOf('@') > 0 ? acceptor : caller.email));
@@ -273,6 +285,7 @@ function apptList_(caller) {
   const all = apptAll_().filter(function (a) { return !vis || vis.indexOf(String(a.campus)) !== -1; })
     .sort(function (a, b) { return hirMs_(a.start) - hirMs_(b.start); });
   const ahead = function (a) { return hirMs_(a.start) >= today.getTime(); };
+  const declined = apptLatestDeclined_(all);
   const out = function (a) {
     const o = {};
     APPT_KEYS.forEach(function (k) { o[k] = Object.prototype.toString.call(a[k]) === '[object Date]' ? a[k].toISOString() : a[k]; });
@@ -284,7 +297,7 @@ function apptList_(caller) {
     toAccept: all.filter(function (a) {
       return a.status === 'proposed' && (a.kind === 'md' ? apptMdAcceptor_(caller) : apptHasRole_(caller, 'Principal') && apptCovers_(caller, String(a.campus)));
     }).map(out),
-    myProposals: all.filter(function (a) { return a.proposedBy === caller.email && a.status !== 'cancelled' && ahead(a); }).map(out),
+    myProposals: all.filter(function (a) { return a.proposedBy === caller.email && a.status !== 'cancelled' && (ahead(a) || declined.indexOf(a) !== -1); }).map(out),
     upcoming: all.filter(function (a) { return a.status === 'accepted' && ahead(a); }).map(out),
   };
 }

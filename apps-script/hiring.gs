@@ -632,6 +632,8 @@ function hiringApplicants_(caller) {
   });
   // Employee codes -- after the de-dupe, so a superseded duplicate row can never get a code locked onto it.
   hirAssignEmployeeCodes_(list, values.slice(1).map(function (r) { return String(r[HIR_COL.EMP_CODE - 1] || '').trim().toUpperCase(); }).filter(Boolean));
+  hirAttachAppointments_(list, apptAll_());
+  const legwork = hirLegwork_(list, Date.now()); // on the FULL list: a clerk's strip below hides the reports that clear it
   list.sort(function (a, b) {
     const s = hirLadderIndex_(b.status) - hirLadderIndex_(a.status);
     if (s) return s;
@@ -641,7 +643,44 @@ function hiringApplicants_(caller) {
   });
   const anyApproved = Object.keys(requisitions).some(function (c) { return !visibleCampuses || visibleCampuses.indexOf(c) !== -1; });
   return { success: true, statuses: HIR_STATUSES, rejectReasons: HIR_REJECT_REASONS, positions: hirOpenPositionLabelsFor_(visibleCampuses),
-    applicants: hirForCaller_(caller, list), gated: !anyApproved && !list.length };
+    applicants: hirForCaller_(caller, list), legwork: legwork, gated: !anyApproved && !list.length };
+}
+
+// Each applicant's appointments (by normalised phone): open and accepted ones, plus the latest declined per kind.
+// Trimmed: no notes (an md note is the Principal's), no place.
+function hirAttachAppointments_(list, all) {
+  const keep = all.filter(function (a) { return a.status === 'proposed' || a.status === 'accepted'; }).concat(apptLatestDeclined_(all));
+  list.forEach(function (p) {
+    p.appointments = apptForPerson_(keep, p.row, p.phoneNorm).sort(function (a, b) { return hirMs_(a.start) - hirMs_(b.start); }).map(function (a) {
+      return { id: a.id, kind: a.kind, start: a.start instanceof Date ? a.start.toISOString() : String(a.start), status: a.status,
+        proposedBy: a.proposedBy, declineNote: a.declineNote, calendarMode: a.calendarMode };
+    });
+  });
+}
+
+// The hiring legwork behind the Fee Clerk's banner and the office nav (counts). Reports filed by anyone count as
+// evidence; a report counts for an appointment if it was filed from 6 hours before its start (an earlier round's doesn't).
+function hirLegwork_(list, nowMs) {
+  const w = { toSchedule: 0, waiting: 0, booked: 0, reportsToUpload: 0, demosToBook: 0, documents: 0 };
+  const open = function (p, kind) { return p.appointments.some(function (a) { return a.kind === kind && (a.status === 'proposed' || a.status === 'accepted'); }); };
+  list.forEach(function (p) {
+    p.appointments = p.appointments || [];
+    if (p.status === 'Shortlisted' && !open(p, 'interview')) w.toSchedule++;
+    if (p.status === 'Interview Done' && !open(p, 'demo')) w.demosToBook++;
+    if (p.status === 'Hiring Approved' && (p.docsMissing || []).length) w.documents++;
+    p.appointments.forEach(function (a) {
+      const t = hirMs_(a.start);
+      if (a.status === 'proposed') w.waiting++;
+      if (a.status !== 'accepted') return;
+      if (t >= nowMs && t <= nowMs + 7 * 864e5) w.booked++;
+      if (t < nowMs && (a.kind === 'interview' || a.kind === 'demo')) {
+        const reports = (a.kind === 'interview' ? p.interviewReports : p.demoReports) || [];
+        const has = reports.some(function (r) { return r.submittedAtMs >= t - 6 * 36e5; }) || (a.kind === 'interview' && !!p.interviewReportPdf);
+        if (!has) w.reportsToUpload++;
+      }
+    });
+  });
+  return w;
 }
 
 // A Fee Clerk books slots and chases documents: no salary, notes, report contents or earlier rounds.
@@ -651,6 +690,7 @@ function hirForCaller_(caller, list) {
     const o = Object.assign({}, a);
     ['offerBreakdown', 'notes', 'interviewReportPdf', 'matchRemarks'].forEach(function (k) { delete o[k]; });
     o.interviewReports = []; o.demoReports = []; o.history = [];
+    o.appointments = (a.appointments || []).map(function (x) { return x.kind === 'md' ? Object.assign({}, x, { declineNote: '' }) : x; });
     return o;
   });
 }

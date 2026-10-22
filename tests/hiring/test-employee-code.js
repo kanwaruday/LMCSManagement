@@ -9,6 +9,8 @@ const ctx = vm.createContext({
   aprValues_: () => [[], ['x', 'LMS4', 'Salary Offer Approval', '', '', '', '', 'T-0943 — Preeti Sood']],
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring.gs'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring-appointments.gs'), 'utf8'), ctx);
+ctx.apptAll_ = () => [];
 
 function fakeSheet(rows, maxCols) {            // rows: 2D, 1-based accessors
   return {

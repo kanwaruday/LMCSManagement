@@ -414,3 +414,22 @@ T('the real calendar seam: Calendar REST over UrlFetchApp, sendUpdates=none, bea
   assert.ok(logs.some((l) => /own/.test(l)));
   assert.ok(!/MailApp/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring-appointments.gs'), 'utf8')));
 });
+T('myProposals keeps the latest declined proposal per (applicant, kind) even once its time has passed', () => {
+  reset([appRow(SL)]);
+  const base = { phone: '9876543210', row: 2, name: 'Asha', campus: 'LMS4', proposedBy: 'c@lms.org.in', status: 'declined', declineNote: 'no' };
+  addAppt(Object.assign({}, base, { id: 'dOld', kind: 'interview', start: PAST, proposedAt: day(-9) }));
+  addAppt(Object.assign({}, base, { id: 'dNew', kind: 'interview', start: new Date(PAST.getTime() + 864e5), proposedAt: day(-8) }));
+  addAppt(Object.assign({}, base, { id: 'dDemo', kind: 'demo', start: PAST, proposedAt: day(-8) }));
+  const ids = (l) => Array.from(l, (a) => a.id).sort().join(',');
+  assert.strictEqual(ids(ctx.apptList_(clerk).myProposals), 'dDemo,dNew');
+  assert.strictEqual(ids(ctx.apptList_(clerk2).myProposals), ''); // someone else's
+  addAppt(Object.assign({}, base, { id: 'again', kind: 'interview', start: FUTURE, status: 'proposed', proposedAt: day(-1) }));
+  assert.strictEqual(ids(ctx.apptList_(clerk).myProposals), 'again,dDemo'); // re-proposed: the declined one retires
+});
+T('calendar retry: the acceptor check ignores email case', () => {
+  reset([appRow(SL)]);
+  addAppt({ id: 'a1', kind: 'interview', applicantId: 'T-0002', row: 2, phone: '9876543210', name: 'Asha', campus: 'LMS4', start: new Date(FUTURE),
+    durationMin: 30, status: 'accepted', decidedBy: 'C@LMS.org.in', calendarMode: 'none', proposedBy: 'c@lms.org.in' });
+  ctx.apptCalendarRetry_(clerk, { id: 'a1' });
+  assert.strictEqual(appts()[0].calendarMode, 'own');
+});
