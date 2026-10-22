@@ -127,10 +127,17 @@ T('hiringApplicants_: a position picked on the report form wins over subject mis
   ctx.hirSalaryOfferDecisions_ = () => ({});
   ctx.hirAssignEmployeeCodes_ = () => {};
   ctx.hirApprovedRequisitions_ = () => ({ LMS4: [{ subjects: 'English', matchSubjects: 'English', roleLevel: 'TGT', openings: null }] });
-  ctx.hirInterviewReportPhones_ = () => ({ '7876160890': { pdf: '', remarks: '', position: 'LMS 4 - TGT: English' } });
+  ctx.hirPortalReports_ = () => [];
+  // Interview Report form rows: timestamp, name, phone, branch, subject, remarks, pdf, position.
+  const ir = (pos) => { ctx.hirIrSheet_ = () => ({ getDataRange: () => ({ getValues: () => [['ts', 'n', 'p', 'b', 's', 'r', 'pdf', 'Position interviewed for'], [new Date(), 'Simar', '7876160890', 'LMS 4', '', '', '', pos]] }) }); };
+  ir('LMS 4 - TGT: English');
   let res = ctx.hiringApplicants_({ campusId: 'ALL' });
   assert.strictEqual(res.applicants.length, 1);
-  ctx.hirInterviewReportPhones_ = () => ({ '7876160890': { pdf: '', remarks: '', position: 'Not for any open role' } });
+  assert.deepStrictEqual(Array.from(res.applicants[0].matchedRoleKeys), ['LMS4|TGT|English']);
+  ir('Not for any open role');
   res = ctx.hiringApplicants_({ campusId: 'ALL' });
-  assert.strictEqual(res.applicants.length, 0); // MW to C-2 alone matches no English requisition
+  // 2026-10-22: an interviewed candidate stays visible (in progress), just under no role chip --
+  // MW to C-2 alone matches no English requisition.
+  assert.strictEqual(res.applicants.length, 1);
+  assert.strictEqual(res.applicants[0].matchedRoleKeys.length, 0); assert.strictEqual(res.applicants[0].noOpenRole, true);
 });

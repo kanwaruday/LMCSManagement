@@ -85,74 +85,215 @@ const HIR_COL = {
   DOJ: 17,
   // Salary Dashboard's computed breakdown (JSON), for the Appointment Letter shown on Hired. Column R.
   OFFER_BREAKDOWN: 18,
+  // 2026-10-22, per Uday (Principal's day): rejection reason, revival, origin and progress marks. Columns S-Y.
+  REJECT_REASON: 19, REVIVED_AT: 20, HISTORY: 21, SOURCE: 22, ADDED_BY: 23, STAGE_MARKS: 24, DEMO_AT: 25,
 };
 
-// 2026-09-25, per Uday: replaced the activity-tracking ladder (New/
-// Contacted/Not Responding -- "irrelevant if someone's been called 100
-// times but nothing's scheduled") with an output-only ladder. No status
-// at all (blank) now means "not yet at Interview Scheduled" -- there's
-// no "New"/"Contacted" placeholder value anymore; the free-text Notes
-// field (unchanged) is still there for a Principal to jot "called 3x,
-// no pickup" without it needing to be a formal stage. 'Rejected' is a
-// terminal exit reachable from any point, not a rung on the ladder --
-// see hirLadderIndex_ below, which is what the ladder/checklist UI and
-// scoring both key off instead of raw array position.
-const HIR_STATUSES = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired', 'Rejected'];
-// The linear ladder only (excludes 'Rejected') -- hirLadderIndex_(status)
-// returns -1 for blank/unrecognized (including legacy 'New'/'Contacted'/
-// 'Interviewed'/'Offered'/'Not Responding' values already sitting in the
-// sheet from before this ladder changed -- those just render as "not
-// started" going forward rather than crashing or being silently
-// rewritten) and -1 for 'Rejected' too, since it's not a ladder rung.
-const HIR_LADDER = ['Interview Scheduled', 'Interview & Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired'];
+// 2026-10-22, per Uday: 'Interview & Demo Done' split in two -- the paper report became two portal
+// forms (Interview Report, Demo Report). The rest of the ladder is unchanged since 2026-09-28: Salary
+// Offer before the MD Academics interview, 'Hiring Approved' once an Owner approves the Salary Offer
+// Approval, 'Hired' a real Principal click behind the document gate. 'Rejected' is an exit, not a rung
+// (hirLadderIndex_ gives -1 for it and for blank / legacy values).
+const HIR_STATUSES = ['Interview Scheduled', 'Interview Done', 'Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired', 'Rejected'];
+const HIR_LADDER = HIR_STATUSES.slice(0, -1);
 function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
-// 2026-09-28, per Uday (reordering): Salary Offer comes BEFORE MD
-// Academics Interview Scheduled -- the salary numbers must be finalized
-// by the Principal (submitted for Owner approval via the Salary
-// Dashboard's "Record as Salary Offer") before the candidate even
-// meets MD Academics, not as a final step once they already have.
-//
-// 2026-09-28, per Uday (later same day): "the Principal must get a
-// feeling of a win while being able to hire" -- Hired went back to
-// being a real Principal click (see hiringUpdateStatus_), not
-// something purely derived. 'Hiring Approved' is the new rung in
-// between: it ticks once an Owner has Approved this candidate's Salary
-// Offer Approval request (after the MD Academics interview) -- that's
-// the PRECONDITION for the Hired button to actually succeed, not the
-// hire itself. A Principal can click Hired the moment they reach this
-// rung, but the write is refused (see hiringUpdateStatus_) until every
-// compulsory document is also on file -- that final click, once
-// everything's actually ready, is the "win" moment.
-function hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, hiringApproved) {
-  if (!hasInterviewAt) return '';
-  if (!hasReport) return 'Interview Scheduled';
-  if (!hasSalaryOfferAt) return 'Interview & Demo Done';
-  if (!hasMdInterviewAt) return 'Salary Offer';
-  if (!hiringApproved) return 'MD Academics Interview Scheduled';
-  return 'Hiring Approved';
+// Rejection reasons (2026-10-22, Uday's three + the rest). group drives the Rejected pool: 'notnow' =
+// the candidate's choice, the first people to call when a role opens; 'notsuitable' = the school's call.
+const HIR_REJECT_REASONS = [
+  { label: "Doesn't want to join right now", group: 'notnow' },
+  { label: 'Working at another school / serving notice', group: 'notnow' },
+  { label: 'Salary expectation too high', group: 'notnow' },
+  { label: 'Location / commute / relocation', group: 'notnow' },
+  { label: 'Not reachable / stopped responding', group: 'notnow' },
+  { label: 'Took another offer / withdrew', group: 'notnow' },
+  { label: 'Personal or family reasons', group: 'notnow' },
+  { label: 'Poor communication skills', group: 'notsuitable' },
+  { label: 'Weak subject knowledge', group: 'notsuitable' },
+  { label: 'Weak demo / classroom handling', group: 'notsuitable' },
+  { label: "Doesn't meet the qualification norm", group: 'notsuitable' },
+  { label: 'Attitude / conduct at interview', group: 'notsuitable' },
+  { label: 'Reference / background concern', group: 'notsuitable' },
+  { label: 'Position filled or closed', group: 'filled' },
+  { label: 'Other', group: 'other' },
+];
+
+// The campuses a caller may browse: null = every campus (campusId ALL); otherwise the union of the
+// districts of each campus in their cell -- a Fee Clerk's cell can be a comma list ("LMS1,LMS4").
+function hirCallerCampuses_(caller) {
+  const ids = String(caller.campusId || '').split(',').map(function (c) { return c.trim().toUpperCase(); }).filter(Boolean);
+  if (ids.indexOf('ALL') !== -1) return null;
+  const out = [];
+  ids.forEach(function (c) { hirDistrictCampuses_(c).forEach(function (d) { if (out.indexOf(d) === -1) out.push(d); }); });
+  return out;
 }
 
-// The status hiringApplicants_/hirRefreshTrackerCore_ actually SHOW.
-//
-// 2026-09-28, per Uday: an Owner declining the Salary Offer Approval
-// (after the MD Academics interview) still directly derives 'Rejected'
-// -- that's an unambiguous terminal call, nothing left for a Principal
-// to decide. Approving it, however, no longer directly derives 'Hired'
-// -- it only unlocks the 'Hiring Approved' rung, from which a Principal
-// must still click Hired themselves (see hirDerivedLadderStage_ and
-// hiringUpdateStatus_'s own comments for why).
-//
-// A Principal-written 'Rejected' still wins and stays terminal -- an
-// obviously-unsuitable candidate can still be rejected early, before
-// ever reaching a Salary Offer, same as before.
-function hirEffectiveStatus_(storedStatus, hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, salaryOfferDecision) {
-  if (storedStatus === 'Hired' || storedStatus === 'Rejected') return storedStatus;
-  if (hasMdInterviewAt && salaryOfferDecision === APR_STATUS.APPROVED) {
-    return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, true);
+function hirMs_(v) {
+  if (!v) return 0;
+  const t = (v instanceof Date ? v : new Date(v)).getTime();
+  return isNaN(t) ? 0 : t;
+}
+function hirJson_(v, fallback) {
+  try { const o = JSON.parse(String(v || '')); return o && typeof o === 'object' ? o : fallback; } catch (e) { return fallback; }
+}
+
+// phone -> [{atMs, pdf, remarks, position}] for every Interview Report Google Form row (the old combined
+// report: bio-data + interview + demo in one scanned PDF, so it counts as both interview and demo).
+function hirIrIndex_(irValues) {
+  const idx = {};
+  const head = (irValues[0] || []).map(function (h) { return String(h).toLowerCase(); });
+  const posCol = head.findIndex(function (h) { return h.indexOf('position interviewed') !== -1; });
+  for (let i = 1; i < irValues.length; i++) {
+    const r = irValues[i];
+    const phone = hirNormalizePhone_(r[HIR_IR_COL.PHONE]);
+    if (!phone) continue;
+    (idx[phone] = idx[phone] || []).push({ atMs: hirMs_(r[0]), pdf: String(r[HIR_IR_COL.PDF] || '').trim(),
+      remarks: String(r[HIR_IR_COL.REMARKS] || '').trim(), position: posCol === -1 ? '' : String(r[posCol] || '').trim() });
   }
-  if (hasMdInterviewAt && salaryOfferDecision === APR_STATUS.REJECTED) return 'Rejected';
-  return hirDerivedLadderStage_(hasInterviewAt, hasReport, hasSalaryOfferAt, hasMdInterviewAt, false);
+  return idx;
+}
+function hirByPhone_(reports) {
+  const idx = {};
+  (reports || []).forEach(function (rep) { const p = hirNormalizePhone_(rep.phone); if (p) (idx[p] = idx[p] || []).push(rep); });
+  return idx;
+}
+
+// What has happened for one person since their last revival (revivedAtMs; 0 = never revived).
+// src = {ir, interviews, demos} phone-keyed indexes. A Principal's mark ("interview done, report later")
+// counts as the rung; reportPending says a mark is still waiting for its report.
+function hirEvidence_(phone, revivedAtMs, src, marks) {
+  const after = function (list, atKey) { return (list || []).filter(function (x) { return (x[atKey] || 0) >= revivedAtMs; }); };
+  const ir = after(src.ir[phone], 'atMs');
+  const interviews = after(src.interviews[phone], 'submittedAtMs');
+  const demos = after(src.demos[phone], 'submittedAtMs');
+  const mark = function (k) { return marks && marks[k] && hirMs_(marks[k].at) >= revivedAtMs ? marks[k] : null; };
+  const demoReport = demos.some(function (d) { return d.recommendation === 'proceed'; });
+  const hasInterview = ir.length > 0 || interviews.length > 0 || !!mark('interview');
+  const hasDemo = ir.length > 0 || demoReport || !!mark('demo');
+  let reportPending = '';
+  if (mark('interview') && !ir.length && !interviews.length) reportPending = 'interview';
+  else if (mark('demo') && !ir.length && !demoReport) reportPending = 'demo';
+  return { interview: hasInterview, demo: hasDemo, reportPending: reportPending, ir: ir,
+    interviewReports: src.interviews[phone] || [], demoReports: src.demos[phone] || [] };
+}
+
+// The status everything SHOWS. Stored 'Hired'/'Rejected' win (a Principal's call). An Owner declining
+// the Salary Offer Approval after the MD interview derives 'Rejected'; approving it unlocks 'Hiring
+// Approved'. a = {storedStatus, interviewAt, evidence, salaryOfferAt, mdInterviewAt, decision}.
+function hirDerive_(a) {
+  if (a.storedStatus === 'Hired' || a.storedStatus === 'Rejected') return a.storedStatus;
+  const ev = a.evidence;
+  const legacyDemo = a.storedStatus === 'Interview & Demo Done';
+  if (a.mdInterviewAt && a.decision === APR_STATUS.REJECTED) return 'Rejected';
+  if (!a.interviewAt && !ev.interview && !legacyDemo) return '';
+  if (!ev.interview && !legacyDemo) return 'Interview Scheduled';
+  if (!ev.demo && !legacyDemo) return 'Interview Done';
+  if (!a.salaryOfferAt) return 'Demo Done';
+  if (!a.mdInterviewAt) return 'Salary Offer';
+  return a.decision === APR_STATUS.APPROVED ? 'Hiring Approved' : 'MD Academics Interview Scheduled';
+}
+
+// One sheet row -> applicant with its derived status, no visibility/matching. i = 0-based index into
+// values (sheet row i+1). ctx: {ir, interviews, demos} indexes + decisions {applicantId: {status, decidedAtMs}}.
+function hirRowApplicant_(r, i, ctx) {
+  const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
+  const applicantId = hirApplicantId_(i + 1);
+  const revivedAtMs = hirMs_(r[HIR_COL.REVIVED_AT - 1]);
+  const marks = hirJson_(r[HIR_COL.STAGE_MARKS - 1], {});
+  const evidence = hirEvidence_(phone, revivedAtMs, ctx, marks);
+  const dec = ctx.decisions[applicantId];
+  const decision = dec && dec.decidedAtMs >= revivedAtMs ? dec.status : '';
+  const history = hirJson_(r[HIR_COL.HISTORY - 1], []);
+  const a = {
+    row: i + 1, applicantId: applicantId, phoneNorm: phone,
+    timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
+    name: String(r[HIR_COL.NAME - 1] || '').trim(),
+    phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
+    age: String(r[HIR_COL.AGE - 1] || '').trim(),
+    subjects: String(r[HIR_COL.SUBJECTS - 1] || '').trim(),
+    branches: String(r[HIR_COL.BRANCHES - 1] || '').trim(),
+    qualification: String(r[HIR_COL.QUALIFICATION - 1] || '').trim(),
+    bed: String(r[HIR_COL.BED - 1] || '').trim(),
+    gender: String(r[HIR_COL.GENDER - 1] || '').trim(),
+    cv: String(r[HIR_COL.CV - 1] || '').trim(),
+    storedStatus: String(r[HIR_COL.STATUS - 1] || '').trim(),
+    notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
+    interviewAt: hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]),
+    mdInterviewAt: hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]),
+    salaryOfferAt: hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]),
+    employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
+    dateOfJoining: hirDojStr_(r[HIR_COL.DOJ - 1]),
+    offerBreakdown: hirParseJson_(r[HIR_COL.OFFER_BREAKDOWN - 1]),
+    rejectReason: String(r[HIR_COL.REJECT_REASON - 1] || '').trim(),
+    revivedAt: hirSafeISO_(r[HIR_COL.REVIVED_AT - 1]),
+    history: Array.isArray(history) ? history : [],
+    source: String(r[HIR_COL.SOURCE - 1] || '').trim(),
+    addedBy: String(r[HIR_COL.ADDED_BY - 1] || '').trim(),
+    stageMarks: marks,
+    demoAt: hirSafeISO_(r[HIR_COL.DEMO_AT - 1]),
+    decision: decision,
+    reportPending: evidence.reportPending,
+    interviewReports: evidence.interviewReports, demoReports: evidence.demoReports,
+    interviewReportPdf: (evidence.ir.length ? evidence.ir[evidence.ir.length - 1].pdf : '') ||
+      ((ctx.ir[phone] || []).slice(-1)[0] || {}).pdf || '',
+    reportedPosition: ((evidence.interviewReports.slice(-1)[0] || {}).position) || ((ctx.ir[phone] || []).slice(-1)[0] || {}).position || '',
+  };
+  a.employeeCodePermanent = !!a.employeeCode;
+  a.round = a.history.length + 1;
+  a.status = hirDerive_({ storedStatus: a.storedStatus, interviewAt: a.interviewAt, evidence: evidence,
+    salaryOfferAt: a.salaryOfferAt, mdInterviewAt: a.mdInterviewAt, decision: decision });
+  if (a.status === 'Rejected' && !a.rejectReason && decision === APR_STATUS.REJECTED) a.rejectReason = 'Salary offer not approved';
+  // Anything that shows we've dealt with this person (Rejected alone doesn't: it can sit on rows nobody touched).
+  a.inPipeline = !!(a.interviewAt || evidence.interview || a.demoAt || a.source || a.storedStatus === 'Hired' || hirLadderIndex_(a.status) >= 0);
+  return a;
+}
+// For de-dupe: how far along a row is (Rejected sits just above an untouched row).
+function hirProgressRank_(a) { return a.status === 'Rejected' ? 0 : hirLadderIndex_(a.status) + 1; }
+
+// The candidate list a caller sees -- pure, so the rules are testable with plain arrays.
+// ctx: {requisitions, visibleCampuses (null = all), irRows, portalInterviews, portalDemos, decisions, nowMs}.
+// 1. every row -> applicant (status from evidence since its last revival);
+// 2. one per phone: the row furthest along wins, the latest row breaks a tie, a missing CV is borrowed;
+// 3. visible if in the caller's district AND (matches an approved requisition, OR is in progress, OR was
+//    added in the portal). A requisition the Principal named on a report wins over subject matching.
+function hirBuildApplicants_(values, ctx) {
+  const src = { ir: hirIrIndex_(ctx.irRows || [[]]), interviews: hirByPhone_(ctx.portalInterviews), demos: hirByPhone_(ctx.portalDemos), decisions: ctx.decisions || {} };
+  const byPhone = {}, order = [];
+  for (let i = 1; i < values.length; i++) {
+    if (!values[i][HIR_COL.NAME - 1]) continue;
+    const a = hirRowApplicant_(values[i], i, src);
+    const key = a.phoneNorm || ('row' + a.row);
+    const prev = byPhone[key];
+    if (!prev) { byPhone[key] = a; order.push(key); continue; }
+    const keep = hirProgressRank_(a) >= hirProgressRank_(prev) ? a : prev;
+    const other = keep === a ? prev : a;
+    if (!keep.cv && other.cv) keep.cv = other.cv;
+    byPhone[key] = keep;
+  }
+  const reqs = ctx.requisitions || {};
+  const vis = ctx.visibleCampuses;
+  const out = [];
+  order.forEach(function (k) {
+    const a = byPhone[k];
+    const tags = (a.branches.match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); });
+    if (vis && !tags.some(function (c) { return vis.indexOf(c) !== -1; })) return;
+    const relevant = [];
+    Object.keys(reqs).forEach(function (c) {
+      if (vis && vis.indexOf(c) === -1) return;
+      reqs[c].forEach(function (req) {
+        const named = a.reportedPosition && HIR_POSITION_NONE.indexOf(a.reportedPosition) === -1 && hirPositionLabel_(c, req) === a.reportedPosition;
+        if (named || (tags.indexOf(c) !== -1 && hirSubjectsMatch_(req.matchSubjects, a.subjects))) relevant.push(Object.assign({ campusId: c }, req));
+      });
+    });
+    if (!relevant.length && !a.inPipeline) return;
+    a.matchedRoleKeys = relevant.map(function (req) { return hirRoleKey_(req.campusId, req.roleLevel, req.subjects); });
+    a.noOpenRole = !relevant.length;
+    const scored = relevant.length ? hirScoreApplicant_(a, relevant) : null;
+    a.matchScore = scored ? scored.total : null;
+    a.matchRemarks = scored ? scored.remarks : [];
+    out.push(a);
+  });
+  return out;
 }
 
 // "Interview Reports" tab -- filled in independently by whoever conducts
@@ -456,194 +597,75 @@ const HIR_DISTRICT_CAMPUSES = {
 };
 function hirDistrictCampuses_(campusId) { return HIR_DISTRICT_CAMPUSES[campusId] || [campusId]; }
 
-// action=hiringapplicants -- an applicant row is visible only if AT LEAST
-// ONE campus in its Branches column currently has an Approved "Hiring /
-// New/ Backup Position" AND that requisition's required subjects overlap the
-// applicant's own Subjects (hirSubjectsMatch_ -- a blank requirement is
-// a wildcard, so this doesn't newly hide anything that was visible
-// before subjects existed on the form). A locked Principal is further
-// narrowed to their own DISTRICT's campuses only (HIR_DISTRICT_CAMPUSES,
-// by the same "LMS-N" substring tag the sheet's own per-campus tabs
-// use) -- not just their exact campus, since 2026-09-25; Owner/
-// Coordinator (campusId 'ALL') see the union across every approved+
-// matching campus network-wide -- NOT everyone unconditionally.
-//
-// 2026-09-25, per Uday: source of truth is the "Form Responses 1" tab
-// this file already reads (HIR_SHEET_GID) -- the per-campus tabs (LMS
-// 1..6) in that same spreadsheet are just FILTER()-formula views of it
-// for humans to skim, not a separate data source, and are never read
-// here. Walk-in interviewees who never filled the Google Form are a
-// deliberately separate mechanism (not this sheet) -- out of scope for
-// this file until that's built.
-//
-// 2026-09-14, per Uday (twice): first pass gated locked campuses but
-// exempted Owner on the theory that "they're the approver, they need
-// visibility" -- wrong, caught live: approving a requisition is about
-// the role description, not about browsing candidate PII, so Owner
-// browsing every applicant regardless of approval state has the exact
-// same PII-exposure problem a locked Principal would. No exemption now;
-// the rule is identical for everyone, just evaluated per-campus. Same
-// day, per-subject filtering added on top for the same reason -- an
-// approval for "PRT Science" shouldn't surface a PGT Commerce applicant
-// just because the campus has SOME open role.
-//
-// Visible applicants also get a matchScore (0-100, see hirScoreApplicant_)
-// against the best-fitting requisition they're relevant to, and the list
-// is sorted highest-first -- "showcase the best matches," not just a
-// filtered dump in sheet order.
-//
-// Deduped by phone number server-side (one implementation instead of
-// every caller re-deduping) -- keeps the most recent submission,
-// backfilling a missing CV link from an older duplicate that had one.
+// action=hiringapplicants -- the caller's candidates (see hirBuildApplicants_ for who is visible and how
+// each status is derived). Sorted: furthest along first, then applied within the last year, then best fit.
+// `gated` only when nothing is approved anywhere in scope AND nobody is in progress -- the "request a
+// role first" state. statuses/rejectReasons travel with the list so the page never re-types them.
 function hiringApplicants_(caller) {
   const requisitions = hirApprovedRequisitions_('New/ Backup Position');
-  // District-wide, not single-campus, for a locked caller (see
-  // HIR_DISTRICT_CAMPUSES above) -- Owner/ALL keeps seeing the union
-  // across every approved campus, same as before.
-  const visibleCampuses = caller.campusId === 'ALL' ? null : hirDistrictCampuses_(caller.campusId);
-  const hasApproval = visibleCampuses ? visibleCampuses.some(function (c) { return !!requisitions[c]; }) : Object.keys(requisitions).length > 0;
-  if (!hasApproval) {
-    // Covers both a locked caller whose whole district has nothing
-    // approved, and the ALL case where literally no campus anywhere
-    // does -- same "gated" signal either way, so the frontend shows one
-    // consistent message instead of a bare empty table.
-    return { success: true, statuses: HIR_STATUSES, applicants: [], gated: true };
-  }
+  const visibleCampuses = hirCallerCampuses_(caller);
   hirAutoBackfillWalkIns_(); // before the read below, so a brand-new walk-in's row is in it
   const values = hirSheet_().getDataRange().getValues();
-  const irPhones = hirInterviewReportPhones_(); // one sheet read, reused per-applicant below for the derived-stage check
-  const salaryOfferDecisions = hirSalaryOfferDecisions_(); // ditto -- one Approvals sheet read, not one per applicant
-  const byPhone = {};
-  const order = [];
-  for (let i = 1; i < values.length; i++) {
-    const r = values[i];
-    if (!r[HIR_COL.NAME - 1]) continue;
-    const branches = String(r[HIR_COL.BRANCHES - 1] || '').trim();
-    const subjects = String(r[HIR_COL.SUBJECTS - 1] || '').trim();
+  const list = hirBuildApplicants_(values, {
+    requisitions: requisitions, visibleCampuses: visibleCampuses, irRows: hirIrSheet_().getDataRange().getValues(),
+    portalInterviews: hirPortalReports_(HIR_PI_TAB), portalDemos: hirPortalReports_(HIR_PD_TAB),
+    decisions: hirSalaryOfferDecisions_(), nowMs: Date.now(),
+  });
+  // Employee codes -- after the de-dupe, so a superseded duplicate row can never get a code locked onto it.
+  hirAssignEmployeeCodes_(list, values.slice(1).map(function (r) { return String(r[HIR_COL.EMP_CODE - 1] || '').trim().toUpperCase(); }).filter(Boolean));
+  list.sort(function (a, b) {
+    const s = hirLadderIndex_(b.status) - hirLadderIndex_(a.status);
+    if (s) return s;
+    const rec = (hirIsRecent_(b.timestamp) ? 1 : 0) - (hirIsRecent_(a.timestamp) ? 1 : 0);
+    if (rec) return rec;
+    return (b.matchScore || 0) - (a.matchScore || 0);
+  });
+  const anyApproved = Object.keys(requisitions).some(function (c) { return !visibleCampuses || visibleCampuses.indexOf(c) !== -1; });
+  return { success: true, statuses: HIR_STATUSES, rejectReasons: HIR_REJECT_REASONS, positions: hirOpenPositionLabelsFor_(visibleCampuses),
+    applicants: list, gated: !anyApproved && !list.length };
+}
 
-    // Every requisition (across every campus this applicant applied to,
-    // or just the caller's own district when locked) that this
-    // applicant actually matches -- collected, not just tested as a
-    // boolean, so hirScoreApplicant_ below can score against the BEST
-    // of them (an applicant can be relevant to more than one open role
-    // at once).
-    const relevantReqs = [];
-    Object.keys(requisitions).forEach(function (c) {
-      if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return; // outside caller's district
-      const campusTag = 'LMS-' + c.replace(/[^0-9]/g, '');
-      if (branches.indexOf(campusTag) === -1) return;
-      requisitions[c].forEach(function (req) {
-        if (hirSubjectsMatch_(req.matchSubjects, subjects)) relevantReqs.push(Object.assign({ campusId: c }, req));
-      });
-    });
-    // 2026-10-13, per Uday: the position a Principal picked on the Interview Report form WINS -- the
-    // candidate shows under that requisition even if subjects/branches wouldn't have matched.
-    const reported = irPhones[hirNormalizePhone_(r[HIR_COL.PHONE - 1])];
-    if (reported && reported.position && HIR_POSITION_NONE.indexOf(reported.position) === -1) {
-      Object.keys(requisitions).forEach(function (c) {
-        if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return;
-        requisitions[c].forEach(function (req) {
-          const key = hirRoleKey_(c, req.roleLevel, req.subjects);
-          if (hirPositionLabel_(c, req) === reported.position && !relevantReqs.some(function (x) { return hirRoleKey_(x.campusId, x.roleLevel, x.subjects) === key; })) {
-            relevantReqs.push(Object.assign({ campusId: c }, req));
-          }
-        });
-      });
-    }
-    if (!relevantReqs.length) continue;
+// Open positions as the report forms offer them ("LMS 4 - TGT: English"), limited to the caller's campuses.
+function hirOpenPositionLabelsFor_(visibleCampuses) {
+  const reqs = hirApprovedRequisitions_('New/ Backup Position');
+  const out = [];
+  Object.keys(reqs).sort().forEach(function (c) {
+    if (visibleCampuses && visibleCampuses.indexOf(c) === -1) return;
+    reqs[c].forEach(function (r) { const l = hirPositionLabel_(c, r); if (out.indexOf(l) === -1) out.push(l); });
+  });
+  return out.concat(HIR_POSITION_NONE);
+}
 
-    const phone = hirNormalizePhone_(r[HIR_COL.PHONE - 1]);
-    const applicantPhoneRaw = String(r[HIR_COL.PHONE - 1] || '').trim();
-    const interviewAtISO = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
-    const mdInterviewAtISO = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
-    const salaryOfferAtISO = hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]);
-    const storedStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
-    const applicant = {
-      row: i + 1, // 1-based sheet row, used to write status/notes back
-      applicantId: hirApplicantId_(i + 1),
-      // Every specific open role this applicant matches (not just the
-      // single best one matchScore is computed against) -- lets the
-      // frontend filter to "applicants for THIS role" after a click,
-      // without duplicating subject-matching logic client-side.
-      matchedRoleKeys: relevantReqs.map(function (req) { return hirRoleKey_(req.campusId, req.roleLevel, req.subjects); }),
-      timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
-      name: String(r[HIR_COL.NAME - 1] || '').trim(),
-      phone: applicantPhoneRaw,
-      age: String(r[HIR_COL.AGE - 1] || '').trim(),
-      subjects: subjects,
-      branches: branches,
-      qualification: String(r[HIR_COL.QUALIFICATION - 1] || '').trim(),
-      bed: String(r[HIR_COL.BED - 1] || '').trim(),
-      gender: String(r[HIR_COL.GENDER - 1] || '').trim(),
-      cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      // 2026-09-25, per Uday ("not by my clicking"): derived live from
-      // evidence, not read as-is from the sheet -- see
-      // hirEffectiveStatus_'s own comment.
-      status: hirEffectiveStatus_(storedStatus, !!interviewAtISO, !!irPhones[phone], !!salaryOfferAtISO, !!mdInterviewAtISO, salaryOfferDecisions[hirApplicantId_(i + 1)]),
-      notes: String(r[HIR_COL.NOTES - 1] || '').trim(),
-      interviewAt: interviewAtISO,
-      mdInterviewAt: mdInterviewAtISO,
-      salaryOfferAt: salaryOfferAtISO,
-      // Direct link, not a per-click lookup -- see hirInterviewReportPhones_'s
-      // own comment for why.
-      interviewReportPdf: (irPhones[phone] && irPhones[phone].pdf) || '',
-      // Column P -- the permanent code, if hirAssignEmployeeCodes_ (below)
-      // has already locked one for this row.
-      employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
-      employeeCodePermanent: !!String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
-      dateOfJoining: hirDojStr_(r[HIR_COL.DOJ - 1]),
-      offerBreakdown: hirParseJson_(r[HIR_COL.OFFER_BREAKDOWN - 1]),
-    };
-    const scored = hirScoreApplicant_(applicant, relevantReqs);
-    applicant.matchScore = scored.total;
-    applicant.matchRemarks = scored.remarks;
+// ── Portal report tabs (2026-10-22): the Interview Report and the Demo Report, filled in on the Hiring
+// Dashboard instead of uploading a scan. Same workbook, found by NAME, created with headers on first write.
+const HIR_PI_TAB = 'Portal Interview Reports';
+const HIR_PD_TAB = 'Portal Demo Reports';
+const HIR_PI_HEADERS = ['Report ID', 'Applicant ID', 'Row', 'Name', 'Phone', 'Campus', 'Position', 'Interview Date', 'Confidence', 'English',
+  'Capability (JSON)', 'Spouse / family occupation', 'Family support', 'Qualification remarks', 'Other skills', 'Experience (JSON)',
+  'Commitment', 'Expected salary', 'Strengths', 'Weaknesses', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At'];
+const HIR_PD_HEADERS = ['Report ID', 'Applicant ID', 'Row', 'Name', 'Phone', 'Campus', 'Demo Date', 'Class', 'Subject', 'Pedagogy', 'Content',
+  'Student Interaction', 'Student Response', 'Classroom Management', 'Clarity & Audibility', 'Makes Subject Relatable', 'Use of Teaching Aids',
+  'Student Feedback', 'Total /45', 'Strengths', 'Areas to improve', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At'];
 
-    if (!phone || !byPhone[phone]) {
-      byPhone[phone || ('row' + applicant.row)] = applicant;
-      order.push(phone || ('row' + applicant.row));
-    } else {
-      // Later row for the same phone wins as the "current" record (most
-      // recent submission), but keep an older CV link if the newer
-      // submission is missing one.
-      const prev = byPhone[phone];
-      if (!applicant.cv && prev.cv) applicant.cv = prev.cv;
-      byPhone[phone] = applicant;
-    }
-  }
-  // 2026-09-26, per Uday: whoever's furthest along the hiring ladder
-  // floats to the very top, above everything else -- someone already at
-  // MD Academics Interview Scheduled is more urgent to act on than a
-  // fresh, better-scoring applicant nobody's even called yet. WITHIN the
-  // same stage, the 2026-09-25 recency-then-score order (below) still
-  // decides it.
-  //
-  // 2026-09-25, per Uday: applicants from the last year float above
-  // everyone older, since a stale application from years ago is rarely
-  // worth chasing first even if it happens to score well -- but WITHIN
-  // each of those two buckets, the existing fit-quality score (B.Ed/
-  // subject/qualification-weighted, recency only a minor tiebreaker
-  // inside it) still decides order. This adds a recency gate on top of
-  // that scoring rather than replacing it.
-  const finalList = order.map(function (k) { return byPhone[k]; });
-  // Employee codes -- after the phone de-dupe above, so a superseded
-  // duplicate row can never get a code locked onto it.
-  hirAssignEmployeeCodes_(finalList, values.slice(1).map(function (r) { return String(r[HIR_COL.EMP_CODE - 1] || '').trim().toUpperCase(); }).filter(Boolean));
-  const applicants = finalList
-    .sort(function (a, b) {
-      const aStage = hirLadderIndex_(a.status);
-      const bStage = hirLadderIndex_(b.status);
-      if (aStage !== bStage) return bStage - aStage;
-      const aRecent = hirIsRecent_(a.timestamp) ? 1 : 0;
-      const bRecent = hirIsRecent_(b.timestamp) ? 1 : 0;
-      if (aRecent !== bRecent) return bRecent - aRecent;
-      return b.matchScore - a.matchScore;
-    });
-  // NOT `gated: true` here even if this comes out empty -- unlike the
-  // two checks above (nobody approved ANYTHING), a genuinely empty
-  // result after subject-matching means "approved roles exist, just no
-  // applicant matches them yet," which is real, informative emptiness,
-  // not the same "nothing's been requested" state the gated message is for.
-  return { success: true, statuses: HIR_STATUSES, applicants: applicants };
+function hirPortalTab_(name, headers, create) {
+  const wb = hirWorkbook_();
+  let sh = wb.getSheetByName(name);
+  if (!sh && create) { sh = wb.insertSheet(name); sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold'); }
+  return sh;
+}
+
+// Every report on a tab as {header: value} objects plus phone / submittedAtMs / recommendation. [] if the tab doesn't exist yet.
+function hirPortalReports_(name) {
+  const sh = hirWorkbook_().getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const v = sh.getDataRange().getValues();
+  return v.slice(1).map(function (r) {
+    const o = {};
+    v[0].forEach(function (h, j) { o[String(h)] = r[j] instanceof Date ? r[j].toISOString() : r[j]; });
+    o.phone = String(o['Phone'] || ''); o.submittedAtMs = hirMs_(o['Submitted At']);
+    o.recommendation = String(o['Recommendation'] || ''); o.position = String(o['Position'] || '');
+    return o;
+  });
 }
 
 // action=hiringrownotes -- 2026-09-29, per Uday: the Salary Dashboard's
@@ -1014,7 +1036,7 @@ function hirSalaryOfferDecisions_() {
     if (status !== APR_STATUS.APPROVED && status !== APR_STATUS.REJECTED) continue;
     const m = String(row[7] || '').match(/T-\d{4}/);
     if (!m) continue;
-    map[m[0]] = status; // last decided row for this ID wins if somehow more than one exists
+    map[m[0]] = { status: status, decidedAtMs: hirMs_(row[15]) }; // last decided row for this ID wins; decidedAt lets a revival ignore it
   }
   return map;
 }
@@ -1047,8 +1069,10 @@ function hirSalaryOfferGateCheck_(applicantId, decision) {
 function hirIsHiringApproved_(applicantId) {
   const row = parseInt(String(applicantId || '').replace(/^T-0*/, ''), 10);
   if (!row) return false;
-  if (!hirSheet_().getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue()) return false;
-  return hirSalaryOfferDecisions_()[applicantId] === APR_STATUS.APPROVED;
+  const sheet = hirSheet_();
+  if (!sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue()) return false;
+  const d = hirSalaryOfferDecisions_()[applicantId];
+  return !!d && d.status === APR_STATUS.APPROVED && d.decidedAtMs >= hirMs_(sheet.getRange(row, HIR_COL.REVIVED_AT).getValue());
 }
 
 // ── Employee codes ───────────────────────────────────────────────────
@@ -1282,7 +1306,11 @@ function hiringUpdateStatus_(caller, body) {
     // Report already carries the candidate's bio-data, so a separate CV
     // upload is redundant, not a genuine missing-document risk.
     if (!hirDojStr_(sheet.getRange(row, HIR_COL.DOJ).getValue())) missing.push('the Date of Joining');
-    if (!hiringCheckInterviewReport_(phone).found) missing.push('an uploaded Interview Report');
+    // 2026-10-22: a report filed in the portal counts as well as the old Google Form; a "done, report later"
+    // mark does not -- the paperwork has to catch up before the hire.
+    const ev = hirRowEvidence_(sheet, row, phone);
+    if (!ev.ir.length && !ev.interviewReports.some(function (r) { return r.submittedAtMs >= ev.since; })) missing.push('the Interview Report');
+    if (!ev.ir.length && !ev.demoReports.some(function (r) { return r.submittedAtMs >= ev.since && r.recommendation === 'proceed'; })) missing.push('the Demo Report');
     // 2026-10-03: only submissions from just before the interview onward
     // count -- see hiringCheckDocuments_'s own comment (Preeti Sood).
     const interviewAt = sheet.getRange(row, HIR_COL.INTERVIEW_AT).getValue();
@@ -1355,6 +1383,15 @@ function hiringUpdateStatus_(caller, body) {
   return hiringApplicants_(caller);
 }
 
+// One row's evidence since its last revival (the Hired gate and the write actions use it).
+function hirRowEvidence_(sheet, row, phone) {
+  const since = hirMs_(sheet.getRange(row, HIR_COL.REVIVED_AT).getValue());
+  const src = { ir: hirIrIndex_(hirIrSheet_().getDataRange().getValues()), interviews: hirByPhone_(hirPortalReports_(HIR_PI_TAB)), demos: hirByPhone_(hirPortalReports_(HIR_PD_TAB)) };
+  const ev = hirEvidence_(hirNormalizePhone_(phone), since, src, hirJson_(sheet.getRange(row, HIR_COL.STAGE_MARKS).getValue(), {}));
+  ev.since = since;
+  return ev;
+}
+
 // action=hiringcheckinterviewreport -- looks up the "Interview Reports"
 // tab by phone number (the one reliable shared key -- that sheet has no
 // applicant-name normalization to trust). Read-only, warns, never blocks.
@@ -1376,34 +1413,6 @@ function hiringCheckInterviewReport_(phone) {
   return { found: false };
 }
 
-// Set of normalized phones with at least one uploaded Interview Report --
-// one sheet read, used by hiringRefreshTracker_ instead of a per-row
-// lookup (cheap for one candidate via the dashboard's own 🔍report
-// button, but would mean re-reading this sheet hundreds of times for
-// the tracker's bulk refresh).
-// 2026-09-26, per Uday: now carries the PDF link (column G, "Upload
-// Scanned PDF...") and remarks alongside the plain true/false match,
-// not just the match itself -- an object is truthy exactly like the
-// old `true` was, so every existing `!!irPhones[phone]`/`irPhones[phone]
-// ? ... : ...` callsite below keeps working unchanged. This is what
-// lets hiringApplicants_ hand the frontend a ready-to-click PDF link
-// directly in the initial payload instead of a separate per-click
-// lookup (hiringcheckinterviewreport) -- that lookup used to back a
-// window.open() called only after its own async round-trip resolved,
-// which most browsers no longer treat as tied to the original click
-// and silently popup-block; a plain <a href> from data already on hand
-// sidesteps that entirely, same as the CV link already does.
-function hirInterviewReportPhones_() {
-  const values = hirIrSheet_().getDataRange().getValues();
-  const set = {};
-  // "Position interviewed for" (added by hirSyncPositionDropdown) -- found by header, a column at the end.
-  const posCol = values[0].map(function (h) { return String(h).toLowerCase(); }).findIndex(function (h) { return h.indexOf('position interviewed') !== -1; });
-  for (let i = 1; i < values.length; i++) {
-    const phone = hirNormalizePhone_(values[i][HIR_IR_COL.PHONE]);
-    if (phone) set[phone] = { pdf: String(values[i][HIR_IR_COL.PDF] || '').trim(), remarks: String(values[i][HIR_IR_COL.REMARKS] || '').trim(), position: posCol === -1 ? '' : String(values[i][posCol] || '').trim() };
-  }
-  return set;
-}
 
 function hirTrackerSheet_() {
   const sheet = hirWorkbook_().getSheets().find(function (s) { return s.getSheetId() === HIR_TRACKER_SHEET_GID; });
@@ -1440,8 +1449,8 @@ function hiringRefreshTracker_(caller) {
 function hirRefreshTrackerCore_() {
   const requisitions = hirApprovedRequisitions_('New/ Backup Position');
   const hiringDecisionCampuses = hirApprovedCampuses_('Salary Offer Approval');
-  const irPhones = hirInterviewReportPhones_();
-  const salaryOfferDecisions = hirSalaryOfferDecisions_();
+  const src = { ir: hirIrIndex_(hirIrSheet_().getDataRange().getValues()), interviews: hirByPhone_(hirPortalReports_(HIR_PI_TAB)),
+    demos: hirByPhone_(hirPortalReports_(HIR_PD_TAB)), decisions: hirSalaryOfferDecisions_() };
 
   const values = hirSheet_().getDataRange().getValues();
   const byPhone = {};
@@ -1466,25 +1475,8 @@ function hirRefreshTrackerCore_() {
       });
     });
 
-    const trackerInterviewAt = hirSafeISO_(r[HIR_COL.INTERVIEW_AT - 1]);
-    const trackerMdInterviewAt = hirSafeISO_(r[HIR_COL.MD_INTERVIEW_AT - 1]);
-    const trackerSalaryOfferAt = hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]);
-    const trackerStoredStatus = String(r[HIR_COL.STATUS - 1] || '').trim();
-    const applicant = {
-      row: i + 1,
-      applicantId: hirApplicantId_(i + 1),
-      timestamp: hirSafeISO_(r[HIR_COL.TIMESTAMP - 1]),
-      name: String(r[HIR_COL.NAME - 1] || '').trim(),
-      phone: String(r[HIR_COL.PHONE - 1] || '').trim(),
-      phoneNorm: phone,
-      age: String(r[HIR_COL.AGE - 1] || '').trim(),
-      subjects: subjects,
-      branches: branches,
-      cv: String(r[HIR_COL.CV - 1] || '').trim(),
-      // Same live derivation as hiringApplicants_ -- see hirEffectiveStatus_.
-      status: hirEffectiveStatus_(trackerStoredStatus, !!trackerInterviewAt, !!irPhones[phone], !!trackerSalaryOfferAt, !!trackerMdInterviewAt, salaryOfferDecisions[hirApplicantId_(i + 1)]),
-      bestRole: '', matchScore: null, matchedCampus: '',
-    };
+    // Same derivation as hiringApplicants_ -- see hirRowApplicant_.
+    const applicant = Object.assign(hirRowApplicant_(r, i, src), { bestRole: '', matchScore: null, matchedCampus: '' });
     if (relevantReqs.length) {
       const scored = hirScoreApplicant_(applicant, relevantReqs);
       applicant.matchScore = scored.total;
@@ -1518,7 +1510,7 @@ function hirRefreshTrackerCore_() {
       // hirInterviewReportPhones_'s own comment), so this is directly
       // clickable from the tracker sheet instead of requiring a second
       // trip through the Interview Reports tab.
-      (irPhones[a.phoneNorm] && irPhones[a.phoneNorm].pdf) || '',
+      a.interviewReportPdf,
       a.cv, a.timestamp, new Date().toISOString(),
     ];
   });
