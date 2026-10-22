@@ -285,6 +285,14 @@
   - `hiring/hiring-view.js` and `tests/hiring/ui-stub.js` to reuse;
   - the 7 MB client-side check;
   - the `today.js` change just made.
+  - **Its own checklist (agreed with that session, 2026-10-23):**
+    - exact GET/POST action names and bodies (`apptpropose`, `apptcancel`, `hiringuploadreport`, and how
+      the file travels as base64 in a text/plain JSON POST);
+    - the `legwork` and appointment object shapes;
+    - the error messages and their meanings (the backend returns `{success:false, error:<text>}`, not
+      codes, so list each text);
+    - which `assets/appointments.js` call the office home makes (`LMCSAppts.mount`);
+    - `tests/office/test-today-view.js` is updated by us along with `today.js`.
 
 ### Task 5: Scanned report upload + confirm reject
 
