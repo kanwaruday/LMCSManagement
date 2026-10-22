@@ -102,7 +102,7 @@ module.exports = function run(t) {
   });
   t.test('officeImportFromDrive loads opening then daybook per campus folder, idempotently', () => {
     const h = boot(); h.addConfig(); const book = h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-22T10:00:00Z'));
-    h.run("OFFICE_TABLES.DayBook.push('collection')"); // the Day Book branch adds this column
+    h.run("if (OFFICE_TABLES.DayBook.indexOf('collection') === -1) OFFICE_TABLES.DayBook.push('collection')"); // the Day Book branch adds this column
     const put = (folder, name, text) => folder.createFile({ getName: () => name, getContentType: () => 'text/csv', getBytes: () => [], getDataAsString: () => text });
     const f = h.drive.root.createFolder('LMS1'); put(f, 'opening-2026-27.csv', b.campuses.LMS1.opening); put(f, 'daybook.csv', b.campuses.LMS1.daybook);
     put(h.drive.root.createFolder('LMS2'), 'daybook.csv', 'x'); // no opening file: reported, others unaffected
