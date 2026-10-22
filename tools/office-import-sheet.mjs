@@ -8,8 +8,11 @@
 // is US-style). "Sheet row" in the review file = the row in the tab (header = row 1), which is also the CSV line.
 // --review: CSV with columns Campus, Sheet row, Proposed category, Your correction (others ignored); a correction
 //   overrides the proposal; only 'Not on this List' rows use it.
-// --actual: JSON {"LMS1": <rupees counted in the cash box on --to>, ...}.
-// Output per campus: <out>/<campus>/opening-2026-27.csv (zero opening) and daybook.csv; <out>/report.txt.
+// --actual: JSON {"LMS1": <rupees counted in the cash box on --to>, ...}; a number is adjusted in the fee bucket, or give
+//   {"LMS1": {"fee": n, "other": n}} to adjust each bucket separately. Negative or non-numeric figures are an error.
+// Output per campus: <out>/<campus>/opening-2026-27.csv (zero opening), daybook.csv and meta.json {from,to}; <out>/report.txt.
+// Row ids are built from the row's content (not its Sheet row number), so re-running after the Sheet is re-sorted gives
+// the same ids. Rows already loaded are corrected only by reversal: a re-run never edits them.
 // Load with officeImportFromDrive (apps-script/office-import.gs). Real data stays OUTSIDE the repo.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -31,7 +34,7 @@ const CATS = Object.fromEntries(JSON.parse(JSON.stringify(gs.OFFICE_CATEGORIES))
 for (const [id, direction] of [['construction_works', 'OUT'], ['student_collection_paid', 'OUT'], ['cash_received', 'IN'], ['transport_legacy', 'OUT'], ['import_adjustment_in', 'IN'], ['import_adjustment_out', 'OUT']]) CATS[id] = CATS[id] || { id, direction, group: 'school' };
 
 const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-const BUCKET = 'other'; // the Sheet is one cash box with no petty/fee split; 'other' is the neutral bucket (balances sum all buckets)
+const bucketOf = (category) => (category === 'fee_collection' || category === 'deposit_cash_out' ? 'fee' : 'other'); // fee receipts and what is deposited from them; the rest is 'other' (balances sum all buckets)
 const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, '/');
 const head = (s) => norm(s).replace(/[^a-z0-9]/g, '');
 const campusId = (s) => { const m = /^lms\s*([1-6])$/i.exec(String(s).trim()); return m ? 'LMS' + m[1] : /^hes$/i.test(String(s).trim()) ? 'HES' : null; };
@@ -81,7 +84,7 @@ export function parseDate(s, fmt = 'DMY') {
 }
 
 const directionOf = (type) => { const t = norm(type); return /^rec/.test(t) ? 'IN' : /^(pai|pia)/.test(t) ? 'OUT' : null; };
-const hash = (campus, row) => createHash('sha256').update(campus + ':' + row).digest('hex').slice(0, 16);
+const hash = (...parts) => createHash('sha256').update(parts.join('\u241f')).digest('hex').slice(0, 16);
 const rupees = (p) => (p < 0 ? '-' : '') + Math.floor(Math.abs(p) / 100) + '.' + String(Math.abs(p) % 100).padStart(2, '0');
 
 // review CSV text -> Map 'LMS1:12' -> {proposed, correction}
@@ -127,10 +130,10 @@ const SOURCE_ROW = (cells, cols) => Object.fromEntries(Object.entries(cols).map(
 export function buildCampus(csvText, campus, o) {
   const [h, ...lines] = parseCsv(csvText);
   const find = (re) => h.findIndex((c) => re.test(head(c)));
-  const cols = { date: find(/^date$/) >= 0 ? find(/^date$/) : find(/^column1$/), type: find(/^typeoftransaction|^type/), bill: find(/^bill|^receipt/), cat: find(/^category$/),
+  const cols = { stamp: find(/^timestamp$/), date: find(/^date$/) >= 0 ? find(/^date$/) : find(/^column1$/), type: find(/^typeoftransaction|^type/), bill: find(/^bill|^receipt/), cat: find(/^category$/),
     other: find(/^othercategory|^other/), school: find(/^school$/), part: find(/^particular/), amount: find(/^amount/) };
   for (const k of ['date', 'type', 'cat', 'amount']) if (cols[k] < 0) throw new Error(`${campus}: no ${k} column in the header`);
-  const out = { rows: [], skipped: [], notes: [], mapCounts: {}, fallbacks: [], bankLegs: 0 };
+  const out = { rows: [], skipped: [], notes: [], mapCounts: {}, fallbacks: [], bankLegs: 0, ids: {} }, seen = {};
   lines.forEach((cells, i) => {
     if (cells.every((c) => c.trim() === '')) return;
     const n = i + 2, r = SOURCE_ROW(cells, cols), skip = (why) => out.skipped.push({ n, why });
@@ -150,57 +153,69 @@ export function buildCampus(csvText, campus, o) {
       campus, entry_date: date, amount_paise: paise, payee: '', narration, file_id: '', reverses: '', created_at: o.at, created_by: 'import',
       vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '', supplier_bill_no: '', settles_account: '', settles: '', source: 'sheet', legacy_category: legacy,
     };
-    const id = `sheet-${campus}-${hash(campus, n)}`;
+    const h = hash(campus, r.stamp, date, r.type, paise, r.part, r.bill, r.cat, r.other), k = seen[h] = (seen[h] ?? -1) + 1;
+    const id = `sheet-${campus}-${h}${k ? '-' + k : ''}`;
+    out.ids[n] = id;
     const charged = (c) => (/^personal$/i.test(r.cat) || c === 'chairman_personal' ? 'CHAIRMAN' : sch || campus);
     const key = cat.contra ? 'deposit_cash_out + deposit_bank_in' : cat.id;
     out.mapCounts[`${r.cat} (${dir}) -> ${key}`] = (out.mapCounts[`${r.cat} (${dir}) -> ${key}`] || 0) + 1;
     if (cat.by === 'fallback') out.fallbacks.push(`row ${n}: ${cat.why}`);
     if (cat.contra) {
       const cs = charged('deposit_cash_out');
-      out.rows.push({ ...base, id, direction: 'OUT', mode: 'cash', bucket: BUCKET, category: 'deposit_cash_out', account: 'cash:' + campus, charged_to: cs, mapped_by: 'rule', collection: '' });
+      out.rows.push({ ...base, id, direction: 'OUT', mode: 'cash', bucket: 'fee', category: 'deposit_cash_out', account: 'cash:' + campus, charged_to: cs, mapped_by: 'rule', collection: '' });
       out.rows.push({ ...base, id: id + '-bank', direction: 'IN', mode: 'bank', bucket: '', category: 'deposit_bank_in', account: 'bank:' + campus, charged_to: cs, mapped_by: 'rule', collection: '' });
       out.bankLegs++;
       return;
     }
-    out.rows.push({ ...base, id, direction: dir, mode: 'cash', bucket: BUCKET, category: cat.id, account: 'cash:' + campus, charged_to: charged(cat.id), mapped_by: cat.by,
+    out.rows.push({ ...base, id, direction: dir, mode: 'cash', bucket: bucketOf(cat.id), category: cat.id, account: 'cash:' + campus, charged_to: charged(cat.id), mapped_by: cat.by,
       collection: cat.id.startsWith('student_collection') ? collectionOf(r.part) : '' });
   });
   return out;
 }
 
-const cashClosing = (campus, rows, date) => {
-  const c = balances({ cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }, rows.filter((r) => r.account === 'cash:' + campus), date).closing.cash;
-  return c.petty + c.fee + c.other;
-};
+const cashBuckets = (campus, rows, date) => balances({ cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }, rows.filter((r) => r.account === 'cash:' + campus), date).closing.cash;
+const cashClosing = (campus, rows, date) => { const c = cashBuckets(campus, rows, date); return c.petty + c.fee + c.other; };
+
+// One --actual figure (rupees, number or text) -> paise. Zero is fine; negative, blank or non-numeric is an error.
+function actualPaise(campus, v) {
+  const t = typeof v === 'number' || typeof v === 'string' ? String(v).trim() : '';
+  const p = /^0+(\.0*)?$/.test(t) ? 0 : parseRupeesToPaise(t);
+  if (p === null || p === undefined) throw new Error(`${campus}: --actual figure ${JSON.stringify(v)} must be a number of rupees, zero or more`);
+  return p;
+}
 
 // Whole import. sheets = {LMS1: csvText, ...}. Returns {campuses: {LMS1: {daybook, opening}}, report}.
 export function buildImport(sheets, reviewText, actual, opts) {
   const o = { dateFormat: 'DMY', at: new Date().toISOString(), ...opts, review: reviewText ? parseReview(reviewText) : new Map() };
   const fy = `${o.from.slice(0, 4)}-${String((Number(o.from.slice(0, 4)) + 1) % 100).padStart(2, '0')}`;
-  const res = { campuses: {}, report: '' }, rep = [`Day book Sheet import, FY ${fy}, ${o.from} to ${o.to}, run at ${o.at}`, ''];
+  const res = { campuses: {}, report: '' }, rep = [`Day book Sheet import, FY ${fy}, ${o.from} to ${o.to}, run at ${o.at}`, 'Rows already loaded are corrected only by reversal: a re-run (same ids for same content) never edits them.', ''];
   for (const campus of CAMPUSES) {
     if (sheets[campus] === undefined) { rep.push(`${campus}: no tab file found, nothing imported`, ''); continue; }
     const b = buildCampus(sheets[campus], campus, o);
     const rows = b.rows;
     if (actual && actual[campus] !== undefined) {
-      const want = parseRupeesToPaise(String(actual[campus]).replace(/^-/, '')) ?? (Number(actual[campus]) === 0 ? 0 : null);
-      if (want === null) rep.push(`${campus}: --actual value "${actual[campus]}" unreadable, no adjustment`);
-      else {
-        const diff = want - cashClosing(campus, rows, o.to);
-        b.adjustment = diff;
-        if (diff) rows.push({ id: `sheet-${campus}-adjustment`, campus, entry_date: o.to, direction: diff > 0 ? 'IN' : 'OUT', mode: 'cash', bucket: BUCKET, category: diff > 0 ? 'import_adjustment_in' : 'import_adjustment_out',
+      const v = actual[campus], obj = v && typeof v === 'object';
+      if (obj && Object.keys(v).some((k) => k !== 'fee' && k !== 'other')) throw new Error(`${campus}: --actual takes a number or {"fee": n, "other": n}`);
+      const want = obj ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, actualPaise(campus, x)])) : { fee: actualPaise(campus, v) };
+      b.adjustment = 0;
+      for (const bk of ['fee', 'other']) {
+        if (want[bk] === undefined) continue;
+        // a plain number counts the whole box: the fee bucket takes whatever the other bucket does not already hold
+        const diff = want[bk] - cashBuckets(campus, rows, o.to)[bk] - (obj ? 0 : cashBuckets(campus, rows, o.to).other);
+        b.adjustment += diff;
+        if (diff) rows.push({ id: `sheet-${campus}-adjustment-${bk}`, campus, entry_date: o.to, direction: diff > 0 ? 'IN' : 'OUT', mode: 'cash', bucket: bk, category: diff > 0 ? 'import_adjustment_in' : 'import_adjustment_out',
           amount_paise: Math.abs(diff), payee: '', narration: `Sheet import adjustment to the counted cash in hand on ${o.to}`, file_id: '', reverses: '', created_at: o.at, created_by: 'import',
           account: 'cash:' + campus, charged_to: campus, vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '', supplier_bill_no: '', settles_account: '', settles: '', source: 'sheet',
           legacy_category: '', mapped_by: 'rule', collection: '' });
       }
     }
     const z = (m, bk, a) => ({ id: `impopen-${campus}-${fy}-${m}${bk ? '-' + bk : ''}`, campus, mode: m, bucket: bk, amount_paise: a, created_at: o.at, created_by: 'import' });
-    res.campuses[campus] = { daybook: toCsv(DAYBOOK_COLS, rows), opening: toCsv(OPENING_COLS, [z('cash', 'petty', 0), z('cash', 'fee', 0), z('cash', 'other', 0), z('bank', '', 0), z('upi', '', 0)]), rows };
+    res.campuses[campus] = { daybook: toCsv(DAYBOOK_COLS, rows), opening: toCsv(OPENING_COLS, [z('cash', 'petty', 0), z('cash', 'fee', 0), z('cash', 'other', 0), z('bank', '', 0), z('upi', '', 0)]), rows, ids: b.ids };
     const cash = rows.filter((r) => r.account === 'cash:' + campus), sum = (d) => cash.filter((r) => r.direction === d).reduce((s, r) => s + r.amount_paise, 0);
     const noColl = rows.filter((r) => r.category.startsWith('student_collection') && !r.collection);
     rep.push(`== ${campus} ==`, `Rows imported: ${rows.length} (${cash.length} cash, ${b.bankLegs} paired bank legs${b.adjustment ? ', 1 adjustment' : ''}); skipped: ${b.skipped.length}`,
       `Cash in ${rupees(sum('IN'))}, cash out ${rupees(sum('OUT'))}, cash closing ${o.to}: ${rupees(cashClosing(campus, rows, o.to))}`,
-      ...(actual && actual[campus] !== undefined ? [`Adjustment to counted cash: ${b.adjustment ? rupees(b.adjustment) : 'none (already equal)'}`] : ['No --actual for this campus: NO adjustment written']),
+      ...(actual && actual[campus] !== undefined ? [`Adjustment to counted cash: ${b.adjustment ? rupees(b.adjustment) : 'none (already equal)'} (${rows.filter((r) => r.id.includes('-adjustment-')).length} row(s))`] : ['No --actual for this campus: NO adjustment written']),
       'Category mapping:', ...Object.entries(b.mapCounts).sort().map(([k, v]) => `  ${v}  ${k}`),
       `Mapped by fallback (other_in/other_out): ${b.fallbacks.length}`, ...b.fallbacks.map((x) => '  ' + x),
       `Student collection rows with no collection keyword: ${noColl.length}`, ...noColl.map((r) => `  ${r.entry_date} ${rupees(r.amount_paise)} ${r.narration}`),
@@ -228,6 +243,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     mkdirSync(join(out, c), { recursive: true });
     writeFileSync(join(out, c, `opening-${fy}.csv`), f.opening);
     writeFileSync(join(out, c, 'daybook.csv'), f.daybook);
+    writeFileSync(join(out, c, 'meta.json'), JSON.stringify({ from, to }));
   }
   writeFileSync(join(out, 'report.txt'), r.report);
   process.stdout.write(r.report);

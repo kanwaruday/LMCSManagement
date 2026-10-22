@@ -29,14 +29,14 @@ const LMS1 = [H,
 ].join('\n') + '\n';
 const REVIEW = 'Campus,Sheet row,Details,Proposed category,Your correction\nLMS1,7,x,fuel,\nLMS 1,8,x,fuel,stationery\n';
 const build = (sheets = { LMS1 }, actual = { LMS1: 1000 }) => imp.buildImport(sheets, REVIEW, actual, OPTS);
-const rowOf = (b, n) => b.campuses.LMS1.rows.find((r) => r.id.endsWith(require('crypto').createHash('sha256').update('LMS1:' + n).digest('hex').slice(0, 16)));
+const rowOf = (b, n) => b.campuses.LMS1.rows.find((r) => r.id === b.campuses.LMS1.ids[n]);
 
 module.exports = function run(t) {
   const b = build();
   const rows = b.campuses.LMS1.rows;
   t.test('direction, paise, account, source, columns', () => {
     const r = rowOf(b, 2);
-    assert.deepStrictEqual([r.direction, r.amount_paise, r.account, r.mode, r.source, r.created_by, r.category, r.mapped_by, r.charged_to], ['IN', 100050, 'cash:LMS1', 'cash', 'fee_collection' && 'sheet', 'import', 'fee_collection', 'rule', 'LMS1']);
+    assert.deepStrictEqual([r.direction, r.amount_paise, r.account, r.mode, r.source, r.created_by, r.category, r.mapped_by, r.charged_to], ['IN', 100050, 'cash:LMS1', 'cash', 'sheet', 'import', 'fee_collection', 'rule', 'LMS1']);
     assert.strictEqual(rowOf(b, 4).direction, 'OUT');
     const h = boot(); const cols = JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES.DayBook));
     assert.deepStrictEqual(parseCsv(b.campuses.LMS1.daybook)[0], cols.concat(cols.includes('collection') ? [] : ['collection']));
@@ -75,14 +75,14 @@ module.exports = function run(t) {
   });
   t.test('adjustment brings cash closing to the counted amount (backend balances); none when equal; none without --actual', () => {
     const h = boot();
-    const adj = rows.find((r) => r.id === 'sheet-LMS1-adjustment');
+    const adj = rows.find((r) => r.id === 'sheet-LMS1-adjustment-fee');
     assert.deepStrictEqual([adj.entry_date, adj.account, adj.narration], ['2026-10-22', 'cash:LMS1', 'Sheet import adjustment to the counted cash in hand on 2026-10-22']);
     const cash = rows.filter((r) => r.account === 'cash:LMS1').map((r) => ({ ...r }));
     const c = JSON.parse(JSON.stringify(h.ctx.officeBalances_({ cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }, cash, '2026-10-22'))).closing.cash;
     assert.strictEqual(c.petty + c.fee + c.other, 100000);
     const same = build({ LMS1 }, { LMS1: 1000 }).campuses.LMS1.rows.length;
     const exact = imp.buildImport({ LMS1 }, REVIEW, { LMS1: ((100000 - (adj.direction === 'IN' ? adj.amount_paise : -adj.amount_paise)) / 100).toFixed(2) }, OPTS);
-    assert.ok(!exact.campuses.LMS1.rows.some((r) => r.id === 'sheet-LMS1-adjustment'), 'zero diff, no row');
+    assert.ok(!exact.campuses.LMS1.rows.some((r) => r.id === 'sheet-LMS1-adjustment-fee'), 'zero diff, no row');
     assert.strictEqual(exact.campuses.LMS1.rows.length, same - 1);
     const none = imp.buildImport({ LMS1 }, REVIEW, {}, OPTS);
     assert.ok(!none.campuses.LMS1.rows.some((r) => r.id.endsWith('adjustment')) && none.report.includes('NO adjustment'));
@@ -90,9 +90,30 @@ module.exports = function run(t) {
   });
   t.test('ids are deterministic; opening is zero', () => {
     assert.strictEqual(build().campuses.LMS1.daybook, b.campuses.LMS1.daybook);
-    assert.ok(rows.every((r) => /^sheet-LMS1-([0-9a-f]{16}(-bank)?|adjustment)$/.test(r.id)));
+    assert.ok(rows.every((r) => /^sheet-LMS1-([0-9a-f]{16}(-\d+)?(-bank)?|adjustment-(fee|other))$/.test(r.id)));
     const o = parseCsv(b.campuses.LMS1.opening);
     assert.deepStrictEqual(o.slice(1).map((r) => r[4]), ['0', '0', '0', '0', '0']);
+  });
+  t.test('buckets: fee receipts and deposit cash-outs are fee, the rest other', () => {
+    assert.strictEqual(rowOf(b, 2).bucket, 'fee'); assert.strictEqual(rowOf(b, 3).bucket, 'fee'); assert.strictEqual(rowOf(b, 4).bucket, 'other'); assert.strictEqual(rowOf(b, 10).bucket, 'other');
+    assert.strictEqual(rows.find((r) => r.id === rowOf(b, 3).id + '-bank').bucket, '');
+  });
+  t.test('--actual: a number adjusts the fee bucket; {fee, other} adjusts each bucket; bad figures are rejected', () => {
+    const h = boot(); const close = (rs) => JSON.parse(JSON.stringify(h.ctx.officeBalances_({ cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }, rs.filter((r) => r.account === 'cash:LMS1'), '2026-10-22').closing.cash));
+    const adj = (r) => r.rows.filter((x) => x.id.includes('-adjustment-')).map((x) => x.id.split('-adjustment-')[1]);
+    const one = build().campuses.LMS1;
+    assert.deepStrictEqual(adj(one), ['fee']); const c1 = close(one.rows); assert.strictEqual(c1.fee + c1.other, 100000); assert.strictEqual(c1.other, close(build({ LMS1 }, {}).campuses.LMS1.rows).other);
+    const two = imp.buildImport({ LMS1 }, REVIEW, { LMS1: { fee: 300, other: 20 } }, OPTS).campuses.LMS1;
+    assert.deepStrictEqual(adj(two).sort(), ['fee', 'other']); const c2 = close(two.rows); assert.deepStrictEqual([c2.fee, c2.other], [30000, 2000]);
+    for (const bad of [-5, '-5', 'abc', null, { fee: -1, other: 0 }, { fee: 1, other: 'x' }]) assert.throws(() => imp.buildImport({ LMS1 }, REVIEW, { LMS1: bad }, OPTS), /actual/i, JSON.stringify(bad));
+  });
+  t.test('ids come from row content: re-sorting the Sheet gives the same ids; identical rows get a counter', () => {
+    const [head, ...body] = LMS1.trim().split('\n');
+    const same = line('09/04/2026', 'Paid', 'Internet', '10');
+    const a = imp.buildImport({ LMS1: [head, ...body, same, same].join('\n') }, '', {}, OPTS).campuses.LMS1.rows.map((r) => r.id);
+    const z = imp.buildImport({ LMS1: [head, same, ...body.reverse(), same].join('\n') }, '', {}, OPTS).campuses.LMS1.rows.map((r) => r.id);
+    assert.deepStrictEqual([...a].sort(), [...z].sort()); assert.strictEqual(new Set(a).size, a.length);
+    assert.ok(a.filter((id) => /-1$/.test(id)).length === 1);
   });
   t.test('Column 1 date header and missing campus tabs', () => {
     const alt = 'Timestamp,Column 1,Type of Transaction,Category,Particulars,Amount\n,2026-04-02,Received,Fee Online,x,5\n';
@@ -113,7 +134,7 @@ module.exports = function run(t) {
     const stored = h.ctx.officeRows_(book, 'DayBook');
     assert.strictEqual(stored.length, rows.length);
     assert.strictEqual(stored.find((r) => r.id === rowOf(b, 10).id).collection, 'field_trips');
-    assert.strictEqual(JSON.parse(JSON.stringify(h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-22' }).closing.cash)).other, 100000);
+    const cc = JSON.parse(JSON.stringify(h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-22' }).closing.cash)); assert.strictEqual(cc.fee + cc.other, 100000);
     const again = JSON.parse(JSON.stringify(h.ctx.officeImportFromDrive(h.drive.root.id)));
     assert.deepStrictEqual([again[0].daybook.appended, again[0].daybook.duplicates], [0, rows.length]);
   });
