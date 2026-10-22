@@ -850,7 +850,7 @@ const HIR_SUBJECT_CANON = {
 // For roles with a recognisable applicant-side wording it now matches only those; Sweeper/Technician/
 // Gardener have none on either form, so they stay "anyone".
 // 2026-10-13: the Interview Report form's "Role interviewed for" question (hirApplyReportForm in
-// hiring-forms.gs builds it from this list). token = the subject word hirBackfillWalkInApplicants_
+// hiring-form.gs builds it from this list). token = the subject word hirBackfillWalkInApplicants_
 // puts on a walk-in so it matches the same requisition Approvals files for that role ('' = none
 // needed: TGT/PGT/PRT 3-5 match on their real subjects; Sweeper/Technician/Gardener match anyone).
 const HIR_FORM_ROLES = [

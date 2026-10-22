@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// hiring-forms.gs -- 2026-10-13, per Uday: rethink the Interview Report Google Form.
+// hiring-form.gs -- 2026-10-13, per Uday: rethink the Interview Report Google Form.
 // Run from the Apps Script editor (not web-exposed), same project as hiring.gs.
 //
 //   1. hirPreviewReportForm  -> only LOGS what would change. Run this first.
