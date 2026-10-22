@@ -88,3 +88,32 @@ T('apptBackfillRun takes the lock once (no nested lock) and logs', () => {
   const res = ctx.apptBackfillRun();
   assert.strictEqual(res.created, 1); assert.ok(logs.some((l) => /apptBackfill/.test(l)));
 });
+
+// ── fix round 1 ──
+T('same phone on two rows, each with a future interview -> one appointment', () => {
+  reset([appRow({ INTERVIEW_AT: FUT }), appRow({ INTERVIEW_AT: new Date(FUT.getTime() + 864e5) })]);
+  assert.strictEqual(ctx.apptBackfill_(NOW).created, 1); assert.strictEqual(appts().length, 1);
+});
+T('a garbage INTERVIEW_AT does not throw, gets no appointment, other rows still processed', () => {
+  reset([appRow({ INTERVIEW_AT: 'garbage', phone: '9000000001' }), appRow({ INTERVIEW_AT: FUT, phone: '9000000002' })]);
+  const res = ctx.apptBackfill_(NOW);
+  assert.strictEqual(res.created, 1); assert.strictEqual(appts()[0].row, 3);
+});
+T('a Demo Done row with no stamp gets the shortlist stamp', () => {
+  reset([appRow({ STATUS: 'Demo Done', INTERVIEW_AT: PAST })]);
+  const res = ctx.apptBackfill_(NOW);
+  assert.strictEqual(res.shortlisted, 1); assert.ok(apps.rows[1][C.SHORTLISTED_AT - 1]);
+});
+T('a Rejected row with a future interview -> no appointment and no stamp', () => {
+  reset([appRow({ STATUS: 'Rejected', INTERVIEW_AT: FUT })]);
+  const res = ctx.apptBackfill_(NOW);
+  assert.deepStrictEqual([res.created, res.shortlisted], [0, 0]); assert.strictEqual(appts().length, 0);
+  assert.strictEqual(apps.rows[1][C.SHORTLISTED_AT - 1] || '', '');
+});
+T('an already-stamped row at Interview Scheduled+ keeps its stamp and is not counted', () => {
+  const S = new Date(Date.UTC(2026, 8, 1));
+  reset([appRow({ INTERVIEW_AT: PAST, SHORTLISTED_AT: S, SHORTLISTED_BY: 'p@lms.org.in' })]);
+  const res = ctx.apptBackfill_(NOW);
+  assert.strictEqual(res.shortlisted, 0); assert.strictEqual(apps.rows[1][C.SHORTLISTED_AT - 1].getTime(), S.getTime());
+  assert.strictEqual(apps.rows[1][C.SHORTLISTED_BY - 1], 'p@lms.org.in');
+});

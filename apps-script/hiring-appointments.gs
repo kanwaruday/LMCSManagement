@@ -361,6 +361,7 @@ function apptBackfill_(nowMs) {
   const all = apptAll_();
   let created = 0, shortlisted = 0;
   list.forEach(function (p) {
+    if (p.status === 'Rejected') return; // apptpropose refuses Rejected: a migrated appointment would be a forbidden state
     [['interview', p.interviewAt], ['demo', p.demoAt], ['md', p.mdInterviewAt]].forEach(function (kd) {
       const ms = hirMs_(kd[1]);
       if (!ms || ms <= nowMs) return;
@@ -371,7 +372,7 @@ function apptBackfill_(nowMs) {
         proposedBy: 'migration', proposedAt: new Date(nowMs), acceptorRole: kd[0] === 'md' ? 'Owner' : 'Principal', status: 'accepted',
         decidedBy: 'migration', decidedAt: new Date(nowMs), declineNote: '', eventId: '', calendarMode: 'none', calendarError: '' }));
     });
-    if (p.status !== 'Rejected' && hirLadderIndex_(p.status) >= hirLadderIndex_('Interview Scheduled') && !p.shortlistedAt) {
+    if (hirLadderIndex_(p.status) >= hirLadderIndex_('Interview Scheduled') && !p.shortlistedAt) {
       hirStampShortlist_(sheet, p.row, { email: 'migration' });
       shortlisted++;
     }
