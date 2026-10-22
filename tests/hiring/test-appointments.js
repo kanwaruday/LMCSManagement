@@ -168,6 +168,22 @@ T('cancel of an accepted one clears the time column only while it still holds th
   ctx.apptCancel_(principal, { id: appts()[1].id });
   assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1], other);
 });
+T('cancel refuses a past accepted appointment (it is history): no change, time column kept; clear skips it too', () => {
+  reset([appRow(Object.assign({ INTERVIEW_AT: PAST }, SL))]);
+  addAppt({ id: 'h1', kind: 'interview', row: 2, phone: '9876543210', status: 'accepted', start: PAST, proposedBy: 'c@lms.org.in' });
+  throws(() => ctx.apptCancel_(principal, { id: 'h1' }), /^This appointment has already happened$/);
+  throws(() => ctx.apptCancel_(clerk, { id: 'h1' }), /^This appointment has already happened$/);
+  assert.strictEqual(appts()[0].status, 'accepted');
+  assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1], PAST);
+  throws(() => ctx.hiringSchedule_(principal, { row: 2, clear: 'interview' }), /Nothing booked to clear/);
+  assert.strictEqual(appts()[0].status, 'accepted');
+});
+T('revive still ends a past accepted appointment (it does not go through the cancel guard)', () => {
+  reset([appRow(Object.assign({ STATUS: 'Rejected' }, SL))]);
+  addAppt({ id: 'h2', kind: 'interview', row: 2, phone: '9876543210', status: 'accepted', start: PAST, proposedBy: 'c@lms.org.in' });
+  ctx.hiringRevive_(principal, { row: 2, note: 'back' });
+  assert.strictEqual(appts()[0].status, 'cancelled');
+});
 T('revive cancels every open or accepted appointment, on a duplicate same-phone row too', () => {
   reset([appRow(Object.assign({ STATUS: 'Rejected' }, SL)), appRow(Object.assign({ phone: '+91 98765 43210', STATUS: 'Rejected' }, SL))]);
   addAppt({ id: 'a1', kind: 'interview', row: 3, phone: '9876543210', status: 'proposed', start: new Date(FUTURE), proposedBy: 'c@lms.org.in' });

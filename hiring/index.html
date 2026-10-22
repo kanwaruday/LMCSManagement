@@ -303,7 +303,11 @@ function nextStep_(a) {
     case '': return { act: 'shortlist', label: 'Shortlist' };
     case 'Shortlisted': return open('interview') ? { act: 'open', label: 'Interview proposed', disabled: true } : { act: 'book', kind: 'interview', label: book + 'interview' };
     case 'Interview Scheduled': return { act: 'interview', label: 'Interview report' };
-    case 'Interview Done': return open('demo') ? { act: 'demo', label: 'Demo report' } : { act: 'book', kind: 'demo', label: book + 'demo' };
+    case 'Interview Done': {
+      // The demo report only once a demo is accepted; a proposed one waits for the Principal's accept.
+      if ((a.appointments || []).some(function (x) { return x.kind === 'demo' && x.status === 'accepted'; })) return { act: 'demo', label: 'Demo report' };
+      return open('demo') ? { act: 'open', label: 'Demo proposed', disabled: true } : { act: 'book', kind: 'demo', label: book + 'demo' };
+    }
     case 'Demo Done': return { act: 'salary', label: 'Salary offer' };
     case 'Salary Offer': return open('md') ? { act: 'open', label: 'MD interview proposed', disabled: true } : { act: 'book', kind: 'md', label: 'Propose MD interview' };
     case 'MD Academics Interview Scheduled': return { act: 'open', label: 'Awaiting Owner', disabled: true };
@@ -363,8 +367,11 @@ function countsHtml_(counts) {
 function calRetryBtn_(x) {
   return ELEVATED && x.status === 'accepted' && x.calendarMode === 'none' ? '<button type="button" class="btn" data-act="calretry" data-id="' + esc_(x.id) + '" title="The event could not be put on the calendar">Calendar not updated — Retry</button>' : '';
 }
-function cancelBtn_(x) {
-  return (x.status === 'proposed' || x.status === 'accepted') && (ELEVATED || x.proposedBy === SESSION.email) ? '<button type="button" class="btn ghost" data-act="cancelappt" data-id="' + esc_(x.id) + '">Cancel</button>' : '';
+// Cancel: a proposal, or an accepted appointment still ahead, for someone not Rejected/Hired. A past accepted one is history
+// (the backend refuses it: cancelling would clear the applicant's time column).
+function cancelBtn_(x, a) {
+  const open = x.status === 'proposed' || (x.status === 'accepted' && new Date(x.start).getTime() > Date.now());
+  return open && (!a || active_(a)) && (ELEVATED || x.proposedBy === SESSION.email) ? '<button type="button" class="btn ghost" data-act="cancelappt" data-id="' + esc_(x.id) + '">Cancel</button>' : '';
 }
 
 // ── views ─────────────────────────────────────────────────────────
@@ -389,7 +396,7 @@ function renderClerkToday_() {
   return countsHtml_([['schedule', b.toSchedule.length, 'To schedule'], ['waiting', b.waiting.length, 'Waiting for Principal'], ['booked', b.booked.length, 'Booked'],
     ['reports', b.reportsToUpload.length, 'Reports to upload'], ['demos', b.demosToBook.length, 'Demos to book'], ['docs', b.documents.length, 'Documents to chase']]) +
     section_('schedule', 'To schedule', b.toSchedule.map(function (a) { return cardHtml_(a, declined(a)); }), 'No shortlisted applicant is waiting for a time. The Principal shortlists; then they appear here.') +
-    section_('waiting', 'Waiting for Principal', b.waiting.map(function (s) { return cardHtml_(s.a, at(s) + ' · proposed', false, cancelBtn_(s.appt)); }), 'Nothing waiting for the Principal.') +
+    section_('waiting', 'Waiting for Principal', b.waiting.map(function (s) { return cardHtml_(s.a, at(s) + ' · proposed', false, cancelBtn_(s.appt, s.a)); }), 'Nothing waiting for the Principal.') +
     section_('booked', 'Booked — call to confirm', b.booked.map(function (s) { return cardHtml_(s.a, at(s), false); }), 'Nothing booked for the coming week.') +
     section_('reports', 'Reports to upload', b.reportsToUpload.map(function (s) { return cardHtml_(s.a, at(s), { act: 'upload', kind: s.appt.kind, label: 'Upload ' + s.appt.kind + ' report' }); }), 'No reports to upload.') +
     section_('demos', 'Demos to book', b.demosToBook.map(function (a) { return cardHtml_(a); }), 'No demos to book.') +
@@ -400,7 +407,7 @@ function renderClerkToday_() {
 function inCampus_(x) { return campusFilter === 'ALL' || x.campus === campusFilter; }
 function apptCardHtml_(x, mine) {
   const pill = { proposed: 'warn', accepted: 'ok', declined: 'bad' }[x.status] || '';
-  const acts = mine ? cancelBtn_(x) + calRetryBtn_(x)
+  const acts = mine ? cancelBtn_(x, byRow_(Number(x.row))) + calRetryBtn_(x)
     : '<button type="button" class="btn primary" data-act="accept" data-id="' + esc_(x.id) + '">Accept</button>' +
       '<input class="inp" id="dn-' + esc_(x.id) + '" placeholder="Why decline? (they see it)" aria-label="Reason for declining" style="width:auto;flex:1;min-width:140px">' +
       '<button type="button" class="btn danger" data-act="decline" data-id="' + esc_(x.id) + '">Decline</button>';
@@ -544,7 +551,7 @@ function apptBlockHtml_(a) {
     return '<div class="report"><div class="r-head"><span>' + esc_(KIND_LABEL[x.kind] + ' · ' + fmtWhen_(x.start)) + '</span><span class="pill ' + pill + '">' + esc_(x.status) + '</span></div>' +
       '<div class="note">Proposed by ' + esc_(x.proposedBy) + (x.status === 'accepted' && x.calendarMode === 'none' ? ' · calendar not updated' : '') + (x.reportFiled ? ' · report filed' : '') + '</div>' +
       (x.declineNote ? '<div class="note">Declined: ' + esc_(x.declineNote) + '</div>' : '') +
-      ((cancelBtn_(x) || calRetryBtn_(x)) ? '<div class="foot" style="margin-top:4px">' + cancelBtn_(x) + calRetryBtn_(x) + '</div>' : '') + '</div>';
+      ((cancelBtn_(x, a) || calRetryBtn_(x)) ? '<div class="foot" style="margin-top:4px">' + cancelBtn_(x, a) + calRetryBtn_(x) + '</div>' : '') + '</div>';
   }).join('') : '<div class="note">No appointments yet.</div>';
   const kinds = [];
   if (a.status === 'Shortlisted' || a.status === 'Interview Scheduled' || (a.status === '' && IS_PRINCIPAL)) kinds.push('interview');
@@ -770,7 +777,7 @@ function post_(action, body, msgId, btn, okText) {
     if (btn) btn.disabled = false;
     if (!res.success) { msg_(msgId, res.error || 'Could not save', 'err'); return null; }
     if (res.applicants) { DATA = res; buildRoles_(); render_(); loadAppts_(); }
-    if (res.toAccept) { APPTS = res; refreshApplicants_(); } // apptdecide / apptcalendarretry return the apptlist
+    if (res.toAccept) { APPTS = res; render_(true); refreshApplicants_(); } // apptdecide / apptcalendarretry return the apptlist
     msg_(msgId, okText || 'Saved ✓', 'ok');
     return res;
   }).catch(function () { if (btn) btn.disabled = false; msg_(msgId, 'Network error — try again', 'err'); return null; });

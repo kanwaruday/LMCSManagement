@@ -99,6 +99,7 @@ calendarError`. `myProposals` keeps the latest declined proposal per person and 
 - **Cancelling:**
   - `Appointment not found`
   - `This appointment is already …`
+  - `This appointment has already happened` (an accepted appointment whose time has passed is history; it can't be cancelled)
   - `Only the proposer or a Principal, Coordinator or the Owner can cancel this`
 - **Upload (Task 5):** `… must be a score from 1 to 5`, `Give at least one capability score …`, a
   PDF/JPG/PNG type error, and a 7 MB size error.

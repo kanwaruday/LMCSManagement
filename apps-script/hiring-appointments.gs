@@ -316,6 +316,9 @@ function testCalendarWrite(email) {
 function apptCancelCore_(caller, appt, note) {
   const cur = apptById_(appt.id);
   if (cur.status !== 'proposed' && cur.status !== 'accepted') throw new Error('This appointment is already ' + cur.status);
+  // A past accepted appointment is history: cancelling it would clear the applicant's time column. (Revive and reject
+  // end appointments through apptEnd_ directly; reject skips past accepted ones anyway.)
+  if (cur.status === 'accepted' && hirMs_(cur.start) <= Date.now()) throw new Error('This appointment has already happened');
   if (cur.proposedBy !== caller.email && !hirElevated_(caller)) throw new Error('Only the proposer or a Principal, Coordinator or the Owner can cancel this');
   const sheet = hirSheet_();
   hirScopedRow_(caller, sheet, cur.row);

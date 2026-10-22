@@ -1758,7 +1758,7 @@ function hiringSchedule_(caller, body) {
       // can't throw after some cancels were written).
       const inScope = function (a) { try { hirScopedRow_(caller, sheet, a.row); return true; } catch (e) { return false; } };
       const hits = apptForPerson_(apptAll_(), r.row, r.phone)
-        .filter(function (a) { return a.kind === body.clear && (a.status === 'proposed' || a.status === 'accepted') && inScope(a); });
+        .filter(function (a) { return a.kind === body.clear && (a.status === 'proposed' || (a.status === 'accepted' && hirMs_(a.start) > Date.now())) && inScope(a); }); // past accepted = history
       if (!hits.length) throw new Error('Nothing booked to clear');
       hits.forEach(function (a) { apptCancelCore_(caller, a, 'cleared'); });
     }

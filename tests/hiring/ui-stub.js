@@ -152,6 +152,7 @@
         const x = appts.find((o) => o.id === b.id);
         if (!x) return fail('Appointment not found');
         if (x.status !== 'proposed' && x.status !== 'accepted') return fail('This appointment is already ' + x.status);
+        if (x.status === 'accepted' && ms(x.start) <= Date.now()) return fail('This appointment has already happened');
         if (x.proposedBy !== ME && clerk()) return fail('Only the proposer or a Principal, Coordinator or the Owner can cancel this');
         const wasAccepted = x.status === 'accepted';
         end(x, b.note);
