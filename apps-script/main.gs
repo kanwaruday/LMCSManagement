@@ -130,6 +130,10 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // role check, when Teacher Portal grows a new self-scoped action.
 const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
+// Fee Clerk (2026-10-22, per Uday): hiring legwork only -- browse, add an applicant, book interview/demo
+// slots. Never a decision (progress, reject, revive, Hired, reports): those stay with the Principal.
+const PDR_FEECLERK_GET_ACTIONS = ['hiringapplicants', 'hiringapprovalstatus'];
+const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'hiringschedule'];
 
 function doGet(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
@@ -138,7 +142,7 @@ function doGet(e) {
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
 
     const action = (e.parameter.action || 'teacherstats').toLowerCase();
-    if (pdrIsTeacherOnly_(caller) && PDR_TEACHER_GET_ACTIONS.indexOf(action) === -1) {
+    if (!pdrIsElevated_(caller) && !pdrLimitedAllows_(caller, action, false)) {
       return jsonOut_({ success: false, error: 'Not authorized' });
     }
 
@@ -200,7 +204,7 @@ function doPost(e) {
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
 
     const action = String(body.action || '').toLowerCase();
-    if (pdrIsTeacherOnly_(caller) && PDR_TEACHER_POST_ACTIONS.indexOf(action) === -1) {
+    if (!pdrIsElevated_(caller) && !pdrLimitedAllows_(caller, action, true)) {
       return jsonOut_({ success: false, error: 'Not authorized' });
     }
 
@@ -218,6 +222,12 @@ function doPost(e) {
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
     if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
     if (action === 'hiringrefreshtracker') return jsonOut_(hiringRefreshTracker_(caller));
+    if (action === 'hiringaddapplicant') return jsonOut_(hiringAddApplicant_(caller, body));
+    if (action === 'hiringschedule') return jsonOut_(hiringSchedule_(caller, body));
+    if (action === 'hiringmarkstage') return jsonOut_(hiringMarkStage_(caller, body));
+    if (action === 'hiringsubmitinterview') return jsonOut_(hiringSubmitInterview_(caller, body));
+    if (action === 'hiringsubmitdemo') return jsonOut_(hiringSubmitDemo_(caller, body));
+    if (action === 'hiringrevive') return jsonOut_(hiringRevive_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
@@ -291,7 +301,7 @@ function verifyCallerToken_(idToken) {
       // PDR_TEACHER_GET_ACTIONS/PDR_TEACHER_POST_ACTIONS and
       // pdrIsTeacherOnly_() below, which are what actually keep a
       // Teacher-only caller scoped to their own requests.
-      if (!roles.some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner' || r === 'Teacher'; })) return null;
+      if (!roles.some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner' || r === 'Teacher' || r === 'FeeClerk'; })) return null;
       // Column E (added 2026-09-10, Approvals delegation) -- a
       // Coordinator with this TRUE can decide approvals same as Owner;
       // Uday flips this cell by hand to delegate/revoke. Blank/FALSE
@@ -327,6 +337,20 @@ function pdrIsTeacherOnly_(caller) {
     && !callerHasRole_(caller, 'Principal')
     && !callerHasRole_(caller, 'Coordinator')
     && !callerHasRole_(caller, 'Owner');
+}
+
+// Principal, Coordinator or Owner -- the roles with the full action set. Everyone else (Teacher, FeeClerk)
+// is limited to the explicit lists above, see pdrLimitedAllows_.
+function pdrIsElevated_(caller) {
+  return callerHasRole_(caller, 'Principal') || callerHasRole_(caller, 'Coordinator') || callerHasRole_(caller, 'Owner');
+}
+
+// A non-elevated caller may call an action only if one of their limited roles lists it.
+function pdrLimitedAllows_(caller, action, isPost) {
+  const lists = [];
+  if (callerHasRole_(caller, 'Teacher')) lists.push(isPost ? PDR_TEACHER_POST_ACTIONS : PDR_TEACHER_GET_ACTIONS);
+  if (callerHasRole_(caller, 'FeeClerk')) lists.push(isPost ? PDR_FEECLERK_POST_ACTIONS : PDR_FEECLERK_GET_ACTIONS);
+  return lists.some(function (l) { return l.indexOf(action) !== -1; });
 }
 
 // Who may "view as" an employee in the Teacher Portal, and how far (2026-10-08, per Uday -- the
