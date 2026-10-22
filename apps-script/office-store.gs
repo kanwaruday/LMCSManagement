@@ -50,7 +50,6 @@ function officeOpen_(campus, fy) {
   const id = PropertiesService.getScriptProperties().getProperty(key);
   if (!id) throw new Error('NO_BOOK');
   const ss = SpreadsheetApp.openById(id);
-  if (OFFICE_MEMO) OFFICE_MEMO.books[key] = ss;
   Object.keys(OFFICE_TABLES).forEach(function (tab) {
     const have = ss.getSheetByName(tab);
     if (have) { officeEnsureHeader_(have, OFFICE_TABLES[tab]); return; }
@@ -58,6 +57,7 @@ function officeOpen_(campus, fy) {
     sh.getRange(1, 1, 1, OFFICE_TABLES[tab].length).setNumberFormat('@').setValues([OFFICE_TABLES[tab]]);
     sh.setFrozenRows(1);
   });
+  if (OFFICE_MEMO) OFFICE_MEMO.books[key] = ss; // memoised only once the headers check out
   return ss;
 }
 
@@ -69,6 +69,8 @@ function officeEnsureHeader_(sheet, columns) {
   while (head.length && head[head.length - 1] === '') head.pop();
   for (let i = 0; i < head.length; i++) if (head[i] !== columns[i]) throw new Error('HEADER_MISMATCH');
   if (head.length >= columns.length) return;
+  // Sheets throws past the grid (a new sheet has 26 columns), so widen it first.
+  if (sheet.getMaxColumns() < columns.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), columns.length - sheet.getMaxColumns());
   sheet.getRange(1, head.length + 1, 1, columns.length - head.length).setNumberFormat('@').setValues([columns.slice(head.length)]);
 }
 

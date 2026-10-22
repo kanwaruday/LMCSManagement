@@ -146,4 +146,19 @@ module.exports = function run(t) {
     assert.equal(c.getSheetByName('Categories').values.length, 9, 'Categories seed unchanged');
     h.ctx.officeConfigBook_(); assert.equal(c.getSheetByName('Accounts').values.length, 1, 'second open adds nothing');
   });
+  t.test('old book with exactly 14 columns migrates without throwing; a wide sheet gets no insertColumnsAfter', () => {
+    const h = boot(); const b = oldBook(h, '2026-27'); const sh = b.getSheetByName('DayBook'); sh.maxCols = 14;
+    const ss = open(h);
+    assert.equal(sh.values[0].length, 26); assert.ok(sh.maxCols >= 26); assert.equal(sh.insertCalls, 1);
+    const wide = boot(); oldBook(wide, '2026-27'); open(wide);
+    assert.equal(wide.books['BOOK-LMS1-2026-27'].getSheetByName('DayBook').insertCalls, 0);
+    assert.ok(ss);
+  });
+
+  t.test('a book that fails its header check is not memoised', () => {
+    const h = boot(); const b = h.addBook('LMS1', '2026-27'); b.insertSheet('DayBook').getRange(1, 1, 1, 2).setNumberFormat('@').setValues([['id', 'bad']]);
+    h.run('officeMemoStart_()');
+    assert.throws(() => open(h), /HEADER_MISMATCH/);
+    assert.equal(h.run('Object.keys(OFFICE_MEMO.books).length'), 0);
+  });
 };

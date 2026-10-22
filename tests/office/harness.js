@@ -30,7 +30,12 @@ const DEFAULT_FIXTURE = {
 // ISO dates/datetimes become Date, '='-prefixed text becomes a formula marker, numeric text becomes a Number.
 function sheetsLike(sheet) {
   const getRange = sheet.getRange;
+  // Like Sheets: a new sheet has 26 columns, a range past the grid throws, insertColumnsAfter widens it.
+  sheet.maxCols = 26; sheet.insertCalls = 0;
+  sheet.getMaxColumns = () => sheet.maxCols;
+  sheet.insertColumnsAfter = (pos, n) => { sheet.insertCalls++; sheet.maxCols += n; };
   sheet.getRange = (...a) => {
+    if (a[1] + (a[3] || 1) - 1 > sheet.maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
     const r = getRange(...a); let fmt = null; const setValues = r.setValues;
     r.setNumberFormat = (f) => { fmt = f; return r; };
     r.setValues = (v) => setValues(fmt === '@' ? v : v.map((row) => row.map((x) => {
