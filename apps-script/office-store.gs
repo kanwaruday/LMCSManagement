@@ -11,7 +11,7 @@ var OFFICE_TABLES = {
   Closes: ['id', 'campus', 'close_date', 'closing_json', 'created_at', 'created_by'],
   Reopens: ['id', 'campus', 'close_date', 'reason', 'created_at', 'created_by'],
   Reports: ['id', 'campus', 'report_date', 'json', 'late', 'submitted_for', 'created_at', 'created_by'],
-  Deposits: ['id', 'campus', 'covers_date', 'amount_paise', 'bank_ref', 'file_id', 'created_at', 'created_by'],
+  Deposits: ['id', 'campus', 'covers_date', 'amount_paise', 'bank_ref', 'file_id', 'created_at', 'created_by', 'bank_account'],
   DepositSigns: ['id', 'campus', 'deposit_id', 'created_at', 'created_by'],
   ErpTotals: ['id', 'campus', 'total_date', 'amount_paise', 'created_at', 'created_by'],
   Files: ['id', 'campus', 'drive_id', 'name', 'size', 'fingerprint', 'category', 'belongs_to', 'created_at', 'created_by'],

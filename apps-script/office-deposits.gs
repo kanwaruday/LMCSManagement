@@ -39,26 +39,30 @@ function officeDepositAdd_(ctx, data) {
   // A retry may arrive after 1 April: look in both recent books (R41).
   const prior = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Deposits')); }, []).filter(function (r) { return r.id === String(data.id); })[0];
   if (prior) return officeDepositRepair_(ctx, prior); // retry: complete any leg a crash left behind (R21)
+  const bankAccount = officeBlank_(data.bank_account) ? 'bank:' + data.campus : String(data.bank_account);
+  const acct = officeAccount_(bankAccount);
+  if (!acct || !acct.active || acct.kind !== 'bank' || acct.campus !== data.campus) throw new Error('BAD_ACCOUNT');
   officeAssertOpen_(ss, today); // covers_date may be a closed day; the deposit itself lands today
   const book = officeRows_(ss, 'DayBook');
   if (data.amount_paise > officeBalances_(officeOpening_(ss), book, today).closing.cash.fee) throw officeCoded_('INSUFFICIENT_CASH');
   const res = officeAppend_(ss, 'Deposits', {
-    id: data.id, campus: data.campus, covers_date: data.covers_date, amount_paise: data.amount_paise, bank_ref: bankRef, file_id: data.file_id,
+    id: data.id, campus: data.campus, covers_date: data.covers_date, amount_paise: data.amount_paise, bank_ref: bankRef, file_id: data.file_id, bank_account: bankAccount,
   }, ctx.caller, { action: 'deposit.add', campus: data.campus });
-  officeDepositLegs_(ctx, ss, res.id, data.campus, today, data.amount_paise, bankRef, data.covers_date, data.file_id);
+  officeDepositLegs_(ctx, ss, res.id, data.campus, today, data.amount_paise, bankRef, data.covers_date, data.file_id, bankAccount);
   return { id: res.id, duplicate: false };
 }
 
 // Writes both Day Book legs of a deposit; each is idempotent by id, so re-running only fills gaps.
-function officeDepositLegs_(ctx, ss, id, campus, date, amount, bankRef, coversDate, fileId) {
-  const leg = function (suffix, category, direction, mode, bucket) {
+function officeDepositLegs_(ctx, ss, id, campus, date, amount, bankRef, coversDate, fileId, bankAccount) {
+  const leg = function (suffix, category, direction, mode, bucket, account) {
     officeDaybookWrite_(ss, ctx, {
       id: id + ':' + suffix, campus: campus, entry_date: date, direction: direction, mode: mode, bucket: bucket, category: category,
       amount_paise: amount, payee: '', narration: 'Deposit ' + bankRef + ' for ' + coversDate, file_id: fileId, reverses: '',
+      account: account, charged_to: campus,
     }, 'deposit.add');
   };
-  leg('out', 'deposit_cash_out', 'OUT', 'cash', 'fee');
-  leg('in', 'deposit_bank_in', 'IN', 'bank', '');
+  leg('out', 'deposit_cash_out', 'OUT', 'cash', 'fee', 'cash:' + campus);
+  leg('in', 'deposit_bank_in', 'IN', 'bank', '', bankAccount);
 }
 
 // Retry of a saved deposit: legs belong to the deposit's own IST date. Open day: fill missing legs.
@@ -69,7 +73,7 @@ function officeDepositRepair_(ctx, dep) {
   const have = officeRows_(ss, 'DayBook').map(function (r) { return r.id; });
   if (have.indexOf(dep.id + ':out') !== -1 && have.indexOf(dep.id + ':in') !== -1) return { id: dep.id, duplicate: true };
   if (officeIsFrozen_(ss, date)) throw officeCoded_('LEGS_MISSING');
-  officeDepositLegs_(ctx, ss, dep.id, dep.campus, date, dep.amount_paise, dep.bank_ref, dep.covers_date, dep.file_id);
+  officeDepositLegs_(ctx, ss, dep.id, dep.campus, date, dep.amount_paise, dep.bank_ref, dep.covers_date, dep.file_id, dep.bank_account || 'bank:' + dep.campus);
   return { id: dep.id, duplicate: true };
 }
 

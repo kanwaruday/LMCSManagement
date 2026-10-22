@@ -234,4 +234,22 @@ module.exports = function run(t) {
     ['dep1:out', 'dep1:in'].forEach((leg) => assert.equal(h.call('daybook.reverse', { id: 'rv-' + leg, campus: 'LMS1', reverses: leg }, 'clerk-token').code, 'DEPOSIT_LEG', leg));
     assert.equal(rows(h, 'DayBook').filter((r) => r.reverses).length, 0);
   });
+  t.test('deposit legs carry accounts; default bank account; another campus bank refused', () => {
+    const h = fresh(); fee(h, 20000);
+    assert.equal(dep(h, { id: 'da1' }).success, true);
+    const leg = (id) => rows(h, 'DayBook').filter((r) => r.id === id)[0];
+    assert.deepEqual([leg('da1:out').account, leg('da1:out').charged_to, leg('da1:in').account, leg('da1:in').charged_to], ['cash:LMS1', 'LMS1', 'bank:LMS1', 'LMS1']);
+    assert.equal(h.call('account.add', { id: 'sbi1', campus: 'LMS1', kind: 'bank', label: 'SBI' }, 'fh-token').success, true);
+    assert.equal(dep(h, { id: 'da2', bank_account: 'sbi1' }).success, true);
+    assert.equal(leg('da2:in').account, 'sbi1');
+    assert.equal(rows(h, 'Deposits').filter((r) => r.id === 'da2')[0].bank_account, 'sbi1');
+    ['bank:LMS2', 'cash:LMS1', 'nope'].forEach((a) => assert.equal(dep(h, { id: 'bad' + a, bank_account: a }).error, 'BAD_ACCOUNT', a));
+    assert.equal(rows(h, 'Deposits').length, 2);
+    // R21 repair: a crash left the in leg missing; the retry writes it to the chosen account.
+    const sh = h.ctx.officeOpen_('LMS1', '2026-27').getSheetByName('DayBook');
+    const data = sh.getDataRange().getValues(), at = data.findIndex((r) => r[0] === 'da2:in');
+    sh.deleteRow(at + 1);
+    assert.equal(dep(h, { id: 'da2', bank_account: 'sbi1' }).duplicate, true);
+    assert.equal(leg('da2:in').account, 'sbi1');
+  });
 };
