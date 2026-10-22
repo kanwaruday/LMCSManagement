@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig } = await import('../../office/js/daybook.js');
+  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -27,8 +27,8 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(mergeQueued([row('n1')], [q('n1', 'waiting', { entry_date: '2026-10-21' })], '2026-10-21').length, 1);
   // loadConfig: fetched every visit, saved to the cache; offline or refused keeps the cache (null)
   let saved = null, nCalls = 0;
-  const conf = { success: true, categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'] };
-  assert.deepStrictEqual(await loadConfig({ read: async () => { nCalls++; return conf; } }, (c) => { saved = c; }), { categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'] });
+  const conf = { success: true, categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'], collections: [4] };
+  assert.deepStrictEqual(await loadConfig({ read: async () => { nCalls++; return conf; } }, (c) => { saved = c; }), { categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'], collections: [4] });
   assert.deepStrictEqual(saved.vehicles, [3]); assert.strictEqual(nCalls, 1);
   saved = null;
   for (const r of [{ success: false }, { success: true, stale: true }]) assert.strictEqual(await loadConfig({ read: async () => r }, (c) => { saved = c; }), null);
@@ -61,7 +61,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(bankFH.includes('credit_settlement') && !bankFH.includes('cash_transfer'));
   assert.ok(!flat(categoriesFor(cfgCats, 'cash', { role: 'Owner' })).includes('credit_settlement'));
   assert.deepStrictEqual(categoriesFor(cfgCats, 'cash', { role: 'Owner' }).map((g) => g.group), ['fee', 'income', 'school', 'transport', 'movement']);
-  const base = { campus: 'LMS1', date: '2026-10-21', account: A('cash:LMS1', 'cash', 'LMS1'), category: CAT('stationery', 'OUT', 'school'), bucket: 'petty', mode: 'bank', amount: '1,234.50', payee: ' Raju ', narration: '', charged_to: '' };
+  const base = { campus: 'LMS1', date: '2026-10-21', account: A('cash:LMS1', 'cash', 'LMS1'), category: CAT('stationery', 'OUT', 'school'), bucket: 'petty', mode: 'bank', amount: '1,234.50', payee: ' Raju ', narration: '', charged_to: '', hasFile: true };
   let r = entryPayload(base);
   assert.ok(r.ok); assert.deepStrictEqual(r.data, { campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', account: 'cash:LMS1', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 123450, payee: 'Raju', narration: '', charged_to: 'LMS1', file_id: '' });
   r = entryPayload({ ...base, account: A('bank:LMS1', 'bank', 'LMS1'), mode: 'upi', bucket: 'petty' }); assert.strictEqual(r.data.mode, 'upi'); assert.strictEqual(r.data.bucket, ''); // bank: client picks bank/upi
@@ -72,6 +72,20 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(entryPayload({ ...base, category: null }).errors.category);
   assert.strictEqual(entryPayload({ ...base, charged_to: 'CHAIRMAN' }).data.charged_to, 'CHAIRMAN');
   for (const bad of ['0', '-5', '0.1+0.2', '', '1.234']) assert.ok(entryPayload({ ...base, amount: bad }).errors.amount, bad);
+  // every payment needs the photo; money in does not; reversal never goes through here
+  assert.strictEqual(entryPayload({ ...base, hasFile: false }).errors.file, PAYMENT_PHOTO_HINT);
+  assert.ok(entryPayload({ ...base, category: CAT('donation', 'IN', 'income'), hasFile: false }).ok, 'IN needs no photo');
+  assert.ok(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'V1', hasFile: false }).errors.file, 'credit bills too');
+  assert.ok(entryPayload({ ...base, category: CAT('cash_transfer', 'OUT', 'movement'), hasFile: false }).errors.file, 'cash transfer too');
+  // student collections: head required for both categories, never sent for others
+  const scIn = { ...base, bucket: 'other', category: CAT('student_collection', 'IN', 'income'), hasFile: false };
+  assert.ok(entryPayload(scIn).errors.collection);
+  assert.strictEqual(entryPayload({ ...scIn, collection: 'mun' }).data.collection, 'mun');
+  const scOut = { ...base, category: CAT('student_collection_paid', 'OUT', 'school'), collection: 'mun' };
+  assert.strictEqual(entryPayload(scOut).data.collection, 'mun'); assert.ok(entryPayload({ ...scOut, collection: '' }).errors.collection);
+  assert.ok(!('collection' in entryPayload({ ...base, collection: 'mun' }).data), 'other categories send no collection');
+  assert.deepStrictEqual(collectionOptions([{ id: 'a', label: 'A', active: true }, { id: 'b', label: 'B', active: false }]), [{ value: 'a', label: 'A' }]);
+  assert.deepStrictEqual(collectionOptions(undefined), []);
   // vehicle categories
   const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true) };
   assert.ok(entryPayload(tyres).errors.vehicle); assert.strictEqual(entryPayload({ ...tyres, vehicle: 'FLEET' }).data.vehicle, 'FLEET');

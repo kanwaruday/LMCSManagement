@@ -82,6 +82,11 @@ export function vehicleOptions(vehicles, campus, categoryId) {
     categoryId === 'fuel' ? [] : [{ value: 'FLEET', label: 'Shared / whole fleet' }]);
 }
 
+// Active student collection heads as select options.
+export const collectionOptions = (collections) => (collections || []).filter((c) => c.active).map((c) => ({ value: c.id, label: c.label }));
+export const COLLECTION_CATEGORIES = ['student_collection', 'student_collection_paid'];
+export const PAYMENT_PHOTO_HINT = 'Photo of the bill, or of the hand-written receipt signed by the person paid.';
+
 // The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
 export const keepChoice = (prev, values, fallback) => (prev && values.includes(prev) ? prev : fallback);
 
@@ -103,9 +108,9 @@ export function parseLitresToMl(text) {
 const parseOdometer = (text) => { const m = /^\s*(\d+)\s*$/.exec(String(text)); const n = m && Number(m[1]); return m && Number.isSafeInteger(n) ? n : null; };
 
 // form: {campus, date, account (object), category (object), mode (bank accounts only: bank|upi), bucket, amount, payee, narration,
-//   charged_to, vehicle, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
+//   charged_to, vehicle, collection, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
 // Returns {ok, data, errors}. Direction comes from the category, mode from the account kind, bucket only for cash;
-// file_id is added by the caller once the photo is queued.
+// file_id is added by the caller once the photo is queued (every payment has one: bill or signed receipt).
 export function entryPayload(form) {
   const errors = {}, acct = form.account, cat = form.category, kind = acct && acct.kind;
   if (!acct) errors.account = 'Choose the account.';
@@ -132,6 +137,11 @@ export function entryPayload(form) {
     data.odometer_note = (form.odometer_note || '').trim();
     if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
   }
+  if (cat && COLLECTION_CATEGORIES.includes(cat.id)) {
+    data.collection = form.collection || '';
+    if (!data.collection) errors.collection = 'Choose which student collection this is.';
+  }
+  if (cat && cat.direction === 'OUT' && !form.hasFile && !errors.file) errors.file = PAYMENT_PHOTO_HINT;
   if (kind === 'credit') data.supplier_bill_no = (form.supplier_bill_no || '').trim();
   if (cat && cat.id === 'credit_settlement') {
     data.settles_account = form.settles_account || '';
@@ -158,7 +168,7 @@ export function balancesTable(b) {
 export async function loadConfig(api, save) {
   const conf = await api.read('config.get', {}, 'dbcfg').catch(() => null);
   if (!conf || !conf.success || conf.stale) return null;
-  const cfg = { categories: conf.categories, accounts: conf.accounts, vehicles: conf.vehicles, campuses: conf.campuses };
+  const cfg = { categories: conf.categories, accounts: conf.accounts, vehicles: conf.vehicles, campuses: conf.campuses, collections: conf.collections };
   save(cfg);
   return cfg;
 }
@@ -167,7 +177,7 @@ export async function showDayBook(root, session, api, outbox) {
   const campus = session.campus;
   let date = todayIst();
   const cached = cacheGet('config') || {};
-  let cfg = { categories: cached.categories || [], accounts: cached.accounts || [], vehicles: cached.vehicles || [], campuses: cached.campuses || [] };
+  let cfg = { categories: cached.categories || [], accounts: cached.accounts || [], vehicles: cached.vehicles || [], campuses: cached.campuses || [], collections: cached.collections || [] };
   let loaded = { rows: [], ok: false };
   let seq = 0;
   const catLabel = (id) => ((cfg.categories || []).find((c) => c.id === id) || {}).label || id; // inactive categories keep their label in old rows
@@ -194,7 +204,9 @@ export async function showDayBook(root, session, api, outbox) {
   const odoNoteIn = h('input', { type: 'text', autocomplete: 'off' });
   const odoNoteF = field('db-odonote', 'Odometer note (only if the reading is lower, e.g. meter replaced)', odoNoteIn);
   const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
-  const fileF = field('db-file', 'Fuel bill photo (showing the odometer)', fileIn);
+  const fileF = field('db-file', 'Photo', fileIn, PAYMENT_PHOTO_HINT);
+  const collSel = h('select', {});
+  const collF = field('db-coll', 'Collection', collSel);
   const billIn = h('input', { type: 'text', autocomplete: 'off' });
   const billF = field('db-bill', 'Supplier bill no.', billIn);
   const settlesSel = h('select', {});
@@ -224,17 +236,22 @@ export async function showDayBook(root, session, api, outbox) {
   const paintCharged = () => keep(chargedSel, () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c }, chargedLabel(c)))), campus);
   const paintSettles = () => keep(settlesSel, () => settlesSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(cfg.accounts || []).filter((a) => a.active && a.kind === 'credit').map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'))));
   const paintVehicles = () => keep(vehSel, () => { const c = curCat(); vehSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...vehicleOptions(cfg.vehicles, campus, c && c.id).map((o) => h('option', { value: o.value }, o.label))); });
+  const paintCollections = () => keep(collSel, () => collSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...collectionOptions(cfg.collections).map((o) => h('option', { value: o.value }, o.label))));
   const sync = () => {
     const a = curAcct(), c = curCat();
     modeF.root.hidden = !(a && a.kind === 'bank');
     bucketF.root.hidden = !(a && a.kind === 'cash');
     billF.root.hidden = !(a && a.kind === 'credit');
     vehF.root.hidden = !(c && c.needs_vehicle);
-    [litresF, odoF, odoNoteF, fileF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    [litresF, odoF, odoNoteF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    collF.root.hidden = !(c && COLLECTION_CATEGORIES.includes(c.id));
+    fileF.root.hidden = !(c && c.direction === 'OUT'); // every payment carries a photo
+    fileIn.required = !fileF.root.hidden;
+    fileF.root.querySelector('label').textContent = c && c.id === 'fuel' ? 'Fuel bill photo (showing the odometer)' : 'Photo of the bill or signed receipt';
     [settlesF, settlesF2].forEach((f) => { f.root.hidden = !(c && c.id === 'credit_settlement'); });
     dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : '';
   };
-  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); sync(); };
+  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); paintCollections(); sync(); };
   acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); sync(); });
   catSel.addEventListener('change', () => { paintVehicles(); sync(); });
   paintForm();
@@ -249,7 +266,7 @@ export async function showDayBook(root, session, api, outbox) {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
 
-  const FIELDS = { account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
+  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (roll()) return;
@@ -257,16 +274,16 @@ export async function showDayBook(root, session, api, outbox) {
     const file = fileIn.files && fileIn.files[0];
     const r = entryPayload({
       campus, date, account: curAcct(), category: curCat(), mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value,
-      charged_to: chargedSel.value, vehicle: vehSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      charged_to: chargedSel.value, vehicle: vehSel.value, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
       supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
     });
     if (!r.ok) { Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; }); return; }
     saveBtn.disabled = true; // double-tap guard; the id is assigned once per enqueue
     try {
-      if (r.data.category === 'fuel') { // photo first (FIFO, R7), then the entry that names it
+      if (r.data.direction === 'OUT') { // photo first (FIFO, R7), then the entry that names it
         saveMsg.textContent = 'Preparing the photo…';
         const img = await resizeImage(file);
-        r.data.file_id = await outbox.enqueue('file.upload', { campus, category: 'bill', belongs_to: '', name: file.name || 'fuel-bill', mime: img.mime, base64: img.base64 });
+        r.data.file_id = await outbox.enqueue('file.upload', { campus, category: 'bill', belongs_to: '', name: file.name || (r.data.category === 'fuel' ? 'fuel-bill' : 'payment-bill'), mime: img.mime, base64: img.base64 });
       }
       await outbox.enqueue('daybook.add', r.data);
       [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
@@ -276,7 +293,7 @@ export async function showDayBook(root, session, api, outbox) {
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -293,12 +310,14 @@ export async function showDayBook(root, session, api, outbox) {
   }
 
   // Second line of a list row: account, mode/bucket, charged-to (when not the campus), vehicle, fuel figures, then the free text.
+  const collLabel = (id) => ((cfg.collections || []).find((c) => c.id === id) || {}).label || id;
   const rowMeta = (it) => [
     rowAccountLabel(cfg.accounts, { ...it, campus }),
     it.bucket ? BUCKETS[it.bucket] : '', it.mode === 'upi' ? 'UPI' : '',
     it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
     it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
     it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
+    it.collection ? collLabel(it.collection) : '',
     it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
   ].filter(Boolean);
 
