@@ -179,3 +179,11 @@ T('updatehiringstatus Rejected: reason required, written with the note, Notes ke
   assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Rejected'); assert.strictEqual(apps.rows[1][C.REJECT_REASON - 1], 'Took another offer / withdrew');
   assert.strictEqual(apps.rows[1][C.NOTES - 1], 'called twice | Rejected: joined DAV');
 });
+
+T('approval status: a comma-list campus gets each of its own campuses', () => {
+  ctx.hirApprovedRequisitions_ = () => ({ LMS1: [{ roleLevel: 'TGT', subjects: 'English' }], LMS2: [], LMS3: [{ roleLevel: 'PRT', subjects: '' }] });
+  ctx.hirApprovedCampuses_ = () => ({});
+  const res = ctx.hiringApprovalStatus_({ campusId: 'LMS1,LMS2', roles: ['FeeClerk'] });
+  assert.deepStrictEqual(Array.from(res.campuses, (c) => c.campusId), ['LMS1', 'LMS2']);
+  assert.strictEqual(res.campuses[0].newPositions[0].roleKey, 'LMS1|TGT|English');
+});

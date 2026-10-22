@@ -704,7 +704,9 @@ function hiringRowNotes_(row) {
 // sister-campus applicant through this screen even though the
 // underlying candidate match could still exist.
 function hiringApprovalStatus_(caller) {
-  const visibleCampuses = caller.campusId === 'ALL' ? Object.keys(HIR_DISTRICT_CAMPUSES) : [caller.campusId];
+  // Own campuses only (a Fee Clerk's cell may be a comma list); ALL = every campus.
+  const own = String(caller.campusId || '').split(',').map(function (c) { return c.trim().toUpperCase(); }).filter(Boolean);
+  const visibleCampuses = own.indexOf('ALL') !== -1 ? Object.keys(HIR_DISTRICT_CAMPUSES) : own;
   const newPosition = hirApprovedRequisitions_('New/ Backup Position');
   const hiringDecision = hirApprovedCampuses_('Salary Offer Approval');
   return {
