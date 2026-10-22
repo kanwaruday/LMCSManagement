@@ -108,7 +108,7 @@ module.exports = function run(t) {
 
   t.test('cash differing from day book is returned in cashMismatch and does not block', () => {
     const h = fresh();
-    h.call('daybook.add', { id: 'e1', campus: 'LMS1', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 5000 }, 'clerk-token');
+    h.call('daybook.add', { id: 'e1', campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 5000 }, 'clerk-token');
     assert.equal(submit(h, { cash: { petty: 100, fee: 5000, other: 0 } }).success, true);
     assert.deepEqual(get(h).cashMismatch, [{ bucket: 'petty', report_paise: 100, daybook_paise: 0 }]);
     h.setNow(new Date('2026-10-21T10:05:00Z'));

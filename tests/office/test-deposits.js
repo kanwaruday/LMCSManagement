@@ -24,7 +24,7 @@ module.exports = function run(t) {
     return h;
   };
   let n = 0;
-  const fee = (h, amt, date, o) => h.call('daybook.add', Object.assign({ id: 'f' + (++n), campus: 'LMS1', entry_date: date || '2026-10-20', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: amt }, o), 'clerk-token');
+  const fee = (h, amt, date, o) => h.call('daybook.add', Object.assign({ id: 'f' + (++n), campus: 'LMS1', entry_date: date || '2026-10-20', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: amt }, o), 'clerk-token');
   const dep = (h, o, tok) => h.call('deposit.add', Object.assign({ id: 'd' + (++n), campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' }, o), tok || 'clerk-token');
   const recon = (h, date) => h.call('recon.get', { campus: 'LMS1', date: date || '2026-10-20' }, 'clerk-token');
   const rows = (h, tab) => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), tab);

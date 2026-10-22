@@ -25,7 +25,7 @@ module.exports = function run(t) {
     return h;
   };
   let n = 0;
-  const fee = (h, amt, date) => h.call('daybook.add', { id: 'f' + (++n), campus: 'LMS1', entry_date: date, direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: amt }, 'clerk-token');
+  const fee = (h, amt, date) => h.call('daybook.add', { id: 'f' + (++n), campus: 'LMS1', entry_date: date, account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: amt }, 'clerk-token');
   const get = (h, tok) => h.call('today.get', { campus: 'LMS1' }, tok || 'clerk-token');
   const ids = (r) => r.tasks.map((x) => x.id);
   const one = (r, id) => r.tasks.filter((x) => x.id === id)[0];
@@ -60,7 +60,7 @@ module.exports = function run(t) {
 
   t.test('finance head sees unsigned deposits and day close', () => {
     const h = fresh(); fee(h, 5000, '2026-10-20');
-    h.call('daybook.add', { id: 'seed', campus: 'LMS1', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 5000 }, 'clerk-token');
+    h.call('daybook.add', { id: 'seed', campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 5000 }, 'clerk-token');
     assert.equal(h.call('deposit.add', { id: 'd1', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' }, 'clerk-token').success, true);
     const r = get(h, 'fh-token');
     assert.equal(one(r, 'sign:2026-10-20').status, 'due');
@@ -142,13 +142,13 @@ module.exports = function run(t) {
     h.setNow(new Date('2027-02-20T10:00:00Z'));
     h.call('file.upload', { id: 'slip', campus: 'LMS1', category: 'deposit_proof', mime: 'application/pdf', base64: PDF, name: 's.pdf' }, 'clerk-token');
     const dates = []; for (let d = new Date('2026-04-01T00:00:00Z'); d < new Date('2027-02-20T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) dates.push(d.toISOString().slice(0, 10));
-    let k = 0; const add = (date, extra) => assert.equal(h.call('daybook.add', Object.assign({ id: 'b' + (++k), campus: 'LMS1', entry_date: date, direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 1000 }, extra), 'clerk-token').success, true);
+    let k = 0; const add = (date, extra) => assert.equal(h.call('daybook.add', Object.assign({ id: 'b' + (++k), campus: 'LMS1', entry_date: date, account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 1000 }, extra), 'clerk-token').success, true);
     dates.forEach((date, i) => {
       add(date);
-      if (i % 5 === 0) add(date, { mode: 'upi', bucket: '' }); // not cash
+      if (i % 5 === 0) assert.equal(h.call('daybook.add', { id: 'b' + (++k), campus: 'LMS1', entry_date: date, account: 'bank:LMS1', direction: 'IN', mode: 'upi', category: 'fee_collection', amount_paise: 1000 }, 'owner-token').success, true); // not cash (bank rows: FinanceHead/Owner)
       if (i % 7 === 0) h.call('deposit.add', { id: 'dp' + i, campus: 'LMS1', covers_date: date, amount_paise: 1000, bank_ref: 'R' + i, file_id: 'slip' }, 'clerk-token');
       if (i % 11 === 0) h.call('deposit.add', { id: 'dh' + i, campus: 'LMS1', covers_date: date, amount_paise: 500, bank_ref: 'H' + i, file_id: 'slip' }, 'clerk-token'); // part-deposited
-      if (i % 13 === 0) assert.equal(h.call('daybook.reverse', { id: 'rv' + i, campus: 'LMS1', reverses: 'b' + k }, 'clerk-token').success, true, 'reversed in full');
+      if (i % 13 === 0) assert.equal(h.call('daybook.reverse', { id: 'rv' + i, campus: 'LMS1', reverses: 'b' + k }, 'owner-token').success, true, 'reversed in full'); // b+k may be the bank row
     });
     assert.ok(dates.length >= 300, dates.length);
     const cutoff = '2027-02-13';

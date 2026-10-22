@@ -23,7 +23,7 @@ module.exports = function run(t) {
     return h;
   };
   let n = 0;
-  const add = (h, o) => h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 1000 }, o), 'clerk-token');
+  const add = (h, o) => h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 1000 }, o), 'clerk-token');
   const close = (h, d, o) => h.call('day.close', Object.assign({ id: 'c' + (++n), campus: 'LMS1', close_date: d }, o), 'fh-token');
   const reopen = (h, d, o, tok) => h.call('day.reopen', Object.assign({ id: 'r' + (++n), campus: 'LMS1', close_date: d, reason: 'wrong amount' }, o), tok || 'owner-token');
   const tick = (h, iso) => h.setNow(new Date(iso));
@@ -66,7 +66,7 @@ module.exports = function run(t) {
   t.test('close stores closing balances equal to daybook.balances', () => {
     const h = fresh();
     add(h, { amount_paise: 700 });
-    add(h, { direction: 'OUT', category: 'petty_expense', bucket: 'petty', amount_paise: 200 });
+    add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 200 });
     const r = close(h, '2026-10-20');
     const b = h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-20' }, 'clerk-token');
     const row = h.ctx.officeRows_(h.book, 'Closes')[0];
@@ -175,5 +175,26 @@ module.exports = function run(t) {
     close(h, '2026-10-20');
     const r = h.call('opening.set', { id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 5 }] }, 'fh-token');
     assert.equal(r.error, 'OPENING_LOCKED');
+  });
+  // Review Focus 4: a day close is the cash count; bank, UPI and credit rows keep their real date.
+  t.test('late bank/UPI/credit rows dated into a closed day are accepted; a cash row that day is DAY_CLOSED', () => {
+    const h = fresh();
+    const cfg = h.ctx.officeConfigBook_();
+    h.ctx.officeWriteRow_(cfg, 'Accounts', { id: 'pump1', label: 'Pump', kind: 'credit', campus: 'LMS1', active: 'true' });
+    h.ctx.officeWriteRow_(cfg, 'Vehicles', { reg: 'HP665805', label: 'Bus 1', kind: 'bus', campus: 'LMS1', active: 'true' });
+    add(h, { id: 'keep' });
+    assert.equal(close(h, '2026-10-20').success, true);
+    const fh = (o) => h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', account: 'bank:LMS1', direction: 'IN', category: 'other_in', amount_paise: 500 }, o), 'fh-token');
+    assert.equal(fh({ id: 'bank', mode: 'bank' }).success, true);
+    assert.equal(fh({ id: 'upi', mode: 'upi' }).success, true);
+    assert.equal(h.call('daybook.add', { id: 'fill', campus: 'LMS1', entry_date: '2026-10-19', account: 'pump1', direction: 'OUT', category: 'fuel', vehicle: 'HP665805',
+      litres_ml: 30000, odometer_km: 10, file_id: 'slip', amount_paise: 3000 }, 'clerk-token').success, true, 'credit fill on a frozen day');
+    assert.equal(add(h, { id: 'cash' }).code, 'DAY_CLOSED');
+    assert.equal(fh({ id: 'cash2', account: 'cash:LMS1', mode: 'cash', bucket: 'other' }).code, 'DAY_CLOSED', 'FinanceHead cash too');
+    assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2026-10-19', to: '2026-10-20' }, 'fh-token').entries.map((x) => x.id).sort(), ['bank', 'fill', 'keep', 'upi']);
+    // reversing a bank row while today is closed is not blocked; reversing a cash row is
+    h.ctx.officeWriteRow_(h.book, 'Closes', { id: 'x', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}', created_at: '2026-10-21T09:00:00.000Z' });
+    assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'bank' }, 'fh-token').success, true);
+    assert.equal(h.call('daybook.reverse', { id: 'rk', campus: 'LMS1', reverses: 'keep' }, 'fh-token').code, 'DAY_CLOSED');
   });
 };

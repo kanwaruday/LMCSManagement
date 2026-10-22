@@ -105,7 +105,7 @@ module.exports = function run(t) {
     const rows = h.ctx.officeRows_(book, 'DayBook');
     assert.strictEqual(rows.length, 6); assert.strictEqual(rows[0].amount_paise, 1250050); assert.strictEqual(rows[0].created_by, 'import');
     assert.strictEqual(h.ctx.officeIsClosed_(book, '2026-04-02'), true);
-    assert.strictEqual(h.call('daybook.add', { id: 'x', campus: 'LMS1', entry_date: '2026-04-02', direction: 'IN', mode: 'upi', category: 'fee_collection', amount_paise: 100 }).code, 'DAY_CLOSED');
+    assert.strictEqual(h.call('daybook.add', { id: 'x', campus: 'LMS1', entry_date: '2026-04-02', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 100 }).code, 'DAY_CLOSED');
     assert.strictEqual(JSON.stringify(h.call('daybook.balances', { campus: 'LMS1', date: '2026-04-03' }).closing.cash.fee), String(1250050 + 10 + 25000));
   });
 

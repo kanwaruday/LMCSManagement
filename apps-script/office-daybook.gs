@@ -20,6 +20,22 @@ function officeIsoDate_(s) {
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; // invalid month/day gives Invalid Date, which has no ISO string
 }
 
+// Defaults for rows written before Day Book v2 (blank account / charged_to).
+function officeRowAccount_(row) { return row.account || (row.mode === 'cash' ? 'cash:' : 'bank:') + row.campus; }
+function officeRowChargedTo_(row) { return row.charged_to || row.campus; }
+
+function officeBlank_(v) { return v === undefined || v === null || v === ''; }
+
+// Fee Clerk / Admin Manager (no FinanceHead or Owner role, P8): own campus, cash accounts, credit bills only for
+// vehicle categories; no bank rows, settlements or cash transfers. Used by daybook.add and daybook.reverse.
+function officeAssertAccountAllowed_(caller, acct, cat) {
+  if (caller.roles.indexOf('FinanceHead') !== -1 || caller.roles.indexOf('Owner') !== -1) return;
+  const id = cat && cat.id;
+  if (id === 'credit_settlement' || id === 'cash_transfer' || acct.kind === 'bank' ||
+      (acct.kind === 'credit' && !(cat && cat.needs_vehicle)) ||
+      (caller.campuses.indexOf('ALL') === -1 && caller.campuses.indexOf(acct.campus) === -1)) throw officeCoded_('FORBIDDEN_ACCOUNT');
+}
+
 function officeDaybookAdd_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (!officeIsoDate_(data.entry_date)) throw new Error('BAD_DATE');
@@ -29,23 +45,75 @@ function officeDaybookAdd_(ctx, data) {
   const cat = officeCategory_(data.category);
   if (!cat) throw new Error('BAD_CATEGORY');
   if (OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(cat.id) !== -1) throw officeCoded_('DEPOSIT_LEG_CATEGORY'); // only deposit.add writes legs (R37)
+  if (!cat.active) throw new Error('CATEGORY_INACTIVE');
   if (data.direction !== 'IN' && data.direction !== 'OUT') throw new Error('DIRECTION_MISMATCH');
   if (cat.direction !== data.direction) throw new Error('DIRECTION_MISMATCH');
-  officeCheckModeBucket_(data.mode, data.bucket);
+
+  // Money account: who may use it, then that it is this campus's, then what it may carry.
+  const acct = officeAccount_(String(data.account || ''));
+  if (!acct || !acct.active) throw new Error('BAD_ACCOUNT');
+  officeAssertAccountAllowed_(ctx.caller, acct, cat);
+  if (acct.campus !== data.campus) throw new Error('BAD_ACCOUNT');
+  let settlesAccount = '';
+  if (cat.id === 'credit_settlement') {
+    const sa = officeAccount_(String(data.settles_account || ''));
+    if (acct.kind !== 'bank' || !sa || !sa.active || sa.kind !== 'credit' || sa.campus !== data.campus) throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
+    settlesAccount = sa.id;
+  } else if (!officeBlank_(data.settles_account)) throw new Error('NOT_A_SETTLEMENT');
+  // Credit is an expense when incurred, so only expense categories; cash_transfer moves cash only.
+  if (acct.kind === 'credit' && (cat.direction !== 'OUT' || (cat.group !== 'school' && cat.group !== 'transport'))) throw officeCoded_('FORBIDDEN_ACCOUNT');
+  if (cat.id === 'cash_transfer' && acct.kind !== 'cash') throw officeCoded_('FORBIDDEN_ACCOUNT');
+
+  // mode is derived from the account kind; only a bank account lets the client choose (bank or upi).
+  const mode = acct.kind === 'bank' ? data.mode : acct.kind;
+  if (acct.kind === 'bank' ? ['bank', 'upi'].indexOf(mode) === -1 : !officeBlank_(data.mode) && data.mode !== acct.kind) throw new Error('BAD_MODE');
+  if (mode === 'cash' && OFFICE_BUCKETS.indexOf(data.bucket) === -1) throw new Error('BUCKET_REQUIRED');
+  if (mode !== 'cash' && data.bucket) throw new Error('BUCKET_NOT_ALLOWED');
+
+  const chargedTo = officeBlank_(data.charged_to) ? data.campus : data.charged_to;
+  if (chargedTo !== 'CHAIRMAN' && OFFICE_CAMPUSES.indexOf(chargedTo) === -1) throw new Error('BAD_CHARGED_TO');
+
+  const vehicle = officeNormReg_(data.vehicle);
+  if (cat.needs_vehicle) {
+    if (!vehicle) throw new Error('VEHICLE_REQUIRED');
+    if (vehicle !== 'FLEET' && !officeVehicles_().some(function (v) { return v.active && officeNormReg_(v.reg) === vehicle; })) throw new Error('BAD_VEHICLE');
+  } else if (vehicle) throw new Error('BAD_VEHICLE');
+
+  const isFuel = cat.id === 'fuel';
+  if (isFuel) {
+    if (typeof data.litres_ml !== 'number' || !Number.isSafeInteger(data.litres_ml) || data.litres_ml <= 0) throw new Error('LITRES_REQUIRED');
+    if (typeof data.odometer_km !== 'number' || !Number.isSafeInteger(data.odometer_km) || data.odometer_km < 0) throw new Error('ODOMETER_REQUIRED');
+    if (!data.file_id) throw officeCoded_('FILE_REQUIRED');
+  } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
+  const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
+
   const ss = officeOpen_(data.campus, officeFy_(data.entry_date));
   // A retry of an entry already saved stays a duplicate even if its day has since been closed.
-  if (!officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) officeAssertOpen_(ss, data.entry_date);
+  const saved = officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); });
+  // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
+  if (!saved && acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
+  // ponytail: FLEET is not one meter, so it has no odometer check.
+  if (!saved && isFuel && vehicle !== 'FLEET' && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
   return officeDaybookWrite_(ss, ctx, {
-    id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: data.mode,
-    bucket: data.mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
+    id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: mode,
+    bucket: mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
+    account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
+    odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
+    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live',
   }, 'daybook.add');
 }
 
-function officeCheckModeBucket_(mode, bucket) {
-  if (['cash', 'bank', 'upi'].indexOf(mode) === -1) throw new Error('BAD_MODE');
-  if (mode === 'cash' && OFFICE_BUCKETS.indexOf(bucket) === -1) throw new Error('BUCKET_REQUIRED');
-  if (mode !== 'cash' && bucket) throw new Error('BUCKET_NOT_ALLOWED');
+// Highest odometer of the vehicle's fuel fills dated on or before `date` in the campus's recent books (P4).
+// Reversed fills and reversals are left out, so a mistyped reading that was reversed stops counting. -1 when none.
+function officeLastOdometer_(campus, vehicle, date) {
+  const rows = officeRecentBooks_(campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  const reversed = {};
+  rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  return rows.reduce(function (m, r) {
+    if (r.category !== 'fuel' || r.reverses || reversed[r.id] || r.entry_date > date || r.odometer_km === '' || officeNormReg_(r.vehicle) !== vehicle) return m;
+    return Math.max(m, r.odometer_km);
+  }, -1);
 }
 
 function officeDaybookWrite_(ss, ctx, row, action) {
@@ -65,11 +133,18 @@ function officeDaybookReverse_(ctx, data) {
   // A leg reversed alone would split a deposit; correcting a deposit is a later feature (R37).
   if (/:(out|in)$/.test(orig.id) || OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(orig.category) !== -1) throw officeCoded_('DEPOSIT_LEG');
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
-  officeAssertOpen_(ss, officeToday_()); // defence in depth: day.close refuses today, but a closed today must never take a row
+  const account = officeRowAccount_(orig);
+  const acct = officeAccount_(account) || { id: account, kind: orig.mode === 'cash' ? 'cash' : orig.mode === 'credit' ? 'credit' : 'bank', campus: orig.campus };
+  officeAssertAccountAllowed_(ctx.caller, acct, officeCategory_(orig.category)); // inactive categories still reverse
+  // defence in depth: day.close refuses today, but a closed today must never take a cash row
+  if (orig.mode === 'cash') officeAssertOpen_(ss, officeToday_());
   return officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,
     narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
+    account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
+    odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
+    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by,
   }, 'daybook.reverse');
 }
 
@@ -94,6 +169,7 @@ function officeDaybookBalances_(ctx, data) {
 function officeBalances_(opening, rows, date) {
   const zero = function () { return { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }; };
   const add = function (acc, r, sign) {
+    if (r.mode === 'credit') return; // a supplier credit line is neither cash nor bank (owed amounts: ledger.summary)
     if (r.mode === 'cash') acc.cash[r.bucket] += sign * r.amount_paise; else acc[r.mode] += sign * r.amount_paise;
   };
   const open = zero(), inn = zero(), out = zero(), close = zero();

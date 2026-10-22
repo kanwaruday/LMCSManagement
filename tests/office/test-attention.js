@@ -31,7 +31,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   const fs = require('fs'), path = require('path');
   const dir = path.join(__dirname, '../../apps-script');
   const { CODES } = await import('../../office/js/codes.js');
-  const IGNORE = /^OFFICE_/; // Script Property names
+  const IGNORE = /^(OFFICE_|CHAIRMAN$)/; // Script Property names; CHAIRMAN is a charged_to value, not a code
   const used = new Set();
   fs.readdirSync(dir).filter((f) => /^office.*\.gs$/.test(f)).forEach((f) => (fs.readFileSync(path.join(dir, f), 'utf8').match(/'[A-Z][A-Z_]{5,}'/g) || []).forEach((m) => used.add(m.slice(1, -1))));
   assert.ok(used.has('OPENING_LOCKED') && used.size > 20, 'scan found the codes');

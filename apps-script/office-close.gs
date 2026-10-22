@@ -28,7 +28,7 @@ function officeIsFrozen_(ss, isoDate) {
   return Object.keys(later).some(function (d) { return officeIsClosed_(ss, d); });
 }
 
-// Shared guard for every write dated to a day (daybook.add, report.submit, deposit.add, daybook.reverse).
+// Shared guard for every write dated to a day (report.submit, deposit.add; daybook.add and daybook.reverse for cash-account rows only).
 // The thrown error carries `code`, which officeHandle_ returns alongside `error`.
 function officeAssertOpen_(ss, isoDate) {
   if (officeIsFrozen_(ss, isoDate)) throw officeCoded_('DAY_CLOSED');
