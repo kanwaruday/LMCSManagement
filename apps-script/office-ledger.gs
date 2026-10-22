@@ -64,8 +64,16 @@ function officeLedgerSummary_(ctx, data) {
 
   // Period figures, from the scope's own books only.
   const inPeriod = function (r) { return r.entry_date >= data.from && scope.indexOf(r.campus) !== -1; };
-  const byChargedTo = {}, inter = {}, vehicles = {};
+  const byChargedTo = {}, inter = {}, vehicles = {}, collections = {};
   rows.filter(inPeriod).forEach(function (r) {
+    // Student collections: per head (blank for old or imported rows) and per school; a reversal nets out by sign.
+    if (r.category === 'student_collection' || r.category === 'student_collection_paid') {
+      const k = r.category === 'student_collection' ? 'collected_paise' : 'paid_paise', v0 = r.category === 'student_collection' ? signed(r) : -signed(r);
+      const zero = function () { return { collected_paise: 0, paid_paise: 0, balance_paise: 0 }; };
+      const head = collections[r.collection || ''] = collections[r.collection || ''] || Object.assign(zero(), { bySchool: {} });
+      const sch = head.bySchool[officeRowChargedTo_(r)] = head.bySchool[officeRowChargedTo_(r)] || zero();
+      [head, sch].forEach(function (x) { x[k] += v0; x.balance_paise = x.collected_paise - x.paid_paise; });
+    }
     const cat = officeCategory_(r.category);
     if (!cat || OFFICE_LEDGER_GROUPS.indexOf(cat.group) === -1) return; // movements (deposits, settlements, transfers) are not income or cost
     const to = officeRowChargedTo_(r), v = signed(r);
@@ -102,5 +110,5 @@ function officeLedgerSummary_(ctx, data) {
         km_per_litre: p && km >= 0 && p.litres_ml > 0 && !r.odometer_note ? Math.round(km * 100000 / p.litres_ml) / 100 : null });
     });
   });
-  return { byChargedTo: byChargedTo, accounts: accounts, interSchool: interSchool, vehicles: vehicles, fuel: fuel };
+  return { byChargedTo: byChargedTo, accounts: accounts, interSchool: interSchool, vehicles: vehicles, fuel: fuel, collections: collections };
 }

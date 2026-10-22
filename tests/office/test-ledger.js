@@ -200,4 +200,21 @@ module.exports = function run(t) {
     assert.equal(sum(h, { to: '' }).error, 'BAD_DATE');
     assert.equal(sum(h, { campus: 'LMS3' }).error, 'NO_BOOK');
   });
+
+  t.test('collections: collected, paid onward and balance per head and per charged_to school; reversals net out; blank head kept', () => {
+    const h = fresh();
+    const col = (o) => add(h, Object.assign({ direction: 'IN', bucket: 'other', category: 'student_collection', collection: 'mun', amount_paise: 1000, file_id: 'slipLMS1' }, o));
+    const paid = (o) => col(Object.assign({ direction: 'OUT', category: 'student_collection_paid', amount_paise: 400 }, o));
+    col({}); col({ amount_paise: 500, charged_to: 'LMS2' }); col({ collection: 'sports', amount_paise: 70 });
+    paid({}); const mistake = paid({ amount_paise: 99 });
+    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: mistake }, 'owner-token');
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'old', campus: 'LMS1', entry_date: '2026-10-11', direction: 'IN', mode: 'cash', bucket: 'other', category: 'student_collection', amount_paise: 25 });
+    const c = sum(h).collections;
+    assert.deepEqual(J(c.mun), { collected_paise: 1500, paid_paise: 400, balance_paise: 1100, bySchool: {
+      LMS1: { collected_paise: 1000, paid_paise: 400, balance_paise: 600 }, LMS2: { collected_paise: 500, paid_paise: 0, balance_paise: 500 } } });
+    assert.deepEqual(J(c.sports), { collected_paise: 70, paid_paise: 0, balance_paise: 70, bySchool: { LMS1: { collected_paise: 70, paid_paise: 0, balance_paise: 70 } } });
+    assert.deepEqual(J(c['']), { collected_paise: 25, paid_paise: 0, balance_paise: 25, bySchool: { LMS1: { collected_paise: 25, paid_paise: 0, balance_paise: 25 } } });
+    assert.deepEqual(Object.keys(c).sort(), ['', 'mun', 'sports']);
+    assert.deepEqual(Object.keys(sum(h, { from: '2026-10-21' }).collections), ['mun'], 'period figures only (just the reversal dated today)');
+  });
 };
