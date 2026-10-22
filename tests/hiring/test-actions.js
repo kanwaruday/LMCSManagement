@@ -6,7 +6,7 @@ const ctx = vm.createContext({
   Utilities: { formatDate: () => '2026-10-22' }, APR_STATUS: { APPROVED: 'Approved', REJECTED: 'Rejected' },
   LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring.gs'), 'utf8'), ctx);
+['hiring.gs', 'hiring-appointments.gs'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), ctx));
 const C = vm.runInContext('HIR_COL', ctx);
 const isDate = (v) => Object.prototype.toString.call(v) === '[object Date]'; // vm realm: instanceof fails
 const T = (name, fn) => { fn(); console.log('ok  -', name); };
@@ -83,11 +83,11 @@ T('add applicant: needs name, a 10-digit phone, a campus in scope and a source',
   throws(() => ctx.hiringAddApplicant_(principal, { name: 'X', phone: '9816012345', campusId: 'LMS4', source: 'Magic' }), /source/i);
 });
 
-T('schedule: Fee Clerk sets and clears interview / demo dates', () => {
-  reset([appRow({})]);
-  ctx.hiringSchedule_(clerk, { row: 2, interviewAt: '2026-10-23T10:30', demoAt: '2026-10-24T09:00' });
+T('schedule: a Principal books interview / demo directly (Appointments) and clears them', () => {
+  reset([appRow({ STAGE_MARKS: JSON.stringify({ interview: { at: day(-1).toISOString(), by: 'p@lms.org.in' } }) })]);
+  ctx.hiringSchedule_(principal, { row: 2, interviewAt: '2026-10-23T10:30', demoAt: '2026-10-24T09:00' });
   assert.ok(isDate(apps.rows[1][C.INTERVIEW_AT - 1])); assert.ok(isDate(apps.rows[1][C.DEMO_AT - 1]));
-  ctx.hiringSchedule_(clerk, { row: 2, clear: 'demo' });
+  ctx.hiringSchedule_(principal, { row: 2, clear: 'demo' });
   assert.strictEqual(apps.rows[1][C.DEMO_AT - 1], '');
 });
 T('schedule: outside the caller\'s schools is refused', () => {
@@ -134,8 +134,8 @@ T('demo report: all nine scores required, total out of 45', () => {
   const tab = tabs['Portal Demo Reports'], h = tab.rows[0];
   assert.strictEqual(tab.rows[1][h.indexOf('Total /45')], 34);
 });
-T('demo report: "another" sets the next demo date', () => {
-  reset([appRow({ INTERVIEW_AT: day(0) })]);
+T('demo report: "another" sets the next demo date (a Principal\'s direct booking)', () => {
+  reset([appRow({ INTERVIEW_AT: day(0), STAGE_MARKS: JSON.stringify({ interview: { at: day(-1).toISOString(), by: 'p@lms.org.in' } }) })]);
   ctx.hiringSubmitDemo_(principal, { row: 2, demoDate: '2026-10-22', scores: nine, studentFeedback: 4, recommendation: 'another', nextDemoAt: '2026-10-25T09:00' });
   assert.ok(isDate(apps.rows[1][C.DEMO_AT - 1]));
   assert.strictEqual(tabs['Portal Demo Reports'].rows[1][tabs['Portal Demo Reports'].rows[0].indexOf('Recommendation')], 'another');

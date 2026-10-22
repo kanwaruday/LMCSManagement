@@ -12,8 +12,9 @@ T('Fee Clerk: hiring legwork only', () => {
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'hiringapprovalstatus', false), true);
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'approvalslist', false), false);
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'hiringaddapplicant', true), true);
-  assert.strictEqual(ctx.pdrLimitedAllows_(c, 'hiringschedule', true), true);
-  ['updatehiringstatus', 'hiringrevive', 'hiringmarkstage', 'hiringsubmitinterview', 'hiringsubmitdemo', 'submitapproval']
+  assert.strictEqual(ctx.pdrLimitedAllows_(c, 'apptlist', false), true);
+  ['apptpropose', 'apptcancel', 'hiringuploadreport'].forEach((a) => assert.strictEqual(ctx.pdrLimitedAllows_(c, a, true), true, a));
+  ['hiringschedule', 'apptdecide', 'hiringshortlist', 'updatehiringstatus', 'hiringrevive', 'hiringmarkstage', 'hiringsubmitinterview', 'hiringsubmitdemo', 'submitapproval']
     .forEach((a) => assert.strictEqual(ctx.pdrLimitedAllows_(c, a, true), false, a));
 });
 T('Teacher keeps its own lists', () => {
@@ -23,7 +24,7 @@ T('Teacher keeps its own lists', () => {
 T('Fee Clerk + Teacher gets both', () => {
   const c = who('FeeClerk,Teacher');
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'submitapproval', true), true);
-  assert.strictEqual(ctx.pdrLimitedAllows_(c, 'hiringschedule', true), true);
+  assert.strictEqual(ctx.pdrLimitedAllows_(c, 'apptpropose', true), true);
 });
 T('Principal/Coordinator/Owner are elevated', () => {
   ['Principal', 'Coordinator', 'Owner', 'Coordinator,Teacher'].forEach((r) => assert.strictEqual(ctx.pdrIsElevated_(who(r)), true, r));

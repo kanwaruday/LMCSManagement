@@ -130,10 +130,11 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // role check, when Teacher Portal grows a new self-scoped action.
 const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
-// Fee Clerk (2026-10-22, per Uday): hiring legwork only -- browse, add an applicant, book interview/demo
-// slots. Never a decision (progress, reject, revive, Hired, reports): those stay with the Principal.
-const PDR_FEECLERK_GET_ACTIONS = ['hiringapplicants', 'hiringapprovalstatus'];
-const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'hiringschedule'];
+// Fee Clerk (2026-10-22, per Uday): hiring legwork only -- browse, add an applicant, propose interview/demo
+// slots (hiring v2: apptpropose, never hiringschedule), upload scanned reports. Never a decision (shortlist,
+// accept, reject, revive, Hired): those stay with the Principal.
+const PDR_FEECLERK_GET_ACTIONS = ['hiringapplicants', 'hiringapprovalstatus', 'apptlist'];
+const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'apptpropose', 'apptcancel', 'hiringuploadreport'];
 
 function doGet(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
@@ -229,6 +230,8 @@ function doPost(e) {
     if (action === 'hiringsubmitdemo') return jsonOut_(hiringSubmitDemo_(caller, body));
     if (action === 'hiringshortlist') return jsonOut_(hiringShortlist_(caller, body));
     if (action === 'hiringrevive') return jsonOut_(hiringRevive_(caller, body));
+    if (action === 'apptpropose') return jsonOut_(apptPropose_(caller, body));
+    if (action === 'apptcancel') return jsonOut_(apptCancel_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

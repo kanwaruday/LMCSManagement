@@ -5,7 +5,7 @@ const ctx = vm.createContext({
   Utilities: { formatDate: () => '2026-10-22' }, APR_STATUS: { APPROVED: 'Approved', REJECTED: 'Rejected' },
   LockService: { getScriptLock: () => ({ waitLock() { ctx.__locked = true; }, tryLock: () => true, releaseLock() { ctx.__locked = false; } }) },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring.gs'), 'utf8'), ctx);
+['hiring.gs', 'hiring-appointments.gs'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), ctx));
 const C = vm.runInContext('HIR_COL', ctx);
 const T = (name, fn) => { fn(); console.log('ok  -', name); };
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message), String(re));
@@ -36,6 +36,7 @@ let apps, lockedDuringList;
 function reset(rows) {
   apps = sheet([['Timestamp']].concat(rows));
   ctx.hirSheet_ = () => apps;
+  ctx.hirWorkbook_ = () => ({ getSheetByName: () => null }); // no Appointments tab yet
   ctx.hirSalaryOfferDecisions_ = () => ({});
   ctx.hiringApplicants_ = () => { lockedDuringList = ctx.__locked; return { success: true, applicants: [] }; };
 }

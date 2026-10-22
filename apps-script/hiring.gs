@@ -1299,6 +1299,10 @@ function hiringUpdateStatus_(caller, body) {
   if (status && status !== 'Hired' && status !== 'Rejected') {
     throw new Error('Invalid status');
   }
+  // Hiring v2: interview / demo / MD times are Appointments now (hiring-appointments.gs). Only an Owner may
+  // still send mdInterviewAt -- it becomes their md booking (direct if they are an MD acceptor).
+  const isOwner = (caller.roles || []).indexOf('Owner') !== -1;
+  if (body.interviewAt || body.demoAt || (body.mdInterviewAt && !isOwner)) throw new Error('Book it through Appointments');
 
   const sheet = hirSheet_();
   const branches = hirScopedRow_(caller, sheet, row).branches;
@@ -1360,48 +1364,37 @@ function hiringUpdateStatus_(caller, body) {
   // Only ever writes for a deliberate Hired/Rejected click -- see the
   // comment above. Everything before that stays derived, so the Status
   // cell itself stays blank until one of those two decisions is made.
-  // Notes only when the page sent them (a Reject from the Today list doesn't), so they're never blanked by accident.
-  if (body.notes !== undefined) sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
-  if (status === 'Hired') sheet.getRange(row, HIR_COL.STATUS).setValue(status);
-  if (status === 'Rejected') hirRejectRow_(caller, sheet, row, body.rejectReason, body.rejectNote);
-  // Guard the write side too -- an unparseable value here would plant
-  // the exact same class of corrupted-cell bug hirSafeISO_ exists to
-  // survive on read (a real "F"-in-a-Timestamp-cell was found live
-  // 2026-09-25). Silently skips the write rather than saving garbage;
-  // Status/Notes above still get saved either way. Two independent
-  // stage dates now (Interview Scheduled / MD Academics Interview
-  // Scheduled), each optional and written whenever present regardless
-  // of which status is currently being saved.
-  if (body.interviewAt) {
-    const d = new Date(body.interviewAt);
-    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(d);
-  }
-  if (body.mdInterviewAt) {
-    const d = new Date(body.mdInterviewAt);
-    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.MD_INTERVIEW_AT).setValue(d);
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(body.dateOfJoining || ''))) {
-    if (sheet.getMaxColumns() < HIR_COL.DOJ) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.DOJ - sheet.getMaxColumns());
-    // Text format so Sheets keeps 'yyyy-MM-dd' as typed (no date coercion / timezone shift).
-    sheet.getRange(row, HIR_COL.DOJ).setNumberFormat('@').setValue(body.dateOfJoining);
-    if (!String(sheet.getRange(1, HIR_COL.DOJ).getValue() || '').trim()) sheet.getRange(1, HIR_COL.DOJ).setValue('Date of Joining');
-  }
-  if (body.offerBreakdown) {
-    const j = String(body.offerBreakdown);
-    if (hirParseJson_(j) && j.length < 2000) {
-      if (sheet.getMaxColumns() < HIR_COL.OFFER_BREAKDOWN) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.OFFER_BREAKDOWN - sheet.getMaxColumns());
-      sheet.getRange(row, HIR_COL.OFFER_BREAKDOWN).setValue(j);
-      if (!String(sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).getValue() || '').trim()) sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).setValue('Offer Breakdown (JSON)');
+  // One lock around the writes; the Hired gate above (hirLockEmployeeCode_ locks itself) stays outside it.
+  hirWithLock_(function () {
+    // Notes only when the page sent them (a Reject from the Today list doesn't), so they're never blanked by accident.
+    if (body.notes !== undefined) sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
+    if (status === 'Hired') sheet.getRange(row, HIR_COL.STATUS).setValue(status);
+    if (status === 'Rejected') hirRejectRowCore_(caller, sheet, row, body.rejectReason, body.rejectNote);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(body.dateOfJoining || ''))) {
+      if (sheet.getMaxColumns() < HIR_COL.DOJ) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.DOJ - sheet.getMaxColumns());
+      // Text format so Sheets keeps 'yyyy-MM-dd' as typed (no date coercion / timezone shift).
+      sheet.getRange(row, HIR_COL.DOJ).setNumberFormat('@').setValue(body.dateOfJoining);
+      if (!String(sheet.getRange(1, HIR_COL.DOJ).getValue() || '').trim()) sheet.getRange(1, HIR_COL.DOJ).setValue('Date of Joining');
     }
-  }
-  // Written by the Salary Dashboard module (salary/index.html's "Record
-  // as Salary Offer"), same optional-write pattern as the two dates
-  // above -- this is what gives 'Salary Offer' the evidence source noted
-  // as missing in hirDerivedLadderStage_'s history/comment.
-  if (body.salaryOfferAt) {
-    const d = new Date(body.salaryOfferAt);
-    if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.SALARY_OFFER_AT).setValue(d);
-  }
+    if (body.offerBreakdown) {
+      const j = String(body.offerBreakdown);
+      if (hirParseJson_(j) && j.length < 2000) {
+        if (sheet.getMaxColumns() < HIR_COL.OFFER_BREAKDOWN) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.OFFER_BREAKDOWN - sheet.getMaxColumns());
+        sheet.getRange(row, HIR_COL.OFFER_BREAKDOWN).setValue(j);
+        if (!String(sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).getValue() || '').trim()) sheet.getRange(1, HIR_COL.OFFER_BREAKDOWN).setValue('Offer Breakdown (JSON)');
+      }
+    }
+    // Written by the Salary Dashboard module (salary/index.html's "Record
+    // as Salary Offer"), same optional-write pattern as the two dates
+    // above -- this is what gives 'Salary Offer' the evidence source noted
+    // as missing in hirDerivedLadderStage_'s history/comment.
+    if (body.salaryOfferAt) {
+      const d = new Date(body.salaryOfferAt);
+      if (!isNaN(d.getTime())) sheet.getRange(row, HIR_COL.SALARY_OFFER_AT).setValue(d);
+    }
+    // An Owner's MD time (last, after any Salary Offer above): booked directly if they are an MD acceptor.
+    if (body.mdInterviewAt) apptProposeCore_(caller, sheet, { row: row, kind: 'md', start: body.mdInterviewAt });
+  });
   return hiringApplicants_(caller);
 }
 
@@ -1696,16 +1689,20 @@ function hiringAddApplicant_(caller, body) {
   return Object.assign(hiringApplicants_(caller), res);
 }
 
-// action=hiringschedule -- book (or clear) the interview / demo slot. Fee Clerk allowed.
+// action=hiringschedule -- hiring v2: a thin wrapper over Appointments (hiring-appointments.gs). A Principal
+// books directly, anyone else proposes; clear cancels that kind's open or accepted appointment. Fee Clerks
+// use apptpropose instead (main.gs).
 function hiringSchedule_(caller, body) {
   const sheet = hirSheet_();
-  const r = hirScopedRow_(caller, sheet, body.row);
-  if (String(sheet.getRange(r.row, HIR_COL.STATUS).getValue()) === 'Rejected') throw new Error('This applicant was rejected -- a Principal has to revive them first');
-  hirGrow_(sheet);
-  if (body.clear === 'interview') sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue('');
-  if (body.clear === 'demo') sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue('');
-  if (body.interviewAt) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(hirDateOrThrow_(body.interviewAt, 'interview date and time'));
-  if (body.demoAt) sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue(hirDateOrThrow_(body.demoAt, 'demo date and time'));
+  hirWithLock_(function () {
+    const r = hirScopedRow_(caller, sheet, body.row);
+    if (body.clear === 'interview' || body.clear === 'demo') {
+      apptForPerson_(apptAll_(), r.row, r.phone).filter(function (a) { return a.kind === body.clear && (a.status === 'proposed' || a.status === 'accepted'); })
+        .forEach(function (a) { apptCancelCore_(caller, a, 'cleared'); });
+    }
+    if (body.interviewAt) apptProposeCore_(caller, sheet, { row: r.row, kind: 'interview', start: body.interviewAt });
+    if (body.demoAt) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: body.demoAt });
+  });
   return hiringApplicants_(caller);
 }
 
@@ -1753,7 +1750,11 @@ function hirSamePhoneRows_(sheet, row) {
 
 // Reject with one of HIR_REJECT_REASONS on every row of this person (Hired rows excepted); the note
 // goes into this row's Notes (required for "Other").
+// Lock-free core (call it from inside an entry point's lock); hirRejectRow_ is the locking wrapper.
 function hirRejectRow_(caller, sheet, row, reason, note) {
+  hirWithLock_(function () { hirRejectRowCore_(caller, sheet, row, reason, note); });
+}
+function hirRejectRowCore_(caller, sheet, row, reason, note) {
   hirCheckRejectArgs_(reason, note);
   note = hirText_(note, 500);
   hirGrow_(sheet);
@@ -1766,13 +1767,15 @@ function hirRejectRow_(caller, sheet, row, reason, note) {
     const prev = String(sheet.getRange(row, HIR_COL.NOTES).getValue() || '');
     sheet.getRange(row, HIR_COL.NOTES).setValue((prev ? prev + ' | ' : '') + 'Rejected: ' + note);
   }
+  apptCancelForRejectCore_(sheet, row); // open proposals and future accepted appointments
 }
 
 function hirAppendReport_(tab, headers, obj) {
-  hirWithLock_(function () {
-    const sh = hirPortalTab_(tab, headers, true);
-    sh.appendRow(headers.map(function (h) { return obj.hasOwnProperty(h) ? obj[h] : ''; }));
-  });
+  hirWithLock_(function () { hirAppendReportCore_(tab, headers, obj); });
+}
+function hirAppendReportCore_(tab, headers, obj) {
+  const sh = hirPortalTab_(tab, headers, true);
+  sh.appendRow(headers.map(function (h) { return obj.hasOwnProperty(h) ? obj[h] : ''; }));
 }
 function hirReportBase_(caller, sheet, r) {
   return { 'Report ID': 'rep-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), 'Applicant ID': hirApplicantId_(r.row),
@@ -1802,7 +1805,7 @@ function hiringSubmitInterview_(caller, body) {
   if (['proceed', 'reject'].indexOf(body.recommendation) === -1) throw new Error('Pick a recommendation');
   if (body.recommendation === 'reject') hirCheckRejectArgs_(body.rejectReason, body.rejectNote);
   const e = body.experience || {};
-  hirAppendReport_(HIR_PI_TAB, HIR_PI_HEADERS, Object.assign(hirReportBase_(caller, sheet, r), {
+  const report = Object.assign(hirReportBase_(caller, sheet, r), {
     'Position': hirText_(body.position, 120), 'Interview Date': date, 'Confidence': confidence, 'English': english,
     'Capability (JSON)': JSON.stringify(cap), 'Spouse / family occupation': hirText_(body.spouseOccupation), 'Family support': hirText_(body.familySupport),
     'Qualification remarks': hirText_(body.qualificationRemarks), 'Other skills': hirText_(body.otherSkills),
@@ -1810,10 +1813,14 @@ function hiringSubmitInterview_(caller, body) {
       extraWork: hirText_(e.extraWork, 200), classes: hirText_(e.classes, 120), subjects: hirText_(e.subjects, 120), lastSalary: hirText_(e.lastSalary, 30) }),
     'Commitment': hirText_(body.commitment, 60), 'Expected salary': hirText_(body.expectedSalary, 30),
     'Strengths': hirText_(body.strengths), 'Weaknesses': hirText_(body.weaknesses), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation,
-  }));
-  hirGrow_(sheet);
-  if (!sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(date);
-  if (body.recommendation === 'reject') hirRejectRow_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  });
+  hirWithLock_(function () {
+    hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, report);
+    hirGrow_(sheet);
+    // Evidence only (a walk-in seen on the spot); never shows on Today, which reads accepted appointments.
+    if (!sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(date);
+    if (body.recommendation === 'reject') hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  });
   return hiringApplicants_(caller);
 }
 
@@ -1836,10 +1843,13 @@ function hiringSubmitDemo_(caller, body) {
   const next = body.recommendation === 'another' && body.nextDemoAt ? hirDateOrThrow_(body.nextDemoAt, 'next demo date') : null;
   Object.assign(obj, { 'Demo Date': date, 'Class': hirText_(body.class, 20), 'Subject': hirText_(body.subject, 60), 'Total /45': total,
     'Strengths': hirText_(body.strengths), 'Areas to improve': hirText_(body.improve), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation });
-  hirAppendReport_(HIR_PD_TAB, HIR_PD_HEADERS, obj);
-  hirGrow_(sheet);
-  if (next) sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue(next);
-  if (body.recommendation === 'reject') hirRejectRow_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  hirWithLock_(function () {
+    // The next demo goes through Appointments (a Principal books it, anyone else proposes) -- first, so a
+    // refused booking leaves no half-saved report.
+    if (next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: next });
+    hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, obj);
+    if (body.recommendation === 'reject') hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  });
   return hiringApplicants_(caller);
 }
 
@@ -1875,23 +1885,34 @@ function hiringRevive_(caller, body) {
       sheet.getRange(row, HIR_COL.REVIVED_AT).setValue(now);
     });
     sheet.getRange(r.row, HIR_COL.NOTES).setValue('Revived (round ' + (history.length + 1) + '): ' + note);
+    apptCancelAllForCore_(sheet, r.row, 'revived');
   });
   // Outside the lock: building the list takes the script lock itself (walk-in backfill, employee codes).
   return hiringApplicants_(caller);
 }
 
-// action=hiringshortlist -- the Principal's call to take a CV forward ({row, on}). Off clears the stamp.
-// The un-shortlist guards that involve appointments arrive with the appointments code.
+// Write (or clear, caller null) the shortlist stamp, labelling columns Z/AA on first use. Lock-free.
+function hirStampShortlist_(sheet, row, caller) {
+  hirGrow_(sheet);
+  if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_AT).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_AT).setValue('Shortlisted At');
+  if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_BY).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_BY).setValue('Shortlisted By');
+  sheet.getRange(row, HIR_COL.SHORTLISTED_AT).setValue(caller ? new Date() : '');
+  sheet.getRange(row, HIR_COL.SHORTLISTED_BY).setValue(caller ? caller.email : '');
+}
+
+// action=hiringshortlist -- the Principal's call to take a CV forward ({row, on}). Off clears the stamp: refused
+// while an appointment is accepted, and it cancels the person's open proposals.
 function hiringShortlist_(caller, body) {
   hirNeedElevated_(caller);
   const sheet = hirSheet_();
   const r = hirScopedRow_(caller, sheet, body.row);
   hirWithLock_(function () {
-    hirGrow_(sheet);
-    if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_AT).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_AT).setValue('Shortlisted At');
-    if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_BY).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_BY).setValue('Shortlisted By');
-    sheet.getRange(r.row, HIR_COL.SHORTLISTED_AT).setValue(body.on ? new Date() : '');
-    sheet.getRange(r.row, HIR_COL.SHORTLISTED_BY).setValue(body.on ? caller.email : '');
+    if (!body.on) {
+      const mine = apptForPerson_(apptAll_(), r.row, r.phone);
+      if (mine.some(function (a) { return a.status === 'accepted'; })) throw new Error('This applicant is already scheduled -- cancel the appointment first');
+      mine.filter(function (a) { return a.status === 'proposed'; }).forEach(function (a) { apptEnd_(a, caller.email, 'un-shortlisted', sheet); });
+    }
+    hirStampShortlist_(sheet, r.row, body.on ? caller : null);
   });
   // Outside the lock: building the list takes the script lock itself.
   return hiringApplicants_(caller);
