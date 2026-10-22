@@ -1840,10 +1840,9 @@ function hirAppendReportCore_(tab, headers, obj) {
   sh.appendRow(headers.map(function (h) { return obj.hasOwnProperty(h) ? obj[h] : ''; }));
 }
 function hirReportBase_(caller, sheet, r) {
-  const role = ['Principal', 'Coordinator', 'Owner', 'FeeClerk'].filter(function (x) { return (caller.roles || []).indexOf(x) !== -1; })[0] || '';
   return { 'Report ID': 'rep-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), 'Applicant ID': hirApplicantId_(r.row),
     'Row': r.row, 'Name': r.name, 'Phone': r.phone, 'Campus': r.campus, 'Submitted By': caller.email, 'Submitted At': new Date(),
-    'Entered By Role': role };
+    'Entered By Role': hirElevated_(caller) ? 'principal' : 'clerk' }; // spec: principal|clerk
 }
 
 // The "Teacher Interview Report" page of the paper form, validated into a report row (no writes). Confidence and
@@ -1954,7 +1953,7 @@ function hirScanFile_(file) {
   return { bytes: bytes, type: type };
 }
 // Save the scan as "<T-id> <Name> <kind> <yyyy-mm-dd>.<ext>" in the campus subfolder, viewable by anyone at the
-// domain with the link (Principals and Owners open it from the portal). Returns its URL.
+// domain with the link (Principals and Owners open it from the portal). Returns the Drive file.
 function hirSaveScan_(scan, r, kind, date) {
   const rootId = PropertiesService.getScriptProperties().getProperty('HIR_SCAN_FOLDER_ID');
   if (!rootId) throw new Error('The hiring scans folder is not set up yet -- ask the admin to run hirSetupScans');
@@ -1964,8 +1963,11 @@ function hirSaveScan_(scan, r, kind, date) {
   const folder = it.hasNext() ? it.next() : root.createFolder(sub);
   const name = [hirApplicantId_(r.row), r.name, kind, Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd')].join(' ') + '.' + scan.type.ext;
   const file = folder.createFile(Utilities.newBlob(scan.bytes, scan.type.mime, name));
-  file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
-  return file.getUrl();
+  try { file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { hirTrashScan_(file); throw e; }
+  return file;
+}
+function hirTrashScan_(file) {
+  try { file.setTrashed(true); } catch (e) { Logger.log('hiring scan trash: ' + e.message); }
 }
 
 // action=hiringuploadreport {row, kind:'interview'|'demo', file:{name, mime, base64}, ...the submit form's fields}.
@@ -1981,25 +1983,29 @@ function hiringUploadReport_(caller, body) {
   const scan = hirScanFile_(body.file);
   const elevated = hirElevated_(caller);
   const reject = body.recommendation === 'reject';
-  hirWithLock_(function () {
-    // Anything that can refuse goes first, so a refusal leaves no file or half-saved report behind.
-    if (rec.next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: rec.next });
-    rec.report['Scan Link'] = hirSaveScan_(scan, r, kind, rec.at);
-    if (kind === 'interview') {
-      hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, rec.report);
-      hirStampInterviewAtCore_(sheet, r.row, rec.at);
-    } else {
-      hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, rec.report);
-    }
-    if (reject && elevated) hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
-    else if (reject) {
-      hirGrow_(sheet);
-      const marks = hirJson_(sheet.getRange(r.row, HIR_COL.STAGE_MARKS).getValue(), {});
-      marks.rejectPending = { reason: body.rejectReason, note: hirText_(body.rejectNote, 500), kind: kind, reportId: rec.report['Report ID'],
-        by: caller.email, at: new Date().toISOString() };
-      sheet.getRange(r.row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
-    }
-  });
+  // The Drive write (up to 7 MB) happens before the lock, and before anything is written: if it fails, nothing is.
+  // If anything under the lock throws, the saved file is trashed, so no orphan scan is left behind.
+  const file = hirSaveScan_(scan, r, kind, rec.at);
+  rec.report['Scan Link'] = file.getUrl();
+  try {
+    hirWithLock_(function () {
+      if (rec.next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: rec.next }); // first: a refusal writes nothing
+      if (kind === 'interview') {
+        hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, rec.report);
+        hirStampInterviewAtCore_(sheet, r.row, rec.at);
+      } else {
+        hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, rec.report);
+      }
+      if (reject && elevated) hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+      else if (reject) {
+        hirGrow_(sheet);
+        const marks = hirJson_(sheet.getRange(r.row, HIR_COL.STAGE_MARKS).getValue(), {});
+        marks.rejectPending = { reason: body.rejectReason, note: hirText_(body.rejectNote, 500), kind: kind, reportId: rec.report['Report ID'],
+          by: caller.email, at: new Date().toISOString() };
+        sheet.getRange(r.row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
+      }
+    });
+  } catch (e) { hirTrashScan_(file); throw e; }
   return hiringApplicants_(caller);
 }
 

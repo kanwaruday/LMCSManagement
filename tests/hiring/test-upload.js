@@ -13,7 +13,7 @@ function fakeDrive() {
     getFoldersByName(n) { const f = this.subs[n]; let done = !f; return { hasNext: () => !done, next() { done = true; return f; } }; },
     createFolder(n) { return (this.subs[n] = folder(id + '/' + n, n)); },
     createFile(blob) {
-      const file = { blob, sharing: null, getName: () => blob.name, getUrl: () => 'https://drive.google.com/file/d/' + blob.name + '/view',
+      const file = { blob, sharing: null, trashed: false, setTrashed(v) { this.trashed = v; }, getName: () => blob.name, getUrl: () => 'https://drive.google.com/file/d/' + blob.name + '/view',
         setSharing(a, p) { this.sharing = [a, p]; return this; } };
       this.files.push(file); return file;
     } });
@@ -138,7 +138,7 @@ T('a clerk proceed -> saved with a scan link, role FeeClerk, counts as evidence;
   assert.strictEqual(lockedDuringList, false);
   const rep = reports(PI)[0];
   assert.ok(/^https:\/\/drive\.google\.com\//.test(rep['Scan Link']));
-  assert.strictEqual(rep['Entered By Role'], 'FeeClerk'); assert.strictEqual(rep['Submitted By'], 'c@lms.org.in');
+  assert.strictEqual(rep['Entered By Role'], 'clerk'); assert.strictEqual(rep['Submitted By'], 'c@lms.org.in');
   assert.strictEqual(rep['Recommendation'], 'proceed'); assert.strictEqual(rep['Confidence'], 4);
   assert.strictEqual(tabs[PI].rows[0].slice(-2).join('|'), 'Scan Link|Entered By Role');
   assert.strictEqual(ctx.hirRowEvidence_(apps, 2, '9876543210').interview, true);
@@ -164,7 +164,7 @@ T('an existing report tab grows its header row on first write', () => {
   tabs[PI] = sheet([old.slice()]);
   ctx.hiringUploadReport_(clerk, interview());
   assert.strictEqual(tabs[PI].rows[0].length, old.length + 2);
-  assert.strictEqual(reports(PI)[0]['Entered By Role'], 'FeeClerk');
+  assert.strictEqual(reports(PI)[0]['Entered By Role'], 'clerk');
 });
 T('a clerk reject -> status unchanged and rejectPending set (no reject, no cancels)', () => {
   reset([appRow(SL)]);
@@ -188,7 +188,7 @@ T('a Principal upload: reject rejects, "another" books the demo directly', () =>
   reset([appRow(SL)]);
   ctx.hiringUploadReport_(principal, interview(REJ));
   assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Rejected');
-  assert.strictEqual(reports(PI)[0]['Entered By Role'], 'Principal');
+  assert.strictEqual(reports(PI)[0]['Entered By Role'], 'principal');
   reset([appRow(Object.assign({ STAGE_MARKS: MARKED }, SL))]);
   ctx.hiringUploadReport_(principal, demo({ recommendation: 'another', nextDemoAt: FUTURE }));
   assert.strictEqual(appts()[0].status, 'accepted');
@@ -227,4 +227,29 @@ T('hirSetupScans creates "Hiring scans" once and stores its id', () => {
   props.HIR_SCAN_FOLDER_ID = 'keep';
   ctx.hirSetupScans();
   assert.strictEqual(props.HIR_SCAN_FOLDER_ID, 'keep');
+});
+T('a Principal\'s portal-form submission is Entered By Role "principal" (a Coordinator too)', () => {
+  reset([appRow(SL)]);
+  const body = interview(); delete body.file; delete body.kind;
+  ctx.hiringSubmitInterview_(principal, body);
+  ctx.hiringSubmitInterview_({ email: 'co@lms.org.in', campusId: 'LMS4', roles: ['Coordinator'] }, body);
+  assert.deepStrictEqual(reports(PI).map((x) => x['Entered By Role']), ['principal', 'principal']);
+});
+T('no scans folder + a Principal\'s "another" + nextDemoAt -> throws, NO appointment, no DEMO_AT, no report', () => {
+  reset([appRow(Object.assign({ STAGE_MARKS: MARKED }, SL))]); props = {};
+  throws(() => ctx.hiringUploadReport_(principal, demo({ recommendation: 'another', nextDemoAt: FUTURE })), /hirSetupScans/);
+  assert.strictEqual(appts().length, 0); assert.strictEqual(apps.rows[1][C.DEMO_AT - 1], ''); assert.strictEqual(reports(PD).length, 0);
+});
+T('a refused proposal or a throw in the append core after the save -> the saved file is trashed, the error rethrown', () => {
+  reset([appRow(SL)]); // no interview evidence: the clerk's "another" proposal is refused inside the lock
+  throws(() => ctx.hiringUploadReport_(clerk, demo({ recommendation: 'another', nextDemoAt: FUTURE })), /interview has to be done/);
+  assert.strictEqual(drive.root.subs.LMS4.files[0].trashed, true);
+  reset([appRow(SL)]);
+  const real = ctx.hirAppendReportCore_;
+  ctx.hirAppendReportCore_ = () => { throw new Error('sheet write failed'); };
+  try { throws(() => ctx.hiringUploadReport_(clerk, interview()), /sheet write failed/); } finally { ctx.hirAppendReportCore_ = real; }
+  assert.strictEqual(drive.root.subs.LMS4.files.length, 1); assert.strictEqual(drive.root.subs.LMS4.files[0].trashed, true);
+  reset([appRow(SL)]);
+  ctx.hiringUploadReport_(clerk, interview());
+  assert.strictEqual(drive.root.subs.LMS4.files[0].trashed, false);
 });
