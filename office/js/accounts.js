@@ -61,6 +61,22 @@ export function accountOpeningPayload(account, text) {
   return p === null ? { ok: false, error: 'Enter the opening in rupees, like 1234.50 (or 0).' } : { ok: true, data: { account: account.id, campus: account.campus, amount_paise: p } };
 }
 
+// New collection head from a typed name: id is a slug of it. Refuses a name that is already a head (switch it on instead).
+export function collectionPayload(label, heads) {
+  const l = String(label || '').trim();
+  const id = l.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  if (!id) return { ok: false, error: 'Enter a name for the collection.' };
+  return (heads || []).some((c) => c.id === id) ? { ok: false, error: 'That collection is already in the list. If it is switched off, switch it on there.' } : { ok: true, data: { id, label: l } };
+}
+
+export const NO_HEAD_LABEL = 'No collection named (older entries)';
+// ledger.summary collections {head: {collected_paise, paid_paise, balance_paise}} -> table rows: known heads in list order, then unknown ids, then the blank head.
+export function collectionRows(by, heads) {
+  const ids = Object.keys(by || {}), label = (id) => id === '' ? NO_HEAD_LABEL : ((heads || []).find((c) => c.id === id) || {}).label || id;
+  const order = (heads || []).map((c) => c.id).filter((id) => ids.includes(id)).concat(ids.filter((id) => id !== '' && !(heads || []).some((c) => c.id === id)), ids.includes('') ? [''] : []);
+  return order.map((id) => ({ label: label(id), collected: by[id].collected_paise, paid: by[id].paid_paise, balance: by[id].balance_paise }));
+}
+
 // Mean of the non-null km_per_litre values of a vehicle's fills, 2 decimals; null when there are none.
 export function avgKmPerLitre(fills) {
   const v = (fills || []).map((f) => f.km_per_litre).filter((x) => typeof x === 'number');
@@ -104,6 +120,9 @@ export function summaryView(sum, cfg, campusLabel) {
     Object.keys(groups).length ? Object.keys(groups).sort().map((s) => h('div', {}, h('h4', {}, label(s)),
       groups[s].map((g) => h('div', {}, h('p', {}, h('b', {}, g.label + ': ' + formatInr(g.total))),
         table(['Category', 'Amount'], g.items.map((i) => [h('td', {}, i.label), money(i.paise)])))))) : h('p', {}, 'Nothing in this period.'),
+    h('h3', {}, 'Student collections'),
+    h('p', { class: 'meta' }, 'Collected from students, paid onward, and what is still held, for this period.'),
+    collectionRows(sum.collections, cfg.collections).length ? table(['Collection', 'Collected', 'Paid onward', 'Balance'], collectionRows(sum.collections, cfg.collections).map((r) => [h('td', {}, r.label), money(r.collected), money(r.paid), money(r.balance)])) : h('p', {}, 'None.'),
     h('h3', {}, 'Between schools'),
     sum.interSchool.length ? table(['Paid by', 'For', 'Amount'], sum.interSchool.map((x) => [h('td', {}, label(x.from)), h('td', {}, label(x.to)), money(x.paise)])) : h('p', {}, 'None.'),
     h('h3', {}, 'Vehicle costs'),
@@ -125,7 +144,7 @@ export async function showAccounts(root, session, api, outbox) {
   const guard = inflightGuard();
   const campus = session.campus;
   const allCampus = session.campusId === 'ALL' || hasRole(session, ['Accounts']);
-  let cfg = { categories: [], accounts: [], vehicles: [], campuses: [] };
+  let cfg = { categories: [], accounts: [], vehicles: [], campuses: [], collections: [] };
   const say = (el, text) => { el.textContent = text; };
   // Queue, flush, and report what happened to that entry.
   async function send(action, data, msgEl, okText) {
@@ -177,16 +196,35 @@ export async function showAccounts(root, session, api, outbox) {
     say(impMsg, 'Added ' + n + ' bus' + (n === 1 ? '' : 'es') + (n < rows.length ? ' (' + (rows.length - n) + ' were already listed)' : '') + '.');
   });
 
+  // --- student collections
+  const cList = h('ul', { class: 'office-list' }), cMsg = h('p', { role: 'status' }), cName = txt('c-name', 'New collection (for example Yoga camp)', { maxlength: 60 });
+  const cBtn = btn('c', 'Add collection', async () => {
+    const r = collectionPayload(cName.querySelector('input').value, cfg.collections);
+    if (!r.ok) return say(cMsg, r.error);
+    if (await send('collection.add', r.data, cMsg, 'Collection added.')) { cName.querySelector('input').value = ''; loadConfig(); }
+  });
+  function paintCollections() {
+    setKids(cList, cfg.collections.length ? cfg.collections.map((c) => {
+      const b = h('button', { type: 'button', class: 'secondary' }, c.active ? 'Active — tap to switch off' : 'Switched off — tap to switch on');
+      b.addEventListener('click', () => guard('c:' + c.id, async () => {
+        b.disabled = true;
+        try { if (await send('collection.set_active', { id: c.id, active: !c.active }, cMsg, c.label + (c.active ? ' switched off.' : ' switched on.'))) await loadConfig(); } finally { b.disabled = false; }
+      }));
+      return h('li', {}, h('b', {}, c.label), ' ', b);
+    }) : [h('li', {}, 'No collections yet.')]);
+  }
+
   function paintConfig() {
     const mine = cfg.accounts.filter((a) => a.kind !== 'cash' && a.active && (allCampus || a.campus === campus));
     setKids(opAcc, mine.map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ', ' + a.kind + ')')));
     setKids(vList, cfg.vehicles.length ? cfg.vehicles.filter((v) => allCampus || v.campus === campus).map((v) => h('li', {}, h('b', {}, v.label), ' · ', v.reg, ' · ', v.kind, ' · ', v.campus, v.active ? '' : ' · inactive')) : [h('li', {}, 'No vehicles yet.')]);
+    paintCollections();
     paintCampusPick();
   }
   async function loadConfig() {
     const r = await api.read('config.get', {}, 'accfg');
     if (r.stale) return;
-    if (r.success) { cfg = { categories: r.categories, accounts: r.accounts, vehicles: r.vehicles, campuses: r.campuses }; paintConfig(); }
+    if (r.success) { cfg = { categories: r.categories, accounts: r.accounts, vehicles: r.vehicles, campuses: r.campuses, collections: r.collections || [] }; paintConfig(); }
     else say(vMsg, 'Could not load accounts and vehicles: ' + (r.error ? explainCode(r.code || r.error) : 'offline'));
   }
 
@@ -218,6 +256,7 @@ export async function showAccounts(root, session, api, outbox) {
     form('Add a bank or supplier account for ' + campus, acKind, acName, acBtn, acMsg),
     form('Opening balance of a bank or supplier account', h('label', { for: 'op-acc' }, 'Account'), opAcc, opAmt, opBtn, opMsg),
     form('Vehicles', vList, impBtn, impMsg, h('h4', {}, 'Add a vehicle for ' + campus), vKind, vReg, vLabel, vBtn, vMsg),
+    form('Student collections', h('p', { class: 'meta' }, 'Heads you can collect under. A switched-off head is not offered on the Day Book form; its past entries still show in reports.'), cList, cName, cBtn, cMsg),
     form('Summary', h('label', { for: 'sm-from' }, 'From'), fromIn, h('label', { for: 'sm-to' }, 'To'), toIn,
       allCampus ? [h('label', { for: 'sm-campus' }, 'Campus'), campPick] : null, smBtn, sumBox));
   await loadConfig();

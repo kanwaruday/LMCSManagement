@@ -69,4 +69,17 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(A.samePeriodYear('2026-04-01', '2027-03-31'), true);
   assert.strictEqual(A.samePeriodYear('2026-03-31', '2026-04-01'), false);
   ok('period');
+
+  const heads = [{ id: 'mun', label: 'MUN', active: true }, { id: 'sports', label: 'Sports fund', active: false }];
+  assert.deepStrictEqual(A.collectionPayload(' Yoga & Camp 2027! ', heads), { ok: true, data: { id: 'yoga_camp_2027', label: 'Yoga & Camp 2027!' } });
+  assert.strictEqual(A.collectionPayload('  ', heads).ok, false);
+  assert.strictEqual(A.collectionPayload('!!!', heads).ok, false);
+  assert.match(A.collectionPayload('mun', heads).error, /already/i);
+  assert.match(A.collectionPayload('Sports', heads).error, /already/i, 'a switched-off head is switched on, not added again');
+  ok('collectionPayload');
+
+  const rows = A.collectionRows({ mun: { collected_paise: 1500, paid_paise: 400, balance_paise: 1100, bySchool: {} }, '': { collected_paise: 25, paid_paise: 0, balance_paise: 25 }, gone: { collected_paise: 1, paid_paise: 0, balance_paise: 1 } }, heads);
+  assert.deepStrictEqual(rows.map((r) => [r.label, r.collected, r.paid, r.balance]), [['MUN', 1500, 400, 1100], ['gone', 1, 0, 1], ['No collection named (older entries)', 25, 0, 25]]);
+  assert.deepStrictEqual(A.collectionRows(undefined, heads), []);
+  ok('collectionRows');
 })().catch((e) => { console.error(e); process.exit(1); });
