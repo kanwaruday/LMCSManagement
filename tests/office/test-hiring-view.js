@@ -12,16 +12,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
     ap(1, 'Shortlisted'),
     ap(2, 'Shortlisted', [ax('a2', 'interview', 'proposed', '2026-10-26T10:00')]),
     ap(3, 'Shortlisted', [ax('a3', 'interview', 'declined', '2026-10-25T10:00', { declineNote: 'busy' })]),
-    ap(4, 'Interview Scheduled', [ax('a4', 'interview', 'accepted', '2026-10-24T09:00')]),   // past, no report
+    ap(4, 'Interview Scheduled', [ax('a4', 'interview', 'accepted', '2026-10-24T09:00', { reportFiled: false })]),   // past, no report
     ap(5, 'Interview Done'),
     ap(6, 'Interview Done', [ax('a6', 'demo', 'accepted', '2026-10-27T10:00')]),             // booked, not a demo to book
     ap(7, 'Hiring Approved', [], { docsMissing: ['PAN'] }),
     ap(8, 'Hiring Approved', [], { docsMissing: [] }),
     ap(9, 'Salary Offer', [ax('a9', 'md', 'accepted', '2026-10-30T10:00')]),                 // md booked
-    ap(10, 'Rejected', [ax('a10', 'interview', 'accepted', '2026-10-25T10:00')], { docsMissing: ['X'] }),
+    ap(10, 'Rejected', [ax('a10', 'interview', 'accepted', '2026-10-20T10:00', { reportFiled: false })], { docsMissing: ['X'] }),
     ap(11, 'Hired', [ax('a11', 'demo', 'accepted', '2026-10-25T10:00')]),
-    ap(12, 'Interview Done', [ax('a12', 'interview', 'accepted', '2026-10-20T10:00')]),     // report already filed
-    ap(13, 'Interview Done', [ax('a13', 'demo', 'accepted', '2026-10-23T10:00')]),          // past demo, no demo report
+    ap(12, 'Interview Done', [ax('a12', 'interview', 'accepted', '2026-10-20T10:00', { reportFiled: true })]),     // report already filed
+    ap(13, 'Interview Done', [ax('a13', 'demo', 'accepted', '2026-10-23T10:00', { reportFiled: false })]),          // past demo, no demo report
     ap(14, 'Shortlisted', [ax('a14', 'interview', 'accepted', '2026-11-20T10:00')]),        // beyond 7 days
   ];
   const mine = { myProposals: [{ id: 'a2', status: 'proposed', name: 'N2' }, { id: 'x', status: 'declined', name: 'N3' }] };
@@ -30,12 +30,15 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(rows(b.toSchedule), [1, 3]); ok('to schedule: declined counts, proposed/accepted do not, Rejected/Hired excluded');
   assert.deepStrictEqual(b.waiting.map((p) => p.id), ['a2']); ok('waiting = my open proposals');
   assert.deepStrictEqual(rows(b.booked), [4, 6, 9]); ok('booked: all kinds incl. md, next 7 days, sorted, not Rejected/Hired');
-  assert.deepStrictEqual(rows(b.reports), [13, 4]); ok('reports: past accepted with no report (sorted)');
+  assert.deepStrictEqual(rows(b.reports), [13, 4]); ok('reports: past accepted with reportFiled false (sorted); filed, Rejected excluded');
   assert.deepStrictEqual(rows(b.demos), [5, 12]); ok('demos to book');
   assert.deepStrictEqual(rows(b.docs), [7]); ok('documents to chase');
   assert.strictEqual(H.declined(list[2], 'interview').declineNote, 'busy'); ok('decline note');
-  assert.ok(H.docFormUrl({ name: 'A B', branches: ['LMS4'], employeeCode: 'E1' }).includes('entry.773686043=A+B'));
-  assert.strictEqual(H.docFormUrl({ name: 'A', branches: 'LMS2' }), 'https://forms.gle/LV1fy13jXzrrcXra9'); ok('doc form link');
+  const du = H.docFormUrl({ name: 'A B', campusId: 'LMS4', branches: 'LMS-4, LMS-5', employeeCode: 'E1', role: { roleLevel: 'PRT' } });
+  assert.ok(du.includes('entry.773686043=A+B') && du.includes('entry.1017094729=PRT%2C+TGT'));
+  assert.deepStrictEqual(H.capSubjects({ role: { subjects: 'English, Hindi' }, subjects: 'X' }), ['English', 'Hindi']);
+  assert.deepStrictEqual(H.capSubjects({ role: null, subjects: 'Maths & Science' }), ['Maths', 'Science']);
+  assert.strictEqual(H.docFormUrl({ name: 'A', campusId: 'LMS2' }), 'https://forms.gle/LV1fy13jXzrrcXra9'); ok('doc form link');
 
   // propose
   const p = (o) => H.proposePayload({ row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: '', place: ' Office ', note: '', ...o }, now);

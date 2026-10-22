@@ -10,16 +10,15 @@ export const DEMO_SCORES = [['pedagogy', 'Pedagogy'], ['content', 'Content'], ['
   ['management', 'Classroom Management'], ['clarity', 'Clarity & Audibility'], ['relatable', 'Makes Subject Relatable'], ['aids', 'Use of Teaching Aids']];
 export const MAX_FILE = 7 * 1024 * 1024;
 const MIMES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
-const ORDER = ['', 'Shortlisted', 'Interview Scheduled', 'Interview Done', 'Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved'];
 const DOC_FORM_URLS = {
   LMS1: 'https://forms.gle/mEtGFD6vGhgK3kJG7', LMS2: 'https://forms.gle/LV1fy13jXzrrcXra9', LMS3: 'https://forms.gle/hHgMU9XqBxpk3gWd8',
   LMS4: 'https://forms.gle/1uFg6AuYpYmP7ukA9', LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
 };
-// Same prefill as hiring/index.html DOC_FORM_PREFILL (LMS4 only so far; role is left out, the clerk screen does not know it).
-const DOC_FORM_PREFILL = { LMS4: { url: 'https://docs.google.com/forms/d/e/1FAIpQLSdNTYssKiHvr3v0F-tbOZP5_DNJgHjvauts8ttt1h1mar9XLg/viewform', name: 'entry.773686043', empId: 'entry.1648508931' } };
+// Same prefill as hiring/index.html DOC_FORM_PREFILL (LMS4 only so far).
+const DOC_FORM_PREFILL = { LMS4: { url: 'https://docs.google.com/forms/d/e/1FAIpQLSdNTYssKiHvr3v0F-tbOZP5_DNJgHjvauts8ttt1h1mar9XLg/viewform', name: 'entry.773686043', empId: 'entry.1648508931', role: 'entry.1017094729' } };
+const DOC_FORM_ROLE_LABEL = { PRT: 'PRT, TGT', TGT: 'PRT, TGT', PGT: 'PGT', NTT: 'NTT' };
 
 // ---- pure ----
-const rank = (s) => { const i = ORDER.indexOf(s || ''); return i < 0 ? 99 : i; };
 const appts = (a) => a.appointments || [];
 const has = (a, kind, ...st) => appts(a).some((x) => x.kind === kind && st.includes(x.status));
 const startOf = (x) => new Date(x.start).getTime();
@@ -34,8 +33,7 @@ export function bucketApplicants(applicants, apptlist, now = new Date()) {
     if (x.status !== 'accepted') continue;
     const s = startOf(x);
     if (s >= from && s <= to) booked.push({ a, x });
-    // The applicant carries no report flag: the stage tells (a filed interview report makes it Interview Done, a demo report Demo Done).
-    if (s < t && ((x.kind === 'interview' && rank(a.status) < rank('Interview Done')) || (x.kind === 'demo' && rank(a.status) < rank('Demo Done')))) reports.push({ a, x });
+    if (s < t && (x.kind === 'interview' || x.kind === 'demo') && x.reportFiled === false) reports.push({ a, x });
   }
   const byStart = (p, q) => startOf(p.x) - startOf(q.x);
   return {
@@ -47,16 +45,19 @@ export function bucketApplicants(applicants, apptlist, now = new Date()) {
     docs: live.filter((a) => a.status === 'Hiring Approved' && (a.docsMissing || []).length),
   };
 }
+// Subject names for the capability grid rows: the role's subjects, else the applicant's; at most 5.
+export const capSubjects = (a) => String((a.role && a.role.subjects) || a.subjects || '').split(/,|&/).map((x) => x.trim()).filter(Boolean).slice(0, 5);
 export const declined = (a, kind) => appts(a).filter((x) => x.kind === kind && x.status === 'declined').pop();
 
 export function docFormUrl(a, fallbackCampus) {
-  const br = Array.isArray(a.branches) ? a.branches : String(a.branches || '').split(/[,;]/).map((s) => s.trim());
-  const school = br.find((c) => DOC_FORM_URLS[c]) || fallbackCampus, cfg = DOC_FORM_PREFILL[school];
+  const school = a.campusId || fallbackCampus, cfg = DOC_FORM_PREFILL[school];
   if (!cfg) return DOC_FORM_URLS[school] || '';
   const p = new URLSearchParams({ usp: 'pp_url' });
   p.set(cfg.name, a.name);
   const code = a.employeeCode || a.expectedEmployeeCode;
   if (code) p.set(cfg.empId, code);
+  const label = a.role && DOC_FORM_ROLE_LABEL[String(a.role.roleLevel || '').toUpperCase()];
+  if (label) p.set(cfg.role, label);
   return cfg.url + '?' + p.toString();
 }
 
@@ -248,9 +249,10 @@ export async function mountHiring(root, session, deps = {}) {
       const body = [];
       let capRows = null;
       if (kind === 'interview') {
-        capRows = [0, 1, 2, 3, 4].map(() => ({ sub: inp('text', { 'aria-label': 'Subject' }), cells: CLASSES.map((c) => { const e = score(); e.setAttribute('aria-label', c); return e; }) }));
+        const subs = capSubjects(a);
+        capRows = [0, 1, 2, 3, 4].map((i) => ({ sub: inp('text', { 'aria-label': 'Subject', value: subs[i] || '' }), cells: CLASSES.map((c) => { const e = score(); e.setAttribute('aria-label', c); return e; }) }));
         body.push(add('interviewDate', 'Interview date', inp('date', { value: day })),
-          add('position', 'Position interviewed for', sel([['', 'Pick...'], ...(data.positions || [])])),
+          add('position', 'Position interviewed for', sel([['', 'Pick...'], ...(data.positions || [])], (data.positions || []).includes(a.positionLabel) ? a.positionLabel : '')),
           add('confidence', 'Confidence (1-5)', score()), add('english', 'English (1-5)', score()),
           h('p', {}, h('b', {}, 'Capability: score 1-5 for each class they can teach (at least one)')),
           h('div', { class: 'capwrap' }, h('table', { class: 'bal' }, h('tr', {}, h('th', {}, 'Subject'), CLASSES.map((c) => h('th', {}, c))),
