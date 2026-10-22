@@ -191,8 +191,9 @@ function apptDecideCore_(caller, appt, decision, note) {
   }
   const sheet = hirSheet_();
   hirGrow_(sheet);
-  // A reschedule: the old accepted one goes first (and loses its event), so its clear can't wipe the new time.
-  apptForPerson_(apptAll_(), cur.row, cur.phone).filter(function (a) { return a.kind === cur.kind && a.status === 'accepted' && a.id !== cur.id; })
+  // A reschedule: the old FUTURE accepted one goes first (and loses its event), so its clear can't wipe the new time.
+  // A past accepted one is history (a demo that happened before "another demo"): it stays, event and all.
+  apptForPerson_(apptAll_(), cur.row, cur.phone).filter(function (a) { return a.kind === cur.kind && a.status === 'accepted' && a.id !== cur.id && hirMs_(a.start) > Date.now(); })
     .forEach(function (a) { apptEnd_(a, caller.email, 'rescheduled', sheet); });
   sheet.getRange(cur.row, apptTimeCol_(cur.kind)).setValue(cur.start);
   Object.assign(cur, { status: 'accepted', decidedBy: by, decidedAt: new Date() });

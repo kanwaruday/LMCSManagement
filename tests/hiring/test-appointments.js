@@ -344,6 +344,15 @@ T('a reschedule\'s accept cancels the old accepted one and removes its event', (
   assert.deepStrictEqual(cal.removes, [['p@lms.org.in', 'ev1']]);
   assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1].getTime(), new Date('2030-01-12T10:00').getTime());
 });
+T('accepting a second demo leaves the past accepted demo accepted with its event', () => {
+  reset([appRow(Object.assign({ STAGE_MARKS: MARKED }, SL))]);
+  addAppt({ id: 'old', kind: 'demo', row: 2, phone: '9876543210', campus: 'LMS4', status: 'accepted', start: PAST, eventId: 'p@lms.org.in|evOld', proposedBy: 'c@lms.org.in' });
+  const id = proposeId(clerk, { kind: 'demo' });
+  ctx.apptDecide_(principal, { id, decision: 'accept' });
+  assert.deepStrictEqual(appts().map((a) => a.status), ['accepted', 'accepted']);
+  assert.deepStrictEqual(cal.removes, []);
+  assert.strictEqual(apps.rows[1][C.DEMO_AT - 1].getTime(), new Date(FUTURE).getTime());
+});
 T('decline needs a note; it leaves the applicant row alone', () => {
   reset([appRow(SL)]);
   const id = proposeId(clerk);
