@@ -252,4 +252,12 @@ module.exports = function run(t) {
     assert.equal(dep(h, { id: 'da2', bank_account: 'sbi1' }).duplicate, true);
     assert.equal(leg('da2:in').account, 'sbi1');
   });
+  t.test('imported (source sheet) fee days are not undeposited fee cash', () => {
+    const h = fresh();
+    const out = JSON.parse(JSON.stringify(h.ctx.officeFeeCashByDate_([
+      { id: 'a', category: 'fee_collection', direction: 'IN', mode: 'cash', entry_date: '2026-05-01', amount_paise: 900, source: 'sheet', reverses: '' },
+      { id: 'b', category: 'fee_collection', direction: 'IN', mode: 'cash', entry_date: '2026-10-20', amount_paise: 500, source: 'live', reverses: '' },
+    ])));
+    assert.deepEqual(out, { '2026-10-20': 500 });
+  });
 };

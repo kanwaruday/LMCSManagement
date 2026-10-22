@@ -125,7 +125,7 @@ function officeErpSet_(ctx, data) {
 function officeFeeCashByDate_(rows) {
   const dateOf = {}, out = {};
   rows.forEach(function (r) {
-    if (r.category !== 'fee_collection' || r.direction !== 'IN' || r.mode !== 'cash' || r.reverses) return;
+    if (r.category !== 'fee_collection' || r.direction !== 'IN' || r.mode !== 'cash' || r.reverses || r.source === 'sheet') return; // imported days were deposited long ago
     dateOf[r.id] = r.entry_date;
     out[r.entry_date] = (out[r.entry_date] || 0) + r.amount_paise;
   });
