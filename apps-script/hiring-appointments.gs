@@ -16,8 +16,23 @@ var APPT_KEYS = ['id', 'kind', 'applicantId', 'row', 'phone', 'name', 'campus', 
   'proposedBy', 'proposedAt', 'acceptorRole', 'status', 'decidedBy', 'decidedAt', 'declineNote', 'eventId',
   'calendarMode', 'calendarError'];
 var APPT_DURATION = { interview: 30, demo: 45, md: 30 };
-// Calendar seam. Placeholder: Task 3 replaces it with the UrlFetchApp Calendar REST calls (sendUpdates=none).
-var APPT_CAL_ = { insert: function () { return null; }, remove: function () {} };
+// Calendar seam: the Calendar REST API over UrlFetchApp with sendUpdates=none, so neither creating nor
+// removing an event ever sends mail (CalendarApp can't promise that on deletes). Throws on non-2xx.
+// `var` so tests replace it.
+var APPT_CAL_ = {
+  insert: function (calendarId, event) { return apptCalFetch_('post', calendarId, '', event); },
+  remove: function (calendarId, eventId) { apptCalFetch_('delete', calendarId, eventId); },
+};
+function apptCalFetch_(method, calendarId, eventId, payload) {
+  const url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calendarId) + '/events' +
+    (eventId ? '/' + encodeURIComponent(eventId) : '') + '?sendUpdates=none';
+  const opt = { method: method, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
+  if (payload) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
+  const res = UrlFetchApp.fetch(url, opt);
+  const code = res.getResponseCode(), text = res.getContentText();
+  if (code < 200 || code >= 300) throw new Error('Calendar ' + code + ': ' + String(text).slice(0, 200));
+  return text ? JSON.parse(text) : {};
+}
 
 // The applicant time column an accepted appointment writes (a function: HIR_COL lives in hiring.gs).
 function apptTimeCol_(kind) { return { interview: HIR_COL.INTERVIEW_AT, demo: HIR_COL.DEMO_AT, md: HIR_COL.MD_INTERVIEW_AT }[kind]; }
@@ -106,6 +121,7 @@ function apptProposeCore_(caller, sheet, body) {
   }
   const r = hirScopedRow_(caller, sheet, body.row);
   const start = hirDateOrThrow_(body.start, 'date and time');
+  hirGrow_(sheet); // apptRowState_ reads Shortlisted At (col 26): a live sheet may still have 25 columns
   const st = apptRowState_(sheet, r.row);
   if (st.rejected) throw new Error('This applicant was rejected -- Revive them first');
   const direct = apptIsDirect_(caller, kind);
@@ -136,27 +152,151 @@ function apptPropose_(caller, body) {
   return Object.assign({ id: appt.id }, hiringApplicants_(caller));
 }
 
-// Accept / decline. TASK 2 STUB: only the direct-booking accept (the proposer is themselves its acceptor);
-// Task 3 completes it (acceptor checks, Owner override, decline, calendar fallbacks).
+// Who may accept / decline: interview and demo -> role Principal covering the campus, or an Owner (override);
+// md -> an MD acceptor Owner. Returns the Decided By label, or throws.
+function apptAcceptorLabel_(caller, a) {
+  if (a.kind === 'md') {
+    if (!apptMdAcceptor_(caller)) throw new Error('Only MD Academics (an Owner) can accept or decline an MD Academics interview');
+    return caller.email;
+  }
+  if (apptHasRole_(caller, 'Principal') && apptCovers_(caller, a.campus)) return caller.email;
+  if (apptHasRole_(caller, 'Owner')) return caller.email + ' (override)';
+  throw new Error('Only the ' + a.campus + ' Principal (or the Owner) can accept or decline this');
+}
+function apptDeciderEmail_(a) { return String(a.decidedBy || '').replace(/\s*\(override\)$/, ''); }
+
+// Accept / decline under the caller's lock. Re-reads the appointment, so a second accept finds it decided.
 function apptDecideCore_(caller, appt, decision, note) {
   const cur = apptById_(appt.id);
-  const isDirect = decision === 'accept' && cur.status === 'proposed' && cur.proposedBy === caller.email && apptIsDirect_(caller, cur.kind)
-    && (cur.kind === 'md' || apptCovers_(caller, cur.campus));
-  if (!isDirect) throw new Error('not implemented');
+  if (decision !== 'accept' && decision !== 'decline') throw new Error('Choose accept or decline');
+  if (cur.status !== 'proposed') throw new Error('This appointment is already ' + cur.status);
+  const by = apptAcceptorLabel_(caller, cur);
+  if (decision === 'decline') {
+    note = hirText_(note, 500);
+    if (!note) throw new Error('Add a note saying why (the proposer sees it)');
+    return apptSave_(Object.assign(cur, { status: 'declined', decidedBy: by, decidedAt: new Date(), declineNote: note }));
+  }
   const sheet = hirSheet_();
   hirGrow_(sheet);
-  // A reschedule: the old accepted one goes first, so its clear can't wipe the new time.
+  // A reschedule: the old accepted one goes first (and loses its event), so its clear can't wipe the new time.
   apptForPerson_(apptAll_(), cur.row, cur.phone).filter(function (a) { return a.kind === cur.kind && a.status === 'accepted' && a.id !== cur.id; })
     .forEach(function (a) { apptEnd_(a, caller.email, 'rescheduled', sheet); });
   sheet.getRange(cur.row, apptTimeCol_(cur.kind)).setValue(cur.start);
-  let ev = null, err = '';
-  try {
-    ev = APPT_CAL_.insert(caller.email, { summary: cur.kind + ': ' + cur.name, start: cur.start,
-      end: new Date(hirMs_(cur.start) + cur.durationMin * 60000) });
-  } catch (e) { err = e.message; }
-  Object.assign(cur, { status: 'accepted', decidedBy: caller.email, decidedAt: new Date(),
-    eventId: ev && ev.id ? caller.email + '|' + ev.id : '', calendarMode: ev && ev.id ? 'own' : 'none', calendarError: err });
+  Object.assign(cur, { status: 'accepted', decidedBy: by, decidedAt: new Date() });
+  apptStoreCalendar_(cur, apptCalendarWrite_(cur, caller.email));
   return apptSave_(cur);
+}
+function apptStoreCalendar_(a, cal) {
+  Object.assign(a, { eventId: cal.eventId ? cal.calendarId + '|' + cal.eventId : '', calendarMode: cal.mode, calendarError: cal.error });
+}
+
+// action=apptdecide {id, decision:'accept'|'decline', note?}
+function apptDecide_(caller, body) {
+  hirWithLock_(function () { apptDecideCore_(caller, { id: body.id }, String(body.decision || ''), body.note); });
+  return Object.assign({ id: String(body.id) }, apptList_(caller));
+}
+
+// action=apptcalendarretry {id} -- an accepted appointment whose calendar write failed (mode none). It goes on
+// the acceptor's calendar; a migrated one (decided by "migration") on the retrier's.
+function apptCalendarRetry_(caller, body) {
+  hirWithLock_(function () {
+    const cur = apptById_(body.id);
+    const acceptor = apptDeciderEmail_(cur);
+    if (acceptor !== caller.email && !hirElevated_(caller)) throw new Error('Only the acceptor or a Principal, Coordinator or the Owner can retry this');
+    hirScopedRow_(caller, hirSheet_(), cur.row);
+    if (cur.status !== 'accepted' || cur.calendarMode !== 'none') throw new Error('This appointment is already on the calendar (or not accepted)');
+    apptStoreCalendar_(cur, apptCalendarWrite_(cur, acceptor.indexOf('@') > 0 ? acceptor : caller.email));
+    apptSave_(cur);
+  });
+  return Object.assign({ id: String(body.id) }, apptList_(caller));
+}
+
+// The event for an appointment. Role: the first approved requisition at its campus the subjects match (the
+// hiring page's roleFor_), else the position on their latest interview report, else their subjects.
+var APPT_TITLE = { interview: 'Interview', demo: 'Demo class', md: 'MD Academics interview' };
+function apptEvent_(a) {
+  let role = '', stage = '';
+  if (a.row) {
+    const sheet = hirSheet_();
+    const subjects = String(sheet.getRange(a.row, HIR_COL.SUBJECTS).getValue() || '').trim();
+    stage = String(sheet.getRange(a.row, HIR_COL.STATUS).getValue() || '').trim();
+    try {
+      const req = (hirApprovedRequisitions_('New/ Backup Position')[a.campus] || [])
+        .filter(function (q) { return hirSubjectsMatch_(q.matchSubjects, subjects); })[0];
+      if (req) role = (req.roleLevel || 'ROLE') + (req.subjects ? ': ' + req.subjects : '');
+    } catch (e) { Logger.log('appt event role: ' + e.message); }
+    if (!role) {
+      const rep = hirPortalReports_(HIR_PI_TAB).filter(function (r) {
+        return hirNormalizePhone_(r.phone) === a.phone && r.position && HIR_POSITION_NONE.indexOf(r.position) === -1;
+      }).pop();
+      role = rep ? rep.position : subjects;
+    }
+  }
+  const start = new Date(hirMs_(a.start));
+  return {
+    summary: APPT_TITLE[a.kind] + ': ' + a.name + (role ? ' (' + role + ')' : ''),
+    description: ['Phone: ' + a.phone, 'School: ' + a.campus, role ? 'Position: ' + role : '', stage ? 'Stage: ' + stage : '',
+      'Proposed by: ' + a.proposedBy, a.place ? 'Place: ' + a.place : '',
+      'https://kanwaruday.github.io/LMCSManagement/hiring/index.html#row=' + a.row].filter(Boolean).join('\n'),
+    start: { dateTime: start.toISOString(), timeZone: 'Asia/Kolkata' },
+    end: { dateTime: new Date(start.getTime() + (a.durationMin || APPT_DURATION[a.kind] || 30) * 60000).toISOString(), timeZone: 'Asia/Kolkata' },
+  };
+}
+
+// Put the event on the acceptor's own calendar (shared with the backend account, "make changes"); else on
+// the backend's primary with the acceptor as a guest (sendUpdates=none: no invitation mail); else none.
+// Never throws. Returns {eventId, mode, calendarId, error}.
+function apptCalendarWrite_(appt, acceptorEmail) {
+  const errs = [];
+  let ev;
+  try { ev = apptEvent_(appt); } catch (e) { return { eventId: '', mode: 'none', calendarId: '', error: 'event: ' + e.message }; }
+  const tries = [[acceptorEmail, ev, 'own'], ['primary', Object.assign({}, ev, { attendees: [{ email: acceptorEmail }] }), 'guest']];
+  for (let i = 0; i < tries.length; i++) {
+    try {
+      const res = APPT_CAL_.insert(tries[i][0], tries[i][1]);
+      if (res && res.id) return { eventId: String(res.id), mode: tries[i][2], calendarId: tries[i][0], error: '' };
+      errs.push(tries[i][2] + ': no event id');
+    } catch (e) { errs.push(tries[i][2] + ': ' + e.message); }
+  }
+  return { eventId: '', mode: 'none', calendarId: '', error: errs.join('; ').slice(0, 500) };
+}
+
+// action=apptlist -> {toAccept, myProposals, upcoming}, every list inside the caller's campuses.
+//   toAccept: proposals this caller accepts -- interview/demo for a covering Principal, md for an MD acceptor
+//     Owner. An Owner's override for interview/demo is used from the Hiring panel, not this inbox.
+//   myProposals: what the caller proposed (not cancelled), from today on.  upcoming: accepted, from today on.
+// A Fee Clerk never sees an md note.
+function apptList_(caller) {
+  const vis = hirCallerCampuses_(caller);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const clerk = !hirElevated_(caller);
+  const all = apptAll_().filter(function (a) { return !vis || vis.indexOf(String(a.campus)) !== -1; })
+    .sort(function (a, b) { return hirMs_(a.start) - hirMs_(b.start); });
+  const ahead = function (a) { return hirMs_(a.start) >= today.getTime(); };
+  const out = function (a) {
+    const o = {};
+    APPT_KEYS.forEach(function (k) { o[k] = Object.prototype.toString.call(a[k]) === '[object Date]' ? a[k].toISOString() : a[k]; });
+    if (clerk && a.kind === 'md') { o.note = ''; o.declineNote = ''; }
+    return o;
+  };
+  return {
+    success: true,
+    toAccept: all.filter(function (a) {
+      return a.status === 'proposed' && (a.kind === 'md' ? apptMdAcceptor_(caller) : apptHasRole_(caller, 'Principal') && apptCovers_(caller, String(a.campus)));
+    }).map(out),
+    myProposals: all.filter(function (a) { return a.proposedBy === caller.email && a.status !== 'cancelled' && ahead(a); }).map(out),
+    upcoming: all.filter(function (a) { return a.status === 'accepted' && ahead(a); }).map(out),
+  };
+}
+
+// Editor-run check that the backend can write to someone's calendar: inserts a 5-minute test event tomorrow
+// through APPT_CAL_ (own, else guest), removes it, and logs the mode.
+function testCalendarWrite(email) {
+  const res = apptCalendarWrite_({ kind: 'interview', name: 'Calendar test (delete me)', row: 0, phone: '', campus: '', place: '',
+    proposedBy: 'testCalendarWrite', start: new Date(Date.now() + 86400000), durationMin: 5 }, email);
+  Logger.log('testCalendarWrite(' + email + '): mode ' + res.mode + (res.error ? ' -- ' + res.error : ''));
+  if (res.eventId) apptCalendarDelete_({ eventId: res.calendarId + '|' + res.eventId });
+  return res;
 }
 
 function apptCancelCore_(caller, appt, note) {

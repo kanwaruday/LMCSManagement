@@ -162,6 +162,7 @@ function doGet(e) {
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
+    if (action === 'apptlist') return jsonOut_(apptList_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
     if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'hiringrownotes') return jsonOut_(hiringRowNotes_(e.parameter.row));
@@ -232,6 +233,8 @@ function doPost(e) {
     if (action === 'hiringrevive') return jsonOut_(hiringRevive_(caller, body));
     if (action === 'apptpropose') return jsonOut_(apptPropose_(caller, body));
     if (action === 'apptcancel') return jsonOut_(apptCancel_(caller, body));
+    if (action === 'apptdecide') return jsonOut_(apptDecide_(caller, body));
+    if (action === 'apptcalendarretry') return jsonOut_(apptCalendarRetry_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {

@@ -1697,8 +1697,13 @@ function hiringSchedule_(caller, body) {
   hirWithLock_(function () {
     const r = hirScopedRow_(caller, sheet, body.row);
     if (body.clear === 'interview' || body.clear === 'demo') {
-      apptForPerson_(apptAll_(), r.row, r.phone).filter(function (a) { return a.kind === body.clear && (a.status === 'proposed' || a.status === 'accepted'); })
-        .forEach(function (a) { apptCancelCore_(caller, a, 'cleared'); });
+      // Only the person's rows inside the caller's scope (checked up front, so an out-of-scope duplicate row
+      // can't throw after some cancels were written).
+      const inScope = function (a) { try { hirScopedRow_(caller, sheet, a.row); return true; } catch (e) { return false; } };
+      const hits = apptForPerson_(apptAll_(), r.row, r.phone)
+        .filter(function (a) { return a.kind === body.clear && (a.status === 'proposed' || a.status === 'accepted') && inScope(a); });
+      if (!hits.length) throw new Error('Nothing booked to clear');
+      hits.forEach(function (a) { apptCancelCore_(caller, a, 'cleared'); });
     }
     if (body.interviewAt) apptProposeCore_(caller, sheet, { row: r.row, kind: 'interview', start: body.interviewAt });
     if (body.demoAt) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: body.demoAt });

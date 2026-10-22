@@ -2,11 +2,11 @@
 // propose, cancel, direct booking, and every old date writer rerouted through it.
 const vm = require('vm'), fs = require('fs'), assert = require('assert'), path = require('path');
 // The script lock is not re-entrant in Apps Script: this fake throws if anything takes it while it is held.
-let held = false;
+let held = false, props = {}, logs = [];
 const ctx = vm.createContext({
-  console, Logger: { log() {} }, Session: { getScriptTimeZone: () => 'Asia/Kolkata' },
+  console, Logger: { log(m) { logs.push(String(m)); } }, Session: { getScriptTimeZone: () => 'Asia/Kolkata' },
   Utilities: { formatDate: () => '2026-10-22' }, APR_STATUS: { APPROVED: 'Approved', REJECTED: 'Rejected' },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] === undefined ? null : props[k]) }) },
   LockService: { getScriptLock: () => ({
     waitLock() { if (held) throw new Error('lock taken while held (nested lock)'); held = true; },
     tryLock() { if (held) throw new Error('lock taken while held (nested lock)'); held = true; return true; },
@@ -14,18 +14,21 @@ const ctx = vm.createContext({
 });
 ['hiring.gs', 'hiring-appointments.gs'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), ctx));
 const C = vm.runInContext('HIR_COL', ctx);
+const REAL_CAL = ctx.APPT_CAL_;
 const H = Array.from(vm.runInContext('APPT_HEADERS', ctx));
 const isDate = (v) => Object.prototype.toString.call(v) === '[object Date]';
 const T = (name, fn) => { held = false; fn(); assert.strictEqual(held, false, 'lock left held'); console.log('ok  -', name); };
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message), String(re));
 
+// Like Apps Script: reading a column past getMaxColumns() throws (a live sheet starts at 25 columns).
 function sheet(rows) {
-  let maxCols = 25;
+  let maxCols = Math.max(25, ...rows.map((r) => r.length));
   const s = {
     rows, getLastRow: () => rows.length, getMaxColumns: () => maxCols, insertColumnsAfter(n, k) { maxCols += k; },
     appendRow(r) { rows.push(r.slice()); },
     getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
     getRange(r, c) {
+      if (c > maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
       const rng = {
         getValue: () => ((rows[r - 1] || [])[c - 1] === undefined ? '' : rows[r - 1][c - 1]),
         setValue(v) { while (rows.length < r) rows.push([]); rows[r - 1][c - 1] = v; return rng; },
@@ -56,6 +59,17 @@ function reset(rows) {
   ctx.hiringApplicants_ = () => { lockedDuringList = held; return { success: true, applicants: [] }; };
   ctx.hirSalaryOfferDecisions_ = () => ({});
   ctx.hirIsHiringApproved_ = () => false;
+  props = {}; logs = [];
+  stubCal({});
+}
+// The calendar seam, recorded. failOwn: insert into the acceptor's calendar throws; failGuest: into 'primary'.
+let cal;
+function stubCal(o) {
+  cal = Object.assign({ inserts: [], removes: [] }, o);
+  ctx.APPT_CAL_ = {
+    insert(id, ev) { cal.inserts.push({ id, ev: JSON.parse(JSON.stringify(ev)) }); if (id === 'primary' ? cal.failGuest : cal.failOwn) throw new Error('403 read-only'); return { id: 'ev' + cal.inserts.length }; },
+    remove(id, eid) { cal.removes.push([id, eid]); },
+  };
 }
 const appts = () => ctx.apptAll_();
 // An appointment row written straight into the tab (for states the stub can't reach yet).
@@ -219,8 +233,184 @@ T('demo report "another" + nextDemoAt: a Principal books it, a Coordinator propo
   ctx.hiringSubmitDemo_(coord, body);
   assert.strictEqual(appts()[0].status, 'proposed'); assert.strictEqual(apps.rows[1][C.DEMO_AT - 1], '');
 });
-T('decide core: anything but a direct booking is not implemented yet', () => {
+const owner = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'] };
+const md = { email: 'md@lms.org.in', campusId: 'ALL', roles: ['Owner'] };
+const p1 = { email: 'p1@lms.org.in', campusId: 'LMS1', roles: ['Principal'] };
+const proposeId = (who, o) => ctx.apptPropose_(who, Object.assign({ row: 2, kind: 'interview', start: FUTURE }, o)).id;
+
+T('a same-campus Principal accepts -> accepted, column 13 set, event on their own calendar', () => {
   reset([appRow(SL)]);
-  ctx.apptPropose_(clerk, { row: 2, kind: 'interview', start: FUTURE });
-  throws(() => ctx.apptDecideCore_(principal, appts()[0], 'accept', ''), /not implemented/);
+  const id = proposeId(clerk);
+  const res = ctx.apptDecide_(principal, { id, decision: 'accept' });
+  assert.strictEqual(lockedDuringList, false); assert.ok(Array.isArray(Array.from(res.toAccept)));
+  const a = appts()[0];
+  assert.strictEqual(a.status, 'accepted'); assert.strictEqual(a.decidedBy, 'p@lms.org.in'); assert.strictEqual(a.calendarMode, 'own');
+  assert.strictEqual(a.eventId, 'p@lms.org.in|ev1'); assert.strictEqual(a.calendarError, '');
+  assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1].getTime(), new Date(FUTURE).getTime());
+  const ev = cal.inserts[0].ev;
+  assert.strictEqual(cal.inserts[0].id, 'p@lms.org.in');
+  assert.strictEqual(ev.summary, 'Interview: Asha (English)');
+  assert.ok(ev.description.includes('9876543210') && ev.description.includes('LMS4') && ev.description.includes('c@lms.org.in'));
+  assert.ok(ev.description.includes('https://kanwaruday.github.io/LMCSManagement/hiring/index.html#row=2'));
+  assert.strictEqual(new Date(ev.end.dateTime) - new Date(ev.start.dateTime), 30 * 60000);
+  assert.strictEqual(ev.attendees, undefined);
+});
+T('the event title names the first approved role that matches', () => {
+  reset([appRow(SL)]);
+  ctx.hirApprovedRequisitions_ = () => ({ LMS4: [{ roleLevel: 'TGT', subjects: 'English', matchSubjects: 'English' }] });
+  try { ctx.apptDecide_(principal, { id: proposeId(clerk), decision: 'accept' }); } finally { delete ctx.hirApprovedRequisitions_; }
+  assert.strictEqual(cal.inserts[0].ev.summary, 'Interview: Asha (TGT: English)');
+});
+T('the acceptor\'s calendar is read-only -> guest on primary with the acceptor as attendee', () => {
+  reset([appRow(SL)]);
+  stubCal({ failOwn: true });
+  ctx.apptDecide_(principal, { id: proposeId(clerk), decision: 'accept' });
+  const a = appts()[0];
+  assert.strictEqual(a.calendarMode, 'guest'); assert.strictEqual(a.eventId, 'primary|ev2');
+  assert.strictEqual(cal.inserts[1].id, 'primary');
+  assert.deepStrictEqual(cal.inserts[1].ev.attendees, [{ email: 'p@lms.org.in' }]);
+});
+T('both calendar inserts fail -> still accepted, mode none, error stored; a retry later lands on own', () => {
+  reset([appRow(SL)]);
+  stubCal({ failOwn: true, failGuest: true });
+  const id = proposeId(clerk);
+  ctx.apptDecide_(principal, { id, decision: 'accept' });
+  let a = appts()[0];
+  assert.strictEqual(a.status, 'accepted'); assert.strictEqual(a.calendarMode, 'none'); assert.ok(/403/.test(a.calendarError));
+  assert.strictEqual(a.eventId, ''); assert.ok(apps.rows[1][C.INTERVIEW_AT - 1]);
+  throws(() => ctx.apptCalendarRetry_(clerk, { id }), /Principal|acceptor/);
+  cal.failOwn = false;
+  ctx.apptCalendarRetry_(principal, { id });
+  a = appts()[0];
+  assert.strictEqual(a.calendarMode, 'own'); assert.strictEqual(a.calendarError, ''); assert.strictEqual(a.eventId, 'p@lms.org.in|ev3');
+  throws(() => ctx.apptCalendarRetry_(principal, { id }), /already/);
+});
+T('a double accept -> the second throws "already accepted"; one event', () => {
+  reset([appRow(SL)]);
+  const id = proposeId(clerk);
+  ctx.apptDecide_(principal, { id, decision: 'accept' });
+  throws(() => ctx.apptDecide_({ email: 'p2@lms.org.in', campusId: 'LMS4', roles: ['Principal'] }, { id, decision: 'accept' }), /already accepted/);
+  assert.strictEqual(cal.inserts.length, 1);
+});
+T('who may not accept: another campus\'s Principal, a Coordinator, a Fee Clerk', () => {
+  reset([appRow(SL)]);
+  const id = proposeId(clerk);
+  throws(() => ctx.apptDecide_(p1, { id, decision: 'accept' }), /Principal/);
+  throws(() => ctx.apptDecide_(coord, { id, decision: 'accept' }), /Principal/);
+  throws(() => ctx.apptDecide_(clerk, { id, decision: 'accept' }), /Principal/);
+  throws(() => ctx.apptDecide_(clerk, { id, decision: 'decline', note: 'no' }), /Principal/);
+  assert.strictEqual(appts()[0].status, 'proposed'); assert.strictEqual(cal.inserts.length, 0);
+});
+T('an Owner override accepts an interview -> decidedBy marked (override)', () => {
+  reset([appRow(SL)]);
+  ctx.apptDecide_(owner, { id: proposeId(clerk), decision: 'accept' });
+  const a = appts()[0];
+  assert.strictEqual(a.status, 'accepted'); assert.ok(/o@lms\.org\.in.*\(override\)/.test(a.decidedBy));
+  assert.strictEqual(cal.inserts[0].id, 'o@lms.org.in');
+});
+T('md: with MD_ACCEPTOR_EMAILS set, a different Owner may not accept; the listed one may', () => {
+  reset([appRow(Object.assign({ SALARY_OFFER_AT: day(-1) }, SL))]);
+  props.MD_ACCEPTOR_EMAILS = 'md@lms.org.in';
+  const id = proposeId(principal, { kind: 'md' });
+  throws(() => ctx.apptDecide_(owner, { id, decision: 'accept' }), /MD Academics/);
+  throws(() => ctx.apptDecide_(principal, { id, decision: 'accept' }), /MD Academics/);
+  ctx.apptDecide_(md, { id, decision: 'accept' });
+  assert.strictEqual(appts()[0].status, 'accepted'); assert.ok(apps.rows[1][C.MD_INTERVIEW_AT - 1]);
+  assert.ok(/^MD Academics interview: Asha/.test(cal.inserts[0].ev.summary));
+});
+T('a reschedule\'s accept cancels the old accepted one and removes its event', () => {
+  reset([appRow(SL)]);
+  ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: FUTURE }); // direct: event p@|ev1
+  const id = proposeId(clerk, { start: '2030-01-12T10:00' });
+  assert.deepStrictEqual(appts().map((a) => a.status), ['accepted', 'proposed']);
+  ctx.apptDecide_(principal, { id, decision: 'accept' });
+  assert.deepStrictEqual(appts().map((a) => a.status), ['cancelled', 'accepted']);
+  assert.deepStrictEqual(cal.removes, [['p@lms.org.in', 'ev1']]);
+  assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1].getTime(), new Date('2030-01-12T10:00').getTime());
+});
+T('decline needs a note; it leaves the applicant row alone', () => {
+  reset([appRow(SL)]);
+  const id = proposeId(clerk);
+  throws(() => ctx.apptDecide_(principal, { id, decision: 'decline' }), /note/);
+  throws(() => ctx.apptDecide_(principal, { id, decision: 'maybe' }), /accept or decline/);
+  ctx.apptDecide_(principal, { id, decision: 'decline', note: 'I am away that day' });
+  const a = appts()[0];
+  assert.strictEqual(a.status, 'declined'); assert.strictEqual(a.declineNote, 'I am away that day'); assert.strictEqual(a.decidedBy, 'p@lms.org.in');
+  assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1], ''); assert.strictEqual(cal.inserts.length, 0);
+});
+T('a Principal direct booking -> accepted at once, event on their calendar', () => {
+  reset([appRow(SL)]);
+  ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: FUTURE });
+  const a = appts()[0];
+  assert.strictEqual(a.status, 'accepted'); assert.strictEqual(a.calendarMode, 'own'); assert.strictEqual(cal.inserts[0].id, 'p@lms.org.in');
+  assert.ok(cal.inserts[0].ev.summary.startsWith('Interview: Asha'));
+});
+T('apptList_: scoped to the caller; clerks lose md notes; an Owner\'s toAccept is md only', () => {
+  reset([appRow(SL)]);
+  const base = { phone: '9876543210', row: 2, name: 'Asha', start: new Date(FUTURE), proposedBy: 'c@lms.org.in' };
+  addAppt(Object.assign({}, base, { id: 'i4', kind: 'interview', campus: 'LMS4', status: 'proposed' }));
+  addAppt(Object.assign({}, base, { id: 'i1', kind: 'interview', campus: 'LMS1', status: 'proposed' }));
+  addAppt(Object.assign({}, base, { id: 'd4', kind: 'demo', campus: 'LMS4', status: 'accepted' }));
+  addAppt(Object.assign({}, base, { id: 'm4', kind: 'md', campus: 'LMS4', status: 'proposed', note: 'salary 30k', proposedBy: 'p@lms.org.in' }));
+  addAppt(Object.assign({}, base, { id: 'x4', kind: 'interview', campus: 'LMS4', status: 'cancelled' }));
+  addAppt(Object.assign({}, base, { id: 'old', kind: 'demo', campus: 'LMS4', status: 'accepted', start: PAST }));
+  const ids = (l) => Array.from(l, (a) => a.id).sort().join(',');
+  let L = ctx.apptList_(principal);
+  assert.strictEqual(L.success, true);
+  assert.strictEqual(ids(L.toAccept), 'i4'); assert.strictEqual(ids(L.myProposals), 'm4'); assert.strictEqual(ids(L.upcoming), 'd4');
+  assert.strictEqual(typeof L.upcoming[0].start, 'string');
+  L = ctx.apptList_(clerk);
+  assert.strictEqual(ids(L.toAccept), ''); assert.strictEqual(ids(L.myProposals), 'd4,i4'); assert.strictEqual(ids(L.upcoming), 'd4');
+  L = ctx.apptList_(p1);
+  assert.strictEqual(ids(L.toAccept), 'i1'); assert.strictEqual(ids(L.upcoming), '');
+  L = ctx.apptList_(owner);
+  assert.strictEqual(ids(L.toAccept), 'm4'); assert.strictEqual(ids(L.upcoming), 'd4');
+  props.MD_ACCEPTOR_EMAILS = 'md@lms.org.in';
+  assert.strictEqual(ids(ctx.apptList_(owner).toAccept), '');
+  assert.strictEqual(ids(ctx.apptList_(md).toAccept), 'm4');
+  // a clerk never sees an md note
+  addAppt(Object.assign({}, base, { id: 'm5', kind: 'md', campus: 'LMS4', status: 'accepted', note: 'salary 30k', declineNote: 'x' }));
+  const m5 = Array.from(ctx.apptList_(clerk).upcoming).filter((a) => a.id === 'm5')[0];
+  assert.strictEqual(m5.note, ''); assert.strictEqual(m5.declineNote, '');
+  assert.strictEqual(Array.from(ctx.apptList_(principal).upcoming).filter((a) => a.id === 'm5')[0].note, 'salary 30k');
+});
+T('a live 25-column sheet: proposing never reads past the last column', () => {
+  reset([appRow({})]);
+  assert.strictEqual(apps.getMaxColumns(), 25);
+  throws(() => ctx.apptPropose_(clerk, { row: 2, kind: 'interview', start: FUTURE }), /Shortlist/);
+  ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: FUTURE });
+  assert.strictEqual(appts()[0].status, 'accepted');
+});
+T('hiringschedule clear: only the caller\'s in-scope rows; nothing booked -> error', () => {
+  reset([appRow(SL), appRow(Object.assign({ branches: 'LMS-1' }, SL))]);
+  addAppt({ id: 'a1', kind: 'interview', row: 3, phone: '9876543210', campus: 'LMS1', status: 'proposed', start: new Date(FUTURE), proposedBy: 'x@lms.org.in' });
+  addAppt({ id: 'a2', kind: 'interview', row: 2, phone: '9876543210', campus: 'LMS4', status: 'proposed', start: new Date(FUTURE), proposedBy: 'c@lms.org.in' });
+  ctx.hiringSchedule_(coord, { row: 2, clear: 'interview' });
+  assert.deepStrictEqual(appts().map((a) => a.status), ['proposed', 'cancelled']);
+  throws(() => ctx.hiringSchedule_(coord, { row: 2, clear: 'interview' }), /Nothing booked to clear/);
+  throws(() => ctx.hiringSchedule_(coord, { row: 2, clear: 'demo' }), /Nothing booked to clear/);
+});
+T('the real calendar seam: Calendar REST over UrlFetchApp, sendUpdates=none, bearer token; non-2xx throws', () => {
+  const calls = [];
+  let code = 200;
+  ctx.ScriptApp = { getOAuthToken: () => 'tok' };
+  ctx.UrlFetchApp = { fetch(url, opt) { calls.push({ url, opt }); return { getResponseCode: () => code, getContentText: () => (code === 204 ? '' : code < 300 ? '{"id":"e9"}' : 'nope') }; } };
+  ctx.MailApp = { sendEmail() { throw new Error('no mail ever'); } };
+  const ev = { summary: 's' };
+  assert.strictEqual(REAL_CAL.insert('p@lms.org.in', ev).id, 'e9');
+  assert.strictEqual(calls[0].url, 'https://www.googleapis.com/calendar/v3/calendars/p%40lms.org.in/events?sendUpdates=none');
+  assert.strictEqual(calls[0].opt.method, 'post'); assert.strictEqual(calls[0].opt.headers.Authorization, 'Bearer tok');
+  assert.strictEqual(calls[0].opt.muteHttpExceptions, true); assert.deepStrictEqual(JSON.parse(calls[0].opt.payload), ev);
+  code = 204;
+  REAL_CAL.remove('primary', 'e9');
+  assert.strictEqual(calls[1].url, 'https://www.googleapis.com/calendar/v3/calendars/primary/events/e9?sendUpdates=none');
+  assert.strictEqual(calls[1].opt.method, 'delete');
+  code = 403;
+  throws(() => REAL_CAL.insert('p@lms.org.in', ev), /403/);
+  // testCalendarWrite: insert then remove a test event through the seam, logging the mode
+  reset([appRow(SL)]);
+  const res = ctx.testCalendarWrite('p@lms.org.in');
+  assert.strictEqual(res.mode, 'own'); assert.deepStrictEqual(cal.removes, [['p@lms.org.in', 'ev1']]);
+  assert.ok(logs.some((l) => /own/.test(l)));
+  assert.ok(!/MailApp/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring-appointments.gs'), 'utf8')));
 });
