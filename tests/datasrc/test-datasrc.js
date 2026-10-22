@@ -28,6 +28,7 @@ const NO_SOURCES = {
   'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',
   'curriculum-progress/course-mapping-admin.html': 'Admin Panel: an "↗ Open" link sits beside every sheet ID it configures (each school, Daily, Allocation)',
+  'office/accounts.html': OFFICE_REASON,
   'office/close.html': OFFICE_REASON,
   'office/daybook.html': OFFICE_REASON,
   'office/deposits.html': OFFICE_REASON,

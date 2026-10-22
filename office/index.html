@@ -45,7 +45,11 @@
   <script type="module">
     import { bootOffice } from './js/shell.js';
     import { showToday } from './js/today.js';
-    bootOffice({ onReady: (session, api) => showToday(document.getElementById('today'), session, api) });
+    import { canSeeAccounts } from './js/accounts.js';
+    bootOffice({ onReady: (session, api) => {
+      if (canSeeAccounts(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'accounts.html'; a.textContent = 'Accounts'; document.querySelector('.office-nav').append(a); }
+      return showToday(document.getElementById('today'), session, api);
+    } });
   </script>
 </body>
 </html>
