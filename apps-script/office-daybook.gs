@@ -11,6 +11,7 @@ function officeDaybookActions_() {
 }
 
 var OFFICE_BUCKETS = ['petty', 'fee', 'other'];
+var OFFICE_COLLECTION_CATEGORIES = ['student_collection', 'student_collection_paid'];
 var OFFICE_DEPOSIT_LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
 
 // Strict ISO calendar date: shape and a real day (rejects 2026-02-30).
@@ -97,6 +98,14 @@ function officeDaybookAdd_(ctx, data) {
   } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
+  // Student collections are tracked per head; no other category carries one.
+  const collection = String(officeBlank_(data.collection) ? '' : data.collection);
+  if (OFFICE_COLLECTION_CATEGORIES.indexOf(cat.id) !== -1) {
+    if (!collection) throw officeCoded_('COLLECTION_REQUIRED');
+    const head = officeCollection_(collection);
+    if (!head || !head.active) throw officeCoded_('BAD_COLLECTION');
+  } else if (collection) throw new Error('BAD_FIELD');
+
   // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
   if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
   if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
@@ -106,7 +115,7 @@ function officeDaybookAdd_(ctx, data) {
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
     account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
-    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live',
+    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection,
   }, 'daybook.add');
 }
 
@@ -150,7 +159,7 @@ function officeDaybookReverse_(ctx, data) {
     narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
     account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
-    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by,
+    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection,
   }, 'daybook.reverse');
 }
 

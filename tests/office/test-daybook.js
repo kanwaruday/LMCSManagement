@@ -373,4 +373,45 @@ module.exports = function run(t) {
     assert.deepEqual([r.success, r.duplicate, r.id], [true, true, 'keep']);
     assert.equal(rowsOf(h).length, 1);
   });
+
+  // ── student collection heads ──
+  const sc = (o) => e(Object.assign({ category: 'student_collection', collection: 'mun', bucket: 'other' }, o));
+  const scPaid = (o) => e(Object.assign({ category: 'student_collection_paid', direction: 'OUT', collection: 'mun', bucket: 'other', file_id: 'slip' }, o));
+
+  t.test('DayBook has a trailing collection column', () => {
+    const h = v2();
+    const head = h.ctx.OFFICE_TABLES.DayBook;
+    assert.equal(head[head.length - 1], 'collection');
+  });
+
+  t.test('student collection categories need an active head (COLLECTION_REQUIRED / BAD_COLLECTION) and it is stored', () => {
+    const h = v2();
+    const add = (d) => h.call('daybook.add', d, 'clerk-token');
+    [sc, scPaid].forEach((mk) => {
+      assert.equal(add(mk({ collection: '' })).code, 'COLLECTION_REQUIRED');
+      assert.equal(add(mk({ collection: undefined })).code, 'COLLECTION_REQUIRED');
+      assert.equal(add(mk({ collection: 'nope' })).code, 'BAD_COLLECTION');
+    });
+    h.call('collection.set_active', { id: 'mun', active: false }, 'fh-token');
+    assert.equal(add(sc({})).code, 'BAD_COLLECTION', 'switched off');
+    h.call('collection.set_active', { id: 'mun', active: true }, 'fh-token');
+    assert.equal(add(sc({ id: 'c1' })).success, true);
+    assert.equal(add(scPaid({ id: 'c2' })).success, true);
+    assert.deepEqual([rowsOf(h).find((r) => r.id === 'c1').collection, rowsOf(h).find((r) => r.id === 'c2').collection], ['mun', 'mun']);
+    assert.equal(rowsOf(h).length, 2);
+  });
+
+  t.test('a collection on any other category is BAD_FIELD', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', e({ collection: 'mun' }), 'clerk-token').error, 'BAD_FIELD');
+    assert.equal(h.call('daybook.add', e({ collection: '' }), 'clerk-token').success, true);
+    assert.equal(rowsOf(h).length, 1);
+  });
+
+  t.test('reversal copies the collection', () => {
+    const h = v2();
+    h.call('daybook.add', sc({ id: 'c1', entry_date: '2026-10-21' }), 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rc1', campus: 'LMS1', reverses: 'c1' }, 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'rc1').collection, 'mun');
+  });
 };
