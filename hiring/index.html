@@ -496,7 +496,7 @@ function renderPanel_(row) {
       '<span class="formmsg" id="slotMsg"></span></div></div>';
   }
 
-  h += '<div class="block"><h4>Reports</h4>' + reportsHtml_(a);
+  if (ELEVATED) h += '<div class="block"><h4>Reports</h4>' + reportsHtml_(a);
   if (ELEVATED && active_(a)) {
     h += '<div class="foot"><button type="button" class="btn" data-act="interview" data-row="' + row + '">+ Interview report</button>' +
       (a.status !== 'Interview Scheduled' && a.status !== '' ? '<button type="button" class="btn" data-act="demo" data-row="' + row + '">+ Demo report</button>' : '') +
@@ -504,7 +504,7 @@ function renderPanel_(row) {
       (a.status === 'Interview Done' ? '<button type="button" class="btn ghost" data-act="mark" data-stage="demo" data-row="' + row + '">Demo done — report later</button>' : '') +
       '<span class="formmsg" id="markMsg"></span></div>';
   }
-  h += '<div id="formHost"></div></div>';
+  if (ELEVATED) h += '<div id="formHost"></div></div>';
 
   if (ELEVATED && ['Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired'].indexOf(a.status) !== -1) {
     h += '<div class="block"><h4>Offer</h4><div class="foot" style="margin-top:0"><a class="btn" href="' + esc_(salaryLinkUrl_(a)) + '" target="_blank" rel="noopener">💰 Salary Dashboard</a>' +
@@ -690,6 +690,7 @@ function submitInterview_(btn, row) {
   if (!val_('ifConf') || !val_('ifEng')) return msg_('ifMsg', 'Give Confidence and English a score from 1 to 5.', 'err');
   if (!Object.keys(cap).length) return msg_('ifMsg', 'Score at least one subject × class in the capability grid.', 'err');
   if (rec === 'reject' && !val_('ifRejReason')) return msg_('ifMsg', 'Pick a reason for rejecting.', 'err');
+  if (rec === 'reject' && val_('ifRejReason') === 'Other' && !val_('ifRejNote')) return msg_('ifMsg', 'Add a note saying why (reason: Other).', 'err');
   post_('hiringsubmitinterview', {
     row: row, interviewDate: val_('ifDate'), position: val_('ifPos'), confidence: Number(val_('ifConf')), english: Number(val_('ifEng')), capability: cap,
     spouseOccupation: val_('ifSpouse'), familySupport: val_('ifSupport'), qualificationRemarks: val_('ifQual'), otherSkills: val_('ifSkills'),
@@ -706,6 +707,7 @@ function submitDemo_(btn, row) {
   if (missing || !val_('df_feedback')) return msg_('dfMsg', 'Every demo score and Student Feedback needs a 1–5.', 'err');
   const rec = (document.querySelector('input[name="dfRec"]:checked') || {}).value;
   if (rec === 'reject' && !val_('dfRejReason')) return msg_('dfMsg', 'Pick a reason for rejecting.', 'err');
+  if (rec === 'reject' && val_('dfRejReason') === 'Other' && !val_('dfRejNote')) return msg_('dfMsg', 'Add a note saying why (reason: Other).', 'err');
   post_('hiringsubmitdemo', {
     row: row, demoDate: val_('dfDate'), class: val_('dfClass'), subject: val_('dfSubject'), scores: scores, studentFeedback: Number(val_('df_feedback')),
     strengths: val_('dfStrengths'), improve: val_('dfImprove'), remarks: val_('dfRemarks'), recommendation: rec, nextDemoAt: val_('dfNext'),
@@ -773,6 +775,7 @@ document.addEventListener('click', function (e) {
     case 'letter': showAppointmentLetter_(row); break;
     case 'dorej':
       if (!val_('pRejReason')) { msg_('rejMsg', 'Pick a reason.', 'err'); break; }
+      if (val_('pRejReason') === 'Other' && !val_('pRejNote')) { msg_('rejMsg', 'Add a note saying why (reason: Other).', 'err'); break; }
       post_('updatehiringstatus', { row: row, status: 'Rejected', rejectReason: val_('pRejReason'), rejectNote: val_('pRejNote') }, 'rejMsg', b, 'Rejected');
       break;
     case 'dorevive':
@@ -900,7 +903,8 @@ function showAppointmentLetter_(row) {
 
 function showApp(session) {
   SESSION = session;
-  ELEVATED = LMCS.canViewTeacherSS(session);
+  // Decisions by role, not by campus: a Fee Clerk whose campus is ALL is still a Fee Clerk.
+  ELEVATED = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(session, r); });
   if (LMCS.canViewCoordinatorPortal(session)) document.getElementById('aprLink').href = '../coordinator/systems/index.html#approvals';
   if (!ELEVATED) { document.getElementById('aprLink').style.display = 'none'; document.getElementById('homeLink').href = '../office/index.html'; }
   const mine = myCampuses_();

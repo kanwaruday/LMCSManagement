@@ -52,6 +52,7 @@ function reset(rows) {
     insertSheet: (n) => (tabs[n] = sheet([], n)),
   });
   ctx.hiringApplicants_ = () => ({ success: true, applicants: [] });
+  ctx.hirSalaryOfferDecisions_ = () => ({});
 }
 const principal = { email: 'p@lms.org.in', campusId: 'LMS4', roles: ['Principal'] };
 const clerk = { email: 'c@lms.org.in', campusId: 'LMS4', roles: ['FeeClerk'] };
@@ -186,4 +187,27 @@ T('approval status: a comma-list campus gets each of its own campuses', () => {
   const res = ctx.hiringApprovalStatus_({ campusId: 'LMS1,LMS2', roles: ['FeeClerk'] });
   assert.deepStrictEqual(Array.from(res.campuses, (c) => c.campusId), ['LMS1', 'LMS2']);
   assert.strictEqual(res.campuses[0].newPositions[0].roleKey, 'LMS1|TGT|English');
+});
+
+// Final review fixes
+T('reject and revive apply to every row with the same phone', () => {
+  reset([appRow({ INTERVIEW_AT: day(-3) }), appRow({ phone: '+91 98765 43210', INTERVIEW_AT: day(-3) })]);
+  ctx.hirRejectRow_(principal, apps, 3, 'Salary expectation too high', '');
+  assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Rejected'); assert.strictEqual(apps.rows[2][C.STATUS - 1], 'Rejected');
+  ctx.hiringRevive_(principal, { row: 3, note: 'back' });
+  [1, 2].forEach((i) => { assert.strictEqual(apps.rows[i][C.STATUS - 1], ''); assert.ok(isDate(apps.rows[i][C.REVIVED_AT - 1])); assert.strictEqual(JSON.parse(apps.rows[i][C.HISTORY - 1]).length, 1); });
+});
+T('revive: a candidate the Owner declined (derived Rejected) can be revived', () => {
+  reset([appRow({ INTERVIEW_AT: day(-5), MD_INTERVIEW_AT: day(-2) })]);
+  ctx.hirSalaryOfferDecisions_ = () => ({ 'T-0002': { status: 'Rejected', decidedAtMs: day(-1).getTime() } });
+  ctx.hiringRevive_(principal, { row: 2, note: 'Owner agreed to revisit' });
+  assert.strictEqual(apps.rows[1][C.MD_INTERVIEW_AT - 1], '');
+  assert.strictEqual(JSON.parse(apps.rows[1][C.HISTORY - 1])[0].rejectReason, 'Salary offer not approved');
+});
+T('report with reject reason "Other" and no note is refused before anything is saved', () => {
+  reset([appRow({ INTERVIEW_AT: day(0) })]);
+  throws(() => ctx.hiringSubmitInterview_(principal, Object.assign({}, goodInterview, { recommendation: 'reject', rejectReason: 'Other', rejectNote: '' })), /note/i);
+  assert.strictEqual(tabs['Portal Interview Reports'], undefined);
+  throws(() => ctx.hiringSubmitDemo_(principal, { row: 2, demoDate: '2026-10-22', scores: nine, studentFeedback: 4, recommendation: 'reject', rejectReason: 'Other' }), /note/i);
+  assert.strictEqual(tabs['Portal Demo Reports'], undefined);
 });

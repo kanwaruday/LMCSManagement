@@ -113,3 +113,14 @@ T('fields carried: reason, source, demoAt, history', () => {
   assert.strictEqual(a.status, 'Rejected'); assert.strictEqual(a.rejectReason, 'Salary expectation too high');
   assert.strictEqual(a.source, 'Walk-in'); assert.ok(a.demoAt); assert.strictEqual(a.history.length, 1);
 });
+
+// Final review C-1: two rows, one person (same phone). A stored decision must not be undone by a duplicate row.
+T('de-dupe: a stored Rejected beats a duplicate row that only shares evidence', () => {
+  const ev = { portalInterviews: [{ phone: '9876543210', submittedAtMs: day(-2).getTime(), recommendation: 'proceed' }] };
+  const list = build([row({ interviewAt: day(-3) }), row({ ts: day(-1), interviewAt: day(-3), status: 'Rejected', reason: 'Salary expectation too high' })], ev);
+  assert.strictEqual(list.length, 1); assert.strictEqual(list[0].status, 'Rejected'); assert.strictEqual(list[0].row, 3);
+});
+T('de-dupe: a row revived after the rejection beats the rejected duplicate', () => {
+  const list = build([row({ status: 'Rejected', reason: 'Other' }), row({ ts: day(-1), revivedAt: day(-1), interviewAt: day(1) })]);
+  assert.strictEqual(list.length, 1); assert.strictEqual(list[0].status, 'Interview Scheduled');
+});

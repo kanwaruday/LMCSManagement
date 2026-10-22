@@ -250,6 +250,21 @@ function hirRowApplicant_(r, i, ctx) {
 // For de-dupe: how far along a row is (Rejected sits just above an untouched row).
 function hirProgressRank_(a) { return a.status === 'Rejected' ? 0 : hirLadderIndex_(a.status) + 1; }
 
+// Which of two rows for one person (same phone) to show. Evidence is shared by phone, so a decision a
+// Principal STORED on one row must win over a duplicate that merely shares the reports: Hired first,
+// then a stored Rejected -- unless the other row was revived after it. Otherwise furthest along, and
+// the later row (a) on a tie. `a` is always the later sheet row.
+function hirPreferRow_(a, prev) {
+  const hired = function (x) { return x.storedStatus === 'Hired'; };
+  if (hired(a) !== hired(prev)) return hired(a) ? a : prev;
+  const rej = function (x) { return x.storedStatus === 'Rejected'; };
+  if (rej(a) !== rej(prev)) {
+    const r = rej(a) ? a : prev, other = r === a ? prev : a;
+    return hirMs_(other.revivedAt) > hirMs_(r.revivedAt) ? other : r;
+  }
+  return hirProgressRank_(a) >= hirProgressRank_(prev) ? a : prev;
+}
+
 // The candidate list a caller sees -- pure, so the rules are testable with plain arrays.
 // ctx: {requisitions, visibleCampuses (null = all), irRows, portalInterviews, portalDemos, decisions, nowMs}.
 // 1. every row -> applicant (status from evidence since its last revival);
@@ -265,7 +280,7 @@ function hirBuildApplicants_(values, ctx) {
     const key = a.phoneNorm || ('row' + a.row);
     const prev = byPhone[key];
     if (!prev) { byPhone[key] = a; order.push(key); continue; }
-    const keep = hirProgressRank_(a) >= hirProgressRank_(prev) ? a : prev;
+    const keep = hirPreferRow_(a, prev);
     const other = keep === a ? prev : a;
     if (!keep.cv && other.cv) keep.cv = other.cv;
     byPhone[key] = keep;
@@ -622,7 +637,18 @@ function hiringApplicants_(caller) {
   });
   const anyApproved = Object.keys(requisitions).some(function (c) { return !visibleCampuses || visibleCampuses.indexOf(c) !== -1; });
   return { success: true, statuses: HIR_STATUSES, rejectReasons: HIR_REJECT_REASONS, positions: hirOpenPositionLabelsFor_(visibleCampuses),
-    applicants: list, gated: !anyApproved && !list.length };
+    applicants: hirForCaller_(caller, list), gated: !anyApproved && !list.length };
+}
+
+// A Fee Clerk books slots and chases documents: no salary, notes, report contents or earlier rounds.
+function hirForCaller_(caller, list) {
+  if (hirElevated_(caller)) return list;
+  return list.map(function (a) {
+    const o = Object.assign({}, a);
+    ['offerBreakdown', 'notes', 'interviewReportPdf', 'matchRemarks'].forEach(function (k) { delete o[k]; });
+    o.interviewReports = []; o.demoReports = []; o.history = [];
+    return o;
+  });
 }
 
 // Open positions as the report forms offer them ("LMS 4 - TGT: English"), limited to the caller's campuses.
@@ -1276,11 +1302,7 @@ function hiringUpdateStatus_(caller, body) {
   // Rejected is a terminal exit, not a ladder rung (see HIR_LADDER). 2026-10-22: it needs a reason from
   // HIR_REJECT_REASONS (column S) -- checked here, before anything is written; the note is optional
   // except for "Other". See hirRejectRow_.
-  if (status === 'Rejected') {
-    const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === body.rejectReason; })[0];
-    if (!hit) throw new Error('Pick a reason for rejecting this candidate');
-    if (hit.group === 'other' && !String(body.rejectNote || '').trim()) throw new Error('Add a note saying why (reason: Other)');
-  }
+  if (status === 'Rejected') hirCheckRejectArgs_(body.rejectReason, body.rejectNote);
 
   // The campus actually doing the hiring is the CALLER's own campus,
   // not necessarily whichever campus the applicant happened to list
@@ -1706,15 +1728,36 @@ function hiringMarkStage_(caller, body) {
   return hiringApplicants_(caller);
 }
 
-// Reject with one of HIR_REJECT_REASONS; the note goes into Notes (required for "Other").
-function hirRejectRow_(caller, sheet, row, reason, note) {
+// Throws unless reason is one of HIR_REJECT_REASONS (and "Other" has a note). Run BEFORE anything is
+// written, so a refused reject never leaves a half-saved report behind.
+function hirCheckRejectArgs_(reason, note) {
   const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === reason; })[0];
   if (!hit) throw new Error('Pick a reason for rejecting this candidate');
+  if (hit.group === 'other' && !hirText_(note, 500)) throw new Error('Add a note saying why (reason: Other)');
+  return hit;
+}
+
+// Every row for the same person (same phone) as `row` -- a decision applies to all of them, since the
+// dashboard shows one row per phone and the reports are shared by phone. Always includes `row` itself.
+function hirSamePhoneRows_(sheet, row) {
+  const phone = hirNormalizePhone_(sheet.getRange(row, HIR_COL.PHONE).getValue());
+  if (!phone) return [row];
+  const v = sheet.getDataRange().getValues(), out = [];
+  for (let i = 1; i < v.length; i++) if (i + 1 === row || hirNormalizePhone_(v[i][HIR_COL.PHONE - 1]) === phone) out.push(i + 1);
+  return out;
+}
+
+// Reject with one of HIR_REJECT_REASONS on every row of this person (Hired rows excepted); the note
+// goes into this row's Notes (required for "Other").
+function hirRejectRow_(caller, sheet, row, reason, note) {
+  hirCheckRejectArgs_(reason, note);
   note = hirText_(note, 500);
-  if (hit.group === 'other' && !note) throw new Error('Add a note saying why (reason: Other)');
   hirGrow_(sheet);
-  sheet.getRange(row, HIR_COL.STATUS).setValue('Rejected');
-  sheet.getRange(row, HIR_COL.REJECT_REASON).setValue(reason);
+  hirSamePhoneRows_(sheet, row).forEach(function (r) {
+    if (r !== row && String(sheet.getRange(r, HIR_COL.STATUS).getValue()) === 'Hired') return;
+    sheet.getRange(r, HIR_COL.STATUS).setValue('Rejected');
+    sheet.getRange(r, HIR_COL.REJECT_REASON).setValue(reason);
+  });
   if (note) {
     const prev = String(sheet.getRange(row, HIR_COL.NOTES).getValue() || '');
     sheet.getRange(row, HIR_COL.NOTES).setValue((prev ? prev + ' | ' : '') + 'Rejected: ' + note);
@@ -1753,7 +1796,7 @@ function hiringSubmitInterview_(caller, body) {
   });
   if (!scored) throw new Error('Give at least one capability score (subject x class, 1 to 5)');
   if (['proceed', 'reject'].indexOf(body.recommendation) === -1) throw new Error('Pick a recommendation');
-  if (body.recommendation === 'reject' && !HIR_REJECT_REASONS.some(function (x) { return x.label === body.rejectReason; })) throw new Error('Pick a reason for rejecting this candidate');
+  if (body.recommendation === 'reject') hirCheckRejectArgs_(body.rejectReason, body.rejectNote);
   const e = body.experience || {};
   hirAppendReport_(HIR_PI_TAB, HIR_PI_HEADERS, Object.assign(hirReportBase_(caller, sheet, r), {
     'Position': hirText_(body.position, 120), 'Interview Date': date, 'Confidence': confidence, 'English': english,
@@ -1785,7 +1828,7 @@ function hiringSubmitDemo_(caller, body) {
   obj['Student Feedback'] = hirScoreOrThrow_(body.studentFeedback, 'Student Feedback');
   total += obj['Student Feedback'];
   if (['proceed', 'another', 'reject'].indexOf(body.recommendation) === -1) throw new Error('Pick a recommendation');
-  if (body.recommendation === 'reject' && !HIR_REJECT_REASONS.some(function (x) { return x.label === body.rejectReason; })) throw new Error('Pick a reason for rejecting this candidate');
+  if (body.recommendation === 'reject') hirCheckRejectArgs_(body.rejectReason, body.rejectNote);
   const next = body.recommendation === 'another' && body.nextDemoAt ? hirDateOrThrow_(body.nextDemoAt, 'next demo date') : null;
   Object.assign(obj, { 'Demo Date': date, 'Class': hirText_(body.class, 20), 'Subject': hirText_(body.subject, 60), 'Total /45': total,
     'Strengths': hirText_(body.strengths), 'Areas to improve': hirText_(body.improve), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation });
@@ -1803,21 +1846,32 @@ function hiringRevive_(caller, body) {
   const note = hirText_(body.note, 500);
   const sheet = hirSheet_();
   const r = hirScopedRow_(caller, sheet, body.row);
-  return hirWithLock_(function () {
+  hirWithLock_(function () {
     const get = function (col) { return sheet.getRange(r.row, col).getValue(); };
-    if (String(get(HIR_COL.STATUS)) !== 'Rejected') throw new Error('Only a Rejected candidate can be revived');
+    const applicantId = hirApplicantId_(r.row);
+    // Rejected = stored by a Principal, or derived: the Owner declined the Salary Offer Approval after the MD interview.
+    const dec = get(HIR_COL.MD_INTERVIEW_AT) ? hirSalaryOfferDecisions_()[applicantId] : null;
+    const ownerDeclined = !!dec && dec.status === APR_STATUS.REJECTED && dec.decidedAtMs >= hirMs_(get(HIR_COL.REVIVED_AT));
+    if (String(get(HIR_COL.STATUS)) !== 'Rejected' && !ownerDeclined) throw new Error('Only a Rejected candidate can be revived');
     if (!note) throw new Error('Add a note saying why they are being revived');
     const history = hirJson_(get(HIR_COL.HISTORY), []);
     const iso = function (col) { return hirSafeISO_(get(col)); };
     history.push({ round: history.length + 1, interviewAt: iso(HIR_COL.INTERVIEW_AT), demoAt: iso(HIR_COL.DEMO_AT), mdInterviewAt: iso(HIR_COL.MD_INTERVIEW_AT),
-      salaryOfferAt: iso(HIR_COL.SALARY_OFFER_AT), rejectReason: String(get(HIR_COL.REJECT_REASON) || ''), notes: String(get(HIR_COL.NOTES) || ''),
-      revivedBy: caller.email, revivedAt: new Date().toISOString(), reviveNote: note });
+      salaryOfferAt: iso(HIR_COL.SALARY_OFFER_AT), rejectReason: String(get(HIR_COL.REJECT_REASON) || '') || (ownerDeclined ? 'Salary offer not approved' : ''),
+      notes: String(get(HIR_COL.NOTES) || ''), revivedBy: caller.email, revivedAt: new Date().toISOString(), reviveNote: note });
     hirGrow_(sheet);
-    [HIR_COL.STATUS, HIR_COL.REJECT_REASON, HIR_COL.INTERVIEW_AT, HIR_COL.MD_INTERVIEW_AT, HIR_COL.SALARY_OFFER_AT, HIR_COL.DOJ,
-      HIR_COL.OFFER_BREAKDOWN, HIR_COL.STAGE_MARKS, HIR_COL.DEMO_AT].forEach(function (col) { sheet.getRange(r.row, col).setValue(''); });
-    sheet.getRange(r.row, HIR_COL.HISTORY).setValue(JSON.stringify(history));
-    sheet.getRange(r.row, HIR_COL.REVIVED_AT).setValue(new Date());
+    const now = new Date();
+    // Every row of this person starts the new round together (see hirSamePhoneRows_), or a duplicate row
+    // would carry the old round's evidence and outrank the revived one.
+    hirSamePhoneRows_(sheet, r.row).forEach(function (row) {
+      if (row !== r.row && String(sheet.getRange(row, HIR_COL.STATUS).getValue()) === 'Hired') return;
+      [HIR_COL.STATUS, HIR_COL.REJECT_REASON, HIR_COL.INTERVIEW_AT, HIR_COL.MD_INTERVIEW_AT, HIR_COL.SALARY_OFFER_AT, HIR_COL.DOJ,
+        HIR_COL.OFFER_BREAKDOWN, HIR_COL.STAGE_MARKS, HIR_COL.DEMO_AT].forEach(function (col) { sheet.getRange(row, col).setValue(''); });
+      sheet.getRange(row, HIR_COL.HISTORY).setValue(JSON.stringify(history));
+      sheet.getRange(row, HIR_COL.REVIVED_AT).setValue(now);
+    });
     sheet.getRange(r.row, HIR_COL.NOTES).setValue('Revived (round ' + (history.length + 1) + '): ' + note);
-    return hiringApplicants_(caller);
   });
+  // Outside the lock: building the list takes the script lock itself (walk-in backfill, employee codes).
+  return hiringApplicants_(caller);
 }
