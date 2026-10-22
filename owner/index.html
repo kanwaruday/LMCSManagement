@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Owner</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+      <nav class="roles" id="header-status"></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
+    <section class="hero" id="auth-root" style="padding-top:40px;">
+      <span class="eyebrow">Internal · Staff use only</span>
+      <h1>One home for La Montessori School management</h1>
+      <div id="gate-slot"></div>
+    </section>
+
+    <div id="app-root" style="display:none">
+
+      <div class="welcome" id="welcome-strip"></div>
+
+      <div id="appt-box"></div>
+
+      <section class="block" id="modules">
+        <h2>Owner tools</h2>
+        <div class="modules" id="modules-grid"></div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js"></script>
+  <script src="../assets/appointments.js"></script>
+  <script>
+    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+    const MODULES = [
+      // Approvals points at the Coordinator systems page for now; Owner portal part A replaces it.
+      { name: 'Approvals', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },
+      { name: 'Payroll', url: '../payroll/index.html', desc: 'Monthly payroll.' },
+      { name: 'Salary Dashboard', url: '../salary/index.html', desc: 'Offer-letter salary calculator and salary data.' },
+    ];
+
+    function renderModules() {
+      document.getElementById('modules-grid').innerHTML = MODULES.map((m) => (
+        '<div class="card"><div class="card-top"><h3><a href="' + m.url + '">' + m.name + '</a></h3></div><p>' + m.desc + '</p></div>'
+      )).join('');
+    }
+
+    function showApp(session) {
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+
+      document.getElementById('header-status').innerHTML =
+        '<span>Owner</span>';
+
+      document.getElementById('welcome-strip').innerHTML =
+        '<div class="welcome-text">Signed in as <b>' + session.name + '</b>' +
+        '<span class="welcome-campus">' + session.campusName + '</span></div>' +
+        '<a href="#" class="signout" id="signout-link">Sign out</a>';
+
+      document.getElementById('signout-link').addEventListener('click', function (e) {
+        e.preventDefault();
+        LMCS.signOut();
+      });
+
+      renderModules();
+      LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
+    }
+
+    // Fast path: a cached, valid session shows the app immediately instead
+    // of waiting on a live allowlist re-check (that fetch alone can take
+    // 20s+ — see the perf audit) — same pattern every module page already
+    // uses for its own gate. Falls back to requireSession() (which re-
+    // validates the cached session against the allowlist) if there's no
+    // cached session to show yet.
+    const cachedSession = LMCS.getSession();
+    function gate(session) {
+      if (LMCS.canViewOwnerPortal(session)) return showApp(session);
+      document.getElementById('gate-slot').innerHTML = '<p>The Owner portal is for the Owner only. <a href="../index.html">Back to the portals</a></p>';
+    }
+    if (cachedSession) {
+      gate(cachedSession);
+    } else {
+      LMCS.requireSession('#gate-slot').then(gate);
+    }
+  </script>
+
+</body>
+</html>

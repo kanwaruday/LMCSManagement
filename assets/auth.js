@@ -257,6 +257,11 @@ window.LMCS = (function () {
     return canViewTeacherSS(session) || hasRole(session, 'FeeClerk');
   }
 
+  // Owner portal (owner/index.html): Owner only.
+  function canViewOwnerPortal(session) {
+    return hasRole(session, 'Owner');
+  }
+
   // Coordinator Portal (coordinator/index.html): Owner or Coordinator only --
   // deliberately a separate name from canManageStaff even though the rule
   // matches today, so either can change without touching the other.
@@ -436,7 +441,7 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 

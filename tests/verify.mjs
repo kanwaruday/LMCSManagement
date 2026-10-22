@@ -23,7 +23,7 @@ for (const f of readdirSync(join(root, 'apps-script')).filter((f) => f.endsWith(
 step('gs files mapped to projects', () => execFileSync('node', [join(root, 'apps-script/deploy.mjs'), '--check'], { stdio: 'pipe', encoding: 'utf8' }));
 
 if (process.argv.includes('--live')) {
-  const pages = ['', 'coordinator/', 'payroll/', 'hiring/', 'principals-daily-reporting/', 'staff/add-employee.html', 'office/'];
+  const pages = ['', 'coordinator/', 'payroll/', 'hiring/', 'principals-daily-reporting/', 'staff/add-employee.html', 'office/', 'owner/'];
   const projects = JSON.parse(readFileSync(join(root, 'apps-script/projects.json'), 'utf8'));
   const urls = [
     ...pages.map((p) => `https://kanwaruday.github.io/LMCSManagement/${p}`),

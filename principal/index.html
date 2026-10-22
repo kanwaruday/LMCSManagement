@@ -36,6 +36,8 @@
 
       <div class="welcome" id="welcome-strip"></div>
 
+      <div id="appt-box"></div>
+
       <section class="block" id="modules">
         <h2>Modules</h2>
         <div class="modules" id="modules-grid">
@@ -54,7 +56,9 @@
   </footer>
 
   <script src="../assets/auth.js"></script>
+  <script src="../assets/appointments.js"></script>
   <script>
+    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
     const MODULES = [
       { name: 'Curriculum & Progress', status: 'live', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW tracking mapped against the Annual Curriculum Plan.' },
       { name: "Principal's Daily Reporting", status: 'live', url: '../principals-daily-reporting/index.html', desc: 'Teacher SS, Principal DR, and more — one hub for every Support Session/Daily Report role and their dashboards. Principal/Coordinator/Owner access.' },
@@ -102,6 +106,7 @@
       });
 
       renderModules();
+      LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
     }
 
     // Fast path: a cached, valid session shows the app immediately instead
