@@ -62,6 +62,9 @@ function makeDrive() {
     const f = {
       id, name, parent, kids: [],
       getId: () => id,
+      getName: () => name,
+      getFolders() { let i = 0; const m = f.kids.map((k) => d.folders[k]); return { hasNext: () => i < m.length, next: () => m[i++] }; },
+      getFilesByName(nm) { let i = 0; const m = Object.values(d.files).filter((x) => x.folder === id && x.name === nm); return { hasNext: () => i < m.length, next: () => m[i++] }; },
       getFoldersByName(nm) { d.calls.push('getFoldersByName'); const m = f.kids.filter((k) => d.folders[k].name === nm).map((k) => d.folders[k]); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
       createFolder(nm) { d.calls.push('createFolder'); return folder(nm, id); },
       createFile(blob) {
@@ -94,6 +97,7 @@ function boot(fixture, opts) {
   const drive = makeDrive(); props.OFFICE_DRIVE_ROOT = drive.root.id;
   const g = {
     console,
+    Logger: { log: (m) => (drive.logs = drive.logs || []).push(String(m)) },
     DriveApp: drive.app,
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), getProperties: () => Object.assign({}, props) }) },
     SpreadsheetApp: {
