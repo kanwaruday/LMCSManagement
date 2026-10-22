@@ -393,9 +393,9 @@ module.exports = function run(t) {
       assert.equal(add(mk({ collection: undefined })).code, 'COLLECTION_REQUIRED');
       assert.equal(add(mk({ collection: 'nope' })).code, 'BAD_COLLECTION');
     });
-    h.call('collection.set_active', { id: 'mun', active: false }, 'fh-token');
+    h.call('collection.set_active', { id: 'rq-1', head: 'mun', active: false }, 'fh-token');
     assert.equal(add(sc({})).code, 'BAD_COLLECTION', 'switched off');
-    h.call('collection.set_active', { id: 'mun', active: true }, 'fh-token');
+    h.call('collection.set_active', { id: 'rq-1', head: 'mun', active: true }, 'fh-token');
     assert.equal(add(sc({ id: 'c1' })).success, true);
     assert.equal(add(scPaid({ id: 'c2' })).success, true);
     assert.deepEqual([rowsOf(h).find((r) => r.id === 'c1').collection, rowsOf(h).find((r) => r.id === 'c2').collection], ['mun', 'mun']);

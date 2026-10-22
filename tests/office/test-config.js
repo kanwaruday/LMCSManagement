@@ -15,6 +15,7 @@ const fixture = {
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 module.exports = function run(t) {
+  const U = '3f2b8c1e-0000-4000-8000-000000000001'; // the outbox's request id: the head travels in `head`
   const fresh = () => {
     const h = boot(fixture);
     h.addConfig();
@@ -114,12 +115,12 @@ module.exports = function run(t) {
 
   t.test('collection.add: FinanceHead/Owner only, validated, duplicate is a no-op, audited', () => {
     const h = fresh();
-    assert.equal(h.call('collection.add', { id: 'x', label: 'X' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
-    assert.equal(h.call('collection.add', { id: '', label: 'X' }, 'fh-token').error, 'MISSING_ID');
-    assert.equal(h.call('collection.add', { id: 'Bad Id', label: 'X' }, 'fh-token').error, 'BAD_FIELD');
-    assert.equal(h.call('collection.add', { id: 'x', label: '  ' }, 'fh-token').error, 'LABEL_REQUIRED');
-    assert.equal(h.call('collection.add', { id: 'mun', label: 'Again' }, 'fh-token').duplicate, true, 'existing id is refused as a duplicate');
-    const r = h.call('collection.add', { id: 'yoga', label: ' Yoga camp ' }, 'owner-token');
+    assert.equal(h.call('collection.add', { id: U, head: 'x', label: 'X' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('collection.add', { id: U, head: '', label: 'X' }, 'fh-token').error, 'MISSING_ID');
+    assert.equal(h.call('collection.add', { id: U, head: 'Bad Id', label: 'X' }, 'fh-token').error, 'BAD_FIELD');
+    assert.equal(h.call('collection.add', { id: U, head: 'x', label: '  ' }, 'fh-token').error, 'LABEL_REQUIRED');
+    assert.equal(h.call('collection.add', { id: U, head: 'mun', label: 'Again' }, 'fh-token').duplicate, true, 'existing id is refused as a duplicate');
+    const r = h.call('collection.add', { id: U, head: 'yoga', label: ' Yoga camp ' }, 'owner-token');
     assert.equal(r.success, true); assert.equal(r.duplicate, false);
     const c = h.call('config.get', {}, 'clerk-token').collections;
     assert.deepEqual(J(c[11]), { id: 'yoga', label: 'Yoga camp', active: true });
@@ -130,13 +131,13 @@ module.exports = function run(t) {
 
   t.test('collection.set_active appends a row, the latest per id wins, order is kept, heads are never removed', () => {
     const h = fresh();
-    assert.equal(h.call('collection.set_active', { id: 'mun', active: false }, 'clerk-token').error, 'FORBIDDEN_ROLE');
-    assert.equal(h.call('collection.set_active', { id: 'nope', active: false }, 'fh-token').error, 'NOT_FOUND');
-    assert.equal(h.call('collection.set_active', { id: 'mun', active: 'no' }, 'fh-token').error, 'BAD_FIELD');
-    assert.equal(h.call('collection.set_active', { id: 'mun', active: false }, 'fh-token').success, true);
+    assert.equal(h.call('collection.set_active', { id: U, head: 'mun', active: false }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('collection.set_active', { id: U, head: 'nope', active: false }, 'fh-token').error, 'NOT_FOUND');
+    assert.equal(h.call('collection.set_active', { id: U, head: 'mun', active: 'no' }, 'fh-token').error, 'BAD_FIELD');
+    assert.equal(h.call('collection.set_active', { id: U, head: 'mun', active: false }, 'fh-token').success, true);
     let c = h.call('config.get', {}, 'clerk-token').collections;
     assert.equal(c.length, 11); assert.equal(c[1].id, 'mun'); assert.equal(c[1].active, false); assert.equal(c[1].label, 'MUN');
-    assert.equal(h.call('collection.set_active', { id: 'mun', active: true }, 'fh-token').success, true);
+    assert.equal(h.call('collection.set_active', { id: U, head: 'mun', active: true }, 'fh-token').success, true);
     assert.equal(h.call('config.get', {}, 'clerk-token').collections[1].active, true);
     const sh = h.ctx.officeConfigBook_().getSheetByName('Collections');
     assert.equal(sh.values.length, 1 + 11 + 2, 'append-only: two toggle rows');

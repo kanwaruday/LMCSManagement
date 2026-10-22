@@ -71,7 +71,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   ok('period');
 
   const heads = [{ id: 'mun', label: 'MUN', active: true }, { id: 'sports', label: 'Sports fund', active: false }];
-  assert.deepStrictEqual(A.collectionPayload(' Yoga & Camp 2027! ', heads), { ok: true, data: { id: 'yoga_camp_2027', label: 'Yoga & Camp 2027!' } });
+  assert.deepStrictEqual(A.collectionPayload(' Yoga & Camp 2027! ', heads), { ok: true, data: { head: 'yoga_camp_2027', label: 'Yoga & Camp 2027!' } });
   assert.strictEqual(A.collectionPayload('  ', heads).ok, false);
   assert.strictEqual(A.collectionPayload('!!!', heads).ok, false);
   assert.match(A.collectionPayload('mun', heads).error, /already/i);

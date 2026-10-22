@@ -124,8 +124,9 @@ function officeCollection_(id) {
   return officeCollections_().filter(function (c) { return c.id === id; })[0] || null;
 }
 
+// `data.id` is the outbox request id (the outbox overwrites it); the head's own id travels in `data.head`.
 function officeCollectionAdd_(ctx, data) {
-  const id = String(data.id || '');
+  const id = String(data.head || '');
   if (!id) throw new Error('MISSING_ID');
   if (!/^[a-z0-9_]+$/.test(id)) throw new Error('BAD_FIELD');
   if (!String(data.label || '').trim()) throw new Error('LABEL_REQUIRED');
@@ -136,7 +137,7 @@ function officeCollectionAdd_(ctx, data) {
 
 // Switch a head off or back on: appends a row (latest wins) and audits it. Not officeAppend_, which refuses a second row for an id.
 function officeCollectionSetActive_(ctx, data) {
-  const c = officeCollection_(String(data.id || ''));
+  const c = officeCollection_(String(data.head || ''));
   if (!c) throw new Error('NOT_FOUND');
   if (typeof data.active !== 'boolean') throw new Error('BAD_FIELD');
   const iso = officeNow_().toISOString();

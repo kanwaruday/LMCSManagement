@@ -247,7 +247,7 @@ export async function showDayBook(root, session, api, outbox) {
     collF.root.hidden = !(c && COLLECTION_CATEGORIES.includes(c.id));
     fileF.root.hidden = !(c && c.direction === 'OUT'); // every payment carries a photo
     fileIn.required = !fileF.root.hidden;
-    fileF.root.querySelector('label').textContent = c && c.id === 'fuel' ? 'Fuel bill photo (showing the odometer)' : 'Photo of the bill or signed receipt';
+    fileF.root.querySelector('label').textContent = c && c.id === 'fuel' ? 'Photo of the fuel bill (type the odometer below)' : 'Photo of the bill or signed receipt';
     [settlesF, settlesF2].forEach((f) => { f.root.hidden = !(c && c.id === 'credit_settlement'); });
     dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : '';
   };

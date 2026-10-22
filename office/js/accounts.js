@@ -66,7 +66,7 @@ export function collectionPayload(label, heads) {
   const l = String(label || '').trim();
   const id = l.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
   if (!id) return { ok: false, error: 'Enter a name for the collection.' };
-  return (heads || []).some((c) => c.id === id) ? { ok: false, error: 'That collection is already in the list. If it is switched off, switch it on there.' } : { ok: true, data: { id, label: l } };
+  return (heads || []).some((c) => c.id === id) ? { ok: false, error: 'That collection is already in the list. If it is switched off, switch it on there.' } : { ok: true, data: { head: id, label: l } };
 }
 
 export const NO_HEAD_LABEL = 'No collection named (older entries)';
@@ -208,7 +208,7 @@ export async function showAccounts(root, session, api, outbox) {
       const b = h('button', { type: 'button', class: 'secondary' }, c.active ? 'Active — tap to switch off' : 'Switched off — tap to switch on');
       b.addEventListener('click', () => guard('c:' + c.id, async () => {
         b.disabled = true;
-        try { if (await send('collection.set_active', { id: c.id, active: !c.active }, cMsg, c.label + (c.active ? ' switched off.' : ' switched on.'))) await loadConfig(); } finally { b.disabled = false; }
+        try { if (await send('collection.set_active', { head: c.id, active: !c.active }, cMsg, c.label + (c.active ? ' switched off.' : ' switched on.'))) await loadConfig(); } finally { b.disabled = false; }
       }));
       return h('li', {}, h('b', {}, c.label), ' ', b);
     }) : [h('li', {}, 'No collections yet.')]);
