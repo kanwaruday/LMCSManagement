@@ -102,6 +102,47 @@ module.exports = function run(t) {
     assert.equal(h.ctx.officeVehicles_()[0].label, 'Bus 1');
   });
 
+  t.test('Collections tab is seeded with the 11 heads and config.get returns them', () => {
+    const h = fresh();
+    const g = h.call('config.get', {}, 'clerk-token');
+    assert.equal(g.collections.length, 11);
+    assert.deepEqual(J(g.collections[0]), { id: 'annual_function', label: 'Annual Function', active: true });
+    assert.deepEqual(g.collections.map((c) => c.id), ['annual_function', 'mun', 'olympiads', 'field_trips', 'senior_tour', 'id_cards', 'red_cross', 'scouts_guides', 'board_registration', 'certificates', 'sports']);
+    assert.equal(g.collections[2].label, 'SOF and other Olympiads'); assert.equal(g.collections[8].label, 'Board registration (IX / XI)');
+    assert.deepEqual(Array.from(h.ctx.officeConfigBook_().getSheetByName('Collections').values[0]), ['id', 'label', 'active', 'created_at', 'created_by']);
+  });
+
+  t.test('collection.add: FinanceHead/Owner only, validated, duplicate is a no-op, audited', () => {
+    const h = fresh();
+    assert.equal(h.call('collection.add', { id: 'x', label: 'X' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('collection.add', { id: '', label: 'X' }, 'fh-token').error, 'MISSING_ID');
+    assert.equal(h.call('collection.add', { id: 'Bad Id', label: 'X' }, 'fh-token').error, 'BAD_FIELD');
+    assert.equal(h.call('collection.add', { id: 'x', label: '  ' }, 'fh-token').error, 'LABEL_REQUIRED');
+    assert.equal(h.call('collection.add', { id: 'mun', label: 'Again' }, 'fh-token').duplicate, true, 'existing id is refused as a duplicate');
+    const r = h.call('collection.add', { id: 'yoga', label: ' Yoga camp ' }, 'owner-token');
+    assert.equal(r.success, true); assert.equal(r.duplicate, false);
+    const c = h.call('config.get', {}, 'clerk-token').collections;
+    assert.deepEqual(J(c[11]), { id: 'yoga', label: 'Yoga camp', active: true });
+    assert.equal(c.find((x) => x.id === 'mun').label, 'MUN');
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit');
+    assert.equal(au.length, 1); assert.equal(au[0].action, 'collection.add'); assert.equal(au[0].tab, 'Collections');
+  });
+
+  t.test('collection.set_active appends a row, the latest per id wins, order is kept, heads are never removed', () => {
+    const h = fresh();
+    assert.equal(h.call('collection.set_active', { id: 'mun', active: false }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('collection.set_active', { id: 'nope', active: false }, 'fh-token').error, 'NOT_FOUND');
+    assert.equal(h.call('collection.set_active', { id: 'mun', active: 'no' }, 'fh-token').error, 'BAD_FIELD');
+    assert.equal(h.call('collection.set_active', { id: 'mun', active: false }, 'fh-token').success, true);
+    let c = h.call('config.get', {}, 'clerk-token').collections;
+    assert.equal(c.length, 11); assert.equal(c[1].id, 'mun'); assert.equal(c[1].active, false); assert.equal(c[1].label, 'MUN');
+    assert.equal(h.call('collection.set_active', { id: 'mun', active: true }, 'fh-token').success, true);
+    assert.equal(h.call('config.get', {}, 'clerk-token').collections[1].active, true);
+    const sh = h.ctx.officeConfigBook_().getSheetByName('Collections');
+    assert.equal(sh.values.length, 1 + 11 + 2, 'append-only: two toggle rows');
+    assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit').filter((a) => a.action === 'collection.set_active').length, 2);
+  });
+
   t.test('account.opening: once per bank/credit account, row has account and mode, cash refused', () => {
     const h = fresh();
     h.call('account.add', { id: 'a1', label: 'Pump', kind: 'credit', campus: 'LMS1' }, 'fh-token');
@@ -174,12 +215,12 @@ module.exports = function run(t) {
     assert.deepEqual(J(h.ctx.officeOpening_(h.ctx.officeOpen_('LMS1', '2026-27'))), { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 });
   });
 
-  t.test('one request checks the Config headers once, on Accounts and Vehicles only', () => {
+  t.test('one request checks the Config headers once, on Accounts, Vehicles and Collections only', () => {
     const h = fresh();
     h.call('config.get', {}, 'clerk-token'); // creates the tabs
     const real = h.ctx.officeEnsureHeader_, seen = [];
     h.ctx.officeEnsureHeader_ = (sheet, cols) => { seen.push(sheet.getName()); return real(sheet, cols); };
     assert.equal(h.call('config.get', {}, 'clerk-token').success, true);
-    assert.deepEqual(seen.slice().sort(), ['Accounts', 'Vehicles']);
+    assert.deepEqual(seen.slice().sort(), ['Accounts', 'Collections', 'Vehicles']);
   });
 };

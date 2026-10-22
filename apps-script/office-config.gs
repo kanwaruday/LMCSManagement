@@ -17,6 +17,12 @@ var OFFICE_CONFIG_SEED = {
   // Headers only; rows are added by the Accounts page. Default cash:/bank: accounts per campus are not stored.
   Accounts: [['id', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']],
   Vehicles: [['reg', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']],
+  // Student collection heads (trips, events, ID cards...). Switching one off appends a row; the latest row per id wins.
+  Collections: [['id', 'label', 'active', 'created_at', 'created_by']].concat([
+    ['annual_function', 'Annual Function'], ['mun', 'MUN'], ['olympiads', 'SOF and other Olympiads'], ['field_trips', 'Field trips'],
+    ['senior_tour', "Senior students' tour"], ['id_cards', 'ID cards'], ['red_cross', 'Red Cross'], ['scouts_guides', 'Scouts & Guides registration'],
+    ['board_registration', 'Board registration (IX / XI)'], ['certificates', 'Certificates and corrections (name, DOB, other)'], ['sports', 'Sports fund and tournaments'],
+  ].map(function (c) { return [c[0], c[1], 'true', '', '']; })),
   // Placeholder until Uday decides the approval limits (0 = no limit set).
   Limits: [
     ['role', 'max_amount_paise'],
@@ -105,6 +111,51 @@ function officeVehicles_() {
     return { reg: r.reg, label: r.label, kind: r.kind, campus: r.campus, active: officeActiveCell_(r.active) };
   });
 }
+// Collection heads in first-appearance order; the latest row per id wins (label and active), so a head is never lost.
+function officeCollections_() {
+  const out = [], at = {};
+  officeRows_(officeConfigBook_(), 'Collections').forEach(function (r) {
+    const c = { id: r.id, label: r.label, active: officeActiveCell_(r.active) };
+    if (at[r.id] === undefined) { at[r.id] = out.length; out.push(c); } else out[at[r.id]] = c;
+  });
+  return out;
+}
+function officeCollection_(id) {
+  return officeCollections_().filter(function (c) { return c.id === id; })[0] || null;
+}
+
+function officeCollectionAdd_(ctx, data) {
+  const id = String(data.id || '');
+  if (!id) throw new Error('MISSING_ID');
+  if (!/^[a-z0-9_]+$/.test(id)) throw new Error('BAD_FIELD');
+  if (!String(data.label || '').trim()) throw new Error('LABEL_REQUIRED');
+  const res = officeAppend_(officeConfigBook_(), 'Collections', { id: id, label: String(data.label).trim(), active: 'true' }, ctx.caller,
+    { action: 'collection.add', auditSs: officeCollectionAuditBook_(ctx.caller) });
+  return { id: id, duplicate: res.duplicate };
+}
+
+// Switch a head off or back on: appends a row (latest wins) and audits it. Not officeAppend_, which refuses a second row for an id.
+function officeCollectionSetActive_(ctx, data) {
+  const c = officeCollection_(String(data.id || ''));
+  if (!c) throw new Error('NOT_FOUND');
+  if (typeof data.active !== 'boolean') throw new Error('BAD_FIELD');
+  const iso = officeNow_().toISOString();
+  const row = { id: c.id, label: c.label, active: String(data.active), created_at: iso, created_by: ctx.caller.email };
+  officeWriteRow_(officeConfigBook_(), 'Collections', row);
+  officeWriteRow_(officeCollectionAuditBook_(ctx.caller), 'Audit', {
+    id: Utilities.getUuid(), ts: iso, who: ctx.caller.email, action: 'collection.set_active', tab: 'Collections', row_id: c.id, campus: '', after: JSON.stringify(row),
+  });
+  return { id: c.id, active: data.active };
+}
+
+// The Config book has no Audit tab, so collection changes are audited in the book of a campus the caller may use.
+function officeCollectionAuditBook_(caller) {
+  const fy = officeFy_(officeToday_());
+  const campus = OFFICE_CAMPUSES.filter(function (c) { return (caller.campuses.indexOf('ALL') !== -1 || caller.campuses.indexOf(c) !== -1) && officeHasBook_(c, fy); })[0];
+  if (!campus) throw new Error('NO_BOOK');
+  return officeOpen_(campus, fy);
+}
+
 function officeNormReg_(s) { return String(s === undefined || s === null ? '' : s).toUpperCase().replace(/[\s.\-]/g, ''); }
 
 function officeAccountAdd_(ctx, data) {
@@ -176,6 +227,8 @@ function officeConfigActions_() {
   return {
     'config.get': { roles: OFFICE_ALL_ROLES, write: false, run: officeConfigGet_ },
     'account.add': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountAdd_ },
+    'collection.add': { roles: ['FinanceHead', 'Owner'], write: true, run: officeCollectionAdd_ },
+    'collection.set_active': { roles: ['FinanceHead', 'Owner'], write: true, run: officeCollectionSetActive_ },
     'vehicle.add': { roles: ['FinanceHead', 'Owner'], write: true, run: officeVehicleAdd_ },
     'vehicles.import': { roles: ['FinanceHead', 'Owner'], write: true, run: officeVehiclesImport_ },
     'account.opening': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountOpening_ },
@@ -183,7 +236,7 @@ function officeConfigActions_() {
   };
 }
 
-// The Office Config book with every seed tab present (created if missing). Only Accounts and Vehicles get a
+// The Office Config book with every seed tab present (created if missing). Only Accounts, Vehicles and Collections get a
 // header check (Limits and the retired Categories tab are left as they are). Checked once per request.
 function officeConfigBook_() {
   const ss = officeConfig_();
@@ -191,7 +244,7 @@ function officeConfigBook_() {
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { if (tab === 'Accounts' || tab === 'Vehicles') officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (tab === 'Accounts' || tab === 'Vehicles' || tab === 'Collections') officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
@@ -204,7 +257,7 @@ function officeConfigGet_() {
   const ss = officeConfigBook_();
   const limits = {};
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
-  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), limits: limits, campuses: OFFICE_CAMPUSES };
+  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES };
 }
 
 function officeOpeningSet_(ctx, data) {
