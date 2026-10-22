@@ -14,16 +14,16 @@ var LMCSAppts = (function () {
       '<div class="ap-when">' + esc_(when_(a.start)) + (a.durationMin ? ' (' + esc_(a.durationMin) + ' min)' : '') + (a.place ? ' · ' + esc_(a.place) : '') + '</div>' +
       (a.note ? '<div class="ap-sub">' + esc_(a.note) + '</div>' : '');
   }
-  function retry_(a, role) {
-    return role !== 'FeeClerk' && a.status === 'accepted' && a.calendarMode === 'none'
-      ? '<div class="ap-sub">Calendar not updated — <button type="button" class="ap-link" data-act="retry" data-id="' + esc_(a.id) + '">Retry</button></div>' : '';
+  function retry_(a) {
+    return '<div class="ap-sub">Calendar not updated — <button type="button" class="ap-link" data-act="retry" data-id="' + esc_(a.id) + '">Retry</button></div>';
   }
-  function renderHtml_(data, role) {
+  // email = the viewer's; Retry only for the acceptor (decidedBy), never a FeeClerk-only viewer.
+  function renderHtml_(data, role, email) {
     data = data || {};
     var acc = role === 'FeeClerk' ? [] : (data.toAccept || []), mine = data.myProposals || [];
-    var seen = {}, retries = (data.upcoming || []).concat(mine).filter(function (a) {
-      if (seen[a.id] || role === 'FeeClerk' || a.status !== 'accepted' || a.calendarMode !== 'none') return false;
-      return (seen[a.id] = true);
+    var me = String(email || '').toLowerCase();
+    var retries = role === 'FeeClerk' || !me ? [] : (data.upcoming || []).filter(function (a) {
+      return a.status === 'accepted' && a.calendarMode === 'none' && String(a.decidedBy || '').toLowerCase() === me;
     });
     var out = '';
     if (acc.length) {
@@ -38,11 +38,10 @@ var LMCSAppts = (function () {
     if (mine.length) {
       out += '<h3>My proposals</h3>' + mine.map(function (a) {
         return '<div class="ap-card">' + head_(a) + '<span class="ap-chip ap-' + esc_(a.status) + '">' + esc_(a.status) + '</span>' +
-          (a.status === 'declined' && a.declineNote ? ' <span class="ap-sub">“' + esc_(a.declineNote) + '”</span>' : '') + retry_(a, role) + '</div>';
+          (a.status === 'declined' && a.declineNote ? ' <span class="ap-sub">“' + esc_(a.declineNote) + '”</span>' : '') + '</div>';
       }).join('');
-    } else if (retries.length) {
-      out += '<h3>Calendar</h3>' + retries.map(function (a) { return '<div class="ap-card">' + head_(a) + retry_(a, role) + '</div>'; }).join('');
     }
+    if (retries.length) out += '<h3>Calendar</h3>' + retries.map(function (a) { return '<div class="ap-card">' + head_(a) + retry_(a) + '</div>'; }).join('');
     return out;
   }
   var CSS = '.ap-box h3{margin:12px 0 6px;font-size:15px}.ap-card{border:1px solid #ddd;border-radius:6px;padding:10px 12px;margin:0 0 8px;background:#fff}' +
@@ -58,7 +57,7 @@ var LMCSAppts = (function () {
       return fetch(opts.backendUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: session.idToken }, body)) }).then(function (r) { return r.json(); });
     }
     function show_(data) {
-      var h = renderHtml_(data, role);
+      var h = renderHtml_(data, role, session.email);
       el.innerHTML = h ? '<style>' + CSS + '</style><section class="ap-box">' + h + '<div class="ap-err" role="alert"></div></section>' : '';
     }
     function err_(card, m) { var e = (card || el).querySelector('.ap-err') || el.querySelector('.ap-err'); if (e) e.textContent = m; }
@@ -66,7 +65,8 @@ var LMCSAppts = (function () {
       return fetch(opts.backendUrl + '?action=apptlist&idToken=' + encodeURIComponent(session.idToken), { cache: 'no-store' })
         .then(function (r) { return r.json(); }).then(function (d) { show_(d && d.success ? d : null); }).catch(function () { show_(null); });
     }
-    el.addEventListener('click', function (e) {
+    if (el.__apptBound) el.removeEventListener('click', el.__apptBound);
+    el.__apptBound = function (e) {
       var b = e.target.closest && e.target.closest('[data-act]'); if (!b) return;
       var act = b.getAttribute('data-act'), id = b.getAttribute('data-id'), card = b.closest('.ap-card');
       if (act === 'decline') { card.querySelector('.ap-decline').hidden = false; card.querySelector('.ap-note').focus(); return; }
@@ -81,7 +81,8 @@ var LMCSAppts = (function () {
       b.disabled = true;
       call.then(function (d) { if (d && d.success === false) { b.disabled = false; err_(el, d.error || 'Could not save'); } else load_(); })
         .catch(function () { b.disabled = false; err_(el, 'Network error — try again.'); });
-    });
+    };
+    el.addEventListener('click', el.__apptBound);
     return load_();
   }
   return { mount: mount, renderHtml_: renderHtml_ };
