@@ -49,8 +49,11 @@ var OFFICE_CATEGORIES = [
   ['security_refund', 'Security deposit refund', 'OUT', 'school', 0, '', 1],
   ['salary_advance', 'Salary advance', 'OUT', 'school', 0, '', 1],
   ['govt_legal', 'Government and legal (stamp paper, NOC, fees)', 'OUT', 'school', 0, '', 1],
-  ['chairman_personal', 'Chairman (personal)', 'OUT', 'school', 0, '', 1],
+  ['chairman_personal', 'Personal (Chairman and family)', 'OUT', 'school', 0, '', 1],
+  ['construction_works', 'Construction and building works', 'OUT', 'school', 0, '', 1],
+  ['student_collection_paid', 'Student collection paid onward', 'OUT', 'school', 0, '', 1],
   ['other_out', 'Other payment (say what for)', 'OUT', 'school', 0, '', 1],
+  ['transport_legacy', 'Transport before 23 Oct 2026 (not by vehicle)', 'OUT', 'transport', 0, '', 0], // import only: no vehicle, so no per-vehicle figure
   ['petty_expense', 'Petty expense (old)', 'OUT', 'school', 0, '', 0],
   ['bill_payment', 'Bill payment (old)', 'OUT', 'school', 0, '', 0],
   ['fuel', 'Fuel (diesel/petrol)', 'OUT', 'transport', 1, 'fuel', 1],
@@ -67,6 +70,9 @@ var OFFICE_CATEGORIES = [
   ['deposit_bank_in', 'Bank deposit (bank in)', 'IN', 'movement', 0, '', 0],
   ['credit_settlement', 'Settle a supplier credit account', 'OUT', 'movement', 0, '', 1],
   ['cash_transfer', 'Cash transfer between cash boxes', 'OUT', 'movement', 0, '', 1],
+  ['cash_received', 'Cash received (from another cash box or bank withdrawal)', 'IN', 'movement', 0, '', 1],
+  ['import_adjustment_in', 'Sheet import adjustment (in)', 'IN', 'movement', 0, '', 0],
+  ['import_adjustment_out', 'Sheet import adjustment (out)', 'OUT', 'movement', 0, '', 0],
 ].map(function (c) {
   return { id: c[0], label: c[1], direction: c[2], group: c[3], needs_vehicle: !!c[4], pnl_column: c[5], active: !!c[6] };
 });

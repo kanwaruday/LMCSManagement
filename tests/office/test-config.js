@@ -39,7 +39,7 @@ module.exports = function run(t) {
     assert.equal(by('transport_income').direction, 'IN'); assert.equal(by('transport_income').pnl_column, 'income');
     for (const c of r.categories) {
       assert.ok(['fee', 'income', 'school', 'transport', 'movement'].includes(c.group), c.id);
-      assert.equal(c.needs_vehicle, c.group === 'transport', c.id);
+      assert.equal(c.needs_vehicle, c.group === 'transport' && c.id !== 'transport_legacy', c.id);
       if (c.needs_vehicle) assert.ok(['fuel', 'service', 'insurance', 'taxes', 'parking', 'challan', 'loan_interest', 'loan_principal', 'other', 'income'].includes(c.pnl_column), c.id);
     }
     assert.equal(r.accounts.length, 14); assert.deepEqual(J(r.accounts[0]), { id: 'cash:LMS1', label: 'LMS1 cash', kind: 'cash', campus: 'LMS1', active: true });
@@ -48,6 +48,17 @@ module.exports = function run(t) {
     assert.deepEqual(J(r.limits), { AdminManager: 0, FinanceHead: 0, Principal: 0 });
     assert.deepEqual(r.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
     assert.equal(h.ctx.officeCategory_('nope'), null); assert.equal(h.ctx.officeCategory_('fuel').id, 'fuel');
+  });
+
+  t.test('v13 categories: construction, collection paid onward, cash received, legacy and import adjustments', () => {
+    const h = fresh();
+    const by = (id) => h.call('config.get', {}, 'clerk-token').categories.find((c) => c.id === id);
+    assert.deepEqual(J(by('construction_works')), { id: 'construction_works', label: 'Construction and building works', direction: 'OUT', group: 'school', needs_vehicle: false, pnl_column: '', active: true });
+    assert.deepEqual([by('student_collection_paid').direction, by('student_collection_paid').group, by('student_collection_paid').active], ['OUT', 'school', true]);
+    assert.deepEqual([by('cash_received').direction, by('cash_received').group, by('cash_received').active], ['IN', 'movement', true]);
+    assert.deepEqual([by('transport_legacy').group, by('transport_legacy').needs_vehicle, by('transport_legacy').pnl_column, by('transport_legacy').active], ['transport', false, '', false]);
+    assert.deepEqual([by('import_adjustment_in').direction, by('import_adjustment_in').active, by('import_adjustment_out').direction, by('import_adjustment_out').active], ['IN', false, 'OUT', false]);
+    assert.equal(by('chairman_personal').label, 'Personal (Chairman and family)');
   });
 
   t.test('officeNormReg_ strips spaces, dots and dashes and upper-cases', () => {
