@@ -54,11 +54,17 @@ function officeOpen_(campus, fy) {
     const have = ss.getSheetByName(tab);
     if (have) { officeEnsureHeader_(have, OFFICE_TABLES[tab]); return; }
     const sh = ss.insertSheet(tab);
+    officeWidenGrid_(sh, OFFICE_TABLES[tab].length); // a new sheet has 26 columns (P7)
     sh.getRange(1, 1, 1, OFFICE_TABLES[tab].length).setNumberFormat('@').setValues([OFFICE_TABLES[tab]]);
     sh.setFrozenRows(1);
   });
   if (OFFICE_MEMO) OFFICE_MEMO.books[key] = ss; // memoised only once the headers check out
   return ss;
+}
+
+// Sheets throws past the grid, so widen it to `n` columns before writing there.
+function officeWidenGrid_(sheet, n) {
+  if (sheet.getMaxColumns() < n) sheet.insertColumnsAfter(sheet.getMaxColumns(), n - sheet.getMaxColumns());
 }
 
 // Brings an existing tab's header up to `columns` by appending the missing trailing ones (text-formatted).
@@ -69,8 +75,7 @@ function officeEnsureHeader_(sheet, columns) {
   while (head.length && head[head.length - 1] === '') head.pop();
   for (let i = 0; i < head.length; i++) if (head[i] !== columns[i]) throw new Error('HEADER_MISMATCH');
   if (head.length >= columns.length) return;
-  // Sheets throws past the grid (a new sheet has 26 columns), so widen it first.
-  if (sheet.getMaxColumns() < columns.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), columns.length - sheet.getMaxColumns());
+  officeWidenGrid_(sheet, columns.length);
   sheet.getRange(1, head.length + 1, 1, columns.length - head.length).setNumberFormat('@').setValues([columns.slice(head.length)]);
 }
 
@@ -107,8 +112,11 @@ function officeRows_(ss, tab) {
   });
 }
 
+// Columns of a campus-book table, or of a Config tab (Accounts, Vehicles) from its seed header.
+function officeCols_(tab) { return OFFICE_TABLES[tab] || (OFFICE_CONFIG_SEED[tab] && OFFICE_CONFIG_SEED[tab][0]); }
+
 function officeWriteRow_(ss, tab, obj) {
-  const cols = OFFICE_TABLES[tab];
+  const cols = officeCols_(tab);
   const sh = ss.getSheetByName(tab);
   // '@' = plain text, so Sheets never turns ISO dates into Dates or '=...' text into formulas.
   sh.getRange(sh.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@').setValues([cols.map(function (c) { return obj[c] === undefined ? '' : obj[c]; })]);
@@ -116,17 +124,20 @@ function officeWriteRow_(ss, tab, obj) {
 }
 
 // Appends `row` to `tab` once per row.id and audits it. Caller must hold the script lock (officeHandle_ does
-// for write actions). Stamps created_at/created_by, and campus if absent. opts: {action} names the audit row.
+// for write actions). Stamps created_at/created_by, and campus if absent. opts: {action} names the audit row;
+// {key} the unique column (default 'id'; Vehicles use 'reg'); {auditSs} the book whose Audit tab records it
+// (Config books have none).
 function officeAppend_(ss, tab, row, caller, opts) {
-  if (!OFFICE_TABLES[tab]) throw new Error('NO_TAB: ' + tab);
-  if (!row || !row.id) throw new Error('MISSING_ID');
-  const id = String(row.id);
-  if (officeRows_(ss, tab).some(function (r) { return String(r.id) === id; })) return { id: id, duplicate: true };
+  if (!officeCols_(tab)) throw new Error('NO_TAB: ' + tab);
+  const key = (opts && opts.key) || 'id';
+  if (!row || !row[key]) throw new Error('MISSING_ID');
+  const id = String(row[key]);
+  if (officeRows_(ss, tab).some(function (r) { return String(r[key]) === id; })) return { id: id, duplicate: true };
   const iso = officeNow_().toISOString();
-  const full = Object.assign({}, row, { id: id, created_at: iso, created_by: caller.email });
+  const full = Object.assign({}, row, { [key]: id, created_at: iso, created_by: caller.email });
   if (!full.campus) full.campus = (opts && opts.campus) || '';
   officeWriteRow_(ss, tab, full);
-  officeWriteRow_(ss, 'Audit', {
+  officeWriteRow_((opts && opts.auditSs) || ss, 'Audit', {
     id: Utilities.getUuid(), ts: iso, who: caller.email, action: (opts && opts.action) || '',
     tab: tab, row_id: id, campus: full.campus, after: JSON.stringify(full),
   });

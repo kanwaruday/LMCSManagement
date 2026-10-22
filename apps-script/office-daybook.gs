@@ -26,7 +26,7 @@ function officeDaybookAdd_(ctx, data) {
   if (data.entry_date > officeToday_()) throw new Error('FUTURE_DATE');
   // typeof number only: "1,234.50" and other strings never reach arithmetic; floats and 0/negatives fail safe-integer > 0.
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
-  const cat = officeRows_(officeConfigBook_(), 'Categories').filter(function (c) { return c.id === data.category; })[0];
+  const cat = officeCategory_(data.category);
   if (!cat) throw new Error('BAD_CATEGORY');
   if (OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(cat.id) !== -1) throw officeCoded_('DEPOSIT_LEG_CATEGORY'); // only deposit.add writes legs (R37)
   if (data.direction !== 'IN' && data.direction !== 'OUT') throw new Error('DIRECTION_MISMATCH');

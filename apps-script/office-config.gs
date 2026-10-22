@@ -25,11 +25,154 @@ var OFFICE_CONFIG_SEED = {
     ['Principal', '0'],
   ],
 };
+// Categories are code, not config (P2). group: fee|income|school|transport|movement. active false = not offered for typing.
+// [id, label, direction, group, needs_vehicle, pnl_column, active]
+var OFFICE_CATEGORIES = [
+  ['fee_collection', 'Fee cash', 'IN', 'fee', 0, '', 1],
+  ['fee_online', 'Fee online', 'IN', 'fee', 0, '', 1],
+  ['fee_cheque', 'Fee cheque (imported from ERP)', 'IN', 'fee', 0, '', 0],
+  ['student_collection', 'Student collection (trips, ID cards, events)', 'IN', 'income', 0, '', 1],
+  ['transport_income', 'Transport income (cashback, scrap, hire)', 'IN', 'transport', 1, 'income', 1],
+  ['donation', 'Donation', 'IN', 'income', 0, '', 1],
+  ['other_in', 'Other receipt', 'IN', 'income', 0, '', 1],
+  ['stationery', 'Stationery', 'OUT', 'school', 0, '', 1],
+  ['postage_courier', 'Postage and courier', 'OUT', 'school', 0, '', 1],
+  ['travel_errands', 'Travel and errands', 'OUT', 'school', 0, '', 1],
+  ['cleaning_housekeeping', 'Cleaning and housekeeping', 'OUT', 'school', 0, '', 1],
+  ['snacks_pantry', 'Snacks and pantry', 'OUT', 'school', 0, '', 1],
+  ['activities_events', 'Activities and events', 'OUT', 'school', 0, '', 1],
+  ['exams_board', 'Exams and board fees', 'OUT', 'school', 0, '', 1],
+  ['utilities', 'Utilities (electricity, internet, phone, gas)', 'OUT', 'school', 0, '', 1],
+  ['repairs_hardware', 'Repairs and hardware', 'OUT', 'school', 0, '', 1],
+  ['labour_wages', 'Labour and daily wages', 'OUT', 'school', 0, '', 1],
+  ['medical_first_aid', 'Medical and first aid', 'OUT', 'school', 0, '', 1],
+  ['security_refund', 'Security deposit refund', 'OUT', 'school', 0, '', 1],
+  ['salary_advance', 'Salary advance', 'OUT', 'school', 0, '', 1],
+  ['govt_legal', 'Government and legal (stamp paper, NOC, fees)', 'OUT', 'school', 0, '', 1],
+  ['chairman_personal', 'Chairman (personal)', 'OUT', 'school', 0, '', 1],
+  ['other_out', 'Other payment (say what for)', 'OUT', 'school', 0, '', 1],
+  ['petty_expense', 'Petty expense (old)', 'OUT', 'school', 0, '', 0],
+  ['bill_payment', 'Bill payment (old)', 'OUT', 'school', 0, '', 0],
+  ['fuel', 'Fuel (diesel/petrol)', 'OUT', 'transport', 1, 'fuel', 1],
+  ['vehicle_service', 'Vehicle service and repair', 'OUT', 'transport', 1, 'service', 1],
+  ['tyres', 'Tyres', 'OUT', 'transport', 1, 'service', 1],
+  ['vehicle_insurance', 'Vehicle insurance', 'OUT', 'transport', 1, 'insurance', 1],
+  ['vehicle_tax_permit', 'Vehicle tax, permit, fitness, pollution', 'OUT', 'transport', 1, 'taxes', 1],
+  ['parking', 'Parking', 'OUT', 'transport', 1, 'parking', 1],
+  ['challan', 'Challan (traffic fine)', 'OUT', 'transport', 1, 'challan', 1],
+  ['loan_interest', 'Vehicle loan interest', 'OUT', 'transport', 1, 'loan_interest', 1],
+  ['loan_principal', 'Vehicle loan principal', 'OUT', 'transport', 1, 'loan_principal', 1],
+  ['driver_travel', 'Driver travel', 'OUT', 'transport', 1, 'other', 1],
+  ['deposit_cash_out', 'Bank deposit (cash out)', 'OUT', 'movement', 0, '', 0],
+  ['deposit_bank_in', 'Bank deposit (bank in)', 'IN', 'movement', 0, '', 0],
+  ['credit_settlement', 'Settle a supplier credit account', 'OUT', 'movement', 0, '', 1],
+  ['cash_transfer', 'Cash transfer between cash boxes', 'OUT', 'movement', 0, '', 1],
+].map(function (c) {
+  return { id: c[0], label: c[1], direction: c[2], group: c[3], needs_vehicle: !!c[4], pnl_column: c[5], active: !!c[6] };
+});
+
+function officeCategory_(id) {
+  return OFFICE_CATEGORIES.filter(function (c) { return c.id === id; })[0] || null;
+}
+
+// Config rows keep every cell as text, so 'false' (any case) is the only way to switch one off.
+function officeActiveCell_(v) { return String(v).toLowerCase() !== 'false'; }
+
+// The default cash:/bank: account of every campus, then the Config Accounts rows.
+function officeAccounts_() {
+  const out = [];
+  OFFICE_CAMPUSES.forEach(function (c) {
+    out.push({ id: 'cash:' + c, label: c + ' cash', kind: 'cash', campus: c, active: true });
+    out.push({ id: 'bank:' + c, label: c + ' bank', kind: 'bank', campus: c, active: true });
+  });
+  officeRows_(officeConfigBook_(), 'Accounts').forEach(function (r) {
+    out.push({ id: r.id, label: r.label, kind: r.kind, campus: r.campus, active: officeActiveCell_(r.active) });
+  });
+  return out;
+}
+function officeAccount_(id) {
+  return officeAccounts_().filter(function (a) { return a.id === id; })[0] || null;
+}
+
+function officeVehicles_() {
+  return officeRows_(officeConfigBook_(), 'Vehicles').map(function (r) {
+    return { reg: r.reg, label: r.label, kind: r.kind, campus: r.campus, active: officeActiveCell_(r.active) };
+  });
+}
+function officeNormReg_(s) { return String(s === undefined || s === null ? '' : s).toUpperCase().replace(/[\s.\-]/g, ''); }
+
+function officeAccountAdd_(ctx, data) {
+  const id = String(data.id || '');
+  if (!id) throw new Error('MISSING_ID');
+  if (data.kind !== 'bank' && data.kind !== 'credit') throw new Error('BAD_KIND');
+  if (!String(data.label || '').trim()) throw new Error('LABEL_REQUIRED');
+  if (OFFICE_CAMPUSES.indexOf(data.campus) === -1) throw new Error('BAD_CAMPUS');
+  // Default ids are reserved; a clash with another stored id is a duplicate (retry).
+  if (/^(cash|bank):/.test(id) && OFFICE_CAMPUSES.some(function (c) { return id === 'cash:' + c || id === 'bank:' + c; })) throw new Error('BAD_ID');
+  const row = { id: id, label: String(data.label).trim(), kind: data.kind, campus: data.campus, active: 'true' };
+  const res = officeAppend_(officeConfigBook_(), 'Accounts', row, ctx.caller,
+    { action: 'account.add', campus: data.campus, auditSs: officeOpen_(data.campus, officeFy_(officeToday_())) });
+  return { id: id, duplicate: res.duplicate };
+}
+
+var OFFICE_VEHICLE_KINDS = ['bus', 'jeep', 'car', 'van'];
+
+// Validates one vehicle and returns the Config row, or throws.
+function officeVehicleRow_(caller, v) {
+  const reg = officeNormReg_(v && v.reg);
+  if (!reg) throw new Error('MISSING_REG');
+  if (OFFICE_VEHICLE_KINDS.indexOf(v.kind) === -1) throw new Error('BAD_KIND');
+  const campus = String(v.campus || '').trim().toUpperCase();
+  if (OFFICE_CAMPUSES.indexOf(campus) === -1) throw new Error('BAD_CAMPUS');
+  officeAssertCampus_(caller, campus);
+  return { reg: reg, label: String(v.label || '').trim() || reg, kind: v.kind, campus: campus, active: 'true' };
+}
+
+function officeVehicleWrite_(ctx, row, action) {
+  return officeAppend_(officeConfigBook_(), 'Vehicles', row, ctx.caller,
+    { action: action, key: 'reg', campus: row.campus, auditSs: officeOpen_(row.campus, officeFy_(officeToday_())) });
+}
+
+function officeVehicleAdd_(ctx, data) {
+  const res = officeVehicleWrite_(ctx, officeVehicleRow_(ctx.caller, data), 'vehicle.add');
+  return { reg: res.id, duplicate: res.duplicate };
+}
+
+function officeVehiclesImport_(ctx, data) {
+  if (!Array.isArray(data.vehicles)) throw new Error('NO_VEHICLES');
+  const rows = data.vehicles.map(function (v) { return officeVehicleRow_(ctx.caller, v); }); // all valid before any write
+  let added = 0;
+  rows.forEach(function (r) { if (!officeVehicleWrite_(ctx, r, 'vehicles.import').duplicate) added++; });
+  return { added: added };
+}
+
+// Opening balance of a bank or credit account (cash accounts use opening.set). Once per account, any time.
+function officeAccountOpening_(ctx, data) {
+  const id = String(data.id || '');
+  if (!id) throw new Error('MISSING_ID');
+  const acct = officeAccount_(String(data.account || ''));
+  if (!acct) throw new Error('UNKNOWN_ACCOUNT');
+  if (acct.kind === 'cash') throw new Error('BAD_KIND');
+  if (acct.campus !== data.campus) throw new Error('BAD_CAMPUS');
+  if (!Number.isSafeInteger(data.amount_paise) || data.amount_paise < 0) throw new Error('BAD_AMOUNT');
+  const prior = officeRecentBooks_(data.campus).reduce(function (all, b) { return all.concat(officeRows_(b, 'Opening')); }, []);
+  if (prior.some(function (r) { return r.id === id; })) return { id: id, duplicate: true };
+  if (prior.some(function (r) { return r.account === acct.id; })) throw officeCoded_('ACCOUNT_OPENING_EXISTS');
+  const ss = officeOpen_(data.campus, officeFy_(officeToday_()));
+  officeAppend_(ss, 'Opening', { id: id, campus: data.campus, mode: acct.kind, bucket: '', amount_paise: data.amount_paise, account: acct.id },
+    ctx.caller, { action: 'account.opening', campus: data.campus });
+  return { id: id, duplicate: false };
+}
+
 var OFFICE_ALL_ROLES = ['FeeClerk', 'AdminManager', 'FinanceHead', 'Principal', 'Coordinator', 'Owner'];
 
 function officeConfigActions_() {
   return {
     'config.get': { roles: OFFICE_ALL_ROLES, write: false, run: officeConfigGet_ },
+    'account.add': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountAdd_ },
+    'vehicle.add': { roles: ['FinanceHead', 'Owner'], write: true, run: officeVehicleAdd_ },
+    'vehicles.import': { roles: ['FinanceHead', 'Owner'], write: true, run: officeVehiclesImport_ },
+    'account.opening': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountOpening_ },
     'opening.set': { roles: ['FinanceHead', 'Owner'], write: true, run: officeOpeningSet_ },
   };
 }
@@ -52,7 +195,7 @@ function officeConfigGet_() {
   const ss = officeConfigBook_();
   const limits = {};
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
-  return { categories: officeRows_(ss, 'Categories'), limits: limits, campuses: OFFICE_CAMPUSES };
+  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), limits: limits, campuses: OFFICE_CAMPUSES };
 }
 
 function officeOpeningSet_(ctx, data) {
@@ -84,6 +227,7 @@ function officeOpeningSet_(ctx, data) {
 function officeOpening_(ss) {
   const o = { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 };
   officeRows_(ss, 'Opening').forEach(function (r) {
+    if (r.account) return; // per-account openings (bank/credit accounts) are not the campus cash/bank/upi opening
     if (r.mode === 'cash') o.cash[r.bucket] = r.amount_paise; else o[r.mode] = r.amount_paise;
   });
   return o;

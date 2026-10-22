@@ -24,15 +24,101 @@ module.exports = function run(t) {
   };
   const bal = [{ mode: 'cash', bucket: 'petty', amount_paise: 500000 }, { mode: 'cash', bucket: 'fee', amount_paise: 1200 }, { mode: 'bank', bucket: '', amount_paise: 9000000 }, { mode: 'upi', bucket: '', amount_paise: 77 }];
 
-  t.test('config.get returns seeded categories', () => {
+  t.test('config.get returns code categories, default accounts, vehicles, limits, campuses', () => {
     const h = fresh();
     const r = h.call('config.get', {}, 'clerk-token');
     assert.equal(r.success, true);
-    assert.deepEqual(r.categories.map((c) => c.id), ['fee_collection', 'deposit_cash_out', 'deposit_bank_in', 'petty_expense', 'bill_payment', 'donation', 'other_in', 'other_out']);
-    assert.equal(r.categories[0].direction, 'IN'); assert.equal(r.categories[1].direction, 'OUT');
+    const ids = r.categories.map((c) => c.id);
+    for (const id of ['fee_collection', 'deposit_cash_out', 'deposit_bank_in', 'petty_expense', 'bill_payment', 'donation', 'other_in', 'other_out', 'fee_online', 'fuel', 'challan', 'credit_settlement', 'cash_transfer', 'chairman_personal']) assert.ok(ids.includes(id), id);
+    assert.equal(new Set(ids).size, ids.length);
+    const by = (id) => r.categories.find((c) => c.id === id);
+    assert.deepEqual(J(by('fee_collection')), { id: 'fee_collection', label: 'Fee cash', direction: 'IN', group: 'fee', needs_vehicle: false, pnl_column: '', active: true });
+    assert.equal(by('deposit_cash_out').active, false); assert.equal(by('deposit_cash_out').group, 'movement');
+    assert.equal(by('petty_expense').active, false); assert.equal(by('fee_cheque').active, false);
+    assert.equal(by('fuel').label, 'Fuel (diesel/petrol)'); assert.equal(by('fuel').needs_vehicle, true); assert.equal(by('fuel').pnl_column, 'fuel');
+    assert.equal(by('transport_income').direction, 'IN'); assert.equal(by('transport_income').pnl_column, 'income');
+    for (const c of r.categories) {
+      assert.ok(['fee', 'income', 'school', 'transport', 'movement'].includes(c.group), c.id);
+      assert.equal(c.needs_vehicle, c.group === 'transport', c.id);
+      if (c.needs_vehicle) assert.ok(['fuel', 'service', 'insurance', 'taxes', 'parking', 'challan', 'loan_interest', 'loan_principal', 'other', 'income'].includes(c.pnl_column), c.id);
+    }
+    assert.equal(r.accounts.length, 14); assert.deepEqual(J(r.accounts[0]), { id: 'cash:LMS1', label: 'LMS1 cash', kind: 'cash', campus: 'LMS1', active: true });
+    assert.equal(r.accounts[13].id, 'bank:HES');
+    assert.deepEqual(r.vehicles, []);
     assert.deepEqual(J(r.limits), { AdminManager: 0, FinanceHead: 0, Principal: 0 });
     assert.deepEqual(r.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
-    assert.equal(h.call('config.get', {}, 'clerk-token').categories.length, 8, 'second open does not reseed');
+    assert.equal(h.ctx.officeCategory_('nope'), null); assert.equal(h.ctx.officeCategory_('fuel').id, 'fuel');
+  });
+
+  t.test('officeNormReg_ strips spaces, dots and dashes and upper-cases', () => {
+    const h = fresh();
+    assert.equal(h.ctx.officeNormReg_('hp 66-5805'), 'HP665805'); assert.equal(h.ctx.officeNormReg_('hp.12.a-1 2'), 'HP12A12');
+  });
+
+  t.test('account.add: roles, codes, stored, audited, retry is a no-op, defaults reserved', () => {
+    const h = fresh(); h.addBook('LMS2', '2026-27');
+    const acc = { id: 'a1', label: 'Pump X (LMS1)', kind: 'credit', campus: 'LMS1' };
+    assert.equal(h.call('account.add', acc, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('account.add', Object.assign({}, acc, { kind: 'cash' }), 'fh-token').error, 'BAD_KIND');
+    assert.equal(h.call('account.add', Object.assign({}, acc, { label: '  ' }), 'fh-token').error, 'LABEL_REQUIRED');
+    assert.equal(h.call('account.add', Object.assign({}, acc, { id: 'cash:LMS1' }), 'fh-token').error, 'BAD_ID');
+    assert.equal(h.call('account.add', Object.assign({}, acc, { campus: 'LMS3' }), 'fh-token').error, 'FORBIDDEN_CAMPUS');
+    let r = h.call('account.add', acc, 'fh-token');
+    assert.equal(r.success, true); assert.equal(r.duplicate, false);
+    assert.equal(h.call('account.add', acc, 'fh-token').duplicate, true);
+    const g = h.call('config.get', {}, 'clerk-token');
+    assert.equal(g.accounts.length, 15);
+    assert.deepEqual(J(g.accounts[14]), { id: 'a1', label: 'Pump X (LMS1)', kind: 'credit', campus: 'LMS1', active: true });
+    assert.deepEqual(J(h.ctx.officeAccount_('a1')), J(g.accounts[14])); assert.equal(h.ctx.officeAccount_('zzz'), null);
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit');
+    assert.equal(au.length, 1); assert.equal(au[0].action, 'account.add'); assert.equal(au[0].tab, 'Accounts');
+    assert.equal(h.call('account.add', { id: 'a2', label: 'HDFC', kind: 'bank', campus: 'LMS2' }, 'owner-token').success, true);
+  });
+
+  t.test('vehicle.add and vehicles.import normalise reg, skip existing, validate first', () => {
+    const h = fresh();
+    const v = { reg: 'hp 66-5805', label: 'Bus 1', kind: 'bus', campus: 'LMS1' };
+    assert.equal(h.call('vehicle.add', v, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('vehicle.add', Object.assign({}, v, { kind: 'tank' }), 'fh-token').error, 'BAD_KIND');
+    assert.equal(h.call('vehicle.add', Object.assign({}, v, { reg: ' - ' }), 'fh-token').error, 'MISSING_REG');
+    assert.equal(h.call('vehicle.add', v, 'fh-token').duplicate, false);
+    assert.equal(h.call('vehicle.add', Object.assign({}, v, { reg: 'HP-66.5805' }), 'fh-token').duplicate, true);
+    let r = h.call('vehicles.import', { vehicles: [{ reg: 'HP 66 5805', label: 'x', kind: 'bus', campus: 'LMS1' }, { reg: 'hp-01-1', label: 'Jeep', kind: 'jeep', campus: 'LMS1' }, { reg: 'HP011', kind: 'jeep', campus: 'LMS1' }] }, 'fh-token');
+    assert.equal(r.added, 1);
+    assert.equal(h.call('vehicles.import', { vehicles: [{ reg: 'A1', kind: 'car', campus: 'LMS1' }, { reg: 'B2', kind: 'plane', campus: 'LMS1' }] }, 'fh-token').error, 'BAD_KIND');
+    assert.equal(h.call('vehicles.import', { vehicles: [{ reg: 'C3', kind: 'car', campus: 'LMS3' }] }, 'fh-token').error, 'FORBIDDEN_CAMPUS');
+    assert.deepEqual(h.call('config.get', {}, 'fh-token').vehicles.map((x) => [x.reg, x.kind, x.active]), [['HP665805', 'bus', true], ['HP011', 'jeep', true]]);
+    assert.equal(h.ctx.officeVehicles_()[0].label, 'Bus 1');
+  });
+
+  t.test('account.opening: once per bank/credit account, row has account and mode, cash refused', () => {
+    const h = fresh();
+    h.call('account.add', { id: 'a1', label: 'Pump', kind: 'credit', campus: 'LMS1' }, 'fh-token');
+    const op = { id: 'ao1', campus: 'LMS1', account: 'a1', amount_paise: 12345 };
+    assert.equal(h.call('account.opening', op, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('account.opening', Object.assign({}, op, { account: 'cash:LMS1' }), 'fh-token').error, 'BAD_KIND');
+    assert.equal(h.call('account.opening', Object.assign({}, op, { account: 'nope' }), 'fh-token').error, 'UNKNOWN_ACCOUNT');
+    assert.equal(h.call('account.opening', Object.assign({}, op, { amount_paise: -1 }), 'fh-token').error, 'BAD_AMOUNT');
+    assert.equal(h.call('account.opening', Object.assign({}, op, { amount_paise: 1.5 }), 'fh-token').error, 'BAD_AMOUNT');
+    assert.equal(h.call('account.opening', op, 'fh-token').duplicate, false);
+    assert.equal(h.call('account.opening', op, 'fh-token').duplicate, true, 'same id retries');
+    const r = h.call('account.opening', Object.assign({}, op, { id: 'ao2' }), 'fh-token');
+    assert.equal(r.error, 'ACCOUNT_OPENING_EXISTS'); assert.equal(r.code, 'ACCOUNT_OPENING_EXISTS');
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27');
+    const rows = h.ctx.officeRows_(ss, 'Opening');
+    assert.equal(rows.length, 1); assert.deepEqual([rows[0].account, rows[0].mode, rows[0].bucket, rows[0].amount_paise], ['a1', 'credit', '', 12345]);
+    h.call('account.add', { id: 'b1', label: 'HDFC', kind: 'bank', campus: 'LMS1' }, 'fh-token');
+    assert.equal(h.call('account.opening', { id: 'ao3', campus: 'LMS1', account: 'bank:LMS1', amount_paise: 0 }, 'fh-token').success, true);
+    assert.equal(h.ctx.officeRows_(ss, 'Opening')[1].mode, 'bank');
+    assert.deepEqual(J(h.ctx.officeOpening_(ss)), { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 }, 'campus opening ignores account rows');
+  });
+
+  t.test('a new tab with more columns than the sheet grid is widened (P7)', () => {
+    const h = boot(fixture); h.addBook('LMS1', '2026-27');
+    h.run("OFFICE_TABLES.Wide = Array.from({length: 30}, function (_, i) { return 'c' + i; })");
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27'); const sh = ss.getSheetByName('Wide');
+    assert.equal(sh.values[0].length, 30); assert.ok(sh.maxCols >= 30); assert.equal(sh.insertCalls, 1);
+    assert.equal(ss.getSheetByName('Audit').insertCalls, 0);
   });
 
   t.test('opening.set by FeeClerk refused', () => {
