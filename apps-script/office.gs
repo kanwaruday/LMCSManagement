@@ -124,7 +124,13 @@ function officeVerifyAllowlist_(idToken) {
   const list = function (v) { return String(v || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); };
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-    return { email: email, name: String(rows[i][1] || '').trim(), campuses: list(rows[i][2]).map(function (c) { return c.toUpperCase(); }), roles: list(rows[i][3]) };
+    const caller = { email: email, name: String(rows[i][1] || '').trim(), campuses: list(rows[i][2]).map(function (c) { return c.toUpperCase(); }), roles: list(rows[i][3]) };
+    // Accounts (Tilak Sir) = FinanceHead on every campus. Applied here so the cached caller carries it.
+    if (caller.roles.indexOf('Accounts') !== -1) {
+      if (caller.roles.indexOf('FinanceHead') === -1) caller.roles.push('FinanceHead');
+      caller.campuses = ['ALL'];
+    }
+    return caller;
   }
   return null;
 }

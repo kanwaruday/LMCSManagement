@@ -99,4 +99,32 @@ module.exports = function run(t) {
     assert.equal(h.ctx.officeFy_('2027-03-31'), '2026-27');
     assert.equal(h.ctx.officeFy_('2026-03-31'), '2025-26');
   });
+
+  // Accounts (Tilak Sir): FinanceHead on every campus, nothing more. The allowlist row names one campus only.
+  const acc = () => {
+    const a = boot({
+      tokens: { 'acc-token': 'acc@example.org' },
+      allowlist: [['Email', 'Name', 'Campuses', 'Roles'], ['acc@example.org', 'Accounts One', 'LMS1', 'Accounts']],
+    });
+    a.addConfig(); a.addBook('LMS3', '2026-27'); a.setNow(new Date('2026-10-21T10:00:00Z'));
+    return a;
+  };
+  t.test('Accounts role acts as FinanceHead on any campus', () => {
+    const a = acc();
+    const r = a.call('day.close', { id: 'c1', campus: 'LMS3', close_date: '2026-10-20' }, 'acc-token');
+    assert.equal(r.success, true, r.error);
+    const again = a.call('day.close', { id: 'c2', campus: 'LMS3', close_date: '2026-10-20' }, 'acc-token');
+    assert.notEqual(again.error, 'FORBIDDEN_ROLE'); // cached caller carries the same roles
+    const c = a.ctx.officeCaller_('acc-token');
+    assert.deepEqual(c.campuses, ['ALL']);
+    assert.deepEqual(c.roles, ['Accounts', 'FinanceHead']);
+  });
+
+  t.test('Accounts does not gain Owner-only actions', () => {
+    const a = acc();
+    a.call('day.close', { id: 'c1', campus: 'LMS3', close_date: '2026-10-20' }, 'acc-token');
+    const r = a.call('day.reopen', { id: 'r1', campus: 'LMS3', close_date: '2026-10-20', reason: 'x' }, 'acc-token');
+    assert.equal(r.success, false);
+    assert.match(r.error, /FORBIDDEN_ROLE/);
+  });
 };
