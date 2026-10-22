@@ -136,6 +136,47 @@ module.exports = function run(t) {
     assert.deepEqual(J(s.byChargedTo.LMS1), { fuel: -9501, vehicle_service: -800, parking: -30, transport_income: 90 });
   });
 
+  t.test('P12: km/l uses the fill before `from` and fills in other campus books; listing stays in period and scope', () => {
+    const h = fresh();
+    fuel(h, { id: 'a1', entry_date: '2026-09-20', odometer_km: 1000, litres_ml: 40000 });
+    fuel(h, { id: 'a2', entry_date: '2026-10-05', odometer_km: 1400, litres_ml: 20000 });
+    fuel(h, { id: 'b1', campus: 'LMS2', account: 'cash:LMS2', bucket: 'petty', mode: 'cash', file_id: 'slipLMS2', entry_date: '2026-10-07', odometer_km: 1700, litres_ml: 10000 });
+    const s1 = sum(h, { from: '2026-10-01' });
+    assert.deepEqual(s1.fuel.HP665805.map((f) => [f.id, f.km_per_litre]), [['a2', 10]], 'fill before from counts, LMS2 fill is out of scope');
+    const s2 = sum(h, { campus: 'LMS2', from: '2026-10-01' });
+    assert.deepEqual(s2.fuel.HP665805.map((f) => [f.id, f.km_per_litre]), [['b1', 15]], 'previous fill from the LMS1 book');
+  });
+
+  t.test('P12: km/l is null for a negative distance or a fill with an odometer_note', () => {
+    const h = fresh();
+    fuel(h, { id: 'n1', entry_date: '2026-10-01', odometer_km: 1000 });
+    fuel(h, { id: 'n2', entry_date: '2026-10-02', odometer_km: 1300, odometer_note: 'meter replaced' });
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'n3', campus: 'LMS1', entry_date: '2026-10-03', direction: 'OUT', mode: 'credit', category: 'fuel', amount_paise: 1, account: 'pump1', vehicle: 'HP665805', litres_ml: 1000, odometer_km: 1200 });
+    fuel(h, { id: 'n4', entry_date: '2026-10-04', odometer_km: 1340 });
+    assert.deepEqual(sum(h).fuel.HP665805.map((f) => [f.id, f.km_per_litre]), [['n1', null], ['n2', null], ['n3', null], ['n4', 140]]);
+  });
+
+  t.test('P12: cash balance = opening + signed rows, so a blank-bucket row still counts', () => {
+    const h = fresh();
+    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'x', campus: 'LMS1', entry_date: '2026-10-01', direction: 'OUT', mode: 'cash', bucket: '', category: 'stationery', amount_paise: 300 });
+    const c = acct(sum(h), 'cash:LMS1');
+    assert.equal(c.balance_paise, 700);
+    assert.deepEqual(J(c.buckets), { petty: 0, fee: 1000, other: 0 });
+  });
+
+  t.test('reversing a settlement brings owed back to its pre-settlement value', () => {
+    const h = fresh();
+    fuel(h, { amount_paise: 5000 });
+    const sid = settle(h, { amount_paise: 2000 });
+    assert.equal(acct(sum(h), 'pump1').owed_paise, 3000);
+    assert.equal(h.call('daybook.reverse', { id: 'srev', campus: 'LMS1', reverses: sid }, 'owner-token').success, true);
+    const s = sum(h);
+    assert.equal(acct(s, 'pump1').owed_paise, 5000);
+    assert.equal(acct(s, 'sbi1').balance_paise, 0);
+    assert.deepEqual(J(s.byChargedTo), { LMS1: { fuel: -5000 } });
+  });
+
   t.test('ALL needs campuses ALL; campuses without a book are skipped; ALL sums every book', () => {
     const h = fresh();
     add(h, { amount_paise: 5 });

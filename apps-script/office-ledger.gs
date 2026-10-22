@@ -36,9 +36,9 @@ function officeLedgerSummary_(ctx, data) {
   rows.forEach(function (r) {
     const a = officeRowAccount_(r);
     bal[a] = (bal[a] || 0) + signed(r);
-    if (r.mode === 'cash') {
+    if (r.mode === 'cash' && OFFICE_BUCKETS.indexOf(r.bucket) !== -1) {
       const b = buckets[a] = buckets[a] || { petty: 0, fee: 0, other: 0 };
-      b[r.bucket] = (b[r.bucket] || 0) + signed(r);
+      b[r.bucket] += signed(r);
     }
     if (r.settles_account) settled[r.settles_account] = (settled[r.settles_account] || 0) + signed(r);
   });
@@ -48,7 +48,7 @@ function officeLedgerSummary_(ctx, data) {
     if (a.kind === 'cash') {
       const o = officeOpening_(books[a.campus]).cash, b = buckets[a.id] || { petty: 0, fee: 0, other: 0 };
       out.buckets = { petty: o.petty + b.petty, fee: o.fee + b.fee, other: o.other + b.other };
-      out.balance_paise = out.buckets.petty + out.buckets.fee + out.buckets.other;
+      out.balance_paise = o.petty + o.fee + o.other + moved; // every signed row, so a stray bucket never drops money (P12)
     } else if (a.kind === 'bank') {
       let open = accountOpening[a.id];
       // The default bank account falls back to the campus opening (bank + upi) when it has no account opening of its own.
@@ -63,11 +63,9 @@ function officeLedgerSummary_(ctx, data) {
   });
 
   // Period figures, from the scope's own books only.
-  const period = rows.filter(function (r) { return r.entry_date >= data.from && scope.indexOf(r.campus) !== -1; });
-  const reversed = {};
-  period.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
-  const byChargedTo = {}, inter = {}, vehicles = {}, fuel = {};
-  period.forEach(function (r) {
+  const inPeriod = function (r) { return r.entry_date >= data.from && scope.indexOf(r.campus) !== -1; };
+  const byChargedTo = {}, inter = {}, vehicles = {};
+  rows.filter(inPeriod).forEach(function (r) {
     const cat = officeCategory_(r.category);
     if (!cat || OFFICE_LEDGER_GROUPS.indexOf(cat.group) === -1) return; // movements (deposits, settlements, transfers) are not income or cost
     const to = officeRowChargedTo_(r), v = signed(r);
@@ -79,20 +77,29 @@ function officeLedgerSummary_(ctx, data) {
       const vv = vehicles[r.vehicle] = vehicles[r.vehicle] || {};
       vv[cat.pnl_column] = (vv[cat.pnl_column] || 0) + v;
     }
-    if (cat.id === 'fuel' && r.vehicle && !r.reverses && !reversed[r.id]) {
-      (fuel[r.vehicle] = fuel[r.vehicle] || []).push({ id: r.id, date: r.entry_date, litres_ml: r.litres_ml, odometer_km: r.odometer_km, amount_paise: r.amount_paise });
-    }
   });
   const interSchool = Object.keys(inter).filter(function (k) { return inter[k] !== 0; }).map(function (k) {
     const p = k.split('|');
     return { from: p[0], to: p[1], paise: inter[k] };
   });
-  // km per litre: distance since the previous fill over the litres bought at that fill (burnt over this distance).
-  Object.keys(fuel).forEach(function (reg) {
-    fuel[reg].sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.odometer_km - b.odometer_km; });
-    fuel[reg].forEach(function (f, i) {
-      const p = fuel[reg][i - 1];
-      f.km_per_litre = p && p.litres_ml > 0 ? Math.round((f.odometer_km - p.odometer_km) * 100000 / p.litres_ml) / 100 : null;
+  // Fuel (P12): each vehicle's fills from every campus book up to `to` (reversed fills and reversals left out), so a
+  // period's first fill and fills at other campuses have their previous fill. km per litre = distance since the previous
+  // fill over the litres bought at that fill (burnt over this distance); null when the distance is negative or the fill
+  // carries an odometer note (meter changed, garbled reading). Then only fills in the period and scope are listed.
+  const reversed = {};
+  rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  const fills = {};
+  rows.forEach(function (r) {
+    if (r.category === 'fuel' && r.vehicle && !r.reverses && !reversed[r.id]) (fills[r.vehicle] = fills[r.vehicle] || []).push(r);
+  });
+  const fuel = {};
+  Object.keys(fills).forEach(function (reg) {
+    const seq = fills[reg].sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : a.entry_date > b.entry_date ? 1 : a.odometer_km - b.odometer_km; });
+    seq.forEach(function (r, i) {
+      if (!inPeriod(r)) return;
+      const p = seq[i - 1], km = p ? r.odometer_km - p.odometer_km : -1;
+      (fuel[reg] = fuel[reg] || []).push({ id: r.id, date: r.entry_date, litres_ml: r.litres_ml, odometer_km: r.odometer_km, amount_paise: r.amount_paise,
+        km_per_litre: p && km >= 0 && p.litres_ml > 0 && !r.odometer_note ? Math.round(km * 100000 / p.litres_ml) / 100 : null });
     });
   });
   return { byChargedTo: byChargedTo, accounts: accounts, interSchool: interSchool, vehicles: vehicles, fuel: fuel };
