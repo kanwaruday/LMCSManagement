@@ -405,12 +405,15 @@ function renderClerkToday_() {
 
 // Appointments (elevated): proposals waiting for me (Accept, or Decline with a note), then what I proposed.
 function inCampus_(x) { return campusFilter === 'ALL' || x.campus === campusFilter; }
+// Accept, or Decline with a note: a proposal waiting for me, or (Owner override) any proposed interview/demo in the panel.
+function overrideBtns_(x) {
+  return '<button type="button" class="btn primary" data-act="accept" data-id="' + esc_(x.id) + '">Accept</button>' +
+    '<input class="inp" id="dn-' + esc_(x.id) + '" placeholder="Why decline? (they see it)" aria-label="Reason for declining" style="width:auto;flex:1;min-width:140px">' +
+    '<button type="button" class="btn danger" data-act="decline" data-id="' + esc_(x.id) + '">Decline</button>';
+}
 function apptCardHtml_(x, mine) {
   const pill = { proposed: 'warn', accepted: 'ok', declined: 'bad' }[x.status] || '';
-  const acts = mine ? cancelBtn_(x, byRow_(Number(x.row))) + calRetryBtn_(x)
-    : '<button type="button" class="btn primary" data-act="accept" data-id="' + esc_(x.id) + '">Accept</button>' +
-      '<input class="inp" id="dn-' + esc_(x.id) + '" placeholder="Why decline? (they see it)" aria-label="Reason for declining" style="width:auto;flex:1;min-width:140px">' +
-      '<button type="button" class="btn danger" data-act="decline" data-id="' + esc_(x.id) + '">Decline</button>';
+  const acts = mine ? cancelBtn_(x, byRow_(Number(x.row))) + calRetryBtn_(x) : overrideBtns_(x);
   return '<div class="card"><div class="who"><div class="name"><span class="when">' + esc_(KIND_LABEL[x.kind] + ' · ' + fmtWhen_(x.start)) + '</span> · ' + esc_(x.name) + ' <span class="id">' + esc_(x.applicantId) + '</span></div>' +
     '<div class="meta">' + esc_([x.phone, LMCS.campusLabel(x.campus), x.place, 'proposed by ' + x.proposedBy].filter(Boolean).join(' · ')) + '</div>' +
     (x.note ? '<div class="note">' + esc_(x.note) + '</div>' : '') +
@@ -551,6 +554,7 @@ function apptBlockHtml_(a) {
     return '<div class="report"><div class="r-head"><span>' + esc_(KIND_LABEL[x.kind] + ' · ' + fmtWhen_(x.start)) + '</span><span class="pill ' + pill + '">' + esc_(x.status) + '</span></div>' +
       '<div class="note">Proposed by ' + esc_(x.proposedBy) + (x.status === 'accepted' && x.calendarMode === 'none' ? ' · calendar not updated' : '') + (x.reportFiled ? ' · report filed' : '') + '</div>' +
       (x.declineNote ? '<div class="note">Declined: ' + esc_(x.declineNote) + '</div>' : '') +
+      (HV.canOverride_(SESSION && SESSION.role, x) ? '<div class="foot" style="margin-top:4px">' + overrideBtns_(x) + '</div>' : '') +
       ((cancelBtn_(x, a) || calRetryBtn_(x)) ? '<div class="foot" style="margin-top:4px">' + cancelBtn_(x, a) + calRetryBtn_(x) + '</div>' : '') + '</div>';
   }).join('') : '<div class="note">No appointments yet.</div>';
   const kinds = [];

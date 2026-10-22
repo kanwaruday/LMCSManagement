@@ -76,7 +76,13 @@
     return b;
   }
 
-  const api = { openAppt_, todayItems_, myActions_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
+  // The Owner override (apptAcceptorLabel_): an Owner may accept or decline a proposed interview/demo at any campus.
+  // role is the session's comma-separated role string. The covering Principal decides from "Waiting for you" instead.
+  function canOverride_(role, x) {
+    return String(role || '').split(',').map((r) => r.trim()).indexOf('Owner') !== -1 && x.status === 'proposed' && (x.kind === 'interview' || x.kind === 'demo');
+  }
+
+  const api = { openAppt_, canOverride_, todayItems_, myActions_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HiringView = api;
 })(typeof window !== 'undefined' ? window : this);

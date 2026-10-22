@@ -79,3 +79,14 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   assert.ok(V.openAppt_(p(10, 'Interview Done', [appt('demo', at(2, 10), 'accepted')]), 'demo', NOW), 'openAppt_: future accepted is open');
   console.log('ok  - clerkBuckets_: to schedule, waiting, booked, reports, demos, documents');
 }
+
+// ── canOverride_: the Owner's Accept / Decline on a proposed interview or demo (vacant post, Principal on leave) ──
+{
+  const prop = (kind, status) => appt(kind, at(1, 10), status || 'proposed');
+  assert.strictEqual(V.canOverride_('Owner', prop('interview')), true, 'Owner, proposed interview');
+  assert.strictEqual(V.canOverride_('Principal, Owner', prop('demo')), true, 'multi-role Owner, proposed demo');
+  assert.strictEqual(V.canOverride_('Owner', prop('md')), false, 'md: MD acceptor only, from the Appointments view');
+  assert.strictEqual(V.canOverride_('Owner', prop('interview', 'accepted')), false, 'already decided');
+  ['Principal', 'Coordinator', 'FeeClerk', '', undefined].forEach((r) => assert.strictEqual(V.canOverride_(r, prop('interview')), false, 'not Owner: ' + r));
+  console.log('ok  - canOverride_: Owner only, proposed interview/demo only');
+}
