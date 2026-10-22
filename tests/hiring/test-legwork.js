@@ -72,3 +72,22 @@ T('hiringApplicants_: legwork computed on the full list, before the clerk strip'
   const a = Array.from(res.applicants).filter((x) => x.row === 3)[0];
   assert.strictEqual(a.interviewReports.length, 0); assert.strictEqual(a.appointments.length, 1);
 });
+
+T('Rejected and Hired people count in no bucket except documents (a leftover past appointment is history)', () => {
+  const past = NOW - 2 * D;
+  const appts = [ap('interview', 'accepted', past), ap('demo', 'proposed', NOW + D), ap('demo', 'accepted', NOW + D)];
+  assert.deepStrictEqual(L([person('Rejected', appts), person('Hired', appts)]), zero);
+  assert.deepStrictEqual(L([person('Interview Done', appts)]), only({ reportsToUpload: 1, waiting: 1, booked: 1 }));
+});
+T('hirAttachAppointments_: a Date start from another realm still becomes an ISO string', () => {
+  const list = [{ phoneNorm: '9876543210', row: 2 }];
+  ctx.hirAttachAppointments_(list, [{ id: 'a', kind: 'demo', status: 'accepted', phone: '9876543210', row: 2, start: new Date(NOW), proposedAt: new Date(NOW),
+    proposedBy: 'c@x', declineNote: '', calendarMode: 'own' }]);
+  assert.strictEqual(list[0].appointments[0].start, '2026-10-22T05:00:00.000Z');
+});
+T('hirForCaller_: a Fee Clerk\'s md appointment has declineNote \'\'; an elevated caller keeps it', () => {
+  const list = [{ row: 2, appointments: [{ id: 'm', kind: 'md', declineNote: 'too costly' }, { id: 'i', kind: 'interview', declineNote: 'busy' }] }];
+  const forClerk = ctx.hirForCaller_({ email: 'c@x', campusId: 'LMS4', roles: ['FeeClerk'] }, list)[0].appointments;
+  assert.strictEqual(forClerk[0].declineNote, ''); assert.strictEqual(forClerk[1].declineNote, 'busy');
+  assert.strictEqual(ctx.hirForCaller_({ email: 'p@x', campusId: 'LMS4', roles: ['Principal'] }, list)[0].appointments[0].declineNote, 'too costly');
+});

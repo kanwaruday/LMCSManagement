@@ -652,7 +652,7 @@ function hirAttachAppointments_(list, all) {
   const keep = all.filter(function (a) { return a.status === 'proposed' || a.status === 'accepted'; }).concat(apptLatestDeclined_(all));
   list.forEach(function (p) {
     p.appointments = apptForPerson_(keep, p.row, p.phoneNorm).sort(function (a, b) { return hirMs_(a.start) - hirMs_(b.start); }).map(function (a) {
-      return { id: a.id, kind: a.kind, start: a.start instanceof Date ? a.start.toISOString() : String(a.start), status: a.status,
+      return { id: a.id, kind: a.kind, start: Object.prototype.toString.call(a.start) === '[object Date]' ? a.start.toISOString() : String(a.start), status: a.status,
         proposedBy: a.proposedBy, declineNote: a.declineNote, calendarMode: a.calendarMode };
     });
   });
@@ -668,6 +668,7 @@ function hirLegwork_(list, nowMs) {
     if (p.status === 'Shortlisted' && !open(p, 'interview')) w.toSchedule++;
     if (p.status === 'Interview Done' && !open(p, 'demo')) w.demosToBook++;
     if (p.status === 'Hiring Approved' && (p.docsMissing || []).length) w.documents++;
+    if (p.status === 'Rejected' || p.status === 'Hired') return; // a leftover past appointment is history, not legwork
     p.appointments.forEach(function (a) {
       const t = hirMs_(a.start);
       if (a.status === 'proposed') w.waiting++;
@@ -712,15 +713,22 @@ const HIR_PI_TAB = 'Portal Interview Reports';
 const HIR_PD_TAB = 'Portal Demo Reports';
 const HIR_PI_HEADERS = ['Report ID', 'Applicant ID', 'Row', 'Name', 'Phone', 'Campus', 'Position', 'Interview Date', 'Confidence', 'English',
   'Capability (JSON)', 'Spouse / family occupation', 'Family support', 'Qualification remarks', 'Other skills', 'Experience (JSON)',
-  'Commitment', 'Expected salary', 'Strengths', 'Weaknesses', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At'];
+  'Commitment', 'Expected salary', 'Strengths', 'Weaknesses', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At', 'Scan Link', 'Entered By Role'];
 const HIR_PD_HEADERS = ['Report ID', 'Applicant ID', 'Row', 'Name', 'Phone', 'Campus', 'Demo Date', 'Class', 'Subject', 'Pedagogy', 'Content',
   'Student Interaction', 'Student Response', 'Classroom Management', 'Clarity & Audibility', 'Makes Subject Relatable', 'Use of Teaching Aids',
-  'Student Feedback', 'Total /45', 'Strengths', 'Areas to improve', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At'];
+  'Student Feedback', 'Total /45', 'Strengths', 'Areas to improve', 'Remarks', 'Recommendation', 'Submitted By', 'Submitted At', 'Scan Link',
+  'Entered By Role'];
 
 function hirPortalTab_(name, headers, create) {
   const wb = hirWorkbook_();
   let sh = wb.getSheetByName(name);
-  if (!sh && create) { sh = wb.insertSheet(name); sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold'); }
+  if (!sh && create) sh = wb.insertSheet(name);
+  if (sh && create) {
+    // A new tab, or one written before a header was appended (hiring v2: Scan Link, Entered By Role): grow it and its
+    // header row. Headers only ever grow at the end, so the last cell tells.
+    if (sh.getMaxColumns() < headers.length) sh.insertColumnsAfter(sh.getMaxColumns(), headers.length - sh.getMaxColumns());
+    if (String(sh.getRange(1, headers.length).getValue() || '') !== headers[headers.length - 1]) sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+  }
   return sh;
 }
 
@@ -1823,16 +1831,16 @@ function hirAppendReportCore_(tab, headers, obj) {
   sh.appendRow(headers.map(function (h) { return obj.hasOwnProperty(h) ? obj[h] : ''; }));
 }
 function hirReportBase_(caller, sheet, r) {
+  const role = ['Principal', 'Coordinator', 'Owner', 'FeeClerk'].filter(function (x) { return (caller.roles || []).indexOf(x) !== -1; })[0] || '';
   return { 'Report ID': 'rep-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), 'Applicant ID': hirApplicantId_(r.row),
-    'Row': r.row, 'Name': r.name, 'Phone': r.phone, 'Campus': r.campus, 'Submitted By': caller.email, 'Submitted At': new Date() };
+    'Row': r.row, 'Name': r.name, 'Phone': r.phone, 'Campus': r.campus, 'Submitted By': caller.email, 'Submitted At': new Date(),
+    'Entered By Role': role };
 }
 
-// action=hiringsubmitinterview -- the "Teacher Interview Report" page of the paper form. Confidence and
+// The "Teacher Interview Report" page of the paper form, validated into a report row (no writes). Confidence and
 // English (1-5) and at least one capability score are required (the paper's marks were usually left blank).
-function hiringSubmitInterview_(caller, body) {
-  hirNeedElevated_(caller);
-  const sheet = hirSheet_();
-  const r = hirScopedRow_(caller, sheet, body.row);
+// Shared by hiringsubmitinterview and hiringuploadreport. Returns {report, at}.
+function hirInterviewRecord_(caller, sheet, r, body) {
   const date = hirDateOrThrow_(body.interviewDate, 'interview date');
   const confidence = hirScoreOrThrow_(body.confidence, 'Confidence');
   const english = hirScoreOrThrow_(body.english, 'English');
@@ -1859,24 +1867,34 @@ function hiringSubmitInterview_(caller, body) {
     'Commitment': hirText_(body.commitment, 60), 'Expected salary': hirText_(body.expectedSalary, 30),
     'Strengths': hirText_(body.strengths), 'Weaknesses': hirText_(body.weaknesses), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation,
   });
+  return { report: report, at: date, next: null };
+}
+// Interview evidence only (a walk-in seen on the spot); never shows on Today, which reads accepted appointments.
+function hirStampInterviewAtCore_(sheet, row, date) {
+  hirGrow_(sheet);
+  if (!sheet.getRange(row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(row, HIR_COL.INTERVIEW_AT).setValue(date);
+}
+
+// action=hiringsubmitinterview
+function hiringSubmitInterview_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const rec = hirInterviewRecord_(caller, sheet, r, body);
   hirWithLock_(function () {
-    hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, report);
-    hirGrow_(sheet);
-    // Evidence only (a walk-in seen on the spot); never shows on Today, which reads accepted appointments.
-    if (!sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(date);
+    hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, rec.report);
+    hirStampInterviewAtCore_(sheet, r.row, rec.at);
     if (body.recommendation === 'reject') hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
   });
   return hiringApplicants_(caller);
 }
 
-// action=hiringsubmitdemo -- the "Demo Classes" page: 8 scores + Student Feedback, all 1-5, total /45.
-// 'proceed' moves to Demo Done; 'another' keeps them at Interview Done and books the next demo.
+// The "Demo Classes" page: 8 scores + Student Feedback, all 1-5, total /45, validated into a report row (no
+// writes). 'proceed' moves to Demo Done; 'another' keeps them at Interview Done, with an optional next demo
+// time (`next`). Shared by hiringsubmitdemo and hiringuploadreport. Returns {report, at, next}.
 const HIR_DEMO_SCORES = [['pedagogy', 'Pedagogy'], ['content', 'Content'], ['interaction', 'Student Interaction'], ['response', 'Student Response'],
   ['management', 'Classroom Management'], ['clarity', 'Clarity & Audibility'], ['relatable', 'Makes Subject Relatable'], ['aids', 'Use of Teaching Aids']];
-function hiringSubmitDemo_(caller, body) {
-  hirNeedElevated_(caller);
-  const sheet = hirSheet_();
-  const r = hirScopedRow_(caller, sheet, body.row);
+function hirDemoRecord_(caller, sheet, r, body) {
   const date = hirDateOrThrow_(body.demoDate, 'demo date');
   const obj = hirReportBase_(caller, sheet, r);
   let total = 0;
@@ -1888,14 +1906,121 @@ function hiringSubmitDemo_(caller, body) {
   const next = body.recommendation === 'another' && body.nextDemoAt ? hirDateOrThrow_(body.nextDemoAt, 'next demo date') : null;
   Object.assign(obj, { 'Demo Date': date, 'Class': hirText_(body.class, 20), 'Subject': hirText_(body.subject, 60), 'Total /45': total,
     'Strengths': hirText_(body.strengths), 'Areas to improve': hirText_(body.improve), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation });
+  return { report: obj, at: date, next: next };
+}
+
+// action=hiringsubmitdemo
+function hiringSubmitDemo_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const rec = hirDemoRecord_(caller, sheet, r, body);
   hirWithLock_(function () {
     // The next demo goes through Appointments (a Principal books it, anyone else proposes) -- first, so a
     // refused booking leaves no half-saved report.
-    if (next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: next });
-    hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, obj);
+    if (rec.next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: rec.next });
+    hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, rec.report);
     if (body.recommendation === 'reject') hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
   });
   return hiringApplicants_(caller);
+}
+
+// ── Scanned reports (hiring v2): the Fee Clerk (or anyone elevated) uploads a scan of the handwritten Interview /
+// Demo Report and types its contents in -- the same fields and checks as the portal forms. The scan goes to the
+// Drive folder in Script Property HIR_SCAN_FOLDER_ID (see hirSetupScans), one subfolder per campus.
+const HIR_SCAN_MAX_BYTES = 7 * 1024 * 1024;
+const HIR_SCAN_TYPES = [ // magic bytes, unsigned
+  { ext: 'pdf', mime: 'application/pdf', magic: [0x25, 0x50, 0x44, 0x46] },
+  { ext: 'jpg', mime: 'image/jpeg', magic: [0xff, 0xd8, 0xff] },
+  { ext: 'png', mime: 'image/png', magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+];
+// The decoded scan and its type, or throws. Utilities.base64Decode returns SIGNED bytes, hence b & 0xff.
+function hirScanFile_(file) {
+  const b64 = String((file && file.base64) || '').replace(/^data:[^,]*,/, '');
+  let bytes = [];
+  try { if (b64) bytes = Utilities.base64Decode(b64); } catch (e) { bytes = []; }
+  const type = HIR_SCAN_TYPES.filter(function (t) { return t.magic.every(function (m, i) { return bytes.length > i && (bytes[i] & 0xff) === m; }); })[0];
+  if (!type) throw new Error('The scan must be a PDF, JPG or PNG file');
+  if (bytes.length > HIR_SCAN_MAX_BYTES) throw new Error('The scan is larger than 7 MB -- scan at a lower resolution, or as a PDF');
+  return { bytes: bytes, type: type };
+}
+// Save the scan as "<T-id> <Name> <kind> <yyyy-mm-dd>.<ext>" in the campus subfolder, viewable by anyone at the
+// domain with the link (Principals and Owners open it from the portal). Returns its URL.
+function hirSaveScan_(scan, r, kind, date) {
+  const rootId = PropertiesService.getScriptProperties().getProperty('HIR_SCAN_FOLDER_ID');
+  if (!rootId) throw new Error('The hiring scans folder is not set up yet -- ask the admin to run hirSetupScans');
+  const root = DriveApp.getFolderById(rootId);
+  const sub = String(r.campus || 'Other');
+  const it = root.getFoldersByName(sub);
+  const folder = it.hasNext() ? it.next() : root.createFolder(sub);
+  const name = [hirApplicantId_(r.row), r.name, kind, Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd')].join(' ') + '.' + scan.type.ext;
+  const file = folder.createFile(Utilities.newBlob(scan.bytes, scan.type.mime, name));
+  file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
+  return file.getUrl();
+}
+
+// action=hiringuploadreport {row, kind:'interview'|'demo', file:{name, mime, base64}, ...the submit form's fields}.
+// Elevated: exactly what the submit action does. A Fee Clerk never decides: 'reject' only sets
+// rejectPending in the Stage Marks (a Principal confirms it, hiringconfirmreject), and 'another' + nextDemoAt
+// only proposes. No shortlist check: a walk-in can be interviewed on the spot.
+function hiringUploadReport_(caller, body) {
+  const kind = String(body.kind || '');
+  if (kind !== 'interview' && kind !== 'demo') throw new Error('Pick interview or demo for the report');
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const rec = (kind === 'interview' ? hirInterviewRecord_ : hirDemoRecord_)(caller, sheet, r, body);
+  const scan = hirScanFile_(body.file);
+  const elevated = hirElevated_(caller);
+  const reject = body.recommendation === 'reject';
+  hirWithLock_(function () {
+    // Anything that can refuse goes first, so a refusal leaves no file or half-saved report behind.
+    if (rec.next) apptProposeCore_(caller, sheet, { row: r.row, kind: 'demo', start: rec.next });
+    rec.report['Scan Link'] = hirSaveScan_(scan, r, kind, rec.at);
+    if (kind === 'interview') {
+      hirAppendReportCore_(HIR_PI_TAB, HIR_PI_HEADERS, rec.report);
+      hirStampInterviewAtCore_(sheet, r.row, rec.at);
+    } else {
+      hirAppendReportCore_(HIR_PD_TAB, HIR_PD_HEADERS, rec.report);
+    }
+    if (reject && elevated) hirRejectRowCore_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+    else if (reject) {
+      hirGrow_(sheet);
+      const marks = hirJson_(sheet.getRange(r.row, HIR_COL.STAGE_MARKS).getValue(), {});
+      marks.rejectPending = { reason: body.rejectReason, note: hirText_(body.rejectNote, 500), kind: kind, reportId: rec.report['Report ID'],
+        by: caller.email, at: new Date().toISOString() };
+      sheet.getRange(r.row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
+    }
+  });
+  return hiringApplicants_(caller);
+}
+
+// action=hiringconfirmreject {row, confirm} -- a Principal settles a Fee Clerk's "reject": confirm rejects with the
+// clerk's reason and note; otherwise the pending flag is just dropped. Either way it's cleared.
+function hiringConfirmReject_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  hirWithLock_(function () {
+    hirGrow_(sheet);
+    const marks = hirJson_(sheet.getRange(r.row, HIR_COL.STAGE_MARKS).getValue(), {});
+    const p = marks.rejectPending;
+    if (!p) throw new Error('No rejection is pending for this applicant');
+    if (body.confirm) hirRejectRowCore_(caller, sheet, r.row, p.reason, p.note);
+    delete marks.rejectPending;
+    sheet.getRange(r.row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
+  });
+  return hiringApplicants_(caller);
+}
+
+// Editor-run, once: creates the "Hiring scans" Drive folder and stores its id in HIR_SCAN_FOLDER_ID (kept if set).
+function hirSetupScans() {
+  const props = PropertiesService.getScriptProperties();
+  const have = props.getProperty('HIR_SCAN_FOLDER_ID');
+  if (have) { Logger.log('HIR_SCAN_FOLDER_ID already set: ' + have); return have; }
+  const id = DriveApp.createFolder('Hiring scans').getId();
+  props.setProperty('HIR_SCAN_FOLDER_ID', id);
+  Logger.log('Created "Hiring scans" (' + id + ') and set HIR_SCAN_FOLDER_ID');
+  return id;
 }
 
 // action=hiringrevive -- bring back a rejected candidate as a fresh interview. Everything from the old

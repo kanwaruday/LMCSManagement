@@ -231,6 +231,8 @@ function doPost(e) {
     if (action === 'hiringsubmitdemo') return jsonOut_(hiringSubmitDemo_(caller, body));
     if (action === 'hiringshortlist') return jsonOut_(hiringShortlist_(caller, body));
     if (action === 'hiringrevive') return jsonOut_(hiringRevive_(caller, body));
+    if (action === 'hiringuploadreport') return jsonOut_(hiringUploadReport_(caller, body));
+    if (action === 'hiringconfirmreject') return jsonOut_(hiringConfirmReject_(caller, body));
     if (action === 'apptpropose') return jsonOut_(apptPropose_(caller, body));
     if (action === 'apptcancel') return jsonOut_(apptCancel_(caller, body));
     if (action === 'apptdecide') return jsonOut_(apptDecide_(caller, body));

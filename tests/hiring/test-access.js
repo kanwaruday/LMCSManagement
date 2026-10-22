@@ -14,7 +14,7 @@ T('Fee Clerk: hiring legwork only', () => {
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'hiringaddapplicant', true), true);
   assert.strictEqual(ctx.pdrLimitedAllows_(c, 'apptlist', false), true);
   ['apptpropose', 'apptcancel', 'hiringuploadreport'].forEach((a) => assert.strictEqual(ctx.pdrLimitedAllows_(c, a, true), true, a));
-  ['hiringschedule', 'apptdecide', 'hiringshortlist', 'updatehiringstatus', 'hiringrevive', 'hiringmarkstage', 'hiringsubmitinterview', 'hiringsubmitdemo', 'submitapproval']
+  ['hiringschedule', 'apptdecide', 'hiringshortlist', 'updatehiringstatus', 'hiringrevive', 'hiringmarkstage', 'hiringsubmitinterview', 'hiringsubmitdemo', 'hiringconfirmreject', 'submitapproval']
     .forEach((a) => assert.strictEqual(ctx.pdrLimitedAllows_(c, a, true), false, a));
 });
 T('Teacher keeps its own lists', () => {
