@@ -43,6 +43,7 @@ export const CODES = {
   BAD_EMAIL: 'The email address was not accepted.',
   NO_BOOK: 'The books for that year are not set up yet. Tell Uday.',
   BAD_HEADER: 'The import file does not have the expected columns.',
+  HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');
 // The backend throws plain errors, so the outbox often stores {code:null, error:'OPENING_LOCKED'}: use either.
