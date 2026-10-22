@@ -29,3 +29,21 @@ export async function showToday(el, session, api) {
   else if (cached) renderTasks(el, cached, 'Offline or unavailable. Showing the last saved list.');
   else el.innerHTML = '<p>Could not load today\'s tasks: ' + esc(r.error || 'unknown error') + '</p>';
 }
+
+// Hiring legwork waiting for the Fee Clerk (the Principal decides; the clerk books slots and chases documents).
+export function hiringCounts(applicants) {
+  const list = applicants || [];
+  return {
+    needSlot: list.filter((a) => (a.status || '') === '' && !a.interviewAt).length,
+    docs: list.filter((a) => a.status === 'Hiring Approved' && (a.docsMissing || []).length).length,
+  };
+}
+export const hiringLabel = (c) => 'Hiring' + (c.needSlot ? ' · ' + c.needSlot + ' need a slot' : '') + (c.docs ? ' · ' + c.docs + ' documents to chase' : '');
+
+// Puts the counts on the nav's Hiring link; silent when the backend cannot be reached or refuses (the link still works).
+export async function showHiringCounts(link, fetchFn, url, token) {
+  try {
+    const r = await (await fetchFn(url + '?action=hiringapplicants&idToken=' + encodeURIComponent(token), { cache: 'no-store' })).json();
+    if (r && r.success) link.textContent = hiringLabel(hiringCounts(r.applicants));
+  } catch (e) { /* offline: leave the plain link */ }
+}
