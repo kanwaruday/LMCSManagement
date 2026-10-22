@@ -41,6 +41,7 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   assert.deepStrictEqual(kinds([p(4, 'Salary Offer', [appt('md', at(2, 10), 'declined', { declineNote: 'busy' })])]), ['4:md'], 'a declined MD proposal: propose again');
   assert.deepStrictEqual(kinds([p(5, 'Hiring Approved')]), ['5:joining'], 'Hiring Approved: DOJ, documents, Hired');
   assert.deepStrictEqual(kinds([p(6, 'Shortlisted', [], { stageMarks: { rejectPending: { reason: 'Other', note: 'x' } } })]), ['6:confirmreject'], 'rejectPending');
+  assert.deepStrictEqual(kinds([p(6, 'Interview Done', [], { stageMarks: { rejectPending: { reason: 'Other' } } })]), ['6:confirmreject'], 'a pending rejection is settled first: no Book demo beside it');
   assert.deepStrictEqual(kinds([p(7, 'Interview Scheduled', [appt('interview', at(-1, 10), 'accepted')])]), ['7:interview'], 'accepted interview in the past, no report');
   assert.deepStrictEqual(kinds([p(7, 'Interview Scheduled', [appt('interview', at(0, 15), 'accepted')])]), [], 'future interview: nothing yet');
   assert.deepStrictEqual(kinds([p(7, 'Interview Done', [appt('interview', at(-1, 10), 'accepted', { reportFiled: true }), appt('demo', at(-1, 15), 'accepted')])]), ['7:demo'], 'past demo, no report');

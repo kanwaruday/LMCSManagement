@@ -139,7 +139,7 @@ textarea{min-height:56px;resize:vertical}
 <div class="hdr">
   <div>
     <h1>Hiring Dashboard</h1>
-    <p>Teaching applicants — today, by role, and the rejected pool</p>
+    <p>Teaching applicants — today, appointments, by role, my actions and the rejected pool</p>
   </div>
   <div class="hdr-right">
     <a href="../principals-daily-reporting/index.html#approvals" id="aprLink" class="hdr-btn">✅ Approvals</a>
@@ -158,7 +158,9 @@ textarea{min-height:56px;resize:vertical}
       <div class="toolbar">
         <div class="tabs" role="group" aria-label="View">
           <button type="button" class="tab" data-act="view" data-view="today">Today</button>
+          <button type="button" class="tab elev" data-act="view" data-view="appts">Appointments <span class="n" id="apptCount">0</span></button>
           <button type="button" class="tab" data-act="view" data-view="role">By role</button>
+          <button type="button" class="tab elev" data-act="view" data-view="actions">My actions <span class="n" id="actCount">0</span></button>
           <button type="button" class="tab" data-act="view" data-view="pool">Rejected pool <span class="n" id="poolCount">0</span></button>
         </div>
         <input type="search" class="search" id="search" placeholder="Find anyone — name or phone" aria-label="Find an applicant by name or phone">
@@ -178,6 +180,7 @@ textarea{min-height:56px;resize:vertical}
 </div>
 
 <script src="../assets/auth.js"></script>
+<script src="hiring-view.js"></script>
 <script>
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
 const DOC_FORM_URLS = {
@@ -215,6 +218,11 @@ let campusFilter = 'ALL';
 let selectedRoleKey = null;
 let OPEN_ROW = null;        // the candidate panel's row, so it re-renders after a save
 let ELEVATED = false;       // Principal / Coordinator / Owner: may decide. A Fee Clerk does the legwork only.
+let IS_PRINCIPAL = false;   // role Principal: an interview/demo time they set is booked at once (accepted); anyone else proposes
+let APPTS = { toAccept: [], myProposals: [], upcoming: [] }; // apptlist (elevated only)
+let SL_FILTER = 'all';      // By role: 'not' (not yet shortlisted) | 'yes' (shortlisted) | 'all'
+const HV = window.HiringView;
+const KIND_LABEL = { interview: 'Interview', demo: 'Demo', md: 'MD Academics interview' };
 
 // ── helpers ───────────────────────────────────────────────────────
 function esc_(v) {
@@ -279,22 +287,25 @@ function docFormUrl_(a) {
 }
 
 // ── what happens next, per stage ──────────────────────────────────
-// One primary action per candidate. A Fee Clerk only ever books slots; every other step is the Principal's.
+// One primary action per candidate. A Fee Clerk only ever proposes times (shortlisted people only); every decision is the Principal's.
 function nextStep_(a) {
+  const open = function (k) { return HV.openAppt_(a, k); };
   if (!ELEVATED) {
-    if (a.status === 'Rejected' || a.status === 'Hired') return null;
-    if (a.status === '' || a.status === 'Interview Scheduled') return { act: 'slot', label: a.interviewAt ? 'Change slot' : 'Book interview' };
-    if (a.status === 'Interview Done') return { act: 'slot', label: a.demoAt ? 'Change demo slot' : 'Book demo' };
+    if (a.status === 'Shortlisted' || a.status === 'Interview Scheduled') return { act: 'book', kind: 'interview', label: open('interview') ? 'Change time' : 'Propose time' };
+    if (a.status === 'Interview Done') return { act: 'book', kind: 'demo', label: open('demo') ? 'Change demo time' : 'Propose demo time' };
     return null;
   }
+  if (active_(a) && a.stageMarks && a.stageMarks.rejectPending) return { act: 'open', label: 'Confirm rejection' };
   if (a.reportPending === 'interview') return { act: 'interview', label: 'File interview report' };
   if (a.reportPending === 'demo') return { act: 'demo', label: 'File demo report' };
+  const book = IS_PRINCIPAL ? 'Book ' : 'Propose ';
   switch (a.status) {
-    case '': return { act: 'slot', label: 'Book interview' };
+    case '': return { act: 'shortlist', label: 'Shortlist' };
+    case 'Shortlisted': return open('interview') ? { act: 'open', label: 'Interview proposed', disabled: true } : { act: 'book', kind: 'interview', label: book + 'interview' };
     case 'Interview Scheduled': return { act: 'interview', label: 'Interview report' };
-    case 'Interview Done': return { act: 'demo', label: 'Demo report' };
+    case 'Interview Done': return open('demo') ? { act: 'demo', label: 'Demo report' } : { act: 'book', kind: 'demo', label: book + 'demo' };
     case 'Demo Done': return { act: 'salary', label: 'Salary offer' };
-    case 'Salary Offer': return { act: 'open', label: 'MD interview date' };
+    case 'Salary Offer': return open('md') ? { act: 'open', label: 'MD interview proposed', disabled: true } : { act: 'book', kind: 'md', label: 'Propose MD interview' };
     case 'MD Academics Interview Scheduled': return { act: 'open', label: 'Awaiting Owner', disabled: true };
     case 'Hiring Approved': return { act: 'open', label: 'Joining & documents' };
     case 'Hired': return { act: 'open', label: 'Appointment letter' };
@@ -304,8 +315,13 @@ function nextStep_(a) {
 }
 
 function chips_(a) {
-  const out = ['<span class="pill ' + (a.status === 'Rejected' ? 'bad' : a.status === 'Hired' ? 'ok' : 'stage') + '">' + esc_(a.status || 'Needs a slot') + '</span>'];
+  const out = ['<span class="pill ' + (a.status === 'Rejected' ? 'bad' : a.status === 'Hired' ? 'ok' : 'stage') + '">' + esc_(a.status || 'Not shortlisted') + '</span>'];
   if (a.reportPending) out.push('<span class="pill warn">' + (a.reportPending === 'interview' ? 'Interview' : 'Demo') + ' report pending</span>');
+  if (active_(a) && a.stageMarks && a.stageMarks.rejectPending) out.push('<span class="pill bad">Rejection to confirm</span>');
+  (a.appointments || []).forEach(function (x) {
+    if (x.status === 'proposed') out.push('<span class="pill warn">' + esc_(KIND_LABEL[x.kind]) + ' proposed · ' + esc_(fmtWhen_(x.start)) + '</span>');
+    else if (x.status === 'declined' && !HV.openAppt_(a, x.kind) && active_(a)) out.push('<span class="pill bad" title="' + esc_(x.declineNote) + '">' + esc_(KIND_LABEL[x.kind]) + ' declined</span>');
+  });
   if (a.round > 1) out.push('<span class="pill">Revived · round ' + a.round + '</span>');
   if (a.noOpenRole && active_(a)) out.push('<span class="pill warn" title="No approved New/ Backup Position matches this applicant">No open role</span>');
   if (a.source) out.push('<span class="pill">' + esc_(a.source) + '</span>');
@@ -313,15 +329,19 @@ function chips_(a) {
   return out.join('');
 }
 
-// One candidate card. `when` = optional bold time label (scheduled lists).
-function cardHtml_(a, when) {
+function stepBtn_(a, step) {
+  return '<button type="button" class="btn primary" data-act="' + esc_(step.act) + '" data-row="' + a.row + '"' + (step.kind ? ' data-kind="' + esc_(step.kind) + '"' : '') + (step.disabled ? ' disabled' : '') + '>' + esc_(step.label) + '</button>';
+}
+// One candidate card. `when` = optional bold label; `step` overrides the primary action (false = none); `extra` = more buttons (HTML).
+function cardHtml_(a, when, step, extra) {
   const digits = String(a.phone || '').replace(/\D/g, '').slice(-10);
   const phone = digits.length === 10 ? '<a href="tel:+91' + digits + '">' + esc_(a.phone) + '</a> · <a href="https://wa.me/91' + digits + '" target="_blank" rel="noopener">WhatsApp</a>' : esc_(a.phone);
   const role = roleFor_(a);
   const what = role ? (role.roleLevel || '') + (role.subjects ? ': ' + role.subjects : '') : (a.subjects || '—');
-  const step = nextStep_(a);
+  if (step === undefined) step = nextStep_(a);
   const acts = [];
-  if (step) acts.push('<button type="button" class="btn primary" data-act="' + step.act + '" data-row="' + a.row + '"' + (step.disabled ? ' disabled' : '') + '>' + esc_(step.label) + '</button>');
+  if (step) acts.push(stepBtn_(a, step));
+  if (extra) acts.push(extra);
   if (ELEVATED && active_(a)) acts.push('<button type="button" class="btn danger" data-act="reject" data-row="' + a.row + '">Reject</button>');
   acts.push('<button type="button" class="btn" data-act="open" data-row="' + a.row + '">Open</button>');
   return '<div class="card"><div class="who">' +
@@ -335,66 +355,79 @@ function section_(id, title, items, emptyText) {
   return '<div class="section" id="sec-' + id + '"><h2>' + esc_(title) + ' <span class="n">' + items.length + '</span></h2>' +
     (items.length ? items.join('') : '<div class="empty">' + esc_(emptyText) + '</div>') + '</div>';
 }
+function countsHtml_(counts) {
+  return '<div class="counts">' + counts.map(function (c) {
+    return '<button type="button" class="count" data-act="jump" data-to="' + c[0] + '"><b>' + c[1] + '</b><span>' + esc_(c[2]) + '</span></button>';
+  }).join('') + '</div>';
+}
+function calRetryBtn_(x) {
+  return ELEVATED && x.status === 'accepted' && x.calendarMode === 'none' ? '<button type="button" class="btn" data-act="calretry" data-id="' + esc_(x.id) + '" title="The event could not be put on the calendar">Calendar not updated — Retry</button>' : '';
+}
+function cancelBtn_(x) {
+  return (x.status === 'proposed' || x.status === 'accepted') && (ELEVATED || x.proposedBy === SESSION.email) ? '<button type="button" class="btn ghost" data-act="cancelappt" data-id="' + esc_(x.id) + '">Cancel</button>' : '';
+}
 
 // ── views ─────────────────────────────────────────────────────────
 function visible_() { return (DATA.applicants || []).filter(inFilter_); }
 
-// Today: the Principal's day in one place. Sections in order: scheduled today, waiting on you,
-// interviewed today, needs a slot, next 7 days (+ documents to chase).
-function todayModel_() {
-  const today = todayKey_(), now = Date.now(), week = now + 7 * 86400000;
-  const list = visible_().filter(active_);
-  const scheduled = [], upcoming = [];
-  list.forEach(function (a) {
-    [['interviewAt', 'Interview', a.status === '' || a.status === 'Interview Scheduled'], ['demoAt', 'Demo', a.status === 'Interview Done' || a.status === 'Interview Scheduled']]
-      .forEach(function (k) {
-        if (!a[k[0]] || !k[2]) return;
-        const t = new Date(a[k[0]]).getTime();
-        if (dayKey_(a[k[0]]) === today) scheduled.push({ a: a, t: t, label: k[1] + ' ' + fmtTime_(a[k[0]]) });
-        else if (t > now && t < week) upcoming.push({ a: a, t: t, label: k[1] + ' · ' + fmtWhen_(a[k[0]]) });
-      });
-  });
-  scheduled.sort(function (x, y) { return x.t - y.t; });
-  upcoming.sort(function (x, y) { return x.t - y.t; });
-  const onToday = {};
-  scheduled.forEach(function (s) { onToday[s.a.row] = true; });
-  const waiting = ELEVATED ? list.filter(function (a) {
-    if (onToday[a.row]) return false;
-    if (a.reportPending) return true;
-    if (a.status === 'Interview Scheduled') return a.interviewAt && new Date(a.interviewAt).getTime() < now;
-    return ['Interview Done', 'Demo Done', 'Salary Offer', 'Hiring Approved'].indexOf(a.status) !== -1;
-  }) : [];
-  const touchedToday = function (a) {
-    const marks = a.stageMarks || {};
-    return [marks.interview && marks.interview.at, marks.demo && marks.demo.at].some(function (x) { return x && dayKey_(x) === today; }) ||
-      (a.interviewReports || []).concat(a.demoReports || []).some(function (r) { return dayKey_(r['Submitted At']) === today; });
+// Today (Principal): accepted interviews and demos only -- today in time order, then the next 7 days. Nothing else.
+function renderToday_() {
+  if (!ELEVATED) return renderClerkToday_();
+  const t = HV.todayItems_(visible_(), Date.now());
+  const card = function (fmt) {
+    return function (s) { return cardHtml_(s.a, KIND_LABEL[s.appt.kind] + ' ' + fmt(s.appt.start), { act: s.appt.kind, label: KIND_LABEL[s.appt.kind] + ' report' }, calRetryBtn_(s.appt)); };
   };
-  const interviewed = visible_().filter(touchedToday);
-  const needsSlot = list.filter(function (a) { return a.status === '' && !a.interviewAt; })
-    .sort(function (x, y) { return (y.source ? 1 : 0) - (x.source ? 1 : 0) || String(y.timestamp).localeCompare(String(x.timestamp)); });
-  const docs = list.filter(function (a) { return a.status === 'Hiring Approved' && a.docsMissing && a.docsMissing.length; });
-  return { scheduled: scheduled, waiting: waiting, interviewed: interviewed, needsSlot: needsSlot, upcoming: upcoming, docs: docs };
+  return section_('scheduled', 'Today', t.today.map(card(fmtTime_)), 'Nothing booked for today.') +
+    section_('upcoming', 'Next 7 days', t.next.map(card(fmtWhen_)), 'Nothing booked for the coming week.');
 }
 
-let SHOW_ALL_SLOTS = false;
-function renderToday_() {
-  const m = todayModel_();
-  const counts = [['scheduled', m.scheduled.length, 'Scheduled today']];
-  if (ELEVATED) counts.push(['waiting', m.waiting.length, 'Waiting on you']);
-  counts.push(['interviewed', m.interviewed.length, 'Interviewed today'], ['needs', m.needsSlot.length, 'Need a slot']);
-  if (!ELEVATED) counts.push(['docs', m.docs.length, 'Documents to chase']);
-  let html = '<div class="counts">' + counts.map(function (c) {
-    return '<button type="button" class="count" data-act="jump" data-to="' + c[0] + '"><b>' + c[1] + '</b><span>' + esc_(c[2]) + '</span></button>';
-  }).join('') + '</div>';
-  html += section_('scheduled', 'Scheduled today', m.scheduled.map(function (s) { return cardHtml_(s.a, s.label); }), 'Nothing booked for today.');
-  if (ELEVATED) html += section_('waiting', 'Waiting on you', m.waiting.map(function (a) { return cardHtml_(a); }), 'Nothing is waiting on you.');
-  html += section_('interviewed', 'Interviewed today', m.interviewed.map(function (a) { return cardHtml_(a); }), 'No interview or demo recorded today yet.');
-  const slots = SHOW_ALL_SLOTS ? m.needsSlot : m.needsSlot.slice(0, 15);
-  html += section_('needs', 'Need a slot', slots.map(function (a) { return cardHtml_(a); }), 'Everyone has a slot.');
-  if (m.needsSlot.length > slots.length) html += '<button type="button" class="btn" data-act="allslots" style="margin:-10px 0 18px">Show all ' + m.needsSlot.length + '</button>';
-  html += section_('docs', 'Documents to chase', m.docs.map(function (a) { return cardHtml_(a, 'Missing: ' + a.docsMissing.join(', ')); }), 'No documents outstanding.');
-  html += section_('upcoming', 'Next 7 days', m.upcoming.map(function (s) { return cardHtml_(s.a, s.label); }), 'Nothing booked for the coming week.');
-  return html;
+// Fee Clerk (temporary, until office/hiring.html ships): the legwork, in the order it's done.
+function renderClerkToday_() {
+  const b = HV.clerkBuckets_(visible_(), Date.now());
+  const declined = function (a) { const d = (a.appointments || []).filter(function (x) { return x.kind === 'interview' && x.status === 'declined'; }).slice(-1)[0]; return d ? 'Declined: ' + (d.declineNote || 'no note') : ''; };
+  const at = function (s) { return KIND_LABEL[s.appt.kind] + ' · ' + fmtWhen_(s.appt.start); };
+  return countsHtml_([['schedule', b.toSchedule.length, 'To schedule'], ['waiting', b.waiting.length, 'Waiting for Principal'], ['booked', b.booked.length, 'Booked'],
+    ['reports', b.reportsToUpload.length, 'Reports to upload'], ['demos', b.demosToBook.length, 'Demos to book'], ['docs', b.documents.length, 'Documents to chase']]) +
+    section_('schedule', 'To schedule', b.toSchedule.map(function (a) { return cardHtml_(a, declined(a)); }), 'No shortlisted applicant is waiting for a time. The Principal shortlists; then they appear here.') +
+    section_('waiting', 'Waiting for Principal', b.waiting.map(function (s) { return cardHtml_(s.a, at(s) + ' · proposed', false, cancelBtn_(s.appt)); }), 'Nothing waiting for the Principal.') +
+    section_('booked', 'Booked — call to confirm', b.booked.map(function (s) { return cardHtml_(s.a, at(s), false); }), 'Nothing booked for the coming week.') +
+    section_('reports', 'Reports to upload', b.reportsToUpload.map(function (s) { return cardHtml_(s.a, at(s), { act: 'upload', kind: s.appt.kind, label: 'Upload ' + s.appt.kind + ' report' }); }), 'No reports to upload.') +
+    section_('demos', 'Demos to book', b.demosToBook.map(function (a) { return cardHtml_(a); }), 'No demos to book.') +
+    section_('docs', 'Documents to chase', b.documents.map(function (a) { return cardHtml_(a, 'Missing: ' + a.docsMissing.join(', '), false); }), 'No documents outstanding.');
+}
+
+// Appointments (elevated): proposals waiting for me (Accept, or Decline with a note), then what I proposed.
+function inCampus_(x) { return campusFilter === 'ALL' || x.campus === campusFilter; }
+function apptCardHtml_(x, mine) {
+  const pill = { proposed: 'warn', accepted: 'ok', declined: 'bad' }[x.status] || '';
+  const acts = mine ? cancelBtn_(x) + calRetryBtn_(x)
+    : '<button type="button" class="btn primary" data-act="accept" data-id="' + esc_(x.id) + '">Accept</button>' +
+      '<input class="inp" id="dn-' + esc_(x.id) + '" placeholder="Why decline? (they see it)" aria-label="Reason for declining" style="width:auto;flex:1;min-width:140px">' +
+      '<button type="button" class="btn danger" data-act="decline" data-id="' + esc_(x.id) + '">Decline</button>';
+  return '<div class="card"><div class="who"><div class="name"><span class="when">' + esc_(KIND_LABEL[x.kind] + ' · ' + fmtWhen_(x.start)) + '</span> · ' + esc_(x.name) + ' <span class="id">' + esc_(x.applicantId) + '</span></div>' +
+    '<div class="meta">' + esc_([x.phone, LMCS.campusLabel(x.campus), x.place, 'proposed by ' + x.proposedBy].filter(Boolean).join(' · ')) + '</div>' +
+    (x.note ? '<div class="note">' + esc_(x.note) + '</div>' : '') +
+    '<div style="margin-top:4px">' + (mine ? '<span class="pill ' + pill + '">' + esc_(x.status) + '</span>' : '') + (x.declineNote ? '<span class="note">Declined: ' + esc_(x.declineNote) + '</span>' : '') + '</div></div>' +
+    '<div class="acts">' + acts + '<button type="button" class="btn" data-act="open" data-row="' + esc_(x.row) + '">Open</button></div></div>';
+}
+function renderAppts_() {
+  return section_('toaccept', 'Waiting for you', (APPTS.toAccept || []).filter(inCampus_).map(function (x) { return apptCardHtml_(x, false); }), 'No proposals waiting for you.') +
+    section_('mine', 'Your proposals', (APPTS.myProposals || []).filter(inCampus_).map(function (x) { return apptCardHtml_(x, true); }), 'You have no open proposals (MD Academics interviews you propose show here).');
+}
+
+// My actions (elevated): everything waiting on the Principal, each with its one action.
+function renderActions_() {
+  const book = IS_PRINCIPAL ? 'Book demo' : 'Propose demo';
+  const steps = { interview: { act: 'interview' }, demo: { act: 'demo' }, bookdemo: { act: 'book', kind: 'demo', label: book }, salary: { act: 'salary' },
+    md: { act: 'book', kind: 'md' }, joining: { act: 'open' }, confirmreject: { act: 'confirmrej' } };
+  return section_('actions', 'Waiting on you', HV.myActions_(visible_(), Date.now()).map(function (it) {
+    const a = byRow_(it.row);
+    const step = Object.assign({ label: it.label }, steps[it.kind]);
+    if (it.kind !== 'confirmreject') return cardHtml_(a, '', step);
+    const p = a.stageMarks.rejectPending;
+    return cardHtml_(a, 'Report says reject: ' + p.reason + (p.note ? ' — ' + p.note : ''), step,
+      '<button type="button" class="btn" data-act="confirmrej" data-confirm="0" data-row="' + a.row + '">Don\'t reject</button>');
+  }), 'Nothing is waiting on you.');
 }
 
 function renderRole_() {
@@ -408,8 +441,15 @@ function renderRole_() {
     return '<button type="button" class="chip-btn" data-act="role" data-key="' + esc_(r.roleKey) + '" aria-pressed="' + (r.roleKey === selectedRoleKey) + '">' + esc_(label) + ' · ' + n + '</button>';
   }).join('') + '</div>';
   if (!selectedRoleKey) return html + '<div class="empty">Pick a role to see its applicants, best match first.</div>';
-  const list = (DATA.applicants || []).filter(function (a) { return (a.matchedRoleKeys || []).indexOf(selectedRoleKey) !== -1; });
-  return html + (list.length ? list.map(function (a) { return cardHtml_(a, a.matchScore != null ? 'Match ' + a.matchScore : ''); }).join('') : '<div class="empty">No applicants match this role yet.</div>');
+  html += '<div class="campus-row" role="group" aria-label="Shortlist filter">' + [['not', 'Not yet shortlisted'], ['yes', 'Shortlisted'], ['all', 'All']].map(function (f) {
+    return '<button type="button" class="chip-btn" data-act="slfilter" data-f="' + f[0] + '" aria-pressed="' + (SL_FILTER === f[0]) + '">' + f[1] + '</button>';
+  }).join('') + '</div>';
+  const list = (DATA.applicants || []).filter(function (a) {
+    if ((a.matchedRoleKeys || []).indexOf(selectedRoleKey) === -1) return false;
+    return SL_FILTER === 'not' ? a.status === '' : SL_FILTER === 'yes' ? a.status !== '' && a.status !== 'Rejected' : true;
+  });
+  const unSl = function (a) { return ELEVATED && a.status === 'Shortlisted' ? '<button type="button" class="btn ghost" data-act="unshortlist" data-row="' + a.row + '">Un-shortlist</button>' : ''; };
+  return html + (list.length ? list.map(function (a) { return cardHtml_(a, a.matchScore != null ? 'Match ' + a.matchScore : '', undefined, unSl(a)); }).join('') : '<div class="empty">No applicants here.</div>');
 }
 
 function renderPool_() {
@@ -439,13 +479,18 @@ function renderCampusRow_() {
   }).join('');
 }
 
-function render_() {
+function render_(keepPanel) { // keepPanel: leave an open candidate panel as it is (its form messages survive)
   const q = document.getElementById('search').value.trim();
   document.querySelectorAll('.tab').forEach(function (t) { t.setAttribute('aria-pressed', String(t.dataset.view === VIEW && !q)); });
   document.getElementById('poolCount').textContent = visible_().filter(function (a) { return a.status === 'Rejected'; }).length;
+  if (ELEVATED) {
+    document.getElementById('apptCount').textContent = (APPTS.toAccept || []).filter(inCampus_).length;
+    document.getElementById('actCount').textContent = HV.myActions_(visible_(), Date.now()).length;
+  }
   renderCampusRow_();
-  document.getElementById('view').innerHTML = q ? renderSearch_(q) : VIEW === 'role' ? renderRole_() : VIEW === 'pool' ? renderPool_() : renderToday_();
-  if (OPEN_ROW && document.getElementById('modal').hasAttribute('open') && byRow_(OPEN_ROW) && document.getElementById('panel')) renderPanel_(OPEN_ROW);
+  document.getElementById('view').innerHTML = q ? renderSearch_(q) : VIEW === 'role' ? renderRole_() : VIEW === 'pool' ? renderPool_() :
+    VIEW === 'appts' && ELEVATED ? renderAppts_() : VIEW === 'actions' && ELEVATED ? renderActions_() : renderToday_();
+  if (!keepPanel && OPEN_ROW && document.getElementById('modal').hasAttribute('open') && byRow_(OPEN_ROW) && document.getElementById('panel')) renderPanel_(OPEN_ROW);
 }
 
 // ── candidate panel ───────────────────────────────────────────────
@@ -457,11 +502,16 @@ function ladderHtml_(a) {
   }).join('') + (a.status === 'Rejected' ? '<span class="rung now">✗ Rejected</span>' : '') + '</div>';
 }
 
+// A clerk-typed report carries its scan: "Scan ↗" (and who typed it in).
+function scanLink_(r) {
+  const u = safeUrl_(r['Scan Link']);
+  return (r['Entered By Role'] === 'clerk' ? ' · typed in by the office' : '') + (u ? ' · <a href="' + esc_(u) + '" target="_blank" rel="noopener">Scan ↗</a>' : '');
+}
 function reportsHtml_(a) {
   const since = a.revivedAt ? new Date(a.revivedAt).getTime() : 0;
   const ir = (a.interviewReports || []).slice().reverse().map(function (r) {
     const earlier = new Date(r['Submitted At']).getTime() < since;
-    return '<div class="report' + (earlier ? ' earlier' : '') + '"><div class="r-head"><span>Interview report' + (earlier ? ' (earlier round)' : '') + '</span><span>' + esc_(fmtWhen_(r['Submitted At'])) + ' · ' + esc_(r['Submitted By']) + '</span></div>' +
+    return '<div class="report' + (earlier ? ' earlier' : '') + '"><div class="r-head"><span>Interview report' + (earlier ? ' (earlier round)' : '') + '</span><span>' + esc_(fmtWhen_(r['Submitted At'])) + ' · ' + esc_(r['Submitted By']) + scanLink_(r) + '</span></div>' +
       '<div>Confidence <b>' + esc_(r['Confidence']) + '/5</b> · English <b>' + esc_(r['English']) + '/5</b> · ' + esc_(r['Position'] || '') + ' · <b>' + (r['Recommendation'] === 'reject' ? 'Rejected' : 'Proceed to demo') + '</b></div>' +
       (r['Strengths'] ? '<div class="note">Strengths: ' + esc_(r['Strengths']) + '</div>' : '') + (r['Weaknesses'] ? '<div class="note">Weaknesses: ' + esc_(r['Weaknesses']) + '</div>' : '') +
       (r['Remarks'] ? '<div class="note">' + esc_(r['Remarks']) + '</div>' : '') + '</div>';
@@ -469,7 +519,7 @@ function reportsHtml_(a) {
   const dr = (a.demoReports || []).slice().reverse().map(function (r) {
     const earlier = new Date(r['Submitted At']).getTime() < since;
     const rec = { proceed: 'Proceed to salary offer', another: 'Another demo', reject: 'Rejected' }[r['Recommendation']] || r['Recommendation'];
-    return '<div class="report' + (earlier ? ' earlier' : '') + '"><div class="r-head"><span>Demo report · <span class="total">' + esc_(r['Total /45']) + '/45</span>' + (earlier ? ' (earlier round)' : '') + '</span><span>' + esc_(fmtWhen_(r['Submitted At'])) + ' · ' + esc_(r['Submitted By']) + '</span></div>' +
+    return '<div class="report' + (earlier ? ' earlier' : '') + '"><div class="r-head"><span>Demo report · <span class="total">' + esc_(r['Total /45']) + '/45</span>' + (earlier ? ' (earlier round)' : '') + '</span><span>' + esc_(fmtWhen_(r['Submitted At'])) + ' · ' + esc_(r['Submitted By']) + scanLink_(r) + '</span></div>' +
       '<div>' + esc_([r['Class'], r['Subject']].filter(Boolean).join(' · ')) + ' · <b>' + esc_(rec) + '</b></div>' +
       '<div class="note">' + DEMO_SCORES.map(function (k) { return esc_(k[1]) + ' ' + esc_(r[k[1]]); }).join(' · ') + ' · Student Feedback ' + esc_(r['Student Feedback']) + '</div>' +
       (r['Remarks'] ? '<div class="note">' + esc_(r['Remarks']) + '</div>' : '') + '</div>';
@@ -477,6 +527,39 @@ function reportsHtml_(a) {
   const pdf = safeUrl_(a.interviewReportPdf);
   const legacy = pdf ? '<div class="report"><div class="r-head"><span>Scanned report (Google Form)</span><a href="' + esc_(pdf) + '" target="_blank" rel="noopener">Open PDF ↗</a></div></div>' : '';
   return (ir.concat(dr).join('') + legacy) || '<div class="empty">No reports yet.</div>';
+}
+
+// The panel's Appointments block: shortlist, history (Cancel, calendar Retry), and the booking form. A Principal's interview
+// or demo time is booked at once (accepted, on their calendar); anyone else's is a proposal the Principal accepts.
+function apptBlockHtml_(a) {
+  const row = a.row;
+  let h = '<div class="block" id="apptBlock"><h4>Appointments</h4>';
+  if (ELEVATED && (a.status === '' || a.status === 'Shortlisted')) {
+    h += '<div class="foot" style="margin:0 0 10px">' + (a.status === '' ? '<button type="button" class="btn primary" data-act="shortlist" data-row="' + row + '">Shortlist</button>'
+      : '<span class="pill ok">Shortlisted</span><button type="button" class="btn ghost" data-act="unshortlist" data-row="' + row + '">Un-shortlist</button>') + '<span class="formmsg" id="slMsg"></span></div>';
+  }
+  const list = a.appointments || [];
+  h += list.length ? list.map(function (x) {
+    const pill = { proposed: 'warn', accepted: 'ok', declined: 'bad' }[x.status] || '';
+    return '<div class="report"><div class="r-head"><span>' + esc_(KIND_LABEL[x.kind] + ' · ' + fmtWhen_(x.start)) + '</span><span class="pill ' + pill + '">' + esc_(x.status) + '</span></div>' +
+      '<div class="note">Proposed by ' + esc_(x.proposedBy) + (x.status === 'accepted' && x.calendarMode === 'none' ? ' · calendar not updated' : '') + (x.reportFiled ? ' · report filed' : '') + '</div>' +
+      (x.declineNote ? '<div class="note">Declined: ' + esc_(x.declineNote) + '</div>' : '') +
+      ((cancelBtn_(x) || calRetryBtn_(x)) ? '<div class="foot" style="margin-top:4px">' + cancelBtn_(x) + calRetryBtn_(x) + '</div>' : '') + '</div>';
+  }).join('') : '<div class="note">No appointments yet.</div>';
+  const kinds = [];
+  if (a.status === 'Shortlisted' || a.status === 'Interview Scheduled' || (a.status === '' && IS_PRINCIPAL)) kinds.push('interview');
+  if (a.status === 'Interview Done') kinds.push('demo');
+  if (active_(a) && kinds.length) {
+    h += '<div class="grid three" style="margin-top:10px"><label class="fld">What<select class="sel" id="pApptKind">' + kinds.map(function (k) { return '<option value="' + k + '">' + esc_(KIND_LABEL[k]) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="fld"><span class="req">When</span><input class="inp" type="datetime-local" id="pApptAt"></label>' +
+      '<label class="fld">Place (optional)<input class="inp" id="pApptPlace" maxlength="200"></label>' +
+      '<label class="fld wide">Note (optional)<input class="inp" id="pApptNote" maxlength="500"></label></div>' +
+      '<div class="foot"><button type="button" class="btn primary" data-act="propose" data-row="' + row + '">' + (IS_PRINCIPAL ? 'Book' : 'Propose time') + '</button><span class="formmsg" id="apptMsg"></span></div>' +
+      '<p class="note">' + (IS_PRINCIPAL ? 'You book it directly: it is accepted and goes on your calendar' + (a.status === '' ? ', and they are shortlisted.' : '.') : 'The Principal accepts or declines it.') + '</p>';
+  } else if (!ELEVATED && a.status === '') {
+    h += '<p class="note" style="margin-top:8px">Not shortlisted yet. Ask the Principal to shortlist, then propose a time.</p>';
+  }
+  return h + '</div>';
 }
 
 function renderPanel_(row) {
@@ -488,30 +571,40 @@ function renderPanel_(row) {
     '<div class="meta note">' + esc_(a.phone) + ' · ' + esc_(campusesOf_(a).map(LMCS.campusLabel).join(', ')) + (a.timestamp ? ' · applied ' + esc_(fmtDay_(a.timestamp)) : '') + (a.addedBy ? ' · added by ' + esc_(a.addedBy) : '') + '</div>' +
     '<div style="margin-top:6px">' + chips_(a) + '</div>' + ladderHtml_(a);
 
-  if (active_(a) && ['', 'Interview Scheduled', 'Interview Done'].indexOf(a.status) !== -1) {
-    h += '<div class="block"><h4>Slots</h4><div class="grid"><label class="fld">Interview<input class="inp" type="datetime-local" id="pInterviewAt" value="' + toLocalInput_(a.interviewAt) + '"></label>' +
-      '<label class="fld">Demo class<input class="inp" type="datetime-local" id="pDemoAt" value="' + toLocalInput_(a.demoAt) + '"></label></div>' +
-      '<div class="foot"><button type="button" class="btn primary" data-act="saveslots" data-row="' + row + '">Save slots</button>' +
-      (a.demoAt ? '<button type="button" class="btn ghost" data-act="clearslot" data-which="demo" data-row="' + row + '">Clear demo</button>' : '') +
-      '<span class="formmsg" id="slotMsg"></span></div></div>';
+  if (ELEVATED && active_(a) && a.stageMarks && a.stageMarks.rejectPending) {
+    const p = a.stageMarks.rejectPending;
+    h += '<div class="block"><h4>Rejection to confirm</h4><p>The ' + esc_(p.kind || '') + ' report entered by ' + esc_(p.by || 'the office') + ' says <b>reject</b>: ' + esc_(p.reason) + (p.note ? ' — ' + esc_(p.note) : '') + '</p>' +
+      '<div class="foot"><button type="button" class="btn danger" data-act="confirmrej" data-confirm="1" data-row="' + row + '">Confirm rejection</button>' +
+      '<button type="button" class="btn" data-act="confirmrej" data-confirm="0" data-row="' + row + '">Don\'t reject</button><span class="formmsg" id="crMsg"></span></div></div>';
   }
+  if (active_(a) || (a.appointments || []).length) h += apptBlockHtml_(a);
 
-  if (ELEVATED) h += '<div class="block"><h4>Reports</h4>' + reportsHtml_(a);
+  if (ELEVATED || active_(a)) h += '<div class="block"><h4>Reports</h4>';
+  if (ELEVATED) h += reportsHtml_(a);
+
+  const notYet = ['', 'Shortlisted', 'Interview Scheduled'].indexOf(a.status) !== -1; // no interview evidence yet
   if (ELEVATED && active_(a)) {
     h += '<div class="foot"><button type="button" class="btn" data-act="interview" data-row="' + row + '">+ Interview report</button>' +
-      (a.status !== 'Interview Scheduled' && a.status !== '' ? '<button type="button" class="btn" data-act="demo" data-row="' + row + '">+ Demo report</button>' : '') +
-      (a.status === 'Interview Scheduled' || a.status === '' ? '<button type="button" class="btn ghost" data-act="mark" data-stage="interview" data-row="' + row + '">Interview done — report later</button>' : '') +
+      (!notYet ? '<button type="button" class="btn" data-act="demo" data-row="' + row + '">+ Demo report</button>' : '') +
+      (notYet ? '<button type="button" class="btn ghost" data-act="mark" data-stage="interview" data-row="' + row + '">Interview done — report later</button>' : '') +
       (a.status === 'Interview Done' ? '<button type="button" class="btn ghost" data-act="mark" data-stage="demo" data-row="' + row + '">Demo done — report later</button>' : '') +
       '<span class="formmsg" id="markMsg"></span></div>';
+  } else if (active_(a)) {
+    h += '<p class="note">Upload the handwritten report\'s scan and type in its contents. The Principal sees both.</p><div class="foot">' +
+      '<button type="button" class="btn" data-act="upload" data-kind="interview" data-row="' + row + '">+ Interview report (scan)</button>' +
+      (!notYet ? '<button type="button" class="btn" data-act="upload" data-kind="demo" data-row="' + row + '">+ Demo report (scan)</button>' : '') + '</div>';
   }
-  if (ELEVATED) h += '<div id="formHost"></div></div>';
+  if (ELEVATED || active_(a)) h += '<div id="formHost"></div></div>';
 
   if (ELEVATED && ['Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired'].indexOf(a.status) !== -1) {
     h += '<div class="block"><h4>Offer</h4><div class="foot" style="margin-top:0"><a class="btn" href="' + esc_(salaryLinkUrl_(a)) + '" target="_blank" rel="noopener">💰 Salary Dashboard</a>' +
       (a.salaryOfferAt ? '<span class="note">Offer recorded ' + esc_(fmtDay_(a.salaryOfferAt)) + '</span>' : '') + '</div>';
     if (a.status !== 'Demo Done') {
-      h += '<div class="grid" style="margin-top:10px"><label class="fld">MD Academics interview<input class="inp" type="datetime-local" id="pMdAt" value="' + toLocalInput_(a.mdInterviewAt) + '"></label></div>' +
-        '<div class="foot"><button type="button" class="btn" data-act="savemd" data-row="' + row + '">Save MD date</button><span class="formmsg" id="mdMsg"></span></div>';
+      if (a.status === 'Salary Offer' || a.status === 'MD Academics Interview Scheduled') {
+        h += '<div class="grid" style="margin-top:10px"><label class="fld">MD Academics interview<input class="inp" type="datetime-local" id="pMdAt"></label></div>' +
+          '<div class="foot"><button type="button" class="btn" data-act="proposemd" data-row="' + row + '">Propose MD interview</button><span class="formmsg" id="mdMsg"></span></div>' +
+          '<p class="note">The MD Academics (an Owner) accepts it; the time is set then.</p>';
+      }
       if (a.status === 'MD Academics Interview Scheduled') h += '<p class="note">Waiting on the Owner\'s decision on the Salary Offer Approval.</p>';
     }
     h += '</div>';
@@ -576,6 +669,7 @@ function openModal_(html) {
 function closeModal_() {
   document.getElementById('modal').removeAttribute('open');
   document.body.style.overflow = '';
+  document.getElementById('modalBody').innerHTML = ''; // so a closed panel's message spots can't swallow a card's result
   OPEN_ROW = null;
 }
 
@@ -586,6 +680,11 @@ function scoreSel_(id, value, label) {
   }).join('') + '</select></label>';
 }
 
+// The scanned handwritten report: required for a Fee Clerk (they transcribe it), optional for the Principal.
+function scanFieldHtml_(id) {
+  return '<div class="grid" style="margin-top:12px"><label class="fld wide"><span' + (ELEVATED ? '' : ' class="req"') + '>Scanned report' + (ELEVATED ? ' (optional)' : '') + ' — PDF, JPG or PNG, up to 7 MB</span>' +
+    '<input class="inp" type="file" id="' + id + '" accept="application/pdf,image/jpeg,image/png"></label></div>';
+}
 function interviewFormHtml_(a) {
   const role = roleFor_(a);
   const defaultPos = role ? role.campusId.replace(/^LMS(\d)/, 'LMS $1') + ' - ' + (role.roleLevel || 'ROLE') + (role.subjects ? ': ' + role.subjects : '') : '';
@@ -613,6 +712,7 @@ function interviewFormHtml_(a) {
     '<label class="fld">Strengths<textarea id="ifStrengths"></textarea></label><label class="fld">Weaknesses<textarea id="ifWeak"></textarea></label><label class="fld wide">Remarks<textarea id="ifRemarks"></textarea></label></div>' +
     '<p class="fld" style="margin-top:12px"><span class="req">Recommendation</span></p><div class="radio-row"><label><input type="radio" name="ifRec" value="proceed" checked><span>Proceed to demo</span></label><label><input type="radio" name="ifRec" value="reject"><span>Reject</span></label></div>' +
     '<div id="ifRejWrap" style="display:none;margin-top:8px">' + rejectFieldsHtml_('ifRej') + '</div>' +
+    scanFieldHtml_('ifScan') +
     '<div class="foot"><button type="button" class="btn primary" data-act="submitinterview" data-row="' + a.row + '">Submit interview report</button><button type="button" class="btn ghost" data-act="cancelform">Cancel</button><span class="formmsg" id="ifMsg"></span></div></div>';
 }
 
@@ -628,6 +728,7 @@ function demoFormHtml_(a) {
     '<p class="fld" style="margin-top:12px"><span class="req">Recommendation</span></p><div class="radio-row"><label><input type="radio" name="dfRec" value="proceed" checked><span>Proceed to salary offer</span></label><label><input type="radio" name="dfRec" value="another"><span>Another demo</span></label><label><input type="radio" name="dfRec" value="reject"><span>Reject</span></label></div>' +
     '<div id="dfNextWrap" style="display:none;margin-top:8px" class="grid"><label class="fld">Next demo (optional)<input class="inp" type="datetime-local" id="dfNext"></label></div>' +
     '<div id="dfRejWrap" style="display:none;margin-top:8px">' + rejectFieldsHtml_('dfRej') + '</div>' +
+    scanFieldHtml_('dfScan') +
     '<div class="foot"><button type="button" class="btn primary" data-act="submitdemo" data-row="' + a.row + '">Submit demo report</button><button type="button" class="btn ghost" data-act="cancelform">Cancel</button><span class="formmsg" id="dfMsg"></span></div></div>';
 }
 
@@ -647,14 +748,20 @@ function addFormHtml_() {
     '<label class="fld">Gender<select class="sel" id="adGender"><option></option><option>Female</option><option>Male</option><option>Other</option></select></label>' +
     '<label class="fld wide">CV / bio-data link (Drive)<input class="inp" id="adCv" placeholder="https://drive.google.com/…"></label>' +
     '<label class="fld wide">Notes<textarea id="adNotes"></textarea></label>' +
-    '<label class="fld">Book interview now (optional)<input class="inp" type="datetime-local" id="adInterview"></label></div>' +
+    (IS_PRINCIPAL ? '<label class="fld">Book interview now (optional)<input class="inp" type="datetime-local" id="adInterview"></label>' : '') + '</div>' +
+    (!ELEVATED ? '<p class="note" style="margin-top:8px">Ask the Principal to shortlist, then propose a time.</p>' : '') +
     '<datalist id="adSubjectList">' + ['English', 'Hindi', 'Sanskrit', 'Mathematics', 'Science', 'Social Science', 'Physics', 'Chemistry', 'Biology', 'Computer', 'Physical Education', 'Drawing', 'Music', 'Dance', 'NTT', 'MW to C-2', 'Librarian', 'Clerk', 'Driver', 'Helping staff'].map(function (s) { return '<option value="' + s + '">'; }).join('') + '</datalist>' +
     '<div class="foot"><button type="button" class="btn primary" data-act="doadd">Add applicant</button><span class="formmsg" id="adMsg"></span></div></div>';
 }
 
 // ── actions ───────────────────────────────────────────────────────
 function val_(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
-function msg_(id, text, kind) { const el = document.getElementById(id); if (el) { el.textContent = text; el.className = 'formmsg' + (kind ? ' ' + kind : ''); } }
+// A message next to the button; a card has no message spot, so its result goes to the status bar.
+function msg_(id, text, kind) {
+  const el = id && document.getElementById(id);
+  if (el) { el.textContent = text; el.className = 'formmsg' + (kind ? ' ' + kind : ''); }
+  else if (kind) setStatus_(kind, text, true);
+}
 // POST, then take the fresh list the backend returns. Buttons are disabled while it runs, so a double click can't double-save.
 function post_(action, body, msgId, btn, okText) {
   if (btn) btn.disabled = true;
@@ -662,12 +769,20 @@ function post_(action, body, msgId, btn, okText) {
   return gasPost_(action, body).then(function (res) {
     if (btn) btn.disabled = false;
     if (!res.success) { msg_(msgId, res.error || 'Could not save', 'err'); return null; }
-    if (res.applicants) { DATA = res; buildRoles_(); render_(); }
+    if (res.applicants) { DATA = res; buildRoles_(); render_(); loadAppts_(); }
+    if (res.toAccept) { APPTS = res; refreshApplicants_(); } // apptdecide / apptcalendarretry return the apptlist
     msg_(msgId, okText || 'Saved ✓', 'ok');
     return res;
   }).catch(function () { if (btn) btn.disabled = false; msg_(msgId, 'Network error — try again', 'err'); return null; });
 }
 
+function loadAppts_() {
+  if (!ELEVATED) return;
+  gasGet_('apptlist').then(function (r) { if (r.success) { APPTS = r; render_(true); } }).catch(function () {});
+}
+function refreshApplicants_() {
+  gasGet_('hiringapplicants').then(function (r) { if (r.success) { DATA = r; buildRoles_(); render_(); } }).catch(function () {});
+}
 function showForm_(row, which) {
   const a = byRow_(row);
   if (!a) return;
@@ -677,6 +792,27 @@ function showForm_(row, which) {
   host.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const first = host.querySelector('input,select');
   if (first) first.focus({ preventScroll: true });
+}
+
+// A report with a scan goes to hiringuploadreport (size and type checked here first, before it is read); without one, a
+// Principal's goes to the plain submit action. A Fee Clerk must attach the scan.
+function sendReport_(btn, kind, body, msgId, okText) {
+  const input = document.getElementById(kind === 'interview' ? 'ifScan' : 'dfScan');
+  const f = input && input.files && input.files[0];
+  if (!f) {
+    if (!ELEVATED) return msg_(msgId, 'Attach the scanned report (PDF, JPG or PNG).', 'err');
+    return post_(kind === 'interview' ? 'hiringsubmitinterview' : 'hiringsubmitdemo', body, msgId, btn, okText);
+  }
+  if (['application/pdf', 'image/jpeg', 'image/png'].indexOf(f.type) === -1) return msg_(msgId, 'The scan must be a PDF, JPG or PNG.', 'err');
+  if (f.size > HV.SCAN_MAX_BYTES) return msg_(msgId, 'The scan is larger than 7 MB — scan at a lower resolution, or as a PDF.', 'err');
+  btn.disabled = true;
+  msg_(msgId, 'Reading the scan…');
+  const rd = new FileReader();
+  rd.onload = function () {
+    post_('hiringuploadreport', Object.assign({ kind: kind, file: { name: f.name, mime: f.type, base64: String(rd.result).replace(/^data:[^,]*,/, '') } }, body), msgId, btn, okText);
+  };
+  rd.onerror = function () { btn.disabled = false; msg_(msgId, 'Could not read the file — pick it again.', 'err'); };
+  rd.readAsDataURL(f);
 }
 
 function submitInterview_(btn, row) {
@@ -691,13 +827,13 @@ function submitInterview_(btn, row) {
   if (!Object.keys(cap).length) return msg_('ifMsg', 'Score at least one subject × class in the capability grid.', 'err');
   if (rec === 'reject' && !val_('ifRejReason')) return msg_('ifMsg', 'Pick a reason for rejecting.', 'err');
   if (rec === 'reject' && val_('ifRejReason') === 'Other' && !val_('ifRejNote')) return msg_('ifMsg', 'Add a note saying why (reason: Other).', 'err');
-  post_('hiringsubmitinterview', {
+  sendReport_(btn, 'interview', {
     row: row, interviewDate: val_('ifDate'), position: val_('ifPos'), confidence: Number(val_('ifConf')), english: Number(val_('ifEng')), capability: cap,
     spouseOccupation: val_('ifSpouse'), familySupport: val_('ifSupport'), qualificationRemarks: val_('ifQual'), otherSkills: val_('ifSkills'),
     experience: { school: val_('ifExSchool'), periods: val_('ifExPeriods'), timing: val_('ifExTiming'), extraWork: val_('ifExExtra'), classes: val_('ifExClasses'), subjects: val_('ifExSubjects'), lastSalary: val_('ifExSalary') },
     commitment: val_('ifCommit'), expectedSalary: val_('ifSalary'), strengths: val_('ifStrengths'), weaknesses: val_('ifWeak'), remarks: val_('ifRemarks'),
     recommendation: rec, rejectReason: val_('ifRejReason'), rejectNote: val_('ifRejNote'),
-  }, 'ifMsg', btn, 'Interview report saved ✓');
+  }, 'ifMsg', !ELEVATED && rec === 'reject' ? 'Saved ✓ — the Principal confirms the rejection' : 'Interview report saved ✓');
 }
 
 function submitDemo_(btn, row) {
@@ -708,11 +844,11 @@ function submitDemo_(btn, row) {
   const rec = (document.querySelector('input[name="dfRec"]:checked') || {}).value;
   if (rec === 'reject' && !val_('dfRejReason')) return msg_('dfMsg', 'Pick a reason for rejecting.', 'err');
   if (rec === 'reject' && val_('dfRejReason') === 'Other' && !val_('dfRejNote')) return msg_('dfMsg', 'Add a note saying why (reason: Other).', 'err');
-  post_('hiringsubmitdemo', {
+  sendReport_(btn, 'demo', {
     row: row, demoDate: val_('dfDate'), class: val_('dfClass'), subject: val_('dfSubject'), scores: scores, studentFeedback: Number(val_('df_feedback')),
     strengths: val_('dfStrengths'), improve: val_('dfImprove'), remarks: val_('dfRemarks'), recommendation: rec, nextDemoAt: val_('dfNext'),
     rejectReason: val_('dfRejReason'), rejectNote: val_('dfRejNote'),
-  }, 'dfMsg', btn, 'Demo report saved ✓');
+  }, 'dfMsg', !ELEVATED && rec === 'reject' ? 'Saved ✓ — the Principal confirms the rejection' : 'Demo report saved ✓');
 }
 
 function doAdd_(btn) {
@@ -727,7 +863,12 @@ function doAdd_(btn) {
       if (byRow_(row)) { renderPanel_(row); if (res.duplicate) msg_('notesMsg', 'Already on file — this is their record.', 'ok'); }
       else { msg_('adMsg', (res.duplicate ? 'Already on file as ' : 'Added as ') + res.applicantId + '. They are not in your view — check the school.', 'ok'); }
     };
-    if (interviewAt && !res.duplicate) gasPost_('hiringschedule', { row: row, interviewAt: interviewAt }).then(function (r2) { if (r2.success) { DATA = r2; buildRoles_(); render_(); } open(); });
+    // A Principal seeing a walk-in on the spot: a direct booking (accepted, and it shortlists them).
+    if (interviewAt && !res.duplicate) gasPost_('apptpropose', { row: row, kind: 'interview', start: interviewAt }).then(function (r2) {
+      if (r2.success) { DATA = r2; buildRoles_(); render_(); loadAppts_(); }
+      open();
+      if (!r2.success) msg_('apptMsg', r2.error || 'Could not book the interview', 'err');
+    }).catch(function () { open(); msg_('apptMsg', 'Network error — the interview was not booked', 'err'); });
     else open();
   });
 }
@@ -738,19 +879,56 @@ document.addEventListener('click', function (e) {
   const row = b.dataset.row ? parseInt(b.dataset.row, 10) : null;
   const a = row ? byRow_(row) : null;
   switch (b.dataset.act) {
-    case 'view': VIEW = b.dataset.view; document.getElementById('search').value = ''; render_(); break;
+    case 'view': VIEW = b.dataset.view; document.getElementById('search').value = ''; render_(); if (VIEW === 'appts') loadAppts_(); break;
+    case 'slfilter': SL_FILTER = b.dataset.f; render_(); break;
     case 'campus': campusFilter = b.dataset.campus; selectedRoleKey = null; render_(); break;
     case 'role': selectedRoleKey = b.dataset.key; render_(); break;
     case 'jump': { const s = document.getElementById('sec-' + b.dataset.to); if (s) s.scrollIntoView({ behavior: 'smooth' }); break; }
-    case 'allslots': SHOW_ALL_SLOTS = true; render_(); break;
     case 'add': openModal_(addFormHtml_()); break;
     case 'doadd': doAdd_(b); break;
     case 'close': closeModal_(); break;
-    case 'open': case 'slot': case 'revive': case 'reject':
+    case 'open': case 'revive': case 'reject':
       renderPanel_(row); openModal_();
-      { const focus = { slot: 'pInterviewAt', revive: 'pRevive', reject: 'pRejReason' }[b.dataset.act];
-        if (b.dataset.act === 'slot' && a && a.status === 'Interview Done') { const el = document.getElementById('pDemoAt'); if (el) el.focus(); }
-        else if (focus && document.getElementById(focus)) { document.getElementById(focus).scrollIntoView({ block: 'center' }); document.getElementById(focus).focus(); } }
+      { const focus = { revive: 'pRevive', reject: 'pRejReason' }[b.dataset.act];
+        if (focus && document.getElementById(focus)) { document.getElementById(focus).scrollIntoView({ block: 'center' }); document.getElementById(focus).focus(); } }
+      break;
+    case 'book': {
+      renderPanel_(row); openModal_();
+      const md = b.dataset.kind === 'md', kindSel = document.getElementById('pApptKind');
+      if (kindSel && !md) kindSel.value = b.dataset.kind;
+      const el = document.getElementById(md ? 'pMdAt' : 'pApptAt');
+      if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); }
+      break;
+    }
+    case 'upload': showForm_(row, b.dataset.kind); break;
+    case 'shortlist': case 'unshortlist':
+      post_('hiringshortlist', { row: row, on: b.dataset.act === 'shortlist' }, 'slMsg', b, b.dataset.act === 'shortlist' ? 'Shortlisted ✓' : 'Un-shortlisted');
+      break;
+    case 'propose': {
+      const kind = val_('pApptKind'), start = val_('pApptAt');
+      if (!start) { msg_('apptMsg', 'Pick the date and time.', 'err'); break; }
+      post_('apptpropose', { row: row, kind: kind, start: start, place: val_('pApptPlace'), note: val_('pApptNote') }, 'apptMsg', b,
+        IS_PRINCIPAL ? 'Booked ✓ — on your calendar' : 'Proposed ✓ — waiting for the Principal');
+      break;
+    }
+    case 'proposemd':
+      if (!val_('pMdAt')) { msg_('mdMsg', 'Pick the date and time.', 'err'); break; }
+      post_('apptpropose', { row: row, kind: 'md', start: val_('pMdAt') }, 'mdMsg', b, 'Proposed ✓ — waiting for MD Academics');
+      break;
+    case 'cancelappt':
+      if (!window.confirm('Cancel this appointment?')) break;
+      post_('apptcancel', { id: b.dataset.id }, 'apptMsg', b, 'Cancelled');
+      break;
+    case 'calretry': post_('apptcalendarretry', { id: b.dataset.id }, 'apptMsg', b, 'Calendar updated ✓'); break;
+    case 'accept': post_('apptdecide', { id: b.dataset.id, decision: 'accept' }, null, b); break;
+    case 'decline': {
+      const note = (document.getElementById('dn-' + b.dataset.id) || {}).value || '';
+      if (!note.trim()) { setStatus_('err', 'Add a note saying why you are declining (the proposer sees it).', true); break; }
+      post_('apptdecide', { id: b.dataset.id, decision: 'decline', note: note.trim() }, null, b);
+      break;
+    }
+    case 'confirmrej':
+      post_('hiringconfirmreject', { row: row, confirm: b.dataset.confirm !== '0' }, 'crMsg', b, b.dataset.confirm !== '0' ? 'Rejected' : 'Kept — not rejected');
       break;
     case 'interview': showForm_(row, 'interview'); break;
     case 'demo': showForm_(row, 'demo'); break;
@@ -759,17 +937,7 @@ document.addEventListener('click', function (e) {
     case 'submitdemo': submitDemo_(b, row); break;
     case 'salary': window.open(salaryLinkUrl_(a), '_blank', 'noopener'); break;
     case 'mark': post_('hiringmarkstage', { row: row, stage: b.dataset.stage }, 'markMsg', b, 'Marked ✓ — file the report when you can'); break;
-    case 'saveslots': {
-      const body = { row: row };
-      const ia = val_('pInterviewAt'), da = val_('pDemoAt');
-      if (ia) body.interviewAt = ia;
-      if (da) body.demoAt = da;
-      if (!ia && !da) { msg_('slotMsg', 'Pick a date and time first.', 'err'); break; }
-      post_('hiringschedule', body, 'slotMsg', b); break;
-    }
-    case 'clearslot': post_('hiringschedule', { row: row, clear: b.dataset.which }, 'slotMsg', b, 'Cleared ✓'); break;
     case 'savenotes': post_('updatehiringstatus', { row: row, status: '', notes: val_('pNotes') }, 'notesMsg', b); break;
-    case 'savemd': if (!val_('pMdAt')) { msg_('mdMsg', 'Pick the date and time.', 'err'); break; } post_('updatehiringstatus', { row: row, status: '', mdInterviewAt: val_('pMdAt') }, 'mdMsg', b); break;
     case 'savedoj': if (!val_('pDoj')) { msg_('dojMsg', 'Pick the joining date.', 'err'); break; } post_('updatehiringstatus', { row: row, status: '', dateOfJoining: val_('pDoj') }, 'dojMsg', b); break;
     case 'hire': post_('updatehiringstatus', { row: row, status: 'Hired' }, 'hireMsg', b, 'Hired ✓').then(function (res) { if (res) showAppointmentLetter_(row); }); break;
     case 'letter': showAppointmentLetter_(row); break;
@@ -805,11 +973,11 @@ function buildRoles_() {
   ROLES = [];
   (APPROVAL_STATUS.campuses || []).forEach(function (c) { c.newPositions.forEach(function (r) { ROLES.push({ campusId: c.campusId, roleLevel: r.roleLevel, subjects: r.subjects, roleKey: r.roleKey }); }); });
 }
-function setStatus_(state, text) {
+function setStatus_(state, text, noRetry) {
   const bar = document.getElementById('statusBar');
   bar.style.display = '';
   bar.className = 'status-bar' + (state ? ' ' + state : '');
-  bar.innerHTML = (state === 'loading' ? '<span class="spin"></span>' : '') + '<span>' + esc_(text) + '</span>' + (state === 'err' ? '<button type="button" class="retry-btn" onclick="loadAll_()">Retry</button>' : '');
+  bar.innerHTML = (state === 'loading' ? '<span class="spin"></span>' : '') + '<span>' + esc_(text) + '</span>' + (state === 'err' && !noRetry ? '<button type="button" class="retry-btn" onclick="loadAll_()">Retry</button>' : '');
 }
 function refreshTracker_() {
   const btn = document.getElementById('refreshTrackerBtn'), msg = document.getElementById('refreshTrackerMsg');
@@ -832,6 +1000,7 @@ function loadAll_() {
     if (!r[0].success) { setStatus_('err', r[0].error || 'Failed to load.'); return; }
     DATA = r[0];
     APPROVAL_STATUS = r[1].success ? r[1] : { campuses: [] };
+    loadAppts_();
     buildRoles_();
     document.getElementById('mainRoot').style.display = '';
     renderDataSourceLinks_();
@@ -905,6 +1074,9 @@ function showApp(session) {
   SESSION = session;
   // Decisions by role, not by campus: a Fee Clerk whose campus is ALL is still a Fee Clerk.
   ELEVATED = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(session, r); });
+  IS_PRINCIPAL = LMCS.hasRole(session, 'Principal');
+  document.querySelectorAll('.tab.elev').forEach(function (t) { t.style.display = ELEVATED ? '' : 'none'; });
+  if (!ELEVATED && (VIEW === 'appts' || VIEW === 'actions')) VIEW = 'today';
   if (LMCS.canViewCoordinatorPortal(session)) document.getElementById('aprLink').href = '../coordinator/systems/index.html#approvals';
   if (!ELEVATED) { document.getElementById('aprLink').style.display = 'none'; document.getElementById('homeLink').href = '../office/index.html'; }
   const mine = myCampuses_();

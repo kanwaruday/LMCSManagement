@@ -41,7 +41,8 @@
     (applicants || []).forEach((a) => {
       if (done(a)) return;
       const kinds = [];
-      if ((a.stageMarks || {}).rejectPending) kinds.push('confirmreject');
+      // A pending rejection (a clerk's report said reject) is settled first: nothing else is offered beside it.
+      if ((a.stageMarks || {}).rejectPending) { out.push({ row: a.row, kind: 'confirmreject', label: LABELS.confirmreject }); return; }
       if (a.reportPending) kinds.push(a.reportPending);
       unreported_(a, nowMs).forEach((x) => kinds.push(x.kind));
       if (a.status === 'Interview Done' && !openAppt_(a, 'demo')) kinds.push('bookdemo');
