@@ -1269,21 +1269,15 @@ function hiringUpdateStatus_(caller, body) {
   }
 
   const sheet = hirSheet_();
-  const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
-  if (caller.campusId !== 'ALL') {
-    const districtTags = hirDistrictCampuses_(caller.campusId).map(function (c) { return 'LMS-' + c.replace(/[^0-9]/g, ''); });
-    if (!districtTags.some(function (t) { return branches.indexOf(t) !== -1; })) {
-      throw new Error('This applicant did not apply to your district');
-    }
-  }
+  const branches = hirScopedRow_(caller, sheet, row).branches;
 
-  // Rejected is a terminal exit, not a ladder rung (see HIR_LADDER) --
-  // per Uday, it always needs a one-line reason. Reuses the existing
-  // free-text Notes field rather than a dedicated column -- Notes has
-  // no other job for a Rejected row, so there's no real ambiguity, and
-  // it avoids a schema change for what's already a plain string field.
-  if (status === 'Rejected' && !String(body.notes || '').trim()) {
-    throw new Error('Enter a one-line reason for rejecting this candidate (in Notes) before saving.');
+  // Rejected is a terminal exit, not a ladder rung (see HIR_LADDER). 2026-10-22: it needs a reason from
+  // HIR_REJECT_REASONS (column S) -- checked here, before anything is written; the note is optional
+  // except for "Other". See hirRejectRow_.
+  if (status === 'Rejected') {
+    const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === body.rejectReason; })[0];
+    if (!hit) throw new Error('Pick a reason for rejecting this candidate');
+    if (hit.group === 'other' && !String(body.rejectNote || '').trim()) throw new Error('Add a note saying why (reason: Other)');
   }
 
   // The campus actually doing the hiring is the CALLER's own campus,
@@ -1338,10 +1332,10 @@ function hiringUpdateStatus_(caller, body) {
   // Only ever writes for a deliberate Hired/Rejected click -- see the
   // comment above. Everything before that stays derived, so the Status
   // cell itself stays blank until one of those two decisions is made.
-  if (status === 'Hired' || status === 'Rejected') {
-    sheet.getRange(row, HIR_COL.STATUS).setValue(status);
-  }
-  sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
+  // Notes only when the page sent them (a Reject from the Today list doesn't), so they're never blanked by accident.
+  if (body.notes !== undefined) sheet.getRange(row, HIR_COL.NOTES).setValue(String(body.notes || ''));
+  if (status === 'Hired') sheet.getRange(row, HIR_COL.STATUS).setValue(status);
+  if (status === 'Rejected') hirRejectRow_(caller, sheet, row, body.rejectReason, body.rejectNote);
   // Guard the write side too -- an unparseable value here would plant
   // the exact same class of corrupted-cell bug hirSafeISO_ exists to
   // survive on read (a real "F"-in-a-Timestamp-cell was found live
@@ -1582,4 +1576,241 @@ function hiringCheckDocuments_(campusId, name, opts) {
   let employeeId = '';
   rows.forEach(function (row) { const v = String(row[idCol] || '').trim(); if (v) employeeId = v; });
   return { found: true, complete: missing.length === 0, missing: missing, employeeId: employeeId };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// The Principal's day (2026-10-22, per Uday): add an applicant, book interview/demo slots, mark a
+// stage done, file the Interview and Demo Reports, reject with a reason, revive. The Fee Clerk does
+// the legwork (add, schedule -- main.gs limits them to those two); every decision is the Principal's.
+// ═══════════════════════════════════════════════════════════════════
+const HIR_SOURCES = ['Walk-in', 'Referral', 'Paper CV', 'Phone call', 'Other'];
+
+function hirElevated_(caller) {
+  return (caller.roles || []).some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner'; });
+}
+function hirNeedElevated_(caller) {
+  if (!hirElevated_(caller)) throw new Error('Only a Principal, Coordinator or the Owner can do this');
+}
+
+// A row the caller may act on: it must name one of the caller's schools. Returns its key cells.
+function hirScopedRow_(caller, sheet, rowRaw) {
+  const row = parseInt(rowRaw, 10);
+  if (!row || row < 2 || row > sheet.getLastRow()) throw new Error('Invalid row');
+  const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
+  const vis = hirCallerCampuses_(caller);
+  const tags = (branches.match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); });
+  if (vis && !tags.some(function (c) { return vis.indexOf(c) !== -1; })) throw new Error('This applicant did not apply to your school');
+  return { row: row, branches: branches, campus: tags.filter(function (c) { return !vis || vis.indexOf(c) !== -1; })[0] || tags[0] || '',
+    name: String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim(), phone: hirNormalizePhone_(sheet.getRange(row, HIR_COL.PHONE).getValue()) };
+}
+
+function hirGrow_(sheet) {
+  if (sheet.getMaxColumns() < HIR_COL.DEMO_AT) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.DEMO_AT - sheet.getMaxColumns());
+}
+function hirDateOrThrow_(v, label) {
+  const d = new Date(v);
+  if (!v || isNaN(d.getTime())) throw new Error('Enter a valid ' + label);
+  return d;
+}
+function hirScoreOrThrow_(v, label) {
+  const n = Number(v);
+  if (!(n >= 1 && n <= 5 && Math.round(n) === n)) throw new Error(label + ' must be a score from 1 to 5');
+  return n;
+}
+function hirText_(v, max) { return String(v === undefined || v === null ? '' : v).trim().slice(0, max || 1000); }
+function hirWithLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+// action=hiringaddapplicant -- an applicant who never filled the online form (walk-in, referral, paper CV).
+// The phone is the identity: one already on file returns that person instead of adding a second row.
+function hiringAddApplicant_(caller, body) {
+  const name = hirText_(body.name, 120).replace(/\s+/g, ' ');
+  if (!name) throw new Error('Enter the applicant\'s name');
+  const phone = hirNormalizePhone_(body.phone);
+  if (phone.length !== 10) throw new Error('Enter a 10-digit mobile number');
+  const campus = String(body.campusId || '').toUpperCase();
+  const vis = hirCallerCampuses_(caller);
+  if (!/^LMS[1-6]$/.test(campus) || (vis && vis.indexOf(campus) === -1)) throw new Error('Pick one of your schools');
+  if (HIR_SOURCES.indexOf(body.source) === -1) throw new Error('Pick where this applicant came from (source)');
+  const sheet = hirSheet_();
+  const res = hirWithLock_(function () {
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (hirNormalizePhone_(values[i][HIR_COL.PHONE - 1]) === phone) return { duplicate: true, applicantId: hirApplicantId_(i + 1) };
+    }
+    hirGrow_(sheet);
+    const r = new Array(HIR_COL.DEMO_AT).fill('');
+    r[HIR_COL.TIMESTAMP - 1] = new Date();
+    r[HIR_COL.NAME - 1] = name;
+    r[HIR_COL.PHONE - 1] = phone;
+    r[HIR_COL.AGE - 1] = hirText_(body.age, 10);
+    r[HIR_COL.SUBJECTS - 1] = hirText_(body.subjects, 300);
+    r[HIR_COL.BRANCHES - 1] = 'LMS-' + campus.slice(3);
+    r[HIR_COL.QUALIFICATION - 1] = hirText_(body.qualification, 200);
+    r[HIR_COL.BED - 1] = hirText_(body.bed, 100);
+    r[HIR_COL.GENDER - 1] = hirText_(body.gender, 20);
+    r[HIR_COL.CV - 1] = hirText_(body.cv, 500);
+    r[HIR_COL.NOTES - 1] = hirText_(body.notes, 500);
+    r[HIR_COL.SOURCE - 1] = body.source;
+    r[HIR_COL.ADDED_BY - 1] = caller.email;
+    const at = sheet.getLastRow() + 1;
+    sheet.getRange(at, 1, 1, r.length).setValues([r]);
+    return { duplicate: false, applicantId: hirApplicantId_(at) };
+  });
+  return Object.assign(hiringApplicants_(caller), res);
+}
+
+// action=hiringschedule -- book (or clear) the interview / demo slot. Fee Clerk allowed.
+function hiringSchedule_(caller, body) {
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  if (String(sheet.getRange(r.row, HIR_COL.STATUS).getValue()) === 'Rejected') throw new Error('This applicant was rejected -- a Principal has to revive them first');
+  hirGrow_(sheet);
+  if (body.clear === 'interview') sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue('');
+  if (body.clear === 'demo') sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue('');
+  if (body.interviewAt) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(hirDateOrThrow_(body.interviewAt, 'interview date and time'));
+  if (body.demoAt) sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue(hirDateOrThrow_(body.demoAt, 'demo date and time'));
+  return hiringApplicants_(caller);
+}
+
+function hirSetMark_(sheet, row, stage, caller) {
+  const marks = hirJson_(sheet.getRange(row, HIR_COL.STAGE_MARKS).getValue(), {});
+  marks[stage] = { at: new Date().toISOString(), by: caller.email };
+  sheet.getRange(row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
+}
+
+// action=hiringmarkstage -- "interview done / demo done, report later". The rung moves now; the row
+// shows "report pending" until the report is filed (and Hired waits for it).
+function hiringMarkStage_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  if (body.stage !== 'interview' && body.stage !== 'demo') throw new Error('Invalid stage');
+  hirGrow_(sheet);
+  if (body.stage === 'interview') {
+    if (!sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(new Date());
+  } else if (!hirRowEvidence_(sheet, r.row, r.phone).interview) {
+    throw new Error('Mark the interview done (or file its report) before the demo');
+  }
+  hirSetMark_(sheet, r.row, body.stage, caller);
+  return hiringApplicants_(caller);
+}
+
+// Reject with one of HIR_REJECT_REASONS; the note goes into Notes (required for "Other").
+function hirRejectRow_(caller, sheet, row, reason, note) {
+  const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === reason; })[0];
+  if (!hit) throw new Error('Pick a reason for rejecting this candidate');
+  note = hirText_(note, 500);
+  if (hit.group === 'other' && !note) throw new Error('Add a note saying why (reason: Other)');
+  hirGrow_(sheet);
+  sheet.getRange(row, HIR_COL.STATUS).setValue('Rejected');
+  sheet.getRange(row, HIR_COL.REJECT_REASON).setValue(reason);
+  if (note) {
+    const prev = String(sheet.getRange(row, HIR_COL.NOTES).getValue() || '');
+    sheet.getRange(row, HIR_COL.NOTES).setValue((prev ? prev + ' | ' : '') + 'Rejected: ' + note);
+  }
+}
+
+function hirAppendReport_(tab, headers, obj) {
+  hirWithLock_(function () {
+    const sh = hirPortalTab_(tab, headers, true);
+    sh.appendRow(headers.map(function (h) { return obj.hasOwnProperty(h) ? obj[h] : ''; }));
+  });
+}
+function hirReportBase_(caller, sheet, r) {
+  return { 'Report ID': 'rep-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), 'Applicant ID': hirApplicantId_(r.row),
+    'Row': r.row, 'Name': r.name, 'Phone': r.phone, 'Campus': r.campus, 'Submitted By': caller.email, 'Submitted At': new Date() };
+}
+
+// action=hiringsubmitinterview -- the "Teacher Interview Report" page of the paper form. Confidence and
+// English (1-5) and at least one capability score are required (the paper's marks were usually left blank).
+function hiringSubmitInterview_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const date = hirDateOrThrow_(body.interviewDate, 'interview date');
+  const confidence = hirScoreOrThrow_(body.confidence, 'Confidence');
+  const english = hirScoreOrThrow_(body.english, 'English');
+  const cap = {};
+  let scored = 0;
+  Object.keys(body.capability || {}).slice(0, 5).forEach(function (subject) {
+    const row = body.capability[subject] || {};
+    Object.keys(row).forEach(function (cls) {
+      if (row[cls] === '' || row[cls] === null || row[cls] === undefined) return;
+      (cap[hirText_(subject, 60)] = cap[hirText_(subject, 60)] || {})[hirText_(cls, 5)] = hirScoreOrThrow_(row[cls], subject + ' ' + cls);
+      scored++;
+    });
+  });
+  if (!scored) throw new Error('Give at least one capability score (subject x class, 1 to 5)');
+  if (['proceed', 'reject'].indexOf(body.recommendation) === -1) throw new Error('Pick a recommendation');
+  if (body.recommendation === 'reject' && !HIR_REJECT_REASONS.some(function (x) { return x.label === body.rejectReason; })) throw new Error('Pick a reason for rejecting this candidate');
+  const e = body.experience || {};
+  hirAppendReport_(HIR_PI_TAB, HIR_PI_HEADERS, Object.assign(hirReportBase_(caller, sheet, r), {
+    'Position': hirText_(body.position, 120), 'Interview Date': date, 'Confidence': confidence, 'English': english,
+    'Capability (JSON)': JSON.stringify(cap), 'Spouse / family occupation': hirText_(body.spouseOccupation), 'Family support': hirText_(body.familySupport),
+    'Qualification remarks': hirText_(body.qualificationRemarks), 'Other skills': hirText_(body.otherSkills),
+    'Experience (JSON)': JSON.stringify({ school: hirText_(e.school, 120), periods: hirText_(e.periods, 20), timing: hirText_(e.timing, 60),
+      extraWork: hirText_(e.extraWork, 200), classes: hirText_(e.classes, 120), subjects: hirText_(e.subjects, 120), lastSalary: hirText_(e.lastSalary, 30) }),
+    'Commitment': hirText_(body.commitment, 60), 'Expected salary': hirText_(body.expectedSalary, 30),
+    'Strengths': hirText_(body.strengths), 'Weaknesses': hirText_(body.weaknesses), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation,
+  }));
+  hirGrow_(sheet);
+  if (!sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).getValue()) sheet.getRange(r.row, HIR_COL.INTERVIEW_AT).setValue(date);
+  if (body.recommendation === 'reject') hirRejectRow_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  return hiringApplicants_(caller);
+}
+
+// action=hiringsubmitdemo -- the "Demo Classes" page: 8 scores + Student Feedback, all 1-5, total /45.
+// 'proceed' moves to Demo Done; 'another' keeps them at Interview Done and books the next demo.
+const HIR_DEMO_SCORES = [['pedagogy', 'Pedagogy'], ['content', 'Content'], ['interaction', 'Student Interaction'], ['response', 'Student Response'],
+  ['management', 'Classroom Management'], ['clarity', 'Clarity & Audibility'], ['relatable', 'Makes Subject Relatable'], ['aids', 'Use of Teaching Aids']];
+function hiringSubmitDemo_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const date = hirDateOrThrow_(body.demoDate, 'demo date');
+  const obj = hirReportBase_(caller, sheet, r);
+  let total = 0;
+  HIR_DEMO_SCORES.forEach(function (k) { obj[k[1]] = hirScoreOrThrow_((body.scores || {})[k[0]], k[1]); total += obj[k[1]]; });
+  obj['Student Feedback'] = hirScoreOrThrow_(body.studentFeedback, 'Student Feedback');
+  total += obj['Student Feedback'];
+  if (['proceed', 'another', 'reject'].indexOf(body.recommendation) === -1) throw new Error('Pick a recommendation');
+  if (body.recommendation === 'reject' && !HIR_REJECT_REASONS.some(function (x) { return x.label === body.rejectReason; })) throw new Error('Pick a reason for rejecting this candidate');
+  const next = body.recommendation === 'another' && body.nextDemoAt ? hirDateOrThrow_(body.nextDemoAt, 'next demo date') : null;
+  Object.assign(obj, { 'Demo Date': date, 'Class': hirText_(body.class, 20), 'Subject': hirText_(body.subject, 60), 'Total /45': total,
+    'Strengths': hirText_(body.strengths), 'Areas to improve': hirText_(body.improve), 'Remarks': hirText_(body.remarks), 'Recommendation': body.recommendation });
+  hirAppendReport_(HIR_PD_TAB, HIR_PD_HEADERS, obj);
+  hirGrow_(sheet);
+  if (next) sheet.getRange(r.row, HIR_COL.DEMO_AT).setValue(next);
+  if (body.recommendation === 'reject') hirRejectRow_(caller, sheet, r.row, body.rejectReason, body.rejectNote);
+  return hiringApplicants_(caller);
+}
+
+// action=hiringrevive -- bring back a rejected candidate as a fresh interview. Everything from the old
+// round goes into History; anything dated before Revived At stops counting (see hirEvidence_).
+function hiringRevive_(caller, body) {
+  hirNeedElevated_(caller);
+  const note = hirText_(body.note, 500);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  return hirWithLock_(function () {
+    const get = function (col) { return sheet.getRange(r.row, col).getValue(); };
+    if (String(get(HIR_COL.STATUS)) !== 'Rejected') throw new Error('Only a Rejected candidate can be revived');
+    if (!note) throw new Error('Add a note saying why they are being revived');
+    const history = hirJson_(get(HIR_COL.HISTORY), []);
+    const iso = function (col) { return hirSafeISO_(get(col)); };
+    history.push({ round: history.length + 1, interviewAt: iso(HIR_COL.INTERVIEW_AT), demoAt: iso(HIR_COL.DEMO_AT), mdInterviewAt: iso(HIR_COL.MD_INTERVIEW_AT),
+      salaryOfferAt: iso(HIR_COL.SALARY_OFFER_AT), rejectReason: String(get(HIR_COL.REJECT_REASON) || ''), notes: String(get(HIR_COL.NOTES) || ''),
+      revivedBy: caller.email, revivedAt: new Date().toISOString(), reviveNote: note });
+    hirGrow_(sheet);
+    [HIR_COL.STATUS, HIR_COL.REJECT_REASON, HIR_COL.INTERVIEW_AT, HIR_COL.MD_INTERVIEW_AT, HIR_COL.SALARY_OFFER_AT, HIR_COL.DOJ,
+      HIR_COL.OFFER_BREAKDOWN, HIR_COL.STAGE_MARKS, HIR_COL.DEMO_AT].forEach(function (col) { sheet.getRange(r.row, col).setValue(''); });
+    sheet.getRange(r.row, HIR_COL.HISTORY).setValue(JSON.stringify(history));
+    sheet.getRange(r.row, HIR_COL.REVIVED_AT).setValue(new Date());
+    sheet.getRange(r.row, HIR_COL.NOTES).setValue('Revived (round ' + (history.length + 1) + '): ' + note);
+    return hiringApplicants_(caller);
+  });
 }
