@@ -134,6 +134,6 @@ T('campusId / role / positionLabel: first tag in the caller\'s campuses; first m
   const clerk = build([two], Object.assign({ visibleCampuses: ['LMS4'] }, multi))[0];
   assert.strictEqual(clerk.campusId, 'LMS4'); // first tag inside the caller's campuses
   assert.deepStrictEqual(j(clerk.role), { roleLevel: 'TGT', subjects: 'English' }); assert.strictEqual(clerk.positionLabel, 'LMS 4 - TGT: English');
-  const none = build([row({ subjects: 'Maths', status: 'Shortlisted' })])[0]; // in the pipeline, no open role
+  const none = build([row({ subjects: 'Maths', interviewAt: day(1) })])[0]; // in the pipeline, no open role
   assert.strictEqual(none.role, null); assert.strictEqual(none.positionLabel, ''); assert.strictEqual(none.campusId, 'LMS4');
 });
