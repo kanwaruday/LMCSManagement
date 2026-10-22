@@ -304,9 +304,11 @@ function nextStep_(a) {
     case 'Shortlisted': return open('interview') ? { act: 'open', label: 'Interview proposed', disabled: true } : { act: 'book', kind: 'interview', label: book + 'interview' };
     case 'Interview Scheduled': return { act: 'interview', label: 'Interview report' };
     case 'Interview Done': {
-      // The demo report only once a demo is accepted; a proposed one waits for the Principal's accept.
-      if ((a.appointments || []).some(function (x) { return x.kind === 'demo' && x.status === 'accepted'; })) return { act: 'demo', label: 'Demo report' };
-      return open('demo') ? { act: 'open', label: 'Demo proposed', disabled: true } : { act: 'book', kind: 'demo', label: book + 'demo' };
+      // The demo report only once a demo is accepted; a proposed one waits for the Principal's accept. A past, reported demo is
+      // history ("another demo" with no time yet), so the next step is booking one.
+      const d = open('demo');
+      if (d && d.status === 'accepted') return { act: 'demo', label: 'Demo report' };
+      return d ? { act: 'open', label: 'Demo proposed', disabled: true } : { act: 'book', kind: 'demo', label: book + 'demo' };
     }
     case 'Demo Done': return { act: 'salary', label: 'Salary offer' };
     case 'Salary Offer': return open('md') ? { act: 'open', label: 'MD interview proposed', disabled: true } : { act: 'book', kind: 'md', label: 'Propose MD interview' };
