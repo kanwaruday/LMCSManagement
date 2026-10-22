@@ -125,7 +125,7 @@ module.exports = function run(t) {
     const h = boot(); h.addConfig(); const book = h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-22T10:00:00Z'));
     h.run("if (OFFICE_TABLES.DayBook.indexOf('collection') === -1) OFFICE_TABLES.DayBook.push('collection')"); // the Day Book branch adds this column
     const put = (folder, name, text) => folder.createFile({ getName: () => name, getContentType: () => 'text/csv', getBytes: () => [], getDataAsString: () => text });
-    const f = h.drive.root.createFolder('LMS1'); put(f, 'opening-2026-27.csv', b.campuses.LMS1.opening); put(f, 'daybook.csv', b.campuses.LMS1.daybook);
+    const f = h.drive.root.createFolder('LMS1'); put(f, 'opening-2026-27.csv', b.campuses.LMS1.opening); put(f, 'daybook.csv', b.campuses.LMS1.daybook); put(f, 'meta.json', '{"from":"2026-04-01","to":"2026-10-22"}');
     put(h.drive.root.createFolder('LMS2'), 'daybook.csv', 'x'); // no opening file: reported, others unaffected
     h.drive.root.createFolder('notes');
     const res = JSON.parse(JSON.stringify(h.ctx.officeImportFromDrive(h.drive.root.id)));
@@ -137,6 +137,43 @@ module.exports = function run(t) {
     const cc = JSON.parse(JSON.stringify(h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-22' }).closing.cash)); assert.strictEqual(cc.fee + cc.other, 100000);
     const again = JSON.parse(JSON.stringify(h.ctx.officeImportFromDrive(h.drive.root.id)));
     assert.deepStrictEqual([again[0].daybook.appended, again[0].daybook.duplicates], [0, rows.length]);
+  });
+  // Drive loader scenarios: a LMS1 folder with the built CSVs and meta.json {from,to}.
+  const loadEnv = (meta = { from: '2026-04-01', to: '2026-10-22' }, files = {}) => {
+    const h = boot(); h.addConfig(); h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-25T10:00:00Z'));
+    h.run("if (OFFICE_TABLES.DayBook.indexOf('collection') === -1) OFFICE_TABLES.DayBook.push('collection')");
+    const book = h.ctx.officeOpen_('LMS1', '2026-27');
+    const put = (folder, name, text) => folder.createFile({ getName: () => name, getContentType: () => 'text/csv', getBytes: () => [], getDataAsString: () => text });
+    const f = h.drive.root.createFolder('LMS1');
+    put(f, 'opening-2026-27.csv', files.opening || b.campuses.LMS1.opening); put(f, 'daybook.csv', b.campuses.LMS1.daybook);
+    if (meta) put(f, 'meta.json', JSON.stringify(meta));
+    const load = () => JSON.parse(JSON.stringify(h.ctx.officeImportFromDrive(h.drive.root.id)))[0];
+    const live = (id, date, extra) => h.ctx.officeAppend_(book, 'DayBook', Object.assign({ id, campus: 'LMS1', entry_date: date, direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 700, account: 'cash:LMS1', source: 'live', collection: '' }, extra), { email: 'clerk@example.org' }, { action: 'daybook.add', campus: 'LMS1' });
+    return { h, book, load, live };
+  };
+  t.test('loader freezes 1 Apr..to with one Closes row at `to`, once, so the next live day can close', () => {
+    const { h, book, load, live } = loadEnv();
+    assert.ok(!load().error);
+    const cl = h.ctx.officeRows_(book, 'Closes');
+    assert.strictEqual(cl.length, 1); assert.strictEqual(cl[0].close_date, '2026-10-22');
+    assert.deepStrictEqual(JSON.parse(cl[0].closing_json), JSON.parse(JSON.stringify(h.ctx.officeBalances_(h.ctx.officeOpening_(book), h.ctx.officeRows_(book, 'DayBook'), '2026-10-22'))));
+    load(); assert.strictEqual(h.ctx.officeRows_(book, 'Closes').length, 1, 'idempotent');
+    live('l1', '2026-10-23');
+    assert.strictEqual(h.call('day.close', { id: 'c1', campus: 'LMS1', close_date: '2026-10-23' }, 'owner-token').success, true);
+  });
+  t.test('loader refuses a campus with a Closes row after `to`, or live rows on/before `to`', () => {
+    let e = loadEnv(); e.h.ctx.officeAppend_(e.book, 'Closes', { id: 'x', campus: 'LMS1', close_date: '2026-10-24', closing_json: '{}' }, { email: 'o' }, { action: 'day.close', campus: 'LMS1' });
+    assert.match(e.load().error, /closed day/); assert.strictEqual(e.h.ctx.officeRows_(e.book, 'DayBook').length, 0);
+    e = loadEnv(); e.live('l0', '2026-10-22');
+    assert.match(e.load().error, /live|overlap/i); assert.strictEqual(e.h.ctx.officeRows_(e.book, 'Closes').length, 0);
+    assert.match(loadEnv(null).load().error, /meta\.json/);
+  });
+  t.test('loader allows live rows after `to`, zero Openings, but refuses a non-zero Opening already there', () => {
+    let e = loadEnv(); e.live('l1', '2026-10-23');
+    assert.ok(!e.load().error, 'zero Opening rows load under existing live rows'); assert.strictEqual(e.h.ctx.officeRows_(e.book, 'DayBook').length, rows.length + 1);
+    e = loadEnv();
+    e.h.ctx.officeAppend_(e.book, 'Opening', { id: 'real', campus: 'LMS1', mode: 'cash', bucket: 'fee', amount_paise: 5000 }, { email: 'o' }, { action: 'x', campus: 'LMS1' });
+    assert.match(e.load().error, /Opening/); assert.strictEqual(e.h.ctx.officeRows_(e.book, 'DayBook').length, 0);
   });
   t.test('loader refuses a collection column that is not deployed', () => {
     const h = boot(); h.addConfig(); h.addBook('LMS1', '2026-27');

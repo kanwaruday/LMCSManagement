@@ -49,7 +49,8 @@ function officeImportRows_(campus, fy, tab, csvText) {
   });
   const ss = officeOpen_(campus, fy);
   if (tab === 'DayBook' && !officeRows_(ss, 'Opening').length) throw new Error('OPENING_FIRST: load opening-' + fy + '.csv as Opening first');
-  if (tab === 'Opening' && officeRows_(ss, 'DayBook').length) {
+  // Zero-amount Opening rows change nothing, so they are always allowed (the Sheet import's Opening is all zeros).
+  if (tab === 'Opening' && officeRows_(ss, 'DayBook').length && objs.some(function (o) { return Number(o.amount_paise) !== 0; })) {
     const have = officeRows_(ss, 'Opening').map(function (r) { return r.id; });
     if (objs.some(function (o) { return have.indexOf(o.id) === -1; })) throw new Error('OPENING_LOCKED: day book rows already exist in ' + fy);
   }
@@ -69,9 +70,29 @@ function officeImportRows_(campus, fy, tab, csvText) {
   return res;
 }
 
+// Checks a campus's book before the Sheet import touches it; throws a clear error otherwise.
+// Live rows dated after `to` are fine (the import is then frozen under them); anything live on or before `to` overlaps
+// the Sheet data. A non-zero Opening would be counted twice, because the import adjusts to the counted cash.
+function officeImportPreflight_(campus, fy, to) {
+  const ss = officeOpen_(campus, fy);
+  if (officeRows_(ss, 'Closes').some(function (r) { return r.close_date > to; })) throw new Error('CLOSES_AFTER_IMPORT: ' + campus + ' already has a closed day after ' + to);
+  if (officeRows_(ss, 'DayBook').some(function (r) { return r.created_by !== 'import' && r.entry_date <= to; })) throw new Error('LIVE_ROWS_OVERLAP: ' + campus + ' has live day book rows dated on or before ' + to + ', which would overlap the Sheet data');
+  if (officeRows_(ss, 'Opening').some(function (r) { return r.amount_paise !== 0; })) throw new Error('OPENING_NOT_ZERO: ' + campus + ' already has a non-zero Opening, which the import would double count');
+}
+
+// Freezes 1 Apr..`to`: one Closes row dated `to` with the closing balances, the shape day.close writes, so the next
+// live day can close (otherwise PREVIOUS_DAY_OPEN). Once only.
+function officeImportClose_(campus, fy, to) {
+  const ss = officeOpen_(campus, fy);
+  if (officeRows_(ss, 'Closes').some(function (r) { return r.close_date === to; })) return false;
+  const closing = officeBalances_(officeOpening_(ss), officeRows_(ss, 'DayBook'), to);
+  officeAppend_(ss, 'Closes', { id: 'impclose-' + campus + '-' + to, campus: campus, close_date: to, closing_json: JSON.stringify(closing) }, { email: 'import' }, { action: 'import', campus: campus });
+  return true;
+}
+
 // Owner runs once from the editor: loads the Sheet import files written by tools/office-import-sheet.mjs.
 // `folderId` = Drive folder holding one subfolder per campus (named LMS1..LMS6), each with opening-2026-27.csv and
-// daybook.csv. Opening first, then DayBook; re-running is safe (duplicates are skipped). A campus that fails is logged
+// daybook.csv and meta.json {from,to}. Opening first, then DayBook; re-running is safe (duplicates are skipped). A campus that fails is logged
 // and the others still load. Returns [{campus, opening, daybook} | {campus, error}].
 var OFFICE_SHEET_IMPORT_FY = '2026-27';
 function officeImportFromDrive(folderId) {
@@ -86,10 +107,14 @@ function officeImportFromDrive(folderId) {
     const folder = kids.next(), campus = folder.getName();
     if (OFFICE_CAMPUSES.indexOf(campus) === -1) { Logger.log('Skipped folder ' + campus + ': not a campus'); continue; }
     try {
+      const meta = JSON.parse(read(folder, 'meta.json'));
+      if (!officeIsoDate_(meta.to) || officeFy_(meta.to) !== OFFICE_SHEET_IMPORT_FY) throw new Error('BAD_META: meta.json needs "to" inside ' + OFFICE_SHEET_IMPORT_FY);
+      officeImportPreflight_(campus, OFFICE_SHEET_IMPORT_FY, meta.to);
       const opening = officeImportRows_(campus, OFFICE_SHEET_IMPORT_FY, 'Opening', read(folder, 'opening-' + OFFICE_SHEET_IMPORT_FY + '.csv'));
       const daybook = officeImportRows_(campus, OFFICE_SHEET_IMPORT_FY, 'DayBook', read(folder, 'daybook.csv'));
+      const closed = officeImportClose_(campus, OFFICE_SHEET_IMPORT_FY, meta.to);
       Logger.log(campus + ' opening ' + JSON.stringify(opening) + ' daybook ' + JSON.stringify(daybook));
-      out.push({ campus: campus, opening: opening, daybook: daybook });
+      out.push({ campus: campus, opening: opening, daybook: daybook, closed: closed });
     } catch (e) {
       Logger.log(campus + ' FAILED: ' + e.message);
       out.push({ campus: campus, error: e.message });
