@@ -241,6 +241,7 @@ module.exports = function run(t) {
     assert.equal(o({ vehicle: 'HP669999' }).error, 'BAD_VEHICLE', 'inactive');
     assert.equal(o({ id: 'p1', vehicle: 'hp 66-5805' }).success, true);
     assert.equal(o({ id: 'p2', vehicle: 'fleet' }).success, true);
+    assert.equal(h.call('daybook.add', fuel({ vehicle: 'FLEET' }), 'clerk-token').error, 'VEHICLE_REQUIRED', 'fuel needs a real vehicle (P9)');
     assert.equal(add(h, { vehicle: 'HP665805', direction: 'OUT', category: 'stationery', bucket: 'petty' }).error, 'BAD_VEHICLE');
     assert.equal(add(h, { vehicle: 'FLEET' }).error, 'BAD_VEHICLE');
     const by = Object.fromEntries(rowsOf(h).map((r) => [r.id, r.vehicle]));
@@ -290,6 +291,7 @@ module.exports = function run(t) {
     assert.equal(s({ account: 'pump1', mode: '' }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', 'from credit');
     ['', undefined, 'nope', 'bank:LMS1', 'cash:LMS1', 'pump2', 'old1'].forEach((a) => assert.equal(s({ settles_account: a }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', String(a)));
     assert.equal(as(h, 'fh-token', { direction: 'OUT', category: 'stationery', bucket: 'petty', settles_account: 'pump1' }).error, 'NOT_A_SETTLEMENT');
+    assert.equal(as(h, 'fh-token', { direction: 'OUT', category: 'stationery', bucket: 'petty', settles: 'Stmt 12' }).error, 'NOT_A_SETTLEMENT', 'settles too (P9)');
     assert.equal(s({ id: 's1', settles: 'Stmt 12' }).success, true);
     const r = rowsOf(h).find((x) => x.id === 's1');
     assert.deepEqual([r.account, r.mode, r.settles_account, r.settles], ['sbi1', 'bank', 'pump1', 'Stmt 12']);
@@ -328,5 +330,18 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.reverse', { id: 'rold', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
     const rv = rowsOf(h).find((r) => r.id === 'rold');
     assert.deepEqual([rv.account, rv.charged_to, rv.source, rv.mode, rv.bucket], ['cash:LMS1', 'LMS1', 'live', 'cash', 'fee']);
+  });
+  t.test('a retry of a saved entry is a duplicate before validation, even after its account or vehicle is switched off (P9)', () => {
+    const h = v2();
+    const fill = fuel({ id: 'keep' });
+    assert.equal(h.call('daybook.add', fill, 'clerk-token').success, true);
+    const cfg = h.ctx.officeConfigBook_();
+    // switch both off: Config rows are append-only text, so overwrite the active cells in the fake sheets
+    const off = (tab, key) => { const v = cfg.getSheetByName(tab).getDataRange().getValues(); const i = v.findIndex((r) => r[0] === key); cfg.getSheetByName(tab).getRange(i + 1, 5).setValues([['false']]); };
+    off('Accounts', 'pump1'); off('Vehicles', 'HP665805');
+    assert.equal(h.call('daybook.add', fuel({}), 'clerk-token').error, 'BAD_ACCOUNT', 'new entries see the change');
+    const r = h.call('daybook.add', fill, 'clerk-token');
+    assert.deepEqual([r.success, r.duplicate, r.id], [true, true, 'keep']);
+    assert.equal(rowsOf(h).length, 1);
   });
 };

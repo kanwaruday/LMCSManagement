@@ -40,6 +40,10 @@ function officeDaybookAdd_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (!officeIsoDate_(data.entry_date)) throw new Error('BAD_DATE');
   if (data.entry_date > officeToday_()) throw new Error('FUTURE_DATE');
+  // P9: a retry of a saved entry is a duplicate before any validation, so a later config change (account or
+  // vehicle switched off, day closed) never strands it in the outbox.
+  const ss = officeOpen_(data.campus, officeFy_(data.entry_date));
+  if (officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true };
   // typeof number only: "1,234.50" and other strings never reach arithmetic; floats and 0/negatives fail safe-integer > 0.
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
   const cat = officeCategory_(data.category);
@@ -59,7 +63,7 @@ function officeDaybookAdd_(ctx, data) {
     const sa = officeAccount_(String(data.settles_account || ''));
     if (acct.kind !== 'bank' || !sa || !sa.active || sa.kind !== 'credit' || sa.campus !== data.campus) throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
     settlesAccount = sa.id;
-  } else if (!officeBlank_(data.settles_account)) throw new Error('NOT_A_SETTLEMENT');
+  } else if (!officeBlank_(data.settles_account) || !officeBlank_(data.settles)) throw new Error('NOT_A_SETTLEMENT');
   // Credit is an expense when incurred, so only expense categories; cash_transfer moves cash only.
   if (acct.kind === 'credit' && (cat.direction !== 'OUT' || (cat.group !== 'school' && cat.group !== 'transport'))) throw officeCoded_('FORBIDDEN_ACCOUNT');
   if (cat.id === 'cash_transfer' && acct.kind !== 'cash') throw officeCoded_('FORBIDDEN_ACCOUNT');
@@ -76,6 +80,7 @@ function officeDaybookAdd_(ctx, data) {
   const vehicle = officeNormReg_(data.vehicle);
   if (cat.needs_vehicle) {
     if (!vehicle) throw new Error('VEHICLE_REQUIRED');
+    if (vehicle === 'FLEET' && cat.id === 'fuel') throw new Error('VEHICLE_REQUIRED'); // a fill needs one real meter (P9)
     if (vehicle !== 'FLEET' && !officeVehicles_().some(function (v) { return v.active && officeNormReg_(v.reg) === vehicle; })) throw new Error('BAD_VEHICLE');
   } else if (vehicle) throw new Error('BAD_VEHICLE');
 
@@ -87,13 +92,9 @@ function officeDaybookAdd_(ctx, data) {
   } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
-  const ss = officeOpen_(data.campus, officeFy_(data.entry_date));
-  // A retry of an entry already saved stays a duplicate even if its day has since been closed.
-  const saved = officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); });
   // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
-  if (!saved && acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
-  // ponytail: FLEET is not one meter, so it has no odometer check.
-  if (!saved && isFuel && vehicle !== 'FLEET' && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
+  if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
+  if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
   return officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: mode,
     bucket: mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
