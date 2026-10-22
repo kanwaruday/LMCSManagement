@@ -91,11 +91,14 @@ function officeDaybookAdd_(ctx, data) {
   if (isFuel) {
     if (typeof data.litres_ml !== 'number' || !Number.isSafeInteger(data.litres_ml) || data.litres_ml <= 0) throw new Error('LITRES_REQUIRED');
     if (typeof data.odometer_km !== 'number' || !Number.isSafeInteger(data.odometer_km) || data.odometer_km < 0) throw new Error('ODOMETER_REQUIRED');
+  } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
+  // Every payment carries a photo of the bill or the signed receipt (deposit legs and reversals never come through here).
+  if (data.direction === 'OUT') {
     if (!data.file_id) throw officeCoded_('FILE_REQUIRED');
     if (!officeRecentBooks_(data.campus).some(function (b) {
       return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
     })) throw officeCoded_('FILE_MISSING'); // same check as deposit.add
-  } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
+  }
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
   // Student collections are tracked per head; no other category carries one.

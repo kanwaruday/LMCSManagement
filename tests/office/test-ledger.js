@@ -31,7 +31,7 @@ module.exports = function run(t) {
   };
   let n = 0;
   const add = (h, o) => {
-    const r = h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-10', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 100 }, o), 'owner-token');
+    const r = h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-10', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 100, file_id: 'slipLMS1' }, o), 'owner-token');
     assert.equal(r.success, true, JSON.stringify(r));
     return r.id;
   };
@@ -180,7 +180,7 @@ module.exports = function run(t) {
   t.test('ALL needs campuses ALL; campuses without a book are skipped; ALL sums every book', () => {
     const h = fresh();
     add(h, { amount_paise: 5 });
-    add(h, { campus: 'LMS2', account: 'cash:LMS2', amount_paise: 7 });
+    add(h, { campus: 'LMS2', account: 'cash:LMS2', amount_paise: 7, file_id: 'slipLMS2' });
     assert.equal(sum(h, { campus: 'ALL' }, 'pr1-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(sum(h, { campus: 'LMS2' }, 'pr1-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(sum(h, {}, 'clerk-token').error, 'FORBIDDEN_ROLE');

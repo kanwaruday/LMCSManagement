@@ -22,10 +22,12 @@ module.exports = function run(t) {
     const h = boot(fixture);
     h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26');
     h.setNow(new Date('2026-10-21T10:00:00Z'));
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
     return h;
   };
   let n = 0;
-  const e = (o) => Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 100000, payee: 'P', narration: 'x' }, o);
+  // Payments (OUT) carry the photo 'slip' unless a test says otherwise (FILE_REQUIRED rule); it is in the Files tab of fresh().
+  const e = (o) => { const d = Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 100000, payee: 'P', narration: 'x' }, o); if (d.direction === 'OUT' && !('file_id' in d)) d.file_id = 'slip'; return d; };
   const add = (h, o) => h.call('daybook.add', e(o), 'clerk-token');
 
   t.test('amount 0, negative, float 0.1 and string "1,234.50" are rejected', () => {
@@ -140,7 +142,6 @@ module.exports = function run(t) {
       .forEach(([id, kind, campus, active]) => h.ctx.officeWriteRow_(cfg, 'Accounts', { id, label: id, kind, campus, active }));
     [['HP665805', 'true'], ['HP660001', 'true'], ['HP669999', 'false']]
       .forEach(([reg, active]) => h.ctx.officeWriteRow_(cfg, 'Vehicles', { reg, label: reg, kind: 'bus', campus: 'LMS1', active }));
-    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS2', '2026-27'), 'Files', { id: 'slip2', campus: 'LMS2', drive_id: 'D2', name: 's.jpg' });
     return h;
   };
@@ -175,7 +176,7 @@ module.exports = function run(t) {
     assert.equal(as(h, 'clerk-token', { direction: 'OUT', category: 'cash_transfer', bucket: 'fee' }).success, true, 'own cash transfer (P10)');
     assert.equal(as(h, 'am-token', { direction: 'OUT', category: 'cash_transfer', bucket: 'petty' }).success, true, 'own cash transfer (P10)');
     assert.equal(h.call('daybook.add', fuel({}), 'clerk-token').success, true);
-    assert.equal(h.call('daybook.add', fuel({ category: 'parking', litres_ml: '', odometer_km: '', file_id: '' }), 'am-token').success, true);
+    assert.equal(h.call('daybook.add', fuel({ category: 'parking', litres_ml: '', odometer_km: '' }), 'am-token').success, true);
   });
 
   t.test('FinanceHead, Owner and Accounts (even with FeeClerk) may use bank, credit, settlements and cash transfers (P8)', () => {
@@ -413,5 +414,24 @@ module.exports = function run(t) {
     h.call('daybook.add', sc({ id: 'c1', entry_date: '2026-10-21' }), 'clerk-token');
     assert.equal(h.call('daybook.reverse', { id: 'rc1', campus: 'LMS1', reverses: 'c1' }, 'clerk-token').success, true);
     assert.equal(rowsOf(h).find((r) => r.id === 'rc1').collection, 'mun');
+  });
+
+  // ── payment photo rule ──
+  t.test('every OUT entry needs a photo that exists in the campus Files (FILE_REQUIRED / FILE_MISSING); IN entries do not', () => {
+    const h = v2();
+    const out = (o) => e(Object.assign({ direction: 'OUT', category: 'stationery', bucket: 'petty' }, o));
+    const add = (o, tok) => h.call('daybook.add', out(o), tok || 'clerk-token');
+    assert.equal(add({ file_id: '' }).code, 'FILE_REQUIRED');
+    assert.equal(add({ file_id: 'nope' }).code, 'FILE_MISSING');
+    assert.equal(add({ file_id: 'slip2' }).code, 'FILE_MISSING', "another campus's file");
+    assert.equal(add({ file_id: 'slip', id: 'ok1' }).success, true);
+    assert.equal(add({ account: 'pump1', mode: '', bucket: '', category: 'parking', vehicle: 'HP665805', file_id: '' }).code, 'FILE_REQUIRED', 'credit bill');
+    assert.equal(add({ account: 'pump1', mode: '', bucket: '', category: 'parking', vehicle: 'HP665805', file_id: 'slip' }).success, true);
+    assert.equal(add({ category: 'cash_transfer', file_id: '' }).code, 'FILE_REQUIRED');
+    assert.equal(add({ category: 'cash_transfer', file_id: 'slip' }).success, true);
+    assert.equal(add({ account: 'sbi1', mode: 'bank', bucket: '', category: 'credit_settlement', settles_account: 'pump1', file_id: '' }, 'fh-token').code, 'FILE_REQUIRED');
+    assert.equal(h.call('daybook.add', e({ id: 'in1' }), 'clerk-token').success, true, 'money in needs no photo');
+    // a reversal of a photographed payment needs none
+    assert.equal(h.call('daybook.reverse', { id: 'rok1', campus: 'LMS1', reverses: 'ok1' }, 'clerk-token').success, true);
   });
 };
