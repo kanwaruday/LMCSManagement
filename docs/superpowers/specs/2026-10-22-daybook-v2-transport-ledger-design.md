@@ -245,6 +245,11 @@ creates missing tabs). New Config tabs: `Accounts`, `Vehicles`; `Categories` gai
   loaded into the portal for FY 2026-27; the Form/Sheet supplies 2020 to March 2026. Days that fail the checks go to a
   review list for a person to confirm against the page image. LMS 6 has no Form data at all; its book is the only record.
 
+- **Cutover (2026-10-22):** clerks move to the portal right away and stop using the Google Form; the old Form data is
+  of limited use. So: FY 2026-27 data = verified hardcopy up to the day before each campus's first portal entry, then
+  the portal. Form history (2020 to March 2026) is imported later as low-confidence reference only, never mixed into
+  live balances. Phase 1 is now urgent, since clerks are entering into today's simpler day book until it ships.
+
 ## Phases (each its own plan, in this order)
 
 1. Day Book v2 core: accounts, charged_to, new categories, vehicle field, credit + settlement, fuel fill fields and
