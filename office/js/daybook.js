@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from './shell.js';
 import { h, field } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
+import { resizeImage } from './image.js';
 
 export const BUCKETS = { petty: 'Petty cash', fee: 'Fee cash', other: 'Other cash' };
 export const MODES = { cash: 'Cash', bank: 'Bank', upi: 'UPI' };
@@ -49,28 +50,92 @@ export function inflightGuard() {
 // Deposit legs are written only by deposit.add and never reversed alone (R37).
 const LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
 const isLeg = (item) => /:(out|in)$/.test(item.id) || LEG_CATEGORIES.includes(item.category);
-export const entryCategories = (cats) => (cats || []).filter((c) => !LEG_CATEGORIES.includes(c.id));
 export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued && !isLeg(item);
 
-// form: {date, category, mode, bucket, amount, payee, narration}; categories: config.get categories.
-// Returns {ok, data, errors:{category,mode,bucket,amount}}; direction comes from the chosen category.
-export function entryFromForm(form, categories) {
-  const errors = {};
-  const cat = (categories || []).find((c) => c.id === form.category);
+// Roles of the portal session (comma list). P8: the clerk-level limits lift with FinanceHead or Owner (Accounts counts as FinanceHead).
+const hasAnyRole = (session, roles) => String((session && session.role) || '').split(',').map((r) => r.trim()).some((r) => roles.includes(r));
+const isPrivileged = (session) => hasAnyRole(session, ['FinanceHead', 'Accounts', 'Owner']);
+
+// Accounts of the selected campus the user may post to: active ones; clerks get cash + credit only (no bank rows).
+export function formAccounts(accounts, session, campus) {
+  const priv = isPrivileged(session);
+  return (accounts || []).filter((a) => a.active && a.campus === campus && (priv || a.kind === 'cash' || a.kind === 'credit'));
+}
+
+export const GROUPS = { fee: 'Fees', income: 'Other receipts', school: 'School expenses', transport: 'Transport', movement: 'Money movements' };
+// Categories offered for an account kind, grouped in GROUPS order: [{group, label, items}]. Active only.
+// credit: expense categories only (clerks: vehicle ones); settlements come from a bank account, never for clerks; cash transfers from cash.
+export function categoriesFor(categories, accountKind, session) {
+  const priv = isPrivileged(session);
+  const ok = (c) => c.active && !LEG_CATEGORIES.includes(c.id) && (
+    accountKind === 'credit' ? c.direction === 'OUT' && (c.group === 'school' || c.group === 'transport') && (priv || c.needs_vehicle)
+      : c.id === 'credit_settlement' ? priv && accountKind === 'bank'
+        : c.id === 'cash_transfer' ? accountKind === 'cash' : true);
+  return Object.entries(GROUPS).map(([group, label]) => ({ group, label, items: (categories || []).filter((c) => c.group === group && ok(c)) })).filter((g) => g.items.length);
+}
+
+// Vehicle choices: active vehicles of the campus, then the others, then "Shared / whole fleet" (never for fuel: a fill needs one meter).
+export function vehicleOptions(vehicles, campus, categoryId) {
+  const act = (vehicles || []).filter((v) => v.active);
+  const opt = (v) => ({ value: v.reg, label: v.label || v.reg });
+  return act.filter((v) => v.campus === campus).map(opt).concat(act.filter((v) => v.campus !== campus).map(opt),
+    categoryId === 'fuel' ? [] : [{ value: 'FLEET', label: 'Shared / whole fleet' }]);
+}
+
+export const CHAIRMAN = 'CHAIRMAN';
+export const chargedLabel = (id) => (id === CHAIRMAN ? 'Chairman (personal)' : id);
+// A row's money account for display: its stored account, else cash:<campus> / bank:<campus> from its mode (old rows).
+export function rowAccountLabel(accounts, row) {
+  const id = row.account || (row.mode === 'cash' ? 'cash:' : 'bank:') + row.campus;
+  return ((accounts || []).find((a) => a.id === id) || {}).label || id;
+}
+
+// '12.5' -> 12500 (millilitres): digits, at most 3 decimals, more than 0; otherwise null.
+export function parseLitresToMl(text) {
+  const m = /^\s*(\d+)(?:\.(\d{1,3}))?\s*$/.exec(String(text));
+  if (!m) return null;
+  const ml = Number(m[1]) * 1000 + Number((m[2] || '').padEnd(3, '0'));
+  return ml > 0 && Number.isSafeInteger(ml) ? ml : null;
+}
+const parseOdometer = (text) => { const m = /^\s*(\d+)\s*$/.exec(String(text)); const n = m && Number(m[1]); return m && Number.isSafeInteger(n) ? n : null; };
+
+// form: {campus, date, account (object), category (object), mode (bank accounts only: bank|upi), bucket, amount, payee, narration,
+//   charged_to, vehicle, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
+// Returns {ok, data, errors}. Direction comes from the category, mode from the account kind, bucket only for cash;
+// file_id is added by the caller once the photo is queued.
+export function entryPayload(form) {
+  const errors = {}, acct = form.account, cat = form.category, kind = acct && acct.kind;
+  if (!acct) errors.account = 'Choose the account.';
   if (!cat) errors.category = 'Choose a category.';
-  if (!MODES[form.mode]) errors.mode = 'Choose cash, bank or UPI.';
-  if (form.mode === 'cash' && !BUCKETS[form.bucket]) errors.bucket = 'Choose the cash bucket.';
+  const mode = kind === 'bank' ? form.mode : kind;
+  if (kind === 'bank' && !['bank', 'upi'].includes(form.mode)) errors.mode = 'Choose bank or UPI.';
+  if (kind === 'cash' && !BUCKETS[form.bucket]) errors.bucket = 'Choose the cash bucket.';
   const amount = parseRupeesToPaise(form.amount);
   if (amount === null) errors.amount = 'Enter an amount in rupees, like 1234.50 (more than zero).';
-  if (Object.keys(errors).length) return { ok: false, errors };
-  return {
-    ok: true, errors,
-    data: {
-      campus: form.campus, entry_date: form.date, direction: cat.direction, mode: form.mode,
-      bucket: form.mode === 'cash' ? form.bucket : '', category: cat.id, amount_paise: amount,
-      payee: (form.payee || '').trim(), narration: (form.narration || '').trim(), file_id: '',
-    },
+  const data = {
+    campus: form.campus, entry_date: form.date, direction: cat && cat.direction, account: acct && acct.id, mode, bucket: kind === 'cash' ? form.bucket : '',
+    category: cat && cat.id, amount_paise: amount, payee: (form.payee || '').trim(), narration: (form.narration || '').trim(),
+    charged_to: form.charged_to || form.campus, file_id: '',
   };
+  if (cat && cat.needs_vehicle) {
+    data.vehicle = String(form.vehicle || '').trim();
+    if (!data.vehicle || (cat.id === 'fuel' && data.vehicle === 'FLEET')) errors.vehicle = cat.id === 'fuel' ? 'Choose the vehicle that was filled.' : 'Choose the vehicle, or Shared / whole fleet.';
+  }
+  if (cat && cat.id === 'fuel') {
+    data.litres_ml = parseLitresToMl(form.litres);
+    if (data.litres_ml === null) errors.litres = 'Enter the litres filled, like 12.5 (more than 0, up to 3 decimals).';
+    data.odometer_km = parseOdometer(form.odometer);
+    if (data.odometer_km === null) errors.odometer = 'Enter the odometer reading in whole km.';
+    data.odometer_note = (form.odometer_note || '').trim();
+    if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
+  }
+  if (kind === 'credit') data.supplier_bill_no = (form.supplier_bill_no || '').trim();
+  if (cat && cat.id === 'credit_settlement') {
+    data.settles_account = form.settles_account || '';
+    data.settles = (form.settles || '').trim();
+    if (!data.settles_account) errors.settles_account = 'Choose the supplier account being settled.';
+  }
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, errors, data };
 }
 
 // Last day of the financial year (Apr-Mar) that contains iso, so a list range never spans two books.
@@ -78,8 +143,6 @@ export function fyEnd(iso) {
   const y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7));
   return (m >= 4 ? y + 1 : y) + '-03-31';
 }
-
-const catLabel = (cats, id) => (cats.find((c) => c.id === id) || {}).label || id;
 
 export function balancesTable(b) {
   const rows = [['Cash — Petty', (x) => x.cash.petty], ['Cash — Fee', (x) => x.cash.fee], ['Cash — Other', (x) => x.cash.other], ['Bank', (x) => x.bank], ['UPI', (x) => x.upi]];
@@ -91,19 +154,41 @@ export function balancesTable(b) {
 export async function showDayBook(root, session, api, outbox) {
   const campus = session.campus;
   let date = todayIst();
-  let categories = (cacheGet('config') || {}).categories || [];
+  const cached = cacheGet('config') || {};
+  let cfg = { categories: cached.categories || [], accounts: cached.accounts || [], vehicles: cached.vehicles || [], campuses: cached.campuses || [] };
   let loaded = { rows: [], ok: false };
   let seq = 0;
+  const catLabel = (id) => ((cfg.categories || []).find((c) => c.id === id) || {}).label || id; // inactive categories keep their label in old rows
 
   const dateIn = h('input', { type: 'date', value: date, max: date });
   const dateF = field('db-date', 'Date', dateIn);
+  const acctSel = h('select', {});
+  const acctF = field('db-acct', 'Money account', acctSel);
   const catSel = h('select', {});
   const catF = field('db-cat', 'Category', catSel);
   const dirNote = h('div', { class: 'meta' });
-  const modeSel = h('select', {}, Object.entries(MODES).map(([k, v]) => h('option', { value: k }, v)));
-  const modeF = field('db-mode', 'Mode', modeSel);
+  const modeSel = h('select', {}, h('option', { value: 'bank' }, 'Bank'), h('option', { value: 'upi' }, 'UPI'));
+  const modeF = field('db-mode', 'Paid / received by', modeSel);
   const bucketSel = h('select', {}, h('option', { value: '' }, 'Choose…'), Object.entries(BUCKETS).map(([k, v]) => h('option', { value: k }, v)));
   const bucketF = field('db-bucket', 'Cash bucket', bucketSel);
+  const chargedSel = h('select', {});
+  const chargedF = field('db-charged', 'Charged to', chargedSel);
+  const vehSel = h('select', {});
+  const vehF = field('db-veh', 'Vehicle', vehSel);
+  const litresIn = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0.0' });
+  const litresF = field('db-litres', 'Litres filled', litresIn);
+  const odoIn = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off' });
+  const odoF = field('db-odo', 'Odometer (km)', odoIn);
+  const odoNoteIn = h('input', { type: 'text', autocomplete: 'off' });
+  const odoNoteF = field('db-odonote', 'Odometer note (only if the reading is lower, e.g. meter replaced)', odoNoteIn);
+  const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
+  const fileF = field('db-file', 'Fuel bill photo (showing the odometer)', fileIn);
+  const billIn = h('input', { type: 'text', autocomplete: 'off' });
+  const billF = field('db-bill', 'Supplier bill no.', billIn);
+  const settlesSel = h('select', {});
+  const settlesF = field('db-settles-acct', 'Supplier account being settled', settlesSel);
+  const settlesIn = h('input', { type: 'text', autocomplete: 'off' });
+  const settlesF2 = field('db-settles', 'Which bills this settles', settlesIn);
   const amountIn = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0.00' });
   const amountF = field('db-amount', 'Amount (₹)', amountIn);
   const payeeIn = h('input', { type: 'text', autocomplete: 'off' });
@@ -116,14 +201,31 @@ export async function showDayBook(root, session, api, outbox) {
   const listNote = h('p', { role: 'status' });
   const balEl = h('div', {});
 
-  const paintCats = () => {
-    catSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...entryCategories(categories).map((c) => h('option', { value: c.id }, c.label + ' (' + c.direction + ')')));
+  const curAcct = () => (cfg.accounts || []).find((a) => a.id === acctSel.value) || null;
+  const curCat = () => (cfg.categories || []).find((c) => c.id === catSel.value) || null;
+  const keep = (sel, fill) => { const v = sel.value; fill(); if ([...sel.options].some((o) => o.value === v)) sel.value = v; };
+  const paintAccts = () => keep(acctSel, () => acctSel.replaceChildren(...formAccounts(cfg.accounts, session, campus).map((a) => h('option', { value: a.id }, a.label))));
+  const paintCats = () => keep(catSel, () => {
+    const a = curAcct();
+    catSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(a ? categoriesFor(cfg.categories, a.kind, session) : []).map((g) => h('optgroup', { label: g.label }, g.items.map((c) => h('option', { value: c.id }, c.label)))));
+  });
+  const paintCharged = () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c, selected: c === campus }, chargedLabel(c))));
+  const paintSettles = () => keep(settlesSel, () => settlesSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(cfg.accounts || []).filter((a) => a.active && a.kind === 'credit').map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'))));
+  const paintVehicles = () => keep(vehSel, () => { const c = curCat(); vehSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...vehicleOptions(cfg.vehicles, campus, c && c.id).map((o) => h('option', { value: o.value }, o.label))); });
+  const sync = () => {
+    const a = curAcct(), c = curCat();
+    modeF.root.hidden = !(a && a.kind === 'bank');
+    bucketF.root.hidden = !(a && a.kind === 'cash');
+    billF.root.hidden = !(a && a.kind === 'credit');
+    vehF.root.hidden = !(c && c.needs_vehicle);
+    [litresF, odoF, odoNoteF, fileF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    [settlesF, settlesF2].forEach((f) => { f.root.hidden = !(c && c.id === 'credit_settlement'); });
+    dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : '';
   };
-  const syncBucket = () => { bucketF.root.hidden = modeSel.value !== 'cash'; };
-  const syncDir = () => { const c = categories.find((x) => x.id === catSel.value); dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : ''; };
-  modeSel.addEventListener('change', syncBucket);
-  catSel.addEventListener('change', syncDir);
-  paintCats(); syncBucket();
+  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); sync(); };
+  acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); sync(); });
+  catSel.addEventListener('change', () => { paintVehicles(); sync(); });
+  paintForm();
 
   let auto = date;
   // Past midnight with the page still on the load day: move to today and stop this save so the clerk sees it.
@@ -135,27 +237,34 @@ export async function showDayBook(root, session, api, outbox) {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
 
+  const FIELDS = { account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (roll()) return;
-    [catF, modeF, bucketF, amountF].forEach((f) => { f.err.textContent = ''; });
-    const r = entryFromForm({ campus, date, category: catSel.value, mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value }, categories);
-    if (!r.ok) {
-      catF.err.textContent = r.errors.category || ''; modeF.err.textContent = r.errors.mode || '';
-      bucketF.err.textContent = r.errors.bucket || ''; amountF.err.textContent = r.errors.amount || '';
-      return;
-    }
+    Object.values(FIELDS).forEach((f) => { f.err.textContent = ''; });
+    const file = fileIn.files && fileIn.files[0];
+    const r = entryPayload({
+      campus, date, account: curAcct(), category: curCat(), mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value,
+      charged_to: chargedSel.value, vehicle: vehSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
+    });
+    if (!r.ok) { Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; }); return; }
     saveBtn.disabled = true; // double-tap guard; the id is assigned once per enqueue
     try {
+      if (r.data.category === 'fuel') { // photo first (FIFO, R7), then the entry that names it
+        saveMsg.textContent = 'Preparing the photo…';
+        const img = await resizeImage(file);
+        r.data.file_id = await outbox.enqueue('file.upload', { campus, category: 'bill', belongs_to: '', name: file.name || 'fuel-bill', mime: img.mime, base64: img.base64 });
+      }
       await outbox.enqueue('daybook.add', r.data);
-      amountIn.value = ''; payeeIn.value = ''; narrIn.value = '';
+      [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
-    } catch (err) { saveMsg.textContent = 'Could not save on this device: ' + (err && err.message || err); }
+    } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, catF.root, dirNote, modeF.root, bucketF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -163,7 +272,7 @@ export async function showDayBook(root, session, api, outbox) {
   async function reverse(item, btn) {
     btn.disabled = true; // until the enqueue resolves; the list repaint then replaces the button
     const ran = await guard(item.id, async () => {
-      if (!confirm('Reverse this entry of ' + formatInr(item.amount_paise) + ' (' + catLabel(categories, item.category) + ')? A new opposite entry dated today will be added. The original stays.')) return;
+      if (!confirm('Reverse this entry of ' + formatInr(item.amount_paise) + ' (' + catLabel(item.category) + ')? A new opposite entry dated today will be added. The original stays.')) return;
       await outbox.enqueue('daybook.reverse', { campus, reverses: item.id });
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
@@ -171,11 +280,21 @@ export async function showDayBook(root, session, api, outbox) {
     if (!ran || btn.isConnected) btn.disabled = false;
   }
 
+  // Second line of a list row: account, mode/bucket, charged-to (when not the campus), vehicle, fuel figures, then the free text.
+  const rowMeta = (it) => [
+    rowAccountLabel(cfg.accounts, { ...it, campus }),
+    it.bucket ? BUCKETS[it.bucket] : '', it.mode === 'upi' ? 'UPI' : '',
+    it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
+    it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
+    it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
+    it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
+  ].filter(Boolean);
+
   function paintList() {
     const items = mergeQueued(loaded.rows, loaded.entries || [], date);
     listEl.replaceChildren(...(items.length ? items.map((it) => h('li', {},
-      h('div', {}, (it.direction === 'IN' ? '+ ' : '− ') + formatInr(it.amount_paise) + ' · ' + catLabel(categories, it.category)),
-      h('div', { class: 'meta' }, [MODES[it.mode] || it.mode, it.bucket ? BUCKETS[it.bucket] : '', it.payee, it.narration, it.reverses ? 'Reversal' : ''].filter(Boolean).join(' · ')),
+      h('div', {}, (it.direction === 'IN' ? '+ ' : '− ') + formatInr(it.amount_paise) + ' · ' + catLabel(it.category)),
+      h('div', { class: 'meta' }, rowMeta(it).join(' · ')),
       it.synced ? null : h('div', { class: 'flag' + (it.status === 'attention' ? ' bad' : '') }, it.status === 'attention' ? 'Needs attention: ' + it.error : 'Not yet synced'),
       it.reversed ? h('div', { class: 'meta' }, 'Reversed') : null,
       it.reversalQueued ? h('div', { class: 'flag' + (it.reversalError ? ' bad' : '') }, it.reversalError ? 'Reversal needs attention: ' + it.reversalError : 'Reversal not yet synced') : null,
@@ -189,13 +308,13 @@ export async function showDayBook(root, session, api, outbox) {
     loaded = { ...loaded, entries };
     paintList();
     const to = todayIst() < fyEnd(date) ? todayIst() : fyEnd(date);
-    const [list, bal, cfg] = await Promise.all([
+    const [list, bal, conf] = await Promise.all([
       api.read('daybook.list', { campus, from: date, to }, 'dblist'),
       api.read('daybook.balances', { campus, date }, 'dbbal'),
-      categories.length ? Promise.resolve(null) : api.read('config.get', {}, 'dbcfg'),
+      cfg.accounts.length ? Promise.resolve(null) : api.read('config.get', {}, 'dbcfg'),
     ]);
     if (my !== seq) return; // a newer refresh (date change) owns the screen
-    if (cfg && cfg.success) { categories = cfg.categories; cacheSet('config', { categories }); paintCats(); }
+    if (conf && conf.success) { cfg = { categories: conf.categories, accounts: conf.accounts, vehicles: conf.vehicles, campuses: conf.campuses }; cacheSet('config', cfg); paintForm(); paintList(); }
     if (list.stale || bal.stale) return;
     if (list.success) { loaded = { rows: list.entries, entries, ok: true }; cacheSet('daybook:' + campus + ':' + date, list.entries); listNote.textContent = ''; }
     else {

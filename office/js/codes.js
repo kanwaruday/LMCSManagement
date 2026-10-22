@@ -41,7 +41,7 @@ export const CODES = {
   ODOMETER_REQUIRED: 'Enter the odometer reading in whole km.',
   ODOMETER_BACKWARDS: 'The odometer is lower than this vehicle\'s previous fill. Check it, or add a note saying why (for example, meter replaced).',
   BAD_FIELD: 'Litres and odometer apply only to fuel entries. Clear them.',
-  SETTLEMENT_ACCOUNT_REQUIRED: 'A settlement is paid from a bank account and must name a supplier credit account of this campus.',
+  SETTLEMENT_ACCOUNT_REQUIRED: 'A settlement is paid from a bank account and must name a supplier credit account (it may belong to any campus).',
   NOT_A_SETTLEMENT: 'Only a credit settlement can name a supplier account to settle.',
   BAD_CATEGORY: 'The category was not accepted. Choose one from the list.',
   BUCKET_REQUIRED: 'Choose the cash bucket (petty, fee or other).',

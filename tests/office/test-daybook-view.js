@@ -3,12 +3,11 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, entryCategories, inflightGuard, entryFromForm, fyEnd, todayIst } = await import('../../office/js/daybook.js');
+  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, inflightGuard, fyEnd, todayIst } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
   const q = (id, status, data, action = 'daybook.add') => ({ id, seq: 1, action, status, code: null, error: status === 'attention' ? 'DAY_CLOSED' : null, data });
-  const cats = [{ id: 'fee_collection', label: 'Fee collection', direction: 'IN' }, { id: 'petty_expense', label: 'Petty', direction: 'OUT' }];
 
   // mergeQueued
   const rows = [row('a'), row('b'), row('rev-b', { direction: 'OUT', reverses: 'b', entry_date: '2026-10-22' }), row('other', { entry_date: '2026-10-20' })];
@@ -21,23 +20,81 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(m.map(canReverse), [false, false, false, false]);
   assert.strictEqual(canReverse(mergeQueued([row('z')], [], '2026-10-21')[0]), true);
   assert.strictEqual(canReverse({ ...row('r'), synced: true, reverses: 'x' }), false);
-  // R37: deposit legs never get a Reverse button, and their categories are not offered in the form
+  // R37: deposit legs never get a Reverse button, and legs never get Reverse
   assert.strictEqual(canReverse(mergeQueued([row('dep1:out', { category: 'deposit_cash_out' })], [], '2026-10-21')[0]), false);
   assert.strictEqual(canReverse(mergeQueued([row('dep1:in', { mode: 'bank', bucket: '', category: 'deposit_bank_in' })], [], '2026-10-21')[0]), false);
-  assert.deepStrictEqual(entryCategories([...cats, { id: 'deposit_cash_out' }, { id: 'deposit_bank_in' }]).map((c) => c.id), ['fee_collection', 'petty_expense']);
   // a queued entry that the server already has (flushed between reads) is not shown twice
   assert.strictEqual(mergeQueued([row('n1')], [q('n1', 'waiting', { entry_date: '2026-10-21' })], '2026-10-21').length, 1);
   console.log('  ok  - mergeQueued marks unsynced, dates, reversals');
 
-  // entryFromForm
-  const f = { campus: 'LMS1', date: '2026-10-21', category: 'petty_expense', mode: 'cash', bucket: 'petty', amount: '1,234.50', payee: ' Raju ', narration: '' };
-  let r = entryFromForm(f, cats);
-  assert.ok(r.ok); assert.strictEqual(r.data.amount_paise, 123450); assert.strictEqual(r.data.direction, 'OUT'); assert.strictEqual(r.data.payee, 'Raju');
-  r = entryFromForm({ ...f, mode: 'upi', bucket: 'petty' }, cats); assert.strictEqual(r.data.bucket, '');
-  assert.ok(entryFromForm({ ...f, mode: 'cash', bucket: '' }, cats).errors.bucket);
-  for (const bad of ['0', '-5', '0.1+0.2', '', '1.234']) assert.ok(entryFromForm({ ...f, amount: bad }, cats).errors.amount, bad);
-  assert.ok(entryFromForm({ ...f, category: 'nope' }, cats).errors.category);
-  console.log('  ok  - entryFromForm derives direction, bucket only for cash, rejects bad amounts');
+  // v2 form helpers
+  const CAT = (id, direction, group, nv = false, active = true) => ({ id, label: id, direction, group, needs_vehicle: nv, active });
+  const cfgCats = [CAT('fee_collection', 'IN', 'fee'), CAT('fee_cheque', 'IN', 'fee', false, false), CAT('donation', 'IN', 'income'), CAT('stationery', 'OUT', 'school'),
+    CAT('petty_expense', 'OUT', 'school', false, false), CAT('fuel', 'OUT', 'transport', true), CAT('tyres', 'OUT', 'transport', true), CAT('transport_income', 'IN', 'transport', true),
+    CAT('deposit_cash_out', 'OUT', 'movement', false, false), CAT('credit_settlement', 'OUT', 'movement'), CAT('cash_transfer', 'OUT', 'movement')];
+  const A = (id, kind, campus, active = true) => ({ id, label: id, kind, campus, active });
+  const accts = [A('cash:LMS1', 'cash', 'LMS1'), A('bank:LMS1', 'bank', 'LMS1'), A('cash:LMS2', 'cash', 'LMS2'), A('pump1', 'credit', 'LMS1'), A('pump2', 'credit', 'LMS2'), A('old1', 'credit', 'LMS1', false)];
+  const ids = (l) => l.map((x) => x.id);
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'FeeClerk' }, 'LMS1')), ['cash:LMS1', 'pump1']); // clerk: no bank, no other campus, no inactive
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'AdminManager,Principal' }, 'LMS1')), ['cash:LMS1', 'pump1']);
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'FinanceHead' }, 'LMS1')), ['cash:LMS1', 'bank:LMS1', 'pump1']);
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'Accounts' }, 'LMS2')), ['cash:LMS2', 'pump2']);
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'Owner' }, 'LMS1')), ['cash:LMS1', 'bank:LMS1', 'pump1']);
+  assert.deepStrictEqual(ids(formAccounts(accts, { role: 'FeeClerk,FinanceHead' }, 'LMS1')), ['cash:LMS1', 'bank:LMS1', 'pump1'], 'P8: FinanceHead lifts the clerk limit');
+  const flat = (g) => g.flatMap((x) => ids(x.items));
+  const cashClerk = flat(categoriesFor(cfgCats, 'cash', { role: 'FeeClerk' }));
+  assert.ok(cashClerk.includes('fee_collection') && cashClerk.includes('cash_transfer') && cashClerk.includes('fuel'), 'clerks may transfer cash (P10)');
+  assert.ok(!cashClerk.includes('credit_settlement') && !cashClerk.includes('fee_cheque') && !cashClerk.includes('petty_expense') && !cashClerk.includes('deposit_cash_out'), 'never settlement or inactive');
+  assert.deepStrictEqual(flat(categoriesFor(cfgCats, 'credit', { role: 'FeeClerk' })), ['fuel', 'tyres'], 'clerk credit bills: vehicle categories only');
+  assert.deepStrictEqual(flat(categoriesFor(cfgCats, 'credit', { role: 'Owner' })), ['stationery', 'fuel', 'tyres'], 'credit: OUT school/transport only');
+  const bankFH = flat(categoriesFor(cfgCats, 'bank', { role: 'FinanceHead' }));
+  assert.ok(bankFH.includes('credit_settlement') && !bankFH.includes('cash_transfer'));
+  assert.ok(!flat(categoriesFor(cfgCats, 'cash', { role: 'Owner' })).includes('credit_settlement'));
+  assert.deepStrictEqual(categoriesFor(cfgCats, 'cash', { role: 'Owner' }).map((g) => g.group), ['fee', 'income', 'school', 'transport', 'movement']);
+  const base = { campus: 'LMS1', date: '2026-10-21', account: A('cash:LMS1', 'cash', 'LMS1'), category: CAT('stationery', 'OUT', 'school'), bucket: 'petty', mode: 'bank', amount: '1,234.50', payee: ' Raju ', narration: '', charged_to: '' };
+  let r = entryPayload(base);
+  assert.ok(r.ok); assert.deepStrictEqual(r.data, { campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', account: 'cash:LMS1', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 123450, payee: 'Raju', narration: '', charged_to: 'LMS1', file_id: '' });
+  r = entryPayload({ ...base, account: A('bank:LMS1', 'bank', 'LMS1'), mode: 'upi', bucket: 'petty' }); assert.strictEqual(r.data.mode, 'upi'); assert.strictEqual(r.data.bucket, ''); // bank: client picks bank/upi
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.mode, 'credit');
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.supplier_bill_no, 'B7');
+  assert.ok(entryPayload({ ...base, bucket: '' }).errors.bucket);
+  assert.ok(entryPayload({ ...base, account: null }).errors.account);
+  assert.ok(entryPayload({ ...base, category: null }).errors.category);
+  assert.strictEqual(entryPayload({ ...base, charged_to: 'CHAIRMAN' }).data.charged_to, 'CHAIRMAN');
+  for (const bad of ['0', '-5', '0.1+0.2', '', '1.234']) assert.ok(entryPayload({ ...base, amount: bad }).errors.amount, bad);
+  // vehicle categories
+  const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true) };
+  assert.ok(entryPayload(tyres).errors.vehicle); assert.strictEqual(entryPayload({ ...tyres, vehicle: 'FLEET' }).data.vehicle, 'FLEET');
+  assert.ok(!('vehicle' in entryPayload(base).data), 'no vehicle key for other categories');
+  // fuel: litres edge cases, odometer, photo
+  const fuel = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12.5', odometer: '45210', odometer_note: ' meter changed ', hasFile: true };
+  r = entryPayload(fuel);
+  assert.ok(r.ok, JSON.stringify(r.errors)); assert.strictEqual(r.data.litres_ml, 12500); assert.strictEqual(r.data.odometer_km, 45210); assert.strictEqual(r.data.odometer_note, 'meter changed'); assert.strictEqual(r.data.vehicle, 'HP01A1');
+  assert.strictEqual(entryPayload({ ...fuel, litres: '0.001' }).data.litres_ml, 1);
+  assert.strictEqual(entryPayload({ ...fuel, litres: '12' }).data.litres_ml, 12000);
+  for (const bad of ['0', '0.000', '-1', '12.3456', '', 'abc', '1e3', '.5', '1,5']) assert.ok(entryPayload({ ...fuel, litres: bad }).errors.litres, 'litres ' + bad);
+  for (const bad of ['', '-1', '12.5', 'abc', '9'.repeat(20)]) assert.ok(entryPayload({ ...fuel, odometer: bad }).errors.odometer, 'odometer ' + bad);
+  assert.strictEqual(entryPayload({ ...fuel, odometer: '0' }).ok, true);
+  assert.ok(entryPayload({ ...fuel, hasFile: false }).errors.file);
+  assert.ok(entryPayload({ ...fuel, vehicle: 'FLEET' }).errors.vehicle, 'FLEET refused for fuel');
+  assert.ok(!('litres_ml' in entryPayload({ ...tyres, vehicle: 'X1', litres: '5' }).data), 'litres only for fuel');
+  // settlement
+  const bank = A('bank:LMS1', 'bank', 'LMS1');
+  const st = { ...base, account: bank, mode: 'bank', category: CAT('credit_settlement', 'OUT', 'movement'), settles_account: 'pump2', settles: ' bills 5-9 ' };
+  r = entryPayload(st); assert.ok(r.ok); assert.strictEqual(r.data.settles_account, 'pump2'); assert.strictEqual(r.data.settles, 'bills 5-9');
+  assert.ok(entryPayload({ ...st, settles_account: '' }).errors.settles_account);
+  assert.ok(!('settles_account' in entryPayload(base).data));
+  // vehicle options: campus first, then others, then FLEET (not for fuel); inactive hidden
+  const veh = [{ reg: 'B2', label: 'Bus B2', campus: 'LMS2', active: true }, { reg: 'A1', label: 'Bus A1', campus: 'LMS1', active: true }, { reg: 'Z9', label: 'Old', campus: 'LMS1', active: false }, { reg: 'C3', label: 'Van C3', campus: 'LMS1', active: true }];
+  assert.deepStrictEqual(vehicleOptions(veh, 'LMS1', 'tyres').map((o) => o.value), ['A1', 'C3', 'B2', 'FLEET']);
+  assert.deepStrictEqual(vehicleOptions(veh, 'LMS1', 'fuel').map((o) => o.value), ['A1', 'C3', 'B2']);
+  assert.strictEqual(vehicleOptions(veh, 'LMS1', 'tyres').pop().label, 'Shared / whole fleet');
+  // list label of a row: stored account, else derived from mode; unknown id falls back to the id
+  assert.strictEqual(rowAccountLabel(accts, { account: 'pump1', mode: 'credit', campus: 'LMS1' }), 'pump1');
+  assert.strictEqual(rowAccountLabel(accts, { account: '', mode: 'cash', campus: 'LMS2' }), 'cash:LMS2');
+  assert.strictEqual(rowAccountLabel(accts, { account: '', mode: 'upi', campus: 'LMS1' }), 'bank:LMS1');
+  assert.strictEqual(rowAccountLabel(accts, { account: 'gone', mode: 'cash', campus: 'LMS1' }), 'gone');
+  console.log('  ok  - v2 form helpers: accounts, categories, payload (litres, odometer, settlement), vehicles');
 
   assert.strictEqual(fyEnd('2026-10-21'), '2027-03-31'); assert.strictEqual(fyEnd('2027-02-01'), '2027-03-31'); assert.strictEqual(fyEnd('2026-04-01'), '2027-03-31');
   assert.strictEqual(todayIst(new Date('2026-10-21T19:00:00Z')), '2026-10-22'); // 00:30 IST next day
