@@ -251,6 +251,12 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // Hiring Dashboard (2026-10-22): everyone above, plus the Fee Clerk, who does the legwork (adds applicants,
+  // books slots) but makes no decisions -- the backend (main.gs pdrLimitedAllows_) is the real boundary.
+  function canUseHiring(session) {
+    return canViewTeacherSS(session) || hasRole(session, 'FeeClerk');
+  }
+
   // Coordinator Portal (coordinator/index.html): Owner or Coordinator only --
   // deliberately a separate name from canManageStaff even though the rule
   // matches today, so either can change without touching the other.
@@ -430,7 +436,7 @@ window.LMCS = (function () {
     });
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 
