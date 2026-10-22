@@ -87,6 +87,8 @@ const HIR_COL = {
   OFFER_BREAKDOWN: 18,
   // 2026-10-22, per Uday (Principal's day): rejection reason, revival, origin and progress marks. Columns S-Y.
   REJECT_REASON: 19, REVIVED_AT: 20, HISTORY: 21, SOURCE: 22, ADDED_BY: 23, STAGE_MARKS: 24, DEMO_AT: 25,
+  // Hiring v2: the Principal's shortlist call (Z, AA).
+  SHORTLISTED_AT: 26, SHORTLISTED_BY: 27,
 };
 
 // 2026-10-22, per Uday: 'Interview & Demo Done' split in two -- the paper report became two portal
@@ -94,7 +96,7 @@ const HIR_COL = {
 // Offer before the MD Academics interview, 'Hiring Approved' once an Owner approves the Salary Offer
 // Approval, 'Hired' a real Principal click behind the document gate. 'Rejected' is an exit, not a rung
 // (hirLadderIndex_ gives -1 for it and for blank / legacy values).
-const HIR_STATUSES = ['Interview Scheduled', 'Interview Done', 'Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired', 'Rejected'];
+const HIR_STATUSES = ['Shortlisted', 'Interview Scheduled', 'Interview Done', 'Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired', 'Rejected'];
 const HIR_LADDER = HIR_STATUSES.slice(0, -1);
 function hirLadderIndex_(status) { return HIR_LADDER.indexOf(status); }
 
@@ -185,7 +187,7 @@ function hirDerive_(a) {
   const ev = a.evidence;
   const legacyDemo = a.storedStatus === 'Interview & Demo Done';
   if (a.mdInterviewAt && a.decision === APR_STATUS.REJECTED) return 'Rejected';
-  if (!a.interviewAt && !ev.interview && !legacyDemo) return '';
+  if (!a.interviewAt && !ev.interview && !legacyDemo) return a.shortlistedAt ? 'Shortlisted' : '';
   if (!ev.interview && !legacyDemo) return 'Interview Scheduled';
   if (!ev.demo && !legacyDemo) return 'Interview Done';
   if (!a.salaryOfferAt) return 'Demo Done';
@@ -231,6 +233,8 @@ function hirRowApplicant_(r, i, ctx) {
     addedBy: String(r[HIR_COL.ADDED_BY - 1] || '').trim(),
     stageMarks: marks,
     demoAt: hirSafeISO_(r[HIR_COL.DEMO_AT - 1]),
+    shortlistedAt: hirSafeISO_(r[HIR_COL.SHORTLISTED_AT - 1]),
+    shortlistedBy: String(r[HIR_COL.SHORTLISTED_BY - 1] || '').trim(),
     decision: decision,
     reportPending: evidence.reportPending,
     interviewReports: evidence.interviewReports, demoReports: evidence.demoReports,
@@ -241,10 +245,10 @@ function hirRowApplicant_(r, i, ctx) {
   a.employeeCodePermanent = !!a.employeeCode;
   a.round = a.history.length + 1;
   a.status = hirDerive_({ storedStatus: a.storedStatus, interviewAt: a.interviewAt, evidence: evidence,
-    salaryOfferAt: a.salaryOfferAt, mdInterviewAt: a.mdInterviewAt, decision: decision });
+    salaryOfferAt: a.salaryOfferAt, mdInterviewAt: a.mdInterviewAt, decision: decision, shortlistedAt: a.shortlistedAt });
   if (a.status === 'Rejected' && !a.rejectReason && decision === APR_STATUS.REJECTED) a.rejectReason = 'Salary offer not approved';
   // Anything that shows we've dealt with this person (Rejected alone doesn't: it can sit on rows nobody touched).
-  a.inPipeline = !!(a.interviewAt || evidence.interview || a.demoAt || a.source || a.storedStatus === 'Hired' || hirLadderIndex_(a.status) >= 0);
+  a.inPipeline = !!(a.interviewAt || evidence.interview || a.demoAt || a.shortlistedAt || a.source || a.storedStatus === 'Hired' || hirLadderIndex_(a.status) >= 0);
   return a;
 }
 // For de-dupe: how far along a row is (Rejected sits just above an untouched row).
@@ -1634,7 +1638,7 @@ function hirScopedRow_(caller, sheet, rowRaw) {
 }
 
 function hirGrow_(sheet) {
-  if (sheet.getMaxColumns() < HIR_COL.DEMO_AT) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.DEMO_AT - sheet.getMaxColumns());
+  if (sheet.getMaxColumns() < HIR_COL.SHORTLISTED_BY) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.SHORTLISTED_BY - sheet.getMaxColumns());
 }
 function hirDateOrThrow_(v, label) {
   const d = new Date(v);
@@ -1866,12 +1870,29 @@ function hiringRevive_(caller, body) {
     hirSamePhoneRows_(sheet, r.row).forEach(function (row) {
       if (row !== r.row && String(sheet.getRange(row, HIR_COL.STATUS).getValue()) === 'Hired') return;
       [HIR_COL.STATUS, HIR_COL.REJECT_REASON, HIR_COL.INTERVIEW_AT, HIR_COL.MD_INTERVIEW_AT, HIR_COL.SALARY_OFFER_AT, HIR_COL.DOJ,
-        HIR_COL.OFFER_BREAKDOWN, HIR_COL.STAGE_MARKS, HIR_COL.DEMO_AT].forEach(function (col) { sheet.getRange(row, col).setValue(''); });
+        HIR_COL.OFFER_BREAKDOWN, HIR_COL.STAGE_MARKS, HIR_COL.DEMO_AT, HIR_COL.SHORTLISTED_AT, HIR_COL.SHORTLISTED_BY].forEach(function (col) { sheet.getRange(row, col).setValue(''); });
       sheet.getRange(row, HIR_COL.HISTORY).setValue(JSON.stringify(history));
       sheet.getRange(row, HIR_COL.REVIVED_AT).setValue(now);
     });
     sheet.getRange(r.row, HIR_COL.NOTES).setValue('Revived (round ' + (history.length + 1) + '): ' + note);
   });
   // Outside the lock: building the list takes the script lock itself (walk-in backfill, employee codes).
+  return hiringApplicants_(caller);
+}
+
+// action=hiringshortlist -- the Principal's call to take a CV forward ({row, on}). Off clears the stamp.
+// The un-shortlist guards that involve appointments arrive with the appointments code.
+function hiringShortlist_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  hirWithLock_(function () {
+    hirGrow_(sheet);
+    if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_AT).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_AT).setValue('Shortlisted At');
+    if (!String(sheet.getRange(1, HIR_COL.SHORTLISTED_BY).getValue() || '').trim()) sheet.getRange(1, HIR_COL.SHORTLISTED_BY).setValue('Shortlisted By');
+    sheet.getRange(r.row, HIR_COL.SHORTLISTED_AT).setValue(body.on ? new Date() : '');
+    sheet.getRange(r.row, HIR_COL.SHORTLISTED_BY).setValue(body.on ? caller.email : '');
+  });
+  // Outside the lock: building the list takes the script lock itself.
   return hiringApplicants_(caller);
 }

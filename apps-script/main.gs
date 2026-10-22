@@ -227,6 +227,7 @@ function doPost(e) {
     if (action === 'hiringmarkstage') return jsonOut_(hiringMarkStage_(caller, body));
     if (action === 'hiringsubmitinterview') return jsonOut_(hiringSubmitInterview_(caller, body));
     if (action === 'hiringsubmitdemo') return jsonOut_(hiringSubmitDemo_(caller, body));
+    if (action === 'hiringshortlist') return jsonOut_(hiringShortlist_(caller, body));
     if (action === 'hiringrevive') return jsonOut_(hiringRevive_(caller, body));
 
     return jsonOut_({ success: false, error: 'Unknown action: ' + action });
