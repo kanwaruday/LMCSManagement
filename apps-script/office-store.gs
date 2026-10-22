@@ -5,8 +5,9 @@
 // One tab per table, header in row 1. Records are append-only: nothing here updates or deletes a row.
 
 var OFFICE_TABLES = {
-  DayBook: ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'reverses', 'created_at', 'created_by'],
-  Opening: ['id', 'campus', 'mode', 'bucket', 'amount_paise', 'created_at', 'created_by'],
+  DayBook: ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'reverses', 'created_at', 'created_by',
+    'account', 'charged_to', 'vehicle', 'litres_ml', 'odometer_km', 'odometer_note', 'supplier_bill_no', 'settles_account', 'settles', 'source', 'legacy_category', 'mapped_by'],
+  Opening: ['id', 'campus', 'mode', 'bucket', 'amount_paise', 'created_at', 'created_by', 'account'],
   Closes: ['id', 'campus', 'close_date', 'closing_json', 'created_at', 'created_by'],
   Reopens: ['id', 'campus', 'close_date', 'reason', 'created_at', 'created_by'],
   Reports: ['id', 'campus', 'report_date', 'json', 'late', 'submitted_for', 'created_at', 'created_by'],
@@ -51,12 +52,24 @@ function officeOpen_(campus, fy) {
   const ss = SpreadsheetApp.openById(id);
   if (OFFICE_MEMO) OFFICE_MEMO.books[key] = ss;
   Object.keys(OFFICE_TABLES).forEach(function (tab) {
-    if (ss.getSheetByName(tab)) return;
+    const have = ss.getSheetByName(tab);
+    if (have) { officeEnsureHeader_(have, OFFICE_TABLES[tab]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, 1, OFFICE_TABLES[tab].length).setNumberFormat('@').setValues([OFFICE_TABLES[tab]]);
     sh.setFrozenRows(1);
   });
   return ss;
+}
+
+// Brings an existing tab's header up to `columns` by appending the missing trailing ones (text-formatted).
+// Existing header cells and rows are never rewritten; a header that is not a prefix of `columns` is a mismatch.
+function officeEnsureHeader_(sheet, columns) {
+  const n = sheet.getLastColumn();
+  const head = n ? sheet.getRange(1, 1, 1, n).getValues()[0].map(String) : [];
+  while (head.length && head[head.length - 1] === '') head.pop();
+  for (let i = 0; i < head.length; i++) if (head[i] !== columns[i]) throw new Error('HEADER_MISMATCH');
+  if (head.length >= columns.length) return;
+  sheet.getRange(1, head.length + 1, 1, columns.length - head.length).setNumberFormat('@').setValues([columns.slice(head.length)]);
 }
 
 function officeConfig_() {
@@ -68,9 +81,9 @@ function officeConfig_() {
   return ss;
 }
 
-// All rows of a tab as objects keyed by the header row. Cells are text; *_paise and size read as Number, late as boolean.
+// All rows of a tab as objects keyed by the header row. Cells are text; *_paise, *_ml, *_km and size read as Number, late as boolean.
 function officeCell_(col, v) {
-  if (/_paise$/.test(col) || col === 'size') return v === '' ? '' : Number(v);
+  if (/_(paise|ml|km)$/.test(col) || col === 'size') return v === '' ? '' : Number(v);
   if (col === 'late') return v === true || String(v).toLowerCase() === 'true';
   return v === null || v === undefined ? '' : String(v);
 }

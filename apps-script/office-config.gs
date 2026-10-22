@@ -14,6 +14,9 @@ var OFFICE_CONFIG_SEED = {
     ['other_in', 'Other receipt', 'IN'],
     ['other_out', 'Other payment', 'OUT'],
   ],
+  // Headers only; rows are added by the Accounts page. Default cash:/bank: accounts per campus are not stored.
+  Accounts: [['id', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']],
+  Vehicles: [['reg', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']],
   // Placeholder until Uday decides the approval limits (0 = no limit set).
   Limits: [
     ['role', 'max_amount_paise'],
@@ -35,8 +38,9 @@ function officeConfigActions_() {
 function officeConfigBook_() {
   const ss = officeConfig_();
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
-    if (ss.getSheetByName(tab)) return;
     const v = OFFICE_CONFIG_SEED[tab];
+    const have = ss.getSheetByName(tab);
+    if (have) { officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);

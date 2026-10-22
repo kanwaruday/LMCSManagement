@@ -83,7 +83,7 @@ module.exports = function run(t) {
 
   t.test('output columns follow OFFICE_TABLES and closing_json is the backend balances shape', () => {
     const h = boot(); const b = build();
-    const cols = (n) => JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES[n]));
+    const cols = (n) => JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES[n])).slice(0, JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES[n])).indexOf('created_by') + 1); // the importer emits the original columns
     assert.deepStrictEqual(imp.parseCsv(b.daybook)[0], cols('DayBook'));
     assert.deepStrictEqual(imp.parseCsv(b.closes)[0], cols('Closes'));
     const last = JSON.parse(imp.parseCsv(b.closes)[2][3]);
@@ -130,7 +130,7 @@ module.exports = function run(t) {
     assert.deepStrictEqual(Object.keys(b.openings), ['2025-26', '2026-27']);
     const amounts = (fy) => imp.parseCsv(b.openings[fy]).slice(1).map((r) => [r[2], r[3], r[4]].join(':'));
     const h = boot();
-    assert.deepStrictEqual(imp.parseCsv(b.openings['2025-26'])[0], JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES.Opening)));
+    assert.deepStrictEqual(imp.parseCsv(b.openings['2025-26'])[0], JSON.parse(JSON.stringify(h.ctx.OFFICE_TABLES.Opening)).slice(0, 7));
     assert.deepStrictEqual(amounts('2025-26'), ['cash:petty:0', 'cash:fee:100', 'cash:other:0', 'bank::5000', 'upi::0']);
     assert.deepStrictEqual(amounts('2026-27'), ['cash:petty:0', 'cash:fee:100100', 'cash:other:0', 'bank::-15000', 'upi::0']);
     assert.ok(b.report.includes('Load order') && b.report.indexOf('opening-2025-26.csv') < b.report.indexOf('opening-2026-27.csv'));

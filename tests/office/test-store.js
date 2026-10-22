@@ -94,4 +94,56 @@ module.exports = function run(t) {
     const v = sh.values[4];
     assert.ok(v[0] instanceof Date); assert.ok(v[1].formula); assert.strictEqual(v[2], 12);
   });
+  const OLD14 = ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'reverses', 'created_at', 'created_by'];
+  const oldBook = (h, fy) => {
+    const b = h.addBook('LMS1', fy); const sh = b.insertSheet('DayBook');
+    sh.getRange(1, 1, 1, 14).setNumberFormat('@').setValues([OLD14]);
+    sh.getRange(2, 1, 1, 14).setNumberFormat('@').setValues([['o1', 'LMS1', '2026-10-01', 'out', 'cash', 'petty', 'petty_expense', '500', '', '', '', '', '2026-10-01T01:00:00.000Z', 'x@example.org']]);
+    return b;
+  };
+
+  t.test('old 14-column DayBook gains the 12 columns at the end and old rows read with blanks', () => {
+    const h = boot(); oldBook(h, '2026-27'); const ss = open(h);
+    const sh = ss.getSheetByName('DayBook');
+    assert.deepEqual(Array.from(sh.values[0]), Array.from(h.ctx.OFFICE_TABLES.DayBook));
+    assert.equal(sh.values[0].length, 26);
+    assert.equal(sh.values[1][0], 'o1'); assert.equal(sh.values[1].length, 14, 'old row untouched');
+    const r = rows(h, ss, 'DayBook')[0];
+    assert.equal(r.id, 'o1'); assert.strictEqual(r.account, ''); assert.strictEqual(r.source, '');
+    assert.strictEqual(r.litres_ml, '');
+  });
+
+  t.test('a header that is not a prefix throws HEADER_MISMATCH', () => {
+    const h = boot(); const b = h.addBook('LMS1', '2026-27'); const sh = b.insertSheet('DayBook');
+    sh.getRange(1, 1, 1, 3).setNumberFormat('@').setValues([['id', 'wrong', 'entry_date']]);
+    assert.throws(() => open(h), /HEADER_MISMATCH/);
+  });
+
+  t.test('appending after migration writes every column in header order', () => {
+    const h = boot(); oldBook(h, '2026-27'); const ss = open(h);
+    h.ctx.officeAppend_(ss, 'DayBook', entry('n1', { account: 'cash:LMS1', vehicle: 'FLEET', source: 'live', mapped_by: 'm' }), caller, {});
+    const row = ss.getSheetByName('DayBook').values[2];
+    assert.equal(row.length, 26);
+    const cols = h.ctx.OFFICE_TABLES.DayBook;
+    assert.equal(row[cols.indexOf('account')], 'cash:LMS1'); assert.equal(row[cols.indexOf('vehicle')], 'FLEET');
+    assert.equal(row[cols.indexOf('source')], 'live'); assert.equal(row[cols.indexOf('mapped_by')], 'm');
+    assert.equal(row[cols.indexOf('created_by')], 'clerk1@example.org');
+  });
+
+  t.test('litres_ml and odometer_km read back as numbers', () => {
+    const h = fresh(); const ss = open(h);
+    h.ctx.officeAppend_(ss, 'DayBook', entry('f1', { litres_ml: 12500, odometer_km: 40210 }), caller, {});
+    h.ctx.officeAppend_(ss, 'DayBook', entry('f2'), caller, {});
+    const r = rows(h, ss, 'DayBook');
+    assert.strictEqual(r[0].litres_ml, 12500); assert.strictEqual(r[0].odometer_km, 40210);
+    assert.strictEqual(r[1].litres_ml, '');
+  });
+
+  t.test('Config gets Accounts and Vehicles tabs with headers', () => {
+    const h = boot(); const c = h.addConfig(); h.ctx.officeConfigBook_();
+    assert.deepEqual(Array.from(c.getSheetByName('Accounts').values[0]), ['id', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']);
+    assert.deepEqual(Array.from(c.getSheetByName('Vehicles').values[0]), ['reg', 'label', 'kind', 'campus', 'active', 'created_at', 'created_by']);
+    assert.equal(c.getSheetByName('Categories').values.length, 9, 'Categories seed unchanged');
+    h.ctx.officeConfigBook_(); assert.equal(c.getSheetByName('Accounts').values.length, 1, 'second open adds nothing');
+  });
 };

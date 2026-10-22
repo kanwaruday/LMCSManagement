@@ -29,7 +29,9 @@ function officeImportRows_(campus, fy, tab, csvText) {
   if (OFFICE_IMPORT_TABS.indexOf(tab) === -1) throw new Error('BAD_TAB: ' + tab);
   const cols = OFFICE_TABLES[tab];
   const parsed = officeImportParseCsv_(String(csvText)).filter(function (r) { return r.some(function (c) { return c !== ''; }); });
-  if (!parsed.length || parsed[0].join(',') !== cols.join(',')) throw new Error('BAD_HEADER');
+  // The importer's CSVs carry the original columns (through created_by); any longer prefix of the table is also accepted.
+  const minLen = cols.indexOf('created_by') + 1;
+  if (!parsed.length || parsed[0].length < minLen || parsed[0].join(',') !== cols.slice(0, parsed[0].length).join(',')) throw new Error('BAD_HEADER');
   const dateCol = { DayBook: 'entry_date', Closes: 'close_date' }[tab]; // Opening rows carry no date: the file is per year
   const objs = parsed.slice(1).map(function (r) {
     const o = {};
