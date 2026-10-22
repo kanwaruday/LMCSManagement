@@ -31,7 +31,10 @@ function officeImportRows_(campus, fy, tab, csvText) {
   const parsed = officeImportParseCsv_(String(csvText)).filter(function (r) { return r.some(function (c) { return c !== ''; }); });
   // The importer's CSVs carry the original columns (through created_by); any longer prefix of the table is also accepted.
   const minLen = cols.indexOf('created_by') + 1;
-  if (!parsed.length || parsed[0].length < minLen || parsed[0].join(',') !== cols.slice(0, parsed[0].length).join(',')) throw new Error('BAD_HEADER');
+  if (!parsed.length || parsed[0].length < minLen || parsed[0].join(',') !== cols.slice(0, parsed[0].length).join(',')) {
+    // The Sheet importer's DayBook ends with `collection`; refuse (never drop it) until that column is deployed.
+    throw new Error(parsed[0][parsed[0].length - 1] === 'collection' && cols.indexOf('collection') === -1 ? 'BAD_HEADER: the collection column is not deployed yet' : 'BAD_HEADER');
+  }
   const dateCol = { DayBook: 'entry_date', Closes: 'close_date' }[tab]; // Opening rows carry no date: the file is per year
   const objs = parsed.slice(1).map(function (r) {
     const o = {};
@@ -64,4 +67,33 @@ function officeImportRows_(campus, fy, tab, csvText) {
     lock.releaseLock();
   }
   return res;
+}
+
+// Owner runs once from the editor: loads the Sheet import files written by tools/office-import-sheet.mjs.
+// `folderId` = Drive folder holding one subfolder per campus (named LMS1..LMS6), each with opening-2026-27.csv and
+// daybook.csv. Opening first, then DayBook; re-running is safe (duplicates are skipped). A campus that fails is logged
+// and the others still load. Returns [{campus, opening, daybook} | {campus, error}].
+var OFFICE_SHEET_IMPORT_FY = '2026-27';
+function officeImportFromDrive(folderId) {
+  const root = DriveApp.getFolderById(folderId), out = [];
+  const read = function (folder, name) {
+    const it = folder.getFilesByName(name);
+    if (!it.hasNext()) throw new Error('MISSING_FILE: ' + name);
+    return it.next().getBlob().getDataAsString();
+  };
+  const kids = root.getFolders();
+  while (kids.hasNext()) {
+    const folder = kids.next(), campus = folder.getName();
+    if (OFFICE_CAMPUSES.indexOf(campus) === -1) { Logger.log('Skipped folder ' + campus + ': not a campus'); continue; }
+    try {
+      const opening = officeImportRows_(campus, OFFICE_SHEET_IMPORT_FY, 'Opening', read(folder, 'opening-' + OFFICE_SHEET_IMPORT_FY + '.csv'));
+      const daybook = officeImportRows_(campus, OFFICE_SHEET_IMPORT_FY, 'DayBook', read(folder, 'daybook.csv'));
+      Logger.log(campus + ' opening ' + JSON.stringify(opening) + ' daybook ' + JSON.stringify(daybook));
+      out.push({ campus: campus, opening: opening, daybook: daybook });
+    } catch (e) {
+      Logger.log(campus + ' FAILED: ' + e.message);
+      out.push({ campus: campus, error: e.message });
+    }
+  }
+  return out;
 }
