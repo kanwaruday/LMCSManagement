@@ -124,3 +124,16 @@ T('de-dupe: a row revived after the rejection beats the rejected duplicate', () 
   const list = build([row({ status: 'Rejected', reason: 'Other' }), row({ ts: day(-1), revivedAt: day(-1), interviewAt: day(1) })]);
   assert.strictEqual(list.length, 1); assert.strictEqual(list[0].status, 'Interview Scheduled');
 });
+
+T('campusId / role / positionLabel: first tag in the caller\'s campuses; first matched requisition; null/blank when none', () => {
+  const multi = { requisitions: { LMS4: openEnglish.LMS4, LMS5: [{ subjects: 'English', matchSubjects: 'English', roleLevel: 'PGT' }] } };
+  const two = row({ branches: 'LMS-5, LMS-4' });
+  const j = (o) => JSON.parse(JSON.stringify(o));
+  const all = build([two], Object.assign({ visibleCampuses: null }, multi))[0];
+  assert.strictEqual(all.campusId, 'LMS5'); // ALL -> first tag
+  const clerk = build([two], Object.assign({ visibleCampuses: ['LMS4'] }, multi))[0];
+  assert.strictEqual(clerk.campusId, 'LMS4'); // first tag inside the caller's campuses
+  assert.deepStrictEqual(j(clerk.role), { roleLevel: 'TGT', subjects: 'English' }); assert.strictEqual(clerk.positionLabel, 'LMS 4 - TGT: English');
+  const none = build([row({ subjects: 'Maths', status: 'Shortlisted' })])[0]; // in the pipeline, no open role
+  assert.strictEqual(none.role, null); assert.strictEqual(none.positionLabel, ''); assert.strictEqual(none.campusId, 'LMS4');
+});

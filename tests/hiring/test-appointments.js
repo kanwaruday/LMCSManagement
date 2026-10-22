@@ -433,3 +433,12 @@ T('calendar retry: the acceptor check ignores email case', () => {
   ctx.apptCalendarRetry_(clerk, { id: 'a1' });
   assert.strictEqual(appts()[0].calendarMode, 'own');
 });
+
+T('a proposal for a past time is refused ("Pick a time in the future."); a Principal direct booking may be in the past', () => {
+  reset([appRow(SL)]);
+  throws(() => ctx.apptPropose_(clerk, { row: 2, kind: 'interview', start: PAST.toISOString() }), /^Pick a time in the future\.$/);
+  throws(() => ctx.apptPropose_(coord, { row: 2, kind: 'interview', start: '2020-01-10T10:30' }), /^Pick a time in the future\.$/);
+  assert.strictEqual(appts().length, 0);
+  ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: PAST.toISOString() });
+  assert.strictEqual(appts()[0].status, 'accepted');
+});

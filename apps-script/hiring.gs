@@ -307,6 +307,10 @@ function hirBuildApplicants_(values, ctx) {
     if (!relevant.length && !a.inPipeline) return;
     a.matchedRoleKeys = relevant.map(function (req) { return hirRoleKey_(req.campusId, req.roleLevel, req.subjects); });
     a.noOpenRole = !relevant.length;
+    const home = tags.filter(function (c) { return !vis || vis.indexOf(c) !== -1; })[0];
+    a.campusId = home || '';
+    a.role = relevant.length ? { roleLevel: relevant[0].roleLevel, subjects: relevant[0].subjects } : null;
+    a.positionLabel = relevant.length ? hirPositionLabel_(relevant[0].campusId, relevant[0]) : '';
     const scored = relevant.length ? hirScoreApplicant_(a, relevant) : null;
     a.matchScore = scored ? scored.total : null;
     a.matchRemarks = scored ? scored.remarks : [];
@@ -653,9 +657,18 @@ function hirAttachAppointments_(list, all) {
   list.forEach(function (p) {
     p.appointments = apptForPerson_(keep, p.row, p.phoneNorm).sort(function (a, b) { return hirMs_(a.start) - hirMs_(b.start); }).map(function (a) {
       return { id: a.id, kind: a.kind, start: Object.prototype.toString.call(a.start) === '[object Date]' ? a.start.toISOString() : String(a.start), status: a.status,
-        proposedBy: a.proposedBy, declineNote: a.declineNote, calendarMode: a.calendarMode };
+        proposedBy: a.proposedBy, declineNote: a.declineNote, calendarMode: a.calendarMode, reportFiled: hirReportFiled_(p, a) };
     });
   });
+}
+
+// Does a report count for this interview/demo appointment? Filed by anyone from 6 hours before its start (an earlier
+// round's doesn't); a legacy interview PDF clears an interview. md never has one. Shared by reportFiled and reportsToUpload.
+function hirReportFiled_(p, a) {
+  if (a.kind !== 'interview' && a.kind !== 'demo') return false;
+  const t = hirMs_(a.start);
+  const reports = (a.kind === 'interview' ? p.interviewReports : p.demoReports) || [];
+  return reports.some(function (r) { return r.submittedAtMs >= t - 6 * 36e5; }) || (a.kind === 'interview' && !!p.interviewReportPdf);
 }
 
 // The hiring legwork behind the Fee Clerk's banner and the office nav (counts). Reports filed by anyone count as
@@ -674,11 +687,7 @@ function hirLegwork_(list, nowMs) {
       if (a.status === 'proposed') w.waiting++;
       if (a.status !== 'accepted') return;
       if (t >= nowMs && t <= nowMs + 7 * 864e5) w.booked++;
-      if (t < nowMs && (a.kind === 'interview' || a.kind === 'demo')) {
-        const reports = (a.kind === 'interview' ? p.interviewReports : p.demoReports) || [];
-        const has = reports.some(function (r) { return r.submittedAtMs >= t - 6 * 36e5; }) || (a.kind === 'interview' && !!p.interviewReportPdf);
-        if (!has) w.reportsToUpload++;
-      }
+      if (t < nowMs && (a.kind === 'interview' || a.kind === 'demo') && !hirReportFiled_(p, a)) w.reportsToUpload++;
     });
   });
   return w;

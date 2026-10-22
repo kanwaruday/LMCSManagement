@@ -137,6 +137,7 @@ function apptProposeCore_(caller, sheet, body) {
   const st = apptRowState_(sheet, r.row);
   if (st.rejected) throw new Error('This applicant was rejected -- Revive them first');
   const direct = apptIsDirect_(caller, kind);
+  if (!direct && start.getTime() < Date.now()) throw new Error('Pick a time in the future.');
   const mine = apptForPerson_(apptAll_(), r.row, r.phone).filter(function (a) { return a.kind === kind; });
   const reschedule = mine.some(function (a) { return a.status === 'accepted'; });
   if (kind === 'interview' && !st.shortlisted && !reschedule && !direct) throw new Error('Shortlist this applicant first (a Principal\'s call)');

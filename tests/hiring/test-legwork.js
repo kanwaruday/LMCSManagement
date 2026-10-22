@@ -50,7 +50,7 @@ T('hirAttachAppointments_: by phone, open + accepted + only the latest declined 
   ctx.hirAttachAppointments_(list, all);
   const got = JSON.parse(JSON.stringify(list[0].appointments));
   assert.deepStrictEqual(got.map((a) => a.id).sort(), ['a', 'd2']);
-  assert.deepStrictEqual(Object.keys(got[0]).sort(), ['calendarMode', 'declineNote', 'id', 'kind', 'proposedBy', 'start', 'status']);
+  assert.deepStrictEqual(Object.keys(got[0]).sort(), ['calendarMode', 'declineNote', 'id', 'kind', 'proposedBy', 'reportFiled', 'start', 'status']);
   assert.strictEqual(typeof got[0].start, 'string'); assert.deepStrictEqual(list[1].appointments, []);
   // a later proposal retires the declined one
   all.push(mk('p', 'interview', 'proposed', NOW - D)); list[0].appointments = null; ctx.hirAttachAppointments_(list, all);
@@ -90,4 +90,22 @@ T('hirForCaller_: a Fee Clerk\'s md appointment has declineNote \'\'; an elevate
   const forClerk = ctx.hirForCaller_({ email: 'c@x', campusId: 'LMS4', roles: ['FeeClerk'] }, list)[0].appointments;
   assert.strictEqual(forClerk[0].declineNote, ''); assert.strictEqual(forClerk[1].declineNote, 'busy');
   assert.strictEqual(ctx.hirForCaller_({ email: 'p@x', campusId: 'LMS4', roles: ['Principal'] }, list)[0].appointments[0].declineNote, 'too costly');
+});
+
+T('reportFiled shares reportsToUpload\'s rule; md is always false; campusId/role/positionLabel survive the clerk strip', () => {
+  const past = NOW - 2 * D, rep = (ms) => ({ submittedAtMs: ms, submittedBy: 'x' });
+  const mk = () => ({ phoneNorm: '9', row: 2, status: 'Interview Done', interviewReports: [rep(past + H)], demoReports: [rep(past - 30 * D)], docsMissing: [], history: [],
+    campusId: 'LMS4', role: { roleLevel: 'TGT', subjects: 'English' }, positionLabel: 'LMS 4 - TGT: English' });
+  const mkAp = (kind) => ({ id: kind, kind, status: 'accepted', phone: '9', row: 2, start: new Date(past), proposedAt: new Date(), proposedBy: 'c', declineNote: '', calendarMode: 'own' });
+  const list = [mk()];
+  ctx.hirAttachAppointments_(list, [mkAp('interview'), mkAp('demo'), mkAp('md')]);
+  const f = {}; Array.from(list[0].appointments).forEach((a) => { f[a.kind] = a.reportFiled; });
+  assert.deepStrictEqual(f, { interview: true, demo: false, md: false });
+  assert.strictEqual(L(list).reportsToUpload, 1); // exactly the demo: same answer as reportFiled
+  const legacy = [{ phoneNorm: '9', row: 2, status: 'Interview Done', interviewReports: [], demoReports: [], interviewReportPdf: 'u', docsMissing: [], history: [] }];
+  ctx.hirAttachAppointments_(legacy, [mkAp('interview')]);
+  assert.strictEqual(legacy[0].appointments[0].reportFiled, true); assert.strictEqual(L(legacy).reportsToUpload, 0);
+  const o = ctx.hirForCaller_({ email: 'c@x', campusId: 'LMS4', roles: ['FeeClerk'] }, list)[0];
+  assert.strictEqual(o.campusId, 'LMS4'); assert.strictEqual(o.positionLabel, 'LMS 4 - TGT: English'); assert.strictEqual(o.role.roleLevel, 'TGT');
+  assert.strictEqual(o.appointments[0].reportFiled, true);
 });

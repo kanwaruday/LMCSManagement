@@ -54,13 +54,17 @@ A clerk may not use `md`. The Principal proposes MD Academics interviews.
 **`applicants[i]`** (fields a clerk receives; report contents, notes and salary are stripped):
 `row, applicantId, name, phone, subjects, branches, status, shortlistedAt, shortlistedBy, source, addedBy,
 interviewAt, demoAt, matchedRoleKeys, noOpenRole, docsMissing, docsComplete, expectedEmployeeCode,
-employeeCode, dateOfJoining, appointments[]`.
+employeeCode, dateOfJoining, campusId, role, positionLabel, appointments[]`.
+`campusId` is `'LMSn'` (the first of the applicant's campuses inside yours; `''` if none). `role` is `{roleLevel, subjects}` of the
+first open requisition they match, else `null`; `positionLabel` is its text (e.g. `LMS 4 - TGT: English`), else `''`.
 `status` is one of `''` (not shortlisted), `'Shortlisted'`, `'Interview Scheduled'`, `'Interview Done'`,
 `'Demo Done'`, `'Salary Offer'`, `'MD Academics Interview Scheduled'`, `'Hiring Approved'`, `'Hired'`,
 `'Rejected'`.
 
 **`applicants[i].appointments[]`:** open + accepted + the latest declined per kind, sorted by start.
-`{id, kind:'interview'|'demo'|'md', start:<ISO>, status:'proposed'|'accepted'|'declined', proposedBy, declineNote, calendarMode}`.
+`{id, kind:'interview'|'demo'|'md', start:<ISO>, status:'proposed'|'accepted'|'declined', proposedBy, declineNote, calendarMode, reportFiled}`.
+`reportFiled` (boolean): a report of that kind counts for this appointment (filed by anyone from 6 h before its start; a legacy
+interview PDF clears an interview); always `false` for `md`. It is the same rule `reportsToUpload` uses.
 `declineNote` is blank on `md` for a clerk.
 
 **`legwork`** (numbers, computed by the server with the same rules as your screen should use):
@@ -90,6 +94,7 @@ calendarError`. `myProposals` keeps the latest declined proposal per person and 
   - `This applicant was rejected -- Revive them first`
   - `The interview has to be done (or its report filed) before a demo`
   - `Invalid appointment kind`
+  - `Pick a time in the future.` (a proposal's start is already past; a Principal's direct booking may be)
   - `Only a Principal, Coordinator or the Owner can propose …` (an md attempt)
 - **Cancelling:**
   - `Appointment not found`
