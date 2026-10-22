@@ -1536,45 +1536,50 @@ function hirRefreshTrackerCore_() {
 // and the most recent one's Employee ID is returned for
 // hirLockEmployeeCode_. opts.cache (a plain object) lets several
 // candidates at one campus share a single read of that campus's sheet.
+// 2026-10-22: since 7 Oct the six response sheets are also "LMS n" tabs of one consolidated workbook (the
+// Staff Portal reads that one -- staff-management-api.gs's RESPONSE_WORKBOOK_ID_). A form may write to
+// either, so both are read and a document counts if ANY matching row in EITHER has it. A source that
+// can't be opened is skipped, never fatal.
+const HIR_DOC_WORKBOOK_ID = '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg';
+function hirDocSources_(campusId, cache) {
+  const out = [];
+  const read = function (key, fn) {
+    if (cache && cache[key]) { out.push(cache[key]); return; }
+    try { const v = fn(); if (v && v.length) { if (cache) cache[key] = v; out.push(v); } } catch (e) { Logger.log('doc source ' + key + ' skipped: ' + e.message); }
+  };
+  read('wb|' + campusId, function () { const t = SpreadsheetApp.openById(HIR_DOC_WORKBOOK_ID).getSheetByName(campusId.replace(/^LMS(\d)/, 'LMS $1')); return t ? t.getDataRange().getValues() : null; });
+  const old = HIR_DOC_SHEET_IDS[campusId];
+  if (old && old !== HIR_DOC_WORKBOOK_ID) read(old, function () { return SpreadsheetApp.openById(old).getDataRange().getValues(); });
+  return out;
+}
 function hiringCheckDocuments_(campusId, name, opts) {
   opts = opts || {};
-  const sheetId = HIR_DOC_SHEET_IDS[campusId];
-  if (!sheetId) return { found: false, reason: 'No document sheet configured for ' + campusId };
-  let values = opts.cache && opts.cache[sheetId];
-  if (!values) {
-    values = SpreadsheetApp.openById(sheetId).getDataRange().getValues();
-    if (opts.cache) opts.cache[sheetId] = values;
-  }
-  if (!values.length) return { found: false };
-  const header = values[0].map(function (h) { return String(h || '').toUpperCase(); });
-  let idCol = header.findIndex(function (h) { return h.indexOf('EMPLOYEE ID') !== -1; });
-  if (idCol === -1) idCol = 3; // col D in every campus sheet seen so far
-
+  if (!HIR_DOC_SHEET_IDS[campusId]) return { found: false, reason: 'No document sheet configured for ' + campusId };
   const target = hirNormalizeName_(name);
-  const rows = [];
-  for (let i = 1; i < values.length; i++) {
-    if (hirNormalizeName_(values[i][2]) !== target) continue; // col C = Employee Name
-    if (opts.notBefore) {
-      const ts = values[i][0] instanceof Date ? values[i][0] : new Date(values[i][0]);
-      if (!isNaN(ts.getTime()) && ts < opts.notBefore) continue; // predates the interview -- not this hire's paperwork
+  const present = {};
+  let found = false, employeeId = '', latest = 0;
+  hirDocSources_(campusId, opts.cache).forEach(function (values) {
+    const header = values[0].map(function (h) { return String(h || '').toUpperCase(); });
+    let idCol = header.findIndex(function (h) { return h.indexOf('EMPLOYEE ID') !== -1; });
+    if (idCol === -1) idCol = 3; // col D in every campus sheet seen so far
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (hirNormalizeName_(row[2]) !== target) continue; // col C = Employee Name
+      const ts = row[0] instanceof Date ? row[0] : new Date(row[0]);
+      if (opts.notBefore && !isNaN(ts.getTime()) && ts < opts.notBefore) continue; // predates the interview -- not this hire's paperwork
+      found = true;
+      Object.keys(HIR_REQUIRED_DOC_KEYWORDS).forEach(function (label) {
+        if (HIR_REQUIRED_DOC_KEYWORDS[label].some(function (k) {
+          return header.some(function (h, idx) { return h.indexOf(k) !== -1 && String(row[idx] || '').trim() !== ''; });
+        })) present[label] = true;
+      });
+      const v = String(row[idCol] || '').trim();
+      const t = isNaN(ts.getTime()) ? 0 : ts.getTime();
+      if (v && t >= latest) { employeeId = v; latest = t; }
     }
-    rows.push(values[i]);
-  }
-  if (!rows.length) return { found: false };
-
-  const missing = [];
-  Object.keys(HIR_REQUIRED_DOC_KEYWORDS).forEach(function (label) {
-    const keywords = HIR_REQUIRED_DOC_KEYWORDS[label];
-    const matchingCols = header
-      .map(function (h, idx) { return keywords.some(function (k) { return h.indexOf(k) !== -1; }) ? idx : -1; })
-      .filter(function (idx) { return idx !== -1; });
-    const present = rows.some(function (row) {
-      return matchingCols.some(function (idx) { return String(row[idx] || '').trim() !== ''; });
-    });
-    if (!present) missing.push(label);
   });
-  let employeeId = '';
-  rows.forEach(function (row) { const v = String(row[idCol] || '').trim(); if (v) employeeId = v; });
+  if (!found) return { found: false };
+  const missing = Object.keys(HIR_REQUIRED_DOC_KEYWORDS).filter(function (l) { return !present[l]; });
   return { found: true, complete: missing.length === 0, missing: missing, employeeId: employeeId };
 }
 

@@ -141,3 +141,21 @@ T('hiringApplicants_: a position picked on the report form wins over subject mis
   assert.strictEqual(res.applicants.length, 1);
   assert.strictEqual(res.applicants[0].matchedRoleKeys.length, 0); assert.strictEqual(res.applicants[0].noOpenRole, true);
 });
+
+// 2026-10-22: since 7 Oct the six document sheets live as "LMS n" tabs in one workbook; the check reads
+// that tab AND the old per-campus sheet, and a document present in either counts.
+T('docs: merged-workbook tab and the old sheet are unioned', () => {
+  const hdrA = ['Timestamp', 'Email', 'Employee Name', 'Employee ID', 'BIODATA', 'HIRING SLIP', 'PAN CARD', 'AADHAR'];
+  const hdrB = ['Timestamp', 'Email', 'Employee Name', 'Employee ID', 'Job', 'CANCELLED CHEQUE', 'BACHELORS', 'POLICE VERIFICATION', 'MEDICAL CERTIFICATE'];
+  const merged = [hdrA, [new Date('2026-10-20'), 'e', 'Neha Rana', 'NCM/26/10/130', 'x', 'x', 'x', 'x']];
+  const old = [hdrB, [new Date('2026-10-21'), 'e', 'Neha Rana', '', 'TGT', 'x', 'x', 'x', 'x']];
+  ctx.SpreadsheetApp = { openById: (id) => id === '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg'
+    ? { getSheetByName: (n) => (n === 'LMS 4' ? { getDataRange: () => ({ getValues: () => merged }) } : null) }
+    : { getDataRange: () => ({ getValues: () => old }) } };
+  const d = ctx.hiringCheckDocuments_('LMS4', 'Neha Rana', { notBefore: new Date('2026-10-19') });
+  assert.strictEqual(d.found, true); assert.deepStrictEqual(Array.from(d.missing), []); assert.strictEqual(d.employeeId, 'NCM/26/10/130');
+});
+T('docs: a source that fails to open is skipped, not fatal', () => {
+  ctx.SpreadsheetApp = { openById: (id) => { if (id === '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg') throw new Error('no access'); return { getDataRange: () => ({ getValues: () => [['Timestamp', 'Email', 'Employee Name']] }) }; } };
+  assert.strictEqual(ctx.hiringCheckDocuments_('LMS4', 'Neha Rana').found, false);
+});
