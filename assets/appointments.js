@@ -17,13 +17,20 @@ var LMCSAppts = (function () {
   function retry_(a) {
     return '<div class="ap-sub">Calendar not updated — <button type="button" class="ap-link" data-act="retry" data-id="' + esc_(a.id) + '">Retry</button></div>';
   }
-  // email = the viewer's; Retry only for the acceptor (decidedBy), never a FeeClerk-only viewer.
-  function renderHtml_(data, role, email) {
+  // email / campusId = the viewer's. Retry (as apptCalendarRetry_ allows) for the acceptor -- an Owner override's
+  // decidedBy ends " (override)" -- and, on a migrated booking (decidedBy 'migration'), for a Principal covering its
+  // campus only: it lands on the retrier's calendar. Never a FeeClerk-only viewer.
+  function renderHtml_(data, role, email, campusId) {
     data = data || {};
     var acc = role === 'FeeClerk' ? [] : (data.toAccept || []), mine = data.myProposals || [];
     var me = String(email || '').toLowerCase();
+    var list = function (v) { return String(v || '').split(',').map(function (r) { return r.trim(); }); };
+    var principal = list(role).indexOf('Principal') !== -1, campuses = list(campusId).map(function (c) { return c.toUpperCase(); });
     var retries = role === 'FeeClerk' || !me ? [] : (data.upcoming || []).filter(function (a) {
-      return a.status === 'accepted' && a.calendarMode === 'none' && String(a.decidedBy || '').toLowerCase() === me;
+      if (a.status !== 'accepted' || a.calendarMode !== 'none') return false;
+      var by = String(a.decidedBy || '').replace(/\s*\(override\)$/, '').toLowerCase();
+      if (by === 'migration') return principal && (campuses.indexOf('ALL') !== -1 || campuses.indexOf(String(a.campus || '').toUpperCase()) !== -1);
+      return by === me;
     });
     var out = '';
     if (acc.length) {
@@ -57,7 +64,7 @@ var LMCSAppts = (function () {
       return fetch(opts.backendUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: session.idToken }, body)) }).then(function (r) { return r.json(); });
     }
     function show_(data) {
-      var h = renderHtml_(data, role, session.email);
+      var h = renderHtml_(data, role, session.email, session.campusId);
       el.innerHTML = h ? '<style>' + CSS + '</style><section class="ap-box">' + h + '<div class="ap-err" role="alert"></div></section>' : '';
     }
     function err_(card, m) { var e = (card || el).querySelector('.ap-err') || el.querySelector('.ap-err'); if (e) e.textContent = m; }
