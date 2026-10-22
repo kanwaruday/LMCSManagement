@@ -86,7 +86,8 @@
       "office-today",
       "office-backup",
       "office-import",
-      "office-setup"
+      "office-setup",
+      "office-ledger"
     ]
   }
 }
