@@ -346,3 +346,41 @@ function apptCancelForRejectCore_(sheet, row) {
     .filter(function (a) { return a.status === 'proposed' || (a.status === 'accepted' && hirMs_(a.start) > now); })
     .forEach(function (a) { apptEnd_(a, '', 'rejected', sheet); });
 }
+
+// ── Migration backfill (one-off, editor-run) ────────────────────────────────────────────────────
+// Bookings already in the old date columns (13 interview, 25 demo, 14 md) become ACCEPTED appointments so Today
+// (accepted only) still shows them; people at Interview Scheduled or beyond get the shortlist stamp they never had.
+// Idempotent: a person with an accepted appointment of that kind is skipped, a stamped row is skipped. Lock-free core.
+function apptBackfill_(nowMs) {
+  const sheet = hirSheet_();
+  hirGrow_(sheet);
+  const list = hirBuildApplicants_(sheet.getDataRange().getValues(), {
+    irRows: hirIrSheet_().getDataRange().getValues(), portalInterviews: hirPortalReports_(HIR_PI_TAB), portalDemos: hirPortalReports_(HIR_PD_TAB),
+    decisions: hirSalaryOfferDecisions_(), nowMs: nowMs,
+  });
+  const all = apptAll_();
+  let created = 0, shortlisted = 0;
+  list.forEach(function (p) {
+    [['interview', p.interviewAt], ['demo', p.demoAt], ['md', p.mdInterviewAt]].forEach(function (kd) {
+      const ms = hirMs_(kd[1]);
+      if (!ms || ms <= nowMs) return;
+      if (apptForPerson_(all, p.row, p.phoneNorm).some(function (a) { return a.kind === kd[0] && a.status === 'accepted'; })) return;
+      const tag = (p.branches.match(/LMS-\d/) || [''])[0];
+      all.push(apptSave_({ id: 'appt-' + nowMs + '-m' + (++created), kind: kd[0], applicantId: p.applicantId, row: p.row, phone: p.phoneNorm, name: p.name,
+        campus: tag ? 'LMS' + tag.slice(4) : '', start: new Date(ms), durationMin: APPT_DURATION[kd[0]], place: '', note: 'Migrated from the old date column',
+        proposedBy: 'migration', proposedAt: new Date(nowMs), acceptorRole: kd[0] === 'md' ? 'Owner' : 'Principal', status: 'accepted',
+        decidedBy: 'migration', decidedAt: new Date(nowMs), declineNote: '', eventId: '', calendarMode: 'none', calendarError: '' }));
+    });
+    if (p.status !== 'Rejected' && hirLadderIndex_(p.status) >= hirLadderIndex_('Interview Scheduled') && !p.shortlistedAt) {
+      hirStampShortlist_(sheet, p.row, { email: 'migration' });
+      shortlisted++;
+    }
+  });
+  return { created: created, shortlisted: shortlisted };
+}
+// Editor-run (no route in main.gs): one lock around the whole backfill.
+function apptBackfillRun() {
+  const res = hirWithLock_(function () { return apptBackfill_(Date.now()); });
+  Logger.log('apptBackfill: ' + JSON.stringify(res));
+  return res;
+}
