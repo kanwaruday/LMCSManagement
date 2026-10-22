@@ -18,3 +18,8 @@
 .bal th:first-child, .bal td:first-child { text-align: left; }
 #attention-panel[hidden] { display: none; }
 #attention-panel { border: 2px solid #b00020; padding: 12px; margin: 12px 0; }
+.hiring-banner { border: 2px solid #8a5a00; border-radius: 8px; padding: 12px; margin: 12px 0; background: #fff8e8; }
+.hiring-banner a { color: inherit; text-decoration: none; }
+.capwrap { overflow-x: auto; }
+.office-form .capwrap input, .office-form .capwrap select { min-height: 40px; min-width: 56px; padding: 4px; }
+section.block h2 { font-size: 1.1rem; }

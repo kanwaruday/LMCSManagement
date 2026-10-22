@@ -32,6 +32,7 @@ const NO_SOURCES = {
   'office/close.html': OFFICE_REASON,
   'office/daybook.html': OFFICE_REASON,
   'office/deposits.html': OFFICE_REASON,
+  'office/hiring.html': OFFICE_REASON,
   'office/index.html': OFFICE_REASON,
   'office/report.html': OFFICE_REASON,
   'office/transport.html': OFFICE_REASON,
