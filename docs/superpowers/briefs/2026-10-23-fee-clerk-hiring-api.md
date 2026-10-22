@@ -68,13 +68,17 @@ interview PDF clears an interview); always `false` for `md`. It is the same rule
 `declineNote` is blank on `md` for a clerk.
 
 **`legwork`** (numbers, computed by the server with the same rules as your screen should use):
-- `toSchedule` — Shortlisted, with no proposed or accepted interview. A declined latest proposal counts.
+
+An **open** appointment of a kind is a proposed one, or an accepted one that is still to come or (interview/demo) still
+has `reportFiled: false`. A past accepted one whose report is filed is history, not open: after a demo report saying
+"another demo" with no time, the person is back in `demosToBook`.
+- `toSchedule` — Shortlisted, with no open interview. A declined latest proposal counts.
 - `waiting` — proposed appointments, any kind.
 - `booked` — accepted appointments starting within the next 7 days, any kind (MD and Principal direct
   bookings included: call the candidate).
 - `reportsToUpload` — past accepted interview or demo appointments with no report of that kind (filed by
   anyone).
-- `demosToBook` — Interview Done, with no proposed or accepted demo.
+- `demosToBook` — Interview Done, with no open demo (see above).
 - `documents` — Hiring Approved with documents missing.
 
 (Task 5 also excludes Rejected and Hired people from these buckets.)

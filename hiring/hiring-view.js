@@ -6,8 +6,11 @@
   const ms = (iso) => new Date(iso).getTime();
   const done = (a) => a.status === 'Rejected' || a.status === 'Hired';
   const appts = (a) => a.appointments || [];
-  // The open (proposed or accepted) appointment of a kind, if any.
-  function openAppt_(a, kind) { return appts(a).filter((x) => x.kind === kind && (x.status === 'proposed' || x.status === 'accepted'))[0] || null; }
+  // The open appointment of a kind, if any: proposed, or accepted and still to come or still waiting for its report
+  // (a past, reported one is history). Same rule as the server's hirLegwork_.
+  function openAppt_(a, kind, nowMs = Date.now()) {
+    return appts(a).filter((x) => x.kind === kind && (x.status === 'proposed' || (x.status === 'accepted' && (ms(x.start) > nowMs || ((kind === 'interview' || kind === 'demo') && !x.reportFiled)))))[0] || null;
+  }
   function endOfDay_(nowMs) { const d = new Date(nowMs); d.setHours(23, 59, 59, 999); return d.getTime(); }
   function startOfDay_(nowMs) { const d = new Date(nowMs); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
@@ -45,9 +48,9 @@
       if ((a.stageMarks || {}).rejectPending) { out.push({ row: a.row, kind: 'confirmreject', label: LABELS.confirmreject }); return; }
       if (a.reportPending) kinds.push(a.reportPending);
       unreported_(a, nowMs).forEach((x) => kinds.push(x.kind));
-      if (a.status === 'Interview Done' && !openAppt_(a, 'demo')) kinds.push('bookdemo');
+      if (a.status === 'Interview Done' && !openAppt_(a, 'demo', nowMs)) kinds.push('bookdemo');
       if (a.status === 'Demo Done') kinds.push('salary');
-      if (a.status === 'Salary Offer' && !openAppt_(a, 'md')) kinds.push('md');
+      if (a.status === 'Salary Offer' && !openAppt_(a, 'md', nowMs)) kinds.push('md');
       if (a.status === 'Hiring Approved') kinds.push('joining');
       kinds.filter((k, i) => kinds.indexOf(k) === i).forEach((k) => out.push({ row: a.row, kind: k, label: LABELS[k] }));
     });
@@ -58,8 +61,8 @@
   function clerkBuckets_(applicants, nowMs) {
     const b = { toSchedule: [], waiting: [], booked: [], reportsToUpload: [], demosToBook: [], documents: [] };
     (applicants || []).forEach((a) => {
-      if (a.status === 'Shortlisted' && !openAppt_(a, 'interview')) b.toSchedule.push(a);
-      if (a.status === 'Interview Done' && !openAppt_(a, 'demo')) b.demosToBook.push(a);
+      if (a.status === 'Shortlisted' && !openAppt_(a, 'interview', nowMs)) b.toSchedule.push(a);
+      if (a.status === 'Interview Done' && !openAppt_(a, 'demo', nowMs)) b.demosToBook.push(a);
       if (a.status === 'Hiring Approved' && (a.docsMissing || []).length) b.documents.push(a);
       if (done(a)) return;
       appts(a).forEach((x) => {

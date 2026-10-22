@@ -47,6 +47,7 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   assert.deepStrictEqual(kinds([p(7, 'Interview Done', [appt('interview', at(-1, 10), 'accepted', { reportFiled: true }), appt('demo', at(-1, 15), 'accepted')])]), ['7:demo'], 'past demo, no report');
   assert.deepStrictEqual(kinds([p(8, 'Interview Done', [appt('interview', at(-1, 10), 'accepted')], { reportPending: 'interview' })]), ['8:interview', '8:bookdemo'], 'one report entry per kind (deduped)');
   assert.deepStrictEqual(kinds([p(9, 'Rejected', [appt('interview', at(-1, 10), 'accepted')], { stageMarks: { rejectPending: {} } }), p(10, 'Hired')]), [], 'Rejected/Hired: nothing');
+  assert.deepStrictEqual(kinds([p(11, 'Interview Done', [appt('demo', at(-2, 10), 'accepted', { reportFiled: true })])]), ['11:bookdemo'], 'a past accepted demo is history, not open: book the second demo');
   assert.ok(V.myActions_([p(3, 'Demo Done')], NOW)[0].label, 'every item has a label');
   console.log('ok  - myActions_: one fixture per item');
 }
@@ -72,5 +73,9 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   assert.deepStrictEqual(rows(b.reportsToUpload), [5]);
   assert.deepStrictEqual(rows(b.demosToBook), [6]);
   assert.deepStrictEqual(rows(b.documents), [7]);
+  assert.deepStrictEqual(rows(V.clerkBuckets_([p(10, 'Interview Done', [appt('demo', at(-2, 10), 'accepted', { reportFiled: true })])], NOW).demosToBook), [10], 'a past accepted demo is not open');
+  assert.strictEqual(V.openAppt_(p(10, 'Interview Done', [appt('demo', at(-2, 10), 'accepted', { reportFiled: true })]), 'demo', NOW), null, 'openAppt_: past reported accepted is not open');
+  assert.ok(V.openAppt_(p(10, 'Interview Done', [appt('demo', at(-2, 10), 'accepted')]), 'demo', NOW), 'openAppt_: past accepted awaiting its report is still open');
+  assert.ok(V.openAppt_(p(10, 'Interview Done', [appt('demo', at(2, 10), 'accepted')]), 'demo', NOW), 'openAppt_: future accepted is open');
   console.log('ok  - clerkBuckets_: to schedule, waiting, booked, reports, demos, documents');
 }

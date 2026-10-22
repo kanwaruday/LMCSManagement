@@ -675,7 +675,9 @@ function hirReportFiled_(p, a) {
 // evidence; a report counts for an appointment if it was filed from 6 hours before its start (an earlier round's doesn't).
 function hirLegwork_(list, nowMs) {
   const w = { toSchedule: 0, waiting: 0, booked: 0, reportsToUpload: 0, demosToBook: 0, documents: 0 };
-  const open = function (p, kind) { return p.appointments.some(function (a) { return a.kind === kind && (a.status === 'proposed' || a.status === 'accepted'); }); };
+  // Open = proposed, or accepted and still to come or still waiting for its report (a past, reported one is history:
+  // "another demo" with no time yet must be booked again). Same rule as HiringView.openAppt_.
+  const open = function (p, kind) { return p.appointments.some(function (a) { return a.kind === kind && (a.status === 'proposed' || (a.status === 'accepted' && (hirMs_(a.start) > nowMs || ((kind === 'interview' || kind === 'demo') && !hirReportFiled_(p, a))))); }); };
   list.forEach(function (p) {
     p.appointments = p.appointments || [];
     if (p.status === 'Shortlisted' && !open(p, 'interview')) w.toSchedule++;

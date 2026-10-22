@@ -41,6 +41,12 @@ T('demosToBook: Interview Done with no proposed or accepted demo; documents: Hir
     person('Hiring Approved', [], { docsMissing: ['PAN', 'Aadhar'] }), person('Hiring Approved')]), only({ demosToBook: 2, waiting: 1, documents: 1 }));
 });
 
+T('demosToBook: a past accepted demo (another demo, no time yet) is history, not open', () => {
+  assert.deepStrictEqual(L([person('Interview Done', [ap('demo', 'accepted', NOW - 2 * D)], { demoReports: [{ submittedAtMs: NOW - 2 * D + 36e5 }] })]), only({ demosToBook: 1 }));
+  assert.deepStrictEqual(L([person('Interview Done', [ap('demo', 'accepted', NOW + 2 * D)])]), only({ booked: 1 }));
+  assert.deepStrictEqual(L([person('Interview Done', [ap('demo', 'accepted', NOW - 2 * D)])]), only({ reportsToUpload: 1 })); // awaiting its report: still open
+});
+
 T('hirAttachAppointments_: by phone, open + accepted + only the latest declined per kind; md note not carried', () => {
   const mk = (id, kind, status, proposedAt, phone) => ({ id, kind, status, phone: phone || '9876543210', row: 2, start: new Date(NOW + D), proposedAt: new Date(proposedAt),
     proposedBy: 'c@x', declineNote: 'n', calendarMode: 'own', note: 'secret' });
