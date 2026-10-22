@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, inflightGuard, fyEnd, todayIst } = await import('../../office/js/daybook.js');
+  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -94,6 +94,8 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(rowAccountLabel(accts, { account: '', mode: 'cash', campus: 'LMS2' }), 'cash:LMS2');
   assert.strictEqual(rowAccountLabel(accts, { account: '', mode: 'upi', campus: 'LMS1' }), 'bank:LMS1');
   assert.strictEqual(rowAccountLabel(accts, { account: 'gone', mode: 'cash', campus: 'LMS1' }), 'gone');
+  assert.strictEqual(keepChoice('HES', ['LMS1', 'HES', 'CHAIRMAN'], 'LMS1'), 'HES'); assert.strictEqual(keepChoice('CHAIRMAN', ['LMS1', 'CHAIRMAN'], 'LMS1'), 'CHAIRMAN');
+  assert.strictEqual(keepChoice('', ['LMS1'], 'LMS1'), 'LMS1'); assert.strictEqual(keepChoice('gone', ['LMS1'], 'LMS1'), 'LMS1');
   console.log('  ok  - v2 form helpers: accounts, categories, payload (litres, odometer, settlement), vehicles');
 
   assert.strictEqual(fyEnd('2026-10-21'), '2027-03-31'); assert.strictEqual(fyEnd('2027-02-01'), '2027-03-31'); assert.strictEqual(fyEnd('2026-04-01'), '2027-03-31');

@@ -82,6 +82,9 @@ export function vehicleOptions(vehicles, campus, categoryId) {
     categoryId === 'fuel' ? [] : [{ value: 'FLEET', label: 'Shared / whole fleet' }]);
 }
 
+// The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
+export const keepChoice = (prev, values, fallback) => (prev && values.includes(prev) ? prev : fallback);
+
 export const CHAIRMAN = 'CHAIRMAN';
 export const chargedLabel = (id) => (id === CHAIRMAN ? 'Chairman (personal)' : id);
 // A row's money account for display: its stored account, else cash:<campus> / bank:<campus> from its mode (old rows).
@@ -203,13 +206,13 @@ export async function showDayBook(root, session, api, outbox) {
 
   const curAcct = () => (cfg.accounts || []).find((a) => a.id === acctSel.value) || null;
   const curCat = () => (cfg.categories || []).find((c) => c.id === catSel.value) || null;
-  const keep = (sel, fill) => { const v = sel.value; fill(); if ([...sel.options].some((o) => o.value === v)) sel.value = v; };
+  const keep = (sel, fill, fallback = '') => { const v = sel.value; fill(); sel.value = keepChoice(v, [...sel.options].map((o) => o.value), fallback || (sel.options[0] ? sel.options[0].value : '')); };
   const paintAccts = () => keep(acctSel, () => acctSel.replaceChildren(...formAccounts(cfg.accounts, session, campus).map((a) => h('option', { value: a.id }, a.label))));
   const paintCats = () => keep(catSel, () => {
     const a = curAcct();
     catSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(a ? categoriesFor(cfg.categories, a.kind, session) : []).map((g) => h('optgroup', { label: g.label }, g.items.map((c) => h('option', { value: c.id }, c.label)))));
   });
-  const paintCharged = () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c, selected: c === campus }, chargedLabel(c))));
+  const paintCharged = () => keep(chargedSel, () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c }, chargedLabel(c)))), campus);
   const paintSettles = () => keep(settlesSel, () => settlesSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(cfg.accounts || []).filter((a) => a.active && a.kind === 'credit').map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'))));
   const paintVehicles = () => keep(vehSel, () => { const c = curCat(); vehSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...vehicleOptions(cfg.vehicles, campus, c && c.id).map((o) => h('option', { value: o.value }, o.label))); });
   const sync = () => {
