@@ -24,10 +24,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
   const r = await A.fetchFleet(fake('{"success":true,"fleet":[{"reg":"A1"}]}'), 'http://x/exec', 'tok en');
   assert.strictEqual(seen, 'http://x/exec?action=coordinatortransport&idToken=tok%20en');
   assert.deepStrictEqual(r, [{ reg: 'A1' }]);
-  await assert.rejects(A.fetchFleet(fake('{"success":false,"error":"Not authorized"}'), 'u', 't'), /Not authorized/);
+  await assert.rejects(A.fetchFleet(fake('{"success":false,"error":"Boom"}'), 'u', 't'), /Boom/);
   await assert.rejects(A.fetchFleet(fake('<html>'), 'u', 't'), /could not be read/);
   ok('fetchFleet');
 
+  await assert.rejects(A.fetchFleet(fake('{"success":false,"error":"Not authorized"}'), 'u', 't'), (e) => e.message === A.NOT_ALLOWED_TRANSPORT);
+  const L = (s) => ({ getSession: () => s });
+  assert.strictEqual(A.liveToken(L({ email: 'A@x.org', idToken: 'T' }), { email: 'a@x.org' }), 'T');
+  assert.throws(() => A.liveToken(L(null), { email: 'a@x.org' }), (e) => e.message === A.SIGNED_OUT);
+  assert.throws(() => A.liveToken(L({ email: 'b@x.org', idToken: 'T' }), { email: 'a@x.org' }), (e) => e.message === A.SIGNED_OUT);
+  ok('token and not-authorized');
   assert.strictEqual(A.canSeeAccounts({ role: 'Owner' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FeeClerk, Accounts' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FinanceHead' }), true);

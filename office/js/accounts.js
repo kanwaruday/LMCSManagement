@@ -31,8 +31,17 @@ export async function fetchFleet(fetchFn, url, token) {
   const res = await fetchFn(url + '?action=coordinatortransport&idToken=' + encodeURIComponent(token));
   let data;
   try { data = JSON.parse(await res.text()); } catch (_) { throw new Error('The Transport answer could not be read. Try again in a minute.'); }
-  if (!data || !data.success) throw new Error((data && data.error) || 'The Transport list could not be loaded.');
+  if (!data || !data.success) throw new Error(/^Not authorized/.test((data && data.error) || '') ? NOT_ALLOWED_TRANSPORT : (data && data.error) || 'The Transport list could not be loaded.');
   return data.fleet || [];
+}
+
+export const NOT_ALLOWED_TRANSPORT = "Your account can't read the Transport list (it needs Coordinator or Owner access). Ask Uday.";
+export const SIGNED_OUT = 'Your sign-in has expired. Sign in again, then try again.';
+// The live session's token, only when it is still the page user's (same rule as the shell's pageUser); else throws SIGNED_OUT.
+export function liveToken(L, session) {
+  const s = L && L.getSession && L.getSession();
+  if (!s || !s.idToken || String(s.email || '').toLowerCase() !== String((session && session.email) || '').toLowerCase()) throw new Error(SIGNED_OUT);
+  return s.idToken;
 }
 
 export function accountPayload(campus, kind, label) {
@@ -91,12 +100,14 @@ export function summaryView(sum, cfg, campusLabel) {
     h('h3', {}, 'Account balances'),
     table(['Account', 'Balance'], sum.accounts.filter((a) => a.kind !== 'credit').map((a) => [h('td', {}, a.label), money(a.balance_paise)])),
     h('h3', {}, 'Per school'),
+    h('p', { class: 'meta' }, 'Money in shows as positive, money out as negative.'),
     Object.keys(groups).length ? Object.keys(groups).sort().map((s) => h('div', {}, h('h4', {}, label(s)),
       groups[s].map((g) => h('div', {}, h('p', {}, h('b', {}, g.label + ': ' + formatInr(g.total))),
         table(['Category', 'Amount'], g.items.map((i) => [h('td', {}, i.label), money(i.paise)])))))) : h('p', {}, 'Nothing in this period.'),
     h('h3', {}, 'Between schools'),
     sum.interSchool.length ? table(['Paid by', 'For', 'Amount'], sum.interSchool.map((x) => [h('td', {}, label(x.from)), h('td', {}, label(x.to)), money(x.paise)])) : h('p', {}, 'None.'),
     h('h3', {}, 'Vehicle costs'),
+    h('p', { class: 'meta' }, 'Money in shows as positive, money out as negative.'),
     veh.length ? veh.sort().map((reg) => h('div', {}, h('h4', {}, regLabel(reg)),
       table(['Column', 'Amount'], Object.keys(sum.vehicles[reg]).sort().map((c) => [h('td', {}, c.replace(/_/g, ' ')), money(sum.vehicles[reg][c])])))) : h('p', {}, 'None.'),
     h('h3', {}, 'Fuel'),
@@ -156,9 +167,8 @@ export async function showAccounts(root, session, api, outbox) {
     say(impMsg, 'Loading the bus list…');
     let rows;
     try {
-      const L = window.LMCS, s = (L && L.getSession && L.getSession()) || session;
-      rows = mapFleet(await fetchFleet((...a) => fetch(...a), COORD_BACKEND_URL, s.idToken));
-    } catch (err) { return say(impMsg, 'Could not load buses: ' + (err && err.message || err)); }
+      rows = mapFleet(await fetchFleet((...a) => fetch(...a), COORD_BACKEND_URL, liveToken(window.LMCS, session)));
+    } catch (err) { return say(impMsg, err && (err.message === SIGNED_OUT || err.message === NOT_ALLOWED_TRANSPORT) ? err.message : 'Could not load buses: ' + (err && err.message || err)); }
     if (!rows.length) return say(impMsg, 'The Transport list has no buses to import.');
     const before = cfg.vehicles.length;
     if (!await send('vehicles.import', { vehicles: rows }, impMsg, 'Imported.')) return;
@@ -195,6 +205,8 @@ export async function showAccounts(root, session, api, outbox) {
     if (!from || !to || from > to) return say(sumBox, 'Choose a start date that is not after the end date.');
     if (!samePeriodYear(from, to)) return say(sumBox, explainCode('RANGE_SPANS_YEARS'));
     say(sumBox, 'Loading…');
+    if (!cfg.categories.length) await loadConfig();
+    if (!cfg.categories.length) return say(sumBox, 'Still loading the category list — try again in a moment.');
     const r = await api.read('ledger.summary', { campus: allCampus ? (campPick.value || 'ALL') : campus, from, to }, 'acsum');
     if (r.stale) return;
     if (!r.success) return say(sumBox, 'Could not load the summary: ' + (r.network ? 'offline or unavailable' : explainCode(r.code || r.error)));
