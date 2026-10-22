@@ -328,12 +328,15 @@ async function init() {
   // header link goes back there. Display only -- what each role may see and upload is still the server's call.
   const fromOffice = new URLSearchParams(location.search).get('view') === 'documents';
   if (fromOffice) { const back = document.querySelector('.hdr-btn'); if (back) { back.href = '../office/index.html'; back.textContent = '← Fee Clerk + PRO'; } }
-  const docsOnly = (!LMCS.canManageStaff(SESSION) && LMCS.hasRole(SESSION, 'FeeClerk')) || (fromOffice && LMCS.canManageStaff(SESSION));
-  if (!LMCS.canManageStaff(SESSION) && !docsOnly) {
+  // A Principal (2026-10-22, per Uday) gets Directory + Documents for their own school: no employee detail
+  // panel (ID and bank numbers), no Needs Verification. The server enforces the same (STAFF_LIMITED_ACTIONS_).
+  const principalView = !LMCS.canManageStaff(SESSION) && LMCS.hasRole(SESSION, 'Principal') && !fromOffice;
+  const docsOnly = (!LMCS.canManageStaff(SESSION) && !principalView && LMCS.hasRole(SESSION, 'FeeClerk')) || (fromOffice && LMCS.canManageStaff(SESSION));
+  if (!LMCS.canManageStaff(SESSION) && !docsOnly && !principalView) {
     document.getElementById('deniedBox').style.display = 'block';
     document.getElementById('deniedBox').innerHTML =
       '<div class="denied"><div class="icon">🔒</div><h3>You don\'t have staff-management access</h3>' +
-      '<p>This page is limited to Coordinators and the Owner. Contact the owner if this is wrong.</p></div>';
+      '<p>This page is for Principals, Coordinators, fee clerks and the Owner. Contact the owner if this is wrong.</p></div>';
     return;
   }
 
@@ -349,6 +352,13 @@ async function init() {
   }
 
   document.getElementById('formArea').style.display = 'block';
+
+  if (principalView) {
+    document.querySelectorAll('.tab-btn').forEach(function (b) { if (b.dataset.tab !== 'directory' && b.dataset.tab !== 'documents') b.style.display = 'none'; });
+    document.getElementById('hdrCtx').textContent = 'Your school\'s staff and their documents';
+    await Promise.all([loadDirectory(), loadDocumentStatus()]);
+    return;
+  }
 
   if (docsOnly) {
     document.querySelectorAll('.tab-btn').forEach(function (b) { if (b.dataset.tab !== 'documents') b.style.display = 'none'; });
@@ -459,7 +469,7 @@ function renderDirectory() {
       return '<tr><td class="name">' + esc(r.name) + '</td><td>' + esc(r.employeeCode) + '</td>' +
         '<td>' + esc(r.role || '—') + '</td>' +
         '<td><span class="pill ' + esc(r.status.toLowerCase()) + '">' + esc(r.status) + '</span></td>' +
-        '<td><a href="#" class="view-link" data-code="' + esc(r.employeeCode) + '">View →</a></td></tr>';
+        '<td>' + (LMCS.canManageStaff(SESSION) ? '<a href="#" class="view-link" data-code="' + esc(r.employeeCode) + '">View →</a>' : '') + '</td></tr>';
     }).join('') +
     '</tbody></table>';
 }

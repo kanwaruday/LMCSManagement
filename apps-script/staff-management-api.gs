@@ -110,6 +110,16 @@ const STAFF_HIDDEN_DEPARTMENTS = ['admintm'];
 // through during the cache window.
 const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord', 'docrules'];
 
+// Roles that get a slice of the Staff Portal without being Coordinator/Owner -- always for their own campus:
+// FeeClerk (2026-10-21): the Documents matrix; Principal (2026-10-22, per Uday): Directory + Documents,
+// but not the employee detail panel (ID and bank numbers), Needs Verification or any write besides uploads.
+const STAFF_LIMITED_ACTIONS_ = { FeeClerk: ['documentstatus'], Principal: ['documentstatus', 'list'] };
+const STAFF_LIMITED_ROLES_ = Object.keys(STAFF_LIMITED_ACTIONS_);
+
+function staffLimitedAllows_(caller, action) {
+  return (caller.roles || []).some(function (r) { return (STAFF_LIMITED_ACTIONS_[r] || []).indexOf(action) !== -1; });
+}
+
 // Renamed from doGet() 2026-09-23 when this file merged into the same
 // Apps Script project as employee-roster.gs (see that file's doGet() --
 // only one function may be named doGet per project, so it's now the
@@ -120,12 +130,12 @@ function staffDoGet_(e) {
   try {
     const action = (e.parameter.action || '').toLowerCase();
     const caller = STAFF_READ_ACTIONS_.indexOf(action) !== -1
-      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken, ['FeeClerk']); })
-      : verifyStaffManagerToken_(e.parameter.idToken, ['FeeClerk']);
+      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_); })
+      : verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_);
     if (!caller) return staffJsonOut_({ success: false, error: 'Not authorized' });
-    // A FeeClerk (not also Coordinator/Owner/ALL) only gets the Documents matrix, for their own campus(es).
-    // `=== false` so a caller cached before this field existed (always a manager then) still passes.
-    if (caller.manager === false && action !== 'documentstatus') return staffJsonOut_({ success: false, error: 'Not authorized' });
+    // Someone in only via a limited role (not also Coordinator/Owner/ALL) gets just that role's actions,
+    // for their own campus(es). `=== false` so a caller cached before this field existed (always a manager then) still passes.
+    if (caller.manager === false && !staffLimitedAllows_(caller, action)) return staffJsonOut_({ success: false, error: 'Not authorized' });
 
     const data = e.parameter.data ? JSON.parse(e.parameter.data) : {};
     if (action === 'documentstatus' || action === 'verificationqueue') refreshCertificateLinksIfStale_(); // staff-documents.gs
@@ -448,6 +458,8 @@ function appendAcademicRow_(ss, employeeCode, name, classSubjects) {
 // bustStaffListCache_) so a hire/transfer/inactive the caller JUST made
 // shows up immediately rather than waiting out the TTL.
 function listEmployees_(caller) {
+  // A comma-list campus isn't one of the per-campus keys bustStaffListCache_ clears, so it's not cached.
+  if (caller.campusId.indexOf(',') !== -1) return buildEmployeeList_(caller);
   return cachedStaff_('staff_list_' + caller.campusId, function () { return buildEmployeeList_(caller); });
 }
 
@@ -468,7 +480,7 @@ function buildEmployeeList_(caller) {
     const code = String(rows[i][idx.EmployeeCode] || '').trim();
     if (!code) continue;
     const school = String(rows[i][idx.SchoolCode] || '').trim().toUpperCase();
-    if (caller.campusId !== 'ALL' && school !== caller.campusId) continue;
+    if (!callerCovers_(caller, school)) continue;
     const salary = salaryByCode[code] || { designation: '', department: '' };
     if (STAFF_HIDDEN_DEPARTMENTS.indexOf(salary.department) !== -1) continue; // see STAFF_HIDDEN_DEPARTMENTS above
     out.push({
