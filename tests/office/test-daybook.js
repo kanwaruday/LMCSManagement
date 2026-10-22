@@ -140,6 +140,8 @@ module.exports = function run(t) {
       .forEach(([id, kind, campus, active]) => h.ctx.officeWriteRow_(cfg, 'Accounts', { id, label: id, kind, campus, active }));
     [['HP665805', 'true'], ['HP660001', 'true'], ['HP669999', 'false']]
       .forEach(([reg, active]) => h.ctx.officeWriteRow_(cfg, 'Vehicles', { reg, label: reg, kind: 'bus', campus: 'LMS1', active }));
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS2', '2026-27'), 'Files', { id: 'slip2', campus: 'LMS2', drive_id: 'D2', name: 's.jpg' });
     return h;
   };
   const rowsOf = (h, campus, fy) => h.ctx.officeRows_(h.ctx.officeOpen_(campus || 'LMS1', fy || '2026-27'), 'DayBook');
@@ -163,13 +165,15 @@ module.exports = function run(t) {
       assert.equal(as(h, tok, { account: 'pump2', mode: '', bucket: '', direction: 'OUT', category: 'parking', vehicle: 'FLEET' }).code, 'FORBIDDEN_ACCOUNT', tok + ' other campus credit');
       assert.equal(as(h, tok, { account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1' }).code, 'FORBIDDEN_ACCOUNT', tok + ' settlement');
       assert.equal(as(h, tok, { direction: 'OUT', category: 'credit_settlement', bucket: 'fee', settles_account: 'pump1' }).code, 'FORBIDDEN_ACCOUNT', tok + ' settlement from cash');
-      assert.equal(as(h, tok, { direction: 'OUT', category: 'cash_transfer', bucket: 'fee' }).code, 'FORBIDDEN_ACCOUNT', tok + ' cash transfer');
+      assert.equal(as(h, tok, { account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'cash_transfer' }).code, 'FORBIDDEN_ACCOUNT', tok + ' cash transfer from bank');
       assert.equal(as(h, tok, { account: 'pump1', mode: '', bucket: '', direction: 'OUT', category: 'stationery' }).code, 'FORBIDDEN_ACCOUNT', tok + ' credit stationery');
     });
     assert.equal(h.call('daybook.add', e({ campus: 'LMS2', account: 'cash:LMS2' }), 'clerk-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(rowsOf(h).length + rowsOf(h, 'LMS2').length, 0, 'nothing written');
     // Allowed for a clerk: own cash, and a credit bill for a vehicle category (fuel fill).
     assert.equal(add(h, {}).success, true);
+    assert.equal(as(h, 'clerk-token', { direction: 'OUT', category: 'cash_transfer', bucket: 'fee' }).success, true, 'own cash transfer (P10)');
+    assert.equal(as(h, 'am-token', { direction: 'OUT', category: 'cash_transfer', bucket: 'petty' }).success, true, 'own cash transfer (P10)');
     assert.equal(h.call('daybook.add', fuel({}), 'clerk-token').success, true);
     assert.equal(h.call('daybook.add', fuel({ category: 'parking', litres_ml: '', odometer_km: '', file_id: '' }), 'am-token').success, true);
   });
@@ -254,6 +258,8 @@ module.exports = function run(t) {
     [undefined, '', 0, -1, 1.5, '20'].forEach((v) => assert.equal(f({ litres_ml: v }).error, 'LITRES_REQUIRED', String(v)));
     [undefined, '', -1, 1.5, '900'].forEach((v) => assert.equal(f({ odometer_km: v }).error, 'ODOMETER_REQUIRED', String(v)));
     assert.equal(f({ file_id: '' }).code, 'FILE_REQUIRED');
+    assert.equal(f({ file_id: 'nope' }).code, 'FILE_MISSING');
+    assert.equal(f({ file_id: 'slip2' }).code, 'FILE_MISSING', "another campus's file");
     assert.equal(f({ id: 'f0', odometer_km: 0 }).success, true, 'a new meter may read 0');
     assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', litres_ml: 5 }).error, 'BAD_FIELD');
     assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', odometer_km: 5 }).error, 'BAD_FIELD');
@@ -284,15 +290,26 @@ module.exports = function run(t) {
     assert.equal(rowsOf(h).find((r) => r.id === 'b2').odometer_note, 'meter replaced');
   });
 
+  t.test('odometer readings that are not finite numbers are ignored (P10)', () => {
+    const h = v2();
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27');
+    const fill = (id, km) => h.ctx.officeWriteRow_(ss, 'DayBook', { id, campus: 'LMS1', entry_date: '2026-10-15', direction: 'OUT', mode: 'credit', category: 'fuel', amount_paise: 1, account: 'pump1', vehicle: 'HP665805', litres_ml: 1, odometer_km: km });
+    fill('g1', 'abc'); fill('g2', ''); fill('g3', 2000);
+    assert.equal(h.ctx.officeLastOdometer_('LMS1', 'HP665805', '2026-10-20'), 2000);
+    assert.equal(h.call('daybook.add', fuel({ odometer_km: 1500 }), 'clerk-token').code, 'ODOMETER_BACKWARDS', 'a garbled row does not switch the check off');
+  });
+
   t.test('credit_settlement needs a bank account and a credit settles_account of the campus; settles_account elsewhere is NOT_A_SETTLEMENT', () => {
     const h = v2();
     const s = (x) => as(h, 'fh-token', Object.assign({ account: 'sbi1', mode: 'bank', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1' }, x));
     assert.equal(s({ account: 'cash:LMS1', mode: '', bucket: 'fee' }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', 'from cash');
     assert.equal(s({ account: 'pump1', mode: '' }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', 'from credit');
-    ['', undefined, 'nope', 'bank:LMS1', 'cash:LMS1', 'pump2', 'old1'].forEach((a) => assert.equal(s({ settles_account: a }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', String(a)));
+    ['', undefined, 'nope', 'bank:LMS1', 'cash:LMS1', 'sbi1', 'old1'].forEach((a) => assert.equal(s({ settles_account: a }).error, 'SETTLEMENT_ACCOUNT_REQUIRED', String(a)));
     assert.equal(as(h, 'fh-token', { direction: 'OUT', category: 'stationery', bucket: 'petty', settles_account: 'pump1' }).error, 'NOT_A_SETTLEMENT');
     assert.equal(as(h, 'fh-token', { direction: 'OUT', category: 'stationery', bucket: 'petty', settles: 'Stmt 12' }).error, 'NOT_A_SETTLEMENT', 'settles too (P9)');
     assert.equal(s({ id: 's1', settles: 'Stmt 12' }).success, true);
+    assert.equal(s({ id: 's2', settles_account: 'pump2' }).success, true, 'another campus pump (P10)');
+    assert.deepEqual([rowsOf(h).find((x) => x.id === 's2').settles_account, rowsOf(h, 'LMS2').length], ['pump2', 0], 'stays in the bank campus book');
     const r = rowsOf(h).find((x) => x.id === 's1');
     assert.deepEqual([r.account, r.mode, r.settles_account, r.settles], ['sbi1', 'bank', 'pump1', 'Stmt 12']);
   });
@@ -314,6 +331,8 @@ module.exports = function run(t) {
     as(h, 'fh-token', { id: 'b', account: 'bank:LMS1', mode: 'bank', bucket: '' });
     assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'b' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT');
     assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'b' }, 'fh-token').success, true);
+    as(h, 'fh-token', { id: 's', account: 'sbi1', mode: 'bank', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1' });
+    assert.equal(h.call('daybook.reverse', { id: 'rs', campus: 'LMS1', reverses: 's' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT', 'settlement');
   });
 
   t.test('an old-style row (no account) balances as cash and defaults account/charged_to; credit rows are not cash or bank', () => {

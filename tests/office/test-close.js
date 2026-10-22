@@ -182,6 +182,7 @@ module.exports = function run(t) {
     const cfg = h.ctx.officeConfigBook_();
     h.ctx.officeWriteRow_(cfg, 'Accounts', { id: 'pump1', label: 'Pump', kind: 'credit', campus: 'LMS1', active: 'true' });
     h.ctx.officeWriteRow_(cfg, 'Vehicles', { reg: 'HP665805', label: 'Bus 1', kind: 'bus', campus: 'LMS1', active: 'true' });
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
     add(h, { id: 'keep' });
     assert.equal(close(h, '2026-10-20').success, true);
     const fh = (o) => h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-20', account: 'bank:LMS1', direction: 'IN', category: 'other_in', amount_paise: 500 }, o), 'fh-token');

@@ -27,11 +27,11 @@ function officeRowChargedTo_(row) { return row.charged_to || row.campus; }
 function officeBlank_(v) { return v === undefined || v === null || v === ''; }
 
 // Fee Clerk / Admin Manager (no FinanceHead or Owner role, P8): own campus, cash accounts, credit bills only for
-// vehicle categories; no bank rows, settlements or cash transfers. Used by daybook.add and daybook.reverse.
+// vehicle categories; no bank rows or settlements (own cash transfers are allowed, P10). Used by daybook.add and daybook.reverse.
 function officeAssertAccountAllowed_(caller, acct, cat) {
   if (caller.roles.indexOf('FinanceHead') !== -1 || caller.roles.indexOf('Owner') !== -1) return;
   const id = cat && cat.id;
-  if (id === 'credit_settlement' || id === 'cash_transfer' || acct.kind === 'bank' ||
+  if (id === 'credit_settlement' || acct.kind === 'bank' ||
       (acct.kind === 'credit' && !(cat && cat.needs_vehicle)) ||
       (caller.campuses.indexOf('ALL') === -1 && caller.campuses.indexOf(acct.campus) === -1)) throw officeCoded_('FORBIDDEN_ACCOUNT');
 }
@@ -61,7 +61,7 @@ function officeDaybookAdd_(ctx, data) {
   let settlesAccount = '';
   if (cat.id === 'credit_settlement') {
     const sa = officeAccount_(String(data.settles_account || ''));
-    if (acct.kind !== 'bank' || !sa || !sa.active || sa.kind !== 'credit' || sa.campus !== data.campus) throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
+    if (acct.kind !== 'bank' || !sa || !sa.active || sa.kind !== 'credit') throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
     settlesAccount = sa.id;
   } else if (!officeBlank_(data.settles_account) || !officeBlank_(data.settles)) throw new Error('NOT_A_SETTLEMENT');
   // Credit is an expense when incurred, so only expense categories; cash_transfer moves cash only.
@@ -89,6 +89,9 @@ function officeDaybookAdd_(ctx, data) {
     if (typeof data.litres_ml !== 'number' || !Number.isSafeInteger(data.litres_ml) || data.litres_ml <= 0) throw new Error('LITRES_REQUIRED');
     if (typeof data.odometer_km !== 'number' || !Number.isSafeInteger(data.odometer_km) || data.odometer_km < 0) throw new Error('ODOMETER_REQUIRED');
     if (!data.file_id) throw officeCoded_('FILE_REQUIRED');
+    if (!officeRecentBooks_(data.campus).some(function (b) {
+      return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
+    })) throw officeCoded_('FILE_MISSING'); // same check as deposit.add
   } else if (!officeBlank_(data.litres_ml) || !officeBlank_(data.odometer_km)) throw new Error('BAD_FIELD');
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
@@ -112,7 +115,7 @@ function officeLastOdometer_(campus, vehicle, date) {
   const reversed = {};
   rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
   return rows.reduce(function (m, r) {
-    if (r.category !== 'fuel' || r.reverses || reversed[r.id] || r.entry_date > date || r.odometer_km === '' || officeNormReg_(r.vehicle) !== vehicle) return m;
+    if (r.category !== 'fuel' || r.reverses || reversed[r.id] || r.entry_date > date || typeof r.odometer_km !== 'number' || !isFinite(r.odometer_km) || officeNormReg_(r.vehicle) !== vehicle) return m;
     return Math.max(m, r.odometer_km);
   }, -1);
 }
