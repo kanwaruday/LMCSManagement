@@ -3,7 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst } = await import('../../office/js/daybook.js');
+  const { mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -25,6 +25,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(canReverse(mergeQueued([row('dep1:in', { mode: 'bank', bucket: '', category: 'deposit_bank_in' })], [], '2026-10-21')[0]), false);
   // a queued entry that the server already has (flushed between reads) is not shown twice
   assert.strictEqual(mergeQueued([row('n1')], [q('n1', 'waiting', { entry_date: '2026-10-21' })], '2026-10-21').length, 1);
+  // loadConfig: fetched every visit, saved to the cache; offline or refused keeps the cache (null)
+  let saved = null, nCalls = 0;
+  const conf = { success: true, categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'] };
+  assert.deepStrictEqual(await loadConfig({ read: async () => { nCalls++; return conf; } }, (c) => { saved = c; }), { categories: [1], accounts: [2], vehicles: [3], campuses: ['LMS1'] });
+  assert.deepStrictEqual(saved.vehicles, [3]); assert.strictEqual(nCalls, 1);
+  saved = null;
+  for (const r of [{ success: false }, { success: true, stale: true }]) assert.strictEqual(await loadConfig({ read: async () => r }, (c) => { saved = c; }), null);
+  assert.strictEqual(await loadConfig({ read: async () => { throw new Error('offline'); } }, (c) => { saved = c; }), null);
+  assert.strictEqual(saved, null);
+  console.log('  ok  - loadConfig refreshes once and keeps the cache on failure');
   console.log('  ok  - mergeQueued marks unsynced, dates, reversals');
 
   // v2 form helpers
@@ -140,7 +150,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   const g = inflightGuard(); let calls = 0, release;
   const slow = () => new Promise((res) => { calls++; release = res; });
   const first = g('a', slow); const second = await g('a', slow);
-  assert.strictEqual(second, false); assert.strictEqual(calls, 1);
+  assert.strictEqual(second, false); assert.strictEqual(nCalls, 1);
   release(); assert.strictEqual(await first, true);
   assert.strictEqual(await g('a', async () => { calls++; }), true); assert.strictEqual(calls, 2); // free again after it resolves
   console.log('  ok  - inflightGuard ignores a second call while the first is pending');

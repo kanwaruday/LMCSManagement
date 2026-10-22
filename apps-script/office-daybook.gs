@@ -54,6 +54,8 @@ function officeDaybookAdd_(ctx, data) {
   if (cat.direction !== data.direction) throw new Error('DIRECTION_MISMATCH');
 
   // Money account: who may use it, then that it is this campus's, then what it may carry.
+  // Entries queued before accounts existed carry none: cash or bank of their own campus.
+  if (officeBlank_(data.account)) data.account = (data.mode === 'cash' ? 'cash:' : 'bank:') + data.campus;
   const acct = officeAccount_(String(data.account || ''));
   if (!acct || !acct.active) throw new Error('BAD_ACCOUNT');
   officeAssertAccountAllowed_(ctx.caller, acct, cat);

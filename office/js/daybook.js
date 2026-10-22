@@ -154,6 +154,15 @@ export function balancesTable(b) {
     h('tbody', {}, rows.map(([name, get]) => h('tr', {}, h('td', {}, name), [b.opening, b.in, b.out, b.closing].map((x) => h('td', {}, formatInr(get(x))))))));
 }
 
+// One config.get; the fresh config (and its cache write), or null when offline/refused so the cached copy stays.
+export async function loadConfig(api, save) {
+  const conf = await api.read('config.get', {}, 'dbcfg').catch(() => null);
+  if (!conf || !conf.success || conf.stale) return null;
+  const cfg = { categories: conf.categories, accounts: conf.accounts, vehicles: conf.vehicles, campuses: conf.campuses };
+  save(cfg);
+  return cfg;
+}
+
 export async function showDayBook(root, session, api, outbox) {
   const campus = session.campus;
   let date = todayIst();
@@ -311,13 +320,11 @@ export async function showDayBook(root, session, api, outbox) {
     loaded = { ...loaded, entries };
     paintList();
     const to = todayIst() < fyEnd(date) ? todayIst() : fyEnd(date);
-    const [list, bal, conf] = await Promise.all([
+    const [list, bal] = await Promise.all([
       api.read('daybook.list', { campus, from: date, to }, 'dblist'),
       api.read('daybook.balances', { campus, date }, 'dbbal'),
-      cfg.accounts.length ? Promise.resolve(null) : api.read('config.get', {}, 'dbcfg'),
     ]);
     if (my !== seq) return; // a newer refresh (date change) owns the screen
-    if (conf && conf.success) { cfg = { categories: conf.categories, accounts: conf.accounts, vehicles: conf.vehicles, campuses: conf.campuses }; cacheSet('config', cfg); paintForm(); paintList(); }
     if (list.stale || bal.stale) return;
     if (list.success) { loaded = { rows: list.entries, entries, ok: true }; cacheSet('daybook:' + campus + ':' + date, list.entries); listNote.textContent = ''; }
     else {
@@ -336,5 +343,6 @@ export async function showDayBook(root, session, api, outbox) {
   root.replaceChildren(h('h2', {}, 'Day Book'), form, h('h3', {}, 'Entries'), listNote, listEl, h('h3', {}, 'Balances for the day'), balEl);
   window.addEventListener('online', () => refresh());
   setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 30000);
+  loadConfig(api, (c) => cacheSet('config', c)).then((c) => { if (c) { cfg = c; paintForm(); paintList(); } }); // once per visit; paintForm keeps valid selections (P13)
   await refresh();
 }

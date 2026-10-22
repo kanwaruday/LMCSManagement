@@ -55,7 +55,6 @@ export const CODES = {
   MISSING_DEPOSIT: 'The deposit was not found. Refresh and try again.',
   MISSING_ID: 'The entry has no id. Discard it and enter it again.',
   MISSING_CAMPUS: 'No campus was given. Discard it and enter it again.',
-  BAD_CAMPUS: 'The campus was not accepted.',
   BANK_REF_REQUIRED: 'Enter the bank reference.',
   REASON_REQUIRED: 'A reason is required.',
   BAD_HOURLY: 'The hourly notes in the report were not accepted.',

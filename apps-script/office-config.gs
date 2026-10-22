@@ -177,17 +177,20 @@ function officeConfigActions_() {
   };
 }
 
-// The Office Config book with Categories and Limits created and seeded if missing.
+// The Office Config book with every seed tab present (created if missing). Only Accounts and Vehicles get a
+// header check (Limits and the retired Categories tab are left as they are). Checked once per request.
 function officeConfigBook_() {
   const ss = officeConfig_();
+  if (OFFICE_MEMO && OFFICE_MEMO.books.OFFICE_CONFIG_CHECKED) return ss;
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (tab === 'Accounts' || tab === 'Vehicles') officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
   });
+  if (OFFICE_MEMO) OFFICE_MEMO.books.OFFICE_CONFIG_CHECKED = true;
   return ss;
 }
 

@@ -162,4 +162,13 @@ module.exports = function run(t) {
     const h = fresh();
     assert.deepEqual(J(h.ctx.officeOpening_(h.ctx.officeOpen_('LMS1', '2026-27'))), { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 });
   });
+
+  t.test('one request checks the Config headers once, on Accounts and Vehicles only', () => {
+    const h = fresh();
+    h.call('config.get', {}, 'clerk-token'); // creates the tabs
+    const real = h.ctx.officeEnsureHeader_, seen = [];
+    h.ctx.officeEnsureHeader_ = (sheet, cols) => { seen.push(sheet.getName()); return real(sheet, cols); };
+    assert.equal(h.call('config.get', {}, 'clerk-token').success, true);
+    assert.deepEqual(seen.slice().sort(), ['Accounts', 'Vehicles']);
+  });
 };

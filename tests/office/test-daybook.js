@@ -150,7 +150,7 @@ module.exports = function run(t) {
 
   t.test('account is required, must exist, be active and belong to the entry campus (BAD_ACCOUNT)', () => {
     const h = v2();
-    [undefined, '', 'nope', 'old1', 'cash:LMS2', 'pump2'].forEach((a) => assert.equal(as(h, 'owner-token', { account: a, mode: '', bucket: '', direction: 'OUT', category: 'fuel' }).error, 'BAD_ACCOUNT', String(a)));
+    ['nope', 'old1', 'cash:LMS2', 'pump2'].forEach((a) => assert.equal(as(h, 'owner-token', { account: a, mode: '', bucket: '', direction: 'OUT', category: 'fuel' }).error, 'BAD_ACCOUNT', String(a)));
     assert.equal(as(h, 'owner-token', { account: 'cash:LMS2' }).error, 'BAD_ACCOUNT');
     assert.equal(rowsOf(h).length, 0);
   });
@@ -333,6 +333,16 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'b' }, 'fh-token').success, true);
     as(h, 'fh-token', { id: 's', account: 'sbi1', mode: 'bank', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1' });
     assert.equal(h.call('daybook.reverse', { id: 'rs', campus: 'LMS1', reverses: 's' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT', 'settlement');
+  });
+
+  t.test('a v1-shaped entry with no account saves to the campus cash or bank account (pre-deploy outbox)', () => {
+    const h = fresh();
+    const v1 = (o) => { const d = e(o); delete d.account; return d; };
+    assert.equal(h.call('daybook.add', v1({ id: 'v1c' }), 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'v1c').account, 'cash:LMS1');
+    const cat = h.call('config.get', {}, 'owner-token').categories.find((c) => c.id === 'fee_online');
+    assert.equal(h.call('daybook.add', v1({ id: 'v1b', mode: 'upi', bucket: '', category: 'fee_online' }), 'owner-token').success, true, cat && cat.id);
+    assert.equal(rowsOf(h).find((r) => r.id === 'v1b').account, 'bank:LMS1');
   });
 
   t.test('an old-style row (no account) balances as cash and defaults account/charged_to; credit rows are not cash or bank', () => {
