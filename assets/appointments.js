@@ -15,7 +15,8 @@ var LMCSAppts = (function () {
       (a.note ? '<div class="ap-sub">' + esc_(a.note) + '</div>' : '');
   }
   function retry_(a) {
-    return '<div class="ap-sub">Calendar not updated — <button type="button" class="ap-link" data-act="retry" data-id="' + esc_(a.id) + '">Retry</button></div>';
+    return '<div class="ap-sub">Calendar not updated — <button type="button" class="ap-link" data-act="retry" data-id="' + esc_(a.id) + '">Retry</button>' +
+      (a.calendarError ? '<div class="ap-sub" style="font-size:11px;opacity:.8">' + esc_(String(a.calendarError).slice(0, 220)) + '</div>' : '') + '</div>';
   }
   // email / campusId = the viewer's. Retry (as apptCalendarRetry_ allows) for the acceptor -- an Owner override's
   // decidedBy ends " (override)" -- and, on a migrated booking (decidedBy 'migration'), for a Principal covering its
