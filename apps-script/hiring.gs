@@ -1147,7 +1147,7 @@ function hirSalaryOfferGateCheck_(applicantId, decision) {
   if (!row) return { ok: false, error: 'Could not identify the applicant from this request’s Item field (expected a "T-0000" style ID).' };
   const mdInterviewAt = hirSheet_().getRange(row, HIR_COL.MD_INTERVIEW_AT).getValue();
   if (!mdInterviewAt) {
-    return { ok: false, error: 'Can’t decide this yet -- the MD Academics interview hasn’t been recorded for this candidate on the Hiring Dashboard.' };
+    return { ok: false, error: 'Can’t decide this yet -- the MD Academics interview hasn’t been recorded for this candidate on the Hiring Dashboard yet' };
   }
   return { ok: true };
 }

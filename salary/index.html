@@ -631,9 +631,14 @@ function recordSalaryOffer_() {
     showLoading_('Submitting for Owner approval…');
     gasPost_('submitapproval', {
       category: 'Salary Offer Approval',
-      title: 'Salary Offer — ' + name + (role ? ' (' + role + ')' : ''),
-      description: (role ? role + ' at ' + LMCS.campusLabel(campus) + '. ' : '') +
-        'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo.',
+      // 2026-10-23, per Uday: what the Owner actually decides here, after the MD Academics interview, is
+      // whether to CONFIRM THE APPOINTMENT (approving unlocks 'Hiring Approved' and the Principal's Hired
+      // click) -- not just a salary figure. Category stays 'Salary Offer Approval' (matched by hiring.gs,
+      // payroll.gs, the coordinator portal); only the wording the Owner reads changes.
+      title: 'Appointment Confirmation — ' + name + (role ? ' (' + role + ')' : ''),
+      description: 'Confirm the appointment of ' + name + (role ? ' as ' + role : '') + ' at ' + LMCS.campusLabel(campus) + ' (' + APPLICANT_ID + '), after the MD Academics interview. ' +
+        'Proposed pay: CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo. ' +
+        'Approving lets the Principal complete the hire.',
       itemName: APPLICANT_ID + ' — ' + name,
     }).then(function (aprRes) {
       SALARY_OFFER_ALREADY_SUBMITTED = true;

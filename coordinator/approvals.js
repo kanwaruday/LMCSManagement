@@ -8,8 +8,11 @@ window.CoordApprovals = (function () {
   const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
   const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+  const catLabel = c => c === 'Salary Offer Approval' ? 'Appointment Confirmation' : c; // the Owner confirms an appointment (stored name unchanged)
   const NO_REFER = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
   const STATUS_PILLS = ['Needs Action', 'All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
+  // An Appointment Confirmation whose MD interview isn't on the Hiring Dashboard yet can't be approved (server gate), so it isn't "needs action".
+  const isNeed = r => ['Pending', 'Info Requested'].indexOf(r.status) !== -1 && !r.awaitingMd;
   const NEEDS = ['Pending', 'Info Requested'], DECIDED = ['Approved', 'Rejected', 'Revoked'];
   const REFER_KINDS = [['action', 'For Action'], ['accountability', 'For Accountability'], ['information', 'For Information']];
   const STALE_DAYS = 3;
@@ -132,7 +135,7 @@ window.CoordApprovals = (function () {
         S.res = res;
         if (res.canDecide) loadReferees();
         renderPickers(); renderList();
-        const needs = res.requests.filter(r => NEEDS.indexOf(r.status) !== -1).length;
+        const needs = res.requests.filter(r => isNeed(r)).length;
         const unallocated = res.requests.filter(r => !r.archived && fuState(r) === 'none').length;
         setBar('ok', '✓ Loaded ' + res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' · ' + needs + ' need action' + (unallocated ? ' · ' + unallocated + ' approved with no follow-up' : '') + ' · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (res.canDecide ? '' : ' · view only: you do not have decision rights'));
       } catch (err) { $('list').innerHTML = '<div class="dash-empty">Couldn’t reach the Approvals backend: ' + esc(err.message) + '</div>'; setBar('err', 'Couldn’t reach the Approvals backend: ' + esc(err.message), true); }
@@ -152,10 +155,10 @@ window.CoordApprovals = (function () {
     function sortRows(rows) {
       if (S.sortKey) {
         const val = { school: r => r.campusId, title: r => r.title.toLowerCase(), category: r => r.category, urgency: r => r.urgency === 'Urgent' ? 0 : 1, status: r => r.status,
-          date: r => NEEDS.indexOf(r.status) !== -1 ? r.requestedAt : (r.decidedAt || r.requestedAt) }[S.sortKey];
+          date: r => isNeed(r) ? r.requestedAt : (r.decidedAt || r.requestedAt) }[S.sortKey];
         return rows.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * S.sortDir || b.requestedAt.localeCompare(a.requestedAt); });
       }
-      const need = rows.filter(r => NEEDS.indexOf(r.status) !== -1), done = rows.filter(r => NEEDS.indexOf(r.status) === -1);
+      const need = rows.filter(r => isNeed(r)), done = rows.filter(r => !isNeed(r));
       need.sort((a, b) => (a.urgency === 'Urgent') !== (b.urgency === 'Urgent') ? (a.urgency === 'Urgent' ? -1 : 1) : a.requestedAt.localeCompare(b.requestedAt)); // urgent first, then oldest first
       done.sort((a, b) => (b.decidedAt || b.requestedAt).localeCompare(a.decidedAt || a.requestedAt));
       return need.concat(done);
@@ -164,7 +167,7 @@ window.CoordApprovals = (function () {
     function renderList() {
       if (!S.res) return;
       let rows = S.res.requests.slice();
-      if (S.status === 'Needs Action') rows = rows.filter(r => NEEDS.indexOf(r.status) !== -1); else if (S.status !== 'All') rows = rows.filter(r => r.status === S.status);
+      if (S.status === 'Needs Action') rows = rows.filter(r => isNeed(r)); else if (S.status !== 'All') rows = rows.filter(r => r.status === S.status);
       if (S.cat !== 'All') rows = rows.filter(r => r.category === S.cat);
       if (S.school !== 'All') rows = rows.filter(r => r.campusId === S.school);
       if (S.fu !== 'All') rows = rows.filter(r => fuState(r) === S.fu);
@@ -182,7 +185,7 @@ window.CoordApprovals = (function () {
       const head = '<thead><tr>' + (canSel ? '<th style="width:28px;cursor:default"><input type="checkbox" data-act="selall" title="Select all" ' + (elig && sel === elig ? 'checked ' : '') + (elig ? '' : 'disabled') + '></th>' : '') +
         th('school', 'School', '<select class="hsel" data-f="school">' + opts(CAMPUSES.map(c => [c, school(c)]), S.school, 'All schools') + '</select>') +
         th('title', 'Title', '<input class="hsel" data-f="search" type="text" placeholder="Search…" value="' + esc(S.search) + '" style="width:100%">') +
-        th('category', 'Category', '<select class="hsel" data-f="cat">' + opts(CATEGORIES.map(c => [c, c]), S.cat, 'All categories') + '</select>') + th('urgency', 'Urgency') + th('status', 'Status') +
+        th('category', 'Category', '<select class="hsel" data-f="cat">' + opts(CATEGORIES.map(c => [c, catLabel(c)]), S.cat, 'All categories') + '</select>') + th('urgency', 'Urgency') + th('status', 'Status') +
         '<th style="cursor:default;vertical-align:top">Follow-up<select class="hsel" data-f="fu">' + opts([['none', 'Not allocated'], ['open', 'Open'], ['overdue', 'Overdue'], ['done', 'Done']], S.fu, 'All follow-ups') + '</select></th>' +
         th('date', 'Age / Decided', sel ? '<button type="button" class="hsel" style="cursor:pointer;font-weight:700" data-act="archsel">' + (S.view === 'Archive' ? 'Unarchive ' : 'Archive ') + sel + ' selected</button>' : '') + '</tr></thead>';
       let body;
@@ -202,11 +205,11 @@ window.CoordApprovals = (function () {
       return st === 'done' ? '<span class="pill ok">Done</span> <span class="sm">' + who + '</span>' : '<span class="' + (st === 'overdue' ? 'late' : '') + '">' + who + ' \u00b7 due ' + dueLabel(f.due) + (st === 'overdue' ? ' (overdue)' : '') + '</span>';
     }
     function rowHtml(r) {
-      const open = S.openId === r.id, needs = NEEDS.indexOf(r.status) !== -1, stale = needs && isStale(r.requestedAt), canSel = !!S.res.canDecide, cols = 7 + (canSel ? 1 : 0);
+      const open = S.openId === r.id, needs = isNeed(r), stale = needs && isStale(r.requestedAt), canSel = !!S.res.canDecide, cols = 7 + (canSel ? 1 : 0);
       const date = needs ? '<span' + (stale ? ' class="stalet"' : '') + '>' + age(r.requestedAt) + '</span>' : ddmmyyyy(r.decidedAt || r.requestedAt);
       let h = '<tr class="row' + (open ? ' open' : '') + (stale ? ' stale' : '') + '" data-act="row" data-id="' + esc(r.id) + '">' +
         (canSel ? '<td data-stop="1">' + (S.eligible[r.id] ? '<input type="checkbox" data-act="sel" data-id="' + esc(r.id) + '" ' + (S.selected[r.id] ? 'checked' : '') + '>' : '') + '</td>' : '') +
-        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + '</td><td>' + esc(r.category) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
+        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + (r.awaitingMd ? '<div class="sm">\u23F3 Waiting for the MD Academics interview to be recorded on the Hiring Dashboard</div>' : '') + '</td><td>' + esc(catLabel(r.category)) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
         '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + fuCell(r) + '</td><td>' + date + '</td></tr>';
       if (open) h += '<tr class="detail"><td colspan="' + cols + '"><div class="dwrap" data-slot="detail">' + (S.detail ? detailInner(S.detail) : '<div class="empty">Loading…</div>') + '</div></td></tr>';
       return h;
@@ -250,7 +253,7 @@ window.CoordApprovals = (function () {
       const allocNow = ctx.post && FOLLOW_SKIP.indexOf(r.category) === -1 ? '<div style="width:100%;margin-bottom:8px"><span class="sm">Optional: if you approve, also allocate the follow-up to</span> <select data-fa-who="' + esc(r.id) + '"><option value="">nobody yet</option>' +
         (ctx.people ? ctx.people() : []).map(c => '<option value="' + esc(c.email) + '">' + esc(c.name || c.email) + '</option>').join('') + '</select> <span class="sm">due</span> <input type="date" data-fa-due="' + esc(r.id) + '" value="' + plusDays(7) + '" min="' + isoDay(new Date()) + '" style="width:auto"></div>' : '';
       if (res.canDecide && (r.status === 'Pending' || r.status === 'Info Requested')) bar = '<div class="bar"><input type="text" class="note" data-note="' + esc(r.id) + '" placeholder="Note explaining the decision (required)">' + allocNow + refer +
-        ['Approved|approve|Approve', 'Rejected|reject|Reject', 'Info Requested|info|Request Info'].map(x => { const p = x.split('|'); return '<button type="button" class="' + p[1] + '" data-act="decide" data-id="' + esc(r.id) + '" data-v="' + p[0] + '">' + p[2] + '</button>'; }).join('') + '</div>';
+        ['Approved|approve|Approve', 'Rejected|reject|Reject', 'Info Requested|info|Request Info'].filter(x => !(r.awaitingMd && x.startsWith('Approved'))).map(x => { const p = x.split('|'); return '<button type="button" class="' + p[1] + '" data-act="decide" data-id="' + esc(r.id) + '" data-v="' + p[0] + '">' + p[2] + '</button>'; }).join('') + '</div>';
       else if (res.canDecide && r.status === 'Approved') bar = '<div class="bar"><input type="text" class="note" data-note="' + esc(r.id) + '" placeholder="Reason for revoking (required)">' + refer + '<button type="button" class="revoke" data-act="decide" data-id="' + esc(r.id) + '" data-v="Revoked">Revoke</button></div>';
       if (res.canDecide && DECIDED.indexOf(r.status) !== -1) bar += '<div class="bar"><button type="button" class="revoke" data-act="archone" data-id="' + esc(r.id) + '" data-v="' + (r.archived ? 'false' : 'true') + '">' + (r.archived ? 'Unarchive' : 'Archive') + '</button></div>';
       if (r.referredTo) bar = '<div class="desc"><b>Referred to:</b> ' + esc(r.referredTo) + '</div>' + bar;

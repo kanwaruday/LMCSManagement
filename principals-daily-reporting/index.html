@@ -2135,6 +2135,9 @@ let aprExpandedDetail = null;   // {request, comments} for the open row
 // innerHTML template -- same reasoning addItemDirect() uses .textContent
 // for typed list items elsewhere on this page, just needed here as a
 // string escape since these get interpolated into larger HTML blocks.
+// 2026-10-23, per Uday: the Owner is confirming an appointment, so the stored category 'Salary Offer Approval'
+// (matched by hiring.gs/payroll.gs/coordinator) is DISPLAYED as 'Appointment Confirmation' in the list.
+function aprCatLabel_(c) { return c === 'Salary Offer Approval' ? 'Appointment Confirmation' : c; }
 function aprEsc_(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -2493,7 +2496,7 @@ function renderApprovalsForSelectedCampus() {
   };
   const head = '<thead><tr>' +
     th('title', 'Title', '<input id="aprSearch" type="text" placeholder="Search…" value="' + aprEsc_(APR_SEARCH) + '" style="' + box + '" onclick="event.stopPropagation()" oninput="aprSetSearch(this.value)">') +
-    th('category', 'Category', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSelectCategoryFilter(this.value)">' + opts(APR_CATEGORIES.map(function (c) { return [c, c]; }), APR_CATEGORY_FILTER, 'All categories') + '</select>') +
+    th('category', 'Category', '<select style="' + box + '" onclick="event.stopPropagation()" onchange="aprSelectCategoryFilter(this.value)">' + opts(APR_CATEGORIES.map(function (c) { return [c, aprCatLabel_(c)]; }), APR_CATEGORY_FILTER, 'All categories') + '</select>') +
     th('urgency', 'Urgency') + th('status', 'Status') + th('date', 'Age / Decided') +
     '</tr></thead>';
 
@@ -2592,7 +2595,7 @@ function aprRowHtml_(r) {
     ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
     : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
-    '<td>' + aprEsc_(r.title) + (aprReasonLine_(r) ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprReasonLine_(r) + '</div>' : '') + '</td><td>' + aprEsc_(r.category) + '</td>' +
+    '<td>' + aprEsc_(r.title) + (aprReasonLine_(r) ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprReasonLine_(r) + '</div>' : '') + '</td><td>' + aprEsc_(aprCatLabel_(r.category)) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span>' + aprFollowUpLine_(r) + '</td>' +
     '<td>' + dateCell + '</td></tr>';

@@ -197,6 +197,7 @@ function aprList_(caller) {
     out.push(aprRowToObj_(row));
   }
   out.sort(function (a, b) { return b.requestedAt.localeCompare(a.requestedAt); });
+  aprAnnotateAwaitingMd_(out);
   return { success: true, requests: out, canDecide: aprCanDecide_(caller) };
 }
 
@@ -214,9 +215,29 @@ function aprDetail_(caller, id) {
     } else if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) {
       return { success: false, error: 'Not authorized for that campus' };
     }
-    return { success: true, request: aprRowToObj_(values[i]), comments: aprComments_(id), canDecide: aprCanDecide_(caller) };
+    const req = aprRowToObj_(values[i]);
+    aprAnnotateAwaitingMd_([req]);
+    return { success: true, request: req, comments: aprComments_(id), canDecide: aprCanDecide_(caller) };
   }
   return { success: false, error: 'Request not found' };
+}
+
+// 2026-10-23, per Uday: an Appointment Confirmation (category 'Salary Offer Approval') is filed when the
+// offer is recorded, but the Owner can only APPROVE it once the MD Academics interview is on the Hiring
+// Dashboard (hirSalaryOfferGateCheck_) -- so the Owner was offered an Approve button that always failed.
+// Flags such open requests `awaitingMd` so the portals hold them out of "Needs Action" and hide Approve.
+// One column read; best-effort (a hiccup just leaves the flag off, the server gate still protects).
+function aprAnnotateAwaitingMd_(list) {
+  const open = list.filter(function (o) { return o.category === 'Salary Offer Approval' && (o.status === APR_STATUS.PENDING || o.status === APR_STATUS.INFO_REQUESTED); });
+  if (!open.length) return;
+  try {
+    const sheet = hirSheet_(), last = sheet.getLastRow();
+    const md = last > 1 ? sheet.getRange(2, HIR_COL.MD_INTERVIEW_AT, last - 1, 1).getValues() : [];
+    open.forEach(function (o) {
+      const m = String(o.itemName || '').match(/T-(\d{4})/), row = m ? parseInt(m[1], 10) : 0;
+      o.awaitingMd = !!row && !(md[row - 2] && md[row - 2][0]);
+    });
+  } catch (err) { /* leave the flag off */ }
 }
 
 function aprComments_(approvalId) {
