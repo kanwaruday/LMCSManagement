@@ -213,6 +213,7 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
         <span class="dir-count" id="docCount"></span>
       </div>
       <div class="dir-school-tabs" id="docSchoolTabs"></div>
+      <div id="docNotes"></div>
       <div id="docBody">Loading…</div>
     </div>
 
@@ -559,6 +560,7 @@ function renderDocumentStatus() {
 
   if (!schools.length) {
     document.getElementById('docSchoolTabs').innerHTML = '';
+    document.getElementById('docNotes').innerHTML = '';
     document.getElementById('docBody').innerHTML = '<div class="dir-empty">No employees to show.</div>';
     return;
   }
@@ -574,9 +576,11 @@ function renderDocumentStatus() {
   const types = DOC_TYPES.filter(function (t) {
     return list.some(function (r) { return r.documents[t.full] || docNeed(r, t.full) !== 'N'; });
   });
-  document.getElementById('docBody').innerHTML =
+  // Legend and upload errors sit outside the sideways-scrolling box, so its scroll shadow never covers them.
+  document.getElementById('docNotes').innerHTML =
     '<div class="doc-legend"><span class="dm dm-ok">✓</span> uploaded (opens the file) <span class="dm dm-req">✗</span> required, missing <span class="dm dm-opt">+</span> optional, not uploaded <span class="dm dm-na">·</span> not needed for this role &nbsp;— click ✗ or + to upload</div>' +
-    docErrorsHtml(list) +
+    docErrorsHtml(list);
+  document.getElementById('docBody').innerHTML =
     '<table class="dm-grid"><thead><tr><th class="dm-name">Name</th><th class="dm-vert"><span>Missing</span></th>' +
     types.map(function (t) { return '<th class="dm-vert" title="' + esc(t.full) + '"><span>' + esc(t.short) + '</span></th>'; }).join('') +
     '</tr></thead><tbody>' +
@@ -750,7 +754,9 @@ document.getElementById('docBody').addEventListener('change', async function (e)
     const row = documentStatusRows.find(function (r) { return r.employeeCode === code; });
     if (row) row.documents[type] = { count: 1, driveLink: json.link };
   } catch (err) {
-    docUploadErrors[key] = 'Not uploaded: ' + err.message;
+    docUploadErrors[key] = /permission/i.test(err.message)
+      ? 'Not uploaded: the upload service isn\'t allowed to save files yet. Ask the Owner to approve Drive access for the staff backend (one-time).'
+      : 'Not uploaded: ' + err.message;
   } finally {
     delete docUploading[key];
     renderDocumentStatus();
