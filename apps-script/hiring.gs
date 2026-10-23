@@ -89,6 +89,8 @@ const HIR_COL = {
   REJECT_REASON: 19, REVIVED_AT: 20, HISTORY: 21, SOURCE: 22, ADDED_BY: 23, STAGE_MARKS: 24, DEMO_AT: 25,
   // Hiring v2: the Principal's shortlist call (Z, AA).
   SHORTLISTED_AT: 26, SHORTLISTED_BY: 27,
+  // 2026-10-23, per Uday: when the Principal pressed "Start Hiring Process" (the hire was added to the Employee Master).
+  HIRING_STARTED_AT: 28,
 };
 
 // 2026-10-22, per Uday: 'Interview & Demo Done' split in two -- the paper report became two portal
@@ -225,6 +227,7 @@ function hirRowApplicant_(r, i, ctx) {
     salaryOfferAt: hirSafeISO_(r[HIR_COL.SALARY_OFFER_AT - 1]),
     employeeCode: String(r[HIR_COL.EMP_CODE - 1] || '').trim(),
     dateOfJoining: hirDojStr_(r[HIR_COL.DOJ - 1]),
+    hiringStartedAt: hirSafeISO_(r[HIR_COL.HIRING_STARTED_AT - 1]),
     offerBreakdown: hirParseJson_(r[HIR_COL.OFFER_BREAKDOWN - 1]),
     rejectReason: String(r[HIR_COL.REJECT_REASON - 1] || '').trim(),
     revivedAt: hirSafeISO_(r[HIR_COL.REVIVED_AT - 1]),
@@ -2027,6 +2030,41 @@ function hiringConfirmReject_(caller, body) {
     sheet.getRange(r.row, HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
   });
   return hiringApplicants_(caller);
+}
+
+// "LMCS Employee Roster Proxy" web app (apps-script/staff-management-api.gs) -- the same URL payroll.gs uses.
+const HIR_ROSTER_WEB_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
+
+// action=hiringstarthire {row, role} -- 2026-10-23, per Uday: at Joining & Documents the Principal presses "Start Hiring
+// Process". It locks the employee code (from the saved Date of Joining), adds the hire to the Employee Master through the Roster
+// Proxy's 'starthire' (so the Staff Portal's Documents page lists them for the Fee Clerk), and stamps the start time. Safe to
+// repeat: the code lock and the roster add are both idempotent. Needs the Owner's approval and a saved joining date.
+function hiringStartHire_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const applicantId = hirApplicantId_(r.row);
+  if (!hirIsHiringApproved_(applicantId)) throw new Error('The Owner has not approved hiring this candidate yet.');
+  const doj = hirDojStr_(sheet.getRange(r.row, HIR_COL.DOJ).getValue());
+  if (!doj) throw new Error('Save the Date of Joining first.');
+  const campus = hirHiringCampus_(applicantId, r.branches, hirSalaryOfferCampuses_());
+  const prefix = HIR_SCHOOL_PREFIX[campus];
+  if (!prefix) throw new Error('Could not work out which school is hiring this candidate.');
+  const locked = hirLockEmployeeCode_(sheet, r.row, prefix, '', hirRosterCodes_(), doj);
+  if (!locked) throw new Error('Another save is in progress -- try again in a moment.');
+  const url = HIR_ROSTER_WEB_URL + '?action=starthire&idToken=' + encodeURIComponent(body.idToken || '') +
+    '&data=' + encodeURIComponent(JSON.stringify({ applicantId: applicantId, school: campus, role: String(body.role || '').slice(0, 120) }));
+  let res;
+  try { res = JSON.parse(UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText()); }
+  catch (err) { throw new Error('Could not reach the Staff Roster to add the employee -- try again.'); }
+  if (!res || !res.success) throw new Error('Could not add the employee to the Staff Roster: ' + ((res && res.error) || 'unknown error'));
+  if (sheet.getMaxColumns() < HIR_COL.HIRING_STARTED_AT) sheet.insertColumnsAfter(sheet.getMaxColumns(), HIR_COL.HIRING_STARTED_AT - sheet.getMaxColumns());
+  const cell = sheet.getRange(r.row, HIR_COL.HIRING_STARTED_AT);
+  if (!cell.getValue()) cell.setValue(new Date());
+  if (!String(sheet.getRange(1, HIR_COL.HIRING_STARTED_AT).getValue() || '').trim()) sheet.getRange(1, HIR_COL.HIRING_STARTED_AT).setValue('Hiring Process Started At');
+  const out = hiringApplicants_(caller);
+  out.employeeCode = res.employeeCode || locked.code;
+  return out;
 }
 
 // Editor-run, once: creates the "Hiring scans" Drive folder and stores its id in HIR_SCAN_FOLDER_ID (kept if set).

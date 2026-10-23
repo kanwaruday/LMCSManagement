@@ -273,6 +273,7 @@ function salaryLinkUrl_(a) {
   if (role && role.subjects) p.set('subjects', role.subjects);
   return '../salary/index.html?' + p.toString();
 }
+const DOCS_PAGE_ = '../staff/add-employee.html?view=documents'; // the Staff Portal's Documents page
 function docFormUrl_(a) {
   const school = campusOf_(a), cfg = DOC_FORM_PREFILL[school];
   if (!cfg) return DOC_FORM_URLS[school] || '';
@@ -380,7 +381,8 @@ function renderToday_() {
     return function (s) { return cardHtml_(s.a, KIND_LABEL[s.appt.kind] + ' ' + fmt(s.appt.start), { act: s.appt.kind, label: KIND_LABEL[s.appt.kind] + ' report' }, calRetryBtn_(s.appt)); };
   };
   return section_('scheduled', 'Today', t.today.map(card(fmtTime_)), 'Nothing booked for today.') +
-    section_('upcoming', 'Next 7 days', t.next.map(card(fmtWhen_)), 'Nothing booked for the coming week.');
+    section_('upcoming', 'Next 7 days', t.next.map(card(fmtWhen_)), 'Nothing booked for the coming week.') +
+    section_('furthest', 'Furthest along', HV.furthest_(visible_(), Date.now(), 5).map(function (a) { return cardHtml_(a, '', undefined); }), 'Nobody is in progress yet.');
 }
 
 // Appointments: proposals waiting for me (Accept, or Decline with a note), then what I proposed.
@@ -606,7 +608,14 @@ function renderPanel_(row) {
     else if (!a.dateOfJoining && a.status === 'Hiring Approved') h += '<div class="note" style="margin-top:8px">The Employee ID and the document form appear once the joining date is saved.</div>';
     if (a.docsMissing && a.docsMissing.length) h += '<div class="note" style="margin-top:6px">Still waiting on: <b>' + esc_(a.docsMissing.join(', ')) + '</b></div>';
     else if (a.docsComplete) h += '<div class="note" style="margin-top:6px">✓ All compulsory documents are in.</div>';
-    h += '<div class="foot">' + (docUrl && a.dateOfJoining ? '<a class="btn" href="' + esc_(docUrl) + '" target="_blank" rel="noopener">🔗 Document Submission Form</a>' : '') +
+    // 2026-10-23, per Uday: "Start Hiring Process" adds the hire to the Employee Master (so the Fee Clerk can upload documents on
+    // the Staff Portal's Documents page) and takes the Principal there; replaces the Google Document Submission Form link.
+    if (a.status === 'Hiring Approved' && a.dateOfJoining) {
+      if (a.hiringStartedAt) h += '<div class="note" style="margin-top:6px">✓ Hiring process started — they are on the Documents page for the Fee Clerk.</div>';
+      else h += '<div class="note" style="margin-top:6px">Press Start Hiring Process to add them to the Employee Master so documents can be uploaded for them.</div>';
+    }
+    h += '<div class="foot">' +
+      (a.status === 'Hiring Approved' && a.dateOfJoining ? (a.hiringStartedAt ? '<a class="btn" href="' + DOCS_PAGE_ + '">📁 Open Documents page</a>' : '<button type="button" class="btn primary" data-act="starthire" data-row="' + row + '">Start Hiring Process</button>') : '') +
       (a.status === 'Hiring Approved' ? '<button type="button" class="btn primary" data-act="hire" data-row="' + row + '">Mark Hired</button>' : '') +
       (a.status === 'Hired' ? '<button type="button" class="btn" data-act="letter" data-row="' + row + '">📄 Appointment Letter</button><a class="btn" href="../payroll/index.html" target="_blank" rel="noopener">➕ Mark Joined in Payroll</a>' : '') +
       '<span class="formmsg" id="hireMsg"></span></div></div>';
@@ -920,6 +929,12 @@ document.addEventListener('click', function (e) {
     case 'savedoj': if (!val_('pDoj')) { msg_('dojMsg', 'Pick the joining date.', 'err'); break; } post_('updatehiringstatus', { row: row, status: '', dateOfJoining: val_('pDoj') }, 'dojMsg', b); break;
     case 'hire': post_('updatehiringstatus', { row: row, status: 'Hired' }, 'hireMsg', b, 'Hired ✓').then(function (res) { if (res) showAppointmentLetter_(row); }); break;
     case 'letter': showAppointmentLetter_(row); break;
+    case 'starthire': {
+      const role = roleFor_(a);
+      post_('hiringstarthire', { row: row, role: role ? (role.roleLevel || '') + (role.subjects ? ': ' + role.subjects : '') : '' }, 'hireMsg', b, 'Started ✓ — opening the Documents page…')
+        .then(function (res) { if (res) setTimeout(function () { location.href = DOCS_PAGE_; }, 800); });
+      break;
+    }
     case 'dorej':
       if (!val_('pRejReason')) { msg_('rejMsg', 'Pick a reason.', 'err'); break; }
       if (val_('pRejReason') === 'Other' && !val_('pRejNote')) { msg_('rejMsg', 'Add a note saying why (reason: Other).', 'err'); break; }

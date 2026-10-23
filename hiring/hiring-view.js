@@ -71,6 +71,18 @@
     return out.sort((p, q) => p.t - q.t);
   }
 
+  // 2026-10-23, per Uday: the Principal's home shows the candidates furthest along the ladder, taken from "My actions" (and
+  // those waiting on the Owner) -- the ones worth attention first. Top n by stage, then the most recently shortlisted/applied.
+  const RANK = { 'Shortlisted': 0, 'Interview Scheduled': 1, 'Interview Done': 2, 'Demo Done': 3, 'Salary Offer': 4, 'MD Academics Interview Scheduled': 5, 'Hiring Approved': 6 };
+  function furthest_(applicants, nowMs, n = 5) {
+    const rows = {};
+    myActions_(applicants, nowMs).forEach((x) => { rows[x.row] = true; });
+    waitingOnOthers_(applicants, nowMs).forEach((x) => { rows[x.row] = true; });
+    return (applicants || []).filter((a) => rows[a.row] && RANK[a.status] !== undefined)
+      .sort((p, q) => RANK[q.status] - RANK[p.status] || (ms(q.shortlistedAt || q.timestamp || 0) || 0) - (ms(p.shortlistedAt || p.timestamp || 0) || 0))
+      .slice(0, n);
+  }
+
   // The Fee Clerk's lists -- the same rules as the server's legwork counts (hirLegwork_).
   function clerkBuckets_(applicants, nowMs) {
     const b = { toSchedule: [], waiting: [], booked: [], reportsToUpload: [], demosToBook: [], documents: [] };
@@ -96,7 +108,7 @@
     return String(role || '').split(',').map((r) => r.trim()).indexOf('Owner') !== -1 && x.status === 'proposed' && (x.kind === 'interview' || x.kind === 'demo');
   }
 
-  const api = { openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
+  const api = { openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HiringView = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -104,3 +104,18 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   require('assert').deepStrictEqual(w.map((x) => x.row), [2, 3]);
   console.log('ok  - waitingOnOthers_');
 }
+
+// furthest_: top n by stage from My actions + waiting-on-Owner.
+{
+  const HVm = (typeof HV !== 'undefined' ? HV : require('../../hiring/hiring-view.js'));
+  const t = Date.parse('2026-10-23T09:00:00Z');
+  const f = HVm.furthest_([
+    { row: 2, status: 'Demo Done', appointments: [] },                                   // action: salary offer
+    { row: 3, status: 'Hiring Approved', appointments: [] },                             // action: joining
+    { row: 4, status: 'MD Academics Interview Scheduled', appointments: [] },            // waiting on Owner
+    { row: 5, status: 'Interview Scheduled', appointments: [] },                         // nothing to do -> not listed
+    { row: 6, status: 'Hired', appointments: [] },
+  ], t, 2);
+  require('assert').deepStrictEqual(f.map((a) => a.row), [3, 4]);
+  console.log('ok  - furthest_');
+}

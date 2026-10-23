@@ -223,6 +223,7 @@ function doPost(e) {
     if (action === 'archiveapproval') return jsonOut_(aprArchive_(caller, body));
     if (action === 'submitss') return jsonOut_(ssSubmit_(caller, body));
     if (action === 'updatehiringstatus') return jsonOut_(hiringUpdateStatus_(caller, body));
+    if (action === 'hiringstarthire') return jsonOut_(hiringStartHire_(caller, body));
     if (action === 'hiringrefreshtracker') return jsonOut_(hiringRefreshTracker_(caller));
     if (action === 'hiringaddapplicant') return jsonOut_(hiringAddApplicant_(caller, body));
     if (action === 'hiringschedule') return jsonOut_(hiringSchedule_(caller, body));

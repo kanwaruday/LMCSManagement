@@ -113,7 +113,8 @@ const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'up
 // Roles that get a slice of the Staff Portal without being Coordinator/Owner -- always for their own campus:
 // FeeClerk (2026-10-21): the Documents matrix; Principal (2026-10-22, per Uday): Directory + Documents,
 // but not the employee detail panel (ID and bank numbers), Needs Verification or any write besides uploads.
-const STAFF_LIMITED_ACTIONS_ = { FeeClerk: ['documentstatus'], Principal: ['documentstatus', 'list'] };
+// 'starthire' (2026-10-23, per Uday): the Principal's "Start Hiring Process" adds an Owner-approved hire to the roster.
+const STAFF_LIMITED_ACTIONS_ = { FeeClerk: ['documentstatus'], Principal: ['documentstatus', 'list', 'starthire'] };
 const STAFF_LIMITED_ROLES_ = Object.keys(STAFF_LIMITED_ACTIONS_);
 
 function staffLimitedAllows_(caller, action) {
@@ -153,6 +154,7 @@ function staffDoGet_(e) {
     else if (action === 'reassigncertificate') result = reassignCertificate_(data, caller);
     else if (action === 'autoresolvequeue') result = autoResolveFromResponseSheets_(caller);
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
+    else if (action === 'starthire') result = startHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
     else if (action === 'bumpincrement') result = bumpIncrement_(data, caller);
@@ -1259,6 +1261,28 @@ function salaryFullRecord_(data, caller) {
  *  its YY/MM segment is therefore the lock month, not dateOfJoining. No
  *  applicantId (or any other caller of this action) behaves exactly as
  *  before. */
+/** data: {applicantId, school (campusId), role}. The Hiring Dashboard's "Start Hiring Process" (Principal for their own
+ *  campus, or a manager). Name, joining date and the locked employee code are read from the applicant's own row --
+ *  never from the caller -- so a Principal can only add a hire the Hiring Dashboard already locked a code for, and only
+ *  into their own school (assertScope_ + the code's prefix check in lockedApplicantCode_). Idempotent: a code already
+ *  in EmpMaster returns as-is. */
+function startHire_(data, caller) {
+  const digits = String(data.applicantId || '').match(/\d+/);
+  const row = digits ? parseInt(digits[0], 10) : NaN;
+  if (!row || row < 2) throw new Error('Invalid applicantId');
+  if (!data.school) throw new Error('school is required');
+  assertScope_(caller, [data.school]);
+  const sheet = hirTeachingApplicantsSheet_();
+  const code = String(sheet.getRange(row, HIR_EMP_CODE_COL_).getValue() || '').trim();
+  if (!code) throw new Error('No employee code is locked for ' + data.applicantId + ' yet');
+  if (empMasterHasCode_(code)) return { employeeCode: code, alreadyAdded: true };
+  const name = String(sheet.getRange(row, 2).getValue() || '').trim();
+  const dojRaw = sheet.getRange(row, 17).getValue(); // column Q, the saved Date of Joining
+  const doj = dojRaw instanceof Date ? Utilities.formatDate(dojRaw, 'Asia/Kolkata', 'yyyy-MM-dd') : String(dojRaw || '').trim();
+  if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(doj)) throw new Error('The applicant has no saved name or Date of Joining');
+  return addNewHire_({ applicantId: data.applicantId, name: name, dateOfJoining: doj, school: data.school, role: String(data.role || '').slice(0, 120), reportsTo: '', classSubjects: [] }, caller);
+}
+
 function addNewHire_(data, caller) {
   if (!data.name || !data.dateOfJoining || !data.school) {
     throw new Error('name, dateOfJoining, and school are required');
