@@ -20,7 +20,8 @@ const DOC_FORM_ROLE_LABEL = { PRT: 'PRT, TGT', TGT: 'PRT, TGT', PGT: 'PGT', NTT:
 
 // ---- pure ----
 const appts = (a) => a.appointments || [];
-const has = (a, kind, ...st) => appts(a).some((x) => x.kind === kind && st.includes(x.status));
+// hiring/hiring-view.js is a plain script that sets the HiringView global; the pages load it before this module.
+const openAppt = (a, kind, t) => globalThis.HiringView.openAppt_(a, kind, t);
 const startOf = (x) => new Date(x.start).getTime();
 const dayStart = (now) => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
@@ -37,11 +38,11 @@ export function bucketApplicants(applicants, apptlist, now = new Date()) {
   }
   const byStart = (p, q) => startOf(p.x) - startOf(q.x);
   return {
-    toSchedule: live.filter((a) => a.status === 'Shortlisted' && !has(a, 'interview', 'proposed', 'accepted')),
+    toSchedule: live.filter((a) => a.status === 'Shortlisted' && !openAppt(a, 'interview', t)),
     waiting: ((apptlist && apptlist.myProposals) || []).filter((p) => p.status === 'proposed'),
     booked: booked.sort(byStart),
     reports: reports.sort(byStart),
-    demos: live.filter((a) => a.status === 'Interview Done' && !has(a, 'demo', 'proposed', 'accepted')),
+    demos: live.filter((a) => a.status === 'Interview Done' && !openAppt(a, 'demo', t)),
     docs: live.filter((a) => a.status === 'Hiring Approved' && (a.docsMissing || []).length),
   };
 }

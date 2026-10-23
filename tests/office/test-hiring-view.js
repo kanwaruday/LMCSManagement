@@ -3,6 +3,7 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
+  globalThis.HiringView = require('../../hiring/hiring-view.js');
   const H = await import('../../office/js/hiring.js');
   const ok = (n) => console.log('  ok  - ' + n);
   const now = new Date('2026-10-24T12:00:00');
@@ -22,6 +23,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
     ap(11, 'Hired', [ax('a11', 'demo', 'accepted', '2026-10-25T10:00')]),
     ap(12, 'Interview Done', [ax('a12', 'interview', 'accepted', '2026-10-20T10:00', { reportFiled: true })]),     // report already filed
     ap(13, 'Interview Done', [ax('a13', 'demo', 'accepted', '2026-10-23T10:00', { reportFiled: false })]),          // past demo, no demo report
+    ap(15, 'Interview Done', [ax('a15', 'demo', 'accepted', '2026-10-20T10:00', { reportFiled: true })]),         // reported demo is history
     ap(14, 'Shortlisted', [ax('a14', 'interview', 'accepted', '2026-11-20T10:00')]),        // beyond 7 days
   ];
   const mine = { myProposals: [{ id: 'a2', status: 'proposed', name: 'N2' }, { id: 'x', status: 'declined', name: 'N3' }] };
@@ -31,7 +33,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(b.waiting.map((p) => p.id), ['a2']); ok('waiting = my open proposals');
   assert.deepStrictEqual(rows(b.booked), [4, 6, 9]); ok('booked: all kinds incl. md, next 7 days, sorted, not Rejected/Hired');
   assert.deepStrictEqual(rows(b.reports), [13, 4]); ok('reports: past accepted with reportFiled false (sorted); filed, Rejected excluded');
-  assert.deepStrictEqual(rows(b.demos), [5, 12]); ok('demos to book');
+  assert.deepStrictEqual(rows(b.demos), [5, 12, 15]); ok('demos to book');
   assert.deepStrictEqual(rows(b.docs), [7]); ok('documents to chase');
   assert.strictEqual(H.declined(list[2], 'interview').declineNote, 'busy'); ok('decline note');
   const du = H.docFormUrl({ name: 'A B', campusId: 'LMS4', branches: 'LMS-4, LMS-5', employeeCode: 'E1', role: { roleLevel: 'PRT' } });

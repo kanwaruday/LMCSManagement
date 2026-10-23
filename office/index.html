@@ -38,12 +38,14 @@
       <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
       <nav class="office-nav"><a class="btn-lg" href="daybook.html">Day Book</a><a class="btn-lg" href="report.html">Daily Report</a><a class="btn-lg" href="deposits.html">Deposits</a><a class="btn-lg" href="close.html">Close Day</a><a class="btn-lg" href="../staff/add-employee.html?view=documents">Staff Documents</a><a class="btn-lg" href="transport.html">Transport Papers</a><a class="btn-lg" href="hiring.html" id="hiring-link">Hiring</a></nav>
       <div id="hiring-banner" class="hiring-banner" hidden></div>
-      <div id="appt-box"></div><!-- placeholder: assets/appointments.js (LMCSAppts.mount) goes here, not mounted yet -->
+      <div id="appt-box"></div><!-- assets/appointments.js: my proposals -->
       <section class="block" id="today"></section>
     </div>
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
   <script src="../assets/auth.js"></script>
+  <script src="../hiring/hiring-view.js"></script>
+  <script src="../assets/appointments.js"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     import { showToday } from './js/today.js';
@@ -53,6 +55,7 @@
     bootOffice({ onReady: (session, api) => {
       if (canSeeAccounts(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'accounts.html'; a.textContent = 'Accounts'; document.querySelector('.office-nav').append(a); }
       try { showOfficeHiring(document.getElementById('hiring-link'), document.getElementById('hiring-banner'), (...a) => fetch(...a), PDR_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
+      try { window.LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: window.LMCS.getSession() || session }); } catch (e) { /* box is optional */ }
       return showToday(document.getElementById('today'), session, api);
     } });
   </script>
