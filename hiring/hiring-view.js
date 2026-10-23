@@ -57,6 +57,20 @@
     return out;
   }
 
+  // Candidates the Principal has moved to the MD stage and is now waiting on the Owner for: the MD interview proposed (Owner to
+  // accept), or accepted and awaiting the Owner's decision. They leave "Waiting on you" (nothing for the Principal to do) but must
+  // not vanish: [{row, md, t, reason}], soonest MD time first.
+  function waitingOnOthers_(applicants, nowMs) {
+    const out = [];
+    (applicants || []).forEach((a) => {
+      if (done(a)) return;
+      const md = appts(a).filter((x) => x.kind === 'md' && (x.status === 'proposed' || x.status === 'accepted')).sort((p, q) => ms(q.start) - ms(p.start))[0];
+      if (a.status === 'Salary Offer' && md && md.status === 'proposed') out.push({ row: a.row, md, t: ms(md.start), reason: 'MD interview proposed — waiting for the Owner to accept' });
+      else if (a.status === 'MD Academics Interview Scheduled') out.push({ row: a.row, md: md || null, t: md ? ms(md.start) : nowMs, reason: "Waiting for the Owner's decision after the MD interview" });
+    });
+    return out.sort((p, q) => p.t - q.t);
+  }
+
   // The Fee Clerk's lists -- the same rules as the server's legwork counts (hirLegwork_).
   function clerkBuckets_(applicants, nowMs) {
     const b = { toSchedule: [], waiting: [], booked: [], reportsToUpload: [], demosToBook: [], documents: [] };
@@ -82,7 +96,7 @@
     return String(role || '').split(',').map((r) => r.trim()).indexOf('Owner') !== -1 && x.status === 'proposed' && (x.kind === 'interview' || x.kind === 'demo');
   }
 
-  const api = { openAppt_, canOverride_, todayItems_, myActions_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
+  const api = { openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HiringView = api;
 })(typeof window !== 'undefined' ? window : this);

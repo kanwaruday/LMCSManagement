@@ -90,3 +90,17 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   ['Principal', 'Coordinator', 'FeeClerk', '', undefined].forEach((r) => assert.strictEqual(V.canOverride_(r, prop('interview')), false, 'not Owner: ' + r));
   console.log('ok  - canOverride_: Owner only, proposed interview/demo only');
 }
+
+// waitingOnOthers_: MD-stage candidates stay visible while the Owner has the ball.
+{
+  const HVm = (typeof HV !== 'undefined' ? HV : require('../../hiring/hiring-view.js'));
+  const t = Date.parse('2026-10-23T09:00:00Z');
+  const w = HVm.waitingOnOthers_([
+    { row: 2, status: 'MD Academics Interview Scheduled', appointments: [{ kind: 'md', status: 'accepted', start: '2026-10-23T08:30:00Z' }] },
+    { row: 3, status: 'Salary Offer', appointments: [{ kind: 'md', status: 'proposed', start: '2026-10-25T08:30:00Z' }] },
+    { row: 4, status: 'Salary Offer', appointments: [] },
+    { row: 5, status: 'Hired', appointments: [] },
+  ], t);
+  require('assert').deepStrictEqual(w.map((x) => x.row), [2, 3]);
+  console.log('ok  - waitingOnOthers_');
+}

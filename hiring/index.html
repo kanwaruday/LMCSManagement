@@ -410,6 +410,10 @@ function renderActions_() {
   const book = IS_PRINCIPAL ? 'Book demo' : 'Propose demo';
   const steps = { interview: { act: 'interview' }, demo: { act: 'demo' }, bookdemo: { act: 'book', kind: 'demo', label: book }, salary: { act: 'salary' },
     md: { act: 'book', kind: 'md' }, joining: { act: 'open' }, confirmreject: { act: 'confirmrej' } };
+  const waitingOthers = HV.waitingOnOthers_(visible_(), Date.now()).map(function (it) {
+    const a = byRow_(it.row);
+    return cardHtml_(a, it.md ? 'MD ' + fmtWhen_(it.md.start) : '', undefined, '<span class="note">' + esc_(it.reason) + '</span>');
+  });
   return section_('actions', 'Waiting on you', HV.myActions_(visible_(), Date.now()).map(function (it) {
     const a = byRow_(it.row);
     const step = Object.assign({ label: it.label }, steps[it.kind]);
@@ -417,7 +421,7 @@ function renderActions_() {
     const p = a.stageMarks.rejectPending;
     return cardHtml_(a, 'Report says reject: ' + p.reason + (p.note ? ' — ' + p.note : ''), step,
       '<button type="button" class="btn" data-act="confirmrej" data-confirm="0" data-row="' + a.row + '">Don\'t reject</button>');
-  }), 'Nothing is waiting on you.');
+  }), 'Nothing is waiting on you.') + section_('waiting', 'Waiting on the Owner', waitingOthers, 'Nobody is waiting on the Owner.');
 }
 
 function renderRole_() {
