@@ -428,8 +428,16 @@ module.exports = function run(t) {
     const early = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' });
     assert.match(early.error, /has not entered the Date of Joining/);
     rows[599][16] = '2028-03-04';
+    // The Staff Roster refusing the joiner stops Joined before anything is written in Payroll.
+    h.roster.failJoin = 'The Hiring Dashboard has no code locked for T-0600';
+    const refused = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' });
+    assert.match(refused.error, /Staff Roster did not add T-0600: The Hiring Dashboard has no code locked.*nothing was saved/);
+    assert.ok(call('month', { month: O }).staff.offers.find((x) => x.id === 'T-0600'), 'offer still open after a refused Joined');
+    h.roster.failJoin = '';
     const ok = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' }); // typed date is ignored
     assert.equal(ok.success, true, ok.error);
+    assert.deepEqual(h.roster.joins[h.roster.joins.length - 1], { applicantId: 'T-0600', code: 'KUL/28/03/900', designation: 'PRT' }, 'Joined puts the joiner on the Staff Roster');
+    assert.deepEqual(ok.rosterJoin, { addedToMaster: true, salaryRow: 'added' });
     const row = ok.rows.find((x) => x.code === 'KUL/28/03/900');
     assert.equal(row.paidDays, 28, 'prorated from 4 March (28 of 31 days), not from the typed 20th');
   });

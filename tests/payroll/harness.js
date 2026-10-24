@@ -54,6 +54,7 @@ function makeBook(tabs, counter) {
 // Builds a fresh backend instance over the given workbooks (see fixtures.js).
 // Returns { ctx, call(action, data), books, counter }.
 function boot(fixture) {
+  const roster = { joins: [], failJoin: '' };
   const counter = { open: 0, read: 0, hdr: 0, write: 0 };
   const books = {};
   Object.keys(fixture.books).forEach((id) => {
@@ -85,6 +86,13 @@ function boot(fixture) {
       // rather than just stubbed out -- see fixtures.js's '1Oj' book.
       fetch: (url) => {
         const u = String(url);
+        // The Roster's 'joinhire' (payRosterJoin_): recorded in roster.joins; set roster.failJoin to make it refuse.
+        if (u.indexOf('action=joinhire') !== -1) {
+          const m = u.match(/[?&]data=([^&]*)/);
+          roster.joins.push(m ? JSON.parse(decodeURIComponent(m[1])) : {});
+          const out = roster.failJoin ? { success: false, error: roster.failJoin } : { success: true, addedToMaster: true, salaryRow: 'added' };
+          return { getResponseCode: () => 200, getContentText: () => JSON.stringify(out) };
+        }
         if (u.indexOf('action=bumpincrement') !== -1) {
           const m = u.match(/[?&]data=([^&]*)/);
           const data = m ? JSON.parse(decodeURIComponent(m[1])) : {};
@@ -114,7 +122,7 @@ function boot(fixture) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'payroll.gs'), 'utf8'), ctx, { filename: 'payroll.gs' });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'payroll-calc.gs'), 'utf8'), ctx, { filename: 'payroll-calc.gs' });
   const call = (action, data, token) => JSON.parse(ctx.payHandle_(action, token === undefined ? 'owner-token' : token, data || {}));
-  return { ctx, call, books, counter, run: (code) => vm.runInContext(code, ctx) };
+  return { ctx, call, books, counter, roster, run: (code) => vm.runInContext(code, ctx) };
 }
 
 module.exports = { boot, makeSheet, makeBook };

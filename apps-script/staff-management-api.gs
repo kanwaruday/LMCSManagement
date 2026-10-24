@@ -155,6 +155,7 @@ function staffDoGet_(e) {
     else if (action === 'autoresolvequeue') result = autoResolveFromResponseSheets_(caller);
     else if (action === 'addnewhire') result = addNewHire_(data, caller);
     else if (action === 'starthire') result = startHire_(data, caller);
+    else if (action === 'joinhire') result = joinHire_(data, caller);
     else if (action === 'transfer') result = transferEmployee_(data, caller);
     else if (action === 'markinactive') result = markInactive_(data, caller);
     else if (action === 'bumpincrement') result = bumpIncrement_(data, caller);
@@ -1281,6 +1282,59 @@ function startHire_(data, caller) {
   const doj = dojRaw instanceof Date ? Utilities.formatDate(dojRaw, 'Asia/Kolkata', 'yyyy-MM-dd') : String(dojRaw || '').trim();
   if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(doj)) throw new Error('The applicant has no saved name or Date of Joining');
   return addNewHire_({ applicantId: data.applicantId, name: name, dateOfJoining: doj, school: data.school, role: String(data.role || '').slice(0, 120), reportsTo: '', classSubjects: [] }, caller);
+}
+
+/** data: {applicantId, code, designation}. Payroll's "Joined" (Owner, 2026-10-24): makes sure the joiner is on the
+ *  Employee Master -- added through startHire_ if the Hiring Dashboard's "Start Hiring Process" was never pressed --
+ *  and has an EmpSalary row with their Designation, which the Staff Directory's role and the document rules read.
+ *  No pay figures: Payroll owns pay. Checks the applicant's locked code before writing anything. Idempotent. */
+function joinHire_(data, caller) {
+  if (caller.roles.indexOf('Owner') === -1) throw new Error('Only the Owner can record a joiner');
+  const code = String(data.code || '').trim().toUpperCase();
+  const designation = String(data.designation || '').trim().slice(0, 120);
+  if (!HIR_EMPCODE_RE_.test(code)) throw new Error('Not a valid employee code: ' + data.code);
+  const school = Object.keys(STAFF_SCHOOL_PREFIX).filter(function (k) { return STAFF_SCHOOL_PREFIX[k] === code.split('/')[0]; })[0];
+  if (!school) throw new Error('Unknown school prefix in ' + code);
+
+  let addedToMaster = false;
+  if (!empMasterHasCode_(code)) {
+    const digits = String(data.applicantId || '').match(/\d+/);
+    const row = digits ? parseInt(digits[0], 10) : NaN;
+    const locked = row >= 2 ? String(hirTeachingApplicantsSheet_().getRange(row, HIR_EMP_CODE_COL_).getValue() || '').trim().toUpperCase() : '';
+    if (locked !== code) throw new Error('The Hiring Dashboard has ' + (locked || 'no code') + ' locked for ' + data.applicantId + ', not ' + code);
+    startHire_({ applicantId: data.applicantId, school: school, role: designation }, caller);
+    addedToMaster = true;
+  }
+
+  const ss = openEmpWorkbook_();
+  const sal = ss.getSheetByName('EmpSalary');
+  if (!sal) throw new Error('EmpSalary tab not found');
+  const rows = sal.getDataRange().getValues();
+  const h = rows[0], iCode = h.indexOf('EmployeeCode'), iDes = h.indexOf('Designation'), iDep = h.indexOf('Department');
+  if (iCode < 0 || iDes < 0) throw new Error('EmpSalary is missing EmployeeCode or Designation');
+  let at = -1;
+  const deptCount = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][iCode] || '').trim().toUpperCase() === code) at = i;
+    if (iDep >= 0 && designation && String(rows[i][iDes] || '').trim().toLowerCase() === designation.toLowerCase()) {
+      const dep = String(rows[i][iDep] || '').trim();
+      if (dep) deptCount[dep] = (deptCount[dep] || 0) + 1;
+    }
+  }
+  // Department = the one most people with this designation already have (e.g. PRT -> Teaching).
+  const department = Object.keys(deptCount).sort(function (a, b) { return deptCount[b] - deptCount[a]; })[0] || '';
+  let salaryRow = 'kept';
+  if (at === -1) {
+    const master = readRowByCode_(ss, 'EmpMaster', code) || {};
+    sal.appendRow(buildRow_(h, { EmployeeCode: code, Name: master.Name || '', Designation: designation, Department: department }));
+    salaryRow = 'added';
+  } else if (!String(rows[at][iDes] || '').trim() && designation) {
+    sal.getRange(at + 1, iDes + 1).setValue(designation);
+    if (iDep >= 0 && !String(rows[at][iDep] || '').trim() && department) sal.getRange(at + 1, iDep + 1).setValue(department);
+    salaryRow = 'designation set';
+  }
+  bustStaffListCache_();
+  return { employeeCode: code, addedToMaster: addedToMaster, salaryRow: salaryRow };
 }
 
 function addNewHire_(data, caller) {

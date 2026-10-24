@@ -178,7 +178,7 @@ function payHandle_(action, idToken, data) {
       uploadleave: function (ss) { payUploadLeave_(ss, data, caller, false); },
       lock: function (ss) { payLock_(ss, data.month, data.entity, caller); },
       unlock: function (ss) { payUnlock_(ss, data.month, data.entity, caller); },
-      joinoffer: function (ss) { payJoinOffer_(ss, data, caller) },
+      joinoffer: function (ss) { extra = { rosterJoin: payJoinOffer_(ss, data, caller, idToken) }; },
       dismissoffer: function (ss) { payCloseOffer_(ss, String(data.applicantId || ''), 'Dismissed', {}, caller) },
       addemployee: function (ss) { payNewMasterRow_(ss, data, caller) },
       markleft: function (ss) { payMarkLeft_(ss, data) },
@@ -1185,7 +1185,7 @@ function payNewMasterRow_(ss, d, caller) {
 }
 
 // d: {applicantId, code, doj} -- offer -> Salary Master row, offer marked Joined.
-function payJoinOffer_(ss, d, caller) {
+function payJoinOffer_(ss, d, caller, idToken) {
   const o = payRows_(ss.getSheetByName('Salary Offers')).filter(function (x) {
     return String(x['Applicant ID']).trim() === d.applicantId && /^offered/i.test(String(x['Status (Offered/Joined/Dismissed)'] || 'Offered'));
   })[0];
@@ -1199,9 +1199,27 @@ function payJoinOffer_(ss, d, caller) {
   }
   const approval = payApprovalStatus_()[d.applicantId];
   if (!payOfferApproved_(approval)) throw new Error(d.applicantId + ' is not Owner-approved (status: ' + (approval || 'Not submitted') + ') -- it cannot be joined');
+  // Roster first (2026-10-24): if the joiner can't be put on the Employee Master, nothing is written here either.
+  const rosterJoin = payRosterJoin_(d.applicantId, d.code, o['Designation'], idToken);
   payNewMasterRow_(ss, { code: d.code, name: o['Name'], entity: o['Entity'], designation: o['Designation'], doj: d.doj, fullBasic: payNum_(o['Full Basic']),
     epf: payYes_(o['EPF Member (Y/N)']), rrf: true, tuition: payNum_(o['Staff-Child Tuition']), remarks: 'From offer ' + d.applicantId }, caller);
   payCloseOffer_(ss, d.applicantId, 'Joined', { 'Employee Code': String(d.code).trim(), 'Date of Joining': payDate_(d.doj) }, caller);
+  return rosterJoin;
+}
+
+// The Roster's 'joinhire' (staff-management-api.gs joinHire_): puts the joiner on the Employee Master if the Hiring
+// Dashboard's "Start Hiring Process" didn't already, and gives them an EmpSalary row with their Designation -- so they
+// show in the Staff Directory, Documents, Approvals and Teacher Portal sign-in. Same signed-in token as
+// payBumpRosterIncrement_, re-verified by the Roster. Unlike that one, this THROWS: a joiner missing from the roster
+// is the bug this fixes, so Joined stops here and can be retried (joinhire is idempotent).
+function payRosterJoin_(applicantId, code, designation, idToken) {
+  const url = PAY_ROSTER_WEB_URL + '?action=joinhire&idToken=' + encodeURIComponent(idToken || '') + '&data=' +
+    encodeURIComponent(JSON.stringify({ applicantId: applicantId, code: String(code || '').trim(), designation: String(designation || '') }));
+  let body;
+  try { body = JSON.parse(UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText()); }
+  catch (err) { throw new Error('Could not reach the Staff Roster to add ' + applicantId + ' -- nothing was saved, try Joined again'); }
+  if (!body || !body.success) throw new Error('Staff Roster did not add ' + applicantId + ': ' + ((body && body.error) || 'unknown error') + ' -- nothing was saved');
+  return { addedToMaster: !!body.addedToMaster, salaryRow: body.salaryRow || '' };
 }
 
 // d: {code, lastDay} -- the latest Salary Master row becomes Left with a last working day.
