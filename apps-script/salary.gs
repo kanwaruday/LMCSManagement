@@ -140,7 +140,7 @@ function salJobRoleNorms_() {
 // Shape: { campusId: { gradeLabel: feeNumber } }.
 function salTuitionFees_() {
   const cache = CacheService.getScriptCache();
-  const cached = cache.get('sal_tuitionfees');
+  const cached = cache.get('sal_tuitionfees_v2');
   if (cached) return JSON.parse(cached);
   const values = salConfigValues_(SAL_TAB_TUITION_FEES);
   const header = values[0];
@@ -155,10 +155,27 @@ function salTuitionFees_() {
       if (!label || r[c] === '' || r[c] == null) continue;
       grades[label] = salParseNumber_(r[c]);
     }
-    out[campusId] = grades;
+    // 2026-10-24: a campus can appear on more than one row (e.g. a stray second "LMS 3" row holding a single grade) --
+    // the old `out[campusId] = grades` let the LAST row wipe the rest, leaving the child-grade dropdown with one option.
+    // Rows now merge; a later row's value wins only for the grades it actually fills.
+    out[campusId] = Object.assign(out[campusId] || {}, grades);
   }
-  cache.put('sal_tuitionfees', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
+  cache.put('sal_tuitionfees_v2', JSON.stringify(out), SAL_CONFIG_CACHE_SECONDS);
   return out;
+}
+
+// Editor-run check of the Tuition Fees tab: per campus, how many rows name it and how many grades are filled.
+// A campus on two rows, or with one grade, is what makes the Salary Offer's child-grade dropdown short.
+function salTuitionDiag() {
+  const values = salConfigValues_(SAL_TAB_TUITION_FEES);
+  const header = values[0], seen = {};
+  for (let i = 1; i < values.length; i++) {
+    const c = salNormalizeCampus_(values[i][0]);
+    if (!c) { if (String(values[i][0] || '').trim()) Logger.log('row ' + (i + 1) + ': "' + values[i][0] + '" is not a campus'); continue; }
+    const filled = header.slice(1).filter(function (h, j) { return String(h || '').trim() && values[i][j + 1] !== '' && values[i][j + 1] != null; });
+    (seen[c] = seen[c] || []).push('row ' + (i + 1) + ': ' + filled.length + ' grades (' + filled.join(', ') + ')');
+  }
+  Object.keys(seen).forEach(function (c) { Logger.log(c + (seen[c].length > 1 ? '  <-- ' + seen[c].length + ' ROWS' : '') + ' | ' + seen[c].join(' | ')); });
 }
 
 // PayRoll Rates: School, DA %, ADA %, EPF Enrolled by Default (Yes/No).

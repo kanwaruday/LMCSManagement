@@ -142,6 +142,7 @@ table.results tr.sep td{padding-top:8px}
             <div class="field-check"><input type="checkbox" id="fEsi" checked><label for="fEsi">ESI applicable (&lt;₹21,000 gross)</label></div>
             <div class="field-check"><input type="checkbox" id="fMdExempt"><label for="fMdExempt">MD — request EPF exemption</label></div>
             <div class="field"><label>Child's Grade (fee wash)</label><select id="fChildGrade"><option value="">No child / N/A</option></select></div>
+            <div class="field"><label>Second child's grade (optional — max 2 children)</label><select id="fChildGrade2"><option value="">No second child</option></select></div>
             <div class="field"><label>Tuition Fee Wash (₹/mo)</label><input type="number" id="fTuiFee" value="0" min="0" step="50"></div>
           </div>
           <div class="epf-box" id="epfBox" style="display:none">
@@ -339,25 +340,29 @@ function applyCampusRates_() {
 // other auto-filled number here) since a real negotiated case can differ
 // from the sheet. "No child / N/A" is the default -- most hires have no
 // fee-wash at all, so this never forces a number where none applies.
+// 2026-10-24, per Uday: up to TWO children per employee get the fee wash -- two grade selects, and the wash is the sum of
+// their fees (still an editable number). Only the total is used in the salary maths, as before.
+const CHILD_GRADE_IDS = ['fChildGrade', 'fChildGrade2'];
 function populateChildGradeSelect_() {
-  const sel = document.getElementById('fChildGrade');
   const campus = document.getElementById('fCampus').value;
   const grades = (CONFIG.tuitionFees && CONFIG.tuitionFees[campus]) || {};
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">No child / N/A</option>';
-  Object.keys(grades).forEach(function (g) {
-    const opt = document.createElement('option');
-    opt.value = g; opt.textContent = g + ' — ₹' + grades[g].toLocaleString('en-IN');
-    sel.appendChild(opt);
+  CHILD_GRADE_IDS.forEach(function (id, n) {
+    const sel = document.getElementById(id), prev = sel.value;
+    sel.innerHTML = '<option value="">' + (n ? 'No second child' : 'No child / N/A') + '</option>';
+    Object.keys(grades).forEach(function (g) {
+      const opt = document.createElement('option');
+      opt.value = g; opt.textContent = g + ' — ₹' + grades[g].toLocaleString('en-IN');
+      sel.appendChild(opt);
+    });
+    if (grades[prev] != null) sel.value = prev;
   });
-  if (grades[prev] != null) sel.value = prev;
 }
+function childGrades_() { return CHILD_GRADE_IDS.map(function (id) { return document.getElementById(id).value; }).filter(Boolean).slice(0, 2); }
 
 function applyChildGradeFee_() {
   const campus = document.getElementById('fCampus').value;
-  const grade = document.getElementById('fChildGrade').value;
-  const fee = grade && CONFIG.tuitionFees && CONFIG.tuitionFees[campus] && CONFIG.tuitionFees[campus][grade];
-  document.getElementById('fTuiFee').value = fee || 0;
+  const fees = (CONFIG.tuitionFees && CONFIG.tuitionFees[campus]) || {};
+  document.getElementById('fTuiFee').value = childGrades_().reduce(function (sum, g) { return sum + (fees[g] || 0); }, 0);
   renderResults_();
 }
 
@@ -664,7 +669,7 @@ function recordSalaryOffer_() {
 function savePayrollOffer_(r, name, campus, designation, subjects) {
   return fetch(PAYROLL_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'recordoffer', idToken: SESSION.idToken, data: {
     applicantId: APPLICANT_ID, name: name, entity: campus, designation: designation, subjects: subjects, fullBasic: r.nb,
-    epf: !r.epfExempt, tuition: Number(document.getElementById('fTuiFee').value) || 0, cti: r.cti, netY1: r.netY1 } }) })
+    epf: !r.epfExempt, tuition: Number(document.getElementById('fTuiFee').value) || 0, childGrades: childGrades_(), cti: r.cti, netY1: r.netY1 } }) })
     .then(function (p) { return p.json(); }).catch(function () { return { success: false, error: 'network error' }; })
     .then(function (p) { return p.success ? '' : ' Payroll copy NOT saved (' + (p.error || 'unknown error') + ') — click Record again.'; });
 }
@@ -690,7 +695,7 @@ function wireInputs_() {
     document.getElementById(id).addEventListener('input', renderResults_);
   });
   document.getElementById('fCampus').addEventListener('change', applyCampusRates_); // DA/ADA + EPF default + child-grade options all key off campus
-  document.getElementById('fChildGrade').addEventListener('change', applyChildGradeFee_);
+  CHILD_GRADE_IDS.forEach(function (id) { document.getElementById(id).addEventListener('change', applyChildGradeFee_); });
   document.getElementById('fDesignation').addEventListener('change', applyDesignationPay_);
   document.getElementById('fMdExempt').addEventListener('change', refreshEpfExemptionStatus_);
   document.getElementById('fName').addEventListener('change', refreshEpfExemptionStatus_);
@@ -733,7 +738,7 @@ function currentMode_() {
 // are editable ONLY in 'new' mode; every other mode locks all of them
 // (auto-computed instead), so "which fields can I type in" always
 // reduces to one simple rule instead of four modes each hand-rolling it.
-const EXTRA_FIELD_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fMdExempt', 'fChildGrade', 'fTuiFee'];
+const EXTRA_FIELD_IDS = ['fLmsExp', 'fOtherExp', 'fPreBasic', 'fGradePay', 'fWorkHours', 'fIdealHours', 'fEpf', 'fEsi', 'fMdExempt', 'fChildGrade', 'fChildGrade2', 'fTuiFee'];
 
 function applyFieldLockState_() {
   const mode = currentMode_();

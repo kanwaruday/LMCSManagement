@@ -74,7 +74,8 @@ const PAY_TABS = {
     'Service Start'],
   // Structured offers from the Offer Calculator's "Record as Salary Offer" (stage c, 2026-09-30).
   'Salary Offers': ['Applicant ID', 'Name', 'Entity', 'Designation', 'Subjects', 'Full Basic', 'EPF Member (Y/N)', 'Staff-Child Tuition',
-    'CTI', 'Net Y1', 'Recorded By', 'Recorded At', 'Status (Offered/Joined/Dismissed)', 'Employee Code', 'Date of Joining', 'Closed By', 'Closed At'],
+    'CTI', 'Net Y1', 'Recorded By', 'Recorded At', 'Status (Offered/Joined/Dismissed)', 'Employee Code', 'Date of Joining', 'Closed By', 'Closed At',
+    'Child Grades'], // 2026-10-24: up to 2 grade labels behind the fee wash (blank on older offers); the wash itself stays the one 'Staff-Child Tuition' number
   // Other Earnings/Deductions columns are from Stage 2 and no longer used --
   // one-offs live in the Adjustments tab (2026-09-30).
   'Monthly Inputs': ['Month', 'Employee Code', 'Paid Days', 'CL Days Encashed', 'Hold for F&F (Y/N)', 'Other Earnings',
@@ -1133,10 +1134,13 @@ function payRecordOffer_(ss, d, caller) {
   if (PAY_ENTITIES.indexOf(entity) === -1) throw new Error('Unknown school: ' + d.entity);
   const basic = Number(d.fullBasic);
   if (!(basic > 0)) throw new Error('Full Basic must be more than 0');
+  // At most 2 children per employee get the fee wash (Uday, 2026-10-24). Older callers send no childGrades.
+  const childGrades = Array.isArray(d.childGrades) ? d.childGrades.map(function (g) { return String(g || '').trim(); }).filter(Boolean) : [];
+  if (childGrades.length > 2) throw new Error('The fee wash covers a maximum of 2 children');
   const sheet = ss.getSheetByName('Salary Offers');
   const values = sheet.getDataRange().getValues();
   const hdr = values[0].map(function (h) { return String(h).trim(); });
-  const obj = { 'Applicant ID': id, 'Name': String(d.name || '').trim(), 'Entity': entity, 'Designation': String(d.designation || ''),
+  const obj = { 'Child Grades': childGrades.join(', '), 'Applicant ID': id, 'Name': String(d.name || '').trim(), 'Entity': entity, 'Designation': String(d.designation || ''),
     'Subjects': String(d.subjects || ''), 'Full Basic': Math.round(basic), 'EPF Member (Y/N)': d.epf ? 'Y' : 'N',
     'Staff-Child Tuition': Math.round(Number(d.tuition) || 0), 'CTI': Math.round(Number(d.cti) || 0), 'Net Y1': Math.round(Number(d.netY1) || 0),
     'Recorded By': caller.email, 'Recorded At': new Date(), 'Status (Offered/Joined/Dismissed)': 'Offered' };
