@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMCS — Owner · Transport</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../../coordinator/shared.css?v=be0c99dc">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>.tc-h{font-size:14px;margin:22px 0 8px}</style>
+</head>
+<body>
+<header class="hdr"><div><h1>LMCS — Owner Portal</h1><p>Transport</p></div><a href="../index.html">&larr; Owner home</a></header>
+<div id="authRoot"></div>
+<main id="appBody" style="display:none"></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="../../assets/auth.js?v=ffa8751c"></script>
+<script src="../../coordinator/transport-rank.js?v=99053049"></script>
+<script src="../../coordinator/shared.js?v=616abc76"></script>
+<script src="../../coordinator/transport-live.js?v=9eeb093f"></script>
+<script src="../../coordinator/transport-checks.js?v=214f7991"></script>
+<script>
+Coord.boot(function (body, session) {
+  if (!LMCS.canViewOwnerPortal(session)) { body.innerHTML = '<div class="denied">This page is for the Owner. Coordinators: <a href="../../coordinator/transport/live.html">Transport checks</a>.</div>'; return; }
+  TransportChecks.mount(body, session, { owner: true });
+});
+</script>
+</body>
+</html>

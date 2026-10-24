@@ -1,0 +1,150 @@
+// coordinator-transport-gps.gs: fuel checks against GPS km, follow-ups with owners and due dates, auto-close only for what a
+// push covered, the clerk's answer, and the note a transport follow-up needs before it can be closed. Fake data only.
+const fs = require('fs'), vm = require('vm'), assert = require('assert'), path = require('path');
+const J = x => JSON.parse(JSON.stringify(x)); // arrays and objects from the vm realm
+
+// in-memory sheets
+function sheet(name) {
+  let data = [];
+  const s = { name, getLastRow: () => data.length, setFrozenRows() {}, clear() { data = []; }, appendRow(r) { data.push(r.slice()); }, _rows: () => data,
+    getDataRange: () => ({ getValues: () => data.map(r => r.slice()) }),
+    getRange(r, c, nr, nc) {
+      return { setNumberFormat() { return this; }, setFontWeight() { return this; },
+        setValues(v) { v.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; }); }); return this; },
+        setValue(x) { data[r - 1] = data[r - 1] || []; data[r - 1][c - 1] = x; return this; }, getValue: () => (data[r - 1] || [])[c - 1] };
+    } };
+  return s;
+}
+const books = {};
+const book = id => books[id] = books[id] || { sheets: {}, getSheetByName(n) { return this.sheets[n] || null; }, insertSheet(n) { return this.sheets[n] = sheet(n); }, getSheets() { return Object.values(this.sheets); } };
+const ctx = { console, Date, Object, String, Math, JSON, Array, Number, isFinite, parseFloat,
+  SpreadsheetApp: { openById: id => book(id) },
+  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+  CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'TRANSPORT_PUSH_SECRET' ? 'S' : null) }) },
+  Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } };
+vm.createContext(ctx);
+const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
+load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs');
+const run = c => vm.runInContext(c, ctx);
+
+// ── fuel checks ──
+const days = [];
+for (let d = 1; d <= 10; d++) days.push({ reg: 'HP1', date: '2026-10-' + String(d).padStart(2, '0'), km: 60 });
+ctx.days = days;
+ctx.fills = [
+  { id: 'f1', campus: 'LMS 4', date: '2026-10-01', reg: 'HP1', litres: 40, odometer: 1000, amount_rs: 3800 },   // first fill: no check
+  { id: 'f2', campus: 'LMS 4', date: '2026-10-06', reg: 'HP1', litres: 60, odometer: 1300, amount_rs: 5700 },   // 300 km / 60 L = 5 vs 7.5
+  { id: 'f3', campus: 'LMS 4', date: '2026-10-10', reg: 'HP1', litres: 30, odometer: 1600, amount_rs: 2850 },   // 240 km / 30 L = 8: ok km/L, odometer off by 60
+  { id: 'x1', campus: 'LMS 4', date: '2026-10-05', reg: 'HP9', litres: 50, odometer: 10, amount_rs: 4750 },     // bus without GPS: never checked
+];
+const checks = J(run('gpsFuelChecks_(fills, days, {HP1: 15})'));
+assert.deepStrictEqual(checks.map(c => c.id), ['f2', 'f3'], 'first fill and untracked buses give no check');
+const c2 = checks[0];
+assert.deepStrictEqual([c2.gpsKm, c2.kmpl, c2.norm, c2.flag, c2.reason, c2.excessL, c2.excessRs], [300, 5, 7.5, 'yes', 'low', 20, 1900]);
+assert.deepStrictEqual([checks[1].flag, checks[1].reason, checks[1].billKm], ['yes', 'odometer', 300]);
+assert.strictEqual(J(run('gpsFuelChecks_([fills[0], {id:"f2b",campus:"LMS 4",date:"2026-10-01",reg:"HP1",litres:5,odometer:1001,amount_rs:475}], days, {HP1: 15})')).length, 0, 'a same-day top-up is too little driving to judge');
+assert.strictEqual(J(run('gpsFuelChecks_(fills.slice(0,2), days, {HP1: 41})'))[0].flag, 'no', '5 km/L is normal for a big bus');
+ctx.noted = [ctx.fills[0], Object.assign({}, ctx.fills[2], { date: '2026-10-06', odometer: 50, odometer_note: 'meter replaced' })];
+assert.ok(!/odometer/.test(J(run('gpsFuelChecks_(noted, days, {HP1: 41})'))[0].reason), 'a meter change is not an odometer mismatch');
+ctx.blank = [Object.assign({}, ctx.fills[0], { odometer: '' }), ctx.fills[2]];
+assert.ok(!/odometer/.test(J(run('gpsFuelChecks_(blank, days, {HP1: 41})'))[0].reason), 'an old fill without an odometer is not compared');
+ctx.gappy = days.filter(d => d.date !== '2026-10-05'); // a Monday with no fix at all
+const g = J(run('gpsFuelChecks_(fills.slice(0,2), gappy, {HP1: 15})'))[0];
+assert.deepStrictEqual([g.flag, g.reason, g.excessRs], ['no', 'gps_gap', 0], 'a weekday the tracker missed: never accuse the fill');
+ctx.sunday = days.filter(d => d.date !== '2026-10-04');
+assert.match(J(run('gpsFuelChecks_(fills.slice(0,2), sunday, {HP1: 15})'))[0].reason, /^low/, 'no fix on a Sunday is a parked bus, not a gap');
+assert.match(run('gpsCheckText_(' + JSON.stringify(c2) + ')'), /^HP1, fuel on 6 Oct: 60 litres for 300 km .*about 7.5\)\.$/);
+
+// ── follow-ups ──
+const fleet = [
+  { reg: 'HP1', campus: 'LMS 4', operational: true, driver: 'Ram', seats: 15, year: 2017 },
+  { reg: 'HP2', campus: 'LMS 4', operational: true, driver: 'Shyam', seats: 41, year: 2011 },  // no tracker, 15 years old
+  { reg: 'HP3', campus: 'LMS 5', operational: true, driver: '', seats: 41, year: 2013 },       // tracker dead (HP1, same district, reports)
+  { reg: 'HP4', campus: 'LMS 2', operational: false, seats: 41, year: 2010 },                  // off the road: nothing
+  { reg: 'AF', campus: 'LMS-5', operational: true, seats: 10, year: 2026 },                    // not a registration: nothing
+];
+ctx.facts = { today: '2026-10-24', fleet, live: [{ reg: 'HP1', at: '2026-10-24T09:00:00+05:30' }, { reg: 'HP3', at: '2026-10-20T09:00:00+05:30' }],
+  health: [{ reg: 'HP1', km7: 300, blind7: 90 }],
+  days: [{ reg: 'HP1', date: '2026-10-22', km: 60, nightAwayKm: 6.4, nightPlace: 'Driver village', minOver40: 7 }, { reg: 'HP1', date: '2026-10-23', km: 55, nightAwayKm: 0.1, minOver40: 6 },
+    { reg: 'HP1', date: '2026-10-10', km: 60, nightAwayKm: 9, minOver40: 30 }], // older than 7 days: ignored
+  checks: [Object.assign({}, c2, { date: '2026-10-21' }), Object.assign({}, checks[1], { date: '2026-10-23' }), Object.assign({}, c2, { id: 'f9', date: '2026-10-23' })],
+  answers: [{ id: 'f9', answer: 'matches' }] };
+const f = J(run('gpsFollowUps_(facts)'));
+const ids = f.map(x => x.taskId).sort();
+assert.deepStrictEqual(ids, ['bus_age|HP2', 'bus_away|HP1|2026-10-22', 'bus_speed|HP1|2026-10-19', 'fuel_check|f2', 'fuel_check|f9', 'gps_blind|HP1', 'gps_dead|HP3', 'gps_none|HP2']);
+const by = id => f.find(x => x.taskId === id);
+assert.deepStrictEqual([by('gps_dead|HP3').due, by('gps_dead|HP3').severity, by('gps_dead|HP3').campus], ['2026-10-27', 'high', 'LMS5']);
+assert.strictEqual(by('bus_away|HP1|2026-10-22').due, '2026-10-26');
+assert.strictEqual(by('gps_none|HP2').due, '2026-11-07');
+assert.match(by('fuel_check|f2').detail, /has not checked the pump slip in 2 days/, 'no clerk answer for 2 days escalates');
+assert.match(by('fuel_check|f9').detail, /it matches the bill/, 'a "matches" answer escalates at once');
+assert.ok(!by('fuel_check|' + checks[1].id), 'a check the clerk still has time for stays with the clerk');
+const holiday = JSON.parse(JSON.stringify(ctx.facts)); holiday.live = [{ reg: 'HP1', at: '2026-10-20T15:00:00+05:30' }, { reg: 'HP3', at: '2026-10-20T09:00:00+05:30' }];
+ctx.holiday = holiday; ctx.holiday.fleet = ctx.facts.fleet;
+assert.ok(!J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'the whole district quiet (a holiday): no silent-tracker follow-up');
+ctx.holiday.live.push({ reg: 'HPX', at: '2026-10-24T08:00:00+05:30' }); ctx.holiday.fleet = ctx.facts.fleet.concat([{ reg: 'HPX', campus: 'LMS 6', operational: true, year: 2020 }]);
+assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'another bus of the district reported: the silent one is flagged');
+ctx.holiday.live = [{ reg: 'HP1', at: '2026-10-20T15:00:00+05:30' }, { reg: 'HP3', at: '2025-01-20T09:00:00+05:30' }]; ctx.holiday.fleet = ctx.facts.fleet;
+assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'silent for months is dead even in a holiday');
+ctx.facts.live = null;
+assert.ok(!J(run('gpsFollowUps_(facts)')).some(x => /^gps_(none|dead)/.test(x.taskId)), 'vendor down: no tracker presence follow-ups');
+
+// ── raise, auto-close only what was covered, owners, note required ──
+ctx.COORD_SHEET_ID = 'TASKS'; ctx.COORD_ALLOWLIST_SHEET_ID = 'ALLOW';
+book('ALLOW').insertSheet('a')._rows().push(['Email', 'Name', 'Campus', 'Roles'], ['c4@x.org', 'C4', 'LMS4', 'Coordinator'], ['c1@x.org', 'C1', 'LMS1', 'Coordinator'], ['o@x.org', 'O', 'ALL', 'Owner']);
+ctx.wanted = f;
+ctx.all3 = {gps_blind:{HP1:true},gps_dead:{HP1:true,HP2:true,HP3:true},gps_none:{HP1:true,HP2:true,HP3:true},bus_age:{HP1:true,HP2:true,HP3:true}};
+run('gpsRaise_(wanted, all3)');
+run('gpsRaise_(wanted, all3)'); // the same push twice: no duplicates
+let rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(rows.length - 1, f.length, 'one row per follow-up');
+const row = id => rows.find(r => r[0] === id);
+assert.deepStrictEqual([row('gps_dead|HP3')[12], row('gps_dead|HP3')[13], row('gps_dead|HP3')[14]], ['Transport', 'c4@x.org', '2026-10-27'], 'LMS5 is in C4\'s district');
+assert.strictEqual(row('bus_away|HP1|2026-10-22')[13], 'c4@x.org');
+ctx.w2 = f.filter(x => x.taskId !== 'gps_dead|HP3' && x.taskId !== 'gps_blind|HP1');
+run('gpsRaise_(w2, {gps_blind:{HP1:true},gps_dead:{HP1:true,HP2:true},gps_none:{HP1:true,HP2:true},bus_age:{HP1:true,HP2:true}})'); // HP3 not covered by this push
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('gps_dead|HP3')[5], 'open', 'a vehicle the push did not cover keeps its follow-up');
+assert.strictEqual(row('gps_blind|HP1')[5], 'resolved', 'a cleared condition closes itself');
+run('gpsRaise_([], {gps_blind:{},gps_dead:{},gps_none:{},bus_age:{}})'); // no live feed, no health: nothing was looked at
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('gps_dead|HP3')[5], 'open', 'without the live feed tracker follow-ups stay open');
+assert.strictEqual(row('bus_away|HP1|2026-10-22')[5], 'open', 'a parking follow-up never closes itself');
+assert.strictEqual(row('gps_dead|HP3')[14], '2026-10-27', 'Due is stored as text, so lateness can be computed');
+assert.strictEqual(run('coordDueIso_(new Date("2026-10-27T05:00:00Z"))'), '2026-10-27', 'an older Date-valued Due still reads as yyyy-MM-dd');
+// a system-closed follow-up whose problem is back reopens; a person's recent close is respected
+run('gpsRaise_(wanted, all3)');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('gps_blind|HP1')[5], 'open', 'the tracker went dark again: the follow-up is back');
+assert.match(String(row('gps_blind|HP1')[11]), /^reopened /);
+const r3 = row('gps_dead|HP3'); r3[5] = 'resolved'; r3[9] = new Date(); r3[10] = 'c4@x.org'; r3[11] = 'Blackbox complaint 77';
+run('gpsRaise_(wanted, all3)');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('gps_dead|HP3')[5], 'resolved', 'closed by a person today: Blackbox gets its repair window');
+r3[9] = new Date(Date.now() - 10 * 86400000);
+run('gpsRaise_(wanted, all3)');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('gps_dead|HP3')[5], 'open', 'still silent after the repair window: back on the list');
+ctx.coordVisibleCampuses_ = () => null;
+assert.match(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"  "})')).error, /Write what was done/);
+assert.strictEqual(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"Driver went to hospital"})')).success, true);
+
+// ── clerk answer: own campus only, once ──
+book(run('COORD_TRANSPORT_FORM_ID'));
+run('gpsWrite_(GPS_TAB_CHECKS, GPS_CHECK_COLS, [' + JSON.stringify(Object.assign({}, c2, { campus: 'LMS 4' })) + '])');
+ctx.coordVisibleCampuses_ = c => c.only || null;
+ctx.gpsRefresh_ = () => ({});
+assert.strictEqual(J(run('coordGpsClerkAnswer_({email:"k@x.org", only:["LMS2"], feeClerkOnly:true, roles:["FeeClerk"]}, {fillId:"f2", answer:"matches"})')).error, 'Not authorized', 'another campus\'s bill is refused');
+assert.match(J(run('coordGpsClerkAnswer_({email:"c4@x.org", only:["LMS4"], roles:["Coordinator"]}, {fillId:"f2", answer:"corrected"})')).error, /Only the Fee Clerk/, 'a coordinator cannot answer for their own buses');
+assert.strictEqual(J(run('coordGpsClerkChecks_({only:["LMS4"]})')).checks.length, 1);
+assert.strictEqual(J(run('coordGpsClerkAnswer_({email:"k@x.org", only:["LMS4"], feeClerkOnly:true, roles:["FeeClerk"]}, {fillId:"f2", answer:"corrected"})')).success, true);
+assert.strictEqual(J(run('coordGpsClerkAnswer_({email:"k@x.org", only:["LMS4"], feeClerkOnly:true, roles:["FeeClerk"]}, {fillId:"f2", answer:"matches"})')).already, true, 'answered once');
+assert.strictEqual(J(run('coordGpsClerkChecks_({only:["LMS4"]})')).checks.length, 0, 'an answered bill leaves the clerk list');
+assert.strictEqual(J(run('coordGpsPush_({secret:"S", payload:{days:[], health:[]}})')).success, false, 'an empty push is refused, so it cannot close anything');
+assert.strictEqual(run('gpsDay_("2024-12-16", "2026-10-24")'), '16 Dec 2024'); assert.strictEqual(run('gpsDay_("2026-10-09", "2026-10-24")'), '9 Oct');
+ctx.f3 = { today: '2026-10-24', fleet, live: ctx.facts.live || [], health: [], days: [], checks: [Object.assign({}, c2, { date: '2026-10-23' })], answers: [{ id: 'f2', answer: 'corrected', at: '2026-10-20T10:00:00Z' }] };
+assert.match(J(run('gpsFollowUps_(f3)')).find(x => x.taskId === 'fuel_check|f2').detail, /said the bill was corrected, but the day book entry is unchanged/);
+ctx.f3.answers[0].at = '2026-10-24T08:00:00Z';
+assert.ok(!J(run('gpsFollowUps_(f3)')).some(x => x.taskId === 'fuel_check|f2'), 'a fresh "corrected" waits for the re-entry');
+console.log('transport gps: all checks passed');

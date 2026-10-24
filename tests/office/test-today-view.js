@@ -26,4 +26,12 @@ if (require.main !== module) { module.exports = () => {}; return; }
   await T.showHiringCounts(l2, async () => { throw new Error('offline'); }, 'u', 't');
   await T.showHiringCounts(l2, async () => ({ json: async () => ({ success: false, error: 'Not authorized' }) }), 'u', 't');
   assert.strictEqual(l2.textContent, 'Hiring'); ok('offline or refused leaves the plain link');
+  assert.strictEqual(T.busLabel(0), 'Live Buses'); assert.strictEqual(T.busLabel(1), 'Live Buses · 1 fuel bill to check'); assert.strictEqual(T.busLabel(3), 'Live Buses · 3 fuel bills to check'); ok('busLabel');
+  const bl = { textContent: 'Live Buses' }, bb = { hidden: true, innerHTML: '' };
+  await T.showBusChecks(bl, bb, async () => ({ json: async () => ({ success: true, checks: [{}, {}] }) }), 'u', 't');
+  assert.strictEqual(bl.textContent, 'Live Buses · 2 fuel bills to check'); assert.strictEqual(bb.hidden, false); assert.ok(/under your name/.test(bb.innerHTML)); ok('showBusChecks: link and banner');
+  const bl2 = { textContent: 'Live Buses' }, bb2 = { hidden: true };
+  await T.showBusChecks(bl2, bb2, async () => ({ json: async () => ({ success: true, checks: [] }) }), 'u', 't');
+  await T.showBusChecks(bl2, bb2, async () => { throw new Error('offline'); }, 'u', 't');
+  assert.strictEqual(bl2.textContent, 'Live Buses'); assert.strictEqual(bb2.hidden, true); ok('showBusChecks: nothing to check or offline leaves the plain link');
 })().catch((e) => { console.error(e); process.exit(1); });

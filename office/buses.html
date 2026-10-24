@@ -39,7 +39,8 @@
       </div>
       <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
       <nav class="office-nav"><a class="btn-lg" href="index.html">Today</a></nav>
-      <p class="hint">Where your campus buses are now, from the GPS devices. Refreshes every minute.</p>
+      <p class="hint">Fuel bills to check, then where your campus buses are now.</p>
+      <section class="block" id="bus-checks"></section>
       <section class="block" id="today"></section><!-- id "today" is the shell's message slot too -->
     </div>
   </main>
@@ -47,9 +48,11 @@
   <script src="../assets/auth.js?v=ffa8751c"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="../coordinator/transport-live.js?v=9eeb093f"></script>
+  <script src="../coordinator/transport-checks.js?v=214f7991"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     bootOffice({ onReady: (session) => {
+      window.TransportChecks.mountClerk(document.getElementById('bus-checks'), session);
       window.TransportLive.mount(document.getElementById('today'), session);
     } });
   </script>

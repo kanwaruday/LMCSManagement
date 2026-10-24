@@ -84,8 +84,9 @@ const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + 
 assert.deepStrictEqual(vis({ campusId: 'LMS1,LMS2', feeClerkOnly: true }), ['LMS1', 'LMS2']);
 assert.deepStrictEqual(vis({ campusId: 'LMS1', feeClerkOnly: true }), ['LMS1'], 'a Fee Clerk of LMS1 does not see LMS2 and LMS3');
 assert.deepStrictEqual(vis({ campusId: 'LMS1' }), ['LMS1', 'LMS2', 'LMS3'], 'a Coordinator still sees their district');
-assert.match(cg, /caller\.feeClerkOnly && action !== 'coordinatortransport'/, 'Fee Clerks are refused every other read');
+assert.match(cg, /caller\.feeClerkOnly && \['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks'\]\.indexOf\(action\) === -1/, 'Fee Clerks are refused every other read');
 assert.match(cg, /!caller \|\| caller\.feeClerkOnly\) return coordJson_/, 'Fee Clerks are refused every write');
+assert.ok(cg.indexOf("=== 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_") < cg.indexOf('!caller || caller.feeClerkOnly) return coordJson_'), 'the clerk fuel answer is the one write a Fee Clerk may make');
 
 // an old-shaped cached form entry (no links) must not break the page
 run('coordTransportLive_ = function(){ return { docs: { "HP1|pollution": "2027-09-01" }, regs: ["HP1"], rows: 1 }; }');

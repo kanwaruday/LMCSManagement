@@ -136,6 +136,9 @@ function officeLastOdometer_(campus, vehicle, date) {
 
 function officeDaybookWrite_(ss, ctx, row, action) {
   const res = officeAppend_(ss, 'DayBook', row, ctx.caller, { action: action, campus: row.campus });
+  if (row.category === 'fuel' && !res.duplicate) { // feeds the GPS fuel checks; a failure here never loses the entry
+    try { officeFuelMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Fuel mirror: ' + err.message); }
+  }
   return { id: res.id, duplicate: res.duplicate };
 }
 

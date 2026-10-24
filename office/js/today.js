@@ -50,3 +50,20 @@ export async function showHiringCounts(link, fetchFn, url, token) {
     if (r && r.success) link.textContent = hiringLabel(hiringCounts(r.applicants, r.legwork));
   } catch (e) { /* offline: leave the plain link */ }
 }
+
+// Live Buses link: how many fuel bills of this campus the GPS flagged and the clerk has not checked yet (Coordinator backend).
+// Unchecked for 2 days, a bill goes to the Coordinator as a follow-up, so the banner says so.
+export const busLabel = (n) => 'Live Buses' + (n ? ' · ' + n + ' fuel bill' + (n > 1 ? 's' : '') + ' to check' : '');
+export async function showBusChecks(link, banner, fetchFn, url, token) {
+  try {
+    const r = await (await fetchFn(url + '?action=coordinatorbuschecks&idToken=' + encodeURIComponent(token), { cache: 'no-store' })).json();
+    if (!r || !r.success) return;
+    const n = r.checks.length;
+    link.textContent = busLabel(n);
+    if (banner && n) {
+      banner.hidden = false;
+      banner.innerHTML = '<b>' + n + ' fuel bill' + (n > 1 ? 's' : '') + ' to check against the pump slip.</b> Open <a href="buses.html">Live Buses</a> and answer each one. ' +
+        'A bill not checked within 2 days goes to the Coordinator under your name.';
+    }
+  } catch (e) { /* offline: leave the plain link */ }
+}

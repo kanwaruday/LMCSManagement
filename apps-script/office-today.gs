@@ -38,6 +38,7 @@ function officeTodayGet_(ctx, data) {
   if (!data.campus) throw new Error('MISSING_CAMPUS');
   const today = officeToday_();
   const pctx = { caller: ctx.caller, campus: data.campus, today: today, ss: officeOpen_(data.campus, officeFy_(today)) };
+  officeFuelMirrorDaily_(data.campus); // catches fills saved before the mirror existed; once a day per campus, never blocks Today
   let tasks = [];
   officeTodayProviders_().forEach(function (p, i) {
     try {

@@ -139,12 +139,14 @@ function doGet(e) {
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
-    if (caller.feeClerkOnly && action !== 'coordinatortransport' && action !== 'coordinatorbuslive') return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
+    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
     if (action === 'coordinatortransport') return coordJson_(coordTransport_(caller));
     if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
+    if (action === 'coordinatorbuschecks') return coordJson_(coordGpsClerkChecks_(caller));
+    if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
@@ -163,7 +165,9 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
+    if (String(body.action || '').toLowerCase() === 'transportgpspush') return coordJson_(coordGpsPush_(body));
     const caller = coordVerifyCaller_(body.idToken);
+    if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();
     if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));
@@ -250,9 +254,15 @@ function coordTaskUpsert_(sh, rows, t) {
     sh.getRange(i + 1, 13).setValue(t.department);
     return;
   }
-  const row = [t.taskId, t.domain, t.campus, t.title, t.detail, 'open', t.severity, now, now, '', '', '', t.department];
+  const row = [t.taskId, t.domain, t.campus, t.title, t.detail, 'open', t.severity, now, now, '', '', '', t.department, t.assignee || '', ''];
   sh.appendRow(row);
+  if (t.due) { sh.getRange(rows.length + 1, 15).setNumberFormat('@').setValue(t.due); row[14] = t.due; } // text: appendRow would make it a Date
   rows.push(row);
+}
+
+/** The Due cell as yyyy-MM-dd: older rows may hold a Date (Sheets converts ISO text written without a text format). */
+function coordDueIso_(v) {
+  return v instanceof Date ? Utilities.formatDate(v, 'Asia/Kolkata', 'yyyy-MM-dd') : String(v || '').slice(0, 10);
 }
 
 /** Open tasks of `domain` on a campus in `covered` (null = every campus) whose TaskId is not in
@@ -858,7 +868,7 @@ function coordTasksList_(caller, idToken) {
     if (r[5] !== 'open') continue;
     if (visible && visible.indexOf(r[2]) === -1 && r[13] !== caller.email) continue; // an assignee always sees what was assigned to them
     tasks.push({
-      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: coordDueSeverity_(r[6], String(r[14] || ''), today), assignee: r[13] || '', due: String(r[14] || ''),
+      taskId: r[0], domain: r[1], campus: r[2], title: r[3], detail: r[4], severity: coordDueSeverity_(r[6], coordDueIso_(r[14]), today), assignee: r[13] || '', due: coordDueIso_(r[14]),
       department: r[12] || COORD_DOMAIN_DEPT[r[1]] || COORD_DEPT_OPS,
       createdAt: r[7] instanceof Date ? r[7].toISOString() : r[7], notes: r[11] || '',
     });
@@ -891,6 +901,7 @@ function coordTaskResolveCore_(caller, body) {
       if (rows[i][0] !== taskId) continue;
       if (visible && visible.indexOf(rows[i][2]) === -1 && rows[i][13] !== caller.email) return { success: false, error: 'Not authorized' };
       if (rows[i][5] !== 'open') return { success: true, alreadyResolved: true };
+      if (GPS_DOMAINS.indexOf(rows[i][1]) !== -1 && !String(body.note || '').trim()) return { success: false, error: 'Write what was done before closing this (for example: driver warned on 24 Oct, or Blackbox complaint number).' };
       sh.getRange(i + 1, 6).setValue('resolved');
       sh.getRange(i + 1, 10, 1, 2).setValues([[new Date(), caller.email]]);
       if (body.note) sh.getRange(i + 1, 12).setValue(String(body.note).slice(0, 500));

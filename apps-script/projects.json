@@ -52,7 +52,8 @@
       "coordinator",
       "coordinator-transport",
       "coordinator-pdr",
-      "coordinator-approvals"
+      "coordinator-approvals",
+      "coordinator-transport-gps"
     ]
   },
   "chapter": {
@@ -88,7 +89,8 @@
       "office-backup",
       "office-import",
       "office-setup",
-      "office-ledger"
+      "office-ledger",
+      "office-fuel-mirror"
     ]
   }
 }

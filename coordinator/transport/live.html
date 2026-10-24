@@ -3,23 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Coordinator · Live buses</title>
+<title>LMCS — Coordinator · Transport checks</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=be0c99dc">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>.tc-h{font-size:14px;margin:22px 0 8px}</style>
 </head>
 <body>
-<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Transport · Live buses</p></div><a href="index.html">&larr; Transport fleet</a></header>
+<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Transport · Checks and live buses</p></div><a href="index.html">&larr; Transport fleet</a></header>
 <div id="authRoot"></div>
 <main id="appBody" style="display:none"></main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
 <script src="../transport-rank.js?v=99053049"></script>
-<script src="../shared.js?v=960a48c4"></script>
+<script src="../shared.js?v=616abc76"></script>
 <script src="../transport-live.js?v=9eeb093f"></script>
+<script src="../transport-checks.js?v=214f7991"></script>
 <script>
 Coord.boot(function (body, session) {
-  TransportLive.mount(body, session);
+  TransportChecks.mount(body, session);
 });
 </script>
 </body>
