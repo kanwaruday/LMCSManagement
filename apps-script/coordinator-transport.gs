@@ -268,3 +268,65 @@ function coordTransportCheck() {
   console.log('scan data synced at ' + all.base.syncedAt + ': ' + all.fleet.length + ' vehicles, ' + all.live.rows + ' form rows, unknown vehicles in form: ' + (all.unknown.join(', ') || 'none'));
   console.log('override warnings: ' + (all.base.warnings.join('; ') || 'none'));
 }
+
+// ── Live bus positions (GPS, Blackbox trackmaster.in) ─────────────────
+// action=coordinatorbuslive: where every bus is now, joined to the fleet roster (campus, route, driver) and scoped like the
+// rest of this page (Fee Clerks: own campus). The vendor's live-status call needs only the customer id, no login -- a vendor
+// flaw we have reported -- so the id is a Script property (TRACKMASTER_CUSTID, set once with action=transportgpsconfig), never in
+// this public repo, and browsers never call the vendor themselves. History (every GPS point) is archived on the Mac
+// (~/Projects/transport-gps), not here: a year of points is ~1M rows, too many for a sheet.
+const COORD_BUS_LIVE_URL = 'https://api1.trackmaster.in/api/LiveStatus/LiveStatusWithAjax';
+const COORD_BUS_LIVE_CACHE_SECONDS = 45; // the devices report about once a minute while moving
+
+/** '24-Oct-2026 10:00:14 AM' (India time) -> ISO 8601 with +05:30, or '' */
+function coordBusTime_(s) {
+  const M = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+  const m = String(s || '').trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) ?([AP]M)$/i);
+  if (!m || !M[m[2]]) return '';
+  const h = (+m[4] % 12) + (/p/i.test(m[7]) ? 12 : 0), p = function (n) { return ('0' + n).slice(-2); };
+  return m[3] + '-' + p(M[m[2]]) + '-' + p(m[1]) + 'T' + p(h) + ':' + m[5] + ':' + m[6] + '+05:30';
+}
+
+/** The vendor's live rows -> [{reg, lat, lng, speed, at, state, place, kmToday, bbid}] (rows without a position are dropped). */
+function coordBusParse_(rows) {
+  return (rows || []).map(function (r) {
+    return { reg: String(r.VehicleName || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), lat: parseFloat(r.Latitude), lng: parseFloat(r.Longitude),
+      speed: Number(r.Speed) || 0, at: coordBusTime_(r.DateTime), state: String(r.ProgressStatus || ''),
+      place: String(r.LocationWithoutLink || '').replace(/\s+/g, ' ').trim(), kmToday: Number(r.Distance) || 0, bbid: String(r.BBID || '') };
+  }).filter(function (b) { return b.reg && isFinite(b.lat) && isFinite(b.lng) && (b.lat || b.lng); });
+}
+
+function coordBusFetch_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('coord_bus_live_v1');
+  if (hit) return JSON.parse(hit);
+  const custid = String(PropertiesService.getScriptProperties().getProperty('TRACKMASTER_CUSTID') || '').trim();
+  if (!custid) throw new Error('GPS tracking is not set up yet (TRACKMASTER_CUSTID)');
+  // the API 404s unless the full DataTables parameter set is sent
+  const cols = ['Sno', '1', '2', '3', 'DateTime', 'Location', '6', '7', 'Distance', '9', '10', '11', '12', '13', '', '15'];
+  const q = { sEcho: 1, iColumns: cols.length, sColumns: new Array(cols.length).join(','), iDisplayStart: 0, iDisplayLength: 500, sSearch: '', bRegex: 'false',
+    iSortCol_0: 3, sSortDir_0: 'desc', iSortingCols: 1, custid: custid, StatusCode: '', type: 0 };
+  cols.forEach(function (c, i) { q['mDataProp_' + i] = c; q['sSearch_' + i] = ''; q['bRegex_' + i] = 'false'; q['bSearchable_' + i] = 'true'; q['bSortable_' + i] = c ? 'true' : 'false'; });
+  const url = COORD_BUS_LIVE_URL + '?' + Object.keys(q).map(function (k) { return k + '=' + encodeURIComponent(q[k]); }).join('&');
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('The GPS provider did not answer (HTTP ' + res.getResponseCode() + ')');
+  const out = { at: new Date().toISOString(), buses: coordBusParse_(JSON.parse(res.getContentText()).aaData) };
+  cache.put('coord_bus_live_v1', JSON.stringify(out), COORD_BUS_LIVE_CACHE_SECONDS);
+  return out;
+}
+
+function coordBusLive_(caller) {
+  const live = coordBusFetch_(), fleet = coordTransportFleet_().fleet, visible = coordVisibleCampuses_(caller), by = {};
+  fleet.forEach(function (b) { by[b.reg] = b; });
+  return { success: true, fetchedAt: live.at, buses: live.buses.map(function (g) {
+    const b = by[g.reg] || {};
+    return Object.assign(g, { campus: b.campus || '', campusId: b.campusId || '', route: b.route || '', driver: b.driver || '', operational: b.reg ? !!b.operational : null });
+  }).filter(function (g) { return !visible || visible.indexOf(g.campusId) !== -1; }) }; // a bus missing from the roster is shown to the Owner only
+}
+
+/** POST action=transportgpsconfig {secret, custid}: stores the GPS customer id (same shared secret as the push). */
+function coordBusConfig_(body) {
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
+  if (!/^\d{3,10}$/.test(String(body.custid || ''))) return { success: false, error: 'custid must be digits' };
+  PropertiesService.getScriptProperties().setProperty('TRACKMASTER_CUSTID', String(body.custid));
+  return { success: true };
+}

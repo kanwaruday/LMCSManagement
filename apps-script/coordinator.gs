@@ -139,11 +139,12 @@ function doGet(e) {
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
-    if (caller.feeClerkOnly && action !== 'coordinatortransport') return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
+    if (caller.feeClerkOnly && action !== 'coordinatortransport' && action !== 'coordinatorbuslive') return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
     if (action === 'coordinatortransport') return coordJson_(coordTransport_(caller));
+    if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
@@ -160,6 +161,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
+    if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     const caller = coordVerifyCaller_(body.idToken);
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });

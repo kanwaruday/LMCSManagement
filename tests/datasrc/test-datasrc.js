@@ -37,6 +37,8 @@ const NO_SOURCES = {
   'office/index.html': OFFICE_REASON,
   'office/report.html': OFFICE_REASON,
   'office/transport.html': OFFICE_REASON,
+  'office/buses.html': OFFICE_REASON,
+  'coordinator/transport/live.html': 'live GPS positions from the vendor through the Coordinator backend; no sheet behind it, and the vendor id stays out of page source',
 };
 function pages(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
