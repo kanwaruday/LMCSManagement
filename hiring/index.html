@@ -850,7 +850,7 @@ function doAdd_(btn) {
     const row = parseInt(String(res.applicantId).replace(/^T-0*/, ''), 10);
     const open = function () {
       if (byRow_(row)) { renderPanel_(row); if (res.duplicate) msg_('notesMsg', 'Already on file — this is their record.', 'ok'); }
-      else { msg_('adMsg', (res.duplicate ? 'Already on file as ' : 'Added as ') + res.applicantId + '. They are not in your view — check the school.', 'ok'); }
+      else { msg_('adMsg', (res.duplicate ? (res.applicantId ? 'Already on file as ' + res.applicantId : 'Already on file at another school') : 'Added as ' + res.applicantId) + '. They are not in your view — check the school.', 'ok'); }
     };
     // A Principal seeing a walk-in on the spot: a direct booking (accepted, and it shortlists them).
     if (interviewAt && !res.duplicate) gasPost_('apptpropose', { row: row, kind: 'interview', start: interviewAt }).then(function (r2) {
@@ -1018,7 +1018,7 @@ function showAppointmentLetter_(row) {
   const d = a.dateOfJoining ? a.dateOfJoining.split('-').reverse().join('-') : '';
   const t = new Date(), today = ('0' + t.getDate()).slice(-2) + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + t.getFullYear();
   const e = function (v, ph) { return '<span contenteditable="true">' + (v === undefined || v === '' ? (ph || '_____') : esc_(v)) + '</span>'; };
-  const n = function (v) { return '<span contenteditable="true">' + (v ? v : 0) + '</span>'; };
+  const n = function (v) { return '<span contenteditable="true">' + (Number(v) || 0) + '</span>'; };
   const row2 = function (l1, v1, l2, v2, l3, v3) {
     return '<tr><td>' + l1 + '<span style="float:right">' + v1 + '</span></td><td>' + l2 + '<span style="float:right">' + v2 + '</span></td><td>' + l3 + '<span style="float:right">' + v3 + '</span></td></tr>';
   };

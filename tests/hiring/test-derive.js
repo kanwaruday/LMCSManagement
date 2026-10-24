@@ -137,3 +137,28 @@ T('campusId / role / positionLabel: first tag in the caller\'s campuses; first m
   const none = build([row({ subjects: 'Maths', interviewAt: day(1) })])[0]; // in the pipeline, no open role
   assert.strictEqual(none.role, null); assert.strictEqual(none.positionLabel, ''); assert.strictEqual(none.campusId, 'LMS4');
 });
+
+// Review close-out (2026-10-24)
+T('reportedPosition: a revived candidate\'s earlier round does not name today\'s position', () => {
+  const old = { phone: '9876543210', submittedAtMs: day(-20).getTime(), position: 'LMS 4 - TGT: English', recommendation: 'proceed' };
+  const a = build([row({ revivedAt: day(-5), interviewAt: day(0) })], { portalInterviews: [old] })[0];
+  assert.strictEqual(a.reportedPosition, '');
+  const now = Object.assign({}, old, { submittedAtMs: day(-1).getTime(), position: 'LMS 4 - PGT: Physics' });
+  assert.strictEqual(build([row({ revivedAt: day(-5), interviewAt: day(0) })], { portalInterviews: [old, now] })[0].reportedPosition, 'LMS 4 - PGT: Physics');
+});
+T('Live Status tracker: one row per phone, the furthest-along wins (not the later row)', () => {
+  const far = ctx.hirRowApplicant_(row({ phone: '9811111111', interviewAt: day(-1), md: day(-1), offerAt: day(-2) }), 1, { ir: {}, interviews: {}, demos: {}, decisions: {} });
+  const later = ctx.hirRowApplicant_(row({ phone: '9811111111', ts: day(-1) }), 2, { ir: {}, interviews: {}, demos: {}, decisions: {} });
+  assert.strictEqual(ctx.hirPreferRow_(later, far).row, far.row);
+});
+T('hirRefreshTrackerCore_ writes one row per phone using that rule', () => {
+  const rows = sheet(row({ phone: '9822222222', name: 'Far', interviewAt: day(-1), md: day(-1), offerAt: day(-2) }), row({ phone: '9822222222', name: 'Later', ts: day(-1) }));
+  let written = [];
+  Object.assign(ctx, {
+    hirApprovedRequisitions_: () => ({}), hirApprovedCampuses_: () => ({}), hirSalaryOfferDecisions_: () => ({}),
+    hirIrSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }), hirPortalReports_: () => [], hirSheet_: () => ({ getDataRange: () => ({ getValues: () => rows }) }),
+    hirTrackerSheet_: () => ({ getMaxRows: () => 100, insertRowsAfter() {}, getRange: () => ({ clearContent() {}, setValues(v) { written = v; } }) }),
+  });
+  assert.strictEqual(ctx.hirRefreshTrackerCore_().count, 1);
+  assert.strictEqual(written[0][1], 'Far');
+});
