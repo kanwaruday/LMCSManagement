@@ -243,7 +243,8 @@ function hirRowApplicant_(r, i, ctx) {
     interviewReports: evidence.interviewReports, demoReports: evidence.demoReports,
     interviewReportPdf: (evidence.ir.length ? evidence.ir[evidence.ir.length - 1].pdf : '') ||
       ((ctx.ir[phone] || []).slice(-1)[0] || {}).pdf || '',
-    reportedPosition: ((evidence.interviewReports.slice(-1)[0] || {}).position) || ((ctx.ir[phone] || []).slice(-1)[0] || {}).position || '',
+    // This round only (evidence is cut at the last revival): an older round's report must not name today's position.
+    reportedPosition: ((evidence.interviewReports.filter(function (x) { return (x.submittedAtMs || 0) >= revivedAtMs; }).slice(-1)[0] || {}).position) || ((evidence.ir.slice(-1)[0] || {}).position) || '',
   };
   a.employeeCodePermanent = !!a.employeeCode;
   a.round = a.history.length + 1;
@@ -1367,7 +1368,9 @@ function hiringUpdateStatus_(caller, body) {
   if (body.interviewAt || body.demoAt || (body.mdInterviewAt && !isOwner)) throw new Error('Book it through Appointments');
 
   const sheet = hirSheet_();
-  const branches = hirScopedRow_(caller, sheet, row).branches;
+  // allowHired: a Hired candidate's Notes can still be saved, but Hired/Rejected can't be written again (below).
+  const branches = hirScopedRow_(caller, sheet, row, true).branches;
+  if (status && String(sheet.getRange(row, HIR_COL.STATUS).getValue() || '').trim() === 'Hired') throw new Error('This candidate is already Hired.');
 
   // Rejected is a terminal exit, not a ladder rung (see HIR_LADDER). 2026-10-22: it needs a reason from
   // HIR_REJECT_REASONS (column S) -- checked here, before anything is written; the note is optional
@@ -1562,8 +1565,8 @@ function hirRefreshTrackerCore_() {
     }
 
     const key = phone || ('row' + applicant.row);
-    if (!phone || !byPhone[key]) { byPhone[key] = applicant; order.push(key); }
-    else { byPhone[key] = applicant; } // later row wins, same rule as hiringApplicants_
+    if (!byPhone[key]) { byPhone[key] = applicant; order.push(key); }
+    else { byPhone[key] = hirPreferRow_(applicant, byPhone[key]); } // same one-per-phone rule as the dashboard (hirBuildApplicants_)
   }
 
   // Approved-requisition matches float to the top (best match score
@@ -1681,13 +1684,15 @@ function hirNeedElevated_(caller) {
 }
 
 // A row the caller may act on: it must name one of the caller's schools. Returns its key cells.
-function hirScopedRow_(caller, sheet, rowRaw) {
+function hirScopedRow_(caller, sheet, rowRaw, allowHired) {
   const row = parseInt(rowRaw, 10);
   if (!row || row < 2 || row > sheet.getLastRow()) throw new Error('Invalid row');
   const branches = String(sheet.getRange(row, HIR_COL.BRANCHES).getValue() || '');
   const vis = hirCallerCampuses_(caller);
   const tags = (branches.match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); });
   if (vis && !tags.some(function (c) { return vis.indexOf(c) !== -1; })) throw new Error('This applicant did not apply to your school');
+  // 2026-10-24: Hired is final -- nothing (booking, shortlisting, reports, rejecting...) may act on a hired candidate.
+  if (!allowHired && String(sheet.getRange(row, HIR_COL.STATUS).getValue() || '').trim() === 'Hired') throw new Error('This candidate is already Hired.');
   return { row: row, branches: branches, campus: tags.filter(function (c) { return !vis || vis.indexOf(c) !== -1; })[0] || tags[0] || '',
     name: String(sheet.getRange(row, HIR_COL.NAME).getValue() || '').trim(), phone: hirNormalizePhone_(sheet.getRange(row, HIR_COL.PHONE).getValue()) };
 }
@@ -1727,7 +1732,13 @@ function hiringAddApplicant_(caller, body) {
   const res = hirWithLock_(function () {
     const values = sheet.getDataRange().getValues();
     for (let i = 1; i < values.length; i++) {
-      if (hirNormalizePhone_(values[i][HIR_COL.PHONE - 1]) === phone) return { duplicate: true, applicantId: hirApplicantId_(i + 1) };
+      if (hirNormalizePhone_(values[i][HIR_COL.PHONE - 1]) === phone) {
+        // 2026-10-24: only name the existing record (its T-ID) when it is inside the caller's schools -- otherwise an
+        // out-of-scope duplicate would leak that a person exists at another school, and which row.
+        const tags = (String(values[i][HIR_COL.BRANCHES - 1] || '').match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); });
+        const mine = !vis || tags.some(function (c) { return vis.indexOf(c) !== -1; });
+        return { duplicate: true, applicantId: mine ? hirApplicantId_(i + 1) : '' };
+      }
     }
     hirGrow_(sheet);
     const r = new Array(HIR_COL.DEMO_AT).fill('');

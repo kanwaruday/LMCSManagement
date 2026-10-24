@@ -436,6 +436,10 @@ function coordHiringWanted_(applicantRows, approvalRows, rosterCodes, now) {
       continue;
     }
 
+    // An approval from BEFORE the candidate's last revival (column T, Revived At) belongs to an earlier round -- it must
+    // not make this round look stalled (hirIsHiringApproved_ ignores it the same way).
+    const revivedAt = r[19] ? new Date(r[19]) : null;
+    if (approvedAt[id] && revivedAt && !isNaN(revivedAt.getTime()) && approvedAt[id] < revivedAt) continue;
     if (approvedAt[id] && r[13]) { // approved to hire after the MD interview, but not Hired yet
       const days = Math.floor((now.getTime() - approvedAt[id].getTime()) / 86400000);
       if (days < COORD_STALL_MEDIUM_DAYS) continue;

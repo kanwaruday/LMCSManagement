@@ -213,3 +213,23 @@ T('report with reject reason "Other" and no note is refused before anything is s
   throws(() => ctx.hiringSubmitDemo_(principal, { row: 2, demoDate: '2026-10-22', scores: nine, studentFeedback: 4, recommendation: 'reject', rejectReason: 'Other' }), /note/i);
   assert.strictEqual(tabs['Portal Demo Reports'], undefined);
 });
+
+// ── Review close-out (2026-10-24) ────────────────────────────────────────────
+T('add applicant: a duplicate phone at ANOTHER school does not reveal that person\'s ID', () => {
+  reset([appRow({ name: 'Elsewhere', phone: '9816099999', branches: 'LMS-1' }), appRow({ name: 'Mine', phone: '9816088888', branches: 'LMS-4' })]);
+  const out = ctx.hiringAddApplicant_(principal, { name: 'Dup', phone: '9816099999', campusId: 'LMS4', source: 'Walk-in' });
+  assert.strictEqual(out.duplicate, true); assert.strictEqual(out.applicantId, '');
+  const own = ctx.hiringAddApplicant_(principal, { name: 'Dup', phone: '9816088888', campusId: 'LMS4', source: 'Walk-in' });
+  assert.strictEqual(own.duplicate, true); assert.strictEqual(own.applicantId, 'T-0003');   // in scope: named as before
+  assert.strictEqual(apps.rows.length, 3);                                                   // nothing appended either way
+});
+T('a Hired candidate: no scheduling, shortlisting or reports; Hired/Rejected cannot be written again', () => {
+  reset([appRow({ STATUS: 'Hired' })]);
+  throws(() => ctx.hiringSchedule_(principal, { row: 2, clear: 'demo' }), /already Hired/);
+  throws(() => ctx.hiringShortlist_(principal, { row: 2 }), /already Hired/);
+  throws(() => ctx.hiringMarkStage_(principal, { row: 2, stage: 'interview' }), /already Hired/);
+  throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Rejected', rejectReason: 'Other', rejectNote: 'x' }), /already Hired/);
+  throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /already Hired/);
+  ctx.hiringUpdateStatus_(principal, { row: 2, status: '', notes: 'letter sent' });          // Notes stay editable
+  assert.strictEqual(apps.rows[1][C.NOTES - 1], 'letter sent');
+});

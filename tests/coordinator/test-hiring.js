@@ -7,7 +7,7 @@ vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/coordinator.gs',
 const now = new Date('2026-10-20T10:00:00+05:30'), day = (n) => new Date(now.getTime() + n * 86400000);
 const ymd = (d) => d.toISOString().slice(0, 10);
 // applicant row: index 1 name, 5 branches, 10 status, 13 MD interview at, 15 emp code, 16 DOJ
-const app = (name, status, o) => { const r = new Array(18).fill(''); r[1] = name; r[5] = o.branches || 'LMS-2'; r[10] = status; r[13] = o.md || ''; r[15] = o.code || ''; r[16] = o.doj || ''; return r; };
+const app = (name, status, o) => { const r = new Array(20).fill(''); r[1] = name; r[5] = o.branches || 'LMS-2'; r[10] = status; r[13] = o.md || ''; r[15] = o.code || ''; r[16] = o.doj || ''; return r; };
 const apRow = (id, campus, status, decidedAt) => { const r = new Array(19).fill(''); r[1] = campus; r[2] = 'Salary Offer Approval'; r[7] = id + ' Name'; r[13] = status; r[15] = decidedAt || ''; return r; };
 
 const applicants = [['h'],
@@ -36,4 +36,11 @@ assert.strictEqual(by['hiring_stall|T-0007'].severity, 'high');
 assert.strictEqual(by['hiring_stall|T-0006'].campus, 'LMS3');   // offer campus wins
 assert.strictEqual(by['complete_hire|T-0002'].campus, 'LMS2');  // falls back to the applicant's branch tick
 assert.ok(w.every((t) => t.department === 'HR & Staff'));
+// A revived candidate: an approval from BEFORE the revival (column T, Revived At) is an earlier round -- no stall alert.
+{
+  const revived = app('Revived after old approval', '', { md: day(-9) }); revived[19] = day(-6);   // revived 6 days ago; approved 9 days ago
+  const fresh = app('Approved after revival', '', { md: day(-9) }); fresh[19] = day(-12);          // revived 12 days ago; approved 9 days ago -> still stalled
+  const w2 = ctx.coordHiringWanted_([['h'], revived, fresh], [['h'], apRow('T-0002', 'LMS3', 'Approved', day(-9)), apRow('T-0003', 'LMS3', 'Approved', day(-9))], [], now);
+  assert.strictEqual(JSON.stringify(w2.map((t) => t.taskId)), JSON.stringify(['hiring_stall|T-0003']));
+}
 console.log('coordinator hiring: ok');
