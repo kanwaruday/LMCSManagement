@@ -28,8 +28,8 @@ map, stops and walking areas, depot).
    see the trade-off before proposing it.
 4. Students allocated to stops (as counts in the game view), so the routes can be fitted to where children
    actually board.
-5. A street-level look at every stop, from Google Street View where it exists and from a verified photo
-   where it does not.
+5. A street-level look at every stop, from the school's own captured imagery, with every map and
+   street-level part **100% open source** (Uday, 2026-10-25).
 6. Built in phases, one at a time, each useful on its own.
 
 ## Non-goals
@@ -154,49 +154,45 @@ map, stops and walking areas, depot).
 
 ### Loop 5: Street-level view of every stop (Phase 1, then grows)
 
-**Uday (2026-10-25):** he accepts that Street View may be patchy, and asked for alternatives to be looked at.
-The research found:
+**Uday (2026-10-25): the map and street-level stack is 100% open source. Google and Esri are dropped.**
 
-- **Google Street View does exist in Mandi district.** A probe on 2026-10-25 opened official car imagery dated
-  **May 2026** on the Ner Chowk–Dadour corridor (SH-13/NH-32), and blue lines run along NH-154. It is
-  **road-only**: off-road stops and the town centres missed, and rural lines may be user photospheres.
-- **Mapillary:** coverage unverified; it needs a free token and is reported thin in India.
-- **KartaView:** one 2017 dashcam drive only.
-- **Panoramax:** nothing in the area.
-- **Apple Look Around:** not in India.
-- **Bing Streetside:** retiring.
+Why the school captures its own imagery: the research found no open street-level coverage of the area.
+Panoramax has nothing there, and KartaView has one 2017 drive. Google Street View (which does cover the main
+corridors) is not open source.
 
-**Layers per stop (Claude's call)**, shown as tabs on the stop card in this order:
+**Capture: our buses are the street-view cars** (Claude's call).
+- A phone in a simple dashboard mount takes a photo every few metres, with GPS, on **one run of each route**.
+  This uses an open-source interval-capture app, or the Panoramax-compatible capture workflow.
+- Run it **outside school hours**, or on the empty leg, so no children are in the frames. A Coordinator rides
+  along and taps "stop here" at each stop, which tags the frames nearest the stop.
+- Refresh once or twice a year, or when a route changes.
+- Faces and number plates are blurred before anything is shown, with an open-source blurring step on the Mac
+  (Panoramax ships one, called "SGBlur").
 
-1. **Our own verified stop photo.** This is the only layer that can exist at every stop. It shows the exact
-   pickup point, and it is current. It works like Pokemon Go Wayfarer, crowd-vetted:
-   - A Coordinator or Fee Clerk uploads a phone photo plus a pin, on a driver's behalf if needed.
-   - A second person verifies it.
-   - The stop earns a **verified** badge.
-   - Photos go to the existing private Drive and backend store, never the repo.
-2. **Google Street View** through the Maps Embed API iframe:
-   - parameters `radius=100` and `source=outdoor`, with the heading set per stop;
-   - free at any volume, with the key restricted by referrer;
-   - the tab shows only where a panorama is known to exist.
-3. **Satellite "from above"** as the always-available fallback, using Esri World Imagery at zoom ≤ 18 with
-   attribution. Register a free ArcGIS developer account for compliant use; that is a builder task, not
-   Uday's.
+**Storage and privacy.** The images are **private school data**:
+- stored with the other private transport data, and served only to signed-in roles by campus scope, like
+  money today;
+- never in the public repo, never on a public platform.
 
-**Knowing where Street View exists (Claude's call):**
-- Phase 1 starts with a **coverage pass** over every stop, using the free Street View metadata request with
-  the same key.
-- It sets a stored `hasStreetView` flag per stop (with the panorama date), so the card never dead-ends on an
-  empty panorama.
-- If the metadata request can't run on a referrer-restricted key, a Coordinator sets the flag once per stop
-  by looking.
-- **Spot-check first:** test about 30 random stops.
-  - If 60% or more have a panorama, Street View stays layer 2.
-  - If fewer do, satellite moves up to layer 2.
+A self-hosted Panoramax instance (open source) is the upgrade path if the image volume or tooling outgrows the
+simple store. That is decided in the Phase 1 plan.
 
-**Later, optional:** upload 360° phone captures of stops to Mapillary (CC BY-SA). That would build open
-coverage the school controls. It is not needed for Phase 1.
-- **"Name this stop"** (GeoGuessr) is an onboarding quiz for new drivers and helpers: shown a street view or
-  verified photo, they pick the stop. It is never scored for speed.
+**Viewer.** An open-source viewer in the page:
+- **Photo Sphere Viewer** (MIT) for 360° frames;
+- a simple next/previous frame strip for flat photos, "drive up to the stop" style.
+
+**Layers per stop**, shown as tabs on the stop card:
+1. **Stop photo**, Pokemon Go Wayfarer style (crowd-vetted):
+   - the best captured frame at the stop, or a phone photo uploaded by a Coordinator or Fee Clerk;
+   - a second person verifies it, and the stop gets a **verified** badge.
+2. **Drive-up strip:** the captured frames along the route approaching the stop.
+3. **Map view** on the open base map, with the stop pin and the bus line.
+
+There is **no satellite layer**: no free, open, high-resolution imagery of India exists, and Sentinel-2's
+10 m pixels are too coarse to see a stop.
+
+**"Name this stop"** (GeoGuessr) is an onboarding quiz for new drivers and helpers. Shown a captured frame,
+they pick the stop. It is never scored for speed.
 
 ## Roles
 
@@ -210,8 +206,8 @@ coverage the school controls. It is not needed for Phase 1.
 
 | Phase | Ships | Depends on |
 |---|---|---|
-| **1. Game shell (read-only) + missions + street view** | Game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, Street View "Look around" per stop with a coverage check | Transport views shipped (`transport-visual-directions`). Maps Embed API key (Uday). Street View coverage check |
-| **2. Route editor sandbox** | Purple-line drawing, trade-off preview, overflow rings, trip highlight, proposals and the Owner's war room | Phase 1. Stop names (staff workbook or GPS) |
+| **1. Game shell (read-only) + missions + street view** | Game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). One capture run per route (staff, outside school hours) |
+| **2. Route editor sandbox** | Purple-line drawing, trade-off preview, overflow rings, trip highlight, proposals and the Owner's war room | Phase 1. Stop names (staff workbook or GPS). OSRM running on the Mac |
 | **3. Student-to-stop allocation** | Counts per stop, unassigned counter, signed-in drag between stops, allocation proposals | ERP per-student transport for each campus. Staff stop workbook imported. Privacy advice (DPDP) |
 | **4. Garage and progression** | Richer garage, reliability, seasons, team goals, streaks with freeze, shipments | Phase 1. Service entries (v2) for reliability |
 | **5. Real writes** | Approved proposals turn into real route and stop changes in the transport workbook, with an audit trail | Uday's approval of the process |
@@ -226,11 +222,17 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 - **Map engine:** keep Leaflet 1.9.4 for Phase 1, since it is already loaded and fine for 23 buses and a few
   hundred stops. Re-evaluate MapLibre GL for Phase 2+ if the game feel needs smooth camera moves, rotation or
   vector styling (`maplibre-cartography` skill installed for that).
-- **Tiles:** `tile.openstreetmap.org` is only acceptable for light interactive use with attribution, never
-  for prefetch or offline. If the game needs offline or heavy use, move to a hosted vector tile provider or a
-  PMTiles extract for the district. Decide in the Phase 1 plan.
-- **Street View:** Maps Embed API iframe (free), key restricted by referrer, and a metadata check before
-  showing it. No scraping or storing of imagery.
+- **Everything map-side is open source** (Uday, 2026-10-25):
+  - **Tiles:** OpenStreetMap data. Use **OpenFreeMap** (free, no key, verified reachable on 2026-10-25), or
+    a self-hosted **PMTiles** extract of the district (Protomaps tools, served as a static file). Drop
+    `tile.openstreetmap.org`, whose policy forbids heavy or offline use. Which one is decided in the Phase 1
+    plan.
+  - **Street level:** our own captured imagery, the Photo Sphere Viewer / frame strip, and open-source
+    blurring (see Loop 5).
+  - **Routing:** **OSRM** (or Valhalla) running on the Mac with the Himachal OpenStreetMap extract. It gives
+    real road km and minutes for the route editor.
+  - **Search:** **Nominatim**, if place search is needed.
+  - **No API keys and no Google or Esri accounts.**
 - **Data flow is unchanged:** the Mac (`~/Projects/transport-gps`) analyses and pushes; the Coordinator
   backend stores and serves by role and campus. New game state (proposals, allocations, season goals, stop
   photos, verifications) gets new tabs in the private transport workbook, served through the same scoped
@@ -283,41 +285,27 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
      and heat.
    - A card turns "banked" when the scan is uploaded and read, as today.
    - No new follow-up rows. Escalation stays where it is today: the compliance page and the Owner view.
-7. **Phase 2 trade-off figures are calibrated estimates, labelled as such.**
-   - The estimate is straight-line distance between stops, times a hill factor.
-   - The factor is calibrated per area from each tracked bus's real GPS km against straight-line km, using
-     data we already have.
-   - No paid routing in Phase 2. Google Routes (needs billing) is a later upgrade if the estimates prove too
-     rough.
+7. **Phase 2 trade-off figures come from open-source routing.**
+   - **OSRM** runs on the Mac, the existing analysis machine, on the Himachal OpenStreetMap extract. It
+     returns road km and drive minutes.
+   - The Mac computes the trade-offs and pushes them to the backend, like the other GPS results. A live
+     "what if" on the page sends the edited stop list to a small queue the Mac answers.
+   - If the Mac is off, the page falls back to straight-line distance × a hill factor, calibrated from
+     tracked buses' real GPS km, and labels it as an estimate.
+   - OSRM is checked against real GPS km per route before its numbers are trusted.
 8. **Phase 1 builds on `transport-visual-directions` as it stands.** Uday approved shipping it unchanged on
    2026-10-25. Splitting the views by role remains a later option the code already supports through
    `opts.views`.
 
 ## Open items for Uday
 
-1. **Google Maps Embed API key.** **Uday (2026-10-25): yes, he will create it.** Claude never types or pastes
-   keys, so the build reads it from a config value Uday sets himself:
-   - It lives in a **Script Property `MAPS_EMBED_KEY`** in the Coordinator Apps Script project (the same
-     pattern as `TRANSPORT_PUSH_SECRET`).
-   - It is served only to signed-in Coordinators and the Owner, with the transport data. It is never in the
-     public repo.
-   - Without it, Phase 1 shows photos and satellite only.
-
-   His steps:
-   1. In Google Cloud Console (console.cloud.google.com), pick or create a project, e.g. "LMCS Portal".
-      Google may ask for a billing account; the Embed API itself is free.
-   2. Go to APIs & Services → Library and enable **Maps Embed API**. Also enable **Street View Static API**
-      for the free metadata check used by the coverage pass.
-   3. Go to APIs & Services → Credentials → Create credentials → **API key**.
-   4. Edit the key:
-      - **Application restrictions:** Websites → add `https://kanwaruday.github.io/*`.
-      - **API restrictions:** Restrict key → tick **Maps Embed API** and **Street View Static API** only.
-      - Save.
-   5. Optional: set a ₹100 budget alert under Billing → Budgets.
-   6. Copy the key. In the Coordinator Apps Script project, go to Project Settings (gear) → Script
-      Properties → Add, with name `MAPS_EMBED_KEY` and the key as the value. Save. No redeploy is needed.
-2. **Street View coverage.** **Uday: accepted that it may be patchy, and asked for alternatives.** Folded in
-   as the three-layer stop view in Loop 5.
+1. **Maps key: no longer needed.** Uday asked for a 100% open-source stack (2026-10-25), so there's no
+   Google Maps key and no Google Cloud steps.
+2. **Street-level capture runs.** Street View coverage was patchy, so the alternative is to capture our own.
+   - One run per route with a phone in a dashboard mount, outside school hours.
+   - A Coordinator rides along to tag the stops.
+   - Uday decides who does this and when, and buys about 6 phone mounts (one per campus). The Phase 1 plan
+     includes a one-page capture guide.
 3. **DPDP advice before Phase 3.** **Uday: he'll get it when Phase 3 comes.** The design already keeps names
    out of the game layer and the public repo.
 
