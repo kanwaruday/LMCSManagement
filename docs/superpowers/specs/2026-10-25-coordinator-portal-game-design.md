@@ -276,6 +276,43 @@ so only this much is designed here).
 - Principals see their own campus's needs bars and the district team bars. They never see another campus's bars side
   by side with theirs.
 
+### `principalissues` response shape (agreed with the game director, who consumes it)
+
+```
+GET action=principalissues&idToken=…   (Principal: own campus only; Coordinator/Owner: as coordinatorpdr scope)
+{ success: true, campus: "LMS4",
+  issues: [ { id, subject, campus, first: "YYYY-MM-DD", last: "YYYY-MM-DD", count, needsAction: bool,
+              status: "open" | "acknowledged" | "assigned" | "resolved",   // from PDR Issue Actions, merges applied
+              assignee: "<email>" | "", resolvedBy: "<email>" | "", resolvedAt: "YYYY-MM-DD" | "",
+              note: "" } ] }
+```
+
+- Merged-away issues are folded into their target, as the Systems page does today.
+- No report text beyond the issue subject is returned.
+
+## Buddy's Coordinator lines (drafts, for the game director's voice check)
+
+| Moment | Line |
+|---|---|
+| Morning, core work waiting | "Good morning. Two approvals at LMS 5 have waited more than three days. The first is a purchase request from the Principal." |
+| Morning, nothing urgent | "Morning. Nothing in your district is past its line today. Your five are ready when you are." |
+| A decision clears a Principal's wait | "Decided. LMS 4's Principal can go ahead with the trip now." |
+| Help credit, end of day | "You unblocked 3 Principals today." |
+| A hire completed | "<Name>'s joining is now complete in the Employee Master. Payroll will pick her up this month." |
+| A stalled hire, shared | "A hire at LMS 2 has been approved for 8 days but not yet marked Hired. A word with the Principal usually moves it." |
+| District goal met | "LMS 1–3 decided every approval within three days this month. Shabash, district." |
+| A campus steady | "LMS 6 is steady: every need is full." |
+| A paper expired (bad news) | "LMS 3's fire NOC expired on 28 April. It is the oldest open campus paper in your district. The renewal step is in your term campaign." |
+| Data delayed (bad news) | "Today's follow-ups are from yesterday evening: the morning refresh didn't run. Nothing is lost; I'll update when it does." |
+
+**Rules applied:**
+- one idea per line;
+- no countdowns, no "you haven't";
+- the person is credited, not the machine;
+- at most one Hinglish touch, and none in bad news.
+
+Names in lines come from live data at runtime, never from static files.
+
 ## Data and backend changes (all in the Coordinator backend unless noted)
 
 1. **A scheduled refresh of the Tasks adapters** (gap 3 in the inventory): a time trigger at about 05:30 IST, so the
