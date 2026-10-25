@@ -605,9 +605,81 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
   return out;
 }
 
-// Stubs until Task 6 (planned activities) and Task 7 (nightly activity matches) land: {"cls|subj|ch": {activity, plannedAt}} / {"cls|subj|ch": {matched, confidence} | {pending:true}}
-function tchPlansFor_(code) { return {}; }
+// Stub until Task 7 (nightly activity matches) lands: {"cls|subj|ch": {matched, confidence} | {pending:true}}
 function tchMatchesFor_(code) { return {}; }
+
+// ── planned activities (Task 6) ──────────────────────────────────────
+// Tab "Teacher Planned Activities", created on the first save: one row per (Code, Class, Subject, ChapterNorm). Ruling 22: it holds the teacher's own
+// typed line (max 200 characters), keyed by employee code, no names; the text is never logged. tchPlansFor_ returns {"cls|subj|chNorm": {activity,
+// plannedAt}} (the shape the missions and quests read), cached 10 min per teacher and removed on every write.
+// ponytail: the read scans the whole tab on a cache miss; add an index column or a per-teacher tab if it ever passes a few thousand rows.
+var TCH_PLAN_TAB = 'Teacher Planned Activities';
+var TCH_PLAN_HEADER = ['Code', 'Campus', 'Class', 'Subject', 'ChapterNorm', 'Chapter', 'Activity', 'PlannedAt', 'UpdatedAt'];
+var TCH_PLAN_TTL_S = 600;
+var TCH_PLAN_MIN = 3, TCH_PLAN_MAX = 200;
+
+function tchPlanRows_(code) { // -> [{cls, subj, chapterNorm, chapter, activity, plannedAt, updatedAt}] for this code; [] when there is no tab yet
+  const sh = gameBook_().getSheetByName(TCH_PLAN_TAB);
+  if (!sh) return [];
+  return sh.getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === code; }).map(function (r) {
+    return { cls: String(r[2]), subj: String(r[3]), chapterNorm: String(r[4]), chapter: String(r[5]), activity: String(r[6]), plannedAt: String(r[7]), updatedAt: String(r[8]) };
+  });
+}
+
+function tchPlansFor_(code) {
+  if (!code) return {};
+  const cache = CacheService.getScriptCache(), key = 'tch_plans_' + code, hit = tchReadJson_(cache, key);
+  if (hit) return hit;
+  let plans = {};
+  try {
+    tchPlanRows_(code).forEach(function (p) { plans[p.cls + '|' + p.subj + '|' + p.chapterNorm] = { activity: p.activity, plannedAt: p.plannedAt }; });
+  } catch (err) { return {}; } // an unreadable workbook is no plans, not an error, and is not cached
+  try { cache.put(key, JSON.stringify(plans), TCH_PLAN_TTL_S); } catch (err) { /* uncached */ }
+  return plans;
+}
+
+// The caller as a teacher with an employee code: only the Teacher role writes or reads its own plans.
+function tchPlanCaller_(caller) {
+  const code = caller && (caller.roles || []).indexOf('Teacher') !== -1 ? tchCodeFor_(caller) : '';
+  return code || null;
+}
+
+// POST {cls, subj, ch, activity}: validated first (the state may refresh the 15 MB feed, so it is read before the lock), then the
+// read-modify-write upsert under the script lock. The row is keyed on the caller's own code, never one from the request.
+GAME_MODULE_ACTIONS.teacherplanactivity = function (caller, p) {
+  const code = tchPlanCaller_(caller);
+  if (!code) return { success: false, error: 'Only a teacher can plan an activity.' };
+  const activity = String(p.activity === null || p.activity === undefined ? '' : p.activity).trim();
+  if (activity.length < TCH_PLAN_MIN || activity.length > TCH_PLAN_MAX) return { success: false, error: 'Write the activity in a few words.' };
+  const cls = String(p.cls || '').trim(), subj = String(p.subj || '').trim(), chapter = String(p.ch || '').trim().slice(0, TCH_PLAN_MAX), chNorm = ownAcadNormChapter_(chapter);
+  const state = tchStateFor_(code), now = gameNow_();
+  if (!state || !cls || !subj || !chNorm || !tchTaught_(state, tchConfig_(tchLoadCfg_()), cls, subj, now.getTime())) return { success: false, error: "That class isn't on your list." };
+  // the subject in the spelling the quests key on (the index's own episode / upcoming-chapter spelling), so the saved plan ticks step 1
+  const spelled = (state.episodes || []).concat(state.nextChapters || []).filter(function (x) { return x.cls === cls && tchSubjKey_(x.subj) === tchSubjKey_(subj); })[0];
+  const useSubj = spelled ? spelled.subj : subj;
+  const iso = now.toISOString(), ss = gameBook_();
+  gameWithLock_(function () {
+    let sh = ss.getSheetByName(TCH_PLAN_TAB);
+    if (!sh) { sh = ss.insertSheet(TCH_PLAN_TAB); gameAppendText_(sh, [TCH_PLAN_HEADER]); }
+    const values = sh.getDataRange().getValues();
+    let at = -1;
+    for (let i = 1; i < values.length; i++) {
+      const r = values[i];
+      if (String(r[0]) === code && String(r[2]) === cls && String(r[3]) === useSubj && String(r[4]) === chNorm) { at = i; break; }
+    }
+    if (at === -1) gameAppendText_(sh, [[code, state.campus, cls, useSubj, chNorm, chapter, activity, iso, iso]]);
+    else sh.getRange(at + 1, 1, 1, TCH_PLAN_HEADER.length).setNumberFormat('@').setValues([[code, state.campus, cls, useSubj, chNorm, chapter, activity, String(values[at][7] || iso), iso]]);
+    try { CacheService.getScriptCache().remove('tch_plans_' + code); } catch (err) { /* expires in 10 min */ }
+  });
+  return { success: true };
+};
+
+// GET: the caller's own plans, no state needed
+GAME_MODULE_ACTIONS.teacherplans = function (caller) {
+  const code = tchPlanCaller_(caller);
+  if (!code) return { success: false, error: 'Only a teacher can see planned activities.' };
+  return { success: true, plans: tchPlanRows_(code).map(function (p) { return { cls: p.cls, subj: p.subj, chapterNorm: p.chapterNorm, chapter: p.chapter, activity: p.activity, plannedAt: p.plannedAt, updatedAt: p.updatedAt }; }) };
+};
 
 // ── quests ───────────────────────────────────────────────────────────
 // Pure part: tchChapterQuests_ and tchSetupQuests_ take data in, QuestState[] out ({questId, title, steps:[{id, title, go, done, locked}], complete}).
@@ -617,6 +689,21 @@ var TCH_QUEST1_ID = 'teacher1';
 
 function tchPlanGo_(cls, subj, ch) { return TCH_PLAN_GO + '?cls=' + encodeURIComponent(cls) + '&subj=' + encodeURIComponent(subj) + '&ch=' + encodeURIComponent(ch); }
 
+// On the roster: classSubjects has the class and the subject, or an umbrella roster subject that covers it (the table the timetable matching snaps with).
+function tchOnRoster_(state, cls, subj) {
+  return (state.classSubjects || []).some(function (c) {
+    return c.cls === cls && (tchSubjKey_(c.subj) === tchSubjKey_(subj) || (tchHas_(TCH_UMBRELLA, c.subj) && TCH_UMBRELLA[c.subj].some(function (a) { return tchSubjKey_(a) === tchSubjKey_(subj); })));
+  });
+}
+
+// Taught (Ruling 21), for planning: on the roster, or logged within taughtLookbackDays (T = tchConfig_), or an upcoming chapter of the index (the
+// Quest 2 links), so every class-subject that shows a quest or a plan link can be planned. nowMs is the game clock.
+function tchTaught_(state, T, cls, subj, nowMs) {
+  if (!state) return false;
+  const cutoff = nowMs - T.taughtLookbackDays * TCH_DAY_MS, same = function (x) { return x.cls === cls && tchSubjKey_(x.subj) === tchSubjKey_(subj); };
+  return tchOnRoster_(state, cls, subj) || (state.episodes || []).some(function (e) { return same(e) && e.last >= cutoff; }) || (state.nextChapters || []).some(same);
+}
+
 // One quest per class-subject, for its current chapter (the episode with the latest entry). Montessori classes (same /^m-/i test as the episode
 // engine) get steps 1-3 only: they have no CWA or remediation.
 function tchChapterQuests_(state, plans, matches, cfg, now) {
@@ -624,12 +711,7 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
   let order = [];
   const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, set = function (v) { return v !== null && v !== undefined; };
   // Taught = on the roster (an umbrella roster subject covers its finer feed subjects, the table the timetable matching snaps with) or logged within taughtLookbackDays.
-  const roster = state.classSubjects || [], cutoff = now.getTime() - T.taughtLookbackDays * TCH_DAY_MS;
-  const onRoster = function (e) {
-    return roster.some(function (c) {
-      return c.cls === e.cls && (tchSubjKey_(c.subj) === tchSubjKey_(e.subj) || (tchHas_(TCH_UMBRELLA, c.subj) && TCH_UMBRELLA[c.subj].some(function (a) { return tchSubjKey_(a) === tchSubjKey_(e.subj); })));
-    });
-  };
+  const cutoff = now.getTime() - T.taughtLookbackDays * TCH_DAY_MS, onRoster = function (e) { return tchOnRoster_(state, e.cls, e.subj); };
   (state.episodes || []).forEach(function (e) {
     const k = tchCsKey_(e.cls, e.subj);
     if (!tchHas_(latest, k)) order.push(k);
