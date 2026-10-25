@@ -270,9 +270,18 @@ so only this much is designed here).
     (role Principal, own campusId only, read-only) that every other action keeps rejecting.
   - **Built by this module in C1 (Nov)**, so it is ready for the shared layer's Phase 1 Principal adapter. Agreed
     with the game director, so it is built once.
-- **Who may close an issue: open with Uday** (asked by the game director). Until he answers, the design assumes
-  **both**: a Principal closes an issue with a note on what was done, a Coordinator can close it too, and either is
-  credited.
+- **Who closes an issue (Uday, 2026-10-25):** "the Principal closes each with an outcome note; the Coordinator sees
+  every closure and can reopen."
+  - **`principalissueresolve`** (new, POST): a Principal resolves an issue of their own campus. The outcome note is
+    required. It writes to `PDR Issue Actions` with `resolvedBy` = the Principal.
+  - **Reopen** goes through the existing `coordinatorpdrissue` with `status: "reopened"` and a required reason. It is
+    Coordinator/Owner only, and the issue goes back to the Principal as "reopened".
+  - **Closures view:** the HQ and the Systems page get a "Closed this week" list: each closure with its note, who
+    closed it and when, plus a Reopen button.
+  - **Claude's reading:** Coordinators no longer resolve report issues themselves. They acknowledge, assign, review
+    and reopen. The Systems page's Coordinator "resolved" option is replaced by Reopen on closed issues.
+  - **Game side (the game director's):** the Principal's mission is done when that Principal resolves it with a note.
+    A reopen puts it back in their Today panel as "reopened" and is not counted against them retroactively.
 - Principals see their own campus's needs bars and the district team bars. They never see another campus's bars side
   by side with theirs.
 
@@ -330,15 +339,17 @@ Names in lines come from live data at runtime, never from static files.
      `coordinatortransport` and `coordinatortransportinsight`;
    - `coordinatordecision`: the trade-off preview for one approval;
    - `principalissues`: the Principal-scoped issue read.
-4. **New tabs:** `Campus Papers` and `Findings` (section 6), plus the push action for Campus Papers.
-5. **No new game storage, except one history tab.** Progress and help credits live in the shared Game Backend.
+4. **New write action:** `principalissueresolve` (Principal, own campus, note required). `coordinatorpdrissue` gains the
+   `reopened` status (Coordinator/Owner, reason required).
+5. **New tabs:** `Campus Papers` and `Findings` (section 6), plus the push action for Campus Papers.
+6. **No new game storage, except one history tab.** Progress and help credits live in the shared Game Backend.
    Missions, needs and heat are computed from source data and never stored twice.
    - **The exception (Claude's call, from the builder check):** SS %, staff-papers % and campus-paper status exist
      only as current state, so "against its own last month or term" needs a record.
    - The scheduled refresh appends one row per campus per day to an **`HQ History`** tab: date, campus and each
      need's value. It holds counts only, no names.
    - Task-based needs could be rebuilt from CreatedAt/ResolvedAt, but one tab for all is simpler.
-6. **Front end:** a new `coordinator/hq.html` **beside** today's pages, as Fleet Command does. The department pages,
+7. **Front end:** a new `coordinator/hq.html` **beside** today's pages, as Fleet Command does. The department pages,
    follow-ups and Systems stay. The home page links to the HQ. Folding the old pages in is a later decision.
    - It loads the shared `assets/game.js`. From Phase C2 it reuses `assets/game-map/` for the map layout.
 
@@ -349,7 +360,7 @@ go-live in Mar.
 
 | Month | Phase | Ships | Depends on |
 |---|---|---|---|
-| Nov 2026 | **C1. Board** | Coordinator mission adapter (core first, done from source records); scheduled Tasks refresh; `HQ History`; the comment-flips-status fix in `approvals.gs`; `principalissues` with the Principal auth path; `coordinator/hq.html` with the contract board, bottleneck flags and campus heat; decision view with the trade-off preview for the categories above; Quest 1 content | Shared layer Phase 1 (Shell); Uday's approval of this design |
+| Nov 2026 | **C1. Board** | Coordinator mission adapter (core first, done from source records); scheduled Tasks refresh; `HQ History`; the comment-flips-status fix in `approvals.gs`; `principalissues` + `principalissueresolve` with the Principal auth path, Coordinator reopen and the closures view; `coordinator/hq.html` with the contract board, bottleneck flags and campus heat; decision view with the trade-off preview for the categories above; Quest 1 content | Shared layer Phase 1 (Shell); Uday's approval of this design |
 | Dec 2026 | **C2. Bases** | Campus needs bars; the Principal side of issue closing; the transport front (after Fleet Command 1b); the map layout on `assets/game-map/`; Owner role switch | Fleet Command 1b; the issue-closing rule |
 | Jan 2027 | **C3. Team and campaigns** | District team goals (season 0 defaults, editable); help-credit lines; Campus Papers and Findings tabs with push and portal entry; term campaigns; Quest 2 | Shared layer Phase 3 (team goals, seasons) |
 | Feb 2027 | Pilot | The shared layer's two-campus pilot (Claude's call: two campuses of one district, so the district goals have a real team); tune lines, thresholds and goals from real use. **C1–C3 must be ready for it** | — |
@@ -398,7 +409,6 @@ only with Uday's go-ahead.
    locked, approvals and the Office backend need the district expansion (see The world).
 3. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
    decide, refer or allocate, so their core mission and Quest 1 can't be done by them.
-4. Who may close a daily-report issue: the Principal, the Coordinator, or both (asked by the game director).
 
 ## Settled after the builder check (Claude's calls)
 
