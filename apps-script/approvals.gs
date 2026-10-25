@@ -274,7 +274,7 @@ function aprFindRowIndex_(values, id) {
 // rights here, not just literal Principal.
 function aprSubmit_(caller, body) {
   const canFullSubmit = !pdrIsTeacherOnly_(caller);
-  const canTeacherSubmit = callerHasRole_(caller, 'Teacher');
+  const canTeacherSubmit = callerHasRole_(caller, 'Teacher') || callerHasRole_(caller, 'Staff'); // Staff: Employee Master auto sign-in, same limited categories
   if (!canFullSubmit && !canTeacherSubmit) return { success: false, error: 'Only Principals and Teachers submit approval requests' };
   const category = String(body.category || '').trim();
   if (APR_CATEGORIES.indexOf(category) === -1) return { success: false, error: 'Invalid category' };
