@@ -254,11 +254,16 @@ they pick the stop. It is never scored for speed.
 the data. It is a **phone page in the portal**, `coordinator/transport/capture.html`, signed in like the rest,
 for Coordinators. Everything below is Claude's call.
 
-**Two kinds of run:**
-- **Photo run** (outside school hours, or on an empty leg, so no children are photographed):
+**Two kinds of run.** The camera opens in **Timelapse** mode by default (Uday, 2026-10-25):
+- **Timelapse run** (the photo run; outside school hours, or on an empty leg, so no children are
+  photographed):
   - The phone sits in a dashboard mount, and the page keeps the screen awake.
-  - It takes a frame from the camera **every ~30 m**, from GPS distance, not time, so a stopped bus doesn't
-    pile up frames.
+  - It takes a frame from the camera **every ~15 m**, from GPS distance, not time, so a stopped bus doesn't
+    pile up frames. The frames *are* the timelapse.
+  - **Why not record the phone's own timelapse video (Claude's call):** a phone camera's timelapse carries no
+    GPS per frame, so it can't be tied to stops. A plain video of a 25 km run is several GB, too heavy to
+    upload over hill networks. Distance-spaced frames with GPS give a better timelapse at a fraction of the
+    size: ~1,700 frames at ~720p, about 100 MB per 25 km.
   - Each frame is stamped with lat/lng, heading, accuracy, time, bus and route.
   - A big **STOP HERE** button: the Coordinator taps it at each stop, picks the stop name (from the known
     list, or types a new one) and takes one deliberate **stop photo**. That becomes the stop's photo, still
@@ -272,6 +277,10 @@ for Coordinators. Everything below is Claude's call.
 **Works in the hills:**
 - Everything is saved on the phone first (IndexedDB) and **uploaded later**, on school Wi-Fi or when the
   signal is good.
+- **Phone limits, shown before starting:**
+  - The page must stay open with the screen on. It holds a screen wake lock and asks for the charger.
+  - If the phone locks or the Coordinator switches apps, capture pauses. It resumes, with a gap noted, when
+    they come back.
 - An upload page shows "312 of 540 frames sent", resumes after any break, and never loses a run if the
   browser closes.
 - Frames are resized to ~1280 px JPEG (~150 KB), so about 25 km is roughly 800 frames and 120 MB.
@@ -284,9 +293,18 @@ for Coordinators. Everything below is Claude's call.
 **Processing on the Mac** (the analysis brain, daily, like the GPS job):
 1. Pull the new frames.
 2. Blur faces and number plates with an open-source detector before anything is shown.
-3. Build each stop's drive-up strip.
-4. Snap stop tags to the road.
-5. Write results back for the stop cards.
+3. **Stitch the route timelapse** with ffmpeg (open source): one MP4 per route at 30 frames per second, so a
+   25 km run plays in about a minute. It has **chapters at each tagged stop** and no speed overlay.
+4. Build each stop's drive-up strip from the same frames.
+5. Snap stop tags to the road.
+6. Write results back for the stop cards.
+
+**Route replay in the portal:** the route's timelapse plays beside the map.
+- A bus marker moves along the line, in step with the video.
+- Tapping a stop jumps the video to that stop's chapter, and dragging the video moves the marker.
+- It is the "watch the route" view in the game, and the briefing a new driver or helper watches before their
+  first run.
+- Signed-in only, and private, like all imagery.
 
 Unblurred originals stay private and are deleted after blurring is checked.
 
