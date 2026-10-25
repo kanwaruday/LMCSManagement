@@ -99,14 +99,21 @@ const iss2 = kinds(ctx.gamePrincipalMissions_(principal, src, cfg({ principalIss
 assert.strictEqual(iss2.filter((m) => m.done).length, 1);                // resolved today -> done (resolvedAt/By)
 assert.strictEqual(iss2.find((m) => m.done).doneBy, 'p@lms.org.in');
 
-// ── scope: an LMS2 approval never reaches the LMS4 Principal; Coordinator and Owner see it ──
+// ── scope: Principal sees own campus and own requests only; Coordinator and Owner see every campus ──
 const lms2 = apr('s2', 'LMS2', 'Pending', { at: ago(5) });
-const aprRows = [APR_H, lms2, apr('s4', 'LMS4', 'Pending', { at: ago(5) })];
-const waitIds = (c, extra) => J(kinds(ctx.gameMissionsFor_(c, Object.assign({ approvals: aprRows, recommendations: [REC_H], tasks: [TASK_H] }, extra), cfg({ recommendationsReady: true }), now), c.primaryRole === 'Owner' ? 'approval_wait' : 'approval_recommend').map((m) => m.id));
-assert.deepStrictEqual(waitIds(coord), ['approval_recommend:s2', 'approval_recommend:s4']);
-assert.deepStrictEqual(waitIds(owner), ['approval_wait:s2', 'approval_wait:s4']);
-const pAll = ctx.gameMissionsFor_(principal, { ss: null, reports: null, approvals: aprRows, issues: null }, cfg(), now);
-assert.ok(!JSON.stringify(pAll).includes('s2'));                          // (principal missions never list approvals except own Info Requested)
+const aprRows = [APR_H, lms2, apr('s4', 'LMS4', 'Pending', { at: ago(5) }), apr('s5', 'LMS5', 'Pending', { at: ago(5) })];
+const waitIds = (c) => J(kinds(ctx.gameMissionsFor_(c, { approvals: aprRows, recommendations: [REC_H], tasks: [TASK_H] }, cfg({ recommendationsReady: true }), now), c.primaryRole === 'Owner' ? 'approval_wait' : 'approval_recommend').map((m) => m.id));
+assert.deepStrictEqual(waitIds(coord), ['approval_recommend:s2', 'approval_recommend:s4', 'approval_recommend:s5']);
+assert.deepStrictEqual(waitIds(owner), ['approval_wait:s2', 'approval_wait:s4', 'approval_wait:s5']);
+const pScope = [APR_H, apr('p5', 'LMS5', 'Info Requested', { by: 'someone@lms.org.in' }), apr('p4', 'LMS4', 'Info Requested', { by: 'p@lms.org.in' }), apr('p2', 'LMS2', 'Pending', { by: 'someone@lms.org.in', at: ago(9) })];
+const pm = ctx.gameMissionsFor_(principal, { ss: null, reports: null, approvals: pScope, issues: null }, cfg(), now);
+assert.deepStrictEqual(J(pm.map((m) => m.id)), ['info_requested:p4']);   // another campus's request never reaches LMS4; the own one does
+
+// an all-campus Principal has no campus: no campus-bound missions, only their own Info Requested
+const pAll = { email: 'pa@lms.org.in', campusId: 'ALL', roles: ['Principal'], primaryRole: 'Principal', canDecide: false };
+const allSrc = { ss: ssFix(), reports: [['Timestamp']], approvals: [APR_H, apr('q1', 'LMS5', 'Info Requested', { by: 'pa@lms.org.in' }), apr('q2', 'LMS5', 'Info Requested', { by: 'z@lms.org.in' })], issues: issues };
+const pa = ctx.gameMissionsFor_(pAll, allSrc, cfg({ principalIssuesReady: true }), now);
+assert.deepStrictEqual(J(pa.map((m) => m.id)), ['info_requested:q1']);
 
 // ── Coordinator: approval_recommend ────────────────────────────────────
 const csrc = (approvals, recs, tasks) => ({ approvals: [APR_H].concat(approvals), recommendations: [REC_H].concat(recs || []), tasks: [TASK_H].concat(tasks || []) });

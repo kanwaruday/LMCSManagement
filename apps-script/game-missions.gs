@@ -45,8 +45,6 @@ function gameIso_(v) { // Date or text from a sheet -> ISO, or '' when empty/unp
   return isNaN(t) ? '' : new Date(t).toISOString();
 }
 function gameDueIso_(v) { return v instanceof Date ? v.toISOString().slice(0, 10) : (String(v || '').trim() || null); }
-function gameInScope_(visible, campus) { return visible === null || !campus || visible.indexOf(gameCampusKey_(campus)) !== -1; }
-function gameVisibleKeys_(caller) { const v = gameVisibleCampuses_(caller); return v === null ? null : v.map(gameCampusKey_); }
 // start of the previous game day (04:00 IST), as epoch ms: finished records older than this are not today's story
 function gameLookbackStart_(now) {
   return Date.parse(gameDayKey_(new Date(now.getTime() - (GAME_DONE_LOOKBACK_DAYS - 1) * GAME_DAY_MS)) + 'T04:00:00+05:30');
@@ -115,12 +113,12 @@ function gameRecWhy_(rec) {
   return 'Recommended to ' + (GAME_REC_WORDS[rec.what] || rec.what.toLowerCase()) + ' by ' + rec.by + (rec.reason ? ': ' + rec.reason : '');
 }
 
-// Approvals rows -> plain records, scoped to the caller. days = waited so far, or until the decision.
-function gameApprovals_(rows, visible, now) {
+// Approvals rows -> plain records, every campus (Coordinator and Owner are network-wide; the Principal path filters by requester). days = waited so far, or until the decision.
+function gameApprovals_(rows, now) {
   const out = [];
   (rows || []).slice(1).forEach(function (r) {
     const campus = gameCampusKey_(r[1]);
-    if (!r[0] || !gameInScope_(visible, campus) || !campus && visible !== null) return;
+    if (!r[0]) return;
     const requestedAt = new Date(r[12]).getTime();
     if (isNaN(requestedAt)) return;
     const decidedAt = gameIso_(r[15]);
@@ -138,10 +136,13 @@ function gameApprovals_(rows, visible, now) {
 
 // ── Principal ────────────────────────────────────────────────────────
 function gamePrincipalMissions_(caller, src, cfg, now) {
-  const out = [], role = 'Principal', dayKey = gameDayKey_(now), campus = gameCampusKey_(caller.campusId), since = gameLookbackStart_(now);
+  const out = [], role = 'Principal', dayKey = gameDayKey_(now), since = gameLookbackStart_(now);
   const go = GAME_PORTAL_PDR, mine = gameLower_(caller.email);
+  // An all-campus Principal (visible set null) has no campus of their own: the campus-bound missions (ss_pace, pdr_report,
+  // pdr_issue) could never complete, so only the caller's own Info Requested request is emitted.
+  const visible = gameVisibleCampuses_(caller), campus = visible === null ? '' : gameCampusKey_(visible[0]);
 
-  if (src.ss) {
+  if (campus && src.ss) {
     let needed = 0;
     gameSsDashboards_(src.ss).forEach(function (dash) {
       (dash.roster || []).forEach(function (r) {
@@ -162,7 +163,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     }
   }
 
-  if (src.reports) {
+  if (campus && src.reports) {
     let stamp = null;
     src.reports.slice(1).forEach(function (r) { if (String(r[1]).slice(0, 10) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
     out.push(gameMission_('pdr_report', campus + ':' + dayKey, {
@@ -171,7 +172,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     }));
   }
 
-  if (src.issues && cfg.principalIssuesReady) {
+  if (campus && src.issues && cfg.principalIssuesReady) {
     (Array.isArray(src.issues) ? src.issues : src.issues.issues || []).forEach(function (i) {
       if (gameCampusKey_(i.campus) !== campus) return;
       const resolved = i.status === 'resolved', at = gameIso_(i.resolvedAt);
@@ -185,7 +186,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
 
   // ponytail: done for info_requested (the requester answered, status left Info Requested) is not visible in one row;
   // the framework sees the id vanish from the open set. A response log would make it exact.
-  gameApprovals_(src.approvals, null, now).forEach(function (a) {
+  gameApprovals_(src.approvals, now).forEach(function (a) {
     if (a.by !== mine || a.status !== 'Info Requested' || a.archived) return;
     out.push(gameMission_('info_requested', a.id, {
       title: gameTitle_('info_requested', { title: a.title }), owner: mine, campus: a.campus, go: go, core: gameIsCore_(cfg, role, 'info_requested'),
@@ -198,14 +199,14 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
 function gameApprovalsGo_() { return GAME_PORTAL_APPROVALS_READY ? GAME_PORTAL_APPROVALS : GAME_PORTAL_FOLLOWUPS; }
 
 function gameCoordinatorMissions_(caller, src, cfg, now) {
-  const out = [], role = 'Coordinator', me = gameLower_(caller.email), visible = gameVisibleKeys_(caller), since = gameLookbackStart_(now);
+  const out = [], role = 'Coordinator', me = gameLower_(caller.email), since = gameLookbackStart_(now);
   const tasks = (src.tasks || []).slice(1);
 
   if (cfg.recommendationsReady) {
     const recs = gameLatestRecs_(src.recommendations);
     const assignee = {};
     tasks.forEach(function (t) { assignee[String(t[0])] = gameLower_(t[13]); });
-    gameApprovals_(src.approvals, visible, now).forEach(function (a) {
+    gameApprovals_(src.approvals, now).forEach(function (a) {
       if (a.archived || a.days < cfg.approvalWaitDays) return;
       const rec = recs[a.id], recommended = !!(rec && rec.reason);
       const state = recommended ? { done: true, doneAt: rec.at, doneBy: gameLower_(rec.by) } : { done: false };
@@ -224,7 +225,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
 
   tasks.forEach(function (t) {
     const id = String(t[0] || '').trim(), domain = String(t[1] || '').trim(), campus = gameCampusKey_(t[2]);
-    if (!id || !gameInScope_(visible, campus)) return;
+    if (!id) return;
     if (cfg.recommendationsReady && /^approval\|.*\|Pending$/.test(id)) return; // approval_recommend already covers it
     const assignee = gameLower_(t[13]), resolved = String(t[5]).trim() === 'resolved', at = gameIso_(t[9]), by = String(t[10] || '').trim();
     const stall = domain === 'hiring_stall';
@@ -247,7 +248,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
 function gameOwnerMissions_(caller, src, cfg, now) {
   const out = [], role = 'Owner', since = gameLookbackStart_(now);
   const recs = cfg.recommendationsReady ? gameLatestRecs_(src.recommendations) : {};
-  gameApprovals_(src.approvals, gameVisibleKeys_(caller), now).forEach(function (a) {
+  gameApprovals_(src.approvals, now).forEach(function (a) {
     if (a.archived || a.days < cfg.approvalWaitDays) return; // archived without a decision: gone, and the framework sees the id vanish
     if (a.decided && !(a.decidedAt && new Date(a.decidedAt).getTime() >= since)) return;
     if (!a.decided && a.status !== 'Pending') return;
