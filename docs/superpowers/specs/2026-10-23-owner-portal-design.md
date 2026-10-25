@@ -184,8 +184,10 @@ them):
 - **no CWA:** the teacher-class-subject moved on. Its later chapters have entries for at least
   `noCwaGapDays` (default 21) after this chapter's last entry, with none of this chapter in between,
   and this chapter never got a CWA.
-- **no remediation:** a CWA with no Remediation entry in the same teacher-class-subject within
-  `remWindowDays` (default 14) after it.
+- **no remediation:** a CWA with no Remediation entry **on the same chapter** (same teacher, class, subject
+  and chapter) within `remWindowDays` (default 14) after it. *(Uday, 2026-10-25: "remediations need to get
+  matched to the chapters". This replaces the earlier teacher-class-subject match. The rule lives in the episode
+  engine shared with the Teacher game, so both show the same number; see the Owner B plan's Global Constraints.)*
 - **thin interaction:** an episode's Q&A plus Activity share under half the norm.
 - **tag inflation:** more than 60% of a teacher's entries carry 3 or more tags. Measured: 4 of 83
   teachers.
@@ -200,7 +202,10 @@ not a fault.
 
 **Findings vs outliers (measured 2026-10-23, after the episode redesign).** Counted on real teaching only
 (Class 1 and up, non-exempt subjects, episodes of at least 3 periods; 2,766 episodes, 1,434 with a CWA):
-- **80% of CWAs are not followed by Remediation within 14 days.** The median teacher has 100%.
+- **80% of CWAs are not followed by Remediation within 14 days** (class-subject match). The median teacher has
+  100%. *Superseded 2026-10-25:* under Uday's same-chapter rule, only 60 of 1,793 CWAs (3%) are remediated on the
+  same chapter within 14 days (25 Oct 2026 snapshot, entries with 7+ tags excluded). The remediation figures below
+  (80%, 66%/96% by school, 4% flags, 21% bright) are from the old rule and are re-measured when the engine is built.
 - **29% of chapters are moved past without a CWA.**
 
 These aren't noise; they are network-wide practice gaps, the most important things the Owner can
