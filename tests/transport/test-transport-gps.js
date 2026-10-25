@@ -147,4 +147,21 @@ ctx.f3 = { today: '2026-10-24', fleet, live: ctx.facts.live || [], health: [], d
 assert.match(J(run('gpsFollowUps_(f3)')).find(x => x.taskId === 'fuel_check|f2').detail, /said the bill was corrected, but the day book entry is unchanged/);
 ctx.f3.answers[0].at = '2026-10-24T08:00:00Z';
 assert.ok(!J(run('gpsFollowUps_(f3)')).some(x => x.taskId === 'fuel_check|f2'), 'a fresh "corrected" waits for the re-entry');
+// ── route views data: tracks and roster extras round-trip; money and tracks scoped like everything else ──
+ctx.coordTransportBase_ = () => ({ fleet: [{ reg: 'HP1', campus: 'LMS 4', operational: true, seats: 15, year: 2017 }, { reg: 'HP7', campus: 'LMS 1', operational: true, seats: 41, year: 2014 }],
+  pnl: [{ reg: 'HP1', campus: 'LMS 4', month: '2026-09', fee: 100, fuel: 50, loan: 0, fixed: 10, pay: 20 }, { reg: 'HP7', campus: 'LMS 1', month: '2026-09', fee: 90, fuel: 10, loan: 0, fixed: 0, pay: 0 }] });
+ctx.coordBusFetch_ = () => ({ buses: [{ reg: 'HP1', at: '2026-10-24T09:00:00+05:30' }, { reg: 'HP7', at: '2026-10-24T09:00:00+05:30' }] });
+ctx.gpsRefresh_ = () => ({ checks: 0, followUps: 0 });
+ctx.coordVisibleCampuses_ = c => c.only || null;
+assert.strictEqual(J(run('coordGpsPush_({secret:"S", payload:{syncedAt:"2026-10-25T01:00:00Z", days:[{reg:"HP1",date:"2026-10-24",km:50}], health:[{reg:"HP1",km7:50,blind7:0}], ' +
+  'tracks:[{reg:"HP1",trip:"AM-1 ~07:29",date:"2026-10-22",path:[[31.6,76.9],[31.61,76.91]]},{reg:"HP7",trip:"AM-1 ~07:00",date:"2026-10-22",path:[[31.9,77.1],[31.91,77.12]]}], ' +
+  'fleetExtra:[{reg:"HP1",rounds:4,students:25,start:"Nalwari"}]}})')).success, true);
+const coord = J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4","LMS5","LMS6"]})'));
+assert.deepStrictEqual(coord.tracks.map(t => t.reg), ['HP1'], 'a coordinator gets the tracks of their campuses only');
+assert.deepStrictEqual(coord.tracks[0].path, [[31.6, 76.9], [31.61, 76.91]]);
+assert.deepStrictEqual(coord.pnl.map(r => r.reg), ['HP1'], 'and the money of their campuses only');
+assert.deepStrictEqual([coord.vehicles[0].rounds, coord.vehicles[0].students, coord.vehicles[0].start], [4, 25, 'Nalwari']);
+assert.deepStrictEqual(coord.proposals, {}, 'proposals stay with the Owner');
+const own = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})'));
+assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v => v.reg === 'HP7').rounds], [2, 2, null], 'the Owner sees all; a bus missing from the roster extras has no rounds, not a guess');
 console.log('transport gps: all checks passed');

@@ -6,13 +6,14 @@
 // same shared secret as the fleet push). On each push this file stores them, checks every fuel fill the Office backend
 // mirrors into the "Fuel Fills" tab against the GPS km, and raises follow-ups in the Tasks store, each with an owner,
 // a due date and one plain instruction. Three views read it:
-//   GET  coordinatortransportinsight  Coordinator / Owner (the Owner also gets money and proposals)
+//   GET  coordinatortransportinsight  Coordinator / Owner, scoped to their campuses (the Owner also gets proposals);
+//                                     feeds the checks and the route views (metro map, city overlay, depot)
 //   GET  coordinatorbuschecks         Fee Clerk: fuel bills of their campus waiting for their check
 //   POST transportclerkcheck          Fee Clerk answers one: 'matches' (slip agrees with the bill) or 'corrected'
 // ponytail: thresholds are the spec's starting values; tune them here once a few weeks of answers exist.
 // ═══════════════════════════════════════════════════════════════════
 
-const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_FILLS = 'Fuel Fills',
+const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_TRACKS = 'GPS Tracks', GPS_TAB_FILLS = 'Fuel Fills',
   GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses';
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
@@ -232,8 +233,11 @@ function coordGpsPush_(body) {
   if (!Array.isArray(p.days) || !p.days.length || !Array.isArray(p.health) || !p.health.length) return { success: false, error: 'Payload rejected: no GPS days or trackers' };
   gpsWrite_(GPS_TAB_DAILY, GPS_DAILY_COLS, p.days);
   gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, p.stops || []);
+  // one drawn road path per bus and trip (a typical day, simplified on the Mac): the route maps draw these, not stop-to-stop lines
+  gpsWrite_(GPS_TAB_TRACKS, ['reg', 'trip', 'date', 'path'], (p.tracks || []).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: JSON.stringify(t.path) }; }));
   gpsWrite_(GPS_TAB_META, ['key', 'value'], [{ key: 'syncedAt', value: p.syncedAt }, { key: 'health', value: JSON.stringify(p.health) },
-    { key: 'bases', value: JSON.stringify(p.bases || []) }, { key: 'proposals', value: JSON.stringify(p.proposals || {}) }]);
+    { key: 'bases', value: JSON.stringify(p.bases || []) }, { key: 'proposals', value: JSON.stringify(p.proposals || {}) },
+    { key: 'fleetExtra', value: JSON.stringify(p.fleetExtra || []) }]);
   const n = gpsRefresh_(p.days, p.health);
   CacheService.getScriptCache().remove('coord_gps_insight_v1');
   return { success: true, days: p.days.length, checks: n.checks, followUps: n.followUps };
@@ -262,7 +266,8 @@ function gpsRefresh_(days, health) {
 function gpsMeta_() {
   const m = {};
   gpsRows_(GPS_TAB_META).forEach(function (r) { m[r.key] = r.value; });
-  return { syncedAt: m.syncedAt || '', health: JSON.parse(m.health || '[]'), bases: JSON.parse(m.bases || '[]'), proposals: JSON.parse(m.proposals || '{}') };
+  return { syncedAt: m.syncedAt || '', health: JSON.parse(m.health || '[]'), bases: JSON.parse(m.bases || '[]'), proposals: JSON.parse(m.proposals || '{}'),
+    fleetExtra: JSON.parse(m.fleetExtra || '[]') };
 }
 
 /** GET action=coordinatortransportinsight: everything the Coordinator page needs, scoped to the caller's campuses; money and proposals for the Owner. */
@@ -277,12 +282,14 @@ function coordGpsInsight_(caller) {
   const health = {};
   meta.health.forEach(function (h) { health[h.reg] = h; });
   const today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
-  const silent = gpsSilent_(base.fleet, live, today);
+  const silent = gpsSilent_(base.fleet, live, today), extra = {};
+  meta.fleetExtra.forEach(function (x) { extra[x.reg] = x; });
   const vehicles = base.fleet.filter(function (b) { return /^HP/.test(b.reg) && mine(campusOf[b.reg]); }).map(function (b) {
     const g = live[b.reg], h = health[b.reg] || {};
     const state = !liveOk ? 'unknown' : !g ? 'none' : silent[b.reg] ? 'dead' : h.blind7 >= GPS.blindMinKm && h.blind7 >= GPS.blindShare * h.km7 ? 'blind' : 'ok';
+    const x = extra[b.reg] || {};
     return { reg: b.reg, campus: b.campus, campusId: campusOf[b.reg], operational: b.operational, route: b.route, driver: b.driver, seats: b.seats, year: b.year,
-      tracker: state, lastFix: g ? g.at : '', km7: h.km7 || 0, blind7: h.blind7 || 0 };
+      tracker: state, lastFix: g ? g.at : '', km7: h.km7 || 0, blind7: h.blind7 || 0, rounds: x.rounds || null, students: x.students || null, start: x.start || b.start || '' };
   });
   const regs = {};
   vehicles.forEach(function (v) { regs[v.reg] = true; });
@@ -302,7 +309,9 @@ function coordGpsInsight_(caller) {
     days: gpsRows_(GPS_TAB_DAILY).filter(function (d) { return regs[d.reg] && d.date > gpsAddDays_(today, -30); }),
     bases: meta.bases.filter(function (b) { return regs[b.reg]; }),
     stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }),
-    proposals: owner ? meta.proposals : {}, pnl: owner ? (base.pnl || []) : [],
+    tracks: gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; }).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: JSON.parse(t.path || '[]') }; }),
+    // money per bus: the Owner sees every bus, a Coordinator their campuses (the same rows the Transport page's Bus P&L tab shows them)
+    proposals: owner ? meta.proposals : {}, pnl: (base.pnl || []).filter(function (r) { return mine(gpsCampusId_(r.campus)); }),
   };
 }
 

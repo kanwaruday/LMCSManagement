@@ -78,15 +78,21 @@ window.TransportChecks = (function () {
     function render() {
       const d = S.d, open = d.tasks.filter(t => t.status === 'open');
       const late = open.filter(t => t.due && t.due < d.today);
-      const tabs = (opts.owner ? [['overview', 'Overview']] : []).concat([['checks', 'Follow-ups (' + open.length + ')'], ['map', 'Map'], ['trackers', 'Trackers'], ['driving', 'Driving'], ['fuel', 'Fuel'], ['stops', 'Stops']]);
+      // the route views (transport-views.js) are tabs every role may get; a page narrows them with opts.views
+      const views = window.TransportViews ? (opts.views || Object.keys(TransportViews.VIEWS)) : [];
+      const tabs = (opts.owner ? [['overview', 'Overview']] : []).concat([['checks', 'Follow-ups (' + open.length + ')']], views.map(v => [v, TransportViews.VIEWS[v][0]]),
+        [['map', 'Live map'], ['trackers', 'Trackers'], ['driving', 'Driving'], ['fuel', 'Fuel'], ['stops', 'Stop times']]);
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       body.innerHTML = '<p class="note">GPS facts as of ' + (synced ? '<b' + (ageH > 30 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</b>' + (ageH > 30 ? ' (the daily GPS sync on the Mac has not run; numbers may be old)' : '') : '<b class="stale">never: the GPS sync has not run yet</b>') + '.</p>' +
-        '<div class="ctl"><span class="seg">' + tabs.map(x => '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (S.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
+        '<div class="ctl"><span class="seg tc-tabs">' + tabs.map(x => '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (S.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
         '<div class="tc-tab"></div>';
       body.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { S.tab = b.dataset.tab; render(); }));
+      const bar = body.querySelector('.tc-tabs'), on = bar.querySelector('.on');
+      if (on) bar.scrollLeft = on.offsetLeft - bar.offsetLeft - 24; // on a phone the open tab stays in sight
       const tab = body.querySelector('.tc-tab');
       mapEl.hidden = S.tab !== 'map';
       if (S.tab === 'map') { if (!S.mapMounted) { TransportLive.mount(mapEl, session); S.mapMounted = true; } return; }
+      if (views.indexOf(S.tab) !== -1) { TransportViews.render(tab, d, S.tab, (S.view = S.view || {})[S.tab] = S.view[S.tab] || {}); return; }
       ({ overview, checks, trackers, driving, fuel, stops })[S.tab](tab, d, open, late);
     }
 
