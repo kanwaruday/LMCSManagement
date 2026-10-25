@@ -218,8 +218,9 @@ function gameAppendText_(sh, rows) {
 // can take 20 s+, and a failure is retried on the next load.
 // ponytail: UrlFetchApp has no request timeout (platform limit ~60 s), so timeoutMs is accepted but cannot
 //   cut a slow call short; the panel renders after the page, so a slow source delays only the game panel.
-//   A response over CacheService's 100 KB value cap is simply not cached.
-function gameFetchJson_(url, idToken, timeoutMs, email) {
+// project(json), optional, trims the body before it is cached and returned (R23: CacheService caps a value at
+// 100 KB); a value still over the cap is simply not cached.
+function gameFetchJson_(url, idToken, timeoutMs, email, project) {
   const cache = CacheService.getScriptCache();
   const key = 'gamefetch_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url + '|' + String(email || '').toLowerCase()));
   const hit = cache.get(key);
@@ -227,9 +228,10 @@ function gameFetchJson_(url, idToken, timeoutMs, email) {
   try {
     const res = UrlFetchApp.fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'idToken=' + encodeURIComponent(idToken), { muteHttpExceptions: true, followRedirects: true });
     if (res.getResponseCode() !== 200) return null;
-    const text = res.getContentText(), json = JSON.parse(text);
+    let json = JSON.parse(res.getContentText());
     if (!json || json.success === false) return null;
-    try { cache.put(key, text, GAME_FETCH_CACHE_S); } catch (err) { /* too big to cache */ }
+    if (project) json = project(json);
+    try { cache.put(key, JSON.stringify(json), GAME_FETCH_CACHE_S); } catch (err) { /* too big to cache */ }
     return json;
   } catch (err) {
     return null;
@@ -246,8 +248,8 @@ function gamePilotPasses_(caller, cfg) {
 
 // Only the sources the caller's role needs, as the mission adapters expect them (sheet rows WITH the header).
 // down = names of the sources that failed. A missing Recommendations tab is empty, not a failure.
-function gameLoadSources_(caller, idToken, cfg) {
-  const role = caller.primaryRole, src = {}, down = [], books = {};
+function gameLoadSources_(caller, idToken, cfg, now) {
+  const role = caller.primaryRole, src = {}, down = [], books = {}, dayKey = gameDayKey_(now);
   const tab = function (id, name, key, optional) {
     try {
       const sh = (books[id] = books[id] || SpreadsheetApp.openById(id)).getSheetByName(name);
@@ -257,15 +259,15 @@ function gameLoadSources_(caller, idToken, cfg) {
     down.push(key);
     return null;
   };
-  const fetch = function (url, action) {
-    const json = gameFetchJson_(url + '?action=' + action, idToken, GAME_FETCH_TIMEOUT_MS, caller.email);
+  const fetch = function (url, action, project) {
+    const json = gameFetchJson_(url + '?action=' + action, idToken, GAME_FETCH_TIMEOUT_MS, caller.email, project);
     if (!json) down.push(action);
     return json;
   };
   if (role === 'Principal' || role === 'Coordinator' || role === 'Owner') src.approvals = tab(GAME_APPROVALS_SHEET_ID, 'Approvals', 'approvals');
   if (role === 'Principal') {
     src.reports = tab(GAME_PDR_SHEET_ID, 'Daily Reports', 'dailyreports');
-    src.ss = fetch(GAME_PDR_URL, 'ssdashboard');
+    src.ss = fetch(GAME_PDR_URL, 'ssdashboard', function (ss) { return gameSsTrim_(ss, caller.email, dayKey); });
     if (cfg.principalIssuesReady) src.issues = fetch(GAME_COORD_URL, 'principalissues');
   }
   if (role === 'Coordinator') {
@@ -274,6 +276,26 @@ function gameLoadSources_(caller, idToken, cfg) {
   }
   if ((role === 'Coordinator' || role === 'Owner') && cfg.recommendationsReady) src.recommendations = tab(GAME_APPROVALS_SHEET_ID, 'Recommendations', 'recommendations', true);
   return { src: src, down: down };
+}
+
+// R23: ssdashboard cut to what game-missions.gs reads (gameSsDashboards_, gameSsTimes_, gamePrincipalMissions_):
+// per dashboard quotaPerMonth + roster { school, submissionsThisMonth, history }, history only this caller's
+// entries of the game day as { timestamp, evaluatorEmail }. Keeps the one-dashboard or { roles } shape.
+// ponytail: a copy cached just before 04:00 IST keeps the old day's history for up to 10 min (cache life).
+function gameSsTrim_(ss, email, dayKey) {
+  const me = gameLower_(email);
+  const dash = function (d) {
+    return { quotaPerMonth: d.quotaPerMonth, roster: (d.roster || []).map(function (r) {
+      return { school: r.school, submissionsThisMonth: r.submissionsThisMonth, history: (r.history || []).filter(function (h) {
+        const iso = gameIso_(h.timestamp);
+        return iso && gameLower_(h.evaluatorEmail) === me && gameDayKey_(new Date(iso)) === dayKey;
+      }).map(function (h) { return { timestamp: h.timestamp, evaluatorEmail: h.evaluatorEmail }; }) };
+    }) };
+  };
+  if (!ss.roles) return Object.assign({ success: ss.success }, dash(ss));
+  const roles = {};
+  Object.keys(ss.roles).forEach(function (k) { roles[k] = dash(ss.roles[k]); });
+  return { success: ss.success, roles: roles };
 }
 
 // PDR Issue Actions rows -> how many issues this person assigned or resolved with a note (a count, never names)
@@ -366,12 +388,16 @@ function gamePersistDaily_(sh, caller, dayKey, missionsNow, cfg, sourcesOk, now)
     rows[f.row - 1][6] = true;
     rows[f.row - 1][7] = f.onTrack;
   });
-  if (plan.newIds) { // DoneIds stays '[]': done state is re-derived from the sources on every read
+  // R24: a snapshot is persisted only when every source loaded; otherwise newIds is just the live view for this
+  // response (no greeting), and the first healthy load creates the day's set. DoneIds stays '[]': done state is
+  // re-derived from the sources on every read.
+  const created = !!plan.newIds && sourcesOk;
+  if (created) {
     const r = [dayKey, gameLower_(caller.email), caller.primaryRole, caller.campusId, JSON.stringify(plan.newIds), '[]', '', '', now.toISOString()];
     gameAppendText_(sh, [r]);
     rows.push(r);
   }
-  return { rows: rows, carried: plan.carried, snapshotIds: plan.newIds || plan.snapshotIds, created: !!plan.newIds };
+  return { rows: rows, carried: plan.carried, snapshotIds: plan.newIds || plan.snapshotIds, created: created };
 }
 
 // Closed windows: append each undecided campus's default and write it to Game Config (lazily, on read)
@@ -395,7 +421,7 @@ function gameToday_(caller, params) {
   const now = gameNow_(), ss = gameBook_(), role = caller.primaryRole, dayKey = gameDayKey_(now), me = gameLower_(caller.email);
   const cfg0 = gameParseConfig_(ss.getSheetByName('Game Config').getDataRange().getValues());
   if (!gamePilotPasses_(caller, cfg0)) return { success: true, notYet: true };
-  const loaded = gameLoadSources_(caller, params.idToken, cfg0);
+  const loaded = gameLoadSources_(caller, params.idToken, cfg0, now);
   let missionsNow = gameMissionsFor_(caller, loaded.src, cfg0, now);
   if (!Array.isArray(missionsNow)) return { success: true, notYet: true }; // no missions for this role yet
   if (role === 'Coordinator') missionsNow = missionsNow.filter(function (m) { return !m.campus || gameInPilot_(cfg0.pilotCampuses.Coordinator, m.campus); });

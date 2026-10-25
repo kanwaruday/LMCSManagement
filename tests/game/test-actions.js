@@ -148,6 +148,52 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(y[6], '');  // Finalized left blank: retried next load
   assert.strictEqual(y[7], '');
   assert.deepStrictEqual(Object.keys(t.cache), []); // a failure is never cached
+  // R24: no snapshot while a source is down; the live list is shown, without the greeting
+  assert.strictEqual(a.firstLoadToday, false);
+  assert.strictEqual(t.game['Game Daily'].rows.length, 2);
+  assert.ok(t.game['Game Daily'].rows.every((r) => r[0] !== '2026-11-05'));
+  assert.strictEqual(a.next.id, 'pdr_report:LMS4:2026-11-05');
+  // the first healthy load creates it, with the core mission from the recovered source
+  t.ctx.UrlFetchApp.fetch = () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: true, quotaPerMonth: 4, roster: [{ school: 'LMS 4', submissionsThisMonth: 1, history: [] }] }) });
+  const b = t.call(P4, 'gametoday');
+  assert.strictEqual(b.firstLoadToday, true);
+  assert.deepStrictEqual(b.sourcesDown, []);
+  assert.strictEqual(b.missions[0].id, 'ss_pace:LMS4');
+  const today = t.game['Game Daily'].rows.filter((r) => r[0] === '2026-11-05');
+  assert.strictEqual(today.length, 1);
+  assert.ok(today[0][4].indexOf('ss_pace:LMS4') !== -1);
+}
+
+// ── R23: ssdashboard is cached as a trimmed projection, so a big response still fits the 100 KB cap ──
+{
+  const t = setup();
+  const hist = (who, at) => ({ timestamp: at, evaluatorEmail: who, employeeName: 'Somebody Long Name', remarks: 'x'.repeat(200), scores: [1, 2, 3, 4, 5] });
+  const roster = [];
+  for (let i = 0; i < 400; i++) {
+    const all = [hist('other@lms.org.in', '2026-11-05T04:00:00Z'), hist('p4@lms.org.in', '2026-11-04T04:00:00Z'), hist('p4@lms.org.in', '2026-11-05T04:00:00Z')];
+    roster.push({ school: i % 2 ? 'LMS 4' : 'LMS 5', employeeName: 'Employee ' + i, designation: 'TGT', submissionsThisMonth: i % 2 ? 0 : 4, // LMS4 far behind: ss_pace stays open
+      history: i < 2 ? all : all.slice(0, 1) });
+  }
+  const big = { success: true, roles: { teaching: { label: 'Teaching', quotaPerMonth: 4, monthLabel: 'Nov', campusCompliance: [], roster } } };
+  const bigText = JSON.stringify(big);
+  assert.ok(bigText.length > 100000);
+  t.ctx.UrlFetchApp.fetch = (url) => { t.fetches.push({ url }); return { getResponseCode: () => 200, getContentText: () => bigText }; };
+  const full = J(t.ctx.gamePrincipalMissions_(P4, { ss: big }, t.ctx.gameParseConfig_([['Key', 'Value']]), t.ctx.gameNow_()));
+  const a = t.call(P4, 'gametoday');
+  const keys = Object.keys(t.cache);
+  assert.strictEqual(keys.length, 1);
+  const cached = t.cache[keys[0]];
+  assert.ok(cached.length < 100000, 'cached ' + cached.length + ' chars');
+  const c = JSON.parse(cached);
+  assert.deepStrictEqual(Object.keys(c.roles.teaching).sort(), ['quotaPerMonth', 'roster']);
+  assert.deepStrictEqual(Object.keys(c.roles.teaching.roster[1]).sort(), ['history', 'school', 'submissionsThisMonth']);
+  assert.deepStrictEqual(c.roles.teaching.roster[1].history, [{ timestamp: '2026-11-05T04:00:00Z', evaluatorEmail: 'p4@lms.org.in' }]); // today's, this caller's
+  assert.deepStrictEqual(c.roles.teaching.roster[2].history, []);
+  const ssFull = full.find((m) => m.kind === 'ss_pace');
+  assert.ok(ssFull && !ssFull.done && ssFull.progress.done === 2);
+  assert.deepStrictEqual(a.missions.find((m) => m.kind === 'ss_pace'), Object.assign({}, ssFull, { rolledOver: false })); // same mission from trimmed data
+  t.call(P4, 'gametoday');
+  assert.strictEqual(t.fetches.length, 1); // second load: from the cache
 }
 {
   // the same earlier day, sources up: finalized; ss_pace still open -> counted, not on track; it rolls over
