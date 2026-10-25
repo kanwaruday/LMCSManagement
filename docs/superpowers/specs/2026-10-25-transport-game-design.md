@@ -132,14 +132,69 @@ map, stops and walking areas, depot).
 
 ### Loop 4: Garage and progression (Phase 4)
 
-- **Garage** (NFS garage, OpenTTD vehicle list) is the depot view, made richer. Each bus card shows:
-  - stats as tuning bars: age against the 15-year line, reliability, fuel economy against its norm, seats
-    filled, tracker health;
-  - its heat;
-  - upgrade options with cost against payback: replace, retire, move to a better-fitting route, fit a
-    tracker.
-- **Reliability** (OpenTTD) decays with days since the last service entry in the day book and resets on a
-  service. This needs v2 service data.
+**Uday (2026-10-25):** he wants a garage covering the service side: a game interface for every key component
+of running a bus, including wear and tear, that helps decide the upgrades for each vehicle. Everything below
+is Claude's call.
+
+**The garage** (Need for Speed garage, OpenTTD reliability, Euro Truck Simulator 2 workshop) has one bay per
+bus, holding:
+
+- **A component board.** Each part has a health bar that wears down with **real km and time**, and is reset
+  by a real repair entry. Starting parts and default lives (km or months, whichever comes first; tuned per bus
+  type and for hill driving):
+
+  | Group | Components | Wears by |
+  |---|---|---|
+  | Engine | engine oil, oil filter, air filter, fuel filter, coolant, belts | km and months |
+  | Stopping | brake linings/pads, brake fluid, hand-brake | km (hill terrain shortens) |
+  | Drivetrain | clutch, gearbox oil, propeller shaft, axle greasing | km |
+  | Tyres | each tyre position, plus the spare: age, km and punctures | km, months, punctures |
+  | Suspension and steering | leaf springs, shock absorbers, steering joints | km |
+  | Electrical | battery, lights, horn, wipers, wiring | months, faults |
+  | Body | rust and paint, seats, windows, door mechanism | months, damage |
+
+- **A safety loadout** (equipment slots, like a car's loadout). Each slot is either present and working, or a
+  red empty slot:
+  - GPS tracker and speed governor (40 km/h) — HP rules;
+  - CCTV — HP rules;
+  - first-aid box, fire extinguisher (with its refill date), window grills, emergency exit, door lock;
+  - school name and phone painted on, and the attendant on board.
+
+  The slots are checked on a **monthly inspection**: a capture-portal checklist with one photo per slot. The
+  exact list follows the HP Motor Vehicle Rules amendment and the school's own policy (Uday to confirm).
+- **Paperwork** from the compliance data: insurance, fitness, MV tax, pollution, permit, speed-governor
+  certificate. This drives heat (Loop 1).
+
+**Where the wear data comes from (nothing new to type except one tap):**
+
+- **Km:** GPS km per day for tracked buses. For untracked buses, the odometer on each fuel fill (required
+  since 23 Oct 2026), interpolated between fills.
+- **Repairs:** the day book's existing vehicle categories (washing and greasing; service and mechanical
+  repair; spare parts and lubricants; battery and electrical; body, welding and paint; tyres), with their
+  amounts, dates and bill photos.
+- **The one new tap:** when a Fee Clerk enters a vehicle service expense, they **tap which component(s)**
+  from a short picture list. The amount, bill and vehicle are already there.
+- **Backup:** the Mac's LM Studio reads the bill or job-card photo and proposes the components, so a missed
+  tap is caught. The Coordinator confirms.
+
+**Decisions the garage helps with** (each is a **proposal** for Uday, never automatic):
+
+- **Service due:** a part reaching its line raises a mission for the Coordinator ("Bus HP659511: brake
+  linings at 90%, book a service this week"), with the nearest workshop and last price.
+- **Repeat repairs** (the 2026-10-24 spec's v2 "service repeats"): the same part repaired twice within half
+  its normal life flags either a bad workshop or a bad part.
+- **Upgrade, keep or replace,** per bus, as a garage card with cost against payback:
+  - **Overhaul:** when repairs over the last 12 months exceed a set share of the bus's value.
+  - **Resize:** a bus bigger or smaller than its route needs, from seats against children across its
+    rounds. Example: swap a 15-seater doing 4 rounds for a larger one doing 2.
+  - **Retire or replace:** at the 15-year legal limit, or when cost per km is far above fleet peers.
+  - **Fuel:** km per litre persistently below the norm, after the tracker and fuel checks are clean.
+- **Workshop scorecard:** for each garage the school uses, the average price per job and how soon the same
+  part comes back. This is a fact sheet for choosing workshops, never a public ranking.
+
+**Reliability** (OpenTTD): a bus's reliability is the weakest of its safety-critical parts (stopping, tyres,
+steering), not an average. So one worn brake makes the whole bus amber.
+
 - **Campus progression** (AoE3 Home City):
   - A term is a **season**. Each campus has a few **team goals** per season, for example "all trackers live",
     "no document expired", "no stop over capacity", "fuel checks answered within 2 days".
@@ -263,8 +318,12 @@ progress bar and a route line filling in on the map. A finished, verified route 
 | **1. Capture portal first, then the game shell (read-only) + missions + street view** | **1a:** `capture.html` (photo runs + count runs, offline queue, upload) and the Mac's blur and strip processing. **1b:** game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). For 1b's stop views: one photo run per route (Coordinator, outside school hours) |
 | **2. Route editor sandbox** | Purple-line drawing, trade-off preview, overflow rings, trip highlight, proposals and the Owner's war room | Phase 1. Stop names (staff workbook or GPS). OSRM running on the Mac |
 | **3. Student-to-stop allocation** | Counts per stop, unassigned counter, signed-in drag between stops, allocation proposals | ERP per-student transport for each campus. Staff stop workbook imported. Privacy advice (DPDP) |
-| **4. Garage and progression** | Richer garage, reliability, seasons, team goals, streaks with freeze, shipments | Phase 1. Service entries (v2) for reliability |
+| **4. Garage and progression** | Component board per bus, safety loadout and monthly inspection, upgrade/keep/replace cards, workshop scorecard, reliability, seasons, team goals, streaks with freeze, shipments | Phase 1. **Months of component-tagged service entries**, so the component tap starts early (see below) |
 | **5. Real writes** | Approved proposals turn into real route and stop changes in the transport workbook, with an audit trail | Uday's approval of the process |
+
+**Start collecting garage data early (Claude's call).** The Fee Clerk's one-tap component pick in the day book, and
+the monthly safety inspection in the capture portal, ship with Phase 1a. That way, by Phase 4 the garage has months
+of real wear history instead of starting empty.
 
 Each phase is planned (superpowers:writing-plans), built on a branch, verified (`verify.mjs`, live checks,
 375 px and desktop) and shipped only with Uday's go-ahead.
@@ -364,6 +423,26 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
    - The Phase 1 plan includes a one-page "how to do a capture run" guide.
 3. **DPDP advice before Phase 3.** **Uday: he'll get it when Phase 3 comes.** The design already keeps names
    out of the game layer and the public repo.
+
+## Decisions still open for Uday
+
+These are the things only Uday can settle. Each changes what gets built:
+
+1. **Capture runs:** which Coordinator rides which route, and when: one photo run outside school hours plus
+   one count run on a school run per route. Plus about 6 phone dashboard mounts.
+2. **Safety loadout list:** confirm the required equipment per bus (HP rules plus school policy), and who does
+   the monthly inspection (the campus Coordinator?).
+3. **Component lives:** use manufacturer service schedules as defaults, tuned for hills, or does a trusted
+   mechanic set them per bus type? Either way, Uday approves the table once.
+4. **Upgrade rules:** the repair-against-value share that triggers "overhaul?", the cost-per-km gap that
+   triggers "replace?", and the yearly fleet-renewal budget the proposals must fit within.
+5. **Workshops:** which garages the school uses, and whether a job-card photo is required with every service
+   bill (it makes the component backup far more reliable).
+6. **Phase 4 rewards:** the season goals per campus, and the size of the monthly reserve Uday can "ship"
+   (spare bus-days, repair budget, fuel advance).
+7. **Drivers as characters** (skills, wellbeing): later or never. It needs an HR call.
+8. **DPDP advice:** before Phase 3, as Uday said.
+9. **The design review itself:** on hold until Uday says.
 
 ## Left to the builder
 
