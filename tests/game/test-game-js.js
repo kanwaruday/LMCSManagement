@@ -178,6 +178,10 @@ assert.strictEqual(G.pickedText(5, 3), '5 picked. Untick 2 to save.');
 assert.strictEqual(G.pickedText(1, 0), '');
 
 // R28 structurally: game.js never parses HTML -- every text goes in as a text node or an attribute
+// quest panel source checks (DOM-free): parallel quests are folded and unnumbered; waiting steps are never the next action; due is neutral
+assert.ok(/q\.parallel/.test(src) && /'details'/.test(src), 'parallel quests render in <details>');
+assert.ok(/!s\.locked && !wait && !linked/.test(src), 'a waiting step is never the next action');
+assert.ok(/\['due', 'due '/.test(src), 'mission due tag uses the neutral due class');
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');
 // mount with no backendUrl renders nothing and touches nothing else
 let cleared = 0;
