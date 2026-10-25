@@ -12,6 +12,9 @@
 // (POST transportcapturepush, kept in the "Capture Stops" tab). This project has no Drive access, so the ids of the blurred
 // route.mp4 and stop photos come from the Roster project by path (captureprocessed, transport-capture.gs), never from the push.
 // An operational bus with no processed run gets capture_route (from GPS.captureFrom).
+// Agency service data (transport/capture/agency_import.py on the Mac, same secret): the vehicle agencies' filled templates become the
+// parts catalog the garage reads (POST transportcatalogpush -> Parts Catalog, Agency Vehicles, Agency History; idempotent), served
+// read-only in coordinatortransportinsight as `catalog`: models and parts fleet-wide, vehicles and history by reg like the rest.
 // Three views read it:
 //   GET  coordinatortransportinsight  Coordinator / Owner, scoped to their campuses (the Owner also gets proposals);
 //                                     feeds the checks and the route views (metro map, city overlay, depot)
@@ -23,6 +26,10 @@
 const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_TRACKS = 'GPS Tracks', GPS_TAB_FILLS = 'Fuel Fills',
   GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses', GPS_TAB_CAPTURE = 'Capture Stops';
 const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt'];
+const GPS_TAB_CATALOG = 'Parts Catalog', GPS_TAB_AGVEH = 'Agency Vehicles', GPS_TAB_AGHIST = 'Agency History';
+const GPS_CATALOG_COLS = ['key', 'model', 'code', 'lifeKm', 'lifeMonths', 'price', 'labour', 'spec', 'components', 'asOf', 'pushedAt'];
+const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'pushedAt'];
+const GPS_AGHIST_COLS = ['key', 'reg', 'chassis', 'jobCard', 'date', 'odometer', 'work', 'part', 'partNo', 'qty', 'partAmount', 'labour', 'pushedAt'];
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
 const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs', 'proof'];
@@ -423,6 +430,85 @@ function gpsCaptureByReg_(regs) {
   return out;
 }
 
+// ── Agency service data: the parts catalog ──
+
+function gpsCatNum_(v) { return typeof v === 'number' && isFinite(v) ? v : ''; }
+function gpsCatNumOut_(v) { return v === '' || v == null || !isFinite(Number(v)) ? null : Number(v); }
+function gpsCatStr_(v) { return v == null ? '' : String(v).trim(); }
+function gpsCatReg_(v) { return gpsCatStr_(v).replace(/\s+/g, '').toUpperCase(); }
+
+/** POST action=transportcatalogpush {secret, payload:{models:[{model, parts:{code:{lifeKm, lifeMonths, price, labour, spec, components, asOf}}}],
+ *  vehicles:[{chassis, reg, model, ...}], history:[{reg, chassis, jobCard, date, odometer, work, part, partNo, qty, partAmount, labour}]}}.
+ *  Idempotent: a part is keyed by model and code (an older asOf never replaces a newer one), a vehicle by chassis, a history row by its
+ *  job card line, so pushing the same file again adds nothing. A push never removes rows. Money stays in these tabs and the insight. */
+function coordCatalogPush_(body) {
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
+  const p = body.payload || {};
+  if (!Array.isArray(p.models) || !Array.isArray(p.vehicles) || !Array.isArray(p.history)) return { success: false, error: 'Payload rejected: models, vehicles and history must be lists' };
+  const now = new Date().toISOString(), parts = [], vehicles = [], history = [];
+  for (let i = 0; i < p.models.length; i++) {
+    const m = p.models[i] || {}, model = gpsCatStr_(m.model);
+    if (!model || !m.parts || typeof m.parts !== 'object' || Array.isArray(m.parts)) return { success: false, error: 'Payload rejected: model ' + (i + 1) + ' needs a name and its parts' };
+    Object.keys(m.parts).forEach(function (code) {
+      const x = m.parts[code] || {};
+      parts.push({ key: model + '|' + code, model: model, code: code, lifeKm: gpsCatNum_(x.lifeKm), lifeMonths: gpsCatNum_(x.lifeMonths), price: gpsCatNum_(x.price),
+        labour: gpsCatNum_(x.labour), spec: gpsCatStr_(x.spec), components: Array.isArray(x.components) ? x.components.map(gpsCatStr_).join(',') : '', asOf: gpsCatStr_(x.asOf), pushedAt: now });
+    });
+  }
+  for (let i = 0; i < p.vehicles.length; i++) {
+    const v = p.vehicles[i] || {};
+    if (!gpsCatStr_(v.chassis)) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' needs its chassis number' };
+    vehicles.push({ chassis: gpsCatStr_(v.chassis), reg: gpsCatReg_(v.reg), model: gpsCatStr_(v.model), variant: gpsCatStr_(v.variant), engine: gpsCatStr_(v.engine),
+      emission: gpsCatStr_(v.emission), year: gpsCatNum_(v.year), warrantyDate: gpsCatStr_(v.warrantyDate), warrantyKm: gpsCatNum_(v.warrantyKm), recalls: gpsCatStr_(v.recalls), pushedAt: now });
+  }
+  for (let i = 0; i < p.history.length; i++) {
+    const h = p.history[i] || {};
+    if (!gpsCatStr_(h.chassis) || !gpsCatStr_(h.date)) return { success: false, error: 'Payload rejected: history row ' + (i + 1) + ' needs a chassis number and a date' };
+    const row = { reg: gpsCatReg_(h.reg), chassis: gpsCatStr_(h.chassis), jobCard: gpsCatStr_(h.jobCard), date: gpsCatStr_(h.date), odometer: gpsCatNum_(h.odometer), work: gpsCatStr_(h.work),
+      part: gpsCatStr_(h.part), partNo: gpsCatStr_(h.partNo), qty: gpsCatStr_(h.qty), partAmount: gpsCatNum_(h.partAmount), labour: gpsCatNum_(h.labour), pushedAt: now };
+    row.key = [row.chassis, row.jobCard, row.date, row.part, row.partNo, row.qty].join('|'); // ponytail: two identical lines on one job card count as one
+    history.push(row);
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const upsert = function (tab, cols, keyOf, fresh, keep) {
+      const by = {}, order = [];
+      gpsRows_(tab).forEach(function (r) { by[keyOf(r)] = r; order.push(keyOf(r)); });
+      fresh.forEach(function (r) {
+        const k = keyOf(r), old = by[k];
+        if (!old) order.push(k);
+        if (!old || !keep || !keep(old, r)) by[k] = r;
+      });
+      const seen = {};
+      gpsWrite_(tab, cols, order.filter(function (k) { return seen[k] ? false : (seen[k] = true); }).map(function (k) { return by[k]; }));
+    };
+    upsert(GPS_TAB_CATALOG, GPS_CATALOG_COLS, function (r) { return r.key; }, parts, function (old, r) { return String(old.asOf) > r.asOf; });
+    upsert(GPS_TAB_AGVEH, GPS_AGVEH_COLS, function (r) { return r.chassis; }, vehicles);
+    upsert(GPS_TAB_AGHIST, GPS_AGHIST_COLS, function (r) { return r.key; }, history);
+  } finally { lock.releaseLock(); }
+  CacheService.getScriptCache().remove('coord_gps_insight_v1');
+  return { success: true, parts: parts.length, vehicles: vehicles.length, history: history.length };
+}
+
+/** The catalog for the insight: {models:{model:{parts:{code:{...}}}}, vehicles, history}. Models and parts for everyone; vehicles and history of the visible buses only. */
+function gpsCatalog_(regs) {
+  const models = {}, num = gpsCatNumOut_;
+  gpsRows_(GPS_TAB_CATALOG).forEach(function (r) {
+    (models[r.model] = models[r.model] || { parts: {} }).parts[r.code] = { lifeKm: num(r.lifeKm), lifeMonths: num(r.lifeMonths), price: num(r.price), labour: num(r.labour),
+      spec: r.spec || '', components: r.components ? String(r.components).split(',') : [], asOf: r.asOf || '' };
+  });
+  return {
+    models: models,
+    vehicles: gpsRows_(GPS_TAB_AGVEH).filter(function (v) { return regs[v.reg]; }).map(function (v) {
+      return { chassis: v.chassis, reg: v.reg, model: v.model, variant: v.variant, engine: v.engine, emission: v.emission, year: num(v.year), warrantyDate: v.warrantyDate, warrantyKm: num(v.warrantyKm), recalls: v.recalls };
+    }),
+    history: gpsRows_(GPS_TAB_AGHIST).filter(function (h) { return regs[h.reg]; }).map(function (h) {
+      return { reg: h.reg, chassis: h.chassis, jobCard: h.jobCard, date: h.date, odometer: num(h.odometer), work: h.work, part: h.part, partNo: h.partNo, qty: h.qty, partAmount: num(h.partAmount), labour: num(h.labour) };
+    }),
+  };
+}
+
 // ── Reads ──
 function gpsMeta_() {
   const m = {};
@@ -472,6 +558,7 @@ function coordGpsInsight_(caller) {
     stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }),
     tracks: gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; }).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: JSON.parse(t.path || '[]') }; }),
     capture: { byReg: gpsCaptureByReg_(regs) }, // processed route timelapses with their stops (blurred; counts only)
+    catalog: gpsCatalog_(regs), // the agencies' parts catalog: models and parts fleet-wide, vehicles and service history of the visible buses
     // money per bus: the Owner sees every bus, a Coordinator their campuses (the same rows the Transport page's Bus P&L tab shows them)
     proposals: owner ? meta.proposals : {}, pnl: (base.pnl || []).filter(function (r) { return mine(gpsCampusId_(r.campus)); }),
   };

@@ -273,4 +273,44 @@ assert.deepStrictEqual([fetched.length, fetched[0].body.runs.length, capped.notY
 const capTab = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Stops')._rows();
 capTab.find(r => r[0] === 'HP7-20261024-071500-zz99')[4] = '[{"seq":1,'; // a cut-off or hand-edited cell
 assert.deepStrictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP7.stops, [], 'one bad cell does not break the page');
+// ── parts catalog (Task 9): the agencies' service data, pushed from the Mac; models and parts fleet-wide, vehicles and history by reg ──
+const part = (o) => Object.assign({ lifeKm: 40000, lifeMonths: 24, price: 9500, labour: 300, spec: '', components: ['tyre_fl', 'tyre_fr'], asOf: '2026-10-01T10:00:00' }, o);
+ctx.catPush = {
+  models: [{ model: 'MODEL ALPHA 36', parts: { tyre: part(), engine_oil: part({ lifeKm: 10000, lifeMonths: 6, price: null, labour: null, components: ['engine_oil'] }) } },
+    { model: 'MODEL BETA 26', parts: { brake_front: part({ lifeKm: 30000, components: ['brake_front'] }) } }],
+  vehicles: [{ chassis: 'TESTCH0001', reg: 'HP1', model: 'MODEL ALPHA 36', variant: 'Skool', year: 2022, warrantyDate: '2027-03-11', warrantyKm: 200000 },
+    { chassis: 'TESTCH0007', reg: 'HP7', model: 'MODEL BETA 26', year: 2018 }],
+  history: [{ reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Engine oil', partNo: 'P1', qty: '7 L', partAmount: 3150, labour: 700 },
+    { reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Oil filter', partNo: 'P2', qty: '1', partAmount: 450, labour: null },
+    { reg: 'HP7', chassis: 'TESTCH0007', jobCard: 'JC-7', date: '2026-10-17', odometer: 40000, work: 'Brakes', part: 'Liner', partNo: 'P3', qty: '4', partAmount: 2400, labour: 900 }],
+};
+assert.strictEqual(J(run('coordCatalogPush_({secret:"X", payload: catPush})')).error, 'Not authorized', 'catalogpush with a wrong secret refused');
+assert.strictEqual(run('gpsRows_("Parts Catalog").length + gpsRows_("Agency Vehicles").length + gpsRows_("Agency History").length'), 0, 'a refused push stores nothing');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: "nope", vehicles: [], history: []}})')).success, false, 'models must be a list');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [{model: "", parts: {}}], vehicles: [], history: []}})')).success, false, 'a model needs a name');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [{reg: "HP1"}], history: []}})')).success, false, 'a vehicle needs its chassis');
+const cp = J(run('coordCatalogPush_({secret:" S\\n", payload: catPush})'));
+assert.deepStrictEqual([cp.success, cp.parts, cp.vehicles, cp.history], [true, 3, 2, 3]);
+const counts = () => run('[gpsRows_("Parts Catalog").length, gpsRows_("Agency Vehicles").length, gpsRows_("Agency History").length]');
+assert.deepStrictEqual(J(counts()), [3, 2, 3]);
+run('coordCatalogPush_({secret:"S", payload: catPush})'); run('coordCatalogPush_({secret:"S", payload: catPush})');
+assert.deepStrictEqual(J(counts()), [3, 2, 3], 're-pushing the same file adds no rows');
+// a push of one model leaves the others; an older file never overwrites a newer part; a newer one does
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 99, asOf: '2026-09-01T00:00:00' })) + '}}], vehicles: [], history: []}})');
+let catRows = J(run('gpsRows_("Parts Catalog")'));
+assert.strictEqual(catRows.find(r => r.code === 'tyre').lifeKm, '40000', 'an older file does not overwrite a newer part');
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 45000, price: 9800, asOf: '2026-10-20T00:00:00' })) + '}}], vehicles: [], history: []}})');
+catRows = J(run('gpsRows_("Parts Catalog")'));
+assert.deepStrictEqual([catRows.length, catRows.find(r => r.code === 'tyre').lifeKm, catRows.find(r => r.code === 'tyre').price], [3, '45000', '9800'], 'a newer file replaces the part');
+const catOwn = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog;
+assert.deepStrictEqual(Object.keys(catOwn.models).sort(), ['MODEL ALPHA 36', 'MODEL BETA 26']);
+assert.deepStrictEqual(catOwn.models['MODEL ALPHA 36'].parts.tyre, { lifeKm: 45000, lifeMonths: 24, price: 9800, labour: 300, spec: '', components: ['tyre_fl', 'tyre_fr'], asOf: '2026-10-20T00:00:00' }, 'numbers and component ids, as the garage reads them');
+assert.deepStrictEqual([catOwn.models['MODEL ALPHA 36'].parts.engine_oil.price, catOwn.models['MODEL ALPHA 36'].parts.engine_oil.lifeKm], [null, 10000], 'an empty price is null, not 0');
+assert.deepStrictEqual([catOwn.vehicles.length, catOwn.history.length], [2, 3], 'the Owner sees every bus');
+const catCoord = J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).catalog;
+assert.deepStrictEqual(catCoord.vehicles.map(v => v.reg), ['HP1'], 'a coordinator gets the vehicles of their campuses only');
+assert.deepStrictEqual(catCoord.history.map(h => h.part), ['Engine oil', 'Oil filter'], 'and their history');
+assert.deepStrictEqual([catCoord.vehicles[0].warrantyKm, catCoord.history[0].partAmount, catCoord.history[0].odometer, catCoord.history[1].labour], [200000, 3150, 81200, null]);
+assert.deepStrictEqual(Object.keys(catCoord.models).sort(), ['MODEL ALPHA 36', 'MODEL BETA 26'], 'models and parts are fleet-wide');
+
 console.log('transport gps: all checks passed');

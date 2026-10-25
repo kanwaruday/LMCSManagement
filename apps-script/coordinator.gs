@@ -171,6 +171,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportgpspush') return coordJson_(coordGpsPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportcapturepull') return coordJson_(coordCapturePull_(body)); // capture.py on the Mac
     if (String(body.action || '').toLowerCase() === 'transportcapturepush') return coordJson_(coordCapturePush_(body));
+    if (String(body.action || '').toLowerCase() === 'transportcatalogpush') return coordJson_(coordCatalogPush_(body)); // agency_import.py on the Mac
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body)); // Fee Clerks too (own campus, checked inside)
