@@ -12,11 +12,11 @@ const ZW = String.fromCharCode(0x200B); // zero-width space
 const top = (gas, name) => vm.runInContext(name, gas); // top-level const/let are not properties of the vm context
 function makeGas(flag, deptCell) {
   const sheets = {
-    EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/24/04/073', 'T.One@lms.org.in'], ['NCM/24/04/074', 't.two@lms.org.in'], ['NCM/24/04/075', 't.three@lms.org.in'],
+    EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/99/01/901', 'T.One@lms.org.in'], ['NCM/24/04/074', 't.two@lms.org.in'], ['NCM/24/04/075', 't.three@lms.org.in'],
       ['HES/1', 'h.one@lms.org.in'], ['KEL/1', 'k.one@lms.org.in'], ['NCM/9', 'p.one@lms.org.in'], ['XYZ/1', 'x.one@lms.org.in']],
-    EmpMaster: [['EmployeeCode', 'Name', 'Status'], ['NCM/24/04/073', 'Teacher One', 'Active'], ['NCM/24/04/074', 'Teacher Two', 'Inactive'], ['NCM/24/04/075', 'Teacher Three', ' active '],
+    EmpMaster: [['EmployeeCode', 'Name', 'Status'], ['NCM/99/01/901', 'Teacher One', 'Active'], ['NCM/24/04/074', 'Teacher Two', 'Inactive'], ['NCM/24/04/075', 'Teacher Three', ' active '],
       ['HES/1', 'Head Office', 'Active'], ['KEL/1', 'Kel One', 'Active'], ['NCM/9', 'Principal One', 'Active'], ['XYZ/1', 'Xyz One', 'Active']],
-    EmpSalary: [['EmployeeCode', 'Department'], ['NCM/24/04/073', deptCell], ['NCM/24/04/074', 'Teaching'], ['NCM/24/04/075', 'Teaching'],
+    EmpSalary: [['EmployeeCode', 'Department'], ['NCM/99/01/901', deptCell], ['NCM/24/04/074', 'Teaching'], ['NCM/24/04/075', 'Teaching'],
       ['HES/1', 'Teaching'], ['KEL/1', 'Teaching'], ['NCM/9', 'Teaching'], ['XYZ/1', 'Teaching']],
   };
   const allow = [['Email', 'Name', 'Campus', 'Role', 'CanApprove'], ['p.one@lms.org.in', 'Principal One', 'LMS4', 'Principal', '']];
@@ -46,8 +46,8 @@ const verify = (gas, email) => { gas.__email = email; return json(gas.verifyCall
 // ── mapping ────────────────────────────────────────────────────────
 let g = makeGas('on', 'Teaching');
 assert.deepStrictEqual(staffOf(g, 't.one@lms.org.in'),
-  { email: 't.one@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], employeeCode: 'NCM/24/04/073' }, 'Active Teaching code -> Teacher');
-assert.strictEqual(staffOf(g, 'T.ONE@LMS.ORG.IN').employeeCode, 'NCM/24/04/073', 'mixed-case email matches');
+  { email: 't.one@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], employeeCode: 'NCM/99/01/901' }, 'Active Teaching code -> Teacher');
+assert.strictEqual(staffOf(g, 'T.ONE@LMS.ORG.IN').employeeCode, 'NCM/99/01/901', 'mixed-case email matches');
 assert.strictEqual(staffOf(g, 't.two@lms.org.in'), null, 'Inactive code');
 assert.strictEqual(staffOf(g, 't.three@lms.org.in').roles[0], 'Teacher', 'Status is trimmed and case-insensitive');
 assert.strictEqual(staffOf(g, 'h.one@lms.org.in'), null, 'HES code -> allowlist only');
@@ -69,7 +69,7 @@ g = makeGas('on', 'Teaching');
 const p = verify(g, 'p.one@lms.org.in');
 assert.deepStrictEqual([p.roles, p.campusId, !!p.autoSignIn], [['Principal'], 'LMS4', false], 'allowlisted Principal unchanged despite an Active Teaching code');
 const t = verify(g, 't.one@lms.org.in');
-assert.deepStrictEqual([t.roles, t.campusId, t.employeeCode, t.canApprove, t.autoSignIn], [['Teacher'], 'LMS4', 'NCM/24/04/073', false, true]);
+assert.deepStrictEqual([t.roles, t.campusId, t.employeeCode, t.canApprove, t.autoSignIn], [['Teacher'], 'LMS4', 'NCM/99/01/901', false, true]);
 assert.strictEqual(verify(g, 't.two@lms.org.in'), null, 'Inactive stays out');
 assert.strictEqual(verify(makeGas(null, 'Teaching'), 't.one@lms.org.in'), null, 'flag off: unlisted email stays out');
 assert.strictEqual(verify(makeGas('on', 'AdminTM'), 't.one@lms.org.in'), null, 'AdminTM stays out');
@@ -91,7 +91,7 @@ assert.strictEqual(json(g.aprSubmit_(staff, { category: 'Not A Teacher Category'
 
 // ── staffsignin action ──────────────────────────────────────────────
 const get = (gas, email, action) => { gas.__email = email; return gas.doGet({ parameter: { idToken: 'tok-' + email, action } }); };
-assert.deepStrictEqual(json(get(g, 't.one@lms.org.in', 'staffsignin')), { success: true, role: 'Teacher', campusId: 'LMS4', employeeCode: 'NCM/24/04/073' });
+assert.deepStrictEqual(json(get(g, 't.one@lms.org.in', 'staffsignin')), { success: true, role: 'Teacher', campusId: 'LMS4', employeeCode: 'NCM/99/01/901' });
 assert.strictEqual(get(g, 'p.one@lms.org.in', 'staffsignin').success, false, 'an allowlisted caller gets nothing from staffsignin');
 assert.strictEqual(get(makeGas(null, 'Teaching'), 't.one@lms.org.in', 'staffsignin').success, false, 'flag off');
 

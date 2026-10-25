@@ -10,7 +10,7 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 const DAY = 86400000, D0 = Date.UTC(2026, 8, 1), NOW = D0 + 60 * DAY;       // 'today' = 31 Oct 2026
 
 // synthetic roster: T One / T Two at LMS4 (idx 3), T Four at LMS2, "Same Name" twice at LMS4 (ambiguous)
-const C1 = 'NCM/24/04/073', C2 = 'NCM/25/01/002', C4 = 'KEL/24/01/010';
+const C1 = 'NCM/99/01/901', C2 = 'NCM/25/01/002', C4 = 'KEL/24/01/010';
 const employees = [
   { employeeCode: C1, name: 'T One', school: 'LMS 4' }, { employeeCode: C2, name: 'T Two', school: 'LMS 4' },
   { employeeCode: C4, name: 'T Four', school: 'LMS 2' },
@@ -314,17 +314,17 @@ assert.ok(!JSON.stringify(audit).includes('T Three'));
 // ---- employee fallback: the PDR rule (Active, EmpPersonal.AuthEmail, department map, HES/unknown prefix -> null)
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows }) });
 const book = (extra) => ({ getSheetByName: (n) => sheet({
-  EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/24/04/073', 'Teach.One@lms.org.in '], ['NCM/24/04/099', 'clerk@lms.org.in'], ['NCM/24/04/100', 'gone@lms.org.in'],
+  EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/99/01/901', 'Teach.One@lms.org.in '], ['NCM/24/04/099', 'clerk@lms.org.in'], ['NCM/24/04/100', 'gone@lms.org.in'],
     ['NCM/24/04/101', 'tm@lms.org.in'], ['HES/24/04/001', 'hes@lms.org.in'], ['ZZZ/24/04/002', 'zzz@lms.org.in'], ['NCM/24/04/102', 'unk@lms.org.in'],
     ['NCM/24/04/103', 'admin.it@lms.org.in'], ['NCM/24/04/104', 'driver@lms.org.in'], ['NCM/24/04/105', 'ctor@lms.org.in']],
-  EmpMaster: [['EmployeeCode', 'Status'], ['NCM/24/04/073', 'Active'], ['NCM/24/04/099', ' active​'], ['NCM/24/04/100', 'Inactive'], ['NCM/24/04/101', 'Active'],
+  EmpMaster: [['EmployeeCode', 'Status'], ['NCM/99/01/901', 'Active'], ['NCM/24/04/099', ' active​'], ['NCM/24/04/100', 'Inactive'], ['NCM/24/04/101', 'Active'],
     ['HES/24/04/001', 'Active'], ['ZZZ/24/04/002', 'Active'], ['NCM/24/04/103', 'Active'], ['NCM/24/04/104', 'Active'], ['NCM/24/04/105', 'Active']],
-  EmpSalary: [['EmployeeCode', 'Department'], ['NCM/24/04/073', 'Teaching'], ['NCM/24/04/099', 'AdminClerk'], ['NCM/24/04/100', 'Teaching'], ['NCM/24/04/101', 'AdminTM'],
+  EmpSalary: [['EmployeeCode', 'Department'], ['NCM/99/01/901', 'Teaching'], ['NCM/24/04/099', 'AdminClerk'], ['NCM/24/04/100', 'Teaching'], ['NCM/24/04/101', 'AdminTM'],
     ['HES/24/04/001', 'Teaching'], ['ZZZ/24/04/002', 'Teaching'], ['NCM/24/04/103', 'AdminIT'], ['NCM/24/04/104', 'Transport'], ['NCM/24/04/105', 'constructor']],
 }[n]) });
 const fb = (email) => J(ctx.tchEmployeeFromBook_(email, book()));
-assert.deepStrictEqual(fb('teach.one@lms.org.in'), { campusId: 'LMS4', employeeCode: 'NCM/24/04/073', role: 'Teacher' });
-assert.deepStrictEqual(fb('TEACH.ONE@lms.org.in'), { campusId: 'LMS4', employeeCode: 'NCM/24/04/073', role: 'Teacher' });
+assert.deepStrictEqual(fb('teach.one@lms.org.in'), { campusId: 'LMS4', employeeCode: 'NCM/99/01/901', role: 'Teacher' });
+assert.deepStrictEqual(fb('TEACH.ONE@lms.org.in'), { campusId: 'LMS4', employeeCode: 'NCM/99/01/901', role: 'Teacher' });
 assert.strictEqual(fb('clerk@lms.org.in').role, 'Staff');                 // AdminClerk, and an invisible character in Status is cleaned
 assert.strictEqual(fb('admin.it@lms.org.in').role, 'Teacher');
 assert.strictEqual(fb('driver@lms.org.in').role, 'Staff');
