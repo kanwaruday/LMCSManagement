@@ -9,7 +9,7 @@ const ctx = { String, Number, Object, officeToday_: () => '2026-10-25', officeAd
   SpreadsheetApp: { openById: () => ({ getSheetByName: () => fakeSheet }) } };
 let rowsNow = [];
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/office-fuel-mirror.gs'), 'utf8').replace(/^const /gm, 'var '), ctx);
+for (const f of ['office-files.gs', 'office-fuel-mirror.gs']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
 const row = (id, o) => Object.assign({ id, campus: 'LMS4', entry_date: '2026-10-24', category: 'fuel', vehicle: 'HP665686', litres_ml: 60000, odometer_km: 75500, amount_paise: 570000, reverses: '', file_id: 'b1' }, o);
 const out = JSON.parse(JSON.stringify(ctx.officeFuelFills_([
   row('a'), row('b', { entry_date: '2026-10-23' }),
@@ -25,6 +25,8 @@ console.log('  ok  - fuel mirror rows');
 
 const proof = JSON.parse(JSON.stringify(ctx.officeFuelFills_([row('v', { video_file_id: 'vid1' }), row('w', { file_id: '', video_file_id: '' })], '2026-06-26')));
 assert.deepStrictEqual(proof.map(r => [r[0], r[8], r[9]]), [['v', 'yes', 'yes'], ['w', 'no', 'no']], 'mirror marks hasVideo when video_file_id is set, hasBill when file_id is');
+const linked = JSON.parse(JSON.stringify(ctx.officeFuelFills_([row('w2', { file_id: '' }), row('x2')], '2026-06-26', { w2: 'at1' })));
+assert.deepStrictEqual(linked.map(r => [r[0], r[8]]), [['w2', 'yes'], ['x2', 'no']], 'a video attached after the save (a side record) counts too');
 console.log('  ok  - mirror marks hasVideo and hasBill');
 // another campus's rows from before the two columns existed are kept, padded, not dropped or written ragged
 tabRows = [['id', 'campus', 'date', 'reg', 'litres', 'odometer', 'amount_rs', 'odometer_note'], ['z', 'LMS2', '2026-10-20', 'HP1', '40', '1000', '3800', '']];

@@ -178,11 +178,13 @@ function gpsFollowUps_(facts) {
       title: gpsCheckText_(c), detail: (unchanged ? 'The fee clerk said the bill was corrected, but the day book entry is unchanged. ' : a ? 'The fee clerk checked the pump slip: it matches the bill. ' : 'The fee clerk has not checked the pump slip in ' + GPS.clerkDays + ' days. ') +
         'Ask the driver to explain' + (c.excessRs ? ' about ' + c.excessL + ' extra litres (Rs ' + c.excessRs + ')' : '') + '. If it cannot be explained, recover the cost. Write the outcome when you mark this done.' });
   });
-  // a fill with no video a day after it: get it from the driver (closes itself when the video is attached or the fill is gone)
-  facts.checks.forEach(function (c) {
-    if ((c.proof !== 'bill' && c.proof !== 'none') || c.date < GPS.proofFrom || c.date > gpsAddDays_(t, -1)) return;
-    add({ taskId: 'fuel_proof|' + c.id, domain: 'fuel_proof', campus: gpsCampusId_(c.campus), severity: 'medium', auto: true,
-      title: c.reg + ', fuel on ' + gpsDay_(c.date, t) + ': no video of the fill', detail: 'Get the fill video from the driver and attach it to the fuel entry.' });
+  // every fill in the Fuel Fills mirror (checked against the GPS or not: a bus's first fill, a top-up, a bus without a tracker) with no
+  // video a day after it: get it from the driver. Closes itself when the video is attached or the fill is gone. 'no' only: a mirror
+  // row written before the hasVideo column existed says nothing.
+  (facts.fills || []).forEach(function (f) {
+    if (f.hasVideo !== 'no' || f.date < GPS.proofFrom || f.date > gpsAddDays_(t, -1)) return;
+    add({ taskId: 'fuel_proof|' + f.id, domain: 'fuel_proof', campus: gpsCampusId_(f.campus), severity: 'medium', auto: true,
+      title: f.reg + ', fuel on ' + gpsDay_(f.date, t) + ': no video of the fill', detail: 'Get the fill video from the driver and attach it to the fuel entry.' });
   });
   return out;
 }
@@ -255,13 +257,13 @@ function coordGpsPush_(body) {
 function gpsRefresh_(days, health) {
   const base = coordTransportBase_(), seats = {};
   base.fleet.forEach(function (b) { seats[b.reg] = b.seats; });
-  const checks = gpsFuelChecks_(gpsRows_(GPS_TAB_FILLS), days, seats);
+  const fills = gpsRows_(GPS_TAB_FILLS), checks = gpsFuelChecks_(fills, days, seats);
   gpsWrite_(GPS_TAB_CHECKS, GPS_CHECK_COLS, checks);
   const today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
   let live = null;
   try { live = coordBusFetch_().buses; } catch (err) { console.error('GPS live feed: ' + err.message); }
   if (live && !live.length) live = null; // an empty answer (bad id, vendor glitch) must not read as "no bus has a tracker"
-  const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, answers: gpsRows_(GPS_TAB_ANSWERS) });
+  const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, fills: fills, answers: gpsRows_(GPS_TAB_ANSWERS) });
   // which vehicles each self-clearing check actually looked at this time: only those may be closed by it
   const fleetRegs = {}, healthRegs = {};
   base.fleet.forEach(function (b) { fleetRegs[b.reg] = true; });

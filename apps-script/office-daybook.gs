@@ -5,6 +5,7 @@ function officeDaybookActions_() {
   return {
     'daybook.add': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookAdd_ },
     'daybook.reverse': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookReverse_ },
+    'daybook.attach_video': { roles: ['FeeClerk', 'Owner'], write: true, run: officeDaybookAttachVideo_ },
     'daybook.list': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookList_ },
     'daybook.balances': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookBalances_ },
   };
@@ -186,6 +187,29 @@ function officeDaybookReverse_(ctx, data) {
   }, 'daybook.reverse');
 }
 
+// Attaches the driver's fill video to a saved fuel entry. The day book stays append-only: the link is a new Files row (category
+// fuel_video, belongs_to = the entry id, the same Drive file) in the book that holds the entry. A second video needs replace:true; the
+// latest link wins. Same-campus Fee Clerk or Owner (campus enforced by the caller check); fuel entries that are not reversed only.
+function officeDaybookAttachVideo_(ctx, data) {
+  if (!data.id) throw new Error('MISSING_ID');
+  const books = officeRecentBooks_(data.campus);
+  const files = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Files')); }, []);
+  if (files.some(function (f) { return f.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
+  const home = books.filter(function (b) { return officeRows_(b, 'DayBook').some(function (r) { return r.id === String(data.entry_id) && r.campus === data.campus; }); })[0];
+  if (!home) throw new Error('NOT_FOUND');
+  const all = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  const entry = all.filter(function (r) { return r.id === String(data.entry_id); })[0];
+  if (entry.category !== 'fuel') throw officeCoded_('NOT_FUEL');
+  if (entry.reverses || all.some(function (r) { return r.reverses === entry.id; })) throw new Error('ALREADY_REVERSED');
+  const video = files.filter(function (f) { return f.id === String(data.file_id) && f.campus === data.campus && f.category === 'fuel_video'; })[0];
+  if (!video) throw officeCoded_('VIDEO_MISSING');
+  if ((entry.video_file_id || officeVideoLinks_(files)[entry.id]) && data.replace !== true) throw officeCoded_('VIDEO_EXISTS');
+  officeAppend_(home, 'Files', { id: data.id, campus: data.campus, drive_id: video.drive_id, name: video.name, size: video.size, fingerprint: video.fingerprint,
+    category: 'fuel_video', belongs_to: entry.id }, ctx.caller, { action: 'daybook.attach_video' });
+  try { officeFuelMirror_(data.campus); } catch (err) { console.error('Fuel mirror: ' + err.message); } // the Coordinator sees hasVideo on its next push
+  return { id: String(data.id) };
+}
+
 function officeDaybookList_(ctx, data) {
   if (!officeIsoDate_(data.from)) throw new Error('BAD_DATE');
   const to = data.to === undefined || data.to === '' ? data.from : data.to;
@@ -193,7 +217,9 @@ function officeDaybookList_(ctx, data) {
   const fy = officeFy_(data.from);
   if (officeFy_(to) !== fy) throw new Error('RANGE_SPANS_YEARS');
   const ss = officeOpen_(data.campus, fy);
-  return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; }) };
+  const links = officeVideoLinks_(officeRows_(ss, 'Files')); // a fill video attached after the save shows as the entry's video_file_id
+  return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; })
+    .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; }) };
 }
 
 function officeDaybookBalances_(ctx, data) {

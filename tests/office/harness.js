@@ -32,6 +32,7 @@ function sheetsLike(sheet) {
   const getRange = sheet.getRange;
   // Like Sheets: a new sheet has 26 columns, a range past the grid throws, insertColumnsAfter widens it.
   sheet.maxCols = 26; sheet.insertCalls = 0;
+  sheet.clear = () => { sheet.values.length = 0; };
   sheet.getMaxColumns = () => sheet.maxCols;
   sheet.insertColumnsAfter = (pos, n) => { sheet.insertCalls++; sheet.maxCols += n; };
   sheet.getRange = (...a) => {

@@ -70,3 +70,11 @@ function officeFileView_(ctx, data) {
   officeAuditWrite_(ss, ctx.caller, 'file.view', row.id, data.campus, { name: row.name });
   return { name: row.name, mime: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
 }
+
+// {entry id: id of its latest fuel_video link row}. A video attached after the day book entry was saved is a Files row of category
+// fuel_video whose belongs_to is the entry id (daybook.attach_video); later rows win, so a replacement shows instead of the first.
+function officeVideoLinks_(filesRows) {
+  const out = {};
+  filesRows.forEach(function (f) { if (f.category === 'fuel_video' && f.belongs_to) out[f.belongs_to] = f.id; });
+  return out;
+}

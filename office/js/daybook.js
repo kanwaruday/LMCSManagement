@@ -25,19 +25,20 @@ export const rolledNote = (iso) => 'It is past midnight: the date has moved on t
 // Rows from daybook.list may span several dates (the range runs on to today so that a reversal dated
 // later still marks its original). Result: the rows of `date` plus queued daybook.add entries for `date`.
 // Each item: {id, entry_date, direction, mode, bucket, category, amount_paise, payee, narration, reverses,
-//   synced, queued (alias !synced), status ('waiting'|'attention'|undefined), error, reversed, reversalQueued, reversalError}.
+//   synced, queued (alias !synced), status ('waiting'|'attention'|undefined), error, reversed, reversalQueued, reversalError, videoQueued}.
 export function mergeQueued(rows, outboxEntries, date) {
   const entries = outboxEntries || [];
   const reversedIds = new Set(rows.filter((r) => r.reverses).map((r) => r.reverses));
   const pendingRev = new Map(); // original id -> queued daybook.reverse entry (a later one wins)
   entries.filter((e) => e.action === 'daybook.reverse' && e.data).forEach((e) => pendingRev.set(e.data.reverses, e));
+  const pendingVid = new Set(entries.filter((e) => e.action === 'daybook.attach_video' && e.data).map((e) => e.data.entry_id)); // a fill video on its way
   const synced = rows.filter((r) => r.entry_date === date).map((r) => {
     const rev = pendingRev.get(r.id);
-    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, reversalError: rev && rev.status === 'attention' ? entryReason(rev) : '' };
+    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, videoQueued: pendingVid.has(r.id), reversalError: rev && rev.status === 'attention' ? entryReason(rev) : '' };
   });
   const have = new Set(rows.map((r) => r.id));
   const queued = entries.filter((e) => e.action === 'daybook.add' && e.data && e.data.entry_date === date && !have.has(e.id))
-    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? entryReason(e) : '', reversed: false, reversalQueued: false, reversalError: '' }));
+    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? entryReason(e) : '', reversed: false, reversalQueued: false, reversalError: '', videoQueued: false }));
   return synced.concat(queued); // stable: server rows keep their append order, queued ones follow in outbox order
 }
 
@@ -51,6 +52,9 @@ export function inflightGuard() {
 const LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
 const isLeg = (item) => /:(out|in)$/.test(item.id) || LEG_CATEGORIES.includes(item.category);
 export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued && !isLeg(item);
+
+// A saved fuel entry that has no fill video yet (and none on its way) can be given one from the list.
+export const canAddVideo = (item) => item.synced && item.category === 'fuel' && !item.reverses && !item.reversed && !item.reversalQueued && !item.video_file_id && !item.videoQueued;
 
 // Roles of the portal session (comma list). P8: the clerk-level limits lift with FinanceHead or Owner (Accounts counts as FinanceHead).
 const hasAnyRole = (session, roles) => String((session && session.role) || '').split(',').map((r) => r.trim()).some((r) => roles.includes(r));
@@ -105,6 +109,9 @@ export const componentOptions = (categoryId) => COMPONENTS.filter((c) => c[2].in
 export const VIDEO_LABEL = 'Video of the fill (from the driver)';
 export const VIDEO_HINT = 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.';
 export const VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/3gpp'], VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+// '' when the chosen file ({size, type}) is fine as a fill video, else the sentence to show.
+export const videoProblem = (f) => !VIDEO_MIMES.includes(f.type) ? 'Choose a video file (MP4, MOV or 3GP).'
+  : f.size > VIDEO_MAX_BYTES ? 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).' : '';
 export const PAYMENT_PHOTO_HINT = 'Photo of the bill, or of the hand-written receipt signed by the person paid.';
 
 // The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
@@ -156,8 +163,7 @@ export function entryPayload(form) {
     if (data.odometer_km === null) errors.odometer = 'Enter the odometer reading in whole km.';
     data.odometer_note = (form.odometer_note || '').trim();
     if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
-    if (form.video && !VIDEO_MIMES.includes(form.video.type)) errors.video = 'Choose a video file (MP4, MOV or 3GP).';
-    else if (form.video && form.video.size > VIDEO_MAX_BYTES) errors.video = 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).';
+    if (form.video && videoProblem(form.video)) errors.video = videoProblem(form.video);
   }
   if (cat && componentOptions(cat.id).length) {
     data.components = form.components || [];
@@ -232,6 +238,7 @@ export async function showDayBook(root, session, api, outbox) {
   const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
   const fileF = field('db-file', 'Photo', fileIn, PAYMENT_PHOTO_HINT);
   const videoIn = h('input', { type: 'file', accept: VIDEO_MIMES.join(',') });
+  const videoPick = h('input', { type: 'file', accept: VIDEO_MIMES.join(','), hidden: true }); // the list's Add fill video button opens this
   const videoF = field('db-video', VIDEO_LABEL, videoIn, VIDEO_HINT);
   // Garage data: one tap per part. Toggle buttons (aria-pressed) in a fieldset, so keyboard and screen readers get the same thing.
   let picked = [];
@@ -349,7 +356,7 @@ export async function showDayBook(root, session, api, outbox) {
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, videoF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, videoF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg, videoPick);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -364,6 +371,25 @@ export async function showDayBook(root, session, api, outbox) {
     }).catch(() => {});
     if (!ran || btn.isConnected) btn.disabled = false;
   }
+
+  // Add fill video: the same picker, then file.upload and daybook.attach_video through the outbox (FIFO: the file first).
+  let pickFor = null;
+  videoPick.addEventListener('change', async () => {
+    const file = videoPick.files && videoPick.files[0], item = pickFor;
+    videoPick.value = '';
+    if (!file || !item) return;
+    const bad = videoProblem(file);
+    if (bad) { saveMsg.textContent = bad; return; }
+    await guard('video:' + item.id, async () => {
+      saveMsg.textContent = 'Preparing the video…';
+      const fileId = await outbox.enqueue('file.upload', { campus, category: 'fuel_video', belongs_to: '', name: file.name || 'fuel-video', mime: file.type, base64: await toBase64(file) });
+      await outbox.enqueue('daybook.attach_video', { campus, entry_id: item.id, file_id: fileId });
+      saveMsg.textContent = 'Saved — will sync';
+      await refresh();
+      outbox.flush().then(refresh).catch(() => {});
+    }).catch((err) => { saveMsg.textContent = err && err.message || String(err); });
+  });
+  const addVideo = (item) => { pickFor = item; videoPick.click(); };
 
   // Second line of a list row: account, mode/bucket, charged-to (when not the campus), vehicle, fuel figures, then the free text.
   const partsLabel = (v) => { // stored as 'tyre_fl,puncture' (a queued entry still holds the array)
@@ -389,6 +415,8 @@ export async function showDayBook(root, session, api, outbox) {
       it.synced ? null : h('div', { class: 'flag' + (it.status === 'attention' ? ' bad' : '') }, it.status === 'attention' ? 'Needs attention: ' + it.error : 'Not yet synced'),
       it.reversed ? h('div', { class: 'meta' }, 'Reversed') : null,
       it.reversalQueued ? h('div', { class: 'flag' + (it.reversalError ? ' bad' : '') }, it.reversalError ? 'Reversal needs attention: ' + it.reversalError : 'Reversal not yet synced') : null,
+      it.videoQueued ? h('div', { class: 'flag' }, 'Fill video not yet synced') : null,
+      canAddVideo(it) ? h('button', { type: 'button', class: 'secondary', onclick: () => addVideo(it) }, 'Add fill video') : null,
       canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null,
     )) : [h('li', {}, 'No entries for ' + isoToDmy(date) + '.')]));
   }

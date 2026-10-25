@@ -13,6 +13,8 @@ export const CODES = {
   LEGS_MISSING: 'This deposit was saved, but part of its day book entry is missing and that day is now closed. Ask the Owner to reopen the day to repair it.',
   FILE_MISSING: 'The photo (deposit slip, bill or signed receipt) did not reach the server, so this was not recorded. Retry the photo upload first, then retry this.',
   VIDEO_MISSING: 'The fill video did not reach the server, so this was not recorded. Retry the upload first, then retry this.',
+  NOT_FUEL: 'A fill video can only be added to a fuel entry.',
+  VIDEO_EXISTS: 'This fuel entry already has a fill video.',
   FILE_REQUIRED: 'A photo is required: the deposit slip, or for a payment the bill or the hand-written receipt signed by the person paid (for fuel, the bill showing the odometer).',
   BAD_FILE: 'The file was not accepted. Take the photo again.',
   BAD_MIME: 'That file type is not accepted. Use a photo or a PDF (for a fuel fill video: MP4, MOV or 3GP).',

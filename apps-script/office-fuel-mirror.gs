@@ -8,8 +8,9 @@ const OFFICE_FUEL_MIRROR_SS = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; //
 const OFFICE_FUEL_MIRROR_TAB = 'Fuel Fills';
 const OFFICE_FUEL_MIRROR_DAYS = 120;
 
-/** DayBook rows -> fill rows, oldest first. A reversal row and the entry it reverses are both left out. */
-function officeFuelFills_(rows, since) {
+/** DayBook rows -> fill rows, oldest first. A reversal row and the entry it reverses are both left out. `linked` = {entry id: true} for
+ *  entries whose video was attached after the save (officeVideoLinks_). */
+function officeFuelFills_(rows, since, linked) {
   const reversed = {};
   rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
   return rows.filter(function (r) {
@@ -17,7 +18,7 @@ function officeFuelFills_(rows, since) {
   }).map(function (r) {
     const n = function (v, div) { return v === '' || v == null ? '' : Number(v) / div; }; // blank stays blank: a pre-23-Oct row has no litres or odometer
     return [String(r.id), r.campus, String(r.entry_date), r.vehicle, n(r.litres_ml, 1000), n(r.odometer_km, 1), n(r.amount_paise, 100), String(r.odometer_note || ''),
-      r.video_file_id ? 'yes' : 'no', r.file_id ? 'yes' : 'no'];
+      r.video_file_id || (linked && linked[r.id]) ? 'yes' : 'no', r.file_id ? 'yes' : 'no'];
   }).sort(function (a, b) { return a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0; });
 }
 
@@ -27,6 +28,7 @@ function officeFuelMirror_(campus, written) {
   const since = officeAddDays_(officeToday_(), -OFFICE_FUEL_MIRROR_DAYS);
   let rows = officeRecentBooks_(campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, [])
     .filter(function (r) { return r.campus === campus; });
+  const files = officeRecentBooks_(campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Files')); }, []);
   if (written && !rows.some(function (r) { return r.id === written.id; })) rows.push(written);
   const ss = SpreadsheetApp.openById(OFFICE_FUEL_MIRROR_SS);
   const sh = ss.getSheetByName(OFFICE_FUEL_MIRROR_TAB) || ss.insertSheet(OFFICE_FUEL_MIRROR_TAB);
@@ -34,7 +36,7 @@ function officeFuelMirror_(campus, written) {
   // other campuses' rows keep what they have; one written before hasVideo/hasBill existed is padded blank (unknown) until its campus refreshes
   const keep = sh.getLastRow() > 1 ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[1] !== campus; })
     .map(function (r) { return head.map(function (_, i) { return i < r.length ? r[i] : ''; }); }) : [];
-  const out = [head].concat(keep, officeFuelFills_(rows, since));
+  const out = [head].concat(keep, officeFuelFills_(rows, since, officeVideoLinks_(files)));
   sh.clear();
   sh.getRange(1, 1, out.length, head.length).setNumberFormat('@').setValues(out.map(function (r) { return r.map(String); })); // text: dates stay yyyy-MM-dd
 }

@@ -15,6 +15,7 @@ export function describeEntry(e) {
   switch (e && e.action) {
     case 'daybook.add': return join('Day book entry', money(d.amount_paise), d.entry_date && 'on ' + date(d.entry_date));
     case 'daybook.reverse': return 'Reversal of a day book entry';
+    case 'daybook.attach_video': return 'Fill video for a fuel entry';
     case 'deposit.add': return join('Deposit', money(d.amount_paise));
     case 'deposit.sign': return 'Deposit signature';
     case 'report.submit': return join('Daily report', date(d.report_date));

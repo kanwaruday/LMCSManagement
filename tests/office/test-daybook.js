@@ -519,6 +519,65 @@ module.exports = function run(t) {
     assert.equal(rowsOf(h).find((r) => r.id === 'rfr').video_file_id, '');
   });
 
+  // ── attach a fill video after the entry is saved (side record: a Files row whose belongs_to is the entry id) ──
+  const attach = (h, o, tok) => h.call('daybook.attach_video', Object.assign({ id: 'at' + (++n), campus: 'LMS1', entry_id: 'fa', file_id: 'vid' }, o), tok || 'clerk-token');
+  const filesOf = (h) => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files');
+  const listed = (h) => h.call('daybook.list', { campus: 'LMS1', from: '2026-10-20' }, 'clerk-token').entries;
+
+  t.test('attach_video links a video to a saved fuel entry of the own campus; the entry row is not rewritten', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    const r = attach(h, { id: 'at1' });
+    assert.equal(r.success, true); assert.equal(r.id, 'at1');
+    const link = filesOf(h).find((f) => f.id === 'at1');
+    assert.deepEqual([link.category, link.belongs_to, link.drive_id, link.campus], ['fuel_video', 'fa', 'DVvid', 'LMS1']);
+    assert.equal(rowsOf(h).find((x) => x.id === 'fa').video_file_id, '', 'append-only: the day book row is untouched');
+    assert.equal(listed(h).find((x) => x.id === 'fa').video_file_id, 'at1', 'the list shows the link');
+    assert.equal(h.call('daybook.attach_video', { id: 'at1', campus: 'LMS1', entry_id: 'fa', file_id: 'vid' }, 'clerk-token').duplicate, true, 'a retry is a duplicate');
+    assert.equal(filesOf(h).filter((f) => f.belongs_to === 'fa').length, 1);
+    assert.equal(attach(h, {}, 'owner-token').code, 'VIDEO_EXISTS', 'the Owner may attach, but the entry has one');
+  });
+
+  t.test('attach_video is refused for another campus, a non-fuel entry, a reversed entry, a reversal, a bad file or role', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', e({ id: 'nf' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fr', odometer_km: 1100 }), 'clerk-token');
+    h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token');
+    assert.equal(attach(h, {}, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(h.call('daybook.attach_video', { id: 'x1', campus: 'LMS2', entry_id: 'fa', file_id: 'vid2' }, 'other-token').error, 'NOT_FOUND', 'the entry is not in that campus');
+    assert.equal(attach(h, { entry_id: 'nf' }).code, 'NOT_FUEL');
+    assert.equal(attach(h, { entry_id: 'fr' }).error, 'ALREADY_REVERSED');
+    assert.equal(attach(h, { entry_id: 'rfr' }).error, 'ALREADY_REVERSED', 'a reversal row is not a fill');
+    assert.equal(attach(h, { entry_id: 'nope' }).error, 'NOT_FOUND');
+    ['nope', 'slip', 'vid2'].forEach((f) => assert.equal(attach(h, { file_id: f }).code, 'VIDEO_MISSING', f));
+    assert.equal(attach(h, {}, 'am-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(filesOf(h).filter((f) => f.belongs_to).length, 0);
+  });
+
+  t.test('a second video needs replace:true and then the latest wins; an entry saved with a video counts as having one', () => {
+    const h = withVideo();
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'vid3', campus: 'LMS1', drive_id: 'DVvid3', name: 'b.mp4', category: 'fuel_video' });
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fb', odometer_km: 1100, video_file_id: 'vid' }), 'clerk-token');
+    assert.equal(attach(h, { id: 'a1' }).success, true);
+    assert.equal(attach(h, { id: 'a2', file_id: 'vid3' }).code, 'VIDEO_EXISTS');
+    assert.equal(attach(h, { id: 'a3', file_id: 'vid3', replace: true }).success, true);
+    assert.equal(listed(h).find((x) => x.id === 'fa').video_file_id, 'a3', 'latest wins');
+    assert.equal(attach(h, { id: 'b1', entry_id: 'fb', file_id: 'vid3' }).code, 'VIDEO_EXISTS');
+    assert.equal(attach(h, { id: 'b2', entry_id: 'fb', file_id: 'vid3', replace: true }).success, true);
+  });
+
+  t.test('after an attach the fuel mirror says hasVideo for that fill', () => {
+    const h = withVideo(); h.addBookById(h.run('OFFICE_FUEL_MIRROR_SS'));
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fb', odometer_km: 1100, video_file_id: 'vid' }), 'clerk-token');
+    const tab = () => J(h.books[h.run('OFFICE_FUEL_MIRROR_SS')].getSheetByName('Fuel Fills').values).slice(1).map((r) => [r[0], r[8], r[9]]);
+    assert.deepEqual(tab(), [['fa', 'no', 'yes'], ['fb', 'yes', 'yes']]);
+    attach(h, { id: 'at9' });
+    assert.deepEqual(tab(), [['fa', 'yes', 'yes'], ['fb', 'yes', 'yes']]);
+  });
+
   t.test('reversal copies the components', () => {
     const h = v2();
     h.call('daybook.add', svc({ id: 'k2', entry_date: '2026-10-21' }), 'clerk-token');

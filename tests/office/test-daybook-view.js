@@ -4,7 +4,7 @@ const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
   const t_ok = (name, fn) => { fn(); console.log('  ok  - ' + name); };
-  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL, VIDEO_LABEL, VIDEO_HINT, VIDEO_MAX_BYTES } = await import('../../office/js/daybook.js');
+  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL, VIDEO_LABEL, VIDEO_HINT, VIDEO_MAX_BYTES, videoProblem, canAddVideo } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -37,6 +37,23 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(saved, null);
   console.log('  ok  - loadConfig refreshes once and keeps the cache on failure');
   console.log('  ok  - mergeQueued marks unsynced, dates, reversals');
+
+  // attach a fill video to a saved fuel entry from the list
+  t_ok('Add fill video shows for a synced fuel entry without a video, until one is queued', () => {
+    const fr = row('fz', { category: 'fuel', direction: 'OUT', vehicle: 'HP1', litres_ml: 40000 });
+    const merged = (rows, entries) => mergeQueued(rows, entries, '2026-10-21');
+    assert.strictEqual(canAddVideo(merged([fr], [])[0]), true);
+    assert.strictEqual(canAddVideo(merged([{ ...fr, video_file_id: 'v1' }], [])[0]), false, 'already has one');
+    assert.strictEqual(canAddVideo(merged([row('o')], [])[0]), false, 'not a fuel entry');
+    assert.strictEqual(canAddVideo(merged([fr, { ...fr, id: 'fz-rev', direction: 'IN', reverses: 'fz' }], [])[0]), false, 'reversed');
+    assert.strictEqual(canAddVideo(merged([fr, { ...fr, id: 'fz-rev', direction: 'IN', reverses: 'fz' }], [])[1]), false, 'a reversal row');
+    const waiting = merged([fr], [q('a1', 'waiting', { entry_id: 'fz', file_id: 'f' }, 'daybook.attach_video')])[0];
+    assert.strictEqual(waiting.videoQueued, true); assert.strictEqual(canAddVideo(waiting), false, 'one is on its way');
+    assert.strictEqual(canAddVideo(merged([], [q('n9', 'waiting', { entry_date: '2026-10-21', category: 'fuel' })])[0]), false, 'not synced yet');
+    assert.strictEqual(videoProblem({ size: 20 * 1024 * 1024, type: 'video/quicktime' }), '');
+    assert.match(videoProblem({ size: 30 * 1024 * 1024, type: 'video/mp4' }), /larger than 25 MB/);
+    assert.match(videoProblem({ size: 3, type: 'application/pdf' }), /Choose a video file/);
+  });
 
   // v2 form helpers
   const CAT = (id, direction, group, nv = false, active = true) => ({ id, label: id, direction, group, needs_vehicle: nv, active });
