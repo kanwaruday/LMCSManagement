@@ -344,13 +344,23 @@ async function postCoord(body) {
   try { return JSON.parse(await (await fetch(COORD_URL, { method: 'POST', body: JSON.stringify({ idToken: s.idToken, ...body }) })).text()); }
   catch (e) { return { success: false, network: true, error: 'No connection' }; }
 }
+// Sign in again (the session ran out). Someone else signing in here reloads the page, so every list and every send is theirs
+// (Ruling 37): the first person's waiting saves never go out under the second person's token.
+async function signInThenSend() {
+  $('authRoot').style.display = ''; scrollTo(0, 0);
+  const s = await LMCS.requireSession('#authRoot');
+  $('authRoot').style.display = 'none';
+  if (!sameUser(s)) { location.reload(); return; }
+  sendQueued();
+}
+const sameUser = (s) => !!s && String(s.email || '').toLowerCase() === String(S.session.email || '').toLowerCase();
 async function sendQueued() {
   if (S.sending) return;
   S.sending = true; drawPending();
   let changed = false;
   try {
     for (const run of (await store.runs()).filter((r) => r.quest && mine(r)).sort((a, b) => a.startedAt - b.startedAt)) {
-      if (!LMCS.getSession()) break;
+      if (!sameUser(LMCS.getSession())) break; // signed out, or someone else signed in (another tab): send nothing
       if (await store.total(run.id) && !run.endSent) {
         await createUploader({ store, post: postRoster, delays: [3000, 10000], waitOnline: async () => { throw new Error('offline'); } }).start(run.id).catch(() => {});
         const r = await store.getRun(run.id);
@@ -378,12 +388,13 @@ function drawPending() {
   $('pendingText').textContent = S.sending ? 'Sending...' : wait ? `${wait} ${wait === 1 ? 'save is' : 'saves are'} waiting to send.` + (signedOut ? ' Sign in to send.' : '') : '';
   $('sendNow').hidden = S.sending || !wait;
   $('sendNow').textContent = signedOut ? 'Sign in' : 'Send now';
-  $('sendNow').onclick = signedOut ? async () => { $('authRoot').style.display = ''; scrollTo(0, 0); await LMCS.requireSession('#authRoot'); $('authRoot').style.display = 'none'; sendQueued(); } : () => sendQueued();
+  $('sendNow').onclick = signedOut ? signInThenSend : () => sendQueued();
   $('refused').innerHTML = bad.map((r) => `<li data-id="${esc(r.id)}"><span>${esc(r.reg)}, ${esc(stepOf(r.quest.id).title.toLowerCase())}: not saved. ${esc(r.error)}</span>` +
     '<button type="button" class="cap-btn" data-a="again">Try again</button><button type="button" class="cap-btn" data-a="drop">Discard</button></li>').join('');
   $('refused').querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
     const id = b.closest('[data-id]').dataset.id;
-    if (!mine(await store.getRun(id))) return; // never someone else's save
+    const run = await store.getRun(id).catch(() => null); // gone (sent or discarded in another tab): nothing to do
+    if (!run || !mine(run)) return; // never someone else's save
     if (b.dataset.a === 'drop') {
       if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to discard'; return; }
       await store.discard(id);
