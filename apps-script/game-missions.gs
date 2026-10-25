@@ -273,3 +273,79 @@ function gameMissionsFor_(caller, src, cfg, now) {
   if (Object.prototype.hasOwnProperty.call(GAME_MODULE_MISSIONS, caller.primaryRole)) return GAME_MODULE_MISSIONS[caller.primaryRole](caller, cfg, now);
   return { notYet: true };
 }
+
+// ── Today: fixed daily set, roll-over, days on track ─────────────────
+// The Today set is fixed at a person's first load of the game day (a snapshot row of ids in Game Daily);
+// later loads show the same ids with live done state. Only ids are stored, never titles or names.
+
+// Today's set: open missions only (done / gone take no slot). Order: rolled over from yesterday, then core, then
+// by due date (none last), then source order (adapters list oldest first).
+function gamePick_(missions, cap, coreKinds, yesterdayOpenIds) {
+  const carried = {};
+  (yesterdayOpenIds || []).forEach(function (id) { carried[id] = true; });
+  const rank = missions.filter(function (m) { return !m.done && !m.gone; }).map(function (m, i) {
+    return { m: Object.assign({}, m, { rolledOver: !!carried[m.id] || !!m.rolledOver }), i: i,
+      core: m.core || (coreKinds || []).indexOf(m.kind) !== -1 };
+  });
+  rank.sort(function (a, b) {
+    if (a.m.rolledOver !== b.m.rolledOver) return a.m.rolledOver ? -1 : 1;
+    if (a.core !== b.core) return a.core ? -1 : 1;
+    if (a.m.due !== b.m.due) return !a.m.due ? 1 : !b.m.due ? -1 : (a.m.due < b.m.due ? -1 : 1);
+    return a.i - b.i;
+  });
+  return rank.slice(0, cap).map(function (r) { return r.m; });
+}
+
+// Game Daily cell -> 'YYYY-MM-DD'. Sheets may turn the text into a Date at midnight IST.
+function gameDayCell_(v) {
+  return v instanceof Date ? new Date(v.getTime() + GAME_IST_OFFSET_MIN * 60000).toISOString().slice(0, 10) : String(v || '').trim();
+}
+function gameIdList_(v) {
+  try { const a = JSON.parse(String(v)); return Array.isArray(a) ? a : []; } catch (err) { return []; }
+}
+
+// dailyRows = Game Daily values, header first. row = the 1-based sheet row (header is row 1).
+function gameSnapshot_(dailyRows, email, dayKey) {
+  const who = gameLower_(email);
+  for (let i = 1; i < dailyRows.length; i++) {
+    const r = dailyRows[i];
+    if (gameDayCell_(r[0]) === dayKey && gameLower_(r[1]) === who) return { row: i + 1, missionIds: gameIdList_(r[4]), doneIds: gameIdList_(r[5]) };
+  }
+  return null;
+}
+
+// Judge one finished game day. counted = the snapshot held a core, non-shared mission that still exists; onTrack = every
+// such mission is done by 04:00 IST the next day. A snapshot id missing from missionsNow is gone (R9), not done. A mission
+// done before the day began counts as done for that day (credit is Task 5's business, not this one's).
+function gameFinalizeDay_(snapshot, missionsNow, dayKey, cfgCore) {
+  const now = {};
+  missionsNow.forEach(function (m) { now[m.id] = m; });
+  const end = Date.parse(dayKey + 'T04:00:00+05:30') + GAME_DAY_MS;
+  let counted = false, onTrack = true;
+  snapshot.missionIds.forEach(function (id) {
+    const m = now[id];
+    if (!m || m.gone || m.shared || !(m.core || (cfgCore || []).indexOf(m.kind) !== -1)) return;
+    counted = true;
+    if (!(m.done && (!m.doneAt || new Date(m.doneAt).getTime() < end))) onTrack = false;
+  });
+  return { counted: counted, onTrack: counted && onTrack };
+}
+
+// Finalized rows only. A counted day has OnTrack TRUE/FALSE; a day with nothing to count has OnTrack blank.
+function gameDaysOnTrack_(dailyRows, email, monthKey) {
+  const who = gameLower_(email);
+  const y = +monthKey.slice(0, 4), m = +monthKey.slice(5, 7);
+  const lastKey = m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0');
+  const out = { onTrack: 0, counted: 0, lastMonthOnTrack: 0, lastMonthCounted: 0 };
+  const flag = function (v) { return v === true || String(v).toLowerCase() === 'true'; };
+  for (let i = 1; i < dailyRows.length; i++) {
+    const r = dailyRows[i];
+    if (gameLower_(r[1]) !== who || !flag(r[6])) continue;
+    const on = String(r[7]).toLowerCase();
+    if (on !== 'true' && on !== 'false') continue;
+    const month = gameDayCell_(r[0]).slice(0, 7);
+    if (month === monthKey) { out.counted++; if (on === 'true') out.onTrack++; }
+    else if (month === lastKey) { out.lastMonthCounted++; if (on === 'true') out.lastMonthOnTrack++; }
+  }
+  return out;
+}
