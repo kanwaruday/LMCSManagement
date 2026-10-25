@@ -6,7 +6,7 @@
 
 var OFFICE_TABLES = {
   DayBook: ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'reverses', 'created_at', 'created_by',
-    'account', 'charged_to', 'vehicle', 'litres_ml', 'odometer_km', 'odometer_note', 'supplier_bill_no', 'settles_account', 'settles', 'source', 'legacy_category', 'mapped_by', 'collection', 'components'],
+    'account', 'charged_to', 'vehicle', 'litres_ml', 'odometer_km', 'odometer_note', 'supplier_bill_no', 'settles_account', 'settles', 'source', 'legacy_category', 'mapped_by', 'collection', 'components', 'video_file_id'],
   Opening: ['id', 'campus', 'mode', 'bucket', 'amount_paise', 'created_at', 'created_by', 'account'],
   Closes: ['id', 'campus', 'close_date', 'closing_json', 'created_at', 'created_by'],
   Reopens: ['id', 'campus', 'close_date', 'reason', 'created_at', 'created_by'],

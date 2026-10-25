@@ -4,7 +4,7 @@ import { cacheGet, cacheSet } from './shell.js';
 import { h, field } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
-import { resizeImage } from './image.js';
+import { resizeImage, toBase64 } from './image.js';
 
 export const BUCKETS = { petty: 'Petty cash', fee: 'Fee cash', other: 'Other cash' };
 export const MODES = { cash: 'Cash', bank: 'Bank', upi: 'UPI' };
@@ -101,6 +101,10 @@ const COMPONENTS = [
 ];
 // [{id, label}] for the chips of a category; empty (no chips) for every category that does not ask which parts.
 export const componentOptions = (categoryId) => COMPONENTS.filter((c) => c[2].includes(categoryId)).map(([id, label]) => ({ id, label }));
+// The driver's video of a fuel fill (proof for the fuel check). Optional; the backend enforces the same types and size.
+export const VIDEO_LABEL = 'Video of the fill (from the driver)';
+export const VIDEO_HINT = 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.';
+export const VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/3gpp'], VIDEO_MAX_BYTES = 25 * 1024 * 1024;
 export const PAYMENT_PHOTO_HINT = 'Photo of the bill, or of the hand-written receipt signed by the person paid.';
 
 // The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
@@ -124,7 +128,7 @@ export function parseLitresToMl(text) {
 const parseOdometer = (text) => { const m = /^\s*(\d+)\s*$/.exec(String(text)); const n = m && Number(m[1]); return m && Number.isSafeInteger(n) ? n : null; };
 
 // form: {campus, date, account (object), category (object), mode (bank accounts only: bank|upi), bucket, amount, payee, narration,
-//   charged_to, vehicle, components (ids in tap order), collection, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
+//   charged_to, vehicle, components (ids in tap order), collection, litres, odometer, odometer_note, hasFile, video ({size, type} of the chosen fill video, if any), supplier_bill_no, settles_account, settles}.
 // Returns {ok, data, errors}. Direction comes from the category, mode from the account kind, bucket only for cash;
 // file_id is added by the caller once the photo is queued (every payment has one: bill or signed receipt).
 export function entryPayload(form) {
@@ -152,6 +156,8 @@ export function entryPayload(form) {
     if (data.odometer_km === null) errors.odometer = 'Enter the odometer reading in whole km.';
     data.odometer_note = (form.odometer_note || '').trim();
     if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
+    if (form.video && !VIDEO_MIMES.includes(form.video.type)) errors.video = 'Choose a video file (MP4, MOV or 3GP).';
+    else if (form.video && form.video.size > VIDEO_MAX_BYTES) errors.video = 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).';
   }
   if (cat && componentOptions(cat.id).length) {
     data.components = form.components || [];
@@ -225,6 +231,8 @@ export async function showDayBook(root, session, api, outbox) {
   const odoNoteF = field('db-odonote', 'Odometer note (only if the reading is lower, e.g. meter replaced)', odoNoteIn);
   const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
   const fileF = field('db-file', 'Photo', fileIn, PAYMENT_PHOTO_HINT);
+  const videoIn = h('input', { type: 'file', accept: VIDEO_MIMES.join(',') });
+  const videoF = field('db-video', VIDEO_LABEL, videoIn, VIDEO_HINT);
   // Garage data: one tap per part. Toggle buttons (aria-pressed) in a fieldset, so keyboard and screen readers get the same thing.
   let picked = [];
   const chipsEl = h('div', { class: 'chips' });
@@ -278,6 +286,7 @@ export async function showDayBook(root, session, api, outbox) {
     billF.root.hidden = !(a && a.kind === 'credit');
     vehF.root.hidden = !(c && c.needs_vehicle);
     [litresF, odoF, odoNoteF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    videoF.root.hidden = !(c && c.id === 'fuel');
     compF.root.hidden = !(c && componentOptions(c.id).length);
     collF.root.hidden = !(c && COLLECTION_CATEGORIES.includes(c.id));
     fileF.root.hidden = !(c && c.direction === 'OUT'); // every payment carries a photo
@@ -301,15 +310,16 @@ export async function showDayBook(root, session, api, outbox) {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
 
-  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, components: compF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
+  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, components: compF, litres: litresF, odometer: odoF, file: fileF, video: videoF, settles_account: settlesF };
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (roll()) return;
     Object.values(FIELDS).forEach((f) => { f.err.textContent = ''; });
-    const file = fileIn.files && fileIn.files[0];
+    const file = fileIn.files && fileIn.files[0], video = !videoF.root.hidden && videoIn.files && videoIn.files[0];
     const r = entryPayload({
       campus, date, account: curAcct(), category: curCat(), mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value,
       charged_to: chargedSel.value, vehicle: vehSel.value, components: picked, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      video: video ? { size: video.size, type: video.type } : null,
       supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
     });
     if (!r.ok) {
@@ -326,8 +336,12 @@ export async function showDayBook(root, session, api, outbox) {
         const img = await resizeImage(file);
         r.data.file_id = await outbox.enqueue('file.upload', { campus, category: 'bill', belongs_to: '', name: file.name || (r.data.category === 'fuel' ? 'fuel-bill' : 'payment-bill'), mime: img.mime, base64: img.base64 });
       }
+      if (video) { // the fill video goes the same way, after the bill and before the entry that names it
+        saveMsg.textContent = 'Preparing the video…';
+        r.data.video_file_id = await outbox.enqueue('file.upload', { campus, category: 'fuel_video', belongs_to: '', name: video.name || 'fuel-video', mime: video.type, base64: await toBase64(video) });
+      }
       await outbox.enqueue('daybook.add', r.data);
-      [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
+      [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, videoIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
       picked = []; paintChips();
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
@@ -335,7 +349,7 @@ export async function showDayBook(root, session, api, outbox) {
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, videoF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -363,7 +377,7 @@ export async function showDayBook(root, session, api, outbox) {
     it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
     it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
     it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
-    it.collection ? collLabel(it.collection) : '', partsLabel(it.components),
+    it.collection ? collLabel(it.collection) : '', partsLabel(it.components), it.video_file_id ? 'Fill video' : '',
     it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
   ].filter(Boolean);
 

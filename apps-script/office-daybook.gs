@@ -99,6 +99,14 @@ function officeDaybookAdd_(ctx, data) {
       return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
     })) throw officeCoded_('FILE_MISSING'); // same check as deposit.add
   }
+  // A fuel fill may carry the driver's video of the fill (a fuel_video file of this campus); the fuel check shows it as proof.
+  const videoId = officeBlank_(data.video_file_id) ? '' : String(data.video_file_id);
+  if (videoId) {
+    if (!isFuel) throw new Error('BAD_FIELD');
+    if (!officeRecentBooks_(data.campus).some(function (b) {
+      return officeRows_(b, 'Files').some(function (f) { return f.id === videoId && f.campus === data.campus && f.category === 'fuel_video'; });
+    })) throw officeCoded_('VIDEO_MISSING');
+  }
   // Garage data: a service bill says which parts it was for (comma-separated ids, in the order tapped). Other categories ignore the field.
   const offered = officeComponentsFor_(cat.id).map(function (c) { return c.id; });
   let components = '';
@@ -127,7 +135,7 @@ function officeDaybookAdd_(ctx, data) {
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
     account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
-    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components,
+    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   }, 'daybook.add');
 }
 

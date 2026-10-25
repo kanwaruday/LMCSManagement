@@ -69,7 +69,7 @@ function makeDrive() {
       createFolder(nm) { d.calls.push('createFolder'); return folder(nm, id); },
       createFile(blob) {
         d.calls.push('createFile'); const fid = 'D' + (++d.n);
-        d.files[fid] = { id: fid, folder: id, name: blob.getName(), mime: blob.getContentType(), bytes: blob.getBytes(), getId: () => fid, getBlob: () => d.files[fid].blob };
+        d.files[fid] = { id: fid, folder: id, name: blob.getName(), mime: blob.getContentType(), bytes: blob.getBytes(), getId: () => fid, getBlob: () => d.files[fid].blob, setTrashed: (v) => { d.files[fid].trashed = !!v; }, isTrashed: () => !!d.files[fid].trashed };
         d.files[fid].blob = blob; return d.files[fid];
       },
     };

@@ -4,7 +4,7 @@ const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
   const t_ok = (name, fn) => { fn(); console.log('  ok  - ' + name); };
-  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL } = await import('../../office/js/daybook.js');
+  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL, VIDEO_LABEL, VIDEO_HINT, VIDEO_MAX_BYTES } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -116,6 +116,19 @@ if (require.main !== module) { module.exports = () => {}; return; }
   const fuel = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12.5', odometer: '45210', odometer_note: ' meter changed ', hasFile: true };
   r = entryPayload(fuel);
   assert.ok(r.ok, JSON.stringify(r.errors)); assert.strictEqual(r.data.litres_ml, 12500); assert.strictEqual(r.data.odometer_km, 45210); assert.strictEqual(r.data.odometer_note, 'meter changed'); assert.strictEqual(r.data.vehicle, 'HP01A1');
+  // the driver's fill video: optional, mp4/mov/3gp, 25 MB
+  t_ok('fuel video: optional, checked for type and size, copy as briefed', () => {
+    assert.strictEqual(VIDEO_LABEL, 'Video of the fill (from the driver)');
+    assert.strictEqual(VIDEO_HINT, 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.');
+    assert.strictEqual(VIDEO_MAX_BYTES, 25 * 1024 * 1024);
+    assert.ok(entryPayload(fuel).ok, 'no video is fine');
+    for (const type of ['video/mp4', 'video/quicktime', 'video/3gpp']) assert.ok(entryPayload({ ...fuel, video: { size: 20 * 1024 * 1024, type } }).ok, type);
+    assert.ok(entryPayload({ ...fuel, video: { size: 25 * 1024 * 1024, type: 'video/mp4' } }).ok, 'exactly 25 MB');
+    assert.strictEqual(entryPayload({ ...fuel, video: { size: 25 * 1024 * 1024 + 1, type: 'video/mp4' } }).errors.video, 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).');
+    assert.strictEqual(entryPayload({ ...fuel, video: { size: 5, type: 'image/jpeg' } }).errors.video, 'Choose a video file (MP4, MOV or 3GP).');
+    assert.ok(!('video' in entryPayload({ ...fuel, video: { size: 5, type: 'video/mp4' } }).data), 'the file id is added by the caller once the video is queued');
+    assert.ok(entryPayload({ ...tyres, vehicle: 'V1', video: { size: 5, type: 'image/jpeg' } }).ok, 'only a fuel entry looks at it');
+  });
   assert.strictEqual(entryPayload({ ...fuel, litres: '0.001' }).data.litres_ml, 1);
   assert.strictEqual(entryPayload({ ...fuel, litres: '12' }).data.litres_ml, 12000);
   for (const bad of ['0', '0.000', '-1', '12.3456', '', 'abc', '1e3', '.5', '1,5']) assert.ok(entryPayload({ ...fuel, litres: bad }).errors.litres, 'litres ' + bad);

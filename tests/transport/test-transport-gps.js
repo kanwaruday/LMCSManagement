@@ -34,12 +34,17 @@ for (let d = 1; d <= 10; d++) days.push({ reg: 'HP1', date: '2026-10-' + String(
 ctx.days = days;
 ctx.fills = [
   { id: 'f1', campus: 'LMS 4', date: '2026-10-01', reg: 'HP1', litres: 40, odometer: 1000, amount_rs: 3800 },   // first fill: no check
-  { id: 'f2', campus: 'LMS 4', date: '2026-10-06', reg: 'HP1', litres: 60, odometer: 1300, amount_rs: 5700 },   // 300 km / 60 L = 5 vs 7.5
-  { id: 'f3', campus: 'LMS 4', date: '2026-10-10', reg: 'HP1', litres: 30, odometer: 1600, amount_rs: 2850 },   // 240 km / 30 L = 8: ok km/L, odometer off by 60
+  { id: 'f2', campus: 'LMS 4', date: '2026-10-06', reg: 'HP1', litres: 60, odometer: 1300, amount_rs: 5700, hasVideo: 'yes', hasBill: 'yes' },   // 300 km / 60 L = 5 vs 7.5
+  { id: 'f3', campus: 'LMS 4', date: '2026-10-10', reg: 'HP1', litres: 30, odometer: 1600, amount_rs: 2850, hasVideo: 'no', hasBill: 'yes' },   // 240 km / 30 L = 8: ok km/L, odometer off by 60
   { id: 'x1', campus: 'LMS 4', date: '2026-10-05', reg: 'HP9', litres: 50, odometer: 10, amount_rs: 4750 },     // bus without GPS: never checked
 ];
 const checks = J(run('gpsFuelChecks_(fills, days, {HP1: 15})'));
 assert.deepStrictEqual(checks.map(c => c.id), ['f2', 'f3'], 'first fill and untracked buses give no check');
+assert.deepStrictEqual(checks.map(c => c.proof), ['video+bill', 'bill'], "fuel check proof is 'video+bill' / 'bill'");
+ctx.noBill = [ctx.fills[0], Object.assign({}, ctx.fills[1], { hasVideo: 'no', hasBill: 'no' })];
+assert.strictEqual(J(run('gpsFuelChecks_(noBill, days, {HP1: 15})'))[0].proof, 'none', 'neither video nor bill: proof is none');
+assert.strictEqual(J(run('gpsFuelChecks_([fills[0], Object.assign({}, fills[1], {hasVideo: undefined, hasBill: undefined})], days, {HP1: 15})'))[0].proof, 'bill', 'a row from before the columns existed reads as bill only');
+assert.ok(run('GPS_CHECK_COLS').indexOf('proof') !== -1, 'proof is stored with the check');
 const c2 = checks[0];
 assert.deepStrictEqual([c2.gpsKm, c2.kmpl, c2.norm, c2.flag, c2.reason, c2.excessL, c2.excessRs], [300, 5, 7.5, 'yes', 'low', 20, 1900]);
 assert.deepStrictEqual([checks[1].flag, checks[1].reason, checks[1].billKm], ['yes', 'odometer', 300]);
@@ -87,6 +92,16 @@ ctx.holiday.live.push({ reg: 'HPX', at: '2026-10-24T08:00:00+05:30' }); ctx.holi
 assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'another bus of the district reported: the silent one is flagged');
 ctx.holiday.live = [{ reg: 'HP1', at: '2026-10-20T15:00:00+05:30' }, { reg: 'HP3', at: '2025-01-20T09:00:00+05:30' }]; ctx.holiday.fleet = ctx.facts.fleet;
 assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'silent for months is dead even in a holiday');
+// ── fuel_proof: no video 24 hours after the fill ──
+const chk = (id, date, proof) => Object.assign({}, c2, { id, date, proof, flag: 'no', reason: '' });
+ctx.pf = { today: '2026-10-27', fleet, live: [{ reg: 'HP1', at: '2026-10-27T09:00:00+05:30' }], health: [], days: [], answers: [],
+  checks: [chk('p1', '2026-10-26', 'bill'), chk('p2', '2026-10-27', 'bill'), chk('p3', '2026-10-26', 'video+bill'), chk('p4', '2026-10-20', 'bill'), chk('p5', '2026-10-26', 'none'), chk('p6', '2026-10-26', undefined)] };
+const pf = J(run('gpsFollowUps_(pf)')).filter(x => x.domain === 'fuel_proof');
+assert.deepStrictEqual(pf.map(x => x.taskId).sort(), ['fuel_proof|p1', 'fuel_proof|p5'], 'a day after the fill and no video; not the same day, not with video, not before the video rule, not a row without proof');
+assert.deepStrictEqual([pf[0].due, pf[0].campus, pf[0].auto], ['2026-10-28', 'LMS4', true], 'due in 1 day, closes itself');
+assert.match(pf[0].detail, /Get the fill video from the driver and attach it to the fuel entry/);
+assert.match(pf[0].title, /^HP1, fuel on 26 Oct: no video of the fill/);
+assert.strictEqual(run('GPS_DOMAINS').indexOf('fuel_proof') !== -1, true);
 ctx.facts.live = null;
 assert.ok(!J(run('gpsFollowUps_(facts)')).some(x => /^gps_(none|dead)/.test(x.taskId)), 'vendor down: no tracker presence follow-ups');
 
@@ -126,6 +141,18 @@ r3[9] = new Date(Date.now() - 10 * 86400000);
 run('gpsRaise_(wanted, all3)');
 rows = book('TASKS').getSheetByName('Tasks')._rows();
 assert.strictEqual(row('gps_dead|HP3')[5], 'open', 'still silent after the repair window: back on the list');
+// fuel_proof raises at 24 h without a video and closes itself when the video is there (or the fill is gone)
+ctx.fp = pf;
+run('gpsRaise_(fp, {fuel_proof: true})');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.deepStrictEqual([row('fuel_proof|p1')[1], row('fuel_proof|p1')[5], row('fuel_proof|p1')[13], row('fuel_proof|p1')[14]], ['fuel_proof', 'open', 'c4@x.org', '2026-10-28']);
+run('gpsRaise_(fp.filter(x => x.taskId !== "fuel_proof|p1"), {fuel_proof: true})'); // p1's check now has its video
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('fuel_proof|p1')[5], 'resolved', 'the video arrived: the follow-up closes itself');
+assert.strictEqual(row('fuel_proof|p5')[5], 'open', 'the other one still has no video');
+run('gpsRaise_([], {fuel_proof: true})'); // the fill was reversed and re-entered (new id): the old follow-up is not left open
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('fuel_proof|p5')[5], 'resolved');
 ctx.coordVisibleCampuses_ = () => null;
 assert.match(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"  "})')).error, /Write what was done/);
 assert.strictEqual(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"Driver went to hospital"})')).success, true);

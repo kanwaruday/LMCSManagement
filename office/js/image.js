@@ -8,7 +8,7 @@ export function resizeDims(w, h, maxEdge = MAX_EDGE) {
 }
 export const pdfTooBig = (bytes) => bytes > PDF_MAX_BYTES;
 
-const toBase64 = (blob) => new Promise((resolve, reject) => {
+export const toBase64 = (blob) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(String(r.result).split(',')[1] || '');
   r.onerror = () => reject(new Error('Could not read the file'));

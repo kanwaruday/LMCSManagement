@@ -30,6 +30,7 @@ function officeBackupNightly() {
       });
       try { officeBackupPrune_(folder); } catch (err) { failures.push({ key: 'retention', error: msg(err) }); }
     }
+    try { officeFuelVideoPrune_(officeNow_()); } catch (err) { failures.push({ key: 'fuel_video', error: msg(err) }); } // runs even if the backup above failed
     if (!props.getProperty('OFFICE_ALERT_EMAIL')) failures.push({ key: 'OFFICE_ALERT_EMAIL', error: 'Script Property is missing, alert sent to the script owner' });
   } catch (err) { failures.push({ key: 'backup', error: msg(err) }); }
   if (!failures.length) return;
@@ -77,6 +78,27 @@ function officeBackupRetention_(names, now) {
     });
   });
   return del;
+}
+
+// Trashes the driver's fuel-fill videos 90 days after upload. The Coordinator's fill check closes within days, but its state
+// lives in another project this one cannot see, so the rule is the age of the upload (Files.created_at), which bounds it.
+// Only Files rows of category fuel_video are ever looked at, and a Drive file that any newer or non-video row still points
+// at (same bytes uploaded again) is kept. A file that cannot be trashed does not stop the others; the run then throws once.
+function officeFuelVideoPrune_(now) {
+  const props = PropertiesService.getScriptProperties(), cutoff = new Date(now.getTime() - 90 * 86400000).toISOString(), rows = [];
+  officeBackupKeys_().filter(function (k) { return /^OFFICE_SS_/.test(k); }).forEach(function (k) {
+    try { officeRows_(SpreadsheetApp.openById(props.getProperty(k)), 'Files').forEach(function (r) { rows.push(r); }); }
+    catch (err) { if (!/^NO_TAB/.test(String(err && err.message))) throw err; } // a book without a Files tab has no videos
+  });
+  const wanted = {}, done = {};
+  rows.forEach(function (r) { if (r.category !== 'fuel_video' || !r.created_at || r.created_at >= cutoff) wanted[r.drive_id] = true; });
+  const failed = [];
+  rows.forEach(function (r) {
+    if (r.category !== 'fuel_video' || r.created_at >= cutoff || wanted[r.drive_id] || done[r.drive_id]) return;
+    done[r.drive_id] = true;
+    try { const f = DriveApp.getFileById(r.drive_id); if (!f.isTrashed()) f.setTrashed(true); } catch (err) { failed.push(r.id + ': ' + String(err && err.message || err)); }
+  });
+  if (failed.length) throw new Error(failed.length + ' video(s) not trashed: ' + failed.join('; '));
 }
 
 // Run once by Uday: one daily 02:00 trigger for officeBackupNightly (other triggers untouched).

@@ -80,6 +80,47 @@ module.exports = function run(t) {
     assert.equal(send(Buffer.from('%PDF-1.4'), 'application/pdf').success, true);
   });
 
+  // ── fuel fill video: category fuel_video, 25 MB (the other categories stay at 3 MB) ──
+  const mb = (n) => n * 1024 * 1024;
+  const mp4 = (bytes) => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(bytes - 12, 7)]); // ISO-BMFF: 'ftyp' box at byte 4
+  const vid = (h, o) => up(h, Object.assign({ category: 'fuel_video', mime: 'video/mp4', name: 'fill.mp4', base64: mp4(mb(1)).toString('base64') }, o));
+
+  t.test('fuel_video accepts a 20 MB mp4 and refuses 26 MB with TOO_LARGE', () => {
+    const h = fresh();
+    const ok = vid(h, { id: 'v20', base64: mp4(mb(20)).toString('base64') });
+    assert.equal(ok.success, true);
+    const row = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files')[0];
+    assert.equal(h.drive.pathOf(row.drive_id), 'LMS1/2026-27/fuel_video');
+    assert.equal(vid(h, { id: 'v26', base64: mp4(mb(26)).toString('base64') }).error, 'TOO_LARGE');
+    assert.equal(Object.keys(h.drive.files).length, 1);
+  });
+
+  t.test('fuel_video refuses a JPEG with BAD_MIME', () => {
+    const h = fresh();
+    const jpg = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10]);
+    assert.equal(vid(h, { mime: 'image/jpeg', base64: jpg.toString('base64') }).error, 'BAD_MIME');
+    assert.equal(vid(h, { mime: 'application/pdf', base64: Buffer.from('%PDF-1.4').toString('base64') }).error, 'BAD_MIME');
+    assert.equal(up(h, { category: 'bill', mime: 'video/mp4', base64: mp4(100).toString('base64') }).error, 'BAD_MIME', 'a video is only for the fuel_video category');
+    assert.equal(Object.keys(h.drive.files).length, 0);
+  });
+
+  t.test('video bytes must carry an ftyp box at byte 4; mov and 3gp are accepted', () => {
+    const h = fresh();
+    assert.equal(vid(h, { base64: Buffer.from('not a video at all, just text').toString('base64') }).error, 'BAD_MIME');
+    assert.equal(vid(h, { base64: Buffer.concat([Buffer.from('ftyp'), Buffer.alloc(20, 1)]).toString('base64') }).error, 'BAD_MIME', 'ftyp at byte 0 is not a box');
+    assert.equal(Object.keys(h.drive.files).length, 0);
+    assert.equal(vid(h, { mime: 'video/quicktime', base64: Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from('ftypqt  '), Buffer.alloc(20, 2)]).toString('base64') }).success, true);
+    assert.equal(vid(h, { mime: 'video/3gpp', base64: Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from('ftyp3gp4'), Buffer.alloc(20, 3)]).toString('base64') }).success, true);
+  });
+
+  t.test('bill category still capped at 3 MB', () => {
+    const h = fresh();
+    const big = (n) => Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(mb(n), 1)]).toString('base64');
+    assert.equal(up(h, { category: 'bill', base64: big(4) }).error, 'TOO_LARGE');
+    assert.equal(up(h, { category: 'deposit_proof', base64: big(4) }).error, 'TOO_LARGE');
+    assert.equal(up(h, { category: 'bill', base64: big(2) }).success, true);
+  });
+
   t.test('upload to another campus is FORBIDDEN_CAMPUS', () => {
     const h = fresh();
     assert.equal(up(h, { campus: 'LMS2' }).error, 'FORBIDDEN_CAMPUS');

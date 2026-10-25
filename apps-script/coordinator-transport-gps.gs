@@ -17,11 +17,11 @@ const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'G
   GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses';
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
-const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs'];
+const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs', 'proof'];
 const GPS = {
   speedLimit: 40, speedMinutes: 10, awayKm: 2, deadDays: 2, longSilentDays: 14, blindShare: 0.2, blindMinKm: 30, ageLimit: 15,
-  normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
-  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, bus_age: 30 },
+  proofFrom: '2026-10-26', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
+  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30 },
 };
 const GPS_DOMAINS = Object.keys(GPS.due);
 const COORD_DEPT_TRANSPORT = 'Transport';
@@ -59,7 +59,7 @@ function gpsDay_(iso, today) {
 function gpsCampusId_(campus) { return 'LMS' + String(campus).replace(/\D/g, ''); }
 
 // ── Fuel checks: each fill against the GPS km since the bus's previous fill ──
-/** fills [{id,campus,date,reg,litres,odometer,amount_rs}], days [{reg,date,km}], seats {reg: n} -> checks (GPS_CHECK_COLS objects).
+/** fills [{id,campus,date,reg,litres,odometer,amount_rs,hasVideo,hasBill}], days [{reg,date,km}], seats {reg: n} -> checks (GPS_CHECK_COLS objects).
  *  The first fill of a bus has nothing to compare with and gives no check. */
 function gpsFuelChecks_(fills, days, seats) {
   const km = {};
@@ -94,7 +94,9 @@ function gpsFuelChecks_(fills, days, seats) {
       if (!reasons.length) own.push(kmpl);
       out.push({ id: String(cur.id), campus: String(cur.campus), date: String(cur.date), reg: reg, litres: litres, gpsKm: Math.round(gpsKm), billKm: billKm,
         kmpl: Math.round(kmpl * 10) / 10, norm: norm, flag: reasons.filter(function (r) { return r !== 'gps_gap'; }).length ? 'yes' : 'no', reason: reasons.join(' '),
-        excessL: Math.round(excessL), excessRs: Math.round(excessL * ((Number(cur.amount_rs) || 0) / litres)) });
+        excessL: Math.round(excessL), excessRs: Math.round(excessL * ((Number(cur.amount_rs) || 0) / litres)),
+        // what the day book holds for this fill: the driver's video and the bill photo ('bill' also for a row from before the two columns existed)
+        proof: cur.hasVideo === 'yes' ? 'video+bill' : cur.hasBill === 'no' ? 'none' : 'bill' });
     }
   });
   return out;
@@ -176,6 +178,12 @@ function gpsFollowUps_(facts) {
       title: gpsCheckText_(c), detail: (unchanged ? 'The fee clerk said the bill was corrected, but the day book entry is unchanged. ' : a ? 'The fee clerk checked the pump slip: it matches the bill. ' : 'The fee clerk has not checked the pump slip in ' + GPS.clerkDays + ' days. ') +
         'Ask the driver to explain' + (c.excessRs ? ' about ' + c.excessL + ' extra litres (Rs ' + c.excessRs + ')' : '') + '. If it cannot be explained, recover the cost. Write the outcome when you mark this done.' });
   });
+  // a fill with no video a day after it: get it from the driver (closes itself when the video is attached or the fill is gone)
+  facts.checks.forEach(function (c) {
+    if ((c.proof !== 'bill' && c.proof !== 'none') || c.date < GPS.proofFrom || c.date > gpsAddDays_(t, -1)) return;
+    add({ taskId: 'fuel_proof|' + c.id, domain: 'fuel_proof', campus: gpsCampusId_(c.campus), severity: 'medium', auto: true,
+      title: c.reg + ', fuel on ' + gpsDay_(c.date, t) + ': no video of the fill', detail: 'Get the fill video from the driver and attach it to the fuel entry.' });
+  });
   return out;
 }
 
@@ -192,7 +200,7 @@ function gpsOwners_() {
   return out;
 }
 
-/** Upserts the wanted follow-ups and closes self-clearing ones whose condition is gone. `covered` = {domain: {reg: true}}:
+/** Upserts the wanted follow-ups and closes self-clearing ones whose condition is gone. `covered` = {domain: {reg: true}, or domain: true when this run looked at every one of them}:
  *  a self-clearing follow-up is closed only if this run looked at its vehicle. A closed self-clearing follow-up whose problem is
  *  back reopens -- at once if the system closed it, after its due window if a person did (Blackbox gets time to repair). */
 function gpsRaise_(wanted, covered) {
@@ -217,7 +225,7 @@ function gpsRaise_(wanted, covered) {
     });
     for (let i = 1; i < rows.length; i++) {
       const id = String(rows[i][0]), dom = rows[i][1], reg = id.split('|')[1];
-      if (rows[i][5] !== 'open' || live[id] || !covered[dom] || !covered[dom][reg]) continue;
+      if (rows[i][5] !== 'open' || live[id] || !covered[dom] || (covered[dom] !== true && !covered[dom][reg])) continue; // true: every follow-up of the domain
       sh.getRange(i + 1, 6).setValue('resolved');
       sh.getRange(i + 1, 10, 1, 2).setValues([[now, 'system (condition cleared)']]);
       rows[i][5] = 'resolved';
@@ -258,7 +266,7 @@ function gpsRefresh_(days, health) {
   const fleetRegs = {}, healthRegs = {};
   base.fleet.forEach(function (b) { fleetRegs[b.reg] = true; });
   health.forEach(function (h) { healthRegs[h.reg] = true; });
-  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs });
+  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true });
   return { checks: checks.length, followUps: wanted.length };
 }
 

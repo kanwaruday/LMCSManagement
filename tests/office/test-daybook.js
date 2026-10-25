@@ -379,10 +379,10 @@ module.exports = function run(t) {
   const sc = (o) => e(Object.assign({ category: 'student_collection', collection: 'mun', bucket: 'other' }, o));
   const scPaid = (o) => e(Object.assign({ category: 'student_collection_paid', direction: 'OUT', collection: 'mun', bucket: 'other', file_id: 'slip' }, o));
 
-  t.test('DayBook has the collection column, then the components column last', () => {
+  t.test('DayBook has the collection column, then components and video_file_id last', () => {
     const h = v2();
     const head = h.ctx.OFFICE_TABLES.DayBook;
-    assert.deepEqual(Array.from(head.slice(-2)), ['collection', 'components']);
+    assert.deepEqual(Array.from(head.slice(-3)), ['collection', 'components', 'video_file_id']);
   });
 
   t.test('student collection categories need an active head (COLLECTION_REQUIRED / BAD_COLLECTION) and it is stored', () => {
@@ -472,14 +472,51 @@ module.exports = function run(t) {
   t.test('old row without the column reads back components "" and the first open adds the column', () => {
     const h = boot(fixture); h.addConfig();
     const cols = Array.from(h.ctx.OFFICE_TABLES.DayBook), old = cols.slice(0, cols.indexOf('components'));
-    assert.ok(old.length === cols.length - 1, 'components is the one new trailing column');
+    assert.ok(old.length === cols.length - 2, 'components and video_file_id are the new trailing columns');
     const sh = h.addBook('LMS1', '2026-27').insertSheet('DayBook'); // a live sheet from before this column
     h.ctx.officeWidenGrid_(sh, cols.length);
     sh.getRange(1, 1, 1, old.length).setNumberFormat('@').setValues([old]);
     sh.getRange(2, 1, 1, old.length).setNumberFormat('@').setValues([old.map((c) => (c === 'id' ? 'old1' : c === 'campus' ? 'LMS1' : ''))]);
     const ss = h.ctx.officeOpen_('LMS1', '2026-27');
-    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 1], 'components');
+    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 2], 'components');
+    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 1], 'video_file_id');
     assert.equal(h.ctx.officeRows_(ss, 'DayBook')[0].components, '');
+    assert.equal(h.ctx.officeRows_(ss, 'DayBook')[0].video_file_id, '');
+  });
+
+  // ── fuel fill video ──
+  const withVideo = () => {
+    const h = v2();
+    const w = (campus, id, category) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(campus, '2026-27'), 'Files', { id, campus, drive_id: 'DV' + id, name: id + '.mp4', category });
+    w('LMS1', 'vid', 'fuel_video'); w('LMS2', 'vid2', 'fuel_video');
+    return h;
+  };
+
+  t.test('a fuel fill stores video_file_id; it is optional', () => {
+    const h = withVideo();
+    assert.equal(h.call('daybook.add', fuel({ id: 'fv', video_file_id: 'vid' }), 'clerk-token').success, true);
+    assert.equal(h.call('daybook.add', fuel({ id: 'fn', odometer_km: 1100 }), 'clerk-token').success, true);
+    const by = Object.fromEntries(rowsOf(h).map((r) => [r.id, r]));
+    assert.equal(by.fv.video_file_id, 'vid'); assert.equal(by.fn.video_file_id, '');
+  });
+
+  t.test('video_file_id must be a fuel_video file of this campus (VIDEO_MISSING)', () => {
+    const h = withVideo();
+    ['nope', 'slip', 'vid2'].forEach((v) => assert.equal(h.call('daybook.add', fuel({ video_file_id: v }), 'clerk-token').code, 'VIDEO_MISSING', v)); // unknown, a bill photo, another campus's video
+    assert.equal(rowsOf(h).length, 0);
+  });
+
+  t.test('video_file_id on a category other than fuel is BAD_FIELD', () => {
+    const h = withVideo();
+    assert.equal(h.call('daybook.add', fuel({ category: 'parking', litres_ml: '', odometer_km: '', video_file_id: 'vid' }), 'clerk-token').error, 'BAD_FIELD');
+    assert.equal(add(h, { video_file_id: 'vid' }).error, 'BAD_FIELD');
+  });
+
+  t.test('reversal row carries no video (the video stays on the original fill)', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fr', video_file_id: 'vid' }), 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'rfr').video_file_id, '');
   });
 
   t.test('reversal copies the components', () => {

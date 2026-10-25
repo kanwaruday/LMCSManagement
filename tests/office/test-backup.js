@@ -21,6 +21,7 @@ module.exports = function run(t) {
     const h = boot(); h.ctx.console = { error() {} }; // keep expected failure logs out of the test output
     h.props.OFFICE_SS_LMS1_2026_27 = 'BOOK-A'; h.props.OFFICE_CONFIG_SS = 'BOOK-CFG'; h.props.OFFICE_BACKUP_FOLDER = 'BK'; h.props.OFFICE_ALERT_EMAIL = 'uday@example.org';
     h.setNow(new Date('2026-10-21T21:00:00Z')); // 02:30 IST on the 22nd
+    h.addBookById('BOOK-A'); // a book with no Files tab has no videos to prune
     return { h, d: backupDrive(h, existing) };
   };
   const iso = (d) => d.toISOString().slice(0, 10);
@@ -101,6 +102,52 @@ module.exports = function run(t) {
     h.ctx.officeBackupNightly(); h.ctx.officeBackupNightly();
     assert.equal(d.copies.length, 2);
     assert.equal(h.mail.sent.length, 0);
+  });
+
+  // ── fuel fill videos: kept 90 days (the Coordinator's fill check closes within days; its state is not visible to this project), then trashed ──
+  const mp4 = (tag) => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.from(tag)]).toString('base64');
+  const withFiles = () => {
+    const h = boot(); h.ctx.console = { error() {} };
+    h.addBook('LMS1', '2026-27'); h.addBook('LMS2', '2026-27');
+    const up = (day, id, o) => { h.setNow(new Date(day + 'T10:00:00Z')); const r = h.call('file.upload', Object.assign({ id, campus: 'LMS1', category: 'fuel_video', belongs_to: '', name: id + '.mp4', mime: 'video/mp4', base64: mp4(id) }, o), 'clerk1-token'); assert.equal(r.success, true, id + ' ' + r.error); };
+    up('2026-07-01', 'old'); up('2026-07-01', 'oldbill', { category: 'bill', mime: 'application/pdf', base64: Buffer.from('%PDF-old').toString('base64') });
+    up('2026-07-02', 'shared'); up('2026-10-01', 'shared2', { base64: mp4('shared') }); // same bytes again, recently: one Drive file, still wanted
+    up('2026-09-20', 'new'); up('2026-07-01', 'sameDay');
+    h.setNow(new Date('2026-10-21T21:00:00Z'));
+    const fileOf = (id) => h.drive.files[h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files').find((r) => r.id === id).drive_id];
+    return { h, fileOf };
+  };
+
+  t.test('fuel videos older than 90 days are trashed; bills, newer videos and a video still shared by a newer row are not', () => {
+    const { h, fileOf } = withFiles();
+    h.ctx.officeFuelVideoPrune_(new Date('2026-10-21T21:00:00Z'));
+    assert.equal(!!fileOf('old').trashed, true); assert.equal(!!fileOf('sameDay').trashed, true);
+    assert.equal(!!fileOf('oldbill').trashed, false, 'an old bill photo is never touched');
+    assert.equal(!!fileOf('new').trashed, false); assert.equal(!!fileOf('shared').trashed, false, 'a newer row points at the same Drive file');
+    h.ctx.officeFuelVideoPrune_(new Date('2026-10-21T21:00:00Z')); // a second run changes nothing
+    assert.equal(Object.values(h.drive.files).filter((f) => f.trashed).length, 2);
+  });
+
+  t.test('the 90 days count from the upload: day 89 stays, day 91 goes', () => {
+    const { h, fileOf } = withFiles();
+    h.ctx.officeFuelVideoPrune_(new Date('2026-09-28T00:00:00Z')); // 89 days after 1 July
+    assert.equal(!!fileOf('old').trashed, false);
+    h.ctx.officeFuelVideoPrune_(new Date('2026-09-30T00:00:00Z')); // 91 days
+    assert.equal(!!fileOf('old').trashed, true);
+  });
+
+  t.test('the nightly run prunes videos even when the backup itself fails, and a Drive error is reported by name', () => {
+    const { h, fileOf } = withFiles();
+    h.props.OFFICE_ALERT_EMAIL = 'uday@example.org'; // no backup folder configured: the backup fails, the prune still runs
+    h.ctx.officeBackupNightly();
+    assert.equal(!!fileOf('old').trashed, true);
+    assert.equal(h.mail.sent.length, 1); assert.ok(h.mail.sent[0].body.includes('OFFICE_BACKUP_FOLDER') && !h.mail.sent[0].body.includes('fuel_video'));
+    const w2 = withFiles(); w2.h.props.OFFICE_ALERT_EMAIL = 'uday@example.org';
+    const real = w2.h.drive.app.getFileById;
+    w2.h.drive.app.getFileById = (id) => { if (id === w2.fileOf('old').id) throw new Error('Drive hiccup'); return real(id); };
+    w2.h.ctx.officeBackupNightly();
+    assert.equal(!!w2.fileOf('sameDay').trashed, true, 'one failing file does not stop the others');
+    assert.ok(w2.h.mail.sent[0].body.includes('fuel_video: ') && w2.h.mail.sent[0].body.includes('Drive hiccup'));
   });
 
   t.test('officeInstallTriggers leaves one daily 02:00 backup trigger and keeps others', () => {

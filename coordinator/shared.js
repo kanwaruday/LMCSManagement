@@ -29,7 +29,7 @@ window.Coord = (function () {
     pdr_issue: '../systems/index.html',
     // transport GPS follow-ups: closed on the checks page, where the outcome note is asked for
     gps_dead: '../transport/live.html', gps_blind: '../transport/live.html', gps_none: '../transport/live.html', bus_away: '../transport/live.html',
-    bus_speed: '../transport/live.html', fuel_check: '../transport/live.html', bus_age: '../transport/live.html',
+    bus_speed: '../transport/live.html', fuel_check: '../transport/live.html', fuel_proof: '../transport/live.html', bus_age: '../transport/live.html',
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

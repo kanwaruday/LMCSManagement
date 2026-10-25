@@ -1,7 +1,8 @@
 // LMCS Office Backend -- copies every campus's fuel fills (last 120 days, reversed entries removed) to the "Fuel Fills" tab of the
 // transport workbook, where the Coordinator backend checks each fill against the km the bus's GPS recorded
 // (coordinator-transport-gps.gs). Runs whenever a fuel fill or its reversal is saved, for that campus only.
-// Columns: id | campus | date | reg | litres | odometer | amount_rs | odometer_note (a meter change: no odometer comparison).
+// Columns: id | campus | date | reg | litres | odometer | amount_rs | odometer_note (a meter change: no odometer comparison) |
+// hasVideo | hasBill ('yes'/'no': the driver's fill video and the bill photo are attached; the fuel check's proof).
 
 const OFFICE_FUEL_MIRROR_SS = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // "LMCS TRANSPORT DOCUMENT SUBMISSION FORM (Responses)"
 const OFFICE_FUEL_MIRROR_TAB = 'Fuel Fills';
@@ -15,7 +16,8 @@ function officeFuelFills_(rows, since) {
     return r.category === 'fuel' && !r.reverses && !reversed[r.id] && r.vehicle && String(r.entry_date) >= since;
   }).map(function (r) {
     const n = function (v, div) { return v === '' || v == null ? '' : Number(v) / div; }; // blank stays blank: a pre-23-Oct row has no litres or odometer
-    return [String(r.id), r.campus, String(r.entry_date), r.vehicle, n(r.litres_ml, 1000), n(r.odometer_km, 1), n(r.amount_paise, 100), String(r.odometer_note || '')];
+    return [String(r.id), r.campus, String(r.entry_date), r.vehicle, n(r.litres_ml, 1000), n(r.odometer_km, 1), n(r.amount_paise, 100), String(r.odometer_note || ''),
+      r.video_file_id ? 'yes' : 'no', r.file_id ? 'yes' : 'no'];
   }).sort(function (a, b) { return a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0; });
 }
 
@@ -28,8 +30,10 @@ function officeFuelMirror_(campus, written) {
   if (written && !rows.some(function (r) { return r.id === written.id; })) rows.push(written);
   const ss = SpreadsheetApp.openById(OFFICE_FUEL_MIRROR_SS);
   const sh = ss.getSheetByName(OFFICE_FUEL_MIRROR_TAB) || ss.insertSheet(OFFICE_FUEL_MIRROR_TAB);
-  const head = ['id', 'campus', 'date', 'reg', 'litres', 'odometer', 'amount_rs', 'odometer_note'];
-  const keep = sh.getLastRow() > 1 ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[1] !== campus; }) : [];
+  const head = ['id', 'campus', 'date', 'reg', 'litres', 'odometer', 'amount_rs', 'odometer_note', 'hasVideo', 'hasBill'];
+  // other campuses' rows keep what they have; one written before hasVideo/hasBill existed is padded blank (unknown) until its campus refreshes
+  const keep = sh.getLastRow() > 1 ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[1] !== campus; })
+    .map(function (r) { return head.map(function (_, i) { return i < r.length ? r[i] : ''; }); }) : [];
   const out = [head].concat(keep, officeFuelFills_(rows, since));
   sh.clear();
   sh.getRange(1, 1, out.length, head.length).setNumberFormat('@').setValues(out.map(function (r) { return r.map(String); })); // text: dates stay yyyy-MM-dd

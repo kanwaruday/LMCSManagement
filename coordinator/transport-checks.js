@@ -7,7 +7,7 @@ window.TransportChecks = (function () {
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // same as shared.js
   const DIESEL_RS = 95; // per litre, Kullu Oct 2026: values km driven away from base in the leakage estimate
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const DOMAIN = { gps_dead: 'Tracker silent', gps_blind: 'Tracker dark while driving', gps_none: 'No tracker', bus_away: 'Parked away', bus_speed: 'Speeding', fuel_check: 'Fuel', bus_age: 'Vehicle age' };
+  const DOMAIN = { gps_dead: 'Tracker silent', gps_blind: 'Tracker dark while driving', gps_none: 'No tracker', bus_away: 'Parked away', bus_speed: 'Speeding', fuel_check: 'Fuel', fuel_proof: 'Fill video', bus_age: 'Vehicle age' };
   const TRACKER = { ok: ['ok', 'Working'], blind: ['soon', 'Dark while driving'], dead: ['expired', 'Silent'], none: ['missing', 'No tracker'], unknown: ['missing', 'GPS provider not answering'] };
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -184,9 +184,10 @@ window.TransportChecks = (function () {
     function fuel(tab, d) {
       const rows = d.checks.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
       tab.innerHTML = '<p class="note">Each fuel fill in the day book against the km the GPS recorded since the bus\'s previous fill. Flagged: below 80% of the bus\'s normal km per litre, or the bill odometer and the GPS disagree by more than 20%.</p>' +
-        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Fee clerk</th></tr></thead><tbody>' +
+        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Proof</th><th>Fee clerk</th></tr></thead><tbody>' +
           rows.map(c => '<tr><td>' + day(c.date) + '</td><td><b>' + esc(c.reg) + '</b></td><td>' + esc(c.litres) + '</td><td>' + esc(c.gpsKm) + '</td><td>' + esc(c.billKm) + '</td><td>' + esc(c.kmpl) + ' <span class="sm">(normal ' + esc(c.norm) + ')</span></td>' +
             '<td>' + (c.flag === 'yes' ? '<span class="pl expired">' + esc(c.reason.indexOf('low') !== -1 ? 'Too much fuel' : 'Odometer differs') + '</span>' + (Number(c.excessRs) ? '<div class="sm">about ' + rs(c.excessRs) + ' extra</div>' : '') : '<span class="pl ok">OK</span>') + (/gps_gap/.test(c.reason) ? '<div class="sm">tracker missed some days</div>' : '') + '</td>' +
+            '<td>' + (c.proof === 'video+bill' ? 'Video and bill' : c.proof === 'none' ? '<b class="miss">No video, no bill</b>' : c.proof === 'bill' ? '<span class="stale">Bill only</span>' : '') + '</td>' +
             '<td>' + (c.answer ? esc(c.answer === 'matches' ? 'slip matches' : 'bill corrected') + '<div class="sm">' + esc(String(c.answeredBy).split('@')[0]) + '</div>' : c.flag === 'yes' ? '<span class="stale">waiting</span>' : '') + '</td></tr>').join('') + '</tbody></table></div>'
           : '<p class="note">No fills to check yet. Fee clerks record fuel in the day book (litres and odometer) since 23 Oct 2026; each fill is checked once the bus has a previous fill and 50 km of GPS driving since.</p>');
     }
