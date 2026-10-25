@@ -125,6 +125,13 @@ assert.strictEqual(G.safeHref('//evil.example/x'), null);
 assert.strictEqual(G.safeHref('\\\\evil.example/x'), null);
 assert.strictEqual(G.safeHref(''), null);
 assert.strictEqual(G.safeHref(undefined), null);
+// the two Google Form prefixes pass exactly (Teacher CW/HW form); look-alikes and other https stay refused
+assert.strictEqual(G.safeHref('https://docs.google.com/forms/d/e/abc/viewform?entry.1=x', '../'), 'https://docs.google.com/forms/d/e/abc/viewform?entry.1=x');
+assert.strictEqual(G.safeHref('https://forms.gle/AbC123'), 'https://forms.gle/AbC123');
+assert.strictEqual(G.safeHref('https://forms.gle.evil.example/x'), null);
+assert.strictEqual(G.safeHref('https://docs.google.com/spreadsheets/d/x'), null);
+assert.strictEqual(G.safeHref('http://docs.google.com/forms/d/x'), null);
+assert.strictEqual(G.safeHref('https://docs.google.com.evil.example/forms/x'), null);
 
 // sourceLabel
 assert.strictEqual(G.sourceLabel('principals-daily-reporting/index.html'), 'Daily Reporting');

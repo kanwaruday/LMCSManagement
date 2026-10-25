@@ -74,10 +74,13 @@ var LMCSGame = window.LMCSGame = (function () {
     return DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
   }
 
-  // A mission link: a root-relative portal path or an absolute path. Control characters and spaces are stripped first
-  // (browsers ignore them inside a scheme); any scheme, and any leading // or \, is refused -> null.
+  // A mission link: a root-relative portal path, an absolute path, or one of the EXTERNAL prefixes exactly. Control
+  // characters and spaces are stripped first (browsers ignore them inside a scheme); any other scheme, and any leading
+  // // or \, is refused -> null.
+  var EXTERNAL = ['https://docs.google.com/forms/', 'https://forms.gle/']; // the Teacher CW/HW Google Form; h() opens it in a new tab
   function safeHref(go, root) {
     go = String(go || '').replace(/[\u0000- \u007f]/g, '');
+    for (var i = 0; i < EXTERNAL.length; i++) if (go.indexOf(EXTERNAL[i]) === 0) return go;
     if (!go || /^[/\\]{2}/.test(go) || go.charAt(0) === '\\' || /^[a-z][a-z0-9+.-]*:/i.test(go)) return null;
     var out = go.charAt(0) === '/' ? go : (root || '') + go;
     if (typeof location !== 'undefined' && typeof URL === 'function') {
@@ -128,6 +131,7 @@ var LMCSGame = window.LMCSGame = (function () {
       else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
       else n.setAttribute(k, v === true ? '' : String(v));
     });
+    if (tag === 'a' && /^https:/.test(n.getAttribute('href') || '')) { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener'); }
     (function add(c) {
       if (Array.isArray(c)) c.forEach(add);
       else if (c !== null && c !== undefined && c !== false && c !== '') n.appendChild(typeof c === 'object' ? c : document.createTextNode(String(c)));
