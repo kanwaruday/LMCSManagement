@@ -235,7 +235,8 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
                      current, defaultIfUndecided,   // set by whoever opens it; "keep current" when there is one
                      opens, closes, appliesFrom,
                      writes: "<Game Config key or module setting>",
-                     openedBy }
+                     openedBy,
+                     confirmBy? }                  // optional: a role that confirms or overrides (propose-then-confirm)
     Decision { windowId, value, note?, decidedBy, decidedAt }      // logged in a `Game Decisions` tab
     ```
   - **Who decides what:** only decisions the role is already allowed to make for its own scope. Examples: a Principal
@@ -255,6 +256,13 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   - **First window (Phase 1):** "Track-suit days for your campus". Each Principal picks 3 of Mon–Sat (the bye-law
     says 3 days a week). It writes the campus's `trackSuitDays` in `Game Config`, so Buddy's outfit follows that
     campus. The Owner sets the default and the close date when opening it.
+  - **Propose-then-confirm windows** (`confirmBy` set): the decider proposes, and the confirming role accepts or
+    overrides. Both steps are logged.
+    - Second window type, asked for by the Coordinator chat: **district goal targets**.
+    - Before each term, the Coordinator proposes their district's team-goal targets (e.g. approvals within 3 days,
+      issues closed within 7), and the Owner confirms or overrides them in Season setup.
+    - If nobody decides, the season 0 defaults apply.
+    - The Owner's confirmation guards against a team setting its own bar too low.
   - **Later windows** are config, not code: Season goals per campus, House event dates, and similar. Any module can
     request a window type through the framework.
 - **Seasons and shipments** (shared by Fleet Command and the Coordinator module, so the framework owns them):
