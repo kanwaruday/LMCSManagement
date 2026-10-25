@@ -188,6 +188,12 @@ Read "Settled after the builder check" first.
     decidedByEmail 14, decidedAt 15, archived 18.
   - Tasks: TaskId 0, Domain 1, Campus 2, Title 3, Status 5, ResolvedAt 9, ResolvedBy 10, Assignee 13, Due 14.
   - Daily Reports: Timestamp 0, Date 1 (ISO), CampusId 2, PrincipalEmail 3.
+  - Recommendations (LMCS Approvals workbook, tab "Recommendations"): RecId 0, ApprovalId 1, Campus 2, Category 3,
+    RecommendedBy 4, Recommendation 5 (Approve|Reject|Info), Reason 6, Checked 7, RecommendedAt 8 (ISO),
+    Superseded 9. The latest non-superseded row per ApprovalId stands. Done needs a non-empty Reason.
+  - PDR Issue Actions (PDR Daily Reports workbook `1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y`, one row per issue,
+    overwritten on each action): Issue id 0, Status 1, Assignee email 2, Assignee name 3, Note 4, Updated by 5,
+    Updated at 6, CampusId 7. The game reads it read-only and never stores names.
 - **Mission kinds:**
 
   | Kind | For | Pending when | Done when (doneAt / doneBy) | go |
@@ -316,8 +322,8 @@ Read "Settled after the builder check" first.
 - Consumes: Mission (Task 2), Decision (Task 4), `Game Progress` rows.
 - Produces:
   - `gameQuestState_(questRows, role, evidence, progressRows, email) -> [{ questId, title, steps: [{ id, title, go, done, locked }], complete }]`
-    - `evidence = { missionsDoneByMe: Mission[], ssByMe: number, decisionsByMe: Decision[], daysOnTrack }`
-    - Check kinds map like this: `pdr_report`, `pdr_issue`, `approval_recommend` and `followup` count missions with
+    - `evidence = { missionsDoneByMe: Mission[], ssByMe: number, decisionsByMe: Decision[], issueActionsByMe: number, daysOnTrack }`
+    - Check kinds map like this: `issue_action` counts PDR Issue Actions rows as above; `pdr_report`, `pdr_issue`, `approval_recommend` and `followup` count missions with
       `doneBy` = me; `ss_submit` counts `ssByMe`; `decision` counts `decisionsByMe`; `day_on_track` counts
       `daysOnTrack.onTrack`.
     - Steps are sticky once done (Progress row `quest_step`).
@@ -332,8 +338,9 @@ Read "Settled after the builder check" first.
     - Reward: "Quest badge: Your portal".
   - **Coordinator Quest 1 "Your network"** (as agreed with the Coordinator chat):
     - `approval_recommend` ×1 "Recommend on one approval that has waited 3+ days"
-    - `joiner_added` ×1 "Add one joiner to the Employee Master" (hidden until the Coordinator chat names the source
-      that records who added the row; config `joinerSource`)
+    - `issue_action` ×1 "Act on one daily-report issue: assign it or resolve it, with a note". From PDR Issue
+      Actions: Updated by = me, Status `assigned` or `resolved`, Note non-empty. Sticky once seen, because the row
+      is overwritten by later actions.
     - `followup` ×1 "Resolve one follow-up with an outcome note"
 
 - [ ] **Step 1: Write `tests/game/test-quests.js`:**
@@ -555,4 +562,4 @@ Read "Settled after the builder check" first.
   - `principalissues` + `principalissueresolve`, for `pdr_issue` (hidden behind `principalIssuesReady:false` until
     then);
   - the `Recommendations` tab (column layout from that chat), for `approval_recommend` and the Owner's `why`;
-  - the joiner-added source, for Quest 1's second step.
+  - (complete-hire stays shared, with no personal credit, until that chat adds an AddedBy column to EmpMaster).
