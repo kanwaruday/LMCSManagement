@@ -48,6 +48,12 @@ const S = {
   loadout: undefined, insp: null, // the safety loadout list; the safety check being filled in {items, answers, thumbs}
 };
 const canvas = document.createElement('canvas');
+// The school phone is shared (Ruling 41). Anyone signed in may SEND any run: it keeps its capturer (uploader.js sends run.by as
+// capturedBy). Only the run's author may carry on, end or discard an unfinished one, or answer its safety check; anyone else
+// sees a count. A sign-in as someone else reloads the page, so nothing of the first person's stays open under the second.
+const lower = (x) => String(x || '').toLowerCase();
+const mine = (r) => lower(r.by) === lower(S.session.email);
+const sameUser = (s) => !!s && lower(s.email) === lower(S.session.email);
 
 // ── Boot ──
 // Offline mode: on a bus there is often no signal, and an expired Google sign-in needs the network. Who signed in here is
@@ -208,11 +214,13 @@ async function loadLoadout() {
 
 // ── Unfinished runs (the page was closed mid-run): carry on, or end them ──
 async function drawResume() {
-  const open = (await store.runs()).filter((r) => !r.endedAt);
+  const all = (await store.runs()).filter((r) => !r.endedAt), open = all.filter(mine), others = all.length - open.length;
   $('resume').innerHTML = open.map((r) => `<div class="cap-resume" data-id="${esc(r.id)}"><p><b>${esc(KIND[r.kind])} on ${esc(r.reg)}</b> from ${when(r.startedAt)} is still open.</p>` +
-    `<button type="button" class="cap-btn" data-a="carry">Carry on</button> <button type="button" class="cap-btn" data-a="end">${r.kind === 'inspection' ? 'Discard it' : 'End it'}</button></div>`).join('');
+    `<button type="button" class="cap-btn" data-a="carry">Carry on</button> <button type="button" class="cap-btn" data-a="end">${r.kind === 'inspection' ? 'Discard it' : 'End it'}</button></div>`).join('') +
+    (others ? `<p class="cap-note">${others === 1 ? 'One unfinished run is' : others + ' unfinished runs are'} waiting on this phone for another person. Only they can carry on or end it.</p>` : '');
   $('resume').querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
-    const run = await store.getRun(b.closest('[data-id]').dataset.id);
+    const run = await store.getRun(b.closest('[data-id]').dataset.id).catch(() => null);
+    if (!run || !mine(run)) return drawResume(); // gone (another tab), or never someone else's run
     if (b.dataset.a === 'end' && run.kind === 'inspection') { // an unsaved check is thrown away, photos and all: two taps, nothing is sent
       if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to discard its photos'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Discard it'; }, 4000); return; }
       await store.discard(run.id); drawResume(); drawUpload(); return;
@@ -238,13 +246,15 @@ function camMsg(e) {
 // One camera at a time (concurrent calls share the promise). A stream that arrives after the run ended or the page was
 // hidden (camWanted false) is stopped at once. grab() waits for camReady: a frame decoded from this stream, so an old
 // picture is never saved against a new GPS fix.
+// closeCamera drops the shared promise, so an open still in flight (hidden and back within the first-frame wait) is stale: the
+// next openCamera starts afresh, and the stale one stops whatever stream it still gets.
 function openCamera() {
   if (S.camP) return S.camP;
-  S.camP = (async () => {
+  const p = S.camP = (async () => {
     if (S.stream && S.stream.getVideoTracks().some((t) => t.readyState === 'live')) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    if (!S.camWanted) { stream.getTracks().forEach((t) => t.stop()); return; }
+    if (!S.camWanted || S.camP !== p) { stream.getTracks().forEach((t) => t.stop()); return; }
     S.stream = stream;
     const v = $('cam');
     v.srcObject = stream;
@@ -252,11 +262,11 @@ function openCamera() {
     await Promise.race([new Promise((r) => setTimeout(r, 3000)), // never hang here (a stream stopped before its first frame)
       new Promise((r) => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : v.addEventListener('timeupdate', () => r(), { once: true })))]);
     if (S.stream === stream) S.camReady = true;
-  })().finally(() => { S.camP = null; });
-  return S.camP;
+  })().finally(() => { if (S.camP === p) S.camP = null; });
+  return p;
 }
 function closeCamera() {
-  S.camReady = false;
+  S.camReady = false; S.camP = null;
   if (S.stream) S.stream.getTracks().forEach((t) => t.stop());
   S.stream = null;
   $('cam').srcObject = null;
@@ -271,6 +281,7 @@ async function start() {
   $('start').disabled = true; // before any await: a double tap must not make two watches or two streams
   try {
     const resume = S.resumeId ? await store.getRun(S.resumeId).catch(() => null) : null;
+    if (resume && !mine(resume)) { S.resumeId = null; drawResume(); return setupSay('That run belongs to another person.'); }
     const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
     if (!reg) return setupSay('Pick the bus first.');
     if (kind === 'inspection') return await startInspection(resume, reg);
@@ -575,6 +586,7 @@ async function signIn() {
   $('authRoot').style.display = ''; scrollTo(0, 0);
   const s = await LMCS.requireSession('#authRoot');
   $('authRoot').style.display = 'none';
+  if (!sameUser(s)) { location.reload(); return null; } // someone else: the page starts again as theirs
   S.session = s; rememberIdentity(s);
   $('offline').hidden = true;
   loadBuses();
@@ -582,7 +594,7 @@ async function signIn() {
 }
 async function sendAll() {
   if (S.sending) return;
-  if (!LMCS.getSession()) await signIn(); // a sign-in lasts about an hour, and offline mode has none: sign in, then send
+  if (!LMCS.getSession() && !(await signIn())) return; // a sign-in lasts about an hour, and offline mode has none: sign in, then send
   S.sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
   S.progress = {};
   const runs = {};
@@ -709,8 +721,9 @@ function answer(id, ok) {
   setCur(id);
   const a = S.insp.answers[id];
   S.insp.answers[id] = ok ? { ...(a && a.ok ? a : {}), ok: true } : { ok: false }; // No drops the photo link and date; a Yes keeps what it had
+  saveDraft(); // first: the store runs in order, so the draft never points at a photo already dropped
   if (!ok && a && a.seq != null) { store.dropFile(S.run.id, 'inspection', a.seq).catch(() => {}); delete S.insp.thumbs[id]; } // that photo is never sent
-  saveDraft(); drawCard(id); drawSlots();
+  drawCard(id); drawSlots();
   $('inspMsg').textContent = '';
 }
 function saveDraft() {
@@ -741,9 +754,9 @@ async function onInspPhoto() {
     const old = S.insp.answers[id] && S.insp.answers[id].seq;
     const seq = await store.addFrame(S.run.id, { takenAt: Date.now(), base64 });
     S.insp.answers[id] = { ...S.insp.answers[id], ok: true, seq };
+    saveDraft(); // the draft points at the new photo before the old one goes (the store runs in order): a page killed in between keeps a photo
     if (old != null) await store.dropFile(S.run.id, 'inspection', old); // a retake replaces the old photo: only the current one is sent
     S.insp.thumbs[id] = 'data:image/jpeg;base64,' + base64;
-    saveDraft();
   } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : e.message; }
   drawCard(id); drawSlots();
   const again = li.querySelector('[data-a="photo"]'); if (again) again.focus();
