@@ -80,7 +80,9 @@ window.captureLayoutTest = async function () {
 // Fleet setup page (coordinator/transport/setup.html), phone width: run   await setupLayoutTest()   on the board, a bus and a
 // quest form (375x667, 320x568 and 740x360). Fails when the page scrolls sideways, anything visible sticks out past the right
 // edge, a button, link button, field, select or "Kilometres, workshop, cost" toggle is under 48 px tall, a team bar does not read
-// "<campus> fleet: N of M buses ready", a bus card has no ring or its ring is squeezed, or a bus does not list its six quests.
+// "<campus> fleet: N of M buses ready", a bus card has no ring or its ring is squeezed, a bus does not list its six quests, an
+// Owner's gap row does not lead with its count, the waiting banner shows empty, or on a quest its strip of slots does not fit or
+// the pinned HUD takes over 30% of the screen.
 window.setupLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement, vis = (e) => e.getClientRects().length > 0;
   facts.viewport = innerWidth + 'x' + innerHeight;
@@ -100,5 +102,17 @@ window.setupLayoutTest = async function () {
     if (cards.some((c) => { const r = c.querySelector('.fs-ring'); return !r || r.getBoundingClientRect().width < 48; })) f.push('a bus card has no ring, or its ring is squeezed');
   }
   if (facts.screen === 'bus' && document.querySelectorAll('#bus .fs-quest').length !== 6) f.push('the bus does not list its six quests');
+  // the Owner's gaps: every row leads with its count; the waiting banner never shows empty (all refused: only the refused list)
+  const gapRows = [...document.querySelectorAll('#gapList .fs-row')].filter(vis);
+  if (gapRows.some((r) => !/^\d+$/.test((r.querySelector('.fs-gapn') || {}).textContent || ''))) f.push('a gap row does not lead with its count');
+  const pend = document.getElementById('pending');
+  if (pend && vis(pend) && !pend.textContent.trim()) f.push('the waiting banner shows with nothing in it');
+  facts.refused = document.querySelectorAll('#refused li').length;
+  // a quest: its strip of slots fits the width, and the pinned HUD takes at most 30% of the screen
+  if (facts.screen === 'quest') {
+    const hud = document.querySelector('#quest .cap-hud'), strip = document.getElementById('needSlots');
+    if (strip && vis(strip) && strip.scrollWidth > strip.clientWidth + 1) f.push('the quest strip of slots does not fit');
+    if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned quest HUD takes over 30% of the screen (' + Math.round(hud.getBoundingClientRect().height) + 'px)');
+  }
   return { pass: f.length === 0, failures: f, facts };
 };

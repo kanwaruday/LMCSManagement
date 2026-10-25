@@ -61,7 +61,7 @@ async function getJson(action) {
   return r;
 }
 async function load() {
-  $('loadMsg').hidden = false; $('loadMsg').firstElementChild.textContent = 'Loading the buses...'; $('retry').hidden = true;
+  $('loadMsg').hidden = false; $('loadMsg').firstElementChild.textContent = 'Loading the buses…'; $('retry').hidden = true;
   try {
     S.data = await getJson('coordinatortransportfleet');
     $('loadMsg').hidden = true;
@@ -85,7 +85,14 @@ async function refresh() {
 }
 const withPhotos = (q) => { const f = { ...q.fields }; Object.keys(q.photos || {}).forEach((k) => { f[k] = 'pending-photo-' + q.photos[k]; }); return f; };
 // ── Screens: board > bus > quest, pushed onto the browser history ──
-function go(view) { S.view = view; history.pushState(view, ''); render(); scrollTo(0, 0); }
+function go(view) { S.view = view; S.just = null; history.pushState(view, ''); render(); scrollTo(0, 0); }
+// A redraw (a filter tap, a send finishing in the background) keeps keyboard focus on the same control.
+function keepFocus(box, draw) {
+  const a = document.activeElement, sel = a && box.contains(a) && ['reg', 'q', 'k'].map((k) => a.dataset[k] && `[data-${k}="${a.dataset[k]}"]`).find(Boolean);
+  draw();
+  const b = sel && box.querySelector(sel); if (b) b.focus({ preventScroll: true });
+}
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 function render() {
   const v = S.view.v, p = S.view.reg && S.profiles.find((x) => x.reg === S.view.reg);
   $('board').hidden = v !== 'board'; $('bus').hidden = v !== 'bus' || !p; $('quest').hidden = v !== 'quest' || !p;
@@ -95,15 +102,16 @@ function render() {
   else if (!S.form || S.form.reg !== p.reg || S.form.quest !== S.view.quest) drawQuest(p, S.view.quest);
 }
 
-function ring(p, big) {
+function ring(p, big, fresh) { // fresh: the quest this save just finished (its segment pops in)
   const qs = FQ.questsFor(p), n = qs.filter((q) => q.done).length, r = 16, C = 2 * Math.PI * r, seg = C / 6, gap = 2.2;
-  const arcs = qs.map((q, i) => `<circle cx="20" cy="20" r="${r}" stroke-dasharray="${(seg - gap).toFixed(3)} ${(C - seg + gap).toFixed(3)}" stroke-dashoffset="${(-i * seg).toFixed(3)}" class="${q.done ? 'on' : ''}"/>`).join('');
+  const arcs = qs.map((q, i) => `<circle cx="20" cy="20" r="${r}" stroke-dasharray="${(seg - gap).toFixed(3)} ${(C - seg + gap).toFixed(3)}" stroke-dashoffset="${(-i * seg).toFixed(3)}" class="${q.done ? 'on' : ''}${q.id === fresh ? ' fresh' : ''}"/>`).join('');
   return `<span class="fs-ring${big ? ' fs-ring-big' : ''}${n === 6 ? ' ready' : ''}" role="img" aria-label="${n} of 6 quests done">` +
     `<svg viewBox="0 0 40 40" aria-hidden="true"><g transform="rotate(-90 20 20)">${arcs}</g></svg><b>${n === 6 ? SVG.ok : FQ.completion(p) + '%'}</b></span>`;
 }
 const badge = '<span class="fs-ready">' + SVG.ok + 'Ready</span>';
 
-function drawBoard() {
+function drawBoard() { keepFocus($('board'), drawBoardNow); }
+function drawBoardNow() {
   const all = S.data ? S.data.campuses : [], wide = GROUPS.lms13.some((c) => all.includes(c)) && GROUPS.lms46.some((c) => all.includes(c));
   $('scope').hidden = !wide;
   if (wide) {
@@ -122,15 +130,19 @@ function drawBoard() {
   $('gaps').hidden = !owner || !ps.length;
   if (owner) {
     const g = FQ.gaps(ps).filter((x) => x.count);
-    $('gapList').innerHTML = g.length ? g.map((x) => `<li><button type="button" class="fs-row" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><span>${esc(x.text)}</span>${SVG.go}</button></li>`).join('')
+    $('gapList').innerHTML = g.length ? g.map((x) => { const sp = x.text.indexOf(' ');
+      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${esc(x.text.slice(0, sp))}</b><span>${esc(x.text.slice(sp + 1))}</span>${SVG.go}</button></li>`; }).join('')
       : '<li class="cap-note">Every bus is set up.</li>';
-    $('gapList').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => { S.gap = S.gap === b.dataset.q ? null : b.dataset.q; drawBoard(); }));
+    $('gapList').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
+      S.gap = S.gap === b.dataset.q ? null : b.dataset.q; drawBoard();
+      if (S.gap) $('filterNote').scrollIntoView({ block: 'start', behavior: calm() ? 'auto' : 'smooth' }); // the list it filters is below the fold
+    }));
   }
   const missing = (p, q) => FQ.questsFor(p).some((x) => x.id === q && !x.done);
   const shown = ps.filter((p) => !S.gap || missing(p, S.gap))
     .sort((a, b) => (FQ.isReady(a) - FQ.isReady(b)) || a.reg.localeCompare(b.reg)); // still to do first, ready ones at the end
   $('filterNote').innerHTML = S.gap ? `Buses that still need ${esc(stepOf(S.gap).gap)}. <button type="button" class="cap-btn" id="allBuses">Show all buses</button>` : '';
-  if (S.gap) $('allBuses').addEventListener('click', () => { S.gap = null; drawBoard(); });
+  if (S.gap) $('allBuses').addEventListener('click', () => { const was = S.gap; S.gap = null; drawBoard(); const r = $('gapList').querySelector(`[data-q="${was}"]`); if (r) r.focus({ preventScroll: true }); });
   $('buses').innerHTML = S.data && !shown.length ? `<li class="cap-note">${S.profiles.length ? 'No buses here.' : 'No running buses on your account.'}</li>` : shown.map((p) => {
     const qs = FQ.questsFor(p), next = qs.find((q) => !q.done), meta = [routeName(p), p.campus].filter(Boolean).join(', ');
     return `<li><button type="button" class="fs-bus" data-reg="${esc(p.reg)}">${ring(p)}<span class="fs-bustext"><b>${esc(p.reg)}</b><span>${esc(meta)}</span>` +
@@ -139,25 +151,31 @@ function drawBoard() {
   $('buses').querySelectorAll('[data-reg]').forEach((b) => b.addEventListener('click', () => go({ v: 'bus', reg: b.dataset.reg })));
 }
 
-const waiting = (reg, quest) => S.queued.some((r) => r.reg === reg && (!quest || r.quest.id === quest));
+const waiting = (reg, quest) => S.queued.find((r) => r.reg === reg && (!quest || r.quest.id === quest));
 function questLine(p, q) {
-  if (waiting(p.reg, q.id)) return '<span class="cap-todo">Saved on this phone. Sends when you are online.</span>';
+  const w = waiting(p.reg, q.id);
+  if (w && w.status === 'error') return '<span class="fs-bad">Not saved. See the message at the top.</span>';
+  if (w) return '<span class="cap-todo">Saved on this phone. Sends when you are online.</span>';
   if (q.done) return '<span class="cap-good">Done</span>';
+  const parts = stepOf(q.id).parts;
+  if (parts) return `${q.missing.length} of ${parts.length} parts still to answer`;
   const names = FQ.missingLabels(q.id, q.missing);
   return 'Still needs ' + esc(names.slice(0, 2).join(', ').toLowerCase()) + (names.length > 2 ? ` and ${names.length - 2} more` : '');
 }
 // The 60+ rule, said where the bus is: the line-up board (Phase 1b) is what keeps the driver off it.
 function ageLine(p) {
   const dob = (p.data.driver || {}).dateOfBirth, limit = CFG.driverAgeLimit;
-  return (dob ? `The driver is ${FQ.ageOn(dob, today())}: ` : 'The driver is ') + `${limit} or over, so they cannot drive a school bus.`;
+  return (dob ? `The driver is ${FQ.ageOn(dob, today())}. ` : 'The driver is over the age limit. ') + `Drivers ${limit} or over cannot drive a school bus.`;
 }
-function drawBus(p) {
+function drawBus(p) { keepFocus($('bus'), () => drawBusNow(p)); }
+function drawBusNow(p) {
   const qs = FQ.questsFor(p), n = qs.filter((q) => q.done).length, meta = [routeName(p), p.campus].filter(Boolean).join(', ');
+  const j = S.just && S.just.reg === p.reg ? S.just : null, fresh = j && !j.was && qs.some((q) => q.id === j.quest && q.done) ? j.quest : null;
   $('bus').innerHTML = `<button type="button" class="fs-back" data-a="back">← All buses</button>` +
-    `<div class="fs-bushead">${ring(p, true)}<div><h2 class="cap-h">${esc(p.reg)}</h2><p class="cap-note">${esc(meta)}</p>${p.driverName ? `<p class="cap-note">Driver: ${esc(p.driverName)}</p>` : ''}` +
-    `<p class="fs-count">${n === 6 ? badge : n + ' of 6 quests done'}</p></div></div>` +
+    `<div class="fs-bushead">${ring(p, true, fresh)}<div><h2 class="cap-h">${esc(p.reg)}</h2><p class="cap-note">${esc(meta)}</p>${p.driverName ? `<p class="cap-note">Driver: ${esc(p.driverName)}</p>` : ''}` +
+    `<p class="fs-count${fresh && n === 6 ? ' fs-fresh' : ''}">${n === 6 ? badge : n + ' of 6 quests done'}</p></div></div>` +
     (p.ageLimit ? `<p class="fs-warn">${esc(ageLine(p))}</p>` : '') +
-    `<ul class="fs-quests">${qs.map((q) => `<li><button type="button" class="fs-quest" data-q="${q.id}" data-done="${q.done}"${q.done ? ' data-s="ok"' : ''}>` +
+    `<ul class="fs-quests">${qs.map((q) => `<li><button type="button" class="fs-quest${q.id === fresh ? ' fs-fresh' : ''}" data-q="${q.id}" data-done="${q.done}"${q.done ? ' data-s="ok"' : ''}>` +
       `<span class="cap-mark">${q.done ? SVG.ok : ''}</span><span class="fs-qtext"><b>${esc(q.label)}</b><span>${questLine(p, q)}</span></span>${SVG.go}</button></li>`).join('')}</ul>`;
   $('bus').querySelector('[data-a="back"]').addEventListener('click', () => history.back());
   $('bus').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => go({ v: 'quest', reg: p.reg, quest: b.dataset.q })));
@@ -215,7 +233,7 @@ function drawQuest(p, questId) {
   } else body += fields.map((f) => fieldHtml(step, f, S.form.values[f.id], f.id)).join('');
   $('quest').innerHTML = `<button type="button" class="fs-back" data-a="back">← ${esc(p.reg)}</button>` +
     `<h2 class="cap-h">${esc(step.title)}</h2><p class="cap-note">${esc([routeName(p), p.campus].filter(Boolean).join(', '))}</p>` +
-    `<div class="cap-hud fs-hud"><p id="need" class="cap-hudcount" aria-live="polite"></p></div>` +
+    `<div class="cap-hud fs-hud"><p id="need" class="cap-hudcount" aria-live="polite"></p><ol id="needSlots" class="cap-slots" aria-hidden="true"></ol></div>` +
     `<form id="qform" novalidate>${body}<p id="qmsg" class="cap-msg" role="alert"></p><button type="submit" class="cap-primary" id="qsave">Save ${esc(step.title.toLowerCase())}</button></form>`;
   const form = $('qform');
   $('quest').querySelector('[data-a="back"]').addEventListener('click', () => history.back());
@@ -248,6 +266,10 @@ function need() {
   $('need').textContent = q.done ? 'Everything this quest needs is here.' : parts ? `${parts.length - q.missing.length} of ${parts.length} parts answered. Each needs a date or Not known.`
     : `Needed to finish (${names.length}): ` + names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more.` : '.');
   $('need').classList.toggle('cap-good', q.done);
+  const all = FQ.questsFor({ data: {} }).find((x) => x.id === q.id).missing, slots = $('needSlots'); // everything this quest can need, in form order
+  slots.hidden = all.length < 2;
+  slots.style.setProperty('--n', Math.min(all.length, 12));
+  slots.innerHTML = all.map((id) => (q.missing.includes(id) ? '<li></li>' : `<li data-s="ok">${SVG.ok}</li>`)).join('');
   if (S.form.quest === 'parts') document.querySelectorAll('[data-part]').forEach((li) => {
     const ok = !q.missing.includes(li.dataset.part);
     li.dataset.s = ok ? 'ok' : ''; li.querySelector('.cap-mark').innerHTML = ok ? SVG.ok : '';
@@ -321,9 +343,14 @@ async function saveQuest() {
     $('qsave').disabled = false;
     return;
   }
-  S.form = null; S.view = { v: 'bus', reg };
+  S.form = null; S.view = { v: 'bus', reg }; S.just = { reg, quest, was: before };
+  // land on the quest just saved, in view (above the toast) and focused: its tick is the reward. Again after the browser
+  // restores the bus's scroll on Back.
+  const land = () => { const row = $('bus').querySelector(`[data-q="${quest}"]`); if (row && !$('bus').hidden) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); } };
+  addEventListener('popstate', () => requestAnimationFrame(land), { once: true });
   history.back(); // to the bus (popstate draws it again)
   await refresh();
+  land();
   const after = FQ.questsFor(S.profiles.find((x) => x.reg === reg)), done = after.filter((q) => q.done).length;
   if (v.warning) toast(`${step.title} saved.`); // the red line on the bus says the rest, and stays
   else if (done === 6) toast(`${reg} is ready.`);
@@ -382,14 +409,14 @@ async function sendQueued() {
 function drawPending() {
   const q = S.queued, bad = q.filter((r) => r.status === 'error'), wait = q.length - bad.length;
   $('others').textContent = S.others ? `${S.others} ${S.others === 1 ? 'save is' : 'saves are'} waiting on this phone for another person. They send it when they sign in here.` : '';
-  $('pending').hidden = !q.length;
+  $('pending').hidden = !(wait || (S.sending && q.length));
   if (!q.length) { $('refused').innerHTML = ''; return; }
   const signedOut = !LMCS.getSession();
   $('pendingText').textContent = S.sending ? 'Sending...' : wait ? `${wait} ${wait === 1 ? 'save is' : 'saves are'} waiting to send.` + (signedOut ? ' Sign in to send.' : '') : '';
   $('sendNow').hidden = S.sending || !wait;
   $('sendNow').textContent = signedOut ? 'Sign in' : 'Send now';
   $('sendNow').onclick = signedOut ? signInThenSend : () => sendQueued();
-  $('refused').innerHTML = bad.map((r) => `<li data-id="${esc(r.id)}"><span>${esc(r.reg)}, ${esc(stepOf(r.quest.id).title.toLowerCase())}: not saved. ${esc(r.error)}</span>` +
+  $('refused').innerHTML = bad.map((r) => `<li data-id="${esc(r.id)}"><p><b>${esc(stepOf(r.quest.id).title)} for ${esc(r.reg)} was not saved.</b> ${esc(r.error)}</p>` +
     '<button type="button" class="cap-btn" data-a="again">Try again</button><button type="button" class="cap-btn" data-a="drop">Discard</button></li>').join('');
   $('refused').querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
     const id = b.closest('[data-id]').dataset.id;
