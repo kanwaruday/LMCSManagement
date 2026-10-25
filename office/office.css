@@ -23,10 +23,18 @@
 .capwrap { overflow-x: auto; }
 .office-form .capwrap input, .office-form .capwrap select { min-height: 40px; min-width: 56px; padding: 4px; }
 section.block h2 { font-size: 1.1rem; }
-/* Part chips (day book, vehicle service bills): toggle buttons that wrap at 375 px. */
+/* Part chips (day book, vehicle service bills): toggle buttons in a grid. */
 .office-form fieldset.parts { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; }
 .office-form fieldset.parts legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
-.office-form .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.office-form button.chip { background: #fff; color: #1f3a5f; padding: 8px 14px; }
+.office-form .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 8px; } /* a parts tray: 2 columns on a phone, 6 on a desk */
+/* Each chip carries a tick box, so picked reads by shape as well as fill. The box is always there and the weight never
+   changes, so a tap never reflows the row under the clerk's thumb. */
+.office-form button.chip { display: flex; align-items: center; gap: 8px; text-align: left; line-height: 1.25; background: #fff; color: #1f3a5f; padding: 8px 10px; transition: transform .08s ease-out; -webkit-tap-highlight-color: transparent; }
+.office-form button.chip::before { content: ''; flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 2px solid currentColor; border-radius: 4px; }
 .office-form button.chip[aria-pressed="true"] { background: #1f3a5f; color: #fff; }
-.office-form button.chip:focus-visible { outline: 3px solid #f0a500; outline-offset: 2px; }
+.office-form button.chip[aria-pressed="true"]::before { border-color: #fff; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.2l2.6 2.6L10 3.4' fill='none' stroke='%231f3a5f' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; }
+.office-form button.chip:active { transform: scale(.96); }
+@media (hover: hover) { .office-form button.chip[aria-pressed="false"]:hover { background: #eef2f7; } }
+.office-form button.chip:focus-visible { outline: 3px solid #1f3a5f; outline-offset: 2px; }
+.office-form fieldset.parts:has(.err:not(:empty)) button.chip { border-color: #b00020; }
+@media (prefers-reduced-motion: reduce) { .office-form button.chip { transition: none; } .office-form button.chip:active { transform: none; } }

@@ -267,6 +267,7 @@ export async function showDayBook(root, session, api, outbox) {
     chipsEl.replaceChildren(...opts.map((o) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(picked.includes(o.id)), onclick: (e) => {
       picked = picked.includes(o.id) ? picked.filter((id) => id !== o.id) : [...picked, o.id];
       e.currentTarget.setAttribute('aria-pressed', String(picked.includes(o.id)));
+      if (picked.length) compErr.textContent = ''; // the "tap the parts" error goes as soon as one is tapped
     } }, o.label)));
   };
   const paintCollections = () => keep(collSel, () => collSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...collectionOptions(cfg.collections).map((o) => h('option', { value: o.value }, o.label))));
@@ -311,7 +312,13 @@ export async function showDayBook(root, session, api, outbox) {
       charged_to: chargedSel.value, vehicle: vehSel.value, components: picked, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
       supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
     });
-    if (!r.ok) { Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; }); return; }
+    if (!r.ok) {
+      Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; });
+      // On a phone Add entry sits far below most fields: bring the first error (in screen order) to the clerk.
+      const bad = form.querySelector('.err:not(:empty)');
+      if (bad) { bad.parentElement.scrollIntoView({ block: 'center' }); const c = bad.parentElement.querySelector('input, select, textarea, button'); if (c) c.focus({ preventScroll: true }); }
+      return;
+    }
     saveBtn.disabled = true; // double-tap guard; the id is assigned once per enqueue
     try {
       if (r.data.direction === 'OUT') { // photo first (FIFO, R7), then the entry that names it
