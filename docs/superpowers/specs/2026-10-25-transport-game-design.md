@@ -442,25 +442,100 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 3. **DPDP advice before Phase 3.** **Uday: he'll get it when Phase 3 comes.** The design already keeps names
    out of the game layer and the public repo.
 
-## Decisions still open for Uday
+## Uday's decisions (2026-10-25) and what is still open
 
-These are the things only Uday can settle. Each changes what gets built:
+**Design approved** (item 14: "Yes"). Phase 1a is planned next.
 
-1. **Capture runs:** which Coordinator rides which route, and when: one photo run outside school hours plus
-   one count run on a school run per route. Plus about 6 phone dashboard mounts.
-2. **Safety loadout list:** confirm the required equipment per bus (HP rules plus school policy), and who does
-   the monthly inspection (the campus Coordinator?).
-3. **Component lives:** use manufacturer service schedules as defaults, tuned for hills, or does a trusted
-   mechanic set them per bus type? Either way, Uday approves the table once.
-4. **Upgrade rules:** the repair-against-value share that triggers "overhaul?", the cost-per-km gap that
-   triggers "replace?", and the yearly fleet-renewal budget the proposals must fit within.
-5. **Workshops:** which garages the school uses, and whether a job-card photo is required with every service
-   bill (it makes the component backup far more reliable).
-6. **Phase 4 rewards:** the season goals per campus, and the size of the monthly reserve Uday can "ship"
-   (spare bus-days, repair budget, fuel advance).
-7. **Drivers as characters** (skills, wellbeing): later or never. It needs an HR call.
-8. **DPDP advice:** before Phase 3, as Uday said.
-9. **The design review itself:** on hold until Uday says.
+| # | Topic | Uday's answer | What it means for the build |
+|---|---|---|---|
+| 1 | Capture runs | **Fee Clerks make sure the school phone goes on these roads** | The capture mission is assigned to the campus Fee Clerk to arrange. The Coordinator records the run (see 5) |
+| 2 | Which phone | **School phones** | The capture portal is used on school phones only, signed in with the campus account |
+| 3 | Phone mounts | **Will be arranged** | — |
+| 4 | Safety equipment list | **Done in the portal; all data now comes from the game interface** | The loadout list is **editable in the portal by the Owner**, not fixed in code. Inspections and answers are entered through the game |
+| 5 | Monthly safety check | **The Coordinator** | Monthly inspection mission per bus for the Coordinator |
+| 6 | Part lives and prices | **Uday will get them from each vehicle agency's service centre** | Claude provides the data request list (`docs/transport-game/service-centre-data-request.md`; a Word copy is in OneDrive `1. Projects/LMCS Transport Game/`). Component lives and prices are entered per make and model, not guessed |
+| 7 | Overhaul / replace triggers | **To discuss further** | Garage cards show the numbers, but "overhaul?" and "replace?" flags stay off until agreed |
+| 8 | Renewal budget | **Decide later** | Replace proposals show cost only, with no budget check yet |
+| 9 | Data questionnaire | **Make one; staff will collect** | `OneDrive/1. Projects/LMCS Transport Game/Transport data questionnaire (staff).xlsx`. It has 8 sheets (vehicles, safety equipment, parts last replaced, workshops, drivers, fuel, capture plan, agencies), pre-filled with the 24 vehicles. It is kept out of the public repo because it holds driver data |
+| 10 | Season goals | **Load cap of 1.4× official capacity; live fuel checking with a video of each fill plus the diesel bill** | See "Load cap" and "Fuel-fill proof" below |
+| 11 | Monthly reserve ("shipments") | **Let's design it** | See "Shipments" below (proposal for Uday's review) |
+| 12 | Drivers as characters | **Yes; Fee Clerks upload their data on the portal** | See "Driver cards" below (Claude's reading of the answer) |
+| 13 | Children's data / DPDP | **Consent is held from employees, parents and students. Parents rely on the school for this data. All of it stays on the school's own systems** | Phase 3 no longer waits for legal advice. Names stay out of the public GitHub repo and static files, and are served only to signed-in roles (a security rule, not a legal one) |
+
+### Load cap (season goal, item 10)
+
+- **The rule:** children on board ≤ **1.4 × the vehicle's official seating capacity** on every run. This is
+  Claude's reading of "stops at 1.4 times official vehicle capacity"; Uday to confirm.
+- **Where the numbers come from:** count runs (Loop 6), and allocation counts (Loop 3) once built.
+- **On the map:** above 1.0× the route bar turns amber, above 1.4× it turns red with a "**blocked**"
+  bottleneck flag and a mission to split the load.
+- **The goal:** "no run above 1.4×" for the whole season.
+
+### Fuel-fill proof (season goal, item 10)
+
+- **What the driver does:** at every diesel fill, they record a **short video** (10–20 s) showing:
+  1. the pump meter at zero;
+  2. the nozzle in the bus's tank;
+  3. the final litres and amount on the meter.
+
+  Then they photograph the **diesel bill**.
+- **What the Fee Clerk does:** they receive both (e.g. on WhatsApp) and attach them to the day-book fuel entry
+  in the portal. The upload is mobile-friendly, and the video is compressed on the phone before upload.
+- **How it is used:**
+  - The fuel check (2026-10-24 spec) shows "**proof attached**" and plays the video beside the GPS km and
+    km/L.
+  - A fill with no proof within 24 hours raises a mission.
+  - The Mac's LM Studio reads the bill and the final meter frame, and flags any mismatch with the litres
+    typed in.
+- **The goal:** "every fill has its video and bill" for the whole season.
+- **Privacy:** videos are private, and auto-deleted after a set period once the fill is checked (Claude's
+  call: 90 days).
+
+### Driver cards (item 12)
+
+Drivers become characters in the game, with **no driver accounts**. Fee Clerks upload their data:
+
+- **Documents:**
+  - licence (class and validity);
+  - date of birth (the HP rule is under 60);
+  - medical fitness;
+  - police verification;
+  - photo.
+- **Assignment:** bus and route.
+- **Briefings:** route replays watched (Loop 6), and the "Name this stop" quiz.
+- **Record** (shown to the Coordinator and Owner only, never ranked publicly):
+  - punctuality;
+  - stop-order adherence;
+  - **clean days** (no minute above 40 km/h);
+  - fuel fills with proof;
+  - incidents.
+- **Never** score speed. **Never** link the card to pay automatically.
+- **Wellbeing:** first and last trip times flag long days (fatigue) for the Coordinator.
+
+### Shipments: the monthly reserve (item 11, proposal for Uday)
+
+Inspired by AoE3's Home City shipments, this turns Uday's discretionary support into a visible game
+mechanic.
+
+- **The reserve:** at the start of each term (season) Uday sets a reserve pool and picks a **deck** of
+  shipment cards. Starting cards:
+  - **Repair voucher** (₹ toward a due component);
+  - **Spare bus-day**;
+  - **Fuel advance**;
+  - **Safety kit** (first-aid or fire-extinguisher refill);
+  - **Workshop priority** (a booked service slot);
+  - **Capture kit** (mount, charger).
+- **Earning:** each campus earns **one shipment per season goal met in a month**. It competes against its
+  own goals, not other campuses, so it is not zero-sum.
+- **Sending:**
+  - The Coordinator chooses which earned card to request and why.
+  - Uday "ships" it with one tap, or declines it with a note.
+  - A shipped card becomes a real approval through the existing Approvals flow, then a normal day-book
+    entry when spent. The reserve can never be overspent.
+- **Expiry:** unused cards expire at the end of the season.
+- **What it never does:** pay any person, or reward speed or size.
+- **Still to set** (by Uday, when Phase 4 comes): the pool size, the card values, and which cards are in the
+  deck.
 
 ## Left to the builder
 
