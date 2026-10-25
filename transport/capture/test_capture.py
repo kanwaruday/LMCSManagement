@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """capture.py: frame order, stop chapters, blur with injected detectors, ffmpeg stitch, fail-closed processing, the 30-day purge.
-Plain asserts: `python3 transport/capture/test_capture.py` (pytest also collects them). Temp dirs and fake images only."""
+Plain asserts: `/usr/local/bin/python3 transport/capture/test_capture.py` (pytest also collects them). Temp dirs and fake images only."""
 import contextlib, io, json, os, subprocess, sys, tempfile, time
 from pathlib import Path
 
@@ -192,21 +192,24 @@ def test_push_runs_sends_counts_only_for_processed_runs_not_yet_stored():
         for x in (d, stored):
             (x / "processed").mkdir()
             (x / "processed" / "route.mp4").write_bytes(b"x")
+        jpeg(d / "processed" / "stop-00001.jpg")
         done = dict(run, runId=stored.name, done=True)
-        out = C.push_runs([run, waiting, done], root)
+        two = dict(run, stops=run["stops"] + [{"seq": 4, "name": "Gate", "takenAt": None}])  # a stop tagged without a photo
+        out = C.push_runs([two, waiting, done], root)
         assert [r["runId"] for r in out] == [run["runId"]], "only processed runs the portal has not stored yet"
         assert out[0] == {"runId": run["runId"], "reg": "HP66A1234", "stops": [
-            {"seq": 1, "name": "Nalwari", "lat": 31.6, "lng": 76.9, "at": "2025-10-25T01:35:00Z", "boardOn": 3, "boardOff": 0}]}, \
-            "no file ids: the portal looks up the processed copies itself"
+            {"seq": 1, "name": "Nalwari", "lat": 31.6, "lng": 76.9, "at": "2025-10-25T01:35:00Z", "boardOn": 3, "boardOff": 0, "photo": True},
+            {"seq": 4, "name": "Gate", "lat": None, "lng": None, "at": "", "boardOn": 0, "boardOff": 0, "photo": False}]}, \
+            "no file ids (the portal looks up the processed copies itself), but which stops have a blurred photo to wait for"
 
 
 def test_frame_times_from_the_manifest_place_the_chapters():
     frames = [{"seq": 0}, {"seq": 2}, {"seq": 3}, {"seq": 7}]
-    got = C.with_times(frames, {"startedAt": 1_000_000, "frameTimes": [0, None, 10, 20]})
+    got = C.with_times(frames, {"startedAt": 1_000_000, "frameTimes": [0, None, 10, 10]})  # deltas: seq 0 at +0, seq 2 +10 s, seq 3 +10 s more
     assert [f.get("takenAt") for f in got] == [1_000_000, 1_010_000, 1_020_000, None], "seq 7 is past the list: no time"
     assert C.with_times(frames, {"startedAt": 1_000_000, "frameTimes": None}) == frames
     assert C.with_times(frames, {"startedAt": "", "frameTimes": [0]}) == frames
-    timed = C.with_times(frames[:3], {"startedAt": 0, "frameTimes": [0, None, 2, 30]})
+    timed = C.with_times(frames[:3], {"startedAt": 0, "frameTimes": [0, None, 2, 28]})
     meta = C.chapters([{"seq": 1, "takenAt": 1000}, {"seq": 4, "takenAt": 29000}], timed)
     assert "START=0\n" in meta.split("[CHAPTER]")[1] and "START=2\n" in meta.split("[CHAPTER]")[2]
 

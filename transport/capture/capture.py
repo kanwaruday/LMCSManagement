@@ -15,6 +15,7 @@ Run it with /usr/local/bin/python3 (framework 3.13, which has numpy, Pillow and 
   /usr/local/bin/python3 transport/capture/capture.py                 # the daily job
   /usr/local/bin/python3 transport/capture/capture.py --dry-run       # read and plan only: nothing written, deleted or pushed
   /usr/local/bin/python3 transport/capture/capture.py --root DIR --manifest runs.json   # a test folder and a local manifest; nothing pushed
+  /usr/local/bin/python3 transport/capture/test_capture.py            # tests; the real-detector one runs once the models are installed
 
 Privacy: blur FAILS CLOSED. Without OpenCV, onnxruntime or either model file, no run is processed (no frames, no route.mp4),
 each waiting run is logged "blur unavailable" and the exit code is 1. A run is built in processed.partial/ and renamed to
@@ -104,12 +105,17 @@ def chapters(stops, frames, fps=FPS):
 
 
 def with_times(frames, run):
-    """The frames with takenAt (ms) from the run's manifest: startedAt (ms) + frameTimes[seq] seconds. Unchanged without them."""
+    """The frames with takenAt (ms) from the run's manifest: frameTimes is indexed by seq, whole seconds since the previous frame
+    (the first since startedAt, ms), null for a stop. Unchanged without them."""
     ft, t0 = run.get("frameTimes"), run.get("startedAt")
     if not isinstance(ft, list) or not isinstance(t0, (int, float)) or isinstance(t0, bool):
         return frames
-    at = lambda s: t0 + ft[s] * 1000 if s < len(ft) and isinstance(ft[s], (int, float)) else None
-    return [dict(f, takenAt=at(f["seq"])) if at(f["seq"]) is not None else f for f in frames]
+    at, sec = {}, 0
+    for seq, d in enumerate(ft):
+        if isinstance(d, (int, float)) and not isinstance(d, bool):
+            sec += d
+            at[seq] = t0 + sec * 1000
+    return [dict(f, takenAt=at[f["seq"]]) if f["seq"] in at else f for f in frames]
 
 
 def blur(image, detectors, cells=8):
@@ -239,14 +245,17 @@ def iso(ms):
 
 def push_runs(runs, root):
     """The transportcapturepush runs: each run with a processed/route.mp4 that the portal has not stored yet (`done`), with its
-    stops, children as counts. No file ids: the portal looks up the processed copies itself."""
+    stops, children as counts. No file ids: the portal looks up the processed copies itself; `photo` says which stops have a
+    blurred photo, so the portal waits for each of them to reach Drive before it stores the run."""
     out = []
     for r in runs:
-        if r.get("done") or not (Path(root) / r["reg"] / r["runId"] / "processed" / "route.mp4").exists():
+        d = Path(root) / r["reg"] / r["runId"] / "processed"
+        if r.get("done") or not (d / "route.mp4").exists():
             continue
         out.append({"runId": r["runId"], "reg": r["reg"], "stops": [
             {"seq": int(s["seq"]), "name": s.get("name") or "", "lat": s.get("lat"), "lng": s.get("lng"), "at": iso(s.get("takenAt")),
-             "boardOn": int(s.get("boardOn") or 0), "boardOff": int(s.get("boardOff") or 0)}
+             "boardOn": int(s.get("boardOn") or 0), "boardOff": int(s.get("boardOff") or 0),
+             "photo": (d / f"stop-{int(s['seq']):05d}.jpg").exists()}
             for s in r.get("stops") or []]})
     return out
 
@@ -328,7 +337,8 @@ def main(argv=None):
         log(f"would push {len(done)} processed runs")
     elif done:
         res = post("transportcapturepush", {"runs": done})
-        log(f"pushed {res.get('runs', 0)} processed runs" + (f"; not yet in Drive, again tomorrow: {', '.join(res['notYet'])}" if res.get("notYet") else ""))
+        wait = (res.get("notYet") or []) + (res.get("later") or [])
+        log(f"pushed {res.get('runs', 0)} processed runs" + (f"; again tomorrow (not yet in Drive, or over the batch): {', '.join(wait)}" if wait else ""))
     return 1 if failed else 0
 
 

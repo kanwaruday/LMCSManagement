@@ -13,8 +13,9 @@
 //   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). `inspection` (inspection runs only) must be
 //   {itemId: {ok: boolean, date?: 'yyyy-MM-dd', fileId?}} with ids from the 'Safety Loadout' tab (kept by the Coordinator
 //   backend, coordinator-transport.gs): answers raise and close follow-ups, so nothing else is stored (no free text).
-//   A timelapse's end manifest also carries frameTimes: seconds since startedAt, indexed by seq (null where the seq is a stop),
-//   which the Mac (transport/capture/capture.py) uses to place each stop's chapter in the route video.
+//   A timelapse's end manifest also carries frameTimes: indexed by seq, whole seconds since the previous frame (the first since
+//   startedAt), null where the seq is a stop. The Mac (transport/capture/capture.py) uses them to place each stop's chapter in the
+//   route video. Too big or invalid, they are dropped and the run is stored without them (the Mac falls back to capture order).
 // Who: Owner / ALL any bus; Coordinator the buses of their district; FeeClerk their campus (tupCovers_, unchanged).
 // POST {action:'captureprocessed', secret, runs:[{reg, runId, stops:[seq]}]} -> {success, found:{runId:{videoFileId, photos:{seq:id}}},
 //   notYet:[runId]}. The Coordinator backend (no Drive access) asks here for the ids of the Mac's BLURRED output:
@@ -28,7 +29,7 @@ const CAP_KINDS_ = ['frame', 'stop', 'inspection'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'] }; // profile kinds: Task 8
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
-const CAP_MAX_FRAME_TIMES_ = 10000; // seqs per run: ~6 characters each keeps the cell under Sheets' 50,000
+const CAP_MAX_FRAME_TIMES_ = 40000; // characters of frameTimes JSON kept: well inside Sheets' 50,000 per cell (a 75 km run is ~10,000)
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 const CAP_PATH_ = TUP_PATH_.slice(0, -1).concat(['Capture']); // sibling of 'Bus Wise Documents'
 
@@ -126,6 +127,19 @@ function capInspectionError_(insp) {
   return '';
 }
 
+/** True for frame times worth keeping: a list of whole-second deltas (or null) adding up to at most a day, small enough for a cell. */
+function capFrameTimesOk_(ft) {
+  if (!Array.isArray(ft) || JSON.stringify(ft).length > CAP_MAX_FRAME_TIMES_) return false;
+  let sum = 0;
+  for (let i = 0; i < ft.length; i++) {
+    const t = ft[i];
+    if (t === null) continue;
+    if (typeof t !== 'number' || t !== Math.floor(t) || t < 0) return false;
+    sum += t;
+  }
+  return sum <= 86400;
+}
+
 function captureRun_(body) {
   const fail = function (m) { return { success: false, error: m }; };
   const run = body.run || {};
@@ -139,16 +153,10 @@ function captureRun_(body) {
     const bad = capInspectionError_(run.inspection);
     if (bad) return fail(bad);
   }
-  if (run.frameTimes != null) {
-    if (run.kind !== 'timelapse') return fail('Only a timelapse run carries frame times');
-    const ft = run.frameTimes;
-    if (!Array.isArray(ft)) return fail('frameTimes must be a list');
-    if (ft.length > CAP_MAX_FRAME_TIMES_) return fail('frameTimes has too many entries');
-    if (!ft.every(function (t) { return t === null || (typeof t === 'number' && t === Math.floor(t) && t >= 0 && t <= 86400); })) return fail('frameTimes must be whole seconds since the start (0 to 86400) or null');
-  }
+  const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
-    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(run.frameTimes)];
+    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(frameTimes)];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {

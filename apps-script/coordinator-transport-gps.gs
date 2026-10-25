@@ -33,6 +33,7 @@ const GPS = {
   inspectionDay: 5, // the monthly safety check is due by the 5th
   inspectionFrom: '2026-11', // set at deploy: the first month a safety check is asked for (no follow-up for months before it)
   captureFrom: '2026-12', // set at deploy: the first month a bus without a route timelapse gets capture_route
+  captureBatch: 20, // runs looked up in the Roster per capture push (about 2 Drive calls per stop): well inside UrlFetch's ~60 s
 };
 const GPS_DOMAINS = Object.keys(GPS.due);
 const COORD_DEPT_TRANSPORT = 'Transport';
@@ -348,9 +349,11 @@ function gpsCaptureStop_(s) {
 /** A Drive file id, or '' (the Mac sends '' until Drive has uploaded the file). */
 function gpsDriveId_(v) { return /^[A-Za-z0-9_-]{10,128}$/.test(String(v || '')) ? String(v) : ''; }
 
-/** POST action=transportcapturepush {secret, payload:{runs:[{runId, reg, stops:[{seq,name,lat,lng,at,boardOn,boardOff}]}]}}.
+/** POST action=transportcapturepush {secret, payload:{runs:[{runId, reg, stops:[{seq,name,lat,lng,at,boardOn,boardOff,photo}]}]}}.
  *  The video and stop-photo ids are looked up in the Roster project (gpsCaptureFiles_): only the Mac's blurred output is ever served,
- *  whatever a push says. A run whose output has not synced up to Drive yet comes back in `notYet` and is pushed again tomorrow.
+ *  whatever a push says. `photo: true` = the Mac has a blurred photo of that stop. Drive uploads route.mp4 and the photos one by
+ *  one, so a run is stored only once the video AND every such photo have an id; until then it comes back in `notYet` (not stored,
+ *  so not done) and is pushed again tomorrow. At most GPS.captureBatch runs are looked up per push; the rest come back in `later`.
  *  Upsert by runId into Capture Stops (a push never removes another run); a bus not in the fleet is skipped. Then the follow-ups refresh. */
 function coordCapturePush_(body) {
   if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
@@ -363,14 +366,16 @@ function coordCapturePush_(body) {
   }
   const campusOf = {}, now = new Date().toISOString(), skipped = [], notYet = [], fresh = [];
   coordTransportBase_().fleet.forEach(function (b) { campusOf[b.reg] = gpsCampusId_(b.campus); });
-  const mine = runs.filter(function (r) { if (!campusOf[r.reg]) skipped.push(String(r.runId)); return !!campusOf[r.reg]; });
+  const known = runs.filter(function (r) { if (!campusOf[r.reg]) skipped.push(String(r.runId)); return !!campusOf[r.reg]; });
+  const mine = known.slice(0, GPS.captureBatch), later = known.slice(GPS.captureBatch).map(function (r) { return String(r.runId); });
   const files = mine.length ? gpsCaptureFiles_(mine) : { found: {} };
   if (files.error) return { success: false, error: files.error };
   mine.forEach(function (r) {
-    const f = files.found[r.runId];
-    if (!f || !gpsDriveId_(f.videoFileId)) { notYet.push(String(r.runId)); return; }
+    const f = files.found[r.runId], photos = (f && f.photos) || {};
+    const missing = function (s) { return s && s.photo === true && !gpsDriveId_(photos[Number(s.seq)]); };
+    if (!f || !gpsDriveId_(f.videoFileId) || r.stops.some(missing)) { notYet.push(String(r.runId)); return; }
     fresh.push({ runId: String(r.runId), reg: r.reg, campus: campusOf[r.reg], videoFileId: f.videoFileId, pushedAt: now,
-      stops: JSON.stringify(r.stops.map(function (s) { const x = gpsCaptureStop_(s || {}); x.photoFileId = gpsDriveId_((f.photos || {})[x.seq]); return x; })) });
+      stops: JSON.stringify(r.stops.map(function (s) { const x = gpsCaptureStop_(s || {}); x.photoFileId = gpsDriveId_(photos[x.seq]); return x; })) });
   });
   if (fresh.length) {
     const lock = LockService.getScriptLock();
@@ -383,7 +388,7 @@ function coordCapturePush_(body) {
     try { gpsRefresh_(gpsRows_(GPS_TAB_DAILY), gpsMeta_().health); } catch (err) { console.error('GPS refresh after capture push: ' + err.message); } // the next GPS push retries
     CacheService.getScriptCache().remove('coord_gps_insight_v1');
   }
-  return { success: true, runs: fresh.length, notYet: notYet, skipped: skipped };
+  return { success: true, runs: fresh.length, notYet: notYet, later: later, skipped: skipped };
 }
 
 /** Asks the Roster project (the one with Drive access) for the processed files' ids: {found:{runId:{videoFileId, photos:{seq:id}}}} or {error}. */
@@ -391,7 +396,7 @@ function gpsCaptureFiles_(runs) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
   const res = UrlFetchApp.fetch(COORD_ROSTER_URL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
     payload: JSON.stringify({ action: 'captureprocessed', secret: secret, runs: runs.map(function (r) {
-      return { reg: r.reg, runId: String(r.runId), stops: r.stops.map(function (s) { return Number((s || {}).seq); }) };
+      return { reg: r.reg, runId: String(r.runId), stops: r.stops.filter(function (s) { return s && s.photo === true; }).map(function (s) { return Number(s.seq); }) };
     }) }) });
   let out = null;
   try { out = JSON.parse(res.getContentText()); } catch (e) { out = null; }

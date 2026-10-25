@@ -157,12 +157,20 @@ assert.match(insp({ fire_extinguisher: { ok: true } }, 'timelapse').error, /Only
 caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
 tabs['Capture Runs'] = tabs['Capture Runs'].map((r) => r.slice(0, 13)); // a tab made before the column existed gets the new header
 assert.strictEqual(cr({ runId: 'RT', reg: 'HP659511', kind: 'timelapse', startedAt: 1000, status: 'ended', frameTimes: [0, null, 32] }).success, true);
+// Ruling 31: frame times too big or invalid are DROPPED; the run is stored without them (capture order on the Mac), never refused
 assert.deepStrictEqual(JSON.parse(JSON.stringify(tabs['Capture Runs'][0])), run('CAP_RUN_HEADER_'));
 assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'RT')[13], '[0,null,32]');
-[[{ 0: 1 }, /list/], [[0, -1], /whole seconds/], [[0, 1.5], /whole seconds/], [[0, '3'], /whole seconds/], [[0, 86401], /whole seconds/],
-  [new Array(10001).fill(0), /too many/]].forEach(([ft, re]) => assert.match(cr({ runId: 'RT2', reg: 'HP659511', kind: 'timelapse', frameTimes: ft }).error || '', re, JSON.stringify(ft).slice(0, 40)));
-assert.match(cr({ runId: 'RT3', reg: 'HP659511', kind: 'count', frameTimes: [0] }).error, /Only a timelapse run/);
-assert.ok(!tabs['Capture Runs'].some((r) => r[0] === 'RT2' || r[0] === 'RT3'), 'refused frame times are not stored');
+[['invalid: an object', { 0: 1 }], ['invalid: negative', [0, -1]], ['invalid: fractional', [0, 1.5]], ['invalid: text', [0, '3']],
+  ['invalid: longer than a day', [0, 86400, 1]], ['oversize: too many entries', new Array(20001).fill(1)]].forEach(([why, ft], i) => {
+  const id = 'RT2' + i, res = cr({ runId: id, reg: 'HP659511', kind: 'timelapse', status: 'ended', frameTimes: ft });
+  assert.strictEqual(res.success, true, why + ': the run is still stored');
+  assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === id)[13], '', why + ': without frame times');
+});
+assert.strictEqual(cr({ runId: 'RT3', reg: 'HP659511', kind: 'count', frameTimes: [0] }).success, true, 'a count run with frame times: dropped, stored');
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'RT3')[13], '');
+const long = [0].concat(new Array(5000).fill(4)); // a 75 km run, a frame every 4 s: still far under the 50,000-character cell
+assert.strictEqual(cr({ runId: 'RT4', reg: 'HP659511', kind: 'timelapse', frameTimes: long }).success, true);
+assert.ok(tabs['Capture Runs'].find((r) => r[0] === 'RT4')[13].length < 12000, 'deltas keep a long run compact');
 
 // Ruling 29: the Coordinator backend (no Drive access) asks this project for the PROCESSED copies' ids, by path
 const cap = transport.kids.find((k) => k.name === 'Capture'), bus = cap.kids.find((k) => k.name === 'HP659511');
@@ -174,6 +182,11 @@ const cp = (b) => run('captureProcessed_(' + JSON.stringify(b) + ')');
 const ask = { runs: [{ reg: 'HP659511', runId: 'HP659511-20261025-071500-ab12', stops: [3, 4] }, { reg: 'HP659511', runId: 'HP659511-20261026-071500-cd34', stops: [] },
   { reg: 'HP000', runId: 'HP000-20261026-071500-zz11', stops: [] }] };
 assert.strictEqual(cp(Object.assign({ secret: 'X' }, ask)).error, 'Not authorized', 'captureprocessed with a wrong secret refused');
+[null, '', '  '].forEach((v) => {
+  const keep = ctx.PropertiesService; ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: () => v }) };
+  try { assert.strictEqual(cp({ secret: v || '', runs: ask.runs }).error, 'Not authorized', 'Roster secret ' + JSON.stringify(v) + ': refused, even for the same empty secret'); }
+  finally { ctx.PropertiesService = keep; }
+});
 const got = cp(Object.assign({ secret: 'S' }, ask));
 assert.deepStrictEqual(got.found, { 'HP659511-20261025-071500-ab12': { videoFileId: video.getId(), photos: { 3: blurred.getId() } } }, 'the served ids are the processed copies');
 assert.notStrictEqual(got.found['HP659511-20261025-071500-ab12'].photos[3], original.getId(), 'never the unblurred original');

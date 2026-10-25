@@ -147,11 +147,17 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     // Unsent file metadata of a run, in seq order (a failed file stays here, with its `error`). Photos are not loaded.
     pending: (runId) => serial(async () => (await filesOf(runId)).filter((f) => !f.sent).sort((a, b) => a.seq - b.seq)),
     total: (runId) => serial(async () => (await filesOf(runId)).length),
-    // The timelapse's frame times for the end manifest, compact: seconds since startedAt, indexed by seq (null where the seq is a
-    // stop or nothing), so the Mac can place each stop's video chapter at the frame nearest in time.
+    // The timelapse's frame times for the end manifest, compact (Ruling 31): indexed by seq, whole seconds since the previous frame
+    // (the first since startedAt), null where the seq is a stop or nothing, so the Mac can place each stop's video chapter at the
+    // frame nearest in time. Each frame is rounded on its own and then differenced (no drift), never backwards, at most a day.
     frameTimes: (runId) => serial(async () => {
       const run = await load(runId), out = new Array(run.nextSeq).fill(null);
-      for (const f of await filesOf(runId)) if (f.kind === 'frame' && Number.isFinite(f.takenAt)) out[f.seq] = Math.max(0, Math.round((f.takenAt - run.startedAt) / 1000));
+      const frames = (await filesOf(runId)).filter((f) => f.kind === 'frame' && Number.isFinite(f.takenAt)).sort((a, b) => a.seq - b.seq);
+      let prev = 0;
+      for (const f of frames) {
+        const at = Math.min(86400, Math.max(prev, Math.round((f.takenAt - run.startedAt) / 1000)));
+        out[f.seq] = at - prev; prev = at;
+      }
       return out;
     }),
     // {seq: Drive file id} of the run's sent files (the inspection answers point at their photos by seq on the phone).
