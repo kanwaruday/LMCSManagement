@@ -383,9 +383,10 @@ px and desktop) and shipped only with Uday's go-ahead.
    chapters"). The low starting baseline is accepted as honest.
 7. Leave: "Leave into Approvals". Teachers apply for leave through the portal's Approvals before the February
    pilot. Until then, days on track shows no denominator.
-8. Teacher sign-in (Q8): "Automatic from Employee Master". The Teacher role only, for Active employees in the
-   Teaching department whose EmpPersonal.AuthEmail matches their verified Google sign-in. It changes `assets/auth.js`,
-   the PDR `main.gs` and the game backend, each off behind a flag that Uday switches on.
+8. Sign-in (Q8): "Automatic from Employee Master", widened to "Automatic, but all employees". Every Active
+   employee whose EmpPersonal.AuthEmail matches their verified Google sign-in gets a role by department (Q9, pending).
+   Existing allowlist rows always win. It changes `assets/auth.js`, the PDR `main.gs` and the game backend, each off
+   behind the `STAFF_AUTO_SIGNIN` switch that Uday turns on.
 9. Chapter quest: "right away, at each school". No single-campus trial; it goes live at all six schools as soon as
    it is built.
 10. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
