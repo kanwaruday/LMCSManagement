@@ -43,8 +43,10 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 
 ## Depends on (block the task named)
 
-- **Uday's Q8 (teacher sign-in), asked 2026-10-25.** Task 1 implements option (a). If he picks (b), Task 1 is
-  replaced by a one-off allowlist import, and the other tasks are unchanged.
+- **Uday's Q8 (teacher sign-in), answered 2026-10-25: "Automatic from Employee Master".** It grants the Teacher role
+  only, to Active employees in the Teaching department whose EmpPersonal.AuthEmail matches their verified Google
+  sign-in. Each part is off behind a flag. This plan owns the `auth.js` and PDR parts (Task 1); the game director adds
+  the game backend part. Production deploys and switching the flag on are Uday's.
 - **The framework Phase 1 code, its Tasks 1–3 at least:** `game.gs` registries, `gameVerifyCaller_`, Mission
   `progress`, and `gamePick_` / days on track. Tasks 3–5 here consume them. Task 8 needs its Tasks 6–10 (the
   `gametoday` response and the mount on `teacher/index.html`).
@@ -102,7 +104,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 
 ---
 
-### Task 1: Teacher sign-in from the Employee Master (Q8 option a)
+### Task 1: Teacher sign-in from the Employee Master (Uday, Q8: "Automatic from Employee Master")
 
 **Files:**
 - Modify: `assets/auth.js`: after the allowlist lookup misses, call `TEACHER_SIGNIN_URL` (the PDR exec URL,
