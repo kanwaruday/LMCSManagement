@@ -166,8 +166,18 @@ first design.
 | 2 | **Teach** | The first CW entry on this chapter | CW/HW feed |
 | 3 | **Run the activity** | A CW entry on this chapter whose description matches the planned activity, checked overnight by local LM Studio (Uday). The Principal's "Activity Based" SS mark is the human spot-check (Uday) | CW/HW feed + the nightly match tab |
 | 4 | **Take the CWA** | A CW entry tagged CWA on this chapter, or the Chapter Tracker's actual CWA date, or a Coordinator "mark as taken" override | CW/HW feed, ChapterTracker |
-| 5 | **Remediate** | A Remediation-tagged entry on the same chapter within 14 days of the CWA (Uday). Tag-inflation flags and the Principal's "Notebook Checking" SS mark are the checks (Uday). Later this moves to ERP marks (Uday) | CW/HW feed |
+| 5 | **Remediate** | A Remediation-tagged entry **on the same chapter as its CWA** within 14 days (Uday, Q5: "remediations need to get matched to the chapters"; matching on class and subject alone does not count). Tag-inflation flags and the Principal's "Notebook Checking" SS mark are the checks (Uday). Later this moves to ERP marks (Uday) | CW/HW feed |
 
+- **The starting baseline is low, and that is honest.** Today 60 of 1,793 CWAs (3%) have a same-chapter remediation
+  within 14 days, mostly because teachers log remediation under the next chapter's name or none. The quest exists to
+  raise it, so the design makes naming the chapter the easy path (Claude's calls):
+  - the `remediation_due` mission's Go opens the CW/HW form **pre-filled** with the class, subject, chapter and the
+    Remediation tag, where the form supports pre-filled links. Otherwise the card shows the exact chapter name to
+    pick;
+  - the Teacher Owl's first remediation mission explains the rule in one line ("Name the chapter you're fixing, so
+    it counts");
+  - for the first two weeks of the pilot, a class-subject remediation logged under the wrong chapter shows a quiet
+    "logged under another chapter, choose this one next time". It doesn't count as done.
 - **Missions from the quest:**
   - `teacher:remediation_due:<episodeId>`: open from the CWA date. Its due date is CWA + 14 days, a real deadline
     from Uday's rule.
@@ -261,8 +271,8 @@ quests. These are real data entry, and done is detected from data:
   calls the teacher part, which this module owns (agreed with the game director).
 - **The episode engine** is shared with the Owner portal (see "Settled after the builder check"). It covers first
   entry through first CWA, per teacher × class × subject, and real teaching only: Class 1+, non-exempt subjects, 3+
-  periods. Its tests reproduce the measured headline numbers on a fixed snapshot of the feed, under whichever
-  remediation rule Uday picks in Q5.
+  periods. Its tests reproduce the measured numbers on a fixed snapshot of the feed (25 Oct 2026: 60 of 1,793 CWAs
+  remediated on the same chapter within 14 days, with entries of 7+ tags excluded).
 - **Identity:** the caller's code comes from `EmpPersonal.AuthEmail` (`tpResolveCallerEmployeeCode_` logic). Feed
   rows are matched by normalised name (`tpResolveEmployeeCode_` logic, kept in sync). Unmatched rows feed the
   Principal's setup quest, never a teacher's mission.
@@ -331,7 +341,9 @@ px and desktop) and shipped only with Uday's go-ahead.
    as the human spot-check."
 5. Teams: "Subject and campus both". The subject team spans all campuses and holds the academic goals; the campus
    team holds everything else.
-6. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
+6. Remediation must be matched on the same chapter as its CWA (Q5: "remediations need to get matched to the
+   chapters"). The low starting baseline is accepted as honest.
+7. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
 
 ## Settled after the builder check (Claude's calls)
 
@@ -339,8 +351,9 @@ px and desktop) and shipped only with Uday's go-ahead.
    (`2026-10-23-owner-portal-b-insights.md`, Task 2) already specifies the episode functions (`ownAcadEpisodes_`
    and related) with tests. They live in one file, deployed to both the Owner and the game backends through
    `apps-script/projects.json`, and are built by whichever ships first. This avoids the Owner and the teacher's card
-   showing different numbers for the same chapter. The remediation-matching rule is that engine's parameter (see
-   Q5).
+   showing different numbers for the same chapter. **The engine uses Uday's same-chapter rule (Q5) everywhere.**
+   The Owner portal B plan, which counted remediation by class-subject, must switch to it before it is built. This
+   was flagged to the master agent.
 2. **Teachers write only the planned activity, never the planned CWA date.**
    - The planned CWA date drives ChapterTracker deadlines, the CWA gap report and `cwa_due`. A teacher who could
      move it could move their own deadline.
@@ -366,14 +379,11 @@ px and desktop) and shipped only with Uday's go-ahead.
 
 ## Open questions for Uday
 
-Q5–Q7 come from the builder check (all sent via the LMCS Master Agent).
+Q4 was asked first; Q5–Q7 come from the builder check (all sent via the LMCS Master Agent).
 
 1. ~~**Q4: who is a teacher's team?**~~ **Answered (Uday):** "Subject and campus both" (see Loop 4).
-2. **Q5: is remediation matched on the same chapter or the same class-subject?** Measured on 1,793 CWAs:
-   - matched on the same chapter within 14 days, only 60 count (3%);
-   - matched on the same teacher, class and subject, 295 count (16%), which was the rule behind the "80%" figure.
-
-   Recommended: the same class-subject, credited to the CWA's chapter.
+2. ~~**Q5: is remediation matched on the same chapter or the same class-subject?**~~ **Answered (Uday):**
+   "remediations need to get matched to the chapters": same chapter only (see Loop 2, step 5).
 3. **Q6: where do teacher leave days come from?** Payroll holds only monthly counts, not dates. Recommended: teacher
    leave moves into the portal (Approvals, all categories, with dates) before the pilot, per Uday's own decision that
    the Teachers' Portal owns leave. Until then, show "18 days on track" without a denominator.
