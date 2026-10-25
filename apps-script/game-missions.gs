@@ -331,9 +331,12 @@ function gameSnapshot_(dailyRows, email, dayKey) {
 
 // Judge one finished game day. counted = the snapshot held a core, non-shared mission that still exists or was seen done
 // that day (snapshot.doneIds); onTrack = every such mission is done by 04:00 IST the next day. A snapshot id in doneIds
-// counts as done even when it has left missionsNow (a day-scoped mission such as ss_pace); any other id missing from
+// counts as done even when it has left missionsNow. A missing id that is day-scoped to that day (ends ':<dayKey>', e.g.
+// ss_pace / pdr_report) and not in doneIds expired undone (R34): counted if core, not on track. Any other id missing from
 // missionsNow is gone (R9), not done. A mission done before the day began counts as done for that day (credit is Task 5's
 // business, not this one's).
+// ponytail: doneIds is only written on a portal visit, so work finished after the person's last visit that day counts as
+// missed; Phase 2's nightly snapshot closes the gap.
 function gameFinalizeDay_(snapshot, missionsNow, dayKey, cfgCore) {
   const now = {}, seenDone = {};
   missionsNow.forEach(function (m) { now[m.id] = m; });
@@ -344,6 +347,10 @@ function gameFinalizeDay_(snapshot, missionsNow, dayKey, cfgCore) {
     const m = now[id];
     if (seenDone[id]) { // recorded done and non-shared on that day: kind from the live mission, else from the id
       if ((m && m.core) || (cfgCore || []).indexOf(m ? m.kind : String(id).split(':')[0]) !== -1) counted = true;
+      return;
+    }
+    if (!m && String(id).slice(-(dayKey.length + 1)) === ':' + dayKey) { // day-scoped, expired undone (R34)
+      if ((cfgCore || []).indexOf(String(id).split(':')[0]) !== -1) { counted = true; onTrack = false; }
       return;
     }
     if (!m || m.gone || m.shared || !(m.core || (cfgCore || []).indexOf(m.kind) !== -1)) return;

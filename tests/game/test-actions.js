@@ -197,14 +197,14 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
 }
 {
   // earlier days, sources up: finalized. info_requested (core here) still open -> counted, not on track; it rolls over.
-  // Yesterday's ss_pace is day-scoped: today's is a new mission, never "from yesterday"; undone and gone, it is not counted (R9).
+  // Yesterday's ss_pace is day-scoped: today's is a new mission, never "from yesterday".
   const t = setup({ config: [['core', '{"Principal":["ss_pace","info_requested"]}']],
-    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04', 'info_requested:A1']), dailyRow('2026-11-03', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-03'])] });
+    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04', 'info_requested:A1']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'])] });
   const a = t.call(P4, 'gametoday');
   const rows = t.game['Game Daily'].rows;
   assert.strictEqual(String(rows[1][6]).toUpperCase(), 'TRUE');
   assert.strictEqual(String(rows[1][7]).toUpperCase(), 'FALSE');
-  assert.strictEqual(String(rows[2][6]).toUpperCase(), 'TRUE'); // nothing still there to count that day
+  assert.strictEqual(String(rows[2][6]).toUpperCase(), 'TRUE'); // only a gone (archived) request that day: nothing to count
   assert.strictEqual(rows[2][7], '');
   assert.deepStrictEqual(a.missions.map((m) => m.id + ':' + m.rolledOver), ['info_requested:A1:true', 'ss_pace:LMS4:2026-11-05:false', 'pdr_report:LMS4:2026-11-05:false']);
   assert.deepStrictEqual(a.daysOnTrack, { onTrack: 0, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
@@ -242,6 +242,20 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(ss.rolledOver, false);
   assert.strictEqual(c.missions.find((m) => m.id === 'info_requested:A1').rolledOver, true); // still open: carried
   assert.deepStrictEqual(c.daysOnTrack, { onTrack: 1, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
+}
+
+{
+  // R34: an undone day-scoped core mission (yesterday's ss_pace, gone this morning, not in DoneIds) -> counted, not on track.
+  // A missing id that is not day-scoped (an archived request) stays gone (R9).
+  const t = setup({ config: [['core', '{"Principal":["ss_pace","info_requested"]}']],
+    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'])] });
+  const a = t.call(P4, 'gametoday');
+  const rows = t.game['Game Daily'].rows;
+  assert.strictEqual(String(rows[1][6]).toUpperCase(), 'TRUE');
+  assert.strictEqual(String(rows[1][7]).toUpperCase(), 'FALSE');
+  assert.strictEqual(rows[2][7], '');
+  assert.strictEqual(a.missions.find((m) => m.kind === 'ss_pace').rolledOver, false); // today's is a new mission
+  assert.deepStrictEqual(a.daysOnTrack, { onTrack: 0, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
 }
 
 // ── pilot gate and roles without missions ───────────────────────────────
