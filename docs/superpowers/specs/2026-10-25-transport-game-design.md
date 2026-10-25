@@ -154,16 +154,47 @@ map, stops and walking areas, depot).
 
 ### Loop 5: Street-level view of every stop (Phase 1, then grows)
 
-- Every stop card has a **"Look around"** panel:
-  - Google **Maps Embed API Street View** (free at any volume; an API key restricted by HTTP referrer to the
-    GitHub Pages domain);
-  - free Street View **metadata** to check whether a panorama exists within about 50 m.
-- **Where no panorama exists** (coverage in Himachal is unverified), the fallback is a **verified stop photo**
-  (Pokemon Go Wayfarer: crowd-vetted locations):
-  - A driver or Coordinator nominates the stop's pin plus a photo from the phone.
-  - A second person (the Coordinator) verifies it.
-  - Verified stops get a badge.
-  - Photos go to the existing private Drive and backend store, never the repo.
+**Uday (2026-10-25):** he accepts that Street View may be patchy, and asked for alternatives to be looked at.
+The research found:
+
+- **Google Street View does exist in Mandi district.** A probe on 2026-10-25 opened official car imagery dated
+  **May 2026** on the Ner Chowk–Dadour corridor (SH-13/NH-32), and blue lines run along NH-154. It is
+  **road-only**: off-road stops and the town centres missed, and rural lines may be user photospheres.
+- **Mapillary:** coverage unverified; it needs a free token and is reported thin in India.
+- **KartaView:** one 2017 dashcam drive only.
+- **Panoramax:** nothing in the area.
+- **Apple Look Around:** not in India.
+- **Bing Streetside:** retiring.
+
+**Layers per stop (Claude's call)**, shown as tabs on the stop card in this order:
+
+1. **Our own verified stop photo.** This is the only layer that can exist at every stop. It shows the exact
+   pickup point, and it is current. It works like Pokemon Go Wayfarer, crowd-vetted:
+   - A Coordinator or Fee Clerk uploads a phone photo plus a pin, on a driver's behalf if needed.
+   - A second person verifies it.
+   - The stop earns a **verified** badge.
+   - Photos go to the existing private Drive and backend store, never the repo.
+2. **Google Street View** through the Maps Embed API iframe:
+   - parameters `radius=100` and `source=outdoor`, with the heading set per stop;
+   - free at any volume, with the key restricted by referrer;
+   - the tab shows only where a panorama is known to exist.
+3. **Satellite "from above"** as the always-available fallback, using Esri World Imagery at zoom ≤ 18 with
+   attribution. Register a free ArcGIS developer account for compliant use; that is a builder task, not
+   Uday's.
+
+**Knowing where Street View exists (Claude's call):**
+- Phase 1 starts with a **coverage pass** over every stop, using the free Street View metadata request with
+  the same key.
+- It sets a stored `hasStreetView` flag per stop (with the panorama date), so the card never dead-ends on an
+  empty panorama.
+- If the metadata request can't run on a referrer-restricted key, a Coordinator sets the flag once per stop
+  by looking.
+- **Spot-check first:** test about 30 random stops.
+  - If 60% or more have a panorama, Street View stays layer 2.
+  - If fewer do, satellite moves up to layer 2.
+
+**Later, optional:** upload 360° phone captures of stops to Mapillary (CC BY-SA). That would build open
+coverage the school controls. It is not needed for Phase 1.
 - **"Name this stop"** (GeoGuessr) is an onboarding quiz for new drivers and helpers: shown a street view or
   verified photo, they pick the stop. It is never scored for speed.
 
@@ -264,12 +295,31 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 
 ## Open items for Uday
 
-1. **Google Maps Embed API key.** Create one in Google Cloud (free for Embed), restrict it to the portal's
-   GitHub Pages domain, and share it for the build. Without it, Phase 1 ships the photo fallback only.
-2. **Street View coverage.** Whether panoramas exist at our stops is unknown. Phase 1 starts with an automatic
-   check across every stop and reports the coverage before promising the feature.
-3. **DPDP advice before Phase 3.** Get advice on handling children's transport data (stop allocation) under
-   India's DPDP rules. The design already keeps names out of the game layer and the public repo.
+1. **Google Maps Embed API key.** **Uday (2026-10-25): yes, he will create it.** Claude never types or pastes
+   keys, so the build reads it from a config value Uday sets himself:
+   - It lives in a **Script Property `MAPS_EMBED_KEY`** in the Coordinator Apps Script project (the same
+     pattern as `TRANSPORT_PUSH_SECRET`).
+   - It is served only to signed-in Coordinators and the Owner, with the transport data. It is never in the
+     public repo.
+   - Without it, Phase 1 shows photos and satellite only.
+
+   His steps:
+   1. In Google Cloud Console (console.cloud.google.com), pick or create a project, e.g. "LMCS Portal".
+      Google may ask for a billing account; the Embed API itself is free.
+   2. Go to APIs & Services → Library and enable **Maps Embed API**. Also enable **Street View Static API**
+      for the free metadata check used by the coverage pass.
+   3. Go to APIs & Services → Credentials → Create credentials → **API key**.
+   4. Edit the key:
+      - **Application restrictions:** Websites → add `https://kanwaruday.github.io/*`.
+      - **API restrictions:** Restrict key → tick **Maps Embed API** and **Street View Static API** only.
+      - Save.
+   5. Optional: set a ₹100 budget alert under Billing → Budgets.
+   6. Copy the key. In the Coordinator Apps Script project, go to Project Settings (gear) → Script
+      Properties → Add, with name `MAPS_EMBED_KEY` and the key as the value. Save. No redeploy is needed.
+2. **Street View coverage.** **Uday: accepted that it may be patchy, and asked for alternatives.** Folded in
+   as the three-layer stop view in Loop 5.
+3. **DPDP advice before Phase 3.** **Uday: he'll get it when Phase 3 comes.** The design already keeps names
+   out of the game layer and the public repo.
 
 ## Left to the builder
 
