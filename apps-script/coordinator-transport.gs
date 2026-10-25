@@ -457,12 +457,15 @@ function coordInspections_() {
 // ── Fleet setup quests (transport game Phase 1a): the staff questionnaire as six quests per bus ──
 // Papers, safety, parts, driver, fuel and capture. The quest definitions and the pure logic (validation, the 60+ driver rule,
 // completion, missions) are coordinator/capture/fleet-quests.js (FleetQuests): projects.json deploys it into this project and
-// the setup page (coordinator/transport/setup.html) loads the same file. Data lives in four tabs of this private transport
-// workbook, each rewritten whole under the script lock (a few hundred rows):
-//   Fleet Profile   one row per reg: the papers, safety, fuel and capture quests, each as JSON
+// the setup page (coordinator/transport/setup.html) loads the same file; FleetQuests.applySave makes the write on both. Data
+// lives in four tabs of this private transport workbook; the first three are machine-kept and rewritten whole under the
+// script lock (a few hundred rows), Workshops is edited in place (people fill it in):
+//   Fleet Profile   one row per reg: the papers, safety, fuel and capture quests, each as JSON, and `saved`: per quest who saved
+//                   it last and who saved the data that completed it (the mission's doneBy)
 //   Driver Profile  one row per driver (employee code; 'bus:<REG>' when the roster has none): the driver card as JSON, ageLimit
 //   Parts History   one row per reg x component (the day book's component ids): that part's fields as JSON
-//   Workshops       one row per workshop named in a quest, with the buses that go there (other columns are for the Owner to fill)
+//   Workshops       one row per workshop named in a quest (the questionnaire's column names), with the buses that go there; the
+//                   other columns are the Owner's, filled by hand, and never touched
 // Driver personal data (date of birth, licence, phone) lives only here and is served only within the caller's campuses.
 // Photos (odometer, driver) are uploaded first through the Roster's capturefile (kind 'profile'); a quest holds their file ids.
 // GET  action=coordinatortransportfleet      every transport role: {rows:{fleet, profiles, drivers, parts, inspected, captured},
@@ -471,64 +474,62 @@ function coordInspections_() {
 // POST action=coordinatortransportfleetsave  {reg, quest, fields}: one quest at a time, the whole quest (parts: the parts sent),
 //                                             same scope -> {success} (driver: + ageLimit, and a warning when 60 or over)
 const COORD_FLEET_TABS = { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History', workshops: 'Workshops' };
-const COORD_FLEET_COLS = {
-  profile: ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'updatedAt', 'updatedBy'],
+const COORD_FLEET_COLS = { // saved: per quest {by, at, doneBy?, doneAt?}: the last save, and the save that completed it (mission doneBy)
+  profile: ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'saved'],
   driver: ['driverKey', 'reg', 'campus', 'driver', 'fields', 'ageLimit', 'updatedAt', 'updatedBy'],
   parts: ['reg', 'campus', 'component', 'fields', 'updatedAt', 'updatedBy'] };
 const COORD_ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
 function coordFleetToday_() { return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); }
 
-/** The running buses of the roster push, with campus as 'LMS n' and campusId 'LMSn' (the roster says 'LMS-5' in one row). */
+/** The running buses of the roster push: reg as A-Z 0-9 only, campus as 'LMS n' and campusId 'LMSn' (the roster says 'LMS-5' in one row). */
 function coordFleetBuses_() {
   return coordTransportBase_().fleet.filter(function (b) { return b.operational; }).map(function (b) {
     const n = String(b.campus).replace(/\D/g, '');
-    return { reg: b.reg, campus: 'LMS ' + n, campusId: 'LMS' + n, route: String(b.route || ''), driver: String(b.driver || ''), driverCode: b.driverCode || '', seats: b.seats, operational: true };
+    return { reg: FleetQuests.normReg(b.reg), campus: 'LMS ' + n, campusId: 'LMS' + n, route: String(b.route || ''), driver: String(b.driver || ''), driverCode: b.driverCode || '', seats: b.seats, operational: true };
   });
 }
 
+/** {reg: true} for the given regs: ended safety checks (Capture Runs) and processed route timelapses (Capture Stops). */
+function coordFleetDone_(regs) {
+  const inspected = {}, captured = {};
+  (coordInspections_() || []).forEach(function (x) { const r = FleetQuests.normReg(x.reg); if (regs[r]) inspected[r] = true; });
+  Object.keys(gpsCaptured_()).forEach(function (x) { const r = FleetQuests.normReg(x); if (regs[r]) captured[r] = true; });
+  return { inspected: inspected, captured: captured };
+}
+
 function coordFleet_(caller) {
-  const vis = coordVisibleCampuses_(caller), T = COORD_FLEET_TABS, regs = {}, keys = {}, inspected = {}, captured = {};
+  const vis = coordVisibleCampuses_(caller), T = COORD_FLEET_TABS, regs = {}, keys = {}, mine = function (r) { return regs[FleetQuests.normReg(r.reg)]; };
   const fleet = coordFleetBuses_().filter(function (b) { return !vis || vis.indexOf(b.campusId) !== -1; });
   fleet.forEach(function (b) { regs[b.reg] = true; keys[FleetQuests.driverKey(b)] = true; });
-  (coordInspections_() || []).forEach(function (x) { if (regs[x.reg]) inspected[x.reg] = true; });
-  Object.keys(gpsCaptured_()).forEach(function (r) { if (regs[r]) captured[r] = true; });
+  const done = coordFleetDone_(regs);
   return { success: true, today: coordFleetToday_(), campuses: vis || COORD_ALL_CAMPUSES, owner: caller.roles.indexOf('Owner') !== -1,
-    rows: { fleet: fleet, inspected: inspected, captured: captured,
-      profiles: gpsRows_(T.profile).filter(function (r) { return regs[r.reg]; }),
+    rows: { fleet: fleet, inspected: done.inspected, captured: done.captured,
+      profiles: gpsRows_(T.profile).filter(mine),
       drivers: gpsRows_(T.driver).filter(function (r) { return keys[r.driverKey]; }),
-      parts: gpsRows_(T.parts).filter(function (r) { return regs[r.reg]; }) } };
+      parts: gpsRows_(T.parts).filter(mine) } };
 }
 
 function coordFleetSave_(caller, body) {
   const fail = function (m) { return { success: false, error: m }; };
-  const reg = String(body.reg || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), quest = String(body.quest || '');
+  const reg = FleetQuests.normReg(body.reg), quest = String(body.quest || '');
   const bus = coordFleetBuses_().filter(function (b) { return b.reg === reg; })[0];
   if (!bus) return fail('Vehicle ' + (reg || '(none)') + ' is not in the fleet');
   const vis = coordVisibleCampuses_(caller);
   if (vis && vis.indexOf(bus.campusId) === -1) return fail('You can only set up buses of your own campuses');
   const v = FleetQuests.validateQuest(quest, body.fields, coordFleetToday_());
   if (v.error) return fail(v.error);
-  const T = COORD_FLEET_TABS, C = COORD_FLEET_COLS, now = new Date().toISOString(), by = caller.email;
+  const T = COORD_FLEET_TABS, C = COORD_FLEET_COLS, one = {};
+  one[reg] = true;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    if (quest === 'driver') {
-      const key = FleetQuests.driverKey(bus), rows = gpsRows_(T.driver).filter(function (r) { return r.driverKey !== key; });
-      rows.push({ driverKey: key, reg: reg, campus: bus.campusId, driver: coordLoadoutLabel_(bus.driver), fields: JSON.stringify(v.fields),
-        ageLimit: v.ageLimit ? 'yes' : 'no', updatedAt: now, updatedBy: by });
-      gpsWrite_(T.driver, C.driver, rows);
-    } else if (quest === 'parts') {
-      const rows = gpsRows_(T.parts).filter(function (r) { return !(r.reg === reg && v.fields[r.component]); });
-      Object.keys(v.fields).forEach(function (k) { rows.push({ reg: reg, campus: bus.campusId, component: k, fields: JSON.stringify(v.fields[k]), updatedAt: now, updatedBy: by }); });
-      gpsWrite_(T.parts, C.parts, rows);
-    } else {
-      const rows = gpsRows_(T.profile);
-      let row = rows.filter(function (r) { return r.reg === reg; })[0];
-      if (!row) { row = { reg: reg }; rows.push(row); }
-      row.campus = bus.campusId; row[quest] = JSON.stringify(v.fields); row.updatedAt = now; row.updatedBy = by;
-      gpsWrite_(T.profile, C.profile, rows);
-    }
+    const done = coordFleetDone_(one);
+    const rows = { fleet: [bus], profiles: gpsRows_(T.profile), drivers: gpsRows_(T.driver), parts: gpsRows_(T.parts), inspected: done.inspected, captured: done.captured };
+    FleetQuests.applySave(rows, reg, quest, v.fields, { by: caller.email, at: new Date().toISOString(), ageLimit: v.ageLimit }); // the same write the page makes
+    gpsWrite_(T.profile, C.profile, rows.profiles); // machine-kept tabs, rewritten whole (a few hundred rows)
+    if (quest === 'driver') gpsWrite_(T.driver, C.driver, rows.drivers);
+    if (quest === 'parts') gpsWrite_(T.parts, C.parts, rows.parts);
     coordFleetWorkshops_(reg, quest, v.fields);
   } finally { lock.releaseLock(); }
   const out = { success: true };
@@ -536,21 +537,35 @@ function coordFleetSave_(caller, body) {
   return out;
 }
 
-/** A workshop named in the papers (usual workshop) or a part joins the Workshops tab, with the bus in its list. */
+/** A workshop named in the papers (usual workshop) or a part joins the Workshops tab, with the bus in its list. The tab is filled in
+ *  by hand too, so it is never rewritten: an existing workshop's row gets only its buses cell set, a new one is appended with
+ *  only its name and bus, and the header is written only when the tab is new. Columns are found by their header text. */
 function coordFleetWorkshops_(reg, quest, fields) {
   const names = [];
   if (quest === 'papers' && fields.usualWorkshop) names.push(fields.usualWorkshop);
   if (quest === 'parts') Object.keys(fields).forEach(function (k) { if (fields[k].workshop) names.push(fields[k].workshop); });
   if (!names.length) return;
-  const rows = gpsRows_(COORD_FLEET_TABS.workshops);
+  const cols = FleetQuests.questConfig().workshopCols, ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
+  let sh = ss.getSheetByName(COORD_FLEET_TABS.workshops);
+  if (!sh) { sh = ss.insertSheet(COORD_FLEET_TABS.workshops); sh.appendRow(cols); sh.setFrozenRows(1); }
+  const v = sh.getDataRange().getValues(), head = (v[0] || []).map(function (h) { return String(h).trim(); });
+  const iName = head.indexOf(cols[0]), iBus = head.indexOf(cols[4]);
+  if (iName === -1 || iBus === -1) return; // the columns were renamed by hand: leave the tab alone
   names.forEach(function (n) {
     const name = coordLoadoutLabel_(n);
     if (!name) return;
-    let w = rows.filter(function (r) { return String(r.workshopName).toLowerCase() === name.toLowerCase(); })[0];
-    if (!w) { w = { workshopName: name }; rows.push(w); }
-    const buses = String(w.whichOfOurBusesGoThere || '').split(/,\s*/).filter(String);
-    if (buses.indexOf(reg) === -1) buses.push(reg);
-    w.whichOfOurBusesGoThere = buses.join(', ');
+    let at = -1;
+    for (let i = 1; i < v.length; i++) if (String(v[i][iName]).trim().toLowerCase() === name.toLowerCase()) { at = i; break; }
+    if (at === -1) {
+      const row = head.map(function () { return ''; });
+      row[iName] = name; row[iBus] = reg;
+      sh.appendRow(row); v.push(row);
+      return;
+    }
+    const buses = String(v[at][iBus] || '').split(/,\s*/).filter(String);
+    if (buses.indexOf(reg) !== -1) return;
+    buses.push(reg);
+    v[at][iBus] = buses.join(', ');
+    sh.getRange(at + 1, iBus + 1).setValue(v[at][iBus]);
   });
-  gpsWrite_(COORD_FLEET_TABS.workshops, FleetQuests.questConfig().workshopCols, rows);
 }

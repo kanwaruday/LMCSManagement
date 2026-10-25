@@ -4,8 +4,9 @@
 //   - the Coordinator backend gets it as a .gs file (apps-script/projects.json maps this path; deploy.mjs copies it);
 //   - the LMCS Game Backend (December) copies it unchanged into a .gs file and computes the missions server-side.
 // Goals are config: every quest, field, part and done check lives in DEFAULT_ROWS, shaped as the Game Backend's rows
-// (Game Quests: QuestId, Role, Title, UnlockAfter, StepsJson, Reward; Game Config: Key, Value as JSON text), and is read
-// only through questConfig(), which takes those rows as overrides.
+// (Game Quests: QuestId, Role, Title, UnlockAfter, StepsJson [{id, title, go, doneCheck}], Reward; Game Config: Key, Value as
+// JSON text, keys 'transport' and 'transportSetupForms'). setConfigRows(rows) makes override rows the config every function
+// uses; questConfig() returns a copy of it.
 // Field ids are the questionnaire's column names in camelCase (bracket notes, "?" and " uploaded to portal" dropped);
 // tests/transport/fixtures/questionnaire-headers.json holds those headers (header rows only, no data).
 // "done" is always derived from saved data: a quest's required fields, each part's date, the first safety check and the
@@ -104,39 +105,67 @@ var FleetQuests = (function () {
       ] }
   ];
   var NEEDS = { inspection: { flag: 'inspected', label: 'the first safety check' }, routeTimelapse: { flag: 'captured', label: 'a route timelapse' } };
-  var WORKSHOP_COLS = ['workshopName', 'place', 'contactPerson', 'phone', 'whichOfOurBusesGoThere', 'jobsTheyDo', 'givesAJobCard', 'pickUpAndDrop', 'notes'];
+  // The Workshops tab's header: the questionnaire's own column names, because people fill this tab in by hand.
+  var WORKSHOP_COLS = ['Workshop name', 'Place', 'Contact person', 'Phone', 'Which of our buses go there',
+    'Jobs they do (service, tyres, electrical, body…)', 'Gives a job card?', 'Pick-up and drop?', 'Notes'];
+  // The game layer's rows (portal-game-layer-design plan, Task 1): Game Quests holds the quest and its steps in the contract's
+  // step shape [{id, title, go, doneCheck}]; Game Config (Key, Value as JSON text) holds the tunables under one key, 'transport',
+  // and the quests' forms (fields, parts, mission wording) under 'transportSetupForms', keyed by step id.
+  var FORMS = {};
+  STEPS.forEach(function (s) { FORMS[s.id] = { task: s.task, gap: s.gap, source: s.source, fields: s.fields, parts: s.parts }; });
   var DEFAULT_ROWS = {
-    quests: [{ QuestId: 'transport:setup', Role: 'FeeClerk', Title: 'Fleet setup', UnlockAfter: '', StepsJson: JSON.stringify(STEPS), Reward: 'Ready badge' }],
-    config: [{ Key: 'transport.loadCapFactor', Value: '1.4' }, { Key: 'transport.driverAgeLimit', Value: '60' }]
+    quests: [{ QuestId: 'transport:setup', Role: 'FeeClerk', Title: 'Fleet setup', UnlockAfter: '',
+      StepsJson: JSON.stringify(STEPS.map(function (s) { return { id: s.id, title: s.title, go: s.go, doneCheck: s.doneCheck }; })), Reward: 'Ready badge' }],
+    config: [{ Key: 'transport', Value: JSON.stringify({ loadCapFactor: 1.4, driverAgeLimit: 60 }) },
+      { Key: 'transportSetupForms', Value: JSON.stringify(FORMS) }]
   };
 
   function parse(text, fallback) { try { var v = JSON.parse(text); return v == null ? fallback : v; } catch (e) { return fallback; } }
   function obj(v) { var o = typeof v === 'string' ? parse(v || '{}', {}) : v; return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }
-  function configValue(rows, key, fallback) {
-    var out = fallback;
-    (rows || []).forEach(function (r) { if (r && r.Key === key) { var v = parse(String(r.Value), null); if (typeof v === typeof fallback) out = v; } });
+  // Rows as objects, or as sheet arrays (header row first, as gameParseConfig_ reads them).
+  function rowObjects(list, keys) {
+    return (list || []).map(function (r) {
+      if (!Array.isArray(r)) return r || {};
+      var o = {}; keys.forEach(function (k, i) { o[k] = r[i]; }); return o;
+    }).filter(function (r) { return r[keys[0]] !== keys[0]; });
+  }
+  function configObject(rows, key) {
+    var out = {};
+    rows.forEach(function (r) { if (r.Key === key) { var v = obj(parse(String(r.Value), null)); Object.keys(v).forEach(function (k) { out[k] = v[k]; }); } });
     return out;
   }
-
-  var cached = null;
-  /** The quest definitions and tunables: defaults, overridden by Game Quests / Game Config rows when given ({quests, config}). */
-  function questConfig(over) {
-    if (!over && cached) return cached;
-    var rows = over || {}, q = null, d = DEFAULT_ROWS.quests[0];
-    (rows.quests || []).forEach(function (r) { if (r && r.QuestId === d.QuestId) q = r; });
+  function build(over) {
+    over = over || {};
+    var d = DEFAULT_ROWS.quests[0], q = null;
+    rowObjects(over.quests, ['QuestId', 'Role', 'Title', 'UnlockAfter', 'StepsJson', 'Reward']).forEach(function (r) { if (r.QuestId === d.QuestId) q = r; });
     q = q || d;
     var steps = parse(q.StepsJson, null);
     if (!Array.isArray(steps) || !steps.length) steps = parse(d.StepsJson, []);
-    var cfgRows = DEFAULT_ROWS.config.concat(rows.config || []);
-    var out = { questId: q.QuestId, role: q.Role || d.Role, title: q.Title || d.Title, reward: q.Reward || d.Reward, steps: steps,
-      loadCapFactor: configValue(cfgRows, 'transport.loadCapFactor', 1.4), driverAgeLimit: configValue(cfgRows, 'transport.driverAgeLimit', 60),
-      workshopCols: WORKSHOP_COLS.slice() };
-    if (!over) cached = out;
-    return out;
+    var cfgRows = DEFAULT_ROWS.config.concat(rowObjects(over.config, ['Key', 'Value']));
+    var tun = configObject(cfgRows, 'transport'), forms = configObject(cfgRows, 'transportSetupForms');
+    var num = function (v, dflt) { return typeof v === 'number' && v > 0 ? v : dflt; };
+    return { questId: q.QuestId, role: q.Role || d.Role, title: q.Title || d.Title, reward: q.Reward || d.Reward,
+      steps: steps.map(function (st) {
+        var f = obj(forms[st.id] || FORMS[st.id]), out = { id: st.id, title: st.title, go: st.go, doneCheck: obj(st.doneCheck) };
+        out.task = f.task || st.title; out.gap = f.gap || st.title; out.source = f.source || '';
+        out.fields = Array.isArray(f.fields) ? f.fields : [];
+        if (Array.isArray(f.parts)) out.parts = f.parts;
+        return out;
+      }),
+      loadCapFactor: num(tun.loadCapFactor, 1.4), driverAgeLimit: num(tun.driverAgeLimit, 60), workshopCols: WORKSHOP_COLS.slice() };
   }
-  function step(id) { var s = questConfig().steps; for (var i = 0; i < s.length; i++) if (s[i].id === id) return s[i]; return null; }
+
+  var activeRows = null, cached = null;
+  function active() { return cached || (cached = build(activeRows)); }
+  /** Make Game Quests / Game Config rows ({quests, config}) the config every function here uses (null: the defaults). */
+  function setConfigRows(rows) { activeRows = rows || null; cached = null; }
+  /** The quest definitions and tunables: the active rows (see setConfigRows), or the rows given. Always a copy. */
+  function questConfig(over) { return JSON.parse(JSON.stringify(over ? build(over) : active())); }
+  function step(id) { var s = active().steps; for (var i = 0; i < s.length; i++) if (s[i].id === id) return s[i]; return null; }
   function blank(v) { return v == null || String(v).trim() === ''; }
   function campusId(c) { return 'LMS' + String(c || '').replace(/\D/g, ''); }
+  function normReg(r) { return String(r || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function clean(v) { return String(v || '').replace(/\s+/g, ' ').trim().replace(/^[=+\-@\s]+/, '').slice(0, 80); } // never starts like a formula
 
   /** The Driver Profile key of a bus's driver: the employee code from the roster, else the bus itself. */
   function driverKey(bus) { return bus.driverCode ? String(bus.driverCode) : 'bus:' + bus.reg; }
@@ -145,17 +174,17 @@ var FleetQuests = (function () {
   function profilesFromRows(rows) {
     rows = rows || {};
     var prof = {}, drv = {}, parts = {}, out = [];
-    (rows.profiles || []).forEach(function (r) { prof[r.reg] = r; });
+    (rows.profiles || []).forEach(function (r) { prof[normReg(r.reg)] = r; });
     (rows.drivers || []).forEach(function (r) { drv[r.driverKey] = r; });
-    (rows.parts || []).forEach(function (r) { (parts[r.reg] = parts[r.reg] || {})[r.component] = obj(r.fields); });
+    (rows.parts || []).forEach(function (r) { var k = normReg(r.reg); (parts[k] = parts[k] || {})[r.component] = obj(r.fields); });
     (rows.fleet || []).forEach(function (b) {
       if (b.operational === false || b.operational === 'no') return;
-      var p = prof[b.reg] || {}, k = driverKey(b), d = drv[k];
-      out.push({ reg: b.reg, campus: 'LMS ' + campusId(b.campusId || b.campus).slice(3), campusId: campusId(b.campusId || b.campus), route: b.route || '',
+      var reg = normReg(b.reg), p = prof[reg] || {}, k = driverKey(b), d = drv[k];
+      out.push({ reg: reg, campus: 'LMS ' + campusId(b.campusId || b.campus).slice(3), campusId: campusId(b.campusId || b.campus), route: b.route || '',
         driverName: b.driver || '', driverKey: k,
-        data: { papers: obj(p.papers), safety: obj(p.safety), parts: parts[b.reg] || {}, driver: d ? obj(d.fields) : {}, fuel: obj(p.fuel), capture: obj(p.capture) },
-        ageLimit: !!d && (d.ageLimit === true || d.ageLimit === 'yes'),
-        inspected: !!(rows.inspected || {})[b.reg], captured: !!(rows.captured || {})[b.reg] });
+        data: { papers: obj(p.papers), safety: obj(p.safety), parts: parts[reg] || {}, driver: d ? obj(d.fields) : {}, fuel: obj(p.fuel), capture: obj(p.capture) },
+        saved: obj(p.saved), ageLimit: !!d && (d.ageLimit === true || d.ageLimit === 'yes'),
+        inspected: !!(rows.inspected || {})[reg], captured: !!(rows.captured || {})[reg] });
     });
     return out;
   }
@@ -164,19 +193,57 @@ var FleetQuests = (function () {
     var data = (profile.data || {})[s.id] || {}, dc = s.doneCheck || {}, m = [];
     (dc.required || []).forEach(function (id) { if (blank(data[id])) m.push(id); });
     if (dc.eachPart) (s.parts || []).forEach(function (p) { if (!data[p.id] || blank(data[p.id][dc.eachPart])) m.push(p.id); });
-    (dc.needs || []).forEach(function (n) { if (!profile[NEEDS[n].flag]) m.push(n); });
+    (dc.needs || []).forEach(function (n) { if (NEEDS[n] && !profile[NEEDS[n].flag]) m.push(n); });
     return m;
   }
   /** [{id, label, done, missing:[field id | part id | 'inspection' | 'routeTimelapse']}] for the six quests, in order. */
   function questsFor(profile) {
     profile = profile || {};
-    return questConfig().steps.map(function (s) { var m = missingFor(s, profile); return { id: s.id, label: s.title, done: !m.length, missing: m }; });
+    return active().steps.map(function (s) { var m = missingFor(s, profile); return { id: s.id, label: s.title, done: !m.length, missing: m }; });
   }
   function completion(profile) {
     var q = questsFor(profile), n = q.filter(function (x) { return x.done; }).length;
     return Math.round(100 * n / q.length);
   }
   function isReady(profile) { return completion(profile) === 100; }
+
+  /** Whether quest questId of bus reg is done in these rows. */
+  function questDone(rows, reg, questId) {
+    var p = profilesFromRows({ fleet: (rows.fleet || []).filter(function (b) { return normReg(b.reg) === reg; }), profiles: rows.profiles, drivers: rows.drivers,
+      parts: rows.parts, inspected: rows.inspected, captured: rows.captured })[0];
+    return !!p && questsFor(p).some(function (q) { return q.id === questId && q.done; });
+  }
+  /** One quest save applied to the rows (mutated and returned; null for a bus not in rows.fleet): the same write on the
+   *  server (coordFleetSave_) and on the page (a save still waiting on the phone). fields: validateQuest's clean fields;
+   *  meta: {by, at, ageLimit}. The bus's Fleet Profile row records, per quest, who saved it last and when (by, at) and who
+   *  saved the data that completed it (doneBy, doneAt), kept while it stays done. */
+  function applySave(rows, reg, questId, fields, meta) {
+    meta = meta || {};
+    reg = normReg(reg);
+    var bus = (rows.fleet || []).filter(function (b) { return normReg(b.reg) === reg; })[0];
+    if (!bus) return null;
+    var cid = campusId(bus.campusId || bus.campus), by = meta.by || '', at = meta.at || '', before = questDone(rows, reg, questId);
+    rows.profiles = rows.profiles || []; rows.drivers = rows.drivers || []; rows.parts = rows.parts || [];
+    var row = rows.profiles.filter(function (r) { return normReg(r.reg) === reg; })[0];
+    if (!row) { row = { reg: reg }; rows.profiles.push(row); }
+    row.campus = cid;
+    if (questId === 'driver') {
+      var key = driverKey(bus);
+      rows.drivers = rows.drivers.filter(function (d) { return d.driverKey !== key; });
+      rows.drivers.push({ driverKey: key, reg: reg, campus: cid, driver: clean(bus.driver), fields: JSON.stringify(fields), ageLimit: meta.ageLimit ? 'yes' : 'no', updatedAt: at, updatedBy: by });
+    } else if (questId === 'parts') {
+      rows.parts = rows.parts.filter(function (r) { return !(normReg(r.reg) === reg && fields[r.component]); });
+      Object.keys(fields).forEach(function (k) { rows.parts.push({ reg: reg, campus: cid, component: k, fields: JSON.stringify(fields[k]), updatedAt: at, updatedBy: by }); });
+    } else row[questId] = JSON.stringify(fields);
+    var saved = obj(row.saved), prev = saved[questId] || {}, s = { by: by, at: at };
+    if (questDone(rows, reg, questId)) {
+      s.doneBy = before ? prev.doneBy || '' : by;
+      s.doneAt = before ? prev.doneAt || '' : at;
+    }
+    saved[questId] = s;
+    row.saved = JSON.stringify(saved);
+    return rows;
+  }
 
   /** Plain names for a quest's missing entries ('Chassis no.', 'Engine oil', 'the first safety check'). */
   function missingLabels(questId, missing) {
@@ -191,23 +258,25 @@ var FleetQuests = (function () {
 
   /** The bus's quest in the game layer's contract shape. */
   function questFor(profile) {
-    var cfg = questConfig();
+    var cfg = active();
     return { id: 'transport:setup:' + profile.reg, role: cfg.role, module: 'transport', title: cfg.title + ' ' + profile.reg, unlockAfter: null,
-      steps: cfg.steps.map(function (s) { return { id: s.id, title: s.title, go: s.go.replace('{reg}', profile.reg), doneCheck: s.doneCheck }; }),
+      steps: cfg.steps.map(function (s) { return { id: s.id, title: s.title, go: s.go.replace('{reg}', profile.reg), doneCheck: JSON.parse(JSON.stringify(s.doneCheck)) }; }),
       reward: cfg.reward };
   }
 
-  /** THE transport mission mapping (rows in, Mission objects out): one mission per unfinished quest of every running bus.
-   *  The framework applies the Today cap; Fleet Command's own screen shows them all. */
+  /** THE transport mission mapping (rows in, Mission objects out): one mission per setup quest of every running bus, done or
+   *  not. done comes from the data; a done mission carries doneBy/doneAt when a save completed it (the Fleet Profile's saved
+   *  record). The framework applies the Today cap; Fleet Command's own screen shows them all. */
   function transportMissions(rows) {
-    var cfg = questConfig(), out = [];
+    var cfg = active(), out = [];
     profilesFromRows(rows).forEach(function (p) {
       questsFor(p).forEach(function (q) {
-        if (q.done) return;
-        var s = step(q.id), names = missingLabels(q.id, q.missing);
-        out.push({ id: 'transport:setup_' + q.id + ':' + p.reg, module: 'transport', kind: 'setup_' + q.id, title: s.task + ' for ' + p.reg,
-          why: 'Still needs ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '') + '.',
-          owner: null, role: cfg.role, campus: p.campusId, go: s.go.replace('{reg}', p.reg), due: null, source: s.source, done: false });
+        var s = step(q.id), names = missingLabels(q.id, q.missing), sv = (p.saved || {})[q.id] || {};
+        var m = { id: 'transport:setup_' + q.id + ':' + p.reg, module: 'transport', kind: 'setup_' + q.id, title: s.task + ' for ' + p.reg,
+          why: q.done ? 'Done.' : 'Still needs ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '') + '.',
+          owner: null, role: cfg.role, campus: p.campusId, go: s.go.replace('{reg}', p.reg), due: null, source: s.source, done: q.done };
+        if (q.done && sv.doneBy) { m.doneBy = sv.doneBy; m.doneAt = sv.doneAt; }
+        out.push(m);
       });
     });
     return out;
@@ -222,7 +291,7 @@ var FleetQuests = (function () {
 
   /** The Owner's gaps: per quest, how many buses still need it ("14 buses still need parts history"). No names. */
   function gaps(profiles) {
-    return questConfig().steps.map(function (s) {
+    return active().steps.map(function (s) {
       var n = (profiles || []).filter(function (p) { return missingFor(s, p).length > 0; }).length;
       return { quest: s.id, count: n, text: n + (n === 1 ? ' bus still needs ' : ' buses still need ') + s.gap };
     });
@@ -264,7 +333,10 @@ var FleetQuests = (function () {
       if (!/^\+?[0-9][0-9 -]{6,16}$/.test(v)) return { error: L + ': digits only' };
     } else if (f.type === 'photo') {
       if (!/^[A-Za-z0-9_-]{10,128}$/.test(v)) return { error: L + ': take the photo again' };
-    } else if (v.length > 120) return { error: L + ': at most 120 characters' };
+    } else {
+      v = v.replace(/^[=+\-@\s]+/, ''); // text never starts like a spreadsheet formula (these fields get exported later)
+      if (v.length > 120) return { error: L + ': at most 120 characters' };
+    }
     return { value: v };
   }
   function checkFields(defs, given, today) {
@@ -294,7 +366,7 @@ var FleetQuests = (function () {
         if (!s.parts.some(function (p) { return p.id === keys[i]; })) return { error: 'Unknown part: ' + String(keys[i]).slice(0, 40) };
         var c = checkFields(s.fields, given[keys[i]], today);
         if (c.error) return { error: missingLabels('parts', [keys[i]])[0] + ': ' + c.error };
-        r.fields[keys[i]] = c.fields;
+        if (Object.keys(c.fields).length) r.fields[keys[i]] = c.fields; // an empty part is not sent: it never wipes a saved one
       }
       return r;
     }
@@ -302,7 +374,7 @@ var FleetQuests = (function () {
     if (r.error || questId !== 'driver') return r;
     r.ageLimit = false;
     if (r.fields.dateOfBirth) {
-      var age = ageOn(r.fields.dateOfBirth, today), limit = questConfig().driverAgeLimit;
+      var age = ageOn(r.fields.dateOfBirth, today), limit = active().driverAgeLimit;
       if (age < 18 || age > 90) return { error: 'Check the date of birth: that makes the driver ' + age };
       r.ageLimit = age >= limit;
       if (r.ageLimit) r.warning = 'Saved. The driver is ' + age + ', so ' + limit + ' or over: they cannot drive a school bus (the rule is under ' + limit + ').';
@@ -310,7 +382,8 @@ var FleetQuests = (function () {
     return r;
   }
 
-  return { DEFAULT_ROWS: DEFAULT_ROWS, questConfig: questConfig, profilesFromRows: profilesFromRows, driverKey: driverKey,
+  return { DEFAULT_ROWS: DEFAULT_ROWS, questConfig: questConfig, setConfigRows: setConfigRows, profilesFromRows: profilesFromRows, driverKey: driverKey,
+    applySave: applySave, normReg: normReg,
     questsFor: questsFor, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
     transportMissions: transportMissions, teamBar: teamBar, gaps: gaps, validateQuest: validateQuest, ageOn: ageOn };
 })();

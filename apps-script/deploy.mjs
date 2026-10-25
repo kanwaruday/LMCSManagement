@@ -14,7 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, mkdtempSync, copyFileSync, renameSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,16 +22,36 @@ const projects = JSON.parse(readFileSync(join(here, 'projects.json'), 'utf8'));
 delete projects._note;
 const clasp = (cwd, ...a) => execFileSync('npx', ['-y', '@google/clasp@3', ...a], { cwd, encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
 const read = (p) => readFileSync(p, 'utf8');
+const pushedAs = (f) => (f.includes('/') ? basename(f).replace(/\.js$/, '') + '.gs' : `${f}.gs`);
+
+// Shared .js entries: a .js file inside the repo that exists, never pushed under the name of a .gs file here, and no two entries
+// of one project pushed under the same name (one would silently replace the other).
+function sharedProblems() {
+  const gs = new Set(readdirSync(here).filter((f) => f.endsWith('.gs'))), bad = [];
+  for (const [key, p] of Object.entries(projects)) {
+    const seen = new Set();
+    for (const f of p.files) {
+      const name = pushedAs(f);
+      if (seen.has(name)) bad.push(`${key}: two entries are pushed as ${name}`);
+      seen.add(name);
+      if (!f.includes('/')) continue;
+      const full = resolve(here, f);
+      if (relative(join(here, '..'), full).startsWith('..')) bad.push(`${key}: ${f} is outside the repo`);
+      if (!f.endsWith('.js')) bad.push(`${key}: ${f} is not a .js file`);
+      if (gs.has(name)) bad.push(`${key}: ${f} would replace ${name}`);
+      if (!existsSync(full)) bad.push(`missing on disk: ${f}`);
+    }
+  }
+  return bad;
+}
 
 // ponytail: mapping check is by filename only; add a header-vs-project check if a file is ever mapped wrong.
 function check() {
   const onDisk = readdirSync(here).filter((f) => f.endsWith('.gs')).map((f) => f.slice(0, -3));
-  const count = {}, shared = [];
-  for (const p of Object.values(projects)) for (const f of p.files) {
-    if (f.includes('/')) shared.push(f); else count[f] = (count[f] || 0) + 1;
-  }
+  const count = {};
+  for (const p of Object.values(projects)) for (const f of p.files) if (!f.includes('/')) count[f] = (count[f] || 0) + 1;
   const bad = [
-    ...shared.filter((f) => !existsSync(join(here, f))).map((f) => `missing on disk: ${f}`),
+    ...sharedProblems(),
     ...onDisk.filter((f) => !count[f]).map((f) => `unmapped: ${f}.gs`),
     ...Object.keys(count).filter((f) => !onDisk.includes(f)).map((f) => `missing on disk: ${f}.gs`),
     ...Object.keys(count).filter((f) => count[f] > 1).map((f) => `mapped twice: ${f}.gs`),
@@ -50,7 +70,9 @@ function run(key, { push, deploy }) {
   for (const f of readdirSync(stage)) if (f.endsWith('.js')) renameSync(join(stage, f), join(stage, f.slice(0, -3) + '.gs'));
 
   const remote = new Set(readdirSync(stage).filter((f) => f.endsWith('.gs')));
-  const src = Object.fromEntries(p.files.map((f) => (f.includes('/') ? [basename(f).replace(/\.js$/, '') + '.gs', join(here, f)] : [`${f}.gs`, join(here, `${f}.gs`)])));
+  const bad = sharedProblems();
+  if (bad.length) throw new Error('projects.json: ' + bad.join('; '));
+  const src = Object.fromEntries(p.files.map((f) => [pushedAs(f), f.includes('/') ? join(here, f) : join(here, `${f}.gs`)]));
   const ours = new Set(Object.keys(src));
   const changed = [], same = [], added = [];
   for (const f of ours) {

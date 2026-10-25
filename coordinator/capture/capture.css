@@ -225,9 +225,9 @@
 .cap a:focus-visible,.cap summary:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
 #loadMsg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #loadMsg[hidden]{display:none}
-.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:10px}
-.fs-teams p{margin:0 0 4px;font-size:16px;font-weight:800;line-height:1.3;font-variant-numeric:tabular-nums}
-.fs-teams .cap-bar{height:12px;border-color:#8a8a8a}
+.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
+.fs-teams p{margin:0 0 3px;font-size:15px;font-weight:800;line-height:1.3;font-variant-numeric:tabular-nums}
+.fs-teams .cap-bar{height:8px;border-color:#8a8a8a}
 .fs-teams:has(li:only-child) p{font-size:18px} /* a Fee Clerk's one campus: the team bar is the page's headline */
 .fs-teams:has(li:only-child) .cap-bar{height:16px}
 .fs-gaps{margin:0 0 14px}

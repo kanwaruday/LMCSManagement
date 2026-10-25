@@ -268,10 +268,11 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   const J = x => JSON.parse(JSON.stringify(x));
   function sheet3(name) {
     let data = [];
-    return { name, getLastRow: () => data.length, setFrozenRows() {}, clear() { data = []; }, appendRow(r) { data.push(r.slice()); }, _rows: () => data,
+    return { name, clears: 0, getLastRow: () => data.length, setFrozenRows() {}, clear() { this.clears++; data = []; }, appendRow(r) { data.push(r.slice()); }, _rows: () => data,
       getDataRange: () => ({ getValues: () => data.map(r => r.slice()) }),
       getRange(r, c) { return { setNumberFormat() { return this; }, setFontWeight() { return this; },
-        setValues(v) { v.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; }); }); return this; } }; } };
+        setValues(v) { v.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; }); }); return this; },
+        setValue(x) { data[r - 1][c - 1] = x; return this; } }; } };
   }
   const books = {};
   const book = id => books[id] = books[id] || { sheets: {}, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSheetByName(n) { return this.sheets[n] || null; }, insertSheet(n) { return this.sheets[n] = sheet3(n); }, getSheets() { return Object.values(this.sheets); } };
@@ -291,19 +292,21 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   const FORM = vm.runInContext('COORD_TRANSPORT_FORM_ID', c), tb = n => book(FORM).getSheetByName(n);
   const fleetTab = book(FORM).insertSheet('LM Studio Fleet');
   fleetTab.appendRow(['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link', 'Staff master name']);
-  [['HP1', 'LMS 4', 'yes', 'E1'], ['HP2', 'LMS 1', 'yes', 'E2'], ['HP5', 'LMS-5', 'yes', 'E5'], ['HP9', 'LMS 5', 'no', '']].forEach(x => fleetTab.appendRow([x[0], 'Bus', x[1], x[2], '18', '', 'D ' + x[0], 40, 2020, x[3], '', '']));
+  [['HP1', 'LMS 4', 'yes', 'E1'], ['HP2', 'LMS 1', 'yes', 'E2'], ['HP5', 'LMS-5', 'yes', 'E5'], ['HP9', 'LMS 5', 'no', ''], ['HP 6-7', 'LMS 6', 'yes', '']].forEach(x => fleetTab.appendRow([x[0], 'Bus', x[1], x[2], '18', '', 'D ' + x[0], 40, 2020, x[3], '', '']));
   book(FORM).insertSheet('LM Studio Documents').appendRow(['Reg']); book(FORM).insertSheet('LM Studio Sync').appendRow(['Key', 'Value']);
   const fc4 = '{email:"f4@x.org", campusId:"LMS4", roles:["FeeClerk"], feeClerkOnly:true}', fc1 = '{email:"f1@x.org", campusId:"LMS1", roles:["FeeClerk"], feeClerkOnly:true}';
-  const co4 = '{email:"c4@x.org", campusId:"LMS4", roles:["Coordinator"]}', co1 = '{email:"c1@x.org", campusId:"LMS1", roles:["Coordinator"]}', own = '{email:"o@x.org", campusId:"ALL", roles:["Owner"]}';
+  const co4 = '{email:"c4@x.org", campusId:"LMS4", roles:["Coordinator"]}', co1 = '{email:"c1@x.org", campusId:"LMS1", roles:["Coordinator"]}', own = '{email:"o@x.org", campusId:"ALL", roles:["Owner"]}', coAll = '{email:"ca@x.org", campusId:"ALL", roles:["Coordinator"]}';
   const save = (who, b) => { c.b = b; return r('coordFleetSave_(' + who + ', b)'); };
 
   // Fee Clerk can save LMS 4 papers, refused for LMS 1
   const ok = save(fc4, { reg: 'HP1', quest: 'papers', fields: { make: 'Tata', chassisNo: 'MAT4X', usualWorkshop: 'Shiva Motors' } });
   assert.strictEqual(ok.success, true, JSON.stringify(ok));
   const fp = J(tb('Fleet Profile')._rows());
-  assert.deepStrictEqual(fp[0], ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'updatedAt', 'updatedBy']);
+  assert.deepStrictEqual(fp[0], ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'saved']);
   assert.deepStrictEqual(JSON.parse(fp[1][2]), { make: 'Tata', chassisNo: 'MAT4X', usualWorkshop: 'Shiva Motors' }, 'one row per reg, the quest as JSON');
-  assert.deepStrictEqual([fp[1][0], fp[1][1], fp[1][7]], ['HP1', 'LMS4', 'f4@x.org']);
+  assert.deepStrictEqual([fp[1][0], fp[1][1]], ['HP1', 'LMS4']);
+  const sv = JSON.parse(fp[1][6]).papers;
+  assert.deepStrictEqual([sv.by, typeof sv.at, sv.doneBy], ['f4@x.org', 'string', undefined], 'saved per quest: by and at; not done yet, so no doneBy');
   const refused = save(fc4, { reg: 'HP2', quest: 'papers', fields: { make: 'Tata' } });
   assert.strictEqual(refused.success, false); assert.match(refused.error, /your own campus/);
   assert.strictEqual(J(tb('Fleet Profile')._rows()).length, 2, 'nothing written for LMS 1');
@@ -311,7 +314,20 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.match(save(fc4, { reg: 'HP404', quest: 'papers', fields: {} }).error, /not in the fleet/);
   assert.match(save(fc4, { reg: 'HP1', quest: 'papers', fields: { colour: 'red' } }).error, /Unknown field/);
   assert.match(save(fc4, { reg: 'HP1', quest: 'speed', fields: {} }).error, /Unknown quest/);
-  assert.deepStrictEqual(J(tb('Workshops')._rows()).slice(0, 2).map(x => x.slice(0, 5)), [['workshopName', 'place', 'contactPerson', 'phone', 'whichOfOurBusesGoThere'], ['Shiva Motors', '', '', '', 'HP1']], 'a workshop named in a quest joins the Workshops tab with its bus');
+  const ws = () => J(tb('Workshops')._rows());
+  assert.deepStrictEqual(ws().map(x => x.slice(0, 5)), [['Workshop name', 'Place', 'Contact person', 'Phone', 'Which of our buses go there'], ['Shiva Motors', '', '', '', 'HP1']], 'a workshop named in a quest joins the Workshops tab with its bus');
+  // the Owner fills the Workshops tab by hand: a later save touches only the buses cell of that workshop's row
+  const wtab = tb('Workshops'), wrows = wtab._rows();
+  wrows[0].push('Rating (Owner)'); wrows[1][1] = 'Ner Chowk'; wrows[1][3] = '=HYPERLINK("tel:98")'; wrows[1][9] = 'good';
+  wrows.push(['Other Garage', 'Mandi', 'Ram', '98', '', '', '', '', '', '']);
+  assert.strictEqual(save(fc4, { reg: 'HP1', quest: 'papers', fields: { usualWorkshop: 'Shiva Motors' } }).success, true);
+  assert.strictEqual(save(own, { reg: 'HP5', quest: 'papers', fields: { usualWorkshop: 'shiva motors' } }).success, true);
+  assert.strictEqual(save(own, { reg: 'HP5', quest: 'papers', fields: { usualWorkshop: 'New Garage' } }).success, true);
+  assert.strictEqual(wtab.clears, 0, 'the Workshops tab is never cleared or rewritten');
+  assert.deepStrictEqual(ws()[1], ['Shiva Motors', 'Ner Chowk', '', '=HYPERLINK("tel:98")', 'HP1, HP5', '', '', '', '', 'good'], 'hand-filled cells, a formula and an extra column survive; the bus is added once');
+  assert.deepStrictEqual(ws()[2], ['Other Garage', 'Mandi', 'Ram', '98', '', '', '', '', '', ''], 'another workshop\'s row is untouched');
+  assert.deepStrictEqual(ws()[3].slice(0, 5), ['New Garage', '', '', '', 'HP5'], 'a new workshop is appended with its name and bus only');
+  assert.strictEqual(save(fc4, { reg: 'HP1', quest: 'papers', fields: { make: 'Tata', chassisNo: 'MAT4X', usualWorkshop: 'Shiva Motors' } }).success, true);
   assert.strictEqual(save(fc4, { reg: 'HP1', quest: 'papers', fields: { make: 'Tata', chassisNo: 'MAT4X', engineNo: 'E9' } }).success, true);
   assert.deepStrictEqual(JSON.parse(J(tb('Fleet Profile')._rows())[1][2]), { make: 'Tata', chassisNo: 'MAT4X', engineNo: 'E9' }, 'a save replaces that quest (the form sends all of it); still one row');
 
@@ -323,6 +339,12 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual([dp[1][0], dp[1][1], dp[1][2], dp[1][3], dp[1][5]], ['E5', 'HP5', 'LMS5', 'D HP5', 'no'], 'one row per driver, keyed by employee code');
   assert.match(save(co1, { reg: 'HP5', quest: 'driver', fields: {} }).error, /your own campus/, 'a Coordinator of LMS 1-3 is refused for LMS 5');
   assert.strictEqual(save(own, { reg: 'HP2', quest: 'fuel', fields: { paymentCreditAccountOrCash: 'Credit' } }).success, true, 'the Owner saves anywhere');
+  assert.strictEqual(save(coAll, { reg: 'HP2', quest: 'fuel', fields: { paymentCreditAccountOrCash: 'Cash' } }).success, true, 'an ALL Coordinator saves for any campus (network-wide)');
+  assert.strictEqual(save(coAll, { reg: 'hp-6 7', quest: 'fuel', fields: { usualFuelPump: 'HP pump' } }).success, true, 'a roster reg with a space or hyphen still matches');
+  // a save that completes a quest records who completed it (the mission's doneBy)
+  const fuel = { usualFuelPump: 'HP pump', paymentCreditAccountOrCash: 'Credit', driverHasASmartphoneForTheFillVideo: 'yes', whoReceivesTheFillVideoAndBill: 'Neha' };
+  assert.strictEqual(save(fc4, { reg: 'HP1', quest: 'fuel', fields: fuel }).success, true);
+  assert.strictEqual(JSON.parse(J(tb('Fleet Profile')._rows()).find(x => x[0] === 'HP1')[6]).fuel.doneBy, 'f4@x.org', 'doneBy recorded in Fleet Profile');
 
   // driver quest accepts a date of birth that makes the driver 60+, saves it with flag ageLimit:true, and returns a warning
   const old = save(co4, { reg: 'HP5', quest: 'driver', fields: { driverPhone: '9800000000', dateOfBirth: '1966-10-25' } });
@@ -340,6 +362,8 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual(ph.slice(1).map(x => x[0] + ' ' + x[2]).sort(), ['HP1 battery', 'HP1 engine_oil']);
   save(fc4, { reg: 'HP1', quest: 'parts', fields: { battery: { lastReplacedOn: '2025-01-01' } } });
   assert.strictEqual(J(tb('Parts History')._rows()).length, 3, 'a part saved again replaces its row; the others stay');
+  assert.strictEqual(save(fc4, { reg: 'HP1', quest: 'parts', fields: { battery: {} } }).success, true);
+  assert.strictEqual(JSON.parse(J(tb('Parts History')._rows()).find(x => x[2] === 'battery')[3]).lastReplacedOn, '2025-01-01', 'an empty part never wipes a saved one');
   assert.ok(J(tb('Workshops')._rows()).some(x => x[0] === 'Thakur Motors' && x[4] === 'HP1'));
   assert.match(save(fc4, { reg: 'HP1', quest: 'safety', fields: { gpsTrackerFittedAndWorking: 'yes' } }).error, /safety check/, 'equipment answers come from the safety check');
 
@@ -356,14 +380,15 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual(g4.rows.captured, {}, 'route timelapses only for visible buses');
   assert.deepStrictEqual(g4.campuses, ['LMS4']);
   const gc = r('coordFleet_(' + co4 + ')');
-  assert.deepStrictEqual(gc.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP5'], 'a district Coordinator gets LMS 4-6');
+  assert.deepStrictEqual(gc.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP5', 'HP67'], 'a district Coordinator gets LMS 4-6');
   assert.deepStrictEqual(gc.rows.drivers.map(d => d.driverKey), ['E5']); assert.deepStrictEqual(gc.rows.captured, { HP5: true });
   const go = r('coordFleet_(' + own + ')');
-  assert.deepStrictEqual(go.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5']); assert.deepStrictEqual(go.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], 'network-wide');
+  assert.deepStrictEqual(go.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67']);
+  assert.deepStrictEqual(r('coordFleet_(' + coAll + ')').rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67'], 'an ALL Coordinator sees every campus'); assert.deepStrictEqual(go.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], 'network-wide');
   c.rows = gc.rows;
   const p1 = r('FleetQuests.profilesFromRows(rows)').find(p => p.reg === 'HP1');
   assert.deepStrictEqual(r('FleetQuests.questsFor(FleetQuests.profilesFromRows(rows)[0]).find(function (q) { return q.id === "safety"; }).missing'), ['attendantHelperName'], 'the page reads the GET rows with the same pure logic');
   assert.strictEqual(p1.data.papers.chassisNo, 'MAT4X');
-  assert.ok(r('FleetQuests.transportMissions(rows)').every(m => m.campus === 'LMS4' || m.campus === 'LMS5'));
+  assert.ok(r('FleetQuests.transportMissions(rows)').every(m => ['LMS4', 'LMS5', 'LMS6'].includes(m.campus)), 'missions only for the caller\'s district');
 }
 console.log('transport .gs: all checks passed');

@@ -7,7 +7,7 @@
 <title>LMCS — Fleet setup</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=29f58300">
-<link rel="stylesheet" href="../capture/capture.css?v=75e30398">
+<link rel="stylesheet" href="../capture/capture.css?v=1f29fe46">
 </head>
 <body>
 <header class="hdr"><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
@@ -15,15 +15,16 @@
 <main id="appBody" class="cap fs" hidden>
   <div id="pending" class="cap-offline" hidden><span id="pendingText"></span> <button type="button" id="sendNow" class="cap-btn">Send now</button></div>
   <ul id="refused" class="fs-refused"></ul>
+  <p id="others" class="cap-note"></p>
   <p id="loadMsg" class="cap-note"><span>Loading the buses...</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
 
   <section id="board" aria-label="Buses">
     <div id="scope" class="cap-modes" role="group" aria-label="Campuses" hidden></div>
-    <ul id="teams" class="fs-teams"></ul>
     <section id="gaps" class="fs-gaps" hidden>
       <h2 class="cap-h">What is still missing</h2>
       <ul id="gapList"></ul>
     </section>
+    <ul id="teams" class="fs-teams"></ul>
     <p id="filterNote" class="fs-filter"></p>
     <ul id="buses" class="fs-buses"></ul>
   </section>
@@ -34,7 +35,7 @@
   <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
 </main>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
-<script src="../capture/fleet-quests.js?v=378cdad7"></script>
-<script type="module" src="../capture/setup.js?v=46129614"></script>
+<script src="../capture/fleet-quests.js?v=705eb671"></script>
+<script type="module" src="../capture/setup.js?v=195892d9"></script>
 </body>
 </html>

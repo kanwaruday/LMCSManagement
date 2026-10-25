@@ -29,7 +29,9 @@ const SVG = {
   go: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
-const S = { session: null, data: null, rows: null, profiles: [], scope: 'all', gap: null, view: { v: 'board' }, form: null, sending: false, queued: [] };
+const S = { session: null, data: null, rows: null, profiles: [], scope: 'all', gap: null, view: { v: 'board' }, form: null, sending: false, queued: [], others: 0 };
+// A save waiting on a shared phone belongs to whoever made it (Ruling 36): only they see, send or discard it. Others see a count.
+const mine = (r) => String(r.by || '').toLowerCase() === String(S.session.email || '').toLowerCase();
 
 // ── Boot and data ──
 async function boot() {
@@ -42,7 +44,7 @@ async function boot() {
   $('photo').addEventListener('change', onPhoto);
   $('retry').addEventListener('click', load);
   addEventListener('popstate', (e) => { S.view = e.state || { v: 'board' }; render(); });
-  addEventListener('online', () => sendQueued());
+  addEventListener('online', () => (S.data ? sendQueued() : load().then(sendQueued)));
   const q = new URLSearchParams(location.search); // a mission's go link: ?reg=HP659511&quest=papers
   S.view = { v: 'board' };
   history.replaceState(S.view, '');
@@ -66,36 +68,22 @@ async function load() {
   } catch (e) {
     $('loadMsg').firstElementChild.textContent = 'Could not load the buses (' + e.message + '). Check the connection, then try again.';
     $('retry').hidden = false;
-    if (!S.data) return;
   }
-  await refresh();
+  await refresh(); // with no data yet this still shows (and lets you send) your saves waiting on this phone
 }
 // The server's rows plus every save still waiting on this phone, so a quest saved offline already counts here.
 async function refresh() {
+  const all = (await store.runs()).filter((r) => r.quest);
+  S.queued = all.filter(mine).sort((a, b) => a.startedAt - b.startedAt);
+  S.others = all.length - S.queued.length;
+  if (!S.data) { drawPending(); return; }
   const rows = JSON.parse(JSON.stringify(S.data.rows));
-  S.queued = (await store.runs()).filter((r) => r.quest).sort((a, b) => a.startedAt - b.startedAt);
-  S.queued.forEach((r) => applyLocal(rows, r.reg, r.quest.id, withPhotos(r.quest), r.quest.ageLimit));
+  S.queued.forEach((r) => FQ.applySave(rows, r.reg, r.quest.id, withPhotos(r.quest), { ageLimit: r.quest.ageLimit, by: r.by })); // the server's own write
   S.rows = rows;
   S.profiles = FQ.profilesFromRows(rows);
   render();
 }
 const withPhotos = (q) => { const f = { ...q.fields }; Object.keys(q.photos || {}).forEach((k) => { f[k] = 'pending-photo-' + q.photos[k]; }); return f; };
-// The same writes the backend makes (coordFleetSave_), on the page's copy of the rows.
-function applyLocal(rows, reg, quest, fields, ageLimit) {
-  const bus = rows.fleet.find((b) => b.reg === reg);
-  if (!bus) return;
-  if (quest === 'driver') {
-    const key = FQ.driverKey(bus);
-    rows.drivers = rows.drivers.filter((d) => d.driverKey !== key).concat([{ driverKey: key, reg, fields: JSON.stringify(fields), ageLimit: ageLimit ? 'yes' : 'no' }]);
-  } else if (quest === 'parts') {
-    rows.parts = rows.parts.filter((p) => !(p.reg === reg && fields[p.component])).concat(Object.keys(fields).map((k) => ({ reg, component: k, fields: JSON.stringify(fields[k]) })));
-  } else {
-    let row = rows.profiles.find((p) => p.reg === reg);
-    if (!row) rows.profiles.push(row = { reg });
-    row[quest] = JSON.stringify(fields);
-  }
-}
-
 // ── Screens: board > bus > quest, pushed onto the browser history ──
 function go(view) { S.view = view; history.pushState(view, ''); render(); scrollTo(0, 0); }
 function render() {
@@ -168,7 +156,7 @@ function drawBus(p) {
   $('bus').innerHTML = `<button type="button" class="fs-back" data-a="back">← All buses</button>` +
     `<div class="fs-bushead">${ring(p, true)}<div><h2 class="cap-h">${esc(p.reg)}</h2><p class="cap-note">${esc(meta)}</p>${p.driverName ? `<p class="cap-note">Driver: ${esc(p.driverName)}</p>` : ''}` +
     `<p class="fs-count">${n === 6 ? badge : n + ' of 6 quests done'}</p></div></div>` +
-    (p.ageLimit ? `<p class="fs-warn" role="alert">${esc(ageLine(p))}</p>` : '') +
+    (p.ageLimit ? `<p class="fs-warn">${esc(ageLine(p))}</p>` : '') +
     `<ul class="fs-quests">${qs.map((q) => `<li><button type="button" class="fs-quest" data-q="${q.id}" data-done="${q.done}"${q.done ? ' data-s="ok"' : ''}>` +
       `<span class="cap-mark">${q.done ? SVG.ok : ''}</span><span class="fs-qtext"><b>${esc(q.label)}</b><span>${questLine(p, q)}</span></span>${SVG.go}</button></li>`).join('')}</ul>`;
   $('bus').querySelector('[data-a="back"]').addEventListener('click', () => history.back());
@@ -357,11 +345,11 @@ async function postCoord(body) {
   catch (e) { return { success: false, network: true, error: 'No connection' }; }
 }
 async function sendQueued() {
-  if (S.sending || !S.data) return;
+  if (S.sending) return;
   S.sending = true; drawPending();
   let changed = false;
   try {
-    for (const run of (await store.runs()).filter((r) => r.quest).sort((a, b) => a.startedAt - b.startedAt)) {
+    for (const run of (await store.runs()).filter((r) => r.quest && mine(r)).sort((a, b) => a.startedAt - b.startedAt)) {
       if (!LMCS.getSession()) break;
       if (await store.total(run.id) && !run.endSent) {
         await createUploader({ store, post: postRoster, delays: [3000, 10000], waitOnline: async () => { throw new Error('offline'); } }).start(run.id).catch(() => {});
@@ -377,14 +365,15 @@ async function sendQueued() {
     }
   } finally {
     S.sending = false;
-    if (changed) { try { S.data = await getJson('coordinatortransportfleet'); } catch (e) { /* keep what we have */ } }
+    if (changed) { try { S.data = await getJson('coordinatortransportfleet'); $('loadMsg').hidden = true; } catch (e) { /* keep what we have */ } }
     await refresh();
   }
 }
 function drawPending() {
   const q = S.queued, bad = q.filter((r) => r.status === 'error'), wait = q.length - bad.length;
+  $('others').textContent = S.others ? `${S.others} ${S.others === 1 ? 'save is' : 'saves are'} waiting on this phone for another person. They send it when they sign in here.` : '';
   $('pending').hidden = !q.length;
-  if (!q.length) return;
+  if (!q.length) { $('refused').innerHTML = ''; return; }
   const signedOut = !LMCS.getSession();
   $('pendingText').textContent = S.sending ? 'Sending...' : wait ? `${wait} ${wait === 1 ? 'save is' : 'saves are'} waiting to send.` + (signedOut ? ' Sign in to send.' : '') : '';
   $('sendNow').hidden = S.sending || !wait;
@@ -394,6 +383,7 @@ function drawPending() {
     '<button type="button" class="cap-btn" data-a="again">Try again</button><button type="button" class="cap-btn" data-a="drop">Discard</button></li>').join('');
   $('refused').querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
     const id = b.closest('[data-id]').dataset.id;
+    if (!mine(await store.getRun(id))) return; // never someone else's save
     if (b.dataset.a === 'drop') {
       if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to discard'; return; }
       await store.discard(id);

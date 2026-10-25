@@ -65,7 +65,7 @@ t('old questionnaire columns map 1:1 to quest fields', () => {
     assert.deepStrictEqual(step.fields.map((f) => f.col), cols, sheet + ': one field per column, in order');
     step.fields.forEach((f) => assert.strictEqual(f.id, camel(f.col), sheet + ': ' + f.col));
   });
-  assert.deepStrictEqual(cfg.workshopCols, fx.Workshops.map(camel), 'the Workshops tab keeps the questionnaire columns');
+  assert.deepStrictEqual(cfg.workshopCols, fx.Workshops, 'the Workshops tab keeps the questionnaire\'s own column names (people fill it in)');
   assert.ok(!fx.Agencies.some((c) => cfg.steps.some((s) => s.fields.some((f) => f.col === c && c !== 'Notes'))), 'Agencies is the agency import (Task 9), not a quest');
   // parts are the day book's component ids (Task 1)
   const office = fs.readFileSync(path.join(__dirname, '../../apps-script/office-config.gs'), 'utf8');
@@ -80,29 +80,60 @@ t('goals are config: questConfig() reads Game Quests / Game Config rows', () => 
   const d = FQ.DEFAULT_ROWS;
   assert.deepStrictEqual(Object.keys(d.quests[0]), ['QuestId', 'Role', 'Title', 'UnlockAfter', 'StepsJson', 'Reward'], 'a Game Quests row');
   assert.strictEqual(d.quests[0].Reward, 'Ready badge');
+  const steps = JSON.parse(d.quests[0].StepsJson);
+  assert.deepStrictEqual(steps.map((s) => s.id), ['papers', 'safety', 'parts', 'driver', 'fuel', 'capture']);
+  steps.forEach((s) => assert.deepStrictEqual(Object.keys(s), ['id', 'title', 'go', 'doneCheck'], 'StepsJson holds the contract step shape only'));
   assert.ok(d.config.every((r) => Object.keys(r).join() === 'Key,Value' && typeof r.Value === 'string'), 'Game Config rows: Key, Value (JSON text)');
+  assert.deepStrictEqual(d.config.map((r) => r.Key), ['transport', 'transportSetupForms'], 'one namespaced key, like the plan\'s cap: {...}');
+  assert.deepStrictEqual(JSON.parse(d.config[0].Value), { loadCapFactor: 1.4, driverAgeLimit: 60 });
   assert.strictEqual(FQ.questConfig().loadCapFactor, 1.4);
   assert.strictEqual(FQ.questConfig().driverAgeLimit, 60);
-  assert.deepStrictEqual(JSON.parse(d.quests[0].StepsJson).map((s) => s.id), ['papers', 'safety', 'parts', 'driver', 'fuel', 'capture']);
-  const over = FQ.questConfig({ config: [{ Key: 'transport.driverAgeLimit', Value: '62' }, { Key: 'transport.loadCapFactor', Value: 'not json' }] });
-  assert.deepStrictEqual([over.driverAgeLimit, over.loadCapFactor], [62, 1.4], 'an override row wins; bad JSON falls back to the default');
+  // an override wins; bad JSON falls back; sheet arrays (header row first) work too
+  const over = FQ.questConfig({ config: [{ Key: 'transport', Value: '{"driverAgeLimit":62}' }, { Key: 'transportSetupForms', Value: 'not json' }] });
+  assert.deepStrictEqual([over.driverAgeLimit, over.loadCapFactor, over.steps[0].fields.length], [62, 1.4, 15], 'an override row wins; bad JSON falls back to the default');
+  const arr = FQ.questConfig({ config: [['Key', 'Value'], ['transport', '{"loadCapFactor":1.2}']],
+    quests: [['QuestId', 'Role', 'Title', 'UnlockAfter', 'StepsJson', 'Reward'], ['transport:setup', 'FeeClerk', 'Bus setup', '', JSON.stringify(steps.slice(0, 2)), 'Star']] });
+  assert.deepStrictEqual([arr.loadCapFactor, arr.title, arr.reward, arr.steps.map((s) => s.id)], [1.2, 'Bus setup', 'Star', ['papers', 'safety']]);
+  assert.strictEqual(arr.steps[0].fields[2].id, 'chassisNo', 'a step\'s form comes from transportSetupForms by its id');
+  // a copy: callers cannot change the defaults
+  const c = FQ.questConfig(); c.steps[0].title = 'X'; c.steps[0].doneCheck.required.length = 0; c.driverAgeLimit = 1;
+  assert.deepStrictEqual([FQ.questConfig().steps[0].title, FQ.questConfig().steps[0].doneCheck.required.length, FQ.questConfig().driverAgeLimit], ['Vehicle papers', 8, 60], 'the defaults stay intact');
+  // setConfigRows: every function uses the override, until it is cleared
+  FQ.setConfigRows({ config: [{ Key: 'transport', Value: '{"driverAgeLimit":55}' }] });
+  try {
+    assert.strictEqual(FQ.validateQuest('driver', { dateOfBirth: '1968-01-01' }, TODAY).ageLimit, true, 'validation uses the override (55)');
+    assert.strictEqual(FQ.questConfig().driverAgeLimit, 55);
+  } finally { FQ.setConfigRows(null); }
+  assert.strictEqual(FQ.validateQuest('driver', { dateOfBirth: '1968-01-01' }, TODAY).ageLimit, false, 'cleared: back to 60');
   const src = fs.readFileSync(FILE, 'utf8').replace(/\/\/.*$/gm, '');
   assert.ok(!/\b(window|document|localStorage|fetch|navigator|SpreadsheetApp|Date\.now|new Date\(\))\b|=>|\b(let|const|class)\s+[A-Za-z_$]|`/.test(src), 'plain ES5, no I/O, no clock: copies into a .gs file unchanged');
 });
 
-t('missions: one per unfinished quest, in the contract shape', () => {
+t('missions: one per setup quest, done from data, doneBy from the completing save', () => {
   const rows = fullRows();
   rows.fleet.push({ reg: 'HP2', campus: 'LMS 5', campusId: 'LMS5', route: '', driver: '', driverCode: '', operational: true },
     { reg: 'HP3', campus: 'LMS 5', campusId: 'LMS5', operational: false });
-  const ms = FQ.transportMissions(rows);
-  assert.strictEqual(ms.length, 6, 'the ready bus has none, the empty bus six, a bus off the road none');
-  const m = ms.find((x) => x.kind === 'setup_papers');
-  assert.deepStrictEqual(Object.keys(m), ['id', 'module', 'kind', 'title', 'why', 'owner', 'role', 'campus', 'go', 'due', 'source', 'done']);
-  assert.strictEqual(m.id, 'transport:setup_papers:HP2');
-  assert.strictEqual(m.module, 'transport'); assert.strictEqual(m.campus, 'LMS5'); assert.strictEqual(m.role, 'FeeClerk');
-  assert.strictEqual(m.due, null); assert.strictEqual(m.done, false);
+  let ms = FQ.transportMissions(rows);
+  assert.strictEqual(ms.length, 12, 'six per running bus, done or not; none for a bus off the road');
+  assert.strictEqual(ms.filter((m) => m.done).length, 6, 'the ready bus: six done missions');
+  const m = ms.find((x) => x.id === 'transport:setup_papers:HP2');
+  assert.deepStrictEqual(Object.keys(m), ['id', 'module', 'kind', 'title', 'why', 'owner', 'role', 'campus', 'go', 'due', 'source', 'done'], 'an open mission: no doneBy');
+  assert.strictEqual(m.module, 'transport'); assert.strictEqual(m.kind, 'setup_papers'); assert.strictEqual(m.campus, 'LMS5'); assert.strictEqual(m.role, 'FeeClerk');
+  assert.strictEqual(m.due, null); assert.strictEqual(m.done, false); assert.strictEqual(m.owner, null);
   assert.strictEqual(m.go, 'coordinator/transport/setup.html?reg=HP2&quest=papers');
   assert.match(m.why, /^Still needs /);
+  // a save that completes the fuel quest: done, with doneBy and doneAt; a later edit keeps the completer
+  const fuel = { usualFuelPump: 'HP pump', paymentCreditAccountOrCash: 'Credit', driverHasASmartphoneForTheFillVideo: 'yes' };
+  FQ.applySave(rows, 'hp-2', 'fuel', fuel, { by: 'a@x.org', at: '2026-10-25T05:00:00Z' });
+  assert.strictEqual(FQ.transportMissions(rows).find((x) => x.id === 'transport:setup_fuel:HP2').done, false, 'three of four: still open');
+  FQ.applySave(rows, 'HP2', 'fuel', Object.assign({ whoReceivesTheFillVideoAndBill: 'Neha' }, fuel), { by: 'b@x.org', at: '2026-10-25T06:00:00Z' });
+  FQ.applySave(rows, 'HP2', 'fuel', Object.assign({ whoReceivesTheFillVideoAndBill: 'Neha', notes: 'typo fixed' }, fuel), { by: 'c@x.org', at: '2026-10-25T07:00:00Z' });
+  const done = FQ.transportMissions(rows).find((x) => x.id === 'transport:setup_fuel:HP2');
+  assert.deepStrictEqual([done.done, done.doneBy, done.doneAt, done.why], [true, 'b@x.org', '2026-10-25T06:00:00Z', 'Done.'], 'doneBy is whoever saved the completing data, not a later editor');
+  assert.deepStrictEqual(JSON.parse(rows.profiles.find((p) => p.reg === 'HP2').saved).fuel, { by: 'c@x.org', at: '2026-10-25T07:00:00Z', doneBy: 'b@x.org', doneAt: '2026-10-25T06:00:00Z' }, 'savedBy/savedAt per quest in Fleet Profile');
+  FQ.applySave(rows, 'HP2', 'fuel', {}, { by: 'd@x.org', at: 'x' });
+  assert.strictEqual(FQ.transportMissions(rows).find((x) => x.id === 'transport:setup_fuel:HP2').doneBy, undefined, 'cleared: open again, no doneBy');
+  assert.strictEqual(FQ.applySave(rows, 'HP404', 'fuel', {}, {}), null, 'a bus not in the rows');
   const q = FQ.questFor(FQ.profilesFromRows(rows)[1]);
   assert.deepStrictEqual(Object.keys(q), ['id', 'role', 'module', 'title', 'unlockAfter', 'steps', 'reward']);
   assert.strictEqual(q.id, 'transport:setup:HP2'); assert.strictEqual(q.unlockAfter, null); assert.strictEqual(q.reward, 'Ready badge');
@@ -128,6 +159,8 @@ t('validation: types, unknown fields, the 60+ driver rule', () => {
   assert.match(FQ.validateQuest('papers', { fuel: 'Water' }, TODAY).error, /Fuel/);
   assert.match(FQ.validateQuest('safety', { gpsTrackerFittedAndWorking: 'yes' }, TODAY).error, /safety check/, 'equipment answers come from the safety check, not the form');
   assert.deepStrictEqual(FQ.validateQuest('papers', { chassisNo: ' MAT4 ', make: '' }, TODAY).fields, { chassisNo: 'MAT4' }, 'trimmed; blanks dropped');
+  assert.strictEqual(FQ.validateQuest('papers', { make: '=HYPERLINK("x")' }, TODAY).fields.make, 'HYPERLINK("x")', 'text never starts like a formula');
+  assert.deepStrictEqual(FQ.validateQuest('parts', { battery: {}, clutch: { notes: ' ' }, coolant: { lastReplacedOn: 'not known' } }, TODAY).fields, { coolant: { lastReplacedOn: 'not known' } }, 'an empty part is dropped, so it never wipes a saved one');
   assert.match(FQ.validateQuest('parts', { brakes: { lastReplacedOn: '2026-01-01' } }, TODAY).error, /Unknown part: brakes/);
   assert.strictEqual(FQ.validateQuest('parts', { battery: { lastReplacedOn: 'not known' } }, TODAY).fields.battery.lastReplacedOn, 'not known');
   assert.match(FQ.validateQuest('parts', { battery: { lastReplacedOn: '2027-01-01' } }, TODAY).error, /future/);
