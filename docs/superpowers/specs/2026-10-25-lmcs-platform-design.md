@@ -161,13 +161,14 @@ before rollout.
 - **The server verifies it** (`google-auth-library`): signature, audience = our client id, `email_verified`, and
   `hd = lms.org.in`. Then it looks the email up in the **allowlist and staff tables in Postgres** (synced from the
   Sheets, below). Not on the list: refused, with the same message today's portal shows.
-- **Who may sign in is waiting on Uday (Q2).** Today's "LMCS Principal Allowlist" gates the portal, but messaging is
-  for all ~170 lms.org.in staff. Recommended: any **active Employee Master row with an lms.org.in email** may sign in
-  with a baseline Staff role, and the allowlist only raises people above that (Teacher Portal, Principal,
-  Coordinator, Owner, Fee Clerk). The other option is filling the allowlist with every staff member before messaging
-  launches.
-- **Linking a person:** allowlist row and Employee Master row are matched by lms.org.in email (as the Teacher
-  Portal's `myemployeecode` lookup already does). Each sync reports staff with a missing, duplicated or
+- **Who may sign in** (Uday, 2026-10-25, for the current portal: "populate all employees to the allow list",
+  then "Automatic, but all employees"): every **Active** employee in the Employee Master whose `AuthEmail` matches
+  their verified Google sign-in gets in, with an automatic role from their department and job. Roles already on the
+  allowlist (Principal, Coordinator, Owner, FeeClerk) win over the automatic role. The platform uses the same rule
+  and the same department-to-role mapping as the Apps Script side (being built by the Teacher chat behind
+  `TEACHER_AUTO_SIGNIN`; the mapping is still to be settled with Uday, and the platform takes whatever is decided
+  there, as data in the sync rather than code). `AuthEmail` is therefore one of the synced fields.
+- **Linking a person:** allowlist row and Employee Master row are matched by `AuthEmail`. Each sync reports staff with a missing, duplicated or
   non-lms.org.in email, so they can be fixed in the Sheet; until fixed, such a person can't be linked to their
   Employee Code and is left out of HOD routing, Reports To and the 10% safety count. (Claude's call.)
 - **The domain check is new** (today's `auth.js` doesn't check `hd`). Before it goes live, the first build task
@@ -204,7 +205,7 @@ mirror** of them.
 - **When:** staff nightly at 02:00 IST; the allowlist hourly (a new Principal shouldn't wait a day). The Owner gets a
   "Sync now" button that asks Apps Script to push at once (an authenticated call to the roster project).
 - **What:** only the fields the platform needs: Employee Code, name, campus, department, designation, role, date of
-  joining, lms.org.in email, mobile number (for phase 6), Reports To, subject(s) taught (for HOD routing), active
+  joining, `AuthEmail`, mobile number (for phase 6), Reports To, subject(s) taught (for HOD routing), active
   status. **Never** Aadhaar, PAN, bank details or salary.
 - **How:** upsert by Employee Code; people missing from the Sheet are marked inactive, never deleted. **Safety
   catch:** if a push would deactivate more than 10% of active staff, the server refuses it and alerts the Owner (a
@@ -391,9 +392,8 @@ The build plan will list the exact environment variable names; Uday fills in the
 ## Open questions for Uday (one at a time, through the LMCS Master Agent)
 
 1. **Hosting** (section 4): Render Singapore (recommended), a Mumbai VPS, or Google Cloud? *Asked 2026-10-25.*
-2. **Who may sign in** (section 6): every active Employee Master staff member with an lms.org.in email at a
-   baseline Staff role, with the allowlist raising roles (recommended), or only people on the allowlist, filled with
-   all staff before messaging launches?
+2. ~~Who may sign in~~ **Answered (Uday, 2026-10-25, for the current portal): "Automatic, but all employees."**
+   Section 6 follows the same rule.
 3. **Address** (section 11): a school subdomain such as `app.lms.org.in` (recommended; needs a DNS record on
    lms.org.in), or the host's free address?
 4. **Approvals timing** (section 12): move Approvals and Coordinator tasks before the February pilot, or after
