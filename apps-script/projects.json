@@ -99,6 +99,7 @@
     "deploymentId": "",
     "files": [
       "game",
+      "game-actions",
       "game-missions",
       "game-windows",
       "game-quests"

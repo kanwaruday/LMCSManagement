@@ -3,7 +3,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
 // either order must work in Apps Script; the test loads game.gs first, then the missions file
-for (const f of ['game.gs', 'game-missions.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 const J = (x) => JSON.parse(JSON.stringify(x)); // plain objects out of the vm realm
 
 const now = new Date('2026-10-27T05:00:00Z'); // Tue 27 Oct, 10:30 IST; game day 2026-10-27

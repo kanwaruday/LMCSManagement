@@ -33,7 +33,7 @@ function setup(opts) {
   opts = opts || {};
   const ctx = { console, JSON };
   vm.createContext(ctx);
-  for (const f of ['game-quests.gs', 'game.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+  for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
   const T = vm.runInContext('GAME_TABS', ctx);
   const win = (o) => T['Game Windows'].map((h) => (o && h in o ? o[h] : {
     WindowId: 'trackSuit', Title: 'Track-suit days for your campus', Question: 'Which 3 days?', Scope: 'campus', ScopeId: '*', Decider: 'Principal',

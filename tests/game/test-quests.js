@@ -2,7 +2,7 @@
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
-for (const f of ['game.gs', 'game-missions.gs', 'game-windows.gs', 'game-quests.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs', 'game-quests.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 const QH = J(vm.runInContext('GAME_TABS', ctx)['Game Quests']);

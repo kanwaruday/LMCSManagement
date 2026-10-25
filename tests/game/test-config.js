@@ -10,7 +10,7 @@ vm.runInContext(`
   GAME_MODULE_ACTIONS.teacherping = function (caller, params) { return { success: true, who: caller.email, n: params.n }; };
   GAME_MODULE_MISSIONS.Teacher = function () { return []; };
 `, ctx);
-vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/game.gs', 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 
 // the game day starts at 04:00 IST (22:30 UTC the evening before)
 assert.strictEqual(ctx.gameDayKey_(new Date('2026-10-26T22:29:00Z')), '2026-10-26'); // 03:59 IST on the 27th

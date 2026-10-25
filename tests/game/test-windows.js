@@ -3,7 +3,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
 // either order must work in Apps Script; the test loads game.gs first, then the windows file
-for (const f of ['game.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 const now = new Date('2026-11-05T05:00:00Z'); // Thu 5 Nov, 10:30 IST
