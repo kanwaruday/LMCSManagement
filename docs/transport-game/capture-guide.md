@@ -64,6 +64,9 @@ Privacy:
 - Back on school Wi-Fi, open **Upload** and tap **Send now on Wi-Fi**. Each run shows, for example, "312 of 540 frames
   sent". If the connection drops, tap Send again later: it carries on where it stopped and never sends a frame twice.
 - A run is done when it says **Sent.** The run then appears in the Capture Runs tab of the transport workbook.
+- The phone is shared. Anyone signed in on it can send any run waiting there; the run stays credited to the person who
+  captured it (the Captured By column). An unfinished run or safety check can be carried on, ended or discarded only by
+  the person who started it; others see only how many are waiting. If someone else signs in, the page starts again as theirs.
 
 ## Phone check before the first real use (Uday or a Coordinator, outside school hours)
 
@@ -77,3 +80,5 @@ Do this once on the school phone; it cannot be checked from a computer.
 - [ ] The run's row appears in the Capture Runs tab (with the gap and both stops), and its photos are in the bus's
       Capture folder in Drive.
 - [ ] A short count run: no camera prompt at all, the counter works with one hand, the summary shows the peak load.
+- [ ] A safety check with a photo item, saved and sent: it says Sent, and its row in Capture Runs is `ended` with the
+      answers and Captured By = the person who did the check, also when someone else signed in to send it.
