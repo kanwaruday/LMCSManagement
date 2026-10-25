@@ -285,6 +285,40 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   runtime from the signed-in backend.
 - **No new location tracking.** Location stays only where an approved module design already has it (transport).
 
+## Goals are configured per season, never hard-coded
+
+**Uday (2026-10-25):** "this is an evolving thing, we will identify the goals for everyone for the next 6 months,
+this goes LIVE LIVE in March."
+
+- **Every role's goals live in the game backend's `Game Config`, set by the Owner per season (term).** That covers:
+  - which mission kinds are core for each role;
+  - the daily cap;
+  - each quest's steps and order;
+  - team goals and their targets;
+  - season dates;
+  - the outfit calendar.
+- **Code supplies the mission kinds** (what each adapter can detect from data); **config chooses which ones count,
+  for whom, and when.** The core missions Uday named on 2026-10-25 are season 0's starting config, not constants.
+- **Until the Owner screen exists, the Owner edits a sheet.** The Owner's **Season setup** screen comes in Phase 3,
+  so Uday and the Coordinators can work the goals out over the six months before go-live.
+
+## Timeline: fully live in March 2027 (planned backwards)
+
+Uday: fully live in March 2027. Claude's reading: March is go-live and the warm-up month, so the first full season
+starts with the new session in April 2027.
+
+| Month | Phase | What happens |
+|---|---|---|
+| Nov 2026 | **1. Shell** | Built and piloted with Uday (Owner) and one district's Coordinator and Principals |
+| Dec 2026 | **2. Cast and modules** | Teacher, Office and Fleet Command plug in; module intros |
+| Jan 2027 | **3. Together** | Team goals, help credit, badges, seasons, the Owner's Season setup screen. Goals for season 1 are drafted |
+| Feb 2027 | Pilot | Two campuses live for a month; tune the wording, caps and goals from real use |
+| **Mar 2027** | **Go-live** | All six campuses and all roles. Season 1 goals are set by the Owner |
+| Apr 2027 | Season 1 | First full season with the new session |
+| When the incentive thread is ready | **4. Standing** | Private standing. Hidden until then; not needed for go-live |
+
+Module chats plan their phases inside this window: transport's Phase 1a/1b already fits Nov–Dec.
+
 ## Phasing
 
 | Phase | Ships | Depends on |
