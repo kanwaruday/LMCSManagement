@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transport views: three directions</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--ink:#18212c;--mute:#5b6673;--paper:#f4f5f2;--card:#fff;--line:#dde1e4;--profit:#2f8f5b;--loss:#c2412d;--warn:#c9871a;--off:#8a939c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ink:#e7ebee;--mute:#9aa6b2;--paper:#11161c;--card:#1a2129;--line:#2c3540;--profit:#4fb37d;--loss:#e5664f;--warn:#e0a23a;--off:#6b7580}}
+:root[data-theme="dark"]{--ink:#e7ebee;--mute:#9aa6b2;--paper:#11161c;--card:#1a2129;--line:#2c3540;--profit:#4fb37d;--loss:#e5664f;--warn:#e0a23a;--off:#6b7580}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0}h2{font-size:18px;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 14px;max-width:72ch}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+.tabs button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:999px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:focus-visible,select:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.answers{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.answers span{font-size:13px;border-radius:6px;padding:3px 9px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.answers b{font-weight:700}
+.ctl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
+.ctl select,.ctl button{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mute);margin-top:10px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:5px}
+.note{font-size:13px;color:var(--mute);margin:10px 0 0;max-width:80ch}
+/* A metro */
+#metro{width:100%;height:auto;display:block;background:color-mix(in srgb,var(--paper) 60%,var(--card));border-radius:10px;touch-action:pan-y}
+#metro text{font:600 10px system-ui;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:3px}
+#metro .tag text{stroke:none;fill:#fff;font-size:10px}
+.side{display:grid;grid-template-columns:1fr 300px;gap:14px}
+.card2{border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px}
+.card2 h3{margin:0 0 6px;font-size:15px}
+/* B city */
+#city{height:62vh;min-height:360px;border-radius:10px}
+#city .leaflet-tile-pane{filter:grayscale(1) contrast(.9) brightness(1.06)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #city .leaflet-tile-pane{filter:grayscale(1) invert(1) contrast(.85) brightness(.8)}}
+/* C depot */
+.depot{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.veh{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--card);position:relative}
+.veh h3{margin:0;font-size:16px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.veh .meta{color:var(--mute);font-size:12.5px;margin:2px 0 10px}
+.lamp{width:12px;height:12px;border-radius:50%;display:inline-block;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 25%,transparent)}
+.row{display:grid;grid-template-columns:76px 1fr auto;gap:8px;align-items:center;font-size:12.5px;margin:6px 0}
+.row .lbl{color:var(--mute)}
+.bar{height:10px;border-radius:5px;background:color-mix(in srgb,var(--ink) 9%,transparent);position:relative;overflow:hidden}
+.bar>i{position:absolute;top:0;bottom:0;border-radius:5px}
+.bar .mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.dec{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.dec span{font-size:12px;font-weight:700;border-radius:6px;padding:3px 8px;color:#fff}
+.group{margin:18px 0 8px;font-size:14px;color:var(--mute);font-weight:700}
+@media (max-width:760px){.side{grid-template-columns:1fr}#city{height:55vh}}
+</style>
+</head>
+<body>
+<main>
+<h1>Transport views: three directions</h1>
+<p class="sub">Mock-ups for choosing a look before anything is built. Real GPS data (25 Aug–23 Oct 2026, the 9 buses with working trackers) and the fleet roster. No driver or student names. Each view is built to answer specific decisions.</p>
+<div class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-p="A">A · Metro map</button>
+  <button role="tab" aria-selected="false" data-p="B">B · City overlay</button>
+  <button role="tab" aria-selected="false" data-p="C">C · Depot</button>
+</div>
+
+<section class="panel" data-panel="A">
+  <h2>A. Metro map (Mini Metro)</h2>
+  <div class="answers"><span><b>Merge two routes?</b> Where lines share stations</span><span><b>Drop or move a stop?</b> Stations a few minutes apart on one line</span><span><b>Which lines lose money?</b> Line badge</span></div>
+  <div class="ctl"><select id="aSide" aria-label="Area"><option value="kullu">Kullu side (LMS 1–3)</option><option value="mandi">Mandi side (LMS 4)</option><option value="all">Both valleys</option></select>
+    <select id="aTrip" aria-label="Trip"><option value="AM">Morning runs</option><option value="PM">Afternoon runs</option></select></div>
+  <div class="side"><svg id="metro" viewBox="0 0 1000 640" role="img" aria-label="Schematic map of bus lines"></svg>
+    <div class="card2" id="aInfo"><h3>Tap a station or a line</h3><p class="note" style="margin:0">Each bus is a line in its own colour, drawn the way a metro map is: straight runs and 45° turns, stations in their real order but evenly spaced. Thick lines carry more children. Dashed lines have a tracker problem, so their stops are incomplete. Rings are stations two buses share: the first places to look at merging. Squares are where a bus waits (school, parking).</p></div></div>
+  <div class="legend" id="aLegend"></div>
+</section>
+
+<section class="panel" data-panel="B" hidden>
+  <h2>B. City overlay (Cities: Skylines)</h2>
+  <div class="answers"><span><b>Move a stop?</b> Catchment circles</span><span><b>Two buses in one village?</b> Overlapping circles of different colours</span><span><b>Long, thin routes?</b> Route colour by money</span></div>
+  <div class="ctl"><select id="bBus" aria-label="Bus"><option value="">All buses</option></select><label style="font-size:13px"><input type="checkbox" id="bCatch" checked> 500 m walking circles</label></div>
+  <div id="city" role="region" aria-label="Map of stops and catchment areas"></div>
+  <div class="legend"><span><i style="background:var(--profit)"></i>route earns more than it costs (Apr–Sep)</span><span><i style="background:var(--loss)"></i>route loses money</span><span><i style="background:transparent;border:2px dashed var(--ink)"></i>500 m walk around a stop</span></div>
+  <p class="note">When the staff workbook comes back (stop names and students per stop), circle size becomes the number of children at that stop and empty stops fade out.</p>
+</section>
+
+<section class="panel" data-panel="C" hidden>
+  <h2>C. Depot (OpenTTD vehicle list)</h2>
+  <div class="answers"><span><b>Scrap a bus?</b> Age bar to the 15-year limit</span><span><b>Fix a tracker?</b> Lamp</span><span><b>Which buses lose money?</b> Profit bar</span><span><b>Too big a bus?</b> Seats filled</span></div>
+  <div class="ctl"><select id="cSort" aria-label="Sort"><option value="need">Most decisions first</option><option value="loss">Biggest loss first</option><option value="age">Oldest first</option></select></div>
+  <div id="depot"></div>
+  <div class="legend"><span><i style="background:var(--profit)"></i>tracker working</span><span><i style="background:var(--warn)"></i>tracker dark while driving</span><span><i style="background:var(--loss)"></i>tracker dead</span><span><i style="background:var(--off)"></i>no tracker</span></div>
+</section>
+<p class="note">Decision tags here are suggestions from the data, for the Owner. Nothing changes until a decision is made.</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const D = __DATA__;
+const LINES = ['#d1495b','#00798c','#e09f3e','#30638e','#66a182','#8d6a9f','#2e4057','#c46d5e','#3c9d9b'];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const lakh = n => (n < 0 ? '−' : '+') + '₹' + (Math.abs(n) / 100000).toFixed(2) + ' L';
+const F = Object.fromEntries(D.fleet.map(f => [f.reg, f]));
+const colour = Object.fromEntries(D.buses.map((b, i) => [b.reg, LINES[i % LINES.length]]));
+const side = reg => ['LMS 4', 'LMS 5', 'LMS 6'].includes((F[reg] || {}).campus) ? 'mandi' : 'kullu';
+
+// tabs
+document.querySelectorAll('[role=tab]').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('[role=tab]').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== t.dataset.p);
+  if (t.dataset.p === 'B') city(); if (t.dataset.p === 'C') depot();
+}));
+
+// ── A. Metro ──
+function metro() {
+  const svg = document.getElementById('metro'), want = document.getElementById('aSide').value, trip = document.getElementById('aTrip').value;
+  const buses = D.buses.filter(b => want === 'all' || side(b.reg) === want);
+  const routes = buses.map(b => { const k = Object.keys(b.trips).filter(k => k.startsWith(trip))[0]; return k ? { b, k, stops: b.trips[k], wait: b.waits[0] } : null; }).filter(Boolean);
+  const pts = routes.flatMap(r => r.stops.concat(r.wait ? [r.wait] : []));
+  if (!pts.length) { svg.innerHTML = ''; return; }
+  const W = 1000, H = 640, pad = 60;
+  // schematic, as metro maps do: keep every station's west-east and south-north ORDER, space them evenly
+  // (real distances squash the valley towns into a heap). Stations within ~150 m share a position.
+  const key = p => Math.round(p.lat / 0.0015) + ':' + Math.round(p.lng / 0.0015);
+  const uniq = Object.values(Object.fromEntries(pts.map(p => [key(p), p])));
+  const rx = {}, ry = {};
+  uniq.slice().sort((a, b) => a.lng - b.lng).forEach((p, i) => rx[key(p)] = i);
+  uniq.slice().sort((a, b) => a.lat - b.lat).forEach((p, i) => ry[key(p)] = i);
+  const n = Math.max(1, uniq.length - 1);
+  const P = p => [pad + rx[key(p)] / n * (W - 2 * pad), H - pad - ry[key(p)] / n * (H - 2 * pad)];
+  const snap = ([x, y]) => [Math.round(x / 4) * 4, Math.round(y / 4) * 4];
+  const elbow = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.min(Math.abs(dx), Math.abs(dy)); const m = [a[0] + Math.sign(dx) * d, a[1] + Math.sign(dy) * d]; return 'L' + m.join(' ') + ' L' + b.join(' '); };
+  let html = '', st = '';
+  const seen = {};
+  routes.forEach(r => {
+    const f = F[r.b.reg] || {}, c = colour[r.b.reg], w = Math.max(4, Math.min(12, (f.students || 20) / 6));
+    const seq = r.stops.map(p => snap(P(p))).concat(r.wait ? [snap(P(r.wait))] : []);
+    const d = 'M' + seq[0].join(' ') + seq.slice(1).map((p, i) => elbow(seq[i], p)).join(' ');
+    const dash = f.tracker === 'ok' ? '' : ' stroke-dasharray="10 8"';
+    html += `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity=".9"${dash} data-line="${r.b.reg}" style="cursor:pointer"/>`;
+    r.stops.forEach((p, i) => { const [x, y] = seq[i], key = x + ',' + y; (seen[key] = seen[key] || { x, y, regs: new Set(), p, list: [] }).regs.add(r.b.reg); seen[key].list.push({ reg: r.b.reg, t: p.t, name: p.name, sure: p.seen }); });
+    if (r.wait) { const [x, y] = seq[seq.length - 1]; st += `<rect x="${x - 9}" y="${y - 9}" width="18" height="18" rx="3" fill="${css('--card')}" stroke="${css('--ink')}" stroke-width="3"/>`; }
+    const [x0, y0] = seq[0], loss = (f.net6m || 0) < 0;
+    st += `<g class="tag" data-line="${r.b.reg}" style="cursor:pointer"><rect x="${x0 - 4}" y="${y0 - 30}" rx="5" width="${74}" height="18" fill="${c}"/><text x="${x0 + 2}" y="${y0 - 17}">${esc(r.b.reg)}</text>` +
+      `<rect x="${x0 + 72}" y="${y0 - 30}" rx="5" width="62" height="18" fill="${loss ? css('--loss') : css('--profit')}"/><text x="${x0 + 76}" y="${y0 - 17}">${lakh(f.net6m || 0)}</text></g>`;
+  });
+  Object.values(seen).forEach(s => {
+    const shared = s.regs.size > 1, sure = Math.max(...s.list.map(l => l.sure)) >= 0.3;
+    st += `<circle cx="${s.x}" cy="${s.y}" r="${shared ? 9 : sure ? 5.5 : 4}" fill="${css('--card')}" stroke="${shared ? css('--ink') : colour[[...s.regs][0]]}" stroke-width="${shared ? 4 : 3}" ${sure ? '' : 'stroke-dasharray="2 2"'} data-st="${s.x},${s.y}" style="cursor:pointer"/>`;
+    if (shared) st += `<text x="${s.x + 12}" y="${s.y + 4}">${esc(s.list[0].name)}</text>`;
+  });
+  svg.innerHTML = html + st;
+  svg.querySelectorAll('[data-line]').forEach(el => el.addEventListener('click', () => lineInfo(el.dataset.line, routes)));
+  svg.querySelectorAll('[data-st]').forEach(el => el.addEventListener('click', () => stInfo(seen[el.dataset.st])));
+  document.getElementById('aLegend').innerHTML = routes.map(r => `<span><i style="background:${colour[r.b.reg]}"></i>${esc(r.b.reg)} · ${esc((F[r.b.reg] || {}).campus || '')}</span>`).join('');
+}
+function lineInfo(reg, routes) {
+  const r = routes.find(x => x.b.reg === reg), f = F[reg] || {};
+  const gaps = r.stops.slice(1).map((s, i) => [r.stops[i], s]).filter(([a, b]) => Math.abs((+b.t.slice(0, 2) * 60 + +b.t.slice(3)) - (+a.t.slice(0, 2) * 60 + +a.t.slice(3))) <= 2);
+  document.getElementById('aInfo').innerHTML = `<h3 style="color:${colour[reg]}">${esc(reg)} · ${esc(r.k)}</h3>
+    <p>${esc(f.campus)} · ${f.students || '?'} children · ${f.seats || '?'} seats · ${f.kmday ? f.kmday + ' km a day' : ''}</p>
+    <p>Apr–Sep: <b style="color:${(f.net6m || 0) < 0 ? css('--loss') : css('--profit')}">${lakh(f.net6m || 0)}</b> after fuel, fixed costs and driver pay.</p>
+    <p>${r.stops.length} stops, ${esc(r.stops[0].t)} to ${esc(r.stops[r.stops.length - 1].t)}.${gaps.length ? ` <b>${gaps.length} pairs of stops within 2 minutes</b> of each other: candidates to combine.` : ''}</p>
+    <p class="note" style="margin:0">Decision buttons in the real view: "Propose merge with…", "Combine stops", "Send to Owner".</p>`;
+}
+function stInfo(s) {
+  document.getElementById('aInfo').innerHTML = `<h3>${esc(s.list[0].name)}</h3>` + s.list.map(l => `<p><b style="color:${colour[l.reg]}">${esc(l.reg)}</b> usually at ${esc(l.t)}${l.sure < 0.3 ? ' (seen on few days: not sure)' : ''}</p>`).join('') +
+    (s.regs.size > 1 ? '<p><b>Shared station.</b> If both buses come within minutes of each other, one of them may not need this stop.</p>' : '');
+}
+document.getElementById('aSide').addEventListener('change', metro); document.getElementById('aTrip').addEventListener('change', metro);
+metro();
+
+// ── B. City ──
+let map, layer;
+function city() {
+  if (!map) {
+    map = L.map('city'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    const sel = document.getElementById('bBus'); sel.innerHTML += D.buses.map(b => `<option>${esc(b.reg)}</option>`).join('');
+    sel.value = D.buses.some(b => b.reg === 'HP665686') ? 'HP665686' : ''; // open on one loss-making Ner Chowk bus: circles readable at once
+    sel.addEventListener('change', drawCity); document.getElementById('bCatch').addEventListener('change', drawCity);
+  }
+  setTimeout(() => { map.invalidateSize(); drawCity(true); }, 30);
+}
+function drawCity(fit) {
+  layer.clearLayers();
+  const one = document.getElementById('bBus').value, catchOn = document.getElementById('bCatch').checked, all = [];
+  D.buses.filter(b => !one || b.reg === one).forEach(b => {
+    const f = F[b.reg] || {}, money = (f.net6m || 0) < 0 ? css('--loss') : css('--profit');
+    Object.entries(b.trips).forEach(([k, stops]) => {
+      if (!k.startsWith('AM')) return;
+      L.polyline(stops.map(s => [s.lat, s.lng]), { color: money, weight: 4, opacity: .85 }).addTo(layer);
+      stops.forEach(s => {
+        all.push([s.lat, s.lng]);
+        if (catchOn) L.circle([s.lat, s.lng], { radius: 500, color: colour[b.reg], weight: 1, dashArray: '4 4', fillColor: colour[b.reg], fillOpacity: .12 }).addTo(layer);
+        L.circleMarker([s.lat, s.lng], { radius: 5, color: '#fff', weight: 2, fillColor: colour[b.reg], fillOpacity: 1 }).addTo(layer)
+          .bindPopup(`<b>${esc(s.name)}</b><br>${esc(b.reg)} at ${esc(s.t)}${s.shared.length ? '<br>Also: ' + esc(s.shared.join(', ')) : ''}<br><a target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s.lat},${s.lng}">Street View</a>`);
+      });
+    });
+    b.waits.forEach(w => L.marker([w.lat, w.lng], { icon: L.divIcon({ className: '', html: `<div style="width:16px;height:16px;border:3px solid ${css('--ink')};background:${css('--card')};border-radius:3px;transform:translate(-8px,-8px)"></div>` }) }).addTo(layer).bindPopup(`${esc(b.reg)} waits here (${esc(w.name)})`));
+  });
+  if (all.length) map.fitBounds(all, { padding: [24, 24], maxZoom: 14 });
+}
+
+// ── C. Depot ──
+function decisions(f) {
+  const d = [], age = 2026 - f.year;
+  if (!f.running) d.push(['Off the road: scrap or sell', css('--off')]);
+  else if (age >= 15) d.push(['Past 15 years: replace', css('--loss')]);
+  else if (age >= 13) d.push(['15 years in ' + (f.year + 15), css('--warn')]);
+  if (f.running && f.tracker === 'dead') d.push(['Fix tracker', css('--loss')]);
+  if (f.running && f.tracker === 'blind') d.push(['Check tracker wiring', css('--warn')]);
+  if (f.running && f.tracker === 'none') d.push(['Fit a tracker', css('--off')]);
+  if (f.running && f.net6m < -100000) d.push(['Losing over ₹1 L: review route', css('--loss')]);
+  if (f.running && f.seats && f.students / f.seats < 0.6) d.push(['Under 60% full', css('--warn')]);
+  return d;
+}
+function depot() {
+  const how = document.getElementById('cSort').value, maxL = Math.max(...D.fleet.map(f => Math.abs(f.net6m))) || 1;
+  const list = D.fleet.slice().sort(how === 'loss' ? (a, b) => a.net6m - b.net6m : how === 'age' ? (a, b) => a.year - b.year : (a, b) => decisions(b).length - decisions(a).length || a.net6m - b.net6m);
+  const lamp = { ok: css('--profit'), blind: css('--warn'), dead: css('--loss'), none: css('--off') };
+  const card = f => {
+    const age = 2026 - f.year, fill = f.seats ? Math.min(1.3, f.students / f.seats) : 0, pl = f.net6m / maxL;
+    return `<div class="veh"><h3>${esc(f.reg)} <span class="lamp" style="color:${lamp[f.tracker]};background:${lamp[f.tracker]}" title="tracker: ${f.tracker}"></span></h3>
+      <div class="meta">${esc(f.campus)} · ${esc(f.route || 'no route')}${f.start ? ' from ' + esc(f.start) : ''}${f.running ? '' : ' · off the road'}</div>
+      <div class="row"><span class="lbl">Apr–Sep</span><div class="bar"><span class="mark" style="left:50%"></span><i style="${pl < 0 ? `right:50%;width:${-pl * 50}%` : `left:50%;width:${pl * 50}%`};background:${pl < 0 ? css('--loss') : css('--profit')}"></i></div><b style="color:${pl < 0 ? css('--loss') : css('--profit')}">${lakh(f.net6m)}</b></div>
+      <div class="row"><span class="lbl">Age</span><div class="bar"><i style="left:0;width:${Math.min(100, age / 20 * 100)}%;background:${age >= 15 ? css('--loss') : age >= 13 ? css('--warn') : css('--ink')}"></i><span class="mark" style="left:75%" title="15-year limit"></span></div><span>${age} yrs</span></div>
+      <div class="row"><span class="lbl">Seats filled</span><div class="bar"><i style="left:0;width:${Math.min(100, fill * 100)}%;background:${fill > 1 ? css('--loss') : fill < 0.6 ? css('--warn') : css('--profit')}"></i></div><span>${f.students}/${f.seats}</span></div>
+      ${f.kmday ? `<div class="row"><span class="lbl">Per day</span><div></div><span>${f.kmday} km</span></div>` : ''}
+      <div class="dec">${decisions(f).map(([t, c]) => `<span style="background:${c}">${esc(t)}</span>`).join('') || '<span style="background:' + css('--profit') + '">No decision needed</span>'}</div></div>`;
+  };
+  const camp = [...new Set(list.map(f => f.campus))].sort();
+  document.getElementById('depot').innerHTML = how === 'need'
+    ? camp.map(c => `<div class="group">${esc(c)}</div><div class="depot">${list.filter(f => f.campus === c).map(card).join('')}</div>`).join('')
+    : `<div class="depot">${list.map(card).join('')}</div>`;
+}
+document.getElementById('cSort').addEventListener('change', depot);
+</script>
+</body>
+</html>
