@@ -1,0 +1,113 @@
+/* Capture page: a phone in a dashboard mount, in bright daylight, worked one-handed in a moving bus.
+   High contrast on white, big targets (56 px and up), STOP HERE the one loud thing. Layered on ../shared.css. */
+:root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
+[hidden]{display:none!important}
+.hdr{padding:0 16px}
+.cap{font-size:16px;line-height:1.45;color:var(--c-ink);max-width:640px}
+#appBody.cap{padding:12px 16px 32px}
+.cap ::selection{background:#ffd6d6}
+.cap :where(button){color:inherit}
+.cap button{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.cap button:focus-visible,.cap input:focus-visible,.cap select:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
+.cap button:disabled{opacity:.45;cursor:default}
+
+/* tabs and mode picker: two big segmented rows */
+.cap-tabs,.cap-modes{display:flex;border:2px solid var(--c-ink);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.cap-tabs button,.cap-modes button{flex:1 1 0;min-width:0;min-height:48px;border:0;background:#fff;font-weight:700;font-size:15px;padding:0 6px;white-space:nowrap}
+.cap-tabs button+button,.cap-modes button+button{border-left:2px solid var(--c-ink)}
+.cap-tabs [aria-pressed="true"],.cap-modes [aria-pressed="true"]{background:var(--c-ink);color:#fff}
+.cap-modes{border-color:var(--c-line)}
+.cap-modes button+button{border-left-color:var(--c-line)}
+
+.cap-h{font-size:20px;font-weight:800;margin:4px 0 6px}
+.cap-help{font-size:15px;margin:0 0 14px}
+.cap-note{font-size:14px;color:var(--c-mute);margin:4px 0 10px}
+.cap-hint{font-size:15px;font-weight:600;margin:12px 0 4px}
+.cap-msg{font-size:15px;font-weight:700;color:var(--c-bad);margin:8px 0}
+.cap-msg:empty,.cap-note:empty{display:none}
+.cap-bad{color:var(--c-bad);font-weight:700}
+.cap-field{display:block;font-weight:700;font-size:15px;margin:6px 0 4px}
+.cap-select,.cap-input{width:100%;min-height:52px;border:2px solid var(--c-ink);border-radius:10px;padding:0 12px;font:inherit;font-size:17px;background:#fff;color:var(--c-ink)}
+.cap-check{display:flex;gap:12px;align-items:center;min-height:60px;border:2px solid var(--c-ink);border-radius:10px;padding:10px 14px;margin:14px 0 4px;font-weight:700;cursor:pointer}
+.cap-check input{width:28px;height:28px;flex:none;accent-color:var(--c-red)}
+.cap-primary{display:block;width:100%;min-height:60px;margin:14px 0 6px;border:0;border-radius:12px;background:var(--c-ink);color:#fff;font-size:18px;font-weight:800}
+.cap-primary:active{background:#333}
+.cap-btn{min-height:48px;padding:0 18px;border:2px solid var(--c-ink);border-radius:10px;background:#fff;font-weight:700}
+.cap-end{display:block;width:100%;min-height:52px;margin:10px 0 0;border:2px solid var(--c-line);border-radius:12px;background:#fff;font-weight:700;color:var(--c-mute)}
+.cap-end[data-armed]{border-color:var(--c-bad);color:var(--c-bad)}
+.cap-resume{border:2px solid var(--c-warn);border-radius:10px;padding:10px 14px;margin-bottom:12px;background:#fffbeb}
+.cap-resume p{margin:0 0 8px}
+
+/* the run: mission, camera (or the on-board count), status, STOP HERE */
+.cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}
+.cap-mission{grid-area:mission}
+.cap-mission h2{font-size:18px;font-weight:800;line-height:1.25;margin:0 0 6px;overflow-wrap:anywhere}
+.cap-bar{height:10px;background:var(--c-soft);border:1px solid var(--c-line);border-radius:6px;overflow:hidden}
+.cap-bar i{display:block;height:100%;width:0;background:var(--c-ok)}
+.cap-view{grid-area:view;min-width:0}
+.cap-cam{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.cap-cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cap-chip{position:absolute;top:8px;padding:2px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.cap-chip-l{left:8px}
+.cap-count{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid var(--c-line);border-radius:12px;padding:10px;min-height:150px;text-align:center}
+.cap-count b{font-size:64px;line-height:1.05;font-variant-numeric:tabular-nums}
+.cap-count span{font-size:15px;color:var(--c-mute);font-weight:600}
+.cap-status{grid-area:status;font-size:15px;font-weight:600;margin:0}
+.cap-run .cap-msg{grid-area:msg;margin:0}
+.cap-stop{grid-area:stop;width:100%;min-height:112px;border:0;border-radius:16px;background:var(--c-red);color:#fff;font-size:34px;font-weight:900;letter-spacing:.02em;box-shadow:0 6px 16px rgba(158,0,0,.35)}
+.cap-stop:active{background:var(--c-red-d)}
+.cap-run .cap-end{grid-area:end;margin:0}
+
+/* phone on its side in the mount: camera left, controls right, all on one screen */
+@media (orientation:landscape) and (max-height:520px){
+  .hdr{height:40px}
+  .hdr p{display:none}
+  #appBody.cap{max-width:none;padding-top:8px}
+  .cap-run{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"view mission" "view status" "view msg" "view stop" "view end";align-content:start}
+  .cap-stop{min-height:96px}
+  .cap-cam{aspect-ratio:auto;height:calc(100vh - 120px)}
+}
+
+/* STOP HERE sheet */
+.cap-sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
+.cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}
+.cap-picks{display:grid;gap:8px;margin-bottom:12px}
+.cap-pick{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:56px;padding:6px 14px;border:2px solid var(--c-ink);border-radius:10px;background:#fff;font-weight:700;text-align:left}
+.cap-pick span{min-width:0;overflow-wrap:anywhere}
+.cap-pick small{flex:none;font-size:14px;color:var(--c-mute);font-variant-numeric:tabular-nums}
+.cap-row{display:flex;gap:8px}
+.cap-row .cap-input{flex:1;min-width:0}
+.cap-ctr{display:grid;grid-template-columns:1fr 64px 72px 64px;align-items:center;gap:8px;margin:10px 0}
+.cap-ctr span{font-weight:700;font-size:18px}
+.cap-ctr b{text-align:center;font-size:36px;font-variant-numeric:tabular-nums}
+.cap-pm{height:64px;border:2px solid var(--c-ink);border-radius:12px;background:#fff;font-size:32px;font-weight:800;line-height:1}
+.cap-pm:active{background:var(--c-soft)}
+@media (prefers-reduced-motion:no-preference){
+  .cap-sheet{animation:cap-up .18s cubic-bezier(.2,.8,.2,1)}
+  .cap-bar i{transition:width .3s ease-out}
+  @keyframes cap-up{from{transform:translateY(24px);opacity:.6}}
+}
+.cap-toast{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;margin:0 auto;max-width:480px;padding:12px 16px;border-radius:10px;background:var(--c-ink);color:#fff;font-weight:700;text-align:center}
+.cap-toast:empty{display:none}
+
+/* summary and upload */
+.cap-facts{font-size:18px;font-weight:700}
+.cap-peak{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;margin:10px 0;display:flex;flex-direction:column}
+.cap-peak b{font-size:48px;line-height:1.1;font-variant-numeric:tabular-nums}
+.cap-peak p{margin:6px 0 0;font-weight:800}
+.cap-peak.ok{border-color:var(--c-ok)}.cap-peak.ok p{color:var(--c-ok)}
+.cap-peak.warn{border-color:var(--c-warn)}.cap-peak.warn p{color:var(--c-warn)}
+.cap-peak.bad{border-color:var(--c-bad)}.cap-peak.bad p{color:var(--c-bad)}
+.cap-table{width:100%;font-size:15px;margin:8px 0}
+.cap-table th,.cap-table td{padding:8px 6px;text-align:right;white-space:normal}
+.cap-table th:first-child,.cap-table td:first-child{text-align:left;overflow-wrap:anywhere}
+.cap-table td{font-variant-numeric:tabular-nums}
+.cap-table th{cursor:default;font-size:13px}
+.cap-runs{list-style:none;margin:12px 0 0;padding:0}
+.cap-runs>li{border-top:1px solid var(--c-line);padding:12px 0}
+.cap-runhead{display:flex;justify-content:space-between;gap:10px;font-size:17px}
+.cap-runhead span{color:var(--c-mute);font-weight:600}
+.cap-runs .cap-note{margin:2px 0}
+.cap-line{font-size:17px;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
+#authRoot{padding:0 16px}

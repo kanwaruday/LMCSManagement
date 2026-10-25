@@ -1,4 +1,4 @@
-// Browser layout check for the Transport page's Vehicle by document grid. Not run by verify.mjs (needs a real browser).
+// Browser layout checks, not run by verify.mjs (they need a real browser): layoutTest for the Transport page's Vehicle by document grid, captureLayoutTest (at the bottom) for the Capture page.
 // Use: load the Transport page (or a local copy with sample data), paste this file into the console, then run
 //   await layoutTest()   -> { pass, failures[], facts{} } for the current window width.
 // Fails when a column is cut off with no way to scroll, the page scrolls sideways, the header or the vehicle column
@@ -33,5 +33,27 @@ window.layoutTest = async function () {
   const narrow = ths.slice(-6).filter((t) => t.getBoundingClientRect().width < 60).map((t) => t.innerText.split('\n')[0]);
   if (narrow.length) f.push('paper columns under 60px: ' + narrow.join(', '));
   facts.colWidths = ths.map((t) => t.innerText.split('\n')[0] + ':' + Math.round(t.getBoundingClientRect().width)).join(' ');
+  return { pass: f.length === 0, failures: f, facts };
+};
+
+// Capture page (coordinator/transport/capture.html), phone width. Load it at 375 px (and at 375x667 for a small phone),
+// paste this file into the console, then run   await captureLayoutTest()   on the start screen and again during a run.
+// Fails when the page scrolls sideways, anything visible sticks out past the right edge, or, during a run, the STOP HERE
+// button is not fully on screen at the top of the page (above the fold) or is under 88 px tall.
+window.captureLayoutTest = async function () {
+  const f = [], facts = {}, de = document.documentElement;
+  scrollTo(0, 0); await new Promise((r) => setTimeout(r, 50));
+  facts.viewport = innerWidth + 'x' + innerHeight;
+  if (de.scrollWidth > de.clientWidth + 1) f.push('page scrolls sideways (' + de.scrollWidth + ' > ' + de.clientWidth + ')');
+  const out = [...document.querySelectorAll('body *')].filter((e) => e.getClientRects().length && e.getBoundingClientRect().right > innerWidth + 1);
+  if (out.length) f.push('sticks out on the right: ' + out.slice(0, 5).map((e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '')).join(', '));
+  const stop = document.getElementById('stopHere'), running = stop && stop.getClientRects().length;
+  facts.screen = running ? 'run' : 'start';
+  if (running) {
+    const r = stop.getBoundingClientRect();
+    facts.stopHere = Math.round(r.top) + '..' + Math.round(r.bottom) + ' of ' + innerHeight;
+    if (r.bottom > innerHeight) f.push('STOP HERE is below the fold');
+    if (r.height < 88) f.push('STOP HERE is under 88 px tall');
+  }
   return { pass: f.length === 0, failures: f, facts };
 };

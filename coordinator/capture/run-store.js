@@ -5,7 +5,7 @@
 // createCaptureIdb() builds the real triple on one IndexedDB database; tests pass in-memory fakes.
 //
 // run:  { id, reg, kind: timelapse|count|inspection, campus, by, role, startedAt, endedAt, status: running|ended|error,
-//         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,boardOn,boardOff}],
+//         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,name,boardOn,boardOff}],
 //         inspection, startSent, endSent }
 // file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
 // seq is one counter per run across kinds, so it is also the capture order.
@@ -102,6 +102,7 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
       let seq;
       if (stop.base64) { noPhotos(run); seq = await addFile(run, 'stop', stop); } else seq = run.nextSeq++;
       const entry = { seq, lat: stop.lat, lng: stop.lng, takenAt: stop.takenAt };
+      if (stop.name) entry.name = String(stop.name); // the stop's name as picked or typed on the capture page
       run.stops.push(entry);
       await idb.runs.put(run);
       return entry;

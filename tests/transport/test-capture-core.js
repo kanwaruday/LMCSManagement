@@ -81,10 +81,10 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     const run = await store.newRun({ reg: 'HP1', kind: 'count' });
     await assert.rejects(() => store.addFrame(run.id, { lat: 0, lng: 0, base64: 'x' }), /count/);
     await assert.rejects(() => store.addStop(run.id, { lat: 0, lng: 0, base64: 'x' }), /count/);
-    const stop = await store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW });
+    const stop = await store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW, name: 'Bhuntar chowk' });
     await store.setCount(run.id, stop.seq, 7, 2);
     const r = (await store.runs())[0];
-    assert.deepStrictEqual([r.stops[0].boardOn, r.stops[0].boardOff], [7, 2]);
+    assert.deepStrictEqual([r.stops[0].name, r.stops[0].boardOn, r.stops[0].boardOff], ['Bhuntar chowk', 7, 2]);
     assert.strictEqual((await store.pending(run.id)).length, 0);
   });
   await test('concurrent addFrame calls get distinct seq', async () => {
