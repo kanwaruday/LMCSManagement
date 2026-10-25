@@ -119,7 +119,7 @@ From top to bottom:
      "behind plan".
    - Tapping the card opens the class-subject's chapter list. That is today's "My CW/HW Patterns" view, extended
      with the quest steps.
-4. **Team bars** (framework TeamGoal): the teacher's teams (see Q4) and what they've filled this week or month.
+4. **Team bars** (framework TeamGoal): the teacher's two teams, subject and campus (Uday) and what they've filled this week or month.
 5. **My conditions** (The Sims), visible to the teacher only:
    - periods this week against their cap (36 for subject teachers, 42 for PRT mother teachers; Period Allotment
      bye-law);
@@ -205,14 +205,21 @@ quests. These are real data entry, and done is detected from data:
 
 ### Loop 4: teams and help (framework primitives, this module's definitions)
 
-- **The teacher's team is decided by Uday (Q4, pending).** Claude's recommendation: the same subject across campuses
-  (e.g. all Class 6–8 Maths teachers in LMS 1–6). 52 of 61 class-subjects use the same book everywhere, and 78% of
-  chapter names are shared by two or more schools.
+- **Every teacher has two teams** (Uday: "Subject and campus both"):
+  - **The subject team spans all campuses.** For example, every Maths teacher in LMS 1–6. It holds the **academic
+    goals**. 52 of 61 class-subjects use the same book everywhere, and 78% of chapter names are shared by two or more
+    schools.
+  - **The campus team** is the whole teaching staff of one campus. It holds **everything else** (logging,
+    planning, setup).
+  - A teacher of two subjects is in both subject teams.
+  - The subject key is the feed's standardised subject name. Whether a subject team is split by wing (e.g. Classes
+    1–5 vs 6–10) is a config choice per season (Claude's call: unsplit in season 0).
 - **Season 0 team goals** (config):
-  - "Every CWA this month remediated within 14 days": % of the team's CWAs this month, against the team's own last
-    month;
-  - "Every chapter this month has its activity": the same shape;
-  - "Every working day logged this week": campus team, if Uday picks campus or both.
+  - Subject team, "Every CWA this month remediated within 14 days": % of the team's CWAs this month, against the
+    team's own last month;
+  - Subject team, "Every chapter this month has its activity": the same shape;
+  - Campus team, "Every working day logged this week": share of due class-subject days logged;
+  - Campus team, "This term's activities planned": share of remaining chapters with a planned activity.
 - **Activity bank + help credit.** A teacher can copy another teacher's planned activity for the same chapter into
   their own course map ("Use this activity"). When the copier's activity is confirmed done (step 3), the author gets
   help credit: "Your 'fraction pizza' activity was used in 3 classes this month." That is a real action with real
@@ -303,7 +310,7 @@ quests. These are real data entry, and done is detected from data:
 |---|---|---|---|
 | **T0. Data ready** | Nov 2026 | Episode engine with tests on a feed snapshot; *Planned activity* column added to the 6 course maps; timetable re-import including LMS 1, with the unmatched-name report; name-resolution audit of the CW/HW feed | Uday's approval; Course Mapping workbook owners |
 | **T1. My Classroom v1** | Dec 2026 (framework Phase 2) | Teacher Owl intro; Today panel with the CW/HW card, remediation due and activity plan due; today's line; class cards with quest steps 1, 2, 4, 5; Quests 1 and 2; days on track | Framework Phase 1 shell + game backend |
-| **T2. Activities and teams** | Jan 2027 (framework Phase 3) | Nightly LM Studio activity match (step 3); activity bank + help credit; team goals per Q4; conditions panel; Principal campus setup quest | T1; Q4 answer |
+| **T2. Activities and teams** | Jan 2027 (framework Phase 3) | Nightly LM Studio activity match (step 3); activity bank + help credit; subject and campus team goals; conditions panel; Principal campus setup quest | T1 |
 | **Pilot** | Feb 2027 | Two campuses with complete timetables; tune wording, caps and the 7-tag rule from real use | T2 |
 | **Go-live** | Mar 2027 | All campuses; season 1 config set by the Owner | Pilot |
 | **T3. Outcomes** | When the CSM extractor reaches exams | Remediation judged by ERP marks (children as counts) | csm-erp-extractor Phase 3 |
@@ -322,7 +329,9 @@ px and desktop) and shipped only with Uday's go-ahead.
 4. Activities: "plan, then confirm. The teacher writes the chapter's planned activity in the course map; done = a CW
    entry whose description matches the plan, checked overnight by LM Studio, with the Principal's Activity Based mark
    as the human spot-check."
-5. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
+5. Teams: "Subject and campus both". The subject team spans all campuses and holds the academic goals; the campus
+   team holds everything else.
+6. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
 
 ## Settled after the builder check (Claude's calls)
 
@@ -357,10 +366,9 @@ px and desktop) and shipped only with Uday's go-ahead.
 
 ## Open questions for Uday
 
-Q4 is asked; Q5–Q7 come from the builder check (all sent via the LMCS Master Agent).
+Q5–Q7 come from the builder check (all sent via the LMCS Master Agent).
 
-1. **Q4: who is a teacher's team?** Options: the same subject across campuses (recommended), the own campus, the
-   House, or both subject and campus.
+1. ~~**Q4: who is a teacher's team?**~~ **Answered (Uday):** "Subject and campus both" (see Loop 4).
 2. **Q5: is remediation matched on the same chapter or the same class-subject?** Measured on 1,793 CWAs:
    - matched on the same chapter within 14 days, only 60 count (3%);
    - matched on the same teacher, class and subject, 295 count (16%), which was the rule behind the "80%" figure.
