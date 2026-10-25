@@ -76,7 +76,7 @@ ms = kinds(run(state({ episodes: [cwa1] }), '2026-11-10', true), 'remediation_du
 assert.strictEqual(ms.length, 1);
 assert.strictEqual(ms[0].due, '2026-11-15'); assert.strictEqual(ms[0].done, false); assert.strictEqual(ms[0].gone, false);
 assert.strictEqual(ms[0].id, 'teacher:remediation_due:' + CODE + ':Class 7|Math|fractions');
-assert.strictEqual(ms[0].title, 'Remediate Fractions in Class 7 Math: name this chapter so it counts');
+assert.strictEqual(ms[0].title, 'Log the remediation for Fractions (Class 7 Math)');
 assert.ok(/Fractions/.test(ms[0].why));                                            // no pre-fill map: the chapter is named in why
 assert.strictEqual(ms[0].go, 'teacher/index.html#tags');
 ms = kinds(run(state({ episodes: [cwa1] }), '2026-11-15', true), 'remediation_due');
@@ -135,8 +135,8 @@ const nxt = (startDate, o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 
 ms = kinds(run(state({ nextChapters: [nxt('2026-11-15')] }), TUE, true), 'activity_plan_due');            // starts in 5 days
 assert.strictEqual(ms.length, 1);
 assert.strictEqual(ms[0].due, '2026-11-15'); assert.strictEqual(ms[0].done, false);
-assert.strictEqual(ms[0].title, 'Plan an activity for Decimals (Class 7 Math), which starts Sun 15 Nov');
-assert.strictEqual(ms[0].go, 'teacher/plan-activity.html?cls=Class%207&subj=Math&ch=decimals');
+assert.strictEqual(ms[0].title, 'Plan an activity for Decimals (Class 7 Math)');
+assert.strictEqual(ms[0].go, 'teacher/plan-activity.html?cls=Class%207&subj=Math&ch=decimals&name=Decimals');
 assert.strictEqual(ms[0].id, 'teacher:activity_plan_due:' + CODE + ':Class 7|Math|decimals');
 assert.strictEqual(ms[0].core, false);
 assert.strictEqual(kinds(run(state({ nextChapters: [nxt('2026-11-19')] }), TUE, true), 'activity_plan_due').length, 0);   // in 9 days

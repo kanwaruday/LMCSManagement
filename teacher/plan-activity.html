@@ -43,7 +43,7 @@
     <h1 id="chapter"></h1>
     <p class="lead" id="lead">One line is plenty: what will the children do? I'll look for it in your classwork once you've taught it.</p>
     <label for="activity">The activity, in a few words</label>
-    <input type="text" id="activity" name="activity" maxlength="200" autocomplete="off" aria-describedby="count">
+    <input type="text" id="activity" name="activity" maxlength="200" autocomplete="off" placeholder="For example: sort picture cards in groups" aria-describedby="count">
     <p class="count" id="count">0 of 200</p>
     <button type="submit" id="save">Save</button>
     <p class="msg" id="msg" role="status" aria-live="polite" hidden></p>
@@ -55,14 +55,14 @@
 const GAME_BACKEND_URL = ''; // set at deploy (same value as teacher/index.html); empty = saving is not open yet
 (function () {
   var q = new URLSearchParams(location.search);
-  var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim();
+  var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim(), name = (q.get('name') || '').trim(); // ch is the key a save is filed under; name is only what the heading shows
   var form = document.getElementById('planForm'), input = document.getElementById('activity'), save = document.getElementById('save'), msg = document.getElementById('msg'), count = document.getElementById('count');
   var session = null;
 
   function say(text, kind) { msg.textContent = text; msg.className = 'msg ' + kind; msg.hidden = !text; }
 
   document.getElementById('where').textContent = cls && subj ? cls + ' · ' + subj : '';
-  document.getElementById('chapter').textContent = ch || 'Which chapter?';
+  document.getElementById('chapter').textContent = name || ch || 'Which chapter?';
   if (!cls || !subj || !ch) {
     document.getElementById('lead').textContent = 'Open this from a chapter on your page, and I will know which one to plan.';
     input.disabled = true; save.disabled = true;

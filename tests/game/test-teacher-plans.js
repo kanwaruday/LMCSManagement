@@ -139,6 +139,34 @@ ctx.LockService = { getScriptLock: () => ({ waitLock: () => { lockHeld = true; }
 assert.deepStrictEqual(post({ activity: 'Order check' }), { success: true });
 assert.strictEqual(stateInLock, false);
 
+// ---- plan links carry the chapter's display name next to its key (the page heading shows `name`, a save still files under `ch`)
+{
+  const NAME = 'Ratio & Proportion', KEYCH = ctx.ownAcadNormChapter_(NAME); // 'ratio proportion'
+  assert.notStrictEqual(KEYCH, NAME);
+  const st = state({ episodes: [{ cls: 'Class 7', subj: 'Math', ch: KEYCH, name: NAME, first: at('2026-11-02T06:00:00Z'), last: at('2026-11-05T06:00:00Z'), cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null }],
+    nextChapters: [{ cls: 'Class 7', subj: 'Math', ch: 'decimals', name: 'Decimals & Place Value', startDate: '2026-11-12' }] });
+  store.set('tch_' + CODE, JSON.stringify(st));
+  const query = (go) => { const i = go.indexOf('?'); return { path: go.slice(0, i), raw: go.slice(i + 1), qs: new URLSearchParams(go.slice(i + 1)) }; };
+  const q = J(ctx.tchChapterQuests_(st, ctx.tchPlansFor_(CODE), {}, {}, NOW)).filter((x) => x.title === 'Class 7 Math \u00b7 ' + NAME)[0];
+  const link = query(q.steps[0].go);
+  assert.strictEqual(link.path, 'teacher/plan-activity.html');
+  assert.strictEqual(link.qs.get('ch'), KEYCH); assert.strictEqual(link.qs.get('name'), NAME);
+  assert.ok(link.raw.indexOf('name=Ratio%20%26%20Proportion') !== -1);                      // URL-encoded
+  // the mission and Quest 2's steps carry both too
+  const ms = J(ctx.tchMissions_(st, '2026-11-10', false, {}, {}, NOW, EMAIL)).filter((m) => m.kind === 'activity_plan_due');
+  assert.strictEqual(ms.length, 1); const ml = query(ms[0].go);
+  assert.strictEqual(ml.qs.get('ch'), 'decimals'); assert.strictEqual(ml.qs.get('name'), 'Decimals & Place Value');
+  const t2 = J(ctx.tchSetupQuests_(st, {}, { onTrack: 5 }, {}, NOW, {})).filter((x) => x.questId.indexOf('term:') === 0)[0], tl = query(t2.steps[0].go);
+  assert.strictEqual(tl.qs.get('ch'), 'decimals'); assert.strictEqual(tl.qs.get('name'), 'Decimals & Place Value');
+  // a save made from that link (the page posts cls, subj and ch, never name) ticks step 1 of that same quest
+  assert.deepStrictEqual(post({ cls: link.qs.get('cls'), subj: link.qs.get('subj'), ch: link.qs.get('ch'), activity: 'Sort the bars' }), { success: true });
+  const after = J(ctx.tchChapterQuests_(st, ctx.tchPlansFor_(CODE), {}, {}, NOW)).filter((x) => x.title === 'Class 7 Math \u00b7 ' + NAME)[0];
+  assert.strictEqual(after.steps[0].done, true);
+  // the link without a name (an older link) is still the same key
+  assert.ok(ctx.tchPlanGo_('Class 7', 'Math', 'fractions').indexOf('name=') === -1);
+  store.set('tch_' + CODE, JSON.stringify(state()));
+}
+
 // ---- Ruling 22: the activity text is never logged
 assert.ok(!logs.some((l) => /Pizza|Fraction|Money|Order check/.test(l)));
 

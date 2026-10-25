@@ -586,13 +586,13 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
     if (e.cwaAt !== null && e.cwaAt !== undefined) {
       const cwaDay = tchIstDay_(e.cwaAt), due = tchAddDays_(cwaDay, T.remediationDays);
       const f = tchFormGo_(T, { cls: e.cls, subj: e.subj, ch: e.name, tag: 'Remediation' }), go = f.go, how = tchFormHint_(f, label, e.name, 'Remediation');
-      const title = 'Remediate ' + e.name + ' in ' + label + ': name this chapter so it counts';
+      const title = 'Log the remediation for ' + e.name + ' (' + label + ')';
       if (e.remediatedAt !== null && e.remediatedAt !== undefined) {
         if (fresh(e.remediatedAt)) out.push(mk('remediation_due', key, { title: title, why: '', go: go, due: due, done: true, doneAt: tchIso_(e.remediatedAt), doneBy: who }));
       } else if (dayKey <= due) {
         out.push(mk('remediation_due', key, { title: title, why: how, go: go, due: due }));
       } else if (dayKey <= tchAddDays_(cwaDay, T.remediationShowDays)) {
-        out.push(mk('remediation_due', key, { title: title, why: 'Closed without remediation', go: go, due: due, gone: true }));
+        out.push(mk('remediation_due', key, { title: title, why: 'The remediation window has passed', go: go, due: due, gone: true }));
       }
     }
     const planned = /^\d{4}-\d\d-\d\d/.test(String(e.plannedCwaDate || '')) ? String(e.plannedCwaDate).slice(0, 10) : '';
@@ -608,8 +608,8 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
   (state.nextChapters || []).forEach(function (c) {
     if (String(c.startDate) > lastDay) return;
     const key = c.cls + '|' + c.subj + '|' + c.ch, plan = plans && tchHas_(plans, key) ? plans[key] : null;
-    const title = 'Plan an activity for ' + c.name + ' (' + c.cls + ' ' + c.subj + '), which starts ' + gameDateLabel_(c.startDate);
-    const go = TCH_PLAN_GO + '?cls=' + encodeURIComponent(c.cls) + '&subj=' + encodeURIComponent(c.subj) + '&ch=' + encodeURIComponent(c.ch);
+    const title = 'Plan an activity for ' + c.name + ' (' + c.cls + ' ' + c.subj + ')'; // the due tag carries the start date
+    const go = tchPlanGo_(c.cls, c.subj, c.ch, c.name);
     if (!plan) { out.push(mk('activity_plan_due', key, { title: title, why: 'A one-line plan is enough', go: go, due: c.startDate })); return; }
     const at = tchDateMs_(plan.plannedAt);
     if (fresh(at)) out.push(mk('activity_plan_due', key, { title: title, why: '', go: go, due: c.startDate, done: true, doneAt: tchIso_(at), doneBy: who }));
@@ -840,7 +840,8 @@ GAME_MODULE_ACTIONS.teacherplans = function (caller) {
 // days), so the hook records each finished step as a Game Progress quest_step row, exactly as the framework does for its own quests.
 var TCH_QUEST1_ID = 'teacher1';
 
-function tchPlanGo_(cls, subj, ch) { return TCH_PLAN_GO + '?cls=' + encodeURIComponent(cls) + '&subj=' + encodeURIComponent(subj) + '&ch=' + encodeURIComponent(ch); }
+// ch = the normalised chapter key (what a save is filed under); name = the chapter as the teacher knows it, shown on the plan page heading.
+function tchPlanGo_(cls, subj, ch, name) { return TCH_PLAN_GO + '?cls=' + encodeURIComponent(cls) + '&subj=' + encodeURIComponent(subj) + '&ch=' + encodeURIComponent(ch) + (name ? '&name=' + encodeURIComponent(name) : ''); }
 
 // On the roster: classSubjects has the class and the subject, or an umbrella roster subject that covers it (the table the timetable matching snaps with).
 function tchOnRoster_(state, cls, subj) {
@@ -878,7 +879,7 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
     const checking = hasPlan && !matched && (!m || m.pending === true); // planned, and last night's check has no answer yet
     const form = function (tag) { return tchFormGo_(T, tag ? { cls: e.cls, subj: e.subj, ch: e.name, tag: tag } : null).go; };
     const steps = [
-      { id: 'plan', title: 'Plan the activity', go: tchPlanGo_(e.cls, e.subj, e.ch), done: hasPlan, locked: false },
+      { id: 'plan', title: 'Plan the activity', go: tchPlanGo_(e.cls, e.subj, e.ch, e.name), done: hasPlan, locked: false },
       { id: 'teach', title: 'Teach', go: form(''), done: true, locked: false },
       { id: 'activity', title: 'Run the activity' + (checking ? ' \u00b7 checking overnight' : ''), go: form(''), done: matched, locked: false },
     ];
@@ -886,7 +887,7 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
       const cwa = set(e.cwaAt), remDone = set(e.remediatedAt);
       const closed = cwa && e.cwaFrom !== 'tracker' && !remDone && today > tchAddDays_(tchIstDay_(e.cwaAt), T.remediationDays);
       steps.push({ id: 'cwa', title: 'Take the CWA', go: form('CWA'), done: cwa, locked: false });
-      steps.push({ id: 'remediate', title: closed ? 'Closed without remediation' : 'Remediate (same chapter, within ' + T.remediationDays + ' days)', go: form('Remediation'), done: remDone, locked: false });
+      steps.push({ id: 'remediate', title: closed ? 'The remediation window has passed' : 'Remediate this chapter', go: form('Remediation'), done: remDone, locked: false });
     }
     return { questId: 'chapter:' + state.code + ':' + e.cls + ':' + e.subj + ':' + e.ch, title: e.cls + ' ' + e.subj + ' \u00b7 ' + e.name,
       steps: steps, complete: steps.every(function (s) { return s.done; }) };
@@ -918,10 +919,13 @@ function tchSetupQuests_(state, plans, daysOnTrack, cfg, now, recorded) {
   const dayWords = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
   const daysTitle = (dayWords[T.questDays - 1] || String(T.questDays)) + (T.questDays === 1 ? ' day' : ' days') + ' on track';
   const form = tchFormGo_(T, null).go;
+  // the plan page needs a chapter to open on: the first upcoming chapter still without a plan, else the first one, else the teacher's own page
+  const nextOnes = state.nextChapters || [], unplanned = nextOnes.filter(function (c) { return !has(c.cls + '|' + c.subj + '|' + c.ch); })[0] || nextOnes[0];
+  const planOneGo = unplanned ? tchPlanGo_(unplanned.cls, unplanned.subj, unplanned.ch, unplanned.name) : TCH_STAFF_GO;
   const q1 = mk(TCH_QUEST1_ID, 'Your portal', [
     { id: 'cw_today', title: "Log today's classwork", go: form, met: entries.length > 0 },
     { id: 'hw_today', title: "Log today's homework", go: form, met: entries.some(function (x) { return x.hw; }) },
-    { id: 'plan_one', title: 'Plan the activity for your next chapter', go: TCH_PLAN_GO, met: !!plans && Object.keys(plans).length > 0 },
+    { id: 'plan_one', title: 'Plan the activity for your next chapter', go: planOneGo, met: !!plans && Object.keys(plans).length > 0 },
     { id: 'days_5', title: daysTitle, go: TCH_STAFF_GO, met: ((daysOnTrack && +daysOnTrack.onTrack) || 0) >= T.questDays },
   ], true);
   const out = [q1], byCs = {}, order = [];
@@ -934,7 +938,7 @@ function tchSetupQuests_(state, plans, daysOnTrack, cfg, now, recorded) {
   order.forEach(function (k) {
     const cs = byCs[k][0];
     out.push(mk('term:' + state.code + ':' + cs.cls + ':' + cs.subj, "Plan your term's activities \u00b7 " + cs.cls + ' ' + cs.subj, byCs[k].map(function (c) {
-      return { id: 'plan:' + c.ch, title: 'Plan the activity for ' + c.name, go: tchPlanGo_(c.cls, c.subj, c.ch), met: has(c.cls + '|' + c.subj + '|' + c.ch) };
+      return { id: 'plan:' + c.ch, title: 'Plan the activity for ' + c.name, go: tchPlanGo_(c.cls, c.subj, c.ch, c.name), met: has(c.cls + '|' + c.subj + '|' + c.ch) };
     }), q1.complete));
   });
   return out;

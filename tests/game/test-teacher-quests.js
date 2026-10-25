@@ -28,7 +28,7 @@ assert.strictEqual(qs.length, 1);
 assert.strictEqual(qs[0].questId, 'chapter:' + CODE + ':Class 7:Math:fractions');
 assert.strictEqual(qs[0].title, 'Class 7 Math · Fractions');
 assert.deepStrictEqual(ids(qs[0]), ['plan', 'teach', 'activity', 'cwa', 'remediate']);
-assert.deepStrictEqual(qs[0].steps.map((s) => s.title), ['Plan the activity', 'Teach', 'Run the activity', 'Take the CWA', 'Remediate (same chapter, within 14 days)']);
+assert.deepStrictEqual(qs[0].steps.map((s) => s.title), ['Plan the activity', 'Teach', 'Run the activity', 'Take the CWA', 'Remediate this chapter']);
 assert.ok(qs[0].steps.every((s) => s.locked === false && typeof s.go === 'string' && s.go));
 assert.deepStrictEqual(done(qs[0]), [false, true, false, false, false]); assert.strictEqual(qs[0].complete, false);
 
@@ -70,11 +70,11 @@ assert.deepStrictEqual(done(qs[0]), [true, true, true, true, true]); assert.stri
 // remediation window passed (CWA 1 Nov + 14 d = 15 Nov; today 16 Nov): "Closed without remediation", never complete
 const late = ep({ cwaAt: at('2026-11-01T06:00:00Z'), cwaFrom: 'tag' });
 qs = chapter(state({ episodes: [late] }), plan, { [KEY]: { matched: true, confidence: 0.9 } }, {}, new Date('2026-11-16T05:00:00Z'));
-assert.strictEqual(qs[0].steps[4].title, 'Closed without remediation'); assert.strictEqual(qs[0].steps[4].done, false); assert.strictEqual(qs[0].complete, false);
+assert.strictEqual(qs[0].steps[4].title, 'The remediation window has passed'); assert.strictEqual(qs[0].steps[4].done, false); assert.strictEqual(qs[0].complete, false);
 qs = chapter(state({ episodes: [late] }), plan, {}, {}, new Date('2026-11-15T05:00:00Z')); // last day of the window: still open
-assert.strictEqual(qs[0].steps[4].title, 'Remediate (same chapter, within 14 days)');
+assert.strictEqual(qs[0].steps[4].title, 'Remediate this chapter');
 qs = chapter(state({ episodes: [late] }), plan, {}, { teacher: { remediationDays: 5 } }, NOW); // config: 1 Nov + 5 d = 6 Nov
-assert.strictEqual(qs[0].steps[4].title, 'Closed without remediation');
+assert.strictEqual(qs[0].steps[4].title, 'The remediation window has passed');
 // remediated in time: done even after the window
 qs = chapter(state({ episodes: [Object.assign({}, late, { remediatedAt: at('2026-11-08T06:00:00Z') })] }), {}, {}, {}, new Date('2026-12-20T05:00:00Z'));
 assert.strictEqual(qs[0].steps[4].done, true);
@@ -105,7 +105,7 @@ assert.deepStrictEqual(qs.map((q) => q.questId), ['chapter:' + CODE + ':Class 7:
 // Ruling 20b: a tracker-only CWA (remediatedAt is always null) is never "Closed without remediation"
 qs = chapter(state({ episodes: [Object.assign({}, late, { cwaFrom: 'tracker' })] }), plan, {}, {}, new Date('2026-12-20T05:00:00Z'));
 assert.strictEqual(qs[0].steps[3].done, true);
-assert.strictEqual(qs[0].steps[4].title, 'Remediate (same chapter, within 14 days)'); assert.strictEqual(qs[0].steps[4].done, false);
+assert.strictEqual(qs[0].steps[4].title, 'Remediate this chapter'); assert.strictEqual(qs[0].steps[4].done, false);
 
 // Ruling 18: through tchBuildIndex_, a Montessori chapter and a chapter with a single entry (both dropped by the Owner's engine rules) get chapter quests
 {
@@ -132,6 +132,13 @@ let sq = setup(state());
 assert.strictEqual(sq[0].title, 'Your portal');
 assert.deepStrictEqual(sq[0].steps.map((s) => [s.id, s.title]), [['cw_today', "Log today's classwork"], ['hw_today', "Log today's homework"], ['plan_one', 'Plan the activity for your next chapter'], ['days_5', 'Five days on track']]);
 assert.deepStrictEqual(done(sq[0]), [false, false, false, false]);
+// "plan one" opens the plan page on a chapter (never the bare page, which has nothing to plan): the first upcoming chapter without a plan
+const planGo = (st, plans) => setup(st, plans)[0].steps[2].go;
+assert.strictEqual(planGo(state()), 'teacher/index.html');                                                       // no upcoming chapter: the teacher's page
+const nx = (ch, name) => ({ cls: 'Class 7', subj: 'Math', ch, name, startDate: '2026-11-20' });
+assert.strictEqual(planGo(state({ nextChapters: [nx('ratio', 'Ratio & Proportion'), nx('angles', 'Angles')] })), 'teacher/plan-activity.html?cls=Class%207&subj=Math&ch=ratio&name=Ratio%20%26%20Proportion');
+assert.strictEqual(planGo(state({ nextChapters: [nx('ratio', 'Ratio'), nx('angles', 'Angles')] }), { 'Class 7|Math|ratio': { activity: 'x', plannedAt: '2026-11-01' } }), 'teacher/plan-activity.html?cls=Class%207&subj=Math&ch=angles&name=Angles');
+assert.strictEqual(planGo(state({ nextChapters: [nx('ratio', 'Ratio')] }), { 'Class 7|Math|ratio': { activity: 'x', plannedAt: '2026-11-01' } }), 'teacher/plan-activity.html?cls=Class%207&subj=Math&ch=ratio&name=Ratio');
 sq = setup(state({ loggedDays: day({}) }));
 assert.deepStrictEqual(done(sq[0]), [true, false, false, false]);                       // an entry without HW: classwork only
 sq = setup(state({ loggedDays: day({}, { subj: 'Hindi', hw: true }) }), plan, { onTrack: 4 });
