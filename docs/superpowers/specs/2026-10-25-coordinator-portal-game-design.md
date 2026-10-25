@@ -278,8 +278,10 @@ so only this much is designed here).
     Coordinator/Owner only, and the issue goes back to the Principal as "reopened".
   - **Closures view:** the HQ and the Systems page get a "Closed this week" list: each closure with its note, who
     closed it and when, plus a Reopen button.
-  - **Claude's reading:** Coordinators no longer resolve report issues themselves. They acknowledge, assign, review
-    and reopen. The Systems page's Coordinator "resolved" option is replaced by Reopen on closed issues.
+  - **The existing Coordinator resolve stays** (the game director's caution: Uday didn't say Coordinators lose it, and
+    some issues only a Coordinator can fix, such as a district purchase). When a Coordinator resolves a Principal's
+    issue, the Principal's mission shows "cleared with help from …" (help credit via `resolvedBy`). The Systems page
+    keeps its resolve option and adds Reopen on closed issues.
   - **Game side (the game director's):** the Principal's mission is done when that Principal resolves it with a note.
     A reopen puts it back in their Today panel as "reopened" and is not counted against them retroactively.
 - Principals see their own campus's needs bars and the district team bars. They never see another campus's bars side
