@@ -29,4 +29,5 @@ assert.strictEqual(ctx.coordHistoryRows_(tasks, '2026-11-03', rows).length, 0);
 assert.strictEqual(ctx.coordHistoryRows_(tasks, '2026-11-04', rows).length, 8);
 // only one campus already recorded: the other is still added
 assert.strictEqual(ctx.coordHistoryRows_(tasks, '2026-11-03', rows.filter((r) => r[1] === 'LMS4')).length, 4);
+assert.strictEqual(typeof ctx.coordScheduledRefresh, 'function'); // a trigger handler must be public (no trailing underscore)
 console.log('coordinator history: ok');

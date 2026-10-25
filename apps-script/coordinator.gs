@@ -907,7 +907,7 @@ function coordTasksList_(caller, idToken) {
 // without anyone opening the page. Run coordInstallTriggers() once from the editor.
 const COORD_HISTORY_TAB = 'HQ History'; // long format: Date, Campus, Measure, Value (counts only)
 
-function coordScheduledRefresh_() {
+function coordScheduledRefresh() {
   // ponytail: SS needs a script-to-script secret to join the 05:30 run (coordRefreshSsCompliance_ takes a caller's token); it stays page-load-refreshed
   try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
   try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
@@ -918,9 +918,9 @@ function coordScheduledRefresh_() {
 
 function coordInstallTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'coordScheduledRefresh_') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === 'coordScheduledRefresh') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('coordScheduledRefresh_').timeBased().atHour(5).nearMinute(30).everyDays(1).create(); // appsscript.json timeZone is Asia/Kolkata
+  ScriptApp.newTrigger('coordScheduledRefresh').timeBased().atHour(5).nearMinute(30).everyDays(1).create(); // appsscript.json timeZone is Asia/Kolkata
 }
 
 /** One row per campus per measure: open, overdue (Due before dayKey, or severity high) and open.<domain>.
