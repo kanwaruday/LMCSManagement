@@ -126,8 +126,9 @@ Must hold WebSockets, send push, stay up with the Mac off, and cost little. Uday
 | C. Google Cloud Run + Cloud SQL, Mumbai | ~$40+ | Inside Google; India region | WebSockets need an always-on instance plus Cloud SQL; the most complex billing |
 | D. Supabase / Neon / Vercel | varies | Generous free tiers | Supabase was dropped in the Fee Clerk design; Vercel can't hold WebSockets; Neon still needs a separate app host |
 
-**Recommendation: A.** About ₹1,200 a month more than B, in exchange for never being the sysadmin. **Waiting on Uday
-(Q1).**
+**Decided: A, Render Singapore** (Uday, 2026-10-25: "Render, Singapore"). Managed server plus managed Postgres,
+about $26/month, with the nightly encrypted copy to Cloudflare R2 on top. Uday signs up and sets every secret
+himself when the build starts.
 
 Data location (Claude's reading, not legal advice): India's DPDP Act allows transfer abroad except to countries the
 government restricts; Singapore is not restricted today. This goes into the DPDP advice Uday is already getting
@@ -373,7 +374,7 @@ Later: SMS/WhatsApp gateway for phase 6 phone sign-in (per message, Uday's pick 
 
 ## Accounts and secrets Uday sets up (when the build starts, not now)
 
-1. Render account (or the host Q1 picks), connected to the GitHub repo; Postgres created there.
+1. Render account (Singapore region), connected to the GitHub repo; Postgres created there.
 2. Cloudflare account with an R2 bucket and an API token limited to that bucket.
 3. Google Cloud console: add the platform's address to the existing OAuth client's authorised origins.
 4. VAPID key pair (`npx web-push generate-vapid-keys` on his Mac), age key pair for backups.
@@ -394,7 +395,7 @@ The build plan will list the exact environment variable names; Uday fills in the
 
 ## Open questions for Uday (one at a time, through the LMCS Master Agent)
 
-1. **Hosting** (section 4): Render Singapore (recommended), a Mumbai VPS, or Google Cloud? *Asked 2026-10-25.*
+1. ~~Hosting~~ **Answered (Uday, 2026-10-25): "Render, Singapore."**
 2. ~~Who may sign in~~ **Answered (Uday, 2026-10-25, for the current portal): "Automatic, but all employees."**
    Section 6 follows the same rule.
 3. **Address** (section 11): a school subdomain such as `app.lms.org.in` (recommended; needs a DNS record on
