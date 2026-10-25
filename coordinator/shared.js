@@ -839,7 +839,7 @@ window.Coord = (function () {
       box.querySelectorAll('.pd-as').forEach(sel => sel.addEventListener('change', () => { sel.closest('.pd-edit').querySelector('.pd-who').style.display = sel.value === 'assigned' ? '' : 'none'; })); // the name only matters for "Assign to"
       const aprSlot = box.querySelector('.pd-apr-slot');
       if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
-        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson }); }
+        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson, get: api }); }
         aprSlot.appendChild(P.aprEl);
       }
       box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); P.tab = b.dataset.tab; render(); }));
