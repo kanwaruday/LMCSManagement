@@ -219,3 +219,73 @@
 .cap-missing svg{flex:none;width:24px;height:24px;padding:2px;border-radius:6px;background:var(--c-bad);color:#fff}
 .cap-missing span{min-width:0;overflow-wrap:anywhere}
 .cap-resume .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff} /* the second tap throws the check away */
+
+/* Fleet setup (setup.html): the same sunlight page. Team bars, then one card per bus with a ring of six segments (one per
+   quest, green when done), a bus's six quests, a quest's short form. Green marks done only; nothing moves but the ring filling. */
+.cap a:focus-visible,.cap summary:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
+#loadMsg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#loadMsg[hidden]{display:none}
+.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:10px}
+.fs-teams p{margin:0 0 4px;font-size:16px;font-weight:800;line-height:1.3;font-variant-numeric:tabular-nums}
+.fs-teams .cap-bar{height:12px;border-color:#8a8a8a}
+.fs-teams:has(li:only-child) p{font-size:18px} /* a Fee Clerk's one campus: the team bar is the page's headline */
+.fs-teams:has(li:only-child) .cap-bar{height:16px}
+.fs-gaps{margin:0 0 14px}
+.fs-gaps ul,.fs-buses,.fs-quests,.fs-refused{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.fs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 12px 6px 14px;border:2px solid var(--c-line);border-radius:10px;background:#fff;font-weight:700;text-align:left}
+.fs-row span{min-width:0;overflow-wrap:anywhere}
+.fs-row svg,.fs-bus>svg,.fs-quest>svg{flex:none;color:var(--c-mute)}
+.fs-row[aria-pressed="true"]{border-color:var(--c-ink);background:var(--c-soft)}
+.fs-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;font-weight:700}
+.fs-filter:empty{display:none}
+.fs-bus,.fs-quest{display:flex;align-items:center;gap:12px;width:100%;min-height:76px;padding:10px 12px;border:2px solid var(--c-line);border-radius:12px;background:#fff;text-align:left}
+.fs-bus:active,.fs-quest:active,.fs-row:active{background:var(--c-soft)}
+.fs-bustext,.fs-qtext{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;line-height:1.3}
+.fs-bustext b,.fs-qtext b{font-size:18px;font-weight:800;overflow-wrap:anywhere}
+.fs-bustext span,.fs-qtext span{font-size:14px;color:var(--c-mute);overflow-wrap:anywhere}
+.fs-bustext .fs-next{font-size:15px;font-weight:700;color:var(--c-ink)}
+.fs-ring{position:relative;flex:none;width:56px;height:56px;display:flex;align-items:center;justify-content:center}
+.fs-ring>svg{position:absolute;inset:0;width:100%;height:100%}
+.fs-ring circle{fill:none;stroke:#d4d4d4;stroke-width:5}
+.fs-ring circle.on{stroke:var(--c-ok)}
+.fs-ring b{position:relative;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.fs-ring.ready b{color:var(--c-ok);display:flex}
+.fs-ring-big{width:88px;height:88px}
+.fs-ring-big b{font-size:20px}
+.fs-ring-big b svg{width:30px;height:30px}
+@media (prefers-reduced-motion:no-preference){.fs-ring circle{transition:stroke .3s ease-out}}
+.fs-ready{display:inline-flex;align-items:center;gap:4px;flex:none;padding:4px 12px 4px 8px;border-radius:999px;background:var(--c-ok);color:#fff;font-size:15px;font-weight:800}
+.fs-back{display:inline-flex;align-items:center;min-height:48px;padding:0 4px;margin:0 0 4px -4px;border:0;background:none;font-size:16px;font-weight:700}
+.fs-bushead{display:flex;align-items:center;gap:14px;margin:0 0 12px}
+.fs-bushead>div{min-width:0}
+.fs-bushead .cap-h{margin:0}
+.fs-bushead .cap-note{margin:0}
+.fs-bushead .fs-count{margin-top:4px}
+.fs-count{margin:0;font-size:16px;font-weight:800}
+.fs-quest[data-done="true"]{border-color:var(--c-ok)}
+.fs-quest .cap-mark{width:32px;height:32px}
+.fs-warn{border:2px solid var(--c-bad);background:#fff5f5;color:var(--c-bad);border-radius:10px;padding:10px 14px;margin:0 0 12px;font-weight:800}
+.fs-hud{margin-top:6px}
+.fs-hud .cap-hudcount{margin:0}
+.fs-field{margin:14px 0 0}
+.fs-field .cap-field{margin-top:0}
+.cap-field small{font-size:14px;font-weight:600;color:var(--c-mute)}
+.fs-hint{margin:-2px 0 6px;font-size:14px;color:var(--c-mute)}
+.fs-dateunk{display:flex;gap:8px}
+.fs-dateunk .cap-input{flex:1 1 auto;min-width:0}
+.fs-dateunk .cap-btn{flex:none;min-height:52px;padding:0 10px;font-size:15px}
+.fs-dateunk .cap-btn[aria-pressed="true"]{background:var(--c-ink);color:#fff}
+.cap-input:disabled{background:var(--c-soft);border-color:var(--c-line)}
+.fs-callout{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;margin:12px 0 0}
+.fs-callout p{margin:0}
+.fs-link{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center;margin-bottom:0}
+.fs .cap-slot details{margin-top:10px}
+.fs .cap-slot summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;font-weight:700;cursor:pointer;list-style:none}
+.fs .cap-slot summary::-webkit-details-marker{display:none}
+.fs .cap-slot summary::after{content:"";flex:none;width:10px;height:10px;margin-right:6px;border-right:2.6px solid var(--c-mute);border-bottom:2.6px solid var(--c-mute);transform:translateY(-3px) rotate(45deg)}
+.fs .cap-slot details[open] summary::after{transform:translateY(3px) rotate(-135deg)}
+.fs .cap-slot .fs-field:first-of-type{margin-top:0}
+.fs-refused li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:2px solid var(--c-bad);background:#fff5f5;border-radius:10px;padding:10px 12px;margin:0 0 4px;font-weight:700}
+.fs-refused li span{flex:1 1 100%;color:var(--c-bad)}
+.fs-refused .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff}
+.fs .cap-offline .cap-btn{min-height:48px}

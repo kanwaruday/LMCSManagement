@@ -14,7 +14,7 @@
 // date (Status "override"); "n/a" there means the vehicle does not need that paper.
 //
 // Powers GET action=coordinatortransport (the Transport page) and POST action=transportpush. No follow-up tasks: they were
-// built and switched off (see coordTransportRetireTasks_).
+// built and switched off (see coordTransportRetireTasks_). Also the safety loadout and the Fleet setup quests (sections below).
 // No Drive access is needed anywhere in here (the Workspace blocks DriveApp for scripts).
 //
 // SETUP: Project Settings > Script properties > add TRANSPORT_PUSH_SECRET (the same value as
@@ -452,4 +452,105 @@ function coordInspections_() {
     if (Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, items: items });
   });
   return out;
+}
+
+// ── Fleet setup quests (transport game Phase 1a): the staff questionnaire as six quests per bus ──
+// Papers, safety, parts, driver, fuel and capture. The quest definitions and the pure logic (validation, the 60+ driver rule,
+// completion, missions) are coordinator/capture/fleet-quests.js (FleetQuests): projects.json deploys it into this project and
+// the setup page (coordinator/transport/setup.html) loads the same file. Data lives in four tabs of this private transport
+// workbook, each rewritten whole under the script lock (a few hundred rows):
+//   Fleet Profile   one row per reg: the papers, safety, fuel and capture quests, each as JSON
+//   Driver Profile  one row per driver (employee code; 'bus:<REG>' when the roster has none): the driver card as JSON, ageLimit
+//   Parts History   one row per reg x component (the day book's component ids): that part's fields as JSON
+//   Workshops       one row per workshop named in a quest, with the buses that go there (other columns are for the Owner to fill)
+// Driver personal data (date of birth, licence, phone) lives only here and is served only within the caller's campuses.
+// Photos (odometer, driver) are uploaded first through the Roster's capturefile (kind 'profile'); a quest holds their file ids.
+// GET  action=coordinatortransportfleet      every transport role: {rows:{fleet, profiles, drivers, parts, inspected, captured},
+//                                             campuses, owner, today}, only the caller's campuses (Fee Clerk: own campus;
+//                                             Coordinator: their district, ALL every campus; Owner: all)
+// POST action=coordinatortransportfleetsave  {reg, quest, fields}: one quest at a time, the whole quest (parts: the parts sent),
+//                                             same scope -> {success} (driver: + ageLimit, and a warning when 60 or over)
+const COORD_FLEET_TABS = { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History', workshops: 'Workshops' };
+const COORD_FLEET_COLS = {
+  profile: ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'updatedAt', 'updatedBy'],
+  driver: ['driverKey', 'reg', 'campus', 'driver', 'fields', 'ageLimit', 'updatedAt', 'updatedBy'],
+  parts: ['reg', 'campus', 'component', 'fields', 'updatedAt', 'updatedBy'] };
+const COORD_ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+
+function coordFleetToday_() { return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); }
+
+/** The running buses of the roster push, with campus as 'LMS n' and campusId 'LMSn' (the roster says 'LMS-5' in one row). */
+function coordFleetBuses_() {
+  return coordTransportBase_().fleet.filter(function (b) { return b.operational; }).map(function (b) {
+    const n = String(b.campus).replace(/\D/g, '');
+    return { reg: b.reg, campus: 'LMS ' + n, campusId: 'LMS' + n, route: String(b.route || ''), driver: String(b.driver || ''), driverCode: b.driverCode || '', seats: b.seats, operational: true };
+  });
+}
+
+function coordFleet_(caller) {
+  const vis = coordVisibleCampuses_(caller), T = COORD_FLEET_TABS, regs = {}, keys = {}, inspected = {}, captured = {};
+  const fleet = coordFleetBuses_().filter(function (b) { return !vis || vis.indexOf(b.campusId) !== -1; });
+  fleet.forEach(function (b) { regs[b.reg] = true; keys[FleetQuests.driverKey(b)] = true; });
+  (coordInspections_() || []).forEach(function (x) { if (regs[x.reg]) inspected[x.reg] = true; });
+  Object.keys(gpsCaptured_()).forEach(function (r) { if (regs[r]) captured[r] = true; });
+  return { success: true, today: coordFleetToday_(), campuses: vis || COORD_ALL_CAMPUSES, owner: caller.roles.indexOf('Owner') !== -1,
+    rows: { fleet: fleet, inspected: inspected, captured: captured,
+      profiles: gpsRows_(T.profile).filter(function (r) { return regs[r.reg]; }),
+      drivers: gpsRows_(T.driver).filter(function (r) { return keys[r.driverKey]; }),
+      parts: gpsRows_(T.parts).filter(function (r) { return regs[r.reg]; }) } };
+}
+
+function coordFleetSave_(caller, body) {
+  const fail = function (m) { return { success: false, error: m }; };
+  const reg = String(body.reg || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), quest = String(body.quest || '');
+  const bus = coordFleetBuses_().filter(function (b) { return b.reg === reg; })[0];
+  if (!bus) return fail('Vehicle ' + (reg || '(none)') + ' is not in the fleet');
+  const vis = coordVisibleCampuses_(caller);
+  if (vis && vis.indexOf(bus.campusId) === -1) return fail('You can only set up buses of your own campuses');
+  const v = FleetQuests.validateQuest(quest, body.fields, coordFleetToday_());
+  if (v.error) return fail(v.error);
+  const T = COORD_FLEET_TABS, C = COORD_FLEET_COLS, now = new Date().toISOString(), by = caller.email;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (quest === 'driver') {
+      const key = FleetQuests.driverKey(bus), rows = gpsRows_(T.driver).filter(function (r) { return r.driverKey !== key; });
+      rows.push({ driverKey: key, reg: reg, campus: bus.campusId, driver: coordLoadoutLabel_(bus.driver), fields: JSON.stringify(v.fields),
+        ageLimit: v.ageLimit ? 'yes' : 'no', updatedAt: now, updatedBy: by });
+      gpsWrite_(T.driver, C.driver, rows);
+    } else if (quest === 'parts') {
+      const rows = gpsRows_(T.parts).filter(function (r) { return !(r.reg === reg && v.fields[r.component]); });
+      Object.keys(v.fields).forEach(function (k) { rows.push({ reg: reg, campus: bus.campusId, component: k, fields: JSON.stringify(v.fields[k]), updatedAt: now, updatedBy: by }); });
+      gpsWrite_(T.parts, C.parts, rows);
+    } else {
+      const rows = gpsRows_(T.profile);
+      let row = rows.filter(function (r) { return r.reg === reg; })[0];
+      if (!row) { row = { reg: reg }; rows.push(row); }
+      row.campus = bus.campusId; row[quest] = JSON.stringify(v.fields); row.updatedAt = now; row.updatedBy = by;
+      gpsWrite_(T.profile, C.profile, rows);
+    }
+    coordFleetWorkshops_(reg, quest, v.fields);
+  } finally { lock.releaseLock(); }
+  const out = { success: true };
+  if (quest === 'driver') { out.ageLimit = v.ageLimit; if (v.warning) out.warning = v.warning; }
+  return out;
+}
+
+/** A workshop named in the papers (usual workshop) or a part joins the Workshops tab, with the bus in its list. */
+function coordFleetWorkshops_(reg, quest, fields) {
+  const names = [];
+  if (quest === 'papers' && fields.usualWorkshop) names.push(fields.usualWorkshop);
+  if (quest === 'parts') Object.keys(fields).forEach(function (k) { if (fields[k].workshop) names.push(fields[k].workshop); });
+  if (!names.length) return;
+  const rows = gpsRows_(COORD_FLEET_TABS.workshops);
+  names.forEach(function (n) {
+    const name = coordLoadoutLabel_(n);
+    if (!name) return;
+    let w = rows.filter(function (r) { return String(r.workshopName).toLowerCase() === name.toLowerCase(); })[0];
+    if (!w) { w = { workshopName: name }; rows.push(w); }
+    const buses = String(w.whichOfOurBusesGoThere || '').split(/,\s*/).filter(String);
+    if (buses.indexOf(reg) === -1) buses.push(reg);
+    w.whichOfOurBusesGoThere = buses.join(', ');
+  });
+  gpsWrite_(COORD_FLEET_TABS.workshops, FleetQuests.questConfig().workshopCols, rows);
 }

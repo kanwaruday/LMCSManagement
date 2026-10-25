@@ -296,6 +296,15 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     const ids = srv.calls.filter((c) => c.action === 'capturefile').map((c) => 'D' + c.seq); // fakeServer answers fileId D<seq>
     assert.deepStrictEqual(srv.calls[3].run.inspection, { fire_extinguisher: { ok: true, date: '2026-09-01', fileId: ids[0] }, first_aid: { ok: true, fileId: ids[1] }, door_lock: { ok: false } });
   });
+  await test('a profile run (Fleet setup quest photos) sends its photos as kind profile with runKind profile', async () => {
+    const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'profile' });
+    const a = await store.addFrame(run.id, { takenAt: NOW, base64: 'ODO' });
+    await store.endRun(run.id);
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(run.id);
+    assert.deepStrictEqual(srv.calls.map((c) => c.action + ':' + (c.kind || c.run.status) + ':' + (c.runKind || c.run.kind)), ['capturerun:running:profile', 'capturefile:profile:profile', 'capturerun:ended:profile']);
+    assert.deepStrictEqual(await store.fileIds(run.id), { [a]: 'D' + a }, 'the quest swaps the photo seq for its Drive file id');
+  });
   await test('an inspection photo that was retaken or answered No is dropped before upload; only current photos are sent', async () => {
     const idb = memIdb(), store = mkStore(idb); const run = await store.newRun({ reg: 'HP1', kind: 'inspection' });
     const old = await store.addFrame(run.id, { takenAt: NOW, base64: 'OLD' }), cur = await store.addFrame(run.id, { takenAt: NOW + 1, base64: 'NEW' });

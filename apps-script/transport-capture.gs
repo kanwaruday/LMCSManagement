@@ -4,11 +4,12 @@
 // photos are queued on the phone and uploaded later. Same project as transport-uploads.gs (Roster: the only project with
 // Drive access) and reuses its helpers (tupNormReg_, tupVehicle_, tupCovers_, tupSniff_, TUP_*).
 //
-// POST {action:'capturefile', idToken, reg, runId, kind:'frame'|'stop'|'inspection', seq, lat, lng, takenAt, base64}
+// POST {action:'capturefile', idToken, reg, runId, kind:'frame'|'stop'|'inspection'|'profile', seq, lat, lng, takenAt, base64}
 //   -> {success, fileId}. Image only, <= 2 MB. Saved as Capture/<REG>/<runId>/<kind>-<seq 5 digits>.jpg, a sibling of
 //   'Bus Wise Documents' under the transport Drive folder. Idempotent on (runId, kind, seq): a repeat returns the existing fileId.
-//   runKind ('timelapse'|'count'|'inspection') is required and decides what a run accepts: timelapse frame+stop, inspection
-//   inspection only, count nothing (no camera). If the run's manifest row exists its Kind must equal runKind.
+//   runKind ('timelapse'|'count'|'inspection'|'profile') is required and decides what a run accepts: timelapse frame+stop,
+//   inspection inspection only, profile profile only (the Fleet setup quests' odometer and driver photos, one run per quest
+//   save), count nothing (no camera). If the run's manifest row exists its Kind must equal runKind.
 // POST {action:'capturerun', idToken, run:{runId, reg, kind, startedAt, endedAt, frames, gaps, stops, inspection, status}}
 //   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). `inspection` (inspection runs only) must be
 //   {itemId: {ok: boolean, date?: 'yyyy-MM-dd', fileId?}} with ids from the 'Safety Loadout' tab (kept by the Coordinator
@@ -25,9 +26,9 @@
 
 const CAP_TAB_ = 'Capture Runs';
 const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'];
-const CAP_KINDS_ = ['frame', 'stop', 'inspection'];
-const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection'];
-const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'] }; // profile kinds: Task 8
+const CAP_KINDS_ = ['frame', 'stop', 'inspection', 'profile'];
+const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection', 'profile'];
+const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'], profile: ['profile'] };
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
 const CAP_MAX_FRAME_TIMES_ = 40000; // characters of frameTimes JSON kept: well inside Sheets' 50,000 per cell (a 75 km run is ~10,000)
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
@@ -73,7 +74,7 @@ function captureFile_(body) {
   if (CAP_KINDS_.indexOf(kind) === -1) return fail('Unknown kind: ' + kind);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return fail('Bad runId');
   const runKind = String(body.runKind || '');
-  if (CAP_RUN_KINDS_.indexOf(runKind) === -1) return fail('runKind is required (timelapse, count or inspection)');
+  if (CAP_RUN_KINDS_.indexOf(runKind) === -1) return fail('runKind is required (timelapse, count, inspection or profile)');
   if (runKind === 'count') return fail('This is a count run: it takes no photos');
   if (CAP_RUN_ACCEPTS_[runKind].indexOf(kind) === -1) return fail('A ' + runKind + ' run does not take ' + kind + ' photos');
   if (!(seq >= 0 && seq <= 99999 && seq === Math.floor(seq))) return fail('Bad seq');

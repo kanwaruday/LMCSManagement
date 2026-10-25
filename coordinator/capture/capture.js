@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-10-25-transport-game-design.md, Loop 6. Guide: docs/transport-game/capture-guide.md.
 // - Timelapse (default): rear camera, a frame every ~15 m of GPS travel (geo.js), STOP HERE tags a stop with a photo.
 // - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
-//   the seats and the load cap (LOAD_CAP_FACTOR x seats).
+//   the seats and the load cap (loadCapFactor() x seats).
 // - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
 //   action=coordinatortransportloadout): Yes/No, a photo when the item needs one (the phone's own camera, not the timelapse
 //   viewfinder), a date when it needs one. Saved as an 'inspection' run: photos as kind 'inspection' files, the answers in
@@ -23,9 +23,9 @@ const HELP = {
   count: 'School run, no camera: count the children who get on and off at each stop.',
   inspection: 'Monthly safety check with the bus parked: one card per item it must carry. Photograph the item only, never children or people.',
 };
-// Goals are config: the defaults live here and are read through one accessor each, so Game Config can override them later.
-const LOAD_CAP_FACTOR = 1.4; // a bus may carry up to 1.4 x its seats
-const loadCapFactor = () => LOAD_CAP_FACTOR;
+// Goals are config: the load cap factor (a bus may carry up to 1.4 x its seats) is a Game Config default in fleet-quests.js,
+// loaded by capture.html before this module, so the Game Backend can override it later.
+const loadCapFactor = () => window.FleetQuests.questConfig().loadCapFactor;
 const STATE = {
   uploading: 'Sending...', retrying: 'No answer from the server. Trying again shortly.', 'waiting-online': 'No connection. Sending resumes when it is back.',
   stopped: 'Stopped.', done: 'Sent.', 'not-ended': 'Sends once the safety check is saved.', 'uploaded-so-far': 'Sent so far. The rest goes when the run has ended.',
@@ -79,7 +79,9 @@ async function boot() {
   if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '\u2190 Live Buses'; } // Fee Clerk
   S.session = s;
   wire();
-  setMode('timelapse');
+  const want = new URLSearchParams(location.search); // from the Fleet setup quests: ?mode=inspection&reg=HP659511
+  setMode(HELP[want.get('mode')] ? want.get('mode') : 'timelapse');
+  S.wantReg = normReg(want.get('reg'));
   battery();
   loadBuses();
   loadLoadout();
@@ -166,6 +168,7 @@ async function loadBuses() {
   sel.innerHTML = S.buses.length
     ? '<option value="">Pick the bus</option>' + S.buses.map((b) => `<option value="${esc(b.reg)}">${esc(b.reg)}${b.route ? ' (' + esc(routeName(b, b.reg)) + ')' : ''}</option>`).join('')
     : '<option value="">No buses</option>';
+  if (S.wantReg && busOf(S.wantReg)) sel.value = busOf(S.wantReg).reg;
   if (!S.buses.length && !note) note = 'No buses on your account.';
   $('busNote').textContent = note;
   if (S.run) hud();

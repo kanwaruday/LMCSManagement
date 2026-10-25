@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#CE0000">
+<title>LMCS — Fleet setup</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../shared.css?v=29f58300">
+<link rel="stylesheet" href="../capture/capture.css?v=75e30398">
+</head>
+<body>
+<header class="hdr"><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
+<div id="authRoot"></div>
+<main id="appBody" class="cap fs" hidden>
+  <div id="pending" class="cap-offline" hidden><span id="pendingText"></span> <button type="button" id="sendNow" class="cap-btn">Send now</button></div>
+  <ul id="refused" class="fs-refused"></ul>
+  <p id="loadMsg" class="cap-note"><span>Loading the buses...</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
+
+  <section id="board" aria-label="Buses">
+    <div id="scope" class="cap-modes" role="group" aria-label="Campuses" hidden></div>
+    <ul id="teams" class="fs-teams"></ul>
+    <section id="gaps" class="fs-gaps" hidden>
+      <h2 class="cap-h">What is still missing</h2>
+      <ul id="gapList"></ul>
+    </section>
+    <p id="filterNote" class="fs-filter"></p>
+    <ul id="buses" class="fs-buses"></ul>
+  </section>
+  <section id="bus" hidden></section>
+  <section id="quest" hidden></section>
+
+  <input type="file" id="photo" accept="image/*" capture="environment" hidden>
+  <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
+</main>
+<script src="../../assets/auth.js?v=ffa8751c"></script>
+<script src="../capture/fleet-quests.js?v=378cdad7"></script>
+<script type="module" src="../capture/setup.js?v=46129614"></script>
+</body>
+</html>

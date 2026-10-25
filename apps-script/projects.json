@@ -54,7 +54,8 @@
       "coordinator-transport",
       "coordinator-pdr",
       "coordinator-approvals",
-      "coordinator-transport-gps"
+      "coordinator-transport-gps",
+      "../coordinator/capture/fleet-quests.js"
     ]
   },
   "chapter": {

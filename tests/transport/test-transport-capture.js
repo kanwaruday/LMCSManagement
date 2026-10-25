@@ -118,6 +118,15 @@ assert.strictEqual(cr({ runId: 'RC', reg: 'HP659511', kind: 'count' }).success, 
 assert.match(frame({ runId: 'RC', seq: 1 }).error, /does not match this run/, 'runKind that does not match the manifest is refused');
 assert.match(frame({ runId: 'RC', runKind: 'count', seq: 1 }).error, /count run/, 'a count run with a count manifest still takes nothing');
 assert.strictEqual(frame({ runId: 'R1', seq: 50 }).success, true, 'matching manifest (R1 timelapse) is accepted');
+// Ruling 33: Fleet setup quest photos (odometer, driver) are kind 'profile' on a run of runKind 'profile', and nothing else
+assert.strictEqual(cr({ runId: 'RP', reg: 'HP659511', kind: 'profile', status: 'running' }).success, true, 'a profile run has a manifest like any run');
+assert.strictEqual(frame({ runId: 'RP', runKind: 'profile', kind: 'profile', seq: 0 }).success, true, 'a profile run takes profile photos');
+assert.strictEqual(transport.kids.find((k) => k.name === 'Capture').kids.find((k) => k.name === 'HP659511').kids.find((k) => k.name === 'RP').files[0].name, 'profile-00000.jpg');
+assert.match(frame({ runId: 'RP', runKind: 'profile', kind: 'frame', seq: 1 }).error, /does not take frame/, 'a profile run takes no frames');
+assert.match(frame({ runId: 'RX', kind: 'profile' }).error, /does not take profile/, 'a timelapse takes no profile photos');
+assert.match(frame({ runId: 'RX', runKind: 'inspection', kind: 'profile' }).error, /does not take profile/, 'nor does a safety check');
+assert.match(frame({ runId: 'RP', runKind: 'timelapse', kind: 'frame', seq: 2 }).error, /does not match this run/, 'the manifest pins the run to profile');
+assert.match(cr({ runId: 'R5', reg: 'HP659511', kind: 'profile', inspection: { cctv: { ok: true } } }).error, /Only an inspection run/, 'a profile run carries no safety answers');
 
 // a run is pinned to its bus and kind (Ruling 11)
 assert.match(cr({ runId: 'R1', reg: 'HP659511', kind: 'inspection' }).error, /cannot change/, 'changed Kind on an existing runId is refused');

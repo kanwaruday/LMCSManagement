@@ -4,11 +4,11 @@
 // marking files never loads a photo; a photo is read only when it is uploaded and deleted as soon as it is sent.
 // createCaptureIdb() builds the real triple on one IndexedDB database; tests pass in-memory fakes.
 //
-// run:  { id, reg, kind: timelapse|count|inspection, campus, by, role, startedAt, endedAt, status: running|ended|error,
+// run:  { id, reg, kind: timelapse|count|inspection|profile, campus, by, role, startedAt, endedAt, status: running|ended|error,
 //         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,name,boardOn,boardOff}],
 //         inspection, draft (capture page: the safety check being filled in), startSent, endSent }
 // The end manifest of a timelapse also carries frameTimes (see frameTimes below).
-// file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
+// file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection|profile, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
 // seq is one counter per run across kinds, so it is also the capture order.
 
 export function createCaptureIdb(dbName = 'lmcs-capture') {
@@ -88,10 +88,10 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
       return run;
     }),
 
-    // Frames: timelapse 'frame' photos, or inspection photos on an inspection run. Count runs have no camera.
+    // Frames: timelapse 'frame' photos, or the photos of an inspection or profile run (kind = the run's). Count runs have no camera.
     addFrame: (runId, frame) => serial(async () => {
       const run = await load(runId); noPhotos(run); open(run);
-      const seq = await addFile(run, run.kind === 'inspection' ? 'inspection' : 'frame', frame);
+      const seq = await addFile(run, run.kind === 'inspection' || run.kind === 'profile' ? run.kind : 'frame', frame);
       run.frames++;
       await idb.runs.put(run);
       return seq;

@@ -1,4 +1,4 @@
-// Browser layout checks, not run by verify.mjs (they need a real browser): layoutTest for the Transport page's Vehicle by document grid, captureLayoutTest (at the bottom) for the Capture page.
+// Browser layout checks, not run by verify.mjs (they need a real browser): layoutTest for the Transport page's Vehicle by document grid, captureLayoutTest for the Capture page, setupLayoutTest (at the bottom) for the Fleet setup page.
 // Use: load the Transport page (or a local copy with sample data), paste this file into the console, then run
 //   await layoutTest()   -> { pass, failures[], facts{} } for the current window width.
 // Fails when a column is cut off with no way to scroll, the page scrolls sideways, the header or the vehicle column
@@ -74,5 +74,31 @@ window.captureLayoutTest = async function () {
   const deb = document.querySelector('#summary:not([hidden]) .cap-debrief .cap-slots');
   if (deb) { facts.screen = 'inspection summary'; const l = deb.lastElementChild; if (l && l.getBoundingClientRect().right > deb.getBoundingClientRect().right + 1) f.push('the summary strip of slots does not fit the width'); }
   if ([...document.querySelectorAll('.cap-resume .cap-btn')].some((b) => b.getClientRects().length && b.getBoundingClientRect().height < 48)) f.push('a Carry on / End it / Discard it button is under 48 px tall');
+  return { pass: f.length === 0, failures: f, facts };
+};
+
+// Fleet setup page (coordinator/transport/setup.html), phone width: run   await setupLayoutTest()   on the board, a bus and a
+// quest form (375x667, 320x568 and 740x360). Fails when the page scrolls sideways, anything visible sticks out past the right
+// edge, a button, link button, field, select or "Kilometres, workshop, cost" toggle is under 48 px tall, a team bar does not read
+// "<campus> fleet: N of M buses ready", a bus card has no ring or its ring is squeezed, or a bus does not list its six quests.
+window.setupLayoutTest = async function () {
+  const f = [], facts = {}, de = document.documentElement, vis = (e) => e.getClientRects().length > 0;
+  facts.viewport = innerWidth + 'x' + innerHeight;
+  if (de.scrollWidth > de.clientWidth + 1) f.push('page scrolls sideways (' + de.scrollWidth + ' > ' + de.clientWidth + ')');
+  const out = [...document.querySelectorAll('body *')].filter((e) => vis(e) && e.getBoundingClientRect().right > innerWidth + 1);
+  if (out.length) f.push('sticks out on the right: ' + out.slice(0, 5).map((e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '.' + e.className)).join(', '));
+  facts.screen = ['quest', 'bus', 'board'].find((id) => !document.getElementById(id).hidden) || 'none';
+  const small = [...document.querySelectorAll('.fs button, .fs a.cap-primary, .fs input:not([type=file]), .fs select, .fs summary')]
+    .filter((e) => vis(e) && e.getBoundingClientRect().height < 47.5).map((e) => (e.textContent || e.id || e.tagName).trim().slice(0, 20) + ':' + Math.round(e.getBoundingClientRect().height));
+  if (small.length) f.push('under 48 px: ' + small.slice(0, 5).join(', '));
+  if (facts.screen === 'board') {
+    const bars = [...document.querySelectorAll('#teams li p')].map((p) => p.textContent);
+    facts.teams = bars.join(' | ');
+    if (bars.some((t) => !/^LMS \d fleet: \d+ of \d+ buses ready$/.test(t))) f.push('a team bar does not read "<campus> fleet: N of M buses ready"');
+    const cards = [...document.querySelectorAll('.fs-bus')];
+    facts.buses = cards.length;
+    if (cards.some((c) => { const r = c.querySelector('.fs-ring'); return !r || r.getBoundingClientRect().width < 48; })) f.push('a bus card has no ring, or its ring is squeezed');
+  }
+  if (facts.screen === 'bus' && document.querySelectorAll('#bus .fs-quest').length !== 6) f.push('the bus does not list its six quests');
   return { pass: f.length === 0, failures: f, facts };
 };
