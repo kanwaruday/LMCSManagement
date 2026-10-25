@@ -209,6 +209,15 @@ function tchTrackerRows_(trackerValues, overrideValues, ayLabel) {
 }
 
 // ── the index ────────────────────────────────────────────────────────
+// Ruling 23, the ONE rule for which feed entries the overnight activity check can look at: an entry with a chapter, a usable time and a
+// non-empty CW description (trimmed), before or after the CWA. The index (episode.lastDescribed) and the nightly pull (tchMatchPull_) both use it.
+// chKey = tchChKey_ of r.cwChapter (the caller caches that). -> {key:'lmsIdx|class|subjectKey|chapterKey', desc, t} or null. The teacher is the caller's to resolve.
+function tchCandidate_(r, chKey) {
+  const desc = String(r.cwDesc || '').trim(), t = Number(r.timeMs);
+  if (!chKey || !desc || !isFinite(t) || t <= 0) return null;
+  return { key: Number(r.lmsIdx) + '|' + r.classMapped + '|' + tchSubjKey_(r.subject) + '|' + chKey, desc: desc, t: t };
+}
+
 function tchIstDay_(ms) { return new Date(ms + TCH_IST_OFFSET_MS).toISOString().slice(0, 10); }
 
 // feed = {cwRecords, cmData}; roster = {employees:[{employeeCode,name,school}], academic:[{employeeCode,class,subject}]};
@@ -234,7 +243,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
   });
 
   // pass 1: resolve every entry's teacher; note which chapters have started (any teacher, resolved or not)
-  const nameCache = {}, unmatchedBy = {}, resolution = {}, started = {}, rawName = {}, chCache = {}, campusPairs = {}, codePairs = {};
+  const nameCache = {}, unmatchedBy = {}, resolution = {}, started = {}, rawName = {}, chCache = {}, campusPairs = {}, codePairs = {}, lastDescribed = {};
   const slim = [];
   recs.forEach(function (r) {
     const idx = Number(r.lmsIdx), res = resolution[idx] = resolution[idx] || { records: 0, resolved: 0 };
@@ -256,6 +265,8 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
       return;
     }
     res.resolved++;
+    const cand = tchCandidate_(r, ch);
+    if (cand) { const dk = code + '|' + cand.key; if (!tchHas_(lastDescribed, dk) || cand.t > lastDescribed[dk]) lastDescribed[dk] = cand.t; }
     const pk = r.classMapped + '|' + tchSubjKey_(r.subject), cp = codePairs[code] = codePairs[code] || {};
     cp[pk] = (cp[pk] || 0) + 1;
     slim.push({ lmsIdx: idx, classMapped: r.classMapped, subject: r.subject, teacher: code, cwChapter: r.cwChapter, cwTag: r.cwTag,
@@ -315,6 +326,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     const trackerAt = tchHas_(trackerCwa, cs + '|' + ck) ? trackerCwa[cs + '|' + ck] : null;
     stateOf(code).episodes.push({
       cls: e.key.cls, subj: e.key.subj, ch: e.key.ch, name: rawName[cs + '|' + ck] || e.key.ch, first: e.first, last: e.last,
+      lastDescribed: lastDescribed[code + '|' + cs + '|' + ck] || 0, // newest candidate note (tchCandidate_), for the overnight check's "checking" hint
       cwaAt: e.cwa !== null ? e.cwa : trackerAt,
       cwaFrom: e.cwa !== null ? 'tag' : (trackerAt !== null ? 'tracker' : null),
       remediatedAt: e.cwa !== null ? e.remediationWithin : null,
@@ -609,6 +621,8 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
 // Each night the Mac asks local LM Studio whether a chapter's CW notes describe the activity the teacher planned (tools/teacher_activity_match.py).
 // Tab "Teacher Activity Matches" (PlanKey, EntryTimeMs, Matched, Confidence, Reason, CheckedAt), created on the first push, one row per
 // checked entry. PlanKey is a SHA-256 of the plan's row key salted with Script property GAME_PUSH_SECRET: the Mac never sees a name or a code.
+// SETUP: Script property GAME_PUSH_SECRET (and the Mac's ~/.lmcs/game_push_secret). ROTATING IT RESETS EVERY ACTIVITY CHECK: it salts planKey, so every
+// stored result stops matching its plan and the next night re-asks about all of them.
 // teachermatchpull / teachermatchpush carry no Google token; the shared secret is the gate (game.gs doPost has a caller-less branch for exactly
 // these two actions). tchMatchesFor_ is called INSIDE gameWithLock_ by the quests hook: sheet and cache reads only, never a feed fetch.
 // ponytail: tchMatchesFor_ scans the whole matches tab on a cache miss (10 min per teacher); add a per-teacher tab if it passes a few thousand rows.
@@ -678,12 +692,12 @@ function tchMatchPull_(body) {
   feed.cwRecords.forEach(function (r) {
     const rawCh = String(r.cwChapter || '');
     const ch = tchHas_(chCache, rawCh) ? chCache[rawCh] : (chCache[rawCh] = tchChKey_(rawCh));
-    const list = ch && want[Number(r.lmsIdx) + '|' + r.classMapped + '|' + tchSubjKey_(r.subject) + '|' + ch];
-    const desc = String(r.cwDesc || '').trim(), t = Number(r.timeMs);
-    if (!list || !desc || !isFinite(t)) return;
+    const cand = tchCandidate_(r, ch), list = cand && want[cand.key]; // the index's own eligibility rule (Ruling 23)
+    if (!list) return;
+    // Ruling 24, deliberate: a note logged before the plan's PlannedAt may still confirm the activity, so there is no PlannedAt filter.
     const nk = Number(r.lmsIdx) + '|' + r.teacher;
     if (!tchHas_(nameCache, nk)) nameCache[nk] = tchResolve_(r.teacher, byCampus, Number(r.lmsIdx));
-    list.forEach(function (w) { if (nameCache[nk] === w.code && t > w.maxT) w.entries.push({ timeMs: t, desc: desc.slice(0, TCH_PULL_DESC_MAX) }); });
+    list.forEach(function (w) { if (nameCache[nk] === w.code && cand.t > w.maxT) w.entries.push({ timeMs: cand.t, desc: cand.desc.slice(0, TCH_PULL_DESC_MAX) }); });
   });
   const items = all.filter(function (w) { return w.entries.length; }).slice(0, TCH_PULL_MAX_ITEMS).map(function (w) {
     return { planKey: w.planKey, activity: w.activity, entries: w.entries.sort(function (a, b) { return a.timeMs - b.timeMs; }).slice(0, TCH_PULL_MAX_ENTRIES) };
@@ -700,10 +714,10 @@ function tchMatchPush_(body) {
   if (!results.length) return { success: true, written: 0 };
   const secret = tchPushSecret_(), codeOf = {};
   tchAllPlanRows_().forEach(function (p) { codeOf[tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm)] = p.code; });
-  const now = gameNow_().toISOString(), rows = [], codes = {};
+  const nowMs = gameNow_().getTime(), now = new Date(nowMs).toISOString(), rows = [], codes = {};
   for (let i = 0; i < results.length; i++) {
     const r = results[i] || {}, t = Number(r.timeMs), c = r.confidence;
-    if (!tchHas_(codeOf, String(r.planKey)) || !(t > 0) || !isFinite(t) || typeof r.matched !== 'boolean' || typeof c !== 'number' || !(c >= 0 && c <= 1)) return { success: false, error: 'Result ' + (i + 1) + ' rejected' };
+    if (!tchHas_(codeOf, String(r.planKey)) || !(t > 0) || !isFinite(t) || t > nowMs + TCH_DAY_MS || typeof r.matched !== 'boolean' || typeof c !== 'number' || !(c >= 0 && c <= 1)) return { success: false, error: 'Result ' + (i + 1) + ' rejected' };
     codes[codeOf[r.planKey]] = true;
     rows.push([r.planKey, String(Math.floor(t)), String(r.matched), String(c), String(r.reason || '').replace(/^[=+\-@\s]+/, '').slice(0, TCH_REASON_MAX), now]); // a note never starts a formula
   }
@@ -717,13 +731,14 @@ function tchMatchPush_(body) {
   return { success: true, written: rows.length };
 }
 
-// {"cls|subj|chNorm": {matched, confidence} | {pending:true}} for the quests: a plan that matched keeps its best match; else {pending:true} while the
-// chapter's newest entry (the cached TeacherState episode) is newer than the last one checked; else the best non-match; a plan with no episode and
-// no check has no key. Safe inside gameWithLock_: sheet reads and cache only.
-function tchMatchesFor_(code) {
+// {"cls|subj|chNorm": {matched, confidence} | {pending:true}} for the quests: a plan with a match at or above matchMinConfidence keeps its best match;
+// else {pending:true} while the chapter's newest candidate note (episode.lastDescribed in the cached TeacherState, the pull's own eligibility rule) is
+// newer than the last one checked; else the best result so far (a weak match or a non-match); a plan with no candidate note and no check has no key.
+// Safe inside gameWithLock_: sheet reads and cache only. cfg (optional) is the parsed Game Config the quests hook already holds.
+function tchMatchesFor_(code, cfg) {
   if (!code) return {};
   try {
-    const secret = tchPushSecret_();
+    const T = tchConfig_(cfg || tchLoadCfg_()), secret = tchPushSecret_();
     if (!secret) return {};
     const cache = CacheService.getScriptCache(), mkey = 'tch_matches_' + code;
     let sums = tchReadJson_(cache, mkey);
@@ -737,10 +752,10 @@ function tchMatchesFor_(code) {
     Object.keys(tchPlansFor_(code)).concat(Object.keys(sums)).forEach(function (key) {
       if (tchHas_(out, key)) return;
       const s = tchHas_(sums, key) ? sums[key] : null, p = key.split('|');
-      const last = eps.reduce(function (n, e) { return e.cls === p[0] && e.subj === p[1] && e.ch === p[2] && e.last > n ? e.last : n; }, 0);
-      if (s && s.bestM) out[key] = { matched: true, confidence: s.bestC };
+      const last = eps.reduce(function (n, e) { return e.cls === p[0] && e.subj === p[1] && e.ch === p[2] && e.lastDescribed > n ? e.lastDescribed : n; }, 0);
+      if (s && s.bestM && s.bestC >= T.matchMinConfidence) out[key] = { matched: true, confidence: s.bestC }; // a weak match falls through: newer notes may still confirm it
       else if (last > (s ? s.maxT : 0)) out[key] = { pending: true };
-      else if (s) out[key] = { matched: false, confidence: s.bestC };
+      else if (s) out[key] = { matched: s.bestM, confidence: s.bestC };
     });
     return out;
   } catch (err) { return {}; }
@@ -996,7 +1011,7 @@ GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now) {
   });
   // view-as never reaches this hook: the game backend has no view-as caller (no marker in game.gs), every caller is the signed-in person
   gameAppendText_(progSheet, fresh);
-  return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code), tcfg, now));
+  return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code, tcfg), tcfg, now));
 };
 
 // Day finalize (the framework calls it for a core id that was not seen done, INSIDE gameWithLock_): when was that day's log card completed?

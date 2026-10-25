@@ -89,6 +89,9 @@ assert.strictEqual(push([ok({ confidence: 'high' })]).success, false); assert.st
 assert.strictEqual(push([ok(), ok({ planKey: 'f'.repeat(64) })]).success, false); // one bad row rejects the batch
 assert.strictEqual(push(new Array(2001).fill(ok())).success, false);
 assert.strictEqual(push('nope').success, false);
+const NOWMS = Date.now(); ctx.gameNow_ = () => new Date(NOWMS); // the push clock; later tests that need another clock set their own
+assert.strictEqual(push([ok({ timeMs: NOWMS + 86400000 + 1000 })]).success, false); // later than now + 1 day
+assert.strictEqual(push([ok({ timeMs: NOWMS + 2 * 86400000 })]).success, false);
 assert.strictEqual(rows(), null); assert.deepStrictEqual(events, []);
 
 // ---- push: appends under the lock, tab created lazily with the exact header, written as text
@@ -97,6 +100,10 @@ assert.deepStrictEqual(events, ['lock', 'unlock']);
 assert.deepStrictEqual(rows()[0], MHEAD); assert.strictEqual(rows().length, 3);
 assert.deepStrictEqual(rows()[1].slice(0, 4), [KA, '1000', 'false', '0.3']); assert.strictEqual(rows()[1][4].charAt(0) === '=', false);
 assert.ok(!isNaN(Date.parse(rows()[1][5])));
+rows().length = 1; // the accepted edge: exactly now + 1 day
+assert.deepStrictEqual(push([ok({ timeMs: NOWMS + 86400000 })]), { success: true, written: 1 });
+rows().length = 1;
+assert.deepStrictEqual(push([ok({ timeMs: 1000, matched: false, confidence: 0.3, reason: '=HYPERLINK("x")' }), ok({ timeMs: 2000, matched: false, confidence: 0.4 })]), { success: true, written: 2 });
 assert.deepStrictEqual(push([]), { success: true, written: 0 });
 assert.strictEqual(push(new Array(2000).fill(ok())).success, true); assert.strictEqual(rows().length, 2003);
 rows().length = 3; // back to the two real rows
@@ -129,7 +136,7 @@ out = pull(); assert.strictEqual(out.items.some((i) => i.planKey === KC), false)
 
 // ---- tchMatchesFor_: best result per plan, {pending:true} when the plan has entries newer than its last check
 const NOW = new Date('2026-11-10T05:00:00Z');
-const ep = (cls, subj, ch, last) => ({ cls: cls, subj: subj, ch: ch, name: ch, first: last - 1, last: last, cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null });
+const ep = (cls, subj, ch, last, described) => ({ cls: cls, subj: subj, ch: ch, name: ch, first: last - 1, last: last, lastDescribed: described === undefined ? last : described, cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null });
 const setState = (eps) => store.set('tch_' + A, JSON.stringify({ code: A, campus: 'LMS4', classSubjects: [], episodes: eps, loggedDays: {}, periodsByDay: null, nextChapters: [] }));
 const invalidate = () => { store.delete('tch_matches_' + A); store.delete('tch_plans_' + A); };
 rows().length = 1; invalidate(); // empty matches tab
@@ -150,6 +157,26 @@ assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: true, confidenc
 // ... even when newer entries arrive later: a plan that already matched stays matched
 setState([ep('Class 7', 'Math', 'fractions', 20000), ep('Class 8', 'Science', 'cells', 5000)]);
 assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: true, confidence: 0.9 });
+// a weak match (< matchMinConfidence 0.7) does not hide "checking overnight" while newer notes await an answer
+rows().length = 1; invalidate();
+push([ok({ timeMs: 9000, matched: true, confidence: 0.5 })]);
+setState([ep('Class 7', 'Math', 'fractions', 20000), ep('Class 8', 'Science', 'cells', 5000)]);
+assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { pending: true });
+setState([ep('Class 7', 'Math', 'fractions', 9000), ep('Class 8', 'Science', 'cells', 5000)]);
+assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: true, confidence: 0.5 }); // nothing newer: the quest treats it as not done
+assert.strictEqual(J(ctx.tchChapterQuests_(JSON.parse(store.get('tch_' + A)), ctx.tchPlansFor_(A), J(ctx.tchMatchesFor_(A)), {}, new Date(10000)))[0].steps[2].done, false);
+// the newest note has a blank description (last 9500, lastDescribed 9000): nothing to check, so NOT pending
+setState([ep('Class 7', 'Math', 'fractions', 9500, 9000)]);
+assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: true, confidence: 0.5 });
+rows().length = 1; invalidate(); push([ok({ timeMs: 9000, matched: false, confidence: 0.4 })]);
+assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: false, confidence: 0.4 });
+setState([ep('Class 7', 'Math', 'fractions', 9500, 9400)]); // a described note newer than the check: pending
+assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { pending: true });
+// the old state shape (no lastDescribed) is never pending, never an error
+setState([{ cls: 'Class 7', subj: 'Math', ch: 'fractions', last: 20000 }]); assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: false, confidence: 0.4 });
+rows().length = 1; invalidate();
+setState([ep('Class 7', 'Math', 'fractions', 9000), ep('Class 8', 'Science', 'cells', 5000)]);
+push([ok({ timeMs: 9000, matched: true, confidence: 0.9 })]);
 // no episode (nothing logged on the chapter yet) and no checks -> no entry at all; no state -> only what the sheet holds
 setState([]); assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { matched: true, confidence: 0.9 }); assert.strictEqual(J(ctx.tchMatchesFor_(A))[KEY2], undefined);
 store.delete('tch_' + A); assert.strictEqual(J(ctx.tchMatchesFor_(A))[KEY2], undefined);
@@ -164,6 +191,29 @@ const quest = (matches) => J(ctx.tchChapterQuests_(JSON.parse(store.get('tch_' +
 assert.strictEqual(quest(J(ctx.tchMatchesFor_(A))).steps[2].done, true);
 rows().length = 1; invalidate();
 assert.ok(/checking overnight/.test(quest(J(ctx.tchMatchesFor_(A))).steps[2].title));
+
+// ---- the index carries lastDescribed from the same eligibility rule the pull uses (Ruling 23): described notes only, before or after the CWA
+{
+  const D = 86400000, T0 = Date.UTC(2026, 10, 1);
+  const r2 = (ch, tag, t, desc) => ({ lmsIdx: 3, classMapped: 'Class 7', subject: 'Math', teacher: 'Anita Rao', cwChapter: ch, cwTag: tag, hwDesc: '', hwTag: '', cwDesc: desc, timeMs: T0 + t * D, dateStr: new Date(T0 + t * D).toISOString().slice(0, 10) });
+  const feed = { cwRecords: [
+    r2('Fractions', 'Chapter Teaching', 1, 'Intro to fractions'), r2('Fractions', 'CWA', 2, 'CWA taken'), r2('Fractions', 'Activity', 3, '  Pizza activity after the CWA  '), r2('Fractions', 'Chapter Teaching', 4, '   '),
+    r2('Decimals', 'Chapter Teaching', 1, 'Place value'), r2('Decimals', 'Chapter Teaching', 2, ''), r2('Decimals', 'Chapter Teaching', 3, undefined),
+    r2('Ghost', 'Chapter Teaching', 1, '')], cmData: {} };
+  const out = ctx.tchBuildIndex_(feed, { employees: empBody.employees, academic: [] }, [], null, null, { now: T0 + 10 * D });
+  const eps = J(out.byCode[A].episodes), byCh = {}; eps.forEach((e) => { byCh[e.ch] = e; });
+  assert.strictEqual(byCh.fractions.lastDescribed, T0 + 3 * D);  // the post-CWA described note counts; the later blank one does not
+  assert.strictEqual(byCh.decimals.lastDescribed, T0 + 1 * D);   // the newer blank / missing descriptions do not
+  assert.strictEqual(byCh.ghost.lastDescribed, 0);               // nothing described at all
+  // the same records through the pull's helper agree
+  const cands = feed.cwRecords.map((r) => ctx.tchCandidate_(r, ctx.tchChKey_(r.cwChapter))).filter(Boolean);
+  assert.strictEqual(cands.length, 4); assert.ok(cands.every((c) => c.desc === c.desc.trim() && /^3\|Class 7\|math\|/.test(c.key)));
+  assert.strictEqual(ctx.tchCandidate_(Object.assign({}, feed.cwRecords[0], { cwChapter: '' }), ''), null);
+  // the whole path: post-CWA note, quest state says pending until it is checked
+  store.set('tch_' + A, JSON.stringify({ code: A, campus: 'LMS4', classSubjects: [], episodes: eps, loggedDays: {}, periodsByDay: null, nextChapters: [] }));
+  rows().length = 1; invalidate();
+  assert.deepStrictEqual(J(ctx.tchMatchesFor_(A))[KEY], { pending: true });
+}
 
 // ---- doPost: the two actions are the only caller-less ones, and they still need the secret
 const post = (b) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(b) } }).text);
