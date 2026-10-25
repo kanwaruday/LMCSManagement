@@ -321,6 +321,19 @@ progress bar and a route line filling in on the map. A finished, verified route 
 - Count runs never use the camera.
 - Every frame is blurred before anyone sees it, and images are never public.
 
+### Later: students and parents in the portal (Uday, 2026-10-25, "keep in hindsight")
+
+Uday wants to open the portal to students and parents in the future, so they can share their own Google data
+with the school. For transport, that would mean, for example, a parent confirming the child's pickup point or
+sharing the live location of the waiting point. It is **not in any phase yet**.
+
+Design for it now:
+- keep stop and allocation data keyed by student ID;
+- keep the auth layer able to add a Parent or Student role later;
+- never assume only staff will ever sign in.
+
+When it comes, it is its own design: consent flows, what parents may see, and Google account sign-in.
+
 ## Roles
 
 | Role | Sees | Does |
@@ -333,7 +346,7 @@ progress bar and a route line filling in on the map. A finished, verified route 
 
 | Phase | Ships | Depends on |
 |---|---|---|
-| **1. Capture portal first, then the game shell (read-only) + missions + street view** | **1a:** `capture.html` (photo runs + count runs, offline queue, upload) and the Mac's blur and strip processing. **1b:** game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). For 1b's stop views: one photo run per route (Coordinator, outside school hours) |
+| **1. Capture portal first, then the game shell (read-only) + missions + street view** | **1a:** `capture.html` (photo runs + count runs, offline queue, upload), the Mac's blur and timelapse processing, the day-book component tap, fuel-fill video proof, the safety loadout and monthly inspection, **Fleet setup quests** and the agency data import. **1b:** driver selection (F1 line-up board), game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). For 1b's stop views: one photo run per route (Coordinator, outside school hours) |
 | **2. Route editor sandbox** | Purple-line drawing, trade-off preview, overflow rings, trip highlight, proposals and the Owner's war room | Phase 1. Stop names (staff workbook or GPS). OSRM running on the Mac |
 | **3. Student-to-stop allocation** | Counts per stop, unassigned counter, signed-in drag between stops, allocation proposals | ERP per-student transport for each campus. Staff stop workbook imported. Privacy advice (DPDP) |
 | **4. Garage and progression** | Component board per bus, safety loadout and monthly inspection, upgrade/keep/replace cards, workshop scorecard, reliability, seasons, team goals, streaks with freeze, shipments | Phase 1. **Months of component-tagged service entries**, so the component tap starts early (see below) |
@@ -347,6 +360,14 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 375 px and desktop) and shipped only with Uday's go-ahead.
 
 ## Tech calls (Claude's, from the research and the current code)
+
+- **Everything lives in `/Volumes/AI Work/Uday - LMCS Software Project/`** (Uday, 2026-10-25):
+  - code goes in the LMCSManagement repo;
+  - private data files go in gitignored folders inside it (`transport/game-data/`);
+  - new Mac processing goes in `LMCSManagement/transport/` (not `~/Projects`).
+
+  Moving the existing `~/Projects/transport-gps` into the project folder is a separate follow-up, because its
+  daily job and the Transport GPS session depend on it.
 
 - **Keep it in the portal:** static pages on GitHub Pages, Apps Script backends, the existing `TransportChecks`
   shell and `TransportViews` module, the auth pattern, and campus scoping as it is today. No framework.
@@ -453,10 +474,10 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 | 3 | Phone mounts | **Will be arranged** | — |
 | 4 | Safety equipment list | **Done in the portal; all data now comes from the game interface** | The loadout list is **editable in the portal by the Owner**, not fixed in code. Inspections and answers are entered through the game |
 | 5 | Monthly safety check | **The Coordinator** | Monthly inspection mission per bus for the Coordinator |
-| 6 | Part lives and prices | **Uday will get them from each vehicle agency's service centre** | Claude provides the data request list (`docs/transport-game/service-centre-data-request.md`; a Word copy is in OneDrive `1. Projects/LMCS Transport Game/`). Component lives and prices are entered per make and model, not guessed |
+| 6 | Part lives and prices | **Uday will get them from each vehicle agency's service centre** | Claude provides the data request list (`docs/transport-game/service-centre-data-request.md`; with a Word copy and an Excel template, `Service centre data template (agencies).xlsx`, for the agencies to fill. Both are in `transport/game-data/` (gitignored); Uday uploads the filled template for import). Component lives and prices are entered per make and model, not guessed |
 | 7 | Overhaul / replace triggers | **To discuss further** | Garage cards show the numbers, but "overhaul?" and "replace?" flags stay off until agreed |
 | 8 | Renewal budget | **Decide later** | Replace proposals show cost only, with no budget check yet |
-| 9 | Data questionnaire | **Make one; staff will collect** | `OneDrive/1. Projects/LMCS Transport Game/Transport data questionnaire (staff).xlsx`. It has 8 sheets (vehicles, safety equipment, parts last replaced, workshops, drivers, fuel, capture plan, agencies), pre-filled with the 24 vehicles. It is kept out of the public repo because it holds driver data |
+| 9 | Data questionnaire | **Make one; staff will collect** | `transport/game-data/Transport data questionnaire (staff).xlsx` (gitignored; superseded by the in-portal Fleet setup quests below, kept as a paper fallback). It has 8 sheets (vehicles, safety equipment, parts last replaced, workshops, drivers, fuel, capture plan, agencies), pre-filled with the 24 vehicles. It is kept out of the public repo because it holds driver data |
 | 10 | Season goals | **Load cap of 1.4× official capacity; live fuel checking with a video of each fill plus the diesel bill** | See "Load cap" and "Fuel-fill proof" below |
 | 11 | Monthly reserve ("shipments") | **Let's design it** | See "Shipments" below (proposal for Uday's review) |
 | 12 | Drivers as characters | **Yes; Fee Clerks upload their data on the portal** | See "Driver cards" below (Claude's reading of the answer) |
@@ -511,6 +532,52 @@ Drivers become characters in the game, with **no driver accounts**. Fee Clerks u
   - incidents.
 - **Never** score speed. **Never** link the card to pay automatically.
 - **Wellbeing:** first and last trip times flag long days (fatigue) for the Coordinator.
+
+### Fleet setup quests: data collection as a game (Uday, 2026-10-25)
+
+Uday asked for the staff questionnaire to become a gamified screen, so no spreadsheet goes round. Fleet setup
+happens **in the portal**. Everything below is Claude's call.
+
+- **Each bus has a profile.** It is a card with a completion ring: "HP659511 · 64% set up".
+- **A quest for each part of the profile.** Each quest is a short form of a few fields, and photos go through
+  the capture portal. The quests:
+  - **Vehicle papers** (make, model, chassis and engine number, RC seating, odometer photo);
+  - **Safety kit** (the first inspection);
+  - **Parts history** (last replaced date, km, workshop and cost per component);
+  - **Driver card**;
+  - **Fuel pump**;
+  - **Capture plan**.
+- **Who does it:** Fee Clerks for their campus, Coordinators for their district.
+- **Rewards:** finishing a quest ticks a segment, and a 100% bus earns a "**ready**" badge. Each campus has a
+  **team bar** ("LMS 4 fleet: 5 of 8 buses ready"). No individual leaderboard.
+- **What the Owner sees:** the gaps ("14 buses with no parts history").
+- **Where the data goes:** tabs in the private transport workbook (`Fleet Profile`, `Driver Profile`,
+  `Parts History`, `Workshops`). Driver personal data is served only to signed-in roles for that campus.
+- **Agency data:** the agencies' Excel template is imported into a `Parts Catalog` tab: schedules, part lives
+  and prices per model. That catalog then sets each part's life and price in the garage.
+
+### Driver selection, F1 style (Uday, 2026-10-25)
+
+Choosing who drives which bus is presented like an **F1 team's driver line-up**. Everything below is
+Claude's call; Uday wanted F1 as the inspiration.
+
+- **Driver cards**, styled like F1 driver cards: photo, name, years with the school, licence class and
+  validity, age (with the under-60 rule), medical, and police verification.
+- **Stats** for each driver: punctuality, stop-order adherence, **clean days** (no minute above 40 km/h),
+  fuel fills with proof, and routes known (from route-replay briefings and runs driven).
+- **Speed is never a stat**, and the cards are never ranked publicly.
+- **The line-up board** (the "pit wall"): each bus is a car slot, and the Coordinator drags a driver onto it.
+- **Eligibility is checked live.** A slot greys out when:
+  - the licence class doesn't fit the vehicle;
+  - the licence, medical or police verification has expired;
+  - the driver is 60 or over.
+
+  The board also warns when the driver has never been briefed on that route.
+- **Reserve drivers** (F1 reserves): each campus keeps a bench. A one-tap "substitute for today" covers a
+  leave or absence, and is recorded.
+- **Changes are proposals.** A permanent swap goes to the Owner, like route proposals. A same-day substitute
+  is the Coordinator's call, and the Owner sees it.
+- **When it ships:** in Phase 1b. It needs the driver cards that the Fleet setup quests fill.
 
 ### Shipments: the monthly reserve (item 11, proposal for Uday)
 
