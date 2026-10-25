@@ -298,7 +298,7 @@ GET action=principalissues&idToken=…   (Principal: own campus only; Coordinato
 | Morning, nothing urgent | "Morning. Nothing in your district is past its line today. Your five are ready when you are." |
 | A decision clears a Principal's wait | "Decided. LMS 4's Principal can go ahead with the trip now." |
 | Help credit, end of day | "You unblocked 3 Principals today." |
-| A hire completed | "<Name>'s joining is now complete in the Employee Master. Payroll will pick her up this month." |
+| A hire completed | "<Name>'s joining is now complete in the Employee Master. Payroll will include them this month." |
 | A stalled hire, shared | "A hire at LMS 2 has been approved for 8 days but not yet marked Hired. A word with the Principal usually moves it." |
 | District goal met | "LMS 1–3 decided every approval within three days this month. Shabash, district." |
 | A campus steady | "LMS 6 is steady: every need is full." |
