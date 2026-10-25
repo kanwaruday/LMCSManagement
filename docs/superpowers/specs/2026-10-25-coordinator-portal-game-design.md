@@ -117,8 +117,10 @@ Builds on, and does not repeat:
     recommendation clears it for all.
   - **Approval (Owner's own Today panel, the game director's adapter):** done when the Approvals row has a decision
     from `aprDecide_`. `doneBy` = `decidedByEmail`.
-  - **Complete-hire:** done when the Employee Master row exists. `doneBy` = whoever added it (the Coordinator's real
-    lever).
+  - **Complete-hire:** done when the Employee Master row exists. **Nothing records who added a row today**
+    (`addNewHire_` and `joinHire_` write no author), so it counts as a shared mission with no personal credit until C1
+    adds an `AddedBy` column to EmpMaster, written by both functions with the caller's email. `buildRow_` maps by
+    header, so the new column is safe for existing readers.
   - **Hiring stall** (approved but not Hired): done when the applicant reaches Hired or Rejected. Only the campus
     marks Hired on the Hiring Dashboard, so a Coordinator's lever here is the conversation. **Claude's call:** the
     stall is a **shared mission**. When it clears, it fills its campus team bar, and no one gets personal
@@ -284,7 +286,9 @@ quest): its steps are the real items, and done is checked from data.
 ### 7. Coordinator quests (content for the shared layer)
 
 - **Quest 1 "Your network"** (in the shared spec as "Your district"; renamed after Uday's "network wide"): recommend on one approval pending 3+ days, with a reason;
-  add one joiner to the Employee Master (a complete-hire); resolve one other follow-up with an outcome note.
+  act on one daily-report issue (assign it or resolve it, with a note: recorded in `PDR Issue Actions`); resolve one
+  other follow-up with an outcome note. (An earlier "add one joiner" step was dropped: no source records who added an
+  Employee Master row, and new joiners mostly arrive through the Hiring Dashboard's Start Hiring Process.)
 - **Quest 2 "Know your bases"**, unlocked after Quest 1:
   - close one daily-report issue together with its Principal (the issue resolved, with the Principal's or your note);
   - see the Owner's decision on three of your recommendations (done when three of your recommendations have been
@@ -411,7 +415,11 @@ Names in lines come from live data at runtime, never from static files.
    - `coordinatortrackrecord`: a Coordinator's own track record (the Owner sees everyone's);
    - `principalissues`: the Principal-scoped issue read.
 4. **New write actions:** `coordinatorrecommend` (Coordinator; reason required) to the new `Recommendations` tab in the
-   LMCS Approvals workbook. `principalissueresolve` (Principal, own campus, note required). `coordinatorpdrissue` gains the
+   LMCS Approvals workbook (`1Tr4Rfc6…`, the workbook that holds Approvals and Tasks). Columns, in this order (the
+   Game Backend reads by position):
+   `RecId, ApprovalId, Campus, Category, RecommendedBy, Recommendation (Approve | Reject | Info), Reason, Checked,
+   RecommendedAt (ISO), Superseded (TRUE when a later recommendation on the same ApprovalId replaced it, else blank)`.
+   The latest non-superseded row per ApprovalId stands. `principalissueresolve` (Principal, own campus, note required). `coordinatorpdrissue` gains the
    `reopened` status (Coordinator/Owner, reason required).
 5. **New tabs:** `Campus Papers` and `Findings` (section 6), plus the push action for Campus Papers.
 6. **No new game storage, except one history tab.** Progress and help credits live in the shared Game Backend.
