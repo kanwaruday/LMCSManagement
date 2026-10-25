@@ -62,6 +62,30 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   await ctx.load();
   assert.ok(/Database busy/.test(els.board.innerHTML) && /Retry/.test(els.board.innerHTML), 'other errors keep Retry');
 
+  // fresh requests: "New request" cards after the existing cards, filtered by district, opening the same decision view
+  const freshT = { taskId: 'doc_missing|E1', domain: 'doc_missing', campus: 'LMS1', title: 'Docs missing', detail: '', severity: 'low', assignee: '', due: '', createdAt: '2026-10-01T05:00:00.000Z' };
+  const freshList = [{ approvalId: 'APR-9', campus: 'LMS4', title: 'Fan <b>repair</b>', category: 'Financial / Purchase', status: 'Pending', requestedAt: '2026-10-25T05:00:00.000Z', recommendation: null },
+    { approvalId: 'APR-8', campus: 'LMS2', title: 'Trip', category: 'Off-Campus Trip / Excursion', status: 'Pending', requestedAt: '2026-10-24T05:00:00.000Z', recommendation: { by: 'x@lms.test', byName: 'A <i>N</i>', recommendation: 'Approve', reason: 'fine' } }];
+  vm.runInContext('TASKS = ' + JSON.stringify([freshT]) + '; FRESH = ' + JSON.stringify(freshList) + "; FILTER = 'All'; SHOW_ALL = false; OPEN = null;", ctx);
+  ctx.renderBoard();
+  const b = els.board.innerHTML;
+  assert.ok(b.indexOf('Docs missing') !== -1 && b.indexOf('Docs missing') < b.indexOf('Fan &lt;b&gt;repair') && b.indexOf('Fan &lt;b&gt;repair') < b.indexOf('Trip'), 'existing cards first, then the new requests (no recommendation yet first)');
+  assert.ok(!b.includes('<b>repair'), 'fresh title escaped');
+  const nc = ctx.freshHtml(freshList[0]);
+  assert.ok(/class="flag new"[^>]*>New request</.test(nc) && nc.includes('raised 25 Oct') && nc.includes('Needs your recommendation') && /data-open="APR-9"/.test(nc), 'new chip, raised date, rec line, opens #d=<id>');
+  assert.ok(nc.includes('Financial / Purchase'), 'category shown');
+  const rc = ctx.freshHtml(freshList[1]);
+  assert.ok(rc.includes('A &lt;i&gt;N&lt;/i&gt; recommends Approve: fine'), 'same recommendation line, escaped');
+  vm.runInContext("FILTER = 'LMS 1–3'", ctx);
+  ctx.renderBoard();
+  assert.ok(els.board.innerHTML.includes('Trip') && !els.board.innerHTML.includes('Fan'), 'district filter applies to new requests');
+  vm.runInContext("TASKS = []; FILTER = 'All'", ctx);
+  ctx.renderBoard();
+  assert.ok(els.board.innerHTML.includes('Fan') && !els.board.innerHTML.includes('Nothing in the network'), 'new requests show even with no follow-ups');
+  ctx.fetch = () => Promise.resolve({ json: () => Promise.resolve({ success: true, tasks: [freshT], fresh: freshList }) });
+  await ctx.load();
+  assert.strictEqual(vm.runInContext('FRESH.length', ctx), 2, 'load keeps fresh from coordinatortasks');
+
   // a late day-book answer fills in the spend line only: the form the Coordinator is typing in is never repainted
   vm.runInContext("SESSION = { idToken: 'tok', email: 'c@lms.test' }; OPEN = 'APR-1'; DECISIONS['APR-1'] = " + JSON.stringify(dec), ctx);
   const preview = ctx.previewHtml(dec);

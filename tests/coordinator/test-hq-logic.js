@@ -95,4 +95,12 @@ assert.strictEqual(H.goHref({}, 'nothing'), null);
 assert.strictEqual(H.approvalId(task('approval|APR-7|Pending')), 'APR-7');
 assert.strictEqual(H.approvalId(task('doc_missing|E1')), null);
 
+// ── rankFresh: new requests (no follow-up card yet) rank among themselves: a Pending one with no recommendation first, then oldest first ──
+const fr = (id, extra) => Object.assign({ approvalId: id, campus: 'LMS4', title: 'T ' + id, category: 'Other', status: 'Pending', requestedAt: '2026-10-25T05:00:00.000Z', recommendation: null }, extra);
+const freshIn = [fr('rec', { requestedAt: '2026-10-20T05:00:00.000Z', recommendation: REC }), fr('info', { status: 'Info Requested', requestedAt: '2026-10-19T05:00:00.000Z' }),
+  fr('new'), fr('old', { requestedAt: '2026-10-24T05:00:00.000Z' })];
+assert.deepStrictEqual(H.rankFresh(freshIn).map((f) => f.approvalId), ['old', 'new', 'info', 'rec']);
+assert.deepStrictEqual(freshIn.map((f) => f.approvalId), ['rec', 'info', 'new', 'old'], 'the input is not reordered in place');
+assert.deepStrictEqual(H.rankFresh(undefined), []);
+
 console.log('hq logic: ok');

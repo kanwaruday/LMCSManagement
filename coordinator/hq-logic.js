@@ -36,6 +36,13 @@
       (sev(a) - sev(b)) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   }
 
+  // New requests (coordinatortasks' fresh: no follow-up card yet) come after every contract; among themselves a Pending one with
+  // no recommendation first, then the oldest first. Returns a new array.
+  function rankFresh(fresh) {
+    const need = (f) => f.status === 'Pending' && !f.recommendation;
+    return (fresh || []).slice().sort((a, b) => (need(b) - need(a)) || String(a.requestedAt || '').localeCompare(String(b.requestedAt || '')));
+  }
+
   // ponytail: starting weights (3 past due or high, 2 medium, 1 low; warm at 4, hot at 10), to be tuned from HQ History.
   function campusHeat(tasks, today) {
     const out = {};
@@ -93,7 +100,7 @@
   // WORK_LINKS (coordinator/shared.js) are written for pages at coordinator/<page>/; the HQ sits one level up.
   function goHref(links, domain) { const l = links && links[domain]; return l ? l.replace(/^\.\.\//, '') : null; }
 
-  const api = { CAMPUSES, districtOf, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, recReady, goHref };
+  const api = { CAMPUSES, districtOf, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, rankFresh, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, recReady, goHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.CoordHQ = api;
 })(typeof window !== 'undefined' ? window : null);

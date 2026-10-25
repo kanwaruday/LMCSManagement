@@ -372,8 +372,7 @@ function coordApprovalWanted_(rows, now) {
     const high = status === 'Pending' ? (urgent ? COORD_APR_URGENT_HIGH_DAYS : COORD_APR_PENDING_HIGH_DAYS) : COORD_APR_INFO_HIGH_DAYS;
     if (days < med) continue;
     const campus = String(r[1] || '').trim();
-    // The same request submitted several times (same campus, category, text, status and day) is one follow-up, not one per copy.
-    const key = [campus, r[2], r[4], status, since.toISOString().slice(0, 10)].join('|');
+    const key = coordAprCopyKey_(r);
     const sev = days >= high ? 'high' : 'medium';
     if (byKey[key]) { byKey[key].ids.push(r[0]); if (sev === 'high') byKey[key].task.severity = 'high'; continue; }
     const task = {
@@ -393,6 +392,13 @@ function coordApprovalWanted_(rows, now) {
     delete t.category; delete t.days; delete t.waitingOn;
   });
   return wanted;
+}
+
+/** The same request submitted several times (same campus, category, text, status and day) is one follow-up, not one per copy.
+ *  Approvals row -> that grouping key; the day is when it started waiting (submitted, or info asked for). */
+function coordAprCopyKey_(r) {
+  const status = String(r[13] || ''), since = new Date(status === 'Pending' ? r[12] : (r[15] || r[12]));
+  return [String(r[1] || '').trim(), r[2], r[4], status, isNaN(since.getTime()) ? '' : since.toISOString().slice(0, 10)].join('|');
 }
 
 function coordRefreshApprovals_() {
@@ -899,7 +905,9 @@ function coordTasksList_(caller, idToken) {
   }
   tasks.sort(function (a, b) { return (rank[a.severity] - rank[b.severity]) || (a.createdAt < b.createdAt ? -1 : 1); });
   try { coordRecAttach_(tasks); } catch (err) { console.error('Recommendations: ' + err.message); } // the tasks show without them rather than not at all
-  return { success: true, tasks: tasks };
+  let fresh = []; // requests too new for a follow-up, so the HQ can still recommend on them (coordinator-recommend.gs)
+  try { fresh = coordFreshApprovals_(coordAprRows_(), rows, visible, coordRecLatest_(coordRecRows_()), coordRecNames_()); } catch (err) { console.error('Fresh requests: ' + err.message); fresh = []; }
+  return { success: true, tasks: tasks, fresh: fresh };
 }
 
 // ── Scheduled refresh and HQ History ─────────────────────────────────

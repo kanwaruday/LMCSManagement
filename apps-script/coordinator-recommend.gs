@@ -219,13 +219,38 @@ function coordDecision_(caller, id) {
   return { success: true, decision: d };
 }
 
+/** A card's recommendation: {by, byName, recommendation, reason, at} from a coordRecLatest_ entry, or null. */
+function coordRecCard_(l, names) {
+  return l ? coordRecNamed_({ by: l.by, recommendation: l.recommendation, reason: l.reason, at: l.at }, names) : null;
+}
+
 /** Attach `recommendation` ({by, byName, recommendation, reason, at} or null) to each approval|<id>|... task. */
 function coordRecAttach_(tasks) {
   const wanted = tasks.filter(function (t) { return String(t.taskId).indexOf('approval|') === 0; });
   if (!wanted.length) return;
   const latest = coordRecLatest_(coordRecRows_()), names = coordRecNames_();
-  wanted.forEach(function (t) {
-    const l = latest[String(t.taskId).split('|')[1]];
-    t.recommendation = l ? coordRecNamed_({ by: l.by, recommendation: l.recommendation, reason: l.reason, at: l.at }, names) : null;
+  wanted.forEach(function (t) { t.recommendation = coordRecCard_(latest[String(t.taskId).split('|')[1]], names); });
+}
+
+/** coordinatortasks' `fresh`: Pending / Info Requested, non-archived approvals in `visible` (null = every campus) with no open
+ *  approval|<id>|... Tasks row, i.e. too new for the approvals adapter's follow-up, so the HQ can recommend on them at once.
+ *  Every category, as the adapter does. Identical copies count once, the way the adapter folds them into one card: a copy of a
+ *  request that already has a card is left out. Pure: Approvals rows, Tasks rows (headers fine), latest = coordRecLatest_, names. */
+function coordFreshApprovals_(aprRows, taskRows, visible, latest, names) {
+  const carded = {}, groups = {}, order = [];
+  taskRows.forEach(function (t) { if (t[5] === 'open' && String(t[0]).indexOf('approval|') === 0) carded[String(t[0]).split('|')[1]] = true; });
+  aprRows.forEach(function (r) {
+    const status = String(r[13] || ''), campus = String(r[1] || '').trim();
+    if ((status !== 'Pending' && status !== 'Info Requested') || String(r[18] || '').toUpperCase() === 'TRUE') return;
+    if (visible && visible.indexOf(campus) === -1) return;
+    const key = coordAprCopyKey_(r);
+    if (!groups[key]) { groups[key] = { carded: false, row: null }; order.push(key); }
+    if (carded[String(r[0])]) groups[key].carded = true;
+    else if (!groups[key].row) groups[key].row = r;
+  });
+  return order.filter(function (k) { return !groups[k].carded && groups[k].row; }).map(function (k) {
+    const r = groups[k].row, id = String(r[0]), at = new Date(coordRecStr_(r[12]));
+    return { approvalId: id, campus: String(r[1] || '').trim(), title: String(r[4] || ''), category: String(r[2] || ''), status: String(r[13]),
+      requestedAt: isNaN(at.getTime()) ? '' : at.toISOString(), recommendation: coordRecCard_(latest[id], names) };
   });
 }

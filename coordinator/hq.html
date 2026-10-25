@@ -56,6 +56,7 @@
     .flag.stuck { color: var(--dark); border-color: var(--dark); }
     .flag.waiting { color: var(--gray); border-color: var(--ctl); }
     .flag.missing { color: var(--warm); background: var(--warm-bg); border-color: #f1d3a8; }
+    .flag.new { color: var(--dark); background: var(--lgray); border-color: var(--border); }
     .contract .meta { margin: 0; font-size: 0.85rem; color: var(--gray); font-variant-numeric: tabular-nums; }
     .contract .meta .late { color: var(--red-dark); font-weight: 600; }
     .contract .detail { margin: 0; font-size: 0.85rem; color: var(--gray); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -209,7 +210,7 @@
 
   <script src="../assets/auth.js?v=ffa8751c"></script>
   <script src="./shared.js?v=026d31a6"></script>
-  <script src="./hq-logic.js?v=ae9334af"></script>
+  <script src="./hq-logic.js?v=88b872ef"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
     // where a Coordinator recommends on an approval. The Owner decides every approval (on the Approvals page); no control
@@ -226,7 +227,7 @@
     const DISTRICTS = [['LMS 1–3', ['LMS1', 'LMS2', 'LMS3']], ['LMS 4–6', ['LMS4', 'LMS5', 'LMS6']]];
     const esc = Coord.esc;
     const $ = (id) => document.getElementById(id);
-    let SESSION = null, TASKS = null, TRACK = null, FILTER = 'All', SHOW_ALL = false;
+    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, FILTER = 'All', SHOW_ALL = false; // FRESH: requests too new for a follow-up card
     const DECISIONS = {}, SPEND = {};
     let OPEN = null, BOARD_Y = 0; // the approval id whose decision view is open; where the board was scrolled when it opened
 
@@ -264,23 +265,22 @@
           '<span class="row"><span>' + n + ' open</span><span class="lvl"><span class="meter" aria-hidden="true"><i></i><i></i><i></i></span>' + lv[0].toUpperCase() + lv.slice(1) + '</span></span></li>';
       }).join('') + '</ul></div>').join('');
       $('tabs').innerHTML = ['All', 'LMS 1–3', 'LMS 4–6'].map((f) => {
-        const n = TASKS.filter((t) => f === 'All' || H.districtOf(t.campus) === f).length;
+        const n = TASKS.concat(FRESH).filter((t) => f === 'All' || H.districtOf(t.campus) === f).length;
         return '<button type="button" data-f="' + f + '" aria-pressed="' + (FILTER === f) + '">' + f + '<span class="n">' + n + '</span></button>';
       }).join('');
     }
     function renderFinding() {
-      if (!TASKS.length) { $('finding').textContent = 'All six campuses are cool.'; return; }
+      const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length + FRESH.filter((f) => f.status === 'Pending' && !f.recommendation).length;
+      if (!TASKS.length && !need) { $('finding').textContent = 'All six campuses are cool.'; return; }
       const heat = H.campusHeat(TASKS, today()), hot = H.CAMPUSES.filter((c) => heat[c].level === 'hot').map(H.shortCampus);
-      const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length;
-      $('finding').innerHTML = '<b>' + TASKS.length + ' open</b> across the network.' +
+      $('finding').innerHTML = (TASKS.length ? '<b>' + TASKS.length + ' open</b> across the network.' : 'All six campuses are cool.') +
         (need ? ' <b>' + need + (need > 1 ? ' requests wait' : ' request waits') + (isOwner() ? ' for a Coordinator\'s recommendation.' : ' for your recommendation.') + '</b>' : '') +
         (hot.length ? ' ' + esc(hot.join(' and ')) + (hot.length > 1 ? ' are' : ' is') + ' hot.' : '');
     }
 
     // ── The board ──
-    function recLine(t) {
-      if (t.domain !== 'approval') return '';
-      const r = t.recommendation;
+    function recLine(t) { return t.domain === 'approval' ? recHtml(t.recommendation) : ''; }
+    function recHtml(r) {
       if (!r) return isOwner() ? '<p class="rec">No recommendation yet</p>' : '<p class="rec need">Needs your recommendation</p>';
       return '<p class="rec">' + esc(r.byName || r.by) + ' recommends ' + esc(CHOICE_LABEL[r.recommendation] || r.recommendation) + ': ' + esc(r.reason) + '</p>';
     }
@@ -298,13 +298,24 @@
           : go ? '<a class="btn quiet" href="' + esc(go) + '">Go</a>' : '') + '</div>' +
       '</li>';
     }
+    // A request too new for a follow-up card (coordinatortasks' fresh): recommend on it at once, in the same decision view.
+    function freshHtml(f) {
+      const meta = [esc(H.shortCampus(f.campus) || 'No campus'), esc(f.category), 'raised ' + H.dayLabel(f.requestedAt)];
+      if (f.status === 'Info Requested') meta.push('waiting for more information');
+      return '<li class="contract' + (f.approvalId === OPEN ? ' sel' : '') + '">' +
+        '<p class="what"><span class="flag new">New request</span>' + esc(f.title || 'Request ' + f.approvalId) + '</p>' +
+        '<p class="meta">' + meta.join(', ') + '</p>' + recHtml(f.recommendation) +
+        '<div class="acts"><button type="button" class="btn quiet" data-open="' + esc(f.approvalId) + '">Open request</button></div>' +
+      '</li>';
+    }
     function renderBoard() {
-      const list = H.rankContracts(TASKS.filter(inView), me(), today());
+      // the follow-up contracts first, then the new requests
+      const list = H.rankContracts(TASKS.filter(inView), me(), today()).map(cardHtml).concat(H.rankFresh(FRESH.filter(inView)).map(freshHtml));
       const board = $('board');
-      if (!TASKS.length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
+      if (!TASKS.length && !FRESH.length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
       if (!list.length) { board.innerHTML = '<li class="empty">Nothing open in ' + esc(FILTER) + ' right now.</li>'; return; }
       const shown = SHOW_ALL ? list : list.slice(0, BOARD_CAP);
-      board.innerHTML = shown.map(cardHtml).join('') +
+      board.innerHTML = shown.join('') +
         (shown.length < list.length ? '<li class="more"><button type="button" class="btn quiet" id="show-all">Show all ' + list.length + '</button></li>' : '');
     }
     function renderAll() { renderBases(); renderFinding(); renderBoard(); }
@@ -444,6 +455,7 @@
       }
       dec.recommendation = res.recommendation;
       TASKS.forEach((t) => { if (H.approvalId(t) === dec.id) t.recommendation = res.recommendation; });
+      FRESH.forEach((f) => { if (f.approvalId === dec.id) f.recommendation = res.recommendation; });
       renderAll();
       paintDecision();
       const flash = $('dv-flash');
@@ -463,7 +475,8 @@
       $('board').innerHTML = '<li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li>';
       const track = loadTrack();
       try {
-        TASKS = (await Coord.api({ action: 'coordinatortasks' })).tasks || [];
+        const res = await Coord.api({ action: 'coordinatortasks' });
+        TASKS = res.tasks || []; FRESH = res.fresh || [];
         renderAll();
       } catch (e) {
         $('finding').textContent = 'The board could not be loaded.';

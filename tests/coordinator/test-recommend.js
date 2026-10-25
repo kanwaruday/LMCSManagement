@@ -10,7 +10,7 @@ const sheetOf = (name) => ({
   getDataRange: () => ({ getValues: () => tabs[name].map((r) => r.slice()) }),
   getRange: (r, c, nr, nc) => { const rng = {
     setValues: (v) => v.forEach((row, i) => { tabs[name][r - 1 + i] = tabs[name][r - 1 + i] || []; row.forEach((x, j) => { tabs[name][r - 1 + i][c - 1 + j] = x; }); }) || rng,
-    setValue(x) { return rng.setValues([[x]]); },
+    setValue(x) { return rng.setValues([[x]]); }, getValue: () => (tabs[name][r - 1] || [])[c - 1],
     setNumberFormat() { return rng; }, setFontWeight() { return rng; } }; return rng; },
   setFrozenRows() {} });
 const ctx = { console, LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
@@ -108,4 +108,46 @@ assert.strictEqual(t8.recent[0].matched, null);
 late[13] = 'Approved'; late[15] = new Date('2026-10-25T11:00:00.000Z');                        // the sheet may hand back a Date
 t8 = ctx.coordTrackRecord_(infoRec, [late], me)[me];
 assert.deepStrictEqual(JSON.parse(JSON.stringify(t8.byCategory[cat])), { made: 1, decided: 1, matched: 0 });
+
+// ── fresh requests: still open, in scope, no open approval|<id>|... follow-up yet (the adapter waits 1 to 5 days to raise one) ──
+const fr = (id, campus, category, status, at, archived) => { const r = aprRow(id, campus, category, status, archived); r[12] = at; return r; };
+const AT = '2026-10-25T05:00:00.000Z';
+const frRows = [['id'],
+  fr('f1', 'LMS1', 'Financial / Purchase', 'Pending', AT),
+  fr('f2', 'LMS1', 'Other', 'Info Requested', new Date(AT)),                       // the sheet may hand back a Date
+  fr('f3', 'LMS1', 'Other', 'Pending', AT),                                        // has an open follow-up card already
+  fr('f4', 'LMS1', 'Other', 'Pending', AT),                                        // its follow-up was resolved by hand: no open row
+  fr('f5', 'LMS1', 'Other', 'Pending', AT, 'TRUE'),                                // archived
+  fr('f6', 'LMS1', 'Other', 'Approved', AT),                                       // decided
+  fr('f7', 'LMS5', 'Other', 'Pending', AT),                                        // outside LMS 1-3
+  fr('f8', 'LMS1', 'New/ Backup Position', 'Pending', AT),                         // the adapter raises hiring categories too, so these show
+  fr('f9', 'LMS1', 'Other', 'Pending', AT),                                        // an identical copy of f3: the adapter folds it into f3's card
+  fr('f10', 'LMS1', 'Other', 'Pending', AT), fr('f11', 'LMS1', 'Other', 'Pending', AT)]; // identical copies, no card yet: one entry
+frRows[9][4] = 'Title f3'; frRows[10][4] = frRows[11][4] = 'Copy';
+const T = (id, status) => [id, 'approval', 'LMS1', 't', 'd', status, 'medium', '', '', '', '', '', '', '', ''];
+const frTasks = [['TaskId'], T('approval|f3|Pending', 'open'), T('approval|f4|Pending', 'resolved'), T('approval|f2|Pending', 'resolved')];
+const frLatest = { f1: { by: 'c@lms.org.in', recommendation: 'Approve', reason: 'Quote is fair', checked: 'quote', at: '2026-10-25T06:00:00.000Z' } };
+const fresh = JSON.parse(JSON.stringify(ctx.coordFreshApprovals_(frRows, frTasks, ['LMS1', 'LMS2', 'LMS3'], frLatest, [{ email: 'c@lms.org.in', name: 'Test Coord' }])));
+assert.deepStrictEqual(fresh.map((f) => f.approvalId), ['f1', 'f2', 'f4', 'f8', 'f10']);
+assert.deepStrictEqual(fresh[0], { approvalId: 'f1', campus: 'LMS1', title: 'Title f1', category: 'Financial / Purchase', status: 'Pending', requestedAt: AT,
+  recommendation: { by: 'c@lms.org.in', recommendation: 'Approve', reason: 'Quote is fair', at: '2026-10-25T06:00:00.000Z', byName: 'Test Coord' } }); // as coordRecAttach_ builds it
+assert.deepStrictEqual([fresh[1].status, fresh[1].requestedAt, fresh[1].recommendation], ['Info Requested', AT, null]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.coordFreshApprovals_(frRows, frTasks, null, {}, []).map((f) => f.approvalId))), ['f1', 'f2', 'f4', 'f7', 'f8', 'f10']); // every campus
+
+// coordinatortasks returns fresh beside tasks; a failure building fresh never breaks the tasks list
+ctx.Utilities = { formatDate: (d) => d.toISOString().slice(0, 10) };
+ctx.CacheService = { getScriptCache: () => ({ get: () => '1', put() {} }) };                      // every adapter already ran
+ctx.coordTransportRetireTasks_ = () => {};                                                           // coordinator-transport.gs is not loaded here
+tabs.Tasks = [vm.runInContext('COORD_HEADERS', ctx).slice(), T('approval|apr-1|Pending', 'open')];
+tabs.Approvals[2][12] = AT;                                                                          // apr-5, LMS5
+const list = JSON.parse(JSON.stringify(ctx.coordTasksList_(coord, 'tok')));
+assert.deepStrictEqual(list.tasks.map((x) => x.taskId), ['approval|apr-1|Pending']);
+assert.strictEqual(list.tasks[0].recommendation.byName, 'Test Coord');
+assert.deepStrictEqual(list.fresh.map((f) => f.approvalId), ['apr-5']);                              // apr-1 already has its card
+assert.strictEqual(ctx.coordTasksList_({ email: 'c@lms.org.in', campusId: 'LMS2', roles: ['Coordinator'] }, 'tok').fresh.length, 0); // LMS 1-3 scope
+ctx.coordFreshApprovals_ = () => { throw new Error('boom'); };
+const safe = ctx.coordTasksList_(coord, 'tok');
+assert.strictEqual(safe.success, true);
+assert.strictEqual(safe.tasks.length, 1);
+assert.strictEqual(safe.fresh.length, 0);
 console.log('coordinator recommend: ok');
