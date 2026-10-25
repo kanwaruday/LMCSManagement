@@ -362,7 +362,17 @@ go-ahead.
    data, so it doesn't matter where the work was done. The next-step bar on module pages comes in Phase 2, with the
    restamping and `verify.mjs` checks for each page.
 6. **Visit-only quest steps are removed** (see Quests). "Done from data" stays strict.
-7. **The game backend is created from the Mac with clasp**, as the Office backend was, and registered in
+7. **Done detection reads the source record, not a Tasks row** (agreed with the Coordinator chat). Approval and
+   hiring Tasks rows auto-resolve as "system (condition cleared)". So:
+   - an approval mission is done when the Approvals row carries a decision (`doneBy` = `decidedByEmail`);
+   - complete-hire is done when the Employee Master row exists;
+   - **a hiring stall is a shared district mission.** It fills the district team bar, gives no personal credit, and
+     is **left out of individual days-on-track**, because only the campus can mark Hired. A person's day never
+     depends on someone else's action.
+8. **The Principal-scoped read of daily-report issues** (`principalissues`, a read-only Principal branch in
+   `coordVerifyCaller_`) is built **once, by the Coordinator chat**, in the Coordinator backend in November. The
+   framework's Principal adapter uses it and never builds a second copy.
+9. **The game backend is created from the Mac with clasp**, as the Office backend was, and registered in
    `apps-script/projects.json`. Uday's part: run its setup once and accept the permission screen.
 
 ## Settled in the conversation
