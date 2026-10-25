@@ -123,4 +123,10 @@ assert.strictEqual(ctx.gameWindowBoard_(coord, [WH, winRow({ Opens: '', Closes: 
 const cfg5 = ctx.gameParseConfig_([['Key', 'Value'], ['pilotCampuses', '{"Principal":["LMS4"]}']]);
 assert.deepStrictEqual(J(ctx.gameWindowBoard_(coord, WROWS, noDec, now, cfg5)).map((b) => b.scopeId), ['LMS4']);
 
+// M18: a choice row missing its options or a positive n can't be decided here (no throw, no "Pick exactly undefined")
+const NOT_HERE = "This window can't be decided here yet.";
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 3 }, ['Mon', 'Tue', 'Wed']), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', options: ['Mon', 'Tue'] }, []), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 0, options: ['Mon'] }, []), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 1, options: ['Mon'] }, ['Mon']), null);
 console.log('ok  test-windows');

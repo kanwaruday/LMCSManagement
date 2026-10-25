@@ -85,8 +85,9 @@ function gameConfigDefaults_() {
     trackSuitDays: {},
     principalIssuesReady: false,
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
+    approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
     recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
-    daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false },
+    daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }
 
@@ -97,7 +98,8 @@ var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, p
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
 var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}; // { employee: fn(verifiedEmail) -> { campusId, employeeCode, role } | null }; see header
-// The only roles, and campuses, the employee fallback can ever grant. Frozen: not widened by a module file.
+// The only roles, and campuses, the employee fallback can ever grant. Frozen so no code mutates them by accident (a module file
+// can still redeclare anything in the shared scope: this is not a guard against a hostile module).
 const GAME_FALLBACK_ROLES = Object.freeze(['Teacher', 'Staff']);
 const GAME_FALLBACK_CAMPUSES = Object.freeze(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']);
 
@@ -182,8 +184,9 @@ function gameCallerFromFallback_(verifiedEmail, flagValue, fallbackFn) {
     if (!r || typeof r !== 'object') return null;
     const campusId = typeof r.campusId === 'string' ? r.campusId.trim().toUpperCase() : '';
     if (GAME_FALLBACK_CAMPUSES.indexOf(campusId) === -1) return null;
-    if (typeof r.role !== 'string' || GAME_FALLBACK_ROLES.indexOf(r.role) === -1) return null;
-    return { email: email, campusId: campusId, roles: [r.role], primaryRole: r.role, canDecide: false, employeeCode: String(r.employeeCode || '') };
+    const role = r.role; // read once: a getter cannot pass the check with one value and return another
+    if (typeof role !== 'string' || GAME_FALLBACK_ROLES.indexOf(role) === -1) return null;
+    return { email: email, campusId: campusId, roles: [role], primaryRole: role, canDecide: false, employeeCode: String(r.employeeCode || '') };
   } catch (err) {
     return null;
   }
@@ -206,6 +209,7 @@ function gameVerifyCaller_(idToken) {
     if (payload.aud !== GAME_GOOGLE_CLIENT_ID) return null;
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
     const email = (payload.email || '').toLowerCase();
+    if (!email) return null;
     const rows = SpreadsheetApp.openById(GAME_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;

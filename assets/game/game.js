@@ -42,7 +42,10 @@ var LMCSGame = window.LMCSGame = (function () {
   function greetingLine(today, session, now) {
     var h = ist_(now || new Date()).getUTCHours();
     var hello = h >= 17 ? 'Good evening' : h >= 12 ? 'Good afternoon' : 'Good morning';
-    var first = String((session && session.name) || '').trim().split(/\s+/)[0];
+    // the first name: honorifics and initials ("Dr.", "Smt", "A.") are skipped
+    var first = String((session && session.name) || '').trim().split(/\s+/).filter(function (w) {
+      return w && !/\.$/.test(w) && !/^(dr|mr|mrs|ms|smt|shri)$/i.test(w);
+    })[0] || '';
     var n = openItems(today).length;
     var line = hello + (first ? ', ' + first + ' ji' : '') + '. ';
     if (!n) return line + 'Nothing is waiting today. Enjoy the calm.';
@@ -85,7 +88,7 @@ var LMCSGame = window.LMCSGame = (function () {
 
   // the portal page a mission's link opens, as the small line names it
   var SOURCES = [['principals-daily-reporting', 'Daily Reporting'], ['coordinator/followups', 'Follow-ups'],
-    ['coordinator/approvals', 'Approvals'], ['principal/issues', 'Issues'], ['teacher/', 'My Classroom']];
+    ['coordinator/approvals', 'Approvals'], ['coordinator/systems', 'Systems'], ['principal/issues', 'Issues'], ['teacher/', 'My Classroom']];
   function sourceLabel(go) {
     go = String(go || '');
     for (var i = 0; i < SOURCES.length; i++) if (go.indexOf(SOURCES[i][0]) !== -1) return SOURCES[i][1];
@@ -198,6 +201,7 @@ var LMCSGame = window.LMCSGame = (function () {
     if (live) live.teardown();
     live = null;
     el.textContent = '';
+    el.hidden = true; // shown only once there is something to show
     if (!opts.backendUrl) return;
     var me = live = { parts: [], bar: null, teardown: function () { me.parts.slice().reverse().forEach(function (f) { f(); }); me.parts = []; me.bar = null; } };
     var session = opts.session || {}, root = opts.root || '', url = opts.backendUrl, now = new Date(), n = ++uid;
@@ -227,6 +231,7 @@ var LMCSGame = window.LMCSGame = (function () {
     function failed() {
       me.teardown();
       el.textContent = '';
+      el.hidden = false;
       el.appendChild(h('div', { class: 'lg-root' }, h('section', { class: 'lg-panel lg-error' }, [
         h('p', {}, ERROR_LINE),
         h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: load }, 'Try again'),
@@ -239,10 +244,12 @@ var LMCSGame = window.LMCSGame = (function () {
     function load() {
       me.teardown();
       el.textContent = '';
+      el.hidden = false;
       el.appendChild(h('div', { class: 'lg-root' }, h('section', { class: 'lg-panel lg-skel', 'aria-busy': 'true', 'aria-label': "Loading today's list" },
         [0, 1, 2].map(function () { return h('div', { class: 'lg-skel-row' }, [h('i'), h('b')]); }))));
       get_().then(function (d) {
         if (live !== me) return;
+        if (d && d.error === 'Not authorized') d = { notYet: true }; // not a portal person for this game: nothing to show, not an error
         if (!d || d.success === false) { failed(); return; }
         safeStart(d);
       }, function () { if (live === me) failed(); });
@@ -301,19 +308,22 @@ var LMCSGame = window.LMCSGame = (function () {
         h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-today-h' + n, tabindex: '-1' }, 'Today'), total ? h('small', {}, done + ' of ' + total + ' done') : null]),
         total >= 2 ? h('div', { class: 'lg-bar', 'aria-hidden': 'true' }, segs) : null,
         (t.sourcesDown || []).length ? h('p', { class: 'lg-down' }, DOWN_LINE) : null,
-        rows.length ? h('ul', { class: 'lg-rows' }, rows) : h('p', { class: 'lg-clear' }, 'All clear. Nothing is waiting today.'),
+        rows.length ? h('ul', { class: 'lg-rows' }, rows)
+          : h('p', { class: 'lg-clear' }, t.next ? "Today's list is done. One more just came in." : 'All clear. Nothing is waiting today.'),
       ]);
       // one solid Go: the first open row's; the rest are quiet
       [].slice.call(todayEl.querySelectorAll('.lg-go')).slice(1).forEach(function (g) { g.classList.add('lg-go-soft'); });
       questEl = questPanel();
       var days = daysLine(t.daysOnTrack), cut = days.indexOf(' Last month: ');
       el.textContent = '';
+      el.hidden = false;
       rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, days && h('p', { class: 'lg-days' },
         cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
       el.appendChild(rootEl);
     }
     // the open quest (the first unfinished one); once every quest is finished, the last one with its reward.
-    // The first open, unlocked step is a link to where it is done; locked steps say they open next.
+    // The first open, unlocked step is a link to where it is done (a decision step: a button that opens the decision
+    // card for the first undecided window, plain text when there is none); locked steps say they open next.
     function questPanel() {
       var qs = t.quests || [], i = 0;
       while (i < qs.length - 1 && qs[i].complete) i++;
@@ -323,11 +333,15 @@ var LMCSGame = window.LMCSGame = (function () {
       return h('section', { class: 'lg-panel lg-quest', 'aria-labelledby': 'lg-quest-h' + n }, [
         h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-quest-h' + n }, 'Quest ' + (i + 1) + ' · ' + q.title), h('small', {}, done + ' of ' + q.steps.length)]),
         h('ul', { class: 'lg-steps' }, q.steps.map(function (s) {
-          var open = !s.done && !s.locked, href = open && !linked && safeHref(s.go, root);
-          if (href) linked = true;
+          var open = !s.done && !s.locked && !linked, win = null, href = null;
+          if (open && s.kind === 'decision') win = (t.windows || []).filter(function (w) { return !w.decided; })[0] || null;
+          else if (open) href = safeHref(s.go, root);
+          if (href || win) linked = true;
           return h('li', { class: 'lg-step' + (s.done ? ' ok' : s.locked ? ' lock' : '') }, [
             h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
-            href ? h('a', { class: 'lg-step-link', href: href }, s.title) : h('span', {}, s.locked && !s.done ? 'Opens next: ' + s.title : s.title),
+            href ? h('a', { class: 'lg-step-link', href: href }, s.title)
+              : win ? h('button', { type: 'button', class: 'lg-step-link', onclick: function () { decide(win, this); } }, s.title)
+              : h('span', {}, s.locked && !s.done ? 'Opens next: ' + s.title : s.title),
             s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
           ]);
         })),
@@ -540,7 +554,7 @@ var LMCSGame = window.LMCSGame = (function () {
     }
 
     function start(d) {
-      if (d.notYet) { el.textContent = ''; return; }
+      if (d.notYet) { el.textContent = ''; el.hidden = true; return; }
       t = d;
       var firstVisit = (t.toursSeen || []).indexOf('home-' + (t.role || '')) === -1;
       var a = art(t, now, firstVisit);

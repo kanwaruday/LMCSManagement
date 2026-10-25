@@ -55,6 +55,11 @@ assert.ok(/^Good evening, /.test(G.greetingLine({ missions: [] }, { name: 'A' },
 assert.ok(/^Good afternoon, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, ist('2026-11-03T16:59:00'))));
 // hour is IST regardless of the browser zone: 07:00 UTC = 12:30 IST
 assert.ok(/^Good afternoon, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, new Date('2026-11-03T07:00:00Z'))));
+// M37: honorifics and initials are skipped for the first name
+assert.strictEqual(g({ missions: [] }, { name: 'Dr. Meena Sharma' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'Smt Meena Sharma' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'MRS. A. K. Meena' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'Dr.' }), 'Good morning. Nothing is waiting today. Enjoy the calm.');
 // no name: still a clean greeting
 assert.strictEqual(G.greetingLine({ missions: [] }, {}, ist('2026-11-03T09:00:00')), 'Good morning. Nothing is waiting today. Enjoy the calm.');
 
@@ -125,6 +130,7 @@ assert.strictEqual(G.safeHref(undefined), null);
 assert.strictEqual(G.sourceLabel('principals-daily-reporting/index.html'), 'Daily Reporting');
 assert.strictEqual(G.sourceLabel('coordinator/followups/index.html'), 'Follow-ups');
 assert.strictEqual(G.sourceLabel('elsewhere.html'), '');
+assert.strictEqual(G.sourceLabel('coordinator/systems/index.html#approvals'), 'Systems'); // N3
 
 // art: speaker, outfit and pose
 const mon = ist('2026-11-02T10:00:00');

@@ -6,7 +6,7 @@
 <title>Game UI stub</title>
 <!-- UI check for the game layer without the live backend. NEVER deployed as a portal page; every name is fictional.
      Serve the repo root (python3 -m http.server 8000) and open /tests/game/ui-stub.html?f=five
-     ?f=     five | zero | down | window | teacher   (fixture; default five)
+     ?f=     five | zero | down | window | teacher | decide | arrived | noauth   (fixture; default five)
      &greet= 0 | 1   force firstLoadToday off / on (default: on, except down, which is off as ruling R24 makes it)
      &tour=  0 | 1   0 = the home tour was already seen (default 1 = first visit)
      &load=  error   the first gametoday call fails (Retry then succeeds)   &load=slow  2.5 s per call (skeleton)
@@ -35,7 +35,7 @@
     <div><b>Daily report</b>Today</div><div><b>Approvals</b>Requests</div><div><b>Hiring</b>Applicants</div>
     <div><b>Staff</b>Documents</div><div><b>Curriculum</b>CW/HW</div><div><b>Evaluations</b>SS</div>
   </div>
-  <div id="game"></div>
+  <section id="game" hidden></section>
   <details style="margin:8px 0 24px"><summary>Stub log</summary><div id="stub-log"></div></details>
   <p style="color:var(--gray);font-size:13px">Last line of the host page: it must stay visible above the next-step bar.</p>
 </main>
@@ -50,10 +50,10 @@
       due: null, core: false, shared: false, done: false, doneAt: null, doneBy: null, rolledOver: false, gone: false }, x || {});
   };
   var quest = { questId: 'principal1', title: 'Your portal', complete: false, reward: 'Quest badge: Your portal', steps: [
-    { id: 'report', title: "Submit today's daily report", go: 'principals-daily-reporting/index.html', done: true, locked: false },
-    { id: 'ss', title: 'Submit one SS evaluation', go: 'principals-daily-reporting/index.html', done: true, locked: false },
-    { id: 'issue', title: 'Close one daily-report issue with a note', go: 'principal/issues.html', done: false, locked: false },
-    { id: 'suit', title: "Choose your campus's track-suit days", go: 'principals-daily-reporting/index.html', done: false, locked: true } ] };
+    { id: 'report', kind: 'pdr_report', title: "Submit today's daily report", go: 'principals-daily-reporting/index.html', done: true, locked: false },
+    { id: 'ss', kind: 'ss_submit', title: 'Submit one SS evaluation', go: 'principals-daily-reporting/index.html', done: true, locked: false },
+    { id: 'issue', kind: 'pdr_issue', title: 'Close one daily-report issue with a note', go: 'principal/issues.html', done: false, locked: false },
+    { id: 'suit', kind: 'decision', title: "Choose your campus's track-suit days", go: '', done: false, locked: true } ] };
   var days = { onTrack: 18, counted: 21, lastMonthOnTrack: 15, lastMonthCounted: 22, showDenominator: true };
   var base = { success: true, day: today, firstLoadToday: true, role: 'Principal', campus: 'LMS4', speaker: 'buddy', windows: [], quests: [quest],
     daysOnTrack: days, sourcesDown: [], toursSeen: [],
@@ -80,6 +80,12 @@
         { id: 'plan', title: 'Plan the activity for your next chapter', go: 'teacher/index.html', done: false, locked: false },
         { id: 'cwa', title: 'Enter the marks for one CWA', go: 'teacher/index.html', done: false, locked: true } ] }] }),
   };
+  // decide: the quest's next open step is the decision (a button that opens the card); arrived: today's set is done and one
+  // more came in; noauth: the backend says Not authorized (renders nothing)
+  FIX.decide = JSON.parse(JSON.stringify(FIX.window));
+  FIX.decide.quests[0].steps[2].done = true; FIX.decide.quests[0].steps[3].locked = false;
+  FIX.arrived = Object.assign({}, base, { missions: [], next: five[2] });
+  FIX.noauth = { success: false, error: 'Not authorized' };
   var tmission = M('cwhw_log', 'T|' + today, "Log today's classwork and homework", { go: 'teacher/index.html', campus: 'LMS2', core: true, why: '2 of 4 classes done', progress: { done: 2, total: 4 } });
   FIX.teacher.missions = [tmission]; FIX.teacher.next = tmission;
 
@@ -87,8 +93,8 @@
   if (q.get('greet')) data.firstLoadToday = q.get('greet') === '1';
   if (q.get('tour') === '0') data.toursSeen = ['home-' + data.role];
 
-  document.getElementById('stub-h1').textContent = data.role + ' portal';
-  document.getElementById('stub-sub').textContent = data.campus.replace('LMS', 'LMS ') + ' · sample host content. The game panel renders below it.';
+  document.getElementById('stub-h1').textContent = (data.role || 'Signed-out') + ' portal';
+  document.getElementById('stub-sub').textContent = String(data.campus || '').replace('LMS', 'LMS ') + ' · sample host content. The game panel renders below it.';
   var nav = document.getElementById('stub-nav');
   Object.keys(FIX).forEach(function (k) {
     var a = document.createElement('a');
@@ -123,7 +129,7 @@
 
   LMCSGame.mount(document.getElementById('game'), {
     backendUrl: STUB, root: '../../',
-    session: { name: f === 'teacher' ? 'Kavya Thakur' : 'Ritika Sood', email: 'stub@example.org', role: data.role, campusId: data.campus, idToken: 'stub-token' },
+    session: { name: f === 'teacher' ? 'Kavya Thakur' : 'Dr. Ritika Sood', email: 'stub@example.org', role: data.role, campusId: data.campus, idToken: 'stub-token' },
     data: q.get('data') === '1' ? data : undefined,
   });
 })();

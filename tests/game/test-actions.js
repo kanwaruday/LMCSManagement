@@ -102,9 +102,9 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(a.speaker, 'buddy');
   assert.deepStrictEqual(a.sourcesDown, []);
   const ids = a.missions.map((m) => m.id);
-  assert.deepStrictEqual(ids, ['ss_pace:LMS4', 'pdr_report:LMS4:2026-11-05', 'info_requested:A1']); // core first, then source order
+  assert.deepStrictEqual(ids, ['ss_pace:LMS4:2026-11-05', 'pdr_report:LMS4:2026-11-05', 'info_requested:A1']); // core first, then source order
   assert.ok(a.missions[0].title && a.missions[0].title.indexOf('Submit') === 0); // titles in the response...
-  assert.strictEqual(a.next.id, 'ss_pace:LMS4');
+  assert.strictEqual(a.next.id, 'ss_pace:LMS4:2026-11-05');
   const daily = t.game['Game Daily'].rows;
   assert.strictEqual(daily.length, 2);
   assert.deepStrictEqual(daily[1].slice(0, 8), ['2026-11-05', 'p4@lms.org.in', 'Principal', 'LMS4', JSON.stringify(ids), '[]', '', '']);
@@ -135,12 +135,12 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   const c = t.call(P4, 'gametoday');
   assert.deepStrictEqual(c.missions.map((m) => m.id), ids);
   assert.strictEqual(c.missions[1].done, true);
-  assert.strictEqual(c.next.id, 'ss_pace:LMS4');
+  assert.strictEqual(c.next.id, 'ss_pace:LMS4:2026-11-05');
 }
 
 // ── a failed source: other missions still present, earlier days stay unfinalized (R15) ─
 {
-  const t = setup({ down: ['ssdashboard'], daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4'])] });
+  const t = setup({ down: ['ssdashboard'], daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-05'])] });
   const a = t.call(P4, 'gametoday');
   assert.deepStrictEqual(a.sourcesDown, ['ssdashboard']);
   assert.deepStrictEqual(a.missions.map((m) => m.id), ['pdr_report:LMS4:2026-11-05', 'info_requested:A1']);
@@ -158,10 +158,10 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   const b = t.call(P4, 'gametoday');
   assert.strictEqual(b.firstLoadToday, true);
   assert.deepStrictEqual(b.sourcesDown, []);
-  assert.strictEqual(b.missions[0].id, 'ss_pace:LMS4');
+  assert.strictEqual(b.missions[0].id, 'ss_pace:LMS4:2026-11-05');
   const today = t.game['Game Daily'].rows.filter((r) => r[0] === '2026-11-05');
   assert.strictEqual(today.length, 1);
-  assert.ok(today[0][4].indexOf('ss_pace:LMS4') !== -1);
+  assert.ok(today[0][4].indexOf('ss_pace:LMS4:2026-11-05') !== -1);
 }
 
 // ── R23: ssdashboard is cached as a trimmed projection, so a big response still fits the 100 KB cap ──
@@ -196,20 +196,52 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(t.fetches.length, 1); // second load: from the cache
 }
 {
-  // the same earlier day, sources up: finalized; ss_pace still open -> counted, not on track; it rolls over
-  const t = setup({ daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:A1'])] });
+  // earlier days, sources up: finalized. info_requested (core here) still open -> counted, not on track; it rolls over.
+  // Yesterday's ss_pace is day-scoped: today's is a new mission, never "from yesterday"; undone and gone, it is not counted (R9).
+  const t = setup({ config: [['core', '{"Principal":["ss_pace","info_requested"]}']],
+    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04', 'info_requested:A1']), dailyRow('2026-11-03', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-03'])] });
   const a = t.call(P4, 'gametoday');
   const rows = t.game['Game Daily'].rows;
   assert.strictEqual(String(rows[1][6]).toUpperCase(), 'TRUE');
   assert.strictEqual(String(rows[1][7]).toUpperCase(), 'FALSE');
-  assert.strictEqual(String(rows[2][6]).toUpperCase(), 'TRUE'); // nothing core to count that day
+  assert.strictEqual(String(rows[2][6]).toUpperCase(), 'TRUE'); // nothing still there to count that day
   assert.strictEqual(rows[2][7], '');
-  assert.strictEqual(a.missions[0].id, 'ss_pace:LMS4');
-  assert.strictEqual(a.missions[0].rolledOver, true);           // from yesterday (the latest earlier day)
-  assert.strictEqual(a.missions[1].rolledOver, false);
+  assert.deepStrictEqual(a.missions.map((m) => m.id + ':' + m.rolledOver), ['info_requested:A1:true', 'ss_pace:LMS4:2026-11-05:false', 'pdr_report:LMS4:2026-11-05:false']);
   assert.deepStrictEqual(a.daysOnTrack, { onTrack: 0, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
   const again = t.call(P4, 'gametoday'); // finalized rows are not touched again
   assert.strictEqual(again.daysOnTrack.counted, 1);
+}
+
+// ── C1: a day-scoped ss_pace finished later in the day makes the day on track, and is never "from yesterday" ──
+{
+  const t = setup({ now: '2026-11-05T05:00:00Z' }); // Thu 5 Nov
+  let cur = { success: true, quotaPerMonth: 4, roster: [{ school: 'LMS 4', submissionsThisMonth: 3, history: [] }] };
+  t.ctx.UrlFetchApp = { fetch: (url) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(url.indexOf('ssdashboard') !== -1 ? cur : { success: true, issues: [] }) }) };
+  const clear = () => Object.keys(t.cache).forEach((k) => delete t.cache[k]);
+  const a = t.call(P4, 'gametoday');
+  assert.deepStrictEqual(a.missions.map((m) => m.id + ':' + m.done), ['ss_pace:LMS4:2026-11-05:false', 'pdr_report:LMS4:2026-11-05:false', 'info_requested:A1:false']);
+  clear();
+  cur = { success: true, quotaPerMonth: 4, roster: [{ school: 'LMS 4', submissionsThisMonth: 4, history: [{ timestamp: '2026-11-05T04:00:00Z', evaluatorEmail: 'p4@lms.org.in' }] }] };
+  const b = t.call(P4, 'gametoday');
+  assert.strictEqual(b.missions[0].done, true);
+  const day1 = t.game['Game Daily'].rows[1];
+  assert.deepStrictEqual(JSON.parse(day1[5]), ['ss_pace:LMS4:2026-11-05']); // DoneIds: the done, non-shared snapshot ids
+  assert.ok(t.game['Game Daily'].formats.some((f) => f.row === 2 && f.col === 6 && f.f === '@'));
+  t.call(P4, 'gametoday');
+  assert.deepStrictEqual(JSON.parse(t.game['Game Daily'].rows[1][5]), ['ss_pace:LMS4:2026-11-05']); // kept, not duplicated
+  // day 2 (Fri 6 Nov, 08:30 IST): yesterday is on track; today's ss_pace is a fresh mission
+  clear();
+  cur = { success: true, quotaPerMonth: 5, roster: [{ school: 'LMS 4', submissionsThisMonth: 4, history: [] }] };
+  t.ctx.gameNow_ = () => vm.runInContext("new Date('2026-11-06T03:00:00Z')", t.ctx);
+  const c = t.call(P4, 'gametoday');
+  const y = t.game['Game Daily'].rows[1];
+  assert.strictEqual(String(y[6]).toUpperCase(), 'TRUE');
+  assert.strictEqual(String(y[7]).toUpperCase(), 'TRUE');
+  const ss = c.missions.find((m) => m.kind === 'ss_pace');
+  assert.strictEqual(ss.id, 'ss_pace:LMS4:2026-11-06');
+  assert.strictEqual(ss.rolledOver, false);
+  assert.strictEqual(c.missions.find((m) => m.id === 'info_requested:A1').rolledOver, true); // still open: carried
+  assert.deepStrictEqual(c.daysOnTrack, { onTrack: 1, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
 }
 
 // ── pilot gate and roles without missions ───────────────────────────────
@@ -246,6 +278,15 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   t.call(COORD, 'gametoday');
   assert.strictEqual(prog().length, 1);
   assert.ok(JSON.stringify(t.game).indexOf('Sent the plumber') === -1); // issue notes are only counted, never stored
+}
+
+{
+  // I3: no PDR Issue Actions tab yet is an empty source, not an outage
+  const t = setup();
+  delete t.books['1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y']['PDR Issue Actions'];
+  const a = t.call(COORD, 'gametoday');
+  assert.deepStrictEqual(a.sourcesDown, []);
+  assert.strictEqual(a.firstLoadToday, true);
 }
 
 // ── gamedecide ─────────────────────────────────────────────────────────
@@ -321,6 +362,12 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(t.fetches.filter((f) => f.url.indexOf('ssdashboard') !== -1).length, 1);
   t.ctx.gameFetchJson_('https://x/exec?action=ssdashboard', 'tok', 10000, 'b@x');
   assert.strictEqual(t.fetches.filter((f) => f.url.indexOf('ssdashboard') !== -1).length, 2); // another person: own entry
+  // M27: no email, no cache (an entry keyed on '' would be shared by everyone without one)
+  const keysBefore = Object.keys(t.cache).length;
+  t.ctx.gameFetchJson_('https://x/exec?action=ssdashboard', 'tok', 10000, '');
+  t.ctx.gameFetchJson_('https://x/exec?action=ssdashboard', 'tok', 10000, '');
+  assert.strictEqual(t.fetches.filter((f) => f.url.indexOf('ssdashboard') !== -1).length, 4);
+  assert.strictEqual(Object.keys(t.cache).length, keysBefore);
   t.ctx.UrlFetchApp.fetch = () => { throw new Error('timeout'); };
   assert.strictEqual(t.ctx.gameFetchJson_('https://y/exec', 'tok', 10000, 'a@x'), null);
   t.ctx.UrlFetchApp.fetch = () => ({ getResponseCode: () => 200, getContentText: () => '{"success":false,"error":"Not authorized"}' });

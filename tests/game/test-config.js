@@ -26,6 +26,8 @@ assert.strictEqual(cfg.approvalWaitDays, 3);                       // untouched 
 assert.strictEqual(cfg.recommendationsReady, false);
 assert.strictEqual(cfg.speaker.Teacher, 'teacher-owl');
 assert.strictEqual(cfg.uniform.winterFrom, '2026-10-26');
+assert.strictEqual(cfg.approvalsGo, 'coordinator/systems/index.html#approvals'); // I1
+assert.strictEqual(cfg.daysDenominator.Staff, false);                         // R27
 const bad = ctx.gameParseConfig_([['Key', 'Value'], ['cap', '{not json'], ['approvalWaitDays', '"three"'], ['core', '']]);
 assert.strictEqual(bad.cap.Principal, 5);                          // bad JSON -> default
 assert.strictEqual(bad.approvalWaitDays, 3);                       // wrong type -> default
