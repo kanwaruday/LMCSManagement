@@ -52,6 +52,7 @@
     .closed-row p { margin: 3px 0 0; font-size: 0.88rem; color: var(--gray); overflow-wrap: anywhere; }
     .status-box { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.92rem; }
     .status-box p { margin: 0 0 10px; }
+    .status-box p:last-child { margin-bottom: 0; }
     a.btn { display: inline-flex; align-items: center; text-decoration: none; }
     .sk { height: 92px; margin-top: 14px; border-radius: var(--radius); background: var(--lgray); }
     a:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--red-dark); outline-offset: 2px; }
@@ -116,6 +117,15 @@
     function fmt(iso) { return iso ? +iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] : '-'; }
     function isoDay(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
     function noteReady(v) { return !!String(v || '').trim(); }
+
+    // The backend says "Not authorized" both for an expired sign-in (the idToken lasts about an hour) and for a sign-in
+    // that doesn't cover this school. Either way only signing in again helps: raise auth.js's banner (it holds the
+    // "Sign in again" button; the cached-session path never starts its expiry watch) and say so in plain words.
+    function isAuthError(msg) { return msg === 'Not authorized'; }
+    function authText(keepsNote) {
+      LMCS.notifyAuthFailure();
+      return 'Your sign-in has expired or doesn\'t cover this school. Sign in again at the top' + (keepsNote ? '; your note is kept.' : '.');
+    }
 
     // Apps Script sometimes answers a cold request with a Google HTML error page: only that is retried, 3 tries at most.
     // A network failure is not retried. Closing is an upsert of the issue's action row, so a repeat cannot double it.
@@ -228,7 +238,8 @@
       catch (e) { res = { success: false, error: e.message }; }
       if (!res || !res.success) {
         delete btn.dataset.busy; ta.readOnly = false; btn.textContent = 'Close with this note'; btn.disabled = !noteReady(ta.value);
-        err.textContent = (res && res.error) || 'The issue could not be closed. Try again.';
+        const msg = (res && res.error) || 'The issue could not be closed. Try again.';
+        err.textContent = isAuthError(msg) ? authText(true) : msg; // the typed note stays in the box either way
         ta.focus(); // disabling the button dropped keyboard focus: put it back where the note can be fixed
         return;
       }
@@ -254,9 +265,10 @@
         render(data);
       } catch (e) {
         document.getElementById('finding').textContent = 'The issues could not be loaded.';
-        body.innerHTML = '<div class="status-box" role="alert"><p class="e"></p><button type="button" class="btn quiet" id="retry">Try again</button></div>';
-        body.querySelector('.e').textContent = e.message;
-        document.getElementById('retry').addEventListener('click', () => {
+        const auth = isAuthError(e.message); // "Try again" can't fix a sign-in, so it isn't offered
+        body.innerHTML = '<div class="status-box" role="alert"><p class="e">' + esc(auth ? authText(false) : e.message) + '</p>' +
+          (auth ? '' : '<button type="button" class="btn quiet" id="retry">Try again</button>') + '</div>';
+        if (!auth) document.getElementById('retry').addEventListener('click', () => {
           document.getElementById('finding').textContent = 'Loading your school\'s issues\u2026';
           body.innerHTML = '<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
           load();

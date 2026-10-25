@@ -13,10 +13,12 @@ assert.ok(html.includes('No open issues from your daily reports.'), 'empty-state
 assert.ok(!/[a-z0-9.]+@lms\.org\.in/i.test(html), 'no email addresses in the page');
 
 // run the inline script with no session: it only defines its helpers and waits on the sign-in gate
+const els = {}, el = (id) => els[id] || (els[id] = { id, style: {}, innerHTML: '', textContent: '', addEventListener() {}, querySelector: () => ({}) });
+let banners = 0;
 const ctx = vm.createContext({
   console, setTimeout: (fn) => fn(), Date,
-  document: { getElementById: () => ({ style: {}, innerHTML: '', addEventListener() {} }) },
-  LMCS: { getSession: () => null, requireSession: () => new Promise(() => {}), campusLabel: (c) => c },
+  document: { getElementById: el },
+  LMCS: { getSession: () => null, requireSession: () => new Promise(() => {}), campusLabel: (c) => c, notifyAuthFailure: () => { banners++; } },
 });
 vm.runInContext(inline, ctx);
 
@@ -56,5 +58,22 @@ const answer = (bodies) => { calls = []; ctx.fetch = (url, init) => { calls.push
   answer([new Error('Failed to fetch')]);
   await assert.rejects(ctx.post({ action: 'principalissueresolve' }, 'tok'));
   assert.strictEqual(calls.length, 1, 'a network failure is not retried');
+
+  // "Not authorized" (expired sign-in, or one that doesn't cover this school): the auth.js banner, plain words, no dead "Try again"
+  vm.runInContext("SESSION = { idToken: 'tok', email: 'p@lms.test' }", ctx);
+  answer(['{"success":false,"error":"Not authorized"}']); banners = 0;
+  await ctx.load();
+  assert.strictEqual(banners, 1, 'load raises the sign-in banner');
+  assert.ok(/Sign in again/.test(els.body.innerHTML) && !/retry|Try again/.test(els.body.innerHTML), 'load: sign-in words, no Try again');
+  answer(['{"success":false,"error":"Database busy"}']);
+  await ctx.load();
+  assert.ok(/Database busy/.test(els.body.innerHTML) && /id="retry"/.test(els.body.innerHTML), 'other load errors keep Try again');
+  const ta = { value: 'Plumber fixed the tank', readOnly: false, focus() {} }, btn = { dataset: {}, disabled: false, textContent: '' }, err = { textContent: '' };
+  const form = { dataset: { id: 'i1' }, querySelector: (q) => ({ textarea: ta, '.btn': btn, '.err': err })[q] };
+  answer(['{"success":false,"error":"Not authorized"}']); banners = 0;
+  await ctx.closeIssue(form);
+  assert.strictEqual(banners, 1, 'close raises the sign-in banner');
+  assert.ok(/Sign in again/.test(err.textContent) && /note is kept/.test(err.textContent), err.textContent);
+  assert.ok(ta.value === 'Plumber fixed the tank' && !ta.readOnly && !btn.disabled, 'the typed note is kept and can be sent again');
   console.log('principal issues page: ok');
 })().catch((e) => { console.error(e); process.exit(1); });
