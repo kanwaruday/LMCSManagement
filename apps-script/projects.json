@@ -98,7 +98,8 @@
     "scriptId": "",
     "deploymentId": "",
     "files": [
-      "game"
+      "game",
+      "game-missions"
     ]
   }
 }

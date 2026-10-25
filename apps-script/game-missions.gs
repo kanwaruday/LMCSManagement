@@ -1,0 +1,274 @@
+// ═══════════════════════════════════════════════════════════════════
+// LMCS Game Backend -- mission adapters. Pure functions: each takes rows/JSON already read by
+// the caller (Task 6 loads the sources) and returns Mission[]. Nothing here reads or writes a sheet.
+// Mission = { id, kind, title, why, owner, campus, go, due, core, shared, done, doneAt, doneBy,
+//             rolledOver, gone, progress? }   id = "<kind>:<recordId>"
+// `done` always comes from source data (a decision, a resolved task, a report row), never a tick.
+// `rolledOver` is set by the framework (game-today), `core` comes from cfg.core[role].
+//
+// Apps Script runs every .gs of a project in one global scope in no fixed order, so this file only
+// uses game.gs functions INSIDE function bodies, never at top level.
+// ═══════════════════════════════════════════════════════════════════
+var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
+var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
+var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+
+const GAME_DAY_MS = 86400000;
+const GAME_DONE_LOOKBACK_DAYS = 2;    // a finished (or gone) record stays visible for today and yesterday: yesterday's day is finalized this morning
+const GAME_PORTAL_PDR = 'principals-daily-reporting/index.html';
+const GAME_PORTAL_FOLLOWUPS = 'coordinator/followups/index.html';
+const GAME_PORTAL_APPROVALS = 'coordinator/approvals/index.html';
+const GAME_PORTAL_APPROVALS_READY = false; // flip to true when the Coordinator chat ships coordinator/approvals/
+
+// ── Copy: one plain line per kind, Buddy's voice (work/LMS Mascot Voice Guide.md) ──
+// Warm, short, factual; no guilt, no hype, no pronouns for people. Done missions use the same line.
+function gameTitle_(kind, d) {
+  const days = d.days === 1 ? '1 day' : d.days + ' days';
+  switch (kind) {
+    case 'ss_pace': return 'SS evaluations: ' + d.needed + ' still needed this month, ' + d.target + ' today keeps the pace';
+    case 'pdr_report': return 'Daily report for ' + d.campus + ' on ' + d.date;
+    case 'pdr_issue': return 'Issue from the daily reports: ' + d.title;
+    case 'info_requested': return 'Management asked for more information on: ' + d.title;
+    case 'approval_recommend': return 'Recommendation wanted on the request from ' + d.campus + ', waiting ' + days + ': ' + d.title;
+    case 'approval_wait': return 'Approval from ' + d.campus + ' has waited ' + days + ': ' + d.title;
+    case 'hiring_stall': return 'Hiring is waiting: ' + d.title;
+    default: return d.title;
+  }
+}
+
+// ── Small helpers ────────────────────────────────────────────────────
+function gameCampusKey_(v) { return String(v || '').replace(/\s+/g, '').toUpperCase(); } // 'LMS 4' -> 'LMS4'
+function gameLower_(v) { return String(v || '').trim().toLowerCase(); }
+function gameIso_(v) { // Date or text from a sheet -> ISO, or '' when empty/unparseable
+  if (v === '' || v === null || v === undefined) return '';
+  const t = new Date(v).getTime();
+  return isNaN(t) ? '' : new Date(t).toISOString();
+}
+function gameDueIso_(v) { return v instanceof Date ? v.toISOString().slice(0, 10) : (String(v || '').trim() || null); }
+function gameInScope_(visible, campus) { return visible === null || !campus || visible.indexOf(gameCampusKey_(campus)) !== -1; }
+function gameVisibleKeys_(caller) { const v = gameVisibleCampuses_(caller); return v === null ? null : v.map(gameCampusKey_); }
+// start of the previous game day (04:00 IST), as epoch ms: finished records older than this are not today's story
+function gameLookbackStart_(now) {
+  return Date.parse(gameDayKey_(new Date(now.getTime() - (GAME_DONE_LOOKBACK_DAYS - 1) * GAME_DAY_MS)) + 'T04:00:00+05:30');
+}
+function gameIsCore_(cfg, role, kind) { return !!(cfg.core && cfg.core[role] && cfg.core[role].indexOf(kind) !== -1); }
+
+function gameMission_(kind, recordId, f) {
+  return {
+    id: kind + ':' + recordId, kind: kind, title: f.title, why: f.why || '', owner: f.owner || '', campus: f.campus || '',
+    go: f.go, due: f.due || null, core: !!f.core, shared: !!f.shared, done: !!f.done, doneAt: f.doneAt || null, doneBy: f.doneBy || null,
+    rolledOver: false, gone: !!f.gone, progress: f.progress,
+  };
+}
+
+// ── SS (staff evaluations) ───────────────────────────────────────────
+// ss is either one role dashboard ({ quotaPerMonth, roster }) or the all-roles response ({ roles: { <role>: dashboard } }).
+function gameSsDashboards_(ss) {
+  if (!ss) return [];
+  if (ss.roles) return Object.keys(ss.roles).map(function (k) { return ss.roles[k]; });
+  return [ss];
+}
+
+// ISO timestamps of today's SS submissions by this evaluator, oldest first
+function gameSsTimes_(ss, email, dayKey) {
+  const times = [], me = gameLower_(email);
+  gameSsDashboards_(ss).forEach(function (dash) {
+    (dash.roster || []).forEach(function (r) {
+      (r.history || []).forEach(function (h) {
+        const iso = gameIso_(h.timestamp);
+        if (iso && gameLower_(h.evaluatorEmail) === me && gameDayKey_(new Date(iso)) === dayKey) times.push(iso);
+      });
+    });
+  });
+  return times.sort();
+}
+function gameSsSubmittedBy_(ss, email, dayKey) { return gameSsTimes_(ss, email, dayKey).length; }
+
+// Working days left in the game day's month, today included, Mon-Sat (Sunday is the only rest day)
+function gameWorkingDaysLeft_(now) {
+  const p = gameDayKey_(now).split('-'), y = +p[0], m = +p[1] - 1, d0 = +p[2];
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  let n = 0;
+  for (let d = d0; d <= last; d++) if (new Date(Date.UTC(y, m, d)).getUTCDay() !== 0) n++;
+  return n;
+}
+function gameSsPaceTarget_(needed, now) {
+  if (!(needed > 0)) return 0;
+  return Math.ceil(needed / Math.max(1, gameWorkingDaysLeft_(now))); // a Sunday on the month's last day: the whole need falls on the day
+}
+
+// ── Source readers ───────────────────────────────────────────────────
+// The latest non-superseded Recommendations row per approval id (RecommendedAt, ISO, decides)
+function gameLatestRecs_(rows) {
+  const by = {};
+  (rows || []).slice(1).forEach(function (r) {
+    const sup = r[9] === true || String(r[9] || '').trim().toUpperCase() === 'TRUE';
+    const id = String(r[1] || '').trim();
+    if (!id || sup) return;
+    const at = gameIso_(r[8]);
+    if (!by[id] || at >= by[id].at) by[id] = { by: String(r[4] || '').trim(), what: String(r[5] || '').trim(), reason: String(r[6] || '').trim(), at: at };
+  });
+  return by;
+}
+const GAME_REC_WORDS = { Approve: 'approve', Reject: 'reject', Info: 'ask for more information' };
+function gameRecWhy_(rec) {
+  return 'Recommended to ' + (GAME_REC_WORDS[rec.what] || rec.what.toLowerCase()) + ' by ' + rec.by + (rec.reason ? ': ' + rec.reason : '');
+}
+
+// Approvals rows -> plain records, scoped to the caller. days = waited so far, or until the decision.
+function gameApprovals_(rows, visible, now) {
+  const out = [];
+  (rows || []).slice(1).forEach(function (r) {
+    const campus = gameCampusKey_(r[1]);
+    if (!r[0] || !gameInScope_(visible, campus) || !campus && visible !== null) return;
+    const requestedAt = new Date(r[12]).getTime();
+    if (isNaN(requestedAt)) return;
+    const decidedAt = gameIso_(r[15]);
+    const status = String(r[13] || '').trim();
+    const decided = status === 'Approved' || status === 'Rejected' || status === 'Revoked';
+    const endMs = decided && decidedAt ? new Date(decidedAt).getTime() : now.getTime();
+    out.push({
+      id: String(r[0]).trim(), campus: campus, title: String(r[4] || '').trim(), by: gameLower_(r[11]), status: status,
+      decided: decided, decidedBy: gameLower_(r[14]), decidedAt: decidedAt, archived: String(r[18] || '').trim().toUpperCase() === 'TRUE',
+      days: Math.floor((endMs - requestedAt) / GAME_DAY_MS),
+    });
+  });
+  return out;
+}
+
+// ── Principal ────────────────────────────────────────────────────────
+function gamePrincipalMissions_(caller, src, cfg, now) {
+  const out = [], role = 'Principal', dayKey = gameDayKey_(now), campus = gameCampusKey_(caller.campusId), since = gameLookbackStart_(now);
+  const go = GAME_PORTAL_PDR, mine = gameLower_(caller.email);
+
+  if (src.ss) {
+    let needed = 0;
+    gameSsDashboards_(src.ss).forEach(function (dash) {
+      (dash.roster || []).forEach(function (r) {
+        if (gameCampusKey_(r.school) === campus) needed += Math.max(0, (dash.quotaPerMonth || 0) - (r.submissionsThisMonth || 0));
+      });
+    });
+    const times = gameSsTimes_(src.ss, caller.email, dayKey);
+    // ponytail: the day's starting need is estimated as need-now + what this person logged today, so the target does not
+    // shrink as they log (a colleague's logging mid-day can still nudge it); an exact start-of-day need is in the snapshot (game-today).
+    const target = gameSsPaceTarget_(needed + times.length, now);
+    if (target > 0) {
+      const done = times.length >= target;
+      out.push(gameMission_('ss_pace', caller.campusId, {
+        title: gameTitle_('ss_pace', { needed: needed, target: target }), why: times.length + ' logged today', owner: mine, campus: campus, go: go,
+        core: gameIsCore_(cfg, role, 'ss_pace'), done: done, doneAt: done ? times[target - 1] : null, doneBy: done ? mine : null,
+        progress: { done: times.length, total: target },
+      }));
+    }
+  }
+
+  if (src.reports) {
+    let stamp = null;
+    src.reports.slice(1).forEach(function (r) { if (String(r[1]).slice(0, 10) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
+    out.push(gameMission_('pdr_report', campus + ':' + dayKey, {
+      title: gameTitle_('pdr_report', { campus: campus, date: dayKey }), owner: mine, campus: campus, go: go,
+      core: gameIsCore_(cfg, role, 'pdr_report'), done: !!stamp, doneAt: stamp, doneBy: stamp ? mine : null,
+    }));
+  }
+
+  if (src.issues && cfg.principalIssuesReady) {
+    (Array.isArray(src.issues) ? src.issues : src.issues.issues || []).forEach(function (i) {
+      if (gameCampusKey_(i.campus) !== campus) return;
+      const resolved = i.status === 'resolved', at = gameIso_(i.resolvedAt);
+      if (resolved && !(at && new Date(at).getTime() >= since)) return; // resolved a while ago: not today's story
+      out.push(gameMission_('pdr_issue', i.id, {
+        title: gameTitle_('pdr_issue', { title: i.subject || i.title || i.id }), owner: mine, campus: campus, go: cfg.principalIssuesGo,
+        core: gameIsCore_(cfg, role, 'pdr_issue'), done: resolved, doneAt: resolved ? at : null, doneBy: resolved ? gameLower_(i.resolvedBy) : null,
+      }));
+    });
+  }
+
+  // ponytail: done for info_requested (the requester answered, status left Info Requested) is not visible in one row;
+  // the framework sees the id vanish from the open set. A response log would make it exact.
+  gameApprovals_(src.approvals, null, now).forEach(function (a) {
+    if (a.by !== mine || a.status !== 'Info Requested' || a.archived) return;
+    out.push(gameMission_('info_requested', a.id, {
+      title: gameTitle_('info_requested', { title: a.title }), owner: mine, campus: a.campus, go: go, core: gameIsCore_(cfg, role, 'info_requested'),
+    }));
+  });
+  return out;
+}
+
+// ── Coordinator ──────────────────────────────────────────────────────
+function gameApprovalsGo_() { return GAME_PORTAL_APPROVALS_READY ? GAME_PORTAL_APPROVALS : GAME_PORTAL_FOLLOWUPS; }
+
+function gameCoordinatorMissions_(caller, src, cfg, now) {
+  const out = [], role = 'Coordinator', me = gameLower_(caller.email), visible = gameVisibleKeys_(caller), since = gameLookbackStart_(now);
+  const tasks = (src.tasks || []).slice(1);
+
+  if (cfg.recommendationsReady) {
+    const recs = gameLatestRecs_(src.recommendations);
+    const assignee = {};
+    tasks.forEach(function (t) { assignee[String(t[0])] = gameLower_(t[13]); });
+    gameApprovals_(src.approvals, visible, now).forEach(function (a) {
+      if (a.archived || a.days < cfg.approvalWaitDays) return;
+      const rec = recs[a.id], recommended = !!(rec && rec.reason);
+      const state = recommended ? { done: true, doneAt: rec.at, doneBy: gameLower_(rec.by) } : { done: false };
+      if (recommended) { if (!rec.at || new Date(rec.at).getTime() < since) return; } // recommended a while ago: not today's story
+      else if (a.decided) { // the Owner decided before any recommendation: no longer needed
+        if (!a.decidedAt || new Date(a.decidedAt).getTime() < since) return;
+        state.gone = true;
+      } else if (a.status !== 'Pending') return;
+      out.push(gameMission_('approval_recommend', a.id, Object.assign({
+        title: gameTitle_('approval_recommend', { campus: a.campus, days: a.days, title: a.title }),
+        why: state.gone ? 'Decided before a recommendation was needed' : '', owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(),
+        core: gameIsCore_(cfg, role, 'approval_recommend'), shared: assignee['approval|' + a.id + '|Pending'] !== me,
+      }, state)));
+    });
+  }
+
+  tasks.forEach(function (t) {
+    const id = String(t[0] || '').trim(), domain = String(t[1] || '').trim(), campus = gameCampusKey_(t[2]);
+    if (!id || !gameInScope_(visible, campus)) return;
+    if (cfg.recommendationsReady && /^approval\|.*\|Pending$/.test(id)) return; // approval_recommend already covers it
+    const assignee = gameLower_(t[13]), resolved = String(t[5]).trim() === 'resolved', at = gameIso_(t[9]), by = String(t[10] || '').trim();
+    const stall = domain === 'hiring_stall';
+    if (!stall && assignee && assignee !== me) return; // another person's follow-up
+    if (resolved && !(at && new Date(at).getTime() >= since)) return;
+    if (!resolved && String(t[5]).trim() !== 'open') return;
+    const kind = stall ? 'hiring_stall' : 'followup', system = /^system/i.test(by);
+    const gone = resolved && !stall && system; // cleared by the system, not by a person
+    out.push(gameMission_(kind, id, {
+      title: gameTitle_(kind, { title: String(t[3] || '').trim() }), why: gone ? 'No longer needed' : String(t[4] || '').trim(),
+      owner: assignee, campus: campus, go: GAME_PORTAL_FOLLOWUPS, due: gameDueIso_(t[14]),
+      core: gameIsCore_(cfg, role, kind), shared: stall || !assignee,
+      done: resolved && !gone, doneAt: resolved && !gone ? at : null, doneBy: resolved && !gone ? gameLower_(by) : null, gone: gone,
+    }));
+  });
+  return out;
+}
+
+// ── Owner ────────────────────────────────────────────────────────────
+function gameOwnerMissions_(caller, src, cfg, now) {
+  const out = [], role = 'Owner', since = gameLookbackStart_(now);
+  const recs = cfg.recommendationsReady ? gameLatestRecs_(src.recommendations) : {};
+  gameApprovals_(src.approvals, gameVisibleKeys_(caller), now).forEach(function (a) {
+    if (a.archived || a.days < cfg.approvalWaitDays) return; // archived without a decision: gone, and the framework sees the id vanish
+    if (a.decided && !(a.decidedAt && new Date(a.decidedAt).getTime() >= since)) return;
+    if (!a.decided && a.status !== 'Pending') return;
+    out.push(gameMission_('approval_wait', a.id, {
+      title: gameTitle_('approval_wait', { campus: a.campus, days: a.days, title: a.title }), why: recs[a.id] ? gameRecWhy_(recs[a.id]) : '',
+      owner: gameLower_(caller.email), campus: a.campus, go: gameApprovalsGo_(), core: gameIsCore_(cfg, role, 'approval_wait'),
+      done: a.decided, doneAt: a.decided ? a.decidedAt : null, doneBy: a.decided ? a.decidedBy : null,
+    }));
+  });
+  return out;
+}
+
+// ── Dispatch ─────────────────────────────────────────────────────────
+// Owner beats Coordinator beats Principal (primaryRole is already chosen that way). Other roles come from their
+// module's registration (Teacher), else "not available yet".
+function gameMissionsFor_(caller, src, cfg, now) {
+  switch (caller.primaryRole) {
+    case 'Principal': return gamePrincipalMissions_(caller, src, cfg, now);
+    case 'Coordinator': return gameCoordinatorMissions_(caller, src, cfg, now);
+    case 'Owner': return gameOwnerMissions_(caller, src, cfg, now);
+  }
+  if (Object.prototype.hasOwnProperty.call(GAME_MODULE_MISSIONS, caller.primaryRole)) return GAME_MODULE_MISSIONS[caller.primaryRole](caller, cfg, now);
+  return { notYet: true };
+}
