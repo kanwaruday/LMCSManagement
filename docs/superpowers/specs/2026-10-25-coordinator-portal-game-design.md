@@ -265,7 +265,8 @@ mission in the decider's Today panel.
 - **The HQ shows the framework's status board** for windows in the district: decided or waiting, per campus. The
   first window is each Principal choosing their campus's 3 track-suit days.
 - **Coordinators can open windows for their district.**
-- **Asked of the game director (not built here):** a **district goal targets** window type. Before each term, the
+- **District goal targets is framework window type 2** (agreed with the game director; `confirmBy` = the Owner). The HQ
+  only shows the proposal card and its status; the framework stores and applies it. Before each term, the
   Coordinator proposes the district's team-goal targets (for example "approvals within 3 days"); the Owner's Season
   setup confirms or overrides them. It fits Uday's "we will identify the goals for everyone over the next 6 months".
 
