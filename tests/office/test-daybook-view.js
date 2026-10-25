@@ -3,7 +3,8 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig } = await import('../../office/js/daybook.js');
+  const t_ok = (name, fn) => { fn(); console.log('  ok  - ' + name); };
+  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -65,8 +66,8 @@ if (require.main !== module) { module.exports = () => {}; return; }
   let r = entryPayload(base);
   assert.ok(r.ok); assert.deepStrictEqual(r.data, { campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', account: 'cash:LMS1', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 123450, payee: 'Raju', narration: '', charged_to: 'LMS1', file_id: '' });
   r = entryPayload({ ...base, account: A('bank:LMS1', 'bank', 'LMS1'), mode: 'upi', bucket: 'petty' }); assert.strictEqual(r.data.mode, 'upi'); assert.strictEqual(r.data.bucket, ''); // bank: client picks bank/upi
-  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.mode, 'credit');
-  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.supplier_bill_no, 'B7');
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), components: ['puncture'], vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.mode, 'credit');
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), components: ['puncture'], vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.supplier_bill_no, 'B7');
   assert.ok(entryPayload({ ...base, bucket: '' }).errors.bucket);
   assert.ok(entryPayload({ ...base, account: null }).errors.account);
   assert.ok(entryPayload({ ...base, category: null }).errors.category);
@@ -87,9 +88,30 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(collectionOptions([{ id: 'a', label: 'A', active: true }, { id: 'b', label: 'B', active: false }]), [{ value: 'a', label: 'A' }]);
   assert.deepStrictEqual(collectionOptions(undefined), []);
   // vehicle categories
-  const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true) };
+  const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true), components: ['tyre_fl'] };
   assert.ok(entryPayload(tyres).errors.vehicle); assert.strictEqual(entryPayload({ ...tyres, vehicle: 'FLEET' }).data.vehicle, 'FLEET');
   assert.ok(!('vehicle' in entryPayload(base).data), 'no vehicle key for other categories');
+  // garage data: which parts a vehicle service bill was for
+  assert.strictEqual(COMPONENT_LABEL, 'Which parts? (tap all that apply)');
+  t_ok('chips show for vehicle_service and hide for fuel', () => {
+    assert.ok(componentOptions('vehicle_service').length > 0);
+    ['vehicle_washing', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'].forEach((c) => assert.ok(componentOptions(c).length > 0, c));
+    ['fuel', 'vehicle_insurance', 'parking', 'stationery', 'transport_income', 'nope', undefined].forEach((c) => assert.deepStrictEqual(componentOptions(c), [], String(c)));
+    assert.deepStrictEqual(componentOptions('tyres').map((o) => o.id), ['tyre_fl', 'tyre_fr', 'tyre_rl', 'tyre_rr', 'tyre_spare', 'puncture', 'other']);
+    assert.ok(componentOptions('tyres').every((o) => o.id && o.label));
+  });
+  t_ok('the client list matches the server list for every category', () => {
+    const { boot } = require('./harness'); const srv = boot();
+    srv.ctx.OFFICE_CATEGORIES.forEach((c) => assert.deepStrictEqual(componentOptions(c.id), JSON.parse(JSON.stringify(srv.ctx.officeComponentsFor_(c.id))), c.id));
+  });
+  t_ok('a service category needs at least one part, and sends them in tap order', () => {
+    assert.ok(entryPayload({ ...tyres, components: [] }).errors.components);
+    assert.ok(entryPayload({ ...tyres, components: undefined }).errors.components);
+    assert.deepStrictEqual(entryPayload({ ...tyres, vehicle: 'V1', components: ['tyre_fl', 'puncture'] }).data.components, ['tyre_fl', 'puncture']);
+    assert.ok(!('components' in entryPayload({ ...base, components: ['tyre_fl'] }).data), 'other categories send none');
+    const fuelCat = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12', odometer: '5', hasFile: true };
+    assert.ok(!('components' in entryPayload(fuelCat).data), 'fuel sends none');
+  });
   // fuel: litres edge cases, odometer, photo
   const fuel = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12.5', odometer: '45210', odometer_note: ' meter changed ', hasFile: true };
   r = entryPayload(fuel);

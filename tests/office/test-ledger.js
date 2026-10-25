@@ -121,7 +121,7 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.reverse', { id: 'badrev', campus: 'LMS1', reverses: 'bad' }, 'owner-token').success, true);
     fuel(h, { id: 'f3', entry_date: '2026-10-08', odometer_km: 1777, litres_ml: 25500, amount_paise: 2500 });
     fuel(h, { id: 'g1', entry_date: '2026-10-02', vehicle: 'HP660001', odometer_km: 50, amount_paise: 1 });
-    add(h, { account: 'pump1', mode: '', bucket: '', category: 'vehicle_service', vehicle: 'HP660001', amount_paise: 800 });
+    add(h, { account: 'pump1', mode: '', bucket: '', category: 'vehicle_service', vehicle: 'HP660001', components: ['other'], amount_paise: 800 });
     add(h, { category: 'parking', vehicle: 'FLEET', amount_paise: 30 });
     add(h, { direction: 'IN', bucket: 'other', category: 'transport_income', vehicle: 'HP660001', amount_paise: 90 });
     const s = sum(h);

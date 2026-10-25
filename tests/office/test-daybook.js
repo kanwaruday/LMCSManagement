@@ -213,7 +213,7 @@ module.exports = function run(t) {
     assert.equal(o({}).code, 'FORBIDDEN_ACCOUNT', 'fee_collection IN');
     assert.equal(o({ category: 'transport_income', vehicle: 'HP665805' }).code, 'FORBIDDEN_ACCOUNT', 'transport IN');
     assert.equal(o({ direction: 'OUT', category: 'cash_transfer' }).code, 'FORBIDDEN_ACCOUNT', 'movement');
-    assert.equal(o({ direction: 'OUT', category: 'vehicle_service', vehicle: 'HP665805' }).success, true);
+    assert.equal(o({ direction: 'OUT', category: 'vehicle_service', vehicle: 'HP665805', components: ['other'] }).success, true);
     assert.equal(as(h, 'owner-token', { account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'cash_transfer' }).code, 'FORBIDDEN_ACCOUNT', 'cash transfer only from cash');
   });
 
@@ -379,10 +379,10 @@ module.exports = function run(t) {
   const sc = (o) => e(Object.assign({ category: 'student_collection', collection: 'mun', bucket: 'other' }, o));
   const scPaid = (o) => e(Object.assign({ category: 'student_collection_paid', direction: 'OUT', collection: 'mun', bucket: 'other', file_id: 'slip' }, o));
 
-  t.test('DayBook has a trailing collection column', () => {
+  t.test('DayBook has the collection column, then the components column last', () => {
     const h = v2();
     const head = h.ctx.OFFICE_TABLES.DayBook;
-    assert.equal(head[head.length - 1], 'collection');
+    assert.deepEqual(Array.from(head.slice(-2)), ['collection', 'components']);
   });
 
   t.test('student collection categories need an active head (COLLECTION_REQUIRED / BAD_COLLECTION) and it is stored', () => {
@@ -433,5 +433,68 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.add', e({ id: 'in1' }), 'clerk-token').success, true, 'money in needs no photo');
     // a reversal of a photographed payment needs none
     assert.equal(h.call('daybook.reverse', { id: 'rok1', campus: 'LMS1', reverses: 'ok1' }, 'clerk-token').success, true);
+  });
+  // ── garage data: which parts a vehicle service bill was for ──
+  const svc = (o) => e(Object.assign({ direction: 'OUT', category: 'tyres', bucket: 'petty', vehicle: 'HP665805', components: ['tyre_fl', 'puncture'] }, o));
+
+  t.test('entry with category tyres and components [tyre_fl, puncture] is saved with components "tyre_fl,puncture"', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', svc({ id: 'k1' }), 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'k1').components, 'tyre_fl,puncture');
+  });
+
+  t.test('service category with no components is refused with COMPONENTS_REQUIRED', () => {
+    const h = v2();
+    [[], undefined, '', null].forEach((c) => assert.equal(h.call('daybook.add', svc({ components: c }), 'clerk-token').code, 'COMPONENTS_REQUIRED', String(c)));
+    ['vehicle_washing', 'vehicle_service', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'].forEach((category) =>
+      assert.equal(h.call('daybook.add', svc({ category, components: [] }), 'clerk-token').code, 'COMPONENTS_REQUIRED', category));
+    assert.equal(rowsOf(h).length, 0);
+  });
+
+  t.test('component not valid for the category (battery on tyres) is refused with BAD_COMPONENT', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', svc({ components: ['battery'] }), 'clerk-token').code, 'BAD_COMPONENT');
+    assert.equal(h.call('daybook.add', svc({ components: ['tyre_fl', 'nope'] }), 'clerk-token').code, 'BAD_COMPONENT');
+    assert.equal(h.call('daybook.add', svc({ components: 'tyre_fl' }), 'clerk-token').code, 'BAD_COMPONENT', 'must be a list');
+    assert.equal(h.call('daybook.add', svc({ category: 'vehicle_parts', components: ['engine_oil', 'brake_front'] }), 'clerk-token').success, true, 'parts take service components');
+    assert.equal(h.call('daybook.add', svc({ category: 'vehicle_electrical', components: ['other'] }), 'clerk-token').success, true, 'other fits every service category');
+    assert.equal(rowsOf(h).length, 2);
+  });
+
+  t.test('non-vehicle category ignores components', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', e({ components: ['battery'] }), 'clerk-token').success, true);
+    const fill = fuel({ id: 'f1', components: ['engine_oil'] });
+    assert.equal(h.call('daybook.add', fill, 'clerk-token').success, true);
+    assert.deepEqual(rowsOf(h).map((r) => r.components), ['', '']);
+  });
+
+  t.test('old row without the column reads back components "" and the first open adds the column', () => {
+    const h = boot(fixture); h.addConfig();
+    const cols = Array.from(h.ctx.OFFICE_TABLES.DayBook), old = cols.slice(0, cols.indexOf('components'));
+    assert.ok(old.length === cols.length - 1, 'components is the one new trailing column');
+    const sh = h.addBook('LMS1', '2026-27').insertSheet('DayBook'); // a live sheet from before this column
+    h.ctx.officeWidenGrid_(sh, cols.length);
+    sh.getRange(1, 1, 1, old.length).setNumberFormat('@').setValues([old]);
+    sh.getRange(2, 1, 1, old.length).setNumberFormat('@').setValues([old.map((c) => (c === 'id' ? 'old1' : c === 'campus' ? 'LMS1' : ''))]);
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27');
+    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 1], 'components');
+    assert.equal(h.ctx.officeRows_(ss, 'DayBook')[0].components, '');
+  });
+
+  t.test('reversal copies the components', () => {
+    const h = v2();
+    h.call('daybook.add', svc({ id: 'k2', entry_date: '2026-10-21' }), 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rk2', campus: 'LMS1', reverses: 'k2' }, 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'rk2').components, 'tyre_fl,puncture');
+  });
+
+  t.test('officeComponentsFor_ lists {id, label} for service categories only, "other" last', () => {
+    const h = v2();
+    const of = (c) => J(h.ctx.officeComponentsFor_(c));
+    assert.deepEqual(of('vehicle_washing').map((x) => x.id), ['washing_greasing', 'other']);
+    assert.deepEqual(of('vehicle_body').map((x) => x.id), ['body_paint', 'seats_windows', 'door', 'other']);
+    assert.ok(of('tyres').every((x) => x.label) && !of('tyres').some((x) => x.id === 'battery'));
+    assert.deepEqual(of('fuel'), []);
   });
 };

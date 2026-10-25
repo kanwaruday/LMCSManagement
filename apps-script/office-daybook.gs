@@ -99,6 +99,15 @@ function officeDaybookAdd_(ctx, data) {
       return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
     })) throw officeCoded_('FILE_MISSING'); // same check as deposit.add
   }
+  // Garage data: a service bill says which parts it was for (comma-separated ids, in the order tapped). Other categories ignore the field.
+  const offered = officeComponentsFor_(cat.id).map(function (c) { return c.id; });
+  let components = '';
+  if (offered.length) {
+    const picked = Array.isArray(data.components) ? data.components : officeBlank_(data.components) ? [] : null;
+    if (picked && !picked.length) throw officeCoded_('COMPONENTS_REQUIRED');
+    if (!picked || picked.some(function (c) { return offered.indexOf(c) === -1; })) throw officeCoded_('BAD_COMPONENT');
+    components = picked.filter(function (c, i) { return picked.indexOf(c) === i; }).join(',');
+  }
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
   // Student collections are tracked per head; no other category carries one.
@@ -118,7 +127,7 @@ function officeDaybookAdd_(ctx, data) {
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
     account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
-    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection,
+    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components,
   }, 'daybook.add');
 }
 
@@ -165,7 +174,7 @@ function officeDaybookReverse_(ctx, data) {
     narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
     account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
-    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection,
+    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
   }, 'daybook.reverse');
 }
 

@@ -42,6 +42,8 @@ export const CODES = {
   ODOMETER_BACKWARDS: 'The odometer is lower than this vehicle\'s previous fill. Check it, or add a note saying why (for example, meter replaced).',
   BAD_FIELD: 'A field was filled in that does not apply to this entry (litres and odometer are for fuel only, a collection is for student collections only). Clear it, or for a collection head id use only small letters, digits and underscores.',
   COLLECTION_REQUIRED: 'Choose which student collection this is (for example Field trips or ID cards).',
+  COMPONENTS_REQUIRED: 'Tap which parts this bill was for.',
+  BAD_COMPONENT: 'One of the parts does not match this kind of bill. Tap the parts again.',
   BAD_COLLECTION: 'That student collection is not in use any more, or does not exist. Choose one from the list.',
   SETTLEMENT_ACCOUNT_REQUIRED: 'A settlement is paid from a bank account and must name a supplier credit account (it may belong to any campus).',
   NOT_A_SETTLEMENT: 'Only a credit settlement can name a supplier account to settle.',

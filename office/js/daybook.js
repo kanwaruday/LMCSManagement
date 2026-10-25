@@ -85,6 +85,22 @@ export function vehicleOptions(vehicles, campus, categoryId) {
 // Active student collection heads as select options.
 export const collectionOptions = (collections) => (collections || []).filter((c) => c.active).map((c) => ({ value: c.id, label: c.label }));
 export const COLLECTION_CATEGORIES = ['student_collection', 'student_collection_paid'];
+// Parts a vehicle service bill can be for (garage data), by category. Keep in step with OFFICE_COMPONENTS in
+// apps-script/office-config.gs; tests/office/test-daybook-view.js fails if the two lists differ.
+export const COMPONENT_LABEL = 'Which parts? (tap all that apply)';
+const SERVICE = ['vehicle_service', 'vehicle_parts'], ALL_SERVICE = ['vehicle_washing', 'vehicle_service', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'];
+const COMPONENTS = [
+  ...[['engine_oil', 'Engine oil'], ['oil_filter', 'Oil filter'], ['fuel_filter', 'Fuel filter'], ['air_filter', 'Air filter'], ['coolant', 'Coolant'], ['belts', 'Belts'],
+    ['brake_front', 'Front brakes'], ['brake_rear', 'Rear brakes'], ['brake_fluid', 'Brake fluid'], ['clutch', 'Clutch'], ['gearbox_oil', 'Gearbox oil'], ['axle_grease', 'Axle grease'],
+    ['suspension', 'Suspension'], ['steering', 'Steering'], ['wheel_bearing', 'Wheel bearing']].map(([id, label]) => [id, label, SERVICE]),
+  ...[['battery', 'Battery'], ['lights_wiring', 'Lights and wiring'], ['starter_alternator', 'Starter / alternator']].map(([id, label]) => [id, label, ['vehicle_electrical']]),
+  ...[['tyre_fl', 'Tyre front left'], ['tyre_fr', 'Tyre front right'], ['tyre_rl', 'Tyre rear left'], ['tyre_rr', 'Tyre rear right'], ['tyre_spare', 'Spare tyre'], ['puncture', 'Puncture']].map(([id, label]) => [id, label, ['tyres']]),
+  ...[['body_paint', 'Body and paint'], ['seats_windows', 'Seats and windows'], ['door', 'Door']].map(([id, label]) => [id, label, ['vehicle_body']]),
+  ['washing_greasing', 'Washing / greasing', ['vehicle_washing']],
+  ['other', 'Other', ALL_SERVICE],
+];
+// [{id, label}] for the chips of a category; empty (no chips) for every category that does not ask which parts.
+export const componentOptions = (categoryId) => COMPONENTS.filter((c) => c[2].includes(categoryId)).map(([id, label]) => ({ id, label }));
 export const PAYMENT_PHOTO_HINT = 'Photo of the bill, or of the hand-written receipt signed by the person paid.';
 
 // The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
@@ -108,7 +124,7 @@ export function parseLitresToMl(text) {
 const parseOdometer = (text) => { const m = /^\s*(\d+)\s*$/.exec(String(text)); const n = m && Number(m[1]); return m && Number.isSafeInteger(n) ? n : null; };
 
 // form: {campus, date, account (object), category (object), mode (bank accounts only: bank|upi), bucket, amount, payee, narration,
-//   charged_to, vehicle, collection, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
+//   charged_to, vehicle, components (ids in tap order), collection, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
 // Returns {ok, data, errors}. Direction comes from the category, mode from the account kind, bucket only for cash;
 // file_id is added by the caller once the photo is queued (every payment has one: bill or signed receipt).
 export function entryPayload(form) {
@@ -136,6 +152,10 @@ export function entryPayload(form) {
     if (data.odometer_km === null) errors.odometer = 'Enter the odometer reading in whole km.';
     data.odometer_note = (form.odometer_note || '').trim();
     if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
+  }
+  if (cat && componentOptions(cat.id).length) {
+    data.components = form.components || [];
+    if (!data.components.length) errors.components = 'Tap the parts this bill was for.';
   }
   if (cat && COLLECTION_CATEGORIES.includes(cat.id)) {
     data.collection = form.collection || '';
@@ -205,6 +225,11 @@ export async function showDayBook(root, session, api, outbox) {
   const odoNoteF = field('db-odonote', 'Odometer note (only if the reading is lower, e.g. meter replaced)', odoNoteIn);
   const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
   const fileF = field('db-file', 'Photo', fileIn, PAYMENT_PHOTO_HINT);
+  // Garage data: one tap per part. Toggle buttons (aria-pressed) in a fieldset, so keyboard and screen readers get the same thing.
+  let picked = [];
+  const chipsEl = h('div', { class: 'chips' });
+  const compErr = h('p', { class: 'err', role: 'alert', id: 'db-comps-err' });
+  const compF = { root: h('fieldset', { class: 'parts', 'aria-describedby': 'db-comps-err' }, h('legend', {}, COMPONENT_LABEL), chipsEl, compErr), err: compErr };
   const collSel = h('select', {});
   const collF = field('db-coll', 'Collection', collSel);
   const billIn = h('input', { type: 'text', autocomplete: 'off' });
@@ -236,6 +261,14 @@ export async function showDayBook(root, session, api, outbox) {
   const paintCharged = () => keep(chargedSel, () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c }, chargedLabel(c)))), campus);
   const paintSettles = () => keep(settlesSel, () => settlesSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(cfg.accounts || []).filter((a) => a.active && a.kind === 'credit').map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'))));
   const paintVehicles = () => keep(vehSel, () => { const c = curCat(); vehSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...vehicleOptions(cfg.vehicles, campus, c && c.id).map((o) => h('option', { value: o.value }, o.label))); });
+  const paintChips = () => { // picks that this category does not offer are dropped
+    const c = curCat(), opts = componentOptions(c && c.id);
+    picked = picked.filter((id) => opts.some((o) => o.id === id));
+    chipsEl.replaceChildren(...opts.map((o) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(picked.includes(o.id)), onclick: (e) => {
+      picked = picked.includes(o.id) ? picked.filter((id) => id !== o.id) : [...picked, o.id];
+      e.currentTarget.setAttribute('aria-pressed', String(picked.includes(o.id)));
+    } }, o.label)));
+  };
   const paintCollections = () => keep(collSel, () => collSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...collectionOptions(cfg.collections).map((o) => h('option', { value: o.value }, o.label))));
   const sync = () => {
     const a = curAcct(), c = curCat();
@@ -244,6 +277,7 @@ export async function showDayBook(root, session, api, outbox) {
     billF.root.hidden = !(a && a.kind === 'credit');
     vehF.root.hidden = !(c && c.needs_vehicle);
     [litresF, odoF, odoNoteF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    compF.root.hidden = !(c && componentOptions(c.id).length);
     collF.root.hidden = !(c && COLLECTION_CATEGORIES.includes(c.id));
     fileF.root.hidden = !(c && c.direction === 'OUT'); // every payment carries a photo
     fileIn.required = !fileF.root.hidden;
@@ -251,9 +285,9 @@ export async function showDayBook(root, session, api, outbox) {
     [settlesF, settlesF2].forEach((f) => { f.root.hidden = !(c && c.id === 'credit_settlement'); });
     dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : '';
   };
-  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); paintCollections(); sync(); };
-  acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); sync(); });
-  catSel.addEventListener('change', () => { paintVehicles(); sync(); });
+  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); paintCollections(); paintChips(); sync(); };
+  acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); paintChips(); sync(); });
+  catSel.addEventListener('change', () => { paintVehicles(); paintChips(); sync(); });
   paintForm();
 
   let auto = date;
@@ -266,7 +300,7 @@ export async function showDayBook(root, session, api, outbox) {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
 
-  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
+  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, components: compF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (roll()) return;
@@ -274,7 +308,7 @@ export async function showDayBook(root, session, api, outbox) {
     const file = fileIn.files && fileIn.files[0];
     const r = entryPayload({
       campus, date, account: curAcct(), category: curCat(), mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value,
-      charged_to: chargedSel.value, vehicle: vehSel.value, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      charged_to: chargedSel.value, vehicle: vehSel.value, components: picked, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
       supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
     });
     if (!r.ok) { Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; }); return; }
@@ -287,13 +321,14 @@ export async function showDayBook(root, session, api, outbox) {
       }
       await outbox.enqueue('daybook.add', r.data);
       [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
+      picked = []; paintChips();
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -310,6 +345,10 @@ export async function showDayBook(root, session, api, outbox) {
   }
 
   // Second line of a list row: account, mode/bucket, charged-to (when not the campus), vehicle, fuel figures, then the free text.
+  const partsLabel = (v) => { // stored as 'tyre_fl,puncture' (a queued entry still holds the array)
+    const ids = Array.isArray(v) ? v : String(v || '').split(',').filter(Boolean);
+    return ids.map((id) => (COMPONENTS.find((c) => c[0] === id) || [id, id])[1]).join(', ');
+  };
   const collLabel = (id) => ((cfg.collections || []).find((c) => c.id === id) || {}).label || id;
   const rowMeta = (it) => [
     rowAccountLabel(cfg.accounts, { ...it, campus }),
@@ -317,7 +356,7 @@ export async function showDayBook(root, session, api, outbox) {
     it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
     it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
     it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
-    it.collection ? collLabel(it.collection) : '',
+    it.collection ? collLabel(it.collection) : '', partsLabel(it.components),
     it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
   ].filter(Boolean);
 

@@ -23,3 +23,10 @@
 .capwrap { overflow-x: auto; }
 .office-form .capwrap input, .office-form .capwrap select { min-height: 40px; min-width: 56px; padding: 4px; }
 section.block h2 { font-size: 1.1rem; }
+/* Part chips (day book, vehicle service bills): toggle buttons that wrap at 375 px. */
+.office-form fieldset.parts { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; }
+.office-form fieldset.parts legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+.office-form .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.office-form button.chip { background: #fff; color: #1f3a5f; padding: 8px 14px; }
+.office-form button.chip[aria-pressed="true"] { background: #1f3a5f; color: #fff; }
+.office-form button.chip:focus-visible { outline: 3px solid #f0a500; outline-offset: 2px; }
