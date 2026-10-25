@@ -74,10 +74,15 @@ function gameWindowScopeIds_(w, cfg) {
   return Array.isArray(pilot) ? pilot : [];
 }
 
-// scope ids the caller may see/decide: the window's scope, narrowed to the caller's campuses (null = all)
+// scope ids the caller may see (board): the window's scope, narrowed to the caller's campuses (null = all)
 function gameCallerScopeIds_(caller, w, cfg) {
   const ids = gameWindowScopeIds_(w, cfg), vis = gameVisibleCampuses_(caller);
   return vis ? ids.filter(function (id) { return vis.indexOf(id) !== -1; }) : ids;
+}
+
+// scope ids a non-Owner may DECIDE: the window's real scope, only their own campus (an ALL-campus Principal decides nothing)
+function gameDecidableScopeIds_(caller, w, cfg) {
+  return gameWindowScopeIds_(w, cfg).filter(function (id) { return id === caller.campusId; });
 }
 
 // the latest decision for each window+scope wins (an Owner override comes after the original)
@@ -104,7 +109,7 @@ function gameWindowsFor_(caller, windowRows, decisionRows, now, cfg) {
   const latest = gameLatestDecisions_(gameParseDecisions_(decisionRows)), out = [];
   gameParseWindows_(windowRows).forEach(function (w) {
     if (caller.roles.indexOf(w.decider) === -1 || gameWindowState_(w, now) !== 'open') return;
-    gameCallerScopeIds_(caller, w, cfg).forEach(function (scopeId) {
+    gameDecidableScopeIds_(caller, w, cfg).forEach(function (scopeId) {
       const decided = latest[w.windowId + '|' + scopeId] || null;
       const setting = cfg[w.writes] && cfg[w.writes][scopeId];
       out.push({ windowId: w.windowId, title: w.title, question: w.question, scopeId: scopeId, choice: w.choice,
@@ -135,14 +140,17 @@ function gameWindowBoard_(caller, windowRows, decisionRows, now, cfg) {
 }
 
 // ── Deciding ─────────────────────────────────────────────────────────
-// win = a parsed window carrying the scopeId being decided; existing = the latest decision for it or null.
-// The Owner may decide any scope at any time; an Owner decision is always logged as an override.
-function gameValidateDecision_(caller, win, value, existing, now, cfg) {
+// win = a parsed window (raw ScopeId, e.g. '*'); scopeId = the campus being decided; existing = the latest
+// decision for it or null. Every caller, the Owner included, needs scopeId in the window's real scope set.
+// The Owner then skips role/campus/date/already-decided checks; an Owner decision is always logged as an override.
+function gameValidateDecision_(caller, win, scopeId, value, existing, now, cfg) {
   cfg = gameCfg_(cfg);
   const isOwner = caller.roles.indexOf('Owner') !== -1;
+  const notYours = { ok: false, error: "That campus isn't yours to decide." };
+  if (!isOwner && caller.roles.indexOf(win.decider) === -1) return { ok: false, error: 'Only the ' + win.decider + ' decides this.' };
+  if (gameWindowScopeIds_(win, cfg).indexOf(scopeId) === -1) return notYours;
   if (!isOwner) {
-    if (caller.roles.indexOf(win.decider) === -1) return { ok: false, error: 'Only the ' + win.decider + ' decides this.' };
-    if (gameCallerScopeIds_(caller, win, cfg).indexOf(win.scopeId) === -1) return { ok: false, error: "That campus isn't yours to decide." };
+    if (gameDecidableScopeIds_(caller, win, cfg).indexOf(scopeId) === -1) return notYours;
     const st = gameWindowState_(win, now);
     if (st === 'closed') return { ok: false, error: 'This window closed on ' + gameDateLabel_(win.closes) + '.' };
     if (st === 'notyet') return { ok: false, error: 'This window opens on ' + gameDateLabel_(win.opens) + '.' };

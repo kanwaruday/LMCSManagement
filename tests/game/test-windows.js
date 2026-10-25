@@ -23,36 +23,44 @@ const winRow = (o) => WH.map((h) => (o && h in o ? o[h] : {
 const decRow = (scopeId, value, kind, by, at) => [ 'trackSuit', scopeId, JSON.stringify(value), '', by || 'x@lms.org.in', at || '2026-11-03T06:00:00Z', kind || 'decided' ];
 const WROWS = [WH, winRow()];
 const noDec = [DH];
-const win = (scopeId, rows) => Object.assign(J(ctx.gameParseWindow_(rows ? rows[1] : winRow())), { scopeId });
+const win = () => J(ctx.gameParseWindow_(winRow())); // raw window: ScopeId stays '*'
 const MWF = ['Mon', 'Wed', 'Fri'];
 
 // ── validation ────────────────────────────────────────────────────────
-assert.deepStrictEqual(J(ctx.gameValidateDecision_(p4, win('LMS4'), MWF, null, now)), { ok: true, kind: 'decided' });
-const err = (caller, w, v, ex, at) => { const r = J(ctx.gameValidateDecision_(caller, w, v, ex === undefined ? null : ex, at || now)); assert.strictEqual(r.ok, false); return r.error; };
-assert.strictEqual(err(p4, win('LMS4'), ['Mon', 'Wed']), 'Pick exactly 3 days.');
-assert.strictEqual(err(p4, win('LMS4'), ['Mon', 'Thu', 'Thu']), 'Pick exactly 3 days.');
-assert.strictEqual(err(p4, win('LMS4'), ['Mon', 'Wed', 'Sun']), "Sun isn't one of the options.");
-assert.strictEqual(err(p4, win('LMS4'), 'Mon'), 'Pick exactly 3 days.');
-assert.strictEqual(err(p4, win('LMS2'), MWF), "That campus isn't yours to decide.");
-assert.strictEqual(err(p4, win('LMS5'), MWF), "That campus isn't yours to decide.");
-assert.strictEqual(err(teacher, win('LMS4'), MWF), 'Only the Principal decides this.');
-assert.strictEqual(err(coord, win('LMS4'), MWF), 'Only the Principal decides this.');
-assert.strictEqual(err(p4, win('LMS4'), MWF, null, new Date('2026-11-09T05:00:00Z')), 'This window closed on Sun 8 Nov.');
-assert.strictEqual(err(p4, win('LMS4'), MWF, null, new Date('2026-10-30T05:00:00Z')), 'This window opens on Sun 1 Nov.');
+assert.deepStrictEqual(J(ctx.gameValidateDecision_(p4, win(), 'LMS4', MWF, null, now)), { ok: true, kind: 'decided' });
+const err = (caller, w, s, v, ex, at) => { const r = J(ctx.gameValidateDecision_(caller, w, s, v, ex === undefined ? null : ex, at || now)); assert.strictEqual(r.ok, false); return r.error; };
+assert.strictEqual(err(p4, win(), 'LMS4', ['Mon', 'Wed']), 'Pick exactly 3 days.');
+assert.strictEqual(err(p4, win(), 'LMS4', ['Mon', 'Thu', 'Thu']), 'Pick exactly 3 days.');
+assert.strictEqual(err(p4, win(), 'LMS4', ['Mon', 'Wed', 'Sun']), "Sun isn't one of the options.");
+assert.strictEqual(err(p4, win(), 'LMS4', 'Mon'), 'Pick exactly 3 days.');
+assert.strictEqual(err(p4, win(), 'LMS2', MWF), "That campus isn't yours to decide.");
+assert.strictEqual(err(p4, win(), 'LMS5', MWF), "That campus isn't yours to decide.");
+assert.strictEqual(err(teacher, win(), 'LMS4', MWF), 'Only the Principal decides this.');
+assert.strictEqual(err(coord, win(), 'LMS4', MWF), 'Only the Principal decides this.');
+assert.strictEqual(err(p4, win(), 'LMS4', MWF, null, new Date('2026-11-09T05:00:00Z')), 'This window closed on Sun 8 Nov.');
+assert.strictEqual(err(p4, win(), 'LMS4', MWF, null, new Date('2026-10-30T05:00:00Z')), 'This window opens on Sun 1 Nov.');
 // the close date itself is still open, in IST: 23:30 IST on 8 Nov = 18:00Z
-assert.strictEqual(ctx.gameValidateDecision_(p4, win('LMS4'), MWF, null, new Date('2026-11-08T18:00:00Z')).ok, true);
+assert.strictEqual(ctx.gameValidateDecision_(p4, win(), 'LMS4', MWF, null, new Date('2026-11-08T18:00:00Z')).ok, true);
 // 00:30 IST on 9 Nov = 19:00Z on 8 Nov: closed
-assert.strictEqual(err(p4, win('LMS4'), MWF, null, new Date('2026-11-08T19:00:00Z')), 'This window closed on Sun 8 Nov.');
+assert.strictEqual(err(p4, win(), 'LMS4', MWF, null, new Date('2026-11-08T19:00:00Z')), 'This window closed on Sun 8 Nov.');
 const earlier = J(ctx.gameParseDecisions_([DH, decRow('LMS4', MWF)])[0]);
-assert.strictEqual(err(p4, win('LMS4'), ['Tue', 'Thu', 'Sat'], earlier), 'Already decided on Tue 3 Nov. The Owner can change it.');
+assert.strictEqual(err(p4, win(), 'LMS4', ['Tue', 'Thu', 'Sat'], earlier), 'Already decided on Tue 3 Nov. The Owner can change it.');
 // a window with no dates set is closed until the Owner opens it
-assert.strictEqual(err(p4, Object.assign(win('LMS4'), { opens: '', closes: '' }), MWF), 'This window is not open yet.');
+assert.strictEqual(err(p4, Object.assign(win(), { opens: '', closes: '' }), 'LMS4', MWF), 'This window is not open yet.');
+
+// scope leaks: the requested campus must be in the window's real set (the pilot), for everyone
+assert.strictEqual(err(principal('LMS2'), win(), 'LMS2', MWF), "That campus isn't yours to decide.");   // own campus, outside the pilot
+assert.strictEqual(err(principal('ALL'), win(), 'LMS9', MWF), "That campus isn't yours to decide.");
+assert.strictEqual(err(principal('ALL'), win(), 'LMS4', MWF), "That campus isn't yours to decide.");    // an ALL-campus Principal decides nothing
+assert.strictEqual(err(owner, win(), 'LMS9', MWF), "That campus isn't yours to decide.");               // the Owner too
+assert.strictEqual(err(owner, win(), 'LMS2', MWF), "That campus isn't yours to decide.");
+assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win(), 'LMS5', MWF, null, now)), { ok: true, kind: 'override' });
 
 // ── Owner override: any time, any scope, still validated ──────────────
-assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win('LMS2'), MWF, earlier, now)), { ok: true, kind: 'override' });
-assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win('LMS4'), MWF, earlier, new Date('2026-12-01T05:00:00Z'))), { ok: true, kind: 'override' });
-assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win('LMS2'), MWF, null, now)), { ok: true, kind: 'override' });
-assert.strictEqual(err(owner, win('LMS2'), ['Mon']), 'Pick exactly 3 days.');
+assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win(), 'LMS5', MWF, earlier, now)), { ok: true, kind: 'override' });
+assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win(), 'LMS4', MWF, earlier, new Date('2026-12-01T05:00:00Z'))), { ok: true, kind: 'override' });
+assert.deepStrictEqual(J(ctx.gameValidateDecision_(owner, win(), 'LMS5', MWF, null, now)), { ok: true, kind: 'override' });
+assert.strictEqual(err(owner, win(), 'LMS5', ['Mon']), 'Pick exactly 3 days.');
 
 // ── gameWindowsFor_: what a Principal is asked ────────────────────────
 let mine = J(ctx.gameWindowsFor_(p4, WROWS, noDec, now));
@@ -72,8 +80,8 @@ assert.strictEqual(ctx.gameWindowsFor_(principal('LMS2'), WROWS, noDec, now).len
 assert.strictEqual(ctx.gameWindowsFor_(p4, WROWS, noDec, new Date('2026-11-09T05:00:00Z')).length, 0); // closed
 assert.strictEqual(ctx.gameWindowsFor_(p4, [WH, winRow({ Opens: '', Closes: '' })], noDec, now).length, 0); // template, not opened
 assert.strictEqual(ctx.gameWindowsFor_(p4, WROWS, noDec, new Date('2026-10-30T05:00:00Z')).length, 0); // not open yet
-// an all-campus Principal is asked once per pilot campus
-assert.deepStrictEqual(J(ctx.gameWindowsFor_(principal('ALL'), WROWS, noDec, now)).map((w) => w.scopeId), ['LMS4', 'LMS5', 'LMS6']);
+// an ALL-campus Principal decides nothing, so is asked nothing
+assert.strictEqual(ctx.gameWindowsFor_(principal('ALL'), WROWS, noDec, now).length, 0);
 
 // ── gameApplyDefaults_ ────────────────────────────────────────────────
 const afterClose = new Date('2026-11-09T05:00:00Z');
@@ -95,7 +103,7 @@ assert.strictEqual(row[2], '["Mon","Wed","Fri"]');
 assert.strictEqual(row[6], 'default_applied');
 
 // ── gameDecisionWrites_ ───────────────────────────────────────────────
-assert.deepStrictEqual(J(ctx.gameDecisionWrites_(win('LMS4'), 'LMS4', MWF)), { key: 'trackSuitDays', path: 'trackSuitDays.LMS4', value: MWF });
+assert.deepStrictEqual(J(ctx.gameDecisionWrites_(win(), 'LMS4', MWF)), { key: 'trackSuitDays', path: 'trackSuitDays.LMS4', value: MWF });
 
 // ── gameWindowBoard_ ──────────────────────────────────────────────────
 const mix = [DH, decRow('LMS4', ['Tue', 'Thu', 'Sat']), decRow('LMS6', MWF, 'default_applied', '')];
