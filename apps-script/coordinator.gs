@@ -152,6 +152,7 @@ function doGet(e) {
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     if (action === 'coordinatortrackrecord') return coordJson_(coordTrackRecordGet_(caller));
+    if (action === 'coordinatordecision') return coordJson_(coordDecision_(caller, e.parameter.id));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });

@@ -10,6 +10,7 @@
 //
 // POST action=coordinatorrecommend {idToken, approvalId, recommendation: Approve|Reject|Info, reason, checked: [..]}
 // GET  action=coordinatortrackrecord  ->  {records: {email: {byCategory, recent}}}  (a Coordinator gets only their own; the Owner gets everyone's)
+// GET  action=coordinatordecision&id=  ->  {success, decision}: what the request touches, from data the portal already holds (day-book spend is read by the HQ front end from the Office backend)
 // ═══════════════════════════════════════════════════════════════════
 
 const COORD_REC_TAB = 'Recommendations';
@@ -21,6 +22,14 @@ const COORD_REC_RECENT = 10;
 // the final status that each recommendation is judged against; a Revoked approval counts as a Reject match
 const COORD_REC_MATCH = { Approve: ['Approved'], Reject: ['Rejected', 'Revoked'], Info: ['Info Requested'] };
 const COORD_REC_DECIDED = ['Approved', 'Rejected', 'Revoked', 'Info Requested'];
+// decision preview: plain cards (an Appointment Confirmation is stored as 'Salary Offer Approval'), the staffing and event categories, and the cache
+const COORD_NO_PREVIEW = ['Compensation Change', 'Disciplinary / Termination', 'EPF Exemption'];
+const COORD_DEC_PLAIN = COORD_NO_PREVIEW.concat(['Salary Offer Approval']);
+const COORD_DEC_STAFF = ['New/ Backup Position'];
+const COORD_DEC_EVENTS = ['Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar'];
+const COORD_DEC_HISTORY_DAYS = 365;
+const COORD_DEC_EVENT_DAYS = 30;
+const COORD_DEC_CACHE_SECONDS = 120;
 
 // Sheets may turn an ISO string into a Date and the text 'TRUE' into a boolean; read both back as plain strings.
 function coordRecStr_(v) { return v instanceof Date ? v.toISOString() : String(v == null ? '' : v); }
@@ -141,12 +150,73 @@ function coordTrackRecord_(recRows, aprRows, email) {
   return out;
 }
 
+/** Rows of the Approvals tab, or [] when it has none. */
+function coordAprRows_() {
+  const apr = SpreadsheetApp.openById(COORD_SHEET_ID).getSheetByName('Approvals');
+  return apr && apr.getLastRow() > 1 ? apr.getDataRange().getValues() : [];
+}
+
 /** GET action=coordinatortrackrecord. Private: a Coordinator sees only their own, the Owner everyone's. */
 function coordTrackRecordGet_(caller) {
   const owner = caller.roles.indexOf('Owner') !== -1;
-  const apr = SpreadsheetApp.openById(COORD_SHEET_ID).getSheetByName('Approvals');
-  const aprRows = apr && apr.getLastRow() > 1 ? apr.getDataRange().getValues() : [];
-  return { success: true, records: coordTrackRecord_(coordRecRows_(), aprRows, owner ? null : caller.email) };
+  return { success: true, records: coordTrackRecord_(coordRecRows_(), coordAprRows_(), owner ? null : caller.email) };
+}
+
+/** What deciding this request touches, from rows the portal already holds; null when the id is not found. Pure: rows in, object out.
+    preview is null for the plain cards; otherwise history, plus staff (New/ Backup Position) or events (Event / Trip / Holiday). Header rows are fine in every list. */
+function coordDecisionPreview_(aprId, aprRows, recRows, empRows, taskRows, now) {
+  const mine = aprRows.filter(function (r) { return String(r[0]) === aprId; })[0];
+  if (!mine) return null;
+  const campus = String(mine[1]).trim(), category = String(mine[2]);
+  const decided = function (r) { return new Date(coordRecStr_(r[15])).getTime(); };
+  const within = function (r, days) { const t = decided(r); return t <= now.getTime() && now.getTime() - t < days * 86400000; };
+  const here = aprRows.filter(function (r) { return String(r[0]) !== aprId && String(r[1]).trim() === campus && !isNaN(decided(r)); });
+  let preview = null;
+  if (COORD_DEC_PLAIN.indexOf(category) === -1) {
+    const past = here.filter(function (r) { return String(r[2]) === category && within(r, COORD_DEC_HISTORY_DAYS); });
+    const count = function (status) { return past.filter(function (r) { return String(r[13]) === status; }).length; };
+    preview = { history: { approved: count('Approved'), rejected: count('Rejected') } };
+    if (COORD_DEC_STAFF.indexOf(category) !== -1) {
+      const h = empRows[0] || [], eSchool = h.indexOf('SchoolCode'), eStatus = h.indexOf('Status');
+      const active = empRows.slice(1).filter(function (r) {
+        const status = String(r[eStatus] || '').trim(); // blank status counts as active, as in the documents card
+        return String(r[eSchool] || '').replace(/\s+/g, '').toUpperCase() === campus && (!status || status === 'Active');
+      }).length;
+      const openStalls = taskRows.filter(function (t) { return t[1] === 'hiring_stall' && t[5] === 'open' && String(t[2]).trim() === campus; }).length;
+      preview.staff = { active: active, openStalls: openStalls };
+    }
+    if (COORD_DEC_EVENTS.indexOf(category) !== -1) {
+      preview.events = here.filter(function (r) { return COORD_DEC_EVENTS.indexOf(String(r[2])) !== -1 && String(r[13]) === 'Approved' && within(r, COORD_DEC_EVENT_DAYS); })
+        .sort(function (a, b) { return decided(b) - decided(a); })
+        .map(function (r) { return { title: String(r[4]), decidedAt: new Date(decided(r)).toISOString() }; });
+    }
+  }
+  const requested = new Date(coordRecStr_(mine[12])).getTime();
+  return { id: aprId, campus: campus, category: category, title: String(mine[4]), amount: mine[6], requestedBy: String(mine[11]).toLowerCase(),
+    waitingDays: isNaN(requested) ? 0 : Math.max(0, Math.floor((now.getTime() - requested) / 86400000)),
+    preview: preview, recommendation: coordRecLatest_(recRows)[aprId] || null };
+}
+
+/** GET action=coordinatordecision&id=. Cached 120 s per id without the recommendation (read fresh: it changes on every write); the sheets open only on a miss. */
+function coordDecision_(caller, id) {
+  id = String(id || '');
+  const cache = CacheService.getScriptCache(), key = 'coord_decision_' + id;
+  let d = null;
+  try { d = JSON.parse(cache.get(key)); } catch (err) { d = null; }
+  if (!d) {
+    const aprRows = coordAprRows_();
+    const mine = aprRows.filter(function (r) { return String(r[0]) === id; })[0];
+    const staff = mine && COORD_DEC_STAFF.indexOf(String(mine[2])) !== -1; // staff counts are the only reason to open the roster and the Tasks tab
+    const emp = staff ? SpreadsheetApp.openById(COORD_ROSTER_SHEET_ID).getSheetByName('EmpMaster') : null;
+    d = coordDecisionPreview_(id, aprRows, [], emp ? emp.getDataRange().getValues() : [], staff ? coordSheet_().getDataRange().getValues() : [], new Date());
+    if (!d) return { success: false, error: 'Request not found' };
+    cache.put(key, JSON.stringify(d), COORD_DEC_CACHE_SECONDS);
+  }
+  const visible = coordVisibleCampuses_(caller);
+  if (visible && visible.indexOf(d.campus) === -1) return { success: false, error: 'Not authorized' };
+  const rec = coordRecLatest_(coordRecRows_())[id];
+  d.recommendation = rec ? coordRecNamed_(rec, coordRecNames_()) : null;
+  return { success: true, decision: d };
 }
 
 /** Attach `recommendation` ({by, byName, recommendation, reason, at} or null) to each approval|<id>|... task. */
