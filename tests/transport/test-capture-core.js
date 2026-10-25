@@ -12,8 +12,10 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
   const { createRunStore } = await import(dir + 'run-store.js');
   const { createUploader } = await import(dir + 'uploader.js');
 
-  const memStore = () => { const m = new Map(); return { put: async (e) => { m.set(e.id, JSON.parse(JSON.stringify(e))); }, getAll: async () => [...m.values()].map((e) => JSON.parse(JSON.stringify(e))), delete: async (id) => { m.delete(id); } }; };
-  const mkStore = () => createRunStore({ runs: memStore(), files: memStore() });
+  const clone = (e) => JSON.parse(JSON.stringify(e));
+  const memStore = () => { const m = new Map(); return { m, reads: 0, put: async (e) => { m.set(e.id, clone(e)); }, get: async function (id) { this.reads++; return m.has(id) ? clone(m.get(id)) : undefined; }, getAll: async () => [...m.values()].map(clone), delete: async (id) => { m.delete(id); } }; };
+  const memIdb = () => ({ runs: memStore(), files: memStore(), data: memStore() });
+  const mkStore = (idb = memIdb(), opts) => createRunStore(idb, opts);
   const NOW = new Date(2026, 9, 25, 7, 5, 9).getTime();
   const mkTimelapse = async (store, n = 0) => {
     const run = await store.newRun({ reg: 'HP-34 B6083', kind: 'timelapse', campus: 'LMS4', by: 'a@b.c', role: 'Coordinator' });
@@ -25,7 +27,7 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
   const NET = { success: false, network: true, error: 'offline' };
 
   // ---- geo
-  const at = (m) => ({ lat: 31 + m / 111195, lng: 76 }); // ~m metres north
+  const at = (m) => ({ lat: 31 + m / 111194.9266, lng: 76 }); // m metres north (R = 6371 km)
   await test('FRAME_SPACING_M is 15 and distanceM is haversine', () => {
     assert.strictEqual(FRAME_SPACING_M, 15);
     assert.ok(Math.abs(distanceM({ lat: 31, lng: 76 }, { lat: 32, lng: 76 }) - 111195) < 200);
@@ -39,10 +41,22 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 10 }), true);
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 80 }), false);
   });
+  await test('a fix with no or non-finite accuracy is not a good fix', () => {
+    for (const accuracy of [undefined, NaN, null, Infinity]) assert.strictEqual(shouldCapture(null, { ...at(0), accuracy }), false, String(accuracy));
+    assert.strictEqual(shouldCapture(at(0), { ...at(100) }), false);
+  });
+  await test('stationary jitter inside the fix accuracy captures nothing; a moving bus at accuracy 10 still captures every 15 m', () => {
+    const last = at(0);
+    for (const m of [20, 25, 30, 35, 39.5]) assert.strictEqual(shouldCapture(last, { ...at(m), accuracy: 40 }), false, 'wander ' + m);
+    assert.strictEqual(shouldCapture(last, { ...at(41), accuracy: 40 }), true);
+    let pos = at(0), frames = 0;
+    for (let m = 1; m <= 150; m++) { const fix = { ...at(m), accuracy: 10 }; if (shouldCapture(pos, fix)) { frames++; pos = fix; } }
+    assert.strictEqual(frames, 10);
+  });
 
   // ---- run store
   await test('runId is <REG>-<yyyyMMdd-HHmmss>-<4 alnum>', async () => {
-    const store = createRunStore({ runs: memStore(), files: memStore() }, { now: () => NOW });
+    const store = mkStore(memIdb(), { now: () => NOW });
     const run = await store.newRun({ reg: 'HP-34 B6083', kind: 'timelapse' });
     assert.ok(/^HP34B6083-20261025-070509-[A-Za-z0-9]{4}$/.test(run.id), run.id);
     assert.strictEqual(run.status, 'running');
@@ -79,11 +93,83 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.deepStrictEqual((await store.pending(run.id)).map((f) => f.seq), [0, 1, 2, 3]);
   });
 
-  // ---- uploader
+
   const fakeServer = (script = () => null) => {
     const calls = [];
     return { calls, post: async (body) => { calls.push(JSON.parse(JSON.stringify(body))); const o = script(body, calls.length); if (o instanceof Error) throw o; return o || (body.action === 'capturefile' ? { success: true, fileId: 'D' + body.seq } : { success: true }); } };
   };
+  // ---- store: gaps, purge, storage, photo reads
+  await test('markGap validates from <= to', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store);
+    await assert.rejects(() => store.markGap(run.id, 200, 100), /gap/i);
+  });
+  await test('open gap survives a reload: re-created store closes it, no frames lost, gap recorded', async () => {
+    const idb = memIdb(); let store = mkStore(idb);
+    const run = await mkTimelapse(store, 2);
+    await store.openGap(run.id, 1000);
+    await store.openGap(run.id, 1500); // already open: keeps the earliest start
+    store = mkStore(idb); // page reloaded mid-gap
+    assert.strictEqual((await store.getRun(run.id)).openGap, 1000);
+    await store.closeGap(run.id, 4000);
+    await store.addFrame(run.id, { lat: 31, lng: 76, takenAt: 4001, base64: 'Z' });
+    await store.endRun(run.id);
+    const r = await store.getRun(run.id);
+    assert.deepStrictEqual(r.gaps, [{ from: 1000, to: 4000 }]);
+    assert.strictEqual(r.frames, 3); assert.strictEqual((await store.pending(run.id)).length, 3); assert.strictEqual(r.openGap, null);
+  });
+  await test('endRun closes a dangling open gap; recover() does the same for runs left open', async () => {
+    const store = mkStore(undefined, { now: () => 9000 }); const run = await mkTimelapse(store, 2); // frames at NOW, NOW+1
+    await store.openGap(run.id, 5);
+    await store.endRun(run.id);
+    assert.deepStrictEqual((await store.getRun(run.id)).gaps, [{ from: 5, to: NOW + 1 }]); // closed at the last frame
+    const r2 = await store.newRun({ reg: 'HP2', kind: 'count' });
+    await store.openGap(r2.id, 8000);
+    await store.endRun(r2.id); // no frames after the gap start: closed at endedAt
+    assert.deepStrictEqual((await store.getRun(r2.id)).gaps, [{ from: 8000, to: 9000 }]);
+    const r3 = await store.newRun({ reg: 'HP3', kind: 'count' });
+    await store.openGap(r3.id, 8500);
+    await store.recover();
+    const g = (await store.getRun(r3.id)); assert.strictEqual(g.openGap, null); assert.deepStrictEqual(g.gaps, [{ from: 8500, to: 9000 }]);
+  });
+  await test('frames after endRun are rejected', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 1); await store.endRun(run.id);
+    await assert.rejects(() => store.addFrame(run.id, { lat: 0, lng: 0, base64: 'x' }), /ended/);
+  });
+  await test('markSent drops the photo data and keeps the metadata row', async () => {
+    const idb = memIdb(); const store = mkStore(idb, { now: () => 777 }); const run = await mkTimelapse(store, 2);
+    assert.strictEqual(idb.data.m.size, 2);
+    await store.markSent(run.id, 'frame', 0, 'F0');
+    assert.strictEqual(idb.data.m.size, 1); assert.ok(!idb.data.m.has(`${run.id}:frame:0`));
+    const meta = idb.files.m.get(`${run.id}:frame:0`);
+    assert.deepStrictEqual([meta.seq, meta.kind, meta.fileId, meta.sentAt, meta.sent, 'base64' in meta], [0, 'frame', 'F0', 777, true, false]);
+    assert.strictEqual(await store.total(run.id), 2);
+  });
+  await test('pending/total/markSent never read photo data; uploading N frames reads each photo once', async () => {
+    const idb = memIdb(); const store = mkStore(idb); const run = await mkTimelapse(store, 5); await store.endRun(run.id);
+    await store.pending(run.id); await store.total(run.id);
+    assert.strictEqual(idb.data.reads, 0);
+    await createUploader({ store, post: fakeServer().post, sleep: instant }).start(run.id);
+    assert.strictEqual(idb.data.reads, 5);
+    assert.strictEqual(idb.data.m.size, 0);
+  });
+  await test('a quota failure maps to STORAGE_FULL', async () => {
+    const idb = memIdb(); const store = mkStore(idb); const run = await mkTimelapse(store, 1);
+    idb.data.put = async () => { throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' }); };
+    await assert.rejects(() => store.addFrame(run.id, { lat: 0, lng: 0, base64: 'x' }), (e) => e.code === 'STORAGE_FULL' && /full/i.test(e.message));
+    idb.data.put = async (e) => { idb.data.m.set(e.id, clone(e)); }; // storage freed: the next frame works and no seq was burnt
+    await store.addFrame(run.id, { lat: 0, lng: 0, base64: 'x' });
+    assert.deepStrictEqual((await store.pending(run.id)).map((f) => f.seq), [0, 1]);
+  });
+  await test('storageInfo reports usage/quota and asks for persistence best-effort', async () => {
+    let persisted = 0;
+    const storage = { estimate: async () => ({ usage: 10, quota: 100 }), persist: async () => { persisted++; return true; } };
+    const store = mkStore(memIdb(), { storage });
+    assert.deepStrictEqual(await store.storageInfo(), { usage: 10, quota: 100, persisted: true });
+    assert.strictEqual(persisted, 1);
+    assert.deepStrictEqual(await mkStore(memIdb(), { storage: null }).storageInfo(), { usage: null, quota: null, persisted: false });
+  });
+
+  // ---- uploader
   await test('uploads start manifest, files in seq order, end manifest', async () => {
     const store = mkStore(); const run = await mkTimelapse(store, 3);
     await store.markGap(run.id, 1, 2); await store.endRun(run.id);
@@ -158,6 +244,29 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     const srv = fakeServer();
     await createUploader({ store, post: srv.post, sleep: instant }).start(run.id);
     assert.deepStrictEqual(srv.calls.map((c) => c.action), ['capturerun', 'capturefile', 'capturefile']);
+  });
+
+  await test('endRun during an upload still sends the end manifest; a frame added mid-upload is sent', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 2);
+    const srv = fakeServer();
+    let did = false;
+    const post = async (b) => {
+      if (b.action === 'capturefile' && b.seq === 0 && !did) { did = true; await store.addFrame(run.id, { lat: 31, lng: 76, takenAt: NOW + 9, base64: 'LATE' }); await store.endRun(run.id); }
+      return srv.post(b);
+    };
+    await createUploader({ store, post, sleep: instant }).start(run.id);
+    assert.deepStrictEqual(srv.calls.map((c) => c.action + (c.seq !== undefined ? c.seq : '')), ['capturerun', 'capturefile0', 'capturefile1', 'capturefile2', 'capturerun']);
+    assert.strictEqual(srv.calls[4].run.status, 'ended'); assert.strictEqual(srv.calls[4].run.frames, 3);
+  });
+  await test('start() during an in-flight upload re-runs once the pass settles, so a late End sends the end manifest', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 1);
+    const srv = fakeServer(); let up;
+    up = createUploader({ store, post: srv.post, sleep: instant, onProgress: (p) => {
+      if (p.state === 'uploaded-so-far' && !srv.ended) { srv.ended = true; store.endRun(run.id); up.start(run.id); } // user taps End as the pass finishes
+    } });
+    await up.start(run.id);
+    assert.deepStrictEqual(srv.calls.map((c) => c.action), ['capturerun', 'capturefile', 'capturerun']);
+    assert.strictEqual(srv.calls[2].run.status, 'ended');
   });
 
   process.exit(failed ? 1 : 0);

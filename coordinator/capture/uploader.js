@@ -18,7 +18,7 @@ export function createUploader({
 }) {
   let stopped = false, wake;
   const stopSignal = new Promise((r) => { wake = r; });
-  const inflight = new Map();
+  const inflight = new Map(), again = new Set();
   const wait = (p) => Promise.race([p, stopSignal]);
 
   const transient = (res) => !res || res.network || (res.success === false && TRANSIENT.test(res.error || ''));
@@ -40,35 +40,44 @@ export function createUploader({
 
   async function upload(runId) {
     let run = await store.patchRun(runId, { error: null, status: run0status(await store.getRun(runId)) });
-    const total = await store.total(runId);
-    let pending = await store.pending(runId), sent = total - pending.length;
+    let total = 0, sent = 0;
     const progress = (state, error) => onProgress({ runId, sent, total, state, error });
     const fail = async (error, f) => {
       if (f) await store.markFailed(runId, f.kind, f.seq, error);
       await store.patchRun(runId, { status: 'error', error });
       progress('error', error);
     };
-    progress('uploading');
     const manifest = (status) => ({ action: 'capturerun', run: {
       runId, reg: run.reg, kind: run.kind, startedAt: run.startedAt, endedAt: run.endedAt, frames: run.frames,
       gaps: run.gaps, stops: run.stops, inspection: run.inspection, status } });
+    const refresh = async () => { // frames may be added and the run ended while we upload, so look again after every pass
+      run = await store.getRun(runId);
+      const pending = await store.pending(runId);
+      total = await store.total(runId); sent = total - pending.length;
+      return pending;
+    };
 
+    let pending = await refresh();
+    progress('uploading');
     if (!run.startSent) {
       const r = await send(manifest('running'), progress);
       if (!r) return progress('stopped');
       if (r.error) return fail(r.error);
-      run = await store.patchRun(runId, { startSent: true });
+      await store.patchRun(runId, { startSent: true });
     }
-    for (const f of pending) {
-      const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, kind: f.kind, seq: f.seq,
-        lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: f.base64 }, progress);
-      if (!r) return progress('stopped');
-      if (r.error) return fail(r.error, f);
-      await store.markSent(runId, f.kind, f.seq, r.res.fileId);
-      sent++; progress('uploading');
+    // Files until none are left, then the end manifest if the run has ended by now (checked on a fresh read).
+    while (pending.length) {
+      for (const f of pending) {
+        const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, kind: f.kind, seq: f.seq,
+          lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) }, progress);
+        if (!r) return progress('stopped');
+        if (r.error) return fail(r.error, f);
+        await store.markSent(runId, f.kind, f.seq, r.res.fileId);
+        sent++; progress('uploading');
+      }
+      pending = await refresh();
     }
     if (run.endedAt && !run.endSent) {
-      run = await store.getRun(runId); // endRun may have added gaps/inspection since we started
       const r = await send(manifest('ended'), progress);
       if (!r) return progress('stopped');
       if (r.error) return fail(r.error);
@@ -79,9 +88,13 @@ export function createUploader({
   const run0status = (run) => (run.endedAt ? 'ended' : 'running'); // an earlier 'error' is cleared on a fresh start
 
   return {
+    // start() while a pass is running flags another pass for when it settles (the page calls start after the user taps End).
     start: (runId) => {
-      if (!inflight.has(runId)) inflight.set(runId, upload(runId).finally(() => inflight.delete(runId)));
-      return inflight.get(runId);
+      if (inflight.has(runId)) { again.add(runId); return inflight.get(runId); }
+      const p = (async () => { do { again.delete(runId); await upload(runId); } while (again.has(runId) && !stopped); })()
+        .finally(() => { inflight.delete(runId); again.delete(runId); });
+      inflight.set(runId, p);
+      return p;
     },
     stop: () => { stopped = true; wake(); },
   };
