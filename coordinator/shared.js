@@ -31,6 +31,7 @@ window.Coord = (function () {
     gps_dead: '../transport/live.html', gps_blind: '../transport/live.html', gps_none: '../transport/live.html', bus_away: '../transport/live.html',
     bus_speed: '../transport/live.html', fuel_check: '../transport/live.html', fuel_proof: '../transport/live.html', bus_age: '../transport/live.html',
     bus_inspection: '../transport/capture.html', bus_equipment: '../transport/capture.html', // done in the capture portal (Inspection)
+    capture_route: '../transport/capture.html', // a timelapse run in the capture portal; the Mac's daily job closes it
   };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

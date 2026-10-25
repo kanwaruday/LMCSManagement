@@ -7,6 +7,9 @@
 // mirrors into the "Fuel Fills" tab against the GPS km, and raises follow-ups in the Tasks store, each with an owner,
 // a due date and one plain instruction. It also raises the safety-loadout follow-ups from the capture portal's monthly
 // safety checks (Capture Runs tab, read by coordInspections_ in coordinator-transport.gs): bus_inspection and bus_equipment.
+// Capture timelapses (transport/capture/capture.py on the Mac, daily, same secret): it pulls the ended timelapse runs
+// (POST transportcapturepull), blurs and stitches them in Drive, and pushes back each processed run's video and stop list
+// (POST transportcapturepush, kept in the "Capture Stops" tab). An operational bus with none gets capture_route.
 // Three views read it:
 //   GET  coordinatortransportinsight  Coordinator / Owner, scoped to their campuses (the Owner also gets proposals);
 //                                     feeds the checks and the route views (metro map, city overlay, depot)
@@ -16,14 +19,15 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_TRACKS = 'GPS Tracks', GPS_TAB_FILLS = 'Fuel Fills',
-  GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses';
+  GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses', GPS_TAB_CAPTURE = 'Capture Stops';
+const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt'];
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
 const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs', 'proof'];
 const GPS = {
   speedLimit: 40, speedMinutes: 10, awayKm: 2, deadDays: 2, longSilentDays: 14, blindShare: 0.2, blindMinKm: 30, ageLimit: 15,
   proofFrom: '2026-10-26', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
-  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30, bus_inspection: 5, bus_equipment: 3 },
+  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30, bus_inspection: 5, bus_equipment: 3, capture_route: 14 },
   inspectionDay: 5, // the monthly safety check is due by the 5th
   inspectionFrom: '2026-11', // set at deploy: the first month a safety check is asked for (no follow-up for months before it)
 };
@@ -173,6 +177,8 @@ function gpsFollowUps_(facts) {
       add({ taskId: 'bus_equipment|' + b.reg + '|' + id, domain: 'bus_equipment', campus: c, severity: 'high', auto: true,
         title: b.reg + ': ' + item.label + ' missing in the safety check of ' + gpsDay_(last.day, t), detail: 'Get it fitted or repaired, then check it again in the capture portal.' });
     });
+    if (facts.captured && !facts.captured[b.reg]) add({ taskId: 'capture_route|' + b.reg, domain: 'capture_route', campus: c, severity: 'medium', auto: true,
+      title: b.reg + ': no route timelapse yet', detail: 'Ask the Fee Clerk to send the school phone on this route\'s next empty run, and do the timelapse run' });
   });
   const bus = {};
   fleet.forEach(function (b) { bus[b.reg] = b; });
@@ -291,14 +297,14 @@ function gpsRefresh_(days, health) {
   if (live && !live.length) live = null; // an empty answer (bad id, vendor glitch) must not read as "no bus has a tracker"
   const inspections = coordInspections_(), loadout = coordLoadoutAll_().filter(function (i) { return i.active; });
   const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, fills: fills, answers: gpsRows_(GPS_TAB_ANSWERS),
-    inspections: inspections || [], loadout: loadout }); // no Capture Runs tab: no check has been sent, so the monthly ones are due (but nothing closes, below)
+    inspections: inspections || [], loadout: loadout, captured: gpsCaptured_() }); // no Capture Runs tab: no check has been sent, so the monthly ones are due (but nothing closes, below)
   // which vehicles each self-clearing check actually looked at this time: only those may be closed by it
   const fleetRegs = {}, healthRegs = {};
   base.fleet.forEach(function (b) { fleetRegs[b.reg] = true; });
   health.forEach(function (h) { healthRegs[h.reg] = true; });
   const cover = gpsInspectionCover_(base.fleet, inspections, loadout);
   gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true,
-    bus_inspection: cover.bus_inspection, bus_equipment: cover.bus_equipment });
+    bus_inspection: cover.bus_inspection, bus_equipment: cover.bus_equipment, capture_route: fleetRegs });
   return { checks: checks.length, followUps: wanted.length };
 }
 
@@ -311,6 +317,76 @@ function gpsInspectionCover_(fleet, inspections, loadout) {
     (loadout || []).forEach(function (i) { eq[b.reg + '|' + i.id] = true; });
   });
   return { bus_inspection: ins, bus_equipment: eq };
+}
+
+// ── Capture timelapses: the Mac pulls the runs to process and pushes back the processed ones ──
+/** POST action=transportcapturepull {secret} -> {success, runs:[{runId, reg, kind, status, frames, startedAt, endedAt, stops}]}: the ended
+ *  timelapse runs of the Capture Runs tab. File ids are not in the manifest: the Mac finds the files in its Drive copy, Capture/<REG>/<runId>/. */
+function coordCapturePull_(body) {
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
+  const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE), runs = [];
+  (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | By | Role | Frames | Gaps | Stops | Inspection | Status
+    if (String(r[3]) !== 'timelapse' || String(r[12]) !== 'ended') return;
+    let stops = [];
+    try { stops = JSON.parse(String(r[10] || '[]')); } catch (e) { stops = []; }
+    runs.push({ runId: String(r[0]), reg: String(r[1]), kind: 'timelapse', status: 'ended', frames: Number(r[8]) || 0, startedAt: r[4], endedAt: r[5], stops: Array.isArray(stops) ? stops : [] });
+  });
+  return { success: true, runs: runs };
+}
+
+/** One stop as stored and served: counts of children, never names; the stop's name is the place. */
+function gpsCaptureStop_(s) {
+  const n = function (v) { return Math.max(0, Math.floor(Number(v)) || 0); }, f = function (v) { return v === '' || v == null || !isFinite(Number(v)) ? '' : Number(v); };
+  return { seq: n(s.seq), name: String(s.name || '').slice(0, 80), lat: f(s.lat), lng: f(s.lng), at: String(s.at || '').slice(0, 30), photoFileId: gpsDriveId_(s.photoFileId), boardOn: n(s.boardOn), boardOff: n(s.boardOff) };
+}
+
+/** A Drive file id, or '' (the Mac sends '' until Drive has uploaded the file). */
+function gpsDriveId_(v) { return /^[A-Za-z0-9_-]{10,128}$/.test(String(v || '')) ? String(v) : ''; }
+
+/** POST action=transportcapturepush {secret, payload:{runs:[{runId, reg, videoFileId, stops:[{seq,name,lat,lng,at,photoFileId,boardOn,boardOff}]}]}}.
+ *  Upsert by runId into Capture Stops (a push never removes another run); a bus not in the fleet is skipped. Then the follow-ups refresh. */
+function coordCapturePush_(body) {
+  if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
+  const runs = (body.payload || {}).runs;
+  if (!Array.isArray(runs)) return { success: false, error: 'Payload rejected: runs must be a list' };
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i] || {};
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(r.runId || '')) || !Array.isArray(r.stops)) return { success: false, error: 'Payload rejected: run ' + (i + 1) + ' needs a runId and a stops list' };
+  }
+  const campusOf = {}, now = new Date().toISOString(), skipped = [], fresh = [];
+  coordTransportBase_().fleet.forEach(function (b) { campusOf[b.reg] = gpsCampusId_(b.campus); });
+  runs.forEach(function (r) {
+    if (!campusOf[r.reg]) { skipped.push(String(r.runId)); return; }
+    fresh.push({ runId: String(r.runId), reg: r.reg, campus: campusOf[r.reg], videoFileId: gpsDriveId_(r.videoFileId),
+      stops: JSON.stringify(r.stops.map(function (s) { return gpsCaptureStop_(s || {}); })), pushedAt: now });
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ids = {};
+    fresh.forEach(function (r) { ids[r.runId] = true; });
+    gpsWrite_(GPS_TAB_CAPTURE, GPS_CAPTURE_COLS, gpsRows_(GPS_TAB_CAPTURE).filter(function (r) { return !ids[r.runId]; }).concat(fresh));
+  } finally { lock.releaseLock(); }
+  try { gpsRefresh_(gpsRows_(GPS_TAB_DAILY), gpsMeta_().health); } catch (err) { console.error('GPS refresh after capture push: ' + err.message); } // the next GPS push retries
+  CacheService.getScriptCache().remove('coord_gps_insight_v1');
+  return { success: true, runs: fresh.length, skipped: skipped };
+}
+
+/** {reg: true} for every bus with a processed timelapse. */
+function gpsCaptured_() {
+  const out = {};
+  gpsRows_(GPS_TAB_CAPTURE).forEach(function (r) { out[r.reg] = true; });
+  return out;
+}
+
+/** {reg: {runId, videoFileId, stops}}: each visible bus's newest processed run (runIds sort by time: <REG>-<yyyyMMdd-HHmmss>-<4>). */
+function gpsCaptureByReg_(regs) {
+  const out = {};
+  gpsRows_(GPS_TAB_CAPTURE).forEach(function (r) {
+    if (!regs[r.reg] || (out[r.reg] && out[r.reg].runId > r.runId)) return;
+    out[r.reg] = { runId: r.runId, videoFileId: r.videoFileId, stops: JSON.parse(r.stops || '[]') };
+  });
+  return out;
 }
 
 // ── Reads ──
@@ -361,6 +437,7 @@ function coordGpsInsight_(caller) {
     bases: meta.bases.filter(function (b) { return regs[b.reg]; }),
     stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }),
     tracks: gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; }).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: JSON.parse(t.path || '[]') }; }),
+    capture: { byReg: gpsCaptureByReg_(regs) }, // processed route timelapses with their stops (blurred; counts only)
     // money per bus: the Owner sees every bus, a Coordinator their campuses (the same rows the Transport page's Bus P&L tab shows them)
     proposals: owner ? meta.proposals : {}, pnl: (base.pnl || []).filter(function (r) { return mine(gpsCampusId_(r.campus)); }),
   };

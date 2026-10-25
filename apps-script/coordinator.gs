@@ -167,6 +167,8 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     if (String(body.action || '').toLowerCase() === 'transportgpspush') return coordJson_(coordGpsPush_(body));
+    if (String(body.action || '').toLowerCase() === 'transportcapturepull') return coordJson_(coordCapturePull_(body)); // capture.py on the Mac
+    if (String(body.action || '').toLowerCase() === 'transportcapturepush') return coordJson_(coordCapturePush_(body));
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
