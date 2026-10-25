@@ -427,6 +427,11 @@ px and desktop) and shipped only with Uday's go-ahead.
 6. **No LMS 1 timetable source exists yet.** Collecting it is the LMS 1 Principal's campus setup quest. Until then,
    LMS 1 uses the `EmpAcademic` fallback for the daily log. The chapter quest doesn't need a timetable, so LMS 1 gets
    it with everyone else.
+7. **The daily log without a timetable is one item ("log today's classes"), not every class-subject the teacher
+   teaches.** A class isn't taught every day, so counting all of them would invent work. (Changes point 6: LMS 1 gets
+   the one-item card until its timetable exists, not an `EmpAcademic` per-class list.)
+8. **Plan step 1 is done whenever a plan exists for the chapter,** not only before its first entry, so chapters
+   already under way at launch can still complete.
 
 ## Open questions for Uday
 

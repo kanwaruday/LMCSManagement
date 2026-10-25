@@ -180,7 +180,7 @@ assert.ok(JSON.stringify(s1).length < 90000);
 // ---- teacher config (Ruling 12): defaults, Game Config `teacher` overrides, bad values fall back
 const D = J(ctx.tchConfig_(null));
 assert.deepStrictEqual(D, { remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
-  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7, loggedDaysWindow: 60 });
+  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7, loggedDaysWindow: 60, cwhwFormUrl: '', cwhwPrefill: {} });
 assert.deepStrictEqual(J(ctx.tchConfig_({ teacher: { remediationDays: 10, examKeywords: ['quiz'], cap: -1, core: 'x', planLeadDays: NaN, junk: 1 } })),
   Object.assign({}, D, { remediationDays: 10, examKeywords: ['quiz'] }));
 for (const bad of [undefined, null, 5, 'x', [], { teacher: 'x' }, { teacher: null }, { teacher: [1] }]) assert.deepStrictEqual(J(ctx.tchConfig_(bad)), D);

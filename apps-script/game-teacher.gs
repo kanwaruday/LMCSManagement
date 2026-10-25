@@ -49,6 +49,8 @@ var TCH_DEFAULTS = {
   remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
   examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7,
   loggedDaysWindow: 60,
+  // Ruling 13: where the missions send the teacher to log, and the Google Form entry ids to pre-fill ({cls, subj, ch, tag} -> 'entry.123')
+  cwhwFormUrl: '', cwhwPrefill: {},
 };
 
 // cfg = the framework's parsed config (gameParseConfig_) or any object with an optional `teacher` object -> a fresh, complete object
@@ -57,6 +59,11 @@ function tchConfig_(cfg) {
   Object.keys(TCH_DEFAULTS).forEach(function (k) {
     const def = TCH_DEFAULTS[k], v = tchHas_(given, k) ? given[k] : undefined;
     if (Array.isArray(def)) out[k] = Array.isArray(v) && v.every(function (x) { return typeof x === 'string'; }) ? v.slice() : def.slice();
+    else if (typeof def === 'string') out[k] = typeof v === 'string' ? v.trim() : def;
+    else if (typeof def === 'object') { // a map of strings; anything else is ignored
+      out[k] = {};
+      if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach(function (n) { if (typeof v[n] === 'string' && v[n]) out[k][n] = v[n]; });
+    }
     else out[k] = typeof v === 'number' && isFinite(v) && v > 0 ? v : def;
   });
   return out;
@@ -451,6 +458,179 @@ function tchStateFor_(code) {
   try { gameTeacherRefresh(); } catch (err) { return null; }
   return tchReadJson_(cache, 'tch_' + code);
 }
+
+// ── missions ─────────────────────────────────────────────────────────
+// Spec/plan: Task 4. Pure part: tchWorkingDay_ and tchMissions_ take data in, Mission[] out. The wiring (GAME_MODULE_MISSIONS.Teacher) is the
+// only part that touches CalendarApp / CacheService. Mission ids: teacher:<kind>:<code>:<key>.
+// Source of the campus calendars: PDR_SCHOOL_CALENDAR_IDS in principal-dr.gs. KEEP IN SYNC (LMS2 and LMS3 share one calendar).
+var TCH_CALENDAR_IDS = {
+  LMS1: 'c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595@group.calendar.google.com',
+  LMS2: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
+  LMS3: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
+  LMS4: 'lms.org.in_snflpd3f357jv8l380s8sc4ju0@group.calendar.google.com',
+  LMS5: 'c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523@group.calendar.google.com',
+  LMS6: 'c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635@group.calendar.google.com',
+};
+var TCH_CAL_TTL_S = 21600;                    // 6 h: a campus's events for one day
+var TCH_DEFAULT_FORM_GO = 'teacher/index.html#tags';
+var TCH_PLAN_GO = 'teacher/plan-activity.html';
+var TCH_STAFF_GO = 'teacher/index.html';      // Staff land on the teacher page, which has the game mount
+
+// Mon-Sat, not the 2nd Saturday, no event titled GH..., no event whose title has an exam keyword (cfg.teacher.examKeywords, case-insensitive).
+// calendarEvents = [{title}] for that day only; campus is unused here (the caller already picked the campus's events).
+function tchWorkingDay_(campus, dayKey, calendarEvents, cfg) {
+  const d = new Date(dayKey + 'T00:00:00Z'), dow = d.getUTCDay(), dom = d.getUTCDate();
+  if (dow === 0 || (dow === 6 && dom >= 8 && dom <= 14)) return false;
+  const words = tchConfig_(cfg).examKeywords.map(function (w) { return w.toLowerCase(); }).filter(Boolean);
+  return !(calendarEvents || []).some(function (e) {
+    const t = String((e && e.title) || '');
+    return t.indexOf('GH') === 0 || words.some(function (w) { return t.toLowerCase().indexOf(w) !== -1; });
+  });
+}
+
+function tchAddDays_(dayKey, n) { return new Date(Date.parse(dayKey + 'T00:00:00Z') + n * TCH_DAY_MS).toISOString().slice(0, 10); }
+function tchCsKey_(cls, subj) { return cls + '|' + tchSubjKey_(subj); }
+function tchIso_(ms) { return ms === null || ms === undefined ? null : new Date(ms).toISOString(); }
+
+// The CW/HW form for a mission: cfg.cwhwFormUrl (else the teacher page's tags tab). Google Forms get usp=pp_url pre-fill from cfg.cwhwPrefill
+// ({cls, subj, ch, tag} -> 'entry.N'); with no map, or another kind of URL, the form opens plain and the mission's `why` names the chapter.
+function tchFormGo_(T, fields) {
+  const base = T.cwhwFormUrl || TCH_DEFAULT_FORM_GO;
+  const parts = [];
+  if (fields && /docs\.google\.com\/forms\//.test(base)) {
+    ['cls', 'subj', 'ch', 'tag'].forEach(function (k) { if (T.cwhwPrefill[k] && fields[k]) parts.push(encodeURIComponent(T.cwhwPrefill[k]) + '=' + encodeURIComponent(fields[k])); });
+  }
+  return parts.length ? base + (base.indexOf('?') === -1 ? '?' : '&') + 'usp=pp_url&' + parts.join('&') : base;
+}
+
+// state = TeacherState; plans = {"cls|subj|ch": {activity, plannedAt}}; cfg = the parsed Game Config (with its `teacher` row); now = Date
+// Pending, done and gone rules: the plan's Task 4 table. A finished mission shows only while it is fresh (today and yesterday, like the
+// other roles); a closed-without-remediation chapter shows as gone until remediationShowDays, never as a mission after that.
+function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now) {
+  if (!state) return [];
+  const T = tchConfig_(cfg), code = state.code, campus = state.campus, out = [], since = gameLookbackStart_(now);
+  const mk = function (kind, key, f) {
+    f.owner = code; f.campus = campus; f.core = T.core.indexOf(kind) !== -1;
+    const m = gameMission_(kind, '', f);
+    m.id = 'teacher:' + kind + ':' + code + ':' + key;
+    return m;
+  };
+  const fresh = function (ms) { return ms !== null && ms >= since; };
+
+  if (isWorkingDay) {
+    const entries = (state.loggedDays && state.loggedDays[dayKey]) || [];
+    const first = {}; // 'cls|subj' -> earliest entry time today
+    entries.forEach(function (e) { const k = tchCsKey_(e.cls, e.subj); if (!tchHas_(first, k) || e.at < first[k]) first[k] = e.at; });
+    const wd = TCH_DAYS[(new Date(dayKey + 'T00:00:00Z').getUTCDay() + 6) % 7];
+    const slots = state.periodsByDay && tchHas_(state.periodsByDay, wd) ? state.periodsByDay[wd] : null;
+    if (!state.periodsByDay || slots) { // a timetable with nothing on this weekday expects nothing
+      let want = [], done, doneAt = null, why;
+      if (slots) {
+        const seen = {};
+        slots.forEach(function (p) { const k = tchCsKey_(p.cls, p.subj); if (!seen[k]) { seen[k] = true; want.push({ k: k, label: p.cls + ' ' + p.subj }); } });
+        const have = want.filter(function (w) { return tchHas_(first, w.k); });
+        done = have.length;
+        if (done === want.length && want.length) doneAt = Math.max.apply(null, have.map(function (w) { return first[w.k]; }));
+        why = done === want.length ? '' : 'Still to log: ' + want.filter(function (w) { return !tchHas_(first, w.k); }).map(function (w) { return w.label; }).join(', ');
+      } else { // no timetable: the honest fallback is one item, never invented per-class work
+        want = [0];
+        const times = Object.keys(first).map(function (k) { return first[k]; });
+        done = times.length ? 1 : 0;
+        if (done) doneAt = Math.min.apply(null, times);
+        why = 'No timetable on file yet, so a log for any of your classes counts';
+      }
+      if (want.length) {
+        const total = want.length, isDone = done >= total;
+        out.push(mk('cwhw_log', dayKey, {
+          title: "Log today's classwork and homework (" + done + ' of ' + total + ' class' + (total === 1 ? '' : 'es') + ')', why: why, go: tchFormGo_(T, null), due: dayKey,
+          done: isDone, doneAt: isDone ? tchIso_(doneAt) : null, doneBy: isDone ? code : null, progress: { done: done, total: total },
+        }));
+      }
+    }
+  }
+
+  (state.episodes || []).forEach(function (e) {
+    const key = e.cls + '|' + e.subj + '|' + e.ch, label = e.cls + ' ' + e.subj;
+    if (e.cwaAt !== null && e.cwaAt !== undefined) {
+      const cwaDay = tchIstDay_(e.cwaAt), due = tchAddDays_(cwaDay, T.remediationDays);
+      const go = tchFormGo_(T, { cls: e.cls, subj: e.subj, ch: e.name, tag: 'Remediation' });
+      const how = go.indexOf('usp=pp_url') !== -1 ? 'The form opens with the class, chapter and Remediation tag filled in' : 'Pick ' + label + ', chapter “' + e.name + '”, tag Remediation';
+      const title = 'Remediate ' + e.name + ' in ' + label + ': name this chapter so it counts';
+      if (e.remediatedAt !== null && e.remediatedAt !== undefined) {
+        if (fresh(e.remediatedAt)) out.push(mk('remediation_due', key, { title: title, why: '', go: go, due: due, done: true, doneAt: tchIso_(e.remediatedAt), doneBy: code }));
+      } else if (dayKey <= due) {
+        out.push(mk('remediation_due', key, { title: title, why: how, go: go, due: due }));
+      } else if (dayKey <= tchAddDays_(cwaDay, T.remediationShowDays)) {
+        out.push(mk('remediation_due', key, { title: title, why: 'Closed without remediation', go: go, due: due, gone: true }));
+      }
+    }
+    const planned = /^\d{4}-\d\d-\d\d/.test(String(e.plannedCwaDate || '')) ? String(e.plannedCwaDate).slice(0, 10) : '';
+    if (planned && planned < dayKey) {
+      const title = 'The CWA for ' + e.name + ' (' + label + ') was planned for ' + gameDateLabel_(planned);
+      const go = tchFormGo_(T, { cls: e.cls, subj: e.subj, ch: e.name, tag: 'CWA' });
+      const how = go.indexOf('usp=pp_url') !== -1 ? 'The form opens with the class, chapter and CWA tag filled in' : 'Pick ' + label + ', chapter “' + e.name + '”, tag CWA';
+      if (e.cwaAt === null || e.cwaAt === undefined) out.push(mk('cwa_due', key, { title: title, why: how, go: go, due: planned }));
+      else if (fresh(e.cwaAt)) out.push(mk('cwa_due', key, { title: title, why: '', go: go, due: planned, done: true, doneAt: tchIso_(e.cwaAt), doneBy: code }));
+    }
+  });
+
+  const lastDay = tchAddDays_(dayKey, T.planLeadDays);
+  (state.nextChapters || []).forEach(function (c) {
+    if (String(c.startDate) > lastDay) return;
+    const key = c.cls + '|' + c.subj + '|' + c.ch, plan = plans && tchHas_(plans, key) ? plans[key] : null;
+    const title = 'Plan an activity for ' + c.name + ' (' + c.cls + ' ' + c.subj + '), which starts ' + gameDateLabel_(c.startDate);
+    const go = TCH_PLAN_GO + '?cls=' + encodeURIComponent(c.cls) + '&subj=' + encodeURIComponent(c.subj) + '&ch=' + encodeURIComponent(c.ch);
+    if (!plan) { out.push(mk('activity_plan_due', key, { title: title, why: 'A one-line plan is enough', go: go, due: c.startDate })); return; }
+    const at = tchDateMs_(plan.plannedAt);
+    if (fresh(at)) out.push(mk('activity_plan_due', key, { title: title, why: '', go: go, due: c.startDate, done: true, doneAt: tchIso_(at), doneBy: code }));
+  });
+  return out;
+}
+
+// Stubs until Task 6 (planned activities) and Task 7 (nightly activity matches) land: {"cls|subj|ch": {activity, plannedAt}} / {"cls|subj|ch": {matched, confidence} | {pending:true}}
+function tchPlansFor_(code) { return {}; }
+function tchMatchesFor_(code) { return {}; }
+
+// A campus's events for one game day as [{title}], cached 6 h per campus and day. A calendar that cannot be read gives [] (a working day) and is not cached.
+function tchCalendarEvents_(campus, dayKey) {
+  const cache = CacheService.getScriptCache(), key = 'tch_cal_' + campus + '_' + dayKey, hit = tchReadJson_(cache, key);
+  if (hit) return hit;
+  try {
+    const id = tchHas_(TCH_CALENDAR_IDS, campus) ? TCH_CALENDAR_IDS[campus] : '';
+    const cal = id ? CalendarApp.getCalendarById(id) : null;
+    if (!cal) return [];
+    const start = new Date(Date.parse(dayKey + 'T00:00:00+05:30'));
+    const events = cal.getEvents(start, new Date(start.getTime() + TCH_DAY_MS)).map(function (e) { return { title: String(e.getTitle() || '') }; });
+    cache.put(key, JSON.stringify(events), TCH_CAL_TTL_S);
+    return events;
+  } catch (err) {
+    Logger.log('[game-teacher] calendar unreadable for ' + campus + ': ' + err);
+    return [];
+  }
+}
+
+// The caller's employee code: set on employee-fallback callers; an allowlisted Teacher is looked up by email in the Employee Master.
+function tchCodeFor_(caller) {
+  if (caller.employeeCode) return caller.employeeCode;
+  try { const r = GAME_CALLER_FALLBACKS.employee(caller.email); return r && r.employeeCode ? r.employeeCode : ''; } catch (err) { return ''; }
+}
+
+// No state (not on the roster, nothing logged) is no missions, never an error. tchStateFor_ runs here, outside any gameWithLock_.
+GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
+  const code = tchCodeFor_(caller), state = code ? tchStateFor_(code) : null;
+  if (!state) return [];
+  const dayKey = gameDayKey_(now), tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_();
+  return tchMissions_(state, dayKey, tchWorkingDay_(state.campus, dayKey, tchCalendarEvents_(state.campus, dayKey), tcfg), tchPlansFor_(code), tcfg, now);
+};
+
+// Staff (Q9: Non-Teaching, AdminClerk, Transport) get one mission kind: their own Approvals requests that Management sent back for more
+// information, built by the framework's Principal builder. Staff are not loaded by gameLoadSources_, so the Approvals tab is read here.
+GAME_MODULE_MISSIONS.Staff = function (caller, cfg, now) {
+  let rows;
+  try { rows = SpreadsheetApp.openById(GAME_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues(); } catch (err) { return []; }
+  return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_STAFF_GO);
+};
+GAME_MODULE_QUESTS.Staff = function () { return []; }; // Staff have no quests
 
 // Owner only: how many names per campus the roster could not match, and the share of entries that resolved. Counts, never names.
 GAME_MODULE_ACTIONS.teacherindexaudit = function (caller) {
