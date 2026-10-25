@@ -72,11 +72,12 @@ function captureFile_(body) {
   const mime = tupSniff_(bytes);
   if (mime.indexOf('image/') !== 0) return fail('Only photos (JPG, PNG, HEIC, WEBP) are accepted');
 
-  const name = kind + '-' + ('00000' + seq).slice(-5) + '.jpg', key = 'cap_' + runId + '_' + kind + '_' + seq;
+  const name = kind + '-' + ('00000' + seq).slice(-5) + '.jpg', key = 'cap_' + reg + '_' + runId + '_' + kind + '_' + seq;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
+    if (row && String(row[1]) !== reg) return fail('This run belongs to another bus (' + row[1] + ')');
     if (row && String(row[3]) !== runKind) return fail('runKind ' + runKind + ' does not match this run (' + row[3] + ')');
     const hit = CacheService.getScriptCache().get(key);
     if (hit) return { success: true, fileId: hit };
@@ -108,6 +109,7 @@ function captureRun_(body) {
     const sh = capRunSheet_(), rows = sh.getDataRange().getValues();
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId) { at = i + 1; break; }
+    if (at && (String(rows[at - 1][1]) !== a.v.reg || String(rows[at - 1][3]) !== run.kind)) return fail('A run\'s bus and kind cannot change (' + rows[at - 1][1] + ', ' + rows[at - 1][3] + ')');
     if (at) sh.getRange(at, 1, 1, row.length).setValues([row]); else sh.appendRow(row);
   } finally {
     lock.releaseLock();

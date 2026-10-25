@@ -17,7 +17,7 @@ const root = folder('LMS Central Repository');
 const transport = root.createFolder('LMCS Repository').createFolder('Important Documents @ LMCS').createFolder('Important Documents Transport');
 transport.createFolder('Bus Wise Documents');
 const tabs = {
-  'LM Studio Fleet': [['Reg', 'Bus', 'Campus'], ['HP659511', 'Bus 4', 'LMS 4'], ['HP665805', 'Bus 1', 'LMS 1']],
+  'LM Studio Fleet': [['Reg', 'Bus', 'Campus'], ['HP659511', 'Bus 4', 'LMS 4'], ['HP665805', 'Bus 1', 'LMS 1'], ['HP665686', 'Bus 5', 'LMS 4']],
 };
 const mkSheet = (n) => ({ appendRow: (r) => tabs[n].push(r), setFrozenRows() {},
   getDataRange: () => ({ getValues: () => tabs[n].map((r) => r.slice()) }),
@@ -117,4 +117,14 @@ assert.strictEqual(cr({ runId: 'RC', reg: 'HP659511', kind: 'count' }).success, 
 assert.match(frame({ runId: 'RC', seq: 1 }).error, /does not match this run/, 'runKind that does not match the manifest is refused');
 assert.match(frame({ runId: 'RC', runKind: 'count', seq: 1 }).error, /count run/, 'a count run with a count manifest still takes nothing');
 assert.strictEqual(frame({ runId: 'R1', seq: 50 }).success, true, 'matching manifest (R1 timelapse) is accepted');
+
+// a run is pinned to its bus and kind (Ruling 11)
+assert.match(cr({ runId: 'R1', reg: 'HP659511', kind: 'inspection' }).error, /cannot change/, 'changed Kind on an existing runId is refused');
+assert.match(cr({ runId: 'R1', reg: 'HP665686', kind: 'timelapse' }).error, /cannot change/, 'changed Reg on an existing runId is refused');
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'R1')[1], 'HP659511');
+assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', frames: 60, status: 'closed' }).success, true, 'other fields still update');
+assert.match(frame({ reg: 'HP665686', runId: 'R1', seq: 60 }).error, /another bus/, 'capturefile for another bus against R1 row is refused');
+const other = frame({ reg: 'HP665686', runId: 'R77', seq: 1 }), mine = frame({ reg: 'HP659511', runId: 'R77', seq: 1 });
+assert.ok(other.success && mine.success && other.fileId !== mine.fileId, 'same runId+seq on two buses never share a fileId');
+assert.strictEqual(frame({ reg: 'HP665686', runId: 'R77', seq: 1 }).fileId, other.fileId, 'repeat on the same bus still dedups');
 console.log('transport capture: all checks passed');
