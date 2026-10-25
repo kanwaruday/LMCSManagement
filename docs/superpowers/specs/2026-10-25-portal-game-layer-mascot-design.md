@@ -170,8 +170,8 @@ first in the Today panel. Other real pending work fills the remaining slots.
 | Principal | **Uday:** "the monthly staff evaluation / Support Session marks, and closing issues raised in daily reports" | The daily report; replying to "Info Requested" on their own approval requests; staff documents to upload | SS tracker (PDR backend; the quota is 2 SS per employee per month, `SS_QUOTA_DEFAULT_PER_MONTH`); the `PDR Issues` and `PDR Issue Actions` tabs (Coordinator backend); Approvals; staff documents |
 | Teacher | **Uday:** "the daily classwork/homework log" | CWA → remediation follow-ups; leave/request status; SS feedback | Curriculum & Progress (CW/HW, ChapterTracker); Approvals |
 | Fee Clerk | **Uday:** "day-book entries without a bill photo, fuel fills without the video/bill, and staff/bus documents not uploaded" | Other transport cards from Fleet Command (they count toward the same cap) | Office backend (Day Book); transport uploads and fuel-fill proof; staff documents |
-| Coordinator | **Uday:** "approvals pending 3+ days and hiring stalls" | Everything else in their follow-up queue (complete-hire, documents, SS compliance, PDR issues, transport) | Coordinator Tasks tab (approvals bottleneck and hiring-stall adapters already exist) |
-| Owner | Proposals and approvals waiting on Uday; the transport war room | (none) | Approvals; Coordinator and transport proposals |
+| Coordinator | **Uday:** "approvals pending 3+ days and hiring stalls". At go-live the Owner decides every approval (Uday: decide rights for Coordinators "not yet"), so the Coordinator's mission is **approvals pending 3+ days awaiting their recommendation** | Everything else in their follow-up queue (complete-hire, documents, SS compliance, PDR issues, transport) | Coordinator Tasks tab; the Coordinator chat's `Recommendations` tab (`coordinatorrecommend`) |
+| Owner | Approvals waiting on Uday's decision, each showing the Coordinator's recommendation as its "why" ("LMS 4 trip: recommended approve by …"); the transport war room | (none) | Approvals; `Recommendations`; transport proposals |
 
 **Daily-report issues today are Coordinator-only.** The `PDR Issues` tab is grouped on the Mac from the Principals'
 Important Messages, and the `PDR Issue Actions` tab records what Coordinators did (acknowledged / assigned /
@@ -204,8 +204,10 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
 ### 6. Team goals, help credit and standing
 
 - **Team goals** (Kingshot's Bear Hunt): one shared bar that everyone's real work fills.
-  - The team is a campus, a district (Coordinator plus 3 Principals), a House, or a same-subject group across
-    campuses. Module chats define the goals.
+  - The team is a **campus** (`campus:LMS4`: its Principal plus every Coordinator), the **network** (`network`: every
+    Coordinator and all six Principals), a House, or a same-subject group across campuses. Module chats define the
+    goals. A district (LMS 1–3, LMS 4–6) is only a grouping for filters and maps, never a team or an access boundary
+    (Uday: Coordinators are network-wide at go-live).
   - Each team is measured against its own target or its own last period, never against another team.
 - **Help credit** (Kingshot's alliance help, but real): when person A's real action clears person B's mission:
   - B's mission shows "cleared with help from A";
@@ -221,6 +223,10 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   - Standing comes from the incentive engine's peer groups once that thread is built. Until then it is hidden.
 - **Consistency, not streaks** (Claude's proposal, confirmed by Uday):
   - Individuals see "**18 of 21 school days on track this month**", against their own last month.
+  - The "of 21" appears only where the counted days are trustworthy: where they come from days the person was
+    present (Phase 1's snapshot days), or where leave can be excluded. A role without a reliable leave source shows
+    "18 days on track this month" (config `daysDenominator`, false for Teachers until teacher leave with dates is in
+    Approvals).
   - Days with no scheduled work for that person (leave, holidays, Sundays, free periods) don't count at all.
   - Only **teams** have streaks, each with one logged freeze a month (as in Fleet Command).
 - **Decision windows** (Uday, 2026-10-25, on track-suit days: "Let that be a setting in the game, that the
@@ -229,7 +235,7 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
     a real settings call for their own scope. The answer **writes the real setting**, and every decision is logged.
   - **The shape:**
     ```
-    DecisionWindow { id, title, question, scope: campus|district|network, scopeId,
+    DecisionWindow { id, title, question, scope: campus|network, scopeId,
                      decider: role (e.g. Principal of that campus),
                      choice: { type: pickN|pickOne|number|text, options[], n? },
                      current, defaultIfUndecided,   // set by whoever opens it; "keep current" when there is one
@@ -240,8 +246,8 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
     Decision { windowId, value, note?, decidedBy, decidedAt }      // logged in a `Game Decisions` tab
     ```
   - **Who decides what:** only decisions the role is already allowed to make for its own scope. Examples: a Principal
-    for their campus; a Coordinator for their district. Windows are opened by the Owner, or by a Coordinator for
-    their district, from Season setup. A sheet is used until that screen exists.
+    for their campus; a Coordinator for the network. Windows are opened by the Owner, or by a Coordinator, from
+    Season setup. A sheet is used until that screen exists.
   - **How it shows:**
     - An open window is a mission in the decider's Today panel ("Decide: your campus's track-suit days"), with the
       close date as its real due date.
@@ -258,9 +264,10 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
     campus. The Owner sets the default and the close date when opening it.
   - **Propose-then-confirm windows** (`confirmBy` set): the decider proposes, and the confirming role accepts or
     overrides. Both steps are logged.
-    - Second window type, asked for by the Coordinator chat: **district goal targets**.
-    - Before each term, the Coordinator proposes their district's team-goal targets (e.g. approvals within 3 days,
-      issues closed within 7), and the Owner confirms or overrides them in Season setup.
+    - Second window type, asked for by the Coordinator chat: **team goal targets**.
+    - Before each term, any Coordinator proposes one set of targets covering the six campus teams and the network
+      team (e.g. recommendations within 3 days, issues closed within 7). The Owner confirms or overrides them in
+      Season setup.
     - If nobody decides, the season 0 defaults apply.
     - The Owner's confirmation guards against a team setting its own bar too low.
   - **Later windows** are config, not code: Season goals per campus, House event dates, and similar. Any module can
@@ -272,7 +279,7 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
     met; Uday ships it through the existing Approvals flow. It is defined once here and used by any module. Pool size,
     card values and the deck stay Uday's to set when the first module needs them (transport Phase 4).
 - **The map shell** (Leaflet world, HUD top bar, minimap pings, campus switcher) is **owned by Fleet Command** as a
-  shared module (`assets/game-map/`) and reused by the Coordinator district map. Buddy and the Today panel work on any
+  shared module (`assets/game-map/`) and reused by the Coordinator map. Buddy and the Today panel work on any
   screen and don't depend on it.
 - **Badges:** for finished quests, team goals met, and first-time milestones. They are shown on the person's own
   profile, visible to them and their line managers. There is no public wall.
@@ -302,7 +309,8 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   - it is a separate project so a game bug can never break a live backend (Uday's own reason for separating the
     Coordinator backend).
 - **Shapes** every module uses:
-  - Mission: `id "<module>:<kind>:<recordId>"`, module, kind, title, why, owner, role, campus, go, due (real
+  - Mission: `id "<module>:<kind>:<recordId>"`, module, kind, title, why, owner, role, campus, go, progress
+    (optional `{done, total}`, e.g. one teacher card "2 of 4 classes logged"), due (real
     deadlines only), source, done (from data), doneBy;
   - Quest: id, role, module, title, unlockAfter, steps with a doneCheck each, reward;
   - TeamGoal: id, module, title, team key and members, measure, target, period, computed progress.
@@ -352,7 +360,7 @@ starts with the new session in April 2027.
 
 | Month | Phase | What happens |
 |---|---|---|
-| Nov 2026 | **1. Shell** | Built and piloted with Uday (Owner) and one district's Coordinator and Principals |
+| Nov 2026 | **1. Shell** | Built and piloted with Uday (Owner), the Coordinators and the Principals of a pilot group of campuses |
 | Dec 2026 | **2. Cast and modules** | Teacher, Office and Fleet Command plug in; module intros |
 | Jan 2027 | **3. Together** | Team goals, help credit, badges, seasons, the Owner's Season setup screen. Goals for season 1 are drafted |
 | Feb 2027 | Pilot | Two campuses live for a month; tune the wording, caps and goals from real use |
@@ -398,7 +406,8 @@ go-ahead.
    - **On track** means that day's core missions were done by the next reset, whether or not the person opened the
      portal. A teacher logging CW/HW from the mobile app counts.
 4. **Unassigned Coordinator tasks are shared missions.**
-   - A Tasks row with no Assignee is a shared mission for every Coordinator of that district, labelled "shared".
+   - A Tasks row with no Assignee is a shared mission for every Coordinator (they are network-wide), labelled
+     "shared".
    - Resolving it marks it done for all. Help credit is not given between holders of the same shared mission.
    - An Assignee, where set, makes it that person's alone.
 5. **Phase 1 loads `game.js` on the role homes only** (Principal, Coordinator, Owner). Done detection reads source
@@ -409,7 +418,7 @@ go-ahead.
    hiring Tasks rows auto-resolve as "system (condition cleared)". So:
    - an approval mission is done when the Approvals row carries a decision (`doneBy` = `decidedByEmail`);
    - complete-hire is done when the Employee Master row exists;
-   - **a hiring stall is a shared district mission.** It fills the district team bar, gives no personal credit, and
+   - **a hiring stall is a shared Coordinator mission.** It fills the network team bar, gives no personal credit, and
      is **left out of individual days-on-track**, because only the campus can mark Hired. A person's day never
      depends on someone else's action.
 8. **The Principal-scoped read of daily-report issues** (`principalissues`, a read-only Principal branch in
@@ -417,6 +426,16 @@ go-ahead.
    framework's Principal adapter uses it and never builds a second copy.
 9. **The game backend is created from the Mac with clasp**, as the Office backend was, and registered in
    `apps-script/projects.json`. Uday's part: run its setup once and accept the permission screen.
+10. **Mission adapters run server-side** in the LMCS Game Backend, not in the browser. Days-on-track needs them
+    there anyway. A module adds its adapter (and any module actions) as a `.gs` file in that project, e.g.
+    `game-teacher.gs`, registered in a module-actions table in `game.gs`. It reads its sources read-only.
+11. **Coordinators are network-wide at go-live, and the Owner decides every approval** (Uday, answering the
+    Coordinator chat).
+    - Coordinator missions cover all campuses. Shared missions are shared by every Coordinator.
+    - Approval work for Coordinators is a **recommendation with a reason**. It is done when a recommendation exists;
+      if the Owner decides first, it drops out as "no longer needed".
+    - The Owner's approval mission shows the recommendation. Help credit (Phase 3): the recommending Coordinator
+      gets "Your notes helped Uday decide 4 requests today."
 
 ## Settled in the conversation
 

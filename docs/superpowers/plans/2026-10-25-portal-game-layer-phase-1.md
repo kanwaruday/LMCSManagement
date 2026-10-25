@@ -1,10 +1,10 @@
-# Portal Game Layer, Phase 1 (the shell + one-district pilot) Implementation Plan
+# Portal Game Layer, Phase 1 (the shell + pilot group) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Buddy greets Principals, Coordinators and the Owner once a day on their role home, shows a fixed Today
 list of real pending work (core missions first), a next-step bar, Quest 1, "days on track", and the first decision
-window (track-suit days). It is piloted in one district plus the Owner.
+window (track-suit days). It is piloted on a group of campuses, with every Coordinator and the Owner.
 
 **Architecture:**
 - **The "LMCS Game Backend" is a new Apps Script project.** It runs as Uday and verifies each caller's Google ID token
@@ -53,8 +53,9 @@ Read "Settled after the builder check" first.
 - **Today cap:** 5 for Principal, Coordinator and Owner (from `Game Config` `cap.<Role>`, default 5).
 - **Core missions** (season 0 defaults in `Game Config`, never constants in logic):
   - Principal: `ss_pace`, `pdr_issue`;
-  - Coordinator: `approval_wait` (pending ≥ 3 days), `hiring_stall`;
-  - Owner: `approval_wait`.
+  - Coordinator: `approval_recommend` (pending ≥ 3 days, awaiting their recommendation), `hiring_stall`;
+  - Owner: `approval_wait` (the Owner decides every approval at go-live).
+- **Coordinators are network-wide** (Uday): no district scoping anywhere. A district is only a display grouping.
 - **Shared missions** (`hiring_stall`, and Coordinator Tasks with no Assignee) never give personal credit and never
   count toward days on track.
 - **The progress workbook holds email, role, campus, record ids, flags and counts only.** No names, free text or ₹.
@@ -83,7 +84,7 @@ Read "Settled after the builder check" first.
      days on track.
    - Tests in Tasks 3 and 7.
 3. **Scope leaks.**
-   - Expected: a Principal sees only their own campus; a Coordinator only `coordVisibleCampuses_`'s district; the
+   - Expected: a Principal sees only their own campus; a Coordinator every campus (within the pilot); the
      Owner everything. A Fee Clerk or Teacher calling `gametoday` gets "not available yet".
    - Test in Task 2.
 4. **The 04:00 IST boundary.**
@@ -115,8 +116,10 @@ Read "Settled after the builder check" first.
   - `gameParseConfig_(rows: any[][]) -> Config`
   - `gameVerifyCaller_(idToken) -> { email, campusId, roles[], primaryRole, canDecide } | null`: copy of
     `coordVerifyCaller_`, but allows every allowlisted role
-  - `gameVisibleCampuses_(caller) -> string[] | null`: `null` means all; Coordinator district rule as
-    `COORD_DISTRICTS`
+  - `gameVisibleCampuses_(caller) -> string[] | null`: `null` means all (Owner and Coordinator); a Principal gets
+    `[campusId]`
+  - `GAME_MODULE_ACTIONS`: an object `{ action: fn(caller, params) }` that module `.gs` files (e.g. the Teacher chat's
+    `game-teacher.gs`) add to; `doGet`/`doPost` look actions up here after the built-in ones
   - `gameSetup()`: creates the workbook "LMCS Game" and its tabs, seeds the defaults, and stores the id in Script
     Properties as `GAME_SHEET_ID`
 - **Workbook tabs** (header rows exactly as listed; code indexes by position):
@@ -129,14 +132,15 @@ Read "Settled after the builder check" first.
     `default_applied`, `override`)
   - `Game Quests`: `QuestId, Role, Title, UnlockAfter, StepsJson, Reward`
 - **Config keys** seeded by `gameSetup()`:
-  - `pilotCampuses: ["LMS4","LMS5","LMS6"]` (Uday names the pilot district at deploy)
+  - `pilotCampuses: ["LMS4","LMS5","LMS6"]` (Uday names the pilot campuses at deploy)
   - `cap: {"Principal":5,"Coordinator":5,"Owner":5}`
-  - `core: {"Principal":["ss_pace","pdr_issue"],"Coordinator":["approval_wait","hiring_stall"],"Owner":["approval_wait"]}`
+  - `core: {"Principal":["ss_pace","pdr_issue"],"Coordinator":["approval_recommend","hiring_stall"],"Owner":["approval_wait"]}`
   - `approvalWaitDays: 3`
   - `uniform: {"summerFrom":"2027-05-03","winterFrom":"2026-10-26","festivals":[]}`
   - `trackSuitDays: {}`
   - `principalIssuesReady: false`
   - `principalIssuesGo: ""` (the Coordinator chat gives the path)
+  - `daysDenominator: {"Principal":true,"Coordinator":true,"Owner":true,"Teacher":false}`
 
 - [ ] **Step 1: Write `tests/game/test-config.js`** (vm-load `game.gs` with stubs, like `tests/coordinator/test-approvals.js`):
   - `gameDayKey_(new Date('2026-10-26T22:29:00Z'))` (03:59 IST on the 27th) === `'2026-10-26'`;
@@ -144,7 +148,7 @@ Read "Settled after the builder check" first.
   - `gameParseConfig_([['Key','Value'],['cap','{"Principal":3}']]).cap.Principal === 3`, with the other cap roles
     falling back to 5;
   - bad JSON in a Value cell falls back to that key's default and does not throw;
-  - `gameVisibleCampuses_({campusId:'LMS5',roles:['Coordinator']})` deep-equals `['LMS4','LMS5','LMS6']`;
+  - `gameVisibleCampuses_({campusId:'LMS5',roles:['Coordinator']})` returns `null` (network-wide);
   - for `{campusId:'ALL',roles:['Owner']}` it returns `null`;
   - for `{campusId:'LMS2',roles:['Principal']}` it returns `['LMS2']`.
 - [ ] **Step 2: Run** `node tests/game/test-config.js`. Expected: it fails, because `gameDayKey_` is not defined.
@@ -165,12 +169,14 @@ Read "Settled after the builder check" first.
 - Consumes: `gameDayKey_`, `gameVisibleCampuses_`, Config (Task 1).
 - Produces:
   - **Mission:**
-    `{ id, kind, title, why, owner, campus, go, due, core, shared, done, doneAt, doneBy, rolledOver }`.
+    `{ id, kind, title, why, owner, campus, go, due, core, shared, done, doneAt, doneBy, rolledOver, gone, progress? }`.
+    `progress` is `{done, total}` for grouped cards (e.g. a teacher's "2 of 4 classes logged"); `done` is then
+    `progress.done >= progress.total`.
     `id` = `"<kind>:<recordId>"`. `go` = a portal path relative to the site root.
   - `gamePrincipalMissions_(caller, src, cfg, now) -> Mission[]`, where
     `src = { ss: ssdashboard JSON|null, reports: DailyReports rows|null, approvals: Approvals rows|null, issues: principalissues JSON|null }`
-  - `gameCoordinatorMissions_(caller, src, cfg, now) -> Mission[]`, where `src = { tasks: Tasks rows, approvals: Approvals rows }`
-  - `gameOwnerMissions_(caller, src, cfg, now) -> Mission[]`, where `src = { approvals }`
+  - `gameCoordinatorMissions_(caller, src, cfg, now) -> Mission[]`, where `src = { tasks: Tasks rows, approvals: Approvals rows, recommendations: Recommendations rows }`
+  - `gameOwnerMissions_(caller, src, cfg, now) -> Mission[]`, where `src = { approvals, recommendations }`
   - `gameMissionsFor_(caller, src, cfg, now) -> Mission[] | { notYet: true }`: dispatches by `primaryRole`
   - `gameSsSubmittedBy_(ss, email, dayKey) -> number`: today's SS submissions by this evaluator
   - `gameSsPaceTarget_(needed: number, now: Date) -> number`:
@@ -188,7 +194,8 @@ Read "Settled after the builder check" first.
   | `pdr_report` | Principal | no Daily Reports row for (today's ISO date, campus) | the row exists (Timestamp) | `principals-daily-reporting/index.html` |
   | `pdr_issue` | Principal | each `issues[]` item with status ≠ resolved (`reopened` counts as open). Only when `cfg.principalIssuesReady` | status resolved (`resolvedAt`, `resolvedBy`) | path given by the Coordinator chat for the Principal issue screen (config key `principalIssuesGo`) |
   | `info_requested` | Principal | own Approvals row (requestedByEmail = caller) with status "Info Requested" | status no longer "Info Requested" | `principals-daily-reporting/index.html` |
-  | `approval_wait` | Coordinator, Owner. Core for those who can decide; for a Coordinator without `canDecide` it is **shared** (chase the decider) | Approvals row Pending for ≥ `approvalWaitDays`, within scope, not archived | status Approved/Rejected/Revoked (decidedAt, decidedByEmail); archived without a decision = "no longer needed" | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
+  | `approval_recommend` | Coordinator | Approvals row Pending for ≥ `approvalWaitDays`, not archived, with no Coordinator recommendation yet. Personal if the matching Tasks row (`approval|<id>|Pending`) has the caller as Assignee, else **shared** | a `Recommendations` row with a reason (doneBy = recommender). Owner decided first = `gone` | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
+| `approval_wait` | Owner | Approvals row Pending for ≥ `approvalWaitDays`, not archived. `why` = the latest recommendation ("recommended approve by {name}") | status Approved/Rejected/Revoked (decidedAt, decidedByEmail); archived without a decision = `gone` | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
   | `hiring_stall` | Coordinator | Tasks Domain `hiring_stall`, open, in scope; **shared** | Tasks Status resolved | `coordinator/followups/index.html` |
   | `followup` | Coordinator | any other open Tasks row in scope. Assignee = caller → personal; blank Assignee → shared | Tasks resolved, and ResolvedBy not `system…` | `coordinator/followups/index.html` |
 
@@ -200,10 +207,11 @@ Read "Settled after the builder check" first.
     - `pdr_report` present when no row for 2026-10-27 LMS4, absent once a row exists;
     - `info_requested` only for the caller's own request;
     - no `pdr_issue` while `principalIssuesReady:false`, two when true with one open and one reopened issue.
-  - **Scope:** an LMS2 approval never appears for the LMS4 Principal or for a Coordinator of LMS4–6, and does appear
-    for the Owner.
-  - **Coordinator** (canDecide): an approval pending 4 days → `approval_wait` with `core:true`; pending 2 days →
-    none. Archived pending → none. `hiring_stall` → `shared:true, core:true`. A blank-Assignee follow-up →
+  - **Scope:** an LMS2 approval never appears for the LMS4 Principal, and does appear for a Coordinator and for the
+    Owner.
+  - **Coordinator:** an approval pending 4 days with no recommendation → `approval_recommend` with `core:true`; with a
+    recommendation by `c@lms.org.in` → `done:true, doneBy:'c@lms.org.in'`; decided by the Owner first → `gone:true`;
+    pending 2 days → none. **Owner:** the same 4-day approval → `approval_wait` with the recommendation in `why`. Archived pending → none. `hiring_stall` → `shared:true, core:true`. A blank-Assignee follow-up →
     `shared:true`. An assigned follow-up → `shared:false`.
   - **Done detection:** an approval decided by `a@lms.org.in` at T → `done:true, doneBy:'a@lms.org.in', doneAt:T`.
     A follow-up resolved by `system (condition cleared)` → `done:false`, plus a `gone:true` flag ("no longer
@@ -262,7 +270,7 @@ Read "Settled after the builder check" first.
     - Open windows where the caller is the decider for a scopeId in scope.
     - Each item: `{ windowId, title, question, scopeId, choice, current, closes, decided: Decision|null }`.
   - `gameWindowBoard_(caller, windowRows, decisionRows, now) -> [{ windowId, scopeId, state: 'decided'|'waiting'|'default_applied', value }]`,
-    for Coordinator (own district) and Owner (all).
+    for Coordinator and Owner (all campuses).
   - `gameValidateDecision_(caller, window, value, existing, now) -> { ok: true } | { ok: false, error: string }`
   - `gameApplyDefaults_(windowRows, decisionRows, now) -> Decision[]`: windows closed with no decision for a scopeId
     → `Kind: 'default_applied'` rows to append.
@@ -307,7 +315,7 @@ Read "Settled after the builder check" first.
 - Produces:
   - `gameQuestState_(questRows, role, evidence, progressRows, email) -> [{ questId, title, steps: [{ id, title, go, done, locked }], complete }]`
     - `evidence = { missionsDoneByMe: Mission[], ssByMe: number, decisionsByMe: Decision[], daysOnTrack }`
-    - Check kinds map like this: `pdr_report`, `pdr_issue`, `approval_wait` and `followup` count missions with
+    - Check kinds map like this: `pdr_report`, `pdr_issue`, `approval_recommend` and `followup` count missions with
       `doneBy` = me; `ss_submit` counts `ssByMe`; `decision` counts `decisionsByMe`; `day_on_track` counts
       `daysOnTrack.onTrack`.
     - Steps are sticky once done (Progress row `quest_step`).
@@ -320,10 +328,11 @@ Read "Settled after the builder check" first.
     - `pdr_issue` ×1 "Close one daily-report issue with a note" (skipped while `principalIssuesReady:false`)
     - `decision` ×1 "Choose your campus's track-suit days"
     - Reward: "Quest badge: Your portal".
-  - **Coordinator Quest 1 "Your district":**
-    - `approval_wait` ×1 "Decide one approval that has waited 3+ days"
+  - **Coordinator Quest 1 "Your network"** (as agreed with the Coordinator chat):
+    - `approval_recommend` ×1 "Recommend on one approval that has waited 3+ days"
+    - `joiner_added` ×1 "Add one joiner to the Employee Master" (hidden until the Coordinator chat names the source
+      that records who added the row; config `joinerSource`)
     - `followup` ×1 "Resolve one follow-up with an outcome note"
-    - `day_on_track` ×1 "Clear every core mission on one day"
 
 - [ ] **Step 1: Write `tests/game/test-quests.js`:**
   - with one `pdr_report` done by me → step 1 done, the step 4 decision not done;
@@ -402,7 +411,8 @@ Read "Settled after the builder check" first.
     - "Good afternoon" after 12:00 IST and "Good evening" after 17:00.
     - firstName comes from `session.name`, at runtime.
   - `LMCSGame.daysLine(d) -> string`: "{onTrack} of {counted} days on track this month" (with "Last month: x of y"
-    when present). Returns `''` when counted is 0.
+    when present). Returns `''` when counted is 0. When `d.showDenominator === false` (config `daysDenominator`) it
+    says "{onTrack} days on track this month".
 
 - [ ] **Step 1: Write `tests/game/test-game-js.js`** (vm with a minimal `window`):
   - LMS4 with `trackSuitDays.LMS4 = ['Mon','Wed','Fri']` on Mon 2 Nov 2026 → `tracksuit-winter`;
@@ -411,7 +421,8 @@ Read "Settled after the builder check" first.
   - a festival date → `festival`;
   - the greeting with 0 missions uses the calm line;
   - `daysLine({onTrack:18,counted:21})` contains "18 of 21";
-  - `daysLine({counted:0})` returns `''`.
+  - `daysLine({counted:0})` returns `''`;
+  - `daysLine({onTrack:18,counted:21,showDenominator:false})` is "18 days on track this month".
 - [ ] **Step 2: Run** it. Expected: fail.
 - [ ] **Step 3: Implement** the pure helpers in `assets/game/game.js`.
 - [ ] **Step 4: Run** the test, then `node tests/verify.mjs`. Expected: pass.
@@ -521,7 +532,7 @@ Read "Settled after the builder check" first.
   Record the `deploymentId`. The web app runs as Me, with access for Anyone; the token check is the gate.
 - [ ] **Step 2: Uday's part** (send via the LMCS Master Agent; it's one message):
   - open the project, run `gameSetup` once, and accept the permission screen;
-  - name the pilot district;
+  - name the pilot campuses;
   - confirm the uniform dates (summer from the first Monday of May, winter from the day after the Dussehra break);
   - set the track-suit window's Opens/Closes;
   - download the full-size Buddy renders if Task 9 used previews.
@@ -538,5 +549,8 @@ Read "Settled after the builder check" first.
 - About 11 tasks, roughly **10–14 hours of agent work**. Tasks 1–7 are pure logic with tests. Task 8 includes up to
   3 UI review rounds. Task 9's art iteration is the most variable.
 - **Uday:** about 15 minutes at deploy (Task 11, Step 2), plus a pilot review.
-- **Depends on the Coordinator chat's `principalissues` + `principalissueresolve`** (its C1, November) for the
-  `pdr_issue` mission. Until then it stays hidden behind `principalIssuesReady:false`.
+- **Depends on the Coordinator chat's C1 (November):**
+  - `principalissues` + `principalissueresolve`, for `pdr_issue` (hidden behind `principalIssuesReady:false` until
+    then);
+  - the `Recommendations` tab (column layout from that chat), for `approval_recommend` and the Owner's `why`;
+  - the joiner-added source, for Quest 1's second step.
