@@ -1019,7 +1019,7 @@ function init() {
   loadTimetable_();
   loadRank_();
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed
-  LMCSGame.mount(document.getElementById('game-root'), { session: SESSION, backendUrl: GAME_BACKEND_URL, root: '../' });
+  if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: SESSION, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
 }
 init();
 </script>

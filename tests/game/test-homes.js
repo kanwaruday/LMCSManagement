@@ -11,10 +11,11 @@ for (const [page, fn] of Object.entries(HOMES)) {
   const html = fs.readFileSync(__dirname + '/../../' + page, 'utf8');
   assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/game\.css(\?v=[0-9a-f]+)?"/.test(html), page + ': game.css link');
   assert(/<section id="game-root" aria-label="Today with Buddy">/.test(html), page + ': #game-root');
-  const auth = html.indexOf('../assets/auth.js"'), game = html.search(/<script src="\.\.\/assets\/game\/game\.js(\?v=[0-9a-f]+)?"/);
+  const auth = html.search(/<script src="\.\.\/assets\/auth\.js(\?v=[0-9a-f]+)?"/), game = html.search(/<script src="\.\.\/assets\/game\/game\.js(\?v=[0-9a-f]+)?"/);
+  assert(auth >= 0, page + ': auth.js script');
   assert(game >= 0, page + ': game.js script');
   assert(game > auth, page + ': game.js after auth.js');
   assert(/const GAME_BACKEND_URL = '';/.test(html), page + ': GAME_BACKEND_URL constant');
-  assert(/LMCSGame\.mount\(document\.getElementById\('game-root'\), \{ session: \w+, backendUrl: GAME_BACKEND_URL, root: '\.\.\/' \}\)/.test(body(html, fn)), page + ': LMCSGame.mount in ' + fn);
+  assert(/if \(typeof LMCSGame !== 'undefined'\) \{ try \{ LMCSGame\.mount\(document\.getElementById\('game-root'\), \{ session: \w+, backendUrl: GAME_BACKEND_URL, root: '\.\.\/' \}\); \} catch \(e\) \{ console\.warn\('game layer', e\); \} \}/.test(body(html, fn)), page + ': guarded LMCSGame.mount in ' + fn);
 }
 console.log('test-homes ok');
