@@ -29,15 +29,15 @@ function fakeSheet(rows, maxCols) {            // rows: 2D, 1-based accessors
 const T = (name, fn) => { fn(); console.log('ok  -', name); };
 
 T('next seq counts roster + locked, per prefix', () => {
-  assert.strictEqual(ctx.hirNextSeq_('NCM', [['NCM/99/07/103', 'KEL/99/03/086'], ['NCM/26/10/110']]), 111);
-  assert.strictEqual(ctx.hirNextSeq_('SAY', [['NCM/99/07/103']]), 1);
+  assert.strictEqual(ctx.hirNextSeq_('NCM', [['NCM/26/07/103', 'KEL/22/03/086'], ['NCM/26/10/110']]), 111);
+  assert.strictEqual(ctx.hirNextSeq_('SAY', [['NCM/26/07/103']]), 1);
 });
-T('new code format', () => assert.strictEqual(ctx.hirNewCode_('NCM', [['NCM/99/07/103']]), 'NCM/26/10/104'));
+T('new code format', () => assert.strictEqual(ctx.hirNewCode_('NCM', [['NCM/26/07/103']]), 'NCM/26/10/104'));
 
 const sheet = fakeSheet([['hdr'], [], [], []], 15);
 ctx.hirSheet_ = () => sheet;
 T('lock uses a valid preferred code and grows the grid', () => {
-  const r = ctx.hirLockEmployeeCode_(sheet, 2, 'NCM', 'ncm/26/10/110', ['NCM/99/07/103']);
+  const r = ctx.hirLockEmployeeCode_(sheet, 2, 'NCM', 'ncm/26/10/110', ['NCM/26/07/103']);
   assert.strictEqual(JSON.stringify(r), JSON.stringify({ code: 'NCM/26/10/110', note: '' }));
   assert.strictEqual(sheet.rows[1][15], 'NCM/26/10/110');
   assert.strictEqual(sheet.getMaxColumns(), 16);
@@ -47,15 +47,15 @@ T('lock is permanent (second call returns the same)', () => {
   assert.strictEqual(ctx.hirLockEmployeeCode_(sheet, 2, 'NCM', 'NCM/26/10/999', []).code, 'NCM/26/10/110');
 });
 T('preferred already used -> next free + note', () => {
-  const r = ctx.hirLockEmployeeCode_(sheet, 3, 'NCM', 'NCM/26/10/110', ['NCM/99/07/103']);
+  const r = ctx.hirLockEmployeeCode_(sheet, 3, 'NCM', 'NCM/26/10/110', ['NCM/26/07/103']);
   assert.strictEqual(r.code, 'NCM/26/10/111'); assert.ok(/already in use/.test(r.note));
 });
 T('garbage preferred -> next free + note', () => {
-  const r = ctx.hirLockEmployeeCode_(sheet, 4, 'NCM', 'abcd', ['NCM/99/07/103']);
+  const r = ctx.hirLockEmployeeCode_(sheet, 4, 'NCM', 'abcd', ['NCM/26/07/103']);
   assert.strictEqual(r.code, 'NCM/26/10/112'); assert.ok(/not a valid NCM code/.test(r.note));
 });
 
-ctx.hirRosterCodes_ = () => ['NCM/99/07/103'];
+ctx.hirRosterCodes_ = () => ['NCM/26/07/103'];
 T('assign: no joining date -> no code offered', () => {
   const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '' };
   ctx.hirAssignEmployeeCodes_([a], []);

@@ -161,12 +161,12 @@ T('revive: only a Rejected row, with a note', () => {
 });
 T('revive: snapshots history and clears the round', () => {
   reset([appRow({ INTERVIEW_AT: day(-3), MD_INTERVIEW_AT: day(-2), SALARY_OFFER_AT: day(-2), STATUS: 'Rejected', REJECT_REASON: "Doesn't want to join right now",
-    STAGE_MARKS: '{"interview":{}}', DEMO_AT: day(-2), DOJ: '2026-11-01', OFFER_BREAKDOWN: '{}', EMP_CODE: 'NCM/99/10/120' })]);
+    STAGE_MARKS: '{"interview":{}}', DEMO_AT: day(-2), DOJ: '2026-11-01', OFFER_BREAKDOWN: '{}', EMP_CODE: 'NCM/26/10/120' })]);
   ctx.hiringRevive_(principal, { row: 2, note: 'Now free to join' });
   const r = apps.rows[1];
   ['STATUS', 'REJECT_REASON', 'INTERVIEW_AT', 'MD_INTERVIEW_AT', 'SALARY_OFFER_AT', 'DOJ', 'OFFER_BREAKDOWN', 'STAGE_MARKS', 'DEMO_AT']
     .forEach((k) => assert.strictEqual(r[C[k] - 1], '', k));
-  assert.strictEqual(r[C.EMP_CODE - 1], 'NCM/99/10/120'); // a number is never reused
+  assert.strictEqual(r[C.EMP_CODE - 1], 'NCM/26/10/120'); // a number is never reused
   assert.ok(isDate(r[C.REVIVED_AT - 1]));
   const h = JSON.parse(r[C.HISTORY - 1]);
   assert.strictEqual(h.length, 1); assert.strictEqual(h[0].round, 1);
@@ -249,33 +249,33 @@ T('Hired gate: lists exactly what is missing (including the approved requisition
   ['PAN', 'Aadhar', 'Police', 'Medical', 'Document Submission'].forEach((w) => assert.ok(msg.indexOf(w) === -1, w + ' must not gate Hired: ' + msg));
 });
 T('Hired gate: a locked code that is in the roster but has no Bio-Data is refused; Bio-Data only (no other documents) lets it through', () => {
-  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/99/11/104', DOJ: '2026-11-02' })]);
+  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
   ctx.hirApprovalApproved_ = () => true;
   ctx.hirIsHiringApproved_ = () => true;
   ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
-  ctx.hirRosterCodes_ = () => ['NCM/99/11/104'];
+  ctx.hirRosterCodes_ = () => ['NCM/26/11/104'];
   ctx.hirPortalDocs_ = () => ({});
   throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /Bio-Data/);
-  ctx.hirPortalDocs_ = () => ({ 'NCM/99/11/104': { 'BIODATA + PROFICIENCY': true } });  // only the Bio-Data, no PAN / Aadhaar / police / medical
+  ctx.hirPortalDocs_ = () => ({ 'NCM/26/11/104': { 'BIODATA + PROFICIENCY': true } });  // only the Bio-Data, no PAN / Aadhaar / police / medical
   ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' });
   assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Hired');
 });
 T('Hired gate: a locked code that is NOT in the Employee Master yet means Start Hiring Process was never pressed', () => {
-  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/99/11/104', DOJ: '2026-11-02' })]);
+  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
   ctx.hirApprovalApproved_ = () => true;
   ctx.hirIsHiringApproved_ = () => true;
   ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
-  ctx.hirRosterCodes_ = () => ['NCM/99/10/100'];
-  ctx.hirPortalDocs_ = () => ({ 'NCM/99/11/104': { 'BIODATA + PROFICIENCY': true } });
+  ctx.hirRosterCodes_ = () => ['NCM/26/10/100'];
+  ctx.hirPortalDocs_ = () => ({ 'NCM/26/11/104': { 'BIODATA + PROFICIENCY': true } });
   throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /Start Hiring Process/);
 });
 
 T('Hired gate: a closed position (no approved New/ Backup Position) blocks an otherwise complete, Owner-approved hire, with a message that says what to do', () => {
-  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/99/11/104', DOJ: '2026-11-02' })]);
+  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
   ctx.hirIsHiringApproved_ = () => true;
   ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
-  ctx.hirRosterCodes_ = () => ['NCM/99/11/104'];
-  ctx.hirPortalDocs_ = () => ({ 'NCM/99/11/104': { 'BIODATA + PROFICIENCY': true } });
+  ctx.hirRosterCodes_ = () => ['NCM/26/11/104'];
+  ctx.hirPortalDocs_ = () => ({ 'NCM/26/11/104': { 'BIODATA + PROFICIENCY': true } });
   ctx.hirApprovalApproved_ = () => false;
   throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /New\/ Backup Position.*closed.*Owner/);
   ctx.hirApprovalApproved_ = (campus, cat) => campus === 'LMS4' && cat === 'New/ Backup Position'; // the Principal's own campus is the one checked

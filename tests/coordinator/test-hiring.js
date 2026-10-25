@@ -11,10 +11,10 @@ const app = (name, status, o) => { const r = new Array(20).fill(''); r[1] = name
 const apRow = (id, campus, status, decidedAt) => { const r = new Array(19).fill(''); r[1] = campus; r[2] = 'Salary Offer Approval'; r[7] = id + ' Name'; r[13] = status; r[15] = decidedAt || ''; return r; };
 
 const applicants = [['h'],
-  app('Hired joins in 10d', 'Hired', { code: 'KEL/99/10/200', doj: ymd(day(10)) }),   // row2 T-0002 low
-  app('Hired joins in 2d', 'Hired', { code: 'KEL/99/10/201', doj: ymd(day(2)) }),     // T-0003 medium
-  app('Hired 5d ago', 'Hired', { code: 'KEL/99/10/202', doj: ymd(day(-5)) }),         // T-0004 high
-  app('Already added', 'Hired', { code: 'KEL/99/09/150', doj: ymd(day(-5)) }),        // T-0005 in roster -> none
+  app('Hired joins in 10d', 'Hired', { code: 'KEL/26/10/200', doj: ymd(day(10)) }),   // row2 T-0002 low
+  app('Hired joins in 2d', 'Hired', { code: 'KEL/26/10/201', doj: ymd(day(2)) }),     // T-0003 medium
+  app('Hired 5d ago', 'Hired', { code: 'KEL/26/10/202', doj: ymd(day(-5)) }),         // T-0004 high
+  app('Already added', 'Hired', { code: 'KEL/26/09/150', doj: ymd(day(-5)) }),        // T-0005 in roster -> none
   app('Approved 5d ago', '', { md: day(-9) }),                                        // T-0006 stall medium
   app('Approved 9d ago', '', { md: day(-12) }),                                       // T-0007 stall high
   app('Approved 1d ago', '', { md: day(-3) }),                                        // T-0008 too fresh
@@ -25,7 +25,7 @@ const approvals = [['h'],
   apRow('T-0006', 'LMS3', 'Approved', day(-5)), apRow('T-0007', 'LMS3', 'Approved', day(-9)),
   apRow('T-0008', 'LMS3', 'Approved', day(-1)), apRow('T-0009', 'LMS3', 'Approved', day(-9)),
   apRow('T-0010', 'LMS3', 'Pending', '')];
-const w = ctx.coordHiringWanted_(applicants, approvals, ['KEL/99/09/150'], now);
+const w = ctx.coordHiringWanted_(applicants, approvals, ['KEL/26/09/150'], now);
 const by = {}; w.forEach((t) => { by[t.taskId] = t; });
 assert.deepStrictEqual(Object.keys(by).sort(), ['complete_hire|T-0002', 'complete_hire|T-0003', 'complete_hire|T-0004', 'hiring_stall|T-0006', 'hiring_stall|T-0007']);
 assert.strictEqual(by['complete_hire|T-0002'].severity, 'low');

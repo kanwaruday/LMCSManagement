@@ -13,18 +13,18 @@ ctx.STAFF_CAMPUS_SHEET_LABEL_ = { LMS1: 'LMS 1', LMS6: 'LMS 6' };
 const tabs = {
   LMS1: [
     ['Timestamp', 'Email Address', 'Employee Name', 'Employee ID', 'JOB ROLE', 'PAN CARD', 'AADHAR CARD', 'PAN CARD', 'Remarks, if any '],
-    ['t1', 'clerk@x', 'typed name', 'kul/99/04/28', 'PRT', 'https://d/p1, https://d/p2', 'https://d/a1', '', 'n/a'],
+    ['t1', 'clerk@x', 'typed name', 'kul/13/04/28', 'PRT', 'https://d/p1, https://d/p2', 'https://d/a1', '', 'n/a'],
     ['t2', 'clerk@x', 'Ghost', 'KUL/99/99/999', 'PRT', '', '', 'https://d/p3', ''],
     ['t3', 'clerk@x', 'No Id', '', 'NTT', 'https://d/p4', '', '', ''],
   ],
   LMS6: [
     ['Timestamp', 'Email Address', 'Employee Name', 'Employee ID', 'SIGNED  JOB ROLE'],
-    ['t4', 'c6@x', 'J', 'JOG/99/04/017', 'https://d/s1'],
+    ['t4', 'c6@x', 'J', 'JOG/26/04/017', 'https://d/s1'],
   ],
 };
 ctx.openResponseSheet_ = (c) => ({ getDataRange: () => ({ getValues: () => tabs[c] }) });
 ctx.openEmpWorkbook_ = () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [
-  ['EmployeeCode', 'Name'], ['KUL/99/04/028', 'REAL NAME'], ['JOG/99/04/017', 'JOGI'],
+  ['EmployeeCode', 'Name'], ['KUL/13/04/028', 'REAL NAME'], ['JOG/26/04/017', 'JOGI'],
 ] }) }) });
 
 const rows = ctx.sdocFormRows_();
@@ -32,7 +32,7 @@ const C = vm.runInContext('SDOC_COL_', ctx);
 const pick = (link) => rows.find((r) => r[C.link] === link);
 
 assert.strictEqual(rows.length, 6, 'one row per link, comma lists split, text answers ignored');
-assert.strictEqual(pick('https://d/p1')[C.code], 'KUL/99/04/028', 'typed short code matched to the roster code');
+assert.strictEqual(pick('https://d/p1')[C.code], 'KUL/13/04/028', 'typed short code matched to the roster code');
 assert.strictEqual(pick('https://d/p1')[C.name], 'REAL NAME', 'roster name wins over the typed one');
 assert.strictEqual(pick('https://d/p2')[C.type], 'PAN CARD');
 assert.strictEqual(pick('https://d/a1')[C.type], 'AADHAAR CARD', 'AADHAR header -> canonical type');

@@ -12,12 +12,12 @@ function load(extra) {
 // ── the pure gate ──────────────────────────────────────────────────────
 const ctx = load();
 const E = 'someone@lms.org.in';
-const ok = { campusId: 'LMS4', employeeCode: 'NCM/99/09/904', role: 'Teacher' };
+const ok = { campusId: 'LMS4', employeeCode: 'NCM/26/09/104', role: 'Teacher' };
 const gate = (flag, fn, email) => J(ctx.gameCallerFromFallback_(email === undefined ? E : email, flag, fn));
 const fb = (r) => () => r;
 
-assert.deepStrictEqual(gate('on', fb(ok)), { email: E, campusId: 'LMS4', roles: ['Teacher'], primaryRole: 'Teacher', canDecide: false, employeeCode: 'NCM/99/09/904' });
-assert.deepStrictEqual(gate('on', fb(Object.assign({}, ok, { role: 'Staff' }))), { email: E, campusId: 'LMS4', roles: ['Staff'], primaryRole: 'Staff', canDecide: false, employeeCode: 'NCM/99/09/904' });
+assert.deepStrictEqual(gate('on', fb(ok)), { email: E, campusId: 'LMS4', roles: ['Teacher'], primaryRole: 'Teacher', canDecide: false, employeeCode: 'NCM/26/09/104' });
+assert.deepStrictEqual(gate('on', fb(Object.assign({}, ok, { role: 'Staff' }))), { email: E, campusId: 'LMS4', roles: ['Staff'], primaryRole: 'Staff', canDecide: false, employeeCode: 'NCM/26/09/104' });
 assert.strictEqual(gate('on', fb(Object.assign({}, ok, { campusId: ' lms6 ' }))).campusId, 'LMS6');          // trimmed + upper-cased
 assert.strictEqual(gate('on', fb({ campusId: 'LMS1', role: 'Teacher' })).employeeCode, '');                  // missing code -> ''
 assert.strictEqual(gate('on', fb(ok), 'Mixed.Case@LMS.org.in').email, 'mixed.case@lms.org.in');             // verified email, lower-cased
