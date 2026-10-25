@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Buddy greets Principals, Coordinators and the Owner once a day on their role home, shows a fixed Today
-list of real pending work (core missions first), a next-step bar, Quest 1, "days on track", and the first decision
-window (track-suit days). It is piloted on a group of campuses, with every Coordinator and the Owner.
+**Goal:** Buddy greets Principals, Coordinators and the Owner once a day on their role home, and the Teacher Owl
+greets teachers on theirs. Each home shows a fixed Today list of real pending work (core missions first), a next-step
+bar, Quest 1, "days on track", and the first decision window (track-suit days). Principals and Coordinators are
+piloted on a group of campuses; **teachers go live at all six schools as soon as the Teacher chat's missions are in**
+(Uday: "right away, at each school").
 
 **Architecture:**
 - **The "LMCS Game Backend" is a new Apps Script project.** It runs as Uday and verifies each caller's Google ID token
@@ -85,7 +87,7 @@ Read "Settled after the builder check" first.
    - Tests in Tasks 3 and 7.
 3. **Scope leaks.**
    - Expected: a Principal sees only their own campus; a Coordinator every campus (within the pilot); the
-     Owner everything. A Fee Clerk or Teacher calling `gametoday` gets "not available yet".
+     Owner everything; a Teacher only their own missions. A Fee Clerk calling `gametoday` gets "not available yet".
    - Test in Task 2.
 4. **The 04:00 IST boundary.**
    - Expected: a load at 03:59 IST belongs to the previous day, and 04:00 starts the new day's snapshot. Two
@@ -120,6 +122,10 @@ Read "Settled after the builder check" first.
     `[campusId]`
   - `GAME_MODULE_ACTIONS`: an object `{ action: fn(caller, params) }` that module `.gs` files (e.g. the Teacher chat's
     `game-teacher.gs`) add to; `doGet`/`doPost` look actions up here after the built-in ones
+  - `GAME_MODULE_MISSIONS`: `{ Teacher: fn(caller, cfg, now) -> Mission[] }`, and `GAME_MODULE_QUESTS`:
+    `{ Teacher: fn(caller, cfg, now) -> QuestState[] }`. A module file registers its role's missions and quests here;
+    the framework calls them and applies picking, roll-over, done detection display and days on track as for every
+    role
   - `gameSetup()`: creates the workbook "LMCS Game" and its tabs, seeds the defaults, and stores the id in Script
     Properties as `GAME_SHEET_ID`
 - **Workbook tabs** (header rows exactly as listed; code indexes by position):
@@ -132,7 +138,9 @@ Read "Settled after the builder check" first.
     `default_applied`, `override`)
   - `Game Quests`: `QuestId, Role, Title, UnlockAfter, StepsJson, Reward`
 - **Config keys** seeded by `gameSetup()`:
-  - `pilotCampuses: ["LMS4","LMS5","LMS6"]` (Uday names the pilot campuses at deploy)
+  - `pilotCampuses: {"Principal":["LMS4","LMS5","LMS6"],"Coordinator":["LMS4","LMS5","LMS6"],"Owner":"ALL","Teacher":"ALL"}`
+    (Uday names the Principal/Coordinator pilot campuses at deploy; teachers are everywhere)
+  - `speaker: {"Teacher":"teacher-owl"}` (every other role: Buddy)
   - `cap: {"Principal":5,"Coordinator":5,"Owner":5}`
   - `core: {"Principal":["ss_pace","pdr_issue"],"Coordinator":["approval_recommend","hiring_stall"],"Owner":["approval_wait"]}`
   - `approvalWaitDays: 3`
@@ -224,7 +232,9 @@ Read "Settled after the builder check" first.
   - **Done detection:** an approval decided by `a@lms.org.in` at T → `done:true, doneBy:'a@lms.org.in', doneAt:T`.
     A follow-up resolved by `system (condition cleared)` → `done:false`, plus a `gone:true` flag ("no longer
     needed").
-  - **Roles:** a Teacher or Fee Clerk caller → `gameMissionsFor_` returns `{ notYet: true }`.
+  - **Roles:** a Fee Clerk caller → `{ notYet: true }`. A Teacher caller → whatever `GAME_MODULE_MISSIONS.Teacher`
+    returns (stub it in the test with one mission carrying `progress:{done:2,total:4}`), or `{ notYet: true }` when
+    nothing is registered.
 - [ ] **Step 2: Run** `node tests/game/test-missions.js`. Expected: fail (not defined).
 - [ ] **Step 3: Implement the adapters plus `gameMissionsFor_(caller, src, cfg, now)`** (dispatch by `primaryRole`;
   Owner beats Coordinator beats Principal). Titles come from `gameTitle_(kind, data)`: one line per kind in Buddy's
@@ -381,7 +391,9 @@ Read "Settled after the builder check" first.
   - PDR URL: the `pdr` deploymentId. Coordinator URL: the `coordinator` deploymentId. Both are constants at the top of
     `game.gs`.
 - **Rules:**
-  - pilot gate: a caller outside `pilotCampuses`, unless Owner → `{success:true, notYet:true}`;
+  - pilot gate: a caller whose campus is outside `pilotCampuses[role]` ("ALL" passes everyone) →
+    `{success:true, notYet:true}`;
+  - the response carries `speaker` (`buddy` or `teacher-owl`) from config;
   - the snapshot is created under the script lock on first load, so two parallel loads create one row;
   - finalize every unfinalized earlier row for this person before building today's;
   - `firstLoadToday` is true only for the call that created the row;
@@ -450,6 +462,9 @@ Read "Settled after the builder check" first.
   - `data` skips the fetch, for the stub page.
   - It renders into `el` and appends the next-step bar to `document.body`.
 - **Behaviour** (match the vault mockup `work/mascot concepts/Login greeting mockup.html`):
+  - **Speaker:** `today.speaker` picks Buddy or the Teacher Owl for the greeting, the avatar and the dialogue name.
+    On a teacher's first visit, the tour's first beat is Buddy handing over ("Here's the Teacher Owl, who knows your
+    classroom best").
   - **Greeting overlay:** only when `firstLoadToday`.
     - Buddy figure in today's outfit, a dialogue box with "Buddy", `greetingLine`, and the buttons **Show me**
       (scrolls to the Today panel and focuses the first Go) and **Later**. **Skip** sits top-right.
@@ -479,7 +494,7 @@ Read "Settled after the builder check" first.
 - [ ] **Step 4: Run** `node tests/verify.mjs`. Expected: pass.
 - [ ] **Step 5: Commit:** `git commit -m "Game UI: greeting, Today, next-step bar, quest, decision card, tour"`.
 
-### Task 9: Buddy art set
+### Task 9: Buddy art set (plus the Teacher Owl)
 
 **Files:**
 - Create: `assets/game/buddy/` with:
@@ -487,8 +502,11 @@ Read "Settled after the builder check" first.
     each transparent and about 480 px tall;
   - `avatar-{outfit}.webp` (a head-and-tie crop, 96 px).
 
+  - `assets/game/teacher-owl/teacher-owl-{intro,neutral,celebrate,nudge,bad}.webp` and `avatar-teacher-owl.webp`
+    (renders made 2026-10-25, vault `work/mascot concepts/teacher owl set/`).
+
 **Interfaces:**
-- Produces: the file names `LMCSGame` uses (`buddy/<outfit>-<pose>.webp`). game.js falls back to
+- Produces: the file names `LMCSGame` uses (`buddy/<outfit>-<pose>.webp`, `teacher-owl/teacher-owl-<pose>.webp`). game.js falls back to
   `winter-formal-neutral.webp` when a file is missing.
 
 - [ ] **Step 1: Generate the renders** in Canva (generate-image, soft 3D, the same Buddy description as the vault's
@@ -505,27 +523,29 @@ Read "Settled after the builder check" first.
 - [ ] **Step 4: Run** `node tests/verify.mjs`. Expected: pass.
 - [ ] **Step 5: Commit:** `git commit -m "Buddy art set: 5 outfits × 4 poses, avatars"`.
 
-### Task 10: Mount on the three role homes
+### Task 10: Mount on the four role homes
 
 **Files:**
-- Modify: `principal/index.html`, `coordinator/index.html`, `owner/index.html`. Add `<link rel="stylesheet"
+- Modify: `principal/index.html`, `coordinator/index.html`, `owner/index.html`, `teacher/index.html` (mount after
+  `SESSION = LMCS.getSession()` in its boot code, above the existing cards; Owner "test mode" passes the viewed
+  teacher's session). Add `<link rel="stylesheet"
   href="../assets/game/game.css">`, a `<section id="game-root" aria-label="Today with Buddy">` placed **above** the
   module grid, and `<script src="../assets/game/game.js"></script>` after `auth.js`. Call
   `LMCSGame.mount(document.getElementById('game-root'), { session, backendUrl: GAME_BACKEND_URL })` at the end of
   each page's existing `showApp`/`gate` function, after its own rendering.
-- Modify: `tools/stamp-assets.mjs` (add the three homes to `PAGES`)
+- Modify: `tools/stamp-assets.mjs` (add the four homes to `PAGES`)
 - Test: `tests/game/test-homes.js`
 
 **Interfaces:**
 - Consumes: `LMCSGame.mount` (Task 8). `GAME_BACKEND_URL` is a constant in each page and stays empty until Task 11;
   when it's empty, mount renders nothing.
 
-- [ ] **Step 1: Write `tests/game/test-homes.js`.** For each of the 3 homes, read the HTML and assert:
+- [ ] **Step 1: Write `tests/game/test-homes.js`.** For each of the 4 homes, read the HTML and assert:
   - the `game.css` link, `#game-root` and the `game.js` script are present;
   - `game.js` comes after `auth.js`;
   - `LMCSGame.mount(` appears inside the page's sign-in callback.
 - [ ] **Step 2: Run** it. Expected: fail.
-- [ ] **Step 3: Edit the three pages.**
+- [ ] **Step 3: Edit the four pages.**
 - [ ] **Step 4: Stage, stamp and verify.** Run `git add` on the changed files, then `node tools/stamp-assets.mjs`,
   then `git add` the pages again, then `node tests/verify.mjs`. Expected: pass, including
   `test-asset-stamps`.
@@ -555,7 +575,7 @@ Read "Settled after the builder check" first.
 
 ## Estimate
 
-- About 11 tasks, roughly **10–14 hours of agent work**. Tasks 1–7 are pure logic with tests. Task 8 includes up to
+- About 11 tasks, roughly **12–17 hours of agent work** (the teacher home adds about 3). Tasks 1–7 are pure logic with tests. Task 8 includes up to
   3 UI review rounds. Task 9's art iteration is the most variable.
 - **Uday:** about 15 minutes at deploy (Task 11, Step 2), plus a pilot review.
 - **Depends on the Coordinator chat's C1 (November):**
