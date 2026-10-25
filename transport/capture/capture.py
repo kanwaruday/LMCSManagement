@@ -30,7 +30,7 @@ Models (Uday installs them; nothing downloads them automatically), in MODELS_DIR
     7,835,770 bytes, input 640x640 RGB 0-1, output rows [batch, x1, y1, x2, y2, class, score] (NMS inside the model):
     https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx
 Install:
-  /usr/local/bin/python3 -m pip install opencv-python-headless    # onnxruntime, numpy and Pillow are already installed
+  /usr/local/bin/python3 -m pip install opencv-python-headless==5.0.0.93    # onnxruntime, numpy and Pillow are already installed
   mkdir -p ~/.lmcs/capture-models && cd ~/.lmcs/capture-models
   curl -fLO https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
   curl -fLO https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx
@@ -70,7 +70,7 @@ class NotReady(Exception):
     """The run's files have not all reached this Mac's Drive copy yet; try again tomorrow."""
 
 
-STALE_DAYS = 3  # a run still waiting for its frames this long after it ended is a failure somebody must look at
+STALE_DAYS = 3  # a run still waiting for its frames or stop photos this long after it ended is a failure somebody must look at
 
 
 def log(msg):
@@ -141,7 +141,7 @@ def load_detectors(models_dir=MODELS_DIR):
         import cv2
         import onnxruntime as ort
     except ImportError as e:
-        raise BlurUnavailable(f"{e.name} is not installed (pip3 install opencv-python-headless)") from None
+        raise BlurUnavailable(f"{e.name} is not installed (/usr/local/bin/python3 -m pip install opencv-python-headless==5.0.0.93)") from None
     face_path, plate_path = Path(models_dir) / FACE_MODEL, Path(models_dir) / PLATE_MODEL
     for p in (face_path, plate_path):
         if not p.is_file():
@@ -193,7 +193,8 @@ def stitch(frames, chapters_text, out_mp4):
 
 def process_run(run_dir, run, detectors):
     """Blurs every frame and stop photo of one run into processed/ and stitches route.mp4 there. All or nothing: built in
-    processed.partial/, renamed only when complete. Raises NotReady while Drive is still bringing the frames down."""
+    processed.partial/, renamed only when complete. Raises NotReady while Drive is still bringing the frames or a stop photo
+    down: every timelapse stop has a photo (the capture page saves no stop without one), so a run is never published without it."""
     if not detectors:
         raise BlurUnavailable("no detectors")
     run_dir = Path(run_dir)
@@ -201,6 +202,9 @@ def process_run(run_dir, run, detectors):
     if not frames or len(frames) < int(run.get("frames") or 0):
         raise NotReady(f"{len(frames)} of {run.get('frames') or '?'} frames in this Mac's Drive copy")
     stops = run.get("stops") or []
+    missing = [s for s in stops if not (run_dir / f"stop-{int(s['seq']):05d}.jpg").exists()]
+    if missing:
+        raise NotReady(f"{len(missing)} of {len(stops)} stop photos not in this Mac's Drive copy")
     part = run_dir / "processed.partial"
     shutil.rmtree(part, ignore_errors=True)
     part.mkdir()
@@ -211,8 +215,7 @@ def process_run(run_dir, run, detectors):
         out = [put(f["path"], f"frame-{f['seq']:05d}.jpg") for f in frames]
         for s in stops:
             src = run_dir / f"stop-{int(s['seq']):05d}.jpg"
-            if src.exists():
-                put(src, src.name)
+            put(src, src.name)
         stitch(out, chapters(stops, frames), part / "route.mp4")
         os.rename(part, run_dir / "processed")
     except BaseException:
@@ -323,7 +326,7 @@ def main(argv=None):
             ended = r.get("endedAt")
             if isinstance(ended, (int, float)) and time.time() - ended / 1000 > STALE_DAYS * 86400:
                 failed += 1
-                log(f"{r['runId']}: failed, still missing frames {STALE_DAYS}+ days after it ended ({e})")
+                log(f"{r['runId']}: failed, still missing files {STALE_DAYS}+ days after it ended ({e})")
             else:
                 log(f"{r['runId']}: waiting ({e})")
         except Exception as e:
