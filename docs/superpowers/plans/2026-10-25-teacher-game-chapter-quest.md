@@ -130,7 +130,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   My Requests, My Evaluations and Upcoming Events.
 - **Not here: `apps-script/game.gs`.** The game director's Task 6b adds `GAME_CALLER_FALLBACKS`. When the game
   project's `STAFF_AUTO_SIGNIN` is `on`, the token is verified and the allowlist misses, it calls
-  `GAME_CALLER_FALLBACKS.Teacher(verifiedEmail)`. That returns `{campusId, employeeCode, role}`, and `game.gs` builds
+  `GAME_CALLER_FALLBACKS.employee(verifiedEmail)`. That returns `{campusId, employeeCode, role}`, and `game.gs` builds
   the caller itself: role `Teacher` or `Staff` only, `canDecide:false`, campus LMS1–6 only. `game-teacher.gs`
   registers the function in Task 3, using the same department map.
 - Test: `tests/teacher-portal/test-staff-signin.js`
@@ -241,7 +241,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
     3. writes each TeacherState to `CacheService` as `tch_<code>` (TTL 6 h) and the meta as `tch_meta`.
   - `tchStateFor_(code) -> TeacherState|null`: the cache. On a miss it runs `gameTeacherRefresh()` once under the
     lock.
-  - `GAME_CALLER_FALLBACKS.Teacher = function (verifiedEmail) -> {campusId, employeeCode, role} | null`, using the
+  - `GAME_CALLER_FALLBACKS.employee = function (verifiedEmail) -> {campusId, employeeCode, role} | null`, using the
     Task 1 rule and the same department map (copied, with a keep-in-sync comment), so the game backend accepts
     exactly the people PDR does. `role` is `Teacher` or `Staff`.
     - `game.gs` (the game director's Task 6b) calls it only when the game project's Script property
@@ -286,6 +286,10 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   - `tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now) -> Mission[]`, then
     `GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now)`, which wires the state, calendar (6 h cache per
     campus) and `tchPlansFor_(code)`.
+  - **Staff (only if Uday approves the Staff role in Q9):** `GAME_MODULE_MISSIONS.Staff = function (caller, cfg, now)`
+    returns only `info_requested`, for the caller's own Approvals rows with status "Info Requested", in the same shape
+    as the framework's Principal `info_requested`. `GAME_MODULE_QUESTS.Staff` returns `[]`. The speaker is Buddy. Staff
+    land on `teacher/index.html`, which already has the game mount, so there's no separate Staff home.
   - **Shared shapes, defined here and filled by later tasks:**
     - `plans` = `{"<cls>|<subj>|<chNorm>": {activity, plannedAt}}` (Task 6);
     - `matches` = `{"<cls>|<subj>|<chNorm>": {matched, confidence} | {pending:true}}` (Task 7).
