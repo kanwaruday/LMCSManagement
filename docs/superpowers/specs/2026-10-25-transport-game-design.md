@@ -355,6 +355,42 @@ progress bar and a route line filling in on the map. A finished, verified route 
 - children only as counts in game views;
 - moods and needs describe conditions and care, never judge a person.
 
+### Bus cam: a phone that lives on every bus (Uday, 2026-10-25; Phase 1b+, not Phase 1a)
+
+Uday: "I think I will ask my drivers to keep their phone on the bus while recording everything." The one-off
+Coordinator capture runs (Loop 6) stay as Phase 1a. Phase 1b+ adds a **bus cam**: the capture page in an
+always-on mode on a phone mounted in each bus. Its runs become the ongoing source for stop photos, drive-up
+strips, route timelapses and route replays. Everything below is Claude's call.
+
+- **The phone:** a dedicated school phone per bus (not the driver's own), in a dashboard mount on the charger,
+  facing **out of the windscreen only**. It never films the cabin or the children inside.
+- **Auto mode:**
+  - The capture page runs as a "bus cam" kiosk for that bus. Capture starts when GPS shows the bus moving
+    away from its parking place, and pauses when it is stationary.
+  - It uses the same distance-spaced frames (every ~15 m) and keeps no continuous video. That keeps storage
+    and upload small: about 100 MB per 25 km. Continuous video would be several GB per day per bus.
+  - Stops are auto-tagged where the bus halts at a known stop (Stops master).
+- **Collection, so Coordinators never handle footage by hand:**
+  - Frames queue on the phone and **upload by themselves on school Wi-Fi** at the parking place or campus,
+    overnight.
+  - The Coordinator's job is only to keep each bus cam alive: a mission appears if a bus cam hasn't
+    uploaded for 2 days ("Bus HP659511's camera is silent: check the phone is on the charger").
+- **Privacy:**
+  - School runs will show children and passers-by at stops, so **every frame is blurred** (faces and number
+    plates) on the Mac before anyone can see it. Unblurred frames are never shown in the portal.
+  - Raw frames are deleted after **30 days**. Only blurred stop photos, drive-up strips and the latest route
+    timelapse are kept.
+  - Frames are private school data and never public.
+  - Uday states that parents have consented. This still needs the DPDP advice he plans to take for people
+    data before bus cam goes beyond road and stop imagery.
+- **Storage limits:**
+  - On the phone: a 2 GB queue cap, keeping the oldest unsent frames first.
+  - In Drive: per bus, the last 30 days of raw frames, plus the derived images.
+  - The Mac's daily job thins old frames to one per 50 m once blurred.
+- **Never used for:** watching or scoring drivers, speed (not shown, never scored), or anything inside the
+  cabin. Incidents (an accident, a complaint) can be reviewed by the Owner from the blurred frames, as
+  evidence, not as a score.
+
 ### Later: students and parents in the portal (Uday, 2026-10-25, "keep in hindsight")
 
 Uday wants to open the portal to students and parents in the future, so they can share their own Google data
