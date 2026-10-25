@@ -4,7 +4,8 @@ Date: 2026-10-25. Asked for by Uday ("can we also create an internal messaging s
 the Portal internal messaging chat, partly relayed through the LMCS Master Agent. **Uday's decisions are marked
 "Uday"; everything else is Claude's call** and open to his correction.
 
-Status: draft. Waiting on Uday's feedback on the mock-ups and on the open questions at the end. Nothing is built.
+Status: ready for Uday's final approval (2026-10-25). All open questions answered. Nothing is built, and nothing
+is built until he approves.
 
 Builds on:
 - the vault bye-law *Communication at LMS* (`LMCS Bye Laws 2026/Employee Conduct/School Rules/Communication at LMS.md`);
@@ -108,8 +109,8 @@ The GTA V idea (Uday): your phone holds the jobs you've been given.
 - **Late** contracts stay open and show "was due Sat 24/10". Nothing is wiped.
 - **Making a contract:** "+ New" (four fields: to, what, due, proof), or **Make contract** on any message, which
   fills in the text and links back to the message.
-- **Your own numbers:** "Closed on time this month: 14 of 16. Last month 11 of 15." Visible only to you, your line
-  managers (as with game-layer badges) and the Owner.
+- **Your own numbers:** "Closed on time this month: 14 of 16. Last month 11 of 15." Visible only to you and the
+  Owner role, as private standing (Uday: "Recognition only for now"; private, like the game layer's standing).
 - **Buddy's next-step bar** points at the earliest-due open contract. Each open contract is a game-layer **mission**
   (`messaging:contract:<id>`), so it competes for a Today-panel slot by real due date like any other pending work.
 
@@ -250,13 +251,10 @@ The Sims idea (Uday): relationships between people, built from what they really 
 
 ## The score
 
-- **Contract on-time %** and the other numbers are **recognition only at first** (Uday: "Feeds incentive later").
-  After a term, if the numbers look fair, Uday decides whether on-time % becomes an input to the incentive
-  calculation.
-- **Conflict to settle (open question 1):** the portal game layer design lists "money tied to game scores" as an
-  anti-goal ("recognition only"). Uday's answer here keeps the door open to linking contract on-time % to the
-  incentive later. Both can hold only if contract on-time % is treated as a work-performance input (like CW/HW
-  compliance, which already feeds `DR Average`) rather than a game score.
+- **Contract on-time % is recognition only for now** (Uday, 2026-10-25: "Recognition only for now"). It shows only
+  as the person's private standing and recognition, in line with the game layer's "no money tied to game scores".
+  **After a season of real data**, Uday revisits whether it should count toward `DR Average`. Nothing in v1 feeds
+  pay.
 - **Contract history is an append-only event log** (sent, accepted, declined, handed back, proof added, closed,
   reopened, cancelled, each with who and when), so that if on-time % ever feeds pay, the record behind it can be
   audited (Claude's call).
@@ -331,7 +329,7 @@ All of it is built (Uday); this is only the order.
 - Uday is the Workspace super admin (vault, hiring calendar decision), so the Google OAuth client and Calendar/Meet
   access for a non-Apps-Script server are available. Fixed Meet links per channel are the fallback.
 - **The design is not approved until Uday approves it.** The Claude's-call items above and in the body may change
-  with his review or the mock-up feedback, and planning waits for that.
+  with his review, and planning waits for that.
 
 ## Open questions for Uday (one at a time, through the LMCS Master Agent)
 
@@ -344,10 +342,8 @@ All of it is built (Uday); this is only the order.
 3. ~~Staff without an lms.org.in account~~ **Answered (Uday, 2026-10-25): "Later, via phone sign-in."** Phases 1-5
    are for lms.org.in staff on the allowlist only; drivers, helpers, guards and other staff join in phase 6 with a
    phone-number sign-in.
-4. **Score vs money.** Should contract on-time % stay recognition-only for good (the game layer's rule), or may it
-   become an incentive input later as a work-performance measure (your answer here)? *Claude's recommendation:*
-   treat it like CW/HW compliance, a work measure that may feed `DR Average` later, and keep it out of game-layer
-   standing. Doesn't block v1.
+4. ~~Score vs money~~ **Answered (Uday, 2026-10-25): "Recognition only for now."** On-time % is private standing
+   and recognition only; whether it counts toward `DR Average` is revisited after a season of real data.
 
 ## Left to the builder
 
