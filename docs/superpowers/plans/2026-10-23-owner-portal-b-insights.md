@@ -39,20 +39,38 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
   chapters").** A CWA counts as remediated only by a Remediation-tagged entry on the **same episode key**: the same
   lmsIdx, class, subject, teacher and normalised chapter, within `remWindowDays` after the CWA. A Remediation logged
   under another chapter, or matched only on teacher-class-subject, does not count.
-- **One episode engine, shared with the Teacher game.** The episode functions (`ownAcadNormChapter_`,
-  `ownAcadTags_`, `ownAcadEpisodes_`, `ownAcadNoCwa_`, and the remediation match) live in **one file,
-  `apps-script/acad-episodes.gs`**, deployed to both the Owner backend and the LMCS Game Backend. The Teacher game's
-  spec is `docs/superpowers/specs/2026-10-25-teacher-portal-game-design.md` on branch `teacher-portal-game-design`
-  (9e73291 or later), "Settled after the builder check" #1. Whichever ships first builds the file, and the other
-  reuses it unchanged; neither forks the rule. The baseline is the game spec's: on the 25 Oct 2026 feed snapshot,
-  **60 of 1,793 CWAs (3%)** are remediated on the same chapter within 14 days, with entries carrying 7 or more tags
-  excluded. The class-subject rule this plan used before gave about 16% on the same CWAs.
+- **One episode engine, shared with the Teacher game, used unchanged.** It is **already built**:
+  `apps-script/acad-episodes.gs` on LMCSManagement branch `teacher-game-t1` (1b0d9ae or later), with its tests in
+  `tests/game/test-acad-episodes.js`. Owner B neither copies nor edits it; a change to it goes through the Teacher game
+  chat. The game spec is `docs/superpowers/specs/2026-10-25-teacher-portal-game-design.md` (branch
+  `teacher-portal-game-design`, 9e73291 or later), "Settled after the builder check" #1. What Owner B relies on:
+  - **Chapter normaliser `ownAcadNormChapter_`** keeps letters, combining marks and digits of any script, and turns
+    every other run of characters into one space. It deliberately differs from ChapterTracker's
+    `chapterNormalizeName`, which strips everything outside `[a-z0-9]`. That blanks every Devanagari chapter name:
+    7,314 of 30,418 CW/HW entries (24%) across Hindi, Sanskrit and some Maths and EVS. Never substitute the
+    ChapterTracker normaliser, and never join the Chapter Tracker rows by `chapterNormalizeName` (see
+    `ownAcadTracker_`).
+  - **`cwa` and `remediationWithin`** are time-in-ms numbers, or `null`.
+  - **Entries with more than `maxEntryTags` (6) tags** stay in their episode for periods and tag counts, but never
+    mark a CWA and never count as remediation.
+  - **The book group comes from an optional argument**, `ownAcadEpisodes_(records, rules, bookGroupOf)`: `bookGroupOf(record) -> g`,
+    which defaults to `''`. The Owner passes its own.
+  - **`ownAcadNoCwa_(episodesByTcs, rules)`** sets `e.noCwa = true` on the closed no-CWA episodes and returns them.
+  - **`hw`** is the number of entries with HW.
+  - **`seq`** is an array of tag codes, one per entry (`TQNACROVLF`, `?` = Other).
+  - **Rules** pass through `ownAcadRules_(rules)`, which reads `remWindowDays`, `maxEntryTags`,
+    `minEpisodePeriods`, `noCwaGapDays` and `exemptSubjects`.
+- **The remediation baseline** is entry-level: `acadRemediatedCwaEntries_` counts every CWA entry, including
+  M classes, exempt subjects and thin episodes. On the 25 Oct 2026 snapshot it gives **60 of 1,793 CWAs (3%)**
+  remediated on the same chapter within 14 days. The class-subject rule this plan used before gave about 16% on the
+  same CWAs. The Owner's L1 `noRemediationRate` is episode-level instead (Class 1+, non-exempt, ≥ 3 periods). It is
+  measured in the Task 2 gate, not assumed equal to 97%.
 - **`OWN_ACAD_RULES`** (one block): `paceHigh 1.5, paceLow 0.5, noCwaGapDays 21, remWindowDays 14,
   maxEntryTags 6, thinShare 0.5, inflationShare 0.6, inflationTags 3, loggingLookbackDays 30, minNorm 3, minEpisodePeriods 3, minUnits 5, outlierZ 2.5, maxSignalRate 0.15`.
-  `remWindowDays` and `maxEntryTags` are engine parameters and must equal the game's values (an entry with more
-  than `maxEntryTags` tags is left out of the remediation count, as in the shared baseline).
+  `remWindowDays`, `maxEntryTags`, `minEpisodePeriods`, `noCwaGapDays` and `exemptSubjects` are engine parameters
+  and must equal the game's values. The rest are Owner-only.
 - **Episodes counted:** Class 1 and up (not M-I to M-III), subject not in `CHAPTER_CWA_EXEMPT_SUBJECTS` (`['general knowledge','computer']`, copied), and at least `minEpisodePeriods` entries.
-- **Findings vs outliers:** network `no_remediation` (≈ 97% under the same-chapter rule, 25 Oct 2026) and `no_cwa` (29%, measured 2026-10-23) are **findings**, shown as headline rates with the best and worst school. **Outlier flags** fire only for units with ≥ `minUnits` episodes whose binomial z against the network rate is ≥ `outlierZ`; **bright spots** are z ≤ −`outlierZ` (the "learn from" list). Measured at teacher level on 2026-10-23: no_cwa worse 12%, bright 11%. The remediation outlier and bright-spot rates were measured under the old class-subject rule (4% / 21%) and are **re-measured** in the Task 2 gate; with a 97% network rate, bright spots (teachers who do remediate on the same chapter) are the useful list. Pace is absolute against the chapter norm.
+- **Findings vs outliers:** network `no_remediation` (about 97% of CWA entries under the same-chapter rule on 25 Oct 2026; the episode-level rate is measured in Task 2) and `no_cwa` (29%, measured 2026-10-23) are **findings**, shown as headline rates with the best and worst school. **Outlier flags** fire only for units with ≥ `minUnits` episodes whose binomial z against the network rate is ≥ `outlierZ`; **bright spots** are z ≤ −`outlierZ` (the "learn from" list). Measured at teacher level on 2026-10-23: no_cwa worse 12%, bright 11%. The remediation outlier and bright-spot rates were measured under the old class-subject rule (4% / 21%) and are **re-measured** in the Task 2 gate; with a 97% network rate, bright spots (teachers who do remediate on the same chapter) are the useful list. Pace is absolute against the chapter norm.
 - **Level 1 of every view:** ≤ 4 numbers plus one list, "most unusual first", and an "as of" stamp. B5
   and B6 also show the sync time.
 - **Auth:**
@@ -78,7 +96,7 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
 ## Review Focus
 
 1. **Outlier rates:** on the real feed, every *outlier flag* fires on fewer than `maxSignalRate` (15%) of
-   its units. The network findings (`no_remediation` ≈ 97% under the same-chapter rule, `no_cwa` ≈ 29%) are
+   its units. The network findings (`no_remediation`, about 97% of CWA entries under the same-chapter rule, and `no_cwa` ≈ 29%) are
    reported, not gated. The shared engine's remediation numbers must equal the Teacher game's on the same feed:
    the Owner and the teacher's card never show different numbers for the same chapter.
    Gate in Task 2.
@@ -130,21 +148,22 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
 
 ### Task 2: Academics cube, episodes, norms, signals (pure) + real-feed gate
 
-**Files:** Create `apps-script/acad-episodes.gs` (the shared episode engine; if the Teacher game already built it, reuse it and add no second copy), `apps-script/owner-academics.gs` (everything Owner-only), `tests/owner/test-academics.js`, `tests/owner/fixtures/feed-sample.json` (synthetic), `tools/owner-acad-gate.js` (runs the pure functions on a downloaded real feed and prints the signal rates; not part of verify).
+**Files:** Use `apps-script/acad-episodes.gs` from `teacher-game-t1` unchanged: merge or rebase onto that branch, or onto main once it lands there, and never copy the file. Create `apps-script/owner-academics.gs` (everything Owner-only), `tests/owner/test-academics.js`, `tests/owner/fixtures/feed-sample.json` (synthetic), `tools/owner-acad-gate.js` (runs the pure functions on a downloaded real feed and prints the signal rates; not part of verify).
 
 **Interfaces** (pure):
-- `ownAcadNormChapter_(s)` (a copy of `chapterNormalizeName`) and `ownAcadTags_(cwTag)`.
-- `ownAcadBookGroups_(records)`.
-- `ownAcadEpisodes_(records) -> episode[]`, where an episode is `{key:{g,cls,subj,ch,lms,teacher},
-  periods, tags, hw, first, last, cwa, seq, postCwa:{periods,tags}, remediationWithin}`.
-  - `remediationWithin` = a Remediation-tagged entry with the **same episode key** (lmsIdx, class, subject,
-    teacher, normalised chapter) within `remWindowDays` after the CWA, ignoring entries with more than
-    `maxEntryTags` tags. Matching on teacher-class-subject alone does not count (Uday, 2026-10-25).
-  - `ownAcadNormChapter_`, `ownAcadTags_`, `ownAcadEpisodes_` and `ownAcadNoCwa_` live in `acad-episodes.gs`;
-    the rest of this list lives in `owner-academics.gs`.
-- `ownAcadNoCwa_(episodesByTcs, rules)` marks an episode with no CWA as closed when the
-  teacher-class-subject has entries of other chapters for at least `noCwaGapDays` after its last entry,
-  with none of this chapter in between.
+- **From `acad-episodes.gs`, used as built (see Global Constraints):**
+  - `ownAcadNormChapter_(s)` and `ownAcadTags_(cwTag)`.
+  - `ownAcadEpisodes_(records, rules, bookGroupOf) -> episode[]`, where an episode is
+    `{key:{g,cls,subj,ch,lms,teacher}, periods, tags:{tag:n}, hw:<count>, first, last, cwa:<ms>|null,
+    seq:<code[]>, postCwa:{periods,tags}, remediationWithin:<ms>|null}`.
+  - `remediationWithin` is the first Remediation entry with the same episode key, within `remWindowDays`
+    after the CWA, from an entry with no more than `maxEntryTags` tags (Uday, 2026-10-25).
+  - `ownAcadNoCwa_(episodesByTcs, rules)` sets `e.noCwa`.
+  - `acadRemediatedCwaEntries_(records, rules)` is the entry-level baseline.
+- **New, in `owner-academics.gs`:**
+  - `ownAcadBookGroups_(records) -> bookGroupOf(record)`: the function passed to `ownAcadEpisodes_`.
+  - `no_remediation` is `e.cwa !== null && e.remediationWithin === null`.
+  - `no_cwa` is `e.noCwa === true`.
 - `ownAcadNorms_(episodes, rules)` gives per-chapter norms `{n, medianP, p25, p75, medianShare, shape}`
   when n ≥ `minNorm`, else `{n, tooFew:true}`, plus per (g, cls, subj) pooled norms.
 - `ownAcadSignals_(episode, norm, pooled, rules)` returns per-episode facts: `pace_slow|pace_fast`
@@ -158,7 +177,7 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
   sorted by |z|. `worse` drives "most unusual first"; `bright` is the "learn from" list.
 - `ownAcadTeacherSignals_(entries, rules)` covers `inflation` and `logging_gap` (school days = dates
   with any entry from that lmsIdx; only teacher-classes active in the last `loggingLookbackDays`).
-- `ownAcadTracker_(trackerRows) -> {"<lms>|<class>|<subject>|<chapter>": {status, overdue}}`.
+- `ownAcadTracker_(trackerRows) -> {"<lms>|<class>|<subject>|<chapter>": {status, overdue}}`, with `<chapter>` = `ownAcadNormChapter_(Chapter Name)`, so it joins the episode keys (and Devanagari names don't collapse).
 - `ownAcadBuild_(feed, trackerRows, prevMeta, rules) -> {cube, meta}|{keepPrevious:true, reason}`.
   It keeps the previous build when the feed is missing or `records < 0.7 × prevMeta.records`.
 - `ownAcadLevel_(cube, path, visible)` returns one payload shape per depth (L1–L7), filtered by
@@ -177,12 +196,13 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
   - a too-thin chapter falls back to pooled, labelled;
   - "no plan" ordering;
   - multi-tag counting (once per tag in shares, once in periods);
-  - episode cut at the first CWA, with post-CWA separate;
-  - `no_cwa` fires only after the gap rule;
-  - `no_remediation` uses the same-chapter rule: a Remediation on the same chapter on day 14 counts; one on
-    day 15 does not; one on the next chapter within 14 days does not; one on the same chapter by another
-    teacher does not; an entry with 7 tags does not;
-  - exempt subjects, M classes and episodes under 3 periods are excluded;
+  - the engine's own rules (episode cut at the first CWA, the gap rule, same-chapter remediation, the 7-tag
+    exclusion, the exempt subjects, M classes, short episodes, Devanagari chapters) are covered by
+    `tests/game/test-acad-episodes.js`. Owner tests don't repeat them. They check the Owner's use instead:
+    - `bookGroupOf` is passed and lands in `key.g`;
+    - `no_remediation` and `no_cwa` are read from `remediationWithin` / `noCwa` (null-safe);
+    - a Hindi chapter appears at L3 under its own name;
+    - a remediation on the next chapter shows as no_remediation at L6;
   - findings rate and best/worst on the fixture;
   - an outlier needs ≥ 5 units and z ≥ 2.5 (a unit at the network rate is not flagged; a perfect unit with n=20 at net 80% is bright);
   - inflation;
@@ -194,18 +214,17 @@ Compliance). Each has little on top and goes deep below; Academics goes 8 levels
 - [ ] FAIL → implement → PASS.
 - [ ] **Real-feed gate:** download the feed to the scratchpad and run `node tools/owner-acad-gate.js
   <feed.json>`. Every *outlier flag* (worse) rate must be < `maxSignalRate`, and the findings must be near the
-  measured values: no_cwa ≈ 29% on 2,766 episodes, teacher worse 12% / bright 11%. **Remediation:** on the
-  25 Oct 2026 snapshot the engine must give exactly the Teacher game's baseline (60 of 1,793 CWAs remediated on
-  the same chapter); on a later feed, run the game's engine tests too and confirm both agree. Record the
-  remediation worse/bright rates freshly (the old 4% / 21% were under the class-subject rule). Tune
-  `OWN_ACAD_RULES` (never `remWindowDays` or `maxEntryTags`, which are shared with the game) until the gate
-  holds, or set that signal's `hidden:true` and list it for Uday. Also check the expectations in the Global
-  Constraints. Record the rates in the ledger.
-- [ ] **Shared-file deploy:** `deploy.mjs --check` requires each `.gs` file in exactly one project. Add a
-  top-level `"shared": ["acad-episodes"]` to `projects.json`, let `--check` accept a shared file in more than
-  one project, and list `acad-episodes` in `owner.files` (and in the game project's `files` once it exists).
-  Add `owner-academics` to `owner.files`. A test for the check: a shared file in two projects passes; an
-  unshared one fails. Commit.
+  measured values: no_cwa ≈ 29% (measured 2026-10-23 on 2,766 episodes, Latin chapters only), teacher worse
+  12% / bright 11%. Episode counts rise now that Devanagari chapters form episodes, so record the new episode
+  count and no_cwa rate rather than forcing the old ones.
+  **Remediation:** on the 25 Oct 2026 snapshot, `acadRemediatedCwaEntries_` gives 60 of 1,793 (the game's
+  `tools/teacher-baseline.js` prints the same). Record the episode-level `noRemediationRate` and the remediation
+  worse/bright rates freshly; the old 4% / 21% were under the class-subject rule. Tune only the Owner-only rules
+  until the gate holds, or set that signal's `hidden:true` and list it for Uday. Also check the expectations in
+  the Global Constraints. Record the rates in the ledger.
+- [ ] **Deploy wiring:** `deploy.mjs --check` already accepts files in `projects.json`'s top-level `shared`
+  list (built on `teacher-game-t1`, with `tests/game/test-deploy-check.js`). Add `acad-episodes` and
+  `owner-academics` to `owner.files`, and run `node apps-script/deploy.mjs --check`. Commit.
 
 ### Task 3: Academics endpoints, refresh, SS join, flag
 
