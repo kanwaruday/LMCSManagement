@@ -94,8 +94,23 @@ const nd = (q, role, e, p, cfg) => J(ctx.gameQuestNewlyDone_(q, role, e, p || [P
 assert.deepStrictEqual(nd(principalQ(), 'Principal', ev({ missionsDoneByMe: [mis('pdr_report')], ssByMe: 1 }), prog('principal1:report')), [{ questId: 'principal1', stepId: 'ss' }]);
 assert.deepStrictEqual(nd(principalQ(), 'Principal', ev(), prog('principal1:report')), []);
 // a completed quest's steps are recorded too; the locked next quest's are not
+// I1: where each step goes; every step carries its kind; a decision step has no link (the panel opens the decision card)
+const goOf = (q, role, cfg) => Object.fromEntries(state(q, role, ev(), null, cfg)[0].steps.map((x) => [x.id, x.kind + ' ' + x.go]));
+assert.deepStrictEqual(goOf(principalQ(), 'Principal'), { report: 'pdr_report principals-daily-reporting/index.html', ss: 'ss_submit principals-daily-reporting/index.html', issue: 'pdr_issue principal/issues.html', suit: 'decision ' });
+assert.deepStrictEqual(goOf(coordQ, 'Coordinator'), { recommend: 'approval_recommend coordinator/systems/index.html#approvals', issueact: 'issue_action coordinator/systems/index.html', followup: 'followup coordinator/followups/index.html' });
+assert.strictEqual(goOf(principalQ(), 'Principal', cfgWith({ principalIssuesReady: true, principalIssuesGo: 'p/i.html' })).issue, 'pdr_issue p/i.html');
+
 const all = ev({ missionsDoneByMe: [mis('pdr_report'), mis('pdr_issue')], ssByMe: 1, decisionsByMe: [{ kind: 'decided', decidedBy: 'me@lms.org.in' }] });
-assert.deepStrictEqual(nd(principalQ(), 'Principal', all).map((x) => x.stepId), ['report', 'ss', 'issue', 'suit']);
+assert.deepStrictEqual(nd(principalQ(), 'Principal', all).map((x) => x.stepId), ['report', 'ss', 'issue', 'suit', '_done']); // and the quest itself (M23)
+// M23: a finished quest stays finished. Quest 1 completed while the issue step was hidden; once principalIssuesReady
+// flips on, the recorded '_done' keeps it complete (every step shown done) and Quest 2 stays open
+const hiddenDone = ev({ missionsDoneByMe: [mis('pdr_report')], ssByMe: 1, decisionsByMe: [{ kind: 'decided', decidedBy: 'me@lms.org.in' }] });
+assert.deepStrictEqual(nd(principalQ(), 'Principal', hiddenDone, null, notReady).map((x) => x.stepId), ['report', 'ss', 'suit', '_done']);
+s = state(principalQ(), 'Principal', ev(), prog('principal1:report', 'principal1:ss', 'principal1:suit', 'principal1:_done'), ready);
+assert.strictEqual(s[0].complete, true);
+assert.ok(s[0].steps.every((x) => x.done));
+assert.ok(s[1].steps.every((x) => !x.locked));
+assert.deepStrictEqual(nd(principalQ(), 'Principal', ev({ missionsDoneByMe: [mis('pdr_issue')] }), prog('principal1:report', 'principal1:ss', 'principal1:suit', 'principal1:_done'), ready), []); // nothing more to record for it
 // a hidden step is never recorded
 assert.deepStrictEqual(nd(principalQ(), 'Principal', ev({ missionsDoneByMe: [mis('pdr_issue')] }), null, notReady), []);
 

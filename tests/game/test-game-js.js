@@ -55,6 +55,11 @@ assert.ok(/^Good evening, /.test(G.greetingLine({ missions: [] }, { name: 'A' },
 assert.ok(/^Good afternoon, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, ist('2026-11-03T16:59:00'))));
 // hour is IST regardless of the browser zone: 07:00 UTC = 12:30 IST
 assert.ok(/^Good afternoon, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, new Date('2026-11-03T07:00:00Z'))));
+// M37: honorifics and initials are skipped for the first name
+assert.strictEqual(g({ missions: [] }, { name: 'Dr. Meena Sharma' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'Smt Meena Sharma' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'MRS. A. K. Meena' }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [] }, { name: 'Dr.' }), 'Good morning. Nothing is waiting today. Enjoy the calm.');
 // no name: still a clean greeting
 assert.strictEqual(G.greetingLine({ missions: [] }, {}, ist('2026-11-03T09:00:00')), 'Good morning. Nothing is waiting today. Enjoy the calm.');
 
@@ -73,8 +78,8 @@ assert.strictEqual(G.daysLine({ onTrack: 18, counted: 21, lastMonthCounted: 0 })
 assert.ok(!/\.\./.test(G.greetingLine({ missions: [mission('A.')] }, {}, ist('2026-11-03T09:00:00'))));
 // openItems: core first (server order kept within groups), then undecided windows -- the Today panel's order
 const oi = G.openItems({ missions: [mission('a'), Object.assign(mission('b'), { core: true }), mission('c'), Object.assign(mission('d'), { core: true }), Object.assign(mission('e'), { done: true })],
-  windows: [{ windowId: 'w', title: 'Track-suit days', decided: null }] });
-assert.deepStrictEqual(J(oi.map((x) => x.title)), ['b', 'd', 'a', 'c', 'Decide: Track-suit days']);
+  windows: [{ windowId: 'w', title: "Choose your campus's track-suit days", decided: null }] });
+assert.deepStrictEqual(J(oi.map((x) => x.title)), ['b', 'd', 'a', 'c', "Choose your campus's track-suit days"]); // R2-2: one name, no 'Decide: '
 assert.deepStrictEqual(J(G.openItems({})), []);
 // nextMission: the first open mission in panel order when the server's next is in the set; else the server's own
 const nset = { missions: [mission('a'), Object.assign(mission('b'), { core: true })], next: mission('a') };
@@ -125,6 +130,7 @@ assert.strictEqual(G.safeHref(undefined), null);
 assert.strictEqual(G.sourceLabel('principals-daily-reporting/index.html'), 'Daily Reporting');
 assert.strictEqual(G.sourceLabel('coordinator/followups/index.html'), 'Follow-ups');
 assert.strictEqual(G.sourceLabel('elsewhere.html'), '');
+assert.strictEqual(G.sourceLabel('coordinator/systems/index.html#approvals'), 'Systems'); // N3
 
 // art: speaker, outfit and pose
 const mon = ist('2026-11-02T10:00:00');
@@ -152,6 +158,17 @@ Object.keys(outfitDays).forEach((o) => Object.keys(poseDays).forEach((pose) => [
   [a.figure, a.avatar].forEach((f) => { seen.add(f); assert.ok(fs.existsSync(path.join(artDir, f)), f); });
 }))));
 assert.strictEqual(seen.size, 15 + 5 + 4 + 1); // 15 Buddy figures, 5 avatars, 4 Teacher Owl poses (intro, neutral, celebrate, bad), 1 owl avatar
+
+// R2-2: a window's small line; the track-suit one adds what it changes
+const tsw = { windowId: 'trackSuit', choice: { type: 'pickN', n: 3, options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] } };
+assert.strictEqual(G.windowSmall(tsw), 'Pick 3 of Mon–Sat · Buddy dresses to match');
+assert.strictEqual(G.windowSmall(Object.assign({}, tsw, { windowId: 'other' })), 'Pick 3 of Mon–Sat');
+assert.strictEqual(G.windowSmall({ windowId: 'x' }), '');
+// R2-3: the live pick count, and the over-picking line
+assert.strictEqual(G.pickedText(2, 3), '2 of 3 picked');
+assert.strictEqual(G.pickedText(3, 3), '3 of 3 picked');
+assert.strictEqual(G.pickedText(5, 3), '5 picked. Untick 2 to save.');
+assert.strictEqual(G.pickedText(1, 0), '');
 
 // R28 structurally: game.js never parses HTML -- every text goes in as a text node or an attribute
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');

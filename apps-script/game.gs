@@ -65,7 +65,7 @@ const GAME_LOCK_MS = 20000;
 // Tab -> header row. Code indexes by position, so never reorder.
 const GAME_TABS = {
   'Game Config': ['Key', 'Value'],
-  'Game Daily': ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt'],
+  'Game Daily': ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt', 'CoreIds'], // CoreIds: JSON ids in MissionIds that were core and not shared when the snapshot was made
   'Game Progress': ['Email', 'Kind', 'Key', 'Value', 'At'], // Kind: tour, quest_step
   'Game Windows': ['WindowId', 'Title', 'Question', 'Scope', 'ScopeId', 'Decider', 'Choice', 'DefaultIfUndecided',
     'Opens', 'Closes', 'AppliesFrom', 'Writes', 'OpenedBy', 'ConfirmBy'],
@@ -85,8 +85,9 @@ function gameConfigDefaults_() {
     trackSuitDays: {},
     principalIssuesReady: false,
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
+    approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
     recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
-    daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false },
+    daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }
 
@@ -96,8 +97,10 @@ function gameConfigDefaults_() {
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, params) }, looked up after the built-ins
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
+var GAME_MODULE_DONE_AT = GAME_MODULE_DONE_AT || {};   // { Teacher: fn(caller, missionId) -> time in ms | null }, used only by day finalize for core ids not in DoneIds; a module registers it when its source keeps history (e.g. the Teacher log timestamps)
 var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}; // { employee: fn(verifiedEmail) -> { campusId, employeeCode, role } | null }; see header
-// The only roles, and campuses, the employee fallback can ever grant. Frozen: not widened by a module file.
+// The only roles, and campuses, the employee fallback can ever grant. Frozen so no code mutates them by accident (a module file
+// can still redeclare anything in the shared scope: this is not a guard against a hostile module).
 const GAME_FALLBACK_ROLES = Object.freeze(['Teacher', 'Staff']);
 const GAME_FALLBACK_CAMPUSES = Object.freeze(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']);
 
@@ -182,8 +185,9 @@ function gameCallerFromFallback_(verifiedEmail, flagValue, fallbackFn) {
     if (!r || typeof r !== 'object') return null;
     const campusId = typeof r.campusId === 'string' ? r.campusId.trim().toUpperCase() : '';
     if (GAME_FALLBACK_CAMPUSES.indexOf(campusId) === -1) return null;
-    if (typeof r.role !== 'string' || GAME_FALLBACK_ROLES.indexOf(r.role) === -1) return null;
-    return { email: email, campusId: campusId, roles: [r.role], primaryRole: r.role, canDecide: false, employeeCode: String(r.employeeCode || '') };
+    const role = r.role; // read once: a getter cannot pass the check with one value and return another
+    if (typeof role !== 'string' || GAME_FALLBACK_ROLES.indexOf(role) === -1) return null;
+    return { email: email, campusId: campusId, roles: [role], primaryRole: role, canDecide: false, employeeCode: String(r.employeeCode || '') };
   } catch (err) {
     return null;
   }
@@ -206,6 +210,7 @@ function gameVerifyCaller_(idToken) {
     if (payload.aud !== GAME_GOOGLE_CLIENT_ID) return null;
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
     const email = (payload.email || '').toLowerCase();
+    if (!email) return null;
     const rows = SpreadsheetApp.openById(GAME_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
@@ -254,11 +259,12 @@ function gameSetup() {
   const defaults = gameConfigDefaults_();
   const seed = Object.keys(defaults).filter(function (k) { return !have[k]; }).map(function (k) { return [k, JSON.stringify(defaults[k])]; });
   if (seed.length) cfgSheet.getRange(cfgSheet.getLastRow() + 1, 1, seed.length, 2).setNumberFormat('@').setValues(seed); // text: stops Sheets turning "true"/"3" into booleans/numbers
-  // The track-suit window template: Opens/Closes blank = closed until the Owner sets the dates
+  // The track-suit window template: Opens/Closes blank = closed until the Owner sets the dates.
+  // Window titles are verb-first: the UI uses the title as is (Today row, "First up", the decision sheet's heading).
   const winSheet = ss.getSheetByName('Game Windows');
   if (!winSheet.getDataRange().getValues().slice(1).some(function (r) { return String(r[0]).trim() === 'trackSuit'; })) {
     winSheet.getRange(winSheet.getLastRow() + 1, 1, 1, GAME_TABS['Game Windows'].length).setNumberFormat('@').setValues([[
-      'trackSuit', 'Track-suit days for your campus', 'Which 3 days a week do students come in track suits?',
+      'trackSuit', "Choose your campus's track-suit days", 'Which 3 days a week do students come in track suits?',
       'campus', '*', 'Principal', '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', '["Mon","Wed","Fri"]',
       '', '', '', 'trackSuitDays', '', '']]);
   }

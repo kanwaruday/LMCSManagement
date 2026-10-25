@@ -17,8 +17,6 @@ const GAME_DAY_MS = 86400000;
 const GAME_DONE_LOOKBACK_DAYS = 2;    // a finished (or gone) record stays visible for today and yesterday: yesterday's day is finalized this morning
 const GAME_PORTAL_PDR = 'principals-daily-reporting/index.html';
 const GAME_PORTAL_FOLLOWUPS = 'coordinator/followups/index.html';
-const GAME_PORTAL_APPROVALS = 'coordinator/approvals/index.html';
-const GAME_PORTAL_APPROVALS_READY = false; // flip to true when the Coordinator chat ships coordinator/approvals/
 
 // ── Copy: one plain line per kind, Buddy's voice (work/LMS Mascot Voice Guide.md) ──
 // Verb first, warm, short, factual; no speed language, no guilt, no pronouns for people. Campus as "LMS 4", dates as
@@ -58,7 +56,7 @@ function gameIso_(v) { // Date or text from a sheet -> ISO, or '' when empty/unp
   const t = new Date(v).getTime();
   return isNaN(t) ? '' : new Date(t).toISOString();
 }
-function gameDueIso_(v) { return v instanceof Date ? v.toISOString().slice(0, 10) : (String(v || '').trim() || null); }
+function gameDueIso_(v) { return gameDateKey_(v) || null; } // a Date cell (midnight IST) reads as its IST date
 // start of the previous game day (04:00 IST), as epoch ms: finished records older than this are not today's story
 function gameLookbackStart_(now) {
   return Date.parse(gameDayKey_(new Date(now.getTime() - (GAME_DONE_LOOKBACK_DAYS - 1) * GAME_DAY_MS)) + 'T04:00:00+05:30');
@@ -155,8 +153,10 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
   // An all-campus Principal (visible set null) has no campus of their own: the campus-bound missions (ss_pace, pdr_report,
   // pdr_issue) could never complete, so only the caller's own Info Requested request is emitted.
   const visible = gameVisibleCampuses_(caller), campus = visible === null ? '' : gameCampusKey_(visible[0]);
+  // Sunday (the game day, IST) is the rest day: no SS target and no daily report
+  const workday = new Date(dayKey + 'T00:00:00Z').getUTCDay() !== 0;
 
-  if (campus && src.ss) {
+  if (campus && workday && src.ss) {
     let needed = 0;
     gameSsDashboards_(src.ss).forEach(function (dash) {
       (dash.roster || []).forEach(function (r) {
@@ -169,7 +169,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     const target = gameSsPaceTarget_(needed + times.length, now);
     if (target > 0) {
       const done = times.length >= target;
-      out.push(gameMission_('ss_pace', caller.campusId, {
+      out.push(gameMission_('ss_pace', campus + ':' + dayKey, { // day-scoped, like pdr_report: tomorrow's target is a new mission
         title: gameTitle_('ss_pace', { needed: needed, target: target }), why: needed + ' still needed for ' + GAME_MONTHS[+dayKey.slice(5, 7) - 1], owner: mine, campus: campus, go: go,
         core: gameIsCore_(cfg, role, 'ss_pace'), done: done, doneAt: done ? times[target - 1] : null, doneBy: done ? mine : null,
         progress: { done: times.length, total: target },
@@ -177,9 +177,9 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     }
   }
 
-  if (campus && src.reports) {
+  if (campus && workday && src.reports) {
     let stamp = null;
-    src.reports.slice(1).forEach(function (r) { if (String(r[1]).slice(0, 10) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
+    src.reports.slice(1).forEach(function (r) { if (gameDateKey_(r[1]) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
     out.push(gameMission_('pdr_report', campus + ':' + dayKey, {
       title: gameTitle_('pdr_report', { campus: campus, date: dayKey, today: dayKey }), owner: mine, campus: campus, go: go,
       core: gameIsCore_(cfg, role, 'pdr_report'), done: !!stamp, doneAt: stamp, doneBy: stamp ? mine : null,
@@ -217,7 +217,7 @@ function gameInfoRequested_(approvalsRows, mine, role, cfg, now, go) {
 }
 
 // ── Coordinator ──────────────────────────────────────────────────────
-function gameApprovalsGo_() { return GAME_PORTAL_APPROVALS_READY ? GAME_PORTAL_APPROVALS : GAME_PORTAL_FOLLOWUPS; }
+function gameApprovalsGo_(cfg) { return cfg.approvalsGo; }
 
 function gameCoordinatorMissions_(caller, src, cfg, now) {
   const out = [], role = 'Coordinator', me = gameLower_(caller.email), since = gameLookbackStart_(now);
@@ -226,7 +226,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
   if (cfg.recommendationsReady) {
     const recs = gameLatestRecs_(src.recommendations);
     const assignee = {};
-    tasks.forEach(function (t) { assignee[String(t[0])] = gameLower_(t[13]); });
+    tasks.forEach(function (t) { assignee[String(t[0]).trim()] = gameLower_(t[13]); });
     gameApprovals_(src.approvals, now).forEach(function (a) {
       if (a.archived || a.days < cfg.approvalWaitDays) return;
       const rec = recs[a.id], recommended = !!(rec && rec.reason);
@@ -238,7 +238,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
       } else if (a.status !== 'Pending') return;
       out.push(gameMission_('approval_recommend', a.id, Object.assign({
         title: gameTitle_('approval_recommend', { campus: a.campus, days: a.days, title: a.title }),
-        why: state.gone ? 'Decided before a recommendation was needed' : state.done ? '' : gameWaiting_(a.days), owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(),
+        why: state.gone ? 'Decided before a recommendation was needed' : state.done ? '' : gameWaiting_(a.days), owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(cfg),
         core: gameIsCore_(cfg, role, 'approval_recommend'), shared: assignee['approval|' + a.id + '|Pending'] !== me,
       }, state)));
     });
@@ -275,7 +275,7 @@ function gameOwnerMissions_(caller, src, cfg, now) {
     if (!a.decided && a.status !== 'Pending') return;
     out.push(gameMission_('approval_wait', a.id, {
       title: gameTitle_('approval_wait', { campus: a.campus, days: a.days, title: a.title }), why: recs[a.id] ? gameRecWhy_(recs[a.id]) : gameWaiting_(a.days),
-      owner: gameLower_(caller.email), campus: a.campus, go: gameApprovalsGo_(), core: gameIsCore_(cfg, role, 'approval_wait'),
+      owner: gameLower_(caller.email), campus: a.campus, go: gameApprovalsGo_(cfg), core: gameIsCore_(cfg, role, 'approval_wait'),
       done: a.decided, doneAt: a.decided ? a.decidedAt : null, doneBy: a.decided ? a.decidedBy : null,
     }));
   });
@@ -335,19 +335,33 @@ function gameSnapshot_(dailyRows, email, dayKey) {
   return null;
 }
 
-// Judge one finished game day. counted = the snapshot held a core, non-shared mission that still exists; onTrack = every
-// such mission is done by 04:00 IST the next day. A snapshot id missing from missionsNow is gone (R9), not done. A mission
-// done before the day began counts as done for that day (credit is Task 5's business, not this one's).
-function gameFinalizeDay_(snapshot, missionsNow, dayKey, cfgCore) {
-  const now = {};
+// Judge one finished game day from its snapshot. Core-ness is fixed at snapshot time (snapshot.coreIds), so module
+// missions with namespaced ids (teacher:<kind>:<code>:<day>) work: no kind is parsed out of an id. Each core id is
+// counted unless it is gone or shared (R9); onTrack = every counted one was done by 04:00 IST the next day. An id in
+// snapshot.doneIds counts as done even when it has left missionsNow. Otherwise doneAtFn (optional, missionId -> ms or
+// null; a throw is null) can say when it was done, from a source that keeps history. Otherwise a live mission is judged
+// as it stands, and a missing id that is day-scoped to that day (ends ':<dayKey>') expired undone (R34): counted, not
+// on track. Any other missing id is gone (R9). A mission done before the day began counts as done for that day (credit
+// is Task 5's business, not this one's).
+// ponytail: doneIds is only written on a portal visit, so work finished after the person's last visit that day counts as
+// missed unless doneAtFn knows better; Phase 2's nightly snapshot closes the gap.
+function gameFinalizeDay_(snapshot, missionsNow, dayKey, doneAtFn) {
+  const now = {}, seenDone = {};
   missionsNow.forEach(function (m) { now[m.id] = m; });
+  (snapshot.doneIds || []).forEach(function (id) { seenDone[id] = true; });
   const end = Date.parse(dayKey + 'T04:00:00+05:30') + GAME_DAY_MS;
   let counted = false, onTrack = true;
-  snapshot.missionIds.forEach(function (id) {
+  (snapshot.coreIds || []).forEach(function (id) {
     const m = now[id];
-    if (!m || m.gone || m.shared || !(m.core || (cfgCore || []).indexOf(m.kind) !== -1)) return;
-    counted = true;
-    if (!(m.done && (!m.doneAt || new Date(m.doneAt).getTime() < end))) onTrack = false;
+    if (seenDone[id]) { counted = true; return; }
+    let at = null;
+    if (doneAtFn) { try { at = doneAtFn(id); } catch (err) { at = null; } }
+    if (typeof at === 'number' && isFinite(at)) { counted = true; if (at >= end) onTrack = false; return; }
+    if (m) {
+      if (m.gone || m.shared) return;
+      counted = true;
+      if (!(m.done && (!m.doneAt || new Date(m.doneAt).getTime() < end))) onTrack = false;
+    } else if (String(id).slice(-(dayKey.length + 1)) === ':' + dayKey) { counted = true; onTrack = false; }
   });
   return { counted: counted, onTrack: counted && onTrack };
 }

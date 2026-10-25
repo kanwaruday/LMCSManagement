@@ -15,7 +15,7 @@ const owner = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], primar
 
 const TABS = vm.runInContext('GAME_TABS', ctx), WH = TABS['Game Windows'], DH = TABS['Game Decisions']; // const is not a ctx property
 const winRow = (o) => WH.map((h) => (o && h in o ? o[h] : {
-  WindowId: 'trackSuit', Title: 'Track-suit days for your campus', Question: 'Which 3 days a week do students come in track suits?',
+  WindowId: 'trackSuit', Title: "Choose your campus's track-suit days", Question: 'Which 3 days a week do students come in track suits?',
   Scope: 'campus', ScopeId: '*', Decider: 'Principal',
   Choice: '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', DefaultIfUndecided: '["Mon","Wed","Fri"]',
   Opens: '2026-11-01', Closes: '2026-11-08', AppliesFrom: '2026-11-10', Writes: 'trackSuitDays', OpenedBy: 'o@lms.org.in', ConfirmBy: '',
@@ -123,4 +123,10 @@ assert.strictEqual(ctx.gameWindowBoard_(coord, [WH, winRow({ Opens: '', Closes: 
 const cfg5 = ctx.gameParseConfig_([['Key', 'Value'], ['pilotCampuses', '{"Principal":["LMS4"]}']]);
 assert.deepStrictEqual(J(ctx.gameWindowBoard_(coord, WROWS, noDec, now, cfg5)).map((b) => b.scopeId), ['LMS4']);
 
+// M18: a choice row missing its options or a positive n can't be decided here (no throw, no "Pick exactly undefined")
+const NOT_HERE = "This window can't be decided here yet.";
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 3 }, ['Mon', 'Tue', 'Wed']), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', options: ['Mon', 'Tue'] }, []), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 0, options: ['Mon'] }, []), NOT_HERE);
+assert.strictEqual(ctx.gameCheckChoice_({ type: 'pickN', n: 1, options: ['Mon'] }, ['Mon']), null);
 console.log('ok  test-windows');

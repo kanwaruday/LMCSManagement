@@ -164,7 +164,7 @@ function gameValidateDecision_(caller, win, scopeId, value, existing, now, cfg) 
 
 // null when value is a valid answer to the choice, else the plain message
 function gameCheckChoice_(choice, value) {
-  if (!choice || choice.type !== 'pickN') return "This window can't be decided here yet.";
+  if (!choice || choice.type !== 'pickN' || !Array.isArray(choice.options) || !(choice.n > 0)) return "This window can't be decided here yet.";
   const picks = Array.isArray(value) ? value : [];
   for (let i = 0; i < picks.length; i++) if (choice.options.indexOf(picks[i]) === -1) return picks[i] + " isn't one of the options.";
   const distinct = picks.filter(function (p, i) { return picks.indexOf(p) === i; });

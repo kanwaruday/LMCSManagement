@@ -53,6 +53,12 @@ for (const c of ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']) assert.strictE
 assert.strictEqual(gate('on', fb(ok), ''), null);
 assert.strictEqual(gate('on', fb(ok), null), null);
 
+// M34: role is read once -- a getter that answers 'Teacher' to the checks and 'Owner' afterwards still yields Teacher (or null)
+let reads = 0;
+const shifty = { campusId: 'LMS4', employeeCode: 'x', get role() { return ++reads <= 2 ? 'Teacher' : 'Owner'; } };
+const sh = gate('on', fb(shifty));
+assert.ok(sh === null || (sh.primaryRole === 'Teacher' && sh.roles.length === 1 && sh.roles[0] === 'Teacher'), 'shifting role: ' + JSON.stringify(sh));
+
 // the constants a module file must not be able to widen
 assert.deepStrictEqual(J(vm.runInContext('GAME_FALLBACK_ROLES', ctx)), ['Teacher', 'Staff']);
 assert.throws(() => vm.runInContext("'use strict'; GAME_FALLBACK_ROLES.push('Owner')", ctx));

@@ -32,9 +32,10 @@ function gameAppendText_(sh, rows) {
 // project(json), optional, trims the body before it is cached and returned (R23: CacheService caps a value at
 // 100 KB); a value still over the cap is simply not cached.
 function gameFetchJson_(url, idToken, timeoutMs, email, project) {
-  const cache = CacheService.getScriptCache();
-  const key = 'gamefetch_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url + '|' + String(email || '').toLowerCase()));
-  const hit = cache.get(key);
+  // no email = no cache: an entry keyed on '' would be shared by everyone without one
+  const cache = email ? CacheService.getScriptCache() : null;
+  const key = cache ? 'gamefetch_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url + '|' + String(email).toLowerCase())) : '';
+  const hit = cache && cache.get(key);
   if (hit) return JSON.parse(hit);
   try {
     const res = UrlFetchApp.fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'idToken=' + encodeURIComponent(idToken), { muteHttpExceptions: true, followRedirects: true });
@@ -42,7 +43,7 @@ function gameFetchJson_(url, idToken, timeoutMs, email, project) {
     let json = JSON.parse(res.getContentText());
     if (!json || json.success === false) return null;
     if (project) json = project(json);
-    try { cache.put(key, JSON.stringify(json), GAME_FETCH_CACHE_S); } catch (err) { /* too big to cache */ }
+    if (cache) try { cache.put(key, JSON.stringify(json), GAME_FETCH_CACHE_S); } catch (err) { /* too big to cache */ }
     return json;
   } catch (err) {
     return null;
@@ -58,7 +59,7 @@ function gamePilotPasses_(caller, cfg) {
 }
 
 // Only the sources the caller's role needs, as the mission adapters expect them (sheet rows WITH the header).
-// down = names of the sources that failed. A missing Recommendations tab is empty, not a failure.
+// down = names of the sources that failed. A missing Recommendations or PDR Issue Actions tab is empty, not a failure.
 function gameLoadSources_(caller, idToken, cfg, now) {
   const role = caller.primaryRole, src = {}, down = [], books = {}, dayKey = gameDayKey_(now);
   const tab = function (id, name, key, optional) {
@@ -83,7 +84,7 @@ function gameLoadSources_(caller, idToken, cfg, now) {
   }
   if (role === 'Coordinator') {
     src.tasks = tab(GAME_APPROVALS_SHEET_ID, 'Tasks', 'tasks');
-    src.issueActions = tab(GAME_PDR_SHEET_ID, 'PDR Issue Actions', 'issueactions');
+    src.issueActions = tab(GAME_PDR_SHEET_ID, 'PDR Issue Actions', 'issueactions', true); // not created yet = no actions, not an outage
   }
   if ((role === 'Coordinator' || role === 'Owner') && cfg.recommendationsReady) src.recommendations = tab(GAME_APPROVALS_SHEET_ID, 'Recommendations', 'recommendations', true);
   return { src: src, down: down };
@@ -122,21 +123,24 @@ function gameIssueActionsBy_(rows, email) {
 // earlier day's ids (roll-over), and today's ids: the existing snapshot, or newIds picked now.
 function gameDailyPlan_(dailyRows, caller, dayKey, missionsNow, cfg, sourcesOk) {
   const role = caller.primaryRole, who = gameLower_(caller.email), core = (cfg.core && cfg.core[role]) || [];
+  const hook = GAME_MODULE_DONE_AT[role];
+  const doneAtFn = typeof hook === 'function' ? function (id) { return hook(caller, id); } : null;
   const finalize = [];
   let latest = null;
   for (let i = 1; i < dailyRows.length; i++) {
     const r = dailyRows[i], day = gameDayCell_(r[0]);
     if (gameLower_(r[1]) !== who || day >= dayKey) continue;
-    const ids = gameIdList_(r[4]);
-    if (!latest || day > latest.day) latest = { day: day, ids: ids };
+    const ids = gameIdList_(r[4]), doneIds = gameIdList_(r[5]);
+    if (!latest || day > latest.day) latest = { day: day, ids: ids, doneIds: doneIds };
     if (!sourcesOk || r[6] === true || String(r[6]).toLowerCase() === 'true') continue;
-    const f = gameFinalizeDay_({ missionIds: ids }, missionsNow, day, core);
+    const f = gameFinalizeDay_({ missionIds: ids, doneIds: doneIds, coreIds: gameIdList_(r[9]) }, missionsNow, day, doneAtFn);
     finalize.push({ row: i + 1, onTrack: f.counted ? f.onTrack : '' }); // R14: blank = nothing to count
   }
-  const carried = latest ? latest.ids : [];
+  // rolled over = the latest earlier day's ids that were not seen done that day
+  const carried = latest ? latest.ids.filter(function (id) { return latest.doneIds.indexOf(id) === -1; }) : [];
   const snap = gameSnapshot_(dailyRows, caller.email, dayKey);
   return {
-    finalize: finalize, carried: carried, snapshotIds: snap ? snap.missionIds : null,
+    finalize: finalize, carried: carried, snapshotIds: snap ? snap.missionIds : null, snapshot: snap,
     newIds: snap ? null : gamePick_(missionsNow, (cfg.cap && cfg.cap[role]) || 5, core, carried).map(function (m) { return m.id; }),
   };
 }
@@ -200,11 +204,27 @@ function gamePersistDaily_(sh, caller, dayKey, missionsNow, cfg, sourcesOk, now)
     rows[f.row - 1][7] = f.onTrack;
   });
   // R24: a snapshot is persisted only when every source loaded; otherwise newIds is just the live view for this
-  // response (no greeting), and the first healthy load creates the day's set. DoneIds stays '[]': done state is
-  // re-derived from the sources on every read.
+  // response (no greeting), and the first healthy load creates the day's set. A new snapshot starts with DoneIds '[]';
+  // later loads add each snapshot id seen done (and not shared), so a day-scoped mission that is gone by tomorrow
+  // morning still counts for its day. Ids already there are kept.
+  if (plan.snapshot) {
+    const seen = plan.snapshot.doneIds.slice(), byId = {};
+    missionsNow.forEach(function (m) { byId[m.id] = m; });
+    plan.snapshot.missionIds.forEach(function (id) {
+      const m = byId[id];
+      if (m && m.done && !m.shared && seen.indexOf(id) === -1) seen.push(id);
+    });
+    if (seen.length > plan.snapshot.doneIds.length) {
+      sh.getRange(plan.snapshot.row, 6).setNumberFormat('@').setValue(JSON.stringify(seen));
+      rows[plan.snapshot.row - 1][5] = JSON.stringify(seen);
+    }
+  }
   const created = !!plan.newIds && sourcesOk;
   if (created) {
-    const r = [dayKey, gameLower_(caller.email), caller.primaryRole, caller.campusId, JSON.stringify(plan.newIds), '[]', '', '', now.toISOString()];
+    const byId = {};
+    missionsNow.forEach(function (m) { byId[m.id] = m; });
+    const coreIds = plan.newIds.filter(function (id) { return byId[id] && byId[id].core && !byId[id].shared; });
+    const r = [dayKey, gameLower_(caller.email), caller.primaryRole, caller.campusId, JSON.stringify(plan.newIds), '[]', '', '', now.toISOString(), JSON.stringify(coreIds)];
     gameAppendText_(sh, [r]);
     rows.push(r);
   }

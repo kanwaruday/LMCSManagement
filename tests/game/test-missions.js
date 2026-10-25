@@ -51,7 +51,7 @@ assert.strictEqual(ssm.length, 1);
 assert.strictEqual(ssm[0].core, true);                                   // from cfg.core.Principal
 assert.strictEqual(ssm[0].done, false);
 assert.deepStrictEqual(J(ssm[0].progress), { done: 0, total: 1 });       // needed 4 over 5 days
-assert.strictEqual(ssm[0].id, 'ss_pace:LMS4');
+assert.strictEqual(ssm[0].id, 'ss_pace:LMS4:2026-10-27');                // day-scoped: tomorrow's target is a new mission (C1)
 assert.strictEqual(ssm[0].go, 'principals-daily-reporting/index.html');
 assert.strictEqual(ssm[0].title, 'Submit 1 SS evaluation today');      // verb first, no speed language (R30)
 assert.strictEqual(ssm[0].why, '4 still needed for October');
@@ -78,6 +78,17 @@ src.reports.push(['2026-10-27T04:30:00Z', '2026-10-27', 'LMS4', 'p@lms.org.in'])
 pdr = kinds(ctx.gamePrincipalMissions_(principal, src, cfg(), now), 'pdr_report');
 assert.strictEqual(pdr.filter((m) => !m.done).length, 0);                // nothing pending any more
 assert.strictEqual(pdr[0].done, true); assert.strictEqual(pdr[0].doneAt, '2026-10-27T04:30:00.000Z'); // done is read from the row, not ticked
+
+// a Date cell in Daily Reports' Date column (Sheets turns '2026-10-27' into midnight IST) still matches the game day (M6)
+src = { ss: null, reports: [['Timestamp'], ['2026-10-27T04:30:00Z', vm.runInContext("new Date('2026-10-26T18:30:00Z')", ctx), 'LMS4']], approvals: null, issues: null };
+assert.strictEqual(kinds(ctx.gamePrincipalMissions_(principal, src, cfg(), now), 'pdr_report')[0].done, true);
+// I4: Sunday (the IST game day) is the rest day: no ss_pace and no pdr_report, even at 02:30 IST on Monday (still Sunday's game day)
+for (const sun of ['2026-11-01T05:00:00Z', '2026-11-01T21:00:00Z']) {
+  const sm = ctx.gamePrincipalMissions_(principal, { ss: ssFix(), reports: [['Timestamp']], approvals: [APR_H], issues: null }, cfg(), new Date(sun));
+  assert.strictEqual(kinds(sm, 'ss_pace').length + kinds(sm, 'pdr_report').length, 0, 'Sunday missions at ' + sun);
+}
+const mon = ctx.gamePrincipalMissions_(principal, { ss: ssFix(), reports: [['Timestamp']], approvals: [APR_H], issues: null }, cfg(), new Date('2026-11-01T23:00:00Z')); // Mon 04:30 IST
+assert.strictEqual(kinds(mon, 'ss_pace').length + kinds(mon, 'pdr_report').length, 2);
 
 // Info Requested: only the caller's own request
 src = { ss: null, reports: null, approvals: [APR_H, apr('i1', 'LMS4', 'Info Requested', { by: 'p@lms.org.in' }), apr('i2', 'LMS4', 'Info Requested', { by: 'other@lms.org.in' }), apr('i3', 'LMS4', 'Pending', { by: 'p@lms.org.in' })], issues: null };
@@ -123,7 +134,8 @@ assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recom
 let ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar.length, 1); assert.strictEqual(ar[0].core, true); assert.strictEqual(ar[0].done, false);
 assert.strictEqual(ar[0].shared, true);                                   // no matching Tasks row assigned to the caller
-assert.strictEqual(ar[0].go, 'coordinator/followups/index.html');
+assert.strictEqual(ar[0].go, 'coordinator/systems/index.html#approvals');   // cfg.approvalsGo (I1)
+assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, approvalsGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html');
 ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task('approval|r1|Pending', 'approval', 'LMS4', 'x', { assignee: 'c@lms.org.in' })]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar[0].shared, false);                                  // the caller is assigned: personal credit
 assert.strictEqual(kinds(cm(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })]), coord, { recommendationsReady: true }), 'approval_recommend').length, 0); // 2 days: too young
@@ -144,7 +156,8 @@ const om = (src, over) => ctx.gameOwnerMissions_(owner, src, cfg(over), now);
 let aw = kinds(om(csrc([apr('r1', 'LMS4', 'Pending')], [rec('x1', 'r1', 'c@lms.org.in', 'Approve', 'Fits the budget', ago(0.2))]), { recommendationsReady: true }), 'approval_wait');
 assert.strictEqual(aw.length, 1); assert.strictEqual(aw[0].core, true); assert.strictEqual(aw[0].done, false);
 assert.ok(/approve/i.test(aw[0].why) && aw[0].why.includes('c@lms.org.in'));
-assert.strictEqual(aw[0].title, 'Decide the LMS 4 request \u201cTitle r1\u201d'); // campus as "LMS 4", verb first (R30)
+assert.strictEqual(aw[0].title, 'Decide the LMS 4 request \u201cTitle r1\u201d');
+assert.strictEqual(aw[0].go, 'coordinator/systems/index.html#approvals'); // I1 // campus as "LMS 4", verb first (R30)
 assert.strictEqual(kinds(om(csrc([apr('r1', 'LMS4', 'Pending')], [rec('x1', 'r1', 'c@lms.org.in', 'Approve', 'ok', ago(0.2))]), { recommendationsReady: false }), 'approval_wait')[0].why, 'Waiting 4 days'); // tab not ready: no recommendation, the wait instead
 assert.strictEqual(kinds(om(csrc([apr('r1', 'LMS4', 'Pending', { archived: 'TRUE' })])), 'approval_wait').length, 0);
 assert.strictEqual(kinds(om(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })])), 'approval_wait').length, 0);
@@ -167,6 +180,12 @@ const byId = {}; tk.forEach((m) => { byId[m.id] = m; });
 assert.strictEqual(byId['hiring_stall:hs1'].shared, true); assert.strictEqual(byId['hiring_stall:hs1'].core, true);
 assert.strictEqual(byId['followup:f1'].shared, true); assert.strictEqual(byId['followup:f1'].core, false);
 assert.strictEqual(byId['followup:f2'].shared, false); assert.strictEqual(byId['followup:f2'].due, '2026-10-30');
+// a Date cell in Due (midnight IST) reads as its IST date, not the UTC day before (M6)
+const dueDate = cm(csrc([], [], [task('f7', 'transport', 'LMS6', 'Dated', { assignee: 'c@lms.org.in', due: vm.runInContext("new Date('2026-10-29T18:30:00Z')", ctx) })]), coord);
+assert.strictEqual(dueDate[0].due, '2026-10-30');
+// a stray space around the approval's Tasks id still finds its assignee (M11)
+const spaced = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task(' approval|r1|Pending ', 'approval', 'LMS4', 'x', { assignee: 'c@lms.org.in' })]), coord, { recommendationsReady: true }), 'approval_recommend');
+assert.strictEqual(spaced[0].shared, false);
 assert.ok(!byId['followup:f3'] && !byId['followup:f4']);
 // resolved by a person: done; resolved by the system: not done, gone ("no longer needed")
 const rs = cm(csrc([], [], [

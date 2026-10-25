@@ -13,7 +13,7 @@ import { dirname, join, normalize, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGES = ['coordinator/transport/index.html', 'office/transport.html', 'coordinator/transport/live.html', 'office/buses.html', 'owner/transport/index.html'];
+const PAGES = ['principal/index.html', 'coordinator/index.html', 'owner/index.html', 'teacher/index.html', 'coordinator/transport/index.html', 'office/transport.html', 'coordinator/transport/live.html', 'office/buses.html', 'owner/transport/index.html'];
 const check = process.argv.includes('--check');
 const indexed = (path) => { try { return execFileSync('git', ['show', ':' + path], { cwd: root, encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return readFileSync(join(root, path)); } };
 const stale = [];
