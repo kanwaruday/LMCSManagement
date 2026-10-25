@@ -5,7 +5,9 @@
 // The Mac (~/Projects/transport-gps/insights.py, daily) pushes per-bus daily facts from the GPS (action=transportgpspush,
 // same shared secret as the fleet push). On each push this file stores them, checks every fuel fill the Office backend
 // mirrors into the "Fuel Fills" tab against the GPS km, and raises follow-ups in the Tasks store, each with an owner,
-// a due date and one plain instruction. Three views read it:
+// a due date and one plain instruction. It also raises the safety-loadout follow-ups from the capture portal's monthly
+// safety checks (Capture Runs tab, read by coordInspections_ in coordinator-transport.gs): bus_inspection and bus_equipment.
+// Three views read it:
 //   GET  coordinatortransportinsight  Coordinator / Owner, scoped to their campuses (the Owner also gets proposals);
 //                                     feeds the checks and the route views (metro map, city overlay, depot)
 //   GET  coordinatorbuschecks         Fee Clerk: fuel bills of their campus waiting for their check
@@ -21,7 +23,8 @@ const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billK
 const GPS = {
   speedLimit: 40, speedMinutes: 10, awayKm: 2, deadDays: 2, longSilentDays: 14, blindShare: 0.2, blindMinKm: 30, ageLimit: 15,
   proofFrom: '2026-10-26', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
-  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30 },
+  due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30, bus_inspection: 5, bus_equipment: 3 },
+  inspectionDay: 5, // the monthly safety check is due by the 5th
 };
 const GPS_DOMAINS = Object.keys(GPS.due);
 const COORD_DEPT_TRANSPORT = 'Transport';
@@ -133,6 +136,13 @@ function gpsFollowUps_(facts) {
   facts.answers.forEach(function (a) { answers[a.id] = a; });
   const due = function (domain) { return gpsAddDays_(t, GPS.due[domain]); };
   const silent = gpsSilent_(fleet, live, t);
+  // the monthly safety check (capture portal, Inspection mode): from the 5th, a running bus needs one this month; until then last
+  // month's still counts, so a check that was missed stays open across the turn of the month instead of closing itself
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dueMonth = Number(t.slice(8, 10)) >= GPS.inspectionDay ? t.slice(0, 7) : gpsAddDays_(t.slice(0, 7) + '-01', -1).slice(0, 7);
+  const lastCheck = {}, loadout = {};
+  (facts.inspections || []).forEach(function (x) { if (!lastCheck[x.reg] || x.day >= lastCheck[x.reg].day) lastCheck[x.reg] = x; });
+  (facts.loadout || []).forEach(function (i) { loadout[i.id] = i; }); // active items only: a switched-off item raises nothing
   const add = function (o) { out.push(Object.assign({ due: due(o.domain), auto: false }, o)); };
   fleet.forEach(function (b) {
     if (!b.operational) return;
@@ -148,6 +158,16 @@ function gpsFollowUps_(facts) {
     if (age >= GPS.ageLimit - 1) add({ taskId: 'bus_age|' + b.reg, domain: 'bus_age', campus: c, severity: age >= GPS.ageLimit ? 'high' : 'medium', auto: true,
       title: b.reg + ': registered ' + b.year + (age >= GPS.ageLimit ? ', over the 15-year limit for school buses' : ', reaches the 15-year limit in ' + (Number(b.year) + GPS.ageLimit)),
       detail: 'HP rules (2018) allow school vehicles up to 15 years. Send the Owner a plan: replace, merge its route into another bus, or retire it.' });
+    const chk = lastCheck[b.reg];
+    if (facts.inspections && !(chk && chk.day >= dueMonth + '-01')) add({ taskId: 'bus_inspection|' + b.reg, domain: 'bus_inspection', campus: c, severity: 'medium', auto: true,
+      title: b.reg + ': no safety check in ' + MON[Number(dueMonth.slice(5, 7)) - 1], detail: 'Do this month\'s safety check in the capture portal' });
+    // every item marked missing in the bus's latest check, until a later check has it
+    if (chk) Object.keys(chk.items).forEach(function (id) {
+      const a = chk.items[id], item = loadout[id];
+      if (!item || !a || a.ok !== false) return;
+      add({ taskId: 'bus_equipment|' + b.reg + '|' + id, domain: 'bus_equipment', campus: c, severity: 'high', auto: true,
+        title: b.reg + ': ' + item.label + ' missing in the safety check of ' + gpsDay_(chk.day, t), detail: 'Get it fitted or repaired, then check it again in the capture portal.' });
+    });
   });
   const bus = {};
   fleet.forEach(function (b) { bus[b.reg] = b; });
@@ -263,12 +283,13 @@ function gpsRefresh_(days, health) {
   let live = null;
   try { live = coordBusFetch_().buses; } catch (err) { console.error('GPS live feed: ' + err.message); }
   if (live && !live.length) live = null; // an empty answer (bad id, vendor glitch) must not read as "no bus has a tracker"
-  const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, fills: fills, answers: gpsRows_(GPS_TAB_ANSWERS) });
+  const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, fills: fills, answers: gpsRows_(GPS_TAB_ANSWERS),
+    inspections: coordInspections_(), loadout: coordLoadoutAll_().filter(function (i) { return i.active; }) });
   // which vehicles each self-clearing check actually looked at this time: only those may be closed by it
   const fleetRegs = {}, healthRegs = {};
   base.fleet.forEach(function (b) { fleetRegs[b.reg] = true; });
   health.forEach(function (h) { healthRegs[h.reg] = true; });
-  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true });
+  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true, bus_inspection: true, bus_equipment: true });
   return { checks: checks.length, followUps: wanted.length };
 }
 

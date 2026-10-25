@@ -7,7 +7,27 @@
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../../coordinator/shared.css?v=29f58300">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<style>.tc-h{font-size:14px;margin:22px 0 8px}</style>
+<style>.tc-h{font-size:14px;margin:22px 0 8px}
+/* Safety loadout editor: one row per item; on a phone the name takes the row and the controls wrap under it */
+.lo{max-width:760px;margin:32px 0 16px;padding-top:16px;border-top:1px solid var(--border)}
+.lo h2{font-size:16px;margin:0 0 4px}
+.lo ol{list-style:none;margin:10px 0;padding:0;counter-reset:lo}
+.lo li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 0;border-bottom:1px solid var(--border);counter-increment:lo}
+.lo li::before{content:counter(lo);width:22px;text-align:right;font-size:12px;color:var(--gray);font-variant-numeric:tabular-nums}
+.lo li.off .lo-name{color:var(--gray);text-decoration:line-through}
+.lo-name{flex:1 1 220px;min-width:0;min-height:36px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font:inherit;font-size:14px}
+.lo label{display:inline-flex;align-items:center;gap:4px;font-size:13px;min-height:36px}
+.lo label input{width:18px;height:18px;accent-color:var(--dark)}
+.lo-ctl{display:flex;gap:6px;flex-wrap:wrap}
+.lo button.btn{min-height:36px}
+.lo button:focus-visible,.lo input:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.lo-add{display:flex;gap:8px;margin:12px 0}
+.lo-add input{flex:1;min-width:0;min-height:40px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;font:inherit;font-size:14px}
+.lo-save{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.lo-save .btn.primary{background:var(--dark);color:#fff;border-color:var(--dark);min-height:40px;font-size:14px;padding:0 18px}
+.lo-st{font-size:13px}.lo-st.bad{color:var(--red);font-weight:700}.lo-st.good{color:#15803d;font-weight:700}
+@media (max-width:600px){.lo-name{flex-basis:calc(100% - 32px)}.lo button.btn,.lo label{min-height:44px}}
+</style>
 </head>
 <body>
 <header class="hdr"><div><h1>LMCS — Owner Portal</h1><p>Transport</p></div><a href="../index.html">&larr; Owner home</a></header>
@@ -16,15 +36,84 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
 <script src="../../coordinator/transport-rank.js?v=99053049"></script>
-<script src="../../coordinator/shared.js?v=14034617"></script>
+<script src="../../coordinator/shared.js?v=17824703"></script>
 <script src="../../coordinator/transport-live.js?v=9eeb093f"></script>
 <script src="../../coordinator/transport-views.js?v=458a31fa"></script>
-<script src="../../coordinator/transport-checks.js?v=0514663c"></script>
+<script src="../../coordinator/transport-checks.js?v=55330474"></script>
 <script>
 Coord.boot(function (body, session) {
   if (!LMCS.canViewOwnerPortal(session)) { body.innerHTML = '<div class="denied">This page is for the Owner. Coordinators: <a href="../../coordinator/transport/live.html">Transport checks</a>.</div>'; return; }
   TransportChecks.mount(body, session, { owner: true });
+  const box = document.createElement('section');
+  box.className = 'lo'; box.setAttribute('aria-labelledby', 'loH');
+  body.appendChild(box);
+  Loadout(box, session);
 });
+
+/* The safety loadout every bus must carry: the Coordinator checks it monthly in the capture portal (Inspection), one card per
+   active item. Kept in the 'Safety Loadout' tab via Coordinator backend action=coordinatortransportloadout (GET; POST is
+   Owner only). Items keep their id for life (the monthly answers are keyed by it): rename and switch off, never delete. */
+function Loadout(box, session) {
+  const URL_ = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
+  const esc = Coord.esc;
+  let items = [], dirty = false;
+  box.innerHTML = '<h2 id="loH">Safety loadout</h2><p class="note">What every bus must carry. Coordinators check each running bus once a month in the capture portal. A switched-off item is not asked.</p><div class="lo-body"><p class="note">Loading...</p></div>';
+  const el = box.querySelector('.lo-body');
+  const say = (t, cls) => { const s = box.querySelector('.lo-st'); if (s) { s.textContent = t; s.className = 'lo-st ' + (cls || ''); } };
+  async function load() {
+    try {
+      const r = await (await fetch(URL_ + '?action=coordinatortransportloadout&idToken=' + encodeURIComponent(session.idToken), { cache: 'no-store' })).json();
+      if (!r.success) throw new Error(r.error || 'Request failed');
+      items = r.all; dirty = false; draw();
+    } catch (err) { el.innerHTML = '<p class="note" role="alert">Could not load the safety loadout: ' + esc(err.message) + ' <button class="btn lo-retry">Retry</button></p>'; el.querySelector('.lo-retry').addEventListener('click', load); }
+  }
+  function draw(focus) {
+    el.innerHTML = '<ol>' + items.map(function (x, i) {
+      const n = esc(x.label || 'item ' + (i + 1));
+      return '<li class="' + (x.active ? '' : 'off') + '" data-i="' + i + '"><input class="lo-name" value="' + esc(x.label) + '" aria-label="Name of item ' + (i + 1) + '" maxlength="80">' +
+        '<label><input type="checkbox" data-k="needsPhoto"' + (x.needsPhoto ? ' checked' : '') + '>Needs photo</label><label><input type="checkbox" data-k="needsDate"' + (x.needsDate ? ' checked' : '') + '>Needs date</label>' +
+        '<span class="lo-ctl"><button class="btn" data-a="up" aria-label="Move ' + n + ' up"' + (i ? '' : ' disabled') + '>Up</button><button class="btn" data-a="down" aria-label="Move ' + n + ' down"' + (i < items.length - 1 ? '' : ' disabled') + '>Down</button>' +
+        '<button class="btn" data-a="act" aria-label="' + (x.active ? 'Switch off ' : 'Switch on ') + n + '">' + (x.active ? 'Switch off' : 'Switch on') + '</button></span></li>';
+    }).join('') + '</ol>' +
+      '<div class="lo-add"><input id="loNew" maxlength="80" placeholder="New item, for example Seat belts" aria-label="New item"><button class="btn" data-a="add">Add item</button></div>' +
+      '<div class="lo-save"><button class="btn primary" data-a="save">Save loadout</button><span class="lo-st" role="status"></span></div>';
+    el.querySelectorAll('li').forEach(function (li) {
+      const i = +li.dataset.i;
+      li.querySelector('.lo-name').addEventListener('input', function (e) { items[i].label = e.target.value; touch(); });
+      li.querySelectorAll('[data-k]').forEach(function (c) { c.addEventListener('change', function () { items[i][c.dataset.k] = c.checked; touch(); }); });
+      li.querySelectorAll('[data-a]').forEach(function (b) { b.addEventListener('click', function () {
+        const a = b.dataset.a, j = a === 'up' ? i - 1 : i + 1;
+        if (a === 'act') { items[i].active = !items[i].active; touch(); return draw({ i: i, a: 'act' }); }
+        const t = items[i]; items[i] = items[j]; items[j] = t; touch();
+        draw({ i: j, a: (a === 'up' && j === 0) || (a === 'down' && j === items.length - 1) ? (a === 'up' ? 'down' : 'up') : a }); // the moved item keeps focus
+      }); });
+    });
+    const add = function () {
+      const v = el.querySelector('#loNew').value.trim();
+      if (!v) return el.querySelector('#loNew').focus();
+      items.push({ label: v, needsPhoto: false, needsDate: false, active: true }); touch();
+      draw({ i: items.length - 1, name: true });
+    };
+    el.querySelector('[data-a="add"]').addEventListener('click', add);
+    el.querySelector('#loNew').addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
+    el.querySelector('[data-a="save"]').addEventListener('click', save);
+    if (dirty) say('Not saved yet.');
+    if (focus) { const li = el.querySelector('[data-i="' + focus.i + '"]'), f = li && (focus.name ? li.querySelector('.lo-name') : li.querySelector('[data-a="' + focus.a + '"]')); if (f) f.focus(); }
+  }
+  function touch() { dirty = true; say('Not saved yet.'); }
+  async function save() {
+    const blank = items.findIndex(function (x) { return !String(x.label || '').trim(); });
+    if (blank !== -1) { say('Item ' + (blank + 1) + ' has no name.', 'bad'); el.querySelectorAll('.lo-name')[blank].focus(); return; }
+    const b = el.querySelector('[data-a="save"]'); b.disabled = true; say('Saving...');
+    try {
+      const r = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ action: 'coordinatortransportloadout', idToken: session.idToken,
+        items: items.map(function (x) { return { id: x.id, label: x.label, needsPhoto: !!x.needsPhoto, needsDate: !!x.needsDate, active: x.active !== false }; }) }) })).json();
+      if (!r.success) throw new Error(r.error || 'Could not save');
+      items = r.all; dirty = false; draw(); say('Saved. The next safety check on any bus uses this list.', 'good');
+    } catch (err) { b.disabled = false; say('Not saved: ' + err.message, 'bad'); }
+  }
+  load();
+}
 </script>
 </body>
 </html>

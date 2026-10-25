@@ -39,7 +39,8 @@ window.layoutTest = async function () {
 // Capture page (coordinator/transport/capture.html), phone width. Load it at 375 px (and at 375x667 for a small phone),
 // paste this file into the console, then run   await captureLayoutTest()   on the start screen and again during a run.
 // Fails when the page scrolls sideways, anything visible sticks out past the right edge, or, during a run, the STOP HERE
-// button is not fully on screen at the top of the page (above the fold) or is under 88 px tall.
+// button is not fully on screen at the top of the page (above the fold) or is under 88 px tall. On the safety check
+// (Inspection) it also fails when a Yes/No button is under 48 px tall or the strip of slots does not fit the width.
 window.captureLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement;
   scrollTo(0, 0); await new Promise((r) => setTimeout(r, 50));
@@ -54,6 +55,14 @@ window.captureLayoutTest = async function () {
     facts.stopHere = Math.round(r.top) + '..' + Math.round(r.bottom) + ' of ' + innerHeight;
     if (r.bottom > innerHeight) f.push('STOP HERE is below the fold');
     if (r.height < 88) f.push('STOP HERE is under 88 px tall');
+  }
+  const insp = document.getElementById('inspect');
+  if (insp && insp.getClientRects().length) {
+    facts.screen = 'inspection';
+    if ([...insp.querySelectorAll('.cap-yn button')].some((b) => b.getBoundingClientRect().height < 48)) f.push('a Yes/No button is under 48 px tall');
+    const strip = document.getElementById('slots'), last = strip.lastElementChild;
+    facts.slots = strip.children.length;
+    if (last && last.getBoundingClientRect().right > strip.getBoundingClientRect().right + 1) f.push('the strip of slots does not fit the width');
   }
   return { pass: f.length === 0, failures: f, facts };
 };

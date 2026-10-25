@@ -3,7 +3,10 @@
 // - Timelapse (default): rear camera, a frame every ~15 m of GPS travel (geo.js), STOP HERE tags a stop with a photo.
 // - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
 //   the seats and the 1.4 x seats load cap.
-// - Inspection: Task 6.
+// - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
+//   action=coordinatortransportloadout): Yes/No, a photo when the item needs one (the phone's own camera, not the timelapse
+//   viewfinder), a date when it needs one. Saved as an 'inspection' run: photos as kind 'inspection' files, the answers in
+//   the run's Inspection JSON {itemId: {ok, date?, fileId?}} (uploader.js swaps each photo's seq for its Drive file id).
 // Everything is saved on the phone first (run-store.js) and sent later from the Upload tab (uploader.js -> Roster web app).
 // Never shows speed or trip time, and no sound.
 import { shouldCapture, distanceM } from './geo.js';
@@ -13,11 +16,16 @@ import { createUploader } from './uploader.js';
 const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
 const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
 const FULL_MSG = 'The phone is full. Upload on Wi-Fi now, then carry on.';
-const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Inspection' };
+const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
+const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
   timelapse: 'Photo run: a frame every 15 m and one photo at each stop. Outside school hours only.',
   count: 'School run, no camera: count the children who get on and off at each stop.',
+  inspection: 'Monthly safety check with the bus parked: one card per item it must carry.',
 };
+// Goals are config: the defaults live here and are read through one accessor each, so Game Config can override them later.
+const LOAD_CAP_FACTOR = 1.4; // a bus may carry up to 1.4 x its seats
+const loadCapFactor = () => LOAD_CAP_FACTOR;
 const STATE = {
   uploading: 'Sending...', retrying: 'No answer from the server. Trying again shortly.', 'waiting-online': 'No connection. Sending resumes when it is back.',
   stopped: 'Stopped.', done: 'Sent.', 'uploaded-so-far': 'Sent so far. The rest goes when the run has ended.',
@@ -37,6 +45,7 @@ const S = {
   run: null, active: false, fix: null, last: null, busy: false, stream: null, watch: null, wake: null,
   camWanted: false, camReady: false, camP: null,
   stop: null, sending: false, progress: {},
+  loadout: null, insp: null, // the safety loadout list; the safety check being filled in {items, answers, thumbs}
 };
 const canvas = document.createElement('canvas');
 
@@ -73,6 +82,7 @@ async function boot() {
   setMode('timelapse');
   battery();
   loadBuses();
+  loadLoadout();
   drawResume();
   drawUpload();
 }
@@ -85,7 +95,10 @@ function wire() {
   $('end').addEventListener('click', endClick);
   $('send').addEventListener('click', sendAll);
   $('signIn').addEventListener('click', () => signIn());
-  $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap')) closeSheet(); });
+  // a tap on the dim backdrop closes the sheet, except while aiming the stop photo: then the "backdrop" is the viewfinder
+  $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap') && !$('sheetWrap').classList.contains('cap-aim')) closeSheet(); });
+  $('inspSave').addEventListener('click', saveInspection);
+  $('inspPhoto').addEventListener('change', onInspPhoto);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheetWrap').hidden) closeSheet(); });
   document.addEventListener('visibilitychange', onVisibility);
 }
@@ -102,8 +115,9 @@ function setMode(mode) {
   document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
   $('modeHelp').textContent = HELP[mode] || '';
   $('privacyRow').hidden = mode !== 'timelapse';
+  $('hint').hidden = $('battery').hidden = mode === 'inspection'; // a parked bus: no charger, no screen-on worries
   $('privacy').checked = false; // asked again before every timelapse start
-  $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + (mode === 'timelapse' ? 'timelapse' : 'count run');
+  $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
 }
 
@@ -158,6 +172,17 @@ async function loadBuses() {
 }
 const busOf = (reg) => S.buses.find((b) => normReg(b.reg) === normReg(reg));
 const routeName = (bus, reg) => { const r = bus && String(bus.route || '').trim(); return !r ? reg : /^\d+$/.test(r) ? 'Route ' + r : r; };
+// The safety loadout (active items, in the Owner's order), kept on the phone like the bus list so a check works without signal.
+async function loadLoadout() {
+  const key = 'lmcs-capture-loadout:' + S.session.email;
+  try {
+    if (!S.session.idToken) throw new Error('offline mode');
+    S.loadout = (await getJson('coordinatortransportloadout')).items;
+    try { localStorage.setItem(key, JSON.stringify(S.loadout)); } catch (e) { /* full */ }
+  } catch (err) {
+    try { S.loadout = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { S.loadout = null; }
+  }
+}
 
 // ── Unfinished runs (the page was closed mid-run): carry on, or end them ──
 async function drawResume() {
@@ -221,6 +246,7 @@ async function start() {
     const resume = S.resumeId ? await store.getRun(S.resumeId).catch(() => null) : null;
     const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
     if (!reg) return setupSay('Pick the bus first.');
+    if (kind === 'inspection') return await startInspection(resume, reg);
     if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: outside school hours, no children on board.');
     if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
     if (kind === 'timelapse') {
@@ -429,13 +455,19 @@ function drawSummary() {
   const run = S.run, bus = busOf(run.reg), el = $('summary');
   let body;
   if (run.kind === 'count') {
-    const L = load(run.stops), seats = Number(bus && bus.seats), cap = Math.floor(1.4 * seats);
+    const L = load(run.stops), seats = Number(bus && bus.seats), k = loadCapFactor(), cap = Math.floor(k * seats);
     const verdict = !seats ? ['', 'Seats not on record: the load cannot be checked.'] : L.peak <= seats ? ['ok', 'Within the seats.']
-      : L.peak <= cap ? ['warn', 'Above the seats, within the 1.4 × load cap.'] : ['bad', 'Above the 1.4 × load cap.'];
+      : L.peak <= cap ? ['warn', `Above the seats, within the ${k} × load cap.`] : ['bad', `Above the ${k} × load cap.`];
     body = `<div class="cap-peak ${verdict[0]}"><span>Most on board at once</span><b>${L.peak}</b>` +
-      (seats ? `<span>${seats} seats. Load cap (1.4 × seats) ${cap}.</span>` : '') + `<p>${verdict[1]}</p></div>` +
+      (seats ? `<span>${seats} seats. Load cap (${k} × seats) ${cap}.</span>` : '') + `<p>${verdict[1]}</p></div>` +
       (run.stops.length ? '<table class="cap-table"><thead><tr><th>Stop</th><th>On</th><th>Off</th><th>On board</th></tr></thead><tbody>' +
         run.stops.map((s, i) => `<tr><td>${esc(s.name || 'Stop ' + (i + 1))}</td><td>${s.boardOn || 0}</td><td>${s.boardOff || 0}</td><td>${L.after[i]}</td></tr>`).join('') + '</tbody></table>' : '');
+  } else if (run.kind === 'inspection') {
+    const items = (run.draft && run.draft.items) || [], a = run.inspection || {};
+    const missing = items.filter((i) => a[i.id] && a[i.id].ok === false), on = items.filter((i) => a[i.id] && a[i.id].ok).length;
+    body = `<div class="cap-peak ${missing.length ? 'bad' : 'ok'}"><span>On board</span><b>${on} of ${items.length}</b>` +
+      `<p>${missing.length ? 'Missing: ' + esc(missing.map((i) => i.label).join(', ')) + '.' : 'Everything is on board.'}</p>` +
+      (missing.length ? '<span>Once this is sent, each missing item becomes a follow-up for this bus.</span>' : '') + '</div>';
   } else {
     const known = bus ? bus.stops.length : 0, n = run.stops.length;
     body = '<dl class="cap-stats">' + `<div><dt>Frames</dt><dd>${run.frames}</dd></div>` +
@@ -443,10 +475,10 @@ function drawSummary() {
       `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
   const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
-  el.innerHTML = `<h2 class="cap-h">Run saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
+  el.innerHTML = `<h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
     '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>';
   el.querySelector('[data-a="send"]').addEventListener('click', () => { showTab('upload'); sendAll(); });
-  el.querySelector('[data-a="new"]').addEventListener('click', () => { el.hidden = true; $('setup').hidden = false; S.run = null; setMode(S.mode); drawResume(); });
+  el.querySelector('[data-a="new"]').addEventListener('click', () => { el.hidden = true; $('setup').hidden = false; S.run = null; S.insp = null; setMode(S.mode); drawResume(); });
   el.hidden = false;
 }
 
@@ -459,6 +491,7 @@ async function post(body) { // the uploader's transport: the signed-in idToken, 
 }
 function runLine(run, p) {
   if (run.kind === 'count') return `${plural(run.stops.length, 'stop')} counted`;
+  if (run.kind === 'inspection') return p.total ? `${p.sent} of ${plural(p.total, 'photo')} sent` : 'No photos';
   return `${p.sent} of ${p.total} frames sent`;
 }
 function stateLine(run, p) {
@@ -525,6 +558,134 @@ async function sendAll() {
     S.sending = false; $('send').textContent = 'Send now on Wi-Fi';
     await drawUpload();
   }
+}
+
+// ── Safety check (Inspection mode) ──
+// The answers are saved on the phone after every tap (run.draft), so a phone that drops the page while its camera app is
+// open, or a check finished later, carries on from the Unfinished list.
+const SVG = {
+  ok: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  no: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+};
+async function startInspection(resume, reg) {
+  const items = resume ? resume.draft && resume.draft.items : S.loadout;
+  if (!items || !items.length) return setupSay('The safety list is not on this phone yet. Open this page on Wi-Fi once, then start again.');
+  const bus = busOf(reg);
+  try {
+    S.run = resume || await store.newRun({ reg, kind: 'inspection', campus: bus && bus.campus, by: S.session.email, role: S.session.role });
+    if (!resume) S.run = await store.patchRun(S.run.id, { draft: { items, answers: {} } });
+  } catch (e) { return setupSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Could not save on this phone: ' + e.message); }
+  S.resumeId = null;
+  S.insp = { items, answers: { ...S.run.draft.answers }, thumbs: {} };
+  $('setup').hidden = true; $('summary').hidden = true; $('inspect').hidden = false;
+  $('inspTitle').textContent = `Safety check ${S.run.reg}` + (bus && bus.route ? ` (${routeName(bus, S.run.reg)})` : '');
+  $('inspMsg').textContent = '';
+  $('cards').innerHTML = items.map((i) => `<li class="cap-slot" data-id="${esc(i.id)}"></li>`).join('');
+  items.forEach((i) => drawCard(i.id));
+  drawSlots();
+  const first = $('cards').querySelector('button'); if (first) first.focus();
+}
+// done: answered, and a Yes has the photo and date it needs. A No needs nothing more: the missing item is the finding.
+function slotState(item) {
+  const a = S.insp.answers[item.id];
+  if (!a) return 'empty';
+  if (!a.ok) return 'no';
+  return (item.needsPhoto && a.seq == null) || (item.needsDate && !a.date) ? 'todo' : 'ok';
+}
+function drawSlots() {
+  const st = S.insp.items.map(slotState), done = st.filter((x) => x === 'ok' || x === 'no').length;
+  $('slots').innerHTML = st.map((x) => `<li data-s="${x}">${x === 'ok' ? SVG.ok : x === 'no' ? SVG.no : ''}</li>`).join('');
+  $('slots').style.setProperty('--n', String(Math.min(st.length, 12))); // a long list wraps to a second row of slots
+  $('inspSave').textContent = done === st.length ? 'Save safety check' : `Save safety check (${done} of ${st.length} done)`;
+}
+function drawCard(id) {
+  const item = S.insp.items.find((i) => i.id === id), a = S.insp.answers[id], li = $('cards').querySelector(`[data-id="${CSS.escape(id)}"]`), state = slotState(item);
+  const focused = document.activeElement && li.contains(document.activeElement) ? document.activeElement.dataset.a : null;
+  const needs = [item.needsPhoto && 'a photo', item.needsDate && 'the date'].filter(Boolean);
+  li.dataset.s = state;
+  li.innerHTML = `<div class="cap-slothead"><span class="cap-mark">${state === 'ok' ? SVG.ok : state === 'no' ? SVG.no : ''}</span>` +
+    `<h3 id="lab-${esc(id)}">${esc(item.label)}</h3></div>` +
+    `<div class="cap-yn" role="group" aria-labelledby="lab-${esc(id)}">` +
+    `<button type="button" data-a="yes" aria-pressed="${!!(a && a.ok)}">Yes</button><button type="button" data-a="no" aria-pressed="${!!(a && !a.ok)}">No</button></div>` +
+    (!a && needs.length ? `<p class="cap-note">Yes needs ${needs.join(' and ')}.</p>` : '') +
+    (a && !a.ok ? '<p class="cap-slotnote">Missing or not working.</p>' : '') +
+    (a && a.ok && item.needsPhoto ? (a.seq == null ? '<button type="button" class="cap-btn cap-photo" data-a="photo">Take photo</button>'
+      : `<div class="cap-took">${S.insp.thumbs[id] ? `<img src="${S.insp.thumbs[id]}" alt="">` : ''}<span>Photo saved</span><button type="button" class="cap-btn" data-a="photo">Retake</button></div>`) : '') +
+    (a && a.ok && item.needsDate ? `<label class="cap-field" for="d-${esc(id)}">Date on the certificate or tag</label><input type="date" id="d-${esc(id)}" class="cap-input" data-a="date" value="${esc(a.date || '')}">` : '');
+  li.querySelectorAll('[data-a="yes"],[data-a="no"]').forEach((b) => b.addEventListener('click', () => answer(id, b.dataset.a === 'yes')));
+  li.querySelectorAll('[data-a="photo"]').forEach((b) => b.addEventListener('click', () => { S.insp.photoFor = id; $('inspPhoto').value = ''; $('inspPhoto').click(); }));
+  const d = li.querySelector('[data-a="date"]');
+  if (d) d.addEventListener('change', () => { S.insp.answers[id].date = d.value; saveDraft(); drawSlots(); li.dataset.s = slotState(item); drawMark(li, item); });
+  if (focused) { const f = li.querySelector(`[data-a="${focused}"]`); if (f) f.focus(); }
+}
+function drawMark(li, item) { const s = slotState(item); li.querySelector('.cap-mark').innerHTML = s === 'ok' ? SVG.ok : s === 'no' ? SVG.no : ''; }
+function answer(id, ok) {
+  const a = S.insp.answers[id];
+  S.insp.answers[id] = ok ? { ...(a && a.ok ? a : {}), ok: true } : { ok: false }; // No drops the photo link and date; a Yes keeps what it had
+  saveDraft(); drawCard(id); drawSlots();
+  $('inspMsg').textContent = '';
+}
+function saveDraft() {
+  store.patchRun(S.run.id, { draft: { items: S.insp.items, answers: S.insp.answers } })
+    .catch((e) => { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved on this phone: ' + e.message; });
+}
+function readImage(file) { // the photo from the phone's camera app, longest side 1280 px, JPEG 0.7, as base64
+  const url = URL.createObjectURL(file);
+  return new Promise((ok, no) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.round(img.naturalWidth * k); canvas.height = Math.round(img.naturalHeight * k);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      ok(canvas.toDataURL('image/jpeg', 0.7).split(',')[1]);
+    };
+    img.onerror = () => no(new Error('This photo could not be read. Take it again.'));
+    img.src = url;
+  }).finally(() => URL.revokeObjectURL(url));
+}
+async function onInspPhoto() {
+  const file = $('inspPhoto').files[0], id = S.insp && S.insp.photoFor;
+  if (!file || !id) return;
+  const li = $('cards').querySelector(`[data-id="${CSS.escape(id)}"]`), btn = li.querySelector('[data-a="photo"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving photo...'; }
+  try {
+    const base64 = await readImage(file);
+    // ponytail: a retaken photo leaves the first one on the phone and it is sent too (the answer points at the new one)
+    const seq = await store.addFrame(S.run.id, { takenAt: Date.now(), base64 });
+    S.insp.answers[id] = { ...S.insp.answers[id], ok: true, seq };
+    S.insp.thumbs[id] = 'data:image/jpeg;base64,' + base64;
+    saveDraft();
+  } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : e.message; }
+  drawCard(id); drawSlots();
+  const again = li.querySelector('[data-a="photo"]'); if (again) again.focus();
+}
+async function saveInspection() {
+  const left = S.insp.items.filter((i) => ['empty', 'todo'].includes(slotState(i)));
+  if (left.length) {
+    const i = left[0], a = S.insp.answers[i.id];
+    const msg = !a ? `Answer ${i.label} first.` : a.seq == null && i.needsPhoto ? `Take the photo of ${i.label} first.` : `Add the date for ${i.label} first.`;
+    $('inspMsg').textContent = msg; toast(msg); // the page scrolls to the card, away from the message under Save
+    const li = $('cards').querySelector(`[data-id="${CSS.escape(i.id)}"]`);
+    li.scrollIntoView({ block: 'center' }); (li.querySelector('[data-a="photo"],[data-a="date"]') || li.querySelector('button')).focus({ preventScroll: true });
+    return;
+  }
+  const inspection = {};
+  S.insp.items.forEach((i) => {
+    const a = S.insp.answers[i.id], out = { ok: !!a.ok };
+    if (a.ok && i.needsDate) out.date = a.date;
+    if (a.ok && i.needsPhoto) out.seq = a.seq; // uploader.js swaps it for the photo's Drive file id
+    inspection[i.id] = out;
+  });
+  $('inspSave').disabled = true;
+  try {
+    await store.endRun(S.run.id, { inspection });
+    S.run = await store.getRun(S.run.id);
+  } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message; return; }
+  finally { $('inspSave').disabled = false; }
+  $('inspect').hidden = true;
+  $('offline').hidden = !!LMCS.getSession();
+  drawSummary(); drawUpload();
+  $('summary').querySelector('[data-a="send"]').focus();
 }
 
 boot();

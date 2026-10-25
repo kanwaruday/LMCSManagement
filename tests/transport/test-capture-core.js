@@ -268,6 +268,16 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.deepStrictEqual(srv.calls.map((c) => c.action), ['capturerun', 'capturefile', 'capturerun']);
     assert.strictEqual(srv.calls[2].run.status, 'ended');
   });
+  await test('an inspection run sends its photos as kind inspection and its answers with each photo\'s Drive file id', async () => {
+    const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'inspection' });
+    const a = await store.addFrame(run.id, { takenAt: NOW, base64: 'FIRE' }), b = await store.addFrame(run.id, { takenAt: NOW + 1, base64: 'KIT' });
+    await store.endRun(run.id, { inspection: { fire_extinguisher: { ok: true, date: '2026-09-01', seq: a }, first_aid: { ok: true, seq: b }, door_lock: { ok: false } } });
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(run.id);
+    assert.deepStrictEqual(srv.calls.map((c) => c.action + ':' + (c.kind || c.run.status)), ['capturerun:running', 'capturefile:inspection', 'capturefile:inspection', 'capturerun:ended']);
+    const ids = srv.calls.filter((c) => c.action === 'capturefile').map((c) => 'D' + c.seq); // fakeServer answers fileId D<seq>
+    assert.deepStrictEqual(srv.calls[3].run.inspection, { fire_extinguisher: { ok: true, date: '2026-09-01', fileId: ids[0] }, first_aid: { ok: true, fileId: ids[1] }, door_lock: { ok: false } });
+  });
 
   process.exit(failed ? 1 : 0);
 })();

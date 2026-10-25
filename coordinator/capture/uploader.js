@@ -47,9 +47,19 @@ export function createUploader({
       await store.patchRun(runId, { status: 'error', error });
       progress('error', error);
     };
-    const manifest = (status) => ({ action: 'capturerun', run: {
+    const manifest = (status, inspection = run.inspection) => ({ action: 'capturerun', run: {
       runId, reg: run.reg, kind: run.kind, startedAt: run.startedAt, endedAt: run.endedAt, frames: run.frames,
-      gaps: run.gaps, stops: run.stops, inspection: run.inspection, status } });
+      gaps: run.gaps, stops: run.stops, inspection, status } });
+    // Inspection answers point at their photo by seq on the phone; the server gets the photo's Drive file id instead.
+    const withFileIds = async (insp) => {
+      if (!insp) return insp;
+      const ids = await store.fileIds(runId), out = {};
+      Object.keys(insp).forEach((k) => {
+        const { seq, ...a } = insp[k];
+        out[k] = seq != null && ids[seq] ? { ...a, fileId: ids[seq] } : a;
+      });
+      return out;
+    };
     const refresh = async () => { // frames may be added and the run ended while we upload, so look again after every pass
       run = await store.getRun(runId);
       const pending = await store.pending(runId);
@@ -78,7 +88,7 @@ export function createUploader({
       pending = await refresh();
     }
     if (run.endedAt && !run.endSent) {
-      const r = await send(manifest('ended'), progress);
+      const r = await send(manifest('ended', await withFileIds(run.inspection)), progress);
       if (!r) return progress('stopped');
       if (r.error) return fail(r.error);
       await store.patchRun(runId, { endSent: true });

@@ -139,7 +139,7 @@ function doGet(e) {
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
-    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
+    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
@@ -147,6 +147,7 @@ function doGet(e) {
     if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
     if (action === 'coordinatorbuschecks') return coordJson_(coordGpsClerkChecks_(caller));
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
+    if (action === 'coordinatortransportloadout') return coordJson_(coordLoadout_(caller)); // the safety loadout list: every transport role reads it
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
@@ -174,6 +175,7 @@ function doPost(e) {
     if (action === 'coordinatorpdrmerge') return coordJson_(coordPdrMerge_(caller, body));
     if (action === 'coordinatorallocate') return coordJson_(coordAprAllocate_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
+    if (action === 'coordinatortransportloadout') return coordJson_(coordLoadoutSet_(caller, body)); // Owner only (checked inside)
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });

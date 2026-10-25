@@ -6,7 +6,7 @@
 //
 // run:  { id, reg, kind: timelapse|count|inspection, campus, by, role, startedAt, endedAt, status: running|ended|error,
 //         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,name,boardOn,boardOff}],
-//         inspection, startSent, endSent }
+//         inspection, draft (capture page: the safety check being filled in), startSent, endSent }
 // file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
 // seq is one counter per run across kinds, so it is also the capture order.
 
@@ -146,6 +146,8 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     // Unsent file metadata of a run, in seq order (a failed file stays here, with its `error`). Photos are not loaded.
     pending: (runId) => serial(async () => (await filesOf(runId)).filter((f) => !f.sent).sort((a, b) => a.seq - b.seq)),
     total: (runId) => serial(async () => (await filesOf(runId)).length),
+    // {seq: Drive file id} of the run's sent files (the inspection answers point at their photos by seq on the phone).
+    fileIds: (runId) => serial(async () => Object.fromEntries((await filesOf(runId)).filter((f) => f.sent).map((f) => [f.seq, f.fileId]))),
     // The one place a photo is read: its base64, or undefined once it was sent.
     fileData: (runId, kind, seq) => serial(async () => (await idb.data.get(fileId(runId, kind, seq)))?.base64),
 

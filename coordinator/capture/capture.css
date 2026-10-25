@@ -165,3 +165,37 @@
 .cap-runs .cap-note{margin:2px 0}
 .cap-line{font-size:17px;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
 #authRoot{padding:0 16px}
+
+/* Safety check: the bus's loadout. A strip of slots (ticked green, red cross for missing, empty while open) and one card per
+   item. Colour carries the answer only; nothing moves. */
+.cap-slots{display:grid;grid-template-columns:repeat(var(--n,10),minmax(0,1fr));gap:4px;list-style:none;margin:0 0 8px;padding:0}
+.cap-slots li{height:28px;border:2px dashed #8a8a8a;border-radius:6px;display:flex;align-items:center;justify-content:center;min-width:0}
+.cap-slots svg{width:18px;height:18px}
+.cap-slots [data-s="ok"]{border:2px solid var(--c-ok);background:var(--c-ok);color:#fff}
+.cap-slots [data-s="no"]{border:2px solid var(--c-bad);background:#fee2e2;color:var(--c-bad)}
+.cap-slots [data-s="todo"]{border:2px solid var(--c-warn);border-style:dashed}
+.cap-cards{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
+.cap-slot{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;background:#fff}
+.cap-slot[data-s="ok"]{border-color:var(--c-ok)}
+.cap-slot[data-s="todo"]{border-color:var(--c-warn)}
+.cap-slot[data-s="no"]{border-color:var(--c-bad);background:#fff5f5}
+.cap-slothead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.cap-slothead h3{margin:0;font-size:18px;font-weight:800;line-height:1.25;min-width:0;overflow-wrap:anywhere}
+.cap-mark{flex:none;width:30px;height:30px;border:2px dashed #8a8a8a;border-radius:8px;display:flex;align-items:center;justify-content:center}
+[data-s="ok"] .cap-mark{border:0;background:var(--c-ok);color:#fff}
+[data-s="no"] .cap-mark{border:0;background:var(--c-bad);color:#fff}
+[data-s="todo"] .cap-mark{border-color:var(--c-warn)}
+.cap-yn{display:flex;border:2px solid var(--c-ink);border-radius:10px;overflow:hidden}
+.cap-yn button{flex:1 1 0;min-height:56px;border:0;background:#fff;font-size:18px;font-weight:800}
+.cap-yn button+button{border-left:2px solid var(--c-ink)}
+.cap-yn [data-a="yes"][aria-pressed="true"]{background:var(--c-ok);color:#fff}
+.cap-yn [data-a="no"][aria-pressed="true"]{background:var(--c-bad);color:#fff}
+.cap-slot .cap-note{margin:8px 0 0}
+.cap-slotnote{margin:8px 0 0;font-weight:700;color:var(--c-bad)}
+.cap-photo{width:100%;margin-top:10px;min-height:52px}
+.cap-took{display:flex;align-items:center;gap:10px;margin-top:10px;font-weight:700;color:var(--c-ok)}
+.cap-took img{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-line);flex:none}
+.cap-took span{flex:1;min-width:0}
+.cap-took .cap-btn{flex:none;color:var(--c-ink)}
+.cap-slot .cap-field{margin-top:10px}
+.cap-peak>span{font-size:15px;color:var(--c-mute);font-weight:600}
