@@ -91,7 +91,8 @@ Builds on, and does not repeat:
   into the repo (Uday: "The Coordinator names are in the allowlist google sheet").
 - **The cast:** Buddy only. Coordinators and the Owner get no module owl (the game director's call, agreed).
   Coordinator lines are drafted here and voice-checked by the game director against the Voice Guide.
-- **Two layouts over one set of data** (**pending Uday's answer to question 3**; Claude's recommendation):
+- **Two layouts over one set of data** (Uday, 2026-10-25: "Coordinator morning view: both. The mission board by
+  default (and on phones), the district map on a laptop, same data."):
   - **The board** is the default and is phone-first. It shows the ranked contracts with a small district strip of 3
     bases and their needs on top.
   - **The map** is the laptop view. The 3 bases sit on the district map, using Fleet Command's shared map shell, with
@@ -420,10 +421,9 @@ only with Uday's go-ahead.
 
 ## Open for Uday
 
-1. **Question 3** (sent): what a Coordinator sees first in the morning (the board, the map, or both).
-2. **At go-live, is each Coordinator locked to a district (LMS 1–3 or LMS 4–6), or network-wide as today?** If
+1. **At go-live, is each Coordinator locked to a district (LMS 1–3 or LMS 4–6), or network-wide as today?** If
    locked, approvals and the Office backend need the district expansion (see The world).
-3. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
+2. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
    decide, refer or allocate, so their core mission and Quest 1 can't be done by them.
 
 ## Settled after the builder check (Claude's calls)
