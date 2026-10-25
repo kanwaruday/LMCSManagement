@@ -127,4 +127,28 @@ assert.match(frame({ reg: 'HP665686', runId: 'R1', seq: 60 }).error, /another bu
 const other = frame({ reg: 'HP665686', runId: 'R77', seq: 1 }), mine = frame({ reg: 'HP659511', runId: 'R77', seq: 1 });
 assert.ok(other.success && mine.success && other.fileId !== mine.fileId, 'same runId+seq on two buses never share a fileId');
 assert.strictEqual(frame({ reg: 'HP665686', runId: 'R77', seq: 1 }).fileId, other.fileId, 'repeat on the same bus still dedups');
+
+// the Inspection JSON: only known safety items, each {ok: boolean, date?: 'yyyy-MM-dd', fileId?} (counts only, no free text)
+const insp = (inspection, kind) => cr({ runId: 'RQ' + (kind || 'i'), reg: 'HP659511', kind: kind || 'inspection', status: 'ended', inspection });
+assert.match(insp({ fire_extinguisher: { ok: true } }).error, /safety list/, 'no Safety Loadout tab yet: refused, never stored unchecked');
+tabs['Safety Loadout'] = [['Item ID', 'Label', 'Needs photo', 'Needs date', 'Order', 'Active'], ['fire_extinguisher', 'Fire extinguisher', 'yes', 'yes', '1', 'yes'], ['cctv', 'CCTV camera', 'no', 'no', '2', 'no']];
+const good = { fire_extinguisher: { ok: true, date: '2026-09-01', fileId: '1AbC_dEf-GhIjK' }, cctv: { ok: false } };
+assert.strictEqual(insp(good).success, true, 'a good shape is stored (an item switched off since is still known)');
+assert.deepStrictEqual(JSON.parse(tabs['Capture Runs'].find((r) => r[0] === 'RQi')[11]), good);
+assert.strictEqual(cr({ runId: 'RQs', reg: 'HP659511', kind: 'inspection', status: 'running' }).success, true, 'the start manifest carries no answers');
+const bad = [
+  [{ seat_belts: { ok: true } }, /Unknown safety item: seat_belts/],
+  [{ fire_extinguisher: { ok: 'false' } }, /ok must be true or false/],
+  [{ fire_extinguisher: { ok: 0 } }, /ok must be true or false/],
+  [{ fire_extinguisher: { ok: true, note: 'driver Ramesh' } }, /only ok, date and fileId/],
+  [{ fire_extinguisher: { ok: true, date: '1/9/2026' } }, /date must be yyyy-MM-dd/],
+  [{ fire_extinguisher: { ok: false, date: '2026-09-01' } }, /only on a Yes/],
+  [{ fire_extinguisher: { ok: true, fileId: 'x' } }, /fileId/],
+  [{ fire_extinguisher: 'yes' }, /must be an object/],
+  [['fire_extinguisher'], /must be an object/],
+  [{}, /no answers/],
+];
+bad.forEach(([v, re]) => assert.match(insp(v).error || '', re, JSON.stringify(v)));
+assert.ok(!tabs['Capture Runs'].some((r) => r[0] === 'RQi' && /Ramesh/.test(r[11])), 'a refused shape is not stored');
+assert.match(insp({ fire_extinguisher: { ok: true } }, 'timelapse').error, /Only an inspection run/, 'a timelapse run cannot carry answers');
 console.log('transport capture: all checks passed');

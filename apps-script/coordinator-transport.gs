@@ -333,12 +333,15 @@ function coordBusConfig_(body) {
 
 // ── Safety loadout (transport game Phase 1a): what every bus must carry, kept by the Owner ──
 // Tab 'Safety Loadout' in the transport workbook. The Owner edits it from the Owner portal (POST below); the capture portal's
-// Inspection mode shows one card per active item. Item IDs never change once given (inspection answers are keyed by them),
-// so a rename keeps the ID and an item is switched off, never deleted. The seed below is a default used only while the tab
-// is empty: once the Owner saves, the tab is the list.
-// GET  action=coordinatortransportloadout  every transport role: {items:[{id,label,needsPhoto,needsDate,order}]} (active only);
-//                                           the Owner also gets `all` (with `active`) for the editor
-// POST action=coordinatortransportloadout  Owner only: {items:[{id?,label,needsPhoto,needsDate,active}]} in display order
+// Inspection mode shows one card per active item. Item IDs are for life: inspection answers and bus_equipment follow-ups are
+// keyed by them, so a rename keeps the ID, an item is switched off (never deleted), and a new item gets an ID no answer has
+// ever used. The seed below is the default for an empty tab: the first read writes it into the tab (so the capture server,
+// another project, can check answers against real IDs); from then on the tab is the list.
+// GET  action=coordinatortransportloadout  every transport role: {items:[{id,label,needsPhoto,needsDate,order}] (active only),
+//                                           version}; the Owner also gets `all` (with `active`) for the editor
+// POST action=coordinatortransportloadout  Owner only: {version, items:[{id?,label,needsPhoto,needsDate,active}]} in display
+//                                           order. Every known id must come back; new items come without one; `version` must be
+//                                           the one the editor loaded, else "The list changed since you opened it".
 const COORD_TRANSPORT_TAB_LOADOUT = 'Safety Loadout';
 const COORD_LOADOUT_HEADER = ['Item ID', 'Label', 'Needs photo', 'Needs date', 'Order', 'Active'];
 const COORD_LOADOUT_SEED = [ // [id, label, needs photo, needs date]: the date is the speed governor's certificate date, the extinguisher's refill date
@@ -349,23 +352,43 @@ const COORD_LOADOUT_SEED = [ // [id, label, needs photo, needs date]: the date i
   ['school_name_phone', 'School name and phone painted', true, false], ['attendant', 'Attendant on board', false, false]];
 const COORD_LOADOUT_MAX = 40;
 const COORD_TRANSPORT_TAB_CAPTURE = 'Capture Runs'; // written by transport-capture.gs (Roster project) in this same workbook
+const COORD_LOADOUT_STALE = 'The list changed since you opened it. Reload, then save again.';
 
-/** Every loadout item in display order, with `active`. */
+/** An item id as stored: lower case, a-z 0-9 _ only (a hand-typed 'Seat-Belts ' reads as 'seat_belts'). Same rule in transport-capture.gs. */
+function coordLoadoutId_(v) { return String(v || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40); }
+/** A label as stored: one line, at most 80 characters, never starting like a spreadsheet formula. */
+function coordLoadoutLabel_(v) { return String(v || '').replace(/\s+/g, ' ').trim().replace(/^[=+\-@\s]+/, '').slice(0, 80); }
+
+/** Every loadout item in display order, with `active`. An empty tab gets the seed written into it first. */
 function coordLoadoutAll_() {
-  const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_LOADOUT);
-  const rows = sh ? sh.getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]).trim(); }) : [];
+  const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID), sh = ss.getSheetByName(COORD_TRANSPORT_TAB_LOADOUT);
+  const rows = sh ? sh.getDataRange().getValues().slice(1).filter(function (r) { return coordLoadoutId_(r[0]); }) : [];
   const yes = function (v) { return v === true || /^(yes|true|y)$/i.test(String(v).trim()); };
-  if (!rows.length) return COORD_LOADOUT_SEED.map(function (s, i) { return { id: s[0], label: s[1], needsPhoto: s[2], needsDate: s[3], order: i + 1, active: true }; });
+  if (!rows.length) {
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_LOADOUT, COORD_LOADOUT_HEADER,
+      COORD_LOADOUT_SEED.map(function (x, i) { return [x[0], x[1], x[2] ? 'yes' : 'no', x[3] ? 'yes' : 'no', String(i + 1), 'yes']; }));
+    return COORD_LOADOUT_SEED.map(function (x, i) { return { id: x[0], label: x[1], needsPhoto: x[2], needsDate: x[3], order: i + 1, active: true }; });
+  }
   return rows.map(function (r, i) {
-    return { id: String(r[0]).trim(), label: String(r[1]).trim(), needsPhoto: yes(r[2]), needsDate: yes(r[3]), order: Number(r[4]) || i + 1,
+    return { id: coordLoadoutId_(r[0]), label: coordLoadoutLabel_(r[1]), needsPhoto: yes(r[2]), needsDate: yes(r[3]), order: Number(r[4]) || i + 1,
       active: String(r[5]).trim() === '' || yes(r[5]) }; // a row typed into the sheet by hand with Active left blank counts as active
   }).sort(function (a, b) { return a.order - b.order; });
+}
+
+/** A short fingerprint of the whole list: the editor sends back the one it loaded, so a stale tab cannot overwrite newer edits. */
+function coordLoadoutVersion_(all) {
+  const t = JSON.stringify(all);
+  let h = 5381;
+  for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+  return h.toString(36) + '.' + t.length;
 }
 
 function coordLoadout_(caller) {
   const all = coordLoadoutAll_(), owner = caller.roles.indexOf('Owner') !== -1;
   const items = all.filter(function (x) { return x.active; }).map(function (x) { return { id: x.id, label: x.label, needsPhoto: x.needsPhoto, needsDate: x.needsDate, order: x.order }; });
-  return owner ? { success: true, items: items, all: all } : { success: true, items: items };
+  const out = { success: true, items: items, version: coordLoadoutVersion_(all) };
+  if (owner) out.all = all;
+  return out;
 }
 
 function coordLoadoutSet_(caller, body) {
@@ -375,42 +398,58 @@ function coordLoadoutSet_(caller, body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const known = {}, used = {}, rows = [];
-    coordLoadoutAll_().forEach(function (x) { known[x.id] = true; }); // a new item never takes the ID of an old one
+    const current = coordLoadoutAll_(), known = {}, taken = {}, used = {}, rows = [];
+    if (String(body.version || '') !== coordLoadoutVersion_(current)) return { success: false, error: COORD_LOADOUT_STALE };
+    current.forEach(function (x) { known[x.id] = true; taken[x.id] = true; });
+    (coordInspections_() || []).forEach(function (r) { Object.keys(r.items).forEach(function (k) { taken[coordLoadoutId_(k)] = true; }); }); // ids answers ever used
     for (let i = 0; i < list.length; i++) {
-      const x = list[i] || {}, label = String(x.label || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const x = list[i] || {}, label = coordLoadoutLabel_(x.label), sent = x.id != null && String(x.id).trim() !== '';
       if (!label) return { success: false, error: 'Item ' + (i + 1) + ' has no name' };
-      let id = String(x.id || '').trim();
-      if (id && !/^[a-z0-9_]{1,40}$/.test(id)) return { success: false, error: 'Bad item id: ' + id };
-      if (!id) {
-        const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'item';
+      let id = sent ? String(x.id).trim() : '';
+      if (sent && !known[id]) return { success: false, error: 'Unknown item id: ' + id + '. New items are sent without an id.' };
+      if (!sent) {
+        const base = coordLoadoutId_(label).slice(0, 32) || 'item';
         id = base;
-        for (let n = 2; used[id] || known[id]; n++) id = base + '_' + n;
+        for (let n = 2; taken[id] || used[id]; n++) id = base + '_' + n;
       }
       if (used[id]) return { success: false, error: '"' + label + '" is in the list twice' };
       used[id] = true;
-      rows.push([id, label, x.needsPhoto ? 'yes' : 'no', x.needsDate ? 'yes' : 'no', String(i + 1), x.active === false ? 'no' : 'yes']);
+      rows.push([id, label, x.needsPhoto === true ? 'yes' : 'no', x.needsDate === true ? 'yes' : 'no', String(i + 1), x.active === false ? 'no' : 'yes']);
     }
+    const missing = Object.keys(known).filter(function (id) { return !used[id]; });
+    if (missing.length) return { success: false, error: 'An item cannot be removed, only switched off: switch it off instead (missing: ' + missing.join(', ') + ').' };
     coordTransportWriteTab_(SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID), COORD_TRANSPORT_TAB_LOADOUT, COORD_LOADOUT_HEADER, rows);
   } finally { lock.releaseLock(); }
-  return { success: true, all: coordLoadoutAll_() };
+  const all = coordLoadoutAll_();
+  return { success: true, all: all, version: coordLoadoutVersion_(all) };
 }
 
-/** Finished safety checks from the capture portal: [{reg, runId, day: 'yyyy-MM-dd' (India), items: {itemId: {ok, date?, fileId?}}}].
- *  Counts only runs of kind 'inspection' whose end manifest arrived (Status 'ended') with answers in it. */
+/** Finished safety checks from the capture portal: [{reg, runId, day: 'yyyy-MM-dd' (India), items: {itemId: {ok, date?, fileId?}}}],
+ *  or null when the Capture Runs tab is missing (unknown, which is not "no checks": nothing may close on it).
+ *  Counts only runs of kind 'inspection' whose end manifest arrived (Status 'ended') with answers in it. Only ok === true is
+ *  present: a hand-edited "true" or 1 reads as missing. */
 function coordInspections_() {
   const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+  if (!sh) return null;
   const day = function (v) { // the phone sends ms since 1970; a hand-edited cell may be a Date or ISO text
     const d = v instanceof Date ? v : /^\d+$/.test(String(v).trim()) ? new Date(Number(v)) : new Date(String(v));
     return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, 'Asia/Kolkata', 'yyyy-MM-dd');
   };
   const out = [];
-  (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | ... | Inspection JSON (12th) | Status
+  sh.getDataRange().getValues().slice(1).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | ... | Inspection JSON (12th) | Status
     if (String(r[3]) !== 'inspection' || String(r[12]) !== 'ended') return;
-    let items = null;
-    try { items = JSON.parse(String(r[11] || 'null')); } catch (e) { items = null; }
+    let raw = null;
+    try { raw = JSON.parse(String(r[11] || 'null')); } catch (e) { raw = null; }
+    const items = {};
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) Object.keys(raw).forEach(function (k) {
+      const a = raw[k];
+      if (!a || typeof a !== 'object') return;
+      items[k] = { ok: a.ok === true };
+      if (a.ok === true && a.date) items[k].date = String(a.date);
+      if (a.ok === true && a.fileId) items[k].fileId = String(a.fileId);
+    });
     const d = day(r[5] || r[4]);
-    if (items && typeof items === 'object' && Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, items: items });
+    if (Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, items: items });
   });
   return out;
 }

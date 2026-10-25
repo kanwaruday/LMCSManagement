@@ -56,7 +56,8 @@ Coord.boot(function (body, session) {
 function Loadout(box, session) {
   const URL_ = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
   const esc = Coord.esc;
-  let items = [], dirty = false;
+  let items = [], version = '', dirty = false;
+  addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } }); // unsaved edits are not lost silently
   box.innerHTML = '<h2 id="loH">Safety loadout</h2><p class="note">What every bus must carry. Coordinators check each running bus once a month in the capture portal. A switched-off item is not asked.</p><div class="lo-body"><p class="note">Loading...</p></div>';
   const el = box.querySelector('.lo-body');
   const say = (t, cls) => { const s = box.querySelector('.lo-st'); if (s) { s.textContent = t; s.className = 'lo-st ' + (cls || ''); } };
@@ -64,14 +65,15 @@ function Loadout(box, session) {
     try {
       const r = await (await fetch(URL_ + '?action=coordinatortransportloadout&idToken=' + encodeURIComponent(session.idToken), { cache: 'no-store' })).json();
       if (!r.success) throw new Error(r.error || 'Request failed');
-      items = r.all; dirty = false; draw();
+      items = r.all; version = r.version; dirty = false; draw();
     } catch (err) { el.innerHTML = '<p class="note" role="alert">Could not load the safety loadout: ' + esc(err.message) + ' <button class="btn lo-retry">Retry</button></p>'; el.querySelector('.lo-retry').addEventListener('click', load); }
   }
   function draw(focus) {
     el.innerHTML = '<ol>' + items.map(function (x, i) {
       const n = esc(x.label || 'item ' + (i + 1));
       return '<li class="' + (x.active ? '' : 'off') + '" data-i="' + i + '"><input class="lo-name" value="' + esc(x.label) + '" aria-label="Name of item ' + (i + 1) + '" maxlength="80">' +
-        '<label><input type="checkbox" data-k="needsPhoto"' + (x.needsPhoto ? ' checked' : '') + '>Needs photo</label><label><input type="checkbox" data-k="needsDate"' + (x.needsDate ? ' checked' : '') + '>Needs date</label>' +
+        '<label><input type="checkbox" data-k="needsPhoto" aria-label="' + n + ' needs a photo"' + (x.needsPhoto ? ' checked' : '') + '>Needs photo</label>' +
+        '<label><input type="checkbox" data-k="needsDate" aria-label="' + n + ' needs a date"' + (x.needsDate ? ' checked' : '') + '>Needs date</label>' +
         '<span class="lo-ctl"><button class="btn" data-a="up" aria-label="Move ' + n + ' up"' + (i ? '' : ' disabled') + '>Up</button><button class="btn" data-a="down" aria-label="Move ' + n + ' down"' + (i < items.length - 1 ? '' : ' disabled') + '>Down</button>' +
         '<button class="btn" data-a="act" aria-label="' + (x.active ? 'Switch off ' : 'Switch on ') + n + '">' + (x.active ? 'Switch off' : 'Switch on') + '</button></span></li>';
     }).join('') + '</ol>' +
@@ -79,13 +81,20 @@ function Loadout(box, session) {
       '<div class="lo-save"><button class="btn primary" data-a="save">Save loadout</button><span class="lo-st" role="status"></span></div>';
     el.querySelectorAll('li').forEach(function (li) {
       const i = +li.dataset.i;
-      li.querySelector('.lo-name').addEventListener('input', function (e) { items[i].label = e.target.value; touch(); });
+      li.querySelector('.lo-name').addEventListener('input', function (e) {
+        items[i].label = e.target.value; touch();
+        const n = e.target.value.trim() || 'item ' + (i + 1); // the controls' labels name the item: keep them current without a redraw (focus stays put)
+        li.querySelector('[data-k="needsPhoto"]').setAttribute('aria-label', n + ' needs a photo'); li.querySelector('[data-k="needsDate"]').setAttribute('aria-label', n + ' needs a date');
+        li.querySelector('[data-a="up"]').setAttribute('aria-label', 'Move ' + n + ' up'); li.querySelector('[data-a="down"]').setAttribute('aria-label', 'Move ' + n + ' down');
+        li.querySelector('[data-a="act"]').setAttribute('aria-label', (items[i].active ? 'Switch off ' : 'Switch on ') + n);
+      });
       li.querySelectorAll('[data-k]').forEach(function (c) { c.addEventListener('change', function () { items[i][c.dataset.k] = c.checked; touch(); }); });
       li.querySelectorAll('[data-a]').forEach(function (b) { b.addEventListener('click', function () {
         const a = b.dataset.a, j = a === 'up' ? i - 1 : i + 1;
-        if (a === 'act') { items[i].active = !items[i].active; touch(); return draw({ i: i, a: 'act' }); }
+        if (a === 'act') { items[i].active = !items[i].active; touch(); draw({ i: i, a: 'act' }); return say((items[i].label || 'Item') + (items[i].active ? ' switched on' : ' switched off') + '. Not saved yet.'); }
         const t = items[i]; items[i] = items[j]; items[j] = t; touch();
         draw({ i: j, a: (a === 'up' && j === 0) || (a === 'down' && j === items.length - 1) ? (a === 'up' ? 'down' : 'up') : a }); // the moved item keeps focus
+        say('Moved ' + (items[j].label || 'item') + ' to position ' + (j + 1) + '. Not saved yet.');
       }); });
     });
     const add = function () {
@@ -106,11 +115,14 @@ function Loadout(box, session) {
     if (blank !== -1) { say('Item ' + (blank + 1) + ' has no name.', 'bad'); el.querySelectorAll('.lo-name')[blank].focus(); return; }
     const b = el.querySelector('[data-a="save"]'); b.disabled = true; say('Saving...');
     try {
-      const r = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ action: 'coordinatortransportloadout', idToken: session.idToken,
+      const r = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ action: 'coordinatortransportloadout', idToken: session.idToken, version: version,
         items: items.map(function (x) { return { id: x.id, label: x.label, needsPhoto: !!x.needsPhoto, needsDate: !!x.needsDate, active: x.active !== false }; }) }) })).json();
       if (!r.success) throw new Error(r.error || 'Could not save');
-      items = r.all; dirty = false; draw(); say('Saved. The next safety check on any bus uses this list.', 'good');
-    } catch (err) { b.disabled = false; say('Not saved: ' + err.message, 'bad'); }
+      items = r.all; version = r.version; dirty = false; draw(); say('Saved. The next safety check on any bus uses this list.', 'good');
+    } catch (err) {
+      b.disabled = false; say('Not saved: ' + err.message, 'bad');
+      if (/Reload/.test(err.message)) { const re = document.createElement('button'); re.className = 'btn'; re.textContent = 'Reload the list'; re.addEventListener('click', function () { dirty = false; load(); }); box.querySelector('.lo-save').appendChild(re); }
+    }
   }
   load();
 }

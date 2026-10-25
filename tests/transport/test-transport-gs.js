@@ -130,29 +130,48 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   ['GPS tracker', 'CCTV', 'First-aid box', 'Window grills', 'Emergency exit', 'Door lock', 'School name and phone', 'Attendant on board']
     .forEach(l => assert.ok(seed.items.some(i => i.label.toLowerCase().indexOf(l.toLowerCase()) === 0), 'seed has ' + l));
   assert.strictEqual(seed.all, undefined, 'a Coordinator gets the active list only');
+  const seedTab = J(book(FORM).getSheetByName('Safety Loadout')._rows());
+  assert.deepStrictEqual(seedTab.slice(1).map(x => x[0]), seed.items.map(i => i.id), 'the seed is written to the tab on first read, so the capture server knows its ids');
+  assert.strictEqual(typeof seed.version, 'string', 'the list carries a version, so a stale editor cannot overwrite a newer list');
   const edit = seed.items.map(i => Object.assign({}, i, { active: true }));
   edit.unshift(edit.splice(edit.findIndex(i => i.id === 'fire_extinguisher'), 1)[0]);            // reorder: fire extinguisher first
   edit.find(i => i.id === 'gps_tracker').label = 'GPS tracker (Blackbox)';                        // rename
   edit.find(i => i.id === 'cctv').active = false;                                                 // deactivate
   edit.push({ label: 'Seat belts for the driver', needsPhoto: true, needsDate: false, active: true }); // add
-  c.edit = edit;
-  const refused = r('coordLoadoutSet_(' + coord + ', {items: edit})');
+  c.edit = edit; c.v0 = seed.version;
+  const refused = r('coordLoadoutSet_(' + coord + ', {items: edit, version: v0})');
   assert.strictEqual(refused.success, false); assert.match(refused.error, /Owner/, 'Coordinator POST refused');
-  assert.strictEqual(book(FORM).getSheetByName('Safety Loadout'), null, 'a refused POST writes nothing');
-  assert.strictEqual(r('coordLoadoutSet_(' + owner + ', {items: edit})').success, true, 'Owner can set the list');
+  const tabNow = () => J(book(FORM).getSheetByName('Safety Loadout')._rows());
+  assert.deepStrictEqual(tabNow(), seedTab, 'a refused POST writes nothing');
+  // ids are for life: every known id must come back, new items come without one, and a stale editor is refused
+  c.omit = edit.filter(i => i.id !== 'cctv');
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: omit, version: v0})').error, /switch it off.*cctv/i, 'an item left out is refused, never deleted');
+  c.unknown = edit.concat([{ id: 'foo', label: 'Foo' }]);
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: unknown, version: v0})').error, /Unknown item id: foo/, 'an id the server never issued is refused');
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: edit, version: "old"})').error, /The list changed since you opened it. Reload, then save again./, 'a stale editor is refused');
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: edit})').error, /Reload/, 'no version, no save');
+  assert.deepStrictEqual(tabNow(), seedTab, 'and none of those wrote anything');
+  edit.find(i => i.id === 'door_lock').needsPhoto = 'false'; // only a real true counts
+  edit.find(i => i.id === 'attendant').label = '=HYPERLINK("x")Attendant on board';
+  assert.strictEqual(r('coordLoadoutSet_(' + owner + ', {items: edit, version: v0})').success, true, 'Owner can set the list');
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: edit, version: v0})').error, /Reload/, 'the same old version cannot save twice');
   const tab = book(FORM).getSheetByName('Safety Loadout')._rows();
   assert.deepStrictEqual(tab[0], ['Item ID', 'Label', 'Needs photo', 'Needs date', 'Order', 'Active']);
   const after = r('coordLoadout_(' + coord + ')').items;
   assert.strictEqual(after[0].id, 'fire_extinguisher', 'the Owner\'s order is kept');
   assert.strictEqual(after.find(i => i.id === 'gps_tracker').label, 'GPS tracker (Blackbox)', 'a rename keeps the id');
   assert.deepStrictEqual(after[after.length - 1], { id: 'seat_belts_for_the_driver', label: 'Seat belts for the driver', needsPhoto: true, needsDate: false, order: 11 }, 'a new item gets an id from its label');
+  assert.strictEqual(after.find(i => i.id === 'door_lock').needsPhoto, false, 'the string "false" is not true');
+  assert.ok(!/^[=+\-@]/.test(after.find(i => i.id === 'attendant').label), 'a label never starts like a formula');
   // inactive items hidden from inspection
   assert.ok(!after.some(i => i.id === 'cctv'), 'inactive items hidden from inspection');
   const all = r('coordLoadout_(' + owner + ')').all;
   assert.deepStrictEqual([all.length, all.find(i => i.id === 'cctv').active], [11, false], 'the Owner still sees the inactive item, to switch it back on');
-  c.dup = [{ id: 'cctv', label: 'A' }, { id: 'cctv', label: 'B' }];
-  assert.match(r('coordLoadoutSet_(' + owner + ', {items: dup})').error, /twice/);
-  assert.match(r('coordLoadoutSet_(' + owner + ', {items: [{label: "  "}]})').error, /name/);
+  c.v1 = r('coordLoadout_(' + owner + ')').version;
+  c.dup = all.concat([{ id: 'cctv', label: 'B' }]);
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: dup, version: v1})').error, /twice/);
+  c.blank = all.concat([{ label: '  ' }]);
+  assert.match(r('coordLoadoutSet_(' + owner + ', {items: blank, version: v1})').error, /name/);
   assert.strictEqual(r('coordLoadout_(' + owner + ')').all.length, 11, 'a refused list leaves the saved one alone');
   assert.match(cg, /action === 'coordinatortransportloadout'\) return coordJson_\(coordLoadout_\(caller\)\)/, 'GET route');
   assert.match(cg, /action === 'coordinatortransportloadout'\) return coordJson_\(coordLoadoutSet_\(caller, body\)\)/, 'POST route');
@@ -171,8 +190,10 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   capRun('HP2-c', 'HP2', 'inspection', '2026-11-03', null);                              // ended without answers: does not count
   const fleet2 = [{ reg: 'HP1', campus: 'LMS 4', operational: true, year: 2020 }, { reg: 'HP2', campus: 'LMS 4', operational: true, year: 2020 }, { reg: 'HP3', campus: 'LMS 4', operational: false, year: 2020 }];
   c.factsOn = today => ({ today, fleet: fleet2, live: null, health: [], days: [], checks: [], fills: [], answers: [], inspections: vm.runInContext('coordInspections_()', c), loadout: after });
+  capRun('HP2-d', 'HP2', 'inspection', '2026-10-01', okAll({ door_lock: { ok: 'true' } }));  // hand-edited row: only ok === true is present
   const ins = r('coordInspections_()');
-  assert.deepStrictEqual(ins.map(x => x.reg + ' ' + x.day).sort(), ['HP1 2026-10-20', 'HP2 2026-10-21'], 'only ended inspection runs with answers count');
+  assert.strictEqual(ins.find(x => x.runId === 'HP2-d').items.door_lock.ok, false, 'ok "true" (text) does not count as present');
+  assert.deepStrictEqual(ins.map(x => x.reg + ' ' + x.day).sort(), ['HP1 2026-10-20', 'HP2 2026-10-01', 'HP2 2026-10-21'], 'only ended inspection runs with answers count');
 
   // inspection run with fire extinguisher ok:false raises a follow-up for that bus
   const oct = r('gpsFollowUps_(factsOn("2026-10-25"))');
@@ -182,6 +203,20 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.match(eq[0].title, /^HP1: Fire extinguisher/);
   assert.ok(!oct.some(x => x.domain === 'bus_inspection'), 'both buses were checked this month');
 
+  // Ruling 21: no bus_inspection for months before the deploy-set start month; M2: none while every item is switched off
+  const from0 = vm.runInContext('GPS.inspectionFrom', c);
+  assert.match(from0, /^\d{4}-\d{2}$/, 'GPS.inspectionFrom is a yyyy-MM set at deploy');
+  c.bare = today => Object.assign(c.factsOn(today), { inspections: [] });
+  vm.runInContext('GPS.inspectionFrom = "2026-11"', c);
+  assert.ok(!r('gpsFollowUps_(bare("2026-10-25"))').some(x => x.domain === 'bus_inspection'), 'October is before the start month: nothing raised');
+  assert.ok(!r('gpsFollowUps_(bare("2026-11-04"))').some(x => x.domain === 'bus_inspection'), 'before the 5th the due month is still October: nothing raised');
+  assert.strictEqual(r('gpsFollowUps_(bare("2026-11-05"))').filter(x => x.domain === 'bus_inspection').length, 2, 'from the 5th of the start month it is raised');
+  vm.runInContext('GPS.inspectionFrom = "2026-10"', c);
+  assert.strictEqual(r('gpsFollowUps_(bare("2026-10-25"))').filter(x => x.domain === 'bus_inspection').length, 2, 'an earlier start month raises it in October');
+  assert.ok(!r('gpsFollowUps_(Object.assign(bare("2026-10-25"), {loadout: []}))').some(x => x.domain === 'bus_inspection'), 'every item switched off: no check can be done, nothing raised');
+  vm.runInContext('GPS.inspectionFrom = ' + JSON.stringify(from0), c);
+  vm.runInContext('GPS.inspectionFrom = "2026-11"', c); // the scenario below starts in November
+
   // bus_inspection raised on the 5th when no inspection this month, resolves after one is saved
   assert.ok(!r('gpsFollowUps_(factsOn("2026-11-04"))').some(x => x.domain === 'bus_inspection'), 'before the 5th, last month\'s check still counts');
   const nov = r('gpsFollowUps_(factsOn("2026-11-05"))').filter(x => x.domain === 'bus_inspection');
@@ -190,17 +225,38 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.strictEqual(nov[0].detail, 'Do this month\'s safety check in the capture portal');
   c.COORD_ALLOWLIST_SHEET_ID = 'ALLOW'; c.COORD_SHEET_ID = 'TASKS';
   book('ALLOW').insertSheet('a')._rows().push(['Email', 'Name', 'Campus', 'Roles'], ['c4@x.org', 'C4', 'LMS4', 'Coordinator']);
-  const cover = '{bus_inspection: true, bus_equipment: true}';
+  const cover = 'gpsInspectionCover_(factsOn("x").fleet, coordInspections_(), coordLoadoutAll_().filter(function (i) { return i.active; }))';
+  const cv = r(cover);
+  assert.deepStrictEqual(Object.keys(cv.bus_inspection).sort(), ['HP1', 'HP2', 'HP3'], 'only the fleet\'s buses are covered');
+  assert.ok(cv.bus_equipment['HP1|fire_extinguisher'] && !cv.bus_equipment['HP1|cctv'], 'equipment is covered per bus and active item');
+  assert.deepStrictEqual(r('gpsInspectionCover_(factsOn("x").fleet, null, [])'), { bus_inspection: {}, bus_equipment: {} }, 'no Capture Runs tab: nothing may close');
   vm.runInContext('gpsRaise_(gpsFollowUps_(factsOn("2026-11-05")), ' + cover + ')', c);
   const task = id => book('TASKS').getSheetByName('Tasks')._rows().find(x => x[0] === id);
   assert.deepStrictEqual([task('bus_inspection|HP1')[5], task('bus_inspection|HP1')[13], task('bus_inspection|HP1')[14]], ['open', 'c4@x.org', '2026-11-10']);
   assert.strictEqual(task('bus_equipment|HP1|fire_extinguisher')[5], 'open', 'the October fire extinguisher is still missing');
+  // switching an item off must not read as "cleared": its open follow-up stays for a person to close
+  c.v2 = r('coordLoadout_(' + owner + ')'); c.off = c.v2.all.map(i => Object.assign({}, i, { active: i.id === 'fire_extinguisher' ? false : i.active }));
+  assert.strictEqual(r('coordLoadoutSet_(' + owner + ', {items: off, version: v2.version})').success, true);
+  vm.runInContext('gpsRaise_(gpsFollowUps_(Object.assign(factsOn("2026-11-05"), {loadout: coordLoadoutAll_().filter(function (i) { return i.active; })})), ' + cover + ')', c);
+  assert.strictEqual(task('bus_equipment|HP1|fire_extinguisher')[5], 'open', 'the item was switched off, not fixed: the follow-up stays open');
+  c.on = r('coordLoadout_(' + owner + ')'); c.on2 = c.on.all.map(i => Object.assign({}, i, { active: i.id === 'fire_extinguisher' ? true : i.active }));
+  assert.strictEqual(r('coordLoadoutSet_(' + owner + ', {items: on2, version: on.version})').success, true);
   capRun('HP1-b', 'HP1', 'inspection', '2026-11-06', okAll({ fire_extinguisher: { ok: true, date: '2026-11-06', fileId: 'F2' } }));
   vm.runInContext('gpsRaise_(gpsFollowUps_(factsOn("2026-11-06")), ' + cover + ')', c);
   assert.strictEqual(task('bus_inspection|HP1')[5], 'resolved', 'the check is saved: the follow-up closes itself');
   assert.strictEqual(task('bus_equipment|HP1|fire_extinguisher')[5], 'resolved', 'the new check has the fire extinguisher: closed');
   assert.strictEqual(task('bus_inspection|HP2')[5], 'open', 'HP2 still has no check this month');
   assert.ok(r('GPS_DOMAINS').indexOf('bus_inspection') !== -1 && r('GPS_DOMAINS').indexOf('bus_equipment') !== -1, 'the Coordinator page lists them with the other transport follow-ups');
-  assert.ok(/bus_inspection: true, bus_equipment: true/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator-transport-gps.gs'), 'utf8')), 'the daily refresh closes them');
+  assert.ok(/gpsInspectionCover_\(base\.fleet, inspections, loadout\)/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator-transport-gps.gs'), 'utf8')), 'the daily refresh closes them with that cover');
+  c.partial = Object.assign(c.factsOn('2026-11-09'), { inspections: [{ reg: 'HP1', runId: 'a', day: '2026-11-01', items: { fire_extinguisher: { ok: false } } },
+    { reg: 'HP1', runId: 'b', day: '2026-11-08', items: { door_lock: { ok: true } } }] });
+  assert.ok(r('gpsFollowUps_(partial)').some(x => x.taskId === 'bus_equipment|HP1|fire_extinguisher'), 'a later check that left the item out (an older list on the phone) does not clear it');
+  // a new item never takes an id that answers already use, even if its row was deleted from the sheet by hand
+  capRun('HP1-z', 'HP1', 'inspection', '2026-11-07', okAll({ old_kit: { ok: true } }));
+  c.v3 = r('coordLoadout_(' + owner + ')'); c.add = c.v3.all.concat([{ label: 'Old kit' }]);
+  assert.strictEqual(r('coordLoadoutSet_(' + owner + ', {items: add, version: v3.version})').all.slice(-1)[0].id, 'old_kit_2', 'a fresh id, never a reused one');
+  // a row typed into the sheet by hand with a messy id is read back clean, so it does not block the Owner's saves
+  book(FORM).getSheetByName('Safety Loadout')._rows().push(['Seat-Belts ', 'Seat belts', 'no', 'no', '99', '']);
+  assert.ok(r('coordLoadout_(' + owner + ')').all.some(i => i.id === 'seat_belts'), 'a hand-typed id is normalised on read');
 }
 console.log('transport .gs: all checks passed');

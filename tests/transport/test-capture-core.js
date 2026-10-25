@@ -278,6 +278,26 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     const ids = srv.calls.filter((c) => c.action === 'capturefile').map((c) => 'D' + c.seq); // fakeServer answers fileId D<seq>
     assert.deepStrictEqual(srv.calls[3].run.inspection, { fire_extinguisher: { ok: true, date: '2026-09-01', fileId: ids[0] }, first_aid: { ok: true, fileId: ids[1] }, door_lock: { ok: false } });
   });
+  await test('an inspection photo that was retaken or answered No is dropped before upload; only current photos are sent', async () => {
+    const idb = memIdb(), store = mkStore(idb); const run = await store.newRun({ reg: 'HP1', kind: 'inspection' });
+    const old = await store.addFrame(run.id, { takenAt: NOW, base64: 'OLD' }), cur = await store.addFrame(run.id, { takenAt: NOW + 1, base64: 'NEW' });
+    const no = await store.addFrame(run.id, { takenAt: NOW + 2, base64: 'GONE' });
+    await store.dropFile(run.id, 'inspection', old); await store.dropFile(run.id, 'inspection', no);
+    assert.deepStrictEqual([idb.data.m.size, idb.files.m.size, (await store.getRun(run.id)).frames], [1, 1, 1], 'photo and its row are gone');
+    await store.endRun(run.id, { inspection: { first_aid: { ok: true, seq: cur }, cctv: { ok: false } } });
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(run.id);
+    assert.deepStrictEqual(srv.calls.filter((c) => c.action === 'capturefile').map((c) => c.base64), ['NEW']);
+  });
+  await test('an unfinished inspection uploads nothing; discard removes the run and its photos', async () => {
+    const idb = memIdb(), store = mkStore(idb); const run = await store.newRun({ reg: 'HP1', kind: 'inspection' });
+    await store.addFrame(run.id, { takenAt: NOW, base64: 'MAYBE' });
+    const srv = fakeServer(), states = [];
+    await createUploader({ store, post: srv.post, sleep: instant, onProgress: (p) => states.push(p.state) }).start(run.id);
+    assert.deepStrictEqual([srv.calls.length, states.slice(-1)[0]], [0, 'not-ended'], 'nothing leaves the phone before the check is saved');
+    await store.discard(run.id);
+    assert.deepStrictEqual([idb.runs.m.size, idb.files.m.size, idb.data.m.size], [0, 0, 0]);
+  });
 
   process.exit(failed ? 1 : 0);
 })();

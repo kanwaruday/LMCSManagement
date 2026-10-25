@@ -10,7 +10,9 @@
 //   runKind ('timelapse'|'count'|'inspection') is required and decides what a run accepts: timelapse frame+stop, inspection
 //   inspection only, count nothing (no camera). If the run's manifest row exists its Kind must equal runKind.
 // POST {action:'capturerun', idToken, run:{runId, reg, kind, startedAt, endedAt, frames, gaps, stops, inspection, status}}
-//   -> {success}. One row per runId in the tab 'Capture Runs' (upsert).
+//   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). `inspection` (inspection runs only) must be
+//   {itemId: {ok: boolean, date?: 'yyyy-MM-dd', fileId?}} with ids from the 'Safety Loadout' tab (kept by the Coordinator
+//   backend, coordinator-transport.gs): answers raise and close follow-ups, so nothing else is stored (no free text).
 // Who: Owner / ALL any bus; Coordinator the buses of their district; FeeClerk their campus (tupCovers_, unchanged).
 // ═══════════════════════════════════════════════════════════════════
 
@@ -20,6 +22,7 @@ const CAP_KINDS_ = ['frame', 'stop', 'inspection'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'] }; // profile kinds: Task 8
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
+const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 const CAP_PATH_ = TUP_PATH_.slice(0, -1).concat(['Capture']); // sibling of 'Bus Wise Documents'
 
 // Capture/<REG>/<runId>/, created on first use.
@@ -92,6 +95,30 @@ function captureFile_(body) {
   }
 }
 
+/** '' if `insp` is a valid set of safety-check answers, else what is wrong with it. */
+function capInspectionError_(insp) {
+  if (!insp || typeof insp !== 'object' || Array.isArray(insp)) return 'The safety check answers must be an object';
+  const keys = Object.keys(insp);
+  if (!keys.length) return 'The safety check has no answers';
+  const sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(CAP_LOADOUT_TAB_), known = {};
+  if (!sh) return 'The safety list is not set up yet. Open the capture page on Wi-Fi, then send again';
+  sh.getDataRange().getValues().slice(1).forEach(function (r) { // same id rule as coordLoadoutId_
+    const id = String(r[0] || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (id) known[id] = true;
+  });
+  for (let i = 0; i < keys.length; i++) {
+    const id = keys[i], a = insp[id];
+    if (!known[id]) return 'Unknown safety item: ' + String(id).slice(0, 40);
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return 'The answer for ' + id + ' must be an object';
+    if (Object.keys(a).some(function (k) { return ['ok', 'date', 'fileId'].indexOf(k) === -1; })) return 'An answer has only ok, date and fileId (' + id + ')';
+    if (typeof a.ok !== 'boolean') return 'ok must be true or false (' + id + ')';
+    if (!a.ok && (a.date !== undefined || a.fileId !== undefined)) return 'A date or photo goes only on a Yes (' + id + ')';
+    if (a.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(a.date))) return 'The date must be yyyy-MM-dd (' + id + ')';
+    if (a.fileId !== undefined && !/^[A-Za-z0-9_-]{10,128}$/.test(String(a.fileId))) return 'Bad photo fileId (' + id + ')';
+  }
+  return '';
+}
+
 function captureRun_(body) {
   const fail = function (m) { return { success: false, error: m }; };
   const run = body.run || {};
@@ -100,6 +127,11 @@ function captureRun_(body) {
   const runId = String(run.runId || '');
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return fail('Bad runId');
   if (CAP_RUN_KINDS_.indexOf(run.kind) === -1) return fail('Unknown kind: ' + run.kind);
+  if (run.inspection != null) {
+    if (run.kind !== 'inspection') return fail('Only an inspection run carries safety check answers');
+    const bad = capInspectionError_(run.inspection);
+    if (bad) return fail(bad);
+  }
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
     Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open')];

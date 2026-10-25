@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-10-25-transport-game-design.md, Loop 6. Guide: docs/transport-game/capture-guide.md.
 // - Timelapse (default): rear camera, a frame every ~15 m of GPS travel (geo.js), STOP HERE tags a stop with a photo.
 // - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
-//   the seats and the 1.4 x seats load cap.
+//   the seats and the load cap (LOAD_CAP_FACTOR x seats).
 // - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
 //   action=coordinatortransportloadout): Yes/No, a photo when the item needs one (the phone's own camera, not the timelapse
 //   viewfinder), a date when it needs one. Saved as an 'inspection' run: photos as kind 'inspection' files, the answers in
@@ -21,14 +21,14 @@ const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety 
 const HELP = {
   timelapse: 'Photo run: a frame every 15 m and one photo at each stop. Outside school hours only.',
   count: 'School run, no camera: count the children who get on and off at each stop.',
-  inspection: 'Monthly safety check with the bus parked: one card per item it must carry.',
+  inspection: 'Monthly safety check with the bus parked: one card per item it must carry. Photograph the item only, never children or people.',
 };
 // Goals are config: the defaults live here and are read through one accessor each, so Game Config can override them later.
 const LOAD_CAP_FACTOR = 1.4; // a bus may carry up to 1.4 x its seats
 const loadCapFactor = () => LOAD_CAP_FACTOR;
 const STATE = {
   uploading: 'Sending...', retrying: 'No answer from the server. Trying again shortly.', 'waiting-online': 'No connection. Sending resumes when it is back.',
-  stopped: 'Stopped.', done: 'Sent.', 'uploaded-so-far': 'Sent so far. The rest goes when the run has ended.',
+  stopped: 'Stopped.', done: 'Sent.', 'not-ended': 'Sends once the safety check is saved.', 'uploaded-so-far': 'Sent so far. The rest goes when the run has ended.',
 };
 
 const store = createRunStore(createCaptureIdb());
@@ -188,9 +188,13 @@ async function loadLoadout() {
 async function drawResume() {
   const open = (await store.runs()).filter((r) => !r.endedAt);
   $('resume').innerHTML = open.map((r) => `<div class="cap-resume" data-id="${esc(r.id)}"><p><b>${esc(KIND[r.kind])} on ${esc(r.reg)}</b> from ${when(r.startedAt)} is still open.</p>` +
-    `<button type="button" class="cap-btn" data-a="carry">Carry on</button> <button type="button" class="cap-btn" data-a="end">End it</button></div>`).join('');
+    `<button type="button" class="cap-btn" data-a="carry">Carry on</button> <button type="button" class="cap-btn" data-a="end">${r.kind === 'inspection' ? 'Discard it' : 'End it'}</button></div>`).join('');
   $('resume').querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
     const run = await store.getRun(b.closest('[data-id]').dataset.id);
+    if (b.dataset.a === 'end' && run.kind === 'inspection') { // an unsaved check is thrown away, photos and all: two taps, nothing is sent
+      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to discard its photos'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Discard it'; }, 4000); return; }
+      await store.discard(run.id); drawResume(); drawUpload(); return;
+    }
     if (b.dataset.a === 'end') { await store.endRun(run.id); drawResume(); drawUpload(); return; }
     S.resumeId = run.id;
     $('resume').innerHTML = '';
@@ -498,7 +502,7 @@ function stateLine(run, p) {
   if (p.state) return p.state === 'error' ? 'Stopped: ' + p.error : STATE[p.state] || '';
   if (run.endSent) return 'Sent.';
   if (run.status === 'error') return 'Stopped: ' + run.error + '. Tap Send to try again.';
-  return run.endedAt ? 'Waiting to send.' : 'Still recording.';
+  return run.endedAt ? 'Waiting to send.' : run.kind === 'inspection' ? 'Not saved yet: finish the check first.' : 'Still recording.';
 }
 function drawRow(li, run, p) {
   const pct = p.total ? (100 * p.sent / p.total) : run.endSent ? 100 : 0;
@@ -568,12 +572,13 @@ const SVG = {
   no: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
 };
 async function startInspection(resume, reg) {
-  const items = resume ? resume.draft && resume.draft.items : S.loadout;
-  if (!items || !items.length) return setupSay('The safety list is not on this phone yet. Open this page on Wi-Fi once, then start again.');
+  const items = (resume && resume.draft && resume.draft.items) || S.loadout; // a check closed before its draft was written takes today's list
+  if (!items) return setupSay('The safety list is not on this phone yet. Open this page on Wi-Fi once, then start again.');
+  if (!items.length) return setupSay('The Owner has switched off every safety item: there is nothing to check.');
   const bus = busOf(reg);
   try {
     S.run = resume || await store.newRun({ reg, kind: 'inspection', campus: bus && bus.campus, by: S.session.email, role: S.session.role });
-    if (!resume) S.run = await store.patchRun(S.run.id, { draft: { items, answers: {} } });
+    if (!S.run.draft) S.run = await store.patchRun(S.run.id, { draft: { items, answers: {} } });
   } catch (e) { return setupSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Could not save on this phone: ' + e.message); }
   S.resumeId = null;
   S.insp = { items, answers: { ...S.run.draft.answers }, thumbs: {} };
@@ -622,6 +627,7 @@ function drawMark(li, item) { const s = slotState(item); li.querySelector('.cap-
 function answer(id, ok) {
   const a = S.insp.answers[id];
   S.insp.answers[id] = ok ? { ...(a && a.ok ? a : {}), ok: true } : { ok: false }; // No drops the photo link and date; a Yes keeps what it had
+  if (!ok && a && a.seq != null) { store.dropFile(S.run.id, 'inspection', a.seq).catch(() => {}); delete S.insp.thumbs[id]; } // that photo is never sent
   saveDraft(); drawCard(id); drawSlots();
   $('inspMsg').textContent = '';
 }
@@ -650,9 +656,10 @@ async function onInspPhoto() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving photo...'; }
   try {
     const base64 = await readImage(file);
-    // ponytail: a retaken photo leaves the first one on the phone and it is sent too (the answer points at the new one)
+    const old = S.insp.answers[id] && S.insp.answers[id].seq;
     const seq = await store.addFrame(S.run.id, { takenAt: Date.now(), base64 });
     S.insp.answers[id] = { ...S.insp.answers[id], ok: true, seq };
+    if (old != null) await store.dropFile(S.run.id, 'inspection', old); // a retake replaces the old photo: only the current one is sent
     S.insp.thumbs[id] = 'data:image/jpeg;base64,' + base64;
     saveDraft();
   } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : e.message; }
@@ -678,6 +685,9 @@ async function saveInspection() {
   });
   $('inspSave').disabled = true;
   try {
+    // only the photos the answers point at leave the phone (a photo left by a page closed mid-retake, say, is dropped here)
+    const keep = new Set(Object.values(inspection).map((o) => o.seq).filter((x) => x != null));
+    for (const f of await store.pending(S.run.id)) if (!keep.has(f.seq)) await store.dropFile(S.run.id, f.kind, f.seq);
     await store.endRun(S.run.id, { inspection });
     S.run = await store.getRun(S.run.id);
   } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message; return; }

@@ -68,6 +68,8 @@ export function createUploader({
     };
 
     let pending = await refresh();
+    // A safety check sends nothing until it is saved: until then a photo may still be retaken or dropped (private photos).
+    if (run.kind === 'inspection' && !run.endedAt) return progress('not-ended');
     progress('uploading');
     if (!run.startSent) {
       const r = await send(manifest('running'), progress);

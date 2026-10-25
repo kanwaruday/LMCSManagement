@@ -25,6 +25,7 @@ const GPS = {
   proofFrom: '2026-10-26', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
   due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30, bus_inspection: 5, bus_equipment: 3 },
   inspectionDay: 5, // the monthly safety check is due by the 5th
+  inspectionFrom: '2026-11', // set at deploy: the first month a safety check is asked for (no follow-up for months before it)
 };
 const GPS_DOMAINS = Object.keys(GPS.due);
 const COORD_DEPT_TRANSPORT = 'Transport';
@@ -140,8 +141,12 @@ function gpsFollowUps_(facts) {
   // month's still counts, so a check that was missed stays open across the turn of the month instead of closing itself
   const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dueMonth = Number(t.slice(8, 10)) >= GPS.inspectionDay ? t.slice(0, 7) : gpsAddDays_(t.slice(0, 7) + '-01', -1).slice(0, 7);
-  const lastCheck = {}, loadout = {};
-  (facts.inspections || []).forEach(function (x) { if (!lastCheck[x.reg] || x.day >= lastCheck[x.reg].day) lastCheck[x.reg] = x; });
+  const lastCheck = {}, lastAnswer = {}, loadout = {}; // per bus; per bus and item: the newest check that answered it (a check from an
+  // older list on the phone may leave an item out, and leaving it out says nothing about it)
+  (facts.inspections || []).slice().sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; }).forEach(function (x) {
+    lastCheck[x.reg] = x;
+    Object.keys(x.items).forEach(function (id) { lastAnswer[x.reg + '|' + id] = { a: x.items[id], day: x.day }; });
+  });
   (facts.loadout || []).forEach(function (i) { loadout[i.id] = i; }); // active items only: a switched-off item raises nothing
   const add = function (o) { out.push(Object.assign({ due: due(o.domain), auto: false }, o)); };
   fleet.forEach(function (b) {
@@ -159,14 +164,14 @@ function gpsFollowUps_(facts) {
       title: b.reg + ': registered ' + b.year + (age >= GPS.ageLimit ? ', over the 15-year limit for school buses' : ', reaches the 15-year limit in ' + (Number(b.year) + GPS.ageLimit)),
       detail: 'HP rules (2018) allow school vehicles up to 15 years. Send the Owner a plan: replace, merge its route into another bus, or retire it.' });
     const chk = lastCheck[b.reg];
-    if (facts.inspections && !(chk && chk.day >= dueMonth + '-01')) add({ taskId: 'bus_inspection|' + b.reg, domain: 'bus_inspection', campus: c, severity: 'medium', auto: true,
+    if (facts.inspections && dueMonth >= GPS.inspectionFrom && (!facts.loadout || facts.loadout.length) && !(chk && chk.day >= dueMonth + '-01')) add({ taskId: 'bus_inspection|' + b.reg, domain: 'bus_inspection', campus: c, severity: 'medium', auto: true,
       title: b.reg + ': no safety check in ' + MON[Number(dueMonth.slice(5, 7)) - 1], detail: 'Do this month\'s safety check in the capture portal' });
-    // every item marked missing in the bus's latest check, until a later check has it
-    if (chk) Object.keys(chk.items).forEach(function (id) {
-      const a = chk.items[id], item = loadout[id];
-      if (!item || !a || a.ok !== false) return;
+    // every active item whose newest answer for this bus is not a Yes, until a later check has it
+    Object.keys(loadout).forEach(function (id) {
+      const last = lastAnswer[b.reg + '|' + id], item = loadout[id];
+      if (!last || last.a.ok === true) return; // a switched-off item is not in `loadout`: nothing new (gpsInspectionCover_ leaves its open one alone)
       add({ taskId: 'bus_equipment|' + b.reg + '|' + id, domain: 'bus_equipment', campus: c, severity: 'high', auto: true,
-        title: b.reg + ': ' + item.label + ' missing in the safety check of ' + gpsDay_(chk.day, t), detail: 'Get it fitted or repaired, then check it again in the capture portal.' });
+        title: b.reg + ': ' + item.label + ' missing in the safety check of ' + gpsDay_(last.day, t), detail: 'Get it fitted or repaired, then check it again in the capture portal.' });
     });
   });
   const bus = {};
@@ -246,8 +251,9 @@ function gpsRaise_(wanted, covered) {
         department: COORD_DEPT_TRANSPORT, assignee: owners[w.campus] || '', due: w.due });
     });
     for (let i = 1; i < rows.length; i++) {
-      const id = String(rows[i][0]), dom = rows[i][1], reg = id.split('|')[1];
-      if (rows[i][5] !== 'open' || live[id] || !covered[dom] || (covered[dom] !== true && !covered[dom][reg])) continue; // true: every follow-up of the domain
+      const id = String(rows[i][0]), dom = rows[i][1], reg = id.split('|')[1], rest = id.slice(String(dom).length + 1);
+      // true: every follow-up of the domain; else keyed by vehicle, or by everything after the domain ('HP1|fire_extinguisher')
+      if (rows[i][5] !== 'open' || live[id] || !covered[dom] || (covered[dom] !== true && !covered[dom][reg] && !covered[dom][rest])) continue;
       sh.getRange(i + 1, 6).setValue('resolved');
       sh.getRange(i + 1, 10, 1, 2).setValues([[now, 'system (condition cleared)']]);
       rows[i][5] = 'resolved';
@@ -283,14 +289,28 @@ function gpsRefresh_(days, health) {
   let live = null;
   try { live = coordBusFetch_().buses; } catch (err) { console.error('GPS live feed: ' + err.message); }
   if (live && !live.length) live = null; // an empty answer (bad id, vendor glitch) must not read as "no bus has a tracker"
+  const inspections = coordInspections_(), loadout = coordLoadoutAll_().filter(function (i) { return i.active; });
   const wanted = gpsFollowUps_({ today: today, fleet: base.fleet, live: live, health: health, days: days, checks: checks, fills: fills, answers: gpsRows_(GPS_TAB_ANSWERS),
-    inspections: coordInspections_(), loadout: coordLoadoutAll_().filter(function (i) { return i.active; }) });
+    inspections: inspections || [], loadout: loadout }); // no Capture Runs tab: no check has been sent, so the monthly ones are due (but nothing closes, below)
   // which vehicles each self-clearing check actually looked at this time: only those may be closed by it
   const fleetRegs = {}, healthRegs = {};
   base.fleet.forEach(function (b) { fleetRegs[b.reg] = true; });
   health.forEach(function (h) { healthRegs[h.reg] = true; });
-  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true, bus_inspection: true, bus_equipment: true });
+  const cover = gpsInspectionCover_(base.fleet, inspections, loadout);
+  gpsRaise_(wanted, { gps_blind: healthRegs, gps_dead: live ? fleetRegs : {}, gps_none: live ? fleetRegs : {}, bus_age: fleetRegs, fuel_proof: true,
+    bus_inspection: cover.bus_inspection, bus_equipment: cover.bus_equipment });
   return { checks: checks.length, followUps: wanted.length };
+}
+
+/** What the safety-check follow-ups may close: the fleet's buses for bus_inspection, and each bus x ACTIVE item for bus_equipment
+ *  (an item switched off or gone is not "fixed": its open follow-up waits for a person). Nothing when Capture Runs is unreadable. */
+function gpsInspectionCover_(fleet, inspections, loadout) {
+  const ins = {}, eq = {};
+  if (inspections) fleet.forEach(function (b) {
+    ins[b.reg] = true;
+    (loadout || []).forEach(function (i) { eq[b.reg + '|' + i.id] = true; });
+  });
+  return { bus_inspection: ins, bus_equipment: eq };
 }
 
 // ── Reads ──

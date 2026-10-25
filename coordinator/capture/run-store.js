@@ -151,6 +151,21 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     // The one place a photo is read: its base64, or undefined once it was sent.
     fileData: (runId, kind, seq) => serial(async () => (await idb.data.get(fileId(runId, kind, seq)))?.base64),
 
+    // Drop one unsent photo (an inspection photo that was retaken, or whose item was then answered No): it never leaves the phone.
+    // A photo already sent stays sent (false).
+    dropFile: (runId, kind, seq) => serial(async () => {
+      const id = fileId(runId, kind, seq), f = await idb.files.get(id);
+      if (!f || f.sent) return false;
+      await idb.data.delete(id); await idb.files.delete(id);
+      const run = await load(runId); run.frames = Math.max(0, run.frames - 1); await idb.runs.put(run);
+      return true;
+    }),
+    // Remove a run and everything it holds (an unfinished safety check the user discards).
+    discard: (runId) => serial(async () => {
+      for (const f of await filesOf(runId)) { await idb.data.delete(f.id); await idb.files.delete(f.id); }
+      await idb.runs.delete(runId);
+    }),
+
     // Sent: keep the metadata row (seq, kind, fileId, sentAt), drop the photo.
     markSent: (runId, kind, seq, serverFileId) => serial(async () => {
       const id = fileId(runId, kind, seq), f = await idb.files.get(id);
