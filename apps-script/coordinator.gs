@@ -200,7 +200,7 @@ function coordVerifyCaller_(idToken) {
   if (hit) return JSON.parse(hit);
   try {
     const email = coordTokenEmail_(idToken);
-    if (email === null) return null;
+    if (!email) return null;
     const rows = SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
@@ -220,7 +220,7 @@ function coordVerifyCaller_(idToken) {
 }
 
 /** Google ID token -> the lower-cased email it was issued to, or null unless Google verifies it, it was issued to this
- *  portal (aud) and the email is verified. Shared by coordVerifyCaller_ and coordVerifyPrincipal_ (coordinator-principal.gs). */
+ *  portal (aud) and the email is present and verified. Shared by coordVerifyCaller_ and coordVerifyPrincipal_ (coordinator-principal.gs). */
 function coordTokenEmail_(idToken) {
   try {
     const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
@@ -228,7 +228,8 @@ function coordTokenEmail_(idToken) {
     const payload = JSON.parse(res.getContentText());
     if (payload.aud !== COORD_GOOGLE_CLIENT_ID) return null;
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
-    return (payload.email || '').toLowerCase();
+    const email = String(payload.email || '').trim().toLowerCase();
+    return email || null; // a missing email must never match a blank allowlist row
   } catch (err) {
     return null;
   }

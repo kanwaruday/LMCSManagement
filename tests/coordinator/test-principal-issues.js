@@ -38,13 +38,14 @@ const allowTabs = { Sheet1: [['email', 'name', 'campus', 'roles', 'canDecide'],
   ['p4@lms.org.in', 'Test P4', 'LMS4', 'Principal'], ['pall@lms.org.in', 'Test PAll', 'ALL', 'Principal'],
   ['plist@lms.org.in', 'Test PList', 'LMS4, LMS5', 'Principal'], ['fc@lms.org.in', 'Test FC', 'LMS4', 'FeeClerk'],
   ['c@lms.org.in', 'Test Coord', 'ALL', 'Coordinator'], ['c4@lms.org.in', 'Test Coord4', 'LMS4', 'Coordinator'], ['t@lms.org.in', 'Test T', 'LMS4', 'Teacher'],
-  ['p2@lms.org.in', 'Test P2', 'lms2 ', 'Principal']] };
+  ['p2@lms.org.in', 'Test P2', 'lms2 ', 'Principal'], ['', 'Blank row', 'LMS4', 'Coordinator, Principal']] }; // a blank email cell must never match
 
 const CLIENT = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
 const tokens = {};
 ['p4', 'pall', 'plist', 'fc', 'c', 'c4', 't', 'p2', 'nobody'].forEach((u) => { tokens['tok-' + u] = { aud: CLIENT, email_verified: 'true', email: u.toUpperCase() + '@lms.org.in' }; });
 tokens['tok-badaud'] = { aud: 'someone-else', email_verified: 'true', email: 'p4@lms.org.in' };
 tokens['tok-unverified'] = { aud: CLIENT, email_verified: 'false', email: 'p4@lms.org.in' };
+tokens['tok-noemail'] = { aud: CLIENT, email_verified: 'true' };
 let fetches = 0;
 const cacheStore = {};
 const ctx = { console,
@@ -98,6 +99,9 @@ assert.deepStrictEqual(plain(ctx.coordVerifyCaller_('tok-c')), { email: 'c@lms.o
 assert.strictEqual(ctx.coordVerifyCaller_('tok-fc').feeClerkOnly, true);
 assert.strictEqual(ctx.coordVerifyCaller_('tok-badaud'), null);
 assert.strictEqual(ctx.coordVerifyCaller_('tok-unverified'), null);
+assert.strictEqual(ctx.coordVerifyCaller_('tok-noemail'), null);      // no email never matches the blank allowlist row
+assert.strictEqual(ctx.coordVerifyPrincipal_('tok-noemail'), null);
+assert.strictEqual(vm.runInContext('coordTokenEmail_', ctx)('tok-noemail'), null);
 assert.ok(Object.keys(cacheStore).some((k) => k.indexOf('coordauth_') === 0) && Object.keys(cacheStore).some((k) => k.indexOf('coordprin_') === 0));
 
 // ── routes ──
