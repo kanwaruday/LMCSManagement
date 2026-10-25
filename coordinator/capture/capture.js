@@ -605,6 +605,7 @@ function drawSlots() {
   $('slots').innerHTML = st.map((x) => `<li data-s="${x}">${x === 'ok' ? SVG.ok : x === 'no' ? SVG.no : ''}</li>`).join('');
   $('slots').style.setProperty('--n', String(Math.min(st.length, 12))); // a long list wraps to a second row of slots
   $('inspCount').textContent = `${done} of ${st.length} done`;
+  $('inspCount').classList.toggle('cap-good', done === st.length); // every slot answered: the count turns green
   $('inspSave').textContent = done === st.length ? 'Save safety check' : `Save safety check (${done} of ${st.length} done)`;
 }
 function drawCard(id) {

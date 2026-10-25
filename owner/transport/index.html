@@ -36,6 +36,7 @@
 .lo-save .btn.primary{background:var(--dark);color:#fff;border-color:var(--dark);min-height:44px;font-size:14px;padding:0 20px}
 .lo-save .btn.primary:hover{background:#000;color:#fff}
 .lo-save .btn{min-height:44px}
+.lo-err{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;color:var(--red);font-weight:600}
 .lo-st{font-size:13px;font-weight:600}.lo-st.warn{color:var(--amber)}.lo-st.bad{color:var(--red);font-weight:700}.lo-st.good{color:#15803d;font-weight:700}
 @media (max-width:600px){
   .lo li{grid-template-columns:24px minmax(0,1fr) 48px;grid-template-areas:"n name up" ". opts down";gap:6px 8px;padding:10px 0}
@@ -90,7 +91,7 @@ function Loadout(box, session) {
       const r = await (await fetch(URL_ + '?action=coordinatortransportloadout&idToken=' + encodeURIComponent(session.idToken), { cache: 'no-store' })).json();
       if (!r.success) throw new Error(r.error || 'Request failed');
       items = r.all; version = r.version; dirty = false; draw();
-    } catch (err) { el.innerHTML = '<p class="note" role="alert">Could not load the safety loadout: ' + esc(err.message) + ' <button class="btn lo-retry">Retry</button></p>'; el.querySelector('.lo-retry').addEventListener('click', load); }
+    } catch (err) { el.innerHTML = '<p class="note lo-err" role="alert">Could not load the safety loadout: ' + esc(err.message) + ' <button class="btn lo-retry">Retry</button></p>'; el.querySelector('.lo-retry').addEventListener('click', load); }
   }
   function draw(focus) {
     el.innerHTML = '<ol>' + items.map(function (x, i) {
