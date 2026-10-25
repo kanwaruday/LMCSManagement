@@ -47,8 +47,8 @@ Inputs:
 4. Teachers work toward **shared team goals**, and their real help to each other is credited.
 5. Each teacher sees **their own conditions** (period load, free periods), private to them, as things the school
    owes them.
-6. Ready for the framework's **February 2027 two-campus pilot** and the **March 2027 go-live** (Uday), with goals set
-   per season as config.
+6. **The chapter quest live at all six schools as soon as it is built** (Uday: "right away, at each school"). The rest
+   follows the framework's February 2027 pilot and March 2027 go-live (Uday), with goals set per season as config.
 
 ## Non-goals
 
@@ -316,17 +316,36 @@ quests. These are real data entry, and done is detected from data:
   opt to share anonymously (Claude's call).
 - No location data of any kind.
 
-## Phasing (to fit the framework's timeline)
+## Phasing (chapter quest first, at every school)
+
+**Uday (Q7): "right away, at each school".** The chapter quest goes live at all six schools as soon as it is built.
+There is no single-campus trial, so it leads the plan. Everything else follows the framework's timeline.
+
+**What the chapter quest needs first (T0), and what it does not.**
+- **It needs:**
+  - the shared episode engine (same-chapter rule, Q5);
+  - somewhere to write the planned activity (`Teacher Planned Activities`);
+  - the overnight LM Studio check (`Teacher Activity Matches`);
+  - the framework's game backend and `assets/game.js` on the teacher home;
+  - the Teacher Owl's art (game director).
+- **It does not need the timetable.** The quest reads the CW/HW feed, `EmpAcademic` and the course map, which exist
+  at all six schools. That includes LMS 1, which has no timetable. The timetable only drives today's line and the
+  per-period "due" of the daily log, which falls back to working days without it.
 
 | Phase | When | Ships | Depends on |
 |---|---|---|---|
-| **T0. Data ready** | Nov 2026 | Episode engine with tests on a feed snapshot; *Planned activity* column added to the 6 course maps; timetable re-import including LMS 1, with the unmatched-name report; name-resolution audit of the CW/HW feed | Uday's approval; Course Mapping workbook owners |
-| **T1. My Classroom v1** | Dec 2026 (framework Phase 2) | Teacher Owl intro; Today panel with the CW/HW card, remediation due and activity plan due; today's line; class cards with quest steps 1, 2, 4, 5; Quests 1 and 2; days on track | Framework Phase 1 shell + game backend |
-| **T2. Activities and teams** | Jan 2027 (framework Phase 3) | Nightly LM Studio activity match (step 3); activity bank + help credit; subject and campus team goals; conditions panel; Principal campus setup quest | T1 |
-| **Pilot** | Feb 2027 | Two campuses with complete timetables; tune wording, caps and the 7-tag rule from real use | T2; **teacher leave in Approvals** (below) |
-| **Go-live** | Mar 2027 | All campuses; season 1 config set by the Owner | Pilot |
-| **T3. Outcomes** | When the CSM extractor reaches exams | Remediation judged by ERP marks (children as counts) | csm-erp-extractor Phase 3 |
-| **T4. Standing** | When the incentive engine is encoded | Private standing replaces the draft score | Incentive thread |
+| **T0. Chapter-quest groundwork** | Starts on approval (Nov 2026) | Shared episode engine (same-chapter remediation, 7+-tag entries excluded) with tests that reproduce the 25 Oct snapshot (60 of 1,793); `Teacher Planned Activities` tab and its one-line write action; the Mac's nightly LM Studio activity match pushing to `Teacher Activity Matches`, spot-checked on a sample; name-resolution audit of the CW/HW feed (unmatched list per campus) | Uday's approval; the framework's game backend project created (framework Phase 1, Task 1) |
+| **T1. Chapter quest live, all six schools** | As soon as T0 and the framework shell are deployed (target late Nov 2026) | Teacher Owl intro; class cards with all 5 quest steps; missions `remediation_due`, `activity_plan_due`, `cwa_due` and the one `cwhw_log` card (working-day based); Today panel on the teacher home; Quests 1 and 2; days on track without a denominator | T0; framework Phase 1 (game backend, `game.js`, Today panel) extended to the teacher home. **Requested from the game director:** bring the teacher home into the shell now, not in Dec |
+| **T2. Today's line and conditions** | Dec 2026 (framework Phase 2) | Timetable moved behind the backend (`Teacher Timetable`; the public JSON removed); today's line; per-period "due" for the daily log; conditions panel; Principal campus setup quest (LMS 1 timetable, unmatched names, `EmpAcademic` gaps); nightly teacher snapshot inside the framework's trigger | T1; framework Phase 2 |
+| **T3. Teams and help** | Jan 2027 (framework Phase 3) | Subject and campus team goals; team streak with freeze; activity bank + help credit | T2; framework Phase 3 |
+| **Framework pilot** | Feb 2027 | The teacher chapter quest is already live everywhere. The two-campus pilot tunes the rest (Today caps, wording, teams). "Of M" returns for teachers once leave is in Approvals | T3; **teacher leave in Approvals** (below) |
+| **Go-live** | Mar 2027 | All campuses and all teacher features; season 1 config set by the Owner | Pilot |
+| **T4. Outcomes** | When the CSM extractor reaches exams | Remediation judged by ERP marks (children as counts) | csm-erp-extractor Phase 3 |
+| **T5. Standing** | When the incentive engine is encoded | Private standing replaces the draft score | Incentive thread |
+
+**Timing note.** New teaching ends around 30 Nov for Classes 10 and 12, and around 14–17 Feb for the others. A late-
+November start gives the other classes about 11 teaching weeks this session, and the quest then runs in full from
+April 2027 (Season 1). Classes 10 and 12 see it properly only from the new session.
 
 **Dependency: teacher leave in Approvals (Uday, Q6), before the February pilot.** This is a separate build, not part
 of this module. It extends `approvals.gs` with the bye-law leave categories (the 12 in Payroll's leave template) for
@@ -353,7 +372,9 @@ px and desktop) and shipped only with Uday's go-ahead.
    chapters"). The low starting baseline is accepted as honest.
 7. Leave: "Leave into Approvals". Teachers apply for leave through the portal's Approvals before the February
    pilot. Until then, days on track shows no denominator.
-8. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
+8. Chapter quest: "right away, at each school". No single-campus trial; it goes live at all six schools as soon as
+   it is built.
+9. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
 
 ## Settled after the builder check (Claude's calls)
 
@@ -385,20 +406,22 @@ px and desktop) and shipped only with Uday's go-ahead.
    - It becomes a `Teacher Timetable` tab read by the game backend.
    - The existing "Your Timetable" card is rewired to that read, and the JSON file is removed from the repo.
 6. **No LMS 1 timetable source exists yet.** Collecting it is the LMS 1 Principal's campus setup quest. Until then,
-   LMS 1 uses the `EmpAcademic` fallback, so LMS 1 is not a pilot campus.
+   LMS 1 uses the `EmpAcademic` fallback for the daily log. The chapter quest doesn't need a timetable, so LMS 1 gets
+   it with everyone else.
 
 ## Open questions for Uday
 
-Q4 was asked first; Q5–Q7 come from the builder check (all sent via the LMCS Master Agent).
+All answered on 2026-10-25, via the LMCS Master Agent. Q4 was asked first; Q5–Q7 came from the builder check.
 
 1. ~~**Q4: who is a teacher's team?**~~ **Answered (Uday):** "Subject and campus both" (see Loop 4).
 2. ~~**Q5: is remediation matched on the same chapter or the same class-subject?**~~ **Answered (Uday):**
    "remediations need to get matched to the chapters": same chapter only (see Loop 2, step 5).
 3. ~~**Q6: where do teacher leave days come from?**~~ **Answered (Uday):** "Leave into Approvals". Teachers apply
    for leave in the portal's Approvals before the February pilot. Until then, "N days on track" with no "of M".
-4. **Q7: when does the chapter-quest pilot run?** New teaching ends around 30 Nov (Classes 10, 12) and around 14–17
-   Feb (others). Recommended: pilot the chapter quest on one campus in Dec–Jan. The February pilot then covers the
-   daily log and planning next session's Term I activities.
+4. ~~**Q7: when does the chapter-quest pilot run?**~~ **Answered (Uday):** "right away, at each school". See
+   Phasing.
+
+No questions are open.
 
 ## Left to the builder
 
