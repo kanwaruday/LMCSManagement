@@ -1351,12 +1351,19 @@ function hiringUpdateStatus_(caller, body) {
   // except for "Other". See hirRejectRow_.
   if (status === 'Rejected') hirCheckRejectArgs_(body.rejectReason, body.rejectNote);
 
+  // The campus actually doing the hiring is the CALLER's own campus, not necessarily whichever campus the applicant listed first --
+  // a locked Principal browsing their district can act on a candidate who only ticked a sister campus. Owner/ALL has no single
+  // campus of their own, so it keeps the branches-parse fallback (first campus mentioned).
+  const branchMatch = branches.match(/LMS-(\d)/);
+  const applicantCampus = caller.campusId !== 'ALL' ? caller.campusId : (branchMatch ? 'LMS' + branchMatch[1] : caller.campusId);
+
   if (status === 'Hired') {
     const phone = String(sheet.getRange(row, HIR_COL.PHONE).getValue() || '').trim();
     const missing = [];
     if (!hirIsHiringApproved_(hirApplicantId_(row))) missing.push('an Owner\'s approval of this candidate\'s Salary Offer (after their MD Academics interview)');
-    // 2026-10-25, per Uday (review P0 #3): the "New/ Backup Position" requisition is no longer a Hired condition -- closing a position
-    // must not strand a candidate the Owner already approved.
+    // Still a hard requirement (Uday, 2026-10-25: "do not drop the requisition check"): the campus needs an APPROVED "New/ Backup
+    // Position". The message says what to do, because a Principal closing a position can strand an Owner-approved hire (review #5).
+    if (!hirApprovalApproved_(applicantCampus, 'New/ Backup Position')) missing.push('an approved "New/ Backup Position" for ' + applicantCampus + ' -- the position may have been closed; ask the Owner to approve a new one (Approvals), then try again');
     if (!hirDojStr_(sheet.getRange(row, HIR_COL.DOJ).getValue())) missing.push('the Date of Joining');
     // 2026-10-22: a report filed in the portal counts as well as the old Google Form; a "done, report later"
     // mark does not -- the paperwork has to catch up before the hire.

@@ -236,19 +236,21 @@ T('a Hired candidate: no scheduling, shortlisting or reports; Hired/Rejected can
 
 // ── The Hired gate (2026-10-25, per Uday): Owner approval, Date of Joining, Interview + Demo Report, Employee Master row (Start
 // Hiring Process) and the Bio-Data from the portal's Documents table. Nothing else gates it.
-T('Hired gate: lists exactly what is missing, and nothing about other documents or the requisition', () => {
+T('Hired gate: lists exactly what is missing (including the approved requisition) and nothing about other documents', () => {
   reset([appRow({ INTERVIEW_AT: day(-9) })]);
+  ctx.hirApprovalApproved_ = () => false;
   ctx.hirIsHiringApproved_ = () => false;
   ctx.hirRowEvidence_ = () => ({ ir: [], interviewReports: [], demoReports: [], since: 0 });
   ctx.hirRosterCodes_ = () => [];
   ctx.hirPortalDocs_ = () => ({});
   let msg = '';
   try { ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }); } catch (e) { msg = e.message; }
-  ['Owner\'s approval', 'Date of Joining', 'Interview Report', 'Demo Report', 'Start Hiring Process'].forEach((w) => assert.ok(msg.indexOf(w) !== -1, w + ' in: ' + msg));
-  ['PAN', 'Aadhar', 'Police', 'Medical', 'requisition', 'Document Submission'].forEach((w) => assert.ok(msg.indexOf(w) === -1, w + ' must not gate Hired: ' + msg));
+  ['Owner\'s approval', 'Date of Joining', 'Interview Report', 'Demo Report', 'Start Hiring Process', 'New/ Backup Position'].forEach((w) => assert.ok(msg.indexOf(w) !== -1, w + ' in: ' + msg));
+  ['PAN', 'Aadhar', 'Police', 'Medical', 'Document Submission'].forEach((w) => assert.ok(msg.indexOf(w) === -1, w + ' must not gate Hired: ' + msg));
 });
 T('Hired gate: a locked code that is in the roster but has no Bio-Data is refused; Bio-Data only (no other documents) lets it through', () => {
   reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
+  ctx.hirApprovalApproved_ = () => true;
   ctx.hirIsHiringApproved_ = () => true;
   ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
   ctx.hirRosterCodes_ = () => ['NCM/26/11/104'];
@@ -260,9 +262,23 @@ T('Hired gate: a locked code that is in the roster but has no Bio-Data is refuse
 });
 T('Hired gate: a locked code that is NOT in the Employee Master yet means Start Hiring Process was never pressed', () => {
   reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
+  ctx.hirApprovalApproved_ = () => true;
   ctx.hirIsHiringApproved_ = () => true;
   ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
   ctx.hirRosterCodes_ = () => ['NCM/26/10/100'];
   ctx.hirPortalDocs_ = () => ({ 'NCM/26/11/104': { 'BIODATA + PROFICIENCY': true } });
   throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /Start Hiring Process/);
+});
+
+T('Hired gate: a closed position (no approved New/ Backup Position) blocks an otherwise complete, Owner-approved hire, with a message that says what to do', () => {
+  reset([appRow({ INTERVIEW_AT: day(-9), EMP_CODE: 'NCM/26/11/104', DOJ: '2026-11-02' })]);
+  ctx.hirIsHiringApproved_ = () => true;
+  ctx.hirRowEvidence_ = () => ({ ir: [{}], interviewReports: [], demoReports: [], since: 0 });
+  ctx.hirRosterCodes_ = () => ['NCM/26/11/104'];
+  ctx.hirPortalDocs_ = () => ({ 'NCM/26/11/104': { 'BIODATA + PROFICIENCY': true } });
+  ctx.hirApprovalApproved_ = () => false;
+  throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' }), /New\/ Backup Position.*closed.*Owner/);
+  ctx.hirApprovalApproved_ = (campus, cat) => campus === 'LMS4' && cat === 'New/ Backup Position'; // the Principal's own campus is the one checked
+  ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' });
+  assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Hired');
 });
