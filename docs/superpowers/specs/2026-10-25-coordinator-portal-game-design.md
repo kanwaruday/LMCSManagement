@@ -256,6 +256,19 @@ quest): its steps are the real items, and done is checked from data.
 - **Season setup:** the shared layer's Owner screen (Phase 3). Until it exists, the Owner edits `Game Config` in the
   sheet.
 
+### 9. Decision windows (shared layer mechanic, Uday)
+
+A window is a stated period in which a named role makes a real settings call for its own scope. It writes the real
+setting and logs every decision. If nobody decides, a default applies; the Owner can override. The window shows as a
+mission in the decider's Today panel.
+
+- **The HQ shows the framework's status board** for windows in the district: decided or waiting, per campus. The
+  first window is each Principal choosing their campus's 3 track-suit days.
+- **Coordinators can open windows for their district.**
+- **Asked of the game director (not built here):** a **district goal targets** window type. Before each term, the
+  Coordinator proposes the district's team-goal targets (for example "approvals within 3 days"); the Owner's Season
+  setup confirms or overrides them. It fits Uday's "we will identify the goals for everyone over the next 6 months".
+
 ## The Principal side of the district goals (hand-over section)
 
 **For a future Principal Portal game chat to take over** (Master Agent's instruction: no Principal chat exists yet,
