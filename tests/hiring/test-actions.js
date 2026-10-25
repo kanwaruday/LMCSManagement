@@ -83,8 +83,8 @@ T('add applicant: needs name, a 10-digit phone, a campus in scope and a source',
   throws(() => ctx.hiringAddApplicant_(principal, { name: 'X', phone: '9816012345', campusId: 'LMS4', source: 'Magic' }), /source/i);
 });
 
-// Relative, not hard-coded: a booking date must stay in the future however old this test gets.
-function futureAt(n) { return day(n).toISOString().slice(0, 16); }
+// Relative to the real clock: a booking date must stay in the future however old this test gets.
+function futureAt(n) { return new Date(Date.now() + n * 86400000).toISOString().slice(0, 16); } // real now + n days (day() is pinned to 22 Oct 2026, so it went stale)
 T('schedule: a Principal books interview / demo directly (Appointments) and clears them', () => {
   reset([appRow({ STAGE_MARKS: JSON.stringify({ interview: { at: day(-1).toISOString(), by: 'p@lms.org.in' } }) })]);
   ctx.hiringSchedule_(principal, { row: 2, interviewAt: futureAt(2), demoAt: futureAt(3) });
