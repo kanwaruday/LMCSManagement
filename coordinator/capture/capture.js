@@ -264,6 +264,8 @@ function hud() {
   const [verb, done] = run.kind === 'count' ? ['Count', 'counted'] : ['Capture', 'tagged'];
   $('mission').textContent = `${verb} ${routeName(bus, run.reg)}: ` + (total ? `${tagged} of ${total} stops ${done}` : `${plural(tagged, 'stop')} ${done}`);
   $('barWrap').hidden = !total;
+  $('barWrap').classList.toggle('cap-pips', total > 0 && total <= 40); // one pip per stop while they are wide enough to see
+  $('barWrap').style.setProperty('--n', String(total || 1));
   $('bar').style.width = total ? (100 * tagged / total) + '%' : '0';
   $('barWrap').setAttribute('aria-valuenow', String(tagged)); $('barWrap').setAttribute('aria-valuemax', String(total));
   $('frames').textContent = plural(run.frames, 'frame');
@@ -275,9 +277,11 @@ function hud() {
 }
 function gpsLine() {
   const f = S.fix;
-  $('gps').textContent = !f ? 'Waiting for GPS...' : f.accuracy > 50 ? `GPS weak (±${Math.round(f.accuracy)} m). Frames wait for a better fix.` : `GPS ±${Math.round(f.accuracy)} m`;
+  $('gps').dataset.s = !f ? 'wait' : f.accuracy > 50 ? 'weak' : 'ok';
+  $('gps').textContent = !f ? 'Waiting for GPS...' : f.accuracy > 50 ? `GPS weak (±${Math.round(f.accuracy)} m): frames paused` : `GPS ±${Math.round(f.accuracy)} m`;
 }
 function onGpsError(e) {
+  $('gps').dataset.s = e.code === 1 ? 'bad' : 'wait';
   $('gps').textContent = e.code === 1 ? 'Location is blocked. Allow location for this site, then come back.' : 'No GPS signal yet. Keep the phone near the windscreen.';
 }
 function grab() { // a camera frame, longest side 1280 px (720p), JPEG 0.7, as base64
@@ -324,11 +328,16 @@ function openSheet() {
   const f = S.fix;
   S.stop = { lat: f ? f.lat : undefined, lng: f ? f.lng : undefined, takenAt: Date.now(), name: '', on: 0, off: 0, step: 'pick' };
   $('sheetWrap').hidden = false;
+  behindSheet(true);
   drawSheet();
 }
-function closeSheet() { $('sheetWrap').hidden = true; S.stop = null; $('stopHere').focus(); }
+function closeSheet() { $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; $('stopHere').focus(); }
+function behindSheet(on) { // the sheet is modal: keyboard and screen reader stay inside it
+  document.querySelectorAll('.hdr, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
+}
 function drawSheet() {
   const st = S.stop, sheet = $('sheet'), count = S.run.kind === 'count';
+  $('sheetWrap').classList.toggle('cap-aim', !count && st.step !== 'pick'); // aiming the stop photo: no dark veil over the camera
   if (st.step === 'pick') {
     const bus = busOf(S.run.reg), done = new Set(S.run.stops.map((s) => s.name));
     const here = S.fix, list = (bus ? bus.stops : []).map((s) => ({ ...s, m: here && Number.isFinite(s.lat) ? distanceM(here, s) : null }))
@@ -379,7 +388,9 @@ async function saveStop(btn) {
     const entry = await store.addStop(id, stop);
     if (S.run.kind === 'count') await store.setCount(id, entry.seq, st.on, st.off);
     S.run = await store.getRun(id);
-    closeSheet(); hud(); toast('Stop saved: ' + st.name);
+    closeSheet(); hud();
+    const bus = busOf(S.run.reg), known = bus ? bus.stops.length : 0, n = S.run.stops.length, done = S.run.kind === 'count' ? 'counted' : 'tagged';
+    toast(known && n === known ? `All ${known} stops ${done}. Shabash. End the run when you are done.` : `${st.name} ${done}.`);
   } catch (e) {
     btn.disabled = false;
     $('sheetMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message;
@@ -427,9 +438,13 @@ function drawSummary() {
       (run.stops.length ? '<table class="cap-table"><thead><tr><th>Stop</th><th>On</th><th>Off</th><th>On board</th></tr></thead><tbody>' +
         run.stops.map((s, i) => `<tr><td>${esc(s.name || 'Stop ' + (i + 1))}</td><td>${s.boardOn || 0}</td><td>${s.boardOff || 0}</td><td>${L.after[i]}</td></tr>`).join('') + '</tbody></table>' : '');
   } else {
-    body = `<p class="cap-facts">${plural(run.frames, 'frame')}, ${plural(run.stops.length, 'stop')} tagged, ${plural(run.gaps.length, 'gap')}.</p>`;
+    const known = bus ? bus.stops.length : 0, n = run.stops.length;
+    body = '<dl class="cap-stats">' + `<div><dt>Frames</dt><dd>${run.frames}</dd></div>` +
+      `<div><dt>Stops tagged</dt><dd>${n}${known ? ` <small>of ${Math.max(known, n)}</small>` : ''}</dd></div>` +
+      `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
-  el.innerHTML = `<h2 class="cap-h">Run saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}. Send it on school Wi-Fi.</p>` + body +
+  const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
+  el.innerHTML = `<h2 class="cap-h">Run saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
     '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>';
   el.querySelector('[data-a="send"]').addEventListener('click', () => { showTab('upload'); sendAll(); });
   el.querySelector('[data-a="new"]').addEventListener('click', () => { el.hidden = true; $('setup').hidden = false; S.run = null; setMode(S.mode); drawResume(); });
@@ -474,6 +489,7 @@ async function drawUpload() {
   const c = navigator.connection;
   $('netNote').textContent = c && c.type === 'cellular' ? 'You are on mobile data. Frames are large: send on school Wi-Fi.' : '';
   $('send').disabled = S.sending || !todo;
+  if (!S.sending) $('send').textContent = todo ? 'Send now on Wi-Fi' : runs.length ? 'All runs sent' : 'Nothing to send';
   const info = await store.storageInfo();
   $('storage').textContent = info.quota ? `Phone storage for capture: ${mb(info.usage)} used of ${mb(info.quota)}.` + (info.persisted ? '' : ' The browser may clear it if the phone runs low: send soon.') : '';
 }

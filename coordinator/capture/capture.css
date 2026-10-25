@@ -2,9 +2,10 @@
    High contrast on white, big targets (56 px and up), STOP HERE the one loud thing. Layered on ../shared.css. */
 :root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
 [hidden]{display:none!important}
+:root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or STOP HERE */
 .hdr{padding:0 16px}
-.cap{font-size:16px;line-height:1.45;color:var(--c-ink);max-width:640px}
-#appBody.cap{padding:12px 16px 32px}
+.cap{font-size:16px;line-height:1.45;color:var(--c-ink)}
+#appBody.cap{padding:12px 16px 32px;max-width:640px} /* #appBody in shared.css is 1200 px wide */
 .cap ::selection{background:#ffd6d6}
 .cap :where(button){color:inherit}
 .cap button{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -44,7 +45,10 @@
 .cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}
 .cap-mission{grid-area:mission}
 .cap-mission h2{font-size:18px;font-weight:800;line-height:1.25;margin:0 0 6px;overflow-wrap:anywhere}
-.cap-bar{height:10px;background:var(--c-soft);border:1px solid var(--c-line);border-radius:6px;overflow:hidden}
+.cap-bar{position:relative;height:10px;background:var(--c-soft);border:1px solid var(--c-line);border-radius:6px;overflow:hidden}
+/* the mission bar: one pip per stop, so "6 of 14" reads at a glance */
+.cap-mission .cap-bar{height:16px;border-color:#8a8a8a}
+.cap-bar.cap-pips::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(100% / var(--n) - 3px),#fff calc(100% / var(--n) - 3px) calc(100% / var(--n)))}
 .cap-bar i{display:block;height:100%;width:0;background:var(--c-ok)}
 .cap-view{grid-area:view;min-width:0}
 .cap-cam{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
@@ -54,24 +58,61 @@
 .cap-count{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid var(--c-line);border-radius:12px;padding:10px;min-height:150px;text-align:center}
 .cap-count b{font-size:64px;line-height:1.05;font-variant-numeric:tabular-nums}
 .cap-count span{font-size:15px;color:var(--c-mute);font-weight:600}
-.cap-status{grid-area:status;font-size:15px;font-weight:600;margin:0}
+.cap-status{grid-area:status;font-size:15px;font-weight:700;margin:0}
+.cap-status[data-s="wait"],.cap-status[data-s="weak"]{color:var(--c-warn)}
+.cap-status[data-s="bad"]{color:var(--c-bad)}
 .cap-run .cap-msg{grid-area:msg;margin:0}
 .cap-stop{grid-area:stop;width:100%;min-height:112px;border:0;border-radius:16px;background:var(--c-red);color:#fff;font-size:34px;font-weight:900;letter-spacing:.02em;box-shadow:0 6px 16px rgba(158,0,0,.35)}
 .cap-stop:active{background:var(--c-red-d)}
 .cap-run .cap-end{grid-area:end;margin:0}
 
-/* phone on its side in the mount: camera left, controls right, all on one screen */
+/* During a run the page is a HUD: it fills the screen, the camera (or the count) takes the space that is left, and
+   STOP HERE stays in one place at the bottom. A message or a longer GPS line shrinks the camera; it never moves the
+   button under the thumb. Browsers without :has() keep the plain stacked layout. */
+@supports selector(:has(*)){
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])){display:flex;flex-direction:column;height:100vh;height:100dvh}
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{flex:none}
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{flex:1 1 0;min-height:0;display:flex;flex-direction:column;width:100%;margin:0 auto;padding-bottom:16px}
+  #tabCapture:has(#running:not([hidden])){flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+  #tabCapture #running:not([hidden]){flex:1 1 0;min-height:0;grid-template-rows:auto minmax(96px,1fr) auto auto auto auto}
+  #running:not([hidden]) .cap-view{display:flex;flex-direction:column;min-height:0}
+  #running:not([hidden]) .cap-cam,#running:not([hidden]) .cap-count{flex:1 1 0;aspect-ratio:auto;min-height:96px}
+  #running:not([hidden]) .cap-count b{font-size:76px}
+}
+
+/* a short phone held upright (320x568): give the camera's room back so a message still fits above STOP HERE */
+@media (orientation:portrait) and (max-height:620px){
+  .cap-tabs button{min-height:44px}
+  .cap-mission h2{font-size:16px}
+  .cap-stop{min-height:100px;font-size:32px}
+  .cap-run .cap-end{min-height:48px}
+}
+
+/* phone on its side in the mount: the mission across the top, camera left, STOP HERE right, all on one screen */
 @media (orientation:landscape) and (max-height:520px){
   .hdr{height:40px}
   .hdr p{display:none}
   #appBody.cap{max-width:none;padding-top:8px}
-  .cap-run{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"view mission" "view status" "view msg" "view stop" "view end";align-content:start}
+  .cap-tabs{margin-bottom:8px}
+  .cap-run{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"mission mission" "view status" "view msg" "view stop" "view end";align-content:start}
+  .cap-mission h2{font-size:17px;margin-bottom:4px}
   .cap-stop{min-height:96px}
   .cap-cam{aspect-ratio:auto;height:calc(100vh - 120px)}
+  @supports selector(:has(*)){
+    body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{display:none} /* the run is the whole screen; End run is the way out */
+    body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{max-width:none;padding-bottom:8px}
+    #tabCapture #running:not([hidden]){grid-template-rows:auto auto auto minmax(88px,1fr) auto}
+    #running:not([hidden]) .cap-stop{min-height:88px;height:100%}
+    #running:not([hidden]) .cap-cam{height:auto}
+  }
+  .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over STOP HERE */
+  .cap-sheetwrap.cap-aim{justify-content:flex-end} /* the photo sheet sits over the controls, the camera stays in view */
+  .cap-aim .cap-sheet{max-width:44vw;border-radius:16px 0 0 0}
 }
 
 /* STOP HERE sheet */
 .cap-sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.cap-sheetwrap.cap-aim{background:rgba(0,0,0,.12)} /* taking the stop photo: the viewfinder stays clear */
 .cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
 .cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}
 .cap-picks{display:grid;gap:8px;margin-bottom:12px}
@@ -90,11 +131,18 @@
   .cap-bar i{transition:width .3s ease-out}
   @keyframes cap-up{from{transform:translateY(24px);opacity:.6}}
 }
-.cap-toast{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;margin:0 auto;max-width:480px;padding:12px 16px;border-radius:10px;background:var(--c-ink);color:#fff;font-weight:700;text-align:center}
+.cap-toast{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;margin:0 auto;max-width:480px;padding:12px 16px;border-radius:10px;background:var(--c-ink);color:#fff;font-weight:700;text-align:center;pointer-events:none} /* taps go through to the button under it */
 .cap-toast:empty{display:none}
 
 /* summary and upload */
 .cap-facts{font-size:18px;font-weight:700}
+/* the run's debrief: three plain figures */
+.cap-stats{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);border:2px solid var(--c-line);border-radius:12px;margin:10px 0}
+.cap-stats div{padding:10px 12px;min-width:0}
+.cap-stats div+div{border-left:2px solid var(--c-line)}
+.cap-stats dt{font-size:14px;font-weight:600;color:var(--c-mute)}
+.cap-stats dd{margin:0;font-size:28px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cap-stats dd small{font-size:16px;font-weight:700;color:var(--c-mute)}
 .cap-peak{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;margin:10px 0;display:flex;flex-direction:column}
 .cap-peak b{font-size:48px;line-height:1.1;font-variant-numeric:tabular-nums}
 .cap-peak p{margin:6px 0 0;font-weight:800}
