@@ -139,7 +139,9 @@ Read "Settled after the builder check" first.
   - `uniform: {"summerFrom":"2027-05-03","winterFrom":"2026-10-26","festivals":[]}`
   - `trackSuitDays: {}`
   - `principalIssuesReady: false`
-  - `principalIssuesGo: ""` (the Coordinator chat gives the path)
+  - `principalIssuesGo: "principal/issues.html"` (from the Coordinator chat; ships with its C1)
+  - `recommendationsReady: false` (until the Coordinator chat's C1 ships the `Recommendations` tab; while false,
+    Coordinators get no `approval_recommend` missions and the Owner's `why` is blank)
   - `daysDenominator: {"Principal":true,"Coordinator":true,"Owner":true,"Teacher":false}`
 
 - [ ] **Step 1: Write `tests/game/test-config.js`** (vm-load `game.gs` with stubs, like `tests/coordinator/test-approvals.js`):
@@ -194,7 +196,7 @@ Read "Settled after the builder check" first.
   | `pdr_report` | Principal | no Daily Reports row for (today's ISO date, campus) | the row exists (Timestamp) | `principals-daily-reporting/index.html` |
   | `pdr_issue` | Principal | each `issues[]` item with status ≠ resolved (`reopened` counts as open). Only when `cfg.principalIssuesReady` | status resolved (`resolvedAt`, `resolvedBy`) | path given by the Coordinator chat for the Principal issue screen (config key `principalIssuesGo`) |
   | `info_requested` | Principal | own Approvals row (requestedByEmail = caller) with status "Info Requested" | status no longer "Info Requested" | `principals-daily-reporting/index.html` |
-  | `approval_recommend` | Coordinator | Approvals row Pending for ≥ `approvalWaitDays`, not archived, with no Coordinator recommendation yet. Personal if the matching Tasks row (`approval|<id>|Pending`) has the caller as Assignee, else **shared** | a `Recommendations` row with a reason (doneBy = recommender). Owner decided first = `gone` | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
+  | `approval_recommend` | Coordinator | Approvals row Pending for ≥ `approvalWaitDays`, not archived, with no Coordinator recommendation yet. Only when `cfg.recommendationsReady`. Personal if the matching Tasks row (`approval|<id>|Pending`) has the caller as Assignee, else **shared** | a `Recommendations` row with a reason (doneBy = recommender). Owner decided first = `gone` | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
 | `approval_wait` | Owner | Approvals row Pending for ≥ `approvalWaitDays`, not archived. `why` = the latest recommendation ("recommended approve by {name}") | status Approved/Rejected/Revoked (decidedAt, decidedByEmail); archived without a decision = `gone` | `coordinator/approvals/index.html` if it exists, else `coordinator/followups/index.html` |
   | `hiring_stall` | Coordinator | Tasks Domain `hiring_stall`, open, in scope; **shared** | Tasks Status resolved | `coordinator/followups/index.html` |
   | `followup` | Coordinator | any other open Tasks row in scope. Assignee = caller → personal; blank Assignee → shared | Tasks resolved, and ResolvedBy not `system…` | `coordinator/followups/index.html` |
@@ -209,7 +211,7 @@ Read "Settled after the builder check" first.
     - no `pdr_issue` while `principalIssuesReady:false`, two when true with one open and one reopened issue.
   - **Scope:** an LMS2 approval never appears for the LMS4 Principal, and does appear for a Coordinator and for the
     Owner.
-  - **Coordinator:** an approval pending 4 days with no recommendation → `approval_recommend` with `core:true`; with a
+  - **Coordinator:** with `recommendationsReady:false` → no `approval_recommend` at all. With it true: an approval pending 4 days with no recommendation → `approval_recommend` with `core:true`; with a
     recommendation by `c@lms.org.in` → `done:true, doneBy:'c@lms.org.in'`; decided by the Owner first → `gone:true`;
     pending 2 days → none. **Owner:** the same 4-day approval → `approval_wait` with the recommendation in `why`. Archived pending → none. `hiring_stall` → `shared:true, core:true`. A blank-Assignee follow-up →
     `shared:true`. An assigned follow-up → `shared:false`.
