@@ -328,8 +328,8 @@ function openSheet() {
   const f = S.fix;
   S.stop = { lat: f ? f.lat : undefined, lng: f ? f.lng : undefined, takenAt: Date.now(), name: '', on: 0, off: 0, step: 'pick' };
   $('sheetWrap').hidden = false;
-  behindSheet(true);
   drawSheet();
+  behindSheet(true);
 }
 function closeSheet() { $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; $('stopHere').focus(); }
 function behindSheet(on) { // the sheet is modal: keyboard and screen reader stay inside it
