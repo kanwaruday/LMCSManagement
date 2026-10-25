@@ -239,7 +239,7 @@ quests. These are real data entry, and done is detected from data:
 - **Compute lives in the game backend, not the PDR backend** (Claude's call). `teacher-portal.gs` sits in the live
   "Principal's Daily Reporting Backend" project. Uday's own rule from the Coordinator backend is that new work must
   never put that project at risk. So the teacher adapter is a file in the framework's separate **LMCS Game Backend**
-  project (`game-teacher.gs`). It reads the source sheets directly: the CW/HW sheet, the Course Mapping workbooks,
+  project (`game-adapter-teacher.gs`). It reads the source sheets directly: the CW/HW sheet, the Course Mapping workbooks,
   the Chapter Tracker sheet, the Employee Master (`EmpAcademic`, `EmpPersonal`), the timetable, and the Teacher SS
   responses. It serves:
   - `teachermissions`: the caller's missions, in the framework's Mission shape;
