@@ -36,6 +36,16 @@ assert.ok(/\.disabled\s*=\s*!noteReady\(/.test(inline), 'typing re-checks the bu
 const re = ctx.openRowHtml(issue('i2', 'reopened', '2026-10-12', { note: 'Still <b>leaking</b>' }), '');
 assert.ok(re.includes('Reopened') && re.includes('Still &lt;b&gt;leaking&lt;/b&gt;') && !re.includes('<b>leaking'), 'reopened tag and escaped note');
 
+// raised again after it was closed: in the open list, with a "Raised again" tag and the normal close box
+const again = issue('i3', 'open', '2026-10-14', { raisedAgain: true });
+const ag = ctx.openRowHtml(again, '');
+assert.ok(ag.includes('Raised again') && /class="close-form"/.test(ag) && ag.includes('Close with this note'), 'raised-again tag and close box');
+assert.ok(!ctx.openRowHtml(issue('i4', 'open', '2026-10-14'), '').includes('Raised again'), 'no tag on a plain open issue');
+assert.deepStrictEqual(ctx.splitIssues([again], '2026-10-26').open.map((i) => i.id), ['i3']);
+// the backend sends a Principal only the reopen reason (and their own closure notes): the page promises no other note
+assert.ok(!/Coordinator\\?'s note/.test(html), 'no "Coordinator\'s note" label');
+assert.ok(!ctx.openRowHtml(issue('i5', 'assigned', '2026-10-14', { note: 'stray' }), '').includes('stray'), 'a note is shown only on a reopened issue');
+
 // open and reopened first, oldest Last seen first; "Closed recently" = resolved in the last 14 days, newest first
 const all = [issue('a', 'open', '2026-10-20'), issue('b', 'reopened', '2026-10-05'), issue('c', 'assigned', '2026-10-11'),
   issue('d', 'resolved', '2026-10-09', { resolvedAt: '2026-10-12', note: 'done' }), issue('e', 'resolved', '2026-09-01', { resolvedAt: '2026-10-11', note: 'old' }),

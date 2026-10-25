@@ -21,6 +21,7 @@ const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', Ner
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
 const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what was done with each issue: acknowledged / assigned / resolved (Coordinator or Principal) / reopened
+const COORD_PDR_ACTIONS_LOG_TAB = 'PDR Issue Actions Log'; // append-only: each action row as it was just before it was replaced, plus LoggedAt
 const COORD_PDR_REPEATS_TAB = 'PDR Repeats'; // how much of each report repeats the campus's previous one (push from the Mac)
 const COORD_PDR_MERGES_TAB = 'PDR Issue Merges'; // 'this issue is the same problem as that one': source id -> target id, applied by the page
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
@@ -161,21 +162,31 @@ function coordPdrIssueAction_(caller, body) {
   return { success: true, taskError: taskError, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
 }
 
-/** One row per issue in the actions tab (insert or replace). Takes the script lock, so callers must not hold it. */
+/** One row per issue in the actions tab (insert or replace); a replaced row is first appended to the actions log, so a later
+ *  action (a reopen, say) never destroys the closure note, who wrote it and when. Takes the script lock, so callers must not hold it. */
 function coordPdrWriteAction_(ss, rec) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    let sh = ss.getSheetByName(COORD_PDR_ACTIONS_TAB);
-    if (!sh) {
-      sh = ss.insertSheet(COORD_PDR_ACTIONS_TAB);
-      sh.getRange(1, 1, 1, 9).setValues([['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated']]).setFontWeight('bold');
-      sh.setFrozenRows(1);
-    }
+    const headers = ['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated'];
+    const tab = function (name, cols) {
+      let t = ss.getSheetByName(name);
+      if (!t) {
+        t = ss.insertSheet(name);
+        t.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
+        t.setFrozenRows(1);
+      }
+      return t;
+    };
+    const sh = tab(COORD_PDR_ACTIONS_TAB, headers);
     const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
     let row = -1;
     for (let i = 0; i < ids.length; i++) if (ids[i][0] === rec[0]) { row = i + 2; break; }
     if (row < 0) row = sh.getLastRow() + 1;
+    else {
+      const lg = tab(COORD_PDR_ACTIONS_LOG_TAB, headers.concat(['LoggedAt']));
+      lg.getRange(lg.getLastRow() + 1, 1, 1, 10).setNumberFormat('@').setValues([sh.getRange(row, 1, 1, 9).getValues()[0].concat([new Date().toISOString()])]);
+    }
     sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([rec]);
   } finally { lock.releaseLock(); }
 }

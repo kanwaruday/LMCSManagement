@@ -23,9 +23,9 @@ const issueRows = [issue('i1', 'LMS4', 'Water tank leaking', '2026-10-01', '2026
   issue('i2', 'LMS4', 'Broken bench', '2026-10-02', '2026-10-12', 2, false),
   issue('i3', 'LMS4', 'Tank overflow', '2026-10-05', '2026-10-08', 2, true),
   issue('i9', 'LMS2', 'Bus late', '2026-10-03', '2026-10-09', 4, true)];
-const act = (id, status, note, by, at, campus) => [id, status, '', '', note, by, at, campus, '2026-10-10'];
+const act = (id, status, note, by, at, campus, lastAt) => [id, status, '', '', note, by, at, campus, lastAt || '2026-10-10'];
 const actionRows = [act('i1', 'reopened', 'Still leaking', 'c@lms.org.in', '2026-10-21 11:00', 'LMS4'),
-  act('i2', 'resolved', 'Bench replaced', 'p4@lms.org.in', '2026-10-20 09:30', 'LMS4'),
+  act('i2', 'resolved', 'Bench replaced', 'p4@lms.org.in', '2026-10-20 09:30', 'LMS4', '2026-10-12'),
   act('gone', 'resolved', 'old', 'p4@lms.org.in', '2026-10-01 09:00', 'LMS4')]; // id the Issues tab no longer has
 const mergeRows = [['i3', 'i1', 'c@lms.org.in', '2026-10-20 10:00', 'LMS4']];
 
@@ -67,7 +67,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
 const lms4 = plain(ctx.coordPrincipalIssues_(issueRows, actionRows, mergeRows, 'LMS4'));
 assert.deepStrictEqual(lms4.map((i) => i.id).sort(), ['i1', 'i2']);
 const i1 = lms4.find((i) => i.id === 'i1'), i2 = lms4.find((i) => i.id === 'i2');
-assert.deepStrictEqual(Object.keys(i1), ['id', 'subject', 'campus', 'first', 'last', 'count', 'needsAction', 'status', 'assignee', 'resolvedBy', 'resolvedAt', 'note']);
+assert.deepStrictEqual(Object.keys(i1), ['id', 'subject', 'campus', 'first', 'last', 'count', 'needsAction', 'status', 'assignee', 'resolvedBy', 'resolvedAt', 'note', 'raisedAgain']);
 assert.strictEqual(i1.count, 5);                                         // i1 (3) + i3 (2), no shared days
 assert.strictEqual(i1.status, 'reopened');
 assert.strictEqual(i1.note, 'Still leaking');
@@ -84,6 +84,30 @@ assert.strictEqual(all.find((i) => i.id === 'i1').count, 5);
 // a merge onto a day both issues were mentioned counts that day once (as the Systems page does)
 assert.strictEqual(ctx.coordPrincipalIssues_([issue('a', 'LMS4', 's', '2026-10-01', '2026-10-05', 2, false), issue('b', 'LMS4', 's', '2026-10-05', '2026-10-07', 2, false)],
   [], [['b', 'a', '', '', 'LMS4']], 'LMS4')[0].count, 3);
+
+// ── a Principal (viewer = their email) sees only the notes addressed to them: a reopen reason, or their own closure ──
+const nIssues = ['n1', 'n2', 'n3', 'n4', 'n5'].map((id) => issue(id, 'LMS4', 'S ' + id, '2026-10-01', '2026-10-05', 1, false));
+const nActs = [act('n1', 'acknowledged', 'coordinator-only ack', 'c@lms.org.in', '2026-10-06 09:00', 'LMS4', '2026-10-05'),
+  ['n2', 'assigned', 'c4@lms.org.in', 'Test Coord4', 'coordinator-only assign', 'c@lms.org.in', '2026-10-06 09:00', 'LMS4', '2026-10-05'],
+  act('n3', 'reopened', 'Why it was reopened', 'c@lms.org.in', '2026-10-06 09:00', 'LMS4', '2026-10-05'),
+  act('n4', 'resolved', 'My outcome', 'p4@lms.org.in', '2026-10-06 09:00', 'LMS4', '2026-10-05'),
+  act('n5', 'resolved', 'Coordinator closure', 'c@lms.org.in', '2026-10-06 09:00', 'LMS4', '2026-10-05')];
+const notes = (viewer) => { const o = {}; plain(ctx.coordPrincipalIssues_(nIssues, nActs, [], 'LMS4', viewer)).forEach((i) => { o[i.id] = i.note; }); return o; };
+assert.deepStrictEqual(notes('p4@lms.org.in'), { n1: '', n2: '', n3: 'Why it was reopened', n4: 'My outcome', n5: '' });
+assert.deepStrictEqual(notes(null), { n1: 'coordinator-only ack', n2: 'coordinator-only assign', n3: 'Why it was reopened', n4: 'My outcome', n5: 'Coordinator closure' }); // Coordinator / Owner: unchanged
+
+// ── raised again: a resolved or acknowledged issue mentioned after its action (last > Last mention when updated) is open again ──
+const gIssues = [issue('g1', 'LMS4', 'Res', '2026-10-01', '2026-10-12', 3, true), issue('g2', 'LMS4', 'Ack', '2026-10-01', '2026-10-12', 3, true),
+  issue('g3', 'LMS4', 'Re', '2026-10-01', '2026-10-12', 3, true), issue('g4', 'LMS4', 'Same', '2026-10-01', '2026-10-10', 3, true)];
+const gActs = [act('g1', 'resolved', 'Fixed', 'p4@lms.org.in', '2026-10-10 09:00', 'LMS4'), act('g2', 'acknowledged', '', 'c@lms.org.in', '2026-10-10 09:00', 'LMS4'),
+  act('g3', 'reopened', 'Back to you', 'c@lms.org.in', '2026-10-10 09:00', 'LMS4'), act('g4', 'resolved', 'Fixed', 'p4@lms.org.in', '2026-10-10 09:00', 'LMS4')];
+const g = {}; plain(ctx.coordPrincipalIssues_(gIssues, gActs, [], 'LMS4', 'p4@lms.org.in')).forEach((i) => { g[i.id] = i; });
+assert.deepStrictEqual([g.g1.status, g.g1.raisedAgain, g.g1.resolvedBy, g.g1.resolvedAt], ['open', true, '', '']);
+assert.deepStrictEqual([g.g2.status, g.g2.raisedAgain], ['open', true]);
+assert.deepStrictEqual([g.g3.status, g.g3.raisedAgain], ['reopened', false]);   // already back with the Principal
+assert.deepStrictEqual([g.g4.status, g.g4.raisedAgain, g.g4.resolvedBy], ['resolved', false, 'p4@lms.org.in']); // not mentioned since
+assert.strictEqual(g.g1.note, '');                                              // raised again = open: a Principal gets no note on it
+assert.strictEqual(i2.raisedAgain, false);
 
 // ── the gate ──
 assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p4')), { email: 'p4@lms.org.in', campusId: 'LMS4', principal: true });
@@ -163,4 +187,29 @@ assert.strictEqual(r2[5], 'c@lms.org.in');
 assert.strictEqual(taskTabs.Tasks.find((t) => t[0] === 'pdr_issue|i2')[5], 'open');   // not closed as a "reset"
 assert.strictEqual(get('principalissues', 'tok-p4').issues.find((i) => i.id === 'i2').status, 'reopened');
 assert.deepStrictEqual(post({ action: 'coordinatorpdrissue', idToken: 'tok-fc', id: 'i2', status: 'reopened', note: 'x' }), NA); // Fee Clerks can't reopen
+// the routes apply the viewer: a Principal gets the reopen reason and their own closure, never a Coordinator-only note
+assert.strictEqual(get('principalissues', 'tok-p4').issues.find((i) => i.id === 'i2').note, 'The bench is still broken');
+assert.strictEqual(get('principalissues', 'tok-p4').issues.find((i) => i.id === 'i1').note, 'Plumber fixed the tank');
+assert.strictEqual(ctx.coordPdrIssueAction_(coord, { id: 'i1', status: 'acknowledged', note: 'Coordinator view only' }).success, true);
+assert.strictEqual(get('principalissues', 'tok-p4').issues.find((i) => i.id === 'i1').note, '');
+assert.strictEqual(get('principalissues', 'tok-c').issues.find((i) => i.id === 'i1').note, 'Coordinator view only');
+assert.strictEqual(ctx.coordPdrIssueAction_(coord, { id: 'i1', status: 'resolved', note: 'Closed by the Coordinator' }).success, true);
+const i1p = get('principalissues', 'tok-p4').issues.find((i) => i.id === 'i1');
+assert.deepStrictEqual([i1p.status, i1p.resolvedBy, i1p.note], ['resolved', 'c@lms.org.in', '']);
+assert.strictEqual(get('principalissues', 'tok-c').issues.find((i) => i.id === 'i1').note, 'Closed by the Coordinator');
+
+// ── the actions log: a replaced action row is appended to PDR Issue Actions Log first, so a reopen never loses the closure ──
+const logTabs = {}, logBook = book(logTabs);
+const v1 = ['x1', 'resolved', '', '', 'Plumber fixed it', 'p4@lms.org.in', '2026-10-20 09:30', 'LMS4', '2026-10-10'];
+const v2 = ['x1', 'reopened', '', '', 'Still leaking', 'c@lms.org.in', '2026-10-21 11:00', 'LMS4', '2026-10-10'];
+ctx.coordPdrWriteAction_(logBook, v1);
+assert.ok(!logTabs['PDR Issue Actions Log'] || logTabs['PDR Issue Actions Log'].length <= 1, 'a first write logs nothing');
+ctx.coordPdrWriteAction_(logBook, v2);
+assert.deepStrictEqual(logTabs['PDR Issue Actions'].slice(1), [v2]);              // still one row per issue, the latest
+const log = logTabs['PDR Issue Actions Log'];
+assert.deepStrictEqual(log[0], ['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated', 'LoggedAt']);
+assert.strictEqual(log.length, 2);
+assert.deepStrictEqual(log[1].slice(0, 9), v1);                                  // the outgoing version, as it was
+assert.ok(!isNaN(Date.parse(log[1][9])) && /T.*Z$/.test(log[1][9]), 'LoggedAt is ISO');
+assert.deepStrictEqual(pdrTabs['PDR Issue Actions Log'].slice(1).map((r) => r[0] + ':' + r[1]), ['i1:reopened', 'i2:resolved', 'i1:resolved', 'i1:acknowledged']); // one per replaced row above
 console.log('coordinator principal issues: ok');

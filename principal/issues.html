@@ -29,7 +29,7 @@
     .subject-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .subject { margin: 0; font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; }
     .chip { flex: none; white-space: nowrap; font-size: 0.75rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--gray); background: var(--lgray); border: 1px solid var(--border); }
-    .chip.reopened { color: var(--red-dark); background: var(--red-pale); border-color: #f5c2c2; }
+    .chip.reopened, .chip.again { color: var(--red-dark); background: var(--red-pale); border-color: #f5c2c2; }
     .meta { margin: 4px 0 0; font-size: 0.85rem; color: var(--gray); font-variant-numeric: tabular-nums; }
     .hq-note { margin: 10px 0 0; padding: 8px 12px; background: var(--lgray); border-radius: var(--radius); font-size: 0.88rem; overflow-wrap: anywhere; }
     .hq-note span { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray); }
@@ -141,7 +141,7 @@
     // text/plain JSON with no custom headers keeps the request CORS-simple, as the other portal pages do.
     function post(body, idToken) { return call(BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: idToken }, body)) }); }
 
-    // Open = anything not resolved (open, acknowledged, assigned, reopened), oldest Last seen first.
+    // Open = anything not resolved (open, acknowledged, assigned, reopened, or raised again after a closure), oldest Last seen first.
     // Closed recently = resolved in the last CLOSED_DAYS days, newest first.
     function splitIssues(issues, today) {
       const d = new Date(today + 'T00:00:00');
@@ -159,10 +159,12 @@
     }
 
     const CHIPS = { reopened: 'Reopened', acknowledged: 'Acknowledged', assigned: 'Assigned' };
+    // The backend sends a Principal a note on an open issue only when a Coordinator reopened it (the reason is for them).
     function openRowHtml(i, draft) {
       const id = esc(i.id), reopened = i.status === 'reopened';
-      const chip = CHIPS[i.status] ? '<span class="chip ' + esc(i.status) + '">' + CHIPS[i.status] + '</span>' : '';
-      const note = !i.note ? '' : '<p class="hq-note"><span>' + (reopened ? 'Why a Coordinator reopened it' : 'Coordinator\'s note') + '</span>' + esc(i.note) + '</p>';
+      const chip = i.raisedAgain ? '<span class="chip again">Raised again</span>'
+        : CHIPS[i.status] ? '<span class="chip ' + esc(i.status) + '">' + CHIPS[i.status] + '</span>' : '';
+      const note = !reopened || !i.note ? '' : '<p class="hq-note"><span>Why a Coordinator reopened it</span>' + esc(i.note) + '</p>';
       return '<li class="issue" data-id="' + id + '">' +
         '<div class="about">' +
           '<div class="subject-line"><h3 class="subject" id="s-' + id + '">' + esc(i.subject) + '</h3>' + chip + '</div>' +
