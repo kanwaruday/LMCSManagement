@@ -35,8 +35,10 @@ Builds on, and does not repeat:
 1. **A Coordinator HQ** that reads like a regional commander's screen. It shows the network's 6 campuses (Uday:
    Coordinators stay "network wide"), each with
    needs bars, and the full ranked queue of contracts (follow-ups).
-2. **Every approval is a decision with a trade-off preview** (Frostpunk). Before deciding, the Coordinator sees what
-   the decision touches, from real data.
+2. **Every approval gets a Coordinator's recommendation, backed by a trade-off preview** (Frostpunk). The Owner
+   decides all approvals for now (Uday). The Coordinator prepares each one: checks it, recommends a decision with a
+   reason, and chases missing information. The Owner's real decisions against those recommendations become the
+   feedback that, over time, earns a Coordinator decide rights, category by category.
 3. **Team goals** shared by the Coordinators and the Principals (Kingshot's Bear Hunt): one team per campus (its
    Principal and the Coordinators), plus one network team. Everyone's real work fills one bar, measured against that
    team's own target or its own last term.
@@ -56,13 +58,14 @@ Builds on, and does not repeat:
 - No Principal Portal game. Only the Principal side of the shared team goals is designed here, in its own
   hand-over section, for a future Principal chat to take over.
 - No automatic decisions. The game never approves, rejects, assigns or closes anything by itself.
-- No change to who may decide. Decide rights stay as they are: the Owner, or a Coordinator with `CanApprove`.
+- No change to who may decide at go-live: the Owner decides every approval (Uday). Handover to Coordinators is a
+  later, per-category, Owner-only step (section 3), never automatic.
 
 ## Anti-goals (a failure even if it works)
 
-- **Rewarding speed of decisions.** "Approvals within 3 days" is a team goal against an **age line**. Time to
-  decide is never scored per person; a careful "Info Requested" counts as action. A game that makes Coordinators
-  approve faster but worse has failed.
+- **Rewarding speed of decisions.** "Prepared within 3 days" is a team goal against an **age line**. Time to
+  recommend or decide is never scored per person; a careful "Ask for information" counts as action. A game that makes
+  requests move faster but worse has failed.
 - **Rewarding volume.** No credit for the number of comments, nudges, messages, assignments or resolves. Closing a
   follow-up needs a written outcome, as it already does for transport.
 - **Comparing campuses or districts.** Campuses are never ranked against each other, and LMS 1–3 is never ranked
@@ -104,13 +107,16 @@ Builds on, and does not repeat:
 
 ### 1. The Today panel (shared layer, Coordinator content)
 
-- Up to 5 missions, **core first** (Uday): approvals waiting 3+ days, then hiring stalls (approved but not Hired, or
+- Up to 5 missions, **core first** (Uday): approvals awaiting the Coordinator's recommendation (see 3), then hiring stalls (approved but not Hired, or
   Hired but not in the Employee Master). The rest of the queue fills any remaining slots.
 - Mission id: `coordinator:<domain>:<TaskId>`.
 - **Done and doneBy come from the source record, not the Tasks row** (builder check). Approval and hiring rows
   auto-resolve as `system (condition cleared)`, which the shared spec would otherwise read as "no longer needed".
-  - **Approval:** done when the Approvals row has a decision (Approved, Rejected, Info Requested or Revoked, made
-    through `aprDecide_`). `doneBy` = `decidedByEmail`.
+  - **Approval (Coordinator):** done when the request has a Coordinator recommendation with a reason, or the Owner
+    decided it first. `doneBy` = the recommending Coordinator. Unassigned requests are shared missions; the first
+    recommendation clears it for all.
+  - **Approval (Owner's own Today panel, the game director's adapter):** done when the Approvals row has a decision
+    from `aprDecide_`. `doneBy` = `decidedByEmail`.
   - **Complete-hire:** done when the Employee Master row exists. `doneBy` = whoever added it (the Coordinator's real
     lever).
   - **Hiring stall** (approved but not Hired): done when the applicant reaches Hired or Rejected. Only the campus
@@ -147,9 +153,13 @@ This is the same order the Today panel uses, extended to the whole queue.
 they clear. It is the same idea as Fleet Command's heat per bus, at campus level. When a campus's heat is high, the
 Owner's view shows it, which is today's "Owner sees who is late", made visible.
 
-### 3. Decisions with a trade-off preview (Frostpunk)
+### 3. Approvals: prepare, recommend, and earn the handover (Frostpunk preview)
 
-An approval card opens a **decision view**. The request (title, description, amount, item, quantity, evidence link,
+**Uday (2026-10-25):** "not yet, presently the owner for all approvals, we will track the approvals and my
+feedback and over time we will hand over things to the coordinators". So at go-live **no Coordinator has decide
+rights**; the Owner decides every approval.
+
+An approval card opens a **decision view**, the same one for the Coordinator (preparing) and the Owner (deciding). The request (title, description, amount, item, quantity, evidence link,
 comments) is shown as today. Beside it is a preview built only from data the portal already holds. Each figure shows
 where it came from, and anything unknown is labelled "not known".
 
@@ -160,17 +170,49 @@ where it came from, and anything unknown is labelled "not known".
 | New / Backup Position | Active staff in that department at the campus; open requisitions; applicants in the pipeline for that role | Employee Master; Hiring Dashboard data |
 | Event / Invitation, Off-Campus Trip, Holiday / Calendar | Other approved events at the campus within ±7 days. For a holiday: working days left in the term | Approvals history; the existing working-day logic |
 | Academic Change | The CW/HW logging and tag pattern of the classes concerned, where the request names them | `coordinatoracademics` |
-| Compensation Change, Disciplinary / Termination, EPF Exemption | **No preview** (see the anti-goals). A plain decision card | — |
+| Compensation Change, Disciplinary / Termination, EPF Exemption | **No preview** (see the anti-goals). A plain card; the Coordinator may still recommend with a reason | — |
 | Appointment Confirmation (Salary Offer) | Unchanged: the Hiring Dashboard gate (MD interview first) | Hiring |
 
-**The decision is today's action.** Approve, reject, ask for information or refer go through the existing
-`approvals.gs`; allocating a follow-up goes through `coordinatorallocate`. A Coordinator without `CanApprove` sees the preview and can
-comment, but cannot decide, refer or allocate. Refer and allocate are decider-only in the code (`aprDecide_`,
-`coordAprAllocate_`). **Whether every Coordinator gets `CanApprove` is open for Uday**; without it, a Coordinator
-can't clear their own core mission.
+**What the Coordinator does (the core mission):**
+- **Check and recommend.** The Coordinator records a **recommendation**: Approve, Reject or Ask for information,
+  with a required reason, and optionally what was checked ("quotation matches the day-book rate"). This is
+  `coordinatorrecommend`, a new action in the Coordinator backend, writing a `Recommendations` tab in the LMCS
+  Approvals workbook (the same workbook as Tasks). The latest recommendation stands; every one is logged.
+- **Chase missing information.** A Coordinator's comment to the requester stays a comment. It no longer pauses the
+  request (the comment-flips-status bug, fixed in C1). The request stays in the Owner's queue with the Coordinator's
+  note.
+- **The Owner sees the recommendation on the card** (in `coordinator/approvals.js`, where he already decides): who
+  recommended what, why, and the preview. He decides as today through `aprDecide_`. Allocating a follow-up stays with
+  the Owner (`coordinatorallocate`).
 
-**Help credit** (shared layer): when a Coordinator's decision clears a Principal's waiting mission, the Principal sees
-"cleared with help from …" and the Coordinator gets a recognition line ("You unblocked 2 Principals today").
+**Feedback: the Owner's decision against the recommendation** ("my feedback"):
+- When the Owner decides, the Coordinator sees the outcome next to their recommendation, with the Owner's decision
+  note: "Uday approved, as you recommended", or "Uday rejected: the trip clashes with Term I".
+- **Track record**, per Coordinator per category: recommendations made, how many matched the Owner's decision, and the
+  last 10 with notes. It is **private**: visible to that Coordinator and the Owner only (the shared standing rule).
+  It never ranks Coordinators against each other.
+- It counts careful work, not speed: there is no credit for recommending fast, and an "Ask for information" that the
+  Owner agrees with counts as a match.
+
+**The handover, an Owner-controlled unlock:**
+- Decide rights become **per category**: for example, a Coordinator may decide Event / Invitation and Holiday /
+  Calendar while the Owner keeps Financial / Purchase. Delegations are rows in a `Delegations` tab: Coordinator,
+  category, from date, given by. `aprCanDecide_` in `approvals.gs` reads it. The all-or-nothing `CanApprove` cell
+  stays as "every category".
+- **A "ready to hand over?" card** appears in the Owner's view when a Coordinator's track record in a category passes
+  a line the Owner sets in `Game Config`. Claude's suggested default: at least 20 recommendations, 90% matched, over at
+  least two months. The card shows the record and the last 10 notes. **It is a suggestion only. Nothing is ever
+  delegated automatically**; the Owner taps "Hand over" or "Not yet", and both are logged.
+- Compensation Change, Disciplinary / Termination, EPF Exemption and Appointment Confirmation **never get a
+  "ready" card**. The Owner can still delegate them by hand.
+- Once delegated, that category's requests become decide missions for that Coordinator. Their decisions are logged as
+  today, and the Owner can revoke a delegation in one tap.
+- **When:** the recommendation and feedback loop ships in C1. The `Delegations` tab and per-category
+  `aprCanDecide_` come **after go-live**, when Uday is ready to hand over the first category.
+
+**Help credit** (shared layer): when the Owner decides a request, the Principal's waiting mission clears with help
+from the Owner. A Coordinator's recommendation that preceded it gets a recognition line ("Your notes helped Uday
+decide 4 requests today"). This is detected from the Recommendations and Approvals rows, so there is nothing to tap.
 
 ### 4. Campus needs bars (The Sims)
 
@@ -203,10 +245,9 @@ and is refilled by real actions, never by a tap.
     school group, the Kingshot alliance.
 - **Season 0 defaults** (from Uday's answers). They are **editable defaults, not commitments**, set in `Game Config`
   by the Owner each term:
-  1. **Decisions on time:** every approval decided within 3 days. A decision is Approved, Rejected,
-     Info Requested or Revoked, made through `aprDecide_`. **A comment does not count.** Today any comment flips
-     Pending to Info Requested (Principal Portal Review 2026-10-22, item 17); that bug is fixed in C1 before this goal
-     goes live, so the goal can't be met by commenting.
+  1. **Requests prepared on time:** every approval request has a Coordinator recommendation with a reason within 3
+     days of being raised (Uday's "approvals pending 3+ days", now the part the team controls). **A comment does not
+     count.** The Owner's own decision time is his Today panel's business, not a team score.
   2. **No stalled hires:** no hire stuck past 7 days, and every new joiner in the Employee Master before their joining
      date.
   3. **Evaluations in:** every campus meets its SS quota by month end.
@@ -242,11 +283,12 @@ quest): its steps are the real items, and done is checked from data.
 
 ### 7. Coordinator quests (content for the shared layer)
 
-- **Quest 1 "Your network"** (in the shared spec as "Your district"; renamed after Uday's "network wide"): decide one approval pending 3+ days; move one stalled hire
-  to its next step; resolve one other follow-up with an outcome note.
+- **Quest 1 "Your network"** (in the shared spec as "Your district"; renamed after Uday's "network wide"): recommend on one approval pending 3+ days, with a reason;
+  add one joiner to the Employee Master (a complete-hire); resolve one other follow-up with an outcome note.
 - **Quest 2 "Know your bases"**, unlocked after Quest 1:
   - close one daily-report issue together with its Principal (the issue resolved, with the Principal's or your note);
-  - allocate one approved request's follow-up to someone with a due date;
+  - see the Owner's decision on three of your recommendations (done when three of your recommendations have been
+    decided; nothing to tap);
   - upload one campus or bus paper.
 - **Season quests:** the term campaigns above.
 - Every step leaves a trace in source data. There are no "open" or "look at" steps (shared rule).
@@ -326,13 +368,14 @@ GET action=principalissues&idToken=…   (Principal: own campus only; Coordinato
 
 | Moment | Line |
 |---|---|
-| Morning, core work waiting | "Good morning. Two approvals at LMS 5 have waited more than three days. The first is a purchase request from the Principal." |
+| Morning, core work waiting | "Good morning. Two requests at LMS 5 have waited more than three days for your recommendation. The first is a purchase request from the Principal." |
 | Morning, nothing urgent | "Morning. Nothing in the network is past its line today. Your five are ready when you are." |
-| A decision clears a Principal's wait | "Decided. LMS 4's Principal can go ahead with the trip now." |
+| A recommendation is in | "Your note is with Uday. LMS 4's trip request is ready for his decision." |
+| Feedback on a recommendation | "Uday approved LMS 4's trip, as you recommended." |
 | Help credit, end of day | "You unblocked 3 Principals today." |
 | A hire completed | "<Name>'s joining is complete in the Employee Master, so payroll picks it up this month." |
 | A stalled hire, shared | "A hire at LMS 2 has been approved for 8 days but not yet marked Hired. A word with the Principal usually moves it." |
-| Team goal met | "LMS 4 decided every approval within three days this month. Shabash, LMS 4." |
+| Team goal met | "Every LMS 4 request was ready for Uday within three days this month. Shabash, LMS 4." |
 | A campus steady | "LMS 6 is steady: every need bar is full." |
 | A paper expired (bad news) | "LMS 3's fire NOC expired on 28 April, so the campus is out of compliance until it's renewed. The renewal is the first step in your term campaign." ("Term campaign" is the HQ's on-screen label for section 6.) |
 | Data delayed (bad news) | "Today's follow-ups are from yesterday evening: the morning refresh didn't run. Nothing is lost; I'll update when it does." |
@@ -360,9 +403,11 @@ Names in lines come from live data at runtime, never from static files.
    - `coordinatortransportfront` is **Fleet Command's**: promised in its Phase 1b, returning
      `{byCampus:{heatHigh, heatMed, overdueMissions, ready, total}}`. Until then the transport need is computed from
      `coordinatortransport` and `coordinatortransportinsight`;
-   - `coordinatordecision`: the trade-off preview for one approval;
+   - `coordinatordecision`: the trade-off preview for one approval, with its recommendations;
+   - `coordinatortrackrecord`: a Coordinator's own track record (the Owner sees everyone's);
    - `principalissues`: the Principal-scoped issue read.
-4. **New write action:** `principalissueresolve` (Principal, own campus, note required). `coordinatorpdrissue` gains the
+4. **New write actions:** `coordinatorrecommend` (Coordinator; reason required) to the new `Recommendations` tab in the
+   LMCS Approvals workbook. `principalissueresolve` (Principal, own campus, note required). `coordinatorpdrissue` gains the
    `reopened` status (Coordinator/Owner, reason required).
 5. **New tabs:** `Campus Papers` and `Findings` (section 6), plus the push action for Campus Papers.
 6. **No new game storage, except one history tab.** Progress and help credits live in the shared Game Backend.
@@ -383,11 +428,12 @@ go-live in Mar.
 
 | Month | Phase | Ships | Depends on |
 |---|---|---|---|
-| Nov 2026 | **C1. Board** | Coordinator mission adapter (core first, done from source records); scheduled Tasks refresh; `HQ History`; the comment-flips-status fix in `approvals.gs`; `principalissues` + `principalissueresolve` with the Principal auth path, Coordinator reopen and the closures view; `coordinator/hq.html` with the contract board, bottleneck flags and campus heat; decision view with the trade-off preview for the categories above; Quest 1 content | Shared layer Phase 1 (Shell); Uday's approval of this design |
+| Nov 2026 | **C1. Board** | Coordinator mission adapter (core first, done from source records); scheduled Tasks refresh; `HQ History`; the comment-flips-status fix in `approvals.gs`; `principalissues` + `principalissueresolve` with the Principal auth path, Coordinator reopen and the closures view; `coordinator/hq.html` with the contract board, bottleneck flags and campus heat; decision view with the trade-off preview; `coordinatorrecommend`, the Owner's view of recommendations, feedback and private track records; Quest 1 content | Shared layer Phase 1 (Shell); Uday's approval of this design |
 | Dec 2026 | **C2. Bases** | Campus needs bars; the Principal side of issue closing; the transport front (after Fleet Command 1b); the map layout on `assets/game-map/`; Owner role switch | Fleet Command 1b; the issue-closing rule |
 | Jan 2027 | **C3. Team and campaigns** | Campus and network team goals (season 0 defaults, editable); help-credit lines; Campus Papers and Findings tabs with push and portal entry; term campaigns; Quest 2 | Shared layer Phase 3 (team goals, seasons) |
 | Feb 2027 | Pilot | The shared layer's two-campus pilot (campus team goals work with any two campuses); tune lines, thresholds and goals from real use. **C1–C3 must be ready for it** | — |
 | **Mar 2027** | **Go-live** | All 6 campuses. Season 1 goals set by the Owner | — |
+| After go-live, when Uday chooses | **Handover** | `Delegations` tab, per-category `aprCanDecide_` (PDR project), the "ready to hand over?" card | A track record worth reading (months of recommendations) |
 | Later | — | A Finance need (bill photos, deposits); Student Life once a register exists; staffing imbalance once Student Master data exists; private standing (shared layer Phase 4) | Those threads |
 
 Each phase is planned (superpowers:writing-plans), built on a branch, verified (`node tests/verify.mjs`, live checks,
@@ -427,8 +473,8 @@ only with Uday's go-ahead.
 
 ## Open for Uday
 
-1. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
-   decide, refer or allocate, so their core mission and Quest 1 can't be done by them.
+Nothing open from the brainstorm. For his review: the handover line (Claude's default of 20 recommendations, 90%
+matched, two months) and the four categories that never get a "ready" card.
 
 ## Settled with Uday
 
@@ -437,6 +483,9 @@ only with Uday's go-ahead.
 - Daily-report issues: "the Principal closes each with an outcome note; the Coordinator sees every closure and can
   reopen." The Coordinator's existing resolve stays.
 - Goals are per-term config ("this is an evolving thing"); go-live March 2027.
+- Approvals: "not yet, presently the owner for all approvals, we will track the approvals and my feedback and over
+  time we will hand over things to the coordinators". Coordinators prepare and recommend; handover is per category,
+  Owner-controlled.
 
 ## Settled after the builder check (Claude's calls)
 
@@ -444,7 +493,8 @@ only with Uday's go-ahead.
   applicant status), not the auto-resolved Tasks row.
 - A hiring stall (approved but not Hired) is a shared mission feeding its campus team bar. Only the campus can mark Hired, so no
   personal credit for nudges.
-- "Decisions on time" counts `aprDecide_` decisions only; the comment-flips-status bug is fixed first (C1).
+- The approvals team goal counts recommendations with a reason, never comments; the comment-flips-status bug is
+  fixed first (C1).
 - `principalissues` gets a read-only Principal auth path and is built in C1, once, by this module.
 - `coordinatortransportfront` is Fleet Command's (Phase 1b), per its message of 2026-10-25.
 - One `HQ History` tab (counts per campus per day) makes "against its own last month" possible.
