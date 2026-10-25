@@ -7,7 +7,8 @@
 // POST {action:'capturefile', idToken, reg, runId, kind:'frame'|'stop'|'inspection', seq, lat, lng, takenAt, base64}
 //   -> {success, fileId}. Image only, <= 2 MB. Saved as Capture/<REG>/<runId>/<kind>-<seq 5 digits>.jpg, a sibling of
 //   'Bus Wise Documents' under the transport Drive folder. Idempotent on (runId, kind, seq): a repeat returns the existing fileId.
-//   A run whose manifest says Kind = count has no camera: its frames are refused (stop photos are still taken).
+//   runKind ('timelapse'|'count'|'inspection') is required and decides what a run accepts: timelapse frame+stop, inspection
+//   inspection only, count nothing (no camera). If the run's manifest row exists its Kind must equal runKind.
 // POST {action:'capturerun', idToken, run:{runId, reg, kind, startedAt, endedAt, frames, gaps, stops, inspection, status}}
 //   -> {success}. One row per runId in the tab 'Capture Runs' (upsert).
 // Who: Owner / ALL any bus; Coordinator the buses of their district; FeeClerk their campus (tupCovers_, unchanged).
@@ -17,6 +18,7 @@ const CAP_TAB_ = 'Capture Runs';
 const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status'];
 const CAP_KINDS_ = ['frame', 'stop', 'inspection'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection'];
+const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'] }; // profile kinds: Task 8
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
 const CAP_PATH_ = TUP_PATH_.slice(0, -1).concat(['Capture']); // sibling of 'Bus Wise Documents'
 
@@ -59,6 +61,10 @@ function captureFile_(body) {
   const reg = a.v.reg, runId = String(body.runId || ''), kind = String(body.kind || ''), seq = Number(body.seq);
   if (CAP_KINDS_.indexOf(kind) === -1) return fail('Unknown kind: ' + kind);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return fail('Bad runId');
+  const runKind = String(body.runKind || '');
+  if (CAP_RUN_KINDS_.indexOf(runKind) === -1) return fail('runKind is required (timelapse, count or inspection)');
+  if (runKind === 'count') return fail('This is a count run: it takes no photos');
+  if (CAP_RUN_ACCEPTS_[runKind].indexOf(kind) === -1) return fail('A ' + runKind + ' run does not take ' + kind + ' photos');
   if (!(seq >= 0 && seq <= 99999 && seq === Math.floor(seq))) return fail('Bad seq');
   const bytes = Utilities.base64Decode(String(body.base64 || ''));
   if (!bytes.length) return fail('Empty file');
@@ -70,10 +76,8 @@ function captureFile_(body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    if (kind === 'frame') { // a count run has no camera
-      const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
-      if (row && String(row[3]) === 'count') return fail('This is a count run: it takes no frames');
-    }
+    const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
+    if (row && String(row[3]) !== runKind) return fail('runKind ' + runKind + ' does not match this run (' + row[3] + ')');
     const hit = CacheService.getScriptCache().get(key);
     if (hit) return { success: true, fileId: hit };
     const dir = capFolder_(reg, runId), it = dir.getFilesByName(name);

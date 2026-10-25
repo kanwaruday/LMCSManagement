@@ -41,7 +41,7 @@ vm.runInContext(gs('transport-capture.gs'), ctx);
 const run = (code) => JSON.parse(JSON.stringify(vm.runInContext(code, ctx)));
 const b64 = (hex, pad) => Buffer.concat([Buffer.from(hex.replace(/ /g, ''), 'hex'), Buffer.alloc(pad || 8)]).toString('base64');
 const JPG = b64('FF D8 FF E0'), PDF = b64('25 50 44 46 2D');
-const frame = (o) => run('captureFile_(' + JSON.stringify(Object.assign({ idToken: 't', reg: 'HP659511', runId: 'R1', kind: 'frame', seq: 1, lat: 31.5, lng: 76.9, takenAt: '2026-10-25T08:00:00Z', base64: JPG }, o)) + ')');
+const frame = (o) => run('captureFile_(' + JSON.stringify(Object.assign({ idToken: 't', reg: 'HP659511', runId: 'R1', runKind: 'timelapse', kind: 'frame', seq: 1, lat: 31.5, lng: 76.9, takenAt: '2026-10-25T08:00:00Z', base64: JPG }, o)) + ')');
 const runDir = () => { const c = transport.kids.find((k) => k.name === 'Capture'); const r = c && c.kids.find((k) => k.name === 'HP659511'); return r && r.kids.find((k) => k.name === 'R1'); };
 
 caller = null;
@@ -76,7 +76,7 @@ const n = runDir().files.length, again = frame({ seq: 1 });
 assert.strictEqual(again.fileId, a.fileId); assert.strictEqual(runDir().files.length, n);
 Object.keys(cache).forEach((k) => delete cache[k]); // cache evicted: the file-name check still dedups
 assert.strictEqual(frame({ seq: 1 }).fileId, a.fileId); assert.strictEqual(runDir().files.length, n);
-assert.strictEqual(frame({ seq: 1, kind: 'inspection' }).success, true, 'kind is part of the key');
+assert.strictEqual(frame({ seq: 1, kind: 'stop' }).success, true, 'kind is part of the key');
 
 // PDF refused, 3 MB frame refused, bad input refused
 assert.match(frame({ seq: 3, base64: PDF }).error, /photo/);
@@ -105,8 +105,16 @@ assert.match(cr({ runId: 'R5', reg: 'HP659511', kind: 'timelapse' }).error, /own
 caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
 assert.match(cr({ runId: 'R5', reg: 'HP659511', kind: 'drone' }).error, /kind/);
 
-// count run with any frame upload is refused
+// runKind decides what a run accepts, whatever order things arrive in
+assert.match(frame({ runId: 'RX', runKind: 'count' }).error, /count run/, 'a frame with runKind count is refused with no manifest row');
+assert.match(frame({ runId: 'RX', runKind: 'count', kind: 'stop' }).error, /count run/, 'a stop with runKind count is refused');
+assert.match(frame({ runId: 'RX', kind: 'inspection' }).error, /does not take inspection/, 'inspection upload with runKind timelapse is refused');
+assert.match(frame({ runId: 'RX', runKind: 'inspection' }).error, /does not take frame/, 'inspection run takes no frames');
+assert.strictEqual(frame({ runId: 'RI', runKind: 'inspection', kind: 'inspection' }).success, true, 'inspection run takes inspection photos');
+assert.match(frame({ runKind: undefined }).error, /runKind is required/, 'runKind missing is refused');
+assert.match(frame({ runKind: 'drone' }).error, /runKind is required/);
 assert.strictEqual(cr({ runId: 'RC', reg: 'HP659511', kind: 'count' }).success, true);
-assert.match(frame({ runId: 'RC', seq: 1 }).error, /count run/);
-assert.strictEqual(frame({ runId: 'RC', seq: 1, kind: 'stop' }).success, true, 'a count run may still bank stop photos');
+assert.match(frame({ runId: 'RC', seq: 1 }).error, /does not match this run/, 'runKind that does not match the manifest is refused');
+assert.match(frame({ runId: 'RC', runKind: 'count', seq: 1 }).error, /count run/, 'a count run with a count manifest still takes nothing');
+assert.strictEqual(frame({ runId: 'R1', seq: 50 }).success, true, 'matching manifest (R1 timelapse) is accepted');
 console.log('transport capture: all checks passed');
