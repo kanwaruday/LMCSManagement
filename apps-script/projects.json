@@ -100,7 +100,8 @@
     "files": [
       "game",
       "game-missions",
-      "game-windows"
+      "game-windows",
+      "game-quests"
     ]
   }
 }

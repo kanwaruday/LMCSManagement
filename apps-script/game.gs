@@ -214,5 +214,9 @@ function gameSetup() {
       'campus', '*', 'Principal', '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', '["Mon","Wed","Fri"]',
       '', '', '', 'trackSuitDays', '', '']]);
   }
+  // Quest 1 for Principal and Coordinator (game-quests.gs); only rows whose QuestId is absent
+  const questSheet = ss.getSheetByName('Game Quests');
+  const questSeed = gameQuestRowsToSeed_(questSheet.getDataRange().getValues());
+  if (questSeed.length) questSheet.getRange(questSheet.getLastRow() + 1, 1, questSeed.length, GAME_TABS['Game Quests'].length).setNumberFormat('@').setValues(questSeed);
   return ss.getUrl();
 }
