@@ -384,7 +384,11 @@ px and desktop) and shipped only with Uday's go-ahead.
 7. Leave: "Leave into Approvals". Teachers apply for leave through the portal's Approvals before the February
    pilot. Until then, days on track shows no denominator.
 8. Sign-in (Q8): "Automatic from Employee Master", widened to "Automatic, but all employees". Every Active
-   employee whose EmpPersonal.AuthEmail matches their verified Google sign-in gets a role by department (Q9, pending).
+   employee whose EmpPersonal.AuthEmail matches their verified Google sign-in gets a role by department (Q9: "Teacher + new Staff role").
+   - Teaching, AdminPTI and AdminIT get Teacher.
+   - AdminClerk, Non-Teaching and Transport get a self-service Staff role: My Requests, My Evaluations, Upcoming
+     Events and own documents, with no office powers.
+   - AdminTM is allowlist only.
    Existing allowlist rows always win. It changes `assets/auth.js`, the PDR `main.gs` and the game backend, each off
    behind the `STAFF_AUTO_SIGNIN` switch that Uday turns on.
 9. Chapter quest: "right away, at each school". No single-campus trial; it goes live at all six schools as soon as

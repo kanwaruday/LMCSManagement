@@ -46,13 +46,17 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 - **Uday's Q8 (sign-in), answered 2026-10-25:** "Automatic from Employee Master", widened to "Automatic, but all
   employees".
   - **Who:** every Active employee whose EmpPersonal.AuthEmail matches their verified Google sign-in.
-  - **Role:** chosen by department; the mapping is Q9, pending.
+  - **Role:** chosen by department (Q9, below).
   - **Precedence:** existing allowlist rows always win.
   - **Switch:** each part stays off behind the switch.
   - **Owners:** this plan owns the `auth.js`, PDR and teacher page parts (Task 1). The game director adds the game
     backend part (its Task 6b).
   - Production deploys and switching it on are Uday's.
-- **Uday's Q9 (department → role, what non-teaching staff see), asked 2026-10-25.** It blocks Task 1, Step 3.
+- **Uday's Q9, answered 2026-10-25: "Teacher + new Staff role".**
+  - Teaching, AdminPTI and AdminIT get Teacher.
+  - AdminClerk, Non-Teaching and Transport get the new self-service Staff role.
+  - AdminTM gets nothing automatic.
+  - Allowlist roles win, and nobody gets powers by default.
 - **The framework Phase 1 code, its Tasks 1–3 at least:** `game.gs` registries, `gameVerifyCaller_`, Mission
   `progress`, and `gamePick_` / days on track. Tasks 3–5 here consume them. Task 8 needs its Tasks 6–10 (the
   `gametoday` response and the mount on `teacher/index.html`).
@@ -138,8 +142,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 **Interfaces:**
 - Produces:
   - `pdrStaffFromEmployeeMaster_(email) -> {email, campusId, roles:[role], employeeCode} | null` in `main.gs`.
-  - `PDR_AUTO_ROLE_BY_DEPARTMENT`. These are the **defaults recommended in Q9, pending Uday's answer**. Replace them
-    with his mapping before Step 3:
+  - `PDR_AUTO_ROLE_BY_DEPARTMENT`, **Uday's Q9 answer ("Teacher + new Staff role", 2026-10-25)**:
     `{Teaching:'Teacher', AdminPTI:'Teacher', AdminIT:'Teacher', AdminClerk:'Staff', 'Non-Teaching':'Staff', Transport:'Staff'}`.
     AdminTM has no entry, so it is allowlist only. Department cells are trimmed and invisible characters stripped
     (the `ss-forms-sync.gs:67-79` cleaning).
@@ -286,7 +289,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   - `tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now) -> Mission[]`, then
     `GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now)`, which wires the state, calendar (6 h cache per
     campus) and `tchPlansFor_(code)`.
-  - **Staff (only if Uday approves the Staff role in Q9):** `GAME_MODULE_MISSIONS.Staff = function (caller, cfg, now)`
+  - **Staff (Uday, Q9):** `GAME_MODULE_MISSIONS.Staff = function (caller, cfg, now)`
     returns only `info_requested`, for the caller's own Approvals rows with status "Info Requested", in the same shape
     as the framework's Principal `info_requested`. `GAME_MODULE_QUESTS.Staff` returns `[]`. The speaker is Buddy. Staff
     land on `teacher/index.html`, which already has the game mount, so there's no separate Staff home.
