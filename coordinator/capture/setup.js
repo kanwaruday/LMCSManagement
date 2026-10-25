@@ -40,6 +40,7 @@ async function boot() {
   $('appBody').hidden = false;
   if (!(LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk'))) { $('appBody').innerHTML = '<div class="denied">Fleet setup is for Fee Clerks, Coordinators and the Owner.</div>'; return; }
   if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '← Live Buses'; } // Fee Clerk
+  else if (LMCS.canViewOwnerPortal && LMCS.canViewOwnerPortal(s)) { $('back').href = '../../owner/transport/index.html'; $('back').textContent = '← Transport'; } // the Owner came from the Owner portal
   S.session = s;
   $('photo').addEventListener('change', onPhoto);
   $('retry').addEventListener('click', load);
@@ -266,6 +267,7 @@ function need() {
   $('need').textContent = q.done ? 'Everything this quest needs is here.' : parts ? `${parts.length - q.missing.length} of ${parts.length} parts answered. Each needs a date or Not known.`
     : `Needed to finish (${names.length}): ` + names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more.` : '.');
   $('need').classList.toggle('cap-good', q.done);
+  $('quest').style.setProperty('--hud', $('need').parentNode.offsetHeight + 'px'); // focused fields scroll to below it (capture.css)
   const all = FQ.questsFor({ data: {} }).find((x) => x.id === q.id).missing, slots = $('needSlots'); // everything this quest can need, in form order
   slots.hidden = all.length < 2;
   slots.style.setProperty('--n', Math.min(all.length, 12));
@@ -412,7 +414,7 @@ function drawPending() {
   $('pending').hidden = !(wait || (S.sending && q.length));
   if (!q.length) { $('refused').innerHTML = ''; return; }
   const signedOut = !LMCS.getSession();
-  $('pendingText').textContent = S.sending ? 'Sending...' : wait ? `${wait} ${wait === 1 ? 'save is' : 'saves are'} waiting to send.` + (signedOut ? ' Sign in to send.' : '') : '';
+  $('pendingText').textContent = S.sending ? 'Sending…' : wait ? `${wait} ${wait === 1 ? 'save is' : 'saves are'} waiting to send.` + (signedOut ? ' Sign in to send.' : '') : '';
   $('sendNow').hidden = S.sending || !wait;
   $('sendNow').textContent = signedOut ? 'Sign in' : 'Send now';
   $('sendNow').onclick = signedOut ? signInThenSend : () => sendQueued();

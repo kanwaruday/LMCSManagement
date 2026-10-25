@@ -1,7 +1,7 @@
-# Capture a route: guide for Coordinators and Fee Clerks
+# Capture portal: guide for Coordinators and Fee Clerks
 
-The page is `coordinator/transport/capture.html`: Coordinators open it from Transport checks → **Capture a route**, Fee
-Clerks from the Office portal's Live Buses → **Capture a route**. You ride the bus with a
+The page is `coordinator/transport/capture.html`: Coordinators open it from Transport checks → **Capture portal**, Fee
+Clerks from the Office portal's Live Buses → **Capture portal**. You ride the bus with a
 school phone. The page saves everything on the phone and you send it later on school Wi-Fi.
 
 ## What you need
@@ -41,9 +41,21 @@ Privacy:
   under **New stop** (a place, never a person).
 - **Keep the page open and the screen on.** If the phone locks or you switch apps, capture pauses. When you come back it
   carries on, and the time away is marked as a gap.
-- If the page was closed, open it again: it offers **Carry on** for the open run.
+- If the page was closed, open it again: it offers **Carry on** for the open run, with that run's kind already picked.
+- Count run: miscounted the last stop? Tap **Change count** under the number on board, put the numbers right, and save.
+- Leaving the page during a run (the back link, a reload) asks first: the camera and GPS stop while you are away.
 - **End run** needs two taps, so a bump cannot end it.
 - "The phone is full": go to the **Upload** tab and send on Wi-Fi, then carry on. Nothing already saved is lost.
+
+## The monthly safety check (Inspection)
+
+- With the bus parked, pick **Inspection** and the bus. The line under the help says how big the check is, for example
+  "10 items, 4 need a photo". Photograph the item only, never children or people.
+- One card per item of the Owner's safety loadout: **Yes** (it is there and works) or **No** (missing or broken). A Yes may
+  need a photo and the date on its certificate or tag; the card says what it still needs, in amber.
+- The strip of slots at the top stays in view and fills in green (on board) or red (missing). Tap a slot to go to its card.
+- A finished card folds to one line once you move on to the next one; tap the line to open it again.
+- **Save safety check** when every slot is filled. Each missing item becomes a follow-up for the bus once it is sent.
 
 ## After the run
 

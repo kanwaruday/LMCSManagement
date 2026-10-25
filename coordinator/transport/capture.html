@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#CE0000">
-<title>LMCS — Capture a route</title>
+<title>LMCS — Capture portal</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=29f58300">
-<link rel="stylesheet" href="../capture/capture.css?v=b0cf3379">
+<link rel="stylesheet" href="../capture/capture.css?v=e468bef8">
 </head>
 <body>
-<header class="hdr"><div><h1>Capture a route</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
+<header class="hdr"><div><h1>Capture portal</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
 <div id="authRoot"></div>
 <main id="appBody" class="cap" hidden>
   <p id="offline" class="cap-offline" hidden><span>Offline mode: sign in to send.</span> <button type="button" id="signIn" class="cap-btn">Sign in</button></p>
@@ -28,8 +28,9 @@
         <button type="button" data-mode="inspection" aria-pressed="false">Inspection</button>
       </div>
       <p id="modeHelp" class="cap-help"></p>
+      <p id="loNote" class="cap-hint" hidden></p>
       <label class="cap-field" for="bus">Bus</label>
-      <select id="bus" class="cap-select"><option value="">Loading buses...</option></select>
+      <select id="bus" class="cap-select"><option value="">Loading the buses…</option></select>
       <p id="busNote" class="cap-note"></p>
       <label id="privacyRow" class="cap-check" for="privacy"><input type="checkbox" id="privacy"> <span>Outside school hours, no children on board</span></label>
       <p id="hint" class="cap-hint">Plug in the charger. Keep this page open with the screen on: if the phone locks, capture pauses.</p>
@@ -52,6 +53,7 @@
           <span>On board now</span>
           <b id="onboard">0</b>
           <span id="seats"></span>
+          <button type="button" id="fixCount" class="cap-btn cap-fix" hidden></button>
         </div>
       </div>
       <p id="gps" class="cap-status" aria-live="polite"></p>
@@ -91,6 +93,6 @@
 </main>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
 <script src="../capture/fleet-quests.js?v=705eb671"></script>
-<script type="module" src="../capture/capture.js?v=dd355888"></script>
+<script type="module" src="../capture/capture.js?v=06046934"></script>
 </body>
 </html>

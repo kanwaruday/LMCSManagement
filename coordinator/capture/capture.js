@@ -27,7 +27,7 @@ const HELP = {
 // loaded by capture.html before this module, so the Game Backend can override it later.
 const loadCapFactor = () => window.FleetQuests.questConfig().loadCapFactor;
 const STATE = {
-  uploading: 'Sending...', retrying: 'No answer from the server. Trying again shortly.', 'waiting-online': 'No connection. Sending resumes when it is back.',
+  uploading: 'Sending…', retrying: 'No answer from the server. Trying again shortly.', 'waiting-online': 'No connection. Sending resumes when it is back.',
   stopped: 'Stopped.', done: 'Sent.', 'not-ended': 'Sends once the safety check is saved.', 'uploaded-so-far': 'Sent so far. The rest goes when the run has ended.',
 };
 
@@ -45,7 +45,7 @@ const S = {
   run: null, active: false, fix: null, last: null, busy: false, stream: null, watch: null, wake: null,
   camWanted: false, camReady: false, camP: null,
   stop: null, sending: false, progress: {},
-  loadout: null, insp: null, // the safety loadout list; the safety check being filled in {items, answers, thumbs}
+  loadout: undefined, insp: null, // the safety loadout list; the safety check being filled in {items, answers, thumbs}
 };
 const canvas = document.createElement('canvas');
 
@@ -85,8 +85,13 @@ async function boot() {
   battery();
   loadBuses();
   loadLoadout();
-  drawResume();
+  drawResume().then((open) => { // an unfinished count run or safety check is waiting: open its mode, not Timelapse
+    const last = open.sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (!HELP[want.get('mode')] && last && last.kind !== S.mode && !S.resumeId && !$('setup').hidden) setMode(last.kind);
+  });
   drawUpload();
+  // leaving mid-run (the header's back link, a reload) stops the camera and GPS: ask first. The run itself stays on the phone.
+  addEventListener('beforeunload', (e) => { if (S.active) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 function wire() {
@@ -101,6 +106,8 @@ function wire() {
   $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap') && !$('sheetWrap').classList.contains('cap-aim')) closeSheet(); });
   $('inspSave').addEventListener('click', saveInspection);
   $('inspPhoto').addEventListener('change', onInspPhoto);
+  $('slots').addEventListener('click', (e) => { const li = e.target.closest('li'); if (li && S.insp) jump(S.insp.items[[...$('slots').children].indexOf(li)].id); });
+  $('fixCount').addEventListener('click', openFix);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheetWrap').hidden) closeSheet(); });
   document.addEventListener('visibilitychange', onVisibility);
 }
@@ -121,6 +128,16 @@ function setMode(mode) {
   $('privacy').checked = false; // asked again before every timelapse start
   $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
+  loadoutLine();
+}
+// Inspection: what the check holds before it starts ("10 items, 4 need a photo"), from the list saved on the phone.
+function loadoutLine() {
+  const L = S.loadout, el = $('loNote');
+  el.hidden = S.mode !== 'inspection' || L === undefined; // undefined: still loading
+  if (el.hidden) return;
+  const p = L ? L.filter((i) => i.needsPhoto).length : 0;
+  el.textContent = !L ? 'The safety list is not on this phone yet. Open this page on Wi-Fi once.'
+    : `${plural(L.length, 'item')}, ${p ? p + (p === 1 ? ' needs' : ' need') + ' a photo' : 'no photos'}.`;
 }
 
 async function battery() {
@@ -169,8 +186,9 @@ async function loadBuses() {
     ? '<option value="">Pick the bus</option>' + S.buses.map((b) => `<option value="${esc(b.reg)}">${esc(b.reg)}${b.route ? ' (' + esc(routeName(b, b.reg)) + ')' : ''}</option>`).join('')
     : '<option value="">No buses</option>';
   if (S.wantReg && busOf(S.wantReg)) sel.value = busOf(S.wantReg).reg;
-  if (!S.buses.length && !note) note = 'No buses on your account.';
+  if (!S.buses.length && !note) note = 'No running buses on your account.';
   $('busNote').textContent = note;
+  $('busNote').classList.toggle('cap-bad', !S.buses.length); // nothing to pick: an error, not a grey aside
   if (S.run) hud();
 }
 const busOf = (reg) => S.buses.find((b) => normReg(b.reg) === normReg(reg));
@@ -185,6 +203,7 @@ async function loadLoadout() {
   } catch (err) {
     try { S.loadout = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { S.loadout = null; }
   }
+  loadoutLine();
 }
 
 // ── Unfinished runs (the page was closed mid-run): carry on, or end them ──
@@ -206,6 +225,7 @@ async function drawResume() {
     $('bus').value = bus ? bus.reg : '';
     $('setupMsg').textContent = run.kind === 'timelapse' ? 'Tick the box, then tap Carry on.' : '';
   }));
+  return open;
 }
 
 // ── Start a run ──
@@ -306,6 +326,9 @@ function hud() {
     const seats = Number(bus && bus.seats);
     $('onboard').textContent = load(run.stops).now;
     $('seats').textContent = seats ? `${seats} seats` : ''; // the load cap is for the summary only
+    const last = run.stops[run.stops.length - 1]; // a miscount is put right before the next stop
+    $('fixCount').hidden = !last;
+    if (last) { $('fixCount').textContent = 'Change count: ' + (last.name || 'last stop'); $('fixCount').setAttribute('aria-label', 'Change the count at ' + (last.name || 'the last stop')); }
   }
 }
 function gpsLine() {
@@ -364,6 +387,14 @@ function openSheet() {
   drawSheet();
   behindSheet(true);
 }
+function openFix() { // the last stop's count, put right: the same counters, saved over the old numbers (store.setCount)
+  const last = S.run.stops[S.run.stops.length - 1];
+  if (!last) return;
+  S.stop = { fix: last.seq, name: last.name || 'Last stop', on: last.boardOn || 0, off: last.boardOff || 0, step: 'next' };
+  $('sheetWrap').hidden = false;
+  drawSheet();
+  behindSheet(true);
+}
 function closeSheet() { $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; $('stopHere').focus(); }
 function behindSheet(on) { // the sheet is modal: keyboard and screen reader stay inside it
   document.querySelectorAll('.hdr, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
@@ -394,8 +425,8 @@ function drawSheet() {
     const ctr = (k, label) => `<div class="cap-ctr"><span id="l-${k}">${label}</span><button type="button" class="cap-pm" data-k="${k}" data-d="-1" aria-label="${label}: one less">&minus;</button>` +
       `<b id="v-${k}" aria-labelledby="l-${k}">${st[k]}</b><button type="button" class="cap-pm" data-k="${k}" data-d="1" aria-label="${label}: one more">+</button></div>`;
     sheet.innerHTML = `<h2 id="sheetTitle">${esc(st.name)}</h2>` + ctr('on', 'Got on') + ctr('off', 'Got off') +
-      '<button type="button" class="cap-primary" data-a="save">Save stop</button><p class="cap-msg" id="sheetMsg" role="alert"></p>' +
-      '<button type="button" class="cap-end" data-a="back">Back</button>';
+      `<div class="cap-sheetbtns"><button type="button" class="cap-primary" data-a="save">${st.fix != null ? 'Save count' : 'Save stop'}</button>` +
+      (st.fix != null ? '<button type="button" class="cap-end" data-a="cancel">Cancel</button>' : '<button type="button" class="cap-end" data-a="back">Back</button>') + '</div><p class="cap-msg" id="sheetMsg" role="alert"></p>';
     sheet.querySelectorAll('.cap-pm').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.k; st[k] = Math.max(0, st[k] + Number(b.dataset.d)); $('v-' + k).textContent = st[k];
     }));
@@ -410,6 +441,12 @@ function drawSheet() {
 function pick(name) { S.stop.name = name; S.stop.step = 'next'; drawSheet(); }
 async function saveStop(btn) {
   const st = S.stop, id = S.run.id, f = S.fix;
+  if (st.fix != null) {
+    btn.disabled = true;
+    try { await store.setCount(id, st.fix, st.on, st.off); S.run = await store.getRun(id); closeSheet(); hud(); toast(`${st.name}: count changed.`); }
+    catch (e) { btn.disabled = false; $('sheetMsg').textContent = 'Not saved: ' + e.message; }
+    return;
+  }
   const stop = { lat: st.lat ?? (f && f.lat), lng: st.lng ?? (f && f.lng), takenAt: st.takenAt, name: st.name };
   if (S.run.kind !== 'count') {
     stop.base64 = grab();
@@ -546,7 +583,7 @@ async function signIn() {
 async function sendAll() {
   if (S.sending) return;
   if (!LMCS.getSession()) await signIn(); // a sign-in lasts about an hour, and offline mode has none: sign in, then send
-  S.sending = true; $('send').disabled = true; $('send').textContent = 'Sending...';
+  S.sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
   S.progress = {};
   const runs = {};
   const up = createUploader({
@@ -587,14 +624,32 @@ async function startInspection(resume, reg) {
     if (!S.run.draft) S.run = await store.patchRun(S.run.id, { draft: { items, answers: {} } });
   } catch (e) { return setupSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Could not save on this phone: ' + e.message); }
   S.resumeId = null;
-  S.insp = { items, answers: { ...S.run.draft.answers }, thumbs: {} };
+  S.insp = { items, answers: { ...S.run.draft.answers }, thumbs: {}, cur: null }; // cur: the card being worked on stays open
   $('setup').hidden = true; $('summary').hidden = true; $('inspect').hidden = false;
   $('inspTitle').textContent = `Safety check ${S.run.reg}` + (bus && bus.route ? ` (${routeName(bus, S.run.reg)})` : '');
   $('inspMsg').textContent = '';
   $('cards').innerHTML = items.map((i) => `<li class="cap-slot" data-id="${esc(i.id)}"></li>`).join('');
   items.forEach((i) => drawCard(i.id));
   drawSlots();
-  const first = $('cards').querySelector('button'); if (first) first.focus();
+  const todo = items.find((i) => !['ok', 'no'].includes(slotState(i))), first = cardEl((todo || items[0]).id).querySelector('button');
+  if (first) first.focus();
+}
+const cardEl = (id) => $('cards').querySelector(`[data-id="${CSS.escape(id)}"]`);
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Work moves to another card: the one before folds to a line if it is finished, and the card under the thumb stays where it is.
+function setCur(id) {
+  const prev = S.insp.cur;
+  S.insp.cur = id;
+  if (!prev || prev === id) return;
+  const li = cardEl(id), y = li.getBoundingClientRect().top;
+  drawCard(prev);
+  scrollBy(0, li.getBoundingClientRect().top - y);
+}
+function jump(id) { // a tap on a slot in the HUD: that item's card, open, below the HUD
+  setCur(id); drawCard(id);
+  const li = cardEl(id);
+  li.scrollIntoView({ block: 'start', behavior: calm() ? 'auto' : 'smooth' });
+  li.querySelector('button').focus({ preventScroll: true });
 }
 // done: answered, and a Yes has the photo and date it needs. A No needs nothing more: the missing item is the finding.
 function slotState(item) {
@@ -609,13 +664,23 @@ function drawSlots() {
   $('slots').style.setProperty('--n', String(Math.min(st.length, 12))); // a long list wraps to a second row of slots
   $('inspCount').textContent = `${done} of ${st.length} done`;
   $('inspCount').classList.toggle('cap-good', done === st.length); // every slot answered: the count turns green
+  $('inspect').style.setProperty('--hud', $('slots').parentNode.offsetHeight + 'px'); // fields scroll to below it (capture.css)
   $('inspSave').textContent = done === st.length ? 'Save safety check' : `Save safety check (${done} of ${st.length} done)`;
 }
 function drawCard(id) {
-  const item = S.insp.items.find((i) => i.id === id), a = S.insp.answers[id], li = $('cards').querySelector(`[data-id="${CSS.escape(id)}"]`), state = slotState(item);
+  const item = S.insp.items.find((i) => i.id === id), a = S.insp.answers[id], li = cardEl(id), state = slotState(item);
   const focused = document.activeElement && li.contains(document.activeElement) ? document.activeElement.dataset.a : null;
   const needs = [item.needsPhoto && 'a photo', item.needsDate && 'the date'].filter(Boolean);
   li.dataset.s = state;
+  const fold = (state === 'ok' || state === 'no') && S.insp.cur !== id; // finished and not the card being worked on: one line
+  li.classList.toggle('cap-folded', fold);
+  if (fold) {
+    li.innerHTML = `<button type="button" class="cap-fold" data-a="open" aria-expanded="false"><span class="cap-mark">${state === 'ok' ? SVG.ok : SVG.no}</span>` +
+      `<span class="cap-foldname">${esc(item.label)}</span><small>${state === 'ok' ? 'On board' : 'Missing'}</small></button>`;
+    li.querySelector('[data-a="open"]').addEventListener('click', () => { setCur(id); drawCard(id); const y = cardEl(id).querySelector('[aria-pressed="true"]'); if (y) y.focus(); });
+    if (focused) li.querySelector('button').focus();
+    return;
+  }
   li.innerHTML = `<div class="cap-slothead"><span class="cap-mark">${state === 'ok' ? SVG.ok : state === 'no' ? SVG.no : ''}</span>` +
     `<h3 id="lab-${esc(id)}">${esc(item.label)}</h3></div>` +
     `<div class="cap-yn" role="group" aria-labelledby="lab-${esc(id)}">` +
@@ -627,18 +692,21 @@ function drawCard(id) {
       : `<div class="cap-took">${S.insp.thumbs[id] ? `<img src="${S.insp.thumbs[id]}" alt="">` : ''}<span>Photo saved</span><button type="button" class="cap-btn" data-a="photo">Retake</button></div>`) : '') +
     (a && a.ok && item.needsDate ? `<label class="cap-field" for="d-${esc(id)}">Date on the certificate or tag</label><input type="date" id="d-${esc(id)}" class="cap-input" data-a="date" value="${esc(a.date || '')}">` : '');
   li.querySelectorAll('[data-a="yes"],[data-a="no"]').forEach((b) => b.addEventListener('click', () => answer(id, b.dataset.a === 'yes')));
-  li.querySelectorAll('[data-a="photo"]').forEach((b) => b.addEventListener('click', () => { S.insp.photoFor = id; $('inspPhoto').value = ''; $('inspPhoto').click(); }));
+  li.querySelectorAll('[data-a="photo"]').forEach((b) => b.addEventListener('click', () => { setCur(id); S.insp.photoFor = id; $('inspPhoto').value = ''; $('inspPhoto').click(); }));
   const d = li.querySelector('[data-a="date"]');
-  if (d) d.addEventListener('change', () => { S.insp.answers[id].date = d.value; saveDraft(); drawSlots(); li.dataset.s = slotState(item); drawMark(li, item); });
+  if (d) d.addEventListener('change', () => { setCur(id); S.insp.answers[id].date = d.value; saveDraft(); drawSlots(); li.dataset.s = slotState(item); drawMark(li, item); });
   if (focused) { const f = li.querySelector(`[data-a="${focused}"]`); if (f) f.focus(); }
 }
 function drawMark(li, item) {
   const s = slotState(item), note = li.querySelector('.cap-todo');
   li.querySelector('.cap-mark').innerHTML = s === 'ok' ? SVG.ok : s === 'no' ? SVG.no : '';
-  if (note) { if (s === 'todo') note.textContent = stillNeeds(item, S.insp.answers[item.id]); else note.remove(); } // the date field keeps focus: no redraw
+  if (s !== 'todo') { if (note) note.remove(); return; } // the date field keeps focus: no redraw
+  const text = stillNeeds(item, S.insp.answers[item.id]);
+  if (note) note.textContent = text; else li.querySelector('.cap-yn').insertAdjacentHTML('afterend', `<p class="cap-slotnote cap-todo">${text}</p>`); // a cleared date says so too
 }
 const stillNeeds = (item, a) => 'Still needs ' + [item.needsPhoto && a.seq == null && 'a photo', item.needsDate && !a.date && 'the date'].filter(Boolean).join(' and ') + '.';
 function answer(id, ok) {
+  setCur(id);
   const a = S.insp.answers[id];
   S.insp.answers[id] = ok ? { ...(a && a.ok ? a : {}), ok: true } : { ok: false }; // No drops the photo link and date; a Yes keeps what it had
   if (!ok && a && a.seq != null) { store.dropFile(S.run.id, 'inspection', a.seq).catch(() => {}); delete S.insp.thumbs[id]; } // that photo is never sent
@@ -666,8 +734,8 @@ function readImage(file) { // the photo from the phone's camera app, longest sid
 async function onInspPhoto() {
   const file = $('inspPhoto').files[0], id = S.insp && S.insp.photoFor;
   if (!file || !id) return;
-  const li = $('cards').querySelector(`[data-id="${CSS.escape(id)}"]`), btn = li.querySelector('[data-a="photo"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving photo...'; }
+  const li = cardEl(id), btn = li.querySelector('[data-a="photo"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving photo…'; }
   try {
     const base64 = await readImage(file);
     const old = S.insp.answers[id] && S.insp.answers[id].seq;
@@ -686,7 +754,7 @@ async function saveInspection() {
     const i = left[0], a = S.insp.answers[i.id];
     const msg = !a ? `Answer ${i.label} first.` : a.seq == null && i.needsPhoto ? `Take the photo of ${i.label} first.` : `Add the date for ${i.label} first.`;
     $('inspMsg').textContent = msg; toast(msg); // the page scrolls to the card, away from the message under Save
-    const li = $('cards').querySelector(`[data-id="${CSS.escape(i.id)}"]`);
+    const li = cardEl(i.id);
     li.scrollIntoView({ block: 'center' }); (li.querySelector('[data-a="photo"],[data-a="date"]') || li.querySelector('button')).focus({ preventScroll: true });
     return;
   }

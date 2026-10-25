@@ -1,9 +1,13 @@
 /* Capture page: a phone in a dashboard mount, in bright daylight, worked one-handed in a moving bus.
-   High contrast on white, big targets (56 px and up), STOP HERE the one loud thing. Layered on ../shared.css. */
+   High contrast on white, big targets (48 px at the least, 56 px and up for the capture actions), STOP HERE the one loud
+   thing. Green means done, amber still needs something, red missing or refused. Layered on ../shared.css. */
 :root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
 [hidden]{display:none!important}
 :root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or STOP HERE */
 .hdr{padding:0 16px}
+.hdr a{position:relative;font-size:13px} /* the back link: a small pill, a thumb-sized target */
+.hdr a::after{content:"";position:absolute;inset:-12px -8px}
+.hdr a:focus-visible{outline:3px solid #fff;outline-offset:2px}
 .cap{font-size:16px;line-height:1.45;color:var(--c-ink)}
 #appBody.cap{padding:12px 16px 32px;max-width:640px} /* #appBody in shared.css is 1200 px wide */
 .cap ::selection{background:#ffd6d6}
@@ -40,7 +44,7 @@
 .cap-resume{border:2px solid var(--c-warn);border-radius:10px;padding:10px 14px;margin-bottom:12px;background:#fffbeb}
 .cap-resume p{margin:0 0 8px}
 .cap-offline{display:flex;align-items:center;justify-content:space-between;gap:8px;border:2px solid var(--c-warn);background:#fffbeb;border-radius:10px;padding:6px 6px 6px 12px;margin:0 0 12px;font-size:15px;font-weight:700}
-.cap-offline .cap-btn{flex:none;min-height:44px;padding:0 12px}
+.cap-offline .cap-btn{flex:none;min-height:48px;padding:0 12px}
 
 /* the run: mission, camera (or the on-board count), status, STOP HERE */
 .cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}
@@ -59,6 +63,7 @@
 .cap-count{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid var(--c-line);border-radius:12px;padding:10px;min-height:150px;text-align:center}
 .cap-count b{font-size:64px;line-height:1.05;font-variant-numeric:tabular-nums}
 .cap-count span{font-size:15px;color:var(--c-mute);font-weight:600}
+.cap-count .cap-fix{margin-top:8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px} /* a miscount, put right */
 .cap-status{grid-area:status;font-size:15px;font-weight:700;margin:0}
 .cap-status[data-s="wait"],.cap-status[data-s="weak"]{color:var(--c-warn)}
 .cap-status[data-s="bad"]{color:var(--c-bad)}
@@ -83,7 +88,6 @@
 
 /* a short phone held upright (320x568): give the camera's room back so a message still fits above STOP HERE */
 @media (orientation:portrait) and (max-height:620px){
-  .cap-tabs button{min-height:44px}
   .cap-mission h2{font-size:16px}
   .cap-stop{min-height:100px;font-size:32px}
   .cap-run .cap-end{min-height:48px}
@@ -110,6 +114,12 @@
   .cap-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start} /* the safety check: two cards across, half the scrolling */
   .cap-sheetwrap.cap-aim{justify-content:flex-end} /* the photo sheet sits over the controls, the camera stays in view */
   .cap-aim .cap-sheet{max-width:44vw;border-radius:16px 0 0 0}
+  /* the count sheet fits the short screen whole: Save and Back side by side, no scrolling inside the sheet */
+  .cap-sheet{max-height:calc(100vh - 12px);padding:12px 16px 14px}
+  .cap-sheet h2{margin-bottom:6px}
+  .cap-ctr{margin:6px 0}
+  .cap-sheetbtns{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:10px}
+  .cap-sheetbtns>*{margin:0}
 }
 
 /* STOP HERE sheet */
@@ -175,7 +185,9 @@
 .cap-hud .cap-slots{margin:0}
 @media (min-height:540px){
   .cap-hud{position:sticky;top:0;z-index:5;box-shadow:0 1px 0 var(--c-line),0 8px 10px -10px rgba(0,0,0,.45)}
-  .cap-slot{scroll-margin-top:120px} /* Save's "answer this first" scroll lands below the HUD, not under it */
+  /* a card scrolled to, or a field focused (keyboard, Tab), lands below the pinned HUD, not under it. --hud: its height, set by
+     the page */
+  .cap-slot,.cap-hud~* :is(button,input,select,summary,a){scroll-margin-top:calc(var(--hud,120px) + 12px)}
 }
 .cap-slots:has(li:nth-child(13)) li{height:20px;border-radius:4px} /* a long list: four short rows, not four tall ones */
 .cap-slots:has(li:nth-child(13)) svg{width:14px;height:14px}
@@ -185,11 +197,24 @@
 .cap-slots [data-s="ok"]{border:2px solid var(--c-ok);background:var(--c-ok);color:#fff}
 .cap-slots [data-s="no"]{border:2px solid var(--c-bad);background:#fee2e2;color:var(--c-bad)}
 .cap-slots [data-s="todo"]{border:2px solid var(--c-warn);border-style:dashed}
+/* the HUD's slots are a shortcut: a tap opens that item's card (the cards themselves are the full-size targets) */
+#slots li{position:relative;cursor:pointer;touch-action:manipulation}
+#slots li::before{content:"";position:absolute;inset:-8px -2px}
+#slots:has(li:nth-child(13)) li::before{inset:-2px}
 .cap-cards{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
 .cap-slot{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;background:#fff}
 .cap-slot[data-s="ok"]{border-color:var(--c-ok)}
 .cap-slot[data-s="todo"]{border-color:var(--c-warn)}
 .cap-slot[data-s="no"]{border-color:var(--c-bad);background:#fff5f5}
+/* a finished card folds to one line (mark, name, answer); a tap opens it again */
+.cap-slot.cap-folded{padding:0}
+.cap-fold{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:8px 14px;border:0;border-radius:10px;background:none;text-align:left;font:inherit}
+.cap .cap-fold:focus-visible{outline-offset:-5px}
+.cap-foldname{flex:1;min-width:0;font-size:17px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}
+.cap-fold small{flex:none;font-size:15px;font-weight:700}
+[data-s="ok"] .cap-fold small{color:var(--c-ok)}
+[data-s="no"] .cap-fold small{color:var(--c-bad)}
+.cap-fold::after{content:"";flex:none;width:9px;height:9px;margin:0 4px 4px 2px;border-right:2.6px solid var(--c-mute);border-bottom:2.6px solid var(--c-mute);transform:rotate(45deg)}
 .cap-slothead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .cap-slothead h3{margin:0;font-size:18px;font-weight:800;line-height:1.25;min-width:0;overflow-wrap:anywhere}
 .cap-mark{flex:none;width:30px;height:30px;border:2px dashed #8a8a8a;border-radius:8px;display:flex;align-items:center;justify-content:center}
