@@ -226,7 +226,9 @@ The Sims idea (Uday): relationships between people, built from what they really 
 
 ## Rules
 
-- **Nothing is private** (Uday). The Owner can read every channel and DM. Staff see this:
+- **Nothing is private** (Uday). **Everyone with the Owner role** (Uday), MD Academics included, can read every
+  channel and DM and see the relationship map. "View as" is read-only inside messaging and never sends as someone
+  else (Claude's call). Staff see this, naming "everyone with the Owner role" as the readers (Claude's call):
   - at first sign-in, as a one-time screen they must accept before sending anything;
   - under every composer;
   - in the Communication bye-law (amendment above).
@@ -326,10 +328,10 @@ All of it is built (Uday); this is only the order.
 
 1. ~~Mock-up feedback~~ **Answered (Uday, 2026-10-25):** "Messaging mockups look good as they are, no changes."
    The three mock-ups are the reference for the phone of contracts, a channel and the relationship map.
-2. **Who is "the Owner" who can read everything?** The Owner role today includes more than Uday (e.g. MD
-   Academics), and Owners can "view as" other staff. *Claude's recommendation:* only a named list can read others'
-   channels and DMs and see the relationship map, starting with Uday alone; "view as" inside messaging is read-only
-   and can never send as someone else. The "nothing is private" notice names who can read.
+2. ~~Who is "the Owner" who can read everything?~~ **Answered (Uday, 2026-10-25): "Everyone with Owner role."**
+   Anyone holding the Owner role, MD Academics included, can read every channel and DM and see the relationship
+   map. Claude's calls that go with it: the "nothing is private" notice says plainly "everyone with the Owner role
+   can read all messages"; "view as" inside messaging is read-only and can never send as someone else.
 3. **Staff without an lms.org.in account** (drivers, attendants, helpers, guards). Are they in, eventually, for
    messaging to replace WhatsApp? *Claude's recommendation:* v1 is for everyone already on the allowlist with an
    lms.org.in account; others join as they are given accounts, which is a Workspace licensing decision for Uday.
