@@ -323,7 +323,7 @@ Module chats plan their phases inside this window: transport's Phase 1a/1b alrea
 
 | Phase | Ships | Depends on |
 |---|---|---|
-| **1. Shell** | Buddy (winter, summer, track-suit outfits), the greeting, the next-step bar, and the Today panel on the Principal, Coordinator and Owner **homes**. Adapters: Coordinator Tasks (approvals 3+ days, hiring stalls), SS quota, daily-report issues (new Principal-scoped read), daily report, Info Requested. The game backend (progress, the daily set, nightly days-on-track). Quest 1 for Principal and Coordinator | Uday's approval; final Buddy renders; the issue-closing rule |
+| **1. Shell** | Buddy (winter, summer, track-suit outfits), the greeting, the next-step bar, and the Today panel on the Principal, Coordinator and Owner **homes**. Adapters: Coordinator Tasks (approvals 3+ days, hiring stalls), SS quota, daily-report issues (new Principal-scoped read), daily report, Info Requested. The game backend (progress, the daily set, nightly days-on-track). Quest 1 for Principal and Coordinator | Uday's approval; final Buddy renders; `principalissues` with a Principal resolve action (Coordinator chat) |
 | **2. Cast and modules** | Teacher Owl and Teacher adapters/quests (with the Teacher chat); Office Owl and Fee Clerk adapters/quests; Coach Owlet inside Fleet Command (with the transport chat); module intros; new-feature cards | Phase 1 |
 | **3. Together** | Team goals, help credit, badges, the Montessori Owlet's first-week quest for new joiners | Phase 2 |
 | **4. Standing** | Private standing from the incentive engine's peer groups | The incentive redesign thread |
@@ -385,8 +385,10 @@ go-ahead.
 
 ## Open questions for Uday (sent via the LMCS Master Agent)
 
-1. **Who may close a daily-report issue?** Claude's recommendation: the Principal closes it with an outcome note,
-   and the Coordinator sees every closure and can reopen it.
+1. ~~Who may close a daily-report issue?~~ **Answered (Uday, 2026-10-25):** "the Principal closes each with an
+   outcome note; the Coordinator sees every closure and can reopen."
+   - The Principal's mission is done when the issue is resolved by that Principal with a note.
+   - A reopen puts it back in their Today panel as "reopened". It is not counted against them retroactively.
 2. **Which 3 days a week are track-suit days?** (Buddy's outfit calendar.)
 3. **Confirm "days on track" instead of personal streaks.** Individuals see "18 of 21 school days on track",
    never a breakable streak; only teams have streaks with a freeze.
