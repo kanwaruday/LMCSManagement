@@ -902,6 +902,66 @@ function coordTasksList_(caller, idToken) {
   return { success: true, tasks: tasks };
 }
 
+// ── Scheduled refresh and HQ History ─────────────────────────────────
+// Time-triggered at 05:30 IST, after the game layer's 04:00 daily missions, so the Tasks tab is fresh
+// without anyone opening the page. Run coordInstallTriggers() once from the editor.
+const COORD_HISTORY_TAB = 'HQ History'; // long format: Date, Campus, Measure, Value (counts only)
+
+function coordScheduledRefresh_() {
+  // ponytail: SS needs a script-to-script secret to join the 05:30 run (coordRefreshSsCompliance_ takes a caller's token); it stays page-load-refreshed
+  try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
+  try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
+  try { coordRefreshDocuments_(); } catch (err) { console.error('Documents adapter: ' + err.message); }
+  try { coordTransportRetireTasks_(); } catch (err) { console.error('Transport retire: ' + err.message); }
+  try { coordHistoryAppend_(); } catch (err) { console.error('HQ History: ' + err.message); }
+}
+
+function coordInstallTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'coordScheduledRefresh_') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('coordScheduledRefresh_').timeBased().atHour(5).nearMinute(30).everyDays(1).create(); // appsscript.json timeZone is Asia/Kolkata
+}
+
+/** One row per campus per measure: open, overdue (Due before dayKey, or severity high) and open.<domain>.
+ *  `existing` is the tab's rows; a (dayKey, campus) pair already in it is skipped, so a rerun adds nothing. */
+function coordHistoryRows_(taskRows, dayKey, existing) {
+  const done = {}, byCampus = {}, out = [];
+  (existing || []).forEach(function (r) { done[r[0] + '|' + r[1]] = true; });
+  for (let i = 1; i < taskRows.length; i++) {
+    const r = taskRows[i], campus = r[2];
+    if (r[5] !== 'open' || !campus || done[dayKey + '|' + campus]) continue;
+    const c = byCampus[campus] || (byCampus[campus] = { open: 0, overdue: 0, domains: {} });
+    const due = coordDueIso_(r[14]);
+    c.open++;
+    if (r[6] === 'high' || (due && due < dayKey)) c.overdue++;
+    c.domains[r[1]] = (c.domains[r[1]] || 0) + 1;
+  }
+  Object.keys(byCampus).forEach(function (campus) {
+    const c = byCampus[campus];
+    out.push([dayKey, campus, 'open', c.open], [dayKey, campus, 'overdue', c.overdue]);
+    Object.keys(c.domains).forEach(function (d) { out.push([dayKey, campus, 'open.' + d, c.domains[d]]); });
+  });
+  return out;
+}
+
+function coordHistoryAppend_() {
+  const ss = SpreadsheetApp.openById(COORD_SHEET_ID);
+  let sh = ss.getSheetByName(COORD_HISTORY_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(COORD_HISTORY_TAB);
+    sh.getRange(1, 1, 1, 4).setValues([['Date', 'Campus', 'Measure', 'Value']]).setFontWeight('bold');
+    sh.getRange('A:A').setNumberFormat('@'); // keep 2026-11-03 as text, not a date
+    sh.setFrozenRows(1);
+  }
+  const dayKey = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+  const existing = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().map(function (r) {
+    return [r[0] instanceof Date ? Utilities.formatDate(r[0], 'Asia/Kolkata', 'yyyy-MM-dd') : r[0], r[1], r[2], r[3]];
+  }) : [];
+  const rows = coordHistoryRows_(coordSheet_().getDataRange().getValues(), dayKey, existing);
+  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+}
+
 // POST action=coordinatorresolvetask {taskId, note}. A follow-up raised from a Systems issue (pdr_issue|<id>) also marks that issue resolved.
 function coordTaskResolve_(caller, body) {
   const res = coordTaskResolveCore_(caller, body);
