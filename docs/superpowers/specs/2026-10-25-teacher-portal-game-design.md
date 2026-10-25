@@ -137,14 +137,17 @@ From top to bottom:
 
 ### Loop 1: the daily log (core mission, Uday)
 
-- **Mission `teacher:cwhw_missing:<code>:<date>:<classSubject>`**: one per class-subject due today.
-  - **Due** when the timetable shows a period of that class-subject today, or, without a timetable, when it is a
-    working day for the campus.
-  - **Done** when the CW/HW feed has an entry for that teacher, class and subject dated today. Logging later the same
-    evening counts, because the reset is at 04:00 IST.
-- **In the Today panel these collapse into one card**, "Log today's classwork and homework (2 of 4 classes done)",
-  so the daily log takes one slot, not four (Claude's call). Go opens the CW/HW form.
+- **Mission `teacher:cwhw_log:<code>:<date>`**: ONE mission per teacher per day, with `progress: {done, total}`
+  (framework rule: done = `progress.done >= progress.total`). The Today card reads "Log today's classwork and
+  homework (2 of 4 classes done)", and Go opens the CW/HW form.
+  - **`total`** = the class-subjects due today: those with a timetabled period today, or, without a timetable,
+    every class-subject the teacher teaches on a working day for the campus.
+  - **`done`** = how many of those have a CW/HW feed entry for that teacher, class and subject dated today.
+    Logging later the same evening counts, because the reset is at 04:00 IST.
 - **Days on track** (framework): a working day, not on leave, with every due class-subject logged.
+  - Teachers see "18 days on track this month" **without "of 21"** (framework config `daysDenominator` = false for
+    Teacher). That holds until teacher leave, with dates, is in Approvals (Q6).
+  - The framework's Phase 2 nightly snapshot counts the days of teachers who log only from the mobile app.
 - **Counter-checks.** An entry with 7+ tags doesn't count toward any quest step. It still counts as "logged",
   because the parent deliverable went out. Teachers with repeated 7+-tag entries appear in the existing Coordinator
   tag view, not in the game.
@@ -239,13 +242,16 @@ quests. These are real data entry, and done is detected from data:
 - **Compute lives in the game backend, not the PDR backend** (Claude's call). `teacher-portal.gs` sits in the live
   "Principal's Daily Reporting Backend" project. Uday's own rule from the Coordinator backend is that new work must
   never put that project at risk. So the teacher adapter is a file in the framework's separate **LMCS Game Backend**
-  project (`game-adapter-teacher.gs`). It reads the source sheets directly: the CW/HW sheet, the Course Mapping workbooks,
+  project (`game-teacher.gs`). It reads the source sheets directly: the CW/HW sheet, the Course Mapping workbooks,
   the Chapter Tracker sheet, the Employee Master (`EmpAcademic`, `EmpPersonal`), the timetable, and the Teacher SS
   responses. It serves:
   - `teachermissions`: the caller's missions, in the framework's Mission shape;
   - `teacherclassroom`: the caller's class cards, chapter episodes and quest step states, conditions and team bars;
   - nightly: chapter episodes and days on track, written as flags and counts to the game workbook (no names, no free
     text).
+
+  Both actions are registered in the framework's `GAME_MODULE_ACTIONS`. The framework's Phase 2 nightly trigger
+  calls the teacher part, which this module owns (agreed with the game director).
 - **The episode engine** is shared with the Owner portal (see "Settled after the builder check"). It covers first
   entry through first CWA, per teacher × class × subject, and real teaching only: Class 1+, non-exempt subjects, 3+
   periods. Its tests reproduce the measured headline numbers on a fixed snapshot of the feed, under whichever
@@ -258,21 +264,27 @@ quests. These are real data entry, and done is detected from data:
   1. reads the day's CW entries and the planned activities;
   2. asks LM Studio (`/no_think`, the `drive-index/lmstudio_summarize.py` call pattern) "does this description
      describe this planned activity: yes/no + confidence";
-  3. pushes the results over HTTPS to an `Activity Matches` tab in the game workbook.
+  3. pushes the results over HTTPS to a `Teacher Activity Matches` tab in the game workbook.
 
   Apps Script can't reach the Mac, which is why the Mac pushes. If the Mac is asleep, step 3 simply waits and shows
   "checking overnight", so a step is never marked failed for that reason.
 - **Planned activities:** the teacher fills them from the class card, a one-line form that writes to a
-  `Planned Activities` tab in the game workbook, keyed per teacher. Each campus's course map gets a read-only rollup
+  `Teacher Planned Activities` tab in the game workbook, keyed per teacher. Each campus's course map gets a read-only rollup
   column, so academic staff see every plan. The Course Mapping workbooks are otherwise unchanged.
-- **Timetable:** moves from the public `teacher/data/timetable.json` to a `Timetable` tab behind the signed-in game
+- **Timetable:** moves from the public `teacher/data/timetable.json` to a `Teacher Timetable` tab behind the signed-in game
   backend in T0 (see "Settled after the builder check").
 - **Front end:** `teacher/index.html` loads the framework's `assets/game.js`, then a small `teacher/classroom.js` for
   today's line, the class cards and the conditions panel. No framework, following the repo's conventions. Design
   skills apply in this order: the LMCS skills (`frontend-design-for-lmcs`, `taste-for-lmcs`, `impeccable-for-lmcs`),
   then `game-ui-ux` and `gamification-loops`, whose safety warnings are binding.
-- **Config:** every mission kind, quest step, the 14-day rule, the 7-tag rule and team targets are entries in the
-  framework's `Game Config` (Uday: goals are config, set per season).
+- **Config:** every value lives in the framework's `Game Config` under the `teacher.*` namespace (Uday: goals are
+  config, set per season). That covers:
+  - `teacher.examKeywords`;
+  - `teacher.remediationDays` = 14;
+  - `teacher.tagInflationThreshold` = 7;
+  - the mission kinds, quest steps and team targets, as season 0 defaults.
+- **Game workbook tabs** are named with the module prefix (`Teacher Planned Activities`, `Teacher Activity Matches`,
+  `Teacher Timetable`) and keyed by teacher code, with no names.
 
 ## Privacy (DPDP)
 
@@ -338,7 +350,7 @@ px and desktop) and shipped only with Uday's go-ahead.
    - No chapter quest opens after the course map's last teaching date for that class.
 5. **The timetable moves behind the signed-in backend in T0.** `teacher/data/timetable.json` holds staff names and
    codes in the public repo, which breaks the framework's rule that nothing personal goes in static files.
-   - It becomes a `Timetable` tab read by the game backend.
+   - It becomes a `Teacher Timetable` tab read by the game backend.
    - The existing "Your Timetable" card is rewired to that read, and the JSON file is removed from the repo.
 6. **No LMS 1 timetable source exists yet.** Collecting it is the LMS 1 Principal's campus setup quest. Until then,
    LMS 1 uses the `EmpAcademic` fallback, so LMS 1 is not a pilot campus.
