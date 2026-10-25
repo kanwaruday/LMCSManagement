@@ -271,6 +271,17 @@ quests. These are real data entry, and done is detected from data:
 
   Both actions are registered in the framework's `GAME_MODULE_ACTIONS`. The framework's Phase 2 nightly trigger
   calls the teacher part, which this module owns (agreed with the game director).
+- **Framework hooks** (game director's plan, commit 5fcde23 on `portal-game-layer-design`; Phase 1 now includes the
+  teacher home):
+  - `GAME_MODULE_MISSIONS.Teacher = fn(caller, cfg, now) -> Mission[]`;
+  - `GAME_MODULE_QUESTS.Teacher = fn(caller, cfg, now) -> QuestState[]`, with the shape
+    `{ questId, title, steps: [{ id, title, go, done, locked }], complete }`. The chapter quest returns **one
+    QuestState per class-subject**, for its current chapter. The framework's quest panel shows them as the class
+    cards.
+
+  The framework handles picking, roll-over, display and days on track. `game.js` mounts on `teacher/index.html`
+  above the existing cards. The teacher pilot config is "ALL" (all six schools). The Teacher Owl speaks for
+  teachers, and Buddy hands over in the tour's first beat.
 - **The episode engine** is shared with the Owner portal (see "Settled after the builder check"). It covers first
   entry through first CWA, per teacher × class × subject, and real teaching only: Class 1+, non-exempt subjects, 3+
   periods. Its tests reproduce the measured numbers on a fixed snapshot of the feed (25 Oct 2026: 60 of 1,793 CWAs
