@@ -45,13 +45,11 @@ function coordVerifyPrincipal_(idToken) {
  *  viewer = a Principal's email: they get only the notes addressed to them (a reopen reason, or their own closure note),
  *  since the rest were written as "Coordinator view only". null = a Coordinator or the Owner, who get every note. */
 function coordPrincipalIssues_(issueRows, actionRows, mergeRows, campus, viewer) {
-  const byId = {}, merges = {}, acts = {};
+  const byId = {}, acts = {}, rootOf = coordPdrRootOf_(mergeRows);
   issueRows.forEach(function (r) {
     byId[r[0]] = { id: r[0], subject: r[3], campus: r[1], first: r[4], last: r[5], count: +r[6], needsAction: r[7] === 'yes', days: JSON.parse(r[8] || '[]').map(function (x) { return x.date; }) };
   });
-  mergeRows.forEach(function (m) { merges[m[0]] = m[1]; });
   actionRows.forEach(function (a) { acts[a[0]] = a; });
-  const rootOf = function (id) { let x = id, n = 0; while (merges[x] && n++ < 5) x = merges[x]; return x; };
   const kept = [];
   Object.keys(byId).forEach(function (id) {
     const i = byId[id], t = byId[rootOf(id)];
@@ -100,7 +98,7 @@ function coordPrincipalResolve_(principal, body) {
   if (!issue) return { success: false, error: 'This issue was regrouped by the latest sync; refresh the page' };
   if (issue[1] !== principal.campusId) return { success: false, error: 'Not authorized' };
   if (!note) return { success: false, error: 'Write what was done to close this.' };
-  coordPdrWriteAction_(ss, [id, 'resolved', '', '', note, principal.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]]);
+  coordPdrWriteAction_(ss, [id, 'resolved', '', '', note, principal.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], coordPdrMergedLastIn_(ss, id)]);
   let taskError = '';
   try { coordPdrSyncTask_(issue, 'resolved', null, principal, note); } catch (err) { taskError = err.message; } // the closure is saved either way
   return { success: true, taskError: taskError };

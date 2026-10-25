@@ -212,4 +212,25 @@ assert.strictEqual(log.length, 2);
 assert.deepStrictEqual(log[1].slice(0, 9), v1);                                  // the outgoing version, as it was
 assert.ok(!isNaN(Date.parse(log[1][9])) && /T.*Z$/.test(log[1][9]), 'LoggedAt is ISO');
 assert.deepStrictEqual(pdrTabs['PDR Issue Actions Log'].slice(1).map((r) => r[0] + ':' + r[1]), ['i1:reopened', 'i2:resolved', 'i1:resolved', 'i1:acknowledged']); // one per replaced row above
+
+// ── a merged issue's action stores the MERGED last seen, so a close doesn't loop back as "raised again" ──
+const mTabs = { 'PDR Issues': [['Id'], issue('ma', 'LMS4', 'Tank', '2026-10-01', '2026-10-05', 2, true), issue('mb', 'LMS4', 'Tank again', '2026-10-06', '2026-10-07', 1, true)],
+  'PDR Issue Merges': [['Source id'], ['mb', 'ma', 'c@lms.org.in', '2026-10-08 10:00', 'LMS4']] };
+const pdrId = k('COORD_PDR_SHEET_ID'), pdrSaved = books[pdrId];
+books[pdrId] = book(mTabs);
+const col8 = () => mTabs['PDR Issue Actions'].find((a) => a[0] === 'ma')[8];
+const mView = () => plain(ctx.coordPrincipalIssues_(mTabs['PDR Issues'].slice(1).map((r) => r.map(String)), mTabs['PDR Issue Actions'].slice(1), mTabs['PDR Issue Merges'].slice(1), 'LMS4', 'p4@lms.org.in'))[0];
+assert.strictEqual(post({ action: 'principalissueresolve', idToken: 'tok-p4', id: 'ma', note: 'Tank replaced' }).success, true);
+assert.strictEqual(col8(), '2026-10-07');                                           // mb's later mention, not ma's own 10-05
+assert.deepStrictEqual([mView().status, mView().raisedAgain], ['resolved', false]);
+assert.strictEqual(ctx.coordPdrIssueAction_(coord, { id: 'ma', status: 'resolved', note: 'Checked on site' }).success, true);
+assert.strictEqual(col8(), '2026-10-07');
+assert.deepStrictEqual([mView().status, mView().raisedAgain], ['resolved', false]);
+ctx.coordPdrResolveFromTask_('ma', coord, 'Resolved from All follow-ups');
+assert.strictEqual(col8(), '2026-10-07');
+mTabs['PDR Issues'][2][5] = '2026-10-09';                                          // a new mention after the closure
+assert.deepStrictEqual([mView().status, mView().raisedAgain], ['open', true]);
+assert.strictEqual(ctx.coordPdrMergedLast_('i2', issueRows, mergeRows), '2026-10-12'); // no merges: the row's own last seen
+assert.strictEqual(ctx.coordPdrMergedLast_('i1', issueRows, mergeRows), '2026-10-10'); // i3 (10-08) merged in, earlier
+books[pdrId] = pdrSaved;
 console.log('coordinator principal issues: ok');

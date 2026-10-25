@@ -155,11 +155,33 @@ function coordPdrIssueAction_(caller, body) {
     who = coordPdrCoordinators_().filter(function (c) { return c.email === String(body.assignee || '').toLowerCase(); })[0];
     if (!who) return { success: false, error: 'Pick a coordinator to assign this to' };
   }
-  const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]];
+  const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], coordPdrMergedLastIn_(ss, id)];
   coordPdrWriteAction_(ss, rec);
   let taskError = '';
   try { coordPdrSyncTask_(issue, status, who, caller, rec[4]); } catch (err) { taskError = err.message; } // the action is saved either way
   return { success: true, taskError: taskError, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
+}
+
+/** PDR Issue Merges rows (source id, target id, ...) -> id => the issue it finally folds into (itself if none). At most 5 hops,
+ *  the way the Systems page and coordPrincipalIssues_ follow merges. */
+function coordPdrRootOf_(mergeRows) {
+  const merges = {};
+  mergeRows.forEach(function (m) { merges[m[0]] = m[1]; });
+  return function (id) { let x = id, n = 0; while (merges[x] && n++ < 5) x = merges[x]; return x; };
+}
+
+/** The issue's last seen with every issue merged into it folded in: what "Last mention when updated" must hold, since the
+ *  raised-again check compares the merged last. With no merges it is the row's own Last seen (r[5]). Issues rows: display values. */
+function coordPdrMergedLast_(id, issueRows, mergeRows) {
+  const rootOf = coordPdrRootOf_(mergeRows);
+  let last = '';
+  issueRows.forEach(function (r) { if ((r[0] === id || rootOf(r[0]) === id) && String(r[5]) > last) last = String(r[5]); });
+  return last;
+}
+
+/** Display-value rows of the Issues and Merges tabs (headers dropped), for coordPdrMergedLast_. */
+function coordPdrMergedLastIn_(ss, id) {
+  return coordPdrMergedLast_(id, coordPrincipalTab_(ss, COORD_PDR_ISSUES_TAB), coordPrincipalTab_(ss, COORD_PDR_MERGES_TAB));
 }
 
 /** One row per issue in the actions tab (insert or replace); a replaced row is first appended to the actions log, so a later
@@ -227,7 +249,7 @@ function coordPdrResolveFromTask_(issueId, caller, note) {
   const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
   const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === issueId; })[0] : null;
   if (!issue) return;
-  coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]]);
+  coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], coordPdrMergedLastIn_(ss, issueId)]);
 }
 
 /** POST action=coordinatorpdrmerge {idToken, source, target}: the source issue is the same problem as the target (same campus only). Empty target = undo.
