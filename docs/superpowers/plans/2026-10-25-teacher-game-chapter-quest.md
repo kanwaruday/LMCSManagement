@@ -113,9 +113,11 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   `tpAuthEmailToCode_`) to a code that is Active in EmpMaster with `EmpSalary.Department = Teaching`. The caller then
   becomes `{email, campusId: from the code prefix, roles:['Teacher'], employeeCode}`. Add the GET action
   `teachersignin`, which returns just that.
-- Modify: `apps-script/game.gs` (with the game director's agreement; tell them in one message): when
-  `gameVerifyCaller_` misses the allowlist, call a registered fallback `GAME_CALLER_FALLBACKS.Teacher(email)`.
-  `game-teacher.gs` registers it in Task 3.
+- **Not here: `apps-script/game.gs`.** The game director adds `var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}`
+  itself once Uday says yes to Q8 (agreed 2026-10-25). `gameVerifyCaller_` calls `GAME_CALLER_FALLBACKS.Teacher` only
+  after the token is verified (aud, email_verified) and the allowlist misses. It passes the verified email, and the
+  fallback must return exactly role Teacher, the campus from the Employee Master, `canDecide:false` and
+  `employeeCode`, never another role. `game-teacher.gs` registers it in Task 3.
 - Test: `tests/teacher-portal/test-teacher-signin.js`
 
 **Interfaces:**
