@@ -35,6 +35,7 @@ function ownAcadRules_(rules) {
     remWindowDays: rules.remWindowDays || 14,
     maxEntryTags: rules.maxEntryTags || 6,
     minEpisodePeriods: rules.minEpisodePeriods || 3,
+    includeMClasses: rules.includeMClasses === true, // Montessori classes are skipped unless a caller (the Teacher index) asks for them
     noCwaGapDays: rules.noCwaGapDays || 21,
     exempt: rules.exemptSubjects || ['general knowledge', 'computer']
   };
@@ -91,7 +92,7 @@ function ownAcadEpisodes_(records, rules, bookGroupOf) {
   var out = [];
   Object.keys(groups).forEach(function (k) {
     var all = groups[k], p = k.split(SEP), f = all[0].r;
-    if (/^m-/i.test(String(f.classMapped || '').trim()) || ownAcadExempt_(f.subject, R.exempt)) return;
+    if ((!R.includeMClasses && /^m-/i.test(String(f.classMapped || '').trim())) || ownAcadExempt_(f.subject, R.exempt)) return;
     var ci = -1;
     for (var i = 0; i < all.length; i++) if (all[i].cwa) { ci = i; break; }
     var ep = ci < 0 ? all : all.slice(0, ci + 1), post = ci < 0 ? [] : all.slice(ci + 1);

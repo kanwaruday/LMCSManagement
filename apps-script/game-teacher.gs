@@ -306,7 +306,8 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     (st.loggedDays[day] = st.loggedDays[day] || []).push({ cls: r.classMapped, subj: String(r.subject || '').trim(), at: t, hw: !!String(r.hwDesc || '').trim() });
   });
 
-  ownAcadEpisodes_(slim, { remWindowDays: T.remediationDays, maxEntryTags: Math.max(1, Math.round(T.tagInflationThreshold) - 1) }).forEach(function (e) {
+  // includeMClasses / minEpisodePeriods 1: a Montessori chapter or a chapter with a single entry still gets a chapter quest
+  ownAcadEpisodes_(slim, { remWindowDays: T.remediationDays, maxEntryTags: Math.max(1, Math.round(T.tagInflationThreshold) - 1), includeMClasses: true, minEpisodePeriods: 1 }).forEach(function (e) {
     const code = codeByLower[e.key.teacher];
     if (!code) return;
     const cs = e.key.lms + '|' + e.key.cls + '|' + tchSubjKey_(e.key.subj), ck = tchChKey_(e.key.ch);
@@ -621,8 +622,11 @@ function tchPlanGo_(cls, subj, ch) { return TCH_PLAN_GO + '?cls=' + encodeURICom
 function tchChapterQuests_(state, plans, matches, cfg, now) {
   if (!state) return [];
   const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, order = [], set = function (v) { return v !== null && v !== undefined; };
+  const teaches = {};
+  (state.classSubjects || []).forEach(function (c) { teaches[tchCsKey_(c.cls, c.subj)] = true; });
   (state.episodes || []).forEach(function (e) {
     const k = tchCsKey_(e.cls, e.subj);
+    if (!tchHas_(teaches, k)) return; // a class-subject the teacher no longer teaches gets no quest
     if (!tchHas_(latest, k)) order.push(k);
     if (!tchHas_(latest, k) || e.last > latest[k].last) latest[k] = e;
   });
@@ -639,7 +643,7 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
     ];
     if (!/^m-/i.test(e.cls)) {
       const cwa = set(e.cwaAt), remDone = set(e.remediatedAt);
-      const closed = cwa && !remDone && today > tchAddDays_(tchIstDay_(e.cwaAt), T.remediationDays);
+      const closed = cwa && e.cwaFrom !== 'tracker' && !remDone && today > tchAddDays_(tchIstDay_(e.cwaAt), T.remediationDays);
       steps.push({ id: 'cwa', title: 'Take the CWA', go: form('CWA'), done: cwa, locked: false });
       steps.push({ id: 'remediate', title: closed ? 'Closed without remediation' : 'Remediate (same chapter, within ' + T.remediationDays + ' days)', go: form('Remediation'), done: remDone, locked: false });
     }
@@ -650,24 +654,34 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
 
 // Quest 1 "Your portal", then Quest 2 "Plan your term's activities" per class-subject with upcoming chapters (locked until Quest 1 is complete).
 // plans = {"cls|subj|ch": ...}; daysOnTrack = gameDaysOnTrack_'s {onTrack, ...}; recorded = {'<questId>:<stepId>': true} (Game Progress quest_step
-// rows): a recorded step stays done. now defaults to the game clock, recorded to none.
+// rows, key -> the row's Value): a recorded step stays done, and a recorded '<questId>:_done' keeps a quest complete. now defaults to the game clock, recorded to none.
 function tchSetupQuests_(state, plans, daysOnTrack, cfg, now, recorded) {
   if (!state) return [];
   const T = tchConfig_(cfg), rec = recorded || {}, today = gameDayKey_(now || gameNow_()), entries = (state.loggedDays && state.loggedDays[today]) || [];
   const termEnd = /^\d{4}-\d\d-\d\d$/.test(T.quests.termEnd || '') ? T.quests.termEnd : '';
   const has = function (key) { return !!plans && tchHas_(plans, key); };
   const mk = function (questId, title, defs, open) {
+    const fin = rec[questId + ':_done']; // a finished quest stays finished with the steps it finished with (the value holds [{id, title}])
+    if (fin) {
+      let kept = null;
+      try { kept = JSON.parse(fin); } catch (err) { /* not JSON: keep the current steps, all done */ }
+      const list = Array.isArray(kept) && kept.length ? kept : defs;
+      return { questId: questId, title: title, complete: true,
+        steps: list.map(function (d) { return { id: String(d.id), title: String(d.title), go: TCH_PLAN_GO, done: true, locked: false }; }) };
+    }
     const steps = defs.map(function (d) {
       return { id: d.id, title: d.title, go: d.go, done: !!rec[questId + ':' + d.id] || (open && d.met), locked: !open };
     });
     return { questId: questId, title: title, steps: steps, complete: steps.every(function (s) { return s.done; }) };
   };
+  const dayWords = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+  const daysTitle = (dayWords[T.questDays - 1] || String(T.questDays)) + (T.questDays === 1 ? ' day' : ' days') + ' on track';
   const form = tchFormGo_(T, null).go;
   const q1 = mk(TCH_QUEST1_ID, 'Your portal', [
     { id: 'cw_today', title: "Log today's classwork", go: form, met: entries.length > 0 },
     { id: 'hw_today', title: "Log today's homework", go: form, met: entries.some(function (x) { return x.hw; }) },
     { id: 'plan_one', title: 'Plan the activity for your next chapter', go: TCH_PLAN_GO, met: !!plans && Object.keys(plans).length > 0 },
-    { id: 'days_5', title: 'Five days on track', go: TCH_STAFF_GO, met: ((daysOnTrack && +daysOnTrack.onTrack) || 0) >= T.questDays },
+    { id: 'days_5', title: daysTitle, go: TCH_STAFF_GO, met: ((daysOnTrack && +daysOnTrack.onTrack) || 0) >= T.questDays },
   ], true);
   const out = [q1], byCs = {}, order = [];
   (state.nextChapters || []).forEach(function (c) {
@@ -739,15 +753,22 @@ GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now) {
   if (!state) return [];
   const tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), me = gameLower_(caller.email), ss = gameBook_();
   const progSheet = ss.getSheetByName('Game Progress'), rec = {};
-  progSheet.getDataRange().getValues().slice(1).forEach(function (r) { if (gameLower_(r[0]) === me && r[1] === 'quest_step') rec[String(r[2])] = true; });
+  progSheet.getDataRange().getValues().slice(1).forEach(function (r) { if (gameLower_(r[0]) === me && r[1] === 'quest_step') rec[String(r[2])] = String(r[3] || 'done'); });
   const days = gameDaysOnTrack_(ss.getSheetByName('Game Daily').getDataRange().getValues(), me, gameDayKey_(now).slice(0, 7));
   const setup = tchSetupQuests_(state, tchPlansFor_(code), days, tcfg, now, rec), fresh = [];
   setup.forEach(function (q) {
+    if (rec[q.questId + ':_done']) return; // finished and recorded: nothing more to write
     q.steps.forEach(function (s) {
       const key = q.questId + ':' + s.id;
-      if (s.done && !rec[key]) { rec[key] = true; fresh.push([me, 'quest_step', key, 'done', now.toISOString()]); }
+      if (s.done && !rec[key]) { rec[key] = 'done'; fresh.push([me, 'quest_step', key, 'done', now.toISOString()]); }
     });
+    // Quest 2's window slides as chapters start, so its completion is recorded with the step titles it was finished with (Value)
+    if (q.complete && q.questId !== TCH_QUEST1_ID) {
+      rec[q.questId + ':_done'] = 'done';
+      fresh.push([me, 'quest_step', q.questId + ':_done', JSON.stringify(q.steps.map(function (s) { return { id: s.id, title: s.title }; })), now.toISOString()]);
+    }
   });
+  // view-as never reaches this hook: the game backend has no view-as caller (no marker in game.gs), every caller is the signed-in person
   gameAppendText_(progSheet, fresh);
   return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code), tcfg, now));
 };

@@ -9,7 +9,11 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 const CODE = 'NCM/99/01/901', EMAIL = 'teacher@lms.org.in';
 const at = (iso) => Date.parse(iso);
 const NOW = new Date('2026-11-10T05:00:00Z'), TUE = '2026-11-10'; // Tue, 10:30 IST
-const state = (o) => Object.assign({ code: CODE, campus: 'LMS4', classSubjects: [], episodes: [], loggedDays: {}, periodsByDay: null, nextChapters: [] }, o || {});
+const state = (o) => { // classSubjects default to the episodes' class-subjects (the teacher teaches what they logged)
+  const st = Object.assign({ code: CODE, campus: 'LMS4', classSubjects: null, episodes: [], loggedDays: {}, periodsByDay: null, nextChapters: [] }, o || {});
+  if (!st.classSubjects) st.classSubjects = st.episodes.map((e) => ({ cls: e.cls, subj: e.subj }));
+  return st;
+};
 const ep = (o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 'fractions', name: 'Fractions', first: at('2026-11-02T06:00:00Z'), last: at('2026-11-05T06:00:00Z'),
   cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null }, o || {});
 const KEY = 'Class 7|Math|fractions';
@@ -82,6 +86,34 @@ qs = chapter(state({ episodes: [older, ep(), sci] }));
 assert.deepStrictEqual(qs.map((q) => q.questId), ['chapter:' + CODE + ':Class 7:Math:fractions', 'chapter:' + CODE + ':Class 8:Science:light']);
 assert.deepStrictEqual(chapter(state()), []); assert.deepStrictEqual(chapter(null), []);
 
+// Ruling 20a: only class-subjects the teacher teaches (state.classSubjects) get a quest
+qs = chapter(state({ episodes: [ep(), sci], classSubjects: [{ cls: 'Class 7', subj: 'Math' }] }));
+assert.deepStrictEqual(qs.map((q) => q.questId), ['chapter:' + CODE + ':Class 7:Math:fractions']);
+assert.deepStrictEqual(chapter(state({ episodes: [ep()], classSubjects: [] })), []);
+
+// Ruling 20b: a tracker-only CWA (remediatedAt is always null) is never "Closed without remediation"
+qs = chapter(state({ episodes: [Object.assign({}, late, { cwaFrom: 'tracker' })] }), plan, {}, {}, new Date('2026-12-20T05:00:00Z'));
+assert.strictEqual(qs[0].steps[3].done, true);
+assert.strictEqual(qs[0].steps[4].title, 'Remediate (same chapter, within 14 days)'); assert.strictEqual(qs[0].steps[4].done, false);
+
+// Ruling 18: through tchBuildIndex_, a Montessori chapter and a chapter with a single entry (both dropped by the Owner's engine rules) get chapter quests
+{
+  const D0 = Date.UTC(2026, 10, 1), C5 = 'NCM/99/01/905', DAY = 86400000;
+  const roster = { employees: [{ employeeCode: C5, name: 'T Five', school: 'LMS 4' }], academic: [
+    { employeeCode: C5, school: 'LMS 4', class: 'M-II', subject: 'Hindi' }, { employeeCode: C5, school: 'LMS 4', class: 'Class 7', subject: 'Science' }] };
+  let n = 0;
+  const r = (cls, subj, ch, tag, d) => ({ lmsIdx: 3, classMapped: cls, subject: subj, teacher: 'T Five', cwChapter: ch, cwTag: tag, hwDesc: '', hwTag: '', timeMs: D0 + d * DAY + n++, dateStr: new Date(D0 + d * DAY).toISOString().slice(0, 10) });
+  const feed = { cwRecords: [r('M-II', 'Hindi', 'Swar', 'Chapter Teaching', 1), r('M-II', 'Hindi', 'Swar', 'Activity', 2), r('Class 7', 'Science', 'Light', 'Chapter Teaching', 3)], cmData: {} };
+  const built = J(ctx.tchBuildIndex_(feed, roster, [], null, null, { now: D0 + 5 * DAY }).byCode[C5]);
+  const cq = J(ctx.tchChapterQuests_(built, {}, {}, {}, new Date(D0 + 5 * DAY)));
+  assert.deepStrictEqual(cq.map((q) => q.title).sort(), ['Class 7 Science \u00b7 Light', 'M-II Hindi \u00b7 Swar']);
+  assert.strictEqual(cq.filter((q) => /^M-II/.test(q.title))[0].steps.length, 3);
+  assert.strictEqual(cq.filter((q) => /^Class 7/.test(q.title))[0].steps.length, 5);
+  // the Owner's rules are unchanged: no flag, no Montessori episode and no one-entry episode
+  assert.strictEqual(J(ctx.ownAcadEpisodes_(feed.cwRecords, {})).length, 0);
+  assert.strictEqual(J(ctx.ownAcadEpisodes_(feed.cwRecords, { includeMClasses: true, minEpisodePeriods: 1 })).length, 2);
+}
+
 // ---- setup quests: Quest 1 "Your portal"
 const day = (...es) => ({ [TUE]: es.map((e) => Object.assign({ cls: 'Class 7', subj: 'Math', at: at(TUE + 'T04:00:00Z'), hw: false }, e)) });
 const setup = (st, plans, days, cfg, now, rec) => J(ctx.tchSetupQuests_(st, plans || {}, days === undefined ? { onTrack: 0 } : days, cfg || {}, now || NOW, rec || {}));
@@ -99,6 +131,8 @@ sq = setup(state({ loggedDays: day({ hw: true }) }), plan, { onTrack: 5 });
 assert.deepStrictEqual(done(sq[0]), [true, true, true, true]); assert.strictEqual(sq[0].complete, true);
 sq = setup(state({ loggedDays: day({ hw: true }) }), plan, { onTrack: 3 }, { teacher: { questDays: 3 } });
 assert.strictEqual(sq[0].steps[3].done, true);                                           // the day count comes from config
+assert.strictEqual(sq[0].steps[3].title, 'Three days on track'); assert.strictEqual(setup(state(), {}, undefined, { teacher: { questDays: 12 } })[0].steps[3].title, '12 days on track');
+assert.strictEqual(setup(state(), {}, undefined, { teacher: { questDays: 1 } })[0].steps[3].title, 'One day on track');
 
 // Quest 2 "Plan your term's activities": one per class-subject with upcoming chapters, locked until Quest 1 is complete
 const nxt = (o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 'ratio', name: 'Ratio', startDate: '2026-11-20' }, o);
@@ -119,6 +153,15 @@ assert.strictEqual(sq[1].complete, true); assert.strictEqual(sq[2].complete, fal
 assert.strictEqual(setup(state()).length, 1);
 sq = setup(nextState(q1done), plans2, { onTrack: 5 }, { teacher: { quests: { termEnd: '2026-11-30' } } });
 assert.deepStrictEqual(sq[1].steps.map((s) => s.id), ['plan:ratio']); assert.strictEqual(sq[1].complete, true);
+
+// Ruling 19: a recorded '<questId>:_done' keeps Quest 2 complete with the steps it finished with, however the window slides
+const Q2ID = 'term:' + CODE + ':Class 7:Math';
+const slid = nextState({ nextChapters: [nxt({ ch: 'volume', name: 'Volume', startDate: '2026-12-10' })] });
+sq = setup(slid, {}, { onTrack: 0 }, {}, NOW, { 'teacher1:cw_today': 'done', 'teacher1:hw_today': 'done', 'teacher1:plan_one': 'done', 'teacher1:days_5': 'done', [Q2ID + ':_done']: JSON.stringify([{ id: 'plan:ratio', title: 'Plan the activity for Ratio' }, { id: 'plan:angles', title: 'Plan the activity for Angles' }]) });
+const q2 = sq.filter((q) => q.questId === Q2ID)[0];
+assert.strictEqual(q2.complete, true); assert.deepStrictEqual(q2.steps.map((s) => s.title), ['Plan the activity for Ratio', 'Plan the activity for Angles']); assert.ok(q2.steps.every((s) => s.done && !s.locked));
+// the same chapter list without the record is NOT complete (so the record is what keeps it so)
+assert.strictEqual(setup(slid, {}, { onTrack: 0 }, {}, NOW, { 'teacher1:cw_today': 'done', 'teacher1:hw_today': 'done', 'teacher1:plan_one': 'done', 'teacher1:days_5': 'done' }).filter((q) => q.questId === Q2ID)[0].complete, false);
 
 // sticky: recorded steps stay done (and Quest 2 stays unlocked) even when the data no longer says so
 sq = setup(nextState(), {}, { onTrack: 0 }, {}, NOW, { 'teacher1:cw_today': true, 'teacher1:hw_today': true, 'teacher1:plan_one': true, 'teacher1:days_5': true, ['term:' + CODE + ':Class 7:Math:plan:ratio']: true });
@@ -154,9 +197,25 @@ store.set('tch_' + CODE, JSON.stringify(nextState({ episodes: [ep()] })));      
 daily.rows = daily.rows.slice(0, 1);                                                       // and the on-track days
 out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, new Date('2026-11-11T05:00:00Z')));
 assert.deepStrictEqual(done(out[0]), [true, true, false, true]); assert.strictEqual(prog.rows.length, 4);
+// Ruling 19 through the hook: Quest 2 completes -> one '<questId>:_done' row (Value = its step titles); the window then slides: still complete, no second row
+prog.rows = prog.rows.slice(0, 1);
+daily.rows = [daily.rows[0]].concat(['03', '04', '05', '06', '09'].map((d) => ['2026-11-' + d, EMAIL, '', '', '', '', true, true]));
+ctx.tchPlansFor_ = () => ({ 'Class 7|Math|ratio': { activity: 'a', plannedAt: '2026-11-02' }, 'Class 7|Math|angles': { activity: 'b', plannedAt: '2026-11-02' } });
+const two = (nc) => state({ loggedDays: day({ hw: true }), nextChapters: nc, classSubjects: [{ cls: 'Class 7', subj: 'Math' }] });
+store.set('tch_' + CODE, JSON.stringify(two([nxt(), nxt({ ch: 'angles', name: 'Angles', startDate: '2026-12-01' })])));
+out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW));
+const keysOf = () => J(prog.rows.slice(1).map((r) => r[2]));
+assert.deepStrictEqual(keysOf(), ['teacher1:cw_today', 'teacher1:hw_today', 'teacher1:plan_one', 'teacher1:days_5', 'term:' + CODE + ':Class 7:Math:plan:ratio', 'term:' + CODE + ':Class 7:Math:plan:angles', 'term:' + CODE + ':Class 7:Math:_done']);
+assert.deepStrictEqual(J(JSON.parse(prog.rows[7][3])), [{ id: 'plan:ratio', title: 'Plan the activity for Ratio' }, { id: 'plan:angles', title: 'Plan the activity for Angles' }]);
+assert.strictEqual(out[1].complete, true);
+store.set('tch_' + CODE, JSON.stringify(two([nxt({ ch: 'volume', name: 'Volume', startDate: '2026-12-10' })])));   // ratio and angles have started; Volume is next
+out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, new Date('2026-12-02T05:00:00Z')));
+assert.strictEqual(out[1].questId, Q2ID); assert.strictEqual(out[1].complete, true);
+assert.deepStrictEqual(out[1].steps.map((x) => x.title), ['Plan the activity for Ratio', 'Plan the activity for Angles']);
+assert.strictEqual(keysOf().length, 7);                                                    // nothing appended, no second _done
 // no state (or no code): no quests, no writes, no refresh
 store.delete('tch_' + CODE);
 assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW)), []);
 assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Teacher({ email: 'x@lms.org.in', primaryRole: 'Teacher' }, fw, NOW)), []);
-assert.strictEqual(prog.rows.length, 4);
+assert.strictEqual(prog.rows.length, 8);
 console.log('teacher quests OK');
