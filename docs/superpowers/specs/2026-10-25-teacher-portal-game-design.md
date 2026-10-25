@@ -146,7 +146,9 @@ From top to bottom:
     Logging later the same evening counts, because the reset is at 04:00 IST.
 - **Days on track** (framework): a working day, not on leave, with every due class-subject logged.
   - Teachers see "18 days on track this month" **without "of 21"** (framework config `daysDenominator` = false for
-    Teacher). That holds until teacher leave, with dates, is in Approvals (Q6).
+    Teacher), so a leave day never counts against a teacher. That holds until teacher leave, with dates, is in
+    Approvals (Uday, Q6: "Leave into Approvals"). Then approved leave days are left out of the count and the "of M"
+    returns.
   - The framework's Phase 2 nightly snapshot counts the days of teachers who log only from the mobile app.
 - **Counter-checks.** An entry with 7+ tags doesn't count toward any quest step. It still counts as "logged",
   because the parent deliverable went out. Teachers with repeated 7+-tag entries appear in the existing Coordinator
@@ -321,10 +323,16 @@ quests. These are real data entry, and done is detected from data:
 | **T0. Data ready** | Nov 2026 | Episode engine with tests on a feed snapshot; *Planned activity* column added to the 6 course maps; timetable re-import including LMS 1, with the unmatched-name report; name-resolution audit of the CW/HW feed | Uday's approval; Course Mapping workbook owners |
 | **T1. My Classroom v1** | Dec 2026 (framework Phase 2) | Teacher Owl intro; Today panel with the CW/HW card, remediation due and activity plan due; today's line; class cards with quest steps 1, 2, 4, 5; Quests 1 and 2; days on track | Framework Phase 1 shell + game backend |
 | **T2. Activities and teams** | Jan 2027 (framework Phase 3) | Nightly LM Studio activity match (step 3); activity bank + help credit; subject and campus team goals; conditions panel; Principal campus setup quest | T1 |
-| **Pilot** | Feb 2027 | Two campuses with complete timetables; tune wording, caps and the 7-tag rule from real use | T2 |
+| **Pilot** | Feb 2027 | Two campuses with complete timetables; tune wording, caps and the 7-tag rule from real use | T2; **teacher leave in Approvals** (below) |
 | **Go-live** | Mar 2027 | All campuses; season 1 config set by the Owner | Pilot |
 | **T3. Outcomes** | When the CSM extractor reaches exams | Remediation judged by ERP marks (children as counts) | csm-erp-extractor Phase 3 |
 | **T4. Standing** | When the incentive engine is encoded | Private standing replaces the draft score | Incentive thread |
+
+**Dependency: teacher leave in Approvals (Uday, Q6), before the February pilot.** This is a separate build, not part
+of this module. It extends `approvals.gs` with the bye-law leave categories (the 12 in Payroll's leave template) for
+teacher requesters. Each request carries from and to dates, plus half or short day where the bye-law has them. Approved
+requests are what the game reads to leave days out of "days on track". It implements the existing vault decision
+"Teachers' Portal owns the leave system". Who builds it is routed through the master agent.
 
 Each phase is planned (superpowers:writing-plans), built on a branch, verified (`tests/verify.mjs`, live checks, 375
 px and desktop) and shipped only with Uday's go-ahead.
@@ -343,7 +351,9 @@ px and desktop) and shipped only with Uday's go-ahead.
    team holds everything else.
 6. Remediation must be matched on the same chapter as its CWA (Q5: "remediations need to get matched to the
    chapters"). The low starting baseline is accepted as honest.
-7. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
+7. Leave: "Leave into Approvals". Teachers apply for leave through the portal's Approvals before the February
+   pilot. Until then, days on track shows no denominator.
+8. Via the framework: private standing only; goals are config set per season; go-live in March 2027.
 
 ## Settled after the builder check (Claude's calls)
 
@@ -384,9 +394,8 @@ Q4 was asked first; Q5–Q7 come from the builder check (all sent via the LMCS M
 1. ~~**Q4: who is a teacher's team?**~~ **Answered (Uday):** "Subject and campus both" (see Loop 4).
 2. ~~**Q5: is remediation matched on the same chapter or the same class-subject?**~~ **Answered (Uday):**
    "remediations need to get matched to the chapters": same chapter only (see Loop 2, step 5).
-3. **Q6: where do teacher leave days come from?** Payroll holds only monthly counts, not dates. Recommended: teacher
-   leave moves into the portal (Approvals, all categories, with dates) before the pilot, per Uday's own decision that
-   the Teachers' Portal owns leave. Until then, show "18 days on track" without a denominator.
+3. ~~**Q6: where do teacher leave days come from?**~~ **Answered (Uday):** "Leave into Approvals". Teachers apply
+   for leave in the portal's Approvals before the February pilot. Until then, "N days on track" with no "of M".
 4. **Q7: when does the chapter-quest pilot run?** New teaching ends around 30 Nov (Classes 10, 12) and around 14–17
    Feb (others). Recommended: pilot the chapter quest on one campus in Dec–Jan. The February pilot then covers the
    daily log and planning next session's Term I activities.
