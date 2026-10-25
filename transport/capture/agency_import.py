@@ -7,14 +7,18 @@ catalog.models[model].parts[code] = {lifeKm, lifeMonths, price, labour, spec, co
 
   /usr/local/bin/python3 transport/capture/agency_import.py FILE.xlsx [FILE2.xlsx ...]          # dry run: a summary, nothing sent
   /usr/local/bin/python3 transport/capture/agency_import.py FILE.xlsx [FILE2.xlsx ...] --push   # send it (exit non-zero if refused)
+  ... --as-of 2026-10-20                                                                         # the date the agency's data is from
   /usr/local/bin/python3 transport/capture/test_agency_import.py                                 # tests (framework 3.13: has openpyxl)
 
-Reading rules: the grey italic example row and blank rows are skipped. Dates are DD-MM-YYYY, money is rupees with or without ₹ and
+Reading rules: the template's example rows (recognised by their example values, never by font or colour; each skip is noted) and
+blank rows are skipped. Dates are DD-MM-YYYY, money is rupees with or without ₹ and
 commas. A row with text where a number belongs (km, months, price, labour, odometer, amount) or a date that is not a date is NOT
 imported; it is listed under "not imported" so the agency can fix it. The Model column of an item block may be filled on the first
 row only (it carries down). Maintenance schedule: the severe/hill-duty interval wins over the normal one when present, per field.
 Wear parts give the replacement life, price and labour, and win over the schedule for the same model and part. Several files for
-one model merge, the newest file (by its modified time, kept as asOf) winning per part.
+one model merge, the newest file (by its modified time, or --as-of YYYY-MM-DD, kept as asOf) winning per part. Every vehicle gets
+`catalogModel`, the catalog model its model text matches (exactly, else by one unique prefix, else it is reported). Registrations are
+stored without any non-alphanumeric character; a vehicle or history row whose registration cannot be found is reported, not pushed.
 
 The template's codes stay the catalog keys; each part also carries `components`, the Task 1 ids (OFFICE_COMPONENTS in
 apps-script/office-config.gs) the garage matches service bills against. Contacts (advisors' phone numbers) and the packages and
@@ -48,6 +52,28 @@ SHEETS = {
                             "labour": "labour", "notes": "notes"}),
     "contacts": ("Contacts", {"agency": "agency", "advisor": "service advisor", "phone": "phone", "place": "workshop (place", "nearest": "nearest",
                               "timings": "workshop timings", "pickup": "pick-up", "booking": "how to book"}),
+}
+
+
+def _same(v, want):
+    try:
+        return number(v) == number(want)
+    except ValueError:
+        return text(v) is not None and text(v).lower() == str(want).lower()
+
+
+def _sig(**want):
+    return lambda r: all(_same(r[k], w) for k, w in want.items())
+
+
+# The template's example rows, known by their VALUES (product names and placeholder marks only): an agency's re-save loses the grey
+# italic, and data typed over an example row keeps it, so the font tells nothing. The "…" marks a truncated chassis or part number.
+EXAMPLES = {
+    "vehicles": lambda r: "…" in str(r["chassis"] or ""),
+    "history": lambda r: "…" in str(r["chassis"] or ""),
+    "schedule": _sig(code="engine_oil", model="LP 410/36", nKm=20000, nMo=12, sKm=10000, sMo=6, spec="15W-40 CI-4"),
+    "wear": _sig(code="brake_front", model="LP 410/36", km=35000, mo=18, price=2400, labour=900),
+    "contacts": lambda r: "xx" in str(r["phone"] or "").lower(),
 }
 HISTORY_KEY = ("chassis", "jobCard", "date", "part", "partNo", "qty")
 
@@ -90,14 +116,28 @@ def date(v):
         raise ValueError(f"{str(v).strip()!r} is not a DD-MM-YYYY date") from None
 
 
-def ident(v):  # chassis and registration numbers: no spaces, upper case
+def ident(v):  # chassis numbers: no spaces, upper case
     s = re.sub(r"\s+", "", str(v)).upper() if v is not None else ""
     return s or None
 
 
+def reg_id(v):
+    """Registration number as the rest of the repo keeps it (officeNormReg_, tupNormReg_): upper case, every non-alphanumeric dropped."""
+    s = re.sub(r"[^A-Z0-9]", "", str(v).upper()) if v is not None else ""
+    return s or None
+
+
+def money(v):
+    """number(), but a dash, n/a or nil means empty (an agency's way of saying 'no price'). Km and months stay strict."""
+    if isinstance(v, str) and re.fullmatch(r"[\s\-–—.]*|n/?a|nil|none", v.strip().lower()):
+        return None
+    return number(v)
+
+
 def table(wb, key, data):
-    """Yields (row number, {field: raw value}) for the real rows of a sheet: below its header row (found by header text, so a changed
-    intro line does not matter), no grey italic example, no row without any of the `data` fields. A missing sheet gives nothing."""
+    """Yields (row number, {field: raw value}, kind) for the rows of a sheet below its header row (found by header text, so a changed
+    intro line or an inserted column does not matter). kind: 'example' (the template's example values), 'data' (something in a `data`
+    field), 'model' (only a model typed; the caller must still carry it down). Rows with nothing in them are not yielded."""
     name, fields = SHEETS[key]
     if name not in wb.sheetnames:
         return
@@ -110,47 +150,57 @@ def table(wb, key, data):
     else:
         raise ValueError(f"sheet '{name}': the column headers were not found (do not rename the columns)")
     for row in ws.iter_rows(min_row=hr + 1):
-        if any(c.font and c.font.i for c in row if c.value is not None):  # the grey italic example
-            continue
         vals = {f: row[i].value if i < len(row) else None for f, i in cols.items()}
-        if any(text(vals[f]) for f in data):
-            yield row[0].row, vals
+        if EXAMPLES[key](vals):
+            yield row[0].row, vals, "example"
+        elif any(text(vals[f]) for f in data):
+            yield row[0].row, vals, "data"
+        elif text(vals.get("model")):
+            yield row[0].row, vals, "model"
 
 
-def parse_agency(path):
-    """One filled workbook -> {models, vehicles, history, contacts, problems}. models: [{model, parts: {code: {lifeKm, lifeMonths,
-    price, labour, spec, components, asOf}}}]; problems: one line per row left out and why."""
+def parse_agency(path, as_of=None):
+    """One filled workbook -> {models, vehicles, history, contacts, problems, notes}. models: [{model, parts: {code: {lifeKm,
+    lifeMonths, price, labour, spec, components, asOf}}}]; problems: one line per row left out and why ("file: sheet row n: ...");
+    notes: the example rows that were skipped. as_of: 'YYYY-MM-DD' for the parts' asOf (default: the file's modified time)."""
     path = Path(path)
     wb = openpyxl.load_workbook(path, data_only=True)
-    as_of = dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
-    out = {"models": [], "vehicles": [], "history": [], "contacts": [], "problems": []}
-    bad = lambda sheet, n, why: out["problems"].append(f"{sheet} row {n}: {why}")
+    as_of = f"{as_of}T00:00:00" if as_of else dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
+    out = {"models": [], "vehicles": [], "history": [], "contacts": [], "problems": [], "notes": []}
+    bad = lambda sheet, n, why: out["problems"].append(f"{path.name}: {sheet} row {n}: {why}")
 
-    def guarded(key, data):
+    def rows(key, data):
         try:
-            yield from table(wb, key, data)
+            for n, r, kind in table(wb, key, data):
+                if kind == "example":
+                    out["notes"].append(f"{path.name}: {SHEETS[key][0]} row {n} is the template's example row and was skipped "
+                                        f"(if it holds your own data, change it so it differs from the example)")
+                else:
+                    yield n, r, kind
         except ValueError as e:
-            out["problems"].append(str(e))
+            out["problems"].append(f"{path.name}: {e}")
 
-    for n, r in guarded("vehicles", list(SHEETS["vehicles"][1])):
+    for n, r, _ in rows("vehicles", list(SHEETS["vehicles"][1])):
         try:
-            v = {"chassis": ident(r["chassis"]), "reg": ident(r["reg"]), "model": text(r["model"]), "variant": text(r["variant"]),
+            v = {"chassis": ident(r["chassis"]), "reg": reg_id(r["reg"]), "model": text(r["model"]), "variant": text(r["variant"]),
                  "engine": text(r["engine"]), "emission": text(r["emission"]), "year": number(r["year"]), "warrantyDate": date(r["warrantyDate"]),
-                 "warrantyKm": number(r["warrantyKm"]), "recalls": text(r["recalls"])}
+                 "warrantyKm": number(r["warrantyKm"]), "recalls": text(r["recalls"]), "asOf": as_of, "file": path.name, "row": n}
         except ValueError as e:
             bad("Our vehicles", n, e)
             continue
         if not v["chassis"]:
             bad("Our vehicles", n, "no chassis number")
+        elif not v["reg"]:
+            bad("Our vehicles", n, f"{v['chassis']} has no registration number, so it cannot be shown for any bus (not imported)")
         else:
             out["vehicles"].append(v)
     reg_of = {v["chassis"]: v["reg"] for v in out["vehicles"]}
 
-    for n, r in guarded("history", list(SHEETS["history"][1])):
+    for n, r, _ in rows("history", list(SHEETS["history"][1])):
         try:
             h = {"chassis": ident(r["chassis"]), "jobCard": text(r["jobCard"]), "date": date(r["date"]), "odometer": number(r["odometer"]),
                  "work": text(r["work"]), "part": text(r["part"]), "partNo": text(r["partNo"]), "qty": text(r["qty"]),
-                 "partAmount": number(r["partAmount"]), "labour": number(r["labour"])}
+                 "partAmount": money(r["partAmount"]), "labour": money(r["labour"]), "file": path.name, "row": n}
         except ValueError as e:
             bad("Service history", n, e)
             continue
@@ -165,10 +215,13 @@ def parse_agency(path):
             ("schedule", "Maintenance schedule", ["nKm", "nMo", "sKm", "sMo", "spec"],
              lambda r: {"lifeKm": first(number(r["sKm"]), number(r["nKm"])), "lifeMonths": first(number(r["sMo"]), number(r["nMo"])), "spec": text(r["spec"])}),
             ("wear", "Wear parts", ["km", "mo", "price", "labour", "notes"],
-             lambda r: {"lifeKm": number(r["km"]), "lifeMonths": number(r["mo"]), "price": number(r["price"]), "labour": number(r["labour"]), "spec": text(r["notes"])})):
-        model = None  # ponytail: the Model column may be filled on the first row of a block only; it carries down, never from the example row
-        for n, r in guarded(key, data):
-            model = " ".join(str(r["model"]).split()) if text(r["model"]) else model
+             lambda r: {"lifeKm": number(r["km"]), "lifeMonths": number(r["mo"]), "price": money(r["price"]), "labour": money(r["labour"]), "spec": text(r["notes"])})):
+        model, seen = None, set()  # ponytail: the Model column may be filled on the first row of a block only; it carries down (even from a row with no data)
+        for n, r, kind in rows(key, data):
+            if text(r["model"]):
+                model = " ".join(str(r["model"]).split())
+            if kind != "data":
+                continue
             code = text(r["code"]) and text(r["code"]).lower()
             try:
                 vals = extract(r)
@@ -177,12 +230,15 @@ def parse_agency(path):
                 continue
             if not (code and model):
                 bad(sheet, n, "needs a code and a model")
-                continue
-            p = models.setdefault(model, {}).setdefault(code, {"lifeKm": None, "lifeMonths": None, "price": None, "labour": None, "spec": None})
-            p.update({k: v for k, v in vals.items() if v is not None})  # the wear sheet is read last: its life, price and labour win
+            elif (model, code) in seen:  # a second block whose Model was not typed would otherwise overwrite the first
+                bad(sheet, n, f"{code} is listed twice for {model!r}; type the Model on every block (this row was not imported)")
+            else:
+                seen.add((model, code))
+                p = models.setdefault(model, {}).setdefault(code, {"lifeKm": None, "lifeMonths": None, "price": None, "labour": None, "spec": None})
+                p.update({k: v for k, v in vals.items() if v is not None})  # the wear sheet is read last: its life, price and labour win
     out["models"] = [{"model": m, "parts": {c: dict(p, components=components_for(c), asOf=as_of) for c, p in parts.items()}} for m, parts in models.items()]
 
-    for n, r in guarded("contacts", list(SHEETS["contacts"][1])):
+    for n, r, _ in rows("contacts", list(SHEETS["contacts"][1])):
         out["contacts"].append({k: text(v) for k, v in r.items()})
     return out
 
@@ -191,9 +247,25 @@ def first(*vals):
     return next((v for v in vals if v is not None), None)
 
 
+def catalog_key(model, keys):
+    """The catalog model a vehicle's model text means: an exact match (any case), else the one catalog model that is a prefix of it (or
+    that it is a prefix of); (key, '') or ('', why) when there is none or more than one."""
+    m = (model or "").lower()
+    if not m:
+        return "", "it has no model"
+    exact = [k for k in keys if k.lower() == m]
+    if exact:
+        return exact[0], ""
+    near = [k for k in keys if m.startswith(k.lower()) or k.lower().startswith(m)]
+    if len(near) == 1:
+        return near[0], ""
+    return "", f"matches no catalog model" if not near else f"matches more than one catalog model ({', '.join(sorted(near))})"
+
+
 def merge(parsed):
-    """Several parse_agency results -> one {models, vehicles, history, contacts, problems}. Per model and part the newest asOf wins
-    (a tie: the later file). Vehicles by chassis and history rows by job card line are listed once (the later file wins)."""
+    """Several parse_agency results -> one {models, vehicles, history, contacts, problems, notes}. Per model and part, and per vehicle,
+    the newest asOf wins (a tie: the later file). History rows are listed once per job card line (the later file wins). Vehicles get
+    their catalogModel; history rows whose chassis is on no vehicle sheet are reported and left out."""
     models, vehicles, history = {}, {}, {}
     for p in parsed:
         for m in p["models"]:
@@ -201,13 +273,26 @@ def merge(parsed):
             for code, part in m["parts"].items():
                 if code not in mine or part["asOf"] >= mine[code]["asOf"]:
                     mine[code] = part
-        vehicles.update({v["chassis"]: v for v in p["vehicles"]})
-        history.update({tuple(h.get(k) for k in HISTORY_KEY): h for h in p["history"]})
-    reg_of = {c: v["reg"] for c, v in vehicles.items() if v["reg"]}
+        for v in p["vehicles"]:
+            if v["chassis"] not in vehicles or v["asOf"] >= vehicles[v["chassis"]]["asOf"]:
+                vehicles[v["chassis"]] = dict(v)
+        history.update({tuple(h.get(k) for k in HISTORY_KEY): dict(h) for h in p["history"]})
+    problems = [x for p in parsed for x in p["problems"]]
+    for v in vehicles.values():
+        v["catalogModel"], why = catalog_key(v["model"], list(models))
+        if why:
+            problems.append(f"{v['file']}: Our vehicles row {v['row']}: {v['reg']} (model {v['model']!r}) {why}; the garage cannot price it")
+    reg_of = {c: v["reg"] for c, v in vehicles.items()}
+    kept = []
     for h in history.values():
         h["reg"] = h.get("reg") or reg_of.get(h["chassis"], "")
-    return {"models": [{"model": m, "parts": parts} for m, parts in models.items()], "vehicles": list(vehicles.values()), "history": list(history.values()),
-            "contacts": [c for p in parsed for c in p["contacts"]], "problems": [x for p in parsed for x in p["problems"]]}
+        if h["reg"]:
+            kept.append(h)
+        else:
+            problems.append(f"{h['file']}: Service history row {h['row']}: chassis {h['chassis']} is not on any 'Our vehicles' sheet, so the row "
+                            f"cannot be shown for a bus (not imported)")
+    return {"models": [{"model": m, "parts": parts} for m, parts in models.items()], "vehicles": list(vehicles.values()), "history": kept,
+            "contacts": [c for p in parsed for c in p["contacts"]], "problems": problems, "notes": [x for p in parsed for x in p["notes"]]}
 
 
 def summary(label, p):
@@ -216,24 +301,36 @@ def summary(label, p):
             f"{len(p['contacts'])} contacts")
 
 
+def as_of_date(v):
+    try:
+        return dt.date.fromisoformat(v).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{v!r} is not a YYYY-MM-DD date") from None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("files", nargs="+", help="filled agency workbook(s) (.xlsx)")
     ap.add_argument("--push", action="store_true", help="send it to the portal (default: a dry run that prints a summary)")
+    ap.add_argument("--as-of", type=as_of_date, metavar="YYYY-MM-DD", help="the date the data is from (default: each file's modified time)")
     a = ap.parse_args(argv)
-    parsed = [parse_agency(f) for f in a.files]
+    parsed = [parse_agency(f, a.as_of) for f in a.files]
     for f, p in zip(a.files, parsed):
         print(summary(Path(f).name, p))
     m = merge(parsed)
     print(summary("total", m))
+    for line in m["notes"]:
+        print("  note:", line)
     if m["problems"]:
-        print(f"{len(m['problems'])} rows not imported (ask the agency to fix them):")
+        print(f"{len(m['problems'])} problems (ask the agency to fix the rows):")
         for line in m["problems"]:
             print("  -", line)
     if not a.push:
         print("dry run: nothing sent (add --push to send it)")
         return 0
-    res = capture.post("transportcatalogpush", {k: m[k] for k in ("models", "vehicles", "history")})
+    strip = lambda rows, keys: [{k: v for k, v in r.items() if k not in keys} for r in rows]
+    res = capture.post("transportcatalogpush", {"models": m["models"], "vehicles": strip(m["vehicles"], ("file", "row", "asOf")),
+                                                "history": strip(m["history"], ("file", "row"))})
     print("pushed:", {k: v for k, v in res.items() if k != "success"})
     return 0
 

@@ -28,7 +28,7 @@ const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'G
 const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt'];
 const GPS_TAB_CATALOG = 'Parts Catalog', GPS_TAB_AGVEH = 'Agency Vehicles', GPS_TAB_AGHIST = 'Agency History';
 const GPS_CATALOG_COLS = ['key', 'model', 'code', 'lifeKm', 'lifeMonths', 'price', 'labour', 'spec', 'components', 'asOf', 'pushedAt'];
-const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'pushedAt'];
+const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'catalogModel', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'pushedAt'];
 const GPS_AGHIST_COLS = ['key', 'reg', 'chassis', 'jobCard', 'date', 'odometer', 'work', 'part', 'partNo', 'qty', 'partAmount', 'labour', 'pushedAt'];
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
@@ -40,6 +40,7 @@ const GPS = {
   inspectionDay: 5, // the monthly safety check is due by the 5th
   inspectionFrom: '2026-11', // set at deploy: the first month a safety check is asked for (no follow-up for months before it)
   captureFrom: '2026-12', // set at deploy: the first month a bus without a route timelapse gets capture_route
+  catalogHistory: 100, // agency service-history rows the insight carries per bus (the newest); the tab keeps them all
   captureBatch: 20, // runs looked up in the Roster per capture push (about 2 Drive calls per stop): well inside UrlFetch's ~60 s
 };
 const GPS_DOMAINS = Object.keys(GPS.due);
@@ -432,10 +433,11 @@ function gpsCaptureByReg_(regs) {
 
 // ── Agency service data: the parts catalog ──
 
-function gpsCatNum_(v) { return typeof v === 'number' && isFinite(v) ? v : ''; }
+function gpsCatNum_(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ? v : ''; }
 function gpsCatNumOut_(v) { return v === '' || v == null || !isFinite(Number(v)) ? null : Number(v); }
-function gpsCatStr_(v) { return v == null ? '' : String(v).trim(); }
-function gpsCatReg_(v) { return gpsCatStr_(v).replace(/\s+/g, '').toUpperCase(); }
+function gpsCatStr_(v) { return v == null ? '' : String(v).trim().slice(0, 500); }
+function gpsCatReg_(v) { return gpsCatStr_(v).replace(/[^A-Za-z0-9]/g, '').toUpperCase(); } // as officeNormReg_ / tupNormReg_ do: HP-66-5805 is HP665805
+function gpsCatDate_(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v); }
 
 /** POST action=transportcatalogpush {secret, payload:{models:[{model, parts:{code:{lifeKm, lifeMonths, price, labour, spec, components, asOf}}}],
  *  vehicles:[{chassis, reg, model, ...}], history:[{reg, chassis, jobCard, date, odometer, work, part, partNo, qty, partAmount, labour}]}}.
@@ -449,7 +451,12 @@ function coordCatalogPush_(body) {
   for (let i = 0; i < p.models.length; i++) {
     const m = p.models[i] || {}, model = gpsCatStr_(m.model);
     if (!model || !m.parts || typeof m.parts !== 'object' || Array.isArray(m.parts)) return { success: false, error: 'Payload rejected: model ' + (i + 1) + ' needs a name and its parts' };
-    Object.keys(m.parts).forEach(function (code) {
+    const codes = Object.keys(m.parts);
+    for (let k = 0; k < codes.length; k++) {
+      const asOf = gpsCatStr_((m.parts[codes[k]] || {}).asOf);
+      if (!/^[A-Za-z0-9_]{1,40}$/.test(codes[k]) || (asOf && !/^\d{4}-\d{2}-\d{2}(T[\d:]+)?$/.test(asOf))) return { success: false, error: 'Payload rejected: part ' + codes[k] + ' of ' + model + ' needs a plain code and an ISO asOf' };
+    }
+    codes.forEach(function (code) {
       const x = m.parts[code] || {};
       parts.push({ key: model + '|' + code, model: model, code: code, lifeKm: gpsCatNum_(x.lifeKm), lifeMonths: gpsCatNum_(x.lifeMonths), price: gpsCatNum_(x.price),
         labour: gpsCatNum_(x.labour), spec: gpsCatStr_(x.spec), components: Array.isArray(x.components) ? x.components.map(gpsCatStr_).join(',') : '', asOf: gpsCatStr_(x.asOf), pushedAt: now });
@@ -458,12 +465,13 @@ function coordCatalogPush_(body) {
   for (let i = 0; i < p.vehicles.length; i++) {
     const v = p.vehicles[i] || {};
     if (!gpsCatStr_(v.chassis)) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' needs its chassis number' };
-    vehicles.push({ chassis: gpsCatStr_(v.chassis), reg: gpsCatReg_(v.reg), model: gpsCatStr_(v.model), variant: gpsCatStr_(v.variant), engine: gpsCatStr_(v.engine),
+    if (gpsCatStr_(v.warrantyDate) && !gpsCatDate_(gpsCatStr_(v.warrantyDate))) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' warranty date must be yyyy-mm-dd' };
+    vehicles.push({ chassis: gpsCatStr_(v.chassis), reg: gpsCatReg_(v.reg), model: gpsCatStr_(v.model), catalogModel: gpsCatStr_(v.catalogModel), variant: gpsCatStr_(v.variant), engine: gpsCatStr_(v.engine),
       emission: gpsCatStr_(v.emission), year: gpsCatNum_(v.year), warrantyDate: gpsCatStr_(v.warrantyDate), warrantyKm: gpsCatNum_(v.warrantyKm), recalls: gpsCatStr_(v.recalls), pushedAt: now });
   }
   for (let i = 0; i < p.history.length; i++) {
     const h = p.history[i] || {};
-    if (!gpsCatStr_(h.chassis) || !gpsCatStr_(h.date)) return { success: false, error: 'Payload rejected: history row ' + (i + 1) + ' needs a chassis number and a date' };
+    if (!gpsCatStr_(h.chassis) || !gpsCatDate_(gpsCatStr_(h.date))) return { success: false, error: 'Payload rejected: history row ' + (i + 1) + ' needs a chassis number and a yyyy-mm-dd date' };
     const row = { reg: gpsCatReg_(h.reg), chassis: gpsCatStr_(h.chassis), jobCard: gpsCatStr_(h.jobCard), date: gpsCatStr_(h.date), odometer: gpsCatNum_(h.odometer), work: gpsCatStr_(h.work),
       part: gpsCatStr_(h.part), partNo: gpsCatStr_(h.partNo), qty: gpsCatStr_(h.qty), partAmount: gpsCatNum_(h.partAmount), labour: gpsCatNum_(h.labour), pushedAt: now };
     row.key = [row.chassis, row.jobCard, row.date, row.part, row.partNo, row.qty].join('|'); // ponytail: two identical lines on one job card count as one
@@ -478,7 +486,9 @@ function coordCatalogPush_(body) {
       fresh.forEach(function (r) {
         const k = keyOf(r), old = by[k];
         if (!old) order.push(k);
-        if (!old || !keep || !keep(old, r)) by[k] = r;
+        if (old && keep && keep(old, r)) return;
+        if (old) Object.keys(r).forEach(function (c) { if ((r[c] === '' || r[c] == null) && c !== 'pushedAt' && old[c] !== '' && old[c] != null) r[c] = old[c]; }); // never blank what is stored
+        by[k] = r;
       });
       const seen = {};
       gpsWrite_(tab, cols, order.filter(function (k) { return seen[k] ? false : (seen[k] = true); }).map(function (k) { return by[k]; }));
@@ -493,7 +503,7 @@ function coordCatalogPush_(body) {
 
 /** The catalog for the insight: {models:{model:{parts:{code:{...}}}}, vehicles, history}. Models and parts for everyone; vehicles and history of the visible buses only. */
 function gpsCatalog_(regs) {
-  const models = {}, num = gpsCatNumOut_;
+  const models = {}, num = gpsCatNumOut_, n = {};
   gpsRows_(GPS_TAB_CATALOG).forEach(function (r) {
     (models[r.model] = models[r.model] || { parts: {} }).parts[r.code] = { lifeKm: num(r.lifeKm), lifeMonths: num(r.lifeMonths), price: num(r.price), labour: num(r.labour),
       spec: r.spec || '', components: r.components ? String(r.components).split(',') : [], asOf: r.asOf || '' };
@@ -501,9 +511,11 @@ function gpsCatalog_(regs) {
   return {
     models: models,
     vehicles: gpsRows_(GPS_TAB_AGVEH).filter(function (v) { return regs[v.reg]; }).map(function (v) {
-      return { chassis: v.chassis, reg: v.reg, model: v.model, variant: v.variant, engine: v.engine, emission: v.emission, year: num(v.year), warrantyDate: v.warrantyDate, warrantyKm: num(v.warrantyKm), recalls: v.recalls };
+      return { chassis: v.chassis, reg: v.reg, model: v.model, catalogModel: v.catalogModel, variant: v.variant, engine: v.engine, emission: v.emission, year: num(v.year), warrantyDate: v.warrantyDate, warrantyKm: num(v.warrantyKm), recalls: v.recalls };
     }),
-    history: gpsRows_(GPS_TAB_AGHIST).filter(function (h) { return regs[h.reg]; }).map(function (h) {
+    history: gpsRows_(GPS_TAB_AGHIST).filter(function (h) { return regs[h.reg]; }).sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; }).filter(function (h) {
+      n[h.reg] = (n[h.reg] || 0) + 1; return n[h.reg] <= GPS.catalogHistory; // the newest GPS.catalogHistory per bus
+    }).map(function (h) {
       return { reg: h.reg, chassis: h.chassis, jobCard: h.jobCard, date: h.date, odometer: num(h.odometer), work: h.work, part: h.part, partNo: h.partNo, qty: h.qty, partAmount: num(h.partAmount), labour: num(h.labour) };
     }),
   };
