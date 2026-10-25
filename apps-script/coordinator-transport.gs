@@ -219,7 +219,7 @@ function coordTransportFleet_() {
     });
     const n = String(b.campus).replace(/\D/g, ''); // roster says 'LMS-5' in one row
     return { reg: b.reg, bus: b.bus, campus: 'LMS ' + n, campusId: 'LMS' + n, operational: b.operational,
-      route: b.route, driver: b.driver, driverCode: b.driverCode || '', driverStatus: b.driverStatus || '', driverRosterName: b.driverRosterName || '', docs: docs };
+      route: b.route, driver: b.driver, seats: b.seats, driverCode: b.driverCode || '', driverStatus: b.driverStatus || '', driverRosterName: b.driverRosterName || '', docs: docs };
   });
   const known = {};
   base.fleet.forEach(function (b) { known[b.reg] = true; });

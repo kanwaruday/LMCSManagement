@@ -7,12 +7,13 @@
 <title>LMCS — Capture a route</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=29f58300">
-<link rel="stylesheet" href="../capture/capture.css?v=73e66838">
+<link rel="stylesheet" href="../capture/capture.css?v=8ed18af0">
 </head>
 <body>
-<header class="hdr"><div><h1>Capture a route</h1><p>LMCS Transport</p></div><a href="live.html">&larr; Checks</a></header>
+<header class="hdr"><div><h1>Capture a route</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
 <div id="authRoot"></div>
 <main id="appBody" class="cap" hidden>
+  <p id="offline" class="cap-offline" hidden><span>Offline mode: sign in to send.</span> <button type="button" id="signIn" class="cap-btn">Sign in</button></p>
   <nav class="cap-tabs" aria-label="Capture or upload">
     <button type="button" data-tab="capture" aria-pressed="true">Capture</button>
     <button type="button" data-tab="upload" aria-pressed="false">Upload <span id="upCount"></span></button>
@@ -76,6 +77,6 @@
   <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
 </main>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
-<script type="module" src="../capture/capture.js?v=b726a27e"></script>
+<script type="module" src="../capture/capture.js?v=1c2bf83f"></script>
 </body>
 </html>

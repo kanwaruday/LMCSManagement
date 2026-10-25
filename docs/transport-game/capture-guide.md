@@ -1,18 +1,21 @@
 # Capture a route: guide for Coordinators and Fee Clerks
 
-The page is `coordinator/transport/capture.html` (Transport checks page → **Capture a route**). You ride the bus with a
+The page is `coordinator/transport/capture.html`: Coordinators open it from Transport checks → **Capture a route**, Fee
+Clerks from the Office portal's Live Buses → **Capture a route**. You ride the bus with a
 school phone. The page saves everything on the phone and you send it later on school Wi-Fi.
 
 ## What you need
 
-- **The school phone**, signed in to the portal with the campus account, in Chrome. Not your own phone.
+- **The school phone**, in Chrome. Sign in with your own LMS Google account (the one on the portal's access list).
 - **A dashboard mount** that holds the phone on its side (landscape), camera looking out through the windscreen.
 - **A charger**: a car charger and a cable long enough to reach the mount. The screen stays on for the whole run.
 
 ## Before the ride (on school Wi-Fi)
 
 1. Open the page once on Wi-Fi. It loads the buses and their known stops and keeps them for the ride.
-2. Sign in if asked. A sign-in lasts about an hour; you can sign in again later just to send.
+2. Sign in if asked. A sign-in lasts about an hour. If it has run out on the bus with no signal, the page still opens
+   for capture ("Offline mode: sign in to send") as long as you signed in on this phone in the last 14 days; sign in
+   again on Wi-Fi to send.
 3. When Chrome asks, **allow the camera and the location**.
 
 ## Two kinds of run
@@ -24,15 +27,15 @@ school phone. The page saves everything on the phone and you send it later on sc
 
 Privacy:
 - The page asks before every timelapse: "Outside school hours, no children on board". Tick it only if it is true.
-- A count run records numbers only, never names, and never uses the camera.
+- A count run records numbers only, never children's names, and never uses the camera.
 - Every photo is private and is blurred (faces, number plates) before anyone sees it.
 
 ## During the run
 
 - Pick **Timelapse** or **Count run**, pick the bus, and tap **Start**.
 - The top line is the mission, for example "Capture Route 18: 6 of 14 stops tagged".
-- **STOP HERE**: tap it when the bus stops. The nearest known stops come first. If the stop is not listed, type its name
-  under **New stop**.
+- **STOP HERE**: tap it when the bus stops. The nearest known stops come first. If the stop is not listed, type the place name
+  under **New stop** (a place, never a person).
 - **Keep the page open and the screen on.** If the phone locks or you switch apps, capture pauses. When you come back it
   carries on, and the time away is marked as a gap.
 - If the page was closed, open it again: it offers **Carry on** for the open run.

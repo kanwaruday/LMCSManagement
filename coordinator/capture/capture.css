@@ -37,6 +37,8 @@
 .cap-end[data-armed]{border-color:var(--c-bad);color:var(--c-bad)}
 .cap-resume{border:2px solid var(--c-warn);border-radius:10px;padding:10px 14px;margin-bottom:12px;background:#fffbeb}
 .cap-resume p{margin:0 0 8px}
+.cap-offline{display:flex;align-items:center;justify-content:space-between;gap:8px;border:2px solid var(--c-warn);background:#fffbeb;border-radius:10px;padding:6px 6px 6px 12px;margin:0 0 12px;font-size:15px;font-weight:700}
+.cap-offline .cap-btn{flex:none;min-height:44px;padding:0 12px}
 
 /* the run: mission, camera (or the on-board count), status, STOP HERE */
 .cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}

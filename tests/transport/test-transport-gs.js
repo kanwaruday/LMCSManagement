@@ -78,6 +78,7 @@ assert.strictEqual(p2.insurance.pending, undefined, 'a withdrawn upload is not p
 assert.strictEqual(p1.fitness.pending, undefined);
 const fc = JSON.parse(JSON.stringify(run('coordTransport_({feeClerkOnly:true})')));
 assert.ok(fc.fleet.length && !fc.pnl.length && !fc.people.length, 'Fee Clerks get the papers but no bus money or staff list');
+assert.strictEqual(fc.fleet.find(b => b.reg === 'HP1').seats, 40, 'Fee Clerks get the seats (the capture page\'s count-run summary needs them)');
 // Fee Clerks see only their own campus or comma list, never a whole district
 const cg = fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8');
 const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + cg.match(/function coordVisibleCampuses_[\s\S]*?\n\}/)[0] + '; return coordVisibleCampuses_;')();

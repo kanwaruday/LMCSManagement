@@ -35,21 +35,39 @@ const normReg = (r) => String(r || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(
 const S = {
   session: null, mode: 'timelapse', buses: [], resumeId: null,
   run: null, active: false, fix: null, last: null, busy: false, stream: null, watch: null, wake: null,
+  camWanted: false, camReady: false, camP: null,
   stop: null, sending: false, progress: {},
 };
 const canvas = document.createElement('canvas');
 
 // ── Boot ──
+// Offline mode: on a bus there is often no signal, and an expired Google sign-in needs the network. Who signed in here is
+// remembered on every good boot; for 14 days after, the page opens for capture without a valid sign-in (bus list from the
+// phone). Sending always needs a fresh sign-in; capture never uses the token.
+const ID_KEY = 'lmcs-capture-identity', ID_DAYS = 14;
+const allowed = (s) => LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk');
+function cachedIdentity() {
+  try { const id = JSON.parse(localStorage.getItem(ID_KEY) || 'null'); return id && Date.now() - id.signedInAt < ID_DAYS * 864e5 ? id : null; }
+  catch (e) { return null; }
+}
+function rememberIdentity(s) {
+  try { localStorage.setItem(ID_KEY, JSON.stringify({ email: s.email, role: s.role, campusId: s.campusId, signedInAt: Date.now() })); } catch (e) { /* full */ }
+}
 async function boot() {
   try { await store.recover(); } catch (e) { /* no IndexedDB: the Start button reports it */ }
-  const s = LMCS.getSession() || await LMCS.requireSession('#authRoot');
+  let s = LMCS.getSession();
+  const offline = !s && cachedIdentity();
+  if (!s) s = offline || await LMCS.requireSession('#authRoot');
   $('authRoot').style.display = 'none';
   const main = $('appBody');
   main.hidden = false;
-  if (!(LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk'))) {
+  if (!allowed(s)) {
     main.innerHTML = '<div class="denied">Capture is for Coordinators, Fee Clerks and the Owner.</div>';
     return;
   }
+  if (!offline) rememberIdentity(s);
+  $('offline').hidden = !offline;
+  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '\u2190 Live Buses'; } // Fee Clerk
   S.session = s;
   wire();
   setMode('timelapse');
@@ -66,6 +84,7 @@ function wire() {
   $('stopHere').addEventListener('click', openSheet);
   $('end').addEventListener('click', endClick);
   $('send').addEventListener('click', sendAll);
+  $('signIn').addEventListener('click', () => signIn());
   $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap')) closeSheet(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheetWrap').hidden) closeSheet(); });
   document.addEventListener('visibilitychange', onVisibility);
@@ -112,6 +131,7 @@ async function loadBuses() {
   const key = 'lmcs-capture-buses:' + S.session.email;
   let note = '';
   try {
+    if (!S.session.idToken) throw new Error('offline mode'); // capture only: the saved list
     let list;
     try {
       const d = await getJson('coordinatortransportinsight');
@@ -125,7 +145,7 @@ async function loadBuses() {
   } catch (err) {
     let cached = null;
     try { cached = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* ignore */ }
-    if (cached) { S.buses = cached.buses; note = 'No connection: using the bus list saved on ' + when(cached.at) + '.'; }
+    if (cached) { S.buses = cached.buses; note = (S.session.idToken ? 'No connection: using' : 'Using') + ' the bus list saved on ' + when(cached.at) + '.'; }
     else note = 'Could not load the buses (' + err.message + '). Open this page on Wi-Fi once before the ride.';
   }
   const sel = $('bus');
@@ -163,12 +183,31 @@ function camMsg(e) {
   if (e && e.name === 'NotFoundError') return 'This phone has no rear camera the browser can use.';
   return 'The camera is not available in this browser. Use the school phone in Chrome, or do a count run.';
 }
-async function openCamera() {
-  if (S.stream && S.stream.getVideoTracks().some((t) => t.readyState === 'live')) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
-  S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-  $('cam').srcObject = S.stream;
-  await $('cam').play().catch(() => {});
+// One camera at a time (concurrent calls share the promise). A stream that arrives after the run ended or the page was
+// hidden (camWanted false) is stopped at once. grab() waits for camReady: a frame decoded from this stream, so an old
+// picture is never saved against a new GPS fix.
+function openCamera() {
+  if (S.camP) return S.camP;
+  S.camP = (async () => {
+    if (S.stream && S.stream.getVideoTracks().some((t) => t.readyState === 'live')) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if (!S.camWanted) { stream.getTracks().forEach((t) => t.stop()); return; }
+    S.stream = stream;
+    const v = $('cam');
+    v.srcObject = stream;
+    await v.play().catch(() => {});
+    await Promise.race([new Promise((r) => setTimeout(r, 3000)), // never hang here (a stream stopped before its first frame)
+      new Promise((r) => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : v.addEventListener('timeupdate', () => r(), { once: true })))]);
+    if (S.stream === stream) S.camReady = true;
+  })().finally(() => { S.camP = null; });
+  return S.camP;
+}
+function closeCamera() {
+  S.camReady = false;
+  if (S.stream) S.stream.getTracks().forEach((t) => t.stop());
+  S.stream = null;
+  $('cam').srcObject = null;
 }
 async function holdScreen() {
   try { S.wake = await navigator.wakeLock.request('screen'); }
@@ -176,21 +215,23 @@ async function holdScreen() {
 }
 
 async function start() {
-  const resume = S.resumeId ? await store.getRun(S.resumeId).catch(() => null) : null;
-  const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
-  if (!reg) return setupSay('Pick the bus first.');
-  if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: outside school hours, no children on board.');
-  if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
-  $('start').disabled = true;
+  if ($('start').disabled) return;
+  $('start').disabled = true; // before any await: a double tap must not make two watches or two streams
   try {
+    const resume = S.resumeId ? await store.getRun(S.resumeId).catch(() => null) : null;
+    const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
+    if (!reg) return setupSay('Pick the bus first.');
+    if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: outside school hours, no children on board.');
+    if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
     if (kind === 'timelapse') {
-      try { await openCamera(); } catch (e) { return setupSay(camMsg(e)); } // no camera, no run
+      S.camWanted = true;
+      try { await openCamera(); } catch (e) { S.camWanted = false; return setupSay(camMsg(e)); } // no camera, no run
     }
     const bus = busOf(reg);
     try {
       S.run = resume || await store.newRun({ reg, kind, campus: bus && bus.campus, by: S.session.email, role: S.session.role });
     } catch (e) {
-      if (S.stream) { S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; }
+      S.camWanted = false; closeCamera();
       return setupSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Could not save on this phone: ' + e.message);
     }
     if (resume) { // the page was closed mid-run: nothing was captured from the last thing on record until now
@@ -202,6 +243,7 @@ async function start() {
     }
     S.resumeId = null; S.active = true; S.fix = null; S.last = null;
     $('setup').hidden = true; $('summary').hidden = true; $('running').hidden = false;
+    $('offline').hidden = true; // during a run STOP HERE keeps the space; the summary and Upload offer the sign-in again
     $('camBox').hidden = kind !== 'timelapse'; $('countBox').hidden = kind !== 'count';
     runSay('');
     S.watch = navigator.geolocation.watchPosition(onFix, onGpsError, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
@@ -228,7 +270,7 @@ function hud() {
   if (run.kind === 'count') {
     const seats = Number(bus && bus.seats);
     $('onboard').textContent = load(run.stops).now;
-    $('seats').textContent = seats ? `${seats} seats. Load cap ${Math.floor(1.4 * seats)}.` : 'Seats not on record.';
+    $('seats').textContent = seats ? `${seats} seats` : ''; // the load cap is for the summary only
   }
 }
 function gpsLine() {
@@ -240,7 +282,7 @@ function onGpsError(e) {
 }
 function grab() { // a camera frame, longest side 1280 px (720p), JPEG 0.7, as base64
   const v = $('cam'), w = v.videoWidth, h = v.videoHeight;
-  if (!w || !h) return null;
+  if (!S.camReady || !w || !h) return null;
   const k = Math.min(1, 1280 / Math.max(w, h));
   canvas.width = Math.round(w * k); canvas.height = Math.round(h * k);
   canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
@@ -264,12 +306,17 @@ async function onFix(p) {
 async function onVisibility() {
   if (!S.active) return;
   const id = S.run.id;
-  if (document.hidden) { store.openGap(id, Date.now()).catch(() => {}); return; }
+  const photo = S.run.kind === 'timelapse';
+  if (document.hidden) {
+    store.openGap(id, Date.now()).catch(() => {});
+    if (photo) { S.camWanted = false; closeCamera(); } // the camera is off while away
+    return;
+  }
   await store.closeGap(id, Date.now()).catch(() => {});
   S.run = await store.getRun(id);
   toast('Welcome back. The time away is marked as a gap.');
   await holdScreen();
-  if (S.run.kind === 'timelapse') openCamera().catch((e) => runSay(camMsg(e)));
+  if (photo && S.active) { S.camWanted = true; openCamera().catch((e) => runSay(camMsg(e))); }
 }
 
 // ── STOP HERE sheet ──
@@ -291,7 +338,7 @@ function drawSheet() {
       (list.length ? '<div class="cap-picks">' + list.slice(0, 12).map((s) => `<button type="button" class="cap-pick" data-name="${esc(s.name)}"><span>${esc(s.name)}</span>` +
         `<small>${done.has(s.name) ? 'Tagged' : s.m != null ? (s.m < 1000 ? Math.round(s.m) + ' m' : (s.m / 1000).toFixed(1) + ' km') : ''}</small></button>`).join('') + '</div>'
         : '<p class="cap-note">No known stops for this bus yet. Type the name.</p>') +
-      '<label class="cap-field" for="newStop">New stop</label><div class="cap-row"><input id="newStop" class="cap-input" maxlength="80" placeholder="Name of the stop" autocomplete="off">' +
+      '<label class="cap-field" for="newStop">New stop</label><div class="cap-row"><input id="newStop" class="cap-input" maxlength="80" placeholder="Place name, not a person" autocomplete="off">' +
       '<button type="button" id="useName" class="cap-btn">Use</button></div>' +
       '<button type="button" class="cap-end" data-a="cancel">Cancel</button>';
     sheet.querySelectorAll('.cap-pick').forEach((b) => b.addEventListener('click', () => pick(b.dataset.name)));
@@ -360,11 +407,11 @@ async function endRun() {
   S.watch = null;
   if (S.wake) S.wake.release().catch(() => {});
   S.wake = null;
-  if (S.stream) S.stream.getTracks().forEach((t) => t.stop());
-  S.stream = null;
+  S.camWanted = false; closeCamera();
   await store.endRun(S.run.id);
   S.run = await store.getRun(S.run.id);
   $('running').hidden = true;
+  $('offline').hidden = !!LMCS.getSession();
   drawSummary();
   drawUpload();
 }
@@ -430,14 +477,18 @@ async function drawUpload() {
   const info = await store.storageInfo();
   $('storage').textContent = info.quota ? `Phone storage for capture: ${mb(info.usage)} used of ${mb(info.quota)}.` + (info.persisted ? '' : ' The browser may clear it if the phone runs low: send soon.') : '';
 }
+async function signIn() {
+  $('authRoot').style.display = ''; scrollTo(0, 0);
+  const s = await LMCS.requireSession('#authRoot');
+  $('authRoot').style.display = 'none';
+  S.session = s; rememberIdentity(s);
+  $('offline').hidden = true;
+  loadBuses();
+  return s;
+}
 async function sendAll() {
   if (S.sending) return;
-  if (!LMCS.getSession()) { // the sign-in lasts about an hour: sign in again, then send
-    $('authRoot').style.display = ''; scrollTo(0, 0);
-    const s = await LMCS.requireSession('#authRoot');
-    $('authRoot').style.display = 'none';
-    S.session = s;
-  }
+  if (!LMCS.getSession()) await signIn(); // a sign-in lasts about an hour, and offline mode has none: sign in, then send
   S.sending = true; $('send').disabled = true; $('send').textContent = 'Sending...';
   S.progress = {};
   const runs = {};
