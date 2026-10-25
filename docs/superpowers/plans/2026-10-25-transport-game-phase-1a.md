@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Start collecting the data the transport game needs. That means a Coordinator capture portal
+**Goal:** Start collecting the data the transport game needs, with Fleet setup quests replacing the staff spreadsheet and an import for the agencies' Excel template. That means a Coordinator capture portal
 (timelapse runs, count runs, monthly safety inspections), a one-tap component pick and a fuel-fill video in
 the Fee Clerk's day book, and Mac processing that blurs frames and stitches each route's timelapse.
 
@@ -23,6 +23,8 @@ portal), the early garage data (one-tap components, monthly inspection), the "fu
 and Phase 1a in the phasing table.
 
 ## Global Constraints
+
+- **Location** (Uday): everything lives under `/Volumes/AI Work/Uday - LMCS Software Project/`. Code goes in this repo; private data in gitignored `transport/game-data/`; new Mac processing in `transport/capture/` (never `~/Projects`).
 
 - **Never speed:** never score, rank or display speed or trip time anywhere. No speed overlay on the
   timelapse.
@@ -282,8 +284,8 @@ and Phase 1a in the phasing table.
 ### Task 7: Mac processing: blur, timelapse, stop tags
 
 **Files:**
-- Create: `~/Projects/transport-gps/capture.py`, `~/Projects/transport-gps/test_capture.py`
-- Modify: `~/Projects/transport-gps/weekly.sh` or the daily launchd job (run `capture.py` after `insights.py`)
+- Create: `transport/capture/capture.py`, `transport/capture/test_capture.py` (in this repo; outputs go to Drive, never into the repo)
+- Modify: the existing daily job script that runs `~/Projects/transport-gps/insights.py`. Add one line that then runs `python3 "/Volumes/AI Work/Uday - LMCS Software Project/LMCSManagement/transport/capture/capture.py"`
 - Modify: `apps-script/coordinator-transport-gps.gs`:
   - `POST action=transportcapturepush {secret, payload:{runs:[{runId, reg, videoFileId, stops:[{seq,name,lat,lng,at,photoFileId,boardOn,boardOff}]}]}}`;
   - stored in the tab `Capture Stops`;
@@ -315,14 +317,86 @@ and Phase 1a in the phasing table.
   - `stitch builds a 3-frame mp4 at 30 fps` (ffprobe check);
   - push test in `tests/transport/test-transport-gps.js`: `transportcapturepush with a wrong secret refused; an LMS 4 coordinator sees only LMS 4 capture stops`.
   - `capture_route` test: `raised for an operational bus with no processed run and resolved by the push`.
-- [ ] **Step 2: Run** `python3 -m pytest ~/Projects/transport-gps/test_capture.py` and the node test.
+- [ ] **Step 2: Run** `python3 -m pytest transport/capture/test_capture.py` and the node test.
   Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** both. Expected: PASS.
-- [ ] **Step 5: Commit** in both places: the transport-gps folder, if it's under git, and the repo for the
-  `.gs` change. Message: `transport: capture runs become blurred timelapses with stop chapters`.
+- [ ] **Step 5: Commit** with the message `transport: capture runs become blurred timelapses with stop chapters`.
 
-### Task 8: Verify and hand over for deploy
+### Task 8: Fleet setup quests (gamified data collection)
+
+**Files:**
+- Modify: `apps-script/coordinator-transport.gs`:
+  - tabs `Fleet Profile` (one row per reg), `Driver Profile` (one row per driver), `Parts History` (one row
+    per reg × component) and `Workshops`;
+  - action `coordinatortransportfleet` (GET for scoped roles);
+  - action `coordinatortransportfleetsave` (POST: Fee Clerk for own campus, Coordinator for own district,
+    Owner all; one quest at a time).
+- Create: `coordinator/transport/setup.html`, `coordinator/capture/setup.js` (quest board; photos go through
+  Task 3's `capturefile` with the new kind `'profile'`, using the capture page's offline store pattern)
+- Modify: `apps-script/transport-capture.gs` (allow `kind:'profile'`)
+- Test: `tests/transport/test-transport-gs.js`, `tests/transport/test-fleet-quests.js` (pure completion logic)
+
+**Interfaces:**
+- Produces:
+  - `questsFor(profile) -> [{id, label, done:boolean, missing:[field]}]`, from the six quest IDs
+    `papers | safety | parts | driver | fuel | capture`;
+  - `completion(profile) -> 0..100`, where each of the six quests weighs equally;
+  - the fields per quest, copied from the staff questionnaire's columns (`transport/game-data/Transport data
+    questionnaire (staff).xlsx`), with the same names in camelCase;
+  - the parts IDs, which are the Task 1 component IDs.
+- Team bar: "<campus> fleet: N of M buses ready" (ready = 100%). No per-person ranking.
+
+- [ ] **Step 1: Write failing tests**
+  - `completion is 0 for an empty profile and 100 when all six quests are done`;
+  - `papers quest missing chassisNo lists it in missing`;
+  - `Fee Clerk can save LMS 4 papers, refused for LMS 1`;
+  - `Coordinator LMS4-6 can save driver quest for LMS 5`;
+  - `driver quest accepts a date of birth that makes the driver 60+, saves it with flag ageLimit:true, and returns a warning` (data is recorded; the line-up board in 1b blocks the driver);
+  - `old questionnaire columns map 1:1 to quest fields` (fixture from the xlsx headers).
+- [ ] **Step 2: Run** `node tests/transport/test-fleet-quests.js` and `node tests/transport/test-transport-gs.js`.
+  Expected: FAIL.
+- [ ] **Step 3: Build the logic, backend and page.** The page shows bus cards with completion rings, quest
+  cards with short forms, a "ready" badge, the campus team bar, and the Owner's gaps view. It uses the LMCS
+  design skills, then `game-ui-ux` and `gamification-loops`, and passes the 375 px layout check.
+- [ ] **Step 4: Run** the tests, `node tests/transport/layout-check.browser.js` and `node tests/verify.mjs`.
+  Expected: PASS, with no new failures.
+- [ ] **Step 5: Commit** with the message `transport: fleet setup quests replace the staff questionnaire`.
+
+### Task 9: Agency data import (Parts Catalog)
+
+**Files:**
+- Create: `transport/capture/agency_import.py`, `transport/capture/test_agency_import.py`
+- Modify: `apps-script/coordinator-transport-gps.gs`:
+  - `POST action=transportcatalogpush {secret, payload:{models:[...], vehicles:[...], history:[...]}}`;
+  - tabs `Parts Catalog`, `Agency Vehicles`, `Agency History`;
+  - served in `coordinatortransportinsight` as `catalog`, read-only.
+- Test: `tests/transport/test-transport-gps.js`
+
+**Interfaces:**
+- Consumes: `transport/game-data/Service centre data template (agencies).xlsx` (one filled file per agency).
+  It has sheets `Our vehicles`, `Service history`, `Maintenance schedule`, `Wear parts`, `Service packages`,
+  `Running norms` and `Contacts`. The hidden column A `Code` in the schedule and wear sheets carries the
+  component code.
+- Produces:
+  - `parse_agency(path) -> {models, vehicles, history, contacts}`. It skips the grey example row and blank
+    rows, and parses DD-MM-YYYY dates and ₹ numbers.
+  - The garage reads `catalog.models[model].parts[code] = {lifeKm, lifeMonths, price, labour}`.
+
+- [ ] **Step 1: Write failing tests** (with a fixture copy of the template, filled with 2 models)
+  - `example row is ignored`;
+  - `severe-duty interval wins over normal when present`;
+  - `a row with text in a km column is reported, not imported`;
+  - `two files for the same model merge, newest file wins per part`;
+  - `catalogpush with a wrong secret refused`.
+- [ ] **Step 2: Run** `python3 -m pytest transport/capture/test_agency_import.py` and the node test.
+  Expected: FAIL.
+- [ ] **Step 3: Implement** with openpyxl. The CLI is `python3 transport/capture/agency_import.py <file.xlsx>
+  [--push]`: a dry run prints a summary, and `--push` sends it.
+- [ ] **Step 4: Run** both. Expected: PASS.
+- [ ] **Step 5: Commit** with the message `transport: import the agencies' service data into the parts catalog`.
+
+### Task 10: Verify and hand over for deploy
 
 **Files:** none new.
 
