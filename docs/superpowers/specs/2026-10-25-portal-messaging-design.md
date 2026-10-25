@@ -324,7 +324,8 @@ All of it is built (Uday); this is only the order.
 
 ## Open questions for Uday (one at a time, through the LMCS Master Agent)
 
-1. **Mock-up feedback:** what to change, add or drop on the three screens (sent 2026-10-25, waiting).
+1. ~~Mock-up feedback~~ **Answered (Uday, 2026-10-25):** "Messaging mockups look good as they are, no changes."
+   The three mock-ups are the reference for the phone of contracts, a channel and the relationship map.
 2. **Who is "the Owner" who can read everything?** The Owner role today includes more than Uday (e.g. MD
    Academics), and Owners can "view as" other staff. *Claude's recommendation:* only a named list can read others'
    channels and DMs and see the relationship map, starting with Uday alone; "view as" inside messaging is read-only
