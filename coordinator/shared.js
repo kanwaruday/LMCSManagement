@@ -14,7 +14,7 @@ window.Coord = (function () {
   const DEPARTMENTS = [
     { name: 'HR & Staff', page: 'hr', desc: 'Hiring, staff documents, Support Session compliance, and staff-related approvals.' },
     { name: 'Academics & Examination', page: 'academics', desc: 'CW/HW tag analysis per teacher, and academic-change approvals.' },
-    { name: 'Fees & Finance', page: 'finance', desc: 'Financial and purchase approvals. Payroll exceptions to follow.' },
+    { name: 'School Financials', page: 'finance', desc: 'Financial and purchase approvals. Payroll exceptions to follow.' },
     { name: 'School Operations', page: 'operations', desc: 'Everything not covered elsewhere, such as other approvals.' },
     { name: 'Events & House System', page: 'events', desc: 'Events, trips, invitations and calendar approvals.' },
     { name: 'Transport', page: 'transport', live: true, desc: 'Bus document compliance: insurance, fitness, MV tax, pollution, route permit and speed governor.' },

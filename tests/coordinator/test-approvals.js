@@ -29,7 +29,7 @@ const fin = row('f1', 'LMS1', 'Pending', 'Normal', day(5)); fin[2] = 'Financial 
 const oth = row('o1', 'LMS1', 'Pending', 'Normal', day(5)); oth[2] = 'Other';
 const evt = row('e1', 'LMS1', 'Pending', 'Normal', day(5)); evt[2] = 'Off-Campus Trip / Excursion';
 const dep = ctx.coordApprovalWanted_([['h'], fin, oth, evt], now).map((t) => t.department);
-assert.strictEqual(JSON.stringify(dep), JSON.stringify(['Fees & Finance', 'School Operations', 'Events & House System']));
+assert.strictEqual(JSON.stringify(dep), JSON.stringify(['School Financials', 'School Operations', 'Events & House System']));
 
 // upsert / auto-resolve against a fake sheet
 const store = [['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity']];
