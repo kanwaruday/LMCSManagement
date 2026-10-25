@@ -13,8 +13,8 @@ export function h(tag, attrs = {}, ...kids) {
 export function field(id, label, control, hint) {
   control.id = id;
   const err = h('p', { class: 'err', role: 'alert', id: id + '-err' });
-  control.setAttribute('aria-describedby', id + '-err');
-  return { root: h('div', {}, h('label', { for: id }, label), control, hint ? h('div', { class: 'meta' }, hint) : null, err), err, control };
+  control.setAttribute('aria-describedby', (hint ? id + '-hint ' : '') + id + '-err'); // the hint is read out with the field, not only seen
+  return { root: h('div', {}, h('label', { for: id }, label), control, hint ? h('div', { class: 'meta', id: id + '-hint' }, hint) : null, err), err, control };
 }
 // replaceChildren that skips null/false children (a bare replaceChildren(null) would insert the text "null").
 export function setKids(el, ...kids) {

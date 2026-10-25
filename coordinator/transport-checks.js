@@ -134,7 +134,7 @@ window.TransportChecks = (function () {
       const waiting = d.checks.filter(c => c.flag === 'yes' && !c.answer);
       tab.innerHTML = (late.length ? '<p class="miss">' + late.length + ' follow-up' + (late.length > 1 ? 's are' : ' is') + ' past due. The Owner sees who is late.</p>' : '') +
         (list.length ? list.map(t => '<div class="task ' + esc(t.severity) + '" data-id="' + esc(t.taskId) + '"><div><div class="t"><span class="chip">' + esc(DOMAIN[t.domain]) + '</span>' + esc(t.title) + '</div>' +
-          '<div>' + esc(t.detail) + '</div><div class="d">' + esc(t.campus) + ' · ' + (t.assignee ? (t.assignee === me ? 'yours' : esc(t.assignee.split('@')[0])) : 'no owner') + ' · ' + dueText(t, d.today) + '</div>' +
+          '<div>' + esc(t.detail) + '</div>' + (t.domain === 'fuel_proof' ? '<div class="d">The fee clerk attaches it in the Day Book (Add fill video). This closes by itself once it is attached.</div>' : '') + '<div class="d">' + esc(t.campus) + ' · ' + (t.assignee ? (t.assignee === me ? 'yours' : esc(t.assignee.split('@')[0])) : 'no owner') + ' · ' + dueText(t, d.today) + '</div>' +
           '<div class="tc-close" hidden style="margin-top:8px"><label class="sm">What did you do? (required)<br><input class="tc-note" style="width:min(520px,100%);padding:6px" placeholder="For example: driver warned on 24 Oct / Blackbox complaint 12345"></label> <button class="btn tc-save">Save and close</button><div class="sm tc-err" role="alert"></div></div></div>' +
           '<button class="btn tc-done">Mark done</button></div>').join('') : '<p class="note">No open transport follow-ups. Well done.</p>') +
         (waiting.length ? '<h3 class="tc-h">Fuel bills waiting for the fee clerk (' + waiting.length + ')</h3><p class="note">Each comes to you if the clerk has not answered in 2 days.</p><div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Km per litre</th></tr></thead><tbody>' +
@@ -181,13 +181,15 @@ window.TransportChecks = (function () {
           '<td>' + (o.over7 >= 10 ? '<b class="miss">' + o.over7 + '</b>' : o.over7) + ' / ' + o.over30 + '</td><td>' + (o.maxKmh > 50 ? '<b class="miss">' + o.maxKmh + '</b>' : o.maxKmh) + ' km/h</td></tr>').join('') + '</tbody></table></div>';
     }
 
+    // on a phone the table scrolls sideways: the bus stays in sight next to its Result and Proof
+    const STICK = 'position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--border);';
     function fuel(tab, d) {
       const rows = d.checks.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
       tab.innerHTML = '<p class="note">Each fuel fill in the day book against the km the GPS recorded since the bus\'s previous fill. Flagged: below 80% of the bus\'s normal km per litre, or the bill odometer and the GPS disagree by more than 20%.</p>' +
-        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Proof</th><th>Fee clerk</th></tr></thead><tbody>' +
-          rows.map(c => '<tr><td>' + day(c.date) + '</td><td><b>' + esc(c.reg) + '</b></td><td>' + esc(c.litres) + '</td><td>' + esc(c.gpsKm) + '</td><td>' + esc(c.billKm) + '</td><td>' + esc(c.kmpl) + ' <span class="sm">(normal ' + esc(c.norm) + ')</span></td>' +
+        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th style="' + STICK + 'background:var(--lgray)">Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Proof</th><th>Fee clerk</th></tr></thead><tbody>' +
+          rows.map(c => '<tr><td>' + day(c.date) + '</td><td style="' + STICK + 'background:var(--white)"><b>' + esc(c.reg) + '</b></td><td>' + esc(c.litres) + '</td><td>' + esc(c.gpsKm) + '</td><td>' + esc(c.billKm) + '</td><td>' + esc(c.kmpl) + ' <span class="sm">(normal ' + esc(c.norm) + ')</span></td>' +
             '<td>' + (c.flag === 'yes' ? '<span class="pl expired">' + esc(c.reason.indexOf('low') !== -1 ? 'Too much fuel' : 'Odometer differs') + '</span>' + (Number(c.excessRs) ? '<div class="sm">about ' + rs(c.excessRs) + ' extra</div>' : '') : '<span class="pl ok">OK</span>') + (/gps_gap/.test(c.reason) ? '<div class="sm">tracker missed some days</div>' : '') + '</td>' +
-            '<td>' + (c.proof === 'video+bill' ? 'Video and bill' : c.proof === 'none' ? '<b class="miss">No video, no bill</b>' : c.proof === 'bill' ? '<span class="stale">Bill only</span>' : '') + '</td>' +
+            '<td>' + (c.proof === 'video+bill' ? '<span class="pl ok">Video and bill</span>' : c.proof === 'none' ? '<span class="pl expired">No video, no bill</span>' : c.proof === 'bill' ? '<span class="pl soon">Bill only</span>' : '') + '</td>' +
             '<td>' + (c.answer ? esc(c.answer === 'matches' ? 'slip matches' : 'bill corrected') + '<div class="sm">' + esc(String(c.answeredBy).split('@')[0]) + '</div>' : c.flag === 'yes' ? '<span class="stale">waiting</span>' : '') + '</td></tr>').join('') + '</tbody></table></div>'
           : '<p class="note">No fills to check yet. Fee clerks record fuel in the day book (litres and odometer) since 23 Oct 2026; each fill is checked once the bus has a previous fill and 50 km of GPS driving since.</p>');
     }

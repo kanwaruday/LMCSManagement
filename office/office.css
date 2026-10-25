@@ -38,3 +38,20 @@ section.block h2 { font-size: 1.1rem; }
 .office-form button.chip:focus-visible { outline: 3px solid #1f3a5f; outline-offset: 2px; }
 .office-form fieldset.parts:has(.err:not(:empty)) button.chip { border-color: #b00020; }
 @media (prefers-reduced-motion: reduce) { .office-form button.chip { transition: none; } .office-form button.chip:active { transform: none; } }
+/* A hidden control stays hidden: `.office-form input { display: block }` would otherwise outrank the hidden attribute. */
+.office-form [hidden] { display: none !important; }
+.office-form label .opt { font-weight: 400; color: #55606b; }
+.office-form input[type="file"]::file-selector-button { min-height: 32px; margin-right: 10px; padding: 4px 12px; font: inherit; border: 1px solid #1f3a5f; border-radius: 6px; background: #fff; color: #1f3a5f; cursor: pointer; }
+/* Proof banked: a chosen fill video (form) and an attached one (list) carry the same tick. */
+.office-form .picked { display: flex; align-items: center; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 2px 2px 2px 12px; border: 1px solid #1a7f3c; border-radius: 8px; background: #f1f9f4; font-weight: 600; color: #1a7f3c; }
+.office-form .picked > span { flex: 1; min-width: 0; }
+.office-form .picked .fname { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; font-size: .9rem; color: #55606b; padding-left: 24px; }
+.office-form .picked button { min-height: 44px; padding: 8px 14px; flex: none; border-radius: 6px; }
+.office-form .picked > span::before, .office-list .proof::before { content: ''; display: inline-block; width: 18px; height: 18px; margin-right: 6px; vertical-align: -4px; border-radius: 50%; background: #1a7f3c url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.2l2.2 2.2L9.4 3.8' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.office-list .proof { font-weight: 600; color: #1a7f3c; margin-top: 4px; }
+/* Row buttons: thumb-sized, apart, wrapping on a narrow phone. */
+.office-list .row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.office-list .row-actions button { min-height: 44px; padding: 8px 14px; font-size: 1rem; border-radius: 8px; border: 1px solid #1f3a5f; background: #fff; color: #1f3a5f; cursor: pointer; }
+@media (hover: hover) { .office-list .row-actions button:hover, .office-form .picked button:hover { background: #eef2f7; } }
+.office-list .row-actions button:focus-visible, .office-form .picked button:focus-visible { outline: 3px solid #1f3a5f; outline-offset: 2px; }
+.office-list .row-actions button:disabled { opacity: .5; }

@@ -109,6 +109,8 @@ export const componentOptions = (categoryId) => COMPONENTS.filter((c) => c[2].in
 export const VIDEO_LABEL = 'Video of the fill (from the driver)';
 export const VIDEO_HINT = 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.';
 export const VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/3gpp'], VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+// '14.2 MB', counted the way the 25 MB limit is (1 MB = 1024 × 1024 bytes).
+export const mbText = (bytes) => (bytes / 1048576).toFixed(1) + ' MB';
 // '' when the chosen file ({size, type}) is fine as a fill video, else the sentence to show.
 export const videoProblem = (f) => !VIDEO_MIMES.includes(f.type) ? 'Choose a video file (MP4, MOV or 3GP).'
   : f.size > VIDEO_MAX_BYTES ? 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).' : '';
@@ -240,6 +242,24 @@ export async function showDayBook(root, session, api, outbox) {
   const videoIn = h('input', { type: 'file', accept: VIDEO_MIMES.join(',') });
   const videoPick = h('input', { type: 'file', accept: VIDEO_MIMES.join(','), hidden: true }); // the list's Add fill video button opens this
   const videoF = field('db-video', VIDEO_LABEL, videoIn, VIDEO_HINT);
+  videoF.root.querySelector('label').append(h('span', { class: 'opt' }, ' Optional'));
+  // The chosen video, banked: the picker gives way to a tick, its size and name, and a way to take it off again (the field
+  // is optional). The file stays in the hidden input.
+  const videoSize = h('b', {}), videoName = h('span', { class: 'fname' });
+  const videoDrop = h('button', { type: 'button', class: 'secondary', 'aria-label': 'Remove the video', onclick: () => { clearVideo(); videoIn.focus(); } }, 'Remove');
+  const videoChosen = h('div', { class: 'picked', hidden: true }, h('span', {}, videoSize, videoName), videoDrop);
+  videoF.root.insertBefore(videoChosen, videoIn.nextSibling);
+  const clearVideo = () => { videoIn.value = ''; videoIn.hidden = false; videoChosen.hidden = true; };
+  // Checked the moment it is picked, so a wrong file is named in place and never blocks the save (the entry can go without it).
+  videoIn.addEventListener('change', () => {
+    const f = videoIn.files && videoIn.files[0];
+    videoF.err.textContent = f ? videoProblem(f) : '';
+    if (!f || videoF.err.textContent) { clearVideo(); return; }
+    videoSize.textContent = 'Video chosen · ' + mbText(f.size); videoName.textContent = f.name || '';
+    const had = document.activeElement === videoIn;
+    videoChosen.hidden = false; videoIn.hidden = true;
+    if (had) videoDrop.focus({ preventScroll: true }); // keyboard focus is not dropped with the hidden picker
+  });
   // Garage data: one tap per part. Toggle buttons (aria-pressed) in a fieldset, so keyboard and screen readers get the same thing.
   let picked = [];
   const chipsEl = h('div', { class: 'chips' });
@@ -349,6 +369,7 @@ export async function showDayBook(root, session, api, outbox) {
       }
       await outbox.enqueue('daybook.add', r.data);
       [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, videoIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
+      clearVideo();
       picked = []; paintChips();
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
@@ -373,21 +394,23 @@ export async function showDayBook(root, session, api, outbox) {
   }
 
   // Add fill video: the same picker, then file.upload and daybook.attach_video through the outbox (FIFO: the file first).
-  let pickFor = null;
+  // Its messages show on the entry itself ({id, text, bad}), not at the form far above.
+  let pickFor = null, rowMsg = null;
+  const say = (id, text, bad) => { rowMsg = { id, text, bad }; paintList(); };
   videoPick.addEventListener('change', async () => {
     const file = videoPick.files && videoPick.files[0], item = pickFor;
     videoPick.value = '';
     if (!file || !item) return;
     const bad = videoProblem(file);
-    if (bad) { saveMsg.textContent = bad; return; }
+    if (bad) { say(item.id, bad, true); return; }
     await guard('video:' + item.id, async () => {
-      saveMsg.textContent = 'Preparing the video…';
+      say(item.id, 'Preparing the video…', false);
       const fileId = await outbox.enqueue('file.upload', { campus, category: 'fuel_video', belongs_to: '', name: file.name || 'fuel-video', mime: file.type, base64: await toBase64(file) });
       await outbox.enqueue('daybook.attach_video', { campus, entry_id: item.id, file_id: fileId });
-      saveMsg.textContent = 'Saved — will sync';
+      rowMsg = null; // the row now says the video is on its way
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
-    }).catch((err) => { saveMsg.textContent = err && err.message || String(err); });
+    }).catch((err) => { say(item.id, err && err.message || String(err), true); });
   });
   const addVideo = (item) => { pickFor = item; videoPick.click(); };
 
@@ -403,7 +426,7 @@ export async function showDayBook(root, session, api, outbox) {
     it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
     it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
     it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
-    it.collection ? collLabel(it.collection) : '', partsLabel(it.components), it.video_file_id ? 'Fill video' : '',
+    it.collection ? collLabel(it.collection) : '', partsLabel(it.components),
     it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
   ].filter(Boolean);
 
@@ -412,12 +435,15 @@ export async function showDayBook(root, session, api, outbox) {
     listEl.replaceChildren(...(items.length ? items.map((it) => h('li', {},
       h('div', {}, (it.direction === 'IN' ? '+ ' : '− ') + formatInr(it.amount_paise) + ' · ' + catLabel(it.category)),
       h('div', { class: 'meta' }, rowMeta(it).join(' · ')),
+      it.video_file_id && it.category === 'fuel' ? h('div', { class: 'proof' }, 'Fill video attached') : null, // proof banked
       it.synced ? null : h('div', { class: 'flag' + (it.status === 'attention' ? ' bad' : '') }, it.status === 'attention' ? 'Needs attention: ' + it.error : 'Not yet synced'),
       it.reversed ? h('div', { class: 'meta' }, 'Reversed') : null,
       it.reversalQueued ? h('div', { class: 'flag' + (it.reversalError ? ' bad' : '') }, it.reversalError ? 'Reversal needs attention: ' + it.reversalError : 'Reversal not yet synced') : null,
       it.videoQueued ? h('div', { class: 'flag' }, 'Fill video not yet synced') : null,
-      canAddVideo(it) ? h('button', { type: 'button', class: 'secondary', onclick: () => addVideo(it) }, 'Add fill video') : null,
-      canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null,
+      rowMsg && rowMsg.id === it.id ? h('div', rowMsg.bad ? { class: 'flag bad', role: 'alert' } : { class: 'meta' }, rowMsg.text) : null,
+      canAddVideo(it) || canReverse(it) ? h('div', { class: 'row-actions' },
+        canAddVideo(it) ? h('button', { type: 'button', class: 'secondary', onclick: () => addVideo(it) }, 'Add fill video') : null,
+        canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null) : null,
     )) : [h('li', {}, 'No entries for ' + isoToDmy(date) + '.')]));
   }
 
