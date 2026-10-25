@@ -557,7 +557,7 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, campus: '', itype: '', istatus: 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
+    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, campus: '', itype: '', istatus: location.hash === '#closed' ? 'closed' : 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body');
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -598,7 +598,9 @@ window.Coord = (function () {
       const issues = kept.map(i => Object.assign({ age: ago(i.last), span: ago(i.first) - ago(i.last) }, i));
       const acts = d.actions || {}, people = d.coordinators || [], me = (SESSION && SESSION.email || '').toLowerCase();
       issues.forEach(i => {
-        i.open = i.age <= QUIET_DAYS; i.act = acts[i.id] || null;
+        i.act = acts[i.id] || null;
+        i.open = i.age <= QUIET_DAYS || (!!i.act && i.act.status === 'reopened'); // a reopened issue is back with its Principal, however quiet
+        i.closedWk = !!i.act && i.act.status === 'resolved' && ago(String(i.act.at || '').slice(0, 10)) <= 7; // "Closed this week": a Coordinator sees every closure and can reopen it
         const closed = !!i.act && (i.act.status === 'resolved' || i.act.status === 'acknowledged'); // acknowledged = "noted, no action needed"
         i.reopened = closed && i.last > i.act.lastAtAction; // a principal raised it again after it was filed away: it comes back
         i.archived = closed && !i.reopened;                 // filed away: out of the main lists, in the Archive view
@@ -606,7 +608,7 @@ window.Coord = (function () {
         i.stuck = i.open && i.span >= STUCK_DAYS;
         i.handled = !!i.act && !i.reopened && i.act.status === 'assigned'; // someone owns it
       });
-      const open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction), todo = openAct.filter(i => !i.handled), archive = issues.filter(i => i.archived);
+      const closedWk = issues.filter(i => i.closedWk), open = issues.filter(i => i.open), openAct = open.filter(i => i.needsAction), todo = openAct.filter(i => !i.handled), archive = issues.filter(i => i.archived);
       const msgs = reps.filter(r => r.message.trim()).map(r => ({ r, t: tags[r.date + '|' + r.campus] || { topics: [], action: false, summary: '' } }))
         .sort((a, b) => b.r.date.localeCompare(a.r.date) || a.r.campus.localeCompare(b.r.campus));
       const topics = [...new Set(msgs.flatMap(m => m.t.topics))].sort();
@@ -653,7 +655,7 @@ window.Coord = (function () {
         '<div class="ctl"><span class="seg">' + [['today', 'Today'], ['digest', 'Weekly digest'], ['approvals', 'Approvals'], ['compliance', 'Who reported'], ['repeats', 'Repeat text'], ['fees', 'Fees'], ['admissions', 'Admissions'], ['messages', 'Messages'], ['registers', 'Registers'], ['assembly', 'Morning assembly']].map(x =>
           '<button data-tab="' + x[0] + '" class="' + (P.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span></div>';
 
-      const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">' + (i.act.status === 'acknowledged' ? 'Raised again since you noted it' : 'Raised again after resolved') + '</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : 'Resolved';
+      const chip = i => !i.act || i.act.status === 'open' ? '' : i.reopened ? '<span class="miss">' + (i.act.status === 'acknowledged' ? 'Raised again since you noted it' : 'Raised again after resolved') + '</span>' : i.act.status === 'assigned' ? 'Assigned to <b>' + esc(i.act.assigneeName || i.act.assignee) + '</b>' : i.act.status === 'acknowledged' ? 'Acknowledged' : i.act.status === 'reopened' ? 'Reopened' : 'Resolved';
       const editor = i => '<details class="pd-edit" data-id="' + i.id + '"><summary>' + (chip(i) || 'Acknowledge / assign') + '</summary>' +
         '<div style="display:flex;flex-direction:column;gap:6px;width:230px;padding:8px 0 4px">' +
         '<select class="pd-as" style="width:100%">' + [['acknowledged', 'Acknowledge (no action needed)'], ['assigned', 'Assign to'], ['resolved', 'Resolved'], ['open', 'Reset']].map(x => '<option value="' + x[0] + '"' + (i.act && i.act.status === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
@@ -665,10 +667,13 @@ window.Coord = (function () {
         issues.filter(o => o.id !== i.id && o.campus === i.campus).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 40).map(o => '<option value="' + o.id + '">' + esc(o.subject) + ' (' + esc(o.type) + ', ' + fmt(o.last) + ')</option>').join('') + '</select>' +
         '<button class="btn pd-merge">Merge this into it</button>' +
         (i.kids.length ? '<div class="sm" style="margin-top:6px">Includes: ' + i.kids.map(k => esc(k.subject) + ' <a href="#" class="pd-unmerge" data-src="' + k.id + '">undo</a>').join(', ') + '</div>' : '') + '</div></div></details>';
+      const reopenBox = i => !i.act || i.act.status !== 'resolved' ? '' : '<details class="pd-reopen" data-id="' + esc(i.id) + '"><summary>Reopen</summary>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;width:230px;padding:8px 0 4px"><textarea class="pd-why" maxlength="500" rows="2" aria-label="Why you\'re reopening this" placeholder="Why you\'re reopening this" style="width:100%;box-sizing:border-box;font:inherit;border:1px solid var(--border);border-radius:4px;padding:5px 8px"></textarea>' +
+        '<div><button class="btn pd-reopen-go" disabled>Reopen</button> <span class="sm pd-rmsg" role="alert"></span></div><div class="sm">It goes back to the Principal as reopened, with your note.</div></div></details>';
       const archNote = i => '<span class="sm">' + (i.act.status === 'acknowledged' ? 'Noted, no action needed' : 'Resolved') + ' by ' + esc((i.act.by || '').split('@')[0]) + ', ' + esc((i.act.at || '').slice(0, 10)) + (i.act.note ? '<br>' + esc(i.act.note) : '') + '</span>';
       const issueRow = (i, hide) => '<tr data-id="' + i.id + '">' + (hide === 'campus' ? '' : '<td><b>' + i.campus + '</b></td>') + (hide === 'type' ? '' : '<td>' + esc(i.type) + '</td>') + '<td>' + (i.needsAction ? '<span class="miss">' + esc(i.subject) + '</span>' : esc(i.subject)) + '</td><td>' + fmt(i.first) + '</td><td>' + fmt(i.last) + '</td><td>' + i.count + (i.count >= 3 ? ' <span class="stale">repeat</span>' : '') + '</td><td>' +
         (i.archived ? archNote(i) : i.open ? (i.stuck ? '<span class="miss">Open ' + (i.span + i.age) + ' days</span>' : 'Open') : '<span class="sm">Quiet ' + i.age + ' days</span>') + '</td><td class="sm"><details><summary>' + i.items.length + ' mention' + (i.items.length > 1 ? 's' : '') + '</summary>' +
-        i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm" style="vertical-align:top">' + editor(i) + '</td></tr>';
+        i.items.map(t => fmt(t.date) + ': ' + esc(t.text) + (t.from ? ' <span class="sm">(' + esc(t.from) + ')</span>' : '')).join('<br>') + '</details></td><td class="sm" style="vertical-align:top">' + editor(i) + reopenBox(i) + '</td></tr>';
       const issueTable = (list, hide) => '<div class="tw"><table class="l"><thead><tr>' + (hide === 'campus' ? '' : '<th>Campus</th>') + (hide === 'type' ? '' : '<th>Type</th>') + '<th>Subject</th><th>First</th><th>Last</th><th>Days raised</th><th>Status</th><th>Principal wrote</th><th>Action</th></tr></thead><tbody>' +
         (list.map(i => issueRow(i, hide)).join('') || '<tr><td colspan="9">Nothing matches.</td></tr>') + '</tbody></table></div>';
       const byAge = (a, b) => (a.handled - b.handled) || (b.needsAction - a.needsAction) || (b.span + b.age) - (a.span + a.age);
@@ -679,12 +684,12 @@ window.Coord = (function () {
         type: ['Type', (a, b) => a.type.localeCompare(b.type) || byAge(a, b)] };
       const sel = (cls, label, opts, cur) => '<select class="' + cls + '"><option value="">' + label + '</option>' + opts.map(o => '<option' + (Array.isArray(o) ? ' value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + esc(o[1]) : (cur === o ? ' selected' : '') + '>' + esc(o)) + '</option>').join('') + '</select>';
       const filterBar = full => '<div class="ctl">' + sel('pd-campus', 'All schools', camps, P.campus) + sel('pd-itype', 'All types', issueTypes, P.itype) +
-        (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet'], ['archive', 'Archive (' + archive.length + ')']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
+        (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet'], ['closed', 'Closed this week (' + closedWk.length + ')'], ['archive', 'Archive (' + archive.length + ')']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not assigned</option></select>' +
         '<label>Sort <select class="pd-sort">' + Object.keys(SORTS).map(k => '<option value="' + k + '"' + (P.sort === k ? ' selected' : '') + '>' + SORTS[k][0] + '</option>').join('') + '</select></label>' +
         '<label>Group by <select class="pd-group"><option value="">Nothing</option><option value="campus"' + (P.group === 'campus' ? ' selected' : '') + '>School</option><option value="type"' + (P.group === 'type' ? ' selected' : '') + '>Type</option></select></label>' +
         (full ? '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> ' : '') + '<label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>';
-      const applyFilters = (list, full) => list.filter(i => (!full || (P.istatus === 'archive' ? i.archived : P.istatus === 'all' ? !i.archived : i.open)) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || i.needsAction) && (!P.repeat || i.count >= 3) &&
+      const applyFilters = (list, full) => list.filter(i => (!full || (P.istatus === 'archive' ? i.archived : P.istatus === 'closed' ? i.closedWk : P.istatus === 'all' ? !i.archived : i.open)) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || P.istatus === 'closed' || i.needsAction) && (!P.repeat || i.count >= 3) &&
         (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(SORTS[P.sort][1]);
       const grouped = list => {
         if (!list.length) return issueTable(list);
@@ -864,6 +869,20 @@ window.Coord = (function () {
       }));
       box.querySelectorAll('.pd-unmerge').forEach(a => a.addEventListener('click', e => { e.preventDefault(); mergeCall(a.dataset.src, '', null); }));
       on('.pd-copy', 'click', e => { const b = e.target; navigator.clipboard.writeText(box.dataset.digest || '').then(() => { b.textContent = 'Copied'; }, () => { b.textContent = 'Could not copy'; }); setTimeout(() => { b.textContent = 'Copy digest'; }, 2000); });
+      box.querySelectorAll('.pd-why').forEach(ta => ta.addEventListener('input', () => { ta.closest('.pd-reopen').querySelector('.pd-reopen-go').disabled = !ta.value.trim(); }));
+      box.querySelectorAll('.pd-reopen-go').forEach(btn => btn.addEventListener('click', async () => {
+        const ed = btn.closest('.pd-reopen'), msg = ed.querySelector('.pd-rmsg'), ta = ed.querySelector('.pd-why'), id = ed.dataset.id, note = ta.value.trim();
+        if (!note || btn.dataset.busy) return;
+        btn.dataset.busy = '1'; btn.disabled = true; msg.textContent = 'Reopening...';
+        let res;
+        try { res = await postJson({ action: 'coordinatorpdrissue', id: id, status: 'reopened', note: note }); } catch (err) { res = { success: false, error: err.message }; }
+        if (res && res.success) { P.data.actions = P.data.actions || {}; P.data.actions[id] = res.action; render(); return; }
+        delete btn.dataset.busy; btn.disabled = false;
+        const e = (res && res.error) || 'Not reopened. Try again.';
+        // an expired sign-in: auth.js's banner holds "Sign in again"; the typed reason stays in the box
+        if (e === 'Not authorized') { LMCS.notifyAuthFailure(); msg.textContent = 'Your sign-in has expired. Sign in again at the top; your note is kept.'; } else msg.textContent = e;
+        ta.focus();
+      }));
       box.querySelectorAll('.pd-save').forEach(btn => btn.addEventListener('click', async () => {
         const ed = btn.closest('.pd-edit'), msg = ed.querySelector('.pd-msg'), id = ed.dataset.id;
         btn.disabled = true; msg.textContent = 'Saving...';
@@ -879,5 +898,5 @@ window.Coord = (function () {
     load();
   }
 
-  return { boot, tasksView, academicsView, documentsView, transportView, pdrView, counts, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse };
+  return { boot, tasksView, academicsView, documentsView, transportView, pdrView, counts, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse, api, postJson, WORK_LINKS };
 })();

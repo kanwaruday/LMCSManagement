@@ -49,6 +49,7 @@
     '/payroll/':                 ['payroll', 'payscale', 'staff', 'approvals', 'hiring'],
     '/coordinator/':             FOLLOWUP_SOURCES,
     '/coordinator/followups/':   FOLLOWUP_SOURCES,
+    '/coordinator/hq.html':      FOLLOWUP_SOURCES,  // the board is the follow-ups; recommendations live in the Approvals sheet
     '/coordinator/hr/':          ['hiring', 'staff', 'docs', 'teacherss', 'nonteaching', 'driver', 'approvals'],
     '/coordinator/academics/':   ['daily', 'staff'],
     '/coordinator/finance/':     ['approvals'],
