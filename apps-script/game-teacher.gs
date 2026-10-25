@@ -605,8 +605,146 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
   return out;
 }
 
-// Stub until Task 7 (nightly activity matches) lands: {"cls|subj|ch": {matched, confidence} | {pending:true}}
-function tchMatchesFor_(code) { return {}; }
+// ── overnight activity check (Task 7) ────────────────────────────────
+// Each night the Mac asks local LM Studio whether a chapter's CW notes describe the activity the teacher planned (tools/teacher_activity_match.py).
+// Tab "Teacher Activity Matches" (PlanKey, EntryTimeMs, Matched, Confidence, Reason, CheckedAt), created on the first push, one row per
+// checked entry. PlanKey is a SHA-256 of the plan's row key salted with Script property GAME_PUSH_SECRET: the Mac never sees a name or a code.
+// teachermatchpull / teachermatchpush carry no Google token; the shared secret is the gate (game.gs doPost has a caller-less branch for exactly
+// these two actions). tchMatchesFor_ is called INSIDE gameWithLock_ by the quests hook: sheet and cache reads only, never a feed fetch.
+// ponytail: tchMatchesFor_ scans the whole matches tab on a cache miss (10 min per teacher); add a per-teacher tab if it passes a few thousand rows.
+var TCH_MATCH_TAB = 'Teacher Activity Matches';
+var TCH_MATCH_HEADER = ['PlanKey', 'EntryTimeMs', 'Matched', 'Confidence', 'Reason', 'CheckedAt'];
+var TCH_MATCH_TTL_S = 600;
+var TCH_PULL_MAX_ITEMS = 400, TCH_PULL_MAX_ENTRIES = 20, TCH_PULL_DESC_MAX = 300, TCH_PUSH_MAX_ROWS = 2000, TCH_REASON_MAX = 100;
+
+function tchPushSecret_() { return String(PropertiesService.getScriptProperties().getProperty('GAME_PUSH_SECRET') || '').trim(); }
+
+// Trimmed both sides (a pasted Script property often carries a newline); every character is compared, so the time does not say where they differ.
+function tchSecretOk_(given) {
+  const secret = tchPushSecret_(), g = String(given === null || given === undefined ? '' : given).trim();
+  if (!secret) return false;
+  let diff = secret.length ^ g.length;
+  for (let i = 0; i < Math.max(secret.length, g.length); i++) diff |= (secret.charCodeAt(i) || 0) ^ (g.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+function tchPlanKey_(secret, code, cls, subj, chNorm) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, secret + '|' + [code, cls, subj, chNorm].join('|'), Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+
+function tchAllPlanRows_() { // -> [{code, campus, cls, subj, chapterNorm, activity}]; [] when there is no tab yet
+  const sh = gameBook_().getSheetByName(TCH_PLAN_TAB);
+  if (!sh) return [];
+  return sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0]; }).map(function (r) {
+    return { code: String(r[0]), campus: String(r[1]), cls: String(r[2]), subj: String(r[3]), chapterNorm: String(r[4]), activity: String(r[6]) };
+  });
+}
+
+// PlanKey -> {maxT (newest entry checked), bestM (a match exists), bestC (best confidence: among matches if any, else among non-matches)}
+function tchMatchSums_() {
+  const sh = gameBook_().getSheetByName(TCH_MATCH_TAB), out = {};
+  if (!sh) return out;
+  sh.getDataRange().getValues().slice(1).forEach(function (r) {
+    const k = String(r[0]), t = Number(r[1]), c = Number(r[3]), m = String(r[2]) === 'true';
+    if (!k || !isFinite(t) || !isFinite(c)) return;
+    const s = out[k] = out[k] || { maxT: 0, bestM: false, bestC: -1 };
+    if (t > s.maxT) s.maxT = t;
+    if ((m && !s.bestM) || (m === s.bestM && c > s.bestC)) { s.bestM = m; s.bestC = c; }
+  });
+  return out;
+}
+
+// POST action=teachermatchpull {secret} -> {success, items:[{planKey, activity, entries:[{timeMs, desc}]}]}: plans whose chapter has CW notes newer than the
+// last check (at most 400 plans, 20 oldest entries each). Fetches the feed itself and resolves teacher names with the index's own resolver
+// (tchRosterByCampus_ / tchResolve_). Run outside the lock: it reads ~15 MB.
+function tchMatchPull_(body) {
+  if (!tchSecretOk_(body && body.secret)) return { success: false, error: 'Not authorized' };
+  const secret = tchPushSecret_(), plans = tchAllPlanRows_();
+  if (!plans.length) return { success: true, items: [] };
+  const sums = tchMatchSums_(), minConf = tchConfig_(tchLoadCfg_()).matchMinConfidence, want = {}, all = [];
+  plans.forEach(function (p) {
+    const idx = tchCampusIdx_(p.campus), pk = tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm), s = sums[pk] || { maxT: 0, bestM: false, bestC: -1 };
+    if (idx < 0 || (s.bestM && s.bestC >= minConf)) return; // already matched: nothing more to ask
+    const w = { planKey: pk, activity: p.activity, code: p.code, idx: idx, maxT: s.maxT, entries: [] }, k = idx + '|' + p.cls + '|' + tchSubjKey_(p.subj) + '|' + tchChKey_(p.chapterNorm);
+    (want[k] = want[k] || []).push(w);
+    all.push(w);
+  });
+  const res = UrlFetchApp.fetchAll([{ url: TCH_FEED_URL, muteHttpExceptions: true }, { url: TCH_ROSTER_URL + '?action=employees', muteHttpExceptions: true }]);
+  const parse = function (r) { try { return r && r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null; } catch (err) { return null; } };
+  const feed = parse(res[0]), emp = parse(res[1]);
+  if (!feed || !Array.isArray(feed.cwRecords) || !feed.cwRecords.length || !emp || !emp.success || !Array.isArray(emp.employees)) return { success: false, error: 'sources unreadable' };
+  const byCampus = tchRosterByCampus_(emp.employees), chCache = {}, nameCache = {};
+  feed.cwRecords.forEach(function (r) {
+    const rawCh = String(r.cwChapter || '');
+    const ch = tchHas_(chCache, rawCh) ? chCache[rawCh] : (chCache[rawCh] = tchChKey_(rawCh));
+    const list = ch && want[Number(r.lmsIdx) + '|' + r.classMapped + '|' + tchSubjKey_(r.subject) + '|' + ch];
+    const desc = String(r.cwDesc || '').trim(), t = Number(r.timeMs);
+    if (!list || !desc || !isFinite(t)) return;
+    const nk = Number(r.lmsIdx) + '|' + r.teacher;
+    if (!tchHas_(nameCache, nk)) nameCache[nk] = tchResolve_(r.teacher, byCampus, Number(r.lmsIdx));
+    list.forEach(function (w) { if (nameCache[nk] === w.code && t > w.maxT) w.entries.push({ timeMs: t, desc: desc.slice(0, TCH_PULL_DESC_MAX) }); });
+  });
+  const items = all.filter(function (w) { return w.entries.length; }).slice(0, TCH_PULL_MAX_ITEMS).map(function (w) {
+    return { planKey: w.planKey, activity: w.activity, entries: w.entries.sort(function (a, b) { return a.timeMs - b.timeMs; }).slice(0, TCH_PULL_MAX_ENTRIES) };
+  });
+  return { success: true, items: items };
+}
+
+// POST action=teachermatchpush {secret, results:[{planKey, timeMs, matched, confidence, reason}]}: the whole batch is rejected, nothing written,
+// for an unknown planKey, a confidence outside 0-1, a malformed row or more than 2000 rows.
+function tchMatchPush_(body) {
+  if (!tchSecretOk_(body && body.secret)) return { success: false, error: 'Not authorized' };
+  const results = body.results;
+  if (!Array.isArray(results) || results.length > TCH_PUSH_MAX_ROWS) return { success: false, error: 'Expected at most ' + TCH_PUSH_MAX_ROWS + ' results' };
+  if (!results.length) return { success: true, written: 0 };
+  const secret = tchPushSecret_(), codeOf = {};
+  tchAllPlanRows_().forEach(function (p) { codeOf[tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm)] = p.code; });
+  const now = gameNow_().toISOString(), rows = [], codes = {};
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i] || {}, t = Number(r.timeMs), c = r.confidence;
+    if (!tchHas_(codeOf, String(r.planKey)) || !(t > 0) || !isFinite(t) || typeof r.matched !== 'boolean' || typeof c !== 'number' || !(c >= 0 && c <= 1)) return { success: false, error: 'Result ' + (i + 1) + ' rejected' };
+    codes[codeOf[r.planKey]] = true;
+    rows.push([r.planKey, String(Math.floor(t)), String(r.matched), String(c), String(r.reason || '').replace(/^[=+\-@\s]+/, '').slice(0, TCH_REASON_MAX), now]); // a note never starts a formula
+  }
+  const ss = gameBook_();
+  gameWithLock_(function () {
+    let sh = ss.getSheetByName(TCH_MATCH_TAB);
+    if (!sh) { sh = ss.insertSheet(TCH_MATCH_TAB); gameAppendText_(sh, [TCH_MATCH_HEADER]); }
+    gameAppendText_(sh, rows);
+    Object.keys(codes).forEach(function (code) { try { CacheService.getScriptCache().remove('tch_matches_' + code); } catch (err) { /* expires in 10 min */ } });
+  });
+  return { success: true, written: rows.length };
+}
+
+// {"cls|subj|chNorm": {matched, confidence} | {pending:true}} for the quests: a plan that matched keeps its best match; else {pending:true} while the
+// chapter's newest entry (the cached TeacherState episode) is newer than the last one checked; else the best non-match; a plan with no episode and
+// no check has no key. Safe inside gameWithLock_: sheet reads and cache only.
+function tchMatchesFor_(code) {
+  if (!code) return {};
+  try {
+    const secret = tchPushSecret_();
+    if (!secret) return {};
+    const cache = CacheService.getScriptCache(), mkey = 'tch_matches_' + code;
+    let sums = tchReadJson_(cache, mkey);
+    if (!sums) {
+      const all = tchMatchSums_();
+      sums = {};
+      tchPlanRows_(code).forEach(function (p) { const k = tchPlanKey_(secret, code, p.cls, p.subj, p.chapterNorm); if (tchHas_(all, k)) sums[p.cls + '|' + p.subj + '|' + p.chapterNorm] = all[k]; });
+      try { cache.put(mkey, JSON.stringify(sums), TCH_MATCH_TTL_S); } catch (err) { /* uncached */ }
+    }
+    const state = tchReadJson_(cache, 'tch_' + code), eps = (state && state.episodes) || [], out = {};
+    Object.keys(tchPlansFor_(code)).concat(Object.keys(sums)).forEach(function (key) {
+      if (tchHas_(out, key)) return;
+      const s = tchHas_(sums, key) ? sums[key] : null, p = key.split('|');
+      const last = eps.reduce(function (n, e) { return e.cls === p[0] && e.subj === p[1] && e.ch === p[2] && e.last > n ? e.last : n; }, 0);
+      if (s && s.bestM) out[key] = { matched: true, confidence: s.bestC };
+      else if (last > (s ? s.maxT : 0)) out[key] = { pending: true };
+      else if (s) out[key] = { matched: false, confidence: s.bestC };
+    });
+    return out;
+  } catch (err) { return {}; }
+}
 
 // ── planned activities (Task 6) ──────────────────────────────────────
 // Tab "Teacher Planned Activities", created on the first save: one row per (Code, Class, Subject, ChapterNorm). Ruling 22: it holds the teacher's own
