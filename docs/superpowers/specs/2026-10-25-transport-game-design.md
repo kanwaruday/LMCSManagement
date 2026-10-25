@@ -161,10 +161,9 @@ Panoramax has nothing there, and KartaView has one 2017 drive. Google Street Vie
 corridors) is not open source.
 
 **Capture: our buses are the street-view cars** (Claude's call).
-- A phone in a simple dashboard mount takes a photo every few metres, with GPS, on **one run of each route**.
-  This uses an open-source interval-capture app, or the Panoramax-compatible capture workflow.
-- Run it **outside school hours**, or on the empty leg, so no children are in the frames. A Coordinator rides
-  along and taps "stop here" at each stop, which tags the frames nearest the stop.
+- A Coordinator rides one run of each route with a phone in a dashboard mount, using the school's own
+  **capture portal** (Loop 6), which takes the frames and tags the stops.
+- Run it **outside school hours**, or on the empty leg, so no children are in the frames.
 - Refresh once or twice a year, or when a route changes.
 - Faces and number plates are blurred before anything is shown, with an open-source blurring step on the Mac
   (Panoramax ships one, called "SGBlur").
@@ -194,19 +193,74 @@ There is **no satellite layer**: no free, open, high-resolution imagery of India
 **"Name this stop"** (GeoGuessr) is an onboarding quiz for new drivers and helpers. Shown a captured frame,
 they pick the stop. It is never scored for speed.
 
+### Loop 6: The capture portal: a Coordinator rides the bus (Phase 1, built first)
+
+**Uday (2026-10-25):** we need our own uploading portal, so he can send a Coordinator with the bus to collect
+the data. It is a **phone page in the portal**, `coordinator/transport/capture.html`, signed in like the rest,
+for Coordinators. Everything below is Claude's call.
+
+**Two kinds of run:**
+- **Photo run** (outside school hours, or on an empty leg, so no children are photographed):
+  - The phone sits in a dashboard mount, and the page keeps the screen awake.
+  - It takes a frame from the camera **every ~30 m**, from GPS distance, not time, so a stopped bus doesn't
+    pile up frames.
+  - Each frame is stamped with lat/lng, heading, accuracy, time, bus and route.
+  - A big **STOP HERE** button: the Coordinator taps it at each stop, picks the stop name (from the known
+    list, or types a new one) and takes one deliberate **stop photo**. That becomes the stop's photo, still
+    to be verified by a second person.
+- **Count run** (a normal school run, **no camera at all**):
+  - The same STOP HERE button, plus a **+/− boarding counter** for the children who get on or off at each
+    stop.
+  - This gives real children-per-stop numbers and real stop positions and times, the input Loop 3 needs.
+  - It records counts only, never names.
+
+**Works in the hills:**
+- Everything is saved on the phone first (IndexedDB) and **uploaded later**, on school Wi-Fi or when the
+  signal is good.
+- An upload page shows "312 of 540 frames sent", resumes after any break, and never loses a run if the
+  browser closes.
+- Frames are resized to ~1280 px JPEG (~150 KB), so about 25 km is roughly 800 frames and 120 MB.
+
+**Where uploads go:**
+- They use the same path as today's document uploads: `transport-uploads.gs` in the Roster project, which has
+  the Drive access the Coordinator project lacks. That puts them in a private Drive folder per bus and run.
+- The run's stop tags and counts go to a `Capture Runs` tab in the transport workbook.
+
+**Processing on the Mac** (the analysis brain, daily, like the GPS job):
+1. Pull the new frames.
+2. Blur faces and number plates with an open-source detector before anything is shown.
+3. Build each stop's drive-up strip.
+4. Snap stop tags to the road.
+5. Write results back for the stop cards.
+
+Unblurred originals stay private and are deleted after blurring is checked.
+
+**Stops master gets real data early:** each tagged stop has a name, position and time, and a count run adds
+children. So capture runs seed the Stops master (call 1 below) with checked, on-the-ground data, ahead of the
+staff workbook.
+
+**Game feel, kept useful:** the run shows as a **mission** ("Capture Route 18: 0 of 14 stops tagged"), with a
+progress bar and a route line filling in on the map. A finished, verified route turns from "fog" to
+"mapped". No points for speed, and the counter never rewards bigger numbers.
+
+**Privacy:**
+- Photo runs only happen outside school hours, and the page reminds the Coordinator before starting.
+- Count runs never use the camera.
+- Every frame is blurred before anyone sees it, and images are never public.
+
 ## Roles
 
 | Role | Sees | Does |
 |---|---|---|
 | **Fee Clerk** (from Phase 2; `office/buses.html` is unchanged in Phase 1) | Their campus's buses on the map. Up to 3 mission cards (fuel bills, documents), each one sentence and two buttons. Heat ticks turn "banked" when they upload a document. No money, no rankings | Clear their missions. Upload documents and photos |
-| **Coordinator** | Their district HQ (LMS 1–3 or LMS 4–6) with a campus picker: map, HUD, missions with evidence, heat, bottlenecks, ghost lap, street view, the route editor and allocation (their district only), and per-campus season goals and streaks. Per-bus money for their campuses (Uday, 2026-10-25) | Complete missions with outcomes. Draw proposals. Verify stop photos |
+| **Coordinator** (also rides capture runs) | Their district HQ (LMS 1–3 or LMS 4–6) with a campus picker: map, HUD, missions with evidence, heat, bottlenecks, ghost lap, street view, the route editor and allocation (their district only), and per-campus season goals and streaks. Per-bus money for their campuses (Uday, 2026-10-25) | Complete missions with outcomes. Draw proposals. Verify stop photos |
 | **Owner (Uday)** | All campuses: war room (proposals), garage across the fleet, shipments, season standings shown as each campus against its own last term, plus the role switcher | Approve or reject proposals. Ship reserves. Set season goals |
 
 ## Phasing (one thing at a time)
 
 | Phase | Ships | Depends on |
 |---|---|---|
-| **1. Game shell (read-only) + missions + street view** | Game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). One capture run per route (staff, outside school hours) |
+| **1. Capture portal first, then the game shell (read-only) + missions + street view** | **1a:** `capture.html` (photo runs + count runs, offline queue, upload) and the Mac's blur and strip processing. **1b:** game-styled map world, HUD, minimap with pings, mission cards (re-skinned follow-ups, same backend actions), heat per bus, bottleneck flags, ghost lap, the existing three views inside the shell, stop photos + drive-up strip from our own captured imagery, open base map | Transport views shipped (`transport-visual-directions`). For 1b's stop views: one photo run per route (Coordinator, outside school hours) |
 | **2. Route editor sandbox** | Purple-line drawing, trade-off preview, overflow rings, trip highlight, proposals and the Owner's war room | Phase 1. Stop names (staff workbook or GPS). OSRM running on the Mac |
 | **3. Student-to-stop allocation** | Counts per stop, unassigned counter, signed-in drag between stops, allocation proposals | ERP per-student transport for each campus. Staff stop workbook imported. Privacy advice (DPDP) |
 | **4. Garage and progression** | Richer garage, reliability, seasons, team goals, streaks with freeze, shipments | Phase 1. Service entries (v2) for reliability |
@@ -302,10 +356,12 @@ Each phase is planned (superpowers:writing-plans), built on a branch, verified (
 1. **Maps key: no longer needed.** Uday asked for a 100% open-source stack (2026-10-25), so there's no
    Google Maps key and no Google Cloud steps.
 2. **Street-level capture runs.** Street View coverage was patchy, so the alternative is to capture our own.
-   - One run per route with a phone in a dashboard mount, outside school hours.
-   - A Coordinator rides along to tag the stops.
-   - Uday decides who does this and when, and buys about 6 phone mounts (one per campus). The Phase 1 plan
-     includes a one-page capture guide.
+   - **Uday (2026-10-25):** he will send a Coordinator with the bus, using the school's own capture portal
+     (Loop 6).
+   - Still his to arrange: which Coordinator rides which route and when (one photo run outside school
+     hours, plus one count run on a normal school run per route), and about 6 phone dashboard mounts, one
+     per campus.
+   - The Phase 1 plan includes a one-page "how to do a capture run" guide.
 3. **DPDP advice before Phase 3.** **Uday: he'll get it when Phase 3 comes.** The design already keeps names
    out of the game layer and the public repo.
 
