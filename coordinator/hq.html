@@ -208,7 +208,7 @@
   </footer>
 
   <script src="../assets/auth.js?v=ffa8751c"></script>
-  <script src="./shared.js?v=373de0b1"></script>
+  <script src="./shared.js?v=253ffc1c"></script>
   <script src="./hq-logic.js?v=ae9334af"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
@@ -339,7 +339,7 @@
       out.push('<li>Waiting since ' + H.dayLabel(isoDay(since)) + '.<span class="src">From the Approvals sheet</span></li>');
       if (dec.category === 'Financial / Purchase') {
         const s = SPEND[dec.campus];
-        out.push('<li>' + (!s ? '<span class="wait">Reading the day book&hellip;</span>' : esc(H.spendSummary(s.entries, s.error, dec.amount, { campus: dec.campus, from: s.from }))) + '<span class="src">From the Office day book</span></li>');
+        out.push('<li><span id="dv-spend"' + (s ? '>' + esc(spendText(dec)) : ' class="wait">Reading the day book&hellip;') + '</span><span class="src">From the Office day book</span></li>');
       }
       if (!p) {
         out.push('<li>No preview for this category. Recommend from the request itself, with a reason.</li>');
@@ -370,6 +370,7 @@
       box.innerHTML = decisionHtml(dec);
     }
 
+    function spendText(dec) { const s = SPEND[dec.campus]; return H.spendSummary(s.entries, s.error, dec.amount, { campus: dec.campus, from: s.from }); }
     async function loadSpend(campus) {
       if (SPEND[campus]) return;
       const range = H.daybookRange(today()), ctl = typeof AbortController === 'function' ? new AbortController() : null;
@@ -381,7 +382,9 @@
       } catch (e) { res = { success: false, error: e && e.name === 'AbortError' ? 'timeout' : 'unreadable' }; }
       clearTimeout(timer);
       SPEND[campus] = res && res.success ? { entries: res.entries || [], error: null, from: range.from } : { entries: null, error: (res && res.error) || 'unreadable', from: range.from };
-      if (OPEN && DECISIONS[OPEN] && DECISIONS[OPEN].campus === campus) paintDecision();
+      // the answer can land seconds after the form is in use: fill in the spend line only, never repaint the form under the Coordinator
+      const line = $('dv-spend'), dec = OPEN && DECISIONS[OPEN];
+      if (line && dec && dec.campus === campus) { line.textContent = spendText(dec); line.className = ''; }
     }
 
     async function openDecision(id, fromBtn) {

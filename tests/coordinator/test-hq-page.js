@@ -61,5 +61,22 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   ctx.fetch = () => Promise.resolve({ json: () => Promise.resolve({ success: false, error: 'Database busy' }) });
   await ctx.load();
   assert.ok(/Database busy/.test(els.board.innerHTML) && /Retry/.test(els.board.innerHTML), 'other errors keep Retry');
+
+  // a late day-book answer fills in the spend line only: the form the Coordinator is typing in is never repainted
+  vm.runInContext("SESSION = { idToken: 'tok', email: 'c@lms.test' }; OPEN = 'APR-1'; DECISIONS['APR-1'] = " + JSON.stringify(dec), ctx);
+  const preview = ctx.previewHtml(dec);
+  assert.ok(/id="dv-spend"[^>]*>Reading the day book/.test(preview), 'spend line has its own id while the day book loads');
+  els.decision.innerHTML = '<form id="rec-form">(the form as the Coordinator left it)</form>';
+  const reason = el('rec-reason'), radio = { value: 'Reject', checked: true };
+  reason.value = 'Quotation is twice the day-book rate';
+  let answer;
+  ctx.fetch = (url) => { assert.ok(/action=daybook\.list/.test(url), 'Office day book'); return new Promise((ok) => { answer = ok; }); };
+  const spend = ctx.loadSpend('LMS4');
+  answer({ json: () => Promise.resolve({ success: true, entries: [{ id: 'e1', direction: 'OUT', amount_paise: 4820000 }] }) });
+  await spend;
+  assert.strictEqual(els.decision.innerHTML, '<form id="rec-form">(the form as the Coordinator left it)</form>', 'decision panel not repainted');
+  assert.strictEqual(reason.value, 'Quotation is twice the day-book rate', 'reason kept');
+  assert.ok(radio.checked && radio.value === 'Reject', 'choice kept');
+  assert.ok(/^This request: ₹12,500\. LMS 4 spent ₹48,200 from the day book since \d+ \w{3}\.$/.test(els['dv-spend'].textContent), 'spend line filled in place: ' + els['dv-spend'].textContent);
   console.log('hq page: ok');
 })().catch((e) => { console.error(e); process.exit(1); });
