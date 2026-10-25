@@ -9,6 +9,7 @@ vm.runInContext(inline, vm.createContext({
   document: { getElementById: el },
   LMCS: { getSession: () => session, canViewOwnerPortal: () => true, signOut() {} },
   LMCSAppts: { mount() {} },
+  LMCSGame: { mount() {} },
 }));
 const strip = els['welcome-strip'].innerHTML;
 assert.ok(!/<img/.test(strip) && /&lt;img src=x onerror=alert\(1\)&gt;/.test(strip), 'name escaped');
