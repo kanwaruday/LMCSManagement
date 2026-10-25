@@ -80,25 +80,57 @@ function officeBackupRetention_(names, now) {
   return del;
 }
 
-// Trashes the driver's fuel-fill videos 90 days after upload. The Coordinator's fill check closes within days, but its state
-// lives in another project this one cannot see, so the rule is the age of the upload (Files.created_at), which bounds it.
-// Only Files rows of category fuel_video are ever looked at, and a Drive file that any newer or non-video row still points
-// at (same bytes uploaded again) is kept. A file that cannot be trashed does not stop the others; the run then throws once.
+// Trashes the driver's fuel-fill videos 90 days after the later of the fill's date and the video's upload (a video attached late
+// counts from the attach: its link row has its own created_at). Exception: a video whose fill has a flagged row in the transport
+// workbook's "Fuel Checks" tab and no clerk answer in "Fuel Responses" is kept, because it is the evidence for the open check.
+// Only Files rows of category fuel_video are ever looked at, and a Drive file that any other row still wants (a newer row, a
+// non-video row, a held fill) is kept. If the check state cannot be read, nothing is pruned and the run throws (the nightly mail
+// names it). A file that cannot be trashed does not stop the others; the run then throws once.
 function officeFuelVideoPrune_(now) {
-  const props = PropertiesService.getScriptProperties(), cutoff = new Date(now.getTime() - 90 * 86400000).toISOString(), rows = [];
+  const props = PropertiesService.getScriptProperties(), cutoff = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+  const files = [], fillDate = {}, entryOfVideo = {}; // Files rows; entry id -> entry date; Files id of a video saved with its entry -> entry id
   officeBackupKeys_().filter(function (k) { return /^OFFICE_SS_/.test(k); }).forEach(function (k) {
-    try { officeRows_(SpreadsheetApp.openById(props.getProperty(k)), 'Files').forEach(function (r) { rows.push(r); }); }
-    catch (err) { if (!/^NO_TAB/.test(String(err && err.message))) throw err; } // a book without a Files tab has no videos
+    const ss = SpreadsheetApp.openById(props.getProperty(k));
+    const read = function (tab) { try { return officeRows_(ss, tab); } catch (err) { if (!/^NO_TAB/.test(String(err && err.message))) throw err; return []; } }; // a book without the tab has none
+    read('Files').forEach(function (r) { files.push(r); });
+    read('DayBook').forEach(function (r) { fillDate[r.id] = r.entry_date; if (r.video_file_id) entryOfVideo[r.video_file_id] = r.id; });
   });
-  const wanted = {}, done = {};
-  rows.forEach(function (r) { if (r.category !== 'fuel_video' || !r.created_at || r.created_at >= cutoff) wanted[r.drive_id] = true; });
-  const failed = [];
-  rows.forEach(function (r) {
-    if (r.category !== 'fuel_video' || r.created_at >= cutoff || wanted[r.drive_id] || done[r.drive_id]) return;
-    done[r.drive_id] = true;
-    try { const f = DriveApp.getFileById(r.drive_id); if (!f.isTrashed()) f.setTrashed(true); } catch (err) { failed.push(r.id + ': ' + String(err && err.message || err)); }
+  const entryOf = function (f) { return f.belongs_to || entryOfVideo[f.id] || ''; };
+  const wanted = {}, expired = [];
+  files.forEach(function (f) {
+    if (f.category !== 'fuel_video' || !f.created_at) { wanted[f.drive_id] = true; return; }
+    const day = f.created_at.slice(0, 10), fill = String(fillDate[entryOf(f)] || '');
+    if ((fill > day ? fill : day) >= cutoff) wanted[f.drive_id] = true; else expired.push(f);
+  });
+  const todo = expired.filter(function (f) { return !wanted[f.drive_id]; });
+  if (!todo.length) return;
+  const held = officeFuelChecksOpen_();
+  todo.forEach(function (f) { if (held[entryOf(f)]) wanted[f.drive_id] = true; });
+  const done = {}, failed = [];
+  todo.forEach(function (f) {
+    if (wanted[f.drive_id] || done[f.drive_id]) return;
+    done[f.drive_id] = true;
+    try { const d = DriveApp.getFileById(f.drive_id); if (!d.isTrashed()) d.setTrashed(true); } catch (err) { failed.push(f.id + ': ' + String(err && err.message || err)); }
   });
   if (failed.length) throw new Error(failed.length + ' video(s) not trashed: ' + failed.join('; '));
+}
+
+// {fill id: true} for the fuel checks that are flagged and not yet answered by the Fee Clerk. These tabs belong to the Coordinator
+// project (GPS_TAB_CHECKS, GPS_TAB_ANSWERS) in the same workbook as the fuel mirror. Throws if the checks cannot be read, so the
+// caller prunes nothing; a missing "Fuel Responses" tab only means no answers yet.
+function officeFuelChecksOpen_() {
+  const ss = SpreadsheetApp.openById(OFFICE_FUEL_MIRROR_SS);
+  const table = function (name, required) {
+    const sh = ss.getSheetByName(name);
+    if (!sh) { if (required) throw new Error('"' + name + '" tab is missing, no video pruned'); return []; }
+    const v = sh.getDataRange().getValues(), head = (v[0] || []).map(String);
+    if (head.indexOf('id') === -1 || (required && head.indexOf('flag') === -1)) throw new Error('"' + name + '" tab has no id/flag columns, no video pruned');
+    return v.slice(1).map(function (r) { const o = {}; head.forEach(function (h, i) { o[h] = r[i]; }); return o; });
+  };
+  const answered = {}, open = {};
+  table('Fuel Responses', false).forEach(function (r) { answered[String(r.id)] = true; });
+  table('Fuel Checks', true).forEach(function (r) { if (String(r.flag) === 'yes' && !answered[String(r.id)]) open[String(r.id)] = true; });
+  return open;
 }
 
 // Run once by Uday: one daily 02:00 trigger for officeBackupNightly (other triggers untouched).

@@ -179,10 +179,10 @@ function gpsFollowUps_(facts) {
         'Ask the driver to explain' + (c.excessRs ? ' about ' + c.excessL + ' extra litres (Rs ' + c.excessRs + ')' : '') + '. If it cannot be explained, recover the cost. Write the outcome when you mark this done.' });
   });
   // every fill in the Fuel Fills mirror (checked against the GPS or not: a bus's first fill, a top-up, a bus without a tracker) with no
-  // video a day after it: get it from the driver. Closes itself when the video is attached or the fill is gone. 'no' only: a mirror
+  // video 2 days after its date: get it from the driver. Dates carry no time of day, so a fill dated yesterday may be under 24 hours old. Closes itself when the video is attached or the fill is gone. 'no' only: a mirror
   // row written before the hasVideo column existed says nothing.
   (facts.fills || []).forEach(function (f) {
-    if (f.hasVideo !== 'no' || f.date < GPS.proofFrom || f.date > gpsAddDays_(t, -1)) return;
+    if (f.hasVideo !== 'no' || f.date < GPS.proofFrom || f.date > gpsAddDays_(t, -2)) return;
     add({ taskId: 'fuel_proof|' + f.id, domain: 'fuel_proof', campus: gpsCampusId_(f.campus), severity: 'medium', auto: true,
       title: f.reg + ', fuel on ' + gpsDay_(f.date, t) + ': no video of the fill', detail: 'Get the fill video from the driver and attach it to the fuel entry.' });
   });

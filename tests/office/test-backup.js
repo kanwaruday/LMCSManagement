@@ -104,18 +104,23 @@ module.exports = function run(t) {
     assert.equal(h.mail.sent.length, 0);
   });
 
-  // ── fuel fill videos: kept 90 days (the Coordinator's fill check closes within days; its state is not visible to this project), then trashed ──
+  // ── fuel fill videos: trashed 90 days after the later of the fill date and the upload, unless the fill's check is flagged and no clerk has answered ──
   const mp4 = (tag) => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.from(tag)]).toString('base64');
   const withFiles = () => {
     const h = boot(); h.ctx.console = { error() {} };
     h.addBook('LMS1', '2026-27'); h.addBook('LMS2', '2026-27');
+    // the transport workbook the Coordinator writes its Fuel Checks (id, flag) and Fuel Responses (id, answer) tabs to; the mirror's workbook
+    const mirror = h.addBookById(h.run('OFFICE_FUEL_MIRROR_SS')), checks = mirror.insertSheet('Fuel Checks');
+    checks.values.push(['id', 'campus', 'date', 'reg', 'flag']);
+    const flag = (id, f) => checks.values.push([id, 'LMS1', '2026-06-20', 'HP1', f || 'yes']);
+    const answer = (id) => { const sh = mirror.getSheetByName('Fuel Responses') || mirror.insertSheet('Fuel Responses'); if (!sh.values.length) sh.values.push(['id', 'answer', 'by', 'at']); sh.values.push([id, 'matches', 'k@x.org', '2026-10-01T00:00:00Z']); };
     const up = (day, id, o) => { h.setNow(new Date(day + 'T10:00:00Z')); const r = h.call('file.upload', Object.assign({ id, campus: 'LMS1', category: 'fuel_video', belongs_to: '', name: id + '.mp4', mime: 'video/mp4', base64: mp4(id) }, o), 'clerk1-token'); assert.equal(r.success, true, id + ' ' + r.error); };
     up('2026-07-01', 'old'); up('2026-07-01', 'oldbill', { category: 'bill', mime: 'application/pdf', base64: Buffer.from('%PDF-old').toString('base64') });
     up('2026-07-02', 'shared'); up('2026-10-01', 'shared2', { base64: mp4('shared') }); // same bytes again, recently: one Drive file, still wanted
     up('2026-09-20', 'new'); up('2026-07-01', 'sameDay');
     h.setNow(new Date('2026-10-21T21:00:00Z'));
     const fileOf = (id) => h.drive.files[h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files').find((r) => r.id === id).drive_id];
-    return { h, fileOf };
+    return { h, fileOf, mirror, flag, answer, up };
   };
 
   t.test('fuel videos older than 90 days are trashed; bills, newer videos and a video still shared by a newer row are not', () => {
@@ -134,6 +139,70 @@ module.exports = function run(t) {
     assert.equal(!!fileOf('old').trashed, false);
     h.ctx.officeFuelVideoPrune_(new Date('2026-09-30T00:00:00Z')); // 91 days
     assert.equal(!!fileOf('old').trashed, true);
+  });
+
+  // A fill with its video, saved on `day` (the video uploaded the same day unless `uploaded` says otherwise).
+  const fillWithVideo = (w, entry, day, o) => {
+    const ss = w.h.ctx.officeOpen_('LMS1', '2026-27'), vid = 'v-' + entry;
+    w.up((o && o.uploaded) || day, vid);
+    w.h.ctx.officeWriteRow_(ss, 'DayBook', { id: entry, campus: 'LMS1', entry_date: day, category: 'fuel', video_file_id: vid });
+    return vid;
+  };
+  const NOW = new Date('2026-10-21T21:00:00Z');
+
+  t.test('a flagged fill whose check no clerk has answered keeps its video (day 120); once answered it goes after 90 days', () => {
+    const w = withFiles(), vid = fillWithVideo(w, 'E1', '2026-06-20'); // 123 days before NOW
+    w.flag('E1');
+    w.h.ctx.officeFuelVideoPrune_(NOW);
+    assert.equal(!!w.fileOf(vid).trashed, false, 'the evidence of an open check stays');
+    w.answer('E1');
+    w.h.ctx.officeFuelVideoPrune_(NOW);
+    assert.equal(!!w.fileOf(vid).trashed, true, 'answered: 90 days from the fill');
+  });
+
+  t.test('an unflagged fill and a fill with no check row go 90 days after the fill; a flag on another fill changes nothing', () => {
+    const w = withFiles(), a = fillWithVideo(w, 'E1', '2026-06-20'), b = fillWithVideo(w, 'E2', '2026-06-20'), c = fillWithVideo(w, 'E3', '2026-06-20');
+    w.flag('E1', 'no'); w.flag('E3'); // E2 has no check at all
+    w.h.ctx.officeFuelVideoPrune_(NOW);
+    assert.deepEqual([a, b, c].map((v) => !!w.fileOf(v).trashed), [true, true, false]);
+  });
+
+  t.test('the 90 days run from the later of the fill date and the upload date, and a late-attached video counts from the attach', () => {
+    const w = withFiles();
+    const back = fillWithVideo(w, 'E4', '2026-08-01', { uploaded: '2026-07-01' }); // an entry dated after its upload
+    const ss = w.h.ctx.officeOpen_('LMS1', '2026-27');
+    w.up('2026-06-01', 'late'); // saved without a video, attached on 15 August
+    w.h.ctx.officeWriteRow_(ss, 'DayBook', { id: 'E5', campus: 'LMS1', entry_date: '2026-06-01', category: 'fuel' });
+    const drive = w.h.ctx.officeRows_(ss, 'Files').find((r) => r.id === 'late').drive_id;
+    w.h.ctx.officeWriteRow_(ss, 'Files', { id: 'lk', campus: 'LMS1', drive_id: drive, name: 'late.mp4', category: 'fuel_video', belongs_to: 'E5', created_at: '2026-08-15T10:00:00.000Z' });
+    w.h.ctx.officeFuelVideoPrune_(new Date('2026-10-20T00:00:00Z')); // 80 days after 1 Aug; 66 days after the attach; 141 days after the upload
+    assert.equal(!!w.fileOf(back).trashed, false); assert.equal(!!w.fileOf('late').trashed, false, 'counted from the attach');
+    w.h.ctx.officeFuelVideoPrune_(new Date('2026-10-31T00:00:00Z')); // 91 days after 1 Aug; 77 days after the attach
+    assert.equal(!!w.fileOf(back).trashed, true); assert.equal(!!w.fileOf('late').trashed, false);
+    w.h.ctx.officeFuelVideoPrune_(new Date('2026-11-14T00:00:00Z')); // 91 days after the attach
+    assert.equal(!!w.fileOf('late').trashed, true);
+  });
+
+  t.test('fail safe: if the Fuel Checks tab is missing or the workbook unreadable, nothing is pruned and the run reports it', () => {
+    const w = withFiles(), vid = fillWithVideo(w, 'E1', '2026-06-20');
+    const book = w.h.books[w.h.run('OFFICE_FUEL_MIRROR_SS')], real = book.getSheetByName;
+    book.getSheetByName = (n) => (n === 'Fuel Checks' ? null : real(n));
+    assert.throws(() => w.h.ctx.officeFuelVideoPrune_(NOW), /Fuel Checks/);
+    assert.equal(Object.values(w.h.drive.files).filter((f) => f.trashed).length, 0);
+    book.getSheetByName = real;
+    delete w.h.books[w.h.run('OFFICE_FUEL_MIRROR_SS')]; // the workbook cannot be opened at all
+    assert.throws(() => w.h.ctx.officeFuelVideoPrune_(NOW));
+    assert.equal(Object.values(w.h.drive.files).filter((f) => f.trashed).length, 0);
+    w.h.setNow(NOW); w.h.props.OFFICE_ALERT_EMAIL = 'uday@example.org'; w.h.ctx.officeBackupNightly();
+    assert.ok(w.h.mail.sent[0].body.includes('fuel_video: '), 'the nightly run mails it');
+    assert.equal(!!w.fileOf(vid).trashed, false);
+  });
+
+  t.test('with nothing old enough to prune the checks tab is not needed', () => {
+    const w = withFiles();
+    delete w.h.books[w.h.run('OFFICE_FUEL_MIRROR_SS')];
+    w.h.ctx.officeFuelVideoPrune_(new Date('2026-07-10T00:00:00Z'));
+    assert.equal(Object.values(w.h.drive.files).filter((f) => f.trashed).length, 0);
   });
 
   t.test('the nightly run prunes videos even when the backup itself fails, and a Drive error is reported by name', () => {
