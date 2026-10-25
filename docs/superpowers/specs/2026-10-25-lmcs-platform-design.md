@@ -165,9 +165,12 @@ before rollout.
   then "Automatic, but all employees"): every **Active** employee in the Employee Master whose `AuthEmail` matches
   their verified Google sign-in gets in, with an automatic role from their department and job. Roles already on the
   allowlist (Principal, Coordinator, Owner, FeeClerk) win over the automatic role. The platform uses the same rule
-  and the same department-to-role mapping as the Apps Script side (being built by the Teacher chat behind
-  `TEACHER_AUTO_SIGNIN`; the mapping is still to be settled with Uday, and the platform takes whatever is decided
-  there, as data in the sync rather than code). `AuthEmail` is therefore one of the synced fields.
+  and the same department-to-role mapping as the Apps Script side (Uday, via the Teacher chat, keyed on the Employee
+  Master department `EmpSalary.Department`): Teaching, AdminPTI and AdminIT → **Teacher**; AdminClerk, Non-Teaching
+  and Transport → **Staff** (new self-service role, no office powers); AdminTM → no automatic role (allowlist only).
+  On Apps Script it sits behind the `STAFF_AUTO_SIGNIN` switch, off until Uday turns it on; on the platform the same
+  rule sits behind a rollout switch. The mapping is stored as data, not code, so a change there is a config edit.
+  `AuthEmail` and department are therefore synced fields.
 - **Linking a person:** allowlist row and Employee Master row are matched by `AuthEmail`. Each sync reports staff with a missing, duplicated or
   non-lms.org.in email, so they can be fixed in the Sheet; until fixed, such a person can't be linked to their
   Employee Code and is left out of HOD routing, Reports To and the 10% safety count. (Claude's call.)
