@@ -43,10 +43,16 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 
 ## Depends on (block the task named)
 
-- **Uday's Q8 (teacher sign-in), answered 2026-10-25: "Automatic from Employee Master".** It grants the Teacher role
-  only, to Active employees in the Teaching department whose EmpPersonal.AuthEmail matches their verified Google
-  sign-in. Each part is off behind a flag. This plan owns the `auth.js` and PDR parts (Task 1); the game director adds
-  the game backend part. Production deploys and switching the flag on are Uday's.
+- **Uday's Q8 (sign-in), answered 2026-10-25:** "Automatic from Employee Master", widened to "Automatic, but all
+  employees".
+  - **Who:** every Active employee whose EmpPersonal.AuthEmail matches their verified Google sign-in.
+  - **Role:** chosen by department; the mapping is Q9, pending.
+  - **Precedence:** existing allowlist rows always win.
+  - **Switch:** each part stays off behind the switch.
+  - **Owners:** this plan owns the `auth.js`, PDR and teacher page parts (Task 1). The game director adds the game
+    backend part (its Task 6b).
+  - Production deploys and switching it on are Uday's.
+- **Uday's Q9 (department → role, what non-teaching staff see), asked 2026-10-25.** It blocks Task 1, Step 3.
 - **The framework Phase 1 code, its Tasks 1–3 at least:** `game.gs` registries, `gameVerifyCaller_`, Mission
   `progress`, and `gamePick_` / days on track. Tasks 3–5 here consume them. Task 8 needs its Tasks 6–10 (the
   `gametoday` response and the mount on `teacher/index.html`).
@@ -84,7 +90,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   countdowns, dates instead of timers, no assumed pronouns. Lines are drafted here; the game director checks the
   voice.
 - **Never touch the live PDR project except in Task 1.** Task 1 changes `main.gs` only behind a feature flag (Script
-  property `TEACHER_AUTO_SIGNIN` = `on`), and nothing deploys without Uday's go-ahead.
+  property `STAFF_AUTO_SIGNIN` = `on`), and nothing deploys without Uday's go-ahead.
 - **Before every commit, run `node tests/verify.mjs`.** After staging HTML, run `node tools/stamp-assets.mjs`.
 
 ## Review Focus
@@ -104,43 +110,61 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 
 ---
 
-### Task 1: Teacher sign-in from the Employee Master (Uday, Q8: "Automatic from Employee Master")
+### Task 1: Staff sign-in from the Employee Master (Uday, Q8: "Automatic, but all employees")
 
 **Files:**
-- Modify: `assets/auth.js`: after the allowlist lookup misses, call `TEACHER_SIGNIN_URL` (the PDR exec URL,
-  `?action=teachersignin&idToken=…`). On `{success:true, role:'Teacher', campusId, employeeCode}`, create the
-  session with that role.
-- Modify: `apps-script/main.gs`: in the caller verification (`main.gs:290-320`), when the email isn't allowlisted
-  and Script property `TEACHER_AUTO_SIGNIN` is `on`, map the email through EmpPersonal `AuthEmail` (reuse
-  `tpAuthEmailToCode_`) to a code that is Active in EmpMaster with `EmpSalary.Department = Teaching`. The caller then
-  becomes `{email, campusId: from the code prefix, roles:['Teacher'], employeeCode}`. Add the GET action
-  `teachersignin`, which returns just that.
-- **Not here: `apps-script/game.gs`.** The game director adds `var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}`
-  itself once Uday says yes to Q8 (agreed 2026-10-25). `gameVerifyCaller_` calls `GAME_CALLER_FALLBACKS.Teacher` only
-  after the token is verified (aud, email_verified) and the allowlist misses. It passes the verified email, and the
-  fallback must return exactly role Teacher, the campus from the Employee Master, `canDecide:false` and
-  `employeeCode`, never another role. `game-teacher.gs` registers it in Task 3.
-- Test: `tests/teacher-portal/test-teacher-signin.js`
+- Modify: `assets/auth.js`.
+  - After the allowlist lookup misses, call `STAFF_SIGNIN_URL` (the PDR exec URL, `?action=staffsignin&idToken=…`).
+  - On `{success:true, role, campusId, employeeCode}` with `role` exactly `Teacher` or `Staff`, create the session
+    with that role.
+  - `canViewTeacherPortal` also admits `Staff`.
+- Modify: `apps-script/main.gs`.
+  - In the caller verification (`main.gs:290-320`), when the email isn't allowlisted and Script property
+    `STAFF_AUTO_SIGNIN` is exactly `on`, map the email through EmpPersonal `AuthEmail` (reuse `tpAuthEmailToCode_`)
+    to a code that is Active in EmpMaster.
+  - Its `EmpSalary.Department` picks the role through `PDR_AUTO_ROLE_BY_DEPARTMENT` (below). No entry means null.
+  - The caller becomes `{email, campusId: from the code prefix, roles:[role], employeeCode}`.
+  - Add the GET action `staffsignin`, which returns just that.
+  - **An allowlist row always wins**, so a Principal, Coordinator, Owner or Fee Clerk keeps their listed roles.
+- Modify: `teacher/index.html`. For a `Staff` session, hide My Score, My CW/HW Patterns and the timetable card. Keep
+  My Requests, My Evaluations and Upcoming Events.
+- **Not here: `apps-script/game.gs`.** The game director's Task 6b adds `GAME_CALLER_FALLBACKS`. When the game
+  project's `STAFF_AUTO_SIGNIN` is `on`, the token is verified and the allowlist misses, it calls
+  `GAME_CALLER_FALLBACKS.Teacher(verifiedEmail)`. That returns `{campusId, employeeCode, role}`, and `game.gs` builds
+  the caller itself: role `Teacher` or `Staff` only, `canDecide:false`, campus LMS1–6 only. `game-teacher.gs`
+  registers the function in Task 3, using the same department map.
+- Test: `tests/teacher-portal/test-staff-signin.js`
 
 **Interfaces:**
-- Produces: `pdrTeacherFromEmployeeMaster_(email) -> {email, campusId, roles:['Teacher'], employeeCode} | null` in
-  `main.gs`; `GAME_CALLER_FALLBACKS` (`var` guard, like `GAME_MODULE_ACTIONS`) in `game.gs`.
-- Prefix → campus: `KUL` LMS1, `KEL` LMS2, `DUN` LMS3, `NCM` LMS4, `SAY` LMS5, `JOG` LMS6. `HES` gives null (no
-  teacher campus).
+- Produces:
+  - `pdrStaffFromEmployeeMaster_(email) -> {email, campusId, roles:[role], employeeCode} | null` in `main.gs`.
+  - `PDR_AUTO_ROLE_BY_DEPARTMENT`. These are the **defaults recommended in Q9, pending Uday's answer**. Replace them
+    with his mapping before Step 3:
+    `{Teaching:'Teacher', AdminPTI:'Teacher', AdminIT:'Teacher', AdminClerk:'Staff', 'Non-Teaching':'Staff', Transport:'Staff'}`.
+    AdminTM has no entry, so it is allowlist only. Department cells are trimmed and invisible characters stripped
+    (the `ss-forms-sync.gs:67-79` cleaning).
+  - `PDR_STAFF_GET_ACTIONS` = `approvalslist, approvaldetail, myssstats, myupcomingevents, myemployeecode`.
+  - `PDR_STAFF_POST_ACTIONS` = `submitapproval` and comment add/delete. Teacher callers keep the existing Teacher
+    lists.
+- Prefix → campus: `KUL` LMS1, `KEL` LMS2, `DUN` LMS3, `NCM` LMS4, `SAY` LMS5, `JOG` LMS6. `HES` gives null, because
+  head-office staff use the allowlist.
 
-- [ ] **Step 1: Write the test** (vm-load `main.gs` and `teacher-portal.gs` with fake SpreadsheetApp tabs EmpPersonal,
-  EmpMaster and EmpSalary). Assert:
-  - an allowlisted Principal is unchanged;
+- [ ] **Step 1: Write the test.** Vm-load `main.gs` and `teacher-portal.gs` with fake SpreadsheetApp tabs
+  EmpPersonal, EmpMaster and EmpSalary. Assert:
+  - an allowlisted Principal is unchanged, even with an Active Teaching code;
   - an unlisted email with an Active Teaching code `NCM/24/04/073` → `{campusId:'LMS4', roles:['Teacher'], employeeCode:'NCM/24/04/073'}`;
-  - an Inactive code → null; Department `AdminClerk` → null; an `HES/…` code → null;
-  - `TEACHER_AUTO_SIGNIN` unset → null;
-  - an email in mixed case matches.
-- [ ] **Step 2: Run** `node tests/teacher-portal/test-teacher-signin.js`. Expected: FAIL (not defined).
-- [ ] **Step 3: Implement** the `main.gs` and `auth.js` changes. A Teacher caller made this way gets exactly the
-  existing `PDR_TEACHER_GET_ACTIONS` and `PDR_TEACHER_POST_ACTIONS`, and nothing else.
-- [ ] **Step 4: Run** the test, then `node tests/verify.mjs`. Expected: PASS. `node tests/teacher-portal/test-view-as.js`
-  still passes.
-- [ ] **Step 5: Commit:** `git commit -m "Teacher sign-in from the Employee Master (flagged off until Uday turns it on)"`.
+  - Department `AdminClerk` → `roles:['Staff']`; Department `AdminTM` → null;
+  - an Inactive code → null; an `HES/…` code → null;
+  - `STAFF_AUTO_SIGNIN` unset, or set to `On ` → null;
+  - an email in mixed case matches;
+  - a `Staff` caller is refused `myrankscore` (a Teacher-only action) and allowed `approvalslist`;
+  - a Department cell with a zero-width space still maps.
+- [ ] **Step 2: Run** `node tests/teacher-portal/test-staff-signin.js`. Expected: FAIL (not defined).
+- [ ] **Step 3: Implement** the `main.gs`, `auth.js` and `teacher/index.html` changes. Stage the page and run
+  `node tools/stamp-assets.mjs`.
+- [ ] **Step 4: Run** the test, then `node tests/verify.mjs`. Expected: PASS, and
+  `node tests/teacher-portal/test-view-as.js` still passes.
+- [ ] **Step 5: Commit:** `git commit -m "Staff sign-in from the Employee Master (all Active employees; flagged off until Uday turns it on)"`.
 
 ### Task 2: Shared episode engine and the baseline
 
@@ -217,11 +241,14 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
     3. writes each TeacherState to `CacheService` as `tch_<code>` (TTL 6 h) and the meta as `tch_meta`.
   - `tchStateFor_(code) -> TeacherState|null`: the cache. On a miss it runs `gameTeacherRefresh()` once under the
     lock.
-  - `GAME_CALLER_FALLBACKS.Teacher = function (verifiedEmail) -> {campusId, employeeCode} | null`: the Task 1 rule
-    (an Active Teaching code from the Employee Master), so the game backend accepts the same teachers as PDR.
-    `game.gs` (the game director's Task 6b) calls it only when the game project's Script property `TEACHER_AUTO_SIGNIN` is exactly `on`, the token is verified
-    and the allowlist misses. `game.gs` itself forces `roles:['Teacher']`, `canDecide:false` and the email, and it
-    rejects any campus outside LMS1–LMS6.
+  - `GAME_CALLER_FALLBACKS.Teacher = function (verifiedEmail) -> {campusId, employeeCode, role} | null`, using the
+    Task 1 rule and the same department map (copied, with a keep-in-sync comment), so the game backend accepts
+    exactly the people PDR does. `role` is `Teacher` or `Staff`.
+    - `game.gs` (the game director's Task 6b) calls it only when the game project's Script property
+      `STAFF_AUTO_SIGNIN` is exactly `on`, the token is verified and the allowlist misses.
+    - `game.gs` itself builds the caller: role `Teacher`/`Staff` only, `canDecide:false`, the verified email, campus
+      LMS1–LMS6 only.
+    - A `Staff` caller gets no teacher missions or quests from this module.
   - The action `teacherindexaudit` (Owner only) returns `meta.unmatched` counts per campus. This is the input for
     T2's Principal setup quest.
 
@@ -233,8 +260,8 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   - `MATH`/`Class 7` labels line up with the feed's;
   - a Tracker-only CWA gives `cwaFrom:'tracker'`;
   - `keepPrevious` when records fall from 1,000 to 600;
-  - the fallback returns `{campusId:'LMS4', employeeCode:'NCM/…'}` for an NCM Teaching code, and null for an
-    inactive, non-Teaching or HES code.
+  - the fallback returns `{campusId:'LMS4', employeeCode:'NCM/…', role:'Teacher'}` for an NCM Teaching code, and
+    `role:'Staff'` for AdminClerk; null for an inactive, AdminTM or HES code.
 - [ ] **Step 2: Run** it. Expected: FAIL.
 - [ ] **Step 3: Implement** `game-teacher.gs` (index part). Add `game-teacher` to `projects.json` `game.files`.
 - [ ] **Step 4: Real-data check.** Run `node tools/teacher-baseline.js --index tools/private/feed-<date>.json` (add
@@ -444,10 +471,10 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 - [ ] **Step 1:** `node apps-script/deploy.mjs game --push --deploy "Teacher T1"` (the game backend; the
   `acad-episodes` and `game-teacher` files go with it). Install the `gameTeacherRefresh` 30-min trigger, and set
   `GAME_PUSH_SECRET` (generate it, store it in `~/.lmcs/game_push_secret`, never print it). The teacher sign-in flags
-  stay off: the Script property `TEACHER_AUTO_SIGNIN` in both the PDR and game projects, which is on only at the exact value
+  stay off: the Script property `STAFF_AUTO_SIGNIN` in both the PDR and game projects, which is on only at the exact value
   `on`.
 - [ ] **Step 2: Uday's part** (one message via the LMCS Master Agent):
-  - go-ahead to deploy PDR with Task 1 and set `TEACHER_AUTO_SIGNIN` = `on`;
+  - go-ahead to deploy PDR with Task 1 and set `STAFF_AUTO_SIGNIN` = `on` (both projects);
   - confirm the exam keywords for the campus calendars;
   - tell teachers how to sign in (a one-line message drafted for him, in his words to approve).
 - [ ] **Step 3: After his go-ahead only:** merge to main, push, run `node tests/verify.mjs --live`, and sign in as a
