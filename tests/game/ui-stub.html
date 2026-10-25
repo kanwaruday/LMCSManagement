@@ -58,12 +58,13 @@
   var base = { success: true, day: today, firstLoadToday: true, role: 'Principal', campus: 'LMS4', speaker: 'buddy', windows: [], quests: [quest],
     daysOnTrack: days, sourcesDown: [], toursSeen: [],
     config: { trackSuitDays: { LMS4: ['Mon', 'Wed', 'Fri'] }, uniform: { winterFrom: '2026-10-26', summerFrom: '2027-05-03', festivals: [] } } };
+  // titles and small lines as game-missions.gs now writes them (R30); one title carries markup that must render as text
   var five = [
-    M('ss_pace', 'LMS4|' + today, 'SS evaluations: 6 still needed this month, 2 today keeps the pace', { why: '0 logged today', core: true, progress: { done: 0, total: 2 } }),
-    M('pdr_issue', 'I-104', 'Issue from the daily reports: Fan <b>not</b> working in Room 3 & the corridor', { go: 'principal/issues.html', core: true, rolledOver: true }),
-    M('info_requested', 'A-77', 'Management asked for more information on: Class 5 nature walk', { go: 'coordinator/followups/index.html' }),
-    M('pdr_issue', 'I-109', 'Issue from the daily reports: Water tank cover, Block B', { go: 'principal/issues.html', why: 'Raised yesterday' }),
-    M('pdr_report', 'LMS4|' + today, 'Daily report for LMS4 on ' + today, { done: true, doneBy: 'principal@example.org' }),
+    M('ss_pace', 'LMS4', 'Submit 2 SS evaluations today', { why: '6 still needed for October', core: true, progress: { done: 0, total: 2 } }),
+    M('pdr_issue', 'I-104', 'Close the issue \u201cFan <b>not</b> working in Room 3 & the corridor\u201d', { go: 'principal/issues.html', why: 'From the daily reports \u00b7 raised yesterday', core: true, rolledOver: true }),
+    M('info_requested', 'A-77', 'Reply to Management about \u201cClass 5 nature walk\u201d', { go: 'coordinator/followups/index.html', why: 'They asked for more information' }),
+    M('pdr_issue', 'I-109', 'Close the issue \u201cWater tank cover, Block B\u201d', { go: 'principal/issues.html', why: 'From the daily reports \u00b7 raised today', core: true }),
+    M('pdr_report', 'LMS4:' + today, "Submit today's daily report", { done: true, doneBy: 'principal@example.org' }),
   ];
   var FIX = {
     five: Object.assign({}, base, { missions: five, next: five[0] }),

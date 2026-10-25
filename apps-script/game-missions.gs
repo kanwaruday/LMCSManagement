@@ -7,7 +7,7 @@
 // `rolledOver` is set by the framework (game-today), `core` comes from cfg.core[role].
 //
 // Apps Script runs every .gs of a project in one global scope in no fixed order, so this file only
-// uses game.gs functions INSIDE function bodies, never at top level.
+// uses game.gs / game-windows.gs functions INSIDE function bodies, never at top level.
 // ═══════════════════════════════════════════════════════════════════
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
@@ -21,19 +21,33 @@ const GAME_PORTAL_APPROVALS = 'coordinator/approvals/index.html';
 const GAME_PORTAL_APPROVALS_READY = false; // flip to true when the Coordinator chat ships coordinator/approvals/
 
 // ── Copy: one plain line per kind, Buddy's voice (work/LMS Mascot Voice Guide.md) ──
-// Warm, short, factual; no guilt, no hype, no pronouns for people. Done missions use the same line.
+// Verb first, warm, short, factual; no speed language, no guilt, no pronouns for people. Campus as "LMS 4", dates as
+// "Mon 26 Oct" (IST). Done missions use the same line. Plain text: the UI never parses it as HTML.
 function gameTitle_(kind, d) {
-  const days = d.days === 1 ? '1 day' : d.days + ' days';
+  const q = function (t) { t = String(t || '').trim(); return t ? ' \u201c' + t + '\u201d' : ''; };
+  const req = (d.campus ? 'the ' + gameCampusLabel_(d.campus) + ' request' : 'the request') + q(d.title);
   switch (kind) {
-    case 'ss_pace': return 'SS evaluations: ' + d.needed + ' still needed this month, ' + d.target + ' today keeps the pace';
-    case 'pdr_report': return 'Daily report for ' + d.campus + ' on ' + d.date;
-    case 'pdr_issue': return 'Issue from the daily reports: ' + d.title;
-    case 'info_requested': return 'Management asked for more information on: ' + d.title;
-    case 'approval_recommend': return 'Recommendation wanted on the request from ' + d.campus + ', waiting ' + days + ': ' + d.title;
-    case 'approval_wait': return 'Approval from ' + d.campus + ' has waited ' + days + ': ' + d.title;
-    case 'hiring_stall': return 'Hiring is waiting: ' + d.title;
+    case 'ss_pace': return 'Submit ' + d.target + ' SS evaluation' + (d.target === 1 ? '' : 's') + ' today';
+    case 'pdr_report': return d.date === d.today ? "Submit today's daily report" : 'Submit the daily report for ' + gameDateLabel_(d.date);
+    case 'pdr_issue': return 'Close the issue' + q(d.title);
+    case 'info_requested': return 'Reply to Management about' + (q(d.title) || ' the request');
+    case 'approval_recommend': return 'Recommend on ' + req;
+    case 'approval_wait': return 'Decide ' + req;
+    case 'hiring_stall': return 'Move hiring forward on' + (q(d.title) || ' a stalled role');
+    case 'followup': return 'Resolve the follow-up' + q(d.title);
     default: return d.title;
   }
+}
+// the small line ("why") pieces the adapters share
+function gameCampusLabel_(c) { return String(c || '').replace(/^LMS\s*(\d)/i, 'LMS $1'); } // 'LMS4' -> 'LMS 4'
+function gameWaiting_(days) { return 'Waiting ' + (days === 1 ? '1 day' : days + ' days'); }
+const GAME_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// an issue's first-raised date, relative to the game day: 'raised today' / 'raised yesterday' / 'raised Mon 26 Oct'
+function gameRaised_(first, dayKey) {
+  const key = gameDateKey_(first);
+  if (!key) return '';
+  const y = gameDayKey_(new Date(Date.parse(dayKey + 'T12:00:00+05:30') - GAME_DAY_MS));
+  return key === dayKey ? 'raised today' : key === y ? 'raised yesterday' : 'raised ' + gameDateLabel_(key);
 }
 
 // ── Small helpers ────────────────────────────────────────────────────
@@ -156,7 +170,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     if (target > 0) {
       const done = times.length >= target;
       out.push(gameMission_('ss_pace', caller.campusId, {
-        title: gameTitle_('ss_pace', { needed: needed, target: target }), why: times.length + ' logged today', owner: mine, campus: campus, go: go,
+        title: gameTitle_('ss_pace', { needed: needed, target: target }), why: needed + ' still needed for ' + GAME_MONTHS[+dayKey.slice(5, 7) - 1], owner: mine, campus: campus, go: go,
         core: gameIsCore_(cfg, role, 'ss_pace'), done: done, doneAt: done ? times[target - 1] : null, doneBy: done ? mine : null,
         progress: { done: times.length, total: target },
       }));
@@ -167,7 +181,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     let stamp = null;
     src.reports.slice(1).forEach(function (r) { if (String(r[1]).slice(0, 10) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
     out.push(gameMission_('pdr_report', campus + ':' + dayKey, {
-      title: gameTitle_('pdr_report', { campus: campus, date: dayKey }), owner: mine, campus: campus, go: go,
+      title: gameTitle_('pdr_report', { campus: campus, date: dayKey, today: dayKey }), owner: mine, campus: campus, go: go,
       core: gameIsCore_(cfg, role, 'pdr_report'), done: !!stamp, doneAt: stamp, doneBy: stamp ? mine : null,
     }));
   }
@@ -178,7 +192,8 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
       const resolved = i.status === 'resolved', at = gameIso_(i.resolvedAt);
       if (resolved && !(at && new Date(at).getTime() >= since)) return; // resolved a while ago: not today's story
       out.push(gameMission_('pdr_issue', i.id, {
-        title: gameTitle_('pdr_issue', { title: i.subject || i.title || i.id }), owner: mine, campus: campus, go: cfg.principalIssuesGo,
+        title: gameTitle_('pdr_issue', { title: i.subject || i.title || i.id }), owner: mine,
+        why: ['From the daily reports', gameRaised_(i.first, dayKey)].filter(Boolean).join(' \u00b7 '), campus: campus, go: cfg.principalIssuesGo,
         core: gameIsCore_(cfg, role, 'pdr_issue'), done: resolved, doneAt: resolved ? at : null, doneBy: resolved ? gameLower_(i.resolvedBy) : null,
       }));
     });
@@ -189,7 +204,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
   gameApprovals_(src.approvals, now).forEach(function (a) {
     if (a.by !== mine || a.status !== 'Info Requested' || a.archived) return;
     out.push(gameMission_('info_requested', a.id, {
-      title: gameTitle_('info_requested', { title: a.title }), owner: mine, campus: a.campus, go: go, core: gameIsCore_(cfg, role, 'info_requested'),
+      title: gameTitle_('info_requested', { title: a.title }), why: 'They asked for more information', owner: mine, campus: a.campus, go: go, core: gameIsCore_(cfg, role, 'info_requested'),
     }));
   });
   return out;
@@ -217,7 +232,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
       } else if (a.status !== 'Pending') return;
       out.push(gameMission_('approval_recommend', a.id, Object.assign({
         title: gameTitle_('approval_recommend', { campus: a.campus, days: a.days, title: a.title }),
-        why: state.gone ? 'Decided before a recommendation was needed' : '', owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(),
+        why: state.gone ? 'Decided before a recommendation was needed' : state.done ? '' : gameWaiting_(a.days), owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(),
         core: gameIsCore_(cfg, role, 'approval_recommend'), shared: assignee['approval|' + a.id + '|Pending'] !== me,
       }, state)));
     });
@@ -253,7 +268,7 @@ function gameOwnerMissions_(caller, src, cfg, now) {
     if (a.decided && !(a.decidedAt && new Date(a.decidedAt).getTime() >= since)) return;
     if (!a.decided && a.status !== 'Pending') return;
     out.push(gameMission_('approval_wait', a.id, {
-      title: gameTitle_('approval_wait', { campus: a.campus, days: a.days, title: a.title }), why: recs[a.id] ? gameRecWhy_(recs[a.id]) : '',
+      title: gameTitle_('approval_wait', { campus: a.campus, days: a.days, title: a.title }), why: recs[a.id] ? gameRecWhy_(recs[a.id]) : gameWaiting_(a.days),
       owner: gameLower_(caller.email), campus: a.campus, go: gameApprovalsGo_(), core: gameIsCore_(cfg, role, 'approval_wait'),
       done: a.decided, doneAt: a.decided ? a.decidedAt : null, doneBy: a.decided ? a.decidedBy : null,
     }));

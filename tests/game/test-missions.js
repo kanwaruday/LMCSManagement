@@ -3,7 +3,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
 // either order must work in Apps Script; the test loads game.gs first, then the missions file
-for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 const J = (x) => JSON.parse(JSON.stringify(x)); // plain objects out of the vm realm
 
 const now = new Date('2026-10-27T05:00:00Z'); // Tue 27 Oct, 10:30 IST; game day 2026-10-27
@@ -53,7 +53,8 @@ assert.strictEqual(ssm[0].done, false);
 assert.deepStrictEqual(J(ssm[0].progress), { done: 0, total: 1 });       // needed 4 over 5 days
 assert.strictEqual(ssm[0].id, 'ss_pace:LMS4');
 assert.strictEqual(ssm[0].go, 'principals-daily-reporting/index.html');
-assert.ok(ssm[0].title.includes('4'));                                   // needed is in the one plain line
+assert.strictEqual(ssm[0].title, 'Submit 1 SS evaluation today');      // verb first, no speed language (R30)
+assert.strictEqual(ssm[0].why, '4 still needed for October');
 assert.strictEqual(ctx.gameSsSubmittedBy_(src.ss, 'p@lms.org.in', '2026-10-27'), 0);
 // today's submissions by this evaluator count toward the target (given the day's starting need), other days and people do not
 const today = ago(0.01), yesterdayTs = ago(1);
@@ -143,8 +144,8 @@ const om = (src, over) => ctx.gameOwnerMissions_(owner, src, cfg(over), now);
 let aw = kinds(om(csrc([apr('r1', 'LMS4', 'Pending')], [rec('x1', 'r1', 'c@lms.org.in', 'Approve', 'Fits the budget', ago(0.2))]), { recommendationsReady: true }), 'approval_wait');
 assert.strictEqual(aw.length, 1); assert.strictEqual(aw[0].core, true); assert.strictEqual(aw[0].done, false);
 assert.ok(/approve/i.test(aw[0].why) && aw[0].why.includes('c@lms.org.in'));
-assert.ok(aw[0].title.includes('4 days') && aw[0].title.includes('LMS4'));
-assert.strictEqual(kinds(om(csrc([apr('r1', 'LMS4', 'Pending')], [rec('x1', 'r1', 'c@lms.org.in', 'Approve', 'ok', ago(0.2))]), { recommendationsReady: false }), 'approval_wait')[0].why, ''); // tab not ready: why blank
+assert.strictEqual(aw[0].title, 'Decide the LMS 4 request \u201cTitle r1\u201d'); // campus as "LMS 4", verb first (R30)
+assert.strictEqual(kinds(om(csrc([apr('r1', 'LMS4', 'Pending')], [rec('x1', 'r1', 'c@lms.org.in', 'Approve', 'ok', ago(0.2))]), { recommendationsReady: false }), 'approval_wait')[0].why, 'Waiting 4 days'); // tab not ready: no recommendation, the wait instead
 assert.strictEqual(kinds(om(csrc([apr('r1', 'LMS4', 'Pending', { archived: 'TRUE' })])), 'approval_wait').length, 0);
 assert.strictEqual(kinds(om(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })])), 'approval_wait').length, 0);
 // done detection: decided by a@lms.org.in at T
@@ -195,4 +196,26 @@ sample.forEach((m) => {
   assert.ok(m.id.startsWith(m.kind + ':'));
   assert.ok(!/\b(he|she|his|her|hers|him)\b/i.test(m.title), 'no pronouns: ' + m.title);
 });
+
+// R30 / B5: the copy, verb first, campus as "LMS 4", dates as "Mon 26 Oct", no codes, no speed language
+const TT = (k, d) => ctx.gameTitle_(k, d);
+assert.strictEqual(TT('ss_pace', { needed: 6, target: 2 }), 'Submit 2 SS evaluations today');
+assert.strictEqual(TT('pdr_report', { campus: 'LMS4', date: '2026-10-27', today: '2026-10-27' }), "Submit today's daily report");
+assert.strictEqual(TT('pdr_report', { campus: 'LMS4', date: '2026-10-26', today: '2026-10-27' }), 'Submit the daily report for Mon 26 Oct');
+assert.strictEqual(TT('pdr_issue', { title: 'Fan not working in Room 3' }), 'Close the issue “Fan not working in Room 3”');
+assert.strictEqual(TT('info_requested', { title: 'Class 5 nature walk' }), 'Reply to Management about “Class 5 nature walk”');
+assert.strictEqual(TT('approval_recommend', { campus: 'LMS4', days: 4, title: 'Purchase' }), 'Recommend on the LMS 4 request “Purchase”');
+assert.strictEqual(TT('approval_wait', { campus: '', days: 4, title: '' }), 'Decide the request');
+assert.strictEqual(TT('hiring_stall', { title: 'TGT English' }), 'Move hiring forward on “TGT English”');
+assert.strictEqual(TT('followup', { title: 'Bus 3 route' }), 'Resolve the follow-up “Bus 3 route”');
+assert.strictEqual(ctx.gameCampusLabel_('LMS4'), 'LMS 4');
+assert.strictEqual(ctx.gameWaiting_(1), 'Waiting 1 day');
+assert.strictEqual(ctx.gameRaised_('2026-10-26T09:00:00+05:30', '2026-10-27'), 'raised yesterday');
+assert.strictEqual(ctx.gameRaised_('2026-10-27', '2026-10-27'), 'raised today');
+assert.strictEqual(ctx.gameRaised_('2026-10-20', '2026-10-27'), 'raised Tue 20 Oct');
+assert.strictEqual(ctx.gameRaised_('', '2026-10-27'), '');
+// every adapter title is free of ISO dates and campus codes
+const copyMs = ctx.gamePrincipalMissions_(principal, { ss: ssFix(), reports: [['Timestamp']], approvals: [APR_H], issues: { issues: [] } }, cfg(), now);
+copyMs.forEach((m) => { assert.ok(!/\d{4}-\d{2}-\d{2}|LMS\d/.test(m.title), 'no codes in title: ' + m.title); });
+assert.strictEqual(kinds(copyMs, 'pdr_report')[0].title, "Submit today's daily report");
 console.log('game missions: ok');

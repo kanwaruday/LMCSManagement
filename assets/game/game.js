@@ -26,18 +26,27 @@ var LMCSGame = window.LMCSGame = (function () {
     return (suit ? 'tracksuit-' : '') + (summer ? 'summer' : 'winter') + (suit ? '' : '-formal');
   }
 
-  // "Good morning, Meena. 2 things are waiting today. The first is X." now is optional (tests); defaults to the clock.
-  // No "The first is" when the first mission has no title; a title that already ends in . ! ? gets no second stop.
+  // Today's open items in the order the Today panel lists them: open missions core-first (server order kept within
+  // each group), then undecided decision windows. Each is { title, m } or { title, w }.
+  function openItems(today) {
+    var ms = ((today && today.missions) || []).filter(function (m) { return !m.done && !m.gone; });
+    var ws = ((today && today.windows) || []).filter(function (w) { return !w.decided; });
+    return ms.filter(function (m) { return m.core; }).concat(ms.filter(function (m) { return !m.core; }))
+      .map(function (m) { return { title: String(m.title || ''), m: m }; })
+      .concat(ws.map(function (w) { return { title: 'Decide: ' + w.title, w: w }; }));
+  }
+
+  var NUMS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+  // "Good morning, Meena ji. Four things are waiting today." Counts open items only; the first one is shown apart
+  // (openItems(today)[0]), never spliced into the sentence. now is optional (tests); defaults to the clock.
   function greetingLine(today, session, now) {
     var h = ist_(now || new Date()).getUTCHours();
     var hello = h >= 17 ? 'Good evening' : h >= 12 ? 'Good afternoon' : 'Good morning';
     var first = String((session && session.name) || '').trim().split(/\s+/)[0];
-    var ms = (today && today.missions) || [];
-    var line = hello + (first ? ', ' + first : '') + '. ';
-    if (!ms.length) return line + 'Nothing is waiting today. Enjoy the calm.';
-    var title = String((ms[0] && ms[0].title) || '').trim();
-    return line + ms.length + (ms.length === 1 ? ' thing is' : ' things are') + ' waiting today.' +
-      (title ? ' The first is ' + title + (/[.!?]$/.test(title) ? '' : '.') : '');
+    var n = openItems(today).length;
+    var line = hello + (first ? ', ' + first + ' ji' : '') + '. ';
+    if (!n) return line + 'Nothing is waiting today. Enjoy the calm.';
+    return line + (NUMS[n] || n) + (n === 1 ? ' thing is' : ' things are') + ' waiting today.';
   }
 
   // "18 of 21 days on track this month. Last month: 20 of 22." Empty when nothing was counted this month.
@@ -62,12 +71,16 @@ var LMCSGame = window.LMCSGame = (function () {
     return DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
   }
 
-  // A mission link: a root-relative portal path, an absolute path, or http(s). Anything else (javascript:, //host) -> null.
+  // A mission link: a root-relative portal path or an absolute path. Control characters and spaces are stripped first
+  // (browsers ignore them inside a scheme); any scheme, and any leading // or \, is refused -> null.
   function safeHref(go, root) {
-    go = String(go || '').trim();
-    if (!go || /^[/\\]{2}/.test(go) || go.charAt(0) === '\\') return null;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(go)) return /^https?:/i.test(go) ? go : null;
-    return go.charAt(0) === '/' ? go : (root || '') + go;
+    go = String(go || '').replace(/[\u0000- \u007f]/g, '');
+    if (!go || /^[/\\]{2}/.test(go) || go.charAt(0) === '\\' || /^[a-z][a-z0-9+.-]*:/i.test(go)) return null;
+    var out = go.charAt(0) === '/' ? go : (root || '') + go;
+    if (typeof location !== 'undefined' && typeof URL === 'function') {
+      try { if (!/^https?:$/.test(new URL(out, location.href).protocol)) return null; } catch (e) { return null; }
+    }
+    return out;
   }
 
   // the portal page a mission's link opens, as the small line names it
@@ -96,7 +109,8 @@ var LMCSGame = window.LMCSGame = (function () {
 
   // ═══ UI ═══════════════════════════════════════════════════════════
   var FALLBACK = 'buddy/winter-formal-neutral.webp';
-  var DOWN_LINE = "Some of today's list couldn't load; I'll try again later.";
+  var DOWN_LINE = "Part of today's list didn't load, so a few items may be missing. Everything else here is current.";
+  var ERROR_LINE = "Today's list didn't load. Your work in the portal is safe; only this list is missing.";
   // art paths resolve next to this script, whatever page loads it
   var BASE = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '').replace(/[^/?#]*([?#].*)?$/, '');
   var uid = 0, live = null; // live = the current mount: its body-level pieces, torn down on remount
@@ -149,19 +163,43 @@ var LMCSGame = window.LMCSGame = (function () {
     };
   }
 
+  // A Today row's small line: the mission's own `why`, else the page its link opens. Empty when a progress bar
+  // already says the same ("2 of 4 classes done" next to a 2 of 4 bar).
+  function smallLine(m) {
+    var s = String((m && (m.why || sourceLabel(m.go))) || ''), p = m && m.progress;
+    return p && p.total && s.indexOf(p.done + ' of ' + p.total) !== -1 ? '' : s;
+  }
+
+  // The next-step bar's mission: when the server's next is in Today's set, the first open mission in panel order (so
+  // the bar and the first solid Go agree); a mission from outside the set (arrived mid-day) is kept as the server sent it.
+  function nextMission(today) {
+    var nx = today && today.next;
+    if (!nx) return null;
+    var inSet = ((today.missions || []).some(function (m) { return m.id === nx.id; }));
+    if (!inSet) return nx;
+    var first = openItems(today).filter(function (x) { return x.m; })[0];
+    return first ? first.m : nx;
+  }
+
   function mount(el, opts) {
     opts = opts || {};
     if (live) live.teardown();
     live = null;
     el.textContent = '';
     if (!opts.backendUrl) return;
-    var me = live = { parts: [], bar: null, teardown: function () { me.parts.slice().reverse().forEach(function (f) { f(); }); me.parts = []; } };
+    var me = live = { parts: [], bar: null, teardown: function () { me.parts.slice().reverse().forEach(function (f) { f(); }); me.parts = []; me.bar = null; } };
     var session = opts.session || {}, root = opts.root || '', url = opts.backendUrl, now = new Date(), n = ++uid;
-    var t = null, todayEl = null, questEl = null;
+    var t = null, todayEl = null, questEl = null, rootEl = null;
     // a body-level piece of this mount: remove() runs on remount; returns forget() for when the piece closes itself
     function piece(remove) {
       me.parts.push(remove);
       return function () { var i = me.parts.indexOf(remove); if (i !== -1) me.parts.splice(i, 1); };
+    }
+    // while a layer is open the next-step bar can't be reached: hidden under the greeting and the decision card,
+    // inert (still visible, for its tour beat) under the tour
+    function cover(on, hide) {
+      document.body.classList.toggle('lg-modal-open', !!(on && hide));
+      if (me.bar) me.bar.inert = !!on;
     }
 
     function get_() {
@@ -174,22 +212,28 @@ var LMCSGame = window.LMCSGame = (function () {
         .then(function (r) { return r.json(); });
     }
 
+    function failed() {
+      me.teardown();
+      el.textContent = '';
+      el.appendChild(h('div', { class: 'lg-root' }, h('section', { class: 'lg-panel lg-error' }, [
+        h('p', {}, ERROR_LINE),
+        h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: load }, 'Try again'),
+      ])));
+    }
+    // the host page never sees a throw from here
+    function safeStart(d) {
+      try { start(d); } catch (e) { failed(); }
+    }
     function load() {
+      me.teardown();
       el.textContent = '';
       el.appendChild(h('div', { class: 'lg-root' }, h('section', { class: 'lg-panel lg-skel', 'aria-busy': 'true', 'aria-label': "Loading today's list" },
         [0, 1, 2].map(function () { return h('div', { class: 'lg-skel-row' }, [h('i'), h('b')]); }))));
       get_().then(function (d) {
         if (live !== me) return;
-        if (!d || d.success === false) throw new Error('gametoday');
-        start(d);
-      }).catch(function () {
-        if (live !== me) return;
-        el.textContent = '';
-        el.appendChild(h('div', { class: 'lg-root' }, h('section', { class: 'lg-panel lg-error' }, [
-          h('p', {}, "Today's list couldn't load."),
-          h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: load }, 'Retry'),
-        ])));
-      });
+        if (!d || d.success === false) { failed(); return; }
+        safeStart(d);
+      }, function () { if (live === me) failed(); });
     }
 
     // ── Today rows ──
@@ -197,20 +241,20 @@ var LMCSGame = window.LMCSGame = (function () {
       return list.filter(Boolean).map(function (x) { return [' ', h('span', { class: 'lg-tag lg-tag-' + x[0] }, x[1])]; });
     }
     function missionRow(m) {
-      var href = safeHref(m.go, root), finished = m.done || m.gone;
-      var small = [m.why, sourceLabel(m.go)].filter(Boolean).join(' · ');
+      var href = safeHref(m.go, root), finished = m.done || m.gone, small = smallLine(m);
       var p = m.progress && m.progress.total ? m.progress : null;
       return h('li', { class: 'lg-row' + (finished ? ' lg-done' : '') }, [
         h('div', { class: 'lg-t' }, [
           h('span', { class: 'lg-title' }, m.title),
-          tags([m.rolledOver && !finished && ['roll', 'from yesterday'], m.shared && ['shared', 'shared'], m.due && !finished && ['dec', 'due ' + dateLabel(m.due)]]),
+          tags([m.core && !finished && ['core', 'core'], m.rolledOver && !finished && ['roll', 'from yesterday'], m.shared && ['shared', 'shared'],
+            m.due && !finished && ['dec', 'due ' + dateLabel(m.due)]]),
           small && h('small', {}, small),
           p && !finished && h('span', { class: 'lg-mini' }, [
             h('span', { class: 'lg-track', 'aria-hidden': 'true' }, h('i', { style: 'width:' + Math.min(100, Math.round(100 * p.done / p.total)) + '%' })),
-            h('span', { class: 'lg-mini-n', 'aria-label': p.done + ' of ' + p.total }, p.done + '/' + p.total),
+            h('span', { class: 'lg-mini-n' }, p.done + ' of ' + p.total),
           ]),
         ]),
-        finished ? h('span', { class: 'lg-tick' }, m.done ? 'Done' : 'Not needed')
+        finished ? h('span', { class: 'lg-tick' + (m.done ? '' : ' lg-tick-muted') }, m.done ? 'Done' : 'Not needed')
           : href && h('a', { class: 'lg-go', href: href, 'aria-label': 'Go: ' + m.title }, 'Go'),
       ]);
     }
@@ -233,8 +277,7 @@ var LMCSGame = window.LMCSGame = (function () {
       var ms = all.filter(function (m) { return !m.gone; });
       var total = ms.length + ws.length;
       var done = ms.filter(function (m) { return m.done; }).length + ws.filter(function (w) { return w.decided; }).length;
-      var rows = ms.filter(function (m) { return !m.done; }).map(missionRow)
-        .concat(ws.filter(function (w) { return !w.decided; }).map(windowRow))
+      var rows = openItems(t).map(function (x) { return x.m ? missionRow(x.m) : windowRow(x.w); })
         .concat(ms.filter(function (m) { return m.done; }).map(missionRow))
         .concat(ws.filter(function (w) { return w.decided; }).map(windowRow))
         .concat(all.filter(function (m) { return m.gone; }).map(missionRow));
@@ -242,28 +285,35 @@ var LMCSGame = window.LMCSGame = (function () {
       for (var i = 0; i < total; i++) segs.push(h('i', { class: i < done ? 'on' : null }));
       todayEl = h('section', { class: 'lg-panel lg-today', 'aria-labelledby': 'lg-today-h' + n }, [
         h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-today-h' + n, tabindex: '-1' }, 'Today'), total ? h('small', {}, done + ' of ' + total + ' done') : null]),
-        total ? h('div', { class: 'lg-bar', 'aria-hidden': 'true' }, segs) : null,
+        total >= 2 ? h('div', { class: 'lg-bar', 'aria-hidden': 'true' }, segs) : null,
         (t.sourcesDown || []).length ? h('p', { class: 'lg-down' }, DOWN_LINE) : null,
         rows.length ? h('ul', { class: 'lg-rows' }, rows) : h('p', { class: 'lg-clear' }, 'All clear. Nothing is waiting today.'),
       ]);
+      // one solid Go: the first open row's; the rest are quiet
+      [].slice.call(todayEl.querySelectorAll('.lg-go')).slice(1).forEach(function (g) { g.classList.add('lg-go-soft'); });
       questEl = questPanel();
-      var days = daysLine(t.daysOnTrack);
+      var days = daysLine(t.daysOnTrack), cut = days.indexOf(' Last month: ');
       el.textContent = '';
-      el.appendChild(h('div', { class: 'lg-root' }, [todayEl, questEl, days && h('p', { class: 'lg-days' }, days)]));
+      rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, days && h('p', { class: 'lg-days' },
+        cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
+      el.appendChild(rootEl);
     }
-    // the open quest (the first unfinished one); once every quest is finished, the last one with its reward
+    // the open quest (the first unfinished one); once every quest is finished, the last one with its reward.
+    // The first open, unlocked step is a link to where it is done; locked steps say they open next.
     function questPanel() {
       var qs = t.quests || [], i = 0;
       while (i < qs.length - 1 && qs[i].complete) i++;
       var q = qs[i];
       if (!q || !(q.steps || []).length) return null;
-      var done = q.steps.filter(function (s) { return s.done; }).length;
+      var done = q.steps.filter(function (s) { return s.done; }).length, linked = false;
       return h('section', { class: 'lg-panel lg-quest', 'aria-labelledby': 'lg-quest-h' + n }, [
         h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-quest-h' + n }, 'Quest ' + (i + 1) + ' · ' + q.title), h('small', {}, done + ' of ' + q.steps.length)]),
         h('ul', { class: 'lg-steps' }, q.steps.map(function (s) {
+          var open = !s.done && !s.locked, href = open && !linked && safeHref(s.go, root);
+          if (href) linked = true;
           return h('li', { class: 'lg-step' + (s.done ? ' ok' : s.locked ? ' lock' : '') }, [
             h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
-            h('span', {}, s.locked && !s.done ? 'Locked · ' + s.title : s.title),
+            href ? h('a', { class: 'lg-step-link', href: href }, s.title) : h('span', {}, s.locked && !s.done ? 'Opens next: ' + s.title : s.title),
             s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
           ]);
         })),
@@ -271,58 +321,74 @@ var LMCSGame = window.LMCSGame = (function () {
       ]);
     }
 
-    // ── the next-step bar: on document.body, reserving its own height as body padding ──
+    // ── the next-step bar: on document.body, reserving its own height as body padding; on desktop its content
+    //    lines up with the panel ──
     function renderBar(a) {
-      var m = t.next, href = m && safeHref(m.go, root);
+      var m = nextMission(t), href = m && safeHref(m.go, root);
       if (!href) return;
       var body = document.body, old = body.style.paddingBottom, base = parseFloat(getComputedStyle(body).paddingBottom) || 0;
-      var bar = h('nav', { class: 'lg-nextbar', 'aria-label': 'Next step' }, h('div', { class: 'lg-nextbar-in' }, [
+      var inner = h('div', { class: 'lg-nextbar-in' }, [
         img(a.avatar, 'lg-av'),
         h('div', { class: 'lg-t' }, [h('b', {}, 'Next'), h('span', { class: 'lg-title' }, m.title)]),
         h('a', { class: 'lg-go', href: href, 'aria-label': 'Go: ' + m.title }, 'Go'),
-      ]));
+      ]);
+      var bar = h('nav', { class: 'lg-nextbar', 'aria-label': 'Next step' }, inner);
       body.appendChild(bar);
-      function pad() { body.style.paddingBottom = (base + bar.offsetHeight) + 'px'; }
-      pad();
-      var ro = window.ResizeObserver ? new ResizeObserver(pad) : null;
-      if (ro) ro.observe(bar); else window.addEventListener('resize', pad);
+      function fit() {
+        var r = rootEl && document.documentElement.clientWidth >= 768 ? rootEl.getBoundingClientRect() : null;
+        inner.style.maxWidth = r ? r.width + 'px' : '';
+        inner.style.marginLeft = r ? Math.max(0, r.left - (parseFloat(getComputedStyle(bar).paddingLeft) || 0)) + 'px' : '';
+        body.style.paddingBottom = (base + bar.offsetHeight) + 'px';
+      }
+      fit();
+      var ro = window.ResizeObserver ? new ResizeObserver(fit) : null;
+      if (ro) ro.observe(bar);
+      window.addEventListener('resize', fit);
       me.bar = bar;
       piece(function () {
-        if (ro) ro.disconnect(); else window.removeEventListener('resize', pad);
+        if (ro) ro.disconnect();
+        window.removeEventListener('resize', fit);
         bar.remove();
         body.style.paddingBottom = old;
+        body.classList.remove('lg-modal-open');
       });
     }
 
     // ── the greeting, on the day's first load. Show me -> (the tour, on a first visit) -> Today's first Go ──
     function greet(a, firstVisit, beats) {
-      var release, layer = h('div', { class: 'lg-layer lg-greet' }, [
+      var first = openItems(t)[0], release;
+      var btns = first ? [
+        h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(true); } }, 'Show me'),
+        h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: function () { close(); } }, 'Later'),
+      ] : [h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(); } }, 'Thanks')];
+      var layer = h('div', { class: 'lg-layer lg-greet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'lg-g-who' + n, 'aria-describedby': 'lg-g-line' + n }, [
         h('button', { type: 'button', class: 'lg-skip', onclick: function () { close(); } }, 'Skip'),
-        h('div', { class: 'lg-greet-box', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'lg-g-who' + n, 'aria-describedby': 'lg-g-line' + n }, [
+        h('div', { class: 'lg-greet-box' }, [
           img(a.figure, 'lg-fig'),
           h('div', { class: 'lg-say' }, [
             h('div', { class: 'lg-who', id: 'lg-g-who' + n }, a.name),
-            h('p', { id: 'lg-g-line' + n }, greetingLine(t, session, now)),
-            h('div', { class: 'lg-btns' }, [
-              h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(true); } }, 'Show me'),
-              h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: function () { close(); } }, 'Later'),
+            h('div', { id: 'lg-g-line' + n }, [
+              h('p', {}, greetingLine(t, session, now)),
+              first && h('p', { class: 'lg-first' }, [h('span', { class: 'lg-first-k' }, 'First up'), h('span', { class: 'lg-first-t' }, first.title)]),
             ]),
+            h('div', { class: 'lg-btns' }, btns),
           ]),
         ]),
       ]);
-      var forget = piece(function () { layer.remove(); release(); });
+      var forget = piece(function () { layer.remove(); cover(false); release(); });
       function showMe() {
         var target = todayEl.querySelector('.lg-go') || todayEl.querySelector('h2');
         todayEl.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
         target.focus({ preventScroll: true });
       }
       function close(show) {
-        forget(); layer.remove();
+        forget(); layer.remove(); cover(false);
         if (!show) { release(); return; }
         release(false);
         if (firstVisit && beats.length) tour(beats, showMe); else showMe();
       }
       document.body.appendChild(layer);
+      cover(true, true);
       release = trap(layer, function () { close(); });
       layer.querySelector('.lg-btn').focus();
     }
@@ -377,7 +443,7 @@ var LMCSGame = window.LMCSGame = (function () {
         place();
         nextBtn.focus();
       }
-      function unhook() { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); layer.remove(); }
+      function unhook() { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); layer.remove(); cover(false); }
       var forget = piece(function () { unhook(); release(); });
       function end() {
         forget(); unhook();
@@ -385,43 +451,60 @@ var LMCSGame = window.LMCSGame = (function () {
         if (after) after();
       }
       document.body.appendChild(layer);
+      cover(true, false);
       window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
       release = trap(card, end);
       show(0);
     }
 
-    // ── the decision card: the question, what stands now, the options, an optional note, Decide ──
+    // ── the decision card: the question, what stands now, the options, an optional note, Save ──
     function decide(w, fromBtn) {
       var c = w.choice || {}, cur = Array.isArray(w.current) ? w.current : [], id = 'lg-d' + n, release;
+      var suit = w.windowId === 'trackSuit';
       var err = h('p', { class: 'lg-err', role: 'alert' });
-      var nowLine = (cur.length || w.closes) ? h('p', { class: 'lg-now' }, [cur.length ? 'Now: ' + joinList(cur) + '. ' : '', w.closes ? 'Closes ' + w.closes + '; if nobody decides, the default applies.' : '']) : null;
+      var nowLine = (cur.length || w.closes) ? h('p', { class: 'lg-now' }, [cur.length ? 'Now: ' + joinList(cur) + '. ' : '',
+        w.closes ? 'If nobody decides by ' + w.closes + ', ' + (cur.length ? 'these stay.' : 'the default applies.') : '']) : null;
       var inputs = (c.options || []).map(function (o) { return h('input', { type: 'checkbox', name: 'pick', value: o, checked: cur.indexOf(o) !== -1 }); });
+      var picked = h('span', { class: 'lg-picked', 'aria-live': 'polite' });
       var note = h('textarea', { id: id + '-note', rows: '2', maxlength: '500' });
-      var submit = h('button', { type: 'submit', class: 'lg-btn' }, 'Decide');
-      var form = h('form', { onsubmit: function (e) {
+      var submit = h('button', { type: 'submit', class: 'lg-btn' }, suit ? 'Save days' : 'Save');
+      var busy = false;
+      function count() {
+        var k = inputs.filter(function (x) { return x.checked; }).length;
+        picked.textContent = c.n ? k + ' of ' + c.n + ' picked' : '';
+        submit.disabled = busy || (c.n ? k !== c.n : false);
+      }
+      var form = h('form', { onchange: count, onsubmit: function (e) {
         e.preventDefault();
         var value = inputs.filter(function (x) { return x.checked; }).map(function (x) { return x.value; });
         err.textContent = '';
-        submit.disabled = true;
+        busy = true; count();
         post_('gamedecide', { windowId: w.windowId, scopeId: w.scopeId, value: value, note: note.value }).then(function (r) {
-          if (!r || !r.success) { err.textContent = (r && r.error) || "That didn't save. Try again."; submit.disabled = false; return; }
+          if (live !== me) return;
+          busy = false;
+          if (!r || !r.success) { err.textContent = (r && r.error) || "That didn't save. Try again."; count(); return; }
           w.decided = { value: value }; w.current = value;
           renderPanels();
           if (nowLine) nowLine.remove();
-          var ok = h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(); } }, 'Close');
+          var ok = h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(); } }, 'Done');
           form.replaceWith(h('div', { role: 'status' }, [
-            h('p', { class: 'lg-ok' }, w.windowId === 'trackSuit' ? 'Saved. Buddy will wear the track suit on ' + joinList(value) + '.' : 'Saved.'),
+            h('p', { class: 'lg-saved' }, [img(art({ campus: t.campus, config: t.config }, now).avatar, 'lg-av lg-av-40'),
+              h('span', { class: 'lg-ok' }, suit ? 'Saved. Buddy wears the track suit on ' + joinList(value) + '.' : 'Saved.')]),
             h('div', { class: 'lg-btns' }, ok),
           ]));
           ok.focus();
-        }).catch(function () { err.textContent = "Couldn't reach the school's server. Nothing was saved. Try again."; submit.disabled = false; });
+        }).catch(function () {
+          if (live !== me) return;
+          busy = false; err.textContent = "Couldn't reach the school's server. Nothing was saved. Try again."; count();
+        });
       } }, [
-        h('fieldset', { class: 'lg-opts' }, [h('legend', {}, c.n ? 'Pick ' + c.n : 'Pick'),
+        h('fieldset', { class: 'lg-opts' }, [h('legend', {}, [c.n ? 'Pick ' + c.n + (suit ? ' days' : '') : 'Pick', ' ', picked]),
           h('div', { class: 'lg-opt-grid' }, inputs.map(function (x) { return h('label', { class: 'lg-opt' }, [x, h('span', {}, x.value)]); }))]),
         h('label', { class: 'lg-label', for: note.id }, 'Note (optional)'), note,
         err,
         h('div', { class: 'lg-btns' }, [submit, h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: function () { close(); } }, 'Cancel')]),
       ]);
+      count();
       var box = h('div', { class: 'lg-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': id + '-h' }, [
         h('h2', { id: id + '-h' }, w.title),
         w.question && h('p', {}, w.question),
@@ -429,12 +512,13 @@ var LMCSGame = window.LMCSGame = (function () {
         form,
       ]);
       var layer = h('div', { class: 'lg-layer lg-modal-layer' }, box);
-      var forget = piece(function () { layer.remove(); release(); });
+      var forget = piece(function () { layer.remove(); cover(false); release(); });
       function close() {
-        forget(); layer.remove();
+        forget(); layer.remove(); cover(false);
         release(document.contains(fromBtn) ? fromBtn : todayEl.querySelector('h2'));
       }
       document.body.appendChild(layer);
+      cover(true, true);
       release = trap(box, close);
       (inputs[0] || submit).focus();
     }
@@ -449,9 +533,9 @@ var LMCSGame = window.LMCSGame = (function () {
       if (t.firstLoadToday) greet(a, firstVisit, tourBeats(a));
     }
 
-    if (opts.data) start(opts.data); else load();
+    if (opts.data) safeStart(opts.data); else load();
   }
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
-    safeHref: safeHref, sourceLabel: sourceLabel, art: art, mount: mount };
+    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, nextMission: nextMission, mount: mount };
 })();

@@ -9,6 +9,7 @@ const ctx = { console };
 ctx.window = ctx;
 vm.createContext(ctx); vm.runInContext(src, ctx);
 const G = ctx.LMCSGame;
+const J = (x) => JSON.parse(JSON.stringify(x));
 
 const cfg = {
   trackSuitDays: { LMS4: ['Mon', 'Wed', 'Fri'] },
@@ -36,12 +37,18 @@ assert.strictEqual(G.outfit(ist('2026-11-03T10:00:00'), 'LMS4', {}), 'winter-for
 
 // greeting
 const mission = (t) => ({ id: t, title: t });
-assert.strictEqual(G.greetingLine({ missions: [] }, { name: 'Meena Sharma' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. Nothing is waiting today. Enjoy the calm.');
-assert.strictEqual(G.greetingLine({ missions: [mission('Approve the leave'), mission('B')] }, { name: 'Meena Sharma' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. 2 things are waiting today. The first is Approve the leave.');
-assert.strictEqual(G.greetingLine({ missions: [mission('Approve the leave')] }, { name: 'Meena' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. 1 thing is waiting today. The first is Approve the leave.');
+// B1 / R31: "{firstName} ji"; counts open items only (missions not done/gone + undecided windows), spelled one to nine;
+// the first item is never spliced into the sentence
+const g = (t, name) => G.greetingLine(t, name === undefined ? { name: 'Meena Sharma' } : name, ist('2026-11-03T09:00:00'));
+assert.strictEqual(g({ missions: [] }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.strictEqual(g({ missions: [mission('Approve the leave'), mission('B')] }), 'Good morning, Meena ji. Two things are waiting today.');
+assert.strictEqual(g({ missions: [mission('Approve the leave')] }), 'Good morning, Meena ji. One thing is waiting today.');
+assert.strictEqual(g({ missions: [mission('A'), Object.assign(mission('B'), { done: true }), Object.assign(mission('C'), { gone: true })],
+  windows: [{ windowId: 'w', title: 'W', decided: null }, { windowId: 'v', title: 'V', decided: { value: [] } }] }), 'Good morning, Meena ji. Two things are waiting today.');
+assert.strictEqual(g({ missions: [1, 2, 3, 4].map((i) => mission('m' + i)) }), 'Good morning, Meena ji. Four things are waiting today.');
+assert.strictEqual(g({ missions: Array.from({ length: 12 }, (x, i) => mission('m' + i)) }), 'Good morning, Meena ji. 12 things are waiting today.');
+assert.strictEqual(g({ missions: [Object.assign(mission('B'), { done: true })] }), 'Good morning, Meena ji. Nothing is waiting today. Enjoy the calm.');
+assert.ok(!/Approve/.test(g({ missions: [mission('Approve the leave')] })));
 assert.ok(/^Good afternoon, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, ist('2026-11-03T12:00:00'))));
 assert.ok(/^Good morning, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, ist('2026-11-03T11:59:00'))));
 assert.ok(/^Good evening, /.test(G.greetingLine({ missions: [] }, { name: 'A' }, ist('2026-11-03T17:00:00'))));
@@ -62,14 +69,22 @@ assert.strictEqual(G.daysLine({ onTrack: 18, counted: 21, lastMonthOnTrack: 20, 
   '18 days on track this month. Last month: 20.');
 assert.strictEqual(G.daysLine({ onTrack: 18, counted: 21, lastMonthCounted: 0 }), '18 of 21 days on track this month');
 
-// R28: greeting never says "The first is ." for an untitled mission, never ends in ".."
-assert.strictEqual(G.greetingLine({ missions: [{ id: 'x', title: '' }] }, { name: 'Meena' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. 1 thing is waiting today.');
-assert.strictEqual(G.greetingLine({ missions: [{ id: 'x' }, mission('B')] }, { name: 'Meena' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. 2 things are waiting today.');
-assert.strictEqual(G.greetingLine({ missions: [mission('Reply to the parent.')] }, { name: 'Meena' }, ist('2026-11-03T09:00:00')),
-  'Good morning, Meena. 1 thing is waiting today. The first is Reply to the parent.');
+// R28: no ".." whatever the titles
 assert.ok(!/\.\./.test(G.greetingLine({ missions: [mission('A.')] }, {}, ist('2026-11-03T09:00:00'))));
+// openItems: core first (server order kept within groups), then undecided windows -- the Today panel's order
+const oi = G.openItems({ missions: [mission('a'), Object.assign(mission('b'), { core: true }), mission('c'), Object.assign(mission('d'), { core: true }), Object.assign(mission('e'), { done: true })],
+  windows: [{ windowId: 'w', title: 'Track-suit days', decided: null }] });
+assert.deepStrictEqual(J(oi.map((x) => x.title)), ['b', 'd', 'a', 'c', 'Decide: Track-suit days']);
+assert.deepStrictEqual(J(G.openItems({})), []);
+// nextMission: the first open mission in panel order when the server's next is in the set; else the server's own
+const nset = { missions: [mission('a'), Object.assign(mission('b'), { core: true })], next: mission('a') };
+assert.strictEqual(G.nextMission(nset).id, 'b');
+assert.strictEqual(G.nextMission(Object.assign({}, nset, { next: mission('z') })).id, 'z');
+assert.strictEqual(G.nextMission({ missions: [], next: null }), null);
+// smallLine: why, else the source page; dropped when the progress bar already says it
+assert.strictEqual(G.smallLine({ why: '6 still needed for October', go: 'principals-daily-reporting/index.html', progress: { done: 0, total: 2 } }), '6 still needed for October');
+assert.strictEqual(G.smallLine({ why: '', go: 'principals-daily-reporting/index.html' }), 'Daily Reporting');
+assert.strictEqual(G.smallLine({ why: '2 of 4 classes done', progress: { done: 2, total: 4 } }), '');
 // R28: daysLine uses (onTrack || 0)
 assert.strictEqual(G.daysLine({ counted: 3 }), '0 of 3 days on track this month');
 assert.strictEqual(G.daysLine({ onTrack: 2, counted: 3, lastMonthCounted: 20 }), '2 of 3 days on track this month. Last month: 0 of 20.');
@@ -86,11 +101,18 @@ assert.strictEqual(G.dateLabel('2026-11-08'), 'Sun 8 Nov');
 assert.strictEqual(G.dateLabel('Sat 8 Nov'), 'Sat 8 Nov');
 assert.strictEqual(G.dateLabel(null), '');
 
-// safeHref: root-relative portal paths get the root; only http(s) schemes pass; protocol-relative never
+// safeHref (A1): root-relative portal paths get the root; any scheme, protocol-relative, or control-character trick -> null
 assert.strictEqual(G.safeHref('principal/issues.html', '../'), '../principal/issues.html');
 assert.strictEqual(G.safeHref('principal/issues.html'), 'principal/issues.html');
 assert.strictEqual(G.safeHref('/LMCSManagement/x.html', '../'), '/LMCSManagement/x.html');
-assert.strictEqual(G.safeHref('https://example.org/a', '../'), 'https://example.org/a');
+assert.strictEqual(G.safeHref('https://example.org/a', '../'), null);
+assert.strictEqual(G.safeHref('java\nscript:alert(1)'), null);
+assert.strictEqual(G.safeHref('java\tscript:x'), null);
+assert.strictEqual(G.safeHref('\u0001javascript:x'), null);
+assert.strictEqual(G.safeHref('\u0001//evil.example'), null);
+assert.strictEqual(G.safeHref('\u0001//evil.example', ''), null);
+assert.strictEqual(G.safeHref(' /\\evil.example'), null);
+assert.strictEqual(G.safeHref('coordinator/followups/index.html', ''), 'coordinator/followups/index.html');
 assert.strictEqual(G.safeHref('javascript:alert(1)'), null);
 assert.strictEqual(G.safeHref(' JavaScript:alert(1)'), null);
 assert.strictEqual(G.safeHref('data:text/html,x'), null);
@@ -117,14 +139,19 @@ assert.strictEqual(G.art(tday({ speaker: 'teacher-owl' }), mon, false).figure, '
 assert.strictEqual(G.art(tday({ speaker: 'teacher-owl' }), mon).name, 'Teacher Owl');
 assert.strictEqual(G.art(tday({ speaker: 'teacher-owl' }), mon).avatar, 'teacher-owl/avatar-teacher-owl.webp');
 assert.strictEqual(G.art(tday({}), mon, true).figure, 'buddy/tracksuit-winter-neutral.webp'); // intro is the Teacher Owl's only
-// every path art() can return exists in assets/game
+// D6: every figure and avatar art() can return exists -- each outfit (by date and campus config) x each pose
 const artDir = path.join(__dirname, '../../assets/game');
-['buddy', 'teacher-owl'].forEach((sp) => ['neutral', 'celebrate', 'bad'].forEach((pose) => ['winter-formal', 'summer-formal', 'tracksuit-winter', 'tracksuit-summer', 'festival'].forEach((o) => {
-  const a = G.art({ speaker: sp, campus: 'LMS4', missions: [], sourcesDown: pose === 'bad' ? ['x'] : [] }, mon);
-  assert.ok(fs.existsSync(path.join(artDir, a.figure)), a.figure);
-  assert.ok(fs.existsSync(path.join(artDir, a.avatar)), a.avatar);
-  void o;
-})));
+const outfitDays = { 'winter-formal': ist('2026-11-03T10:00:00'), 'tracksuit-winter': ist('2026-11-02T10:00:00'),
+  'summer-formal': ist('2027-05-11T10:00:00'), 'tracksuit-summer': ist('2027-05-10T10:00:00'), festival: ist('2026-11-08T10:00:00') };
+const poseDays = { neutral: { missions: [{ id: 'a' }], sourcesDown: [] }, celebrate: { missions: [{ id: 'a', done: true }], sourcesDown: [] },
+  bad: { missions: [{ id: 'a' }], sourcesDown: ['x'] } };
+const seen = new Set();
+Object.keys(outfitDays).forEach((o) => Object.keys(poseDays).forEach((pose) => ['buddy', 'teacher-owl'].forEach((sp) => [false, true].forEach((fv) => {
+  const a = G.art(Object.assign({ speaker: sp, campus: 'LMS4', config: cfg }, poseDays[pose]), outfitDays[o], fv);
+  if (sp === 'buddy') assert.strictEqual(a.figure, 'buddy/' + o + '-' + pose + '.webp');
+  [a.figure, a.avatar].forEach((f) => { seen.add(f); assert.ok(fs.existsSync(path.join(artDir, f)), f); });
+}))));
+assert.strictEqual(seen.size, 15 + 5 + 4 + 1); // 15 Buddy figures, 5 avatars, 4 Teacher Owl poses (intro, neutral, celebrate, bad), 1 owl avatar
 
 // R28 structurally: game.js never parses HTML -- every text goes in as a text node or an attribute
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');

@@ -103,7 +103,7 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.deepStrictEqual(a.sourcesDown, []);
   const ids = a.missions.map((m) => m.id);
   assert.deepStrictEqual(ids, ['ss_pace:LMS4', 'pdr_report:LMS4:2026-11-05', 'info_requested:A1']); // core first, then source order
-  assert.ok(a.missions[0].title && a.missions[0].title.indexOf('SS evaluations') === 0); // titles in the response...
+  assert.ok(a.missions[0].title && a.missions[0].title.indexOf('Submit') === 0); // titles in the response...
   assert.strictEqual(a.next.id, 'ss_pace:LMS4');
   const daily = t.game['Game Daily'].rows;
   assert.strictEqual(daily.length, 2);

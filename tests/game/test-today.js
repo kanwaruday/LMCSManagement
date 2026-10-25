@@ -2,7 +2,7 @@
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
-for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+for (const f of ['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 const M = (id, o) => Object.assign({ id: id, kind: id.split(':')[0], title: '', why: '', owner: '', campus: 'LMS4', go: 'x', due: null,
