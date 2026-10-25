@@ -26,7 +26,6 @@ const OFFICE_REASON = 'Office portal: data sits behind the Office backend; sheet
 const NO_SOURCES = {
   'index.html': 'role chooser, public, no data',
   'owner/index.html': 'Owner home: appointment box only (PDR data, whose sources are linked on hiring/); Owner Part A adds a strip',
-  'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',
   'curriculum-progress/course-mapping-admin.html': 'Admin Panel: an "↗ Open" link sits beside every sheet ID it configures (each school, Daily, Allocation)',
   'office/accounts.html': OFFICE_REASON,
@@ -44,7 +43,7 @@ const NO_SOURCES = {
 };
 function pages(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['.claude', '.git', 'graphify-out', 'drive-index', 'tests', 'node_modules', 'web', 'ai-coordinator', 'vendor', 'transport'].includes(e.name) && dir === root) continue;
+    if (['.claude', '.git', 'graphify-out', 'drive-index', 'tests', 'node_modules', 'web', 'ai-coordinator', 'lm-monitor', 'vendor', 'transport'].includes(e.name) && dir === root) continue;
     if (e.name === 'node_modules' || e.name.startsWith('_') || e.name === 'vendor') continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) pages(p, out); else if (e.name.endsWith('.html')) out.push(path.relative(root, p));
@@ -67,7 +66,9 @@ for (const rel of pages(root)) {
   if (own && registered) uncovered.push(rel + ' (has its own strip AND an entry in datasrc.js -- remove one)');
 }
 assert.deepStrictEqual(uncovered, [], 'pages with no data-source links:\n  ' + uncovered.join('\n  '));
-for (const rel of Object.keys(NO_SOURCES)) assert.ok(fs.existsSync(path.join(root, rel)), 'stale exemption ' + rel);
+// Pages that exist only in Uday's own checkout (never committed) may be absent in a clean one; every other exemption must still point at a real page.
+const LOCAL_ONLY = new Set(['lmcs-last-2-months.html']);
+for (const rel of Object.keys(NO_SOURCES)) if (!LOCAL_ONLY.has(rel)) assert.ok(fs.existsSync(path.join(root, rel)), 'stale exemption ' + rel);
 
 // ── 2. every configured source is a well-formed link ────────────────────────────────────────
 for (const [key, [label, url]] of Object.entries(SRC)) {

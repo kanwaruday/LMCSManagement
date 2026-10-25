@@ -2,3 +2,6 @@
 # Transport: generated files carry driver names, employee codes, salaries and fees; repo is public
 transport/master_bus_table.csv
 transport/master_flags.txt
+
+# Local LM Studio monitor: its logs and saved samples contain school document text; the folder is machine-local tooling
+lm-monitor/
