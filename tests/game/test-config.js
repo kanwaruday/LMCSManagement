@@ -2,6 +2,14 @@
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const ctx = { console };
 vm.createContext(ctx);
+// a module file (game-teacher.gs) can run BEFORE game.gs: it starts with the guard lines, then registers
+vm.runInContext(`
+  var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
+  var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
+  var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+  GAME_MODULE_ACTIONS.teacherping = function (caller, params) { return { success: true, who: caller.email, n: params.n }; };
+  GAME_MODULE_MISSIONS.Teacher = function () { return []; };
+`, ctx);
 vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/game.gs', 'utf8'), ctx);
 
 // the game day starts at 04:00 IST (22:30 UTC the evening before)
@@ -40,4 +48,10 @@ assert.strictEqual(ctx.gamePrimaryRole_(['FeeClerk']), 'FeeClerk');
 assert.strictEqual(typeof vm.runInContext('GAME_MODULE_ACTIONS', ctx), 'object');
 assert.strictEqual(typeof vm.runInContext('GAME_MODULE_MISSIONS', ctx), 'object');
 assert.strictEqual(typeof vm.runInContext('GAME_MODULE_QUESTS', ctx), 'object');
+// registrations made before game.gs loaded survive it, and the dispatch finds them
+assert.strictEqual(typeof vm.runInContext('GAME_MODULE_MISSIONS.Teacher', ctx), 'function');
+const r = vm.runInContext("gameDispatch_({ email: 't@lms.org.in' }, 'teacherping', { n: 7 })", ctx);
+assert.strictEqual(r.success, true); assert.strictEqual(r.who, 't@lms.org.in'); assert.strictEqual(r.n, 7);
+assert.strictEqual(vm.runInContext("gameDispatch_({}, 'constructor', {}).success", ctx), false);
+assert.strictEqual(vm.runInContext("gameDispatch_({}, 'nope', {}).error", ctx), 'Unknown action');
 console.log('game config: ok');

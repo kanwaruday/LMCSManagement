@@ -9,8 +9,12 @@
 // doGet/doPost dispatch. Later files in the same project (game-missions.gs,
 // game-windows.gs, game-quests.gs, role modules such as game-teacher.gs) add
 // behaviour by registering into GAME_MODULE_ACTIONS / _MISSIONS / _QUESTS below.
-// game.gs must stay FIRST in the project's file order so those registries exist
-// when the other files run.
+// Apps Script runs all files in one global scope in an order we do not control (game-*.gs
+// sorts before game.gs), so the registries are `var ... || {}` and EVERY module file starts
+// with the same three guard lines, whichever file runs first:
+//   var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
+//   var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
+//   var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //
 // Every allowlisted role may call this backend; what each role SEES is decided by
 // the mission and quest code, not here. Source data is only ever READ.
@@ -70,9 +74,10 @@ function gameConfigDefaults_() {
 
 // Module registries. A module .gs file adds its role's pieces here; the framework does the
 // picking, roll-over, done display and days on track for every role.
-const GAME_MODULE_ACTIONS = {};  // { action: fn(caller, params) }, looked up after the built-ins
-const GAME_MODULE_MISSIONS = {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
-const GAME_MODULE_QUESTS = {};   // { Teacher: fn(caller, cfg, now) -> QuestState[] }
+// var, not const, guarded: a module file may run before this one (see header).
+var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, params) }, looked up after the built-ins
+var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
+var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
 
 function gameJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
