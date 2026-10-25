@@ -43,9 +43,13 @@ window.layoutTest = async function () {
 // (Inspection) it also fails when a Yes/No button is under 48 px tall, Take photo / Retake / the date field is under 48 px,
 // the strip of slots does not fit the width, or the pinned HUD (count + slots) takes more than 30% of the screen height.
 // On the safety check's summary it fails when its strip of slots does not fit; on the start screen, when a Carry on /
-// End it / Discard it button (or its armed "Tap again" state) is under 48 px tall.
+// End it / Discard it button (or its armed "Tap again" state) is under 48 px tall. Whole-screen pass: a folded card's line
+// is under 56 px, the focused field sits under the pinned HUD, a count run's on-board box overflows or its Change count is
+// under 48 px, or an open sheet has Save / Back / Cancel below the bottom of the screen.
 window.captureLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement;
+  const a = document.activeElement, pinned = a && a.closest && a.closest('#inspect') && document.querySelector('#inspect .cap-hud'); // where the page is now
+  const under = pinned && getComputedStyle(pinned).position === 'sticky' && a.getBoundingClientRect().top < pinned.getBoundingClientRect().bottom - 1 && !pinned.contains(a);
   scrollTo(0, 0); await new Promise((r) => setTimeout(r, 50));
   facts.viewport = innerWidth + 'x' + innerHeight;
   if (de.scrollWidth > de.clientWidth + 1) f.push('page scrolls sideways (' + de.scrollWidth + ' > ' + de.clientWidth + ')');
@@ -70,7 +74,18 @@ window.captureLayoutTest = async function () {
     const hud = insp.querySelector('.cap-hud');
     facts.hud = hud ? getComputedStyle(hud).position + ' ' + Math.round(hud.getBoundingClientRect().height) : 'none';
     if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned HUD takes more than 30% of the screen');
+    if ([...insp.querySelectorAll('.cap-fold')].some((b) => b.getBoundingClientRect().height < 56)) f.push('a folded card is under 56 px tall');
+    facts.folded = insp.querySelectorAll('.cap-fold').length;
   }
+  if (under) f.push('the focused field is under the pinned HUD');
+  const cnt = document.getElementById('countBox');
+  if (running && cnt && cnt.getClientRects().length) {
+    if (cnt.scrollHeight > cnt.clientHeight + 1) f.push('the on-board box overflows (' + cnt.scrollHeight + ' > ' + cnt.clientHeight + ')');
+    const fix = document.getElementById('fixCount');
+    if (fix.getClientRects().length && fix.getBoundingClientRect().height < 48) f.push('Change count is under 48 px tall');
+  }
+  const sheet = document.getElementById('sheetWrap');
+  if (sheet && !sheet.hidden && [...sheet.querySelectorAll('.cap-primary, .cap-end, [data-a="cancel"]')].some((b) => b.getBoundingClientRect().bottom > innerHeight + 1)) f.push('a sheet action (Save, Back, Cancel) is below the bottom of the screen'); // a long list of stops scrolls
   const deb = document.querySelector('#summary:not([hidden]) .cap-debrief .cap-slots');
   if (deb) { facts.screen = 'inspection summary'; const l = deb.lastElementChild; if (l && l.getBoundingClientRect().right > deb.getBoundingClientRect().right + 1) f.push('the summary strip of slots does not fit the width'); }
   if ([...document.querySelectorAll('.cap-resume .cap-btn')].some((b) => b.getClientRects().length && b.getBoundingClientRect().height < 48)) f.push('a Carry on / End it / Discard it button is under 48 px tall');
@@ -113,6 +128,8 @@ window.setupLayoutTest = async function () {
     const hud = document.querySelector('#quest .cap-hud'), strip = document.getElementById('needSlots');
     if (strip && vis(strip) && strip.scrollWidth > strip.clientWidth + 1) f.push('the quest strip of slots does not fit');
     if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned quest HUD takes over 30% of the screen (' + Math.round(hud.getBoundingClientRect().height) + 'px)');
+    const a = document.activeElement; // whole-screen pass: a focused field is never left under the pinned HUD
+    if (hud && a && hud.parentNode.contains(a) && !hud.contains(a) && getComputedStyle(hud).position === 'sticky' && a.getBoundingClientRect().top < hud.getBoundingClientRect().bottom - 1) f.push('the focused field is under the pinned quest HUD');
   }
   return { pass: f.length === 0, failures: f, facts };
 };

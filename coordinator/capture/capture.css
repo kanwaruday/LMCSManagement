@@ -63,6 +63,7 @@
 .cap-count{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid var(--c-line);border-radius:12px;padding:10px;min-height:150px;text-align:center}
 .cap-count b{font-size:64px;line-height:1.05;font-variant-numeric:tabular-nums}
 .cap-count span{font-size:15px;color:var(--c-mute);font-weight:600}
+.cap-countnum{display:flex;align-items:baseline;justify-content:center;gap:10px} /* the number, then the seats beside it */
 .cap-count .cap-fix{margin-top:8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px} /* a miscount, put right */
 .cap-status{grid-area:status;font-size:15px;font-weight:700;margin:0}
 .cap-status[data-s="wait"],.cap-status[data-s="weak"]{color:var(--c-warn)}
@@ -91,6 +92,9 @@
   .cap-mission h2{font-size:16px}
   .cap-stop{min-height:100px;font-size:32px}
   .cap-run .cap-end{min-height:48px}
+  #running:not([hidden]) .cap-count b{font-size:56px}
+  .cap-count{padding:6px 10px}
+  .cap-count .cap-fix{margin-top:4px}
 }
 
 /* phone on its side in the mount: the mission across the top, camera left, STOP HERE right, all on one screen */
@@ -187,7 +191,8 @@
   .cap-hud{position:sticky;top:0;z-index:5;box-shadow:0 1px 0 var(--c-line),0 8px 10px -10px rgba(0,0,0,.45)}
   /* a card scrolled to, or a field focused (keyboard, Tab), lands below the pinned HUD, not under it. --hud: its height, set by
      the page */
-  .cap-slot,.cap-hud~* :is(button,input,select,summary,a){scroll-margin-top:calc(var(--hud,120px) + 12px)}
+  .cap-slot{scroll-margin-top:calc(var(--hud,120px) + 12px)}
+  .cap-hud~* :is(button,input,select,summary,a){scroll-margin-top:calc(var(--hud,120px) + 40px)} /* its label in view too */
 }
 .cap-slots:has(li:nth-child(13)) li{height:20px;border-radius:4px} /* a long list: four short rows, not four tall ones */
 .cap-slots:has(li:nth-child(13)) svg{width:14px;height:14px}

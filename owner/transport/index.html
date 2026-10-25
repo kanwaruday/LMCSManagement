@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>.tc-h{font-size:14px;margin:22px 0 8px}
 /* Safety loadout editor: one row per item (number, name, move up / down, needs photo / date, switch off), in that order on
-   screen and for the keyboard. On a phone the name and the arrows take the first line; Photo, Date and Switch off go under
+   screen and for the keyboard. On a phone the name takes the first line; the arrows, Photo, Date and Switch off go under
    it. Every control is 48 px. Save stays in view at the bottom of the screen while the list is longer, and a field reached
    with Tab scrolls clear of it. */
 html{scroll-padding-bottom:112px}
@@ -41,9 +41,12 @@ html{scroll-padding-bottom:112px}
 .lo-err{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;color:var(--red);font-weight:600}
 .lo-st{font-size:13px;font-weight:600}.lo-st.warn{color:var(--amber)}.lo-st.bad{color:var(--red);font-weight:700}.lo-st.good{color:#15803d;font-weight:700}
 @media (max-width:600px){
-  .lo li{grid-template-columns:24px minmax(0,1fr) 48px 48px;grid-template-areas:"n name up down" ". opts opts opts";gap:6px 8px;padding:10px 0}
+  .lo li{grid-template-columns:48px 48px minmax(0,1fr);grid-template-areas:"n name name" "up down opts";gap:6px;padding:10px 0}
+  .lo li::before{padding-right:4px}
   .lo-name,.lo-add input{min-height:48px;font-size:16px}
-  .lo-opts{gap:4px 10px}
+  .lo-opts{gap:4px}
+  .lo-opts label{gap:4px;padding-right:4px}
+  .lo-opts [data-a="act"]{padding:0 8px}
   .lo label{min-height:48px;font-size:14px}
   .lo-l{display:none}.lo-s{display:inline}
   .lo button.btn{min-height:48px;font-size:14px}
