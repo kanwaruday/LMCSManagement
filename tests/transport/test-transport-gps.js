@@ -199,41 +199,65 @@ assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v =
 
 // ── capture runs (Task 7): the Mac pulls the ended timelapse runs and pushes back the processed ones; stops carry counts only ──
 book(run('COORD_TRANSPORT_FORM_ID')).insertSheet('Capture Runs')._rows().push(
-  ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status'],
-  ['HP1-20261025-071500-ab12', 'HP1', 'LMS4', 'timelapse', 1, 2, 'c4@x.org', 'Coordinator', 40, '[]', JSON.stringify([{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, takenAt: 5, boardOn: 2, boardOff: 0 }]), '', 'ended'],
+  ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'],
+  ['HP1-20261025-071500-ab12', 'HP1', 'LMS4', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 40, '[]', JSON.stringify([{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, takenAt: 5, boardOn: 2, boardOff: 0 }]), '', 'ended', '[0,4,9,null,15]'],
   ['HP1-20261025-090000-cd34', 'HP1', 'LMS4', 'timelapse', 1, '', 'c4@x.org', 'Coordinator', 10, '[]', '[]', '', 'running'],
   ['HP7-20261025-071500-ef56', 'HP7', 'LMS1', 'count', 1, 2, 'c4@x.org', 'Coordinator', 0, '[]', '[]', '', 'ended'],
-  ['HP7-20261025-080000-gh78', 'HP7', 'LMS1', 'inspection', 1, 2, 'c4@x.org', 'Coordinator', 3, '[]', '[]', '{}', 'ended']);
+  ['HP7-20261025-080000-gh78', 'HP7', 'LMS1', 'inspection', 1, 2, 'c4@x.org', 'Coordinator', 3, '[]', '[]', '{}', 'ended'],
+  ['HP7-20261024-071500-zz99', 'HP7', 'LMS1', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 2, '[]', '[]', '', 'ended', 'not json']);
 assert.strictEqual(J(run('coordCapturePull_({secret:"X"})')).error, 'Not authorized', 'transportcapturepull with a wrong secret refused');
-const pulled = J(run('coordCapturePull_({secret:" S\\n"})'));
-assert.deepStrictEqual(pulled.runs.map(r => r.runId), ['HP1-20261025-071500-ab12'], 'only ended timelapse runs are pulled');
-assert.deepStrictEqual([pulled.runs[0].reg, pulled.runs[0].kind, pulled.runs[0].status, pulled.runs[0].frames, pulled.runs[0].stops[0].name], ['HP1', 'timelapse', 'ended', 40, 'Nalwari']);
-// capture_route: every operational bus with no processed timelapse, due in 14 days, closes itself
-ctx.cr = { today: '2026-10-25', fleet, live: null, health: [], days: [], checks: [], answers: [], captured: { HP2: true } };
+let pulled = J(run('coordCapturePull_({secret:" S\\n"})'));
+assert.deepStrictEqual(pulled.runs.map(r => r.runId), ['HP1-20261025-071500-ab12', 'HP7-20261024-071500-zz99'], 'only ended timelapse runs are pulled');
+assert.deepStrictEqual([pulled.runs[0].reg, pulled.runs[0].kind, pulled.runs[0].status, pulled.runs[0].frames, pulled.runs[0].stops[0].name, pulled.runs[0].startedAt],
+  ['HP1', 'timelapse', 'ended', 40, 'Nalwari', 1000]);
+assert.deepStrictEqual([pulled.runs[0].frameTimes, pulled.runs[1].frameTimes, pulled.runs[0].done], [[0, 4, 9, null, 15], null, false], 'frame times come along (null when unreadable); not pushed yet');
+// capture_route: every operational bus with no processed timelapse, due in 14 days, closes itself; nothing before GPS.captureFrom (Ruling 30)
+assert.strictEqual(run('GPS.captureFrom'), '2026-12');
+ctx.cr = { today: '2026-12-01', fleet, live: null, health: [], days: [], checks: [], answers: [], captured: { HP2: true } };
 const cr = J(run('gpsFollowUps_(cr)')).filter(x => x.domain === 'capture_route');
 assert.deepStrictEqual(cr.map(x => x.taskId), ['capture_route|HP1', 'capture_route|HP3'], 'raised for an operational bus with no processed run (not HP2, processed; not HP4, off the road; not AF)');
-assert.deepStrictEqual([cr[0].due, cr[0].campus, cr[0].auto], ['2026-11-08', 'LMS4', true]);
+assert.deepStrictEqual([cr[0].due, cr[0].campus, cr[0].auto], ['2026-12-15', 'LMS4', true]);
 assert.strictEqual(cr[0].detail, 'Ask the Fee Clerk to send the school phone on this route\'s next empty run, and do the timelapse run');
 assert.ok(!J(run('gpsFollowUps_(Object.assign({}, cr, {captured: undefined}))')).some(x => x.domain === 'capture_route'), 'no captured facts: nothing said');
+assert.ok(!J(run('gpsFollowUps_(Object.assign({}, cr, {today: "2026-11-30"}))')).some(x => x.domain === 'capture_route'), 'before the start month: nothing raised');
+run('GPS.captureFrom = "2026-10"'); // the real refresh below runs on today's date
 ctx.gpsRefresh_ = realRefresh;
 run('gpsRefresh_([], [])');
 const capRow = id => book('TASKS').getSheetByName('Tasks')._rows().find(r => r[0] === id);
 assert.deepStrictEqual([capRow('capture_route|HP1')[5], capRow('capture_route|HP7')[5], capRow('capture_route|HP1')[13]], ['open', 'open', 'c4@x.org'], 'the refresh raises it, owned by the Coordinator');
+// Ruling 29: the push carries no file ids; the backend asks the Roster project (Drive access) for the processed copies' ids
+const fetched = [];
+let roster = {};
+ctx.UrlFetchApp = { fetch: (url, o) => { fetched.push({ url, body: JSON.parse(o.payload) }); return { getResponseCode: () => 200, getContentText: () => JSON.stringify(roster) }; } };
 ctx.capPush = { runs: [
-  { runId: 'HP1-20261025-071500-ab12', reg: 'HP1', videoFileId: 'vid1234567890', stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', photoFileId: 'pho1234567890', boardOn: 2, boardOff: 0, child: 'Asha' }] },
-  { runId: 'HP9-20261024-071500-zz99', reg: 'HP9', videoFileId: 'vid9999999999', stops: [] }] };
+  { runId: 'HP1-20261025-071500-ab12', reg: 'HP1', stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', boardOn: 2, boardOff: 0, child: 'Asha', photoFileId: 'ORIGINAL123456' }] },
+  { runId: 'HP7-20261024-071500-zz99', reg: 'HP7', stops: [] },
+  { runId: 'HP9-20261024-071500-zz99', reg: 'HP9', stops: [] }] };
 assert.strictEqual(J(run('coordCapturePush_({secret:"X", payload: capPush})')).error, 'Not authorized', 'transportcapturepush with a wrong secret refused');
-assert.strictEqual(run('gpsRows_(GPS_TAB_CAPTURE).length'), 0, 'a refused push stores nothing');
+assert.strictEqual(run('gpsRows_(GPS_TAB_CAPTURE).length') + fetched.length, 0, 'a refused push stores and asks nothing');
 assert.strictEqual(J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP7-20261024-071500-zz99", reg: "HP7", stops: "nope"}]}})')).success, false, 'a run whose stops are not a list is refused');
+assert.match(J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP7-20261024-071500-zz99", reg: "HP1", stops: []}]}})')).error, /run 1/, 'a runId of another bus is refused');
+roster = { success: true, found: { 'HP1-20261025-071500-ab12': { videoFileId: 'VIDblurred123', photos: { 3: 'PHOTOblurred1' } } }, notYet: ['HP7-20261024-071500-zz99'] };
 const pushed = J(run('coordCapturePush_({secret:"S", payload: capPush})'));
-assert.deepStrictEqual([pushed.success, pushed.runs, pushed.skipped], [true, 1, ['HP9-20261024-071500-zz99']], 'a bus not in the fleet is skipped');
+assert.deepStrictEqual([pushed.success, pushed.runs, pushed.notYet, pushed.skipped], [true, 1, ['HP7-20261024-071500-zz99'], ['HP9-20261024-071500-zz99']], 'an unsynced run is "not yet"; a bus not in the fleet is skipped');
+assert.deepStrictEqual([fetched[0].url, fetched[0].body.action, fetched[0].body.secret, fetched[0].body.runs],
+  [run('COORD_ROSTER_URL'), 'captureprocessed', 'S', [{ reg: 'HP1', runId: 'HP1-20261025-071500-ab12', stops: [3] }, { reg: 'HP7', runId: 'HP7-20261024-071500-zz99', stops: [] }]]);
 assert.deepStrictEqual([capRow('capture_route|HP1')[5], capRow('capture_route|HP7')[5]], ['resolved', 'open'], 'resolved by the push; the bus still without a timelapse keeps it');
-assert.strictEqual(J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP7-20261024-071500-zz99", reg: "HP7", videoFileId: "", stops: []}]}})')).success, true);
+pulled = J(run('coordCapturePull_({secret:"S"})'));
+assert.deepStrictEqual(pulled.runs.map(r => r.done), [true, false], 'a stored run is not pushed again; the "not yet" one is');
+roster = { success: false, error: 'Not authorized' };
+assert.match(J(run('coordCapturePush_({secret:"S", payload: capPush})')).error, /Roster.*Not authorized/, 'the Roster refusing is an error the Mac sees');
+roster = { success: true, found: { 'HP7-20261024-071500-zz99': { videoFileId: 'VID7blurred12', photos: {} } }, notYet: [] };
+assert.strictEqual(J(run('coordCapturePush_({secret:"S", payload: {runs: [capPush.runs[1]]}})')).runs, 1);
 const capCoord = J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).capture;
 assert.deepStrictEqual(Object.keys(capCoord.byReg), ['HP1'], 'an LMS 4 coordinator sees only LMS 4 capture stops');
-assert.deepStrictEqual(capCoord.byReg.HP1, { runId: 'HP1-20261025-071500-ab12', videoFileId: 'vid1234567890',
-  stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', photoFileId: 'pho1234567890', boardOn: 2, boardOff: 0 }] }, 'stops keep counts only: anything else sent is dropped');
+assert.deepStrictEqual(capCoord.byReg.HP1, { runId: 'HP1-20261025-071500-ab12', videoFileId: 'VIDblurred123',
+  stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', photoFileId: 'PHOTOblurred1', boardOn: 2, boardOff: 0 }] }, 'the processed ids from the Roster, never one the push sent; counts only');
 assert.deepStrictEqual(Object.keys(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg).sort(), ['HP1', 'HP7'], 'the second push kept the first (upsert by run)');
-run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP1-20261026-071500-ab99", reg: "HP1", videoFileId: "vid2222222222", stops: []}]}})');
+roster = { success: true, found: { 'HP1-20261026-071500-ab99': { videoFileId: 'VID2blurred12', photos: {} } }, notYet: [] };
+run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP1-20261026-071500-ab99", reg: "HP1", stops: []}]}})');
 assert.strictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP1.runId, 'HP1-20261026-071500-ab99', 'the newest run per bus is served');
+const capTab = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Stops')._rows();
+capTab.find(r => r[0] === 'HP7-20261024-071500-zz99')[4] = '[{"seq":1,'; // a cut-off or hand-edited cell
+assert.deepStrictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP7.stops, [], 'one bad cell does not break the page');
 console.log('transport gps: all checks passed');

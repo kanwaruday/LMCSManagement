@@ -7,6 +7,7 @@
 // run:  { id, reg, kind: timelapse|count|inspection, campus, by, role, startedAt, endedAt, status: running|ended|error,
 //         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,name,boardOn,boardOff}],
 //         inspection, draft (capture page: the safety check being filled in), startSent, endSent }
+// The end manifest of a timelapse also carries frameTimes (see frameTimes below).
 // file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
 // seq is one counter per run across kinds, so it is also the capture order.
 
@@ -146,6 +147,13 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     // Unsent file metadata of a run, in seq order (a failed file stays here, with its `error`). Photos are not loaded.
     pending: (runId) => serial(async () => (await filesOf(runId)).filter((f) => !f.sent).sort((a, b) => a.seq - b.seq)),
     total: (runId) => serial(async () => (await filesOf(runId)).length),
+    // The timelapse's frame times for the end manifest, compact: seconds since startedAt, indexed by seq (null where the seq is a
+    // stop or nothing), so the Mac can place each stop's video chapter at the frame nearest in time.
+    frameTimes: (runId) => serial(async () => {
+      const run = await load(runId), out = new Array(run.nextSeq).fill(null);
+      for (const f of await filesOf(runId)) if (f.kind === 'frame' && Number.isFinite(f.takenAt)) out[f.seq] = Math.max(0, Math.round((f.takenAt - run.startedAt) / 1000));
+      return out;
+    }),
     // {seq: Drive file id} of the run's sent files (the inspection answers point at their photos by seq on the phone).
     fileIds: (runId) => serial(async () => Object.fromEntries((await filesOf(runId)).filter((f) => f.sent).map((f) => [f.seq, f.fileId]))),
     // The one place a photo is read: its base64, or undefined once it was sent.

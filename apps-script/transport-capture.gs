@@ -13,15 +13,22 @@
 //   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). `inspection` (inspection runs only) must be
 //   {itemId: {ok: boolean, date?: 'yyyy-MM-dd', fileId?}} with ids from the 'Safety Loadout' tab (kept by the Coordinator
 //   backend, coordinator-transport.gs): answers raise and close follow-ups, so nothing else is stored (no free text).
+//   A timelapse's end manifest also carries frameTimes: seconds since startedAt, indexed by seq (null where the seq is a stop),
+//   which the Mac (transport/capture/capture.py) uses to place each stop's chapter in the route video.
 // Who: Owner / ALL any bus; Coordinator the buses of their district; FeeClerk their campus (tupCovers_, unchanged).
+// POST {action:'captureprocessed', secret, runs:[{reg, runId, stops:[seq]}]} -> {success, found:{runId:{videoFileId, photos:{seq:id}}},
+//   notYet:[runId]}. The Coordinator backend (no Drive access) asks here for the ids of the Mac's BLURRED output:
+//   Capture/<REG>/<runId>/processed/route.mp4 and processed/stop-NNNNN.jpg, never the phone's originals. A run whose processed
+//   folder has not synced up from the Mac yet is "not yet". Same shared secret as the Mac's pushes (TRANSPORT_PUSH_SECRET).
 // ═══════════════════════════════════════════════════════════════════
 
 const CAP_TAB_ = 'Capture Runs';
-const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status'];
+const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'];
 const CAP_KINDS_ = ['frame', 'stop', 'inspection'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'] }; // profile kinds: Task 8
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
+const CAP_MAX_FRAME_TIMES_ = 10000; // seqs per run: ~6 characters each keeps the cell under Sheets' 50,000
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 const CAP_PATH_ = TUP_PATH_.slice(0, -1).concat(['Capture']); // sibling of 'Bus Wise Documents'
 
@@ -53,7 +60,7 @@ function capRunSheet_() {
     sh.appendRow(CAP_RUN_HEADER_);
     sh.getRange(1, 1, 1, CAP_RUN_HEADER_.length).setFontWeight('bold');
     sh.setFrozenRows(1);
-  }
+  } else if (sh.getLastColumn() < CAP_RUN_HEADER_.length) sh.getRange(1, 1, 1, CAP_RUN_HEADER_.length).setValues([CAP_RUN_HEADER_]); // a tab made before a column was added
   return sh;
 }
 
@@ -132,9 +139,16 @@ function captureRun_(body) {
     const bad = capInspectionError_(run.inspection);
     if (bad) return fail(bad);
   }
+  if (run.frameTimes != null) {
+    if (run.kind !== 'timelapse') return fail('Only a timelapse run carries frame times');
+    const ft = run.frameTimes;
+    if (!Array.isArray(ft)) return fail('frameTimes must be a list');
+    if (ft.length > CAP_MAX_FRAME_TIMES_) return fail('frameTimes has too many entries');
+    if (!ft.every(function (t) { return t === null || (typeof t === 'number' && t === Math.floor(t) && t >= 0 && t <= 86400); })) return fail('frameTimes must be whole seconds since the start (0 to 86400) or null');
+  }
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
-    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open')];
+    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(run.frameTimes)];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -147,4 +161,29 @@ function captureRun_(body) {
     lock.releaseLock();
   }
   return { success: true };
+}
+
+/** POST captureprocessed (see the header): ids of the processed (blurred) files, looked up by path; creates nothing. */
+function captureProcessed_(body) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
+  let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+  CAP_PATH_.forEach(function (n) { f = f && getSubfolder_(f, n); });
+  const found = {}, notYet = [], one = function (dir, name) { const it = dir.getFilesByName(name); return it.hasNext() ? it.next().getId() : ''; };
+  (Array.isArray(body.runs) ? body.runs : []).forEach(function (r) {
+    const runId = String(r.runId || ''), reg = String(r.reg || '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || !/^[A-Z0-9]{1,16}$/.test(reg)) return;
+    const bus = f && getSubfolder_(f, reg), run = bus && getSubfolder_(bus, runId), out = run && getSubfolder_(run, 'processed');
+    const video = out ? one(out, 'route.mp4') : '';
+    if (!video) { notYet.push(runId); return; }
+    const photos = {};
+    (Array.isArray(r.stops) ? r.stops : []).forEach(function (seq) {
+      const n = Number(seq);
+      if (!(n >= 0 && n <= 99999 && n === Math.floor(n))) return;
+      const id = one(out, 'stop-' + ('00000' + n).slice(-5) + '.jpg');
+      if (id) photos[n] = id;
+    });
+    found[runId] = { videoFileId: video, photos: photos };
+  });
+  return { success: true, found: found, notYet: notYet };
 }

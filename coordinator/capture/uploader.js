@@ -47,9 +47,9 @@ export function createUploader({
       await store.patchRun(runId, { status: 'error', error });
       progress('error', error);
     };
-    const manifest = (status, inspection = run.inspection) => ({ action: 'capturerun', run: {
+    const manifest = (status, inspection = run.inspection, frameTimes) => ({ action: 'capturerun', run: {
       runId, reg: run.reg, kind: run.kind, startedAt: run.startedAt, endedAt: run.endedAt, frames: run.frames,
-      gaps: run.gaps, stops: run.stops, inspection, status } });
+      gaps: run.gaps, stops: run.stops, inspection, status, ...(frameTimes ? { frameTimes } : {}) } });
     // Inspection answers point at their photo by seq on the phone; the server gets the photo's Drive file id instead.
     const withFileIds = async (insp) => {
       if (!insp) return insp;
@@ -90,7 +90,8 @@ export function createUploader({
       pending = await refresh();
     }
     if (run.endedAt && !run.endSent) {
-      const r = await send(manifest('ended', await withFileIds(run.inspection)), progress);
+      // a timelapse's end manifest carries its frame times, so the Mac can place each stop's chapter in time
+      const r = await send(manifest('ended', await withFileIds(run.inspection), run.kind === 'timelapse' ? await store.frameTimes(runId) : null), progress);
       if (!r) return progress('stopped');
       if (r.error) return fail(r.error);
       await store.patchRun(runId, { endSent: true });

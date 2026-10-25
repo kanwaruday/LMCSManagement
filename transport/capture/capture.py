@@ -5,12 +5,16 @@ Daily, after ~/Projects/transport-gps/insights.py. A Coordinator rides a bus wit
 mode); its frames and stop photos land in Drive as Capture/<REG>/<runId>/frame-<seq>.jpg and stop-<seq>.jpg (Roster backend,
 apps-script/transport-capture.gs). For every ended timelapse run (POST transportcapturepull to the Coordinator backend) that
 has no processed/route.mp4 yet, this blurs faces and number plates in every frame and stop photo into
-Capture/<REG>/<runId>/processed/, stitches route.mp4 (30 fps, H.264, a chapter at each stop) and pushes each processed run's
-video and stops (POST transportcapturepush). Originals of runs processed 30+ days ago are deleted.
+Capture/<REG>/<runId>/processed/, stitches route.mp4 (30 fps, H.264, a chapter at each stop, placed by the phone's frame times)
+and pushes each processed run's stops (POST transportcapturepush). The push carries no file ids: the portal looks up the blurred
+files' ids in Drive itself, and answers "not yet" until Drive for desktop has uploaded them (pushed again the next day, never
+reprocessed). Originals of runs processed 30+ days ago are deleted.
 
-  python3 transport/capture/capture.py                      # the daily job
-  python3 transport/capture/capture.py --dry-run            # read and plan only: nothing written, deleted or pushed
-  python3 transport/capture/capture.py --root DIR --manifest runs.json   # a test folder and a local manifest; nothing pushed
+Run it with /usr/local/bin/python3 (framework 3.13, which has numpy, Pillow and onnxruntime). launchd's python3 is
+/usr/bin/python3 (3.9), which has none of them.
+  /usr/local/bin/python3 transport/capture/capture.py                 # the daily job
+  /usr/local/bin/python3 transport/capture/capture.py --dry-run       # read and plan only: nothing written, deleted or pushed
+  /usr/local/bin/python3 transport/capture/capture.py --root DIR --manifest runs.json   # a test folder and a local manifest; nothing pushed
 
 Privacy: blur FAILS CLOSED. Without OpenCV, onnxruntime or either model file, no run is processed (no frames, no route.mp4),
 each waiting run is logged "blur unavailable" and the exit code is 1. A run is built in processed.partial/ and renamed to
@@ -25,7 +29,7 @@ Models (Uday installs them; nothing downloads them automatically), in MODELS_DIR
     7,835,770 bytes, input 640x640 RGB 0-1, output rows [batch, x1, y1, x2, y2, class, score] (NMS inside the model):
     https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx
 Install:
-  pip3 install opencv-python-headless        # onnxruntime, numpy and Pillow are already installed
+  /usr/local/bin/python3 -m pip install opencv-python-headless    # onnxruntime, numpy and Pillow are already installed
   mkdir -p ~/.lmcs/capture-models && cd ~/.lmcs/capture-models
   curl -fLO https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
   curl -fLO https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx
@@ -40,7 +44,8 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 SECRET = Path.home() / ".lmcs" / "transport_push_secret"
 SHARED_JS = HERE.parent.parent / "coordinator" / "shared.js"  # holds BACKEND_URL, the one place the backend URL lives
-# drive-index's DRIVE_ROOT (drive-index/records.py) + the transport folder of apps-script/transport-uploads.gs (TUP_PATH_) + Capture
+# DRIVE_ROOT (transport/reread_unread.py:33, drive-index/records.py:31) + the transport folder of apps-script/transport-uploads.gs
+# (TUP_PATH_) + Capture. Not imported: reread_unread pulls in build_master and its workbook reader.
 DEFAULT_ROOT = Path("/Users/udaykanwar/Library/CloudStorage/GoogleDrive-uday.kanwar@lms.org.in/My Drive/SCHOOL RELATED/"
                     "LMS Central Repository/LMCS Repository/Important Documents @ LMCS/Important Documents Transport/Capture")
 MODELS_DIR = Path.home() / ".lmcs" / "capture-models"
@@ -62,6 +67,9 @@ class BlurUnavailable(Exception):
 
 class NotReady(Exception):
     """The run's files have not all reached this Mac's Drive copy yet; try again tomorrow."""
+
+
+STALE_DAYS = 3  # a run still waiting for its frames this long after it ended is a failure somebody must look at
 
 
 def log(msg):
@@ -95,6 +103,15 @@ def chapters(stops, frames, fps=FPS):
     return "\n".join(out) + "\n"
 
 
+def with_times(frames, run):
+    """The frames with takenAt (ms) from the run's manifest: startedAt (ms) + frameTimes[seq] seconds. Unchanged without them."""
+    ft, t0 = run.get("frameTimes"), run.get("startedAt")
+    if not isinstance(ft, list) or not isinstance(t0, (int, float)) or isinstance(t0, bool):
+        return frames
+    at = lambda s: t0 + ft[s] * 1000 if s < len(ft) and isinstance(ft[s], (int, float)) else None
+    return [dict(f, takenAt=at(f["seq"])) if at(f["seq"]) is not None else f for f in frames]
+
+
 def blur(image, detectors, cells=8):
     """image: HxWx3 uint8 RGB. detectors: callables image -> [(x, y, w, h)]. A copy with every detected box (padded 15%)
     pixelated to about `cells` blocks across its longer side. A detector that raises fails the whole run."""
@@ -123,14 +140,17 @@ def load_detectors(models_dir=MODELS_DIR):
     for p in (face_path, plate_path):
         if not p.is_file():
             raise BlurUnavailable(f"model missing: {p}")
-    yunet = cv2.FaceDetectorYN.create(str(face_path), "", (320, 320), FACE_SCORE, 0.3, 5000)
+    try:  # an old cv2 without FaceDetectorYN, a corrupt model: the same "blur unavailable", not a crash of the whole job
+        yunet = cv2.FaceDetectorYN.create(str(face_path), "", (320, 320), FACE_SCORE, 0.3, 5000)
+        sess = ort.InferenceSession(str(plate_path), providers=["CPUExecutionProvider"])
+    except Exception as e:
+        raise BlurUnavailable(f"detector load failed: {e}") from None
 
     def faces(img):
         yunet.setInputSize((img.shape[1], img.shape[0]))
         _, found = yunet.detect(np.ascontiguousarray(img[:, :, ::-1]))  # YuNet wants BGR
         return [] if found is None else [tuple(f[:4]) for f in found]
 
-    sess = ort.InferenceSession(str(plate_path), providers=["CPUExecutionProvider"])
     inp = sess.get_inputs()[0]
     size = inp.shape[2] if isinstance(inp.shape[2], int) else 640
 
@@ -168,8 +188,10 @@ def stitch(frames, chapters_text, out_mp4):
 def process_run(run_dir, run, detectors):
     """Blurs every frame and stop photo of one run into processed/ and stitches route.mp4 there. All or nothing: built in
     processed.partial/, renamed only when complete. Raises NotReady while Drive is still bringing the frames down."""
+    if not detectors:
+        raise BlurUnavailable("no detectors")
     run_dir = Path(run_dir)
-    frames = select_frames(run_dir.iterdir())
+    frames = with_times(select_frames(run_dir.iterdir()), run)
     if not frames or len(frames) < int(run.get("frames") or 0):
         raise NotReady(f"{len(frames)} of {run.get('frames') or '?'} frames in this Mac's Drive copy")
     stops = run.get("stops") or []
@@ -197,36 +219,34 @@ def purge(root, now, dry_run=False, days=KEEP_DAYS):
     is `days` old. Returns the paths deleted (or that would be)."""
     gone = []
     for done in sorted(Path(root).glob("*/*/processed/route.mp4")):
+        run_dir = done.parent.parent
+        if (not REG_RE.match(run_dir.parent.name) or not RUN_ID_RE.match(run_dir.name)
+                or any(p.is_symlink() for p in (run_dir.parent, run_dir, done.parent, done))):
+            continue  # only real run folders under Capture/, never a link to somewhere else
         if now - done.stat().st_mtime < days * 86400:
             continue
-        for p in sorted(done.parent.parent.iterdir()):
-            if p.is_file() and ORIGINAL_RE.match(p.name):
+        for p in sorted(run_dir.iterdir()):
+            if p.is_file() and not p.is_symlink() and ORIGINAL_RE.match(p.name):
                 gone.append(p)
                 if not dry_run:
                     p.unlink()
     return gone
 
 
-def drive_id(path):
-    """The Drive file id of a file in the Drive for desktop folder (its xattr), or '' until Drive has uploaded it."""
-    r = subprocess.run(["xattr", "-p", "com.google.drivefs.item-id#S", str(path)], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
-
-
 def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(ms, (int, float)) else ""
 
 
-def push_runs(runs, root, file_id=drive_id):
-    """The transportcapturepush runs: each run with a processed/route.mp4, its video and stop photos as Drive ids, children as counts."""
+def push_runs(runs, root):
+    """The transportcapturepush runs: each run with a processed/route.mp4 that the portal has not stored yet (`done`), with its
+    stops, children as counts. No file ids: the portal looks up the processed copies itself."""
     out = []
     for r in runs:
-        d = Path(root) / r["reg"] / r["runId"] / "processed"
-        if not (d / "route.mp4").exists():
+        if r.get("done") or not (Path(root) / r["reg"] / r["runId"] / "processed" / "route.mp4").exists():
             continue
-        out.append({"runId": r["runId"], "reg": r["reg"], "videoFileId": file_id(d / "route.mp4"), "stops": [
+        out.append({"runId": r["runId"], "reg": r["reg"], "stops": [
             {"seq": int(s["seq"]), "name": s.get("name") or "", "lat": s.get("lat"), "lng": s.get("lng"), "at": iso(s.get("takenAt")),
-             "photoFileId": file_id(d / f"stop-{int(s['seq']):05d}.jpg"), "boardOn": int(s.get("boardOn") or 0), "boardOff": int(s.get("boardOff") or 0)}
+             "boardOn": int(s.get("boardOn") or 0), "boardOff": int(s.get("boardOff") or 0)}
             for s in r.get("stops") or []]})
     return out
 
@@ -263,7 +283,12 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="read and plan only: nothing is written, deleted or pushed")
     a = ap.parse_args(argv)
     root = Path(a.root)
-    runs = [r for r in (json.loads(Path(a.manifest).read_text()) if a.manifest else post("transportcapturepull"))["runs"] if ready(r)]
+    runs = []
+    for r in (json.loads(Path(a.manifest).read_text()) if a.manifest else post("transportcapturepull"))["runs"]:
+        if ready(r):
+            runs.append(r)
+        elif r.get("kind") == "timelapse" and r.get("status") == "ended":
+            log(f"{r.get('runId')}: ignored (unexpected run id or reg {r.get('reg')!r})")
     if runs and not root.is_dir():
         sys.exit(f"Capture folder not found: {root} (is Drive for desktop running? pass --root)")
     todo = [r for r in runs if not (root / r["reg"] / r["runId"] / "processed" / "route.mp4").exists()]
@@ -276,6 +301,9 @@ def main(argv=None):
                 log(f"{r['runId']}: blur unavailable ({e}); nothing published")
             failed, todo = len(todo), []
     for r in todo:
+        if not int(r.get("frames") or 0):
+            log(f"{r['runId']}: empty run, nothing to stitch")
+            continue
         if a.dry_run:
             log(f"{r['runId']}: would blur and stitch")
             continue
@@ -283,7 +311,12 @@ def main(argv=None):
             process_run(root / r["reg"] / r["runId"], r, detectors)
             log(f"{r['runId']}: processed")
         except NotReady as e:
-            log(f"{r['runId']}: waiting ({e})")
+            ended = r.get("endedAt")
+            if isinstance(ended, (int, float)) and time.time() - ended / 1000 > STALE_DAYS * 86400:
+                failed += 1
+                log(f"{r['runId']}: failed, still missing frames {STALE_DAYS}+ days after it ended ({e})")
+            else:
+                log(f"{r['runId']}: waiting ({e})")
         except Exception as e:
             failed += 1
             log(f"{r['runId']}: failed, nothing published ({type(e).__name__}: {e})")
@@ -294,8 +327,8 @@ def main(argv=None):
     if a.dry_run or a.manifest:
         log(f"would push {len(done)} processed runs")
     elif done:
-        post("transportcapturepush", {"runs": done})
-        log(f"pushed {len(done)} processed runs")
+        res = post("transportcapturepush", {"runs": done})
+        log(f"pushed {res.get('runs', 0)} processed runs" + (f"; not yet in Drive, again tomorrow: {', '.join(res['notYet'])}" if res.get("notYet") else ""))
     return 1 if failed else 0
 
 

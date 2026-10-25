@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """capture.py: frame order, stop chapters, blur with injected detectors, ffmpeg stitch, fail-closed processing, the 30-day purge.
 Plain asserts: `python3 transport/capture/test_capture.py` (pytest also collects them). Temp dirs and fake images only."""
-import json, os, subprocess, sys, tempfile, time
+import contextlib, io, json, os, subprocess, sys, tempfile, time
 from pathlib import Path
 
 import numpy as np
@@ -184,19 +184,93 @@ def test_purge_deletes_only_originals_of_runs_processed_30_days_ago():
         assert len(list(raw_d.glob("*.jpg"))) == 4, "never processed: nothing deleted"
 
 
-def test_push_runs_sends_counts_and_drive_ids_only_for_processed_runs():
+def test_push_runs_sends_counts_only_for_processed_runs_not_yet_stored():
     with tempfile.TemporaryDirectory() as root:
         d, run = make_run(root)
         _, waiting = make_run(root, run_id="HP66A1234-20261026-071500-cd34")
-        (d / "processed").mkdir()
-        (d / "processed" / "route.mp4").write_bytes(b"x")
-        jpeg(d / "processed" / "stop-00001.jpg")
-        ids = lambda p: "id-" + p.name if p.exists() else ""
-        out = C.push_runs([run, waiting], root, file_id=ids)
-        assert [r["runId"] for r in out] == [run["runId"]], "only processed runs are pushed"
-        assert out[0]["videoFileId"] == "id-route.mp4"
-        assert out[0]["stops"] == [{"seq": 1, "name": "Nalwari", "lat": 31.6, "lng": 76.9, "at": "2025-10-25T01:35:00Z",
-                                    "photoFileId": "id-stop-00001.jpg", "boardOn": 3, "boardOff": 0}]
+        stored, _ = make_run(root, run_id="HP66A1234-20261024-071500-ef56")
+        for x in (d, stored):
+            (x / "processed").mkdir()
+            (x / "processed" / "route.mp4").write_bytes(b"x")
+        done = dict(run, runId=stored.name, done=True)
+        out = C.push_runs([run, waiting, done], root)
+        assert [r["runId"] for r in out] == [run["runId"]], "only processed runs the portal has not stored yet"
+        assert out[0] == {"runId": run["runId"], "reg": "HP66A1234", "stops": [
+            {"seq": 1, "name": "Nalwari", "lat": 31.6, "lng": 76.9, "at": "2025-10-25T01:35:00Z", "boardOn": 3, "boardOff": 0}]}, \
+            "no file ids: the portal looks up the processed copies itself"
+
+
+def test_frame_times_from_the_manifest_place_the_chapters():
+    frames = [{"seq": 0}, {"seq": 2}, {"seq": 3}, {"seq": 7}]
+    got = C.with_times(frames, {"startedAt": 1_000_000, "frameTimes": [0, None, 10, 20]})
+    assert [f.get("takenAt") for f in got] == [1_000_000, 1_010_000, 1_020_000, None], "seq 7 is past the list: no time"
+    assert C.with_times(frames, {"startedAt": 1_000_000, "frameTimes": None}) == frames
+    assert C.with_times(frames, {"startedAt": "", "frameTimes": [0]}) == frames
+    timed = C.with_times(frames[:3], {"startedAt": 0, "frameTimes": [0, None, 2, 30]})
+    meta = C.chapters([{"seq": 1, "takenAt": 1000}, {"seq": 4, "takenAt": 29000}], timed)
+    assert "START=0\n" in meta.split("[CHAPTER]")[1] and "START=2\n" in meta.split("[CHAPTER]")[2]
+
+
+def test_no_detectors_is_blur_unavailable():
+    with tempfile.TemporaryDirectory() as root:
+        d, run = make_run(root)
+        try:
+            C.process_run(d, run, [])
+            assert False, "an empty detector list must not publish unblurred frames"
+        except C.BlurUnavailable:
+            pass
+        assert not (d / "processed").exists()
+
+
+def test_purge_skips_symlinks_and_unexpected_names():
+    with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as elsewhere:
+        old = time.time() - 40 * 86400
+        real, _ = make_run(elsewhere, reg="HP1", run_id="HP1-20260901-070000-aaaa")
+        odd, _ = make_run(root, reg="hp-1", run_id="HP1-20260901-070000-bbbb")  # not a reg folder name
+        for d in (real, odd):
+            (d / "processed").mkdir()
+            (d / "processed" / "route.mp4").write_bytes(b"x")
+            os.utime(d / "processed" / "route.mp4", (old, old))
+        (Path(root) / "HP2").mkdir()
+        os.symlink(real, Path(root) / "HP2" / "HP2-20260901-070000-cccc")
+        assert C.purge(root, time.time()) == []
+        assert len(list(real.glob("frame-*.jpg"))) == 3 and len(list(odd.glob("frame-*.jpg"))) == 3
+
+
+def stub_detectors(fn):
+    keep = C.load_detectors
+    C.load_detectors = lambda models: [lambda img: []]
+    try:
+        return fn()
+    finally:
+        C.load_detectors = keep
+
+
+def test_main_carries_on_past_a_failed_run_and_exits_non_zero():
+    with tempfile.TemporaryDirectory() as root:
+        bad, a = make_run(root, run_id="HP66A1234-20261025-071500-aaaa")
+        good, b = make_run(root, run_id="HP66A1234-20261025-081500-bbbb")
+        (bad / "frame-00000.jpg").write_bytes(b"not a jpeg")
+        man = Path(root) / "m.json"
+        man.write_text(json.dumps({"runs": [a, b, dict(b, runId="../evil"), dict(b, runId="HP66A1234-1-empty", frames=0)]}))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = stub_detectors(lambda: C.main(["--root", root, "--manifest", str(man)]))
+        assert code == 1
+        assert (good / "processed" / "route.mp4").exists() and not (bad / "processed").exists()
+        assert "../evil: ignored" in out.getvalue(), "a run with an unexpected id is logged, not dropped silently"
+        assert "HP66A1234-1-empty: empty run" in out.getvalue()
+
+
+def test_a_run_waiting_more_than_3_days_for_its_frames_fails():
+    with tempfile.TemporaryDirectory() as root:
+        d, run = make_run(root)
+        man = Path(root) / "m.json"
+        man.write_text(json.dumps({"runs": [dict(run, frames=9, endedAt=(time.time() - 1 * 86400) * 1000)]}))
+        assert stub_detectors(lambda: C.main(["--root", root, "--manifest", str(man)])) == 0, "a day late: still waiting for Drive"
+        man.write_text(json.dumps({"runs": [dict(run, frames=9, endedAt=(time.time() - 4 * 86400) * 1000)]}))
+        assert stub_detectors(lambda: C.main(["--root", root, "--manifest", str(man)])) == 1, "4 days late: somebody must look"
+        assert not (d / "processed").exists()
 
 
 def test_runs_with_unsafe_ids_or_not_ended_are_ignored():

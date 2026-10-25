@@ -230,6 +230,22 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.ok(/another bus/.test(bad.error));
     assert.strictEqual(seen[seen.length - 1].state, 'error');
   });
+  await test('the end manifest of a timelapse carries frameTimes: seconds since the start per seq, null where the seq is a stop', async () => {
+    const store = mkStore(memIdb(), { now: () => NOW }); const run = await store.newRun({ reg: 'HP1', kind: 'timelapse' });
+    await store.addFrame(run.id, { lat: 31, lng: 76, takenAt: NOW + 400, base64: 'AA' });          // seq 0, 0.4 s
+    await store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW + 20000, base64: 'BB' });        // seq 1, a stop photo
+    await store.addFrame(run.id, { lat: 31, lng: 76, takenAt: NOW + 31600, base64: 'CC' });       // seq 2, 31.6 s
+    assert.deepStrictEqual(await store.frameTimes(run.id), [0, null, 32]);
+    await store.endRun(run.id);
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(run.id);
+    const runs = srv.calls.filter((c) => c.action === 'capturerun');
+    assert.ok(!('frameTimes' in runs[0].run), 'the start manifest has none');
+    assert.deepStrictEqual(runs[1].run.frameTimes, [0, null, 32]);
+    const c = mkStore(); const cr = await c.newRun({ reg: 'HP1', kind: 'count' }); await c.endRun(cr.id);
+    const srv2 = fakeServer(); await createUploader({ store: c, post: srv2.post, sleep: instant }).start(cr.id);
+    assert.ok(!srv2.calls.some((x) => x.run && 'frameTimes' in x.run), 'a count run has no frames, so no frameTimes');
+  });
   await test('count run uploads start and end manifests only, with stops and counts', async () => {
     const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'count' });
     const s = await store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW }); await store.setCount(run.id, s.seq, 4, 1); await store.endRun(run.id);
