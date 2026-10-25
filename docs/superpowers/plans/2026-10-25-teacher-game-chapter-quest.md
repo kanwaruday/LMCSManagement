@@ -217,8 +217,11 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
     3. writes each TeacherState to `CacheService` as `tch_<code>` (TTL 6 h) and the meta as `tch_meta`.
   - `tchStateFor_(code) -> TeacherState|null`: the cache. On a miss it runs `gameTeacherRefresh()` once under the
     lock.
-  - `GAME_CALLER_FALLBACKS.Teacher = function (email) {…}`: the Task 1 rule (an Active Teaching code from the
-    Employee Master), so the game backend accepts the same teachers as PDR.
+  - `GAME_CALLER_FALLBACKS.Teacher = function (verifiedEmail) -> {campusId, employeeCode} | null`: the Task 1 rule
+    (an Active Teaching code from the Employee Master), so the game backend accepts the same teachers as PDR.
+    `game.gs` (the game director's) calls it only when Game Config `teacherAutoSignIn` is true, the token is verified
+    and the allowlist misses. `game.gs` itself forces `roles:['Teacher']`, `canDecide:false` and the email, and it
+    rejects any campus outside LMS1–LMS6.
   - The action `teacherindexaudit` (Owner only) returns `meta.unmatched` counts per campus. This is the input for
     T2's Principal setup quest.
 
@@ -230,7 +233,8 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   - `MATH`/`Class 7` labels line up with the feed's;
   - a Tracker-only CWA gives `cwaFrom:'tracker'`;
   - `keepPrevious` when records fall from 1,000 to 600;
-  - the fallback returns `{roles:['Teacher'], campusId:'LMS4'}` for an NCM Teaching code.
+  - the fallback returns `{campusId:'LMS4', employeeCode:'NCM/…'}` for an NCM Teaching code, and null for an
+    inactive, non-Teaching or HES code.
 - [ ] **Step 2: Run** it. Expected: FAIL.
 - [ ] **Step 3: Implement** `game-teacher.gs` (index part). Add `game-teacher` to `projects.json` `game.files`.
 - [ ] **Step 4: Real-data check.** Run `node tools/teacher-baseline.js --index tools/private/feed-<date>.json` (add
@@ -439,7 +443,8 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 
 - [ ] **Step 1:** `node apps-script/deploy.mjs game --push --deploy "Teacher T1"` (the game backend; the
   `acad-episodes` and `game-teacher` files go with it). Install the `gameTeacherRefresh` 30-min trigger, and set
-  `GAME_PUSH_SECRET` (generate it, store it in `~/.lmcs/game_push_secret`, never print it).
+  `GAME_PUSH_SECRET` (generate it, store it in `~/.lmcs/game_push_secret`, never print it). The teacher sign-in flags
+  stay off: PDR Script property `TEACHER_AUTO_SIGNIN` and game Config `teacherAutoSignIn`.
 - [ ] **Step 2: Uday's part** (one message via the LMCS Master Agent):
   - go-ahead to deploy PDR with Task 1 and set `TEACHER_AUTO_SIGNIN` = `on`;
   - confirm the exam keywords for the campus calendars;
