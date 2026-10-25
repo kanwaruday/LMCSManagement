@@ -65,7 +65,7 @@ const GAME_LOCK_MS = 20000;
 // Tab -> header row. Code indexes by position, so never reorder.
 const GAME_TABS = {
   'Game Config': ['Key', 'Value'],
-  'Game Daily': ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt'],
+  'Game Daily': ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt', 'CoreIds'], // CoreIds: JSON ids in MissionIds that were core and not shared when the snapshot was made
   'Game Progress': ['Email', 'Kind', 'Key', 'Value', 'At'], // Kind: tour, quest_step
   'Game Windows': ['WindowId', 'Title', 'Question', 'Scope', 'ScopeId', 'Decider', 'Choice', 'DefaultIfUndecided',
     'Opens', 'Closes', 'AppliesFrom', 'Writes', 'OpenedBy', 'ConfirmBy'],
@@ -97,6 +97,7 @@ function gameConfigDefaults_() {
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, params) }, looked up after the built-ins
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
+var GAME_MODULE_DONE_AT = GAME_MODULE_DONE_AT || {};   // { Teacher: fn(caller, missionId) -> time in ms | null }, used only by day finalize for core ids not in DoneIds; a module registers it when its source keeps history (e.g. the Teacher log timestamps)
 var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}; // { employee: fn(verifiedEmail) -> { campusId, employeeCode, role } | null }; see header
 // The only roles, and campuses, the employee fallback can ever grant. Frozen so no code mutates them by accident (a module file
 // can still redeclare anything in the shared scope: this is not a guard against a hostile module).

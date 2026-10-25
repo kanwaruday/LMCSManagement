@@ -88,7 +88,7 @@ function setup(opts) {
   return { ctx, game, books, fetches, cache, lock, call, T };
 }
 
-const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.stringify(ids), '[]', '', '', '2026-11-04T05:00:00Z'];
+const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Principal', 'LMS4', JSON.stringify(ids), '[]', '', '', '2026-11-04T05:00:00Z', JSON.stringify(coreIds || [])];
 
 // ── gametoday: first load creates the snapshot, the second reuses it ─────
 {
@@ -108,6 +108,7 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   const daily = t.game['Game Daily'].rows;
   assert.strictEqual(daily.length, 2);
   assert.deepStrictEqual(daily[1].slice(0, 8), ['2026-11-05', 'p4@lms.org.in', 'Principal', 'LMS4', JSON.stringify(ids), '[]', '', '']);
+  assert.deepStrictEqual(JSON.parse(daily[1][9]), ['ss_pace:LMS4:2026-11-05']); // CoreIds: the core, non-shared ids picked
   assert.ok(JSON.stringify(daily).indexOf('SS evaluations') === -1);                    // ...never in the workbook
   assert.ok(t.game['Game Daily'].formats.some((f) => f.row === 2 && f.col === 1 && f.f === '@')); // Day stored as plain text
   assert.strictEqual(t.lock.held, 0);
@@ -199,7 +200,7 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   // earlier days, sources up: finalized. info_requested (core here) still open -> counted, not on track; it rolls over.
   // Yesterday's ss_pace is day-scoped: today's is a new mission, never "from yesterday".
   const t = setup({ config: [['core', '{"Principal":["ss_pace","info_requested"]}']],
-    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04', 'info_requested:A1']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'])] });
+    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04', 'info_requested:A1'], ['ss_pace:LMS4:2026-11-04', 'info_requested:A1']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'], ['info_requested:GONE'])] });
   const a = t.call(P4, 'gametoday');
   const rows = t.game['Game Daily'].rows;
   assert.strictEqual(String(rows[1][6]).toUpperCase(), 'TRUE');
@@ -248,7 +249,7 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   // R34: an undone day-scoped core mission (yesterday's ss_pace, gone this morning, not in DoneIds) -> counted, not on track.
   // A missing id that is not day-scoped (an archived request) stays gone (R9).
   const t = setup({ config: [['core', '{"Principal":["ss_pace","info_requested"]}']],
-    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'])] });
+    daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-04'], ['ss_pace:LMS4:2026-11-04']), dailyRow('2026-11-03', 'p4@lms.org.in', ['info_requested:GONE'], ['info_requested:GONE'])] });
   const a = t.call(P4, 'gametoday');
   const rows = t.game['Game Daily'].rows;
   assert.strictEqual(String(rows[1][6]).toUpperCase(), 'TRUE');
@@ -256,6 +257,61 @@ const dailyRow = (day, email, ids) => [day, email, 'Principal', 'LMS4', JSON.str
   assert.strictEqual(rows[2][7], '');
   assert.strictEqual(a.missions.find((m) => m.kind === 'ss_pace').rolledOver, false); // today's is a new mission
   assert.deepStrictEqual(a.daysOnTrack, { onTrack: 0, counted: 1, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: true });
+}
+
+// ── a module mission with a namespaced id (teacher:<kind>:<code>:<day>) is judged from the snapshot's CoreIds, not its parsed kind ──
+{
+  const TEACHER = { email: 't@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], primaryRole: 'Teacher', canDecide: false };
+  const id = 'teacher:cwhw_log:T1:2026-11-04';
+  const mk = (extra) => Object.assign({ id, kind: 'cwhw_log', title: 'Log', why: '', owner: 't@lms.org.in', campus: 'LMS4', go: 'teacher/', due: null, core: true, shared: false, done: false, doneAt: null, doneBy: null, rolledOver: false, gone: false }, extra);
+  const run = (doneIds, live) => {
+    const t = setup({ daily: [dailyRow('2026-11-04', 't@lms.org.in', [id], [id], 'Teacher')] });
+    t.game['Game Daily'].rows[1][5] = JSON.stringify(doneIds);
+    t.ctx.GAME_MODULE_MISSIONS.Teacher = () => live;
+    t.call(TEACHER, 'gametoday');
+    return t.game['Game Daily'].rows[1];
+  };
+  let y = run([id], []); // done on the day (DoneIds), gone this morning
+  assert.strictEqual(String(y[6]).toUpperCase(), 'TRUE');
+  assert.strictEqual(String(y[7]).toUpperCase(), 'TRUE');
+  y = run([], []);       // not done, day-scoped, gone: missed (R34)
+  assert.strictEqual(String(y[7]).toUpperCase(), 'FALSE');
+  // GAME_MODULE_DONE_AT: a module whose source keeps history says when a core id not in DoneIds was done
+  const withHook = (fn) => {
+    const t = setup({ daily: [dailyRow('2026-11-04', 't@lms.org.in', [id], [id], 'Teacher')] });
+    t.ctx.GAME_MODULE_MISSIONS.Teacher = () => [];
+    if (fn) t.ctx.GAME_MODULE_DONE_AT.Teacher = fn;
+    t.call(TEACHER, 'gametoday');
+    return String(t.game['Game Daily'].rows[1][7]).toUpperCase();
+  };
+  const seen = [];
+  assert.strictEqual(withHook((c, i) => { seen.push(c.email + '|' + i); return Date.parse('2026-11-04T10:00:00Z'); }), 'TRUE'); // before 04:00 IST next day
+  assert.deepStrictEqual(seen, ['t@lms.org.in|' + id]);
+  assert.strictEqual(withHook(() => Date.parse('2026-11-04T23:00:00Z')), 'FALSE');  // after the cutoff: counted, late
+  assert.strictEqual(withHook(() => null), 'FALSE');                                 // null: falls through to R34
+  assert.strictEqual(withHook(() => { throw new Error('sheet down'); }), 'FALSE');   // a throw is null
+  assert.strictEqual(withHook(null), 'FALSE');                                       // none registered: unchanged
+  { // an id already in DoneIds never calls the hook
+    const t = setup({ daily: [dailyRow('2026-11-04', 't@lms.org.in', [id], [id], 'Teacher')] });
+    t.game['Game Daily'].rows[1][5] = JSON.stringify([id]);
+    t.ctx.GAME_MODULE_MISSIONS.Teacher = () => [];
+    t.ctx.GAME_MODULE_DONE_AT.Teacher = () => { throw new Error('should not be called'); };
+    t.call(TEACHER, 'gametoday');
+    assert.strictEqual(String(t.game['Game Daily'].rows[1][7]).toUpperCase(), 'TRUE');
+  }
+  // a new Teacher snapshot records its core ids
+  const t = setup();
+  t.ctx.GAME_MODULE_MISSIONS.Teacher = () => [mk({ id: 'teacher:cwhw_log:T1:2026-11-05' }), mk({ id: 'teacher:x:T1', core: false }), mk({ id: 'teacher:s:T1', shared: true })];
+  t.call(TEACHER, 'gametoday');
+  assert.deepStrictEqual(JSON.parse(t.game['Game Daily'].rows[1][9]), ['teacher:cwhw_log:T1:2026-11-05']);
+}
+{
+  // a snapshot whose only ids are non-core: nothing to count, OnTrack blank
+  const t = setup({ daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['info_requested:A1', 'pdr_report:LMS4:2026-11-04'], [])] });
+  t.call(P4, 'gametoday');
+  const y = t.game['Game Daily'].rows[1];
+  assert.strictEqual(String(y[6]).toUpperCase(), 'TRUE');
+  assert.strictEqual(y[7], '');
 }
 
 // ── pilot gate and roles without missions ───────────────────────────────

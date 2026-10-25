@@ -24,8 +24,8 @@ assert.deepStrictEqual(picked.map((m) => m.id), ['t:a', 't:d']);
 assert.strictEqual(ctx.gamePick_([M('t:a'), M('t:b')], 1, [], []).length, 1);
 
 // ── gameSnapshot_ ──────────────────────────────────────────────────────
-const H = ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt'];
-const row = (day, email, ids, done, fin, on) => [day, email, 'Principal', 'LMS4', JSON.stringify(ids), JSON.stringify(done || []), fin === undefined ? '' : fin, on === undefined ? '' : on, ''];
+const H = ['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds', 'Finalized', 'OnTrack', 'CreatedAt', 'CoreIds'];
+const row = (day, email, ids, done, fin, on) => [day, email, 'Principal', 'LMS4', JSON.stringify(ids), JSON.stringify(done || []), fin === undefined ? '' : fin, on === undefined ? '' : on, '', '[]'];
 const rows = [H, row('2026-10-26', 'p@lms.org.in', ['a:1']), row('2026-10-27', 'q@lms.org.in', ['z:1']), row('2026-10-27', 'P@lms.org.in', ['a:2', 'b:3'], ['a:2'])];
 assert.deepStrictEqual(J(ctx.gameSnapshot_(rows, 'p@lms.org.in', '2026-10-27')), { row: 4, missionIds: ['a:2', 'b:3'], doneIds: ['a:2'] }); // row = sheet row, header is 1
 assert.strictEqual(ctx.gameSnapshot_(rows, 'p@lms.org.in', '2026-10-28'), null);
@@ -33,10 +33,10 @@ assert.strictEqual(ctx.gameSnapshot_([H], 'p@lms.org.in', '2026-10-27'), null);
 
 // ── gameFinalizeDay_ ───────────────────────────────────────────────────
 // day 2026-10-27 runs to 04:00 IST on the 28th = 2026-10-27T22:30Z
-const snap = { row: 2, missionIds: ['ss_pace:LMS4', 'pdr_issue:9', 'x:1'], doneIds: [] };
-const core = ['ss_pace', 'pdr_issue'];
-const done = (id, at) => M(id, { core: core.indexOf(id.split(':')[0]) !== -1, done: true, doneAt: at });
-const fin = (s, ms) => J(ctx.gameFinalizeDay_(s, ms, '2026-10-27', core));
+// the snapshot's coreIds are fixed when it is made; finalize never parses a kind out of an id
+const snap = { row: 2, missionIds: ['ss_pace:LMS4', 'pdr_issue:9', 'x:1'], doneIds: [], coreIds: ['ss_pace:LMS4', 'pdr_issue:9'] };
+const done = (id, at) => M(id, { core: id !== 'x:1', done: true, doneAt: at });
+const fin = (s, ms) => J(ctx.gameFinalizeDay_(s, ms, '2026-10-27'));
 assert.deepStrictEqual(fin(snap, [done('ss_pace:LMS4', '2026-10-27T05:00:00Z'), done('pdr_issue:9', '2026-10-27T22:29:00Z'), M('x:1')]),
   { counted: true, onTrack: true });                                              // 03:59 IST next day still counts; non-core x:1 is open and irrelevant
 assert.deepStrictEqual(fin(snap, [done('ss_pace:LMS4', '2026-10-27T05:00:00Z'), done('pdr_issue:9', '2026-10-27T22:31:00Z'), M('x:1')]),
@@ -45,14 +45,20 @@ assert.deepStrictEqual(fin(snap, [done('ss_pace:LMS4', '2026-10-27T05:00:00Z'), 
   { counted: true, onTrack: false });                                             // open at the end
 assert.deepStrictEqual(fin(snap, [done('ss_pace:LMS4', '2026-10-26T20:00:00Z'), done('pdr_issue:9', '2026-10-25T05:00:00Z')]),
   { counted: true, onTrack: true });                                              // finished before the day began: still done for that day
-assert.deepStrictEqual(fin({ row: 2, missionIds: ['hiring_stall:1', 'x:1'], doneIds: [] }, [M('hiring_stall:1', { core: true, shared: true }), M('x:1')]),
+assert.deepStrictEqual(fin({ row: 2, missionIds: ['hiring_stall:1', 'x:1'], doneIds: [], coreIds: ['hiring_stall:1'] }, [M('hiring_stall:1', { core: true, shared: true }), M('x:1')]),
   { counted: false, onTrack: false });                                            // shared never counts
-assert.deepStrictEqual(fin({ row: 2, missionIds: ['x:1'], doneIds: [] }, [M('x:1')]), { counted: false, onTrack: false }); // no core missions
-assert.deepStrictEqual(fin({ row: 2, missionIds: [], doneIds: [] }, []), { counted: false, onTrack: false });
+assert.deepStrictEqual(fin({ row: 2, missionIds: ['x:1'], doneIds: [], coreIds: [] }, [M('x:1')]), { counted: false, onTrack: false }); // no core missions
+assert.deepStrictEqual(fin({ row: 2, missionIds: [], doneIds: [], coreIds: [] }, []), { counted: false, onTrack: false });
 // gone core mission is ignored (flagged gone, or missing from today's list: R9)
 assert.deepStrictEqual(fin(snap, [done('ss_pace:LMS4', '2026-10-27T05:00:00Z'), M('pdr_issue:9', { core: true, gone: true })]), { counted: true, onTrack: true });
 assert.deepStrictEqual(fin(snap, [M('pdr_issue:9', { core: true, gone: true })]), { counted: false, onTrack: false });
 assert.deepStrictEqual(fin(snap, []), { counted: false, onTrack: false });
+// namespaced module ids: core-ness comes from coreIds, never from the id's first segment
+const T1 = 'teacher:cwhw_log:T1:2026-10-27', ts = { row: 2, missionIds: [T1], doneIds: [], coreIds: [T1] };
+assert.deepStrictEqual(fin(Object.assign({}, ts, { doneIds: [T1] }), []), { counted: true, onTrack: true });  // done that day, gone now
+assert.deepStrictEqual(fin(ts, []), { counted: true, onTrack: false });                                       // day-scoped, missing, undone (R34)
+assert.deepStrictEqual(fin({ row: 2, missionIds: ['teacher:cwhw_log:T1'], doneIds: [], coreIds: ['teacher:cwhw_log:T1'] }, []), { counted: false, onTrack: false }); // missing, not day-scoped: gone (R9)
+assert.deepStrictEqual(fin({ row: 2, missionIds: [T1], doneIds: [T1], coreIds: [] }, []), { counted: false, onTrack: false }); // done but not core: nothing to count
 
 // ── gameDaysOnTrack_ ───────────────────────────────────────────────────
 // Finalized TRUE + OnTrack TRUE/FALSE = counted day; Finalized TRUE + OnTrack blank = day with no counted missions
@@ -73,5 +79,5 @@ assert.deepStrictEqual(J(ctx.gameDaysOnTrack_(fx, 'P@lms.org.in', '2027-01')), {
 assert.deepStrictEqual(J(ctx.gameDaysOnTrack_(fx, 'p@lms.org.in', '2026-11')).lastMonthCounted, 21); // year/month rollover: Jan -> Dec checked below
 assert.strictEqual(ctx.gameDaysOnTrack_([H, row('2026-12-05', 'p@lms.org.in', ['a:1'], [], true, true)], 'p@lms.org.in', '2027-01').lastMonthOnTrack, 1);
 // a Sheets Date in the Day column (midnight IST) still reads as that day
-assert.strictEqual(ctx.gameSnapshot_([H, [vm.runInContext("new Date('2026-10-26T18:30:00Z')", ctx), 'p@lms.org.in', 'P', 'L', '["a:1"]', '[]', '', '', '']], 'p@lms.org.in', '2026-10-27').row, 2);
+assert.strictEqual(ctx.gameSnapshot_([H, [vm.runInContext("new Date('2026-10-26T18:30:00Z')", ctx), 'p@lms.org.in', 'P', 'L', '["a:1"]', '[]', '', '', '', '[]']], 'p@lms.org.in', '2026-10-27').row, 2);
 console.log('test-today OK');

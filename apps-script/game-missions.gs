@@ -329,33 +329,33 @@ function gameSnapshot_(dailyRows, email, dayKey) {
   return null;
 }
 
-// Judge one finished game day. counted = the snapshot held a core, non-shared mission that still exists or was seen done
-// that day (snapshot.doneIds); onTrack = every such mission is done by 04:00 IST the next day. A snapshot id in doneIds
-// counts as done even when it has left missionsNow. A missing id that is day-scoped to that day (ends ':<dayKey>', e.g.
-// ss_pace / pdr_report) and not in doneIds expired undone (R34): counted if core, not on track. Any other id missing from
-// missionsNow is gone (R9), not done. A mission done before the day began counts as done for that day (credit is Task 5's
-// business, not this one's).
+// Judge one finished game day from its snapshot. Core-ness is fixed at snapshot time (snapshot.coreIds), so module
+// missions with namespaced ids (teacher:<kind>:<code>:<day>) work: no kind is parsed out of an id. Each core id is
+// counted unless it is gone or shared (R9); onTrack = every counted one was done by 04:00 IST the next day. An id in
+// snapshot.doneIds counts as done even when it has left missionsNow. Otherwise doneAtFn (optional, missionId -> ms or
+// null; a throw is null) can say when it was done, from a source that keeps history. Otherwise a live mission is judged
+// as it stands, and a missing id that is day-scoped to that day (ends ':<dayKey>') expired undone (R34): counted, not
+// on track. Any other missing id is gone (R9). A mission done before the day began counts as done for that day (credit
+// is Task 5's business, not this one's).
 // ponytail: doneIds is only written on a portal visit, so work finished after the person's last visit that day counts as
-// missed; Phase 2's nightly snapshot closes the gap.
-function gameFinalizeDay_(snapshot, missionsNow, dayKey, cfgCore) {
+// missed unless doneAtFn knows better; Phase 2's nightly snapshot closes the gap.
+function gameFinalizeDay_(snapshot, missionsNow, dayKey, doneAtFn) {
   const now = {}, seenDone = {};
   missionsNow.forEach(function (m) { now[m.id] = m; });
   (snapshot.doneIds || []).forEach(function (id) { seenDone[id] = true; });
   const end = Date.parse(dayKey + 'T04:00:00+05:30') + GAME_DAY_MS;
   let counted = false, onTrack = true;
-  snapshot.missionIds.forEach(function (id) {
+  (snapshot.coreIds || []).forEach(function (id) {
     const m = now[id];
-    if (seenDone[id]) { // recorded done and non-shared on that day: kind from the live mission, else from the id
-      if ((m && m.core) || (cfgCore || []).indexOf(m ? m.kind : String(id).split(':')[0]) !== -1) counted = true;
-      return;
-    }
-    if (!m && String(id).slice(-(dayKey.length + 1)) === ':' + dayKey) { // day-scoped, expired undone (R34)
-      if ((cfgCore || []).indexOf(String(id).split(':')[0]) !== -1) { counted = true; onTrack = false; }
-      return;
-    }
-    if (!m || m.gone || m.shared || !(m.core || (cfgCore || []).indexOf(m.kind) !== -1)) return;
-    counted = true;
-    if (!(m.done && (!m.doneAt || new Date(m.doneAt).getTime() < end))) onTrack = false;
+    if (seenDone[id]) { counted = true; return; }
+    let at = null;
+    if (doneAtFn) { try { at = doneAtFn(id); } catch (err) { at = null; } }
+    if (typeof at === 'number' && isFinite(at)) { counted = true; if (at >= end) onTrack = false; return; }
+    if (m) {
+      if (m.gone || m.shared) return;
+      counted = true;
+      if (!(m.done && (!m.doneAt || new Date(m.doneAt).getTime() < end))) onTrack = false;
+    } else if (String(id).slice(-(dayKey.length + 1)) === ':' + dayKey) { counted = true; onTrack = false; }
   });
   return { counted: counted, onTrack: counted && onTrack };
 }

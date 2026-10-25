@@ -123,6 +123,8 @@ function gameIssueActionsBy_(rows, email) {
 // earlier day's ids (roll-over), and today's ids: the existing snapshot, or newIds picked now.
 function gameDailyPlan_(dailyRows, caller, dayKey, missionsNow, cfg, sourcesOk) {
   const role = caller.primaryRole, who = gameLower_(caller.email), core = (cfg.core && cfg.core[role]) || [];
+  const hook = GAME_MODULE_DONE_AT[role];
+  const doneAtFn = typeof hook === 'function' ? function (id) { return hook(caller, id); } : null;
   const finalize = [];
   let latest = null;
   for (let i = 1; i < dailyRows.length; i++) {
@@ -131,7 +133,7 @@ function gameDailyPlan_(dailyRows, caller, dayKey, missionsNow, cfg, sourcesOk) 
     const ids = gameIdList_(r[4]), doneIds = gameIdList_(r[5]);
     if (!latest || day > latest.day) latest = { day: day, ids: ids, doneIds: doneIds };
     if (!sourcesOk || r[6] === true || String(r[6]).toLowerCase() === 'true') continue;
-    const f = gameFinalizeDay_({ missionIds: ids, doneIds: doneIds }, missionsNow, day, core);
+    const f = gameFinalizeDay_({ missionIds: ids, doneIds: doneIds, coreIds: gameIdList_(r[9]) }, missionsNow, day, doneAtFn);
     finalize.push({ row: i + 1, onTrack: f.counted ? f.onTrack : '' }); // R14: blank = nothing to count
   }
   // rolled over = the latest earlier day's ids that were not seen done that day
@@ -219,7 +221,10 @@ function gamePersistDaily_(sh, caller, dayKey, missionsNow, cfg, sourcesOk, now)
   }
   const created = !!plan.newIds && sourcesOk;
   if (created) {
-    const r = [dayKey, gameLower_(caller.email), caller.primaryRole, caller.campusId, JSON.stringify(plan.newIds), '[]', '', '', now.toISOString()];
+    const byId = {};
+    missionsNow.forEach(function (m) { byId[m.id] = m; });
+    const coreIds = plan.newIds.filter(function (id) { return byId[id] && byId[id].core && !byId[id].shared; });
+    const r = [dayKey, gameLower_(caller.email), caller.primaryRole, caller.campusId, JSON.stringify(plan.newIds), '[]', '', '', now.toISOString(), JSON.stringify(coreIds)];
     gameAppendText_(sh, [r]);
     rows.push(r);
   }
