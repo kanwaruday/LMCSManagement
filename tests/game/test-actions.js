@@ -36,7 +36,7 @@ function setup(opts) {
   for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
   const T = vm.runInContext('GAME_TABS', ctx);
   const win = (o) => T['Game Windows'].map((h) => (o && h in o ? o[h] : {
-    WindowId: 'trackSuit', Title: 'Track-suit days for your campus', Question: 'Which 3 days?', Scope: 'campus', ScopeId: '*', Decider: 'Principal',
+    WindowId: 'trackSuit', Title: "Choose your campus's track-suit days", Question: 'Which 3 days?', Scope: 'campus', ScopeId: '*', Decider: 'Principal',
     Choice: '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', DefaultIfUndecided: '["Mon","Wed","Fri"]',
     Opens: '2026-11-01', Closes: '2026-11-08', AppliesFrom: '2026-11-10', Writes: 'trackSuitDays', OpenedBy: '', ConfirmBy: '',
   }[h]));

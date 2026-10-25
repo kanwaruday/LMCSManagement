@@ -70,7 +70,7 @@
     five: Object.assign({}, base, { missions: five, next: five[0] }),
     zero: Object.assign({}, base, { missions: [], next: null }),
     down: Object.assign({}, base, { firstLoadToday: false, sourcesDown: ['ssdashboard'], missions: five.slice(1, 4), next: five[1] }),
-    window: Object.assign({}, base, { missions: five.slice(0, 3), next: five[0], windows: [{ windowId: 'trackSuit', title: 'Track-suit days for your campus',
+    window: Object.assign({}, base, { missions: five.slice(0, 3), next: five[0], windows: [{ windowId: 'trackSuit', title: "Choose your campus's track-suit days",
       question: 'Which 3 days a week do students come in track suits?', scopeId: 'LMS4', choice: { type: 'pickN', n: 3, options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
       current: ['Mon', 'Wed', 'Fri'], closes: 'Sat 8 Nov', decided: null }] }),
     teacher: Object.assign({}, base, { role: 'Teacher', campus: 'LMS2', speaker: 'teacher-owl',

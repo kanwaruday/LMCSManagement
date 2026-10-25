@@ -15,7 +15,7 @@ const owner = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], primar
 
 const TABS = vm.runInContext('GAME_TABS', ctx), WH = TABS['Game Windows'], DH = TABS['Game Decisions']; // const is not a ctx property
 const winRow = (o) => WH.map((h) => (o && h in o ? o[h] : {
-  WindowId: 'trackSuit', Title: 'Track-suit days for your campus', Question: 'Which 3 days a week do students come in track suits?',
+  WindowId: 'trackSuit', Title: "Choose your campus's track-suit days", Question: 'Which 3 days a week do students come in track suits?',
   Scope: 'campus', ScopeId: '*', Decider: 'Principal',
   Choice: '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', DefaultIfUndecided: '["Mon","Wed","Fri"]',
   Opens: '2026-11-01', Closes: '2026-11-08', AppliesFrom: '2026-11-10', Writes: 'trackSuitDays', OpenedBy: 'o@lms.org.in', ConfirmBy: '',

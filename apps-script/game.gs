@@ -254,11 +254,12 @@ function gameSetup() {
   const defaults = gameConfigDefaults_();
   const seed = Object.keys(defaults).filter(function (k) { return !have[k]; }).map(function (k) { return [k, JSON.stringify(defaults[k])]; });
   if (seed.length) cfgSheet.getRange(cfgSheet.getLastRow() + 1, 1, seed.length, 2).setNumberFormat('@').setValues(seed); // text: stops Sheets turning "true"/"3" into booleans/numbers
-  // The track-suit window template: Opens/Closes blank = closed until the Owner sets the dates
+  // The track-suit window template: Opens/Closes blank = closed until the Owner sets the dates.
+  // Window titles are verb-first: the UI uses the title as is (Today row, "First up", the decision sheet's heading).
   const winSheet = ss.getSheetByName('Game Windows');
   if (!winSheet.getDataRange().getValues().slice(1).some(function (r) { return String(r[0]).trim() === 'trackSuit'; })) {
     winSheet.getRange(winSheet.getLastRow() + 1, 1, 1, GAME_TABS['Game Windows'].length).setNumberFormat('@').setValues([[
-      'trackSuit', 'Track-suit days for your campus', 'Which 3 days a week do students come in track suits?',
+      'trackSuit', "Choose your campus's track-suit days", 'Which 3 days a week do students come in track suits?',
       'campus', '*', 'Principal', '{"type":"pickN","n":3,"options":["Mon","Tue","Wed","Thu","Fri","Sat"]}', '["Mon","Wed","Fri"]',
       '', '', '', 'trackSuitDays', '', '']]);
   }

@@ -33,7 +33,7 @@ var LMCSGame = window.LMCSGame = (function () {
     var ws = ((today && today.windows) || []).filter(function (w) { return !w.decided; });
     return ms.filter(function (m) { return m.core; }).concat(ms.filter(function (m) { return !m.core; }))
       .map(function (m) { return { title: String(m.title || ''), m: m }; })
-      .concat(ws.map(function (w) { return { title: 'Decide: ' + w.title, w: w }; }));
+      .concat(ws.map(function (w) { return { title: String(w.title || ''), w: w }; })); // window titles are verb-first
   }
 
   var NUMS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -170,6 +170,18 @@ var LMCSGame = window.LMCSGame = (function () {
     return p && p.total && s.indexOf(p.done + ' of ' + p.total) !== -1 ? '' : s;
   }
 
+  // A decision window's small line: "Pick 3 of Mon–Sat", plus "· Buddy dresses to match" for the track-suit window
+  function windowSmall(w) {
+    var c = (w && w.choice) || {}, o = c.options || [];
+    if (!c.n || !o.length) return '';
+    return 'Pick ' + c.n + ' of ' + o[0] + '–' + o[o.length - 1] + (w.windowId === 'trackSuit' ? ' · Buddy dresses to match' : '');
+  }
+
+  // the decision sheet's live count: "2 of 3 picked", or "4 picked. Untick 1 to save." once over
+  function pickedText(k, n) {
+    return !n ? '' : k > n ? k + ' picked. Untick ' + (k - n) + ' to save.' : k + ' of ' + n + ' picked';
+  }
+
   // The next-step bar's mission: when the server's next is in Today's set, the first open mission in panel order (so
   // the bar and the first solid Go agree); a mission from outside the set (arrived mid-day) is kept as the server sent it.
   function nextMission(today) {
@@ -238,7 +250,11 @@ var LMCSGame = window.LMCSGame = (function () {
 
     // ── Today rows ──
     function tags(list) {
-      return list.filter(Boolean).map(function (x) { return [' ', h('span', { class: 'lg-tag lg-tag-' + x[0] }, x[1])]; });
+      return list.filter(Boolean).map(function (x) { return h('span', { class: 'lg-tag lg-tag-' + x[0] }, x[1]); });
+    }
+    // a row's one meta line under the title: tags, then the small text
+    function meta(tagEls, small) {
+      return tagEls.length || small ? h('span', { class: 'lg-meta' }, [tagEls, small && h('small', {}, small)]) : null;
     }
     function missionRow(m) {
       var href = safeHref(m.go, root), finished = m.done || m.gone, small = smallLine(m);
@@ -246,9 +262,8 @@ var LMCSGame = window.LMCSGame = (function () {
       return h('li', { class: 'lg-row' + (finished ? ' lg-done' : '') }, [
         h('div', { class: 'lg-t' }, [
           h('span', { class: 'lg-title' }, m.title),
-          tags([m.core && !finished && ['core', 'core'], m.rolledOver && !finished && ['roll', 'from yesterday'], m.shared && ['shared', 'shared'],
-            m.due && !finished && ['dec', 'due ' + dateLabel(m.due)]]),
-          small && h('small', {}, small),
+          meta(tags([m.core && !finished && ['core', 'core'], m.rolledOver && !finished && ['roll', 'from yesterday'], m.shared && ['shared', 'shared'],
+            m.due && !finished && ['dec', 'due ' + dateLabel(m.due)]]), small),
           p && !finished && h('span', { class: 'lg-mini' }, [
             h('span', { class: 'lg-track', 'aria-hidden': 'true' }, h('i', { style: 'width:' + Math.min(100, Math.round(100 * p.done / p.total)) + '%' })),
             h('span', { class: 'lg-mini-n' }, p.done + ' of ' + p.total),
@@ -259,12 +274,11 @@ var LMCSGame = window.LMCSGame = (function () {
       ]);
     }
     function windowRow(w) {
-      var c = w.choice || {}, o = c.options || [], title = 'Decide: ' + w.title;
+      var title = w.title;
       return h('li', { class: 'lg-row' + (w.decided ? ' lg-done' : '') }, [
         h('div', { class: 'lg-t' }, [
           h('span', { class: 'lg-title' }, title),
-          tags([!w.decided && w.closes && ['dec', 'closes ' + w.closes]]),
-          c.n && o.length && h('small', {}, 'Pick ' + c.n + ' of ' + o[0] + '–' + o[o.length - 1]),
+          meta(tags([!w.decided && w.closes && ['dec', 'closes ' + w.closes]]), windowSmall(w)),
         ]),
         w.decided ? h('span', { class: 'lg-tick' }, 'Done')
           : h('button', { type: 'button', class: 'lg-go', 'aria-label': 'Go: ' + title, onclick: function () { decide(w, this); } }, 'Go'),
@@ -471,7 +485,8 @@ var LMCSGame = window.LMCSGame = (function () {
       var busy = false;
       function count() {
         var k = inputs.filter(function (x) { return x.checked; }).length;
-        picked.textContent = c.n ? k + ' of ' + c.n + ' picked' : '';
+        picked.textContent = pickedText(k, c.n);
+        picked.classList.toggle('lg-picked-over', !!c.n && k > c.n);
         submit.disabled = busy || (c.n ? k !== c.n : false);
       }
       var form = h('form', { onchange: count, onsubmit: function (e) {
@@ -488,7 +503,8 @@ var LMCSGame = window.LMCSGame = (function () {
           if (nowLine) nowLine.remove();
           var ok = h('button', { type: 'button', class: 'lg-btn', onclick: function () { close(); } }, 'Done');
           form.replaceWith(h('div', { role: 'status' }, [
-            h('p', { class: 'lg-saved' }, [img(art({ campus: t.campus, config: t.config }, now).avatar, 'lg-av lg-av-40'),
+            h('p', { class: 'lg-saved' }, [img(suit ? 'buddy/avatar-tracksuit-' + (/summer/.test(outfit(now, t.campus, t.config)) ? 'summer' : 'winter') + '.webp'
+              : art({ campus: t.campus, config: t.config }, now).avatar, 'lg-av lg-av-40'),
               h('span', { class: 'lg-ok' }, suit ? 'Saved. Buddy wears the track suit on ' + joinList(value) + '.' : 'Saved.')]),
             h('div', { class: 'lg-btns' }, ok),
           ]));
@@ -537,5 +553,5 @@ var LMCSGame = window.LMCSGame = (function () {
   }
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
-    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, nextMission: nextMission, mount: mount };
+    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, mount: mount };
 })();
