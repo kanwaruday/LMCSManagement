@@ -350,6 +350,10 @@ so only this much is designed here).
 - Principals see their own campus's needs bars, their campus team bars and the network bar. They never see another campus's bars side
   by side with theirs.
 
+**The Principal's issue screen** (Claude's call): `principal/issues.html`, a list of their campus's open and reopened
+issues, each with a Resolve-with-note box, and a "Closed recently" list. It is the Go link for the shared layer's
+Principal issue mission.
+
 ### `principalissues` response shape (agreed with the game director, who consumes it)
 
 ```
@@ -417,8 +421,11 @@ Names in lines come from live data at runtime, never from static files.
    - The scheduled refresh appends one row per campus per day to an **`HQ History`** tab: date, campus and each
      need's value. It holds counts only, no names.
    - Task-based needs could be rebuilt from CreatedAt/ResolvedAt, but one tab for all is simpler.
-7. **Front end:** a new `coordinator/hq.html` **beside** today's pages, as Fleet Command does. The department pages,
-   follow-ups and Systems stay. The home page links to the HQ. Folding the old pages in is a later decision.
+7. **Column stability (agreed with the game director, whose Game Backend reads them):** the Tasks tab columns and the
+   Approvals tab columns keep their positions. Recommendations and Delegations are new **tabs**, not new columns.
+8. **Front end:** a new `coordinator/hq.html` **beside** today's pages, as Fleet Command does. The department pages,
+   follow-ups and Systems stay. The home page links to the HQ with one card; the shared layer mounts Buddy on the same page above the department
+   cards, so the HQ card is added after that mount lands. Folding the old pages in is a later decision.
    - It loads the shared `assets/game.js`. From Phase C2 it reuses `assets/game-map/` for the map layout.
 
 ## Timeline and phasing (backwards from March 2027)
