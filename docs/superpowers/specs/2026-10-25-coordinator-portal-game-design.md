@@ -290,7 +290,7 @@ GET action=principalissues&idToken=…   (Principal: own campus only; Coordinato
 - Merged-away issues are folded into their target, as the Systems page does today.
 - No report text beyond the issue subject is returned.
 
-## Buddy's Coordinator lines (drafts, for the game director's voice check)
+## Buddy's Coordinator lines (voice-checked by the game director, 2026-10-25)
 
 | Moment | Line |
 |---|---|
@@ -298,11 +298,11 @@ GET action=principalissues&idToken=…   (Principal: own campus only; Coordinato
 | Morning, nothing urgent | "Morning. Nothing in your district is past its line today. Your five are ready when you are." |
 | A decision clears a Principal's wait | "Decided. LMS 4's Principal can go ahead with the trip now." |
 | Help credit, end of day | "You unblocked 3 Principals today." |
-| A hire completed | "<Name>'s joining is now complete in the Employee Master. Payroll will include them this month." |
+| A hire completed | "<Name>'s joining is complete in the Employee Master, so payroll picks it up this month." |
 | A stalled hire, shared | "A hire at LMS 2 has been approved for 8 days but not yet marked Hired. A word with the Principal usually moves it." |
 | District goal met | "LMS 1–3 decided every approval within three days this month. Shabash, district." |
-| A campus steady | "LMS 6 is steady: every need is full." |
-| A paper expired (bad news) | "LMS 3's fire NOC expired on 28 April. It is the oldest open campus paper in your district. The renewal step is in your term campaign." |
+| A campus steady | "LMS 6 is steady: every need bar is full." |
+| A paper expired (bad news) | "LMS 3's fire NOC expired on 28 April, so the campus is out of compliance until it's renewed. The renewal is the first step in your term campaign." ("Term campaign" is the HQ's on-screen label for section 6.) |
 | Data delayed (bad news) | "Today's follow-ups are from yesterday evening: the morning refresh didn't run. Nothing is lost; I'll update when it does." |
 
 **Rules applied:**
