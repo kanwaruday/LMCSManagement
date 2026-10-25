@@ -151,6 +151,7 @@ function doGet(e) {
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
+    if (action === 'coordinatortrackrecord') return coordJson_(coordTrackRecordGet_(caller));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -176,6 +177,7 @@ function doPost(e) {
     if (action === 'coordinatorpdrmerge') return coordJson_(coordPdrMerge_(caller, body));
     if (action === 'coordinatorallocate') return coordJson_(coordAprAllocate_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
+    if (action === 'coordinatorrecommend') return coordJson_(coordRecommend_(caller, body));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -880,6 +882,7 @@ function coordTasksList_(caller, idToken) {
     });
   }
   tasks.sort(function (a, b) { return (rank[a.severity] - rank[b.severity]) || (a.createdAt < b.createdAt ? -1 : 1); });
+  try { coordRecAttach_(tasks); } catch (err) { console.error('Recommendations: ' + err.message); } // the tasks show without them rather than not at all
   return { success: true, tasks: tasks };
 }
 

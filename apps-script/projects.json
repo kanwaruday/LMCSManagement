@@ -53,6 +53,7 @@
       "coordinator-transport",
       "coordinator-pdr",
       "coordinator-approvals",
+      "coordinator-recommend",
       "coordinator-transport-gps"
     ]
   },
