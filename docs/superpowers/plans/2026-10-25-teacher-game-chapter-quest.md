@@ -212,7 +212,9 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 ### Task 3: Teacher index (the 30-minute build)
 
 **Files:**
-- Create: `apps-script/game-teacher.gs` (starts with the three `var` guard lines plus `GAME_CALLER_FALLBACKS`)
+- Create: `apps-script/game-teacher.gs`. It starts with the four guard lines from `game.gs`'s header
+  (`var GAME_MODULE_ACTIONS/MISSIONS/QUESTS = … || {}` and `var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}`).
+  The framework hook is committed on `portal-game-layer-design` (1075437).
 - Test: `tests/game/test-teacher-index.js`
 
 **Interfaces:**
@@ -266,7 +268,8 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
   - the fallback returns `{campusId:'LMS4', employeeCode:'NCM/…', role:'Teacher'}` for an NCM Teaching code, and
     `role:'Staff'` for AdminClerk; null for an inactive, AdminTM or HES code.
 - [ ] **Step 2: Run** it. Expected: FAIL.
-- [ ] **Step 3: Implement** `game-teacher.gs` (index part). Add `game-teacher` to `projects.json` `game.files`.
+- [ ] **Step 3: Implement** `game-teacher.gs` (index part). Add `game-teacher` to `projects.json` `game.files` (currently `game, game-actions, game-missions, game-windows,
+  game-quests`).
 - [ ] **Step 4: Real-data check.** Run `node tools/teacher-baseline.js --index tools/private/feed-<date>.json` (add
   this mode in this task). It prints: the share of feed entries resolved to a code per campus, the share of
   timetable rows whose labels match a feed class-subject, and the TeacherState size p95. Expected: resolution
