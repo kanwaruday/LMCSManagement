@@ -131,7 +131,7 @@ function drawBoardNow() {
   if (owner) {
     const g = FQ.gaps(ps).filter((x) => x.count);
     $('gapList').innerHTML = g.length ? g.map((x) => { const sp = x.text.indexOf(' ');
-      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${esc(x.text.slice(0, sp))}</b><span>${esc(x.text.slice(sp + 1))}</span>${SVG.go}</button></li>`; }).join('')
+      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${esc(x.text.slice(0, sp))}</b><span>${esc(x.text.slice(sp + 1).replace(' still ', ' '))}</span>${SVG.go}</button></li>`; }).join('')
       : '<li class="cap-note">Every bus is set up.</li>';
     $('gapList').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
       S.gap = S.gap === b.dataset.q ? null : b.dataset.q; drawBoard();
