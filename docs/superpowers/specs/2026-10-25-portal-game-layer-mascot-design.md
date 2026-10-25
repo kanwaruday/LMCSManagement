@@ -94,11 +94,12 @@ is defined only in the vault's `work/LMS Mascot Voice Guide.md`**; this spec doe
 |---|---|
 | Session start, and after the Dussehra break | Winter formal: red blazer with golden buttons, red tie, white shirt, grey trousers, LMS belt, red socks with blue and yellow stripes |
 | From the first Monday of May | Summer formal: no blazer |
-| Track-suit days (3 a week) | Summer: white polo with black-and-red collar. Winter: red hoodie. Both with black track pants with red stripes |
+| That campus's track-suit days (3 a week, chosen by its Principal in a decision window) | Summer: white polo with black-and-red collar. Winter: red hoodie. Both with black track pants with red stripes |
 | Festivals, Annual Day, big milestones | Blazer plus a Kullu cap |
 
 - Junior-wing teachers' screens use the Classes 1–5 uniforms.
-- The outfit calendar is a small config the Owner can edit, not hard-coded.
+- The outfit calendar is config, not code: season dates set by the Owner, track-suit days set per campus by its
+  Principal (Uday).
 
 **Expressions:** every owl needs at least four poses: neutral, celebrating, nudging, and bad news (calm, wings
 folded). The voice guide's three situations map one-to-one onto the last three.
@@ -222,6 +223,40 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   - Individuals see "**18 of 21 school days on track this month**", against their own last month.
   - Days with no scheduled work for that person (leave, holidays, Sundays, free periods) don't count at all.
   - Only **teams** have streaks, each with one logged freeze a month (as in Fleet Command).
+- **Decision windows** (Uday, 2026-10-25, on track-suit days: "Let that be a setting in the game, that the
+  principals can fix, we can open decision windows so that they take the calls"). The design below is Claude's.
+  - **What it is:** the game opens a window, a stated period such as "until Sat 8 Nov", in which a named role makes
+    a real settings call for their own scope. The answer **writes the real setting**, and every decision is logged.
+  - **The shape:**
+    ```
+    DecisionWindow { id, title, question, scope: campus|district|network, scopeId,
+                     decider: role (e.g. Principal of that campus),
+                     choice: { type: pickN|pickOne|number|text, options[], n? },
+                     current, defaultIfUndecided,   // set by whoever opens it; "keep current" when there is one
+                     opens, closes, appliesFrom,
+                     writes: "<Game Config key or module setting>",
+                     openedBy }
+    Decision { windowId, value, note?, decidedBy, decidedAt }      // logged in a `Game Decisions` tab
+    ```
+  - **Who decides what:** only decisions the role is already allowed to make for its own scope. Examples: a Principal
+    for their campus; a Coordinator for their district. Windows are opened by the Owner, or by a Coordinator for
+    their district, from Season setup. A sheet is used until that screen exists.
+  - **How it shows:**
+    - An open window is a mission in the decider's Today panel ("Decide: your campus's track-suit days"), with the
+      close date as its real due date.
+    - Go opens a one-screen decision card: the question, the current value, the options, an optional note, and
+      Decide.
+    - It shows the date, not a ticking countdown, in line with the guardrails.
+    - Coordinators and the Owner see a status board (decided / waiting, per campus).
+  - **If nobody decides:** at the close date, `defaultIfUndecided` applies and is logged as "default applied". The
+    Coordinator and the Owner see which campuses defaulted. Nothing is held against the person.
+  - **Changes:** a decision stands until the next window. The Owner can override at any time, and the override is
+    logged.
+  - **First window (Phase 1):** "Track-suit days for your campus". Each Principal picks 3 of Mon–Sat (the bye-law
+    says 3 days a week). It writes the campus's `trackSuitDays` in `Game Config`, so Buddy's outfit follows that
+    campus. The Owner sets the default and the close date when opening it.
+  - **Later windows** are config, not code: Season goals per campus, House event dates, and similar. Any module can
+    request a window type through the framework.
 - **Seasons and shipments** (shared by Fleet Command and the Coordinator module, so the framework owns them):
   - **A season is a school term.** The term dates live in the game backend's `Game Config`, set by the Owner. Team
     goals, team streaks and season badges all use this one clock.
@@ -323,7 +358,7 @@ Module chats plan their phases inside this window: transport's Phase 1a/1b alrea
 
 | Phase | Ships | Depends on |
 |---|---|---|
-| **1. Shell** | Buddy (winter, summer, track-suit outfits), the greeting, the next-step bar, and the Today panel on the Principal, Coordinator and Owner **homes**. Adapters: Coordinator Tasks (approvals 3+ days, hiring stalls), SS quota, daily-report issues (new Principal-scoped read), daily report, Info Requested. The game backend (progress, the daily set, nightly days-on-track). Quest 1 for Principal and Coordinator | Uday's approval; final Buddy renders; `principalissues` with a Principal resolve action (Coordinator chat) |
+| **1. Shell** | Buddy (winter, summer, track-suit outfits), the greeting, the next-step bar, and the Today panel on the Principal, Coordinator and Owner **homes**. Adapters: Coordinator Tasks (approvals 3+ days, hiring stalls), SS quota, daily-report issues (new Principal-scoped read), daily report, Info Requested. The game backend (progress, the daily set, nightly days-on-track, decision windows and the decision log). The first decision window: track-suit days per campus. Quest 1 for Principal and Coordinator | Uday's approval; final Buddy renders; `principalissues` with a Principal resolve action (Coordinator chat) |
 | **2. Cast and modules** | Teacher Owl and Teacher adapters/quests (with the Teacher chat); Office Owl and Fee Clerk adapters/quests; Coach Owlet inside Fleet Command (with the transport chat); module intros; new-feature cards | Phase 1 |
 | **3. Together** | Team goals, help credit, badges, the Montessori Owlet's first-week quest for new joiners | Phase 2 |
 | **4. Standing** | Private standing from the incentive engine's peer groups | The incentive redesign thread |
@@ -389,7 +424,8 @@ go-ahead.
    outcome note; the Coordinator sees every closure and can reopen."
    - The Principal's mission is done when the issue is resolved by that Principal with a note.
    - A reopen puts it back in their Today panel as "reopened". It is not counted against them retroactively.
-2. **Which 3 days a week are track-suit days?** (Buddy's outfit calendar.)
+2. ~~Which 3 days a week are track-suit days?~~ **Answered (Uday):** a per-campus setting each Principal fixes,
+   through a **decision window** (see Team goals, help credit and standing).
 3. **Confirm "days on track" instead of personal streaks.** Individuals see "18 of 21 school days on track",
    never a breakable streak; only teams have streaks with a freeze.
 
