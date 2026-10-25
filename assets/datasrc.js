@@ -43,6 +43,7 @@
   // folder path -> source keys. Order is the order shown.
   const PAGES = {
     '/principal/':               ['allowlist'],
+    '/principal/issues.html':    ['dailyreports'],   // the PDR Issues tabs live in the Daily Reports sheet
     '/teacher/':                 ['teacherss', 'staff', 'approvals', 'daily', 'cal1', 'cal2', 'cal4', 'cal5', 'cal6', 'timetable'],
     '/salary/':                  ['payscale', 'hiring', 'approvals', 'payroll', 'staff'],
     '/payroll/':                 ['payroll', 'payscale', 'staff', 'approvals', 'hiring'],

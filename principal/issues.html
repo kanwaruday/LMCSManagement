@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Daily-report issues</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <style>
+    /* Page-only styles. Tokens come from assets/style.css. */
+    :root { --rule: #e8e8e8; }
+    .page { padding-top: 20px; padding-bottom: 48px; }
+    .page > * { max-width: 880px; } /* the header's left edge, a narrower column */
+    .back { display: inline-block; font-size: 0.85rem; color: var(--gray); text-decoration: none; padding: 6px 0; }
+    .back:hover { color: var(--red); text-decoration: underline; }
+    .page h1 { font-size: 1.5rem; color: var(--red); margin: 6px 0 4px; letter-spacing: -0.01em; }
+    .finding { margin: 0 0 20px; color: var(--gray); font-size: 0.95rem; }
+    .finding b { color: var(--dark); }
+    .flash { margin: 0 0 16px; padding: 10px 14px; border-radius: var(--radius); font-size: 0.9rem; color: var(--color-live); background: var(--color-live-bg); }
+    .flash:empty { display: none; }
+    .flash:focus { outline: none; }
+    .sec { margin-top: 8px; }
+    .sec + .sec { margin-top: 36px; }
+    .sec h2 { font-size: 1rem; font-weight: 700; margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+    .sec h2 .n { font-weight: 400; color: var(--gray); font-variant-numeric: tabular-nums; }
+    .list { list-style: none; margin: 0; padding: 0; }
+    .issue { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 12px 28px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
+    .subject-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .subject { margin: 0; font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; }
+    .chip { flex: none; white-space: nowrap; font-size: 0.75rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: var(--gray); background: var(--lgray); border: 1px solid var(--border); }
+    .chip.reopened { color: var(--red-dark); background: var(--red-pale); border-color: #f5c2c2; }
+    .meta { margin: 4px 0 0; font-size: 0.85rem; color: var(--gray); font-variant-numeric: tabular-nums; }
+    .hq-note { margin: 10px 0 0; padding: 8px 12px; background: var(--lgray); border-radius: var(--radius); font-size: 0.88rem; overflow-wrap: anywhere; }
+    .hq-note span { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray); }
+    .close-form label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+    .close-form textarea { display: block; width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; font: inherit; font-size: 0.92rem; color: var(--dark); background: var(--white); border: 1px solid #c8c8c8; border-radius: var(--radius); }
+    .close-form textarea:hover { border-color: #9a9a9a; }
+    .actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .btn { min-height: 40px; padding: 8px 16px; font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: var(--radius); cursor: pointer; color: var(--white); background: var(--dark); border: 1px solid var(--dark); }
+    .btn:hover { background: #000; }
+    .btn:disabled { cursor: not-allowed; color: var(--gray); background: var(--lgray); border-color: var(--border); }
+    .btn.quiet { color: var(--dark); background: var(--white); border-color: #c8c8c8; }
+    .btn.quiet:hover { border-color: var(--dark); }
+    .err { margin: 8px 0 0; font-size: 0.85rem; color: var(--red-dark); }
+    .err:empty { display: none; }
+    .empty { margin: 14px 0 0; padding: 12px 14px; border: 1px dashed #c8c8c8; border-radius: var(--radius); color: var(--gray); font-size: 0.92rem; }
+    .closed-row { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+    .closed-row .subject-line { align-items: baseline; flex-wrap: wrap; row-gap: 0; }
+    .closed-row .subject { font-size: 0.95rem; }
+    .when { flex: none; font-size: 0.82rem; color: var(--gray); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .closed-row p { margin: 3px 0 0; font-size: 0.88rem; color: var(--gray); overflow-wrap: anywhere; }
+    .status-box { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.92rem; }
+    .status-box p { margin: 0 0 10px; }
+    a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+    .sk { height: 92px; margin-top: 14px; border-radius: var(--radius); background: var(--lgray); }
+    a:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--red-dark); outline-offset: 2px; }
+    ::selection { background: var(--red-pale); color: var(--dark); }
+    @media (max-width: 640px) {
+      .wrap { padding: 0 16px; }
+      .brand .tagline { display: none; }
+      nav.roles span { white-space: nowrap; }
+      .issue { grid-template-columns: minmax(0, 1fr); }
+      .btn { min-height: 44px; }
+      .actions .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+      <nav class="roles" id="header-status"></nav>
+    </div>
+  </header>
+
+  <main class="wrap page">
+    <a class="back" href="index.html">&larr; Principal home</a>
+    <h1>Daily-report issues</h1>
+
+    <div id="auth-root"><div id="gate-slot"></div></div>
+
+    <div id="app-root" style="display:none">
+      <p class="finding" id="finding">Loading your school's issues&hellip;</p>
+      <div class="flash" id="flash" role="status" tabindex="-1"></div>
+      <div id="body">
+        <div class="sk"></div><div class="sk"></div><div class="sk"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js?v=ffa8751c"></script>
+  <script>
+    // "LMCS Coordinator Backend" (apps-script/coordinator-principal.gs). Same URL as BACKEND_URL in coordinator/shared.js.
+    const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const CLOSED_DAYS = 14;
+    const SLOW = 'The server answered with an error page three times. It is probably waking up: wait a minute and try again.';
+    const OFFLINE = 'Could not reach the server. Check the connection and try again.';
+    let SESSION = null, STATE = null;
+
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function fmt(iso) { return iso ? +iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] : '-'; }
+    function isoDay(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    function noteReady(v) { return !!String(v || '').trim(); }
+
+    // Apps Script sometimes answers a cold request with a Google HTML error page: only that is retried, 3 tries at most.
+    // A network failure is not retried. Closing is an upsert of the issue's action row, so a repeat cannot double it.
+    async function call(url, init) {
+      for (let i = 0; i < 3; i++) {
+        let text;
+        try { text = await (await fetch(url, init)).text(); } catch (_) { throw new Error(OFFLINE); }
+        try { return JSON.parse(text); }
+        catch (_) { if (i < 2) await new Promise((ok) => setTimeout(ok, 1500 * (i + 1))); }
+      }
+      throw new Error(SLOW);
+    }
+    // text/plain JSON with no custom headers keeps the request CORS-simple, as the other portal pages do.
+    function post(body, idToken) { return call(BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: idToken }, body)) }); }
+
+    // Open = anything not resolved (open, acknowledged, assigned, reopened), oldest Last seen first.
+    // Closed recently = resolved in the last CLOSED_DAYS days, newest first.
+    function splitIssues(issues, today) {
+      const d = new Date(today + 'T00:00:00');
+      d.setDate(d.getDate() - CLOSED_DAYS);
+      const since = isoDay(d);
+      return {
+        open: issues.filter((i) => i.status !== 'resolved').sort((a, b) => a.last.localeCompare(b.last) || a.first.localeCompare(b.first)),
+        closed: issues.filter((i) => i.status === 'resolved' && i.resolvedAt >= since).sort((a, b) => b.resolvedAt.localeCompare(a.resolvedAt)),
+      };
+    }
+
+    function raised(i) {
+      if (i.first === i.last) return 'Raised ' + (i.count > 1 ? i.count + ' times on ' : 'on ') + fmt(i.last) + '.';
+      return 'Raised ' + (i.count > 1 ? i.count + ' times' : 'once') + '. First ' + fmt(i.first) + ', last seen ' + fmt(i.last) + '.';
+    }
+
+    const CHIPS = { reopened: 'Reopened', acknowledged: 'Acknowledged', assigned: 'Assigned' };
+    function openRowHtml(i, draft) {
+      const id = esc(i.id), reopened = i.status === 'reopened';
+      const chip = CHIPS[i.status] ? '<span class="chip ' + esc(i.status) + '">' + CHIPS[i.status] + '</span>' : '';
+      const note = !i.note ? '' : '<p class="hq-note"><span>' + (reopened ? 'Why a Coordinator reopened it' : 'Coordinator\'s note') + '</span>' + esc(i.note) + '</p>';
+      return '<li class="issue" data-id="' + id + '">' +
+        '<div class="about">' +
+          '<div class="subject-line"><h3 class="subject" id="s-' + id + '">' + esc(i.subject) + '</h3>' + chip + '</div>' +
+          '<p class="meta">' + raised(i) + '</p>' + note +
+        '</div>' +
+        '<form class="close-form" data-id="' + id + '">' +
+          '<label for="n-' + id + '">What was done</label>' +
+          '<textarea id="n-' + id + '" name="note" maxlength="500" rows="2" aria-describedby="s-' + id + ' e-' + id + '">' + esc(draft) + '</textarea>' +
+          '<div class="actions"><button type="submit" class="btn"' + (noteReady(draft) ? '' : ' disabled') + '>Close with this note</button></div>' +
+          '<p class="err" id="e-' + id + '" role="alert"></p>' +
+        '</form>' +
+      '</li>';
+    }
+
+    function closedRowHtml(i) {
+      const by = i.resolvedBy && SESSION && i.resolvedBy.toLowerCase() !== String(SESSION.email || '').toLowerCase() ? ' by a Coordinator' : '';
+      return '<li class="closed-row">' +
+        '<div class="subject-line"><h3 class="subject">' + esc(i.subject) + '</h3><span class="when">Closed' + by + ' ' + fmt(i.resolvedAt) + '</span></div>' +
+        (i.note ? '<p>' + esc(i.note) + '</p>' : '') +
+      '</li>';
+    }
+
+    function renderFinding() {
+      const open = STATE.open;
+      document.getElementById('finding').innerHTML = esc(STATE.label) + ': ' + (open.length
+        ? '<b>' + open.length + ' open</b>, the oldest last seen ' + fmt(open[0].last) + '. Close each one with a line on what was done.'
+        : 'nothing open.');
+      document.getElementById('open-n').textContent = open.length;
+    }
+    function renderClosed() {
+      const c = STATE.closed;
+      document.getElementById('closed-n').textContent = c.length;
+      document.getElementById('closed-list').innerHTML = c.length ? c.map(closedRowHtml).join('')
+        : '<li class="empty">Nothing closed in the last ' + CLOSED_DAYS + ' days.</li>';
+    }
+    function renderEmptyOpen() {
+      document.getElementById('open-list').innerHTML = '<li class="empty">No open issues from your daily reports.</li>';
+    }
+
+    function render(data) {
+      const body = document.getElementById('body');
+      if (data.campus === 'ALL') { // a Coordinator or the Owner: they close and reopen on the Systems page
+        document.getElementById('finding').textContent = 'This page is for Principals. It lists the issues from their own school\'s daily reports.';
+        body.innerHTML = '<div class="status-box"><p>Coordinators close and reopen issues on the Systems page.</p><a class="btn quiet" href="../coordinator/systems/index.html">Open the Systems page</a></div>';
+        return;
+      }
+      const split = splitIssues(data.issues || [], isoDay(new Date()));
+      STATE = { label: LMCS.campusLabel(data.campus), open: split.open, closed: split.closed };
+      body.innerHTML =
+        '<section class="sec" aria-labelledby="open-h"><h2 id="open-h">Open <span class="n" id="open-n"></span></h2><ul class="list" id="open-list">' +
+          STATE.open.map((i) => openRowHtml(i, '')).join('') + '</ul></section>' +
+        '<section class="sec" aria-labelledby="closed-h"><h2 id="closed-h">Closed recently <span class="n" id="closed-n"></span></h2><ul class="list" id="closed-list"></ul></section>';
+      if (!STATE.open.length) renderEmptyOpen();
+      renderFinding();
+      renderClosed();
+      const list = document.getElementById('open-list');
+      list.addEventListener('input', (e) => {
+        const form = e.target.closest('.close-form');
+        if (!form) return;
+        form.querySelector('.btn').disabled = !noteReady(e.target.value);
+        form.querySelector('.err').textContent = '';
+      });
+      list.addEventListener('submit', (e) => { e.preventDefault(); closeIssue(e.target); });
+    }
+
+    async function closeIssue(form) {
+      const id = form.dataset.id, ta = form.querySelector('textarea'), btn = form.querySelector('.btn'), err = form.querySelector('.err');
+      const note = ta.value.trim();
+      if (!noteReady(note) || btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.disabled = true; ta.readOnly = true; btn.textContent = 'Closing…'; err.textContent = '';
+      let res;
+      try { res = await post({ action: 'principalissueresolve', id: id, note: note }, SESSION.idToken); }
+      catch (e) { res = { success: false, error: e.message }; }
+      if (!res || !res.success) {
+        delete btn.dataset.busy; ta.readOnly = false; btn.textContent = 'Close with this note'; btn.disabled = !noteReady(ta.value);
+        err.textContent = (res && res.error) || 'The issue could not be closed. Try again.';
+        ta.focus(); // disabling the button dropped keyboard focus: put it back where the note can be fixed
+        return;
+      }
+      const issue = STATE.open.filter((i) => i.id === id)[0];
+      STATE.open = STATE.open.filter((i) => i.id !== id);
+      if (issue) STATE.closed.unshift(Object.assign({}, issue, { status: 'resolved', note: note, resolvedAt: isoDay(new Date()), resolvedBy: SESSION.email || '' }));
+      const row = form.closest('.issue'), next = row.nextElementSibling;
+      row.remove();
+      if (!STATE.open.length) renderEmptyOpen();
+      renderFinding();
+      renderClosed();
+      const flash = document.getElementById('flash');
+      flash.textContent = 'Closed: ' + (issue ? issue.subject : 'the issue') + '. It is now under Closed recently.';
+      // The next issue's note box keeps a keyboard user in the list; the status line announces the closure either way.
+      if (next && next.querySelector('textarea')) next.querySelector('textarea').focus(); else flash.focus();
+    }
+
+    async function load() {
+      const body = document.getElementById('body');
+      try {
+        const data = await call(BACKEND_URL + '?action=principalissues&idToken=' + encodeURIComponent(SESSION.idToken));
+        if (!data.success) throw new Error(data.error || 'The issues could not be loaded.');
+        render(data);
+      } catch (e) {
+        document.getElementById('finding').textContent = 'The issues could not be loaded.';
+        body.innerHTML = '<div class="status-box" role="alert"><p class="e"></p><button type="button" class="btn quiet" id="retry">Try again</button></div>';
+        body.querySelector('.e').textContent = e.message;
+        document.getElementById('retry').addEventListener('click', () => {
+          document.getElementById('finding').textContent = 'Loading your school\'s issues\u2026';
+          body.innerHTML = '<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
+          load();
+        });
+      }
+    }
+
+    function showApp(session) {
+      SESSION = session;
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      document.getElementById('header-status').innerHTML = '<span>' + esc(session.campusName) + '</span>';
+      load();
+    }
+
+    // Same gate as principal/index.html: a cached session shows the page at once, else the sign-in gate.
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) showApp(cachedSession);
+    else LMCS.requireSession('#gate-slot').then(showApp);
+  </script>
+
+</body>
+</html>
