@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // Coordinator Backend -- Systems department: Principals' daily report analysis (third file of the same
-// "LMCS Coordinator Backend" project, next to coordinator.gs). Coordinator-only; principals never see this.
+// "LMCS Coordinator Backend" project, next to coordinator.gs). Coordinator-only; principals never see this, except their own
+// campus's issues, which they read and close through coordinator-principal.gs.
 //
 // Reads the "Daily Reports" tab of the Principal DR workbook live (written by principal-dr.gs in the OTHER project),
 // plus the "LM Studio Tags" tab in that same workbook: topic tags for each Important Message, written by
@@ -19,7 +20,7 @@ const COORD_FEES_SHEET_ID = '1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4'; // "
 const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', NerChowk: 'LMS4', Sayoli: 'LMS5', Jogindernagar: 'LMS6' }; // campus name in the email subject -> id
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
-const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what coordinators did with each issue: acknowledged / assigned / resolved
+const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what was done with each issue: acknowledged / assigned / resolved (Coordinator or Principal) / reopened
 const COORD_PDR_REPEATS_TAB = 'PDR Repeats'; // how much of each report repeats the campus's previous one (push from the Mac)
 const COORD_PDR_MERGES_TAB = 'PDR Issue Merges'; // 'this issue is the same problem as that one': source id -> target id, applied by the page
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
@@ -137,10 +138,12 @@ function coordPdrCoordinators_() {
   return out;
 }
 
-/** POST action=coordinatorpdrissue {idToken, id, status: open|acknowledged|assigned|resolved, assignee: email, note}: one row per issue in the actions tab. */
+/** POST action=coordinatorpdrissue {idToken, id, status: open|acknowledged|assigned|resolved|reopened, assignee: email, note}: one row per issue in the actions tab.
+ *  reopened = a Coordinator or the Owner sends a closed issue back to its Principal; the note (why) is required. */
 function coordPdrIssueAction_(caller, body) {
   const id = String(body.id || ''), status = String(body.status || '');
-  if (['open', 'acknowledged', 'assigned', 'resolved'].indexOf(status) === -1) return { success: false, error: 'Unknown status' };
+  if (['open', 'acknowledged', 'assigned', 'resolved', 'reopened'].indexOf(status) === -1) return { success: false, error: 'Unknown status' };
+  if (status === 'reopened' && !String(body.note || '').trim()) return { success: false, error: "Write why you're reopening this." };
   const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), visible = coordVisibleCampuses_(caller);
   const ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
   const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === id; })[0] : null;
@@ -180,6 +183,7 @@ function coordPdrWriteAction_(ss, rec) {
 /** Keeps the All follow-ups page in step with an issue action. Assigned -> an open follow-up for the assignee (reopened if it was resolved);
  *  resolved, acknowledged ("no action needed"), reset or merged -> the follow-up is closed. issue = the row of the PDR Issues tab. */
 function coordPdrSyncTask_(issue, status, who, caller, note) {
+  if (status === 'reopened') return; // back to the Principal; any follow-up stays as it is
   const taskId = 'pdr_issue|' + issue[0];
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);

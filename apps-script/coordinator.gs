@@ -19,7 +19,8 @@
 // GET action=coordinatordocuments (document compliance page),
 // GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
-// Coordinator or Owner only; a locked Coordinator sees their district.
+// Coordinator or Owner only; a locked Coordinator sees their district. The one exception is the daily-report issues of
+// coordinator-principal.gs (GET principalissues, POST principalissueresolve), which also admit a Principal of one campus.
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Coordinator Backend",
@@ -138,9 +139,10 @@ function coordJson_(obj) {
 
 function doGet(e) {
   try {
+    const action = String(e.parameter.action || '').toLowerCase();
+    if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken)); // its own gates (coordinator-principal.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
-    const action = String(e.parameter.action || '').toLowerCase();
     if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
@@ -170,6 +172,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     if (String(body.action || '').toLowerCase() === 'transportgpspush') return coordJson_(coordGpsPush_(body));
+    if (String(body.action || '').toLowerCase() === 'principalissueresolve') return coordJson_(coordPrincipalResolve_(coordVerifyPrincipal_(body.idToken), body)); // Principal gate only
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
@@ -196,12 +199,8 @@ function coordVerifyCaller_(idToken) {
   const hit = cache.get(key);
   if (hit) return JSON.parse(hit);
   try {
-    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) return null;
-    const payload = JSON.parse(res.getContentText());
-    if (payload.aud !== COORD_GOOGLE_CLIENT_ID) return null;
-    if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
-    const email = (payload.email || '').toLowerCase();
+    const email = coordTokenEmail_(idToken);
+    if (email === null) return null;
     const rows = SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
@@ -215,6 +214,21 @@ function coordVerifyCaller_(idToken) {
       return caller;
     }
     return null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Google ID token -> the lower-cased email it was issued to, or null unless Google verifies it, it was issued to this
+ *  portal (aud) and the email is verified. Shared by coordVerifyCaller_ and coordVerifyPrincipal_ (coordinator-principal.gs). */
+function coordTokenEmail_(idToken) {
+  try {
+    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return null;
+    const payload = JSON.parse(res.getContentText());
+    if (payload.aud !== COORD_GOOGLE_CLIENT_ID) return null;
+    if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
+    return (payload.email || '').toLowerCase();
   } catch (err) {
     return null;
   }

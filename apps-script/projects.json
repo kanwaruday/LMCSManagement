@@ -54,7 +54,8 @@
       "coordinator-pdr",
       "coordinator-approvals",
       "coordinator-recommend",
-      "coordinator-transport-gps"
+      "coordinator-transport-gps",
+      "coordinator-principal"
     ]
   },
   "chapter": {
