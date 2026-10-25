@@ -52,6 +52,8 @@ var TCH_DEFAULTS = {
   loggedDaysWindow: 60,
   // Ruling 13: where the missions send the teacher to log, and the Google Form entry ids to pre-fill ({cls, subj, ch, tag} -> 'entry.123')
   cwhwFormUrl: '', cwhwPrefill: {},
+  // Task 5: Quest 1's "on track" day target; quests.termEnd (a string setting, 'YYYY-MM-DD'; unset = no cut-off) drops upcoming chapters starting after the term from Quest 2
+  questDays: 5, quests: {},
 };
 
 // Ruling 16: the CW/HW form URL is accepted only when it starts with exactly one of these (the client renders Go for nothing else); anything else is ''.
@@ -606,6 +608,83 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
 function tchPlansFor_(code) { return {}; }
 function tchMatchesFor_(code) { return {}; }
 
+// ── quests ───────────────────────────────────────────────────────────
+// Pure part: tchChapterQuests_ and tchSetupQuests_ take data in, QuestState[] out ({questId, title, steps:[{id, title, go, done, locked}], complete}).
+// Chapter quests are derived from durable data, so they need no stickiness. Quest 1 and Quest 2 are not (today's log, the month's on-track
+// days), so the hook records each finished step as a Game Progress quest_step row, exactly as the framework does for its own quests.
+var TCH_QUEST1_ID = 'teacher1';
+
+function tchPlanGo_(cls, subj, ch) { return TCH_PLAN_GO + '?cls=' + encodeURIComponent(cls) + '&subj=' + encodeURIComponent(subj) + '&ch=' + encodeURIComponent(ch); }
+
+// One quest per class-subject, for its current chapter (the episode with the latest entry). Montessori classes (same /^m-/i test as the episode
+// engine) get steps 1-3 only: they have no CWA or remediation.
+function tchChapterQuests_(state, plans, matches, cfg, now) {
+  if (!state) return [];
+  const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, order = [], set = function (v) { return v !== null && v !== undefined; };
+  (state.episodes || []).forEach(function (e) {
+    const k = tchCsKey_(e.cls, e.subj);
+    if (!tchHas_(latest, k)) order.push(k);
+    if (!tchHas_(latest, k) || e.last > latest[k].last) latest[k] = e;
+  });
+  return order.map(function (k) {
+    const e = latest[k], key = e.cls + '|' + e.subj + '|' + e.ch;
+    const hasPlan = !!plans && tchHas_(plans, key), m = matches && tchHas_(matches, key) ? matches[key] : null;
+    const matched = !!m && m.matched === true && m.confidence >= T.matchMinConfidence;
+    const checking = hasPlan && !matched && (!m || m.pending === true); // planned, and last night's check has no answer yet
+    const form = function (tag) { return tchFormGo_(T, tag ? { cls: e.cls, subj: e.subj, ch: e.name, tag: tag } : null).go; };
+    const steps = [
+      { id: 'plan', title: 'Plan the activity', go: tchPlanGo_(e.cls, e.subj, e.ch), done: hasPlan, locked: false },
+      { id: 'teach', title: 'Teach', go: form(''), done: true, locked: false },
+      { id: 'activity', title: 'Run the activity' + (checking ? ' \u00b7 checking overnight' : ''), go: form(''), done: matched, locked: false },
+    ];
+    if (!/^m-/i.test(e.cls)) {
+      const cwa = set(e.cwaAt), remDone = set(e.remediatedAt);
+      const closed = cwa && !remDone && today > tchAddDays_(tchIstDay_(e.cwaAt), T.remediationDays);
+      steps.push({ id: 'cwa', title: 'Take the CWA', go: form('CWA'), done: cwa, locked: false });
+      steps.push({ id: 'remediate', title: closed ? 'Closed without remediation' : 'Remediate (same chapter, within ' + T.remediationDays + ' days)', go: form('Remediation'), done: remDone, locked: false });
+    }
+    return { questId: 'chapter:' + state.code + ':' + e.cls + ':' + e.subj + ':' + e.ch, title: e.cls + ' ' + e.subj + ' \u00b7 ' + e.name,
+      steps: steps, complete: steps.every(function (s) { return s.done; }) };
+  });
+}
+
+// Quest 1 "Your portal", then Quest 2 "Plan your term's activities" per class-subject with upcoming chapters (locked until Quest 1 is complete).
+// plans = {"cls|subj|ch": ...}; daysOnTrack = gameDaysOnTrack_'s {onTrack, ...}; recorded = {'<questId>:<stepId>': true} (Game Progress quest_step
+// rows): a recorded step stays done. now defaults to the game clock, recorded to none.
+function tchSetupQuests_(state, plans, daysOnTrack, cfg, now, recorded) {
+  if (!state) return [];
+  const T = tchConfig_(cfg), rec = recorded || {}, today = gameDayKey_(now || gameNow_()), entries = (state.loggedDays && state.loggedDays[today]) || [];
+  const termEnd = /^\d{4}-\d\d-\d\d$/.test(T.quests.termEnd || '') ? T.quests.termEnd : '';
+  const has = function (key) { return !!plans && tchHas_(plans, key); };
+  const mk = function (questId, title, defs, open) {
+    const steps = defs.map(function (d) {
+      return { id: d.id, title: d.title, go: d.go, done: !!rec[questId + ':' + d.id] || (open && d.met), locked: !open };
+    });
+    return { questId: questId, title: title, steps: steps, complete: steps.every(function (s) { return s.done; }) };
+  };
+  const form = tchFormGo_(T, null).go;
+  const q1 = mk(TCH_QUEST1_ID, 'Your portal', [
+    { id: 'cw_today', title: "Log today's classwork", go: form, met: entries.length > 0 },
+    { id: 'hw_today', title: "Log today's homework", go: form, met: entries.some(function (x) { return x.hw; }) },
+    { id: 'plan_one', title: 'Plan the activity for your next chapter', go: TCH_PLAN_GO, met: !!plans && Object.keys(plans).length > 0 },
+    { id: 'days_5', title: 'Five days on track', go: TCH_STAFF_GO, met: ((daysOnTrack && +daysOnTrack.onTrack) || 0) >= T.questDays },
+  ], true);
+  const out = [q1], byCs = {}, order = [];
+  (state.nextChapters || []).forEach(function (c) {
+    if (termEnd && String(c.startDate) > termEnd) return;
+    const k = tchCsKey_(c.cls, c.subj);
+    if (!tchHas_(byCs, k)) { byCs[k] = []; order.push(k); }
+    byCs[k].push(c);
+  });
+  order.forEach(function (k) {
+    const cs = byCs[k][0];
+    out.push(mk('term:' + state.code + ':' + cs.cls + ':' + cs.subj, "Plan your term's activities \u00b7 " + cs.cls + ' ' + cs.subj, byCs[k].map(function (c) {
+      return { id: 'plan:' + c.ch, title: 'Plan the activity for ' + c.name, go: tchPlanGo_(c.cls, c.subj, c.ch), met: has(c.cls + '|' + c.subj + '|' + c.ch) };
+    }), q1.complete));
+  });
+  return out;
+}
+
 // A campus's events for one game day as [{title}], cached 6 h per campus and day; null when the calendar cannot be read (no calendar object, a
 // throw). Unknown is not a working day: the caller withholds the day's log card. The unknown result is cached 30 min so a broken calendar is
 // not hit on every Today load, and logged as a count only (no ids, no names).
@@ -650,6 +729,27 @@ GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
   const dayKey = gameDayKey_(now), tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), events = tchCalendarEvents_(state.campus, dayKey);
   // events === null: the calendar is unreadable, so whether today is a holiday or an exam day is unknown; no log card rather than an invented one
   return tchMissions_(state, dayKey, events !== null && tchWorkingDay_(state.campus, dayKey, events, tcfg), tchPlansFor_(code), tcfg, now, caller.email);
+};
+
+// gameToday_ calls this INSIDE gameWithLock_, so it never runs tchStateFor_ (a cold cache would run the refresh under the lock): it reads the cached
+// state, which GAME_MODULE_MISSIONS.Teacher (outside the lock, earlier in the same load) has just warmed. No state is no quests. For the same reason
+// the quest_step rows are appended here directly: the caller already holds the lock.
+GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now) {
+  const code = tchCodeFor_(caller), state = code ? tchReadJson_(CacheService.getScriptCache(), 'tch_' + code) : null;
+  if (!state) return [];
+  const tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), me = gameLower_(caller.email), ss = gameBook_();
+  const progSheet = ss.getSheetByName('Game Progress'), rec = {};
+  progSheet.getDataRange().getValues().slice(1).forEach(function (r) { if (gameLower_(r[0]) === me && r[1] === 'quest_step') rec[String(r[2])] = true; });
+  const days = gameDaysOnTrack_(ss.getSheetByName('Game Daily').getDataRange().getValues(), me, gameDayKey_(now).slice(0, 7));
+  const setup = tchSetupQuests_(state, tchPlansFor_(code), days, tcfg, now, rec), fresh = [];
+  setup.forEach(function (q) {
+    q.steps.forEach(function (s) {
+      const key = q.questId + ':' + s.id;
+      if (s.done && !rec[key]) { rec[key] = true; fresh.push([me, 'quest_step', key, 'done', now.toISOString()]); }
+    });
+  });
+  gameAppendText_(progSheet, fresh);
+  return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code), tcfg, now));
 };
 
 // Day finalize (the framework calls it for a core id that was not seen done, INSIDE gameWithLock_): when was that day's log card completed?
