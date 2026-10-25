@@ -2,7 +2,7 @@
 // Coordinator Backend -- recommendations on approval requests (a file of the same "LMCS Coordinator Backend" project).
 //
 // The Owner decides every approval. A Coordinator records a recommendation (Approve / Reject / Info) with a reason; the Owner sees the latest one
-// next to the request. Each write supersedes the coordinator's earlier rows for that request, so the tab keeps the history and one row stays live.
+// next to the request. Each write supersedes every live row for that request (any coordinator's), so the tab keeps the history and one row stays live.
 // A private track record (how often the recommendation matched the final decision) is built from this tab; nothing here measures speed or volume.
 //
 // "Recommendations" tab in the LMCS Approvals workbook (COORD_SHEET_ID), read by position (the Game Backend does too), so never reorder:
@@ -15,6 +15,8 @@
 const COORD_REC_TAB = 'Recommendations';
 const COORD_REC_HEADERS = ['RecId', 'ApprovalId', 'Campus', 'Category', 'RecommendedBy', 'Recommendation', 'Reason', 'Checked', 'RecommendedAt', 'Superseded'];
 const COORD_REC_MAX_REASON = 500;
+const COORD_REC_MAX_CHECKED = 500;
+const COORD_REC_CHOICES = ['Approve', 'Reject', 'Info'];
 const COORD_REC_RECENT = 10;
 // the final status that each recommendation is judged against; a Revoked approval counts as a Reject match
 const COORD_REC_MATCH = { Approve: ['Approved'], Reject: ['Rejected', 'Revoked'], Info: ['Info Requested'] };
@@ -27,7 +29,7 @@ function coordRecIsLive_(r) { return String(r[0]) !== 'RecId' && String(r[9]).to
 /** Error message for a recommendation request, or null when it is fine. aprRow is the Approvals row (status 13, archived 18). */
 function coordRecValidate_(body, aprRow) {
   const reason = String(body.reason == null ? '' : body.reason).trim();
-  if (!COORD_REC_MATCH[body.recommendation]) return 'Pick Approve, Reject or Ask for information.';
+  if (typeof body.recommendation !== 'string' || COORD_REC_CHOICES.indexOf(body.recommendation) === -1) return 'Pick Approve, Reject or Ask for information.';
   if (!reason) return 'Write the reason for your recommendation.';
   if (reason.length > COORD_REC_MAX_REASON) return 'Keep the reason under ' + COORD_REC_MAX_REASON + ' characters.';
   if (['Pending', 'Info Requested'].indexOf(String(aprRow[13])) === -1) return 'This request was already decided.';
@@ -42,8 +44,7 @@ function coordRecLatest_(recRows) {
     if (!coordRecIsLive_(r) || !r[1]) return;
     const at = coordRecStr_(r[8]), id = String(r[1]);
     if (out[id] && out[id].at > at) return;
-    let checked = [];
-    try { checked = JSON.parse(coordRecStr_(r[7]) || '[]'); } catch (err) { /* free text from a hand edit: show nothing rather than fail */ }
+    const checked = coordRecStr_(r[7]);
     out[id] = { by: String(r[4]).toLowerCase(), recommendation: String(r[5]), reason: String(r[6]), checked: checked, at: at };
   });
   return out;
@@ -94,14 +95,16 @@ function coordRecommend_(caller, body) {
 
     const sh = coordRecSheet_(true);
     const rows = sh.getLastRow() > 1 ? sh.getDataRange().getValues() : [];
+    const at = new Date().toISOString();
+    // "What I checked": optional free text (a list is joined), trimmed
+    const checked = (Array.isArray(body.checked) ? body.checked.join('; ') : String(body.checked == null ? '' : body.checked)).trim().slice(0, COORD_REC_MAX_CHECKED);
+    const rec = { by: caller.email, recommendation: body.recommendation, reason: String(body.reason).trim(), checked: checked, at: at };
+    const row = ['rec-' + Date.now(), id, String(hit.v[1]).trim(), String(hit.v[2]), caller.email, rec.recommendation, rec.reason, checked, at, ''];
+    sh.getRange(Math.max(sh.getLastRow(), 1) + 1, 1, 1, row.length).setNumberFormat('@').setValues([row]); // text format: keep the ISO string and a blank/TRUE flag as written
+    // append first, supersede after: a failed append must not leave the request with no live recommendation
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][1]) === id && coordRecIsLive_(rows[i])) sh.getRange(i + 1, 10).setNumberFormat('@').setValue('TRUE');
     }
-    const at = new Date().toISOString();
-    const checked = Array.isArray(body.checked) ? body.checked.map(function (c) { return String(c).slice(0, 200); }) : [];
-    const rec = { by: caller.email, recommendation: body.recommendation, reason: String(body.reason).trim(), checked: checked, at: at };
-    const row = ['rec-' + Date.now(), id, String(hit.v[1]).trim(), String(hit.v[2]), caller.email, rec.recommendation, rec.reason, JSON.stringify(checked), at, ''];
-    sh.getRange(Math.max(sh.getLastRow(), 1) + 1, 1, 1, row.length).setNumberFormat('@').setValues([row]); // text format: keep the ISO string and a blank/TRUE flag as written
     return { success: true, recommendation: coordRecNamed_(rec, coordRecNames_()) };
   } finally { lock.releaseLock(); }
 }
@@ -124,8 +127,9 @@ function coordTrackRecord_(recRows, aprRows, email) {
       const by = String(r[4]).toLowerCase();
       if (mine && by !== mine) return;
       const apr = aprs[String(r[1])] || [];
-      const decided = COORD_REC_DECIDED.indexOf(String(apr[13])) !== -1 && !!apr[14];
-      const matched = decided ? (COORD_REC_MATCH[r[5]] || []).indexOf(String(apr[13])) !== -1 : null;
+      // decided only by a decision made AFTER this recommendation (an earlier Info Requested must not score it)
+      const decided = COORD_REC_DECIDED.indexOf(String(apr[13])) !== -1 && !!apr[14] && new Date(coordRecStr_(apr[15])).getTime() > new Date(coordRecStr_(r[8])).getTime();
+      const matched = decided ? (Object.prototype.hasOwnProperty.call(COORD_REC_MATCH, r[5]) ? COORD_REC_MATCH[r[5]] : []).indexOf(String(apr[13])) !== -1 : null;
       const rec = out[by] = out[by] || { byCategory: {}, recent: [] };
       const cat = String(r[3] || apr[2] || '');
       const c = rec.byCategory[cat] = rec.byCategory[cat] || { made: 0, decided: 0, matched: 0 };

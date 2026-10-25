@@ -23,6 +23,8 @@ vm.createContext(ctx);
 const ok = { recommendation: 'Approve', reason: 'Quote is fair' }, pending = aprRow('x', 'LMS1', 'Other', 'Pending');
 const v = (b, r) => ctx.coordRecValidate_(Object.assign({}, ok, b), r || pending);
 assert.strictEqual(v({ recommendation: 'Maybe' }), 'Pick Approve, Reject or Ask for information.');
+['toString', 'constructor', '__proto__', 'hasOwnProperty', ['Approve'], undefined, 'approve'].forEach((x) =>
+  assert.strictEqual(v({ recommendation: x }), 'Pick Approve, Reject or Ask for information.', String(x)));
 assert.strictEqual(v({ reason: '   ' }), 'Write the reason for your recommendation.');
 assert.strictEqual(v({ reason: 'x'.repeat(501) }), 'Keep the reason under 500 characters.');
 assert.strictEqual(v({}, aprRow('x', 'LMS1', 'Other', 'Approved')), 'This request was already decided.');
@@ -31,22 +33,30 @@ assert.strictEqual(v({ reason: 'x'.repeat(500), recommendation: 'Info' }, aprRow
 assert.strictEqual(v({}), null);
 
 // latest: superseded rows are ignored; of the rest the later RecommendedAt wins
-const rec = (id, apr, by, what, at, sup, cat) => [id, apr, 'LMS1', cat || 'Financial / Purchase', by, what, 'why ' + id, '[]', at, sup || ''];
+const rec = (id, apr, by, what, at, sup, cat) => [id, apr, 'LMS1', cat || 'Financial / Purchase', by, what, 'why ' + id, 'looked at ' + id, at, sup || ''];
 const recs = [rec('rec-1', 'apr-1', 'c@lms.org.in', 'Approve', '2026-10-25T10:00:00.000Z'), rec('rec-2', 'apr-1', 'c@lms.org.in', 'Reject', '2026-10-25T10:05:00.000Z'),
   rec('rec-3', 'apr-1', 'c@lms.org.in', 'Info', '2026-10-25T11:00:00.000Z', 'TRUE')];
 const latest = ctx.coordRecLatest_(recs);
 assert.strictEqual(latest['apr-1'].recommendation, 'Reject');
 assert.deepStrictEqual(Object.keys(latest), ['apr-1']);
+assert.strictEqual(latest['apr-1'].checked, 'looked at rec-2');
 
 // two writes on one request leave exactly one live row, the second; an Owner cannot recommend
 const coord = { email: 'c@lms.org.in', campusId: 'ALL', roles: ['Coordinator'] };
-assert.strictEqual(ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Approve', reason: 'first', checked: ['a'] }).success, true);
-const second = ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Reject', reason: 'second' });
+assert.strictEqual(ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Approve', reason: 'first', checked: ['a', 'b'] }).success, true);
+assert.strictEqual(tabs.Recommendations[1][7], 'a; b');                       // a list is joined into plain text
+const second = ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Reject', reason: '  second  ', checked: '  Read the quote  ' });
 assert.strictEqual(second.success, true);
 assert.strictEqual(second.recommendation.recommendation, 'Reject');
 const live = tabs.Recommendations.slice(1).filter((r) => r[9] !== 'TRUE');
 assert.strictEqual(live.length, 1);
 assert.strictEqual(live[0][6], 'second');
+assert.strictEqual(live[0][7], 'Read the quote');                              // trimmed free text in column 8
+assert.strictEqual(second.recommendation.checked, 'Read the quote');
+assert.strictEqual(ctx.coordRecLatest_(tabs.Recommendations)['apr-1'].checked, 'Read the quote');
+assert.strictEqual(ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Info', reason: 'r' }).recommendation.checked, ''); // absent -> empty string
+assert.strictEqual(ctx.coordRecommend_(coord, { approvalId: 'apr-1', recommendation: 'Info', reason: 'r', checked: 'x'.repeat(600) }).recommendation.checked.length, 500);
+tabs.Recommendations.length = 3; tabs.Recommendations[2][9] = ''; tabs.Recommendations[1][9] = 'TRUE'; // back to the two-write state for the checks below
 assert.strictEqual(tabs.Recommendations.length, 3);
 assert.strictEqual(tabs.Recommendations[0].join(','), 'RecId,ApprovalId,Campus,Category,RecommendedBy,Recommendation,Reason,Checked,RecommendedAt,Superseded');
 assert.strictEqual(JSON.stringify(ctx.coordRecommend_({ email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'] }, { approvalId: 'apr-1', recommendation: 'Approve', reason: 'x' })),
@@ -84,6 +94,18 @@ assert.strictEqual(tr[me].recent.find((e) => e.approvalId === 'apr-2').matched, 
 assert.strictEqual(tr[me].recent.find((e) => e.approvalId === 'apr-2').decisionNote, 'note apr-2');
 assert.deepStrictEqual(Object.keys(ctx.coordTrackRecord_(rows, apr, me)), [me]);
 // Reject also matches Revoked
-const rv = aprRow('apr-7', 'LMS1', cat, 'Revoked'); rv[14] = 'o@lms.org.in';
+const rv = aprRow('apr-7', 'LMS1', cat, 'Revoked'); rv[14] = 'o@lms.org.in'; rv[15] = '2026-10-26T09:00:00.000Z';
 assert.strictEqual(ctx.coordTrackRecord_([rec('r7', 'apr-7', me, 'Reject', '2026-10-25T10:00:00.000Z')], [rv], me)[me].byCategory[cat].matched, 1);
+// a junk stored Recommendation never breaks the record
+const junk = ctx.coordTrackRecord_([rec('j1', 'apr-1', me, 'toString', '2026-10-25T10:00:00.000Z')], apr, null);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(junk[me].byCategory[cat])), { made: 1, decided: 1, matched: 0 });
+// decided only by a decision AFTER the recommendation: Info Requested at 09:00, Info recommended at 10:00, Owner approves at 11:00
+const late = aprRow('apr-8', 'LMS1', cat, 'Info Requested'); late[14] = 'o@lms.org.in'; late[15] = '2026-10-25T09:00:00.000Z';
+const infoRec = [rec('i1', 'apr-8', me, 'Info', '2026-10-25T10:00:00.000Z')];
+let t8 = ctx.coordTrackRecord_(infoRec, [late], me)[me];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t8.byCategory[cat])), { made: 1, decided: 0, matched: 0 });
+assert.strictEqual(t8.recent[0].matched, null);
+late[13] = 'Approved'; late[15] = new Date('2026-10-25T11:00:00.000Z');                        // the sheet may hand back a Date
+t8 = ctx.coordTrackRecord_(infoRec, [late], me)[me];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t8.byCategory[cat])), { made: 1, decided: 1, matched: 0 });
 console.log('coordinator recommend: ok');
