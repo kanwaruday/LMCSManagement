@@ -8,9 +8,12 @@ var OWN_ACAD_TAGS = ['Chapter Teaching', 'Question & Answers', 'New Words', 'Act
 var OWN_ACAD_CODES = 'TQNACROVLF'; // one code per canonical tag, in order; '?' = Other
 var OWN_ACAD_DAY_MS = 86400000;
 
-// copy of chapterNormalizeName (ChapterTracker.gs)
+// Deliberately differs from chapterNormalizeName in ChapterTracker.gs: that one strips everything outside [a-z0-9],
+// which blanks every non-Latin chapter name (all Devanagari collapses to '' and unrelated Hindi/Sanskrit chapters
+// collide or get dropped). Here letters, combining marks (Devanagari vowel signs, virama) and digits of any script
+// are kept; each run of anything else becomes one space. So 'Light' -> 'light', 'The Lost-Child!' -> 'the lost child'.
 function ownAcadNormChapter_(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(s || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
 }
 
 // "Activity, cwa" -> ['Activity','CWA']: canonical names, anything unknown -> 'Other', once per tag

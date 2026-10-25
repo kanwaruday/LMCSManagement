@@ -8,7 +8,16 @@ const DAY = 86400000, D0 = Date.UTC(2026, 8, 1);
 const J = (x) => JSON.parse(JSON.stringify(x));       // cross-realm objects -> plain, for deepStrictEqual
 
 // normalisation and tags
-assert.strictEqual(ctx.ownAcadNormChapter_(' The Lost Chi-ld! '), 'thelostchild');
+// English: plain names just lowercase (same as the old a-z0-9 strip when there is no punctuation); internal punctuation becomes a space, it no longer vanishes
+assert.strictEqual(ctx.ownAcadNormChapter_('Light'), 'light');
+assert.strictEqual(ctx.ownAcadNormChapter_('Chapter 3 Heat'), 'chapter 3 heat');
+assert.strictEqual(ctx.ownAcadNormChapter_(' The Lost-Child! '), 'the lost child');
+assert.strictEqual(ctx.ownAcadNormChapter_('The  Lost, Child'), ctx.ownAcadNormChapter_('the lost-child'));   // punctuation/spacing variants agree
+// Devanagari is non-empty (marks kept), differing chapters stay different, punctuation/spacing variants agree
+assert.strictEqual(ctx.ownAcadNormChapter_('सच्ची दोस्ती'), 'सच्ची दोस्ती');
+assert.notStrictEqual(ctx.ownAcadNormChapter_('सच्ची दोस्ती'), ctx.ownAcadNormChapter_('बिल्ली का बच्चा'));
+assert.strictEqual(ctx.ownAcadNormChapter_('सच्ची  दोस्ती!'), ctx.ownAcadNormChapter_('सच्ची दोस्ती'));
+assert.strictEqual(ctx.ownAcadNormChapter_('!!!'), '');
 assert.deepStrictEqual(J(ctx.ownAcadTags_('chapter teaching; Activity, Q&A, activity')), ['Chapter Teaching', 'Activity', 'Other']);
 assert.deepStrictEqual(J(ctx.ownAcadTags_('')), []);
 
@@ -45,6 +54,10 @@ assert.deepStrictEqual(J(ctx.acadRemediatedCwaEntries_(recs, rules)), { cwas: 8,
 // shuffled input gives the same answer
 assert.deepStrictEqual(J(ctx.acadRemediatedCwaEntries_(recs.slice().reverse(), rules)), { cwas: 8, remediated: 2 });
 assert.deepStrictEqual(ctx.ownAcadEpisodes_(recs.slice().reverse(), rules).map((e) => e.key.ch).sort(), eps.map((e) => e.key.ch).sort());
+// a Hindi teacher's chapter forms an episode (it used to normalise to '' and vanish)
+const hi = [0, 1, 2].map((d) => ({ lmsIdx: 1, classMapped: 'Class 5', subject: 'Hindi', teacher: 'T Two', cwChapter: 'सच्ची दोस्ती', cwTag: d === 2 ? 'CWA' : 'Chapter Teaching', timeMs: D0 + d * DAY }));
+assert.strictEqual(ctx.ownAcadEpisodes_(hi, rules).length, 1);
+assert.strictEqual(ctx.ownAcadEpisodes_(hi.concat([{ ...hi[0], cwChapter: 'बिल्ली का बच्चा' }]), rules).length, 1);   // a different Hindi chapter is its own (thin) episode
 // chapters compare ignoring case/spacing
 const two = [0, 1].map((d) => ({ lmsIdx: 1, classMapped: 'Class 5', subject: 'Math', teacher: 'T One ', cwChapter: ' Light ', cwTag: d ? 'Remediation' : 'CWA', timeMs: D0 + d * DAY }));
 assert.deepStrictEqual(J(ctx.acadRemediatedCwaEntries_(two, rules)), { cwas: 1, remediated: 1 });
