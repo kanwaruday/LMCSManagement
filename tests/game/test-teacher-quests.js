@@ -86,10 +86,21 @@ qs = chapter(state({ episodes: [older, ep(), sci] }));
 assert.deepStrictEqual(qs.map((q) => q.questId), ['chapter:' + CODE + ':Class 7:Math:fractions', 'chapter:' + CODE + ':Class 8:Science:light']);
 assert.deepStrictEqual(chapter(state()), []); assert.deepStrictEqual(chapter(null), []);
 
-// Ruling 20a: only class-subjects the teacher teaches (state.classSubjects) get a quest
-qs = chapter(state({ episodes: [ep(), sci], classSubjects: [{ cls: 'Class 7', subj: 'Math' }] }));
+// Ruling 21 (replaces 20a): taught = on the roster (umbrella-snapped) OR logged within teacher.taughtLookbackDays (30)
+const old = (o) => ep(Object.assign({ last: at('2026-08-01T06:00:00Z') }, o));       // 100 days before NOW
+const hist = { cls: 'Class 8', subj: 'History', ch: 'mughals', name: 'Mughals' };
+const art = (days) => ep({ cls: 'Class 3', subj: 'Art & Craft', ch: 'collage', name: 'Collage', last: NOW.getTime() - days * 86400000 });
+const SS = [{ cls: 'Class 8', subj: 'Social Science' }];
+assert.strictEqual(chapter(state({ episodes: [old(hist)], classSubjects: SS })).length, 1);                    // roster Social Science covers feed History, however long ago
+assert.strictEqual(chapter(state({ episodes: [old(Object.assign({}, hist, { subj: 'Geography' }))], classSubjects: SS })).length, 1);
+assert.strictEqual(chapter(state({ episodes: [old(hist)], classSubjects: [{ cls: 'Class 7', subj: 'Social Science' }] })).length, 0);   // another class: not covered
+assert.strictEqual(chapter(state({ episodes: [old({ cls: 'Class 8', subj: 'Science', ch: 'x', name: 'X' })], classSubjects: SS })).length, 0);   // Social Science does not cover Science
+assert.strictEqual(chapter(state({ episodes: [art(10)], classSubjects: [] })).length, 1);                      // not on the roster, logged 10 days ago
+assert.strictEqual(chapter(state({ episodes: [art(40)], classSubjects: [] })).length, 0);                      // 40 days ago, not on the roster
+assert.strictEqual(chapter(state({ episodes: [art(10)], classSubjects: [] }), {}, {}, { teacher: { taughtLookbackDays: 5 } }).length, 0);   // the window comes from config
+assert.strictEqual(chapter(state({ episodes: [art(40)], classSubjects: [] }), {}, {}, { teacher: { taughtLookbackDays: 60 } }).length, 1);
+qs = chapter(state({ episodes: [ep(), old(Object.assign({}, hist))], classSubjects: [{ cls: 'Class 7', subj: 'Math' }] }));                  // mixed: only the taught one
 assert.deepStrictEqual(qs.map((q) => q.questId), ['chapter:' + CODE + ':Class 7:Math:fractions']);
-assert.deepStrictEqual(chapter(state({ episodes: [ep()], classSubjects: [] })), []);
 
 // Ruling 20b: a tracker-only CWA (remediatedAt is always null) is never "Closed without remediation"
 qs = chapter(state({ episodes: [Object.assign({}, late, { cwaFrom: 'tracker' })] }), plan, {}, {}, new Date('2026-12-20T05:00:00Z'));

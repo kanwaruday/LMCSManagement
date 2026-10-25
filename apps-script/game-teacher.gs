@@ -49,7 +49,7 @@ var TCH_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 var TCH_DEFAULTS = {
   remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
   examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7,
-  loggedDaysWindow: 60,
+  loggedDaysWindow: 60, taughtLookbackDays: 30, // taughtLookbackDays: a class-subject logged this recently counts as taught even if the roster lacks it
   // Ruling 13: where the missions send the teacher to log, and the Google Form entry ids to pre-fill ({cls, subj, ch, tag} -> 'entry.123')
   cwhwFormUrl: '', cwhwPrefill: {},
   // Task 5: Quest 1's "on track" day target; quests.termEnd (a string setting, 'YYYY-MM-DD'; unset = no cut-off) drops upcoming chapters starting after the term from Quest 2
@@ -621,15 +621,21 @@ function tchPlanGo_(cls, subj, ch) { return TCH_PLAN_GO + '?cls=' + encodeURICom
 // engine) get steps 1-3 only: they have no CWA or remediation.
 function tchChapterQuests_(state, plans, matches, cfg, now) {
   if (!state) return [];
-  const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, order = [], set = function (v) { return v !== null && v !== undefined; };
-  const teaches = {};
-  (state.classSubjects || []).forEach(function (c) { teaches[tchCsKey_(c.cls, c.subj)] = true; });
+  let order = [];
+  const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, set = function (v) { return v !== null && v !== undefined; };
+  // Taught = on the roster (an umbrella roster subject covers its finer feed subjects, the table the timetable matching snaps with) or logged within taughtLookbackDays.
+  const roster = state.classSubjects || [], cutoff = now.getTime() - T.taughtLookbackDays * TCH_DAY_MS;
+  const onRoster = function (e) {
+    return roster.some(function (c) {
+      return c.cls === e.cls && (tchSubjKey_(c.subj) === tchSubjKey_(e.subj) || (tchHas_(TCH_UMBRELLA, c.subj) && TCH_UMBRELLA[c.subj].some(function (a) { return tchSubjKey_(a) === tchSubjKey_(e.subj); })));
+    });
+  };
   (state.episodes || []).forEach(function (e) {
     const k = tchCsKey_(e.cls, e.subj);
-    if (!tchHas_(teaches, k)) return; // a class-subject the teacher no longer teaches gets no quest
     if (!tchHas_(latest, k)) order.push(k);
     if (!tchHas_(latest, k) || e.last > latest[k].last) latest[k] = e;
   });
+  order = order.filter(function (k) { return latest[k].last >= cutoff || onRoster(latest[k]); }); // neither: no quest
   return order.map(function (k) {
     const e = latest[k], key = e.cls + '|' + e.subj + '|' + e.ch;
     const hasPlan = !!plans && tchHas_(plans, key), m = matches && tchHas_(matches, key) ? matches[key] : null;
