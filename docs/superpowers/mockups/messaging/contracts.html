@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: phone of contracts</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  main { display: flex; flex-wrap: wrap; gap: 32px; justify-content: center; padding: 24px 16px 48px; }
+  figure { margin: 0; width: 360px; max-width: 100%; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  figcaption b { color: var(--ink); }
+  .phone { background: var(--white); border: 1px solid var(--line); border-radius: 28px; overflow: hidden;
+    box-shadow: 0 1px 0 var(--line); min-height: 700px; display: flex; flex-direction: column; }
+  .bar { display: flex; justify-content: space-between; font-size: 12px; padding: 8px 20px 0; color: var(--muted); }
+  header.app { display: flex; align-items: center; gap: 10px; padding: 10px 16px 8px; }
+  header.app h1 { font-size: 20px; margin: 0; flex: 1; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+  .tabs button { flex: 1; border: 0; background: none; padding: 10px 4px; font-weight: 600; color: var(--muted);
+    border-bottom: 3px solid transparent; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-color: var(--red); }
+  .tabs .count { font-weight: 400; }
+  .consistency { margin: 10px 16px 4px; font-size: 13px; color: var(--muted); }
+  .consistency b { color: var(--ink); }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  /* The signature element: a contract is a ticket, issuer on the stub, terms on the body. */
+  .ticket { display: grid; grid-template-columns: 56px 1fr; margin: 10px 12px; border: 1px solid var(--line);
+    border-radius: var(--radius); background: var(--white); }
+  .ticket .stub { border-right: 2px dashed var(--line); display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0; gap: 6px; font-size: 11px; color: var(--muted); text-align: center; }
+  .ticket .body { padding: 10px 12px; min-width: 0; }
+  .ticket h2 { font-size: 15px; margin: 0 0 2px; }
+  .ticket .from { font-size: 13px; color: var(--muted); }
+  .ticket .terms { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; font-size: 13px; }
+  .ticket.unread { border-color: var(--red); }
+  .ticket.unread .stub { border-right-color: var(--red); }
+  .ticket .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .ticket .actions .btn { padding: 5px 12px; font-size: 14px; }
+  .section-h { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 16px 0; }
+  .next { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-top: 1px solid var(--line); background: var(--panel); font-size: 14px; }
+  .next span:not(.avatar) { flex: 1; }
+  /* detail */
+  .detail { padding: 6px 16px 16px; }
+  .detail h2 { font-size: 18px; margin: 4px 0 6px; }
+  dl.terms { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; font-size: 14px; margin: 12px 0; }
+  dl.terms dt { color: var(--muted); }
+  dl.terms dd { margin: 0; }
+  .proof { border: 2px dashed var(--line); border-radius: var(--radius); padding: 18px; text-align: center;
+    color: var(--muted); font-size: 14px; margin: 8px 0 12px; }
+  .msg { display: flex; gap: 8px; margin: 10px 0; font-size: 14px; }
+  .msg .who { font-weight: 600; }
+  .msg time { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+  .stack .btn { width: 100%; padding: 10px; }
+  /* compose */
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  .field { border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 10px; font-size: 15px; background: var(--white); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .seg button { flex: 1; border: 0; background: var(--white); padding: 8px 4px; font-size: 14px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--white); font-weight: 600; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="sample">Mock-up for Uday. Sample people and sample data, not real staff. Portal messaging design, 25/10/2026.</div>
+<main>
+
+  <!-- 1. The phone: received contracts -->
+  <figure>
+    <div class="phone" role="img" aria-label="Phone of contracts, Received tab">
+      <div class="bar"><span>9:12</span><span>LMCS Portal</span></div>
+      <header class="app">
+        <h1>Contracts</h1>
+        <button class="btn" aria-label="New contract">+ New</button>
+      </header>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true">Received <span class="count">(3)</span></button>
+        <button role="tab" aria-selected="false">Job board <span class="count">(4)</span></button>
+        <button role="tab" aria-selected="false">Sent <span class="count">(2)</span></button>
+      </div>
+      <p class="consistency">Closed on time this month: <b class="num">14 of 16</b>. Last month 11 of 15.</p>
+
+      <p class="section-h">New</p>
+      <ul class="list">
+        <li class="ticket unread">
+          <div class="stub"><span class="avatar" style="background:#8a3b3b">RP</span>Principal</div>
+          <div class="body">
+            <h2>Send Class 7 CWA marks to the office</h2>
+            <div class="from">From Ritu P., Principal LMS 4, in #lms4-staff</div>
+            <div class="terms"><span class="chip plain">Due Tue 27/10, 2 PM</span><span class="chip plain">Proof: file</span></div>
+            <div class="actions"><button class="btn primary">Accept</button><button class="btn">Decline</button></div>
+          </div>
+        </li>
+      </ul>
+
+      <p class="section-h">Accepted</p>
+      <ul class="list">
+        <li class="ticket">
+          <div class="stub"><span class="avatar" style="background:#3b5f8a">AK</span>HOD</div>
+          <div class="body">
+            <h2>Check notebooks of 6B (Maths)</h2>
+            <div class="from">From Anil K., HOD Maths</div>
+            <div class="terms"><span class="chip due">Due today, 4 PM</span><span class="chip plain">Proof: photo</span></div>
+          </div>
+        </li>
+        <li class="ticket">
+          <div class="stub"><span class="avatar" style="background:#4d7a4d">SM</span>Teacher</div>
+          <div class="body">
+            <h2>Cover my 5th period on Friday</h2>
+            <div class="from">From Sonia M., claimed from the job board</div>
+            <div class="terms"><span class="chip late">Was due Sat 24/10</span><span class="chip plain">Proof: note</span></div>
+          </div>
+        </li>
+      </ul>
+
+      <div class="next"><span class="avatar owl" aria-hidden="true">B</span><span><b>Next:</b> notebooks of 6B, due 4 PM</span><button class="btn primary">Go</button></div>
+    </div>
+    <figcaption><b>1. Your phone.</b> Instructions arrive as contracts: who sent it, what, real due date, what proof closes it.
+      No countdown clocks, no streak to break: just "closed on time this month" against your own last month.
+      Buddy's next-step bar points at the earliest due one.</figcaption>
+  </figure>
+
+  <!-- 2. One contract opened -->
+  <figure>
+    <div class="phone" role="img" aria-label="A contract opened">
+      <div class="bar"><span>9:14</span><span>LMCS Portal</span></div>
+      <header class="app"><button class="btn" aria-label="Back">Back</button><h1 style="font-size:16px">Contract</h1><span class="chip due">Accepted</span></header>
+      <div class="detail">
+        <h2>Check notebooks of 6B (Maths)</h2>
+        <dl class="terms">
+          <dt>From</dt><dd>Anil K., HOD Maths, LMS 4</dd>
+          <dt>To</dt><dd>You</dd>
+          <dt>Due</dt><dd class="num">Today 25/10, 4:00 PM</dd>
+          <dt>Closes with</dt><dd>A photo of 3 checked notebooks</dd>
+          <dt>Came from</dt><dd><a href="#">Message in #lms4-maths</a>, 9:02 AM</dd>
+        </dl>
+        <div class="proof">Add photo of the checked notebooks<br><span class="hint">Camera or gallery. It goes to Anil K. and stays on record.</span></div>
+        <div class="msg"><span class="avatar" style="background:#3b5f8a">AK</span><div><span class="who">Anil K.</span><time>9:02</time><br>Only the last two chapters, please. Sign on the page.</div></div>
+        <div class="msg"><span class="avatar">You</span><div><span class="who">You</span><time>9:10</time><br>Will do after 3rd period.</div></div>
+        <div class="stack" style="margin-top:14px">
+          <button class="btn primary">Mark done with proof</button>
+          <button class="btn">Reply</button>
+          <button class="btn">Hand back with a reason</button>
+        </div>
+        <p class="notice" style="margin-top:12px">Contracts, replies and proof are on record. The Owner can see them.</p>
+      </div>
+    </div>
+    <figcaption><b>2. A contract opened.</b> It links back to the message it was made from. Done needs the proof the sender
+      asked for, so "done" is never just a tap. Declining or handing back always needs a reason, which the sender sees.</figcaption>
+  </figure>
+
+  <!-- 3. Making a contract -->
+  <figure>
+    <div class="phone" role="img" aria-label="New contract form">
+      <div class="bar"><span>9:20</span><span>LMCS Portal</span></div>
+      <header class="app"><button class="btn">Cancel</button><h1 style="font-size:16px">New contract</h1></header>
+      <div class="detail">
+        <label for="to">To</label>
+        <div class="field" id="to">Rakesh (Admin Manager, LMS 4)</div>
+        <p class="hint">Anyone in the portal. Or post it to the channel's job board for anyone to claim.</p>
+        <label for="what">What needs doing</label>
+        <div class="field" id="what">Get the Room 4 projector repaired</div>
+        <label>Due</label>
+        <div class="field num">Thu 29/10/2026, 1:00 PM</div>
+        <label>Closes with</label>
+        <div class="seg" role="group" aria-label="Proof needed">
+          <button aria-pressed="true">Photo</button><button aria-pressed="false">File</button><button aria-pressed="false">Note</button><button aria-pressed="false">Nothing</button>
+        </div>
+        <label>Post in</label>
+        <div class="field">#lms4-staff (as a thread)</div>
+        <div class="stack" style="margin-top:18px"><button class="btn primary">Send contract</button></div>
+        <p class="hint" style="margin-top:10px">Made from Sonia M.'s message "projector in Room 4 not working" (9:18).</p>
+      </div>
+    </div>
+    <figcaption><b>3. Making one.</b> From scratch with + New, or from any message ("Make contract" in its menu),
+      which fills in the text and links back. Four fields only: who, what, when, what proof.</figcaption>
+  </figure>
+
+</main>
+</body>
+</html>

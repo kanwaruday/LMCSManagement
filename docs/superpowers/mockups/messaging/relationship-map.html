@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: Owner's relationship map</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  header.page { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; background: var(--white); border-bottom: 1px solid var(--line); }
+  header.page h1 { font-size: 19px; margin: 0; flex: 1; min-width: 200px; }
+  select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 16px; }
+  .board { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; min-width: 0; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); padding: 4px 8px 8px; }
+  .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg .edge { cursor: pointer; }
+  svg .edge:hover, svg .edge.sel { stroke-opacity: 1; filter: drop-shadow(0 0 2px rgba(0,0,0,.35)); }
+  svg text { font: 14px var(--font); fill: var(--ink); }
+  svg .campus { font-weight: 700; fill: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .panel { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 2px; }
+  .panel .sub { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 10px; }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: 10px 0 4px; }
+  .spark i { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; }
+  .spark i.now { background: var(--ink); }
+  .panel a { color: #1f5fbf; font-size: 14px; }
+  ol { margin: 0; padding-left: 20px; font-size: 14px; }
+  ol li { padding: 3px 0; }
+  ol li span { color: var(--muted); font-size: 13px; }
+  .finding { font-size: 14px; margin: 0; }
+  @media (max-width: 960px) { .wrap { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="sample">Mock-up for Uday. Sample people and sample data, not real staff. Owner only: nobody else sees this page or any meter.</div>
+<header class="page">
+  <h1>Relationships, last 4 weeks</h1>
+  <label class="muted" for="campus">Campus</label>
+  <select id="campus"><option>All 6</option><option>LMS 4</option></select>
+  <label class="muted" for="show">Show</label>
+  <select id="show"><option>All working pairs</option><option>Strained only</option></select>
+</header>
+
+<div class="wrap">
+  <div class="board">
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>Healthy</span>
+      <span><i style="background:var(--due)"></i>Watch</span>
+      <span><i style="background:var(--red)"></i>Strained</span>
+      <span>Line thickness = how much on-record work passes between them</span>
+    </div>
+    <svg id="map" viewBox="0 0 900 440" role="img" aria-label="Network of working relationships across the six campuses"></svg>
+    <p class="notice" style="padding:0 8px">Built only from on-record work: contracts sent and closed, reports sent up, requests answered, questions in threads answered within the working day. Never from how many messages someone sends, and never from how fast.</p>
+  </div>
+
+  <div class="side">
+    <div class="panel" id="pair" aria-live="polite"></div>
+
+    <div class="panel">
+      <h2>Not getting answers</h2>
+      <p class="sub">Their contracts, reports or questions go unanswered most often.</p>
+      <ol>
+        <li>Teacher, LMS 4 (Science) <span>5 of 8 reports to Principal unanswered</span></li>
+        <li>Fee Clerk, LMS 6 <span>4 requests to Coordinator open 3+ days</span></li>
+        <li>HOD English, LMS 2 <span>3 contracts handed back this month</span></li>
+      </ol>
+    </div>
+
+    <div class="panel">
+      <h2>Holding the most open contracts</h2>
+      <p class="sub">Possible overload. Counts, not a ranking anyone else sees.</p>
+      <ol>
+        <li>Admin Manager, LMS 4 <span class="num">11 open, 4 late</span></li>
+        <li>Principal, LMS 1 <span class="num">9 open, 1 late</span></li>
+        <li>Coordinator (LMS 4-6) <span class="num">8 open, 0 late</span></li>
+      </ol>
+    </div>
+
+    <div class="panel">
+      <h2>Finding this month</h2>
+      <p class="finding">LMS 4's job board: 7 of 9 requests claimed by the same person. <a href="#">Open job board</a></p>
+    </div>
+  </div>
+</div>
+
+<script>
+// Sample data only. Built at render time so nothing personal ever sits in a static file.
+const svg = document.getElementById('map');
+const NS = 'http://www.w3.org/2000/svg';
+const COL = { ok: '#1a7f3c', due: '#b45f06', bad: '#ce0000' };
+const nodes = { owner: { x: 450, y: 46, label: 'Owner' },
+  cA: { x: 235, y: 150, label: 'Coordinator (LMS 1-3)' }, cB: { x: 665, y: 150, label: 'Coordinator (LMS 4-6)' } };
+const xs = [85, 235, 385, 515, 665, 815];
+const edges = [['owner', 'cA', 'ok', 5], ['owner', 'cB', 'ok', 6]];
+const pattern = [['ok','ok','due','ok'], ['ok','due','ok','ok'], ['ok','ok','ok','due'],
+                 ['bad','ok','due','ok'], ['ok','ok','ok','ok'], ['due','ok','bad','ok']];
+xs.forEach((x, i) => {
+  const p = 'p' + i, c = i < 3 ? 'cA' : 'cB';
+  nodes[p] = { x, y: 300, label: 'Principal', campus: 'LMS ' + (i + 1) };
+  edges.push([c, p, i === 5 ? 'due' : 'ok', 4]);
+  [-0.95, -0.35, 0.35, 0.95].forEach((a, j) => {
+    const s = p + 's' + j;
+    nodes[s] = { x: x + a * 50, y: 375 + (j % 2) * 40, label: ['HOD', 'Teacher', 'Teacher', 'Staff'][j] };
+    edges.push([p, s, pattern[i][j], j === 0 ? 4 : 2]);
+  });
+});
+edges.push(['p3s1', 'p3s2', 'ok', 2], ['p0', 'p1', 'ok', 1.5], ['p3s3', 'p3', 'bad', 3]);
+
+const details = {
+  'p3-p3s0': { a: 'Principal, LMS 4', b: 'HOD Science, LMS 4', state: 'bad', trend: [7,6,6,5,4,4,3,2],
+    rows: [['Contracts from Principal closed on time', '6 of 11'], ['Weekly reports sent up', '2 of 4 weeks'],
+           ['Questions answered within the working day', '9 of 16'], ['Contracts handed back with a reason', '3']],
+    link: 'Open the 5 late contracts' },
+  'p3-p3s3': { a: 'Principal, LMS 4', b: 'Admin Manager, LMS 4', state: 'bad', trend: [6,6,5,5,4,3,3,3],
+    rows: [['Contracts closed on time', '7 of 13'], ['Job-board claims closed', '9 of 9'],
+           ['Requests to Principal answered within the working day', '4 of 10'], ['Open now', '11 (4 late)']],
+    link: 'Open their open contracts' },
+};
+function pairInfo(k, e) {
+  if (details[k]) return details[k];
+  const n1 = nodes[e[0]], n2 = nodes[e[1]];
+  return { a: n1.label + (n1.campus ? ', ' + n1.campus : ''), b: n2.label, state: e[2],
+    trend: e[2] === 'ok' ? [6,6,7,6,7,7,8,7] : [6,6,5,5,5,4,5,4],
+    rows: [['Contracts closed on time', e[2] === 'ok' ? '12 of 13' : '8 of 12'], ['Reports sent up', e[2] === 'ok' ? '4 of 4 weeks' : '3 of 4 weeks'],
+           ['Questions answered within the working day', e[2] === 'ok' ? '15 of 16' : '10 of 15']], link: 'Open their contracts' };
+}
+const word = { ok: 'Healthy', due: 'Watch', bad: 'Strained' };
+const chip = { ok: 'ok', due: 'due', bad: 'late' };
+function show(k, e, el) {
+  document.querySelectorAll('.edge.sel').forEach(x => x.classList.remove('sel'));
+  if (el) el.classList.add('sel');
+  const d = pairInfo(k, e);
+  document.getElementById('pair').innerHTML =
+    `<h2>${d.a} and ${d.b}</h2><p class="sub"><span class="chip ${chip[d.state]}">${word[d.state]}</span> over the last 4 weeks</p>` +
+    `<table>${d.rows.map(r => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td></tr>`).join('')}</table>` +
+    `<div class="spark" aria-label="Weekly trend, last 8 weeks">${d.trend.map((v, i) => `<i class="${i === 7 ? 'now' : ''}" style="height:${v * 4}px"></i>`).join('')}</div>` +
+    `<p class="notice">Last 8 weeks, this week dark.</p><a href="#">${d.link}</a> &nbsp; <a href="#">Raise a follow-up</a>`;
+}
+edges.forEach(e => {
+  const a = nodes[e[0]], b = nodes[e[1]], k = e[0] + '-' + e[1];
+  const l = document.createElementNS(NS, 'line');
+  Object.entries({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: COL[e[2]], 'stroke-width': e[3] + 1, 'stroke-opacity': .7,
+    'stroke-linecap': 'round', class: 'edge', tabindex: 0 }).forEach(([n, v]) => l.setAttribute(n, v));
+  l.setAttribute('aria-label', `${a.label} and ${b.label}: ${word[e[2]]}`);
+  l.addEventListener('click', () => show(k, e, l));
+  l.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); show(k, e, l); } });
+  svg.appendChild(l);
+});
+Object.values(nodes).forEach(n => {
+  const big = !n.label.match(/Teacher|Staff|HOD/);
+  const c = document.createElementNS(NS, 'circle');
+  Object.entries({ cx: n.x, cy: n.y, r: big ? 13 : 7, fill: big ? '#1a1a1a' : '#ffffff', stroke: '#1a1a1a', 'stroke-width': 1.5 })
+    .forEach(([k, v]) => c.setAttribute(k, v));
+  svg.appendChild(c);
+  if (big) {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', n.x); t.setAttribute('y', n.y - 20); t.setAttribute('text-anchor', 'middle');
+    t.textContent = n.campus ? n.campus : n.label;
+    if (n.campus) t.setAttribute('class', 'campus');
+    svg.appendChild(t);
+  }
+});
+const first = edges.findIndex(e => e[0] === 'p3' && e[1] === 'p3s0');
+show('p3-p3s0', edges[first], svg.querySelectorAll('.edge')[first]);
+</script>
+</body>
+</html>

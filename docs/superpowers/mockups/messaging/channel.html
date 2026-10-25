@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: a channel</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  .app { display: grid; grid-template-columns: 240px 1fr 320px; height: calc(100vh - 31px); min-height: 640px; background: var(--white); }
+  /* sidebar */
+  nav.side { background: var(--ink); color: #e8e8e8; overflow-y: auto; padding: 12px 0; font-size: 14px; }
+  nav.side .me { display: flex; gap: 10px; align-items: center; padding: 4px 16px 12px; border-bottom: 1px solid #333; }
+  nav.side .me small { display: block; color: #aaa; }
+  nav.side h2 { font-size: 12px; font-weight: 600; color: #aaa; margin: 16px 16px 4px; }
+  nav.side a { display: flex; justify-content: space-between; color: #e8e8e8; text-decoration: none; padding: 4px 16px; }
+  nav.side a[aria-current="page"] { background: var(--red); color: var(--white); font-weight: 600; }
+  nav.side a .badge { background: var(--red); color: var(--white); border-radius: 999px; font-size: 11px; padding: 0 7px; font-weight: 700; }
+  nav.side a .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #777; }
+  nav.side a .dot.on { background: #3cbf6a; }
+  nav.side a .st { color: #aaa; font-size: 12px; }
+  /* channel */
+  section.chan { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
+  .chan-h { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .chan-h h1 { font-size: 17px; margin: 0; }
+  .chan-h .topic { color: var(--muted); font-size: 13px; flex: 1; min-width: 160px; }
+  .huddle { display: flex; align-items: center; gap: 10px; background: var(--ok-bg); color: var(--ok); padding: 6px 16px; font-size: 14px; }
+  .huddle span { flex: 1; }
+  .feed { flex: 1; overflow-y: auto; padding: 8px 0 16px; }
+  .day { text-align: center; font-size: 12px; color: var(--muted); margin: 10px 0; }
+  .m { display: grid; grid-template-columns: 36px 1fr; gap: 10px; padding: 8px 16px; }
+  .m:hover { background: #fafafa; }
+  .m .who { font-weight: 600; }
+  .m .role { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .m time { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .m p { margin: 2px 0; }
+  .reacts { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .reacts span { border: 1px solid var(--line); border-radius: 999px; font-size: 12px; padding: 0 8px; background: var(--white); }
+  .reacts span.mine { border-color: var(--ok); background: var(--ok-bg); }
+  .thread-link { font-size: 13px; color: #1f5fbf; margin-top: 4px; display: inline-block; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-top: 6px; max-width: 520px; background: var(--white); }
+  .card .kind { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .card h3 { font-size: 15px; margin: 2px 0 4px; }
+  .card .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; margin-top: 6px; }
+  .card.announce { border-left: 4px solid var(--ink); }
+  .card.contract { border-left: 4px solid var(--red); }
+  .card.job { border-left: 4px solid var(--due); }
+  .card.form { border-left: 4px solid #1f5fbf; }
+  .bar-read { height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; width: 140px; }
+  .bar-read i { display: block; height: 100%; background: var(--ink); width: 72%; }
+  .voice { display: flex; align-items: center; gap: 10px; }
+  .voice .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--white); }
+  .wave { flex: 1; height: 24px; background: repeating-linear-gradient(90deg, #999 0 2px, transparent 2px 5px); opacity: .55; border-radius: 2px; max-width: 260px; }
+  .transcript { font-size: 14px; background: var(--panel); border-radius: var(--radius); padding: 8px 10px; margin-top: 6px; }
+  .transcript small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .composer { border-top: 1px solid var(--line); padding: 10px 16px 12px; }
+  .composer .box { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; color: var(--muted); }
+  .composer .tools { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .composer .tools .btn { padding: 4px 10px; font-size: 13px; }
+  .composer .notice { margin: 8px 0 0; }
+  /* thread */
+  aside.thread { display: flex; flex-direction: column; min-width: 0; }
+  aside.thread header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  aside.thread h2 { font-size: 15px; margin: 0; }
+  aside.thread .feed .m { padding: 8px 12px; }
+  @media (max-width: 1100px) { .app { grid-template-columns: 220px 1fr; } aside.thread { display: none; } }
+  @media (max-width: 720px) { .app { grid-template-columns: 1fr; height: auto; } nav.side { display: none; } }
+</style>
+</head>
+<body>
+<div class="sample">Mock-up for Uday. Sample people and sample data, not real staff. Desktop layout; on a phone only the middle column shows.</div>
+<div class="app">
+
+  <nav class="side" aria-label="Channels">
+    <div class="me"><span class="avatar" style="background:#8a3b3b">RP</span><div>Ritu P.<small>Principal, LMS 4. In a meeting until 11</small></div></div>
+    <h2>Campus</h2>
+    <a href="#" aria-current="page"># lms4-staff</a>
+    <a href="#"># lms4-transport <span class="badge">2</span></a>
+    <a href="#"># lms4-office</a>
+    <h2>Departments</h2>
+    <a href="#"># academics-network</a>
+    <a href="#"># hr-staff <span class="badge">1</span></a>
+    <a href="#"># school-financials</a>
+    <h2>Topics</h2>
+    <a href="#"># annual-day-2026</a>
+    <a href="#"># hp-board-noc</a>
+    <h2>Direct messages</h2>
+    <a href="#"><span><span class="dot on"></span>Anil K.</span><span class="st">In class</span></a>
+    <a href="#"><span><span class="dot"></span>Coordinator (LMS 4-6)</span><span class="st">On a bus</span></a>
+    <a href="#"><span><span class="dot on"></span>Rakesh</span></a>
+    <a href="#"><span><span class="dot"></span>Sonia M.</span><span class="st">On leave</span></a>
+  </nav>
+
+  <section class="chan" aria-label="Channel lms4-staff">
+    <div class="chan-h">
+      <h1># lms4-staff</h1>
+      <span class="topic">All staff at Ner Chowk. Replies in threads, please.</span>
+      <button class="btn">Forms</button>
+      <button class="btn">Job board <span class="chip due">3 open</span></button>
+      <button class="btn" aria-label="Search this channel">Search</button>
+    </div>
+    <div class="huddle"><span>Huddle in #lms4-staff: Ritu P., Anil K., Rakesh</span><button class="btn">Join</button></div>
+
+    <div class="feed">
+      <div class="day">Today, Sunday 25/10/2026</div>
+
+      <div class="m">
+        <span class="avatar" style="background:#8a3b3b">RP</span>
+        <div>
+          <span class="who">Ritu P.</span><span class="role">Principal</span><time>8:30 AM</time>
+          <div class="card announce">
+            <div class="kind">Announcement, pinned</div>
+            <h3>PTM on Saturday 31/10, 9 AM to 1 PM</h3>
+            <p>Class teachers set up in their own rooms. Report cards collected from the office by Friday 3 PM.</p>
+            <div class="row"><div class="bar-read"><i></i></div><span class="num">42 of 58 have read it</span><a href="#">See who hasn't</a></div>
+          </div>
+          <div class="reacts"><span class="mine">✓ 31</span><span>🙏 6</span></div>
+        </div>
+      </div>
+
+      <div class="m">
+        <span class="avatar" style="background:#3b5f8a">AK</span>
+        <div>
+          <span class="who">Anil K.</span><span class="role">HOD Maths</span><time>9:02 AM</time>
+          <p>Need 6B notebooks checked before Monday, only the last two chapters.</p>
+          <div class="card contract">
+            <div class="kind">Made into a contract</div>
+            <h3>Check notebooks of 6B (Maths)</h3>
+            <div class="row"><span>For Meena S.</span><span class="chip due">Due today, 4 PM</span><span class="chip ok">Accepted</span><span class="chip plain">Proof: photo</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="m">
+        <span class="avatar" style="background:#4d7a4d">SM</span>
+        <div>
+          <span class="who">Sonia M.</span><span class="role">Teacher</span><time>9:18 AM</time>
+          <div class="voice"><button class="play" aria-label="Play voice note">▶</button><span class="wave" aria-hidden="true"></span><span class="num muted">0:21</span></div>
+          <div class="transcript"><small>Transcript (Hindi, automatic)</small>Room 4 का projector फिर से नहीं चल रहा, कल से। Class 8 का presentation है Tuesday को।</div>
+          <div class="card job">
+            <div class="kind">On the job board</div>
+            <h3>Projector in Room 4 not working</h3>
+            <div class="row"><span>Needed by Tue 27/10</span><span class="chip plain">Proof: photo</span><button class="btn primary" style="padding:4px 12px">Claim</button></div>
+          </div>
+          <a class="thread-link" href="#">2 replies in thread</a>
+        </div>
+      </div>
+
+      <div class="m">
+        <span class="avatar" style="background:#6b4d8a">NT</span>
+        <div>
+          <span class="who">Neha T.</span><span class="role">Teacher</span><time>10:05 AM</time>
+          <div class="card form">
+            <div class="kind">Form: Leave request</div>
+            <h3>Casual leave, Wed 28/10 (1 day)</h3>
+            <div class="row"><span>Sent to Ritu P. for approval</span><span class="chip due">Waiting</span><a href="#">Open in Approvals</a></div>
+          </div>
+          <p class="notice">Only Neha and the approver see the reason. The channel sees that a request was made.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="box">Message #lms4-staff</div>
+      <div class="tools">
+        <button class="btn">Attach</button><button class="btn">Voice note</button><button class="btn">Form</button>
+        <button class="btn">Make contract</button><button class="btn">Announcement</button><button class="btn">Schedule</button>
+      </div>
+      <p class="notice">Everything in the portal is on record and visible to the Owner.</p>
+    </div>
+  </section>
+
+  <aside class="thread" aria-label="Thread">
+    <header><h2>Thread: projector in Room 4</h2><button class="btn" aria-label="Close thread">Close</button></header>
+    <div class="feed">
+      <div class="m">
+        <span class="avatar" style="background:#2f6f6f">RK</span>
+        <div><span class="who">Rakesh</span><span class="role">Admin Manager</span><time>9:40 AM</time>
+          <p>Claimed. The lamp was changed in August, so it's likely the board. Will call the vendor.</p>
+          <div class="reacts"><span>👍 2</span></div></div>
+      </div>
+      <div class="m">
+        <span class="avatar" style="background:#4d7a4d">SM</span>
+        <div><span class="who">Sonia M.</span><span class="role">Teacher</span><time>9:44 AM</time><p>Thank you. Room 6 is free 3rd period if needed.</p></div>
+      </div>
+      <div class="m">
+        <span class="avatar owl" aria-hidden="true">B</span>
+        <div><span class="who">Buddy</span><time>9:40 AM</time><p class="muted">Rakesh claimed this. It moved to Rakesh's contracts, due Tue 27/10.</p></div>
+      </div>
+    </div>
+    <div class="composer"><div class="box">Reply in thread</div></div>
+  </aside>
+
+</div>
+</body>
+</html>
