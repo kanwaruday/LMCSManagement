@@ -83,20 +83,23 @@ approvedLeaveDays(email, fromISO, toISO) ->
   same column positions, as `coordinator.gs` already does for approvals; the contract is documented in code next to the columns.
 - A caller sees only their own leave, their campus (Principal), or everyone (Owner/Coordinator), the same scoping as `aprList_`.
 
-### 4. Who approves (needs Uday's decision; biggest change)
+### 4. Who approves (decided: option B for now, with a seam for later)
 
-Today only the Owner and a Coordinator with `CanApprove` decide anything. The bye-laws put the first approval with the Principal.
+**Decided (Uday, 2026-10-25): "Teacher leave: everything goes to Management (Owner / delegated Coordinator) for now, as
+with all approvals. We'll hand routine leave to Principals later."**
 
-- **A (recommended): Principal approves routine leave, Management approves the rest.** A campus Principal can decide
-  `Leave` requests for **their own campus's teachers**: Casual, Single, Half, Short, Emergency. **Compensatory, Long Leave
-  (over 6 working days), Special Day, and a same-role overlap** go to Management (Owner / delegated Coordinator) with the
-  Principal's recommendation recorded first. Matches the bye-laws; keeps Management's queue short.
-- **B: everything to Management.** Simplest to build; Management would see every teacher's leave across six schools.
-- **C: Principal approves everything, Management only sees Compensatory and Long Leave.** Lightest for Management; looser than the bye-laws.
+So v1 changes **no permissions**: `aprCanDecide_` stays exactly as it is (Owner, or Coordinator with `CanApprove`), the
+decision is recorded under the decider's own email, and a campus Principal sees leave only as the requester's campus
+view does today (read, comment, no decide).
 
-Implementation under A: a narrow `aprCanDecideLeave_(caller, row)` check (Principal, own campus, category Leave, type not
-escalated); `aprCanDecide_` is unchanged for every other category. The decision is still recorded with the decider's own
-email, so accountability is kept.
+Built so the later hand-over is a configuration change, not a rewrite:
+- Every decide path (`aprDecide_`, `aprArchive_`, and the Coordinator > Systems > Approvals decide bar) goes through **one**
+  function, `aprCanDecideRow_(caller, row)`. In v1 it returns `aprCanDecide_(caller)` for every row.
+- A constant, `APR_LEAVE_PRINCIPAL_TYPES = []` (empty), names the leave types a campus Principal may decide for their own
+  campus's teachers. Moving routine leave to Principals later = fill that list (Casual, Single, Half, Short, Emergency),
+  plus the own-campus check inside `aprCanDecideRow_`. Compensatory, Long Leave and Special Day stay with Management.
+- The Principal's recommendation step (Principal recommends, Management approves) is **not** built now; the existing
+  comment thread is where a Principal can comment today.
 
 ### 5. Rules checked in v1 versus later
 
@@ -123,7 +126,7 @@ email, so accountability is kept.
    action and `approvedLeaveDays`. A new `approvals-leave.gs` (functions prefixed `aprLv`), added to `apps-script/projects.json`.
    Tests in `tests/approvals/` (the repo has none for approvals today): working days, weights, overlap, scoping, the contract output.
 3. **P2, teacher form** and the Approvals display of leave fields.
-4. **P3, approver scope** per the chosen option, with escalation rules.
+4. **P3, approver seam:** `aprCanDecideRow_` and the empty `APR_LEAVE_PRINCIPAL_TYPES`; no behaviour change. The Principal hand-over is a later, separate build.
 5. **P4, consumers:** hand the contract to the Teacher game; Payroll prefill as a separate piece later.
 6. **P5, later rules** from the table above, one at a time.
 
@@ -132,14 +135,14 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 
 ## Risks
 
-- **Approver scope** is the only change that touches existing permissions; it is narrow, own-campus and `Leave`-only.
+- **Approver scope:** none in v1 (option B). The later Principal hand-over will be the only change to permissions; it is narrow, own-campus and `Leave`-only.
 - **`approvals.gs` global scope:** a duplicate top-level name breaks the whole PDR deployment; `verify.mjs` compiles every
   file, and the plan adds a collision check to the tests.
 - **Leave records are personal data** (reason text can be medical); the contract exposes dates and type, never the reason.
 
 ## Open questions for Uday (asked one at a time, answers recorded below)
 
-1. Who approves teacher leave: A, B or C above? (recommend A)
+1. ~~Who approves teacher leave~~ **Answered: B (Management), seam for later.**
 2. One "Leave" category with a type dropdown, or separate categories? (recommend one)
 3. Which types can a teacher request: Casual, Compensatory, Single, Half, Short, Special Day, Emergency? (recommend all seven)
 4. In "days on track", does a half-day leave excuse the whole day or half of it? (recommend: the whole day, so a teacher is never penalised)
@@ -148,4 +151,6 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 
 ## Uday's decisions
 
-_None yet._
+1. **Who approves (2026-10-25):** "Teacher leave: everything goes to Management (Owner / delegated Coordinator) for now, as
+   with all approvals. We'll hand routine leave to Principals later." Recorded as option B; the hand-over seam is designed in
+   (section 4) but not built.
