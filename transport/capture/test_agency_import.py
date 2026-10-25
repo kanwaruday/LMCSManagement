@@ -232,7 +232,8 @@ def test_cli_push_sends_the_payload_and_a_refused_push_exits_non_zero():
         assert cli(f, "--push")[0] == 0
     assert sent[0][0] == "transportcatalogpush" and set(sent[0][1]) == {"models", "vehicles", "history"}, sent
     assert "contacts" not in sent[0][1], "the advisors' phone numbers stay on the Mac"
-    assert all(set(v) .isdisjoint({"file", "row", "asOf"}) for v in sent[0][1]["vehicles"]), "bookkeeping keys are not pushed"
+    assert all(set(v).isdisjoint({"file", "row"}) and v["asOf"] for v in sent[0][1]["vehicles"]), "bookkeeping keys are not pushed; asOf is"
+    assert all(h["asOf"] for h in sent[0][1]["history"]), "the backend keeps the newest asOf per row"
     assert all(set(h).isdisjoint({"file", "row"}) for h in sent[0][1]["history"])
     assert sent[0][1]["vehicles"][0]["catalogModel"] == "MODEL ALPHA 36"
     with post_stub(lambda action, payload=None: sys.exit(f"{action} refused: Not authorized")):
@@ -325,6 +326,9 @@ def test_a_vehicle_model_resolves_to_the_catalog_key_exact_then_unique_prefix_el
     assert key["T1"] == "LP 410/36", "a unique prefix match"
     assert key["T2"] == "LP 410/36", "an exact match ignores case"
     assert key["T3"] == "" and key["T4"] == "" and key["T5"] == "", "no unique match: no key"
+    assert A.catalog_key("LP 1618", ["LP 1618 Cowl"])[0] == "LP 1618 Cowl" and A.catalog_key("LP 1618 Cowl", ["LP 1618"])[0] == "LP 1618", "at a word boundary"
+    assert A.catalog_key("LP 16180", ["LP 1618"])[0] == "" and A.catalog_key("LP 1618", ["LP 16180"])[0] == "", "not in the middle of a word"
+    assert A.catalog_key("LP 410/36 Starbus", ["LP 410/36"])[0] == "LP 410/36" and A.catalog_key("LP 410", ["LP 410/36"])[0] == "LP 410/36", "a slash is a boundary"
     text = "\n".join(m["problems"])
     assert re.search(r"res\.xlsx: Our vehicles row 7.*T3.*LP 1618 Cowl Skool.*more than one", text), text
     assert re.search(r"T4.*Unknown Model.*no catalog model", text) and re.search(r"T5.*no model", text), text
@@ -349,7 +353,7 @@ def test_as_of_overrides_the_file_time():  # Ruling 39
         raise AssertionError("--as-of takes YYYY-MM-DD")
 
 
-def test_a_reg_that_will_not_resolve_is_reported_and_not_pushed():  # M1
+def test_a_reg_that_will_not_resolve_is_reported_and_left_for_the_portal_to_find():  # M1
     d = tmp()
     path = make_workbook(d / "noreg.xlsx", {
         "Our vehicles": [["TESTCH0001", "TEST01", "MODEL ALPHA 36", None, None, None, 2022, None, None, None],
@@ -358,10 +362,22 @@ def test_a_reg_that_will_not_resolve_is_reported_and_not_pushed():  # M1
         "Service history": [["TESTCH0001", "JC-1", "01-10-2026", 1, "x", "P", None, 1, 1, 1],
                             ["TESTCH0777", "JC-2", "01-10-2026", 1, "x", "P", None, 1, 1, 1]]})
     m = A.merge([A.parse_agency(path)])
-    assert [v["reg"] for v in m["vehicles"]] == ["TEST01"] and [h["chassis"] for h in m["history"]] == ["TESTCH0001"]
+    assert [v["reg"] for v in m["vehicles"]] == ["TEST01"]
+    assert [(h["chassis"], h["reg"]) for h in m["history"]] == [("TESTCH0001", "TEST01"), ("TESTCH0777", "")], \
+        "a chassis not on these sheets is still sent: the portal may know it from an earlier push (and keeps the row only if it does)"
     text = "\n".join(m["problems"])
     assert re.search(r"noreg\.xlsx: Our vehicles row 6.*no registration", text), text
-    assert re.search(r"noreg\.xlsx: Service history row 6.*TESTCH0777.*not on", text), text
+    assert re.search(r"noreg\.xlsx: Service history row 6.*TESTCH0777.*not on.*earlier push", text), text
+
+
+def test_a_part_code_the_backend_would_refuse_is_reported_and_left_out():  # N2
+    d = tmp()
+    path = make_workbook(d / "code.xlsx", {"Wear parts": [["brake|front", "MODEL ALPHA 36", "x", 1, 1, None, 1, 1, None, None],
+                                                           ["battery", "MODEL ALPHA 36", "Battery", 1, 1, None, 1, 1, None, None]],
+                                           "Maintenance schedule": [["engine oil", "MODEL ALPHA 36", "x", 1, 1, None, None, None, None, None]]})
+    p = A.parse_agency(path)
+    assert list(model(p, "MODEL ALPHA 36")["parts"]) == ["battery"]
+    assert len(p["problems"]) == 2 and all(re.search(r"code\.xlsx: .* row 5: .*code", x) for x in p["problems"]), p["problems"]
 
 
 def test_a_dash_in_a_price_cell_means_empty_but_text_in_a_km_cell_still_does_not():  # M5

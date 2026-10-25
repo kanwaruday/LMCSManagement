@@ -278,9 +278,9 @@ const part = (o) => Object.assign({ lifeKm: 40000, lifeMonths: 24, price: 9500, 
 ctx.catPush = {
   models: [{ model: 'MODEL ALPHA 36', parts: { tyre: part(), engine_oil: part({ lifeKm: 10000, lifeMonths: 6, price: null, labour: null, components: ['engine_oil'] }) } },
     { model: 'MODEL BETA 26', parts: { brake_front: part({ lifeKm: 30000, components: ['brake_front'] }) } }],
-  vehicles: [{ chassis: 'TESTCH0001', reg: 'HP1', model: 'MODEL ALPHA 36', catalogModel: 'MODEL ALPHA 36', variant: 'Skool', year: 2022, warrantyDate: '2027-03-11', warrantyKm: 200000 },
-    { chassis: 'TESTCH0007', reg: 'HP7', model: 'MODEL BETA 26', year: 2018 }],
-  history: [{ reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Engine oil', partNo: 'P1', qty: '7 L', partAmount: 3150, labour: 700 },
+  vehicles: [{ chassis: 'TESTCH0001', reg: 'HP1', model: 'MODEL ALPHA 36', catalogModel: 'MODEL ALPHA 36', asOf: '2026-10-01T10:00:00', recalls: 'Open campaign 7', variant: 'Skool', year: 2022, warrantyDate: '2027-03-11', warrantyKm: 200000 },
+    { chassis: 'TESTCH0007', reg: 'HP7', model: 'MODEL BETA 26', year: 2018, asOf: '2026-10-01T10:00:00' }],
+  history: [{ asOf: '2026-10-01T10:00:00', reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Engine oil', partNo: 'P1', qty: '7 L', partAmount: 3150, labour: 700 },
     { reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Oil filter', partNo: 'P2', qty: '1', partAmount: 450, labour: null },
     { reg: 'HP7', chassis: 'TESTCH0007', jobCard: 'JC-7', date: '2026-10-17', odometer: 40000, work: 'Brakes', part: 'Liner', partNo: 'P3', qty: '4', partAmount: 2400, labour: 900 }],
 };
@@ -315,23 +315,44 @@ assert.deepStrictEqual(Object.keys(catCoord.models).sort(), ['MODEL ALPHA 36', '
 
 // fix round 1: registrations like the repo's other normalisers, the catalog model key, no blanking, a bounded history, stricter rows
 assert.strictEqual(catCoord.vehicles[0].catalogModel, 'MODEL ALPHA 36', 'the resolved catalog model key is stored and served');
-run('coordCatalogPush_({secret:"S", payload: {models: [], history: [], vehicles: [{chassis: "TESTCH0001", reg: "", model: "", catalogModel: "", variant: "", year: "", warrantyKm: null}]}})');
-const kept = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog.vehicles.find(v => v.chassis === 'TESTCH0001');
-assert.deepStrictEqual([kept.reg, kept.model, kept.catalogModel, kept.variant, kept.year, kept.warrantyKm], ['HP1', 'MODEL ALPHA 36', 'MODEL ALPHA 36', 'Skool', 2022, 200000], 'a later push never blanks a stored field with an empty one');
-run('coordCatalogPush_({secret:"S", payload: {models: [], history: [], vehicles: [{chassis: "TESTCH0001", reg: "H-p 1", variant: "Skool 36"}]}})');
-const hy = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog.vehicles.find(v => v.chassis === 'TESTCH0001');
-assert.deepStrictEqual([hy.reg, hy.variant], ['HP1', 'Skool 36'], 'a reg typed "H-p 1" is HP1 (every non-alphanumeric dropped, upper case); a real change still applies');
-run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [{reg: "HP-1", chassis: "TESTCH0001", jobCard: "JC-8", date: "2026-10-01", part: "Wipers", partAmount: 100}]}})');
+// Ruling 40: the newest asOf wins per row, whole, blanks included; only identity (reg, catalog model key) is never blanked; an older row is ignored
+const ownCat = () => J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog;
+const veh1 = () => ownCat().vehicles.find(v => v.chassis === 'TESTCH0001');
+const pushVeh = (o) => run('coordCatalogPush_({secret:"S", payload: {models: [], history: [], vehicles: [' + JSON.stringify(Object.assign({ chassis: 'TESTCH0001' }, o)) + ']}})');
+pushVeh({ asOf: '2026-11-01T00:00:00', reg: '', model: '', catalogModel: '', variant: '', year: '', warrantyKm: null, recalls: '' });
+let kept = veh1();
+assert.deepStrictEqual([kept.reg, kept.catalogModel], ['HP1', 'MODEL ALPHA 36'], 'a newer blank never blanks the identity: reg and the catalog model key');
+assert.deepStrictEqual([kept.variant, kept.year, kept.warrantyKm, kept.recalls, kept.warrantyDate], ['', null, null, '', ''], 'but it clears the rest: a closed recall, a dropped warranty, a cleared variant');
+pushVeh({ asOf: '2026-09-01T00:00:00', reg: 'HP1', variant: 'OLD FILE', recalls: 'Open campaign 7', year: 2001 });
+kept = veh1();
+assert.deepStrictEqual([kept.variant, kept.recalls, kept.year], ['', '', null], 'a row with an OLDER asOf overwrites nothing');
+pushVeh({ asOf: '2026-11-02T00:00:00', reg: 'H-p 1', variant: 'Skool 36', year: 2022 });
+kept = veh1();
+assert.deepStrictEqual([kept.reg, kept.variant, kept.year], ['HP1', 'Skool 36', 2022], 'a reg typed "H-p 1" is HP1 (every non-alphanumeric dropped, upper case); a newer row applies whole');
+// a part: a newer file clears a wrong price; an older one is ignored (the tyre was set to 45000 km / 9800 above)
+const tyre = () => ownCat().models['MODEL ALPHA 36'].parts.tyre;
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 46000, price: '', asOf: '2026-11-01T00:00:00' })) + '}}], vehicles: [], history: []}})');
+assert.deepStrictEqual([tyre().lifeKm, tyre().price], [46000, null], 'a newer part row clears the price it no longer states');
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 1, price: 1, asOf: '2026-10-05T00:00:00' })) + '}}], vehicles: [], history: []}})');
+assert.deepStrictEqual([tyre().lifeKm, tyre().price], [46000, null], 'an older part row is ignored');
+run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [{reg: "HP-1", chassis: "TESTCH0001", jobCard: "JC-8", date: "2026-10-01", part: "Wipers", partAmount: 100, asOf: "2026-11-01T00:00:00"}]}})');
 assert.ok(J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).catalog.history.some(h => h.part === 'Wipers' && h.reg === 'HP1'), 'a hyphenated reg in a history row still reaches its bus');
-const blankedHist = J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [Object.assign({}, catPush.history[0], {reg: "", odometer: null, labour: null})]}})'));
-assert.strictEqual(blankedHist.success, true);
-const h0 = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog.history.find(h => h.part === 'Engine oil');
-assert.deepStrictEqual([h0.reg, h0.odometer, h0.labour], ['HP1', 81200, 700], 'and the same for a history row');
+const histOf = () => ownCat().history.find(h => h.part === 'Engine oil');
+const oldH = Object.assign({}, ctx.catPush.history[0], { reg: '', odometer: 1, labour: 1, asOf: '2026-09-01T00:00:00' });
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(oldH) + ']}})')).success, true);
+assert.deepStrictEqual([histOf().odometer, histOf().labour], [81200, 700], 'an older history row is ignored');
+run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(Object.assign({}, oldH, { odometer: null, labour: null, asOf: '2026-11-03T00:00:00' })) + ']}})');
+assert.deepStrictEqual([histOf().reg, histOf().odometer, histOf().labour], ['HP1', null, null], 'a newer history row clears what it leaves empty; its reg (blank) is found from the stored vehicle');
+// N4: a history row for a chassis known only from an earlier push resolves through the stored vehicles; an unknown chassis is not stored and is reported
+const hrow = (o) => Object.assign({ asOf: '2026-11-03T00:00:00', date: '2026-10-02', jobCard: 'JC-9', part: 'Belt' }, o);
+const nres = J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(hrow({ chassis: 'TESTCH0001' })) + ',' + JSON.stringify(hrow({ chassis: 'NOSUCHCHASSIS' })) + ']}})'));
+assert.deepStrictEqual([nres.success, nres.history, nres.unresolved], [true, 1, ['NOSUCHCHASSIS']]);
+assert.deepStrictEqual(ownCat().history.filter(h => h.part === 'Belt').map(h => h.reg), ['HP1']);
 // the insight carries the newest GPS.catalogHistory rows per bus, not all years
 assert.strictEqual(run('GPS.catalogHistory'), 100);
 run('GPS.catalogHistory = 2');
 const bounded = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog.history.filter(h => h.reg === 'HP1');
-assert.deepStrictEqual(bounded.map(h => h.part), ['Wipers', 'Engine oil'], 'newest first, two per bus (HP1 has 3 rows: the oldest dropped)');
+assert.deepStrictEqual(bounded.map(h => h.part), ['Belt', 'Wipers'], 'newest first, two per bus (HP1 has 4 rows: the oldest dropped)');
 run('GPS.catalogHistory = 100');
 const rej = (payload) => J(run('coordCatalogPush_({secret:"S", payload: ' + JSON.stringify(payload) + '})'));
 assert.strictEqual(rej({ models: [{ model: 'M', parts: { 'a|b': part() } }], vehicles: [], history: [] }).success, false, 'a part code with | is refused (it is half the key)');

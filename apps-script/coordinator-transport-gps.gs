@@ -28,8 +28,8 @@ const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'G
 const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt'];
 const GPS_TAB_CATALOG = 'Parts Catalog', GPS_TAB_AGVEH = 'Agency Vehicles', GPS_TAB_AGHIST = 'Agency History';
 const GPS_CATALOG_COLS = ['key', 'model', 'code', 'lifeKm', 'lifeMonths', 'price', 'labour', 'spec', 'components', 'asOf', 'pushedAt'];
-const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'catalogModel', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'pushedAt'];
-const GPS_AGHIST_COLS = ['key', 'reg', 'chassis', 'jobCard', 'date', 'odometer', 'work', 'part', 'partNo', 'qty', 'partAmount', 'labour', 'pushedAt'];
+const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'catalogModel', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'asOf', 'pushedAt'];
+const GPS_AGHIST_COLS = ['key', 'reg', 'chassis', 'jobCard', 'date', 'odometer', 'work', 'part', 'partNo', 'qty', 'partAmount', 'labour', 'asOf', 'pushedAt'];
 const GPS_DAILY_COLS = ['reg', 'date', 'km', 'blindKm', 'firstMove', 'lastMove', 'nightLat', 'nightLng', 'nightPlace', 'nightAwayKm', 'maxKmh', 'minOver40'];
 const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'arrive_early', 'arrive_late', 'spread_min', 'dwell_min', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'];
 const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs', 'proof'];
@@ -437,6 +437,7 @@ function gpsCatNum_(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ?
 function gpsCatNumOut_(v) { return v === '' || v == null || !isFinite(Number(v)) ? null : Number(v); }
 function gpsCatStr_(v) { return v == null ? '' : String(v).trim().slice(0, 500); }
 function gpsCatReg_(v) { return gpsCatStr_(v).replace(/[^A-Za-z0-9]/g, '').toUpperCase(); } // as officeNormReg_ / tupNormReg_ do: HP-66-5805 is HP665805
+function gpsCatAsOf_(v, now) { const a = gpsCatStr_(v); return /^\d{4}-\d{2}-\d{2}(T[\d:]+)?$/.test(a) ? a : a ? null : now.slice(0, 19); } // null: not an ISO stamp; none given: the push time
 function gpsCatDate_(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v); }
 
 /** POST action=transportcatalogpush {secret, payload:{models:[{model, parts:{code:{lifeKm, lifeMonths, price, labour, spec, components, asOf}}}],
@@ -453,52 +454,63 @@ function coordCatalogPush_(body) {
     if (!model || !m.parts || typeof m.parts !== 'object' || Array.isArray(m.parts)) return { success: false, error: 'Payload rejected: model ' + (i + 1) + ' needs a name and its parts' };
     const codes = Object.keys(m.parts);
     for (let k = 0; k < codes.length; k++) {
-      const asOf = gpsCatStr_((m.parts[codes[k]] || {}).asOf);
-      if (!/^[A-Za-z0-9_]{1,40}$/.test(codes[k]) || (asOf && !/^\d{4}-\d{2}-\d{2}(T[\d:]+)?$/.test(asOf))) return { success: false, error: 'Payload rejected: part ' + codes[k] + ' of ' + model + ' needs a plain code and an ISO asOf' };
+      if (!/^[A-Za-z0-9_]{1,40}$/.test(codes[k]) || gpsCatAsOf_((m.parts[codes[k]] || {}).asOf, now) === null) return { success: false, error: 'Payload rejected: part ' + codes[k] + ' of ' + model + ' needs a plain code and an ISO asOf' };
     }
     codes.forEach(function (code) {
       const x = m.parts[code] || {};
       parts.push({ key: model + '|' + code, model: model, code: code, lifeKm: gpsCatNum_(x.lifeKm), lifeMonths: gpsCatNum_(x.lifeMonths), price: gpsCatNum_(x.price),
-        labour: gpsCatNum_(x.labour), spec: gpsCatStr_(x.spec), components: Array.isArray(x.components) ? x.components.map(gpsCatStr_).join(',') : '', asOf: gpsCatStr_(x.asOf), pushedAt: now });
+        labour: gpsCatNum_(x.labour), spec: gpsCatStr_(x.spec), components: Array.isArray(x.components) ? x.components.map(gpsCatStr_).join(',') : '', asOf: gpsCatAsOf_(x.asOf, now), pushedAt: now });
     });
   }
   for (let i = 0; i < p.vehicles.length; i++) {
     const v = p.vehicles[i] || {};
     if (!gpsCatStr_(v.chassis)) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' needs its chassis number' };
+    if (gpsCatAsOf_(v.asOf, now) === null) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' asOf must be an ISO date' };
     if (gpsCatStr_(v.warrantyDate) && !gpsCatDate_(gpsCatStr_(v.warrantyDate))) return { success: false, error: 'Payload rejected: vehicle ' + (i + 1) + ' warranty date must be yyyy-mm-dd' };
     vehicles.push({ chassis: gpsCatStr_(v.chassis), reg: gpsCatReg_(v.reg), model: gpsCatStr_(v.model), catalogModel: gpsCatStr_(v.catalogModel), variant: gpsCatStr_(v.variant), engine: gpsCatStr_(v.engine),
-      emission: gpsCatStr_(v.emission), year: gpsCatNum_(v.year), warrantyDate: gpsCatStr_(v.warrantyDate), warrantyKm: gpsCatNum_(v.warrantyKm), recalls: gpsCatStr_(v.recalls), pushedAt: now });
+      emission: gpsCatStr_(v.emission), year: gpsCatNum_(v.year), warrantyDate: gpsCatStr_(v.warrantyDate), warrantyKm: gpsCatNum_(v.warrantyKm), recalls: gpsCatStr_(v.recalls), asOf: gpsCatAsOf_(v.asOf, now), pushedAt: now });
   }
   for (let i = 0; i < p.history.length; i++) {
     const h = p.history[i] || {};
     if (!gpsCatStr_(h.chassis) || !gpsCatDate_(gpsCatStr_(h.date))) return { success: false, error: 'Payload rejected: history row ' + (i + 1) + ' needs a chassis number and a yyyy-mm-dd date' };
     const row = { reg: gpsCatReg_(h.reg), chassis: gpsCatStr_(h.chassis), jobCard: gpsCatStr_(h.jobCard), date: gpsCatStr_(h.date), odometer: gpsCatNum_(h.odometer), work: gpsCatStr_(h.work),
-      part: gpsCatStr_(h.part), partNo: gpsCatStr_(h.partNo), qty: gpsCatStr_(h.qty), partAmount: gpsCatNum_(h.partAmount), labour: gpsCatNum_(h.labour), pushedAt: now };
+      part: gpsCatStr_(h.part), partNo: gpsCatStr_(h.partNo), qty: gpsCatStr_(h.qty), partAmount: gpsCatNum_(h.partAmount), labour: gpsCatNum_(h.labour), asOf: gpsCatAsOf_(h.asOf, now), pushedAt: now };
+    if (row.asOf === null) return { success: false, error: 'Payload rejected: history row ' + (i + 1) + ' asOf must be an ISO date' };
     row.key = [row.chassis, row.jobCard, row.date, row.part, row.partNo, row.qty].join('|'); // ponytail: two identical lines on one job card count as one
     history.push(row);
   }
+  const unresolved = [];
+  let storedCount = 0;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const upsert = function (tab, cols, keyOf, fresh, keep) {
+    // the newest asOf wins per row, whole (blanks included: an agency can clear a price, close a recall); an older row changes nothing;
+    // `identity` fields are never blanked (a bus must stay findable)
+    const upsert = function (tab, cols, keyOf, fresh, identity) {
       const by = {}, order = [];
       gpsRows_(tab).forEach(function (r) { by[keyOf(r)] = r; order.push(keyOf(r)); });
       fresh.forEach(function (r) {
         const k = keyOf(r), old = by[k];
+        if (old && String(old.asOf) > r.asOf) return;
         if (!old) order.push(k);
-        if (old && keep && keep(old, r)) return;
-        if (old) Object.keys(r).forEach(function (c) { if ((r[c] === '' || r[c] == null) && c !== 'pushedAt' && old[c] !== '' && old[c] != null) r[c] = old[c]; }); // never blank what is stored
+        else identity.forEach(function (c) { if (r[c] === '' && old[c]) r[c] = old[c]; });
         by[k] = r;
       });
       const seen = {};
       gpsWrite_(tab, cols, order.filter(function (k) { return seen[k] ? false : (seen[k] = true); }).map(function (k) { return by[k]; }));
     };
-    upsert(GPS_TAB_CATALOG, GPS_CATALOG_COLS, function (r) { return r.key; }, parts, function (old, r) { return String(old.asOf) > r.asOf; });
-    upsert(GPS_TAB_AGVEH, GPS_AGVEH_COLS, function (r) { return r.chassis; }, vehicles);
-    upsert(GPS_TAB_AGHIST, GPS_AGHIST_COLS, function (r) { return r.key; }, history);
+    upsert(GPS_TAB_CATALOG, GPS_CATALOG_COLS, function (r) { return r.key; }, parts, []);
+    upsert(GPS_TAB_AGVEH, GPS_AGVEH_COLS, function (r) { return r.chassis; }, vehicles, ['reg', 'catalogModel']);
+    // history rows come without a reg when the chassis was not on this push's vehicle sheets: the stored vehicles know it
+    const regOf = {};
+    gpsRows_(GPS_TAB_AGVEH).forEach(function (v) { if (v.reg) regOf[v.chassis] = v.reg; });
+    const stored = [];
+    history.forEach(function (h) { h.reg = h.reg || regOf[h.chassis] || ''; if (h.reg) stored.push(h); else if (unresolved.indexOf(h.chassis) === -1) unresolved.push(h.chassis); });
+    upsert(GPS_TAB_AGHIST, GPS_AGHIST_COLS, function (r) { return r.key; }, stored, ['reg']);
+    storedCount = stored.length;
   } finally { lock.releaseLock(); }
   CacheService.getScriptCache().remove('coord_gps_insight_v1');
-  return { success: true, parts: parts.length, vehicles: vehicles.length, history: history.length };
+  return { success: true, parts: parts.length, vehicles: vehicles.length, history: storedCount, unresolved: unresolved };
 }
 
 /** The catalog for the insight: {models:{model:{parts:{code:{...}}}}, vehicles, history}. Models and parts for everyone; vehicles and history of the visible buses only. */

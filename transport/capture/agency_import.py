@@ -18,7 +18,7 @@ row only (it carries down). Maintenance schedule: the severe/hill-duty interval 
 Wear parts give the replacement life, price and labour, and win over the schedule for the same model and part. Several files for
 one model merge, the newest file (by its modified time, or --as-of YYYY-MM-DD, kept as asOf) winning per part. Every vehicle gets
 `catalogModel`, the catalog model its model text matches (exactly, else by one unique prefix, else it is reported). Registrations are
-stored without any non-alphanumeric character; a vehicle or history row whose registration cannot be found is reported, not pushed.
+stored without any non-alphanumeric character; a vehicle without one is reported and not pushed; a history row whose chassis is on no vehicle sheet here is reported and still pushed (the portal finds its bus from an earlier push, else keeps nothing). The portal keeps, per row, the one with the newest asOf, whole (a newer file may clear a price, a recall or a warranty); only the registration and the catalog model key are never blanked.
 
 The template's codes stay the catalog keys; each part also carries `components`, the Task 1 ids (OFFICE_COMPONENTS in
 apps-script/office-config.gs) the garage matches service bills against. Contacts (advisors' phone numbers) and the packages and
@@ -200,7 +200,7 @@ def parse_agency(path, as_of=None):
         try:
             h = {"chassis": ident(r["chassis"]), "jobCard": text(r["jobCard"]), "date": date(r["date"]), "odometer": number(r["odometer"]),
                  "work": text(r["work"]), "part": text(r["part"]), "partNo": text(r["partNo"]), "qty": text(r["qty"]),
-                 "partAmount": money(r["partAmount"]), "labour": money(r["labour"]), "file": path.name, "row": n}
+                 "partAmount": money(r["partAmount"]), "labour": money(r["labour"]), "asOf": as_of, "file": path.name, "row": n}
         except ValueError as e:
             bad("Service history", n, e)
             continue
@@ -230,6 +230,8 @@ def parse_agency(path, as_of=None):
                 continue
             if not (code and model):
                 bad(sheet, n, "needs a code and a model")
+            elif not re.fullmatch(r"[a-z0-9_]{1,40}", code):  # the portal refuses a whole push over one such code
+                bad(sheet, n, f"the code {code!r} must be letters, digits and underscores only (this row was not imported)")
             elif (model, code) in seen:  # a second block whose Model was not typed would otherwise overwrite the first
                 bad(sheet, n, f"{code} is listed twice for {model!r}; type the Model on every block (this row was not imported)")
             else:
@@ -256,7 +258,8 @@ def catalog_key(model, keys):
     exact = [k for k in keys if k.lower() == m]
     if exact:
         return exact[0], ""
-    near = [k for k in keys if m.startswith(k.lower()) or k.lower().startswith(m)]
+    at_word = lambda a, b: b.startswith(a) and (len(b) == len(a) or not b[len(a)].isalnum())  # "LP 1618" is in "LP 1618 Cowl", not "LP 16180"
+    near = [k for k in keys if at_word(k.lower(), m) or at_word(m, k.lower())]
     if len(near) == 1:
         return near[0], ""
     return "", f"matches no catalog model" if not near else f"matches more than one catalog model ({', '.join(sorted(near))})"
@@ -276,7 +279,10 @@ def merge(parsed):
         for v in p["vehicles"]:
             if v["chassis"] not in vehicles or v["asOf"] >= vehicles[v["chassis"]]["asOf"]:
                 vehicles[v["chassis"]] = dict(v)
-        history.update({tuple(h.get(k) for k in HISTORY_KEY): dict(h) for h in p["history"]})
+        for h in p["history"]:
+            k = tuple(h.get(c) for c in HISTORY_KEY)
+            if k not in history or h["asOf"] >= history[k]["asOf"]:
+                history[k] = dict(h)
     problems = [x for p in parsed for x in p["problems"]]
     for v in vehicles.values():
         v["catalogModel"], why = catalog_key(v["model"], list(models))
@@ -286,11 +292,10 @@ def merge(parsed):
     kept = []
     for h in history.values():
         h["reg"] = h.get("reg") or reg_of.get(h["chassis"], "")
-        if h["reg"]:
-            kept.append(h)
-        else:
-            problems.append(f"{h['file']}: Service history row {h['row']}: chassis {h['chassis']} is not on any 'Our vehicles' sheet, so the row "
-                            f"cannot be shown for a bus (not imported)")
+        kept.append(h)
+        if not h["reg"]:  # still sent: the portal finds the reg from an earlier push of "Our vehicles"; without one it keeps nothing
+            problems.append(f"{h['file']}: Service history row {h['row']}: chassis {h['chassis']} is not on any 'Our vehicles' sheet here; it is "
+                            f"kept only if the portal already knows it from an earlier push")
     return {"models": [{"model": m, "parts": parts} for m, parts in models.items()], "vehicles": list(vehicles.values()), "history": kept,
             "contacts": [c for p in parsed for c in p["contacts"]], "problems": problems, "notes": [x for p in parsed for x in p["notes"]]}
 
@@ -329,7 +334,7 @@ def main(argv=None):
         print("dry run: nothing sent (add --push to send it)")
         return 0
     strip = lambda rows, keys: [{k: v for k, v in r.items() if k not in keys} for r in rows]
-    res = capture.post("transportcatalogpush", {"models": m["models"], "vehicles": strip(m["vehicles"], ("file", "row", "asOf")),
+    res = capture.post("transportcatalogpush", {"models": m["models"], "vehicles": strip(m["vehicles"], ("file", "row")),
                                                 "history": strip(m["history"], ("file", "row"))})
     print("pushed:", {k: v for k, v in res.items() if k != "success"})
     return 0
