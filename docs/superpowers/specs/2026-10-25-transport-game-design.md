@@ -321,6 +321,40 @@ progress bar and a route line filling in on the map. A finished, verified route 
 - Count runs never use the camera.
 - Every frame is blurred before anyone sees it, and images are never public.
 
+### What we borrow from The Sims (Uday, 2026-10-25: the whole portal becomes a game, "also draw inspiration from the Sims games")
+
+**Now, in Fleet Command (Claude's calls):**
+
+- **Needs meters, not scores.** Every bus shows a few Sims-style need bars: "Fuel proof", "Paperwork",
+  "Service", "Tracker" and "Safety kit". They are the existing heat, inspection and garage data, shown as needs
+  that **decay over time and are refilled by real actions** (a document filed, a service logged, an
+  inspection done). A bus with all needs green is "happy".
+- **A mood for each driver, from conditions only.** A wellbeing meter built from long days (first to last
+  trip), rest days and documents due. It shows how the school is treating the driver, never how the driver
+  is performing, and it never feeds pay or rank.
+- **Live mode.** A view of who is doing what right now: buses on the road (GPS), a Coordinator on a capture
+  run, a Fee Clerk clearing missions. Each shows as a small activity bubble over the map or campus. This
+  covers staff actions inside the portal only.
+- **Build mode for the campus base.** The campus HQ is arranged like a Sims lot: depot bays, the parking
+  place, pump and workshop markers, and the bench of reserve drivers. Placing something is real data entry
+  (for example, setting the prescribed parking place or the usual pump). Layout is for clarity, not
+  decoration.
+- **Thought bubbles as nudges.** "HP659511 needs its fill video" appears over the bus. It is the existing
+  missions in Sims clothing: one plain line, one tap to the fix.
+
+**Later, for the people modules (staff, students), not in Fleet Command:**
+
+- Character profiles for staff with needs, skills and relationships. Sims-style households for families.
+- Life-stage progression (joining, training, promotion) as aspirations.
+- **"Real people and their locations"** beyond buses (staff or student location, presence) needs explicit
+  consent and DPDP advice before any tracking is designed. It is not part of any current phase.
+
+**Guardrails stay:**
+- no unsafe incentives (speed never counts);
+- no zero-sum or public rankings of people;
+- children only as counts in game views;
+- moods and needs describe conditions and care, never judge a person.
+
 ### Later: students and parents in the portal (Uday, 2026-10-25, "keep in hindsight")
 
 Uday wants to open the portal to students and parents in the future, so they can share their own Google data
