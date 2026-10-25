@@ -116,7 +116,9 @@ const COORD_DOCS_TYPE_RULES = [
   [/TET DOCUMENT/, 'TET document'], [/EXPERIENCE CERT/, 'Experience certificate'],
   [/LAST SALARY/, 'Last salary certificate'], [/DRIVING LICEN/, 'Driving licence'],
 ];
-// Required = what the Hiring Dashboard already insists on for every new hire (hiring.gs HIR_REQUIRED_DOC_KEYWORDS);
+// Required = the old Hiring Dashboard list (8 documents). NOTE 2026-10-25: the Hired gate now needs only the Bio-Data (hiring.gs
+// hirBioDataOnFile_); the rest is the Documents matrix's per-designation checklist. This list is the Coordinator page's own view -- align it with
+// the matrix rules (review #13) when that page is next touched;
 // the qualification slot is met by any one of the four qualification types.
 const COORD_DOCS_QUALIFICATION = ['Bachelors certificate', 'Master certificate', 'Professional degree', 'Highest qualification'];
 const COORD_DOCS_REQUIRED = ['Bio-Data', 'Hiring Slip', 'PAN card', 'Aadhar card', 'Bank / cancelled cheque',
