@@ -279,7 +279,8 @@ The Sims idea (Uday): relationships between people, built from what they really 
   it: a long-running server that can hold WebSocket (or server-sent-event) connections and send web push; Postgres;
   file storage for photos, files and voice notes; Google sign-in against the same allowlist/staff data.
 - **Same sign-in and roles** as the rest of the portal: Google Identity on lms.org.in, roles Owner, Coordinator,
-  Principal, Fee Clerk, Teacher (plus HOD and other staff as the platform's staff data adds them).
+  Principal, Fee Clerk, Teacher (plus HOD and other staff as the platform's staff data adds them). Staff without an
+  lms.org.in account come later with a phone-number sign-in (phase 6, Uday).
 - **Scale:** about 170 staff across six campuses. Small for Postgres; the design does not need sharding or a
   message broker.
 - **Phones:** many Principals and staff work on phones, some cheap Android ones, some on weak data. Sending must
@@ -310,6 +311,14 @@ All of it is built (Uday); this is only the order.
 3. **Announcements, reports up the chain, forms into Approvals.**
 4. **Voice notes and transcripts, status, scheduled messages and reminders, huddles (Meet links).**
 5. **The Owner's relationship map.** Needs a few weeks of phase 2-3 data before its meters mean anything.
+6. **Staff without an lms.org.in account** (Uday: "Later, via phone sign-in"): drivers, helpers, guards and other
+   staff sign in with their phone number and a one-time code, tied to their Employee Code in the staff data, and
+   get the same features and the same "nothing is private" screen. Claude's calls for the builder:
+   - the one-time code goes by SMS (or WhatsApp) through a paid gateway, which needs Uday's pick of provider and a
+     small running cost;
+   - codes are rate-limited per number, and a phone sign-in is allowed only for a number already in the staff data;
+   - huddles: phone-signed-in staff join the Meet as guests, which the Workspace Meet settings must allow;
+   - Fleet Command's drivers are the first group, since they are already becoming game characters there.
 
 ## Settled after the builder check (Claude's calls unless marked)
 
@@ -332,9 +341,9 @@ All of it is built (Uday); this is only the order.
    Anyone holding the Owner role, MD Academics included, can read every channel and DM and see the relationship
    map. Claude's calls that go with it: the "nothing is private" notice says plainly "everyone with the Owner role
    can read all messages"; "view as" inside messaging is read-only and can never send as someone else.
-3. **Staff without an lms.org.in account** (drivers, attendants, helpers, guards). Are they in, eventually, for
-   messaging to replace WhatsApp? *Claude's recommendation:* v1 is for everyone already on the allowlist with an
-   lms.org.in account; others join as they are given accounts, which is a Workspace licensing decision for Uday.
+3. ~~Staff without an lms.org.in account~~ **Answered (Uday, 2026-10-25): "Later, via phone sign-in."** Phases 1-5
+   are for lms.org.in staff on the allowlist only; drivers, helpers, guards and other staff join in phase 6 with a
+   phone-number sign-in.
 4. **Score vs money.** Should contract on-time % stay recognition-only for good (the game layer's rule), or may it
    become an incentive input later as a work-performance measure (your answer here)? *Claude's recommendation:*
    treat it like CW/HW compliance, a work measure that may feed `DR Average` later, and keep it out of game-layer
