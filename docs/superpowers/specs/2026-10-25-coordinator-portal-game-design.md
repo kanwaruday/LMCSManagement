@@ -1,4 +1,4 @@
-# Coordinator Portal as a game ("District HQ"): design
+# Coordinator Portal as a game ("Coordinator HQ"): design
 
 Date: 2026-10-25. Status: **draft for Uday.** Asked for by Uday through the LMCS Master Agent: "We are trying to engulf
 the entire portal into a game with real life missions and tasks." Uday answered the brainstorm questions one at a
@@ -32,12 +32,14 @@ Builds on, and does not repeat:
 
 ## Goals
 
-1. **A District HQ** that reads like a regional commander's screen. It shows the district's 3 campuses, each with
+1. **A Coordinator HQ** that reads like a regional commander's screen. It shows the network's 6 campuses (Uday:
+   Coordinators stay "network wide"), each with
    needs bars, and the full ranked queue of contracts (follow-ups).
 2. **Every approval is a decision with a trade-off preview** (Frostpunk). Before deciding, the Coordinator sees what
    the decision touches, from real data.
-3. **District team goals** shared by the Coordinator and the 3 Principals (Kingshot's Bear Hunt). Everyone's real work
-   fills one bar, measured against the district's own target or its own last term.
+3. **Team goals** shared by the Coordinators and the Principals (Kingshot's Bear Hunt): one team per campus (its
+   Principal and the Coordinators), plus one network team. Everyone's real work fills one bar, measured against that
+   team's own target or its own last term.
 4. **Long-cycle duties become term campaigns.** Campus papers (fire NOC, recognition, water test) and the findings
    from the MD Academics visit are currently tracked in vault notes. Each becomes a term-long quest with real
    deadlines.
@@ -51,20 +53,20 @@ Builds on, and does not repeat:
 - No new task store. The Coordinator **Tasks** tab stays the one source of missions.
 - No rebuild of the shared game layer (Buddy, the Today panel, quests, team bars, the reset, storage, voice) or of
   Fleet Command. Transport shows on the HQ as one summary "front" that opens Fleet Command.
-- No Principal Portal game. Only the Principal side of the shared district goals is designed here, in its own
+- No Principal Portal game. Only the Principal side of the shared team goals is designed here, in its own
   hand-over section, for a future Principal chat to take over.
 - No automatic decisions. The game never approves, rejects, assigns or closes anything by itself.
 - No change to who may decide. Decide rights stay as they are: the Owner, or a Coordinator with `CanApprove`.
 
 ## Anti-goals (a failure even if it works)
 
-- **Rewarding speed of decisions.** "Approvals within 3 days" is a district goal against an **age line**. Time to
+- **Rewarding speed of decisions.** "Approvals within 3 days" is a team goal against an **age line**. Time to
   decide is never scored per person; a careful "Info Requested" counts as action. A game that makes Coordinators
   approve faster but worse has failed.
 - **Rewarding volume.** No credit for the number of comments, nudges, messages, assignments or resolves. Closing a
   follow-up needs a written outcome, as it already does for transport.
-- **Comparing campuses or districts.** LMS 1–3 is never ranked against LMS 4–6, and campuses are never ranked
-  against each other. Each team is measured only against its own target or its own last term.
+- **Comparing campuses or districts.** Campuses are never ranked against each other, and LMS 1–3 is never ranked
+  against LMS 4–6. Each team is measured only against its own target or its own last term.
 - **Comparing people.** No Coordinator or Principal sees another's name or rank. Private standing follows the shared
   layer (Uday's rule).
 - **Gamifying discipline or people's pay.** Disciplinary / Termination, Compensation Change and EPF Exemption get no
@@ -77,25 +79,25 @@ Builds on, and does not repeat:
 
 ## The world
 
-- **The district is the board.** A Coordinator's HQ is their district: LMS 1–3 or LMS 4–6, from
-  `coordVisibleCampuses_` (the allowlist campusId). The 3 campuses are **bases**.
-- **Today, Coordinators may be network-wide** (campusId `ALL`). The vault calls that "deliberately temporary", and
-  the approvals code comments assume it. An `ALL` Coordinator's HQ shows all 6 bases, grouped into the two districts.
-  **Which it is at go-live is open for Uday** (see Open). A district-locked Coordinator needs the district expansion
-  added in two more places, because both match the campus exactly today:
-  - `approvals.gs` (`aprList_`, `aprDetail_`, `aprDecide_`, `aprAddComment_`), in the PDR project;
-  - the Office backend (`officeAssertCampus_`).
-
-  Alternatively, the allowlist row lists the 3 campuses.
+- **The network is the board (Uday, 2026-10-25: Coordinators stay "network wide").** Every Coordinator's HQ shows all 6
+  campuses as **bases**, as `coordVisibleCampuses_` already returns for an `ALL` caller. No district lock and no
+  backend change for one.
+- **Districts are filters, not locks** (Claude's call). LMS 1–3 (Dhalpur, Kelheli, Dunkhra) and LMS 4–6 (Ner Chowk,
+  Sayoli, Jogindernagar) are two tabs on the board and two regions on the map, because the campuses cluster that way
+  on the ground. The code keeps working for a district-locked Coordinator should that ever change (the data layer is
+  already parameterised by district).
+- **Several Coordinators share one network.** Assigned follow-ups belong to their assignee. An unassigned follow-up is
+  a **shared** mission for every Coordinator, labelled "shared"; whoever resolves it clears it for all (the shared
+  spec's rule, with the network in place of a district).
 - **Names are data, not code.** Who the Coordinators and Principals are is read live from the allowlist, never written
   into the repo (Uday: "The Coordinator names are in the allowlist google sheet").
 - **The cast:** Buddy only. Coordinators and the Owner get no module owl (the game director's call, agreed).
   Coordinator lines are drafted here and voice-checked by the game director against the Voice Guide.
 - **Two layouts over one set of data** (Uday, 2026-10-25: "Coordinator morning view: both. The mission board by
   default (and on phones), the district map on a laptop, same data."):
-  - **The board** is the default and is phone-first. It shows the ranked contracts with a small district strip of 3
-    bases and their needs on top.
-  - **The map** is the laptop view. The 3 bases sit on the district map, using Fleet Command's shared map shell, with
+  - **The board** is the default and is phone-first. It shows the ranked contracts with a strip of the 6 bases and their needs
+    on top, filterable by district.
+  - **The map** is the laptop view. The 6 bases sit on the network map in their two districts, using Fleet Command's shared map shell, with
     missions pinned to their base and a ping list. It comes once the map shell exists (Fleet Command Phase 1b).
 
 ## What a Coordinator sees
@@ -113,15 +115,14 @@ Builds on, and does not repeat:
     lever).
   - **Hiring stall** (approved but not Hired): done when the applicant reaches Hired or Rejected. Only the campus
     marks Hired on the Hiring Dashboard, so a Coordinator's lever here is the conversation. **Claude's call:** the
-    stall is a **shared district mission**. When it clears, it fills the district bar, and no one gets personal
+    stall is a **shared mission**. When it clears, it fills its campus team bar, and no one gets personal
     credit for a nudge.
   - **Other domains:** done when the row is resolved by a person with an outcome note. `doneBy` = `ResolvedBy`.
-- A Tasks row with no Assignee is a **shared** mission for every Coordinator of that district, as settled in the
-  shared spec.
+- A Tasks row with no Assignee is a **shared** mission for every Coordinator (see The world).
 
 ### 2. The contract board (the full queue)
 
-Every open follow-up for the district appears as a **contract card**, in the style of GTA V's phone inbox of
+Every open follow-up in the network appears as a **contract card**, in the style of GTA V's phone inbox of
 contracts. Each card shows:
 - what it is, the campus, and who is waiting on it (a Principal, a candidate's joining date, a bus);
 - its **age against its line**. The line is the domain's existing severity threshold, shown as an "overdue" band,
@@ -192,13 +193,17 @@ and is refilled by real actions, never by a tap.
 - **Later, not now:** a **Finance** need (every day-book expense has its bill photo, deposits reconciled), once the
   Office data has settled after its 22 Oct start. **Student Life** waits until there is a register of any kind.
 
-### 5. District team goals (Kingshot's Bear Hunt)
+### 5. Team goals (Kingshot's Bear Hunt)
 
-- **The team:** the district's Coordinator(s) and its 3 Principals. It uses the shared layer's `TeamGoal`, with
-  `team.key = "district:LMS1-3"`; members come from the allowlist.
+- **The teams** (Claude's call, after Uday's "network wide"), using the shared layer's `TeamGoal`; members come from
+  the allowlist:
+  - **Campus teams:** `team.key = "campus:LMS4"`, the campus's Principal plus every Coordinator. Six teams, each
+    against its own target. This is the main unit, because the work is done campus by campus.
+  - **One network team:** `team.key = "network"`, every Coordinator and all 6 Principals. One bar for the whole
+    school group, the Kingshot alliance.
 - **Season 0 defaults** (from Uday's answers). They are **editable defaults, not commitments**, set in `Game Config`
   by the Owner each term:
-  1. **Decisions on time:** every approval in the district decided within 3 days. A decision is Approved, Rejected,
+  1. **Decisions on time:** every approval decided within 3 days. A decision is Approved, Rejected,
      Info Requested or Revoked, made through `aprDecide_`. **A comment does not count.** Today any comment flips
      Pending to Info Requested (Principal Portal Review 2026-10-22, item 17); that bug is fixed in C1 before this goal
      goes live, so the goal can't be met by commenting.
@@ -206,10 +211,9 @@ and is refilled by real actions, never by a tap.
      date.
   3. **Evaluations in:** every campus meets its SS quota by month end.
   4. **Issues closed:** every daily-report issue closed within 7 days of being raised.
-- Each goal is one bar that the district fills together. Coordinators' and Principals' real actions both count.
-- The comparison is always "this district against its own target or its own last month", never against the other
-  district.
-- **Shipments** (shared layer, from the transport design): a met season goal earns its campus or district a reserve
+- Each goal is one bar that its team fills together. Coordinators' and Principals' real actions both count.
+- The comparison is always "this team against its own target or its own last month", never campus against campus.
+- **Shipments** (shared layer, from the transport design): a met season goal earns its campus a reserve
   card. Uday ships it through Approvals. The deck and card values are his to set.
 
 ### 6. Term campaigns: the long-cycle duties
@@ -238,7 +242,7 @@ quest): its steps are the real items, and done is checked from data.
 
 ### 7. Coordinator quests (content for the shared layer)
 
-- **Quest 1 "Your district"** (already in the shared spec): decide one approval pending 3+ days; move one stalled hire
+- **Quest 1 "Your network"** (in the shared spec as "Your district"; renamed after Uday's "network wide"): decide one approval pending 3+ days; move one stalled hire
   to its next step; resolve one other follow-up with an outcome note.
 - **Quest 2 "Know your bases"**, unlocked after Quest 1:
   - close one daily-report issue together with its Principal (the issue resolved, with the Principal's or your note);
@@ -251,7 +255,7 @@ quest): its steps are the real items, and done is checked from data.
 
 ### 8. The Owner's view of the Coordinator game
 
-- **Role switch** (GTA V): Uday can open any district's HQ "as the Coordinator" to see exactly what they see. This is
+- **Role switch** (GTA V): Uday can open the HQ "as" any Coordinator to see exactly what they see. This is
   the same switcher idea as Fleet Command's, reusing the map shell's campus/role switcher.
 - **Campus heat** for all 6 campuses, each against its own last term, as the insight layer.
 - **Season setup:** the shared layer's Owner screen (Phase 3). Until it exists, the Owner edits `Game Config` in the
@@ -263,15 +267,17 @@ A window is a stated period in which a named role makes a real settings call for
 setting and logs every decision. If nobody decides, a default applies; the Owner can override. The window shows as a
 mission in the decider's Today panel.
 
-- **The HQ shows the framework's status board** for windows in the district: decided or waiting, per campus. The
+- **The HQ shows the framework's status board** for windows across the network: decided or waiting, per campus. The
   first window is each Principal choosing their campus's 3 track-suit days.
-- **Coordinators can open windows for their district.**
-- **District goal targets is framework window type 2** (agreed with the game director; `confirmBy` = the Owner). The HQ
+- **Coordinators can open windows for any campus or the network.**
+- **Team goal targets is framework window type 2** (agreed with the game director as "district goal targets", renamed
+  after Uday's "network wide"; `confirmBy` = the Owner). One proposal per term covers the 6 campus teams and the
+  network team. The HQ
   only shows the proposal card and its status; the framework stores and applies it. Before each term, the
-  Coordinator proposes the district's team-goal targets (for example "approvals within 3 days"); the Owner's Season
+  Coordinators propose each team's goal targets (for example "approvals within 3 days"); the Owner's Season
   setup confirms or overrides them. It fits Uday's "we will identify the goals for everyone over the next 6 months".
 
-## The Principal side of the district goals (hand-over section)
+## The Principal side of the team goals (hand-over section)
 
 **For a future Principal Portal game chat to take over** (Master Agent's instruction: no Principal chat exists yet,
 so only this much is designed here).
@@ -299,7 +305,7 @@ so only this much is designed here).
     keeps its resolve option and adds Reopen on closed issues.
   - **Game side (the game director's):** the Principal's mission is done when that Principal resolves it with a note.
     A reopen puts it back in their Today panel as "reopened" and is not counted against them retroactively.
-- Principals see their own campus's needs bars and the district team bars. They never see another campus's bars side
+- Principals see their own campus's needs bars, their campus team bars and the network bar. They never see another campus's bars side
   by side with theirs.
 
 ### `principalissues` response shape (agreed with the game director, who consumes it)
@@ -321,12 +327,12 @@ GET action=principalissues&idToken=…   (Principal: own campus only; Coordinato
 | Moment | Line |
 |---|---|
 | Morning, core work waiting | "Good morning. Two approvals at LMS 5 have waited more than three days. The first is a purchase request from the Principal." |
-| Morning, nothing urgent | "Morning. Nothing in your district is past its line today. Your five are ready when you are." |
+| Morning, nothing urgent | "Morning. Nothing in the network is past its line today. Your five are ready when you are." |
 | A decision clears a Principal's wait | "Decided. LMS 4's Principal can go ahead with the trip now." |
 | Help credit, end of day | "You unblocked 3 Principals today." |
 | A hire completed | "<Name>'s joining is complete in the Employee Master, so payroll picks it up this month." |
 | A stalled hire, shared | "A hire at LMS 2 has been approved for 8 days but not yet marked Hired. A word with the Principal usually moves it." |
-| District goal met | "LMS 1–3 decided every approval within three days this month. Shabash, district." |
+| Team goal met | "LMS 4 decided every approval within three days this month. Shabash, LMS 4." |
 | A campus steady | "LMS 6 is steady: every need bar is full." |
 | A paper expired (bad news) | "LMS 3's fire NOC expired on 28 April, so the campus is out of compliance until it's renewed. The renewal is the first step in your term campaign." ("Term campaign" is the HQ's on-screen label for section 6.) |
 | Data delayed (bad news) | "Today's follow-ups are from yesterday evening: the morning refresh didn't run. Nothing is lost; I'll update when it does." |
@@ -349,7 +355,7 @@ Names in lines come from live data at runtime, never from static files.
 2. **One definition of required staff documents.** Switch the `doc_*` adapter to the 8-type matrix the Documents page
    uses, so a scored bar and the page agree. This was already noted as an open item on 2026-10-07.
 3. **New read actions:**
-   - `coordinatorhq`: per campus, the needs, heat and a summary of the district goals, computed on request and cached
+   - `coordinatorhq`: per campus, the needs, heat and a summary of the team goals, computed on request and cached
      for 5 min;
    - `coordinatortransportfront` is **Fleet Command's**: promised in its Phase 1b, returning
      `{byCampus:{heatHigh, heatMed, overdueMissions, ready, total}}`. Until then the transport need is computed from
@@ -379,9 +385,9 @@ go-live in Mar.
 |---|---|---|---|
 | Nov 2026 | **C1. Board** | Coordinator mission adapter (core first, done from source records); scheduled Tasks refresh; `HQ History`; the comment-flips-status fix in `approvals.gs`; `principalissues` + `principalissueresolve` with the Principal auth path, Coordinator reopen and the closures view; `coordinator/hq.html` with the contract board, bottleneck flags and campus heat; decision view with the trade-off preview for the categories above; Quest 1 content | Shared layer Phase 1 (Shell); Uday's approval of this design |
 | Dec 2026 | **C2. Bases** | Campus needs bars; the Principal side of issue closing; the transport front (after Fleet Command 1b); the map layout on `assets/game-map/`; Owner role switch | Fleet Command 1b; the issue-closing rule |
-| Jan 2027 | **C3. Team and campaigns** | District team goals (season 0 defaults, editable); help-credit lines; Campus Papers and Findings tabs with push and portal entry; term campaigns; Quest 2 | Shared layer Phase 3 (team goals, seasons) |
-| Feb 2027 | Pilot | The shared layer's two-campus pilot (Claude's call: two campuses of one district, so the district goals have a real team); tune lines, thresholds and goals from real use. **C1–C3 must be ready for it** | — |
-| **Mar 2027** | **Go-live** | Both districts. Season 1 goals set by the Owner | — |
+| Jan 2027 | **C3. Team and campaigns** | Campus and network team goals (season 0 defaults, editable); help-credit lines; Campus Papers and Findings tabs with push and portal entry; term campaigns; Quest 2 | Shared layer Phase 3 (team goals, seasons) |
+| Feb 2027 | Pilot | The shared layer's two-campus pilot (campus team goals work with any two campuses); tune lines, thresholds and goals from real use. **C1–C3 must be ready for it** | — |
+| **Mar 2027** | **Go-live** | All 6 campuses. Season 1 goals set by the Owner | — |
 | Later | — | A Finance need (bill photos, deposits); Student Life once a register exists; staffing imbalance once Student Master data exists; private standing (shared layer Phase 4) | Those threads |
 
 Each phase is planned (superpowers:writing-plans), built on a branch, verified (`node tests/verify.mjs`, live checks,
@@ -392,14 +398,14 @@ only with Uday's go-ahead.
 
 | Game | What we take | Where |
 |---|---|---|
-| Age of Empires III | Campuses as bases of a home district; shipments | The world; shipments (shared) |
+| Age of Empires III | Campuses as bases of one home network; shipments | The world; shipments (shared) |
 | The Sims | Needs that decay and are refilled by real actions; live state of each base | Needs bars |
-| Kingshot | Daily missions and reset; alliance help; shared goals (Bear Hunt); one next objective | Today panel, help credit, team goals (shared); district goals |
+| Kingshot | Daily missions and reset; alliance help; shared goals (Bear Hunt); one next objective | Today panel, help credit, team goals (shared); campus and network goals |
 | GTA V | Phone inbox of contracts; role switching | Contract board; Owner view-as |
 | Frostpunk | See the cost of a choice before making it | Decision view |
 | Factorio | Bottleneck flags on a pipeline | Approvals and hiring pipelines |
 | Need for Speed | Heat that rises and cools | Campus heat (never speed) |
-| Cities: Skylines | District tools: each district has its own settings | Per-district goals in Game Config |
+| Cities: Skylines | District tools: districts as views over one city | District filters on the board and map |
 | Two Point Hospital | Staffing as the thing that makes a building work | The Hiring and Staff papers needs |
 | Mini Metro, Mini Motorways, OpenTTD, Transport Fever 2, ETS2, Pokémon Go/Ingress, GeoGuessr | Transport-specific; used in Fleet Command | Transport front |
 | Duolingo | Consistency against your own last month, with no breakable streak | Days on track (shared) |
@@ -421,16 +427,22 @@ only with Uday's go-ahead.
 
 ## Open for Uday
 
-1. **At go-live, is each Coordinator locked to a district (LMS 1–3 or LMS 4–6), or network-wide as today?** If
-   locked, approvals and the Office backend need the district expansion (see The world).
-2. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
+1. **Does every Coordinator get decide rights (`CanApprove`)?** Without them a Coordinator can comment but can't
    decide, refer or allocate, so their core mission and Quest 1 can't be done by them.
+
+## Settled with Uday
+
+- Morning view: "both. The mission board by default (and on phones), the district map on a laptop, same data."
+- Coordinators stay "network wide" at go-live. Districts are filters; teams are campus teams plus one network team.
+- Daily-report issues: "the Principal closes each with an outcome note; the Coordinator sees every closure and can
+  reopen." The Coordinator's existing resolve stays.
+- Goals are per-term config ("this is an evolving thing"); go-live March 2027.
 
 ## Settled after the builder check (Claude's calls)
 
 - Done and doneBy for core missions come from the source records (Approvals decision, Employee Master row,
   applicant status), not the auto-resolved Tasks row.
-- A hiring stall (approved but not Hired) is a shared district mission. Only the campus can mark Hired, so no
+- A hiring stall (approved but not Hired) is a shared mission feeding its campus team bar. Only the campus can mark Hired, so no
   personal credit for nudges.
 - "Decisions on time" counts `aprDecide_` decisions only; the comment-flips-status bug is fixed first (C1).
 - `principalissues` gets a read-only Principal auth path and is built in C1, once, by this module.
