@@ -143,7 +143,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 ## Open questions for Uday (asked one at a time, answers recorded below)
 
 1. ~~Who approves teacher leave~~ **Answered: B (Management), seam for later.**
-2. One "Leave" category with a type dropdown, or separate categories? (recommend one)
+2. ~~One "Leave" category with a type dropdown, or separate categories?~~ **Answered: one "Leave" + type dropdown (A).**
 3. Which types can a teacher request: Casual, Compensatory, Single, Half, Short, Special Day, Emergency? (recommend all seven)
 4. In "days on track", does a half-day leave excuse the whole day or half of it? (recommend: the whole day, so a teacher is never penalised)
 5. Can a teacher file leave for a past date or the same day? (recommend: same day until 7:00 AM, past dates only by a Principal on their behalf)
@@ -154,3 +154,5 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 1. **Who approves (2026-10-25):** "Teacher leave: everything goes to Management (Owner / delegated Coordinator) for now, as
    with all approvals. We'll hand routine leave to Principals later." Recorded as option B; the hand-over seam is designed in
    (section 4) but not built.
+2. **Category (2026-10-25):** "One 'Leave' + type dropdown" (option A): one new Approvals category, "Leave", with a Leave type
+   dropdown; the type, dates and days show on the row.
