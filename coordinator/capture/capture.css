@@ -219,6 +219,7 @@
 .cap-fold small{flex:none;font-size:15px;font-weight:700}
 [data-s="ok"] .cap-fold small{color:var(--c-ok)}
 [data-s="no"] .cap-fold small{color:var(--c-bad)}
+@media (max-width:360px){.cap-fold small{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}} /* a narrow phone: the mark says it, the name gets the room */
 .cap-fold::after{content:"";flex:none;width:9px;height:9px;margin:0 4px 4px 2px;border-right:2.6px solid var(--c-mute);border-bottom:2.6px solid var(--c-mute);transform:rotate(45deg)}
 .cap-slothead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .cap-slothead h3{margin:0;font-size:18px;font-weight:800;line-height:1.25;min-width:0;overflow-wrap:anywhere}

@@ -334,7 +334,7 @@ function hud() {
 function gpsLine() {
   const f = S.fix;
   $('gps').dataset.s = !f ? 'wait' : f.accuracy > 50 ? 'weak' : 'ok';
-  $('gps').textContent = !f ? 'Waiting for GPS...' : f.accuracy > 50 ? `GPS weak (±${Math.round(f.accuracy)} m): frames paused` : `GPS ±${Math.round(f.accuracy)} m`;
+  $('gps').textContent = !f ? 'Waiting for GPS…' : f.accuracy > 50 ? `GPS weak (±${Math.round(f.accuracy)} m): frames paused` : `GPS ±${Math.round(f.accuracy)} m`;
 }
 function onGpsError(e) {
   $('gps').dataset.s = e.code === 1 ? 'bad' : 'wait';
