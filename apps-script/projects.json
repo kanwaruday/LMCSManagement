@@ -31,7 +31,8 @@
       "salary-payscale-sync",
       "certificate-link-import",
       "staff-documents",
-      "transport-uploads"
+      "transport-uploads",
+      "transport-capture"
     ]
   },
   "payroll": {
