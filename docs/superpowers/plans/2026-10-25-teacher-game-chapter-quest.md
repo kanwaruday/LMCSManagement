@@ -219,7 +219,7 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
     lock.
   - `GAME_CALLER_FALLBACKS.Teacher = function (verifiedEmail) -> {campusId, employeeCode} | null`: the Task 1 rule
     (an Active Teaching code from the Employee Master), so the game backend accepts the same teachers as PDR.
-    `game.gs` (the game director's) calls it only when Game Config `teacherAutoSignIn` is true, the token is verified
+    `game.gs` (the game director's Task 6b) calls it only when the game project's Script property `TEACHER_AUTO_SIGNIN` is exactly `on`, the token is verified
     and the allowlist misses. `game.gs` itself forces `roles:['Teacher']`, `canDecide:false` and the email, and it
     rejects any campus outside LMS1–LMS6.
   - The action `teacherindexaudit` (Owner only) returns `meta.unmatched` counts per campus. This is the input for
@@ -444,7 +444,8 @@ the Principal setup quest (T2), team goals, the activity bank and help credit (T
 - [ ] **Step 1:** `node apps-script/deploy.mjs game --push --deploy "Teacher T1"` (the game backend; the
   `acad-episodes` and `game-teacher` files go with it). Install the `gameTeacherRefresh` 30-min trigger, and set
   `GAME_PUSH_SECRET` (generate it, store it in `~/.lmcs/game_push_secret`, never print it). The teacher sign-in flags
-  stay off: PDR Script property `TEACHER_AUTO_SIGNIN` and game Config `teacherAutoSignIn`.
+  stay off: the Script property `TEACHER_AUTO_SIGNIN` in both the PDR and game projects, which is on only at the exact value
+  `on`.
 - [ ] **Step 2: Uday's part** (one message via the LMCS Master Agent):
   - go-ahead to deploy PDR with Task 1 and set `TEACHER_AUTO_SIGNIN` = `on`;
   - confirm the exam keywords for the campus calendars;
