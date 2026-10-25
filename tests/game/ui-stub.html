@@ -78,7 +78,17 @@
       quests: [{ questId: 'teacher1', title: 'My classroom', complete: false, reward: '', steps: [
         { id: 'log', title: "Log one day's classwork and homework", go: 'teacher/index.html', done: true, locked: false },
         { id: 'plan', title: 'Plan the activity for your next chapter', go: 'teacher/index.html', done: false, locked: false },
-        { id: 'cwa', title: 'Enter the marks for one CWA', go: 'teacher/index.html', done: false, locked: true } ] }] }),
+        { id: 'cwa', title: 'Enter the marks for one CWA', go: 'teacher/index.html', done: false, locked: true } ] },
+        // parallel chapter quests (one per class-subject): listed unnumbered, folded, first open; a waiting step is never the next action
+        { questId: 'chapter:T1:6A:English:4', parallel: true, title: '6A English \u00b7 The Brook', complete: false, reward: '', steps: [
+          { id: 'entry', title: 'First classwork entry for this chapter', go: 'teacher/index.html', done: true, locked: false },
+          { id: 'cwa', title: 'CWA marks \u00b7 checking overnight', go: 'teacher/index.html', done: false, locked: false, waiting: true },
+          { id: 'remed', title: 'Plan remediation for anyone below 40%', go: 'teacher/index.html', done: false, locked: false } ] },
+        { questId: 'chapter:T1:7B:English:2', parallel: true, title: '7B English \u00b7 A Letter Home', complete: false, reward: '', steps: [
+          { id: 'entry', title: 'First classwork entry for this chapter', go: 'teacher/index.html', done: false, locked: false },
+          { id: 'cwa', title: 'Enter the CWA marks', go: 'teacher/index.html', done: false, locked: true } ] },
+        { questId: 'chapter:T1:8C:English:1', parallel: true, title: '8C English \u00b7 Finished', complete: true, reward: '', steps: [
+          { id: 'entry', title: 'First classwork entry', go: 'teacher/index.html', done: true, locked: false } ] }] }),
   };
   // decide: the quest's next open step is the decision (a button that opens the card); arrived: today's set is done and one
   // more came in; noauth: the backend says Not authorized (renders nothing)
@@ -87,7 +97,7 @@
   FIX.arrived = Object.assign({}, base, { missions: [], next: five[2] });
   FIX.noauth = { success: false, error: 'Not authorized' };
   var tmission = M('cwhw_log', 'T|' + today, "Log today's classwork and homework", { go: 'https://docs.google.com/forms/d/e/STUB/viewform', campus: 'LMS2', core: true, why: '2 of 4 classes done', progress: { done: 2, total: 4 } });
-  FIX.teacher.missions = [tmission]; FIX.teacher.next = tmission;
+  FIX.teacher.missions = [tmission, M('activity_plan_due', 'T|6A|English|5', 'Plan the activity for 6A English chapter 5', { go: 'teacher/index.html', campus: 'LMS2', due: today })]; FIX.teacher.next = tmission;
 
   var data = JSON.parse(JSON.stringify(FIX[f] || FIX.five));
   if (q.get('greet')) data.firstLoadToday = q.get('greet') === '1';

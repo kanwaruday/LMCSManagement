@@ -209,7 +209,7 @@ var LMCSGame = window.LMCSGame = (function () {
     if (!opts.backendUrl) return;
     var me = live = { parts: [], bar: null, teardown: function () { me.parts.slice().reverse().forEach(function (f) { f(); }); me.parts = []; me.bar = null; } };
     var session = opts.session || {}, root = opts.root || '', url = opts.backendUrl, now = new Date(), n = ++uid;
-    var t = null, todayEl = null, questEl = null, rootEl = null;
+    var t = null, todayEl = null, questEl = null, parEls = [], rootEl = null, qid = 0;
     // a body-level piece of this mount: remove() runs on remount; returns forget() for when the piece closes itself
     function piece(remove) {
       me.parts.push(remove);
@@ -274,7 +274,7 @@ var LMCSGame = window.LMCSGame = (function () {
         h('div', { class: 'lg-t' }, [
           h('span', { class: 'lg-title' }, m.title),
           meta(tags([m.core && !finished && ['core', 'core'], m.rolledOver && !finished && ['roll', 'from yesterday'], m.shared && ['shared', 'shared'],
-            m.due && !finished && ['dec', 'due ' + dateLabel(m.due)]]), small),
+            m.due && !finished && ['due', 'due ' + dateLabel(m.due)]]), small),
           p && !finished && h('span', { class: 'lg-mini' }, [
             h('span', { class: 'lg-track', 'aria-hidden': 'true' }, h('i', { style: 'width:' + Math.min(100, Math.round(100 * p.done / p.total)) + '%' })),
             h('span', { class: 'lg-mini-n' }, p.done + ' of ' + p.total),
@@ -318,39 +318,49 @@ var LMCSGame = window.LMCSGame = (function () {
       // one solid Go: the first open row's; the rest are quiet
       [].slice.call(todayEl.querySelectorAll('.lg-go')).slice(1).forEach(function (g) { g.classList.add('lg-go-soft'); });
       questEl = questPanel();
+      parEls = parallelQuests();
       var days = daysLine(t.daysOnTrack), cut = days.indexOf(' Last month: ');
       el.textContent = '';
       el.hidden = false;
-      rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, days && h('p', { class: 'lg-days' },
+      rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, parEls, days && h('p', { class: 'lg-days' },
         cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
       el.appendChild(rootEl);
     }
-    // the open quest (the first unfinished one); once every quest is finished, the last one with its reward.
-    // The first open, unlocked step is a link to where it is done (a decision step: a button that opens the decision
-    // card for the first undecided window, plain text when there is none); locked steps say they open next.
+    // The sequential quest: the first unfinished one that isn't parallel, numbered; once all are finished, the last one
+    // with its reward. Parallel quests (q.parallel, set by a module: one chapter quest per class-subject) are listed
+    // after it while open, unnumbered, each folded in a <details> with the first one open.
     function questPanel() {
-      var qs = t.quests || [], i = 0;
+      var qs = (t.quests || []).filter(function (q) { return !q.parallel; }), i = 0;
       while (i < qs.length - 1 && qs[i].complete) i++;
-      var q = qs[i];
-      if (!q || !(q.steps || []).length) return null;
-      var done = q.steps.filter(function (s) { return s.done; }).length, linked = false;
-      return h('section', { class: 'lg-panel lg-quest', 'aria-labelledby': 'lg-quest-h' + n }, [
-        h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-quest-h' + n }, 'Quest ' + (i + 1) + ' · ' + q.title), h('small', {}, done + ' of ' + q.steps.length)]),
-        h('ul', { class: 'lg-steps' }, q.steps.map(function (s) {
-          var open = !s.done && !s.locked && !linked, win = null, href = null;
-          if (open && s.kind === 'decision') win = (t.windows || []).filter(function (w) { return !w.decided; })[0] || null;
-          else if (open) href = safeHref(s.go, root);
-          if (href || win) linked = true;
-          return h('li', { class: 'lg-step' + (s.done ? ' ok' : s.locked ? ' lock' : '') }, [
-            h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
-            href ? h('a', { class: 'lg-step-link', href: href }, s.title)
-              : win ? h('button', { type: 'button', class: 'lg-step-link', onclick: function () { decide(win, this); } }, s.title)
-              : h('span', {}, s.locked && !s.done ? 'Opens next: ' + s.title : s.title),
-            s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
-          ]);
-        })),
-        q.complete && q.reward ? h('p', { class: 'lg-reward' }, q.reward) : null,
-      ]);
+      return qs[i] ? questSection(qs[i], 'Quest ' + (i + 1) + ' \u00b7 ' + qs[i].title, null) : null;
+    }
+    function parallelQuests() {
+      return (t.quests || []).filter(function (q) { return q.parallel && !q.complete; })
+        .map(function (q, k) { return questSection(q, q.title, k === 0 ? 'open' : 'shut'); }).filter(Boolean);
+    }
+    // One quest. The first open, unlocked, not-waiting step is a link to where it is done (a decision step: a button that
+    // opens the decision card for the first undecided window, plain text when there is none); locked steps say they open
+    // next; a waiting step (s.waiting, e.g. "checking overnight") is muted text and never the next action.
+    function questSection(q, heading, fold) {
+      if (!(q.steps || []).length) return null;
+      var done = q.steps.filter(function (s) { return s.done; }).length, linked = false, hid = 'lg-quest-h' + n + '-' + (++qid);
+      var head = [h('h2', { id: hid }, heading), h('small', {}, done + ' of ' + q.steps.length)];
+      var list = h('ul', { class: 'lg-steps' }, q.steps.map(function (s) {
+        var wait = s.waiting && !s.done, open = !s.done && !s.locked && !wait && !linked, win = null, href = null;
+        if (open && s.kind === 'decision') win = (t.windows || []).filter(function (w) { return !w.decided; })[0] || null;
+        else if (open) href = safeHref(s.go, root);
+        if (href || win) linked = true;
+        return h('li', { class: 'lg-step' + (s.done ? ' ok' : wait ? ' wait' : s.locked ? ' lock' : '') }, [
+          h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
+          href ? h('a', { class: 'lg-step-link', href: href }, s.title)
+            : win ? h('button', { type: 'button', class: 'lg-step-link', onclick: function () { decide(win, this); } }, s.title)
+            : h('span', {}, s.locked && !s.done && !wait ? 'Opens next: ' + s.title : s.title),
+          s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
+        ]);
+      }));
+      var reward = q.complete && q.reward ? h('p', { class: 'lg-reward' }, q.reward) : null;
+      if (!fold) return h('section', { class: 'lg-panel lg-quest', 'aria-labelledby': hid }, [h('div', { class: 'lg-ph' }, head), list, reward]);
+      return h('details', { class: 'lg-panel lg-quest', open: fold === 'open' }, [h('summary', { class: 'lg-ph' }, head), list, reward]);
     }
 
     // ── the next-step bar: on document.body, reserving its own height as body padding; on desktop its content
@@ -435,7 +445,7 @@ var LMCSGame = window.LMCSGame = (function () {
       beats.push({ target: todayEl, text: 'This is Today: the work waiting for you, taken from the portal itself. A row shows Done once the work is done.' });
       if (go) beats.push({ target: go, text: 'Go opens the page where that work happens.' });
       if (me.bar) beats.push({ target: me.bar, text: 'The next step always sits in this bar at the bottom.' });
-      if (questEl) beats.push({ target: questEl, text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
+      if (questEl || parEls[0]) beats.push({ target: questEl || parEls[0], text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
       return beats;
     }
     function tour(beats, after) {
