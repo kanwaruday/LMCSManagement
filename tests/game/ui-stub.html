@@ -86,7 +86,7 @@
   FIX.decide.quests[0].steps[2].done = true; FIX.decide.quests[0].steps[3].locked = false;
   FIX.arrived = Object.assign({}, base, { missions: [], next: five[2] });
   FIX.noauth = { success: false, error: 'Not authorized' };
-  var tmission = M('cwhw_log', 'T|' + today, "Log today's classwork and homework", { go: 'teacher/index.html', campus: 'LMS2', core: true, why: '2 of 4 classes done', progress: { done: 2, total: 4 } });
+  var tmission = M('cwhw_log', 'T|' + today, "Log today's classwork and homework", { go: 'https://docs.google.com/forms/d/e/STUB/viewform', campus: 'LMS2', core: true, why: '2 of 4 classes done', progress: { done: 2, total: 4 } });
   FIX.teacher.missions = [tmission]; FIX.teacher.next = tmission;
 
   var data = JSON.parse(JSON.stringify(FIX[f] || FIX.five));
