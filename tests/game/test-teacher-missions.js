@@ -11,9 +11,10 @@ const CODE = 'NCM/99/01/901';
 const at = (iso) => Date.parse(iso);
 const NOW = (iso) => new Date(iso);                       // game-day instants
 const TUE = '2026-11-10', now = NOW('2026-11-10T05:00:00Z'); // Tue 10 Nov, 10:30 IST
-const state = (o) => Object.assign({ code: CODE, campus: 'LMS4', classSubjects: [], episodes: [], loggedDays: {}, periodsByDay: null, nextChapters: [] }, o || {});
 const ep = (o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 'fractions', name: 'Fractions', first: at('2026-10-28T06:00:00Z'), last: at('2026-10-30T06:00:00Z'),
   cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null }, o || {});
+// by default the teacher logged a chapter recently (no CWA, no planned date: no mission of its own), so the state is linked (Ruling 28)
+const state = (o) => Object.assign({ code: CODE, campus: 'LMS4', builtAt: now.getTime(), classSubjects: [], episodes: [ep({ cls: 'Class 5', ch: 'earlier', name: 'Earlier' })], loggedDays: {}, periodsByDay: null, nextChapters: [] }, o || {});
 const run = (st, day, working, plans, cfg, n) => J(ctx.tchMissions_(st, day, working, plans || {}, cfg || {}, n || NOW(day + 'T05:00:00Z')));
 
 // ---- tchWorkingDay_: pure, takes the calendar as data
@@ -166,6 +167,68 @@ assert.strictEqual(kinds(ms, 'cwhw_log').length, 0); assert.strictEqual(kinds(ms
 ms = run(state({ episodes: [ep({ plannedCwaDate: '2026-11-05' })] }), TUE, true, {}, { teacher: { cwhwFormUrl: form, cwhwPrefill: pre } });
 assert.ok(/entry\.111=CWA/.test(kinds(ms, 'cwa_due')[0].go));
 
+// Ruling 27: only each taught class-subject's CURRENT chapter (the latest episode, the chapter quests' own rule), only until planned + remediationShowDays (21)
+const olderCh = ep({ ch: 'decimals', name: 'Decimals', first: at('2026-10-01T06:00:00Z'), last: at('2026-10-10T06:00:00Z'), plannedCwaDate: '2026-11-03' });   // inside the show window
+const currentCh = ep({ plannedCwaDate: '2026-11-05' });
+ms = kinds(run(state({ episodes: [olderCh, currentCh] }), TUE, true), 'cwa_due');
+assert.deepStrictEqual(ms.map((m) => m.id), ['teacher:cwa_due:' + CODE + ':Class 7|Math|fractions']);       // the old chapter's missed CWA gives no mission
+assert.strictEqual(kinds(run(state({ episodes: [Object.assign({}, olderCh, { last: at('2026-11-07T06:00:00Z') }), currentCh] }), TUE, true), 'cwa_due')[0].id,
+  'teacher:cwa_due:' + CODE + ':Class 7|Math|decimals');                                                       // whichever chapter has the latest entry is current
+// not taught: not on the roster and last logged more than taughtLookbackDays (30) ago; on the roster it is taught however long ago
+const stale = ep({ cls: 'Class 9', subj: 'Hindi', ch: 'kabir', name: 'Kabir', first: at('2026-09-01T06:00:00Z'), last: at('2026-09-20T06:00:00Z'), plannedCwaDate: '2026-11-01' });
+assert.strictEqual(kinds(run(state({ episodes: [currentCh, stale] }), TUE, true), 'cwa_due').length, 1);   // only Class 7's
+assert.strictEqual(kinds(run(state({ episodes: [currentCh, stale], classSubjects: [{ cls: 'Class 9', subj: 'Hindi' }] }), TUE, true), 'cwa_due').length, 2);
+assert.strictEqual(kinds(run(state({ episodes: [currentCh, stale] }), TUE, true, {}, { teacher: { taughtLookbackDays: 60 } }), 'cwa_due').length, 2);
+// the show window: planned 5 Nov + 21 d = 26 Nov is the last day shown; gone after it
+assert.strictEqual(kinds(run(state({ episodes: [ep({ plannedCwaDate: '2026-11-05', last: at('2026-11-20T06:00:00Z') })] }), '2026-11-26', true), 'cwa_due').length, 1);
+assert.strictEqual(kinds(run(state({ episodes: [ep({ plannedCwaDate: '2026-11-05', last: at('2026-11-20T06:00:00Z') })] }), '2026-11-27', true), 'cwa_due').length, 0);
+assert.strictEqual(kinds(run(state({ episodes: [ep({ plannedCwaDate: '2026-11-05' })] }), TUE, true, {}, { teacher: { remediationShowDays: 3 } }), 'cwa_due').length, 0);
+assert.strictEqual(kinds(run(state({ episodes: [ep({ plannedCwaDate: '2026-04-20' })] }), TUE, true), 'cwa_due').length, 0);   // a CWA planned before the term's middle: never nagged
+
+// Ruling 29: a tracker-only CWA (no CWA tag, so its remediation is not knowable) gives no remediation_due at all, open or gone
+for (const day of [TUE, '2026-11-16']) assert.strictEqual(kinds(run(state({ episodes: [Object.assign({}, cwa1, { cwaFrom: 'tracker' })] }), day, true), 'remediation_due').length, 0);
+
+// Ruling 28: no feed entry resolved to this teacher within taughtLookbackDays (e.g. the typed name differs from the roster's) -> one plain line only
+const UNL = "Your entries aren't linked to you yet; your Principal can fix this.";
+for (const st of [state({ episodes: [], periodsByDay: tt, nextChapters: [nxt('2026-11-15')] }), state({ episodes: [ep({ last: at('2026-10-01T06:00:00Z'), plannedCwaDate: '2026-11-05' })], periodsByDay: tt }),
+  state({ episodes: [], loggedDays: { '2026-10-05': [ent('Class 7', 'Math', '2026-10-05T04:00:00Z')] } })]) {
+  ms = run(st, TUE, true);
+  assert.strictEqual(ms.length, 1); assert.strictEqual(ms[0].id, 'teacher:unlinked:' + CODE); assert.strictEqual(ms[0].kind, 'unlinked');
+  assert.strictEqual(ms[0].title, UNL); assert.strictEqual(ms[0].go, ''); assert.strictEqual(ms[0].why, '');
+  assert.strictEqual(ms[0].core, false); assert.strictEqual(ms[0].shared, false); assert.strictEqual(ms[0].done, false); assert.strictEqual(ms[0].due, null);
+}
+assert.strictEqual(run(state({ episodes: [] }), TUE, true, {}, { teacher: { core: ['cwhw_log', 'unlinked'] } })[0].core, false);   // never core, whatever the config says
+assert.strictEqual(run(state({ episodes: [], loggedDays: { '2026-10-12': [ent('Class 7', 'Math', '2026-10-12T04:00:00Z')] } }), TUE, true)[0].kind, 'cwhw_log');   // one entry inside 30 days links
+assert.strictEqual(run(state({ episodes: [] }), TUE, true, {}, { teacher: { taughtLookbackDays: 400 } }).length, 1);
+// it never counts for or against days on track: not core, so the day's snapshot holds no core id for it, and DONE_AT has nothing to say about it
+{
+  const only = run(state({ episodes: [], periodsByDay: tt }), TUE, true), coreIds = only.filter((m) => m.core && !m.shared).map((m) => m.id);   // what gamePersistDaily_ snapshots
+  assert.deepStrictEqual(coreIds, []);
+  assert.deepStrictEqual(J(ctx.gameFinalizeDay_({ coreIds, doneIds: [] }, only, TUE, () => null)), { counted: false, onTrack: false });   // a day with nothing counted
+}
+
+// ... through the index: a roster teacher (EmpAcademic + timetable) whose typed feed name differs from the roster's gets exactly that mission
+{
+  const C6 = 'NCM/99/01/906', D = 86400000;
+  const roster = { employees: [{ employeeCode: C6, name: 'T Six', school: 'LMS 4' }], academic: [{ employeeCode: C6, class: 'Class 7', subject: 'Math' }] };
+  const r = (d) => ({ lmsIdx: 3, classMapped: 'Class 7', subject: 'Math', teacher: 'Tee Six maam', cwChapter: 'Fractions', cwTag: 'CWA', cwDesc: 'x', hwDesc: 'y', hwTag: '', timeMs: now.getTime() - d * D, dateStr: '' });
+  const tt6 = { campuses: { LMS4: { [C6]: { periods: [{ day: 'Tue', period: 1, subject: 'Maths', class: 'Class 7', free: false }] } } } };
+  const built = ctx.tchBuildIndex_({ cwRecords: [r(1), r(2), r(3)], cmData: { 3: { 'Class 7': [{ subject: 'Maths', chapterName: 'Fractions', startDate: '2026-11-01', cwaDate: '2026-11-05' }] } } }, roster, [], tt6, null, { now: now.getTime() });
+  assert.deepStrictEqual(J(built.meta.unmatched), { 3: ['Tee Six maam'] });
+  ms = J(ctx.tchMissions_(built.byCode[C6], TUE, true, {}, {}, now, 't6@example.org'));
+  assert.deepStrictEqual(ms.map((m) => [m.id, m.title, m.go, m.core]), [['teacher:unlinked:' + C6, UNL, '', false]]);
+}
+
+// I2: an index older than 2 h (the feed has been failing) says "as of" on the log card; a fresh one says nothing
+const asOf = (builtIso) => kinds(run(state({ builtAt: at(builtIso), periodsByDay: tt }), TUE, true), 'cwhw_log')[0].why;
+assert.ok(!/as of/.test(asOf('2026-11-10T04:00:00Z')));                                                          // 1 h old
+assert.ok(!/as of/.test(asOf('2026-11-10T03:00:00Z')));                                                          // exactly 2 h: still fresh
+assert.ok(/ \(as of 08:29 IST\)$/.test(asOf('2026-11-10T02:59:00Z')), asOf('2026-11-10T02:59:00Z'));           // just over 2 h
+assert.strictEqual(asOf('2026-11-09T12:30:00Z').slice(-28), '(as of Mon 9 Nov, 18:00 IST)');                   // another day names the day
+assert.strictEqual(kinds(run(state({ builtAt: at('2026-11-09T12:30:00Z'), periodsByDay: { Tue: [{ cls: 'Class 7', subj: 'Math' }] }, loggedDays: { [TUE]: [ent('Class 7', 'Math', TUE + 'T04:00:00Z')] } }), TUE, true), 'cwhw_log')[0].why,
+  '(as of Mon 9 Nov, 18:00 IST)');                                                                               // a done card says it too
+assert.ok(!/as of/.test(kinds(run(state({ builtAt: undefined, periodsByDay: tt }), TUE, true), 'cwhw_log')[0].why));   // an old state without builtAt: nothing claimed
+
 // owner and doneBy are the caller's email (quest evidence matches doneBy against it), the ids keep the code
 const who = J(ctx.tchMissions_(state({ periodsByDay: { Tue: [{ cls: 'Class 7', subj: 'Math' }] }, loggedDays: { [TUE]: [ent('Class 7', 'Math', TUE + 'T04:00:00Z')] }, episodes: [Object.assign({}, cwa1, { remediatedAt: REM })], nextChapters: [nxt('2026-11-15')] }), TUE, true, { 'Class 7|Math|decimals': { activity: 'x', plannedAt: '2026-11-09T07:00:00.000Z' } }, {}, now, 'T@LMS.org.in'));
 assert.strictEqual(who.length, 3);
@@ -254,6 +317,7 @@ assert.strictEqual(DA(caller, logId(TUE)), at(TUE + 'T04:10:00Z'));             
 assert.strictEqual(DA(caller, 'teacher:remediation_due:' + CODE + ':Class 7|Math|fractions'), null);   // other kinds
 assert.strictEqual(DA(caller, 'teacher:cwhw_log:OTHER/01/01/001:' + TUE), null);   // another person's id
 assert.strictEqual(DA(caller, 'info_requested:A1'), null); assert.strictEqual(DA(caller, undefined), null);
+assert.strictEqual(DA(caller, 'teacher:unlinked:' + CODE), null);                  // Ruling 28: the unlinked line has no done time, ever
 store.delete('tch_' + CODE);
 assert.strictEqual(DA(caller, logId(TUE)), null);                                   // not cached: null, and no refresh runs inside the lock
 ctx.CacheService = { getScriptCache: () => { throw new Error('down'); } };

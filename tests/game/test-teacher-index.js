@@ -10,11 +10,11 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 const DAY = 86400000, D0 = Date.UTC(2026, 8, 1), NOW = D0 + 60 * DAY;       // 'today' = 31 Oct 2026
 
 // synthetic roster: T One / T Two at LMS4 (idx 3), T Four at LMS2, "Same Name" twice at LMS4 (ambiguous)
-const C1 = 'NCM/99/01/901', C2 = 'NCM/25/01/002', C4 = 'KEL/24/01/010';
+const C1 = 'NCM/99/01/901', C2 = 'NCM/99/01/902', C4 = 'KEL/99/01/910';
 const employees = [
   { employeeCode: C1, name: 'T One', school: 'LMS 4' }, { employeeCode: C2, name: 'T Two', school: 'LMS 4' },
   { employeeCode: C4, name: 'T Four', school: 'LMS 2' },
-  { employeeCode: 'NCM/20/01/001', name: 'Same Name', school: 'LMS 4' }, { employeeCode: 'NCM/20/01/002', name: 'Same Name', school: 'LMS 4' },
+  { employeeCode: 'NCM/99/01/931', name: 'Same Name', school: 'LMS 4' }, { employeeCode: 'NCM/99/01/932', name: 'Same Name', school: 'LMS 4' },
 ];
 const academic = [
   { employeeCode: C1, school: 'LMS 4', class: 'Class 7', subject: 'Math', teacher: 'T One' },
@@ -231,7 +231,7 @@ assert.deepStrictEqual(J(tr).map((r) => [r.lmsIdx, r.cls, r.subj, r.ch, r.cwaAt]
   [[3, 'Class 7', 'Economics', 'Heat!', Date.parse('2026-09-08')], [3, 'Class 7', 'Maths', 'Air', D0 + 9 * DAY], [3, 'Class 7', 'Maths', 'Soil', Date.parse('2026-10-01')]]);
 
 // ---- refresh + cache + audit, with Apps Script services stubbed
-const store = new Map(), fetched = [];
+const store = new Map(), fetched = [], puts = [];
 let now = NOW, mode = 'ok';
 const fetchOne = (url) => {
   fetched.push(url);
@@ -244,7 +244,8 @@ Object.assign(ctx, {
   Logger: { log: () => {} },
   CacheService: { getScriptCache: () => ({
     get: (k) => (store.has(k) ? store.get(k) : null), put: (k, v) => { assert.ok(v.length < 100000, 'value over 100 KB'); store.set(k, v); },
-    putAll: (o) => Object.keys(o).forEach((k) => { assert.ok(o[k].length < 100000); store.set(k, o[k]); }), remove: (k) => store.delete(k) }) },
+    putAll: (o, ttl) => { puts.push({ keys: Object.keys(o), ttl }); Object.keys(o).forEach((k) => { assert.ok(o[k].length < 100000); store.set(k, o[k]); }); },
+    getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; }, remove: (k) => store.delete(k) }) },
   LockService: { getScriptLock: () => { throw new Error('the refresh must not take the script lock'); } },
   UrlFetchApp: { fetch: fetchOne, fetchAll: (rs) => rs.map((r) => fetchOne(typeof r === 'string' ? r : r.url)) },
   SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => ({ getDataRange: () => ({ getValues: () => (n === 'Overrides' ? [['Timestamp']] : [['School', 'Class', 'Subject', 'Chapter Name', 'Actual CWA Date']]) }) }) }) },
@@ -255,7 +256,9 @@ assert.ok(!store.has('tch_building'), 'building marker cleared');
 const meta = JSON.parse(store.get('tch_meta'));
 assert.strictEqual(meta.records, recs.length);
 assert.strictEqual(JSON.parse(store.get('tch_' + C1)).code, C1);
+assert.strictEqual(JSON.parse(store.get('tch_' + C1)).builtAt, meta.builtAt);   // each state carries its build time (the log card's "as of")
 assert.ok(store.has('tch_' + C2));
+assert.ok(puts.length && puts.every((p) => p.keys.length <= 20 && p.ttl === 21600));
 assert.deepStrictEqual(meta.codes.slice().sort(), Object.keys(out.byCode).sort());
 assert.ok(fetched.some((u) => /action=employees/.test(u)) && fetched.some((u) => /timetable\.json/.test(u)));
 // tchStateFor_: a hit reads the cache; a miss with meta present is a plain null (no rebuild); with nothing cached it rebuilds once
@@ -283,6 +286,34 @@ const before = store.get('tch_' + C1);
 mode = 'fail'; now += 120000;
 ctx.gameTeacherRefresh();
 assert.strictEqual(store.get('tch_' + C1), before); assert.ok(!store.has('tch_building'));
+// I2: the failure re-puts the cached states and meta (fresh 6 h TTL, chunks of at most 20) and stamps failedAt, which the 60 s guard respects
+{
+  mode = 'ok'; now += 120000; store.clear(); ctx.gameTeacherRefresh();
+  const good = JSON.parse(store.get('tch_meta'));
+  assert.ok(good.codes.length && !good.failedAt);
+  mode = 'fail'; now += 120000; puts.length = 0; ctx.gameTeacherRefresh();
+  const reput = puts, keys = [].concat.apply([], reput.map((p) => p.keys));
+  assert.deepStrictEqual(keys.sort(), good.codes.map((c) => 'tch_' + c).sort()); assert.ok(reput.every((p) => p.ttl === 21600 && p.keys.length <= 20));
+  const failed = JSON.parse(store.get('tch_meta'));
+  assert.strictEqual(failed.failedAt, now); assert.strictEqual(failed.builtAt, good.builtAt); assert.deepStrictEqual(failed.codes, good.codes);
+  // many teachers: chunks of 20
+  const many = Array.from({ length: 45 }, (_, i) => 'NCM/99/02/' + (900 + i));
+  many.forEach((c) => store.set('tch_' + c, '{}'));
+  store.set('tch_meta', JSON.stringify(Object.assign({}, good, { codes: many }))); puts.length = 0; now += 120000;
+  ctx.gameTeacherRefresh();
+  assert.deepStrictEqual(puts.map((p) => p.keys.length), [20, 20, 5]);
+  many.forEach((c) => store.delete('tch_' + c)); store.set('tch_meta', JSON.stringify(Object.assign({}, failed, { failedAt: now })));   // failed just now
+  // failedAt holds the next fetch back: a load right after (an evicted state) or the next trigger within 60 s fetches nothing
+  const m = fetched.length; store.delete('tch_' + C2); now += 30000;
+  assert.strictEqual(ctx.tchStateFor_(C2), null); ctx.gameTeacherRefresh();
+  assert.strictEqual(fetched.length, m);
+  now += 60000; ctx.gameTeacherRefresh(); assert.ok(fetched.length > m);       // after the guard, it tries again
+  // a cold cache whose source is down: one fetch, then failedAt-only meta; loads within 60 s do not fetch again
+  store.clear(); const c0 = fetched.length;
+  assert.strictEqual(ctx.tchStateFor_(C1), null); assert.strictEqual(fetched.length, c0 + 4);
+  assert.ok(JSON.parse(store.get('tch_meta')).failedAt && !JSON.parse(store.get('tch_meta')).builtAt);
+  assert.strictEqual(ctx.tchStateFor_(C1), null); assert.strictEqual(ctx.tchStateFor_(C2), null); assert.strictEqual(fetched.length, c0 + 4);
+}
 mode = 'ok'; now += 120000; store.set('tch_meta', JSON.stringify({ records: 100000, builtAt: 1 }));
 ctx.gameTeacherRefresh();
 assert.strictEqual(JSON.parse(store.get('tch_meta')).records, 100000);
@@ -314,13 +345,13 @@ assert.ok(!JSON.stringify(audit).includes('T Three'));
 // ---- employee fallback: the PDR rule (Active, EmpPersonal.AuthEmail, department map, HES/unknown prefix -> null)
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows }) });
 const book = (extra) => ({ getSheetByName: (n) => sheet({
-  EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/99/01/901', 'Teach.One@lms.org.in '], ['NCM/24/04/099', 'clerk@lms.org.in'], ['NCM/24/04/100', 'gone@lms.org.in'],
-    ['NCM/24/04/101', 'tm@lms.org.in'], ['HES/24/04/001', 'hes@lms.org.in'], ['ZZZ/24/04/002', 'zzz@lms.org.in'], ['NCM/24/04/102', 'unk@lms.org.in'],
-    ['NCM/24/04/103', 'admin.it@lms.org.in'], ['NCM/24/04/104', 'driver@lms.org.in'], ['NCM/24/04/105', 'ctor@lms.org.in']],
-  EmpMaster: [['EmployeeCode', 'Status'], ['NCM/99/01/901', 'Active'], ['NCM/24/04/099', ' active​'], ['NCM/24/04/100', 'Inactive'], ['NCM/24/04/101', 'Active'],
-    ['HES/24/04/001', 'Active'], ['ZZZ/24/04/002', 'Active'], ['NCM/24/04/103', 'Active'], ['NCM/24/04/104', 'Active'], ['NCM/24/04/105', 'Active']],
-  EmpSalary: [['EmployeeCode', 'Department'], ['NCM/99/01/901', 'Teaching'], ['NCM/24/04/099', 'AdminClerk'], ['NCM/24/04/100', 'Teaching'], ['NCM/24/04/101', 'AdminTM'],
-    ['HES/24/04/001', 'Teaching'], ['ZZZ/24/04/002', 'Teaching'], ['NCM/24/04/103', 'AdminIT'], ['NCM/24/04/104', 'Transport'], ['NCM/24/04/105', 'constructor']],
+  EmpPersonal: [['EmployeeCode', 'AuthEmail'], ['NCM/99/01/901', 'Teach.One@lms.org.in '], ['NCM/99/04/899', 'clerk@lms.org.in'], ['NCM/99/04/900', 'gone@lms.org.in'],
+    ['NCM/99/04/901', 'tm@lms.org.in'], ['HES/99/04/001', 'hes@lms.org.in'], ['ZZZ/99/04/002', 'zzz@lms.org.in'], ['NCM/99/04/902', 'unk@lms.org.in'],
+    ['NCM/99/04/903', 'admin.it@lms.org.in'], ['NCM/99/04/904', 'driver@lms.org.in'], ['NCM/99/04/905', 'ctor@lms.org.in']],
+  EmpMaster: [['EmployeeCode', 'Status'], ['NCM/99/01/901', 'Active'], ['NCM/99/04/899', ' active​'], ['NCM/99/04/900', 'Inactive'], ['NCM/99/04/901', 'Active'],
+    ['HES/99/04/001', 'Active'], ['ZZZ/99/04/002', 'Active'], ['NCM/99/04/903', 'Active'], ['NCM/99/04/904', 'Active'], ['NCM/99/04/905', 'Active']],
+  EmpSalary: [['EmployeeCode', 'Department'], ['NCM/99/01/901', 'Teaching'], ['NCM/99/04/899', 'AdminClerk'], ['NCM/99/04/900', 'Teaching'], ['NCM/99/04/901', 'AdminTM'],
+    ['HES/99/04/001', 'Teaching'], ['ZZZ/99/04/002', 'Teaching'], ['NCM/99/04/903', 'AdminIT'], ['NCM/99/04/904', 'Transport'], ['NCM/99/04/905', 'constructor']],
 }[n]) });
 const fb = (email) => J(ctx.tchEmployeeFromBook_(email, book()));
 assert.deepStrictEqual(fb('teach.one@lms.org.in'), { campusId: 'LMS4', employeeCode: 'NCM/99/01/901', role: 'Teacher' });

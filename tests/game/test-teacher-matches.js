@@ -55,8 +55,9 @@ feedBody = { cwRecords: [
 const pull = (secret) => J(ctx.tchMatchPull_({ secret: secret === undefined ? SECRET : secret }));
 const push = (results, secret) => J(ctx.tchMatchPush_({ secret: secret === undefined ? SECRET : secret, results: results }));
 const rows = () => (book.tabs[MATCH_TAB] ? book.tabs[MATCH_TAB].rows : null);
-const keyOf = (code, cls, subj, ch) => crypto.createHash('sha256').update(SECRET + '|' + [code, cls, subj, ch].join('|'), 'utf8').digest('hex');
-const KA = keyOf(A, 'Class 7', 'Math', 'fractions'), KB = keyOf(B, 'Class 7', 'Math', 'fractions'), KC = keyOf(A, 'Class 8', 'Science', 'cells');
+// Ruling 31: the key covers the activity line too, so an edited plan is a new key
+const keyOf = (code, cls, subj, ch, activity) => crypto.createHash('sha256').update(SECRET + '|' + [code, cls, subj, ch, activity].join('|'), 'utf8').digest('hex');
+const KA = keyOf(A, 'Class 7', 'Math', 'fractions', 'Pizza slices'), KB = keyOf(B, 'Class 7', 'Math', 'fractions', 'Fraction bars'), KC = keyOf(A, 'Class 8', 'Science', 'cells', 'Onion peel slide');
 
 // ---- secret gate: wrong or unset secret -> Not authorized, nothing fetched, nothing written
 assert.strictEqual(typeof ctx.tchMatchPull_, 'function'); assert.strictEqual(typeof ctx.tchMatchPush_, 'function');
@@ -98,7 +99,8 @@ assert.strictEqual(rows(), null); assert.deepStrictEqual(events, []);
 assert.deepStrictEqual(push([ok({ timeMs: 1000, matched: false, confidence: 0.3, reason: '=HYPERLINK("x")' }), ok({ timeMs: 2000, matched: false, confidence: 0.4 })]), { success: true, written: 2 });
 assert.deepStrictEqual(events, ['lock', 'unlock']);
 assert.deepStrictEqual(rows()[0], MHEAD); assert.strictEqual(rows().length, 3);
-assert.deepStrictEqual(rows()[1].slice(0, 4), [KA, '1000', 'false', '0.3']); assert.strictEqual(rows()[1][4].charAt(0) === '=', false);
+assert.deepStrictEqual(rows()[1].slice(0, 4), [KA, '1000', 'false', '0.3']);
+assert.strictEqual(rows()[1][4], ''); assert.strictEqual(rows()[2][4], '');   // Ruling 30: the model's reason is never stored, whatever was sent
 assert.ok(!isNaN(Date.parse(rows()[1][5])));
 rows().length = 1; // the accepted edge: exactly now + 1 day
 assert.deepStrictEqual(push([ok({ timeMs: NOWMS + 86400000 })]), { success: true, written: 1 });
@@ -129,6 +131,30 @@ out = pull(); assert.strictEqual(out.items.some((i) => i.planKey === KC), false)
   for (let i = 0; i < 40; i++) feedBody.cwRecords.push(rec(3, 'Anita Rao', 'Class 7', 'Math', 'Topic 0', 10000 + i, 'more ' + i));
   out = pull(); assert.strictEqual(out.items.length, 400); assert.ok(out.items.every((i) => i.entries.length >= 1 && i.entries.length <= 20));
   plansTab.rows.length = 0; saved.forEach((r) => plansTab.rows.push(r)); feedBody.cwRecords = savedFeed;
+}
+
+// ---- C3: a future-stamped note (later than now + 1 day, which the push rejects) never reaches the pull, so the night's batch still pushes
+{
+  const savedFeed = feedBody.cwRecords.slice(), savedRows = rows().slice();
+  feedBody.cwRecords.push(rec(3, 'Anita Rao', 'Class 7', 'Math', 'Fractions', NOWMS + 2 * 86400000, 'Stamped two days ahead'));
+  feedBody.cwRecords.push(rec(3, 'Anita Rao', 'Class 7', 'Math', 'Fractions', NOWMS + 86400000, 'Stamped one day ahead'));   // the edge: accepted on both sides
+  out = pull(); const a = out.items.filter((i) => i.planKey === KA)[0];
+  assert.deepStrictEqual(a.entries.map((e) => e.desc), ['Quiz on fractions', 'Stamped one day ahead']);
+  const all = []; out.items.forEach((i) => i.entries.forEach((e) => all.push({ planKey: i.planKey, timeMs: e.timeMs, matched: false, confidence: 0.1, reason: '' })));
+  assert.strictEqual(push(all).success, true);                                   // everything the pull hands out is pushable
+  feedBody.cwRecords = savedFeed; rows().length = 0; savedRows.forEach((r) => rows().push(r));
+}
+
+// ---- Ruling 31: editing a plan's activity is a new planKey; the old verdicts are orphaned and the new wording is checked from scratch
+{
+  const planRow = book.tabs[PLAN_TAB].rows[1], savedAct = planRow[6], savedRows = rows().slice(), KA2 = keyOf(A, 'Class 7', 'Math', 'fractions', 'Fraction pizza party');
+  planRow[6] = '  Fraction pizza party ';                                         // trimmed before hashing
+  out = pull(); const a = out.items.filter((i) => i.planKey === KA2)[0];
+  assert.ok(a && !out.items.some((i) => i.planKey === KA)); assert.strictEqual(a.activity, '  Fraction pizza party ');
+  assert.deepStrictEqual(a.entries.map((e) => e.timeMs), [1000, 2000, 9000]);   // every described note again, not only those after the old key's checks
+  assert.strictEqual(push([ok({ planKey: KA })]).success, false);               // the old key is unknown now
+  assert.strictEqual(push([ok({ planKey: KA2, timeMs: 9000 })]).success, true);
+  planRow[6] = savedAct; rows().length = 0; savedRows.forEach((r) => rows().push(r));
 }
 
 // ---- unreadable sources: an error, never a partial answer
@@ -206,9 +232,15 @@ assert.ok(/checking overnight/.test(quest(J(ctx.tchMatchesFor_(A))).steps[2].tit
   assert.strictEqual(byCh.decimals.lastDescribed, T0 + 1 * D);   // the newer blank / missing descriptions do not
   assert.strictEqual(byCh.ghost.lastDescribed, 0);               // nothing described at all
   // the same records through the pull's helper agree
-  const cands = feed.cwRecords.map((r) => ctx.tchCandidate_(r, ctx.tchChKey_(r.cwChapter))).filter(Boolean);
+  const cands = feed.cwRecords.map((r) => ctx.tchCandidate_(r, ctx.tchChKey_(r.cwChapter), T0 + 10 * D)).filter(Boolean);
   assert.strictEqual(cands.length, 4); assert.ok(cands.every((c) => c.desc === c.desc.trim() && /^3\|Class 7\|math\|/.test(c.key)));
-  assert.strictEqual(ctx.tchCandidate_(Object.assign({}, feed.cwRecords[0], { cwChapter: '' }), ''), null);
+  assert.strictEqual(ctx.tchCandidate_(Object.assign({}, feed.cwRecords[0], { cwChapter: '' }), '', T0 + 10 * D), null);
+  // C3: the push's own cap, now + 1 day, on the candidate rule: a later-stamped note is no candidate (the index's lastDescribed ignores it too)
+  const fut = (dt) => Object.assign({}, feed.cwRecords[0], { timeMs: T0 + 10 * D + dt });
+  assert.ok(ctx.tchCandidate_(fut(D), 'fractions', T0 + 10 * D)); assert.strictEqual(ctx.tchCandidate_(fut(D + 1), 'fractions', T0 + 10 * D), null);
+  const withFuture = { cwRecords: feed.cwRecords.concat([r2('Fractions', 'Activity', 12, 'Stamped two days ahead')]), cmData: {} };
+  const futEp = J(ctx.tchBuildIndex_(withFuture, { employees: empBody.employees, academic: [] }, [], null, null, { now: T0 + 10 * D }).byCode[A].episodes).filter((e) => e.ch === 'fractions')[0];
+  assert.strictEqual(futEp.lastDescribed, T0 + 3 * D);
   // the whole path: post-CWA note, quest state says pending until it is checked
   store.set('tch_' + A, JSON.stringify({ code: A, campus: 'LMS4', classSubjects: [], episodes: eps, loggedDays: {}, periodsByDay: null, nextChapters: [] }));
   rows().length = 1; invalidate();

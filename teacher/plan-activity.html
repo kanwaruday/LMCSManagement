@@ -12,7 +12,7 @@
   main { max-width: 480px; margin: 0 auto; padding: 16px; }
   .plan { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 16px; }
   .plan .where { margin: 0 0 2px; font-size: 13px; color: var(--gray); }
-  .plan h1 { margin: 0 0 8px; font-size: 20px; line-height: 1.3; text-transform: capitalize; overflow-wrap: anywhere; }
+  .plan h1 { margin: 0 0 8px; font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
   .plan .lead { margin: 0 0 14px; font-size: 14px; color: var(--gray); }
   .plan label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 700; }
   .plan input[type=text] { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--dark); }
@@ -55,7 +55,7 @@
 const GAME_BACKEND_URL = ''; // set at deploy (same value as teacher/index.html); empty = saving is not open yet
 (function () {
   var q = new URLSearchParams(location.search);
-  var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim(), name = (q.get('name') || '').trim(); // ch is the key a save is filed under; name is only what the heading shows
+  var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim(), name = (q.get('name') || '').trim(); // ch is the key a save is filed under; name is what the heading shows and the sheet's Chapter column keeps
   var form = document.getElementById('planForm'), input = document.getElementById('activity'), save = document.getElementById('save'), msg = document.getElementById('msg'), count = document.getElementById('count');
   var session = null;
 
@@ -91,7 +91,7 @@ const GAME_BACKEND_URL = ''; // set at deploy (same value as teacher/index.html)
     if (save.disabled) return;
     say('', '');
     save.disabled = true;
-    fetch(GAME_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'teacherplanactivity', idToken: session && session.idToken, cls: cls, subj: subj, ch: ch, activity: input.value }) })
+    fetch(GAME_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'teacherplanactivity', idToken: session && session.idToken, cls: cls, subj: subj, ch: ch, name: name, activity: input.value }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.success === true) say("Saved. Tonight I'll look for it in your classwork.", 'ok');

@@ -24,6 +24,8 @@ LMSTUDIO_URL = "http://localhost:1235/v1/chat/completions"
 LMSTUDIO_DIRECT = "http://localhost:1234/v1/chat/completions"
 MODEL = "qwen3-vl-30b-a3b-instruct"
 TOKEN_LOG = Path(__file__).resolve().parent / "private" / "teacher_match_token_usage.jsonl"  # tools/private is git-ignored
+# The model's short reason stays on this Mac only (Ruling 30: the workbook gets ''): plan key, entry time, verdict and reason, never the note or the activity.
+REASON_LOG = Path(__file__).resolve().parent / "private" / "teacher_match_reasons.jsonl"
 PUSH_BATCH = 2000  # the backend's cap per push
 
 PROMPT = ('Planned classroom activity: "{activity}". Teacher\'s note of what happened in class: "{desc}". '
@@ -65,6 +67,15 @@ def ask(activity, desc):
     if not isinstance(matched, bool) or isinstance(conf, bool) or not isinstance(conf, (int, float)) or not 0 <= conf <= 1:
         return None
     return {"matched": matched, "confidence": conf, "reason": str(v.get("reason") or "")[:100]}
+
+
+def log_reason(key, t, v):
+    try:
+        REASON_LOG.parent.mkdir(exist_ok=True)
+        with open(REASON_LOG, "a") as f:
+            f.write(json.dumps({"ts": time.time(), "planKey": key, "timeMs": t, "matched": v["matched"], "confidence": v["confidence"], "reason": v["reason"]}) + "\n")
+    except Exception:
+        pass
 
 
 def post(url, body):
@@ -110,7 +121,8 @@ def main(argv=None):
         if v is None:
             skipped += 1
         else:
-            results.append({"planKey": key, "timeMs": t, **v})
+            log_reason(key, t, v)
+            results.append({"planKey": key, "timeMs": t, "matched": v["matched"], "confidence": v["confidence"], "reason": ""})
     hit = sum(r["matched"] for r in results)
     print(f"{len(asks)} notes on {len(items)} plans: matched {hit}, not matched {len(results) - hit}, skipped {skipped} (unparseable)")
     if args.dry_run:

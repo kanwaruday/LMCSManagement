@@ -169,6 +169,7 @@ window.TEACHER_FIXTURE = {
   {
    "questId": "chapter:NCM/99/01/901:Class 7:Math:fractions",
    "title": "Class 7 Math · Fractions",
+   "parallel": true,
    "steps": [
     {
      "id": "plan",
@@ -189,7 +190,8 @@ window.TEACHER_FIXTURE = {
      "title": "Run the activity",
      "go": "https://docs.google.com/forms/d/e/STUB/viewform",
      "done": true,
-     "locked": false
+     "locked": false,
+     "waiting": false
     },
     {
      "id": "cwa",
@@ -211,6 +213,7 @@ window.TEACHER_FIXTURE = {
   {
    "questId": "chapter:NCM/99/01/901:Class 8:Science:cells the basic unit",
    "title": "Class 8 Science · Cells: The Basic Unit",
+   "parallel": true,
    "steps": [
     {
      "id": "plan",
@@ -231,7 +234,8 @@ window.TEACHER_FIXTURE = {
      "title": "Run the activity · checking overnight",
      "go": "https://docs.google.com/forms/d/e/STUB/viewform",
      "done": false,
-     "locked": false
+     "locked": false,
+     "waiting": true
     },
     {
      "id": "cwa",
@@ -253,6 +257,7 @@ window.TEACHER_FIXTURE = {
   {
    "questId": "chapter:NCM/99/01/901:M-II:Hindi:swar",
    "title": "M-II Hindi · Swar",
+   "parallel": true,
    "steps": [
     {
      "id": "plan",
@@ -273,7 +278,8 @@ window.TEACHER_FIXTURE = {
      "title": "Run the activity",
      "go": "https://docs.google.com/forms/d/e/STUB/viewform",
      "done": false,
-     "locked": false
+     "locked": false,
+     "waiting": false
     }
    ],
    "complete": false

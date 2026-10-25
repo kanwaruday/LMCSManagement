@@ -48,14 +48,19 @@ assert.strictEqual(qs[0].steps[2].done, false);
 qs = chapter(state({ episodes: [ep()] }), plan, { [KEY]: { matched: true, confidence: 0.5 } }, { teacher: { matchMinConfidence: 0.4 } });
 assert.strictEqual(qs[0].steps[2].done, true);
 
-// a plan with entries and no match row, or {pending:true}: "checking overnight", not done
-qs = chapter(state({ episodes: [ep()] }), plan, {});
-assert.strictEqual(qs[0].steps[2].title, 'Run the activity · checking overnight'); assert.strictEqual(qs[0].steps[2].done, false);
+// Ruling 32: "checking overnight" only for {pending:true} (a described note awaits tonight's check), flagged waiting (muted, unlinked in the panel)
 qs = chapter(state({ episodes: [ep()] }), plan, { [KEY]: { pending: true } });
-assert.strictEqual(qs[0].steps[2].title, 'Run the activity · checking overnight'); assert.strictEqual(qs[0].steps[2].done, false);
+assert.strictEqual(qs[0].steps[2].title, 'Run the activity · checking overnight'); assert.strictEqual(qs[0].steps[2].done, false); assert.strictEqual(qs[0].steps[2].waiting, true);
+// a plan with no match row at all (nothing described to check yet): plain title, not waiting
+qs = chapter(state({ episodes: [ep()] }), plan, {});
+assert.strictEqual(qs[0].steps[2].title, 'Run the activity'); assert.strictEqual(qs[0].steps[2].waiting, false);
 // no plan: nothing to check, plain title
 qs = chapter(state({ episodes: [ep()] }), {}, { [KEY]: { pending: true } });
-assert.strictEqual(qs[0].steps[2].title, 'Run the activity');
+assert.strictEqual(qs[0].steps[2].title, 'Run the activity'); assert.strictEqual(qs[0].steps[2].waiting, false);
+// a checked answer is never waiting
+assert.strictEqual(chapter(state({ episodes: [ep()] }), plan, { [KEY]: { matched: false, confidence: 0.4 } })[0].steps[2].waiting, false);
+// every chapter quest is parallel (the panel lists them all after the sequential quest); the other steps carry no waiting flag
+assert.ok(chapter(state({ episodes: [ep(), ep({ cls: 'Class 8', subj: 'Science', ch: 'light', name: 'Light' })] })).every((q) => q.parallel === true && q.steps.filter((x) => x.waiting !== undefined).length === 1));
 
 // Montessori: steps 1-3 only
 const mKey = 'M-II|Hindi|swar';

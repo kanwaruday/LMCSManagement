@@ -158,14 +158,38 @@ assert.strictEqual(stateInLock, false);
   assert.strictEqual(ml.qs.get('ch'), 'decimals'); assert.strictEqual(ml.qs.get('name'), 'Decimals & Place Value');
   const t2 = J(ctx.tchSetupQuests_(st, {}, { onTrack: 5 }, {}, NOW, {})).filter((x) => x.questId.indexOf('term:') === 0)[0], tl = query(t2.steps[0].go);
   assert.strictEqual(tl.qs.get('ch'), 'decimals'); assert.strictEqual(tl.qs.get('name'), 'Decimals & Place Value');
-  // a save made from that link (the page posts cls, subj and ch, never name) ticks step 1 of that same quest
-  assert.deepStrictEqual(post({ cls: link.qs.get('cls'), subj: link.qs.get('subj'), ch: link.qs.get('ch'), activity: 'Sort the bars' }), { success: true });
+  // a save made from that link (the page posts cls, subj, ch and name) ticks step 1 of that same quest, and the sheet keeps the display name
+  assert.deepStrictEqual(post({ cls: link.qs.get('cls'), subj: link.qs.get('subj'), ch: link.qs.get('ch'), name: link.qs.get('name'), activity: 'Sort the bars' }), { success: true });
+  const saved = rows().filter((x) => x[4] === KEYCH)[0];
+  assert.strictEqual(saved[5], NAME); assert.strictEqual(saved[4], KEYCH);       // Chapter = 'Ratio & Proportion', ChapterNorm = the key
+  assert.deepStrictEqual(post({ cls: 'Class 7', subj: 'Math', ch: KEYCH, name: '   ', activity: 'Sort the bars again' }), { success: true });
+  assert.strictEqual(rows().filter((x) => x[4] === KEYCH).length, 1); assert.strictEqual(rows().filter((x) => x[4] === KEYCH)[0][5], KEYCH);   // no name: falls back to ch
+  assert.deepStrictEqual(post({ cls: 'Class 7', subj: 'Math', ch: KEYCH, name: NAME, activity: 'Sort the bars again' }), { success: true });
   const after = J(ctx.tchChapterQuests_(st, ctx.tchPlansFor_(CODE), {}, {}, NOW)).filter((x) => x.title === 'Class 7 Math \u00b7 ' + NAME)[0];
   assert.strictEqual(after.steps[0].done, true);
   // the link without a name (an older link) is still the same key
   assert.ok(ctx.tchPlanGo_('Class 7', 'Math', 'fractions').indexOf('name=') === -1);
   store.set('tch_' + CODE, JSON.stringify(state()));
 }
+
+// ---- Ruling 32: a save while the index is cold or rebuilding says so, instead of "not on your list"
+{
+  const LOADING = { success: false, error: 'Your classes are still loading; try again in a minute.' }, saved = new Map(store);
+  const n = rows().length;
+  store.delete('tch_' + CODE); store.delete('tch_meta');                         // cold: no index at all (the refresh it starts cannot read the feed here)
+  assert.deepStrictEqual(post({ activity: 'Cold save' }), LOADING);
+  store.set('tch_meta', JSON.stringify({ codes: [], failedAt: NOW.getTime() })); // only failed builds so far
+  assert.deepStrictEqual(post({ activity: 'Cold save' }), LOADING);
+  store.set('tch_meta', JSON.stringify({ codes: [], builtAt: NOW.getTime() })); store.set('tch_building', '1');   // a rebuild is running
+  assert.deepStrictEqual(post({ activity: 'Cold save' }), LOADING);
+  store.delete('tch_building');                                                  // built, and this code is not in it: the plain answer
+  assert.deepStrictEqual(post({ activity: 'Cold save' }), notMine);
+  assert.strictEqual(rows().length, n);
+  store.clear(); saved.forEach((v, k) => store.set(k, v));
+}
+// a save drops this teacher's cached match summary too (an edit is a new planKey, Ruling 31)
+store.set('tch_matches_' + CODE, '{}');
+assert.deepStrictEqual(post({ activity: 'Busts the match cache' }), { success: true }); assert.ok(!store.has('tch_matches_' + CODE));
 
 // ---- Ruling 22: the activity text is never logged
 assert.ok(!logs.some((l) => /Pizza|Fraction|Money|Order check/.test(l)));

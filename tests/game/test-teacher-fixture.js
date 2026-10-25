@@ -16,6 +16,9 @@ assert.strictEqual(q1.questId, 'teacher1'); assert.ok(q1.steps.some((s) => s.don
 const chapters = built.quests.filter((q) => q.questId.indexOf('chapter:') === 0);
 assert.strictEqual(chapters.length, 3);
 assert.strictEqual(chapters.filter((q) => q.steps[2].title === 'Run the activity · checking overnight').length, 1);
+assert.ok(chapters.every((q) => q.parallel === true));                                   // the panel lists every open chapter quest
+const waiting = [].concat.apply([], built.quests.map((q) => q.steps)).filter((s) => s.waiting);
+assert.deepStrictEqual(waiting.map((s) => s.title), ['Run the activity · checking overnight']);   // muted, unlinked: only the checking step
 const m2 = chapters.filter((q) => /^chapter:[^:]+:M-II:/.test(q.questId));
 assert.strictEqual(m2.length, 1); assert.strictEqual(m2[0].steps.length, 3);
 assert.ok(built.quests.some((q) => q.questId.indexOf('term:') === 0));

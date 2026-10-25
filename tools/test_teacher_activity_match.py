@@ -13,7 +13,7 @@ tmp = Path(tempfile.mkdtemp())
 SECRET = "unit-test-secret-xyz"
 (tmp / "secret").write_text(SECRET + "\n")
 (tmp / "page.html").write_text("const GAME_BACKEND_URL = 'https://script.example.test/exec'; // set at deploy\n")
-tam.SECRET_FILE, tam.URL_SOURCE, tam.TOKEN_LOG = tmp / "secret", tmp / "page.html", tmp / "tokens.jsonl"
+tam.SECRET_FILE, tam.URL_SOURCE, tam.TOKEN_LOG, tam.REASON_LOG = tmp / "secret", tmp / "page.html", tmp / "tokens.jsonl", tmp / "reasons.jsonl"
 
 # ---- ask(): the prompt, and only a clean verdict comes back
 seen = []
@@ -79,10 +79,15 @@ def run(*argv):
 rc, text = run()
 assert rc == 0 and [b["action"] for b in sent] == ["teachermatchpull", "teachermatchpush"], sent
 assert all(b["secret"] == SECRET for b in sent)
-assert sent[1]["results"] == [  # the malformed answer was skipped, not guessed
-    {"planKey": "k1", "timeMs": 100, "matched": True, "confidence": 0.9, "reason": "pizza fractions"},
-    {"planKey": "k2", "timeMs": 300, "matched": False, "confidence": 0.3, "reason": "no slide"}], sent[1]
+assert sent[1]["results"] == [  # the malformed answer was skipped, not guessed; the reason is never pushed (Ruling 30)
+    {"planKey": "k1", "timeMs": 100, "matched": True, "confidence": 0.9, "reason": ""},
+    {"planKey": "k2", "timeMs": 300, "matched": False, "confidence": 0.3, "reason": ""}], sent[1]
 assert "skipped 1" in text
+# ... it stays in the local reason log, which holds no note or activity text
+logged = [json.loads(l) for l in tam.REASON_LOG.read_text().splitlines()]
+assert [(r["planKey"], r["timeMs"], r["reason"]) for r in logged] == [("k1", 100, "pizza fractions"), ("k2", 300, "no slide")], logged
+raw = tam.REASON_LOG.read_text()
+assert all(s not in raw for s in ["cut pizzas", "looked at cells", "Pizza slices", "Onion slide"]), raw
 
 rc, text = run("--dry-run")  # asks, prints counts, sends no push
 assert rc == 0 and [b["action"] for b in sent] == ["teachermatchpull"], sent

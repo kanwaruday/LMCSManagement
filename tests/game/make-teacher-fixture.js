@@ -33,7 +33,8 @@ function build() {
   };
   const plan = (iso) => ({ activity: 'A planned activity', plannedAt: iso });
   const plans = { [key('Class 7', 'Math', 'Fractions')]: plan('2026-11-01T06:00:00Z'), [key('Class 8', 'Science', 'Cells: The Basic Unit')]: plan('2026-11-03T06:00:00Z') };
-  const matches = { [key('Class 7', 'Math', 'Fractions')]: { matched: true, confidence: 0.9 } }; // Cells has no row yet: "checking overnight"
+  // Cells: a described note waits for tonight's check -> "checking overnight" (a waiting step)
+  const matches = { [key('Class 7', 'Math', 'Fractions')]: { matched: true, confidence: 0.9 }, [key('Class 8', 'Science', 'Cells: The Basic Unit')]: { pending: true } };
   const days = { onTrack: 3, counted: 5, lastMonthOnTrack: 0, lastMonthCounted: 0, showDenominator: false };
 
   const missions = J(ctx.tchMissions_(state, TUE, true, plans, cfg, NOW, 'teacher@example.org'));

@@ -41,6 +41,8 @@ var TCH_NEXT_PER_CLASS = 3;       // upcoming chapters kept per class-subject
 var TCH_NEXT_GRACE_DAYS = 14;     // a chapter whose planned start is further back than this and never started is skipped, not "next"
 var TCH_MIN_KEEP_RATIO = 0.7;     // a feed under this share of the last build's records is treated as broken
 var TCH_MAX_VALUE_BYTES = 95000;  // CacheService caps one value at 100 KB
+var TCH_PUT_CHUNK = 20;           // values per cache putAll / getAll (states are up to ~95 KB each)
+var TCH_STALE_MS = 2 * 3600000;   // an index older than this (the feed has been failing) makes the log card say "as of"
 var TCH_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── config: the Game Config key `teacher` (a JSON object) merged over these defaults (Ruling 12) ──────────────
@@ -211,10 +213,12 @@ function tchTrackerRows_(trackerValues, overrideValues, ayLabel) {
 // ── the index ────────────────────────────────────────────────────────
 // Ruling 23, the ONE rule for which feed entries the overnight activity check can look at: an entry with a chapter, a usable time and a
 // non-empty CW description (trimmed), before or after the CWA. The index (episode.lastDescribed) and the nightly pull (tchMatchPull_) both use it.
-// chKey = tchChKey_ of r.cwChapter (the caller caches that). -> {key:'lmsIdx|class|subjectKey|chapterKey', desc, t} or null. The teacher is the caller's to resolve.
-function tchCandidate_(r, chKey) {
+// chKey = tchChKey_ of r.cwChapter (the caller caches that); nowMs = the clock. An entry stamped later than nowMs + 1 day is no candidate: the push
+// rejects such a timeMs (tchMatchPush_), so one future-stamped note would otherwise fail every nightly batch.
+// -> {key:'lmsIdx|class|subjectKey|chapterKey', desc, t} or null. The teacher is the caller's to resolve.
+function tchCandidate_(r, chKey, nowMs) {
   const desc = String(r.cwDesc || '').trim(), t = Number(r.timeMs);
-  if (!chKey || !desc || !isFinite(t) || t <= 0) return null;
+  if (!chKey || !desc || !isFinite(t) || t <= 0 || !(t <= nowMs + TCH_DAY_MS)) return null;
   return { key: Number(r.lmsIdx) + '|' + r.classMapped + '|' + tchSubjKey_(r.subject) + '|' + chKey, desc: desc, t: t };
 }
 
@@ -265,7 +269,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
       return;
     }
     res.resolved++;
-    const cand = tchCandidate_(r, ch);
+    const cand = tchCandidate_(r, ch, now);
     if (cand) { const dk = code + '|' + cand.key; if (!tchHas_(lastDescribed, dk) || cand.t > lastDescribed[dk]) lastDescribed[dk] = cand.t; }
     const pk = r.classMapped + '|' + tchSubjKey_(r.subject), cp = codePairs[code] = codePairs[code] || {};
     cp[pk] = (cp[pk] || 0) + 1;
@@ -299,7 +303,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
   // per-teacher states
   const states = {};
   const stateOf = function (code) {
-    return states[code] = states[code] || { code: code, campus: 'LMS' + (campusOf[code] + 1), classSubjects: [], episodes: [], loggedDays: {}, periodsByDay: null, nextChapters: [] };
+    return states[code] = states[code] || { code: code, campus: 'LMS' + (campusOf[code] + 1), builtAt: now, classSubjects: [], episodes: [], loggedDays: {}, periodsByDay: null, nextChapters: [] };
   };
   (roster.academic || []).forEach(function (a) {
     const code = String(a.employeeCode || '').trim(), lab = tchLabel_(a.class, a.subject);
@@ -439,23 +443,34 @@ function tchFit_(state) {
   return json;
 }
 
-// Builds the whole index and writes it to CacheService. No script lock (see LOCKS above): a refresh that finds the index younger than
-// TCH_FRESH_MS, or another refresh running (tch_building), does nothing. A failed fetch or a broken-looking feed leaves the cache as it was.
+// A failed fetch or a broken-looking feed: the cached index stays, re-put so it outlives its 6 h TTL (each state keeps its own builtAt, so the
+// log card says "as of"), and meta gets failedAt so the TCH_FRESH_MS guard holds the next fetch back (a failing source is not fetched per load).
+function tchKeepCached_(cache, prev) {
+  const keys = (prev && Array.isArray(prev.codes) ? prev.codes : []).map(function (c) { return 'tch_' + c; });
+  for (let i = 0; i < keys.length; i += TCH_PUT_CHUNK) {
+    const got = cache.getAll(keys.slice(i, i + TCH_PUT_CHUNK)) || {};
+    if (Object.keys(got).length) cache.putAll(got, TCH_STATE_TTL_S);
+  }
+  cache.put('tch_meta', JSON.stringify(Object.assign({}, prev || {}, { failedAt: Date.now() })), TCH_STATE_TTL_S);
+}
+
+// Builds the whole index and writes it to CacheService. No script lock (see LOCKS above): a refresh that finds the index built or failed less
+// than TCH_FRESH_MS ago, or another refresh running (tch_building), does nothing. A failure keeps the cache as it was (tchKeepCached_).
 function gameTeacherRefresh() {
   const cache = CacheService.getScriptCache();
   const prev = tchReadJson_(cache, 'tch_meta');
-  if (prev && prev.builtAt && Date.now() - prev.builtAt < TCH_FRESH_MS) return { success: true, skipped: true };
+  if (prev && Date.now() - Math.max(Number(prev.builtAt) || 0, Number(prev.failedAt) || 0) < TCH_FRESH_MS) return { success: true, skipped: true };
   if (cache.get('tch_building')) return { success: true, skipped: true, building: true };
   cache.put('tch_building', '1', TCH_BUILDING_TTL_S);
   try {
     const inputs = tchFetchInputs_();
-    if (!inputs) { Logger.log('[game-teacher] sources unreadable: keeping the cached index'); return { success: false, error: 'sources unreadable' }; }
-    const out = tchBuildIndex_(inputs.feed, inputs.roster, tchReadTracker_(), inputs.timetable, prev, Object.assign(tchLoadCfg_(), { now: Date.now() }));
-    if (out.keepPrevious) { Logger.log('[game-teacher] keeping the cached index: ' + out.reason); return { success: false, error: out.reason }; }
+    const out = inputs ? tchBuildIndex_(inputs.feed, inputs.roster, tchReadTracker_(), inputs.timetable, prev, Object.assign(tchLoadCfg_(), { now: Date.now() }))
+      : { keepPrevious: true, reason: 'sources unreadable' };
+    if (out.keepPrevious) { Logger.log('[game-teacher] keeping the cached index: ' + out.reason); tchKeepCached_(cache, prev); return { success: false, error: out.reason }; }
     const codes = Object.keys(out.byCode);
-    for (let i = 0; i < codes.length; i += 100) {
+    for (let i = 0; i < codes.length; i += TCH_PUT_CHUNK) {
       const chunk = {};
-      codes.slice(i, i + 100).forEach(function (c) { chunk['tch_' + c] = tchFit_(out.byCode[c]); });
+      codes.slice(i, i + TCH_PUT_CHUNK).forEach(function (c) { chunk['tch_' + c] = tchFit_(out.byCode[c]); });
       cache.putAll(chunk, TCH_STATE_TTL_S);
     }
     cache.put('tch_meta', JSON.stringify(out.meta), TCH_STATE_TTL_S); // last: a reader that sees the new meta sees the new states
@@ -466,14 +481,15 @@ function gameTeacherRefresh() {
 }
 
 // The cached TeacherState for an employee code, or null. Call it BEFORE gameWithLock_, never inside (a cold cache runs the refresh).
-// A miss for a code the index lists (a single key evicted early) or an absent index (cold cache, 6 h expiry) rebuilds; a code the
-// index does not list has no state (not on the roster, nothing logged, no timetable) and gets null with no rebuild.
+// A miss for a code the index lists (a single key evicted early) or an absent index (cold cache, 6 h expiry, or only failed builds so far)
+// rebuilds (the refresh's own guard throttles it); a code a built index does not list has no state (not on the roster, nothing logged, no
+// timetable) and gets null with no rebuild.
 function tchStateFor_(code) {
   const cache = CacheService.getScriptCache();
   const hit = tchReadJson_(cache, 'tch_' + code);
   if (hit) return hit;
   const meta = tchReadJson_(cache, 'tch_meta');
-  if (meta && (!Array.isArray(meta.codes) || meta.codes.indexOf(code) === -1)) return null;
+  if (meta && meta.builtAt && (!Array.isArray(meta.codes) || meta.codes.indexOf(code) === -1)) return null;
   try { gameTeacherRefresh(); } catch (err) { return null; }
   return tchReadJson_(cache, 'tch_' + code);
 }
@@ -556,6 +572,21 @@ function tchLogProgress_(state, dayKey) {
     missing: want.filter(function (w) { return !tchHas_(first, w.k); }).map(function (w) { return w.label; }) };
 }
 
+// Ruling 28: did any feed entry resolve to this teacher within taughtLookbackDays? (loggedDays carries every resolved entry of its window, an
+// episode's `last` is its newest resolved entry.) No: the typed name in the feed does not match the roster, and the state has nothing honest to say.
+function tchLinked_(state, T, nowMs) {
+  const cutoff = nowMs - T.taughtLookbackDays * TCH_DAY_MS, days = state.loggedDays || {};
+  return (state.episodes || []).some(function (e) { return e.last >= cutoff; }) ||
+    Object.keys(days).some(function (d) { return (days[d] || []).some(function (x) { return x.at >= cutoff; }); });
+}
+
+// "(as of 08:30 IST)" for an index built more than TCH_STALE_MS before now (the feed has been failing); '' otherwise. Another day names the day.
+function tchAsOf_(builtAt, nowMs, dayKey) {
+  if (!(builtAt > 0) || nowMs - builtAt <= TCH_STALE_MS) return '';
+  const ist = new Date(builtAt + TCH_IST_OFFSET_MS).toISOString(), day = ist.slice(0, 10);
+  return '(as of ' + (day === dayKey ? '' : gameDateLabel_(day) + ', ') + ist.slice(11, 16) + ' IST)';
+}
+
 // state = TeacherState; email = the caller's (owner / doneBy: quest evidence matches doneBy against the caller's email; defaults to the code); plans = {"cls|subj|ch": {activity, plannedAt}}; cfg = the parsed Game Config (with its `teacher` row); now = Date
 // Pending, done and gone rules: the plan's Task 4 table. A finished mission shows only while it is fresh (today and yesterday, like the
 // other roles); a closed-without-remediation chapter shows as gone until remediationShowDays, never as a mission after that.
@@ -570,20 +601,31 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
   };
   const fresh = function (ms) { return ms !== null && ms >= since; };
 
+  // Ruling 28: nothing resolved to this teacher lately -> one plain line, no Go, never core (it never counts for or against days on track)
+  if (!tchLinked_(state, T, now.getTime())) {
+    const m = gameMission_('unlinked', '', { title: "Your entries aren't linked to you yet; your Principal can fix this.", why: '', owner: who, campus: campus, go: '', core: false });
+    m.id = 'teacher:unlinked:' + code;
+    return [m];
+  }
+
   const log = isWorkingDay ? tchLogProgress_(state, dayKey) : null;
   if (log) {
     const isDone = log.done >= log.total;
+    const why = isDone ? '' : log.missing.length ? 'Still to log: ' + log.missing.join(', ') : 'No timetable on file yet, so a log for any of your classes counts';
     out.push(mk('cwhw_log', dayKey, {
       title: "Log today's classwork and homework (" + log.done + ' of ' + log.total + ' class' + (log.total === 1 ? '' : 'es') + ')',
-      why: isDone ? '' : log.missing.length ? 'Still to log: ' + log.missing.join(', ') : 'No timetable on file yet, so a log for any of your classes counts',
+      why: [why, tchAsOf_(state.builtAt, now.getTime(), dayKey)].filter(Boolean).join(' '),
       go: tchFormGo_(T, null).go, due: dayKey, done: isDone, doneAt: isDone ? tchIso_(log.doneAt) : null, doneBy: isDone ? who : null,
       progress: { done: log.done, total: log.total },
     }));
   }
 
+  // Ruling 27: a CWA is chased only for each taught class-subject's current chapter, and only until plannedCwaDate + remediationShowDays
+  const current = {};
+  tchCurrentEpisodes_(state, T, now.getTime()).forEach(function (e) { current[e.cls + '|' + e.subj + '|' + e.ch] = true; });
   (state.episodes || []).forEach(function (e) {
     const key = e.cls + '|' + e.subj + '|' + e.ch, label = e.cls + ' ' + e.subj;
-    if (e.cwaAt !== null && e.cwaAt !== undefined) {
+    if (e.cwaAt !== null && e.cwaAt !== undefined && e.cwaFrom !== 'tracker') { // Ruling 29: a tracker-only CWA's remediation is not knowable, so it is never asked for
       const cwaDay = tchIstDay_(e.cwaAt), due = tchAddDays_(cwaDay, T.remediationDays);
       const f = tchFormGo_(T, { cls: e.cls, subj: e.subj, ch: e.name, tag: 'Remediation' }), go = f.go, how = tchFormHint_(f, label, e.name, 'Remediation');
       const title = 'Log the remediation for ' + e.name + ' (' + label + ')';
@@ -596,7 +638,7 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
       }
     }
     const planned = /^\d{4}-\d\d-\d\d/.test(String(e.plannedCwaDate || '')) ? String(e.plannedCwaDate).slice(0, 10) : '';
-    if (planned && planned < dayKey) {
+    if (planned && planned < dayKey && dayKey <= tchAddDays_(planned, T.remediationShowDays) && current[key]) {
       const title = 'The CWA for ' + e.name + ' (' + label + ') was planned for ' + gameDateLabel_(planned);
       const f = tchFormGo_(T, { cls: e.cls, subj: e.subj, ch: e.name, tag: 'CWA' }), go = f.go, how = tchFormHint_(f, label, e.name, 'CWA');
       if (e.cwaAt === null || e.cwaAt === undefined) out.push(mk('cwa_due', key, { title: title, why: how, go: go, due: planned }));
@@ -620,7 +662,9 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
 // ── overnight activity check (Task 7) ────────────────────────────────
 // Each night the Mac asks local LM Studio whether a chapter's CW notes describe the activity the teacher planned (tools/teacher_activity_match.py).
 // Tab "Teacher Activity Matches" (PlanKey, EntryTimeMs, Matched, Confidence, Reason, CheckedAt), created on the first push, one row per
-// checked entry. PlanKey is a SHA-256 of the plan's row key salted with Script property GAME_PUSH_SECRET: the Mac never sees a name or a code.
+// checked entry. PlanKey is a SHA-256 of the plan's row key and its activity line, salted with Script property GAME_PUSH_SECRET: the Mac never sees a
+// name or a code, and editing the activity makes a new key (Ruling 31: the old verdicts no longer apply, the new wording is checked from scratch).
+// Reason is always written '' (Ruling 30): CW notes can name children, and the model's reason may echo them; it stays in the Mac's local log only.
 // SETUP: Script property GAME_PUSH_SECRET (and the Mac's ~/.lmcs/game_push_secret). ROTATING IT RESETS EVERY ACTIVITY CHECK: it salts planKey, so every
 // stored result stops matching its plan and the next night re-asks about all of them.
 // teachermatchpull / teachermatchpush carry no Google token; the shared secret is the gate (game.gs doPost has a caller-less branch for exactly
@@ -629,7 +673,7 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
 var TCH_MATCH_TAB = 'Teacher Activity Matches';
 var TCH_MATCH_HEADER = ['PlanKey', 'EntryTimeMs', 'Matched', 'Confidence', 'Reason', 'CheckedAt'];
 var TCH_MATCH_TTL_S = 600;
-var TCH_PULL_MAX_ITEMS = 400, TCH_PULL_MAX_ENTRIES = 20, TCH_PULL_DESC_MAX = 300, TCH_PUSH_MAX_ROWS = 2000, TCH_REASON_MAX = 100;
+var TCH_PULL_MAX_ITEMS = 400, TCH_PULL_MAX_ENTRIES = 20, TCH_PULL_DESC_MAX = 300, TCH_PUSH_MAX_ROWS = 2000;
 
 function tchPushSecret_() { return String(PropertiesService.getScriptProperties().getProperty('GAME_PUSH_SECRET') || '').trim(); }
 
@@ -642,8 +686,8 @@ function tchSecretOk_(given) {
   return diff === 0;
 }
 
-function tchPlanKey_(secret, code, cls, subj, chNorm) {
-  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, secret + '|' + [code, cls, subj, chNorm].join('|'), Utilities.Charset.UTF_8);
+function tchPlanKey_(secret, code, cls, subj, chNorm, activity) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, secret + '|' + [code, cls, subj, chNorm, String(activity || '').trim()].join('|'), Utilities.Charset.UTF_8);
   return bytes.map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
 }
 
@@ -678,7 +722,7 @@ function tchMatchPull_(body) {
   if (!plans.length) return { success: true, items: [] };
   const sums = tchMatchSums_(), minConf = tchConfig_(tchLoadCfg_()).matchMinConfidence, want = {}, all = [];
   plans.forEach(function (p) {
-    const idx = tchCampusIdx_(p.campus), pk = tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm), s = sums[pk] || { maxT: 0, bestM: false, bestC: -1 };
+    const idx = tchCampusIdx_(p.campus), pk = tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm, p.activity), s = sums[pk] || { maxT: 0, bestM: false, bestC: -1 };
     if (idx < 0 || (s.bestM && s.bestC >= minConf)) return; // already matched: nothing more to ask
     const w = { planKey: pk, activity: p.activity, code: p.code, idx: idx, maxT: s.maxT, entries: [] }, k = idx + '|' + p.cls + '|' + tchSubjKey_(p.subj) + '|' + tchChKey_(p.chapterNorm);
     (want[k] = want[k] || []).push(w);
@@ -688,11 +732,11 @@ function tchMatchPull_(body) {
   const parse = function (r) { try { return r && r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null; } catch (err) { return null; } };
   const feed = parse(res[0]), emp = parse(res[1]);
   if (!feed || !Array.isArray(feed.cwRecords) || !feed.cwRecords.length || !emp || !emp.success || !Array.isArray(emp.employees)) return { success: false, error: 'sources unreadable' };
-  const byCampus = tchRosterByCampus_(emp.employees), chCache = {}, nameCache = {};
+  const byCampus = tchRosterByCampus_(emp.employees), chCache = {}, nameCache = {}, nowMs = gameNow_().getTime();
   feed.cwRecords.forEach(function (r) {
     const rawCh = String(r.cwChapter || '');
     const ch = tchHas_(chCache, rawCh) ? chCache[rawCh] : (chCache[rawCh] = tchChKey_(rawCh));
-    const cand = tchCandidate_(r, ch), list = cand && want[cand.key]; // the index's own eligibility rule (Ruling 23)
+    const cand = tchCandidate_(r, ch, nowMs), list = cand && want[cand.key]; // the index's own eligibility rule (Ruling 23)
     if (!list) return;
     // Ruling 24, deliberate: a note logged before the plan's PlannedAt may still confirm the activity, so there is no PlannedAt filter.
     const nk = Number(r.lmsIdx) + '|' + r.teacher;
@@ -705,21 +749,21 @@ function tchMatchPull_(body) {
   return { success: true, items: items };
 }
 
-// POST action=teachermatchpush {secret, results:[{planKey, timeMs, matched, confidence, reason}]}: the whole batch is rejected, nothing written,
-// for an unknown planKey, a confidence outside 0-1, a malformed row or more than 2000 rows.
+// POST action=teachermatchpush {secret, results:[{planKey, timeMs, matched, confidence, reason?}]}: the whole batch is rejected, nothing written,
+// for an unknown planKey, a confidence outside 0-1, a malformed row or more than 2000 rows. A sent reason is ignored (Ruling 30).
 function tchMatchPush_(body) {
   if (!tchSecretOk_(body && body.secret)) return { success: false, error: 'Not authorized' };
   const results = body.results;
   if (!Array.isArray(results) || results.length > TCH_PUSH_MAX_ROWS) return { success: false, error: 'Expected at most ' + TCH_PUSH_MAX_ROWS + ' results' };
   if (!results.length) return { success: true, written: 0 };
   const secret = tchPushSecret_(), codeOf = {};
-  tchAllPlanRows_().forEach(function (p) { codeOf[tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm)] = p.code; });
+  tchAllPlanRows_().forEach(function (p) { codeOf[tchPlanKey_(secret, p.code, p.cls, p.subj, p.chapterNorm, p.activity)] = p.code; });
   const nowMs = gameNow_().getTime(), now = new Date(nowMs).toISOString(), rows = [], codes = {};
   for (let i = 0; i < results.length; i++) {
     const r = results[i] || {}, t = Number(r.timeMs), c = r.confidence;
     if (!tchHas_(codeOf, String(r.planKey)) || !(t > 0) || !isFinite(t) || t > nowMs + TCH_DAY_MS || typeof r.matched !== 'boolean' || typeof c !== 'number' || !(c >= 0 && c <= 1)) return { success: false, error: 'Result ' + (i + 1) + ' rejected' };
     codes[codeOf[r.planKey]] = true;
-    rows.push([r.planKey, String(Math.floor(t)), String(r.matched), String(c), String(r.reason || '').replace(/^[=+\-@\s]+/, '').slice(0, TCH_REASON_MAX), now]); // a note never starts a formula
+    rows.push([r.planKey, String(Math.floor(t)), String(r.matched), String(c), '', now]); // Reason stays empty: no free text from the notes in the workbook
   }
   const ss = gameBook_();
   gameWithLock_(function () {
@@ -745,7 +789,7 @@ function tchMatchesFor_(code, cfg) {
     if (!sums) {
       const all = tchMatchSums_();
       sums = {};
-      tchPlanRows_(code).forEach(function (p) { const k = tchPlanKey_(secret, code, p.cls, p.subj, p.chapterNorm); if (tchHas_(all, k)) sums[p.cls + '|' + p.subj + '|' + p.chapterNorm] = all[k]; });
+      tchPlanRows_(code).forEach(function (p) { const k = tchPlanKey_(secret, code, p.cls, p.subj, p.chapterNorm, p.activity); if (tchHas_(all, k)) sums[p.cls + '|' + p.subj + '|' + p.chapterNorm] = all[k]; });
       try { cache.put(mkey, JSON.stringify(sums), TCH_MATCH_TTL_S); } catch (err) { /* uncached */ }
     }
     const state = tchReadJson_(cache, 'tch_' + code), eps = (state && state.episodes) || [], out = {};
@@ -791,21 +835,32 @@ function tchPlansFor_(code) {
   return plans;
 }
 
+// Ruling 32: the index is cold (no successful build cached) or a rebuild is running, so a missing state says nothing about the teacher yet.
+function tchIndexLoading_() {
+  try {
+    const cache = CacheService.getScriptCache(), meta = tchReadJson_(cache, 'tch_meta');
+    return !(meta && meta.builtAt) || !!cache.get('tch_building');
+  } catch (err) { return false; }
+}
+
 // The caller as a teacher with an employee code: only the Teacher role writes or reads its own plans.
 function tchPlanCaller_(caller) {
   const code = caller && (caller.roles || []).indexOf('Teacher') !== -1 ? tchCodeFor_(caller) : '';
   return code || null;
 }
 
-// POST {cls, subj, ch, activity}: validated first (the state may refresh the 15 MB feed, so it is read before the lock), then the
-// read-modify-write upsert under the script lock. The row is keyed on the caller's own code, never one from the request.
+// POST {cls, subj, ch, name, activity}: validated first (the state may refresh the 15 MB feed, so it is read before the lock), then the
+// read-modify-write upsert under the script lock. The row is keyed on the caller's own code, never one from the request, and on ch (the chapter key);
+// name (the chapter as the teacher knows it; ch when absent) fills the Chapter column.
 GAME_MODULE_ACTIONS.teacherplanactivity = function (caller, p) {
   const code = tchPlanCaller_(caller);
   if (!code) return { success: false, error: 'Only a teacher can plan an activity.' };
   const activity = String(p.activity === null || p.activity === undefined ? '' : p.activity).trim();
   if (activity.length < TCH_PLAN_MIN || activity.length > TCH_PLAN_MAX) return { success: false, error: 'Write the activity in a few words.' };
-  const cls = String(p.cls || '').trim(), subj = String(p.subj || '').trim(), chapter = String(p.ch || '').trim().slice(0, TCH_PLAN_MAX), chNorm = ownAcadNormChapter_(chapter);
+  const cls = String(p.cls || '').trim(), subj = String(p.subj || '').trim(), ch = String(p.ch || '').trim().slice(0, TCH_PLAN_MAX), chNorm = ownAcadNormChapter_(ch);
+  const chapter = (String(p.name || '').trim() || ch).slice(0, TCH_PLAN_MAX);
   const state = tchStateFor_(code), now = gameNow_();
+  if (!state && tchIndexLoading_()) return { success: false, error: 'Your classes are still loading; try again in a minute.' };
   if (!state || !cls || !subj || !chNorm || !tchTaught_(state, tchConfig_(tchLoadCfg_()), cls, subj, now.getTime())) return { success: false, error: "That class isn't on your list." };
   // the subject in the spelling the quests key on (the index's own episode / upcoming-chapter spelling), so the saved plan ticks step 1
   const spelled = (state.episodes || []).concat(state.nextChapters || []).filter(function (x) { return x.cls === cls && tchSubjKey_(x.subj) === tchSubjKey_(subj); })[0];
@@ -822,7 +877,7 @@ GAME_MODULE_ACTIONS.teacherplanactivity = function (caller, p) {
     }
     if (at === -1) gameAppendText_(sh, [[code, state.campus, cls, useSubj, chNorm, chapter, activity, iso, iso]]);
     else sh.getRange(at + 1, 1, 1, TCH_PLAN_HEADER.length).setNumberFormat('@').setValues([[code, state.campus, cls, useSubj, chNorm, chapter, activity, String(values[at][7] || iso), iso]]);
-    try { CacheService.getScriptCache().remove('tch_plans_' + code); } catch (err) { /* expires in 10 min */ }
+    try { const c = CacheService.getScriptCache(); c.remove('tch_plans_' + code); c.remove('tch_matches_' + code); } catch (err) { /* expires in 10 min */ } // an edit is a new planKey
   });
   return { success: true };
 };
@@ -850,38 +905,48 @@ function tchOnRoster_(state, cls, subj) {
   });
 }
 
-// Taught (Ruling 21), for planning: on the roster, or logged within taughtLookbackDays (T = tchConfig_), or an upcoming chapter of the index (the
-// Quest 2 links), so every class-subject that shows a quest or a plan link can be planned. nowMs is the game clock.
-function tchTaught_(state, T, cls, subj, nowMs) {
+// Taught (Ruling 21): on the roster (an umbrella roster subject covers its finer feed subjects, the table the timetable matching snaps with), or
+// logged within taughtLookbackDays (T = tchConfig_). nowMs is the game clock.
+function tchTaughtCs_(state, T, cls, subj, nowMs) {
   if (!state) return false;
-  const cutoff = nowMs - T.taughtLookbackDays * TCH_DAY_MS, same = function (x) { return x.cls === cls && tchSubjKey_(x.subj) === tchSubjKey_(subj); };
-  return tchOnRoster_(state, cls, subj) || (state.episodes || []).some(function (e) { return same(e) && e.last >= cutoff; }) || (state.nextChapters || []).some(same);
+  const cutoff = nowMs - T.taughtLookbackDays * TCH_DAY_MS;
+  return tchOnRoster_(state, cls, subj) || (state.episodes || []).some(function (e) { return e.cls === cls && tchSubjKey_(e.subj) === tchSubjKey_(subj) && e.last >= cutoff; });
 }
 
-// One quest per class-subject, for its current chapter (the episode with the latest entry). Montessori classes (same /^m-/i test as the episode
-// engine) get steps 1-3 only: they have no CWA or remediation.
-function tchChapterQuests_(state, plans, matches, cfg, now) {
-  if (!state) return [];
-  let order = [];
-  const T = tchConfig_(cfg), today = gameDayKey_(now), latest = {}, set = function (v) { return v !== null && v !== undefined; };
-  // Taught = on the roster (an umbrella roster subject covers its finer feed subjects, the table the timetable matching snaps with) or logged within taughtLookbackDays.
-  const cutoff = now.getTime() - T.taughtLookbackDays * TCH_DAY_MS, onRoster = function (e) { return tchOnRoster_(state, e.cls, e.subj); };
+// Taught, for planning: tchTaughtCs_, or (deliberately) an upcoming chapter of the index, so every class-subject that shows a quest or a plan
+// link (Quest 2 links included) can be planned.
+function tchTaught_(state, T, cls, subj, nowMs) {
+  return tchTaughtCs_(state, T, cls, subj, nowMs) || (!!state && (state.nextChapters || []).some(function (x) { return x.cls === cls && tchSubjKey_(x.subj) === tchSubjKey_(subj); }));
+}
+
+// The current chapter of each taught class-subject (tchTaughtCs_): the episode with the latest entry, in first-seen order. The chapter quests
+// and cwa_due (Ruling 27) both read it.
+function tchCurrentEpisodes_(state, T, nowMs) {
+  const latest = {}, order = [];
   (state.episodes || []).forEach(function (e) {
     const k = tchCsKey_(e.cls, e.subj);
     if (!tchHas_(latest, k)) order.push(k);
     if (!tchHas_(latest, k) || e.last > latest[k].last) latest[k] = e;
   });
-  order = order.filter(function (k) { return latest[k].last >= cutoff || onRoster(latest[k]); }); // neither: no quest
-  return order.map(function (k) {
-    const e = latest[k], key = e.cls + '|' + e.subj + '|' + e.ch;
+  return order.map(function (k) { return latest[k]; }).filter(function (e) { return tchTaughtCs_(state, T, e.cls, e.subj, nowMs); });
+}
+
+// One quest per class-subject, for its current chapter (tchCurrentEpisodes_), flagged parallel (the panel lists them all, unnumbered). Montessori
+// classes (same /^m-/i test as the episode engine) get steps 1-3 only: they have no CWA or remediation.
+function tchChapterQuests_(state, plans, matches, cfg, now) {
+  if (!state) return [];
+  const T = tchConfig_(cfg), today = gameDayKey_(now), set = function (v) { return v !== null && v !== undefined; };
+  return tchCurrentEpisodes_(state, T, now.getTime()).map(function (e) {
+    const key = e.cls + '|' + e.subj + '|' + e.ch;
     const hasPlan = !!plans && tchHas_(plans, key), m = matches && tchHas_(matches, key) ? matches[key] : null;
     const matched = !!m && m.matched === true && m.confidence >= T.matchMinConfidence;
-    const checking = hasPlan && !matched && (!m || m.pending === true); // planned, and last night's check has no answer yet
+    const checking = hasPlan && !matched && !!m && m.pending === true; // Ruling 32: only a note that is waiting for tonight's check, never "no row yet"
     const form = function (tag) { return tchFormGo_(T, tag ? { cls: e.cls, subj: e.subj, ch: e.name, tag: tag } : null).go; };
     const steps = [
       { id: 'plan', title: 'Plan the activity', go: tchPlanGo_(e.cls, e.subj, e.ch, e.name), done: hasPlan, locked: false },
       { id: 'teach', title: 'Teach', go: form(''), done: true, locked: false },
-      { id: 'activity', title: 'Run the activity' + (checking ? ' \u00b7 checking overnight' : ''), go: form(''), done: matched, locked: false },
+      // waiting: the panel shows it muted and unlinked, never as the next action
+      { id: 'activity', title: 'Run the activity' + (checking ? ' \u00b7 checking overnight' : ''), go: form(''), done: matched, locked: false, waiting: checking },
     ];
     if (!/^m-/i.test(e.cls)) {
       const cwa = set(e.cwaAt), remDone = set(e.remediatedAt);
@@ -889,7 +954,7 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
       steps.push({ id: 'cwa', title: 'Take the CWA', go: form('CWA'), done: cwa, locked: false });
       steps.push({ id: 'remediate', title: closed ? 'The remediation window has passed' : 'Remediate this chapter', go: form('Remediation'), done: remDone, locked: false });
     }
-    return { questId: 'chapter:' + state.code + ':' + e.cls + ':' + e.subj + ':' + e.ch, title: e.cls + ' ' + e.subj + ' \u00b7 ' + e.name,
+    return { questId: 'chapter:' + state.code + ':' + e.cls + ':' + e.subj + ':' + e.ch, title: e.cls + ' ' + e.subj + ' \u00b7 ' + e.name, parallel: true,
       steps: steps, complete: steps.every(function (s) { return s.done; }) };
   });
 }
