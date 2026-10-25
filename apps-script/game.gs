@@ -16,9 +16,18 @@
 //   var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 //   var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
 //   var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+// (a module that registers the employee fallback also guards GAME_CALLER_FALLBACKS the same way)
 //
 // Every allowlisted role may call this backend; what each role SEES is decided by
 // the mission and quest code, not here. Source data is only ever READ.
+//
+// EMPLOYEE SIGN-IN FALLBACK (off by default): with Script Property STAFF_AUTO_SIGNIN set to exactly
+// "on", a verified Google account that is NOT on the allowlist may still sign in if
+// GAME_CALLER_FALLBACKS.employee(email) says it is an Active employee. The Employee Master lookup and
+// the department -> role mapping live in the Teacher module (game-teacher.gs), which registers that
+// function; this file only gates its answer (gameCallerFromFallback_): the result is trusted for
+// campusId (LMS1-LMS6), employeeCode and role, and the role must be Teacher or Staff. A fallback
+// caller can never be more than that, never gets canDecide, and an allowlist row always wins.
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Game Backend",
@@ -67,7 +76,7 @@ const GAME_TABS = {
 // Season-0 defaults. Never constants in logic: a Game Config row (Value = JSON) overrides its key.
 function gameConfigDefaults_() {
   return {
-    pilotCampuses: { Principal: ['LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL' },
+    pilotCampuses: { Principal: ['LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL' },
     speaker: { Teacher: 'teacher-owl' }, // every other role: Buddy
     cap: { Principal: 5, Coordinator: 5, Owner: 5 },
     core: { Principal: ['ss_pace', 'pdr_issue'], Coordinator: ['approval_recommend', 'hiring_stall'], Owner: ['approval_wait'] },
@@ -87,6 +96,10 @@ function gameConfigDefaults_() {
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, params) }, looked up after the built-ins
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
+var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}; // { employee: fn(verifiedEmail) -> { campusId, employeeCode, role } | null }; see header
+// The only roles, and campuses, the employee fallback can ever grant. Frozen: not widened by a module file.
+const GAME_FALLBACK_ROLES = Object.freeze(['Teacher', 'Staff']);
+const GAME_FALLBACK_CAMPUSES = Object.freeze(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']);
 
 function gameJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -156,9 +169,30 @@ function gamePrimaryRole_(roles) {
   return roles[0] || '';
 }
 
+// The employee fallback's gate (pure: the caller supplies the flag and the lookup). Called only for a verified
+// email that missed the allowlist. Returns a caller built here from the verified email plus the three fields
+// we accept from the lookup, or null for anything else: flag not exactly 'on', no lookup function, a throw,
+// a non-object, a campus outside LMS1-LMS6, a role outside GAME_FALLBACK_ROLES (exact, case-sensitive).
+function gameCallerFromFallback_(verifiedEmail, flagValue, fallbackFn) {
+  if (flagValue !== 'on' || typeof fallbackFn !== 'function') return null;
+  const email = typeof verifiedEmail === 'string' ? verifiedEmail.toLowerCase() : '';
+  if (!email) return null;
+  try {
+    const r = fallbackFn(email);
+    if (!r || typeof r !== 'object') return null;
+    const campusId = typeof r.campusId === 'string' ? r.campusId.trim().toUpperCase() : '';
+    if (GAME_FALLBACK_CAMPUSES.indexOf(campusId) === -1) return null;
+    if (typeof r.role !== 'string' || GAME_FALLBACK_ROLES.indexOf(r.role) === -1) return null;
+    return { email: email, campusId: campusId, roles: [r.role], primaryRole: r.role, canDecide: false, employeeCode: String(r.employeeCode || '') };
+  } catch (err) {
+    return null;
+  }
+}
+
 // Verified Google ID token -> {email, campusId, roles, primaryRole, canDecide}, re-derived from the
-// allowlist; null unless the caller is allowlisted with at least one role (every role may play).
-// Cached 5 min (a role change in the allowlist takes up to 5 min to apply).
+// allowlist; else (STAFF_AUTO_SIGNIN on) from the employee fallback, Teacher/Staff only; else null. Every
+// role may play. A caller is cached 5 min (a role change, or switching the flag off, takes up to 5 min to
+// apply); a null is never cached.
 function gameVerifyCaller_(idToken) {
   if (!idToken) return null;
   const cache = CacheService.getScriptCache();
@@ -182,7 +216,10 @@ function gameVerifyCaller_(idToken) {
       cache.put(key, JSON.stringify(caller), 300);
       return caller;
     }
-    return null;
+    // allowlist miss: the employee fallback (read the switch only now, so allowlisted callers never touch it)
+    const fallback = gameCallerFromFallback_(email, PropertiesService.getScriptProperties().getProperty('STAFF_AUTO_SIGNIN'), GAME_CALLER_FALLBACKS.employee);
+    if (fallback) cache.put(key, JSON.stringify(fallback), 300);
+    return fallback;
   } catch (err) {
     return null;
   }
