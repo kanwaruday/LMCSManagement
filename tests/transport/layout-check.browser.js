@@ -40,7 +40,10 @@ window.layoutTest = async function () {
 // paste this file into the console, then run   await captureLayoutTest()   on the start screen and again during a run.
 // Fails when the page scrolls sideways, anything visible sticks out past the right edge, or, during a run, the STOP HERE
 // button is not fully on screen at the top of the page (above the fold) or is under 88 px tall. On the safety check
-// (Inspection) it also fails when a Yes/No button is under 48 px tall or the strip of slots does not fit the width.
+// (Inspection) it also fails when a Yes/No button is under 48 px tall, Take photo / Retake / the date field is under 48 px,
+// the strip of slots does not fit the width, or the pinned HUD (count + slots) takes more than 30% of the screen height.
+// On the safety check's summary it fails when its strip of slots does not fit; on the start screen, when a Carry on /
+// End it / Discard it button (or its armed "Tap again" state) is under 48 px tall.
 window.captureLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement;
   scrollTo(0, 0); await new Promise((r) => setTimeout(r, 50));
@@ -63,6 +66,13 @@ window.captureLayoutTest = async function () {
     const strip = document.getElementById('slots'), last = strip.lastElementChild;
     facts.slots = strip.children.length;
     if (last && last.getBoundingClientRect().right > strip.getBoundingClientRect().right + 1) f.push('the strip of slots does not fit the width');
+    if ([...insp.querySelectorAll('.cap-photo,.cap-took .cap-btn,.cap-slot input')].some((b) => b.getBoundingClientRect().height < 48)) f.push('a photo button or date field is under 48 px tall');
+    const hud = insp.querySelector('.cap-hud');
+    facts.hud = hud ? getComputedStyle(hud).position + ' ' + Math.round(hud.getBoundingClientRect().height) : 'none';
+    if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned HUD takes more than 30% of the screen');
   }
+  const deb = document.querySelector('#summary:not([hidden]) .cap-debrief .cap-slots');
+  if (deb) { facts.screen = 'inspection summary'; const l = deb.lastElementChild; if (l && l.getBoundingClientRect().right > deb.getBoundingClientRect().right + 1) f.push('the summary strip of slots does not fit the width'); }
+  if ([...document.querySelectorAll('.cap-resume .cap-btn')].some((b) => b.getClientRects().length && b.getBoundingClientRect().height < 48)) f.push('a Carry on / End it / Discard it button is under 48 px tall');
   return { pass: f.length === 0, failures: f, facts };
 };

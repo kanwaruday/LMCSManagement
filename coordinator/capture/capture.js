@@ -469,9 +469,11 @@ function drawSummary() {
   } else if (run.kind === 'inspection') {
     const items = (run.draft && run.draft.items) || [], a = run.inspection || {};
     const missing = items.filter((i) => a[i.id] && a[i.id].ok === false), on = items.filter((i) => a[i.id] && a[i.id].ok).length;
-    body = `<div class="cap-peak ${missing.length ? 'bad' : 'ok'}"><span>On board</span><b>${on} of ${items.length}</b>` +
-      `<p>${missing.length ? 'Missing: ' + esc(missing.map((i) => i.label).join(', ')) + '.' : 'Everything is on board.'}</p>` +
-      (missing.length ? '<span>Once this is sent, each missing item becomes a follow-up for this bus.</span>' : '') + '</div>';
+    const st = items.map((i) => (!a[i.id] ? 'empty' : a[i.id].ok ? 'ok' : 'no')); // the loadout as it was saved: the same slots as the check
+    body = `<div class="cap-peak cap-debrief ${missing.length ? 'bad' : 'ok'}"><span>On board</span><b>${on} of ${items.length}</b>` +
+      `<ol class="cap-slots" aria-hidden="true" style="--n:${Math.min(items.length, 12)}">${st.map((x) => `<li data-s="${x}">${x === 'ok' ? SVG.ok : x === 'no' ? SVG.no : ''}</li>`).join('')}</ol>` +
+      (missing.length ? '<p>Missing</p><ul class="cap-missing">' + missing.map((i) => `<li>${SVG.no}<span>${esc(i.label)}</span></li>`).join('') + '</ul>' +
+        '<span>Once this is sent, each missing item becomes a follow-up for this bus.</span>' : '<p>Everything is on board.</p>') + '</div>';
   } else {
     const known = bus ? bus.stops.length : 0, n = run.stops.length;
     body = '<dl class="cap-stats">' + `<div><dt>Frames</dt><dd>${run.frames}</dd></div>` +
@@ -570,6 +572,7 @@ async function sendAll() {
 const SVG = {
   ok: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   no: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+  cam: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
 };
 async function startInspection(resume, reg) {
   const items = (resume && resume.draft && resume.draft.items) || S.loadout; // a check closed before its draft was written takes today's list
@@ -601,6 +604,7 @@ function drawSlots() {
   const st = S.insp.items.map(slotState), done = st.filter((x) => x === 'ok' || x === 'no').length;
   $('slots').innerHTML = st.map((x) => `<li data-s="${x}">${x === 'ok' ? SVG.ok : x === 'no' ? SVG.no : ''}</li>`).join('');
   $('slots').style.setProperty('--n', String(Math.min(st.length, 12))); // a long list wraps to a second row of slots
+  $('inspCount').textContent = `${done} of ${st.length} done`;
   $('inspSave').textContent = done === st.length ? 'Save safety check' : `Save safety check (${done} of ${st.length} done)`;
 }
 function drawCard(id) {
@@ -614,7 +618,8 @@ function drawCard(id) {
     `<button type="button" data-a="yes" aria-pressed="${!!(a && a.ok)}">Yes</button><button type="button" data-a="no" aria-pressed="${!!(a && !a.ok)}">No</button></div>` +
     (!a && needs.length ? `<p class="cap-note">Yes needs ${needs.join(' and ')}.</p>` : '') +
     (a && !a.ok ? '<p class="cap-slotnote">Missing or not working.</p>' : '') +
-    (a && a.ok && item.needsPhoto ? (a.seq == null ? '<button type="button" class="cap-btn cap-photo" data-a="photo">Take photo</button>'
+    (state === 'todo' ? `<p class="cap-slotnote cap-todo">${stillNeeds(item, a)}</p>` : '') +
+    (a && a.ok && item.needsPhoto ? (a.seq == null ? `<button type="button" class="cap-btn cap-photo" data-a="photo">${SVG.cam}<span>Take photo</span></button>`
       : `<div class="cap-took">${S.insp.thumbs[id] ? `<img src="${S.insp.thumbs[id]}" alt="">` : ''}<span>Photo saved</span><button type="button" class="cap-btn" data-a="photo">Retake</button></div>`) : '') +
     (a && a.ok && item.needsDate ? `<label class="cap-field" for="d-${esc(id)}">Date on the certificate or tag</label><input type="date" id="d-${esc(id)}" class="cap-input" data-a="date" value="${esc(a.date || '')}">` : '');
   li.querySelectorAll('[data-a="yes"],[data-a="no"]').forEach((b) => b.addEventListener('click', () => answer(id, b.dataset.a === 'yes')));
@@ -623,7 +628,12 @@ function drawCard(id) {
   if (d) d.addEventListener('change', () => { S.insp.answers[id].date = d.value; saveDraft(); drawSlots(); li.dataset.s = slotState(item); drawMark(li, item); });
   if (focused) { const f = li.querySelector(`[data-a="${focused}"]`); if (f) f.focus(); }
 }
-function drawMark(li, item) { const s = slotState(item); li.querySelector('.cap-mark').innerHTML = s === 'ok' ? SVG.ok : s === 'no' ? SVG.no : ''; }
+function drawMark(li, item) {
+  const s = slotState(item), note = li.querySelector('.cap-todo');
+  li.querySelector('.cap-mark').innerHTML = s === 'ok' ? SVG.ok : s === 'no' ? SVG.no : '';
+  if (note) { if (s === 'todo') note.textContent = stillNeeds(item, S.insp.answers[item.id]); else note.remove(); } // the date field keeps focus: no redraw
+}
+const stillNeeds = (item, a) => 'Still needs ' + [item.needsPhoto && a.seq == null && 'a photo', item.needsDate && !a.date && 'the date'].filter(Boolean).join(' and ') + '.';
 function answer(id, ok) {
   const a = S.insp.answers[id];
   S.insp.answers[id] = ok ? { ...(a && a.ok ? a : {}), ok: true } : { ok: false }; // No drops the photo link and date; a Yes keeps what it had

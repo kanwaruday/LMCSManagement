@@ -7,7 +7,7 @@
 <title>LMCS — Capture a route</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=29f58300">
-<link rel="stylesheet" href="../capture/capture.css?v=611cc04e">
+<link rel="stylesheet" href="../capture/capture.css?v=06b41e4d">
 </head>
 <body>
 <header class="hdr"><div><h1>Capture a route</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
@@ -62,8 +62,11 @@
 
     <div id="inspect" class="cap-insp" hidden>
       <h2 id="inspTitle" class="cap-h"></h2>
-      <ol id="slots" class="cap-slots" aria-hidden="true"></ol>
-      <p class="cap-note">Look at each item on the bus. Yes if it is there and works.</p>
+      <div class="cap-hud">
+        <p id="inspCount" class="cap-hudcount" aria-live="polite"></p>
+        <ol id="slots" class="cap-slots" aria-hidden="true"></ol>
+      </div>
+      <p class="cap-note">Check each item on the bus. Yes: it is there and works. No: missing or broken.</p>
       <ul id="cards" class="cap-cards"></ul>
       <p id="inspMsg" class="cap-msg" role="alert"></p>
       <button type="button" id="inspSave" class="cap-primary">Save safety check</button>
@@ -87,6 +90,6 @@
   <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
 </main>
 <script src="../../assets/auth.js?v=ffa8751c"></script>
-<script type="module" src="../capture/capture.js?v=48616279"></script>
+<script type="module" src="../capture/capture.js?v=fbe68824"></script>
 </body>
 </html>

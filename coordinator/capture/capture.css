@@ -107,6 +107,7 @@
     #running:not([hidden]) .cap-cam{height:auto}
   }
   .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over STOP HERE */
+  .cap-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start} /* the safety check: two cards across, half the scrolling */
   .cap-sheetwrap.cap-aim{justify-content:flex-end} /* the photo sheet sits over the controls, the camera stays in view */
   .cap-aim .cap-sheet{max-width:44vw;border-radius:16px 0 0 0}
 }
@@ -166,9 +167,19 @@
 .cap-line{font-size:17px;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
 #authRoot{padding:0 16px}
 
-/* Safety check: the bus's loadout. A strip of slots (ticked green, red cross for missing, empty while open) and one card per
-   item. Colour carries the answer only; nothing moves. */
-.cap-slots{display:grid;grid-template-columns:repeat(var(--n,10),minmax(0,1fr));gap:4px;list-style:none;margin:0 0 8px;padding:0}
+/* Safety check: the bus's loadout. The bus, then a HUD ("3 of 10 done" over a strip of slots: ticked green, red cross for missing, empty
+   while open, amber while a Yes still needs its photo or date) and one card per item. Colour carries the answer only; nothing
+   moves. On a phone held upright the HUD stays pinned at the top while the cards scroll under it. */
+.cap-hud{margin:0 -16px 4px;padding:6px 16px 10px;background:#fff}
+.cap-hudcount{margin:0 0 6px;font-size:16px;font-weight:800;line-height:1.25;font-variant-numeric:tabular-nums}
+.cap-hud .cap-slots{margin:0}
+@media (min-height:540px){
+  .cap-hud{position:sticky;top:0;z-index:5;box-shadow:0 1px 0 var(--c-line),0 8px 10px -10px rgba(0,0,0,.45)}
+  .cap-slot{scroll-margin-top:120px} /* Save's "answer this first" scroll lands below the HUD, not under it */
+}
+.cap-slots:has(li:nth-child(13)) li{height:20px;border-radius:4px} /* a long list: four short rows, not four tall ones */
+.cap-slots:has(li:nth-child(13)) svg{width:14px;height:14px}
+.cap-slots{display:grid;grid-template-columns:repeat(var(--n,10),minmax(0,48px));gap:4px;list-style:none;margin:0 0 8px;padding:0}
 .cap-slots li{height:28px;border:2px dashed #8a8a8a;border-radius:6px;display:flex;align-items:center;justify-content:center;min-width:0}
 .cap-slots svg{width:18px;height:18px}
 .cap-slots [data-s="ok"]{border:2px solid var(--c-ok);background:var(--c-ok);color:#fff}
@@ -192,10 +203,19 @@
 .cap-yn [data-a="no"][aria-pressed="true"]{background:var(--c-bad);color:#fff}
 .cap-slot .cap-note{margin:8px 0 0}
 .cap-slotnote{margin:8px 0 0;font-weight:700;color:var(--c-bad)}
-.cap-photo{width:100%;margin-top:10px;min-height:52px}
+.cap-photo{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:10px;min-height:56px;font-size:17px;background:var(--c-ink);color:#fff}
+.cap-photo:active{background:#333}
+.cap-todo{color:var(--c-warn)}
 .cap-took{display:flex;align-items:center;gap:10px;margin-top:10px;font-weight:700;color:var(--c-ok)}
 .cap-took img{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-line);flex:none}
 .cap-took span{flex:1;min-width:0}
 .cap-took .cap-btn{flex:none;color:var(--c-ink)}
 .cap-slot .cap-field{margin-top:10px}
 .cap-peak>span{font-size:15px;color:var(--c-mute);font-weight:600}
+/* the safety check's debrief: the saved loadout as slots, then what is missing, one per line */
+.cap-debrief .cap-slots{margin:10px 0 4px}
+.cap-missing{list-style:none;margin:6px 0 10px;padding:0;display:grid;gap:6px}
+.cap-missing li{display:flex;align-items:flex-start;gap:10px;font-size:17px;font-weight:700;line-height:1.3}
+.cap-missing svg{flex:none;width:24px;height:24px;padding:2px;border-radius:6px;background:var(--c-bad);color:#fff}
+.cap-missing span{min-width:0;overflow-wrap:anywhere}
+.cap-resume .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff} /* the second tap throws the check away */
