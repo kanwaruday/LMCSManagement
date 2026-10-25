@@ -114,7 +114,7 @@ window.CoordApprovals = (function () {
       '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
     const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
-      refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
+      seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
 
     const setBar = (state, text, retry) => { const b = $('bar'); b.className = 'stbar' + (state === 'loading' ? '' : ' ' + state); b.innerHTML = (state === 'loading' ? '<span class="sp"></span>' : '') + '<span>' + text + '</span>' + (retry ? '<button type="button" data-act="refresh">Retry</button>' : ''); };
@@ -220,18 +220,29 @@ window.CoordApprovals = (function () {
       return h;
     }
 
+    // The Coordinator's latest recommendation, fetched alongside the request so the detail is drawn once (never re-drawn under the Owner's typing).
+    // undefined = unavailable (no ctx.get, a failure, "Not authorized", or no answer within REC_MS): the block is simply left out.
+    const REC_MS = 4000;
+    function loadRec(id) {
+      if (!ctx.get) return Promise.resolve(undefined);
+      let timer;
+      return Promise.race([Promise.resolve().then(() => ctx.get({ action: 'coordinatordecision', id: id })), new Promise((ok, no) => { timer = setTimeout(no, REC_MS); })])
+        .then(d => d && d.success && d.decision ? (d.decision.recommendation || null) : undefined, () => undefined)
+        .then(v => { clearTimeout(timer); return v; });
+    }
     async function toggleRow(id) {
       if (S.openId === id) { S.openId = null; S.detail = null; S.rec = undefined; renderList(); return; }
+      const tok = ++S.seq; // an answer from an earlier open of the same row (A, B, A) must not land on this one
       S.openId = id; S.detail = null; S.rec = undefined; renderList();
+      const recP = loadRec(id);
       let res;
       try { res = await get('action=approvaldetail&id=' + encodeURIComponent(id)); } catch (err) { res = { success: false, error: err.message }; }
-      if (S.openId !== id) return; // another row was opened meanwhile
+      if (S.openId !== id || S.seq !== tok) return; // another row was opened meanwhile
       if (!res.success) { authFail(res); const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = '<div class="empty">Couldn’t load this request: ' + esc(res.error || 'unknown error') + '</div>'; return; }
+      const rec = await recP;
+      if (S.openId !== id || S.seq !== tok) return;
+      S.rec = res.canDecide ? rec : undefined;
       S.detail = res; const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = detailInner(res);
-      if (!ctx.get || !res.canDecide) return;
-      try { const d = await ctx.get({ action: 'coordinatordecision', id: id }); if (d && d.success && d.decision) S.rec = d.decision.recommendation || null; } catch (err) { return; } // any failure: no extra block
-      if (S.openId !== id || S.rec === undefined) return;
-      const w2 = root.querySelector('[data-slot="detail"]'); if (w2) w2.innerHTML = detailInner(res);
     }
     const reopen = id => { S.openId = null; S.detail = null; return toggleRow(id); };
 
