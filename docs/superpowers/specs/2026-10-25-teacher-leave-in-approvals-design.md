@@ -144,7 +144,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 
 1. ~~Who approves teacher leave~~ **Answered: B (Management), seam for later.**
 2. ~~One "Leave" category with a type dropdown, or separate categories?~~ **Answered: one "Leave" + type dropdown (A).**
-3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Open follow-ups: what a requested "Late" means (it was management-recorded), and how Casual Leave days reach the game (see below).
+3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). Open follow-up: what a requested "Late" means (it was management-recorded).
 4. In "days on track", does a half-day leave excuse the whole day or half of it? (recommend: the whole day, so a teacher is never penalised)
 5. Can a teacher file leave for a past date or the same day? (recommend: same day until 7:00 AM, past dates only by a Principal on their behalf)
 6. Should approved leave later prefill Payroll's monthly leave counts? (recommend yes, as a separate step after the game)
@@ -157,4 +157,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 2. **Category (2026-10-25):** "One 'Leave' + type dropdown" (option A): one new Approvals category, "Leave", with a Leave type
    dropdown; the type, dates and days show on the row.
 3. **Types (2026-10-25):** "Single, Short, Half, Special Day Leaves, Late" (Uday). The dropdown is therefore Single (unpaid), Short,
-   Half day, Special Day absence and Late. Casual, Compensatory and Emergency are not requested in the portal.
+   Half day, Special Day absence and Late.
+4. **Casual and Emergency added (2026-10-25):** "Add Casual + Emergency" (option A, so every day off has dates in Approvals and the game
+   never counts a Casual or Emergency day as missed). The teacher dropdown is **Single (unpaid), Short, Half day, Special Day
+   absence, Late, Casual, Emergency**. Compensatory stays out of the teacher form (Management grants it).
