@@ -10,8 +10,11 @@
 //   runKind ('timelapse'|'count'|'inspection'|'profile') is required and decides what a run accepts: timelapse frame+stop,
 //   inspection inspection only, profile profile only (the Fleet setup quests' odometer and driver photos, one run per quest
 //   save), count nothing (no camera). If the run's manifest row exists its Kind must equal runKind.
-// POST {action:'capturerun', idToken, run:{runId, reg, kind, startedAt, endedAt, frames, gaps, stops, inspection, status}}
-//   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). `inspection` (inspection runs only) must be
+// POST {action:'capturerun', idToken, run:{runId, reg, kind, startedAt, endedAt, frames, gaps, stops, inspection, status, capturedBy}}
+//   -> {success}. One row per runId in the tab 'Capture Runs' (upsert). The phone is shared (Ruling 41): anyone signed in may
+//   send a run, so By/Role are the sender, and Captured By (the last column) is the run's author from the manifest, kept from
+//   the first manifest that set it; credit for a capture goes to Captured By. No or a bad capturedBy (an old phone): By.
+//   `inspection` (inspection runs only, end manifest: the start one carries none) must be
 //   {itemId: {ok: boolean, date?: 'yyyy-MM-dd', fileId?}} with ids from the 'Safety Loadout' tab (kept by the Coordinator
 //   backend, coordinator-transport.gs): answers raise and close follow-ups, so nothing else is stored (no free text).
 //   A timelapse's end manifest also carries frameTimes: indexed by seq, whole seconds since the previous frame (the first since
@@ -25,7 +28,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const CAP_TAB_ = 'Capture Runs';
-const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'];
+const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON', 'Captured By'];
 const CAP_KINDS_ = ['frame', 'stop', 'inspection', 'profile'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection', 'profile'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'], profile: ['profile'] };
@@ -156,8 +159,10 @@ function captureRun_(body) {
   }
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
+  const author = String(run.capturedBy || '').trim().toLowerCase();
   const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
-    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(frameTimes)];
+    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(frameTimes),
+    /^[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -165,6 +170,7 @@ function captureRun_(body) {
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId) { at = i + 1; break; }
     if (at && (String(rows[at - 1][1]) !== a.v.reg || String(rows[at - 1][3]) !== run.kind)) return fail('A run\'s bus and kind cannot change (' + rows[at - 1][1] + ', ' + rows[at - 1][3] + ')');
+    if (at && rows[at - 1][14]) row[14] = rows[at - 1][14]; // a run keeps its capturer, whoever sends the next manifest
     if (at) sh.getRange(at, 1, 1, row.length).setValues([row]); else sh.appendRow(row);
   } finally {
     lock.releaseLock();

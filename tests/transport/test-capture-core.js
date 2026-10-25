@@ -295,6 +295,23 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.deepStrictEqual(srv.calls.map((c) => c.action + ':' + (c.kind || c.run.status)), ['capturerun:running', 'capturefile:inspection', 'capturefile:inspection', 'capturerun:ended']);
     const ids = srv.calls.filter((c) => c.action === 'capturefile').map((c) => 'D' + c.seq); // fakeServer answers fileId D<seq>
     assert.deepStrictEqual(srv.calls[3].run.inspection, { fire_extinguisher: { ok: true, date: '2026-09-01', fileId: ids[0] }, first_aid: { ok: true, fileId: ids[1] }, door_lock: { ok: false } });
+    assert.ok(!('inspection' in srv.calls[0].run), 'the start manifest carries no answers: on the phone they still point at photos by seq');
+  });
+  await test('every manifest carries capturedBy = the run\'s author, whoever is signed in to send it (Ruling 41)', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 1); await store.endRun(run.id); // by a@b.c
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(run.id); // the page's post adds the sender's token, not the run's
+    assert.deepStrictEqual(srv.calls.filter((c) => c.action === 'capturerun').map((c) => c.run.capturedBy), ['a@b.c', 'a@b.c']);
+  });
+  await test('an Apps Script "Service ... failed" or "Server error" is transient: retried, not a stopped send', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 2); await store.endRun(run.id);
+    const errs = ['Service Spreadsheets failed while accessing document with id X.', 'Internal Server Error'];
+    const srv = fakeServer((b) => (b.action === 'capturefile' && b.seq === 0 && errs.length ? { success: false, error: errs.shift() } : null));
+    const sleeps = [];
+    await createUploader({ store, post: srv.post, sleep: async (ms) => { sleeps.push(ms); } }).start(run.id);
+    assert.deepStrictEqual(sleeps, [5000, 15000]);
+    const r = await store.getRun(run.id);
+    assert.deepStrictEqual([r.status, r.endSent, (await store.pending(run.id)).length], ['ended', true, 0]);
   });
   await test('a profile run (Fleet setup quest photos) sends its photos as kind profile with runKind profile', async () => {
     const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'profile' });

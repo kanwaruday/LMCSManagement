@@ -37,6 +37,17 @@ t('completion is 0 for an empty profile and 100 when all six quests are done', (
   assert.deepStrictEqual(FQ.questsFor(noCheck).find((q) => q.id === 'safety').missing, ['inspection'], 'the safety quest needs the first safety check');
 });
 
+t('missions: a safety or capture quest completed by the run itself credits the run\'s capturer (Captured By, Ruling 41)', () => {
+  const rows = fullRows();
+  rows.inspected = { HP659511: { by: 'rider@x.org', at: '2026-10-21' } }; rows.captured = { HP659511: { by: 'rider2@x.org', at: '2026-10-30T02:00:00Z' } };
+  const m = (id) => FQ.transportMissions(rows).find((x) => x.id === 'transport:setup_' + id + ':HP659511');
+  assert.deepStrictEqual([m('capture').done, m('capture').doneBy, m('capture').doneAt], [true, 'rider2@x.org', '2026-10-30T02:00:00Z'], 'the route timelapse completes the capture quest: its capturer');
+  assert.deepStrictEqual([m('safety').doneBy, m('safety').doneAt], ['rider@x.org', '2026-10-21'], 'the attendant was saved first: the safety check completed it, so its capturer');
+  rows.profiles[0].saved = JSON.stringify({ safety: { by: 'clerk@x.org', at: 't', doneBy: 'clerk@x.org', doneAt: 't' } });
+  assert.strictEqual(m('safety').doneBy, 'clerk@x.org', 'a save that completed the quest (after the check) keeps its own credit');
+  assert.strictEqual(FQ.profilesFromRows(rows)[0].inspected, true, 'the flags stay booleans on the profile');
+});
+
 t('papers quest missing chassisNo lists it in missing', () => {
   const rows = fullRows(), papers = JSON.parse(rows.profiles[0].papers);
   delete papers.chassisNo; papers.engineNo = '  ';

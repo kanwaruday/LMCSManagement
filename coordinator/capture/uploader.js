@@ -1,12 +1,12 @@
 // Resumable uploader. For one run: capturerun (status 'running') -> files in seq order -> capturerun (status 'ended').
 // Every step is recorded in the store, so a closed tab, a dead battery or a dropped connection just means start(runId) again later.
 // post(body) -> Promise<response> is injected (the page adds idToken and talks to the roster web app).
-// Transient trouble (post throws, response.network, a timeout/lock message) retries on delays 5 s, 15 s, 60 s, then waits for the
+// Transient trouble (post throws, response.network, a timeout/lock/service/server-error message) retries on delays 5 s, 15 s, 60 s, then waits for the
 // browser's `online` event and starts the sequence over. A permanent refusal (e.g. "belongs to another bus", "Not authorized")
 // marks the file failed, sets the run's status to 'error' with the reason, and stops: no endless retry.
 
 const DELAYS = [5000, 15000, 60000];
-const TRANSIENT = /timed? ?out|try again|too many|temporar|could not obtain lock|failed to fetch|network/i;
+const TRANSIENT = /timed? ?out|try again|too many|temporar|could not obtain lock|failed to fetch|network|service|server error/i;
 
 export function createUploader({
   store, post, onProgress = () => {}, delays = DELAYS,
@@ -47,9 +47,11 @@ export function createUploader({
       await store.patchRun(runId, { status: 'error', error });
       progress('error', error);
     };
-    const manifest = (status, inspection = run.inspection, frameTimes) => ({ action: 'capturerun', run: {
+    // capturedBy: the run's author. Anyone signed in on the shared phone may send it, but the capture is credited to them (Ruling 41).
+    // Safety-check answers go only in the END manifest: until then they point at their photos by seq, which the server refuses.
+    const manifest = (status, inspection, frameTimes) => ({ action: 'capturerun', run: {
       runId, reg: run.reg, kind: run.kind, startedAt: run.startedAt, endedAt: run.endedAt, frames: run.frames,
-      gaps: run.gaps, stops: run.stops, inspection, status, ...(frameTimes ? { frameTimes } : {}) } });
+      gaps: run.gaps, stops: run.stops, inspection, status, capturedBy: run.by, ...(frameTimes ? { frameTimes } : {}) } });
     // Inspection answers point at their photo by seq on the phone; the server gets the photo's Drive file id instead.
     const withFileIds = async (insp) => {
       if (!insp) return insp;

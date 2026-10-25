@@ -25,7 +25,7 @@
 
 const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_TRACKS = 'GPS Tracks', GPS_TAB_FILLS = 'Fuel Fills',
   GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses', GPS_TAB_CAPTURE = 'Capture Stops';
-const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt'];
+const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy']; // capturedBy: the run's Captured By (Ruling 41)
 const GPS_TAB_CATALOG = 'Parts Catalog', GPS_TAB_AGVEH = 'Agency Vehicles', GPS_TAB_AGHIST = 'Agency History';
 const GPS_CATALOG_COLS = ['key', 'model', 'code', 'lifeKm', 'lifeMonths', 'price', 'labour', 'spec', 'components', 'asOf', 'pushedAt'];
 const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'catalogModel', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'asOf', 'pushedAt'];
@@ -386,6 +386,9 @@ function coordCapturePush_(body) {
       stops: JSON.stringify(r.stops.map(function (s) { const x = gpsCaptureStop_(s || {}); x.photoFileId = gpsDriveId_(photos[x.seq]); return x; })) });
   });
   if (fresh.length) {
+    const who = {}, sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+    (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) { who[String(r[0])] = String(r[14] || r[6] || ''); }); // Captured By, else By (a row from before the column)
+    fresh.forEach(function (r) { r.capturedBy = who[r.runId] || ''; });
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -412,10 +415,13 @@ function gpsCaptureFiles_(runs) {
   return { found: out.found || {} };
 }
 
-/** {reg: true} for every bus with a processed timelapse. */
+/** {reg: {by, at}} for every bus with a processed timelapse: its first one's capturer and push time (the capture quest's credit). */
 function gpsCaptured_() {
-  const out = {};
-  gpsRows_(GPS_TAB_CAPTURE).forEach(function (r) { out[r.reg] = true; });
+  const out = {}, first = {};
+  gpsRows_(GPS_TAB_CAPTURE).forEach(function (r) {
+    if (first[r.reg] && first[r.reg] < r.runId) return; // runIds sort by time
+    first[r.reg] = r.runId; out[r.reg] = { by: String(r.capturedBy || ''), at: String(r.pushedAt || '') };
+  });
   return out;
 }
 

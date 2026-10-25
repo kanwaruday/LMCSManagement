@@ -424,7 +424,7 @@ function coordLoadoutSet_(caller, body) {
   return { success: true, all: all, version: coordLoadoutVersion_(all) };
 }
 
-/** Finished safety checks from the capture portal: [{reg, runId, day: 'yyyy-MM-dd' (India), items: {itemId: {ok, date?, fileId?}}}],
+/** Finished safety checks from the capture portal: [{reg, runId, day: 'yyyy-MM-dd' (India), by, items: {itemId: {ok, date?, fileId?}}}],
  *  or null when the Capture Runs tab is missing (unknown, which is not "no checks": nothing may close on it).
  *  Counts only runs of kind 'inspection' whose end manifest arrived (Status 'ended') with answers in it. Only ok === true is
  *  present: a hand-edited "true" or 1 reads as missing. */
@@ -436,7 +436,7 @@ function coordInspections_() {
     return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, 'Asia/Kolkata', 'yyyy-MM-dd');
   };
   const out = [];
-  sh.getDataRange().getValues().slice(1).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | ... | Inspection JSON (12th) | Status
+  sh.getDataRange().getValues().slice(1).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | By | ... | Inspection JSON (12th) | Status | Frame Times | Captured By
     if (String(r[3]) !== 'inspection' || String(r[12]) !== 'ended') return;
     let raw = null;
     try { raw = JSON.parse(String(r[11] || 'null')); } catch (e) { raw = null; }
@@ -449,7 +449,8 @@ function coordInspections_() {
       if (a.ok === true && a.fileId) items[k].fileId = String(a.fileId);
     });
     const d = day(r[5] || r[4]);
-    if (Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, items: items });
+    // by: who did the check (Captured By), else the sender (By: a row from before the column); the shared phone, Ruling 41
+    if (Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, by: String(r[14] || r[6] || ''), items: items });
   });
   return out;
 }
@@ -490,11 +491,15 @@ function coordFleetBuses_() {
   });
 }
 
-/** {reg: true} for the given regs: ended safety checks (Capture Runs) and processed route timelapses (Capture Stops). */
+/** {reg: {by, at}} for the given regs: the first ended safety check (Capture Runs) and the first processed route timelapse
+ *  (Capture Stops), with who captured it (the safety and capture quests' credit when the run itself completes the quest). */
 function coordFleetDone_(regs) {
-  const inspected = {}, captured = {};
-  (coordInspections_() || []).forEach(function (x) { const r = FleetQuests.normReg(x.reg); if (regs[r]) inspected[r] = true; });
-  Object.keys(gpsCaptured_()).forEach(function (x) { const r = FleetQuests.normReg(x); if (regs[r]) captured[r] = true; });
+  const inspected = {}, captured = {}, cap = gpsCaptured_();
+  (coordInspections_() || []).forEach(function (x) {
+    const r = FleetQuests.normReg(x.reg);
+    if (regs[r] && (!inspected[r] || x.day < inspected[r].at)) inspected[r] = { by: x.by, at: x.day };
+  });
+  Object.keys(cap).forEach(function (x) { const r = FleetQuests.normReg(x); if (regs[r]) captured[r] = cap[x]; });
   return { inspected: inspected, captured: captured };
 }
 

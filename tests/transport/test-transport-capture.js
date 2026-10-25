@@ -43,6 +43,7 @@ const run = (code) => JSON.parse(JSON.stringify(vm.runInContext(code, ctx)));
 const b64 = (hex, pad) => Buffer.concat([Buffer.from(hex.replace(/ /g, ''), 'hex'), Buffer.alloc(pad || 8)]).toString('base64');
 const JPG = b64('FF D8 FF E0'), PDF = b64('25 50 44 46 2D');
 const frame = (o) => run('captureFile_(' + JSON.stringify(Object.assign({ idToken: 't', reg: 'HP659511', runId: 'R1', runKind: 'timelapse', kind: 'frame', seq: 1, lat: 31.5, lng: 76.9, takenAt: '2026-10-25T08:00:00Z', base64: JPG }, o)) + ')');
+const runDirOf = (id) => transport.kids.find((k) => k.name === 'Capture').kids.find((k) => k.name === 'HP659511').kids.find((k) => k.name === id);
 const runDir = () => { const c = transport.kids.find((k) => k.name === 'Capture'); const r = c && c.kids.find((k) => k.name === 'HP659511'); return r && r.kids.find((k) => k.name === 'R1'); };
 
 caller = null;
@@ -90,7 +91,7 @@ assert.match(frame({ reg: 'HP000' }).error, /not in the fleet/);
 
 // capturerun upserts by runId
 const cr = (r) => run('captureRun_(' + JSON.stringify({ idToken: 't', run: r }) + ')');
-assert.deepStrictEqual(run('CAP_RUN_HEADER_'), ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON']);
+assert.deepStrictEqual(run('CAP_RUN_HEADER_'), ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON', 'Captured By']);
 assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', startedAt: 's', frames: 10, stops: [{ seq: 2 }] }).success, true);
 const rows1 = tabs['Capture Runs'];
 assert.deepStrictEqual(JSON.parse(JSON.stringify(rows1[0])), run('CAP_RUN_HEADER_'));
@@ -201,4 +202,41 @@ assert.deepStrictEqual(got.found, { 'HP659511-20261025-071500-ab12': { videoFile
 assert.notStrictEqual(got.found['HP659511-20261025-071500-ab12'].photos[3], original.getId(), 'never the unblurred original');
 assert.deepStrictEqual(got.notYet, ['HP659511-20261026-071500-cd34', 'HP000-20261026-071500-zz11'], 'an unsynced run (or no folder at all) is "not yet", not an error');
 assert.strictEqual(cap.kids.filter((k) => k.name === 'HP000').length, 0, 'looking creates no folders');
-console.log('transport capture: all checks passed');
+
+// Ruling 41: anyone signed in on the shared phone may send a run, but the run keeps its capturer. By = the sender (the token),
+// Captured By (the last column, so the positional reads of the columns before it stay valid) = the manifest's capturedBy.
+const CB = 14, rowOf = (id) => tabs['Capture Runs'].find((r) => r[0] === id);
+caller = { email: 'f4@lms.org.in', campusId: 'LMS4', roles: ['FeeClerk'], role: 'FeeClerk' };
+assert.strictEqual(cr({ runId: 'RB1', reg: 'HP659511', kind: 'count', status: 'running', capturedBy: 'C4@lms.org.in' }).success, true);
+assert.deepStrictEqual([rowOf('RB1')[6], rowOf('RB1')[CB]], ['f4@lms.org.in', 'c4@lms.org.in'], 'By is the sender, Captured By the author');
+assert.strictEqual(cr({ runId: 'RB2', reg: 'HP659511', kind: 'count', status: 'running' }).success, true);
+assert.strictEqual(rowOf('RB2')[CB], 'f4@lms.org.in', 'no capturedBy (an old phone): Captured By falls back to By');
+assert.strictEqual(cr({ runId: 'RB3', reg: 'HP659511', kind: 'count', capturedBy: 'not an email <b>' }).success, true);
+assert.strictEqual(rowOf('RB3')[CB], 'f4@lms.org.in', 'a capturedBy that is not an email falls back to By');
+caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
+assert.strictEqual(cr({ runId: 'RB1', reg: 'HP659511', kind: 'count', status: 'ended' }).success, true); // the end, sent by an old phone
+assert.deepStrictEqual([rowOf('RB1')[6], rowOf('RB1')[CB], rowOf('RB1')[12]], ['o@lms.org.in', 'c4@lms.org.in', 'ended'], 'a run keeps its first capturer');
+
+// C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
+// captured by a Coordinator and sent by the campus Fee Clerk (Ruling 41).
+(async () => {
+  const { createRunStore } = await import('../../coordinator/capture/run-store.js');
+  const { createUploader } = await import('../../coordinator/capture/uploader.js');
+  const cp = (x) => JSON.parse(JSON.stringify(x));
+  const mem = () => { const m = new Map(); return { put: async (e) => { m.set(e.id, cp(e)); }, get: async (id) => (m.has(id) ? cp(m.get(id)) : undefined), getAll: async () => [...m.values()].map(cp), delete: async (id) => { m.delete(id); } }; };
+  const store = createRunStore({ runs: mem(), files: mem(), data: mem() });
+  const sent = [];
+  const post = async (body) => { sent.push(cp(body)); return run((body.action === 'capturefile' ? 'captureFile_(' : 'captureRun_(') + JSON.stringify(Object.assign({ idToken: 't' }, body)) + ')'); };
+  const r0 = await store.newRun({ reg: 'HP659511', kind: 'inspection', campus: 'LMS 4', by: 'c4@lms.org.in', role: 'Coordinator' });
+  const seq = await store.addFrame(r0.id, { takenAt: 1, base64: JPG });
+  await store.endRun(r0.id, { inspection: { fire_extinguisher: { ok: true, date: '2026-09-01', seq }, cctv: { ok: false } } });
+  caller = { email: 'f4@lms.org.in', campusId: 'LMS4', roles: ['FeeClerk'], role: 'FeeClerk' };
+  const states = [];
+  await createUploader({ store, post, sleep: async () => {}, onProgress: (p) => states.push(p.state + (p.error ? ': ' + p.error : '')) }).start(r0.id);
+  assert.strictEqual(states[states.length - 1], 'done', 'the whole check is accepted: ' + states.join(' | '));
+  assert.ok(!('inspection' in sent[0].run), 'the start manifest carries no answers');
+  const row = rowOf(r0.id), fileId = runDirOf(r0.id).files[0].getId();
+  assert.deepStrictEqual(JSON.parse(row[11]), { fire_extinguisher: { ok: true, date: '2026-09-01', fileId }, cctv: { ok: false } }, 'stored with the photo\'s Drive id');
+  assert.deepStrictEqual([row[3], row[12], row[6], row[CB]], ['inspection', 'ended', 'f4@lms.org.in', 'c4@lms.org.in'], 'sent by the clerk, captured by the Coordinator');
+  console.log('transport capture: all checks passed');
+})().catch((e) => { console.error(e); process.exit(1); });

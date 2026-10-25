@@ -369,19 +369,20 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
 
   // GET: rows for the caller's campuses only (driver data never leaves its campus scope); done derived from real data
   const runs = book(FORM).insertSheet('Capture Runs');
-  runs.appendRow(['Run ID', 'Reg', 'Campus', 'Kind', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps', 'Stops', 'Inspection JSON', 'Status']);
-  runs.appendRow(['HP1-i', 'HP1', 'LMS4', 'inspection', 1, Date.parse('2026-10-20T06:00:00Z'), 'c', 'Coordinator', 0, '', '', '{"cctv":{"ok":true}}', 'ended']);
-  const caps = book(FORM).insertSheet('Capture Stops'); caps.appendRow(['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt']); caps.appendRow(['HP5-x', 'HP5', 'LMS5', 'VID', '[]', '']);
+  runs.appendRow(['Run ID', 'Reg', 'Campus', 'Kind', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps', 'Stops', 'Inspection JSON', 'Status', 'Frame Times JSON', 'Captured By']);
+  runs.appendRow(['HP1-j', 'HP1', 'LMS4', 'inspection', 1, Date.parse('2026-10-22T06:00:00Z'), 'c', 'Coordinator', 0, '', '', '{"cctv":{"ok":true}}', 'ended', '', 'later@x.org']);
+  runs.appendRow(['HP1-i', 'HP1', 'LMS4', 'inspection', 1, Date.parse('2026-10-20T06:00:00Z'), 'clerk@x.org', 'FeeClerk', 0, '', '', '{"cctv":{"ok":true}}', 'ended', '', 'rider@x.org']);
+  const caps = book(FORM).insertSheet('Capture Stops'); caps.appendRow(['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy']); caps.appendRow(['HP5-x', 'HP5', 'LMS5', 'VID', '[]', 'P5', 'r5@x.org']);
   const g4 = r('coordFleet_(' + fc4 + ')');
   assert.strictEqual(g4.success, true);
   assert.deepStrictEqual(g4.rows.fleet.map(b => b.reg + ' ' + b.campusId), ['HP1 LMS4'], 'a Fee Clerk gets their campus (running buses only)');
   assert.deepStrictEqual(g4.rows.drivers, [], 'and no other campus\'s drivers');
-  assert.deepStrictEqual(g4.rows.inspected, { HP1: true }, 'the first safety check comes from Capture Runs');
+  assert.deepStrictEqual(g4.rows.inspected, { HP1: { by: 'rider@x.org', at: '2026-10-20' } }, 'the first safety check comes from Capture Runs, credited to its capturer (not the sender)');
   assert.deepStrictEqual(g4.rows.captured, {}, 'route timelapses only for visible buses');
   assert.deepStrictEqual(g4.campuses, ['LMS4']);
   const gc = r('coordFleet_(' + co4 + ')');
   assert.deepStrictEqual(gc.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP5', 'HP67'], 'a district Coordinator gets LMS 4-6');
-  assert.deepStrictEqual(gc.rows.drivers.map(d => d.driverKey), ['E5']); assert.deepStrictEqual(gc.rows.captured, { HP5: true });
+  assert.deepStrictEqual(gc.rows.drivers.map(d => d.driverKey), ['E5']); assert.deepStrictEqual(gc.rows.captured, { HP5: { by: 'r5@x.org', at: 'P5' } });
   const go = r('coordFleet_(' + own + ')');
   assert.deepStrictEqual(go.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67']);
   assert.deepStrictEqual(r('coordFleet_(' + coAll + ')').rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67'], 'an ALL Coordinator sees every campus'); assert.deepStrictEqual(go.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], 'network-wide');

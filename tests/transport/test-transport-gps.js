@@ -200,7 +200,7 @@ assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v =
 // ── capture runs (Task 7): the Mac pulls the ended timelapse runs and pushes back the processed ones; stops carry counts only ──
 book(run('COORD_TRANSPORT_FORM_ID')).insertSheet('Capture Runs')._rows().push(
   ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'],
-  ['HP1-20261025-071500-ab12', 'HP1', 'LMS4', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 40, '[]', JSON.stringify([{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, takenAt: 5, boardOn: 2, boardOff: 0 }]), '', 'ended', '[0,4,9,null,15]'],
+  ['HP1-20261025-071500-ab12', 'HP1', 'LMS4', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 40, '[]', JSON.stringify([{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, takenAt: 5, boardOn: 2, boardOff: 0 }]), '', 'ended', '[0,4,9,null,15]', 'rider@x.org'],
   ['HP1-20261025-090000-cd34', 'HP1', 'LMS4', 'timelapse', 1, '', 'c4@x.org', 'Coordinator', 10, '[]', '[]', '', 'running'],
   ['HP7-20261025-071500-ef56', 'HP7', 'LMS1', 'count', 1, 2, 'c4@x.org', 'Coordinator', 0, '[]', '[]', '', 'ended'],
   ['HP7-20261025-080000-gh78', 'HP7', 'LMS1', 'inspection', 1, 2, 'c4@x.org', 'Coordinator', 3, '[]', '[]', '{}', 'ended'],
@@ -261,6 +261,8 @@ assert.deepStrictEqual(Object.keys(capCoord.byReg), ['HP1'], 'an LMS 4 coordinat
 assert.deepStrictEqual(capCoord.byReg.HP1, { runId: 'HP1-20261025-071500-ab12', videoFileId: 'VIDblurred123',
   stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', photoFileId: 'PHOTOblurred1', boardOn: 2, boardOff: 0 }] }, 'the processed ids from the Roster, never one the push sent; counts only');
 assert.deepStrictEqual(Object.keys(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg).sort(), ['HP1', 'HP7'], 'the second push kept the first (upsert by run)');
+assert.deepStrictEqual(J(run('gpsRows_(GPS_TAB_CAPTURE)')).map(r => r.runId.slice(0, 3) + ' ' + r.capturedBy), ['HP1 rider@x.org', 'HP7 c4@x.org'], 'each processed run keeps its capturer (Captured By, else By: a row from before the column)');
+assert.deepStrictEqual(J(run('gpsCaptured_()')).HP1.by, 'rider@x.org', 'the route timelapse credits its capturer');
 roster = { success: true, found: { 'HP1-20261026-071500-ab99': { videoFileId: 'VID2blurred12', photos: {} } }, notYet: [] };
 run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP1-20261026-071500-ab99", reg: "HP1", stops: []}]}})');
 assert.strictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP1.runId, 'HP1-20261026-071500-ab99', 'the newest run per bus is served');

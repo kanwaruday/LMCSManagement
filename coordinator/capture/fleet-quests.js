@@ -170,7 +170,8 @@ var FleetQuests = (function () {
   /** The Driver Profile key of a bus's driver: the employee code from the roster, else the bus itself. */
   function driverKey(bus) { return bus.driverCode ? String(bus.driverCode) : 'bus:' + bus.reg; }
 
-  /** rows {fleet, profiles, drivers, parts, inspected:{reg:true}, captured:{reg:true}} -> one profile per running bus. */
+  /** rows {fleet, profiles, drivers, parts, inspected:{reg: {by, at} | true}, captured:{reg: {by, at} | true}} -> one profile per
+   *  running bus. {by, at}: who captured the first safety check / route timelapse, and when (the quest's credit). */
   function profilesFromRows(rows) {
     rows = rows || {};
     var prof = {}, drv = {}, parts = {}, out = [];
@@ -179,12 +180,12 @@ var FleetQuests = (function () {
     (rows.parts || []).forEach(function (r) { var k = normReg(r.reg); (parts[k] = parts[k] || {})[r.component] = obj(r.fields); });
     (rows.fleet || []).forEach(function (b) {
       if (b.operational === false || b.operational === 'no') return;
-      var reg = normReg(b.reg), p = prof[reg] || {}, k = driverKey(b), d = drv[k];
+      var reg = normReg(b.reg), p = prof[reg] || {}, k = driverKey(b), d = drv[k], ins = (rows.inspected || {})[reg], cap = (rows.captured || {})[reg];
       out.push({ reg: reg, campus: 'LMS ' + campusId(b.campusId || b.campus).slice(3), campusId: campusId(b.campusId || b.campus), route: b.route || '',
         driverName: b.driver || '', driverKey: k,
         data: { papers: obj(p.papers), safety: obj(p.safety), parts: parts[reg] || {}, driver: d ? obj(d.fields) : {}, fuel: obj(p.fuel), capture: obj(p.capture) },
         saved: obj(p.saved), ageLimit: !!d && (d.ageLimit === true || d.ageLimit === 'yes'),
-        inspected: !!(rows.inspected || {})[reg], captured: !!(rows.captured || {})[reg] });
+        inspected: !!ins, captured: !!cap, credit: { inspected: ins, captured: cap } });
     });
     return out;
   }
@@ -275,7 +276,10 @@ var FleetQuests = (function () {
         var m = { id: 'transport:setup_' + q.id + ':' + p.reg, module: 'transport', kind: 'setup_' + q.id, title: s.task + ' for ' + p.reg,
           why: q.done ? 'Done.' : 'Still needs ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '') + '.',
           owner: null, role: cfg.role, campus: p.campusId, go: s.go.replace('{reg}', p.reg), due: null, source: s.source, done: q.done };
+        // no save completed it: the run did (the safety check, the route timelapse), so its capturer gets the credit
+        var need = ((s.doneCheck || {}).needs || [])[0], run = need && (p.credit || {})[NEEDS[need].flag];
         if (q.done && sv.doneBy) { m.doneBy = sv.doneBy; m.doneAt = sv.doneAt; }
+        else if (q.done && run && run.by) { m.doneBy = run.by; m.doneAt = run.at; }
         out.push(m);
       });
     });
