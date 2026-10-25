@@ -219,7 +219,7 @@ tabs for Principals. It also needs a rule for who may mark an issue closed (see 
   - Alongside it: team goals and **"beat your own last month"**.
   - No ₹ on anything peer-visible.
   - Standing comes from the incentive engine's peer groups once that thread is built. Until then it is hidden.
-- **Consistency, not streaks** (Claude's call):
+- **Consistency, not streaks** (Claude's proposal, confirmed by Uday):
   - Individuals see "**18 of 21 school days on track this month**", against their own last month.
   - Days with no scheduled work for that person (leave, holidays, Sundays, free periods) don't count at all.
   - Only **teams** have streaks, each with one logged freeze a month (as in Fleet Command).
@@ -425,8 +425,16 @@ go-ahead.
 - The voice is trialled on Uday's Telegram updates first (Uday).
 - Leaderboards: private standing only, plus team goals and beat-your-own-last-month (Uday).
 - Questions for Uday go through the LMCS Master Agent chat (Uday's standing rule).
+- Core daily missions for all four roles, in his words (see the Today panel table) (Uday).
+- Daily-report issues: the Principal closes each with an outcome note; the Coordinator sees every closure and can
+  reopen (Uday).
+- Track-suit days are a per-campus setting Principals fix, through **decision windows** (Uday's mechanic; the window
+  design is Claude's).
+- Goals evolve over six months and are configured per season, never hard-coded; fully live in March 2027 (Uday).
+- Individuals see days on track ("18 of 21 this month"), never a breakable streak; only teams get streaks with a
+  freeze (Uday).
 
-## Open questions for Uday (sent via the LMCS Master Agent)
+## Questions put to Uday (via the LMCS Master Agent)
 
 1. ~~Who may close a daily-report issue?~~ **Answered (Uday, 2026-10-25):** "the Principal closes each with an
    outcome note; the Coordinator sees every closure and can reopen."
@@ -434,8 +442,10 @@ go-ahead.
    - A reopen puts it back in their Today panel as "reopened". It is not counted against them retroactively.
 2. ~~Which 3 days a week are track-suit days?~~ **Answered (Uday):** a per-campus setting each Principal fixes,
    through a **decision window** (see Team goals, help credit and standing).
-3. **Confirm "days on track" instead of personal streaks.** Individuals see "18 of 21 school days on track",
-   never a breakable streak; only teams have streaks with a freeze.
+3. ~~Confirm "days on track" instead of personal streaks.~~ **Answered (Uday):** "Yes: individuals see days on
+   track (e.g. 18 of 21 this month), never a breakable streak; only teams get streaks with a freeze."
+
+**All three are answered. What's left is Uday's approval of this design.**
 
 ## Left to the builder
 
