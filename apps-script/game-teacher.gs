@@ -16,8 +16,11 @@ var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {};
 // fallback touch Apps Script services. Source data is only ever READ.
 //
 // SETUP: add a time-driven trigger, gameTeacherRefresh, every 30 minutes (or run it once from the editor).
-// ponytail: TeacherState keeps the last TCH_LOGGED_DAYS days of logged entries, not the whole year (one CacheService
+// ponytail: TeacherState keeps the last teacher.loggedDaysWindow days (60) of logged entries, not the whole year (one CacheService
 //   value is 100 KB). A longer view means a second key per teacher.
+// LOCKS: the refresh takes NO script lock (fetching + building takes tens of seconds, and the Game workbook writes in game-actions.gs
+//   wait on that same lock for 20 s, gameWithLock_). Concurrent refreshes are de-duplicated with a short tch_building cache marker.
+//   Callers (missions, quests) must call tchStateFor_ BEFORE gameWithLock_, never inside it: on a cold cache it runs the refresh.
 // ═══════════════════════════════════════════════════════════════════
 
 // Sources. Keep in sync: TP_CWHW_PROXY_URL / TP_EMPLOYEE_ROSTER_URL in teacher-portal.gs, CHAPTER_TRACKER_SHEET_ID in ChapterTracker.gs,
@@ -31,14 +34,33 @@ var TCH_EMP_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
 var TCH_DAY_MS = 86400000;
 var TCH_IST_OFFSET_MS = 330 * 60000;
 var TCH_STATE_TTL_S = 21600;      // 6 h
-var TCH_LOCK_MS = 60000;
+var TCH_BUILDING_TTL_S = 300;     // the tch_building marker outlives a crashed run by at most this
 var TCH_FRESH_MS = 60000;         // a refresh that finds the index younger than this does nothing (a miss storm builds once)
-var TCH_LOGGED_DAYS = 60;         // logged days kept per teacher
 var TCH_NEXT_PER_CLASS = 3;       // upcoming chapters kept per class-subject
 var TCH_NEXT_GRACE_DAYS = 14;     // a chapter whose planned start is further back than this and never started is skipped, not "next"
-var TCH_MIN_KEEP_RATIO = 0.8;     // a feed under this share of the last build's records is treated as broken
+var TCH_MIN_KEEP_RATIO = 0.7;     // a feed under this share of the last build's records is treated as broken
 var TCH_MAX_VALUE_BYTES = 95000;  // CacheService caps one value at 100 KB
 var TCH_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ── config: the Game Config key `teacher` (a JSON object) merged over these defaults (Ruling 12) ──────────────
+// Tasks 4 and 5 read the same object through tchConfig_(cfg). A missing key, a value of the wrong type or a non-positive number falls back
+// to its default; nothing here throws.
+var TCH_DEFAULTS = {
+  remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
+  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7,
+  loggedDaysWindow: 60,
+};
+
+// cfg = the framework's parsed config (gameParseConfig_) or any object with an optional `teacher` object -> a fresh, complete object
+function tchConfig_(cfg) {
+  const out = {}, given = cfg && cfg.teacher && typeof cfg.teacher === 'object' && !Array.isArray(cfg.teacher) ? cfg.teacher : {};
+  Object.keys(TCH_DEFAULTS).forEach(function (k) {
+    const def = TCH_DEFAULTS[k], v = tchHas_(given, k) ? given[k] : undefined;
+    if (Array.isArray(def)) out[k] = Array.isArray(v) && v.every(function (x) { return typeof x === 'string'; }) ? v.slice() : def.slice();
+    else out[k] = typeof v === 'number' && isFinite(v) && v > 0 ? v : def;
+  });
+  return out;
+}
 
 // ── names ────────────────────────────────────────────────────────────
 // Keep in sync with tpNormalizeName_ in teacher-portal.gs: strips honorific suffixes, collapses spaces, lower-cases. Exact match after that.
@@ -177,11 +199,12 @@ function tchTrackerRows_(trackerValues, overrideValues, ayLabel) {
 function tchIstDay_(ms) { return new Date(ms + TCH_IST_OFFSET_MS).toISOString().slice(0, 10); }
 
 // feed = {cwRecords, cmData}; roster = {employees:[{employeeCode,name,school}], academic:[{employeeCode,class,subject}]};
-// trackerRows from tchTrackerRows_; timetable = timetable.json; prevMeta = the last build's meta or null; cfg = {now?} (ms)
-// -> { byCode:{code:TeacherState}, meta:{builtAt, records, unmatched:{lmsIdx:[name]}, resolution:{lmsIdx:{records,resolved}}} }
+// trackerRows from tchTrackerRows_; timetable = timetable.json; prevMeta = the last build's meta or null; cfg = the parsed Game Config (see
+// tchConfig_) plus an optional now (ms)
+// -> { byCode:{code:TeacherState}, meta:{builtAt, records, codes:[code], unmatched:{lmsIdx:[name]}, resolution:{lmsIdx:{records,resolved}}} }
 //    | { keepPrevious:true, reason }   (a feed that looks broken must not replace a good index)
 function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
-  const now = Number(cfg && cfg.now) || Date.now();
+  const now = Number(cfg && cfg.now) || Date.now(), T = tchConfig_(cfg);
   const recs = feed && Array.isArray(feed.cwRecords) ? feed.cwRecords : [];
   const employees = roster && Array.isArray(roster.employees) ? roster.employees : [];
   if (!recs.length) return { keepPrevious: true, reason: 'feed has no records' };
@@ -261,7 +284,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     if (!st.classSubjects.some(function (x) { return x.cls === lab.cls && x.subj === lab.subj; })) st.classSubjects.push(lab);
   });
 
-  const cutoff = now - TCH_LOGGED_DAYS * TCH_DAY_MS;
+  const cutoff = now - T.loggedDaysWindow * TCH_DAY_MS;
   slim.forEach(function (r) {
     const t = Number(r.timeMs);
     if (!(t >= cutoff)) return;
@@ -270,7 +293,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     (st.loggedDays[day] = st.loggedDays[day] || []).push({ cls: r.classMapped, subj: String(r.subject || '').trim(), at: t, hw: !!String(r.hwDesc || '').trim() });
   });
 
-  ownAcadEpisodes_(slim, cfg && cfg.acadRules).forEach(function (e) {
+  ownAcadEpisodes_(slim, { remWindowDays: T.remediationDays, maxEntryTags: Math.max(1, Math.round(T.tagInflationThreshold) - 1) }).forEach(function (e) {
     const code = codeByLower[e.key.teacher];
     if (!code) return;
     const cs = e.key.lms + '|' + e.key.cls + '|' + tchSubjKey_(e.key.subj), ck = tchChKey_(e.key.ch);
@@ -320,7 +343,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     if (!st.classSubjects.length && !st.episodes.length && !Object.keys(st.loggedDays).length && !st.periodsByDay) delete states[code];
   });
 
-  return { byCode: states, meta: { builtAt: now, records: recs.length, unmatched: unmatched, resolution: resolution } };
+  return { byCode: states, meta: { builtAt: now, records: recs.length, codes: Object.keys(states), unmatched: unmatched, resolution: resolution } };
 }
 
 // ── refresh (time-driven trigger, every 30 minutes) ─────────────────────────────────────────
@@ -332,11 +355,22 @@ function tchReadJson_(cache, key) {
   try { return JSON.parse(v); } catch (err) { return null; }
 }
 
-// Game Config (for the framework's defaults and any Owner overrides); the defaults if the game workbook is not reachable
-function tchConfig_() {
+// The parsed Game Config (framework defaults + Owner overrides) with the `teacher` row carried through even when the framework's own
+// defaults do not list that key yet; the framework defaults if the game workbook is not reachable.
+function tchLoadCfg_() {
   try {
     const id = PropertiesService.getScriptProperties().getProperty('GAME_SHEET_ID');
-    if (id) return gameParseConfig_(SpreadsheetApp.openById(id).getSheetByName('Game Config').getDataRange().getValues());
+    if (id) {
+      const rows = SpreadsheetApp.openById(id).getSheetByName('Game Config').getDataRange().getValues();
+      const cfg = gameParseConfig_(rows);
+      if (!cfg.teacher) {
+        for (let i = 1; i < rows.length; i++) {
+          if (String(rows[i][0] || '').trim() !== 'teacher') continue;
+          try { cfg.teacher = JSON.parse(String(rows[i][1])); } catch (err) { /* bad JSON: defaults */ }
+        }
+      }
+      return cfg;
+    }
   } catch (err) { /* defaults below */ }
   return gameParseConfig_([['Key', 'Value']]);
 }
@@ -379,16 +413,18 @@ function tchFit_(state) {
   return json;
 }
 
+// Builds the whole index and writes it to CacheService. No script lock (see LOCKS above): a refresh that finds the index younger than
+// TCH_FRESH_MS, or another refresh running (tch_building), does nothing. A failed fetch or a broken-looking feed leaves the cache as it was.
 function gameTeacherRefresh() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(TCH_LOCK_MS);
+  const cache = CacheService.getScriptCache();
+  const prev = tchReadJson_(cache, 'tch_meta');
+  if (prev && prev.builtAt && Date.now() - prev.builtAt < TCH_FRESH_MS) return { success: true, skipped: true };
+  if (cache.get('tch_building')) return { success: true, skipped: true, building: true };
+  cache.put('tch_building', '1', TCH_BUILDING_TTL_S);
   try {
-    const cache = CacheService.getScriptCache();
-    const prev = tchReadJson_(cache, 'tch_meta');
-    if (prev && prev.builtAt && Date.now() - prev.builtAt < TCH_FRESH_MS) return { success: true, skipped: true };
     const inputs = tchFetchInputs_();
     if (!inputs) { Logger.log('[game-teacher] sources unreadable: keeping the cached index'); return { success: false, error: 'sources unreadable' }; }
-    const out = tchBuildIndex_(inputs.feed, inputs.roster, tchReadTracker_(), inputs.timetable, prev, Object.assign(tchConfig_(), { now: Date.now() }));
+    const out = tchBuildIndex_(inputs.feed, inputs.roster, tchReadTracker_(), inputs.timetable, prev, Object.assign(tchLoadCfg_(), { now: Date.now() }));
     if (out.keepPrevious) { Logger.log('[game-teacher] keeping the cached index: ' + out.reason); return { success: false, error: out.reason }; }
     const codes = Object.keys(out.byCode);
     for (let i = 0; i < codes.length; i += 100) {
@@ -399,17 +435,19 @@ function gameTeacherRefresh() {
     cache.put('tch_meta', JSON.stringify(out.meta), TCH_STATE_TTL_S); // last: a reader that sees the new meta sees the new states
     return { success: true, teachers: codes.length };
   } finally {
-    lock.releaseLock();
+    cache.remove('tch_building');
   }
 }
 
-// The cached TeacherState for an employee code, or null. A miss with the index present means "no state for this person"
-// (not on the roster, nothing logged, no timetable); only an absent index (cold cache, 6 h expiry) rebuilds, once, under the lock.
+// The cached TeacherState for an employee code, or null. Call it BEFORE gameWithLock_, never inside (a cold cache runs the refresh).
+// A miss for a code the index lists (a single key evicted early) or an absent index (cold cache, 6 h expiry) rebuilds; a code the
+// index does not list has no state (not on the roster, nothing logged, no timetable) and gets null with no rebuild.
 function tchStateFor_(code) {
   const cache = CacheService.getScriptCache();
   const hit = tchReadJson_(cache, 'tch_' + code);
   if (hit) return hit;
-  if (cache.get('tch_meta')) return null;
+  const meta = tchReadJson_(cache, 'tch_meta');
+  if (meta && (!Array.isArray(meta.codes) || meta.codes.indexOf(code) === -1)) return null;
   try { gameTeacherRefresh(); } catch (err) { return null; }
   return tchReadJson_(cache, 'tch_' + code);
 }
@@ -438,7 +476,7 @@ var TCH_CAMPUS_BY_PREFIX = { KUL: 'LMS1', KEL: 'LMS2', DUN: 'LMS3', NCM: 'LMS4',
 function tchEmployeeFromBook_(email, book) {
   email = String(email || '').trim().toLowerCase();
   if (!email) return null;
-  const cell = function (v) { return String(v || '').replace(/[​-‏﻿⁠]/g, '').trim(); }; // same cleaning as ss-forms-sync.gs normalizeCell_
+  const cell = function (v) { return String(v || '').replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim(); }; // same cleaning as ss-forms-sync.gs normalizeCell_
   const rowsOf = function (tab) { return book.getSheetByName(tab).getDataRange().getValues(); };
   let code = null;
   const personal = rowsOf('EmpPersonal'), pe = personal[0].indexOf('AuthEmail'), pc = personal[0].indexOf('EmployeeCode');

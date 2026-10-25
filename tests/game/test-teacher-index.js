@@ -177,10 +177,34 @@ assert.deepStrictEqual(snap.periodsByDay.Mon, [{ cls: 'Class 9', subj: 'Physics'
 // the state fits one CacheService value (100 KB) with room to spare
 assert.ok(JSON.stringify(s1).length < 90000);
 
+// ---- teacher config (Ruling 12): defaults, Game Config `teacher` overrides, bad values fall back
+const D = J(ctx.tchConfig_(null));
+assert.deepStrictEqual(D, { remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
+  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7, loggedDaysWindow: 60 });
+assert.deepStrictEqual(J(ctx.tchConfig_({ teacher: { remediationDays: 10, examKeywords: ['quiz'], cap: -1, core: 'x', planLeadDays: NaN, junk: 1 } })),
+  Object.assign({}, D, { remediationDays: 10, examKeywords: ['quiz'] }));
+for (const bad of [undefined, null, 5, 'x', [], { teacher: 'x' }, { teacher: null }, { teacher: [1] }]) assert.deepStrictEqual(J(ctx.tchConfig_(bad)), D);
+ctx.tchConfig_(null).examKeywords.push('mutated'); assert.deepStrictEqual(J(ctx.tchConfig_(null)).examKeywords, D.examKeywords);   // defaults are never shared
+// remediationDays reaches the episode rule: a remediation 12 days after the CWA counts by default, not with {"remediationDays":10}
+const rr = (ch, tag, d) => rec('T Two', 'Class 3', 'English', ch, tag, 100 + d);
+const remFeed = { cwRecords: [rr('Rain', 'Chapter Teaching', 0), rr('Rain', 'Chapter Teaching', 1), rr('Rain', 'Chapter Teaching', 2), rr('Rain', 'CWA', 3), rr('Rain', 'Remediation', 15)] };
+const remAt = (c) => J(ctx.tchBuildIndex_(remFeed, roster, [], null, null, Object.assign({ now: D0 + 130 * DAY }, c)).byCode[C2]).episodes[0].remediatedAt;
+assert.strictEqual(remAt({}), D0 + 115 * DAY + remFeed.cwRecords[4].timeMs % DAY);
+assert.strictEqual(remAt({ teacher: { remediationDays: 10 } }), null);
+// tagInflationThreshold reaches the tag rule: with 3, an entry carrying 3 tags is not a CWA marker
+const tagFeed = { cwRecords: [rr('Sun', 'Chapter Teaching', 0), rr('Sun', 'Chapter Teaching', 1), rr('Sun', 'CWA, Activity, RT', 2), rr('Sun', 'Chapter Teaching', 3)] };
+const tagEp = (c) => J(ctx.tchBuildIndex_(tagFeed, roster, [], null, null, Object.assign({ now: D0 + 130 * DAY }, c)).byCode[C2]).episodes[0];
+assert.strictEqual(tagEp({}).cwaFrom, 'tag'); assert.strictEqual(tagEp({ teacher: { tagInflationThreshold: 3 } }).cwaFrom, null);
+// loggedDaysWindow replaces the 60-day constant
+assert.deepStrictEqual(Object.keys(J(ctx.tchBuildIndex_(feed, roster, tracker, timetable, null, { now: NOW, teacher: { loggedDaysWindow: 5 } }).byCode[C1]).loggedDays), ['2026-10-30', '2026-10-31']);
+
 // keepPrevious: the feed fell from 1,000 to 600 records, or came back empty/invalid, or the roster is empty
 const filler = (n) => Array.from({ length: n }, (_, i) => rec('T One', 'Class 7', 'Math', 'Light', 'Chapter Teaching', i % 50));
 const k = ctx.tchBuildIndex_({ cwRecords: filler(600), cmData: {} }, roster, [], timetable, { records: 1000 }, cfg);
 assert.strictEqual(k.keepPrevious, true); assert.ok(k.reason);
+const prev1000 = (n) => ctx.tchBuildIndex_({ cwRecords: filler(n), cmData: {} }, roster, [], timetable, { records: 1000 }, cfg);
+assert.ok(!prev1000(750).keepPrevious); assert.ok(!prev1000(700).keepPrevious);          // 0.7 of the last build is the line: 750 and 700 build
+assert.strictEqual(prev1000(699).keepPrevious, true); assert.strictEqual(prev1000(650).keepPrevious, true);
 assert.ok(!ctx.tchBuildIndex_({ cwRecords: filler(900), cmData: {} }, roster, [], timetable, { records: 1000 }, cfg).keepPrevious);  // a normal wobble is fine
 assert.ok(!ctx.tchBuildIndex_({ cwRecords: filler(600), cmData: {} }, roster, [], timetable, null, cfg).keepPrevious);                // nothing to protect
 assert.strictEqual(ctx.tchBuildIndex_({ cwRecords: [], cmData: {} }, roster, [], timetable, null, cfg).keepPrevious, true);
@@ -208,7 +232,7 @@ assert.deepStrictEqual(J(tr).map((r) => [r.lmsIdx, r.cls, r.subj, r.ch, r.cwaAt]
 
 // ---- refresh + cache + audit, with Apps Script services stubbed
 const store = new Map(), fetched = [];
-let locks = 0, now = NOW, mode = 'ok';
+let now = NOW, mode = 'ok';
 const fetchOne = (url) => {
   fetched.push(url);
   if (mode === 'fail') return { getResponseCode: () => 500, getContentText: () => '' };
@@ -221,31 +245,44 @@ Object.assign(ctx, {
   CacheService: { getScriptCache: () => ({
     get: (k) => (store.has(k) ? store.get(k) : null), put: (k, v) => { assert.ok(v.length < 100000, 'value over 100 KB'); store.set(k, v); },
     putAll: (o) => Object.keys(o).forEach((k) => { assert.ok(o[k].length < 100000); store.set(k, o[k]); }), remove: (k) => store.delete(k) }) },
-  LockService: { getScriptLock: () => ({ waitLock: () => { locks++; }, releaseLock: () => { locks--; } }) },
+  LockService: { getScriptLock: () => { throw new Error('the refresh must not take the script lock'); } },
   UrlFetchApp: { fetch: fetchOne, fetchAll: (rs) => rs.map((r) => fetchOne(typeof r === 'string' ? r : r.url)) },
   SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => ({ getDataRange: () => ({ getValues: () => (n === 'Overrides' ? [['Timestamp']] : [['School', 'Class', 'Subject', 'Chapter Name', 'Actual CWA Date']]) }) }) }) },
   Date: class extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } },
 });
 now += 120000; ctx.gameTeacherRefresh();
-assert.strictEqual(locks, 0, 'lock released');
+assert.ok(!store.has('tch_building'), 'building marker cleared');
 const meta = JSON.parse(store.get('tch_meta'));
 assert.strictEqual(meta.records, recs.length);
 assert.strictEqual(JSON.parse(store.get('tch_' + C1)).code, C1);
 assert.ok(store.has('tch_' + C2));
+assert.deepStrictEqual(meta.codes.slice().sort(), Object.keys(out.byCode).sort());
 assert.ok(fetched.some((u) => /action=employees/.test(u)) && fetched.some((u) => /timetable\.json/.test(u)));
 // tchStateFor_: a hit reads the cache; a miss with meta present is a plain null (no rebuild); with nothing cached it rebuilds once
 const n0 = fetched.length;
 assert.strictEqual(ctx.tchStateFor_(C1).code, C1);
 assert.strictEqual(ctx.tchStateFor_('NOPE/00/00/000'), null);
 assert.strictEqual(fetched.length, n0);
-store.clear();
+// ... a single key evicted while tch_meta survives: a code the index lists is rebuilt (not null); the 60 s guard stops a storm
+store.delete('tch_' + C2);
+assert.strictEqual(ctx.tchStateFor_(C2), null);                 // index built a moment ago: no rebuild yet
+assert.strictEqual(fetched.length, n0);
+now += 120000;
 assert.strictEqual(ctx.tchStateFor_(C2).code, C2);
-assert.ok(fetched.length > n0 && store.has('tch_meta'));
+assert.ok(fetched.length > n0);
+store.clear();
+const n00 = fetched.length;
+assert.strictEqual(ctx.tchStateFor_(C2).code, C2);
+assert.ok(fetched.length > n00 && store.has('tch_meta'));
+// another refresh already running: this one does nothing (and a crashed run's marker expires with its TTL)
+store.clear(); store.set('tch_building', '1');
+const nb = fetched.length; ctx.gameTeacherRefresh();
+assert.strictEqual(fetched.length, nb); store.delete('tch_building');
 // a failed fetch keeps what is cached; so does a feed that suddenly shrinks
 const before = store.get('tch_' + C1);
 mode = 'fail'; now += 120000;
 ctx.gameTeacherRefresh();
-assert.strictEqual(store.get('tch_' + C1), before); assert.strictEqual(locks, 0);
+assert.strictEqual(store.get('tch_' + C1), before); assert.ok(!store.has('tch_building'));
 mode = 'ok'; now += 120000; store.set('tch_meta', JSON.stringify({ records: 100000, builtAt: 1 }));
 ctx.gameTeacherRefresh();
 assert.strictEqual(JSON.parse(store.get('tch_meta')).records, 100000);
@@ -253,6 +290,16 @@ assert.strictEqual(JSON.parse(store.get('tch_meta')).records, 100000);
 now += 120000; store.clear(); ctx.gameTeacherRefresh();
 const n1 = fetched.length; ctx.gameTeacherRefresh();
 assert.strictEqual(fetched.length, n1);
+
+// Game Config: the `teacher` row is read even when the framework's defaults do not list it, and merged over TCH_DEFAULTS
+ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: () => 'sheet-id' }) };
+ctx.SpreadsheetApp = { openById: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [['Key', 'Value'], ['cap', '{"Principal":3}'], ['teacher', '{"remediationDays":10,"cap":"x"}']] }) }) }) };
+const loaded = J(ctx.tchLoadCfg_());
+assert.strictEqual(loaded.cap.Principal, 3);                       // the framework's own keys still parse
+assert.strictEqual(J(ctx.tchConfig_(loaded)).remediationDays, 10);
+assert.strictEqual(J(ctx.tchConfig_(loaded)).cap, 3);              // bad type -> default
+ctx.PropertiesService = { getScriptProperties: () => { throw new Error('no'); } };
+assert.strictEqual(J(ctx.tchLoadCfg_()).cap.Principal, 5);        // workbook unreachable: framework defaults, no throw
 
 // the audit action: Owner only, counts only (no names)
 assert.strictEqual(typeof ctx.GAME_MODULE_ACTIONS.teacherindexaudit, 'function');

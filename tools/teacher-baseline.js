@@ -42,9 +42,9 @@ if (process.argv[2] === '--index') {
   });
   console.log(`timetable periods (CW/HW labels, as stored) that exist in the feed for that campus: ${matched} / ${labelled} = ${pct(matched, labelled)}  (${rows} non-free rows, ${Object.keys(unknown).length} distinct non-CW/HW or unknown subject labels dropped)`);
   if (matched / labelled < 0.9) ok = false;
-  const sizes = Object.keys(out.byCode).map((c) => JSON.stringify(out.byCode[c]).length).sort((a, b) => a - b);
+  const sizes = Object.keys(out.byCode).map((c) => Buffer.byteLength(JSON.stringify(out.byCode[c]), 'utf8')).sort((a, b) => a - b);
   const q = (f) => sizes[Math.min(sizes.length - 1, Math.floor(f * sizes.length))];
-  console.log(`TeacherStates: ${sizes.length}; size bytes p50 ${q(0.5)}, p95 ${q(0.95)}, max ${sizes[sizes.length - 1]}  (limit 90000)`);
+  console.log(`TeacherStates: ${sizes.length}; size in UTF-8 bytes p50 ${q(0.5)}, p95 ${q(0.95)}, max ${sizes[sizes.length - 1]}  (limit 90000)`);
   if (q(0.95) >= 90000) ok = false;
   const states = Object.keys(out.byCode).map((c) => out.byCode[c]);
   const eps = [].concat.apply([], states.map((s) => s.episodes));
