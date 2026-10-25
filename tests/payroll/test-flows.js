@@ -398,7 +398,7 @@ module.exports = function run(t) {
     });
     const ids = call('month', { month: O }).staff.offers.map((x) => x.id);
     assert.deepEqual(ids, ['T-0501'], 'Rejected and Not-submitted offers are hidden');
-    const bad = call('joinoffer', { month: O, applicantId: 'T-0500', code: 'KUL/28/02/900', doj: '2028-02-03' });
+    const bad = call('joinoffer', { month: O, applicantId: 'T-0500', code: 'KUL/99/02/900', doj: '2028-02-03' });
     assert.match(bad.error, /not Owner-approved/);
   });
 
@@ -420,34 +420,34 @@ module.exports = function run(t) {
     // Teaching Applicants workbook: row 600, column P = locked code, column Q = Date of Joining (text yyyy-MM-dd).
     const rows = [];
     rows[599] = [];
-    rows[599][15] = 'KUL/28/03/900';
+    rows[599][15] = 'KUL/99/03/900';
     h.books['1aS'] = makeBook({ 'Form Responses 1': makeSheet(rows, 'Form Responses 1', h.counter) }, h.counter);
     call('recordoffer', { applicantId: 'T-0600', name: 'Hiring Person', entity: 'LMS1', designation: 'PRT', fullBasic: 10001, epf: true, tuition: 0, cti: 15000, netY1: 12000 }, 'principal-token'); // bumps the staff cache
     let offer = call('month', { month: O }).staff.offers.find((x) => x.id === 'T-0600');
-    assert.deepEqual(offer.hiring, { ok: true, doj: '', code: 'KUL/28/03/900' }, 'read from the hiring sheet, no date yet');
-    const early = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' });
+    assert.deepEqual(offer.hiring, { ok: true, doj: '', code: 'KUL/99/03/900' }, 'read from the hiring sheet, no date yet');
+    const early = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/99/03/900', doj: '2028-03-20' });
     assert.match(early.error, /has not entered the Date of Joining/);
     rows[599][16] = '2028-03-04';
     // The Staff Roster refusing the joiner stops Joined before anything is written in Payroll.
     h.roster.failJoin = 'The Hiring Dashboard has no code locked for T-0600';
-    const refused = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' });
+    const refused = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/99/03/900', doj: '2028-03-20' });
     assert.match(refused.error, /Staff Roster did not add T-0600: The Hiring Dashboard has no code locked.*nothing was saved/);
     assert.ok(call('month', { month: O }).staff.offers.find((x) => x.id === 'T-0600'), 'offer still open after a refused Joined');
     h.roster.failJoin = '';
-    const ok = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/28/03/900', doj: '2028-03-20' }); // typed date is ignored
+    const ok = call('joinoffer', { month: O, applicantId: 'T-0600', code: 'KUL/99/03/900', doj: '2028-03-20' }); // typed date is ignored
     assert.equal(ok.success, true, ok.error);
-    assert.deepEqual(h.roster.joins[h.roster.joins.length - 1], { applicantId: 'T-0600', code: 'KUL/28/03/900', designation: 'PRT' }, 'Joined puts the joiner on the Staff Roster');
+    assert.deepEqual(h.roster.joins[h.roster.joins.length - 1], { applicantId: 'T-0600', code: 'KUL/99/03/900', designation: 'PRT' }, 'Joined puts the joiner on the Staff Roster');
     assert.deepEqual(ok.rosterJoin, { addedToMaster: true, salaryRow: 'added' });
-    const row = ok.rows.find((x) => x.code === 'KUL/28/03/900');
+    const row = ok.rows.find((x) => x.code === 'KUL/99/03/900');
     assert.equal(row.paidDays, 28, 'prorated from 4 March (28 of 31 days), not from the typed 20th');
   });
 
   t.test('staff are listed by the serial at the end of the code, not as text', () => {
     const fn = (c) => h.run("payCompareCodes_('" + c[0] + "','" + c[1] + "')");
-    assert.equal(fn(['KUL/08/05/072', 'KUL/42/00/028']) > 0, true, '072 sorts after 028');
-    const codes = ['KUL/08/05/072', 'KUL/12/05/021', 'KUL/17/08/042', 'KUL/13/04/028', 'KUL/95/10/001', 'NCM/22/07/054#2', 'NCM/22/07/054', 'KUL/26/02/1994'];
+    assert.equal(fn(['KUL/99/01/072', 'KUL/42/00/028']) > 0, true, '072 sorts after 028');
+    const codes = ['KUL/99/01/072', 'KUL/99/02/021', 'KUL/99/03/042', 'KUL/99/04/028', 'KUL/99/05/001', 'NCM/99/06/054#2', 'NCM/99/06/054', 'KUL/99/07/1994'];
     const sorted = codes.slice().sort((a, b) => h.run("payCompareCodes_('" + a + "','" + b + "')"));
-    assert.deepEqual(sorted, ['KUL/95/10/001', 'KUL/12/05/021', 'KUL/13/04/028', 'KUL/17/08/042', 'NCM/22/07/054', 'NCM/22/07/054#2', 'KUL/08/05/072', 'KUL/26/02/1994']);
+    assert.deepEqual(sorted, ['KUL/99/05/001', 'KUL/99/02/021', 'KUL/99/04/028', 'KUL/99/03/042', 'NCM/99/06/054', 'NCM/99/06/054#2', 'KUL/99/01/072', 'KUL/99/07/1994']);
     const rows = call('month', { month: '2028-04' }).rows.filter((r) => r.entity === 'LMS3' || r.entity === 'HES');
     ['HES', 'LMS3'].forEach((e) => {
       const ser = rows.filter((r) => r.entity === e).map((r) => Number(r.code.match(/(\d+)\D*$/)[1]));

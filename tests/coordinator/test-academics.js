@@ -14,12 +14,12 @@ const feed = { ayStart: '2026-04-01', cwRecords: [
   rec('Seema', 3, '2026-10-15', 'Class 3', 'EVS', 'Activity', ''),                    // same name, other campus: not the roster's LMS2 Seema
   rec('Before Year', 0, '2026-03-20', 'Class 1', 'Math', 'Activity', ''),            // before ayStart: ignored
 ] };
-const roster = [{ employeeCode: 'KEL/20/01/001', name: 'SEEMA', school: 'LMS 2' }];
+const roster = [{ employeeCode: 'KEL/99/01/001', name: 'SEEMA', school: 'LMS 2' }];
 const r = ctx.coordAcademicsAggregate_(feed, roster, now);
 
 const ay = r.ay.teachers, by = {}; ay.forEach((t) => { by[t.key] = t; });
 assert.strictEqual(ay.length, 3);                                  // Seema (LMS2), Unknown (LMS3), Seema-at-LMS4 unmatched
-const s = by['KEL/20/01/001'];
+const s = by['KEL/99/01/001'];
 assert.strictEqual(s.entries, 3);  assert.strictEqual(s.days, 3);  assert.strictEqual(s.matched, true);
 assert.strictEqual(s.cwN, 3);      assert.strictEqual(s.hwN, 1);
 assert.strictEqual(s.cw['Chapter Teaching'], 2); assert.strictEqual(s.cw['OTT'], 1); assert.strictEqual(s.hw['Revise for OTT'], 1);
@@ -28,6 +28,6 @@ assert.strictEqual(s.lastDate, '2026-10-16');
 assert.ok(ay.some((t) => !t.matched && t.campus === 'LMS3'));       // unmatched kept, not dropped
 assert.ok(ay.some((t) => !t.matched && t.campus === 'LMS4'));       // roster match is per campus
 assert.strictEqual(ay.reduce((a, t) => a + t.entries, 0), 5);       // every in-window entry accounted for; the pre-AY one is not
-assert.strictEqual(r.d30.teachers.find((t) => t.key === 'KEL/20/01/001').entries, 2);
+assert.strictEqual(r.d30.teachers.find((t) => t.key === 'KEL/99/01/001').entries, 2);
 assert.strictEqual(JSON.stringify(r.ay.tags.cw), JSON.stringify(['Activity', 'Chapter Teaching', 'OTT', 'Question & Answers']));
 console.log('coordinator academics: ok');
