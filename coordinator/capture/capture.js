@@ -342,14 +342,13 @@ function drawSheet() {
     const bus = busOf(S.run.reg), done = new Set(S.run.stops.map((s) => s.name));
     const here = S.fix, list = (bus ? bus.stops : []).map((s) => ({ ...s, m: here && Number.isFinite(s.lat) ? distanceM(here, s) : null }))
       .sort((a, b) => (done.has(a.name) - done.has(b.name)) || ((a.m ?? 1e9) - (b.m ?? 1e9)));
-    sheet.innerHTML = '<h2 id="sheetTitle">Which stop?</h2>' +
+    sheet.innerHTML = '<div class="cap-sheethead"><h2 id="sheetTitle">Which stop?</h2><button type="button" class="cap-btn" data-a="cancel">Cancel</button></div>' +
       (here ? '' : '<p class="cap-note">No GPS fix yet: the stop is saved without its position.</p>') +
       (list.length ? '<div class="cap-picks">' + list.slice(0, 12).map((s) => `<button type="button" class="cap-pick" data-name="${esc(s.name)}"><span>${esc(s.name)}</span>` +
         `<small>${done.has(s.name) ? 'Tagged' : s.m != null ? (s.m < 1000 ? Math.round(s.m) + ' m' : (s.m / 1000).toFixed(1) + ' km') : ''}</small></button>`).join('') + '</div>'
         : '<p class="cap-note">No known stops for this bus yet. Type the name.</p>') +
       '<label class="cap-field" for="newStop">New stop</label><div class="cap-row"><input id="newStop" class="cap-input" maxlength="80" placeholder="Place name, not a person" autocomplete="off">' +
-      '<button type="button" id="useName" class="cap-btn">Use</button></div>' +
-      '<button type="button" class="cap-end" data-a="cancel">Cancel</button>';
+      '<button type="button" id="useName" class="cap-btn">Use</button></div>';
     sheet.querySelectorAll('.cap-pick').forEach((b) => b.addEventListener('click', () => pick(b.dataset.name)));
     const useTyped = () => { const n = $('newStop').value.trim(); if (n) pick(n); else $('newStop').focus(); };
     $('useName').addEventListener('click', useTyped);
@@ -373,7 +372,7 @@ function drawSheet() {
     else if (b.dataset.a === 'back') { st.step = 'pick'; drawSheet(); }
     else saveStop(b);
   }));
-  const first = sheet.querySelector('button'); if (first) first.focus();
+  const first = sheet.querySelector('.cap-pick') || sheet.querySelector('button:not([data-a="cancel"])'); if (first) first.focus(); // the nearest stop, not Cancel
 }
 function pick(name) { S.stop.name = name; S.stop.step = 'next'; drawSheet(); }
 async function saveStop(btn) {
@@ -472,7 +471,7 @@ function drawRow(li, run, p) {
   const pct = p.total ? (100 * p.sent / p.total) : run.endSent ? 100 : 0;
   li.innerHTML = `<div class="cap-runhead"><b>${esc(run.reg)}</b><span>${esc(KIND[run.kind])}</span></div><p class="cap-note">${when(run.startedAt)}</p>` +
     `<p class="cap-line">${runLine(run, p)}</p>` + (run.kind === 'count' ? '' : `<div class="cap-bar"><i style="width:${pct}%"></i></div>`) +
-    `<p class="cap-note ${p.state === 'error' || (!p.state && run.status === 'error') ? 'cap-bad' : ''}">${esc(stateLine(run, p))}</p>`;
+    `<p class="cap-note ${p.state === 'error' || (!p.state && run.status === 'error') ? 'cap-bad' : p.state === 'done' || (!p.state && run.endSent) ? 'cap-good' : ''}">${esc(stateLine(run, p))}</p>`;
 }
 async function drawUpload() {
   const runs = (await store.runs()).sort((a, b) => b.startedAt - a.startedAt), list = $('runList');

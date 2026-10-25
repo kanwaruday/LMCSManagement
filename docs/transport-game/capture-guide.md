@@ -33,7 +33,10 @@ Privacy:
 ## During the run
 
 - Pick **Timelapse** or **Count run**, pick the bus, and tap **Start**.
-- The top line is the mission, for example "Capture Route 18: 6 of 14 stops tagged".
+- The top line is the mission, for example "Capture Route 18: 6 of 14 stops tagged", with one pip per stop under it.
+- With the phone on its side in the mount, the run fills the screen: the camera on the left, **STOP HERE** on the
+  right. STOP HERE stays at the bottom all run: a message takes room from the camera, never pushes the button away.
+- The line under the camera shows the GPS. Amber means waiting or weak ("frames paused"): frames resume by themselves.
 - **STOP HERE**: tap it when the bus stops. The nearest known stops come first. If the stop is not listed, type the place name
   under **New stop** (a place, never a person).
 - **Keep the page open and the screen on.** If the phone locks or you switch apps, capture pauses. When you come back it

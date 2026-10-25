@@ -27,6 +27,7 @@
 .cap-msg{font-size:15px;font-weight:700;color:var(--c-bad);margin:8px 0}
 .cap-msg:empty,.cap-note:empty{display:none}
 .cap-bad{color:var(--c-bad);font-weight:700}
+.cap-good{color:var(--c-ok);font-weight:700}
 .cap-field{display:block;font-weight:700;font-size:15px;margin:6px 0 4px}
 .cap-select,.cap-input{width:100%;min-height:52px;border:2px solid var(--c-ink);border-radius:10px;padding:0 12px;font:inherit;font-size:17px;background:#fff;color:var(--c-ink)}
 .cap-check{display:flex;gap:12px;align-items:center;min-height:60px;border:2px solid var(--c-ink);border-radius:10px;padding:10px 14px;margin:14px 0 4px;font-weight:700;cursor:pointer}
@@ -115,6 +116,9 @@
 .cap-sheetwrap.cap-aim{background:rgba(0,0,0,.12)} /* taking the stop photo: the viewfinder stays clear */
 .cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
 .cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}
+.cap-sheethead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+.cap-sheethead h2{margin:0}
+.cap-sheethead .cap-btn{flex:none}
 .cap-picks{display:grid;gap:8px;margin-bottom:12px}
 .cap-pick{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:56px;padding:6px 14px;border:2px solid var(--c-ink);border-radius:10px;background:#fff;font-weight:700;text-align:left}
 .cap-pick span{min-width:0;overflow-wrap:anywhere}
