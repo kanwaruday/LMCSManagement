@@ -88,7 +88,9 @@ def scans():
 DESCRIPTIONS = DB.parent / "descriptions"
 PAPER_DOCS = {"rc": "RC", "fitness": "fitness", "pollution": "pollution", "insurance": "insurance", "mv_tax": "MV tax", "route_permit": "route permit"}
 # the speed governor certificate is left out: its Make / Model are the governor's, not the bus's
-IDENTITY = {"chassisNo", "engineNo", "make", "modelAndVariant", "fuel", "dateOfRegistration"}  # the RC beats every other paper for these
+# which paper wins, before "newest": the RC for the identity fields; for "Seats on the RC" the RC, then the fitness certificate
+PRIORITY = {**{f: ("rc",) for f in ("chassisNo", "engineNo", "make", "modelAndVariant", "fuel", "dateOfRegistration")},
+            "seatingCapacityAsPerRc": ("rc", "fitness")}
 PAPER_KEYS = {  # Key data key (lower case, letters and digits only, a leading "(ii) " dropped) -> papers quest field id (mfgYear: shown only)
     "chassisNo": {"chassisno", "chassisnumber", "chassisnoofvehicle"},
     "engineNo": {"engineno", "enginenumber", "enginemotorno", "enginemotornumber", "enginenoofvehicle"},
@@ -179,8 +181,9 @@ def same_paper_value(field, a, b):
 
 def papers_from(records):
     """records [{reg, key (rc / fitness / ...), when (yyyy-mm-dd, for newest), file, link, body (the scan's Key data text)}] ->
-    {reg: {fieldId: {value, doc, file, link, disagree?}}}. The RC beats every other paper for the identity fields; otherwise the
-    newest scan wins. Scans that disagree keep the winner and say disagree: True."""
+    {reg: {fieldId: {value, doc, file, link, disagree?}}}. PRIORITY says which paper wins (the RC for identity fields; RC, then
+    fitness for seats); otherwise the newest scan wins. disagree: True only when scans of the WINNING kind disagree (two RC scans):
+    a misread on another paper never raises the flag; the winner stands quietly."""
     seen = {}  # (reg, field) -> [(is_rc, when, rec, value)]
     for r in records:
         if r["key"] not in PAPER_DOCS:
@@ -196,10 +199,10 @@ def papers_from(records):
                 seen.setdefault((r["reg"], field), []).append((r["key"] == "rc", r.get("when") or "", r, v))
     out = {}
     for (reg, field), c in seen.items():
-        rank = (lambda x: (x[0], x[1])) if field in IDENTITY else (lambda x: x[1])
-        win = max(c, key=rank)
+        pri = PRIORITY.get(field, ())
+        win = max(c, key=lambda x: (tuple(x[2]["key"] == k for k in pri), x[1]))
         e = {"value": win[3], "doc": PAPER_DOCS[win[2]["key"]], "file": win[2]["file"], "link": win[2]["link"]}
-        if any(not same_paper_value(field, x[3], win[3]) for x in c):
+        if any(x[2]["key"] == win[2]["key"] and not same_paper_value(field, x[3], win[3]) for x in c):
             e["disagree"] = True
         out.setdefault(reg, {})[field] = e
     return out
@@ -218,10 +221,15 @@ def paper_records():
 
 
 def paper_overrides(papers, ov):
-    """A registration date typed into the vault's Transport Overrides note (Document "Registration" or "RC") beats every scan."""
+    """A registration date typed into the vault's Transport Overrides note (Document "Registration" or "RC") beats every scan;
+    an RC scan that says otherwise is flagged (disagree), any other paper is not."""
     for (reg, key), o in ov.items():
         if key == "rc" and o.get("date"):
-            papers.setdefault(reg, {})["dateOfRegistration"] = {"value": o["date"], "doc": "overrides", "file": "Transport overrides note", "link": ""}
+            was = papers.setdefault(reg, {}).get("dateOfRegistration")
+            e = {"value": o["date"], "doc": "overrides", "file": "Transport overrides note", "link": ""}
+            if was and was["doc"] == "RC" and was["value"] != o["date"]:
+                e["disagree"] = True
+            papers[reg]["dateOfRegistration"] = e
 
 
 def seen_ids():
@@ -431,20 +439,28 @@ def selftest_papers():
         rec("TEST02", "insurance", "2026-02-01", **{"Fuel Type": "Petrol/CNG", "Date of Regn.": "12/03/2016", "Year of Mfg": "2015",
                                                     "Engine No.": "Not Available", "(ii) Seating Capacity": "=40"}),
         rec("TEST02", "speed_governor", "2026-03-01", **{"Make": "GOVERNORCO", "Model Name": "SG-1"}),
+        rec("TEST03", "rc", "2018-01-01", **{"Chassis No": "TESTCHASSIS0003"}),
+        {**rec("TEST03", "rc", "2020-01-01", **{"Chassis No": "TESTCHASSIS0004"}), "link": "L-TEST03-rc2"},
+        rec("TEST03", "fitness", "2021-01-01", **{"Seating Capacity": "40+1"}),
+        rec("TEST03", "route_permit", "2025-01-01", **{"Seating Capacity": "37"}),
     ]
     p = papers_from(recs)
     a = p["TEST01"]
     ok(a["chassisNo"]["value"] == "TESTCHASSIS0009" and a["chassisNo"]["doc"] == "RC", "the RC beats a newer fitness scan for the chassis no.")
-    ok(a["chassisNo"]["disagree"] is True, "two scans with different chassis numbers are flagged")
+    ok(not a["chassisNo"].get("disagree"), "a fitness scan that reads the chassis no. differently from the RC raises no flag: the RC wins quietly")
     ok(a["chassisNo"]["link"] == "L-TEST01-rc" and a["chassisNo"]["file"] == "rc.jpg", "the winner's file and link travel with the value")
     ok(a["engineNo"]["value"] == "TESTENGINE01" and not a["engineNo"].get("disagree"), "agreeing scans are not flagged")
     ok(a["make"]["value"] == "TESTMAKER" and a["modelAndVariant"]["value"] == "TESTMODEL 1512", "make and model as written")
     ok(a["fuel"] == {"value": "Diesel", "doc": "RC", "file": "rc.jpg", "link": "L-TEST01-rc"}, "fuel normalised, the RC wins, Diesel = Diesel")
     ok(a["dateOfRegistration"]["value"] == "2017-04-05", "a 05-Apr-2017 date becomes yyyy-mm-dd")
-    ok(a["seatingCapacityAsPerRc"]["value"] == "15 (including Driver)" and a["seatingCapacityAsPerRc"]["doc"] == "fitness", "seats: the newest scan wins, as written")
-    ok(not a["seatingCapacityAsPerRc"].get("disagree"), "15 (including Driver) and 14+1 are the same 15 seats")
+    ok(a["seatingCapacityAsPerRc"]["value"] == "14+1" and a["seatingCapacityAsPerRc"]["doc"] == "RC", "seats on the RC: the RC beats a newer fitness scan, as written")
     ok(a["emissionNorm"]["value"] == "BS-VI" and a["emissionNorm"]["doc"] == "pollution", "emission norm: the newest scan wins (not an identity field)")
-    ok(a["emissionNorm"]["disagree"] is True, "BS-VI against the RC's BHARAT STAGE IV is a disagreement")
+    ok(not a["emissionNorm"].get("disagree"), "the winning pollution scan against an RC of another kind raises no flag")
+    c3 = p["TEST03"]
+    ok(c3["chassisNo"]["value"] == "TESTCHASSIS0004" and c3["chassisNo"]["link"] == "L-TEST03-rc2" and c3["chassisNo"]["disagree"] is True,
+       "two RC scans that disagree: the newer RC wins and the flag shows")
+    ok(c3["seatingCapacityAsPerRc"]["value"] == "40+1" and c3["seatingCapacityAsPerRc"]["doc"] == "fitness" and not c3["seatingCapacityAsPerRc"].get("disagree"),
+       "seats with no RC: fitness beats a newer route permit, quietly")
     ok(a["mfgYear"]["value"] == "2017" and a["mfgYear"]["doc"] == "fitness", "year of manufacture read out of 03/2017")
     b = p["TEST02"]
     ok(b["fuel"]["value"] == "CNG" and b["fuel"]["doc"] == "insurance", "Petrol/CNG is a CNG bus; no RC: the other paper is used")
@@ -464,11 +480,12 @@ def selftest_papers():
     OVERRIDES = Path(tempfile.mkdtemp()) / "overrides.md"
     OVERRIDES.write_text("| Vehicle | Document | Valid to | Note |\n|---|---|---|---|\n| TEST01 | Registration | 02/01/2012 | typed off the RC |\n"
                          "| TEST02 | RC | 2016-03-15 | |\n")
-    ov, warn = overrides({"TEST01", "TEST02"})
+    ov, warn = overrides({"TEST01", "TEST02", "TEST03"})
     ok(ov.get(("TEST01", "rc"), {}).get("date") == "2012-01-02" and not warn, "a registration row parses, a date before 2015 included")
     paper_overrides(p, ov)
-    ok(p["TEST01"]["dateOfRegistration"] == {"value": "2012-01-02", "doc": "overrides", "file": "Transport overrides note", "link": ""}, "the override beats the RC scan")
-    ok(p["TEST02"]["dateOfRegistration"]["value"] == "2016-03-15", "and the insurance scan")
+    ok(p["TEST01"]["dateOfRegistration"] == {"value": "2012-01-02", "doc": "overrides", "file": "Transport overrides note", "link": "", "disagree": True},
+       "the override beats the RC scan, and an RC that says otherwise is flagged")
+    ok(p["TEST02"]["dateOfRegistration"]["value"] == "2016-03-15" and not p["TEST02"]["dateOfRegistration"].get("disagree"), "an insurance scan that differs is not")
     print(f"export_fleet papers selftest: {n} checks passed")
 
 
