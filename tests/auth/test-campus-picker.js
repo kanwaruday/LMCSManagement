@@ -43,7 +43,13 @@ const ALL6 = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   assert.deepStrictEqual(plain(C.scope(S('ALL'), { hes: true })), [...ALL6, 'HES']);
   assert.deepStrictEqual(plain(C.scope(S('LMS4, LMS1'), { hes: true })), ['LMS1', 'LMS4'], 'comma list, sorted, no HES');
   assert.deepStrictEqual(plain(C.scope(S('LMS3'))), ['LMS3']);
-  assert.deepStrictEqual(plain(C.scope(S('HES'), { hes: true })), [], 'HES only offered to ALL sessions');
+  assert.deepStrictEqual(plain(C.scope(S('HES'), { hes: true })), ['HES'], 'HES session on a hes page');
+  assert.deepStrictEqual(plain(C.scope(S('HES'))), [], 'HES session without hes: nothing');
+  assert.deepStrictEqual(plain(C.scope(S('LMS2,HES'), { hes: true })), ['LMS2', 'HES'], 'comma list with HES');
+  assert.deepStrictEqual(plain(C.scope(S('LMS2,HES'))), ['LMS2'], 'comma list, HES only with hes');
+  const h = fakeEl('div');
+  C.mount(h, { session: S('HES') });
+  assert.strictEqual(h.hidden, true, 'HES session without hes: picker hidden');
   assert.deepStrictEqual(plain(C.scope(S('LMS9,<b>'))), [], 'unknown codes never enter scope');
   assert.deepStrictEqual(plain(C.scope(null)), []);
 }
@@ -85,7 +91,12 @@ const ALL6 = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   assert.strictEqual(seen.length, 7, 'one onChange per change');
   p.set(['LMS6', 'LMS2']);
   assert.deepStrictEqual(plain(seen[seen.length - 1]), { all: false, campuses: ['LMS2', 'LMS6'] });
+  let raw; const q = C.mount(fakeEl('div'), { session: S('ALL', 'q@lms.org.in'), onChange: (x) => { raw = x; } });
+  raw.campuses.push('HES'); raw.all = false;
+  assert.deepStrictEqual(plain(q.get()), { all: true, campuses: ALL6 }, 'onChange hands out a copy');
   const n = seen.length; p.set(['LMS2', 'LMS6']);
+  p.get().campuses.push('LMS1'); seen[seen.length - 1].campuses.push('LMS1');
+  assert.deepStrictEqual(plain(p.get()), { all: false, campuses: ['LMS2', 'LMS6'] }, 'returned sel is a copy');
   assert.strictEqual(seen.length, n, 'set() to the same selection does not fire');
 }
 

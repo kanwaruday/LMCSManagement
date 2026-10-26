@@ -12,9 +12,10 @@ window.LMCSCampus = (function () {
     if (!session || !session.campusId) return [];
     const ids = String(session.campusId).split(',').map((s) => s.trim().toUpperCase());
     if (ids.includes('ALL')) return opts && opts.hes ? CODES.concat('HES') : CODES.slice();
-    return CODES.filter((c) => ids.includes(c)); // HES only for ALL sessions, by design
+    return CODES.filter((c) => ids.includes(c)).concat(opts && opts.hes && ids.includes('HES') ? ['HES'] : []);
   }
 
+  const copy = (s) => ({ all: s.all, campuses: s.campuses.slice() }); // pages can't mutate picker state
   const key = (session, multi) => (multi ? 'lmcs-campus:' : 'lmcs-campus1:') + ((session && session.email) || '');
   function read(k) { try { const o = JSON.parse(localStorage.getItem(k)); return o && o.v === 1 ? o.sel : null; } catch (_) { return null; } }
   function write(k, sel) { try { localStorage.setItem(k, JSON.stringify({ v: 1, sel })); } catch (_) { /* private mode: just don't remember */ } }
@@ -69,7 +70,7 @@ window.LMCSCampus = (function () {
       sel = next;
       write(k, multi && sel.all ? 'ALL' : sel.campuses);
       paint();
-      if (o.onChange) o.onChange(sel);
+      if (o.onChange) o.onChange(copy(sel));
     }
     function pick(code) {
       if (!multi) return apply(normalize([code], sc, false));
@@ -79,8 +80,8 @@ window.LMCSCampus = (function () {
     }
 
     paint();
-    if (o.onChange) o.onChange(sel);
-    return { get: () => sel, set: (raw) => apply(normalize(raw, sc, multi)) };
+    if (o.onChange) o.onChange(copy(sel));
+    return { get: () => copy(sel), set: (raw) => apply(normalize(raw, sc, multi)) };
   }
 
   function color(code) {
