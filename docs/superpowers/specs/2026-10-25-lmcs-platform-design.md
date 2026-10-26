@@ -4,7 +4,9 @@ Date: 2026-10-25. Asked for by Uday ("Design platform first", in the LMCS Master
 that shapes every module gets its own design instead of being made inside the messaging plan. **Uday's decisions
 are marked "Uday"; everything else is Claude's call** and open to his correction.
 
-Status: **draft, ready for Uday's approval** (2026-10-26). Nothing is built, no account exists, nothing is deployed.
+Status: **approved by Uday, 2026-10-26** ("Approve with both calls", at acf968e): Coordinator Tasks stay on Sheets until
+after the game go-live, and the platform gets a dedicated Workspace account. Section 13 was added after, at his
+direction. Nothing is built; the build plan for the November Approvals move comes next. Nothing is built, no account exists, nothing is deployed.
 
 Belongs to the umbrella project in the vault, `work/active/lmcs-software-platform.md`. Builds on:
 - the approved messaging design (branch `portal-messaging-design`, 703ae2f,
@@ -605,7 +607,7 @@ The build plan will list the exact environment variable names; Uday fills in the
    (sections 2, 11a).
 4. ~~Approvals timing~~ **Answered (Uday, 2026-10-26): "as soon as we think we are ready, i am hoping 2nd week of
    november".** Section 12: 9–15 November behind gates G1–G9.
-5. **New, for Uday's OK:** move Approvals (with Comments, follow-up allocation and Recommendations) in November, but
+5. ~~Tasks and the Workspace account~~ **Approved (Uday, 2026-10-26): "Approve with both calls."** Was: move Approvals (with Comments, follow-up allocation and Recommendations) in November, but
    keep the Coordinator **Tasks** tab on Sheets until after the game go-live (section 12 explains why). Also: a
    dedicated Workspace account for the platform's Google access (name and licence his call).
 
