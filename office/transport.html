@@ -51,13 +51,13 @@
   <script src="../assets/auth.js?v=afd06314"></script>
   <script src="../assets/campus-picker.js?v=415bc090"></script>
   <script src="../coordinator/transport-rank.js?v=b7edf91e"></script>
-  <script src="../coordinator/shared.js?v=a1d7941a"></script>
+  <script src="../coordinator/shared.js?v=26aa5692"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     // The Coordinator Transport view, reused as is: the Coordinator backend scopes a Fee Clerk to their own campus.
     bootOffice({ onReady: (session) => {
       window.Coord.setSession(session);
-      window.Coord.transportView(document.getElementById('today'), { via: 'Fee Clerk Portal', tabs: ['matrix'] });
+      window.Coord.transportView(document.getElementById('today'), { via: 'Fee Clerk Portal', tabs: ['matrix'], campus: session.campus }); // follows the Office header's campus
     } });
   </script>
 </body>

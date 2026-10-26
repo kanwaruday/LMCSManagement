@@ -294,7 +294,7 @@ window.Coord = (function () {
   }
 
   // ── Transport: fleet document compliance ──────────────────────────
-  // opts (optional): {via: upload source label, tabs: the only tabs shown, first
+  // opts (optional): {via: upload source label, campus: pin to one school (no picker), tabs: the only tabs shown, first
   // one opened} -- the Fee Clerk Portal reuses this view with tabs: ['matrix'].
   function transportView(body, opts) {
     opts = opts || {};
@@ -303,7 +303,9 @@ window.Coord = (function () {
     const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-pick"></div><div class="tr-body"></div>';
     const box = body.querySelector('.tr-body');
-    pickInto(body.querySelector('.tr-pick'), 'Show campuses', (s, live) => { T.sel = s; if (live && T.data) render(); });
+    // opts.campus (the Office header's school) pins the view to that one school: no picker
+    if (opts.campus) T.sel = { all: false, campuses: [cidOf({ campus: opts.campus })] };
+    else pickInto(body.querySelector('.tr-pick'), 'Show campuses', (s, live) => { T.sel = s; if (live && T.data) render(); });
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
     const fmtD = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '-'; // DD/MM/YYYY in tables

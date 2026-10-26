@@ -57,6 +57,16 @@ const S = (campusId) => ({ idToken: 't', email: 'c@lms.test', campusId });
     // a Fee Clerk with one school: the picker hides itself and the list is that school's
     ({ box, pick } = await run(null, S('LMS2')));
     assert.strictEqual(pick.hidden, true, 'single-school scope hides the picker');
+
+    // opts.campus (Office header): no picker at all, only that school's rows, even for an ALL-scope session
+    {
+      const { body, box, pickers } = makeBody('.tr-body');
+      const ctx = makeCtx({ session: S('ALL'), data });
+      ctx.Coord.transportView(body, { tabs: ['matrix'], campus: 'LMS2' });
+      await tick(); await tick();
+      assert.ok(!('.tr-pick' in pickers), 'no picker mounted');
+      assert.ok(box.innerHTML.includes('HP02') && !box.innerHTML.includes('HP01') && !box.innerHTML.includes('HP03'), 'only LMS2 rows');
+    }
   }
 
   // ── Systems (pdrView) ──
