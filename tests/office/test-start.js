@@ -339,4 +339,47 @@ module.exports = function run(t) {
     const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS2', '2026-27'), 'Audit').filter((a) => a.action === 'start.approve');
     assert.equal(au.length, 2); assert.equal(au[0].row_id, 'cash:LMS2'); assert.equal(au[0].campus, 'LMS2');
   });
+
+  const cfg = (h, row) => h.ctx.officeWriteRow_(h.ctx.officeConfigBook_(), 'SetupQuests', Object.assign({ fillRoles: 'FeeClerk,AdminManager', approveRoles: 'Coordinator,Owner', approval: 'yes', cutoff: '2026-10-22', optional: 'no', active: 'yes' }, row));
+
+  t.test('cash switched off: export and get do not crash and show no cash', () => {
+    const h = fresh();
+    cfg(h, { id: 'cash', label: 'Cash in hand', active: 'no' });
+    const r = h.call('start.export', {}, 'fh-token');
+    assert.equal(r.success, true, JSON.stringify(r)); assert.deepEqual(J(r.actual), {});
+    const g = h.call('start.get', {});
+    assert.equal(g.success, true); assert.equal(g.items.filter((i) => i.quest === 'cash').length, 0);
+  });
+
+  t.test('Owner approves any school whatever approveRoles say; nobody else approves their own submission', () => {
+    const h = fresh();
+    cfg(h, { id: 'cash', label: 'Cash in hand', approveRoles: 'Coordinator,FinanceHead' });
+    save(h, cash('LMS1', '10'), 'clerk-token'); sub(h, 'cash', 'LMS1');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve', '', 'owner-token').success, true, 'Owner always approves');
+    save(h, cash('LMS2', '10'), 'fh-token'); sub(h, 'cash', 'LMS2', 'fh-token');
+    assert.equal(appr(h, 'cash', 'LMS2', 'approve', '', 'fh-token').code, 'START_SELF_APPROVE');
+    assert.equal(appr(h, 'cash', 'LMS2', 'return', 'x', 'fh-token').code, 'START_SELF_APPROVE');
+    assert.equal(appr(h, 'cash', 'LMS2', 'approve', '', 'co2-token').success, true);
+    h.addBook('LMS3', '2026-27'); save(h, cash('LMS3', '10')); sub(h, 'cash', 'LMS3', 'owner-token');
+    assert.equal(appr(h, 'cash', 'LMS3', 'approve', '', 'owner-token').success, true, 'the Owner may approve their own');
+  });
+
+  t.test('a save to an approved quest+campus puts it back to draft (audited); start.get and export use the quest cutoff', () => {
+    const h = fresh();
+    save(h, cash('LMS1', '10'), 'clerk-token'); sub(h, 'cash', 'LMS1'); appr(h, 'cash', 'LMS1', 'approve');
+    const r = save(h, cash('LMS1', '11'), 'fh-token');
+    assert.equal(r.success, true); assert.equal(st(r, 'LMS1', 'cash').state, 'draft');
+    assert.equal(st(r, 'LMS1', 'cash').by, 'fh@example.org');
+    assert.deepEqual(J(h.call('start.export', {}, 'fh-token').actual), {}, 'changed cash is not approved any more');
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit').filter((a) => a.action === 'start.reopen');
+    assert.equal(au.length, 1); assert.equal(au[0].row_id, 'cash:LMS1');
+    assert.equal(save(h, cash('LMS1', '12'), 'clerk-token').success, true, 'clerk may edit again');
+    save(h, { quest: 'odometer', item: 'V1', fields: { reg: 'HP 01 V 1', campus: 'LMS1', km: 10, active: 'yes' } }, 'clerk-token');
+    sub(h, 'odometer', 'LMS1'); appr(h, 'odometer', 'LMS1', 'approve');
+    save(h, { quest: 'odometer', item: 'V1', fields: { campus: 'LMS2' } });
+    assert.equal(st(h.call('start.get', {}), 'LMS1', 'odometer').state, 'draft', 'moving a vehicle off an approved school reopens it');
+    cfg(h, { id: 'cash', label: 'Cash in hand', cutoff: '2026-11-01' });
+    assert.equal(h.call('start.get', {}).cutoff, '2026-11-01');
+    assert.equal(h.call('start.export', {}, 'fh-token').cutoff, '2026-11-01');
+  });
 };
