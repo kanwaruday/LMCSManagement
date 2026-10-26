@@ -11,7 +11,8 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../coordinator/shared.css?v=14149e6e" />
   <link rel="stylesheet" href="office.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 </head>
 <body>
   <header class="site">
@@ -46,14 +47,15 @@
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
   <script src="../assets/auth.js?v=afd06314"></script>
+  <script src="../assets/campus-picker.js?v=415bc090"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="../coordinator/transport-live.js?v=9eeb093f"></script>
-  <script src="../coordinator/transport-checks.js?v=6428b866"></script>
+  <script src="../coordinator/transport-live.js?v=e9020cd5"></script>
+  <script src="../coordinator/transport-checks.js?v=becfcf4d"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     bootOffice({ onReady: (session) => {
       window.TransportChecks.mountClerk(document.getElementById('bus-checks'), session);
-      window.TransportLive.mount(document.getElementById('today'), session);
+      window.TransportLive.mount(document.getElementById('today'), session, { campus: session.campus }); // the map follows the Office header's campus
     } });
   </script>
 </body>

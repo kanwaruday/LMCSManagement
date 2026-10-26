@@ -22,7 +22,6 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const stepOf = (id) => CFG.steps.find((s) => s.id === id);
 const routeName = (b) => { const r = String(b.route || '').trim(); return !r ? '' : /^\d+$/.test(r) ? 'Route ' + r : r; };
 const TRANSIENT = /timed? ?out|try again|too many|temporar|lock|failed to fetch|network|service/i;
-const GROUPS = { all: null, lms13: ['LMS1', 'LMS2', 'LMS3'], lms46: ['LMS4', 'LMS5', 'LMS6'] };
 const SVG = {
   ok: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   cam: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
@@ -30,7 +29,7 @@ const SVG = {
   ext: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M10 5H4v15h15v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
-const S = { session: null, data: null, rows: null, profiles: [], scope: 'all', gap: null, view: { v: 'board' }, form: null, sending: false, queued: [], others: 0 };
+const S = { session: null, data: null, rows: null, profiles: [], sel: null, gap: null, view: { v: 'board' }, form: null, sending: false, queued: [], others: 0 };
 // A save waiting on a shared phone belongs to whoever made it (Ruling 36): only they see, send or discard it. Others see a count.
 const mine = (r) => String(r.by || '').toLowerCase() === String(S.session.email || '').toLowerCase();
 
@@ -136,15 +135,10 @@ const badge = '<span class="fs-ready">' + SVG.ok + 'Ready</span>';
 
 function drawBoard() { keepFocus($('board'), drawBoardNow); }
 function drawBoardNow() {
-  const all = S.data ? S.data.campuses : [], wide = GROUPS.lms13.some((c) => all.includes(c)) && GROUPS.lms46.some((c) => all.includes(c));
-  $('scope').hidden = !wide;
-  if (wide) {
-    $('scope').innerHTML = [['all', 'All campuses'], ['lms13', 'LMS 1–3'], ['lms46', 'LMS 4–6']]
-      .map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${S.scope === k}">${l}</button>`).join('');
-    $('scope').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { S.scope = b.dataset.k; drawBoard(); }));
+  if (!S.pick) { // the shared campus picker; its first onChange (at mount) only records the choice
+    S.pick = LMCSCampus.mount($('scope'), { session: S.session, label: 'Campuses', onChange: (s) => { const first = !S.sel; S.sel = s; if (!first) drawBoard(); } });
   }
-  const inScope = (p) => !GROUPS[S.scope] || GROUPS[S.scope].includes(p.campusId);
-  const ps = S.profiles.filter(inScope);
+  const ps = LMCSCampus.filter(S.profiles, S.sel, 'campusId');
   const campuses = [...new Set(ps.map((p) => p.campus))].sort();
   $('teams').innerHTML = campuses.map((c) => {
     const t = FQ.teamBar(c, ps), d = FQ.fleetProgress(ps.filter((p) => p.campus === c), today()), w = (f) => 100 * f;
@@ -155,9 +149,10 @@ function drawBoardNow() {
   const owner = S.data && S.data.owner;
   $('gaps').hidden = !owner || !ps.length;
   if (owner) {
-    const g = FQ.gaps(ps).filter((x) => x.count);
+    const g = FQ.gaps(ps).filter((x) => x.count), per = {}; // per[quest][campus]: a school's own count, for the overlay
+    S.sel.campuses.forEach((c) => FQ.gaps(ps.filter((p) => p.campusId === c)).forEach((x) => { (per[x.quest] = per[x.quest] || {})[c] = x.count; }));
     $('gapList').innerHTML = g.length ? g.map((x) => { const sp = x.text.indexOf(' ');
-      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${esc(x.text.slice(0, sp))}</b><span>${esc(x.text.slice(sp + 1).replace(' still ', ' '))}` +
+      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${S.sel.all ? x.count : LMCSCampus.overlay(per[x.quest], S.sel)}</b><span>${esc(x.text.slice(sp + 1).replace(' still ', ' '))}` +
         `${x.known ? `<span class="fs-gapk">${x.known} ${x.known === 1 ? 'has' : 'have'} ${KNOWN_GAP[x.quest] || 'values'} to confirm</span>` : ''}</span>${SVG.go}</button></li>`; }).join('')
       : '<li class="cap-note">Every bus is set up.</li>';
     $('gapList').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {

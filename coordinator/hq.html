@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
   <style>
     /* Page-only styles. Tokens come from assets/style.css. */
     :root { --rule: #e8e8e8; --ctl: #c8c8c8; --warm: #b45f06; --warm-bg: #fdf1de; --cool: #8f8f8f; }
@@ -36,17 +37,13 @@
     .warm .lvl { color: var(--warm); } .warm .meter i:nth-child(-n+2) { background: var(--warm); }
     .hot { background: var(--red-pale); } .hot .lvl { color: var(--red-dark); } .hot .meter i { background: var(--red); }
     .base.sk-b { height: 74px; }
-    .bases:empty, .tabs:empty { display: none; }
-    .district.off { opacity: 0.5; } /* the district the board isn't showing */
+    .bases:empty { display: none; }
+    #campus-pick { margin: 4px 0 10px; } #tabcount { margin: 6px 0 8px; font-size: 0.85rem; color: var(--gray); }
+    .base.off { opacity: 0.5; } /* a campus the picker isn't showing */
 
     /* layout: the board, and beside it the open request or the track record */
     .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); gap: 28px; align-items: start; }
     .side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
-    .tabs { display: inline-flex; border: 1px solid var(--ctl); border-radius: var(--radius); overflow: hidden; margin-bottom: 4px; }
-    .tabs button { font: inherit; font-size: 0.88rem; font-weight: 600; min-height: 36px; padding: 6px 14px; border: 0; border-right: 1px solid var(--ctl); background: var(--white); color: var(--gray); cursor: pointer; }
-    .tabs button:last-child { border-right: 0; }
-    .tabs button[aria-pressed="true"] { background: var(--dark); color: var(--white); }
-    .tabs .n { font-weight: 400; font-variant-numeric: tabular-nums; margin-left: 4px; }
 
     .board { list-style: none; margin: 0; padding: 0; }
     .contract { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
@@ -132,7 +129,7 @@
       .cols { grid-template-columns: minmax(0, 1fr); }
       .side { position: static; max-height: none; overflow: visible; }
       /* one region at a time: the open request replaces the board, Back returns to it */
-      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
+      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open #campus-pick, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
       .back-board { display: inline-flex; }
       .dv-top .close-dv { display: none; }
     }
@@ -141,7 +138,6 @@
       .wrap { padding: 0 16px; }
       .brand .tagline { display: none; }
       nav.roles span { white-space: nowrap; }
-      .tabs { display: flex; } .tabs button { flex: 1 1 auto; min-height: 44px; padding: 6px 8px; }
       .contract { grid-template-columns: minmax(0, 1fr); }
       .contract .acts { grid-column: 1; grid-row: auto; flex-direction: row; justify-content: flex-end; margin-top: 2px; }
       /* a row action on a phone is an ink text action, not a stack of grey blocks */
@@ -182,12 +178,13 @@
         <h1>Coordinator HQ</h1>
         <a href="systems/index.html#closed">Closed this week</a>
       </div>
+      <div id="campus-pick"></div>
       <p class="finding" id="finding">Loading the network&hellip;</p>
-      <section class="bases" id="bases" aria-label="The six campuses"><div class="district"><h2>LMS 1–3</h2><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div><div class="district"><h2>LMS 4–6</h2><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div></section>
+      <section class="bases" id="bases" aria-label="Campuses"><div class="district"><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div></section>
       <div class="cols">
         <section class="main-col" aria-labelledby="board-h">
           <h2 id="board-h" class="sr-only">Contracts</h2>
-          <div class="tabs" id="tabs" role="group" aria-label="Show campuses"></div>
+          <p class="sub" id="tabcount"></p>
           <ul class="board" id="board"><li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li></ul>
         </section>
         <aside class="side">
@@ -209,8 +206,9 @@
   </footer>
 
   <script src="../assets/auth.js?v=afd06314"></script>
+  <script src="../assets/campus-picker.js?v=415bc090"></script>
   <script src="./shared.js?v=1e6a11b7"></script>
-  <script src="./hq-logic.js?v=88b872ef"></script>
+  <script src="./hq-logic.js?v=f0528b25"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
     // where a Coordinator recommends on an approval. The Owner decides every approval (on the Approvals page); no control
@@ -224,10 +222,9 @@
     const CHOICES = [['Approve', 'Approve'], ['Reject', 'Reject'], ['Info', 'Ask for information']];
     const CHOICE_LABEL = { Approve: 'Approve', Reject: 'Reject', Info: 'Ask for information' };
     const FLAG_LABEL = { stuck: 'Stuck', waiting: 'Waiting', missing: 'Missing' };
-    const DISTRICTS = [['LMS 1–3', ['LMS1', 'LMS2', 'LMS3']], ['LMS 4–6', ['LMS4', 'LMS5', 'LMS6']]];
     const esc = Coord.esc;
     const $ = (id) => document.getElementById(id);
-    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, FILTER = 'All', SHOW_ALL = false; // FRESH: requests too new for a follow-up card
+    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, SEL = { all: true, campuses: H.CAMPUSES.slice() }, SHOW_ALL = false; // FRESH: requests too new for a follow-up card
     const DECISIONS = {}, SPEND = {};
     let OPEN = null, BOARD_Y = 0; // the approval id whose decision view is open; where the board was scrolled when it opened
 
@@ -255,19 +252,21 @@
         (auth ? '' : '<button type="button" class="btn quiet" id="' + retryId + '">Retry</button>') + '</div>';
     }
 
-    // ── The bases and the filter tabs ──
-    function inView(t) { return FILTER === 'All' || H.districtOf(t.campus) === FILTER; }
+    // ── The bases and the campus picker ──
+    // The picker (LMCSCampus) owns the selection; SEL is its latest value. Never built by hand.
+    const inScope = () => (window.LMCSCampus && SESSION ? LMCSCampus.scope(SESSION) : []);
     function renderBases() {
-      const heat = H.campusHeat(TASKS, today());
-      $('bases').innerHTML = DISTRICTS.map(([name, camps]) => '<div class="district' + (FILTER === 'All' || FILTER === name ? '' : ' off') + '"><h2>' + name + '</h2><ul>' + camps.map((c) => {
+      const heat = H.campusHeat(TASKS, today()), camps = H.CAMPUSES.filter((c) => !SESSION || inScope().includes(c));
+      $('bases').innerHTML = '<div class="district"><ul>' + camps.map((c) => {
         const n = TASKS.filter((t) => t.campus === c).length, lv = heat[c].level, place = String(LMCS.campusLabel(c)).split(' — ')[1] || '';
-        return '<li class="base ' + lv + '"><span class="bn">' + esc(H.shortCampus(c)) + '</span><span class="place">' + esc(place) + '</span>' +
+        return '<li class="base ' + lv + (SEL.campuses.includes(c) ? '' : ' off') + '"><span class="bn">' + esc(H.shortCampus(c)) + '</span><span class="place">' + esc(place) + '</span>' +
           '<span class="row"><span>' + n + ' open</span><span class="lvl"><span class="meter" aria-hidden="true"><i></i><i></i><i></i></span>' + lv[0].toUpperCase() + lv.slice(1) + '</span></span></li>';
-      }).join('') + '</ul></div>').join('');
-      $('tabs').innerHTML = ['All', 'LMS 1–3', 'LMS 4–6'].map((f) => {
-        const n = TASKS.concat(FRESH).filter((t) => f === 'All' || H.districtOf(t.campus) === f).length;
-        return '<button type="button" data-f="' + f + '" aria-pressed="' + (FILTER === f) + '">' + f + '<span class="n">' + n + '</span></button>';
-      }).join('');
+      }).join('') + '</ul></div>';
+      // open count for the picked campuses: one number, or one per school when 2+ are picked
+      const counts = {};
+      H.CAMPUSES.forEach((c) => { counts[c] = TASKS.concat(FRESH).filter((t) => t.campus === c).length; });
+      // All: every row the board shows, even with no campus; picked schools: the overlay
+      $('tabcount').innerHTML = 'Open in view: ' + (SEL.all ? String(LMCSCampus.filter(TASKS.concat(FRESH), SEL).length) : LMCSCampus.overlay(counts, SEL));
     }
     function renderFinding() {
       const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length + FRESH.filter((f) => f.status === 'Pending' && !f.recommendation).length;
@@ -310,10 +309,10 @@
     }
     function renderBoard() {
       // the follow-up contracts first, then the new requests
-      const list = H.rankContracts(TASKS.filter(inView), me(), today()).map(cardHtml).concat(H.rankFresh(FRESH.filter(inView)).map(freshHtml));
+      const list = H.rankContracts(LMCSCampus.filter(TASKS, SEL), me(), today()).map(cardHtml).concat(H.rankFresh(LMCSCampus.filter(FRESH, SEL)).map(freshHtml));
       const board = $('board');
       if (!TASKS.length && !FRESH.length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
-      if (!list.length) { board.innerHTML = '<li class="empty">Nothing open in ' + esc(FILTER) + ' right now.</li>'; return; }
+      if (!list.length) { board.innerHTML = '<li class="empty">Nothing open in the campuses you picked right now.</li>'; return; }
       const shown = SHOW_ALL ? list : list.slice(0, BOARD_CAP);
       board.innerHTML = shown.join('') +
         (shown.length < list.length ? '<li class="more"><button type="button" class="btn quiet" id="show-all">Show all ' + list.length + '</button></li>' : '');
@@ -480,7 +479,7 @@
         renderAll();
       } catch (e) {
         $('finding').textContent = 'The board could not be loaded.';
-        $('bases').innerHTML = ''; $('tabs').innerHTML = '';
+        $('bases').innerHTML = ''; $('tabcount').innerHTML = '';
         $('board').innerHTML = '<li style="list-style:none">' + failHtml('Could not load the board.', e.message, 'board-retry') + '</li>';
         const r = $('board-retry'); if (r && r.addEventListener) r.addEventListener('click', () => { $('finding').textContent = 'Loading the network…'; load(); });
       }
@@ -490,11 +489,6 @@
     }
 
     // ── Wiring: one listener per region ──
-    $('tabs').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-f]'); if (!b) return;
-      FILTER = b.dataset.f; SHOW_ALL = false; renderBases(); renderBoard();
-      const on = $('tabs').querySelector('[aria-pressed="true"]'); if (on) on.focus(); // the tabs were redrawn: keep keyboard focus on the chosen one
-    });
     $('board').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'); if (o) { openDecision(o.dataset.open); return; }
       if (e.target.closest('#show-all')) { SHOW_ALL = true; renderBoard(); }
@@ -512,6 +506,7 @@
 
     Coord.boot(function (body, session) {
       SESSION = session;
+      LMCSCampus.mount('#campus-pick', { session, label: 'Show campuses', onChange: (s) => { SEL = s; SHOW_ALL = false; if (TASKS) { renderBases(); renderBoard(); } } });
       $('header-status').innerHTML = '<span>' + esc(session.campusName) + '</span>';
       load();
     });

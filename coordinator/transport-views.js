@@ -11,7 +11,6 @@ window.TransportViews = (function () {
   const LINES = ['#d1495b', '#00798c', '#d68c1a', '#30638e', '#5b9a6f', '#8d6a9f', '#2e4057', '#b5604f', '#3c9d9b', '#9a7b24'];
   const PROFIT = '#15803d', LOSS = '#CE0000', WARN = '#b45309', OFF = '#8a939c', INK = '#1a1a1a';
   const WALK_M = 500; // a stop's walking area
-  const KULLU = ['LMS1', 'LMS2', 'LMS3'];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const lakh = n => (n < 0 ? '−' : '+') + '₹' + (Math.abs(n) / 100000).toFixed(2) + ' L';
   const mins = t => +String(t).slice(0, 2) * 60 + +String(t).slice(3, 5);
@@ -70,20 +69,24 @@ window.TransportViews = (function () {
   }
 
   // ── A. Route map ──
+  // The picker lives outside the redraw so it keeps focus; its choice is read fresh from storage each time the tab opens.
   function metro(el, d, S) {
+    el.innerHTML = '<div class="tv-pick"></div><div class="tv-body"></div>';
+    const body = el.querySelector('.tv-body'), draw = () => metroBody(body, d, S, draw);
+    let ready = false;
+    if (window.LMCSCampus) LMCSCampus.mount(el.querySelector('.tv-pick'), { label: 'Show lines for', onChange: s => { S.sel = s; if (ready) draw(); } });
+    ready = true;
+    draw();
+  }
+  function metroBody(el, d, S, redraw) {
     const m = model(d);
-    const area = reg => KULLU.indexOf((m.veh[reg] || {}).campusId) !== -1 ? 'kullu' : 'mandi';
-    const areas = Array.from(new Set(m.buses.map(area)));
-    if (!S.area || areas.indexOf(S.area) === -1) S.area = areas[0] || 'kullu';
     S.half = S.half || 'AM';
     el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; <b>dashed</b> lines have a tracker problem, so their stops are incomplete; <b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits. The badge is the line\'s result ' + esc(m.period) + '.</p>' +
-      '<div class="ctl">' + (areas.length > 1 ? '<span class="seg">' + areas.map(a => '<button data-area="' + a + '" class="' + (S.area === a ? 'on' : '') + '" aria-pressed="' + (S.area === a) + '">' + (a === 'kullu' ? 'Kullu side (LMS 1–3)' : 'Mandi side (LMS 4–6)') + '</button>').join('') + '</span>' : '') +
-      '<span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
+      '<div class="ctl"><span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
       '<div class="tv-split"><svg class="tv-metro" viewBox="0 0 1000 640" role="img" aria-label="Route map: one line per bus"></svg><div class="tv-info"><b>Tap a line or a station.</b><p class="note">A line shows its children, seats, km a day and money, and stops within 2 minutes of each other. A station shows every bus that stops there and when.</p></div></div>';
-    el.querySelectorAll('[data-area]').forEach(b => b.addEventListener('click', () => { S.area = b.dataset.area; metro(el, d, S); }));
-    el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; metro(el, d, S); }));
+    el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; redraw(); }));
     const svg = el.querySelector('.tv-metro'), info = el.querySelector('.tv-info');
-    const routes = m.buses.filter(b => area(b) === S.area).map(b => {
+    const routes = (S.sel ? LMCSCampus.filter(m.buses.map(reg => ({ reg, campusId: (m.veh[reg] || {}).campusId })), S.sel, 'campusId').map(x => x.reg) : m.buses).map(b => {
       const name = Object.keys(m.trips[b] || {}).filter(k => k.indexOf(S.half) === 0).sort()[0];
       if (!name) return null;
       // a village visited twice in one trip is drawn once: the line follows first visits, the station lists every time

@@ -31,6 +31,7 @@ const ctx = vm.createContext({
 });
 ctx.window = ctx;
 vm.runInContext(fs.readFileSync(path.join(root, 'coordinator/shared.js'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(root, 'assets/campus-picker.js'), 'utf8'), ctx);
 vm.runInContext(logic, ctx);
 vm.runInContext(inline, ctx);
 assert.ok(ctx.Coord.api && ctx.Coord.postJson && ctx.Coord.WORK_LINKS, 'shared.js exports api, postJson and WORK_LINKS (R7)');
@@ -66,7 +67,7 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   const freshT = { taskId: 'doc_missing|E1', domain: 'doc_missing', campus: 'LMS1', title: 'Docs missing', detail: '', severity: 'low', assignee: '', due: '', createdAt: '2026-10-01T05:00:00.000Z' };
   const freshList = [{ approvalId: 'APR-9', campus: 'LMS4', title: 'Fan <b>repair</b>', category: 'Financial / Purchase', status: 'Pending', requestedAt: '2026-10-25T05:00:00.000Z', recommendation: null },
     { approvalId: 'APR-8', campus: 'LMS2', title: 'Trip', category: 'Off-Campus Trip / Excursion', status: 'Pending', requestedAt: '2026-10-24T05:00:00.000Z', recommendation: { by: 'x@lms.test', byName: 'A <i>N</i>', recommendation: 'Approve', reason: 'fine' } }];
-  vm.runInContext('TASKS = ' + JSON.stringify([freshT]) + '; FRESH = ' + JSON.stringify(freshList) + "; FILTER = 'All'; SHOW_ALL = false; OPEN = null;", ctx);
+  vm.runInContext('TASKS = ' + JSON.stringify([freshT]) + '; FRESH = ' + JSON.stringify(freshList) + "; SEL = LMCSCampus.get({ campusId: 'ALL' }); SHOW_ALL = false; OPEN = null;", ctx);
   ctx.renderBoard();
   const b = els.board.innerHTML;
   assert.ok(b.indexOf('Docs missing') !== -1 && b.indexOf('Docs missing') < b.indexOf('Fan &lt;b&gt;repair') && b.indexOf('Fan &lt;b&gt;repair') < b.indexOf('Trip'), 'existing cards first, then the new requests (no recommendation yet first)');
@@ -76,10 +77,19 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   assert.ok(nc.includes('Financial / Purchase'), 'category shown');
   const rc = ctx.freshHtml(freshList[1]);
   assert.ok(rc.includes('A &lt;i&gt;N&lt;/i&gt; recommends Approve: fine'), 'same recommendation line, escaped');
-  vm.runInContext("FILTER = 'LMS 1–3'", ctx);
-  ctx.renderBoard();
-  assert.ok(els.board.innerHTML.includes('Trip') && !els.board.innerHTML.includes('Fan'), 'district filter applies to new requests');
-  vm.runInContext("TASKS = []; FILTER = 'All'", ctx);
+  // the picker's own selection filters cards and new requests; two schools overlay the open count, one school shows a total
+  vm.runInContext("SEL = { all: false, campuses: ['LMS1', 'LMS2'] }", ctx);
+  ctx.renderBoard(); ctx.renderBases();
+  assert.ok(els.board.innerHTML.includes('Trip') && els.board.innerHTML.includes('Docs missing') && !els.board.innerHTML.includes('Fan'), 'picker filter applies to cards and new requests');
+  assert.ok(/lmcs-ov/.test(els.tabcount.innerHTML) && /LMS 1 <b>1<\/b>/.test(els.tabcount.innerHTML) && /LMS 2 <b>1<\/b>/.test(els.tabcount.innerHTML), 'two schools: one open count each');
+  vm.runInContext("SEL = { all: false, campuses: ['LMS4'] }", ctx);
+  ctx.renderBases();
+  assert.ok(!/lmcs-ov/.test(els.tabcount.innerHTML) && els.tabcount.innerHTML.endsWith('1'), 'one school: a single total');
+  // All: the count matches the board, no-campus rows included
+  vm.runInContext("SEL = LMCSCampus.get({ campusId: 'ALL' }); TASKS = TASKS.concat([Object.assign({}, TASKS[0], { taskId: 'doc_missing|nc', campus: '' })])", ctx);
+  ctx.renderBases(); ctx.renderBoard();
+  assert.ok(els.tabcount.innerHTML.endsWith('4') && (els.board.innerHTML.match(/class="contract/g) || []).length === 4, 'All: count equals the cards on the board (2 cards + 2 new requests incl. no-campus)');
+  vm.runInContext("TASKS = []; SEL = LMCSCampus.get({ campusId: 'ALL' })", ctx);
   ctx.renderBoard();
   assert.ok(els.board.innerHTML.includes('Fan') && !els.board.innerHTML.includes('Nothing in the network'), 'new requests show even with no follow-ups');
   ctx.fetch = () => Promise.resolve({ json: () => Promise.resolve({ success: true, tasks: [freshT], fresh: freshList }) });
