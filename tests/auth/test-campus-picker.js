@@ -160,6 +160,18 @@ const ALL6 = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   assert.deepStrictEqual(plain(C.get(S('ALL'), { multi: false })), { all: false, campuses: ['LMS2'] });
 }
 
+// --- key option: overrides the storage prefix, default unchanged
+{
+  const { C, store } = load({});
+  const el = fakeEl('div');
+  C.mount(el, { session: S('ALL'), multi: false, key: 'lmcs-office-campus1:' });
+  chip(el, 'LMS3').click();
+  assert.deepStrictEqual(JSON.parse(store['lmcs-office-campus1:a@lms.org.in']), { v: 1, sel: ['LMS3'] });
+  assert.ok(!('lmcs-campus1:a@lms.org.in' in store), 'default key untouched');
+  assert.deepStrictEqual(plain(C.get(S('ALL'), { multi: false, key: 'lmcs-office-campus1:' })).campuses, ['LMS3']);
+  assert.deepStrictEqual(plain(C.get(S('ALL'), { multi: false })).campuses, ['LMS1'], 'no key: default prefix');
+}
+
 // --- Review Focus 5: localStorage blocked -> still works, just forgets
 {
   const { C } = load({ blocked: true });

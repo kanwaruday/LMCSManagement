@@ -7,6 +7,7 @@ import { OFFICE_BACKEND_URL } from './config.js';
 
 const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'];
 const CAMPUS_KEY = 'lmcs-office-campus';
+export const OFFICE_PICK_KEY = 'lmcs-office-campus1:'; // the Office's own pick; Daily Reporting keeps lmcs-campus1:
 const CACHE_PREFIX = 'lmcs-office-cache:';
 
 export function syncLabel({ waiting = 0, attention = 0, others = 0, online = true }) {
@@ -53,11 +54,11 @@ export const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => 
 
 // The one campus every data call of this page uses. Scope comes from the session only: a Fee Clerk or a comma list never gets a
 // campus outside its list (the first one in LMS1..HES order, so it matches the picker's scope; none valid -> '' and the backend refuses).
-// ALL: the header picker's single-select choice (lmcs-campus1:<email>), else the old lmcs-office-campus key (copied across once), else LMS1.
+// ALL: the header picker's single-select choice (lmcs-office-campus1:<email>), else the old lmcs-office-campus key (copied across once), else LMS1.
 export function pickCampus(session, ls) {
   const ids = String(session.campusId || '').split(',').map((x) => x.trim().toUpperCase());
   if (!ids.includes('ALL')) return CAMPUSES.find((c) => ids.includes(c)) || '';
-  const key = 'lmcs-campus1:' + (session.email || '');
+  const key = OFFICE_PICK_KEY + (session.email || '');
   try {
     const store = ls || localStorage;
     try { const o = JSON.parse(store.getItem(key)); const c = o && o.v === 1 && o.sel && o.sel[0]; if (CAMPUSES.includes(c)) return c; } catch (_) {}
@@ -80,6 +81,7 @@ export async function bootOffice({ onReady }) {
   $('app-root').style.display = '';
   if (!session.campus) { // no school in the sign-in: nothing may be queued with a blank campus
     $('who').textContent = session.name || '';
+    $('signout-link').onclick = (e) => { e.preventDefault(); L.signOut(); };
     $('today').innerHTML = '<p><b>' + esc("Your sign-in doesn't include a school for the Office pages. Ask the Owner to check your access.") + '</b></p>';
     return;
   }
@@ -128,7 +130,7 @@ export async function bootOffice({ onReady }) {
   $('who').textContent = session.name + ' · ' + L.campusLabel(session.campus);
   if (session.campusId === 'ALL') { // Fee Clerks and comma lists never get a picker
     let ready = false;
-    window.LMCSCampus.mount($('campus-pick'), { session, multi: false, hes: true, label: 'Campus', onChange: () => { if (ready) location.reload(); } });
+    window.LMCSCampus.mount($('campus-pick'), { session, multi: false, hes: true, key: OFFICE_PICK_KEY, label: 'Campus', onChange: () => { if (ready) location.reload(); } });
     ready = true;
   }
   $('signout-link').onclick = async (e) => {

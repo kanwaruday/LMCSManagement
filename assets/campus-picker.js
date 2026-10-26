@@ -16,7 +16,7 @@ window.LMCSCampus = (function () {
   }
 
   const copy = (s) => ({ all: s.all, campuses: s.campuses.slice() }); // pages can't mutate picker state
-  const key = (session, multi) => (multi ? 'lmcs-campus:' : 'lmcs-campus1:') + ((session && session.email) || '');
+  const key = (session, multi, prefix) => (prefix || (multi ? 'lmcs-campus:' : 'lmcs-campus1:')) + ((session && session.email) || ''); // opts.key overrides the prefix (e.g. 'lmcs-office-campus1:')
   function read(k) { try { const o = JSON.parse(localStorage.getItem(k)); return o && o.v === 1 ? o.sel : null; } catch (_) { return null; } }
   function write(k, sel) { try { localStorage.setItem(k, JSON.stringify({ v: 1, sel })); } catch (_) { /* private mode: just don't remember */ } }
 
@@ -30,13 +30,13 @@ window.LMCSCampus = (function () {
 
   function get(session, opts) {
     const o = opts || {}, multi = o.multi !== false;
-    return normalize(read(key(session, multi)), scope(session, o), multi);
+    return normalize(read(key(session, multi, o.key)), scope(session, o), multi);
   }
 
   function mount(el, opts) {
     const o = opts || {}, multi = o.multi !== false;
     const session = o.session || (window.LMCS && window.LMCS.getSession && window.LMCS.getSession());
-    const sc = scope(session, o), k = key(session, multi);
+    const sc = scope(session, o), k = key(session, multi, o.key);
     let sel = normalize(read(k), sc, multi);
     if (typeof el === 'string') el = document.querySelector(el);
 

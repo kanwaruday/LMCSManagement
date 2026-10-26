@@ -71,7 +71,7 @@ window.TransportChecks = (function () {
     const since = new Date(Date.parse(d.today + 'T00:00:00Z') - 30 * 86400000).toISOString().slice(0, 10);
     const fuelRs = inSel(d.checks, sel).filter(c => c.flag === 'yes' && c.date > since).reduce((s, c) => s + Number(c.excessRs || 0), 0);
     const regs = new Set(inSel(d.vehicles, sel).map(v => v.reg)); // driving days carry only the bus reg
-    const awayKm = d.days.filter(x => Number(x.nightAwayKm) > 2 && regs.has(x.reg)).reduce((s, x) => s + 2 * Number(x.nightAwayKm), 0);
+    const awayKm = d.days.filter(x => Number(x.nightAwayKm) > 2 && (sel.all || regs.has(x.reg))).reduce((s, x) => s + 2 * Number(x.nightAwayKm), 0);
     const ops = inSel(d.vehicles.filter(v => v.operational), sel);
     return { fuelRs, awayRs: awayKm / 5 * DIESEL_RS, ops: ops.length, healthy: ops.filter(v => v.tracker === 'ok').length, open: open.length, late: late.length, old: ops.filter(v => isOld(d, v)).length };
   }

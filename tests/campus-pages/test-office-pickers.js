@@ -22,10 +22,10 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     assert.strictEqual(pickCampus({ campusId: 'LMS2,LMS3', email: 'a' }, mem({ 'lmcs-campus1:a': '{"v":1,"sel":["LMS6"]}', 'lmcs-office-campus': 'LMS6' })), 'LMS2', 'stored choices never leave the scope');
   });
   await T('office header: ALL reads the picker key, then the old key once (copied across), else LMS1', () => {
-    assert.strictEqual(pickCampus({ campusId: 'ALL', email: 'a' }, mem({ 'lmcs-campus1:a': '{"v":1,"sel":["LMS4"]}', 'lmcs-office-campus': 'LMS2' })), 'LMS4');
+    assert.strictEqual(pickCampus({ campusId: 'ALL', email: 'a' }, mem({ 'lmcs-office-campus1:a': '{"v":1,"sel":["LMS4"]}', 'lmcs-campus1:a': '{"v":1,"sel":["LMS5"]}', 'lmcs-office-campus': 'LMS2' })), 'LMS4');
     const m = mem({ 'lmcs-office-campus': 'HES' });
     assert.strictEqual(pickCampus({ campusId: 'ALL', email: 'a' }, m), 'HES');
-    assert.strictEqual(m.s['lmcs-campus1:a'], '{"v":1,"sel":["HES"]}');
+    assert.strictEqual(m.s['lmcs-office-campus1:a'], '{"v":1,"sel":["HES"]}');
     assert.strictEqual(pickCampus({ campusId: 'ALL', email: 'b' }, mem()), 'LMS1');
   });
 
@@ -37,22 +37,32 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     chip(el, 'LMS3').click(); chip(el, 'LMS4').click();
     assert.deepStrictEqual(pressed(el), ['LMS4'], 'exactly one');
     const sh = fs.readFileSync(path.join(root, 'office/js/shell.js'), 'utf8');
-    assert.ok(/session\.campusId === 'ALL'\) \{[^}]*LMCSCampus\.mount/.test(sh) && /multi: false, hes: true/.test(sh), 'mounted for ALL only');
+    assert.ok(/session\.campusId === 'ALL'\) \{[^}]*LMCSCampus\.mount/.test(sh) && /multi: false, hes: true, key: OFFICE_PICK_KEY/.test(sh), 'mounted for ALL only');
     fs.readdirSync(path.join(root, 'office')).filter((f) => f.endsWith('.html')).forEach((f) => {
       const h = fs.readFileSync(path.join(root, 'office', f), 'utf8');
       assert.ok(/<div id="campus-pick" hidden>/.test(h) && /campus-picker\.js/.test(h) && /campus-picker\.css/.test(h), f);
     });
   });
 
+  await T('office and daily reporting keep separate campus picks', () => {
+    const c = pickerCtx(), se = { email: 'u', campusId: 'ALL' };
+    c.LMCSCampus.mount(fakeEl('div'), { session: se, multi: false }).set(['LMS4']); // Daily Reporting
+    assert.strictEqual(pickCampus(se, c.localStorage), 'LMS1', 'Daily Reporting pick leaves the Office alone');
+    c.LMCSCampus.mount(fakeEl('div'), { session: se, multi: false, hes: true, key: 'lmcs-office-campus1:' }).set(['LMS6']); // Office header
+    assert.strictEqual(pickCampus(se, c.localStorage), 'LMS6');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(c.LMCSCampus.get(se, { multi: false }).campuses)), ['LMS4'], 'and the Office pick leaves Daily Reporting alone');
+  });
+
   await T('office boot: a blank campus stops before onReady and queues nothing', async () => {
-    const el = () => ({ style: {}, textContent: '', innerHTML: '' }), els = {};
+    const el = () => ({ style: {}, textContent: '', innerHTML: '' }), els = {}; let outs = 0;
     global.document = { getElementById: (i) => els[i] || (els[i] = el()) };
     global.navigator = {};
-    global.window = { LMCS: { getSession: () => ({ email: 'a', name: 'N', campusId: 'XYZ' }), campusLabel: (c) => c } };
+    global.window = { LMCS: { getSession: () => ({ email: 'a', name: 'N', campusId: 'XYZ' }), signOut: () => { outs++; }, campusLabel: (c) => c } };
     let ready = false;
     const { bootOffice } = await import('../../office/js/shell.js');
     await bootOffice({ onReady: () => { ready = true; } });
     assert.ok(!ready && /doesn&#39;t include a school/.test(els.today.innerHTML), els.today.innerHTML);
+    els['signout-link'].onclick({ preventDefault() {} }); assert.strictEqual(outs, 1, 'blank-campus screen can sign out');
     delete global.document; delete global.navigator; delete global.window;
   });
 
@@ -105,6 +115,10 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     await new Promise((r) => setTimeout(r, 5));
     const tiles = () => tab.innerHTML.split('<div class="tile ').slice(1).map((x) => x.replace(/^[^>]*><b>/, '').replace(/<\/b>[^<]*<\/div>[\s\S]*$/, ''));
     assert.deepStrictEqual(tiles(), ['₹880', '2 of 3', '1 of 3', '1'], 'All: the combined network, 500 fuel + 380 driving');
+    d.days.push({ reg: 'GONE', nightAwayKm: 10 }); // not a registered vehicle
+    ctx.TransportChecks.mount(el, { idToken: 't', campusId: 'ALL', email: 'o' }, { owner: true });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.strictEqual(tiles()[0], '₹1,260', 'All counts driving days of unregistered regs too (500 + 380 + 380)');
     chip(pick, 'LMS1').click();
     assert.deepStrictEqual(tiles(), ['₹780', '1 of 2', '1 of 2', '1'], 'one school: plain figures, counts agree with its lists');
     assert.ok(!/lmcs-ov/.test(tiles().join('')) && /t1/.test(tab.innerHTML) && !/t3/.test(tab.innerHTML), 'lists follow the pick');
