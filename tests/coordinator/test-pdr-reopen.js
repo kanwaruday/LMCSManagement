@@ -1,6 +1,5 @@
 // node tests/coordinator/test-pdr-reopen.js -- coordinator/shared.js pdrView (Systems): closures and Reopen on daily-report issues
-const fs = require('fs'), vm = require('vm'), assert = require('assert'), path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '../../coordinator/shared.js'), 'utf8');
+const assert = require('assert');
 
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
 const issue = (id, last) => ({ id, campus: 'LMS4', type: 'Infrastructure', subject: 'Subject ' + id, first: day(20), last, count: 2, needsAction: true, items: [{ date: last, text: 't' }] });
@@ -17,15 +16,11 @@ const DATA = {
 
 // render the Systems page's Today tab with a given status filter; returns the issue area's HTML
 async function render(hash) {
-  const box = { innerHTML: '', dataset: {}, querySelectorAll: () => [], querySelector: () => null };
-  const body = { innerHTML: '', querySelector: () => box };
-  const ctx = vm.createContext({ console, Date, setTimeout, location: { hash }, LMCS: {}, fetch: () => Promise.resolve({ json: () => Promise.resolve(JSON.parse(JSON.stringify(DATA))) }) });
-  ctx.window = ctx;
-  vm.runInContext(src, ctx);
-  ctx.Coord.setSession({ idToken: 'tok', email: 'c@lms.test' });
+  const { makeBody, makeCtx, tick } = require('./campus-env');
+  const { body, box } = makeBody('.pd-body');
+  const ctx = makeCtx({ session: { idToken: 'tok', email: 'c@lms.test', campusId: 'ALL' }, hash, data: { coordinatorpdr: DATA } });
   ctx.Coord.pdrView(body);
-  await new Promise((ok) => setTimeout(ok, 0));
-  await new Promise((ok) => setTimeout(ok, 0));
+  await tick(); await tick();
   return box.innerHTML;
 }
 const row = (html, id) => (html.match(new RegExp('<tr data-id="' + id + '">[\\s\\S]*?</tr>')) || [''])[0];
