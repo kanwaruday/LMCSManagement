@@ -1,8 +1,8 @@
 # Teacher leave in Approvals (design and plan)
 
 Date: 2026-10-25. Asked for by Uday ("Leave into Approvals", Q6 of the Teacher game design), routed through the LMCS
-Master Agent. **Status: plan only. Nothing here is built or deployed until Uday approves it.** Everything below is
-Claude's recommendation and open to his correction; his answers get recorded in the last section.
+Master Agent. **Status: plan complete. All 8 questions are answered (2026-10-25/26, see "Uday's decisions"); waiting for Uday's go-ahead to
+build. Nothing is built or deployed.** Where the body below differs from a numbered decision, the decision wins.
 
 Inputs: Teacher game spec (`teacher-portal-game-design`, e6ce8e8), LMCS Bye Laws 2026 leave section (OO-09/26, 11 Sep
 2026), Payroll's leave fields (`payroll-calc.gs`, `PAY_LEAVE_FIELDS`), current `approvals.gs` on `origin/main`.
@@ -44,10 +44,11 @@ approval; sandwiched holidays count as leave unless MD Operations exempts them.
 ### 1. Categories: one new category, "Leave", with a leave-type dropdown
 
 Not 12 categories. A single **Leave** category keeps the Approvals filters and category list short. The teacher then picks
-a **Leave type** from the requested group above: Casual, Compensatory, Single (unpaid), Half day, Short, Special Day
-absence, Emergency. Absent / Late / Non-Compliance / Double are never offered; they stay in Payroll's monthly template.
-The existing **Compensatory Leave** category stays as it is today (a Principal asking for days off for the school); a
-teacher taking a comp-off day uses Leave > Compensatory.
+a **Leave type**. **Final teacher dropdown (decisions 3 and 4): Single (unpaid), Short, Half day, Special Day absence, Late, Casual,
+Emergency.** Compensatory is not on the teacher form (Management grants it). Absent, Non-Compliance and Double Leave are never
+offered; they stay in Payroll's monthly template. **Late** (not in the table above, which follows the bye-law's own grouping) is
+now requestable as notice-and-record only (decision 5). The existing **Compensatory Leave** category stays as it is today (a
+Principal asking for days off for the school).
 
 Teachers may submit `Leave` in addition to `Compensatory Leave` and `Other` (`APR_TEACHER_CATEGORIES`).
 
@@ -60,8 +61,8 @@ Add self-creating columns on the Approvals sheet, after the existing follow-up c
 |---|---|
 | `leaveType` | one of the types above |
 | `fromDate`, `toDate` | ISO `YYYY-MM-DD`, inclusive; same day for a half or short leave |
-| `dayPart` | `full`, `half`, `short` |
-| `leaveDays` | **computed on the server**: working days in range (Sundays, 2nd Saturdays and calendar holidays removed) x weight |
+| `dayPart` | `full`, `half`, `short`, `late` |
+| `leaveDays` | **computed on the server**: working days in range (Sundays, 2nd Saturdays and calendar holidays removed) x weight (Late = 0.25, informational: kept for Payroll, never returned to the game) |
 | `noticeDays` | computed: `fromDate` minus the submit date (drives Special Day tier, and flags same-day requests) |
 
 The teacher's email is already in `requestedBy`; Management's decision, note and time are the existing columns.
@@ -131,6 +132,9 @@ Built so the later hand-over is a configuration change, not a rewrite:
 4. **P3, approver seam:** `aprCanDecideRow_` and the empty `APR_LEAVE_PRINCIPAL_TYPES`; no behaviour change. The Principal hand-over is a later, separate build.
 5. **P4, consumers:** hand the contract to the Teacher game; Payroll prefill as a separate piece later.
 6. **P5, later rules** from the table above, one at a time.
+7. **P6, after the February pilot (decision 8):** a "Fill from approved leave" button on Payroll's leave step, pre-filling counts
+   (Single, Casual, Half, Short, Late, Special Day split 2/3/5 by notice) for Management to review before locking the month.
+   Not part of this build; Payroll is untouched until then.
 
 Deploy only through `apps-script/deploy.mjs` (dry run first), then `node tests/verify.mjs --live` and a browser check.
 Target: P1 to P3 in November 2026, so the game has real data before the February 2027 pilot.
@@ -149,7 +153,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). **Late: answered in Q5 below.**
 4. ~~In "days on track", does a half-day leave excuse the whole day or half of it?~~ **Answered (decision 6): the whole day; Short and Late do not.**
 5. ~~Can a teacher file leave for a past date or the same day?~~ **Answered (decision 7): future dates, and today until 7:00 AM IST.**
-6. Should approved leave later prefill Payroll's monthly leave counts? (recommend yes, as a separate step after the game)
+6. ~~Should approved leave later prefill Payroll's monthly leave counts?~~ **Answered (decision 8): later, as a review button.**
 
 ## Uday's decisions
 
@@ -175,3 +179,6 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
    date until 7:00 AM IST. After that, or for any past date, it refuses and says the Principal will record it. Management can still enter
    an exceptional case directly in the sheet. Late is same-day by nature, so it is allowed until 7:00 AM that day. The 7:00 AM check is
    done on the server clock (IST), never the teacher's device.
+8. **Payroll prefill (2026-10-26):** "Later, as a review button" (option A). Payroll stays exactly as it is in this build. After the
+   February pilot, a "Fill from approved leave" button pre-fills the counts for Management to review and change. Absent, Double
+   Leave and Non-Compliance stay typed by hand.
