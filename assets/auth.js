@@ -465,14 +465,16 @@ window.LMCS = (function () {
   }
 
   // The floating Buddy (assets/game/buddy-dock.js + .css) on every page, once, as soon as someone is signed in: on load
-  // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, keeping its ?v= stamp, so the path is
-  // right at any depth. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
+  // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, so the path is
+  // right at any depth, with ?v=DOCK_V (a hash of the dock's files, written by tools/stamp-assets.mjs) so a release reaches
+  // every browser at once. The dock passes the same ?v= on to game.js, game.css and guide.js. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
+  const DOCK_V = 'e0c027d5'; // stamp-assets
   let docked = false;
   function loadDock_() {
     if (docked || window.LMCS_NO_DOCK || !SELF_SRC) return;
     docked = true;
     try {
-      const base = SELF_SRC.replace(/auth\.js(\?.*)?$/, 'game/buddy-dock'), v = (SELF_SRC.match(/\?.*$/) || [''])[0];
+      const base = SELF_SRC.replace(/auth\.js(\?.*)?$/, 'game/buddy-dock'), v = '?v=' + DOCK_V;
       const css = document.createElement('link'), js = document.createElement('script');
       css.rel = 'stylesheet'; css.href = base + '.css' + v;
       js.src = base + '.js' + v; js.async = true;

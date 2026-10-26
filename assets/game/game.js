@@ -438,6 +438,7 @@ var LMCSGame = window.LMCSGame = (function () {
         var wait = s.waiting && !s.done, open = !s.done && !s.locked && !wait && !linked, win = null, href = null;
         if (open && s.kind === 'decision') win = (t.windows || []).filter(function (w) { return !w.decided; })[0] || null;
         else if (open) href = safeHref(s.go, root);
+        if (open && !href && !win && /^[\w-]+$/.test(s.guide || '')) href = root + 'guide/index.html#' + s.guide; // no usable go: the guide says what to click
         if (href || win) linked = true;
         return h('li', { class: 'lg-step' + (s.done ? ' ok' : wait ? ' wait' : s.locked ? ' lock' : '') }, [
           h('span', { class: 'lg-c', 'aria-hidden': 'true' }),

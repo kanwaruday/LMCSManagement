@@ -177,6 +177,10 @@ assert.strictEqual(G.pickedText(3, 3), '3 of 3 picked');
 assert.strictEqual(G.pickedText(5, 3), '5 picked. Untick 2 to save.');
 assert.strictEqual(G.pickedText(1, 0), '');
 
+// a quest step with a guide id and no usable go links to the guide (root-relative); it is the next action like any other step
+assert.ok(/s\.guide/.test(src) && /root \+ 'guide\/index\.html#' \+ s\.guide/.test(src), 'guide link on quest steps');
+assert.ok(/open && !href && !win && \/\^\[\\w-\]\+\$\/\.test\(s\.guide/.test(src), 'only an open step with a plain id gets the guide link');
+
 // R28 structurally: game.js never parses HTML -- every text goes in as a text node or an attribute
 // quest panel source checks (DOM-free): parallel quests are folded and unnumbered; waiting steps are never the next action; due is neutral
 assert.ok(/q\.parallel/.test(src) && /'details'/.test(src), 'parallel quests render in <details>');

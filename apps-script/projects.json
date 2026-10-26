@@ -113,6 +113,7 @@
       "game-quests",
       "game-teacher",
       "game-fleet",
+      "game-setup",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js"
     ]

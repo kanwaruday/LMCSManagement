@@ -4,8 +4,8 @@
 // (LMCSGuide.pages), what's next for you (one gametoday, kept 5 minutes; hidden when there is nothing or it fails),
 // "Show me how" (the page's tour, through LMCSGame.tour) and a guide search (LMCSGuide.articles).
 // game.js, game.css and guide.js are loaded on the first open when the page doesn't have them.
-// The button lifts above the next-step bar (.lg-nextbar) and above anything matching LMCSDock.avoid (a CSS selector
-// list, default ''), e.g. a page's toast. Every piece of text reaches the DOM as text nodes (LMCSGame.ui.h).
+// The button lifts above the next-step bar (.lg-nextbar) and above anything matching LMCSDock.avoid (default #lmcs-warm-chip; a CSS selector
+// list), e.g. a page's toast. Every piece of text reaches the DOM as text nodes (LMCSGame.ui.h).
 var LMCSDock = window.LMCSDock = (function () {
   // the game backend's Apps Script /exec: the same value as the pages' GAME_BACKEND_URL (tests/game/test-dock.js checks)
   var BACKEND = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec';
@@ -39,7 +39,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return (q && (q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; })[0]) || null;
   }
 
-  var api = { avoid: '', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
+  var api = { avoid: '#lmcs-warm-chip', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -60,7 +60,7 @@ var LMCSDock = window.LMCSDock = (function () {
     var d = (window.LMCSGame && LMCSGame.last && LMCSGame.last()) || kept(), s = session();
     if (d) return Promise.resolve(d);
     if (!BACKEND || !s) return Promise.resolve(null);
-    return fetch(BACKEND + '?action=gametoday&idToken=' + encodeURIComponent(s.idToken || ''), { cache: 'no-store' })
+    return fetch(BACKEND + '?action=gametoday&peek=1&idToken=' + encodeURIComponent(s.idToken || ''), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) { if (!d || d.success === false || d.error) return null; keep(d); return d; })
       .catch(function () { return null; });

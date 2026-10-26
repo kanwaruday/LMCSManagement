@@ -10,7 +10,8 @@ const ctx = { console }; ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext(read('assets/game/guide.js'), ctx);
 vm.runInContext(src, ctx); // no document: helpers only, nothing mounts
 const D = ctx.LMCSDock;
-assert.strictEqual(D.avoid, '', 'avoid defaults to an empty selector list');
+assert.strictEqual(D.avoid, '#lmcs-warm-chip', 'avoid defaults to the warm-up chip');
+assert.ok(/action=gametoday&peek=1&/.test(src), 'the dock only peeks: opening Buddy never uses up the home greeting');
 
 // the page's path relative to the portal root
 assert.strictEqual(D.pagePath('/LMCSManagement/coordinator/x.html', '/LMCSManagement/'), 'coordinator/x.html');
@@ -100,8 +101,14 @@ function runAuth(session, extra) {
   return added.map((n) => n.src || n.href || '').filter((u) => /buddy-dock/.test(u));
 }
 const live = { email: 'a@lms.org.in', role: 'Owner', campusId: 'ALL', expiresAt: Date.now() + 3600e3, idToken: 'x' };
-assert.deepStrictEqual(runAuth(live), ['https://portal.test/LMCSManagement/assets/game/buddy-dock.css?v=1234abcd',
-  'https://portal.test/LMCSManagement/assets/game/buddy-dock.js?v=1234abcd']);
+const DOCK_V = (read('assets/auth.js').match(/const DOCK_V = '([0-9a-f]{8})'; \/\/ stamp-assets/) || [])[1];
+assert.ok(DOCK_V, 'auth.js carries a stamped DOCK_V');
+{ // stale-stamp detection: --check fails when a dock file moved after stamping (tools/stamp-assets.mjs; verify.mjs runs the same check)
+  const stamp = fs.readFileSync(path.join(root, 'tools/stamp-assets.mjs'), 'utf8');
+  assert.ok(/DOCK_FILES = \['buddy-dock\.js', 'buddy-dock\.css', 'game\.js', 'game\.css', 'guide\.js'\]/.test(stamp) && /stale\.push\('assets\/auth\.js \(DOCK_V\)'\)/.test(stamp), 'the stamp covers the five dock files and checks DOCK_V');
+}
+assert.deepStrictEqual(runAuth(live), ['https://portal.test/LMCSManagement/assets/game/buddy-dock.css?v=' + DOCK_V,
+  'https://portal.test/LMCSManagement/assets/game/buddy-dock.js?v=' + DOCK_V]);
 assert.deepStrictEqual(runAuth(null), []);
 assert.deepStrictEqual(runAuth(live, { LMCS_NO_DOCK: true }), []);
 const auth = read('assets/auth.js');
