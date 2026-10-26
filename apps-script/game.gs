@@ -76,7 +76,7 @@ const GAME_TABS = {
 // Season-0 defaults. Never constants in logic: a Game Config row (Value = JSON) overrides its key.
 function gameConfigDefaults_() {
   return {
-    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL', FeeClerk: 'ALL' }, // FeeClerk: fleet setup missions (Fleet Command's module)
+    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL', FeeClerk: 'ALL', Accounts: 'ALL' }, // FeeClerk, Accounts: module missions (fleet setup, Day Book starting data)
     speaker: { Teacher: 'teacher-owl' }, // every other role: Buddy
     cap: { Principal: 5, Coordinator: 5, Owner: 5 },
     core: { Principal: ['ss_pace', 'pdr_issue'], Coordinator: ['approval_recommend', 'hiring_stall'], Owner: ['approval_wait'] },
@@ -120,6 +120,7 @@ function doGet(e) {
   try {
     const caller = gameVerifyCaller_(e.parameter.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
+    caller.idToken = String(e.parameter.idToken); // modules call their own backends with it, so those apply their own scope
     return gameJson_(gameDispatch_(caller, String(e.parameter.action || '').toLowerCase(), e.parameter));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });
@@ -136,6 +137,7 @@ function doPost(e) {
     if (action === 'teachermatchpush') return gameJson_(tchMatchPush_(body));
     const caller = gameVerifyCaller_(body.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
+    caller.idToken = String(body.idToken);
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });
