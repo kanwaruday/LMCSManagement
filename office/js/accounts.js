@@ -104,6 +104,23 @@ export const samePeriodYear = (from, to) => fyStart(from) === fyStart(to);
 const money = (p) => h('td', {}, formatInr(p));
 const table = (head, rows) => h('table', { class: 'bal' }, h('thead', {}, h('tr', {}, head.map((x) => h('th', {}, x)))), h('tbody', {}, rows.map((r) => h('tr', {}, r))));
 
+// The headline totals of one ledger.summary (paise): owed to suppliers, bank/other balances, held for student collections.
+export function summaryTotals(sum, cfg) {
+  const add = (xs) => xs.reduce((t, x) => t + (Number(x) || 0), 0);
+  return {
+    owed: add((sum.accounts || []).filter((a) => a.kind === 'credit').map((a) => a.owed_paise)),
+    balance: add((sum.accounts || []).filter((a) => a.kind !== 'credit').map((a) => a.balance_paise)),
+    held: add(collectionRows(sum.collections, cfg && cfg.collections).map((r) => r.balance)),
+  };
+}
+// 2+ schools picked: one total per school in its colour (never summed together); results = [[campus, ledger.summary], ...]
+export function summaryOverlay(results, cfg, overlay) {
+  const sel = { all: false, campuses: results.map((r) => r[0]) }, by = {};
+  results.forEach(([c, sum]) => { by[c] = summaryTotals(sum, cfg); });
+  const line = (label, k) => '<p><b>' + label + '</b> ' + overlay(Object.fromEntries(sel.campuses.map((c) => [c, by[c][k]])), sel, formatInr) + '</p>';
+  return line('Account balances', 'balance') + line('Owed to suppliers', 'owed') + line('Held for student collections', 'held');
+}
+
 export function summaryView(sum, cfg, campusLabel) {
   const label = (id) => chargedLabel(id);
   const credit = sum.accounts.filter((a) => a.kind === 'credit');
@@ -143,6 +160,7 @@ export async function showAccounts(root, session, api, outbox) {
   }
   const guard = inflightGuard();
   const campus = session.campus;
+  const campusLabelOf = (c) => (window.LMCS && window.LMCS.campusLabel ? window.LMCS.campusLabel(c) : c);
   const allCampus = session.campusId === 'ALL' || hasRole(session, ['Accounts']);
   let cfg = { categories: [], accounts: [], vehicles: [], campuses: [], collections: [] };
   const say = (el, text) => { el.textContent = text; };
@@ -219,7 +237,6 @@ export async function showAccounts(root, session, api, outbox) {
     setKids(opAcc, mine.map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ', ' + a.kind + ')')));
     setKids(vList, cfg.vehicles.length ? cfg.vehicles.filter((v) => allCampus || v.campus === campus).map((v) => h('li', {}, h('b', {}, v.label), ' · ', v.reg, ' · ', v.kind, ' · ', v.campus, v.active ? '' : ' · inactive')) : [h('li', {}, 'No vehicles yet.')]);
     paintCollections();
-    paintCampusPick();
   }
   async function loadConfig() {
     const r = await api.read('config.get', {}, 'accfg');
@@ -231,13 +248,8 @@ export async function showAccounts(root, session, api, outbox) {
   // --- summary
   const per = defaultPeriod(todayIst());
   const fromIn = h('input', { type: 'date', id: 'sm-from', value: per.from }), toIn = h('input', { type: 'date', id: 'sm-to', value: per.to });
-  const campPick = h('select', { id: 'sm-campus' }), sumBox = h('div', { role: 'status' });
-  function paintCampusPick() {
-    if (!allCampus) return;
-    const cur = campPick.value || 'ALL';
-    setKids(campPick, ['ALL', ...(cfg.campuses.length ? cfg.campuses : [])].map((c) => h('option', { value: c }, c)));
-    campPick.value = [...campPick.options].some((o) => o.value === cur) ? cur : 'ALL';
-  }
+  const campPick = h('div', { id: 'sm-campus' }), sumBox = h('div', { role: 'status' });
+  let sumSel = { all: true, campuses: [] }; // the summary's own multi-select picker; the header picker stays the forms' campus
   const smBtn = btn('sum', 'Show summary', async () => {
     const from = fromIn.value, to = toIn.value;
     if (!from || !to || from > to) return say(sumBox, 'Choose a start date that is not after the end date.');
@@ -245,10 +257,17 @@ export async function showAccounts(root, session, api, outbox) {
     say(sumBox, 'Loading…');
     if (!cfg.categories.length) await loadConfig();
     if (!cfg.categories.length) return say(sumBox, 'Still loading the category list — try again in a moment.');
-    const r = await api.read('ledger.summary', { campus: allCampus ? (campPick.value || 'ALL') : campus, from, to }, 'acsum');
-    if (r.stale) return;
-    if (!r.success) return say(sumBox, 'Could not load the summary: ' + (r.network ? 'offline or unavailable' : explainCode(r.code || r.error)));
-    setKids(sumBox, h('p', { class: 'meta' }, 'Period ' + isoToDmy(from) + ' to ' + isoToDmy(to) + '. Balances and amounts owed are as at ' + isoToDmy(to) + '.'), summaryView(r, cfg));
+    // ALL (or a non-ALL Accounts user's own scope) is one backend call; picked schools are one call each, shown side by side
+    const targets = !allCampus ? [campus] : sumSel.all ? ['ALL'] : sumSel.campuses;
+    if (!targets.length || !targets[0]) return say(sumBox, 'No campus in your sign-in to show.');
+    const rs = await Promise.all(targets.map((c) => api.read('ledger.summary', { campus: c, from, to }, 'acsum:' + c)));
+    if (rs.some((r) => r.stale)) return;
+    const bad = rs.find((r) => !r.success);
+    if (bad) return say(sumBox, 'Could not load the summary: ' + (bad.network ? 'offline or unavailable' : explainCode(bad.code || bad.error)));
+    const note = h('p', { class: 'meta' }, 'Period ' + isoToDmy(from) + ' to ' + isoToDmy(to) + '. Balances and amounts owed are as at ' + isoToDmy(to) + '.');
+    if (rs.length === 1) return setKids(sumBox, note, summaryView(rs[0], cfg));
+    const ov = h('div', {}); ov.innerHTML = summaryOverlay(targets.map((c, i) => [c, rs[i]]), cfg, window.LMCSCampus.overlay);
+    setKids(sumBox, note, h('h3', {}, 'Totals by school'), ov, targets.map((c, i) => h('div', {}, h('h2', {}, campusLabelOf(c)), summaryView(rs[i], cfg))));
   });
 
   const form = (title, ...kids) => h('div', { class: 'office-form' }, h('h3', {}, title), ...kids);
@@ -258,6 +277,7 @@ export async function showAccounts(root, session, api, outbox) {
     form('Vehicles', vList, impBtn, impMsg, h('h4', {}, 'Add a vehicle for ' + campus), vKind, vReg, vLabel, vBtn, vMsg),
     form('Student collections', h('p', { class: 'meta' }, 'Heads you can collect under. A switched-off head is not offered on the Day Book form; its past entries still show in reports.'), cList, cName, cBtn, cMsg),
     form('Summary', h('label', { for: 'sm-from' }, 'From'), fromIn, h('label', { for: 'sm-to' }, 'To'), toIn,
-      allCampus ? [h('label', { for: 'sm-campus' }, 'Campus'), campPick] : null, smBtn, sumBox));
+      allCampus ? campPick : null, smBtn, sumBox));
+  if (allCampus) window.LMCSCampus.mount(campPick, { session, hes: true, label: 'Summary campuses', onChange: (s) => { sumSel = s; } });
   await loadConfig();
 }

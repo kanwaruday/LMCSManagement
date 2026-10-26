@@ -61,14 +61,35 @@ window.TransportChecks = (function () {
     load();
   }
 
+  // The Owner overview's four numbers for the picked schools. Rate-like pairs ("2 of 5") are per school, never summed (overlay
+  // gets one object per school). Under All every row counts, whatever its campus.
+  const cidOf = r => { const n = String(r.campusId || r.campus || '').replace(/\D/g, ''); return n ? 'LMS' + n : String(r.campusId || r.campus || ''); };
+  const inSel = (rows, sel) => LMCSCampus.filter((rows || []).map(r => Object.assign({}, r, { cid: cidOf(r) })), sel, 'cid');
+  const isOld = (d, v) => Number(v.year) && +d.today.slice(0, 4) - Number(v.year) >= 14;
+  function networkStats(d, sel) {
+    const open = inSel(d.tasks, sel).filter(t => t.status === 'open'), late = open.filter(t => t.due && t.due < d.today);
+    const since = new Date(Date.parse(d.today + 'T00:00:00Z') - 30 * 86400000).toISOString().slice(0, 10);
+    const fuelRs = inSel(d.checks, sel).filter(c => c.flag === 'yes' && c.date > since).reduce((s, c) => s + Number(c.excessRs || 0), 0);
+    const regs = new Set(inSel(d.vehicles, sel).map(v => v.reg)); // driving days carry only the bus reg
+    const awayKm = d.days.filter(x => Number(x.nightAwayKm) > 2 && regs.has(x.reg)).reduce((s, x) => s + 2 * Number(x.nightAwayKm), 0);
+    const ops = inSel(d.vehicles.filter(v => v.operational), sel);
+    return { fuelRs, awayRs: awayKm / 5 * DIESEL_RS, ops: ops.length, healthy: ops.filter(v => v.tracker === 'ok').length, open: open.length, late: late.length, old: ops.filter(v => isOld(d, v)).length };
+  }
+
   // ── Coordinator / Owner ──
   function mount(el, session, opts) {
     opts = opts || {};
     const S = { tab: opts.owner ? 'overview' : 'checks', bus: '', d: null, mapMounted: false };
     el.innerHTML = '<h2 class="pagetitle">' + (opts.owner ? 'Transport: what the GPS shows' : 'Transport checks') + '</h2>' +
       '<p class="pagesub">' + (opts.owner ? 'Leakage, who is acting on it, and proposals. Depth below.' : 'Each item says what to do and by when. Close it with what you did.') + '</p>' +
-      '<div class="tc-body"><div class="status">Loading...</div></div><div class="tc-map" hidden></div>';
+      (opts.owner ? '<div class="tc-pick"></div>' : '') + '<div class="tc-body"><div class="status">Loading...</div></div><div class="tc-map" hidden></div>';
     const body = el.querySelector('.tc-body'), mapEl = el.querySelector('.tc-map');
+    // Owner: the shared picker narrows the four overview numbers; 2+ schools show one value per school. Its own sel is passed on.
+    if (opts.owner && window.LMCSCampus) {
+      let live = false;
+      LMCSCampus.mount(el.querySelector('.tc-pick'), { session, label: 'Show campuses', onChange: s => { S.sel = s; if (live && S.d) render(); } });
+      live = true;
+    }
 
     async function load() {
       try { S.d = await get(session, 'coordinatortransportinsight'); render(); }
@@ -98,25 +119,24 @@ window.TransportChecks = (function () {
 
     // Owner: four numbers, who is late, most unusual first, proposals
     function overview(tab, d, open, late) {
-      const flagged = d.checks.filter(c => c.flag === 'yes');
-      const since = new Date(Date.parse(d.today + 'T00:00:00Z') - 30 * 86400000).toISOString().slice(0, 10);
-      const fuelRs = flagged.filter(c => c.date > since).reduce((s, c) => s + Number(c.excessRs || 0), 0);
-      const awayKm = d.days.filter(x => Number(x.nightAwayKm) > 2).reduce((s, x) => s + 2 * Number(x.nightAwayKm), 0); // there and back
-      const awayRs = awayKm / 5 * DIESEL_RS;
-      const ops = d.vehicles.filter(v => v.operational), healthy = ops.filter(v => v.tracker === 'ok').length;
-      const year = +d.today.slice(0, 4), old = ops.filter(v => Number(v.year) && year - Number(v.year) >= 14);
+      const sel = S.sel || { all: true, campuses: [] }, multi = !sel.all && sel.campuses.length >= 2;
+      const one = c => ({ all: false, campuses: [c] });
+      const st = multi ? null : networkStats(d, sel), per = {};
+      if (multi) sel.campuses.forEach(c => { per[c] = networkStats(d, one(c)); });
+      const ov = (pick, f) => multi ? LMCSCampus.overlay(Object.fromEntries(sel.campuses.map(c => [c, pick(per[c])])), sel, f) : f(pick(st));
+      const pOpen = inSel(open, sel), pLate = inSel(late, sel), old = inSel(d.vehicles.filter(v => v.operational), sel).filter(v => isOld(d, v));
       const who = {};
-      late.forEach(t => { const k = t.assignee || 'nobody (no coordinator for ' + t.campus + ')'; who[k] = (who[k] || 0) + 1; });
-      const unusual = open.slice().sort((a, b) => (a.severity === 'high' ? 0 : 1) - (b.severity === 'high' ? 0 : 1) || (a.due < b.due ? -1 : 1)).slice(0, 8);
+      pLate.forEach(t => { const k = t.assignee || 'nobody (no coordinator for ' + t.campus + ')'; who[k] = (who[k] || 0) + 1; });
+      const unusual = pOpen.slice().sort((a, b) => (a.severity === 'high' ? 0 : 1) - (b.severity === 'high' ? 0 : 1) || (a.due < b.due ? -1 : 1)).slice(0, 8);
       const shared = (d.proposals.shared || []);
       const pnlBus = {};
-      (d.pnl || []).forEach(r => { const o = pnlBus[r.reg] = pnlBus[r.reg] || { reg: r.reg, campus: r.campus, net: 0 }; o.net += r.fee - r.fuel - r.loan - r.fixed - r.pay; });
+      inSel(d.pnl || [], sel).forEach(r => { const o = pnlBus[r.reg] = pnlBus[r.reg] || { reg: r.reg, campus: r.campus, net: 0 }; o.net += r.fee - r.fuel - r.loan - r.fixed - r.pay; });
       const losers = Object.values(pnlBus).filter(o => o.net < 0).sort((a, b) => a.net - b.net);
       tab.innerHTML = '<div class="tiles">' +
-        '<div class="tile ' + (fuelRs + awayRs > 0 ? 'bad' : '') + '"><b>' + rs(fuelRs + awayRs) + '</b>estimated leakage seen by GPS, last 30 days (fuel bills ' + rs(fuelRs) + ', driving to unusual parking ' + rs(awayRs) + ')</div>' +
-        '<div class="tile ' + (healthy < ops.length ? 'warn' : '') + '"><b>' + healthy + ' of ' + ops.length + '</b>running vehicles with a working tracker</div>' +
-        '<div class="tile ' + (late.length ? 'bad' : '') + '"><b>' + late.length + ' of ' + open.length + '</b>transport follow-ups past their due date</div>' +
-        '<div class="tile ' + (old.length ? 'warn' : '') + '"><b>' + old.length + '</b>running vehicles at or within a year of the 15-year limit</div></div>' +
+        '<div class="tile ' + (multi || st.fuelRs + st.awayRs > 0 ? 'bad' : '') + '"><b>' + ov(x => x.fuelRs + x.awayRs, rs) + '</b>estimated leakage seen by GPS, last 30 days (GPS-flagged fuel bills and driving to unusual parking)</div>' +
+        '<div class="tile ' + (multi || st.healthy < st.ops ? 'warn' : '') + '"><b>' + ov(x => x, x => x.healthy + ' of ' + x.ops) + '</b>running vehicles with a working tracker</div>' +
+        '<div class="tile ' + (multi || st.late ? 'bad' : '') + '"><b>' + ov(x => x, x => x.late + ' of ' + x.open) + '</b>transport follow-ups past their due date</div>' +
+        '<div class="tile ' + (multi || old.length ? 'warn' : '') + '"><b>' + ov(x => x.old, String) + '</b>running vehicles at or within a year of the 15-year limit</div></div>' +
         '<h3 class="tc-h">Who is late</h3>' + (Object.keys(who).length ? '<ul>' + Object.keys(who).sort((a, b) => who[b] - who[a]).map(k => '<li><b>' + esc(k.split('@')[0]) + '</b>: ' + who[k] + ' follow-up' + (who[k] > 1 ? 's' : '') + ' past due</li>').join('') + '</ul>' : '<p class="note">Nobody: every transport follow-up is within its due date.</p>') +
         '<h3 class="tc-h">Most urgent first</h3>' + (unusual.length ? unusual.map(t => '<div class="task ' + esc(t.severity) + '"><div><div class="t"><span class="chip">' + esc(DOMAIN[t.domain]) + '</span>' + esc(t.title) + '</div><div class="d">' + esc(t.campus) + ' · ' + (t.assignee ? esc(t.assignee.split('@')[0]) : '<b class="miss">no owner</b>') + ' · ' + dueText(t, d.today) + '</div></div></div>').join('') : '<p class="note">No open transport follow-ups.</p>') +
         '<h3 class="tc-h">Proposals for your decision</h3><p class="note">Nothing here changes by itself. Each needs your decision before anyone acts.</p>' +

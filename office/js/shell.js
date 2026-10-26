@@ -51,9 +51,19 @@ function cacheClear() {
 
 export const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function pickCampus(session) {
-  if (session.campusId !== 'ALL') return session.campusId;
-  try { const c = localStorage.getItem(CAMPUS_KEY); if (CAMPUSES.includes(c)) return c; } catch (_) {}
+// The one campus every data call of this page uses. Scope comes from the session only: a Fee Clerk or a comma list never gets a
+// campus outside its list (the first one in LMS1..HES order, so it matches the picker's scope; none valid -> '' and the backend refuses).
+// ALL: the header picker's single-select choice (lmcs-campus1:<email>), else the old lmcs-office-campus key (copied across once), else LMS1.
+export function pickCampus(session, ls) {
+  const ids = String(session.campusId || '').split(',').map((x) => x.trim().toUpperCase());
+  if (!ids.includes('ALL')) return CAMPUSES.find((c) => ids.includes(c)) || '';
+  const key = 'lmcs-campus1:' + (session.email || '');
+  try {
+    const store = ls || localStorage;
+    try { const o = JSON.parse(store.getItem(key)); const c = o && o.v === 1 && o.sel && o.sel[0]; if (CAMPUSES.includes(c)) return c; } catch (_) {}
+    const old = store.getItem(CAMPUS_KEY);
+    if (CAMPUSES.includes(old)) { store.setItem(key, JSON.stringify({ v: 1, sel: [old] })); return old; }
+  } catch (_) {}
   return 'LMS1'; // pilot default
 }
 
@@ -111,11 +121,10 @@ export async function bootOffice({ onReady }) {
   const refresh = async () => { state = await outbox.counts(); paint(); };
 
   $('who').textContent = session.name + ' · ' + L.campusLabel(session.campus);
-  if (session.campusId === 'ALL') {
-    const sel = $('campus-pick');
-    sel.hidden = false;
-    sel.innerHTML = CAMPUSES.map((c) => '<option value="' + c + '"' + (c === session.campus ? ' selected' : '') + '>' + esc(L.campusLabel(c)) + '</option>').join('');
-    sel.onchange = () => { try { localStorage.setItem(CAMPUS_KEY, sel.value); } catch (_) {} location.reload(); };
+  if (session.campusId === 'ALL') { // Fee Clerks and comma lists never get a picker
+    let ready = false;
+    window.LMCSCampus.mount($('campus-pick'), { session, multi: false, hes: true, label: 'Campus', onChange: () => { if (ready) location.reload(); } });
+    ready = true;
   }
   $('signout-link').onclick = async (e) => {
     e.preventDefault();
