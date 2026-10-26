@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Principal's Daily Reporting</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -277,7 +278,8 @@ td{padding:6px 12px;vertical-align:middle}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=01effdcf"></script>
+<script src="../assets/campus-picker.js?v=cd35c768"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -796,7 +798,6 @@ const DRIVER_FORM_IDS = {
   LMS5: '1K4sC3FyHEMOm8n6ujet8JlhUzqBZMVR7vMccKiHHcqA',
   LMS6: '16oTsz4SBj8PvPasi87ajQLw07_PElUYKrifTL0PH75o',
 };
-const ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 
 // ── Owner/Coordinator "data source" links (2026-09-20, per Uday) ───────────
 // So an Owner can jump straight to the Form/Sheet/Calendar behind
@@ -974,8 +975,7 @@ async function init() {
     loadDashboard(); // fetch eagerly so it's ready once a school is picked/switched
     loadApprovals(); // same treatment -- action=approvalslist already returns every accessible campus in one call
     if (restore) {
-      var campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
-      if (restore.campusId && campuses.indexOf(restore.campusId) > -1) selectSchool(restore.campusId);
+      if (restore.campusId && LMCSCampus.scope(SESSION).indexOf(restore.campusId) > -1) SCHOOL_PICK.set([restore.campusId]);
       if (restore.tab) switchTab(restore.tab);
       if (restore.subTab) switchSubTab(restore.subTab);
       if (restore.reportDate) {
@@ -1011,16 +1011,11 @@ async function init() {
 // re-picking the campus on every tab. Only rendered for ALL-access
 // sessions (Owner/Coordinator); a Principal is already locked to their
 // one school, so there's nothing to pick and this stays hidden.
+var SCHOOL_PICK = null;
 function setupSchoolPicker() {
-  const campuses = SESSION.campusId === 'ALL' ? ALL_CAMPUSES : [SESSION.campusId];
-  if (campuses.length > 1) {
-    const wrap = document.getElementById('schoolPickerWrap');
-    wrap.style.display = 'flex';
-    document.getElementById('schoolPicker').innerHTML = campuses.map(function (c, i) {
-      return '<button class="campus-btn school-btn' + (i === 0 ? ' active' : '') + '" data-campus="' + c + '" onclick="selectSchool(\'' + c + '\')">' + LMCS.campusLabel(c) + '</button>';
-    }).join('');
-  }
-  selectSchool(campuses[0]);
+  // single-select shared picker: scope comes from the session (ALL = six schools, a Principal = their one, hidden). No session = no school.
+  document.getElementById('schoolPickerWrap').style.display = LMCSCampus.scope(SESSION).length > 1 ? 'flex' : 'none';
+  SCHOOL_PICK = LMCSCampus.mount('#schoolPicker', { session: SESSION, multi: false, label: 'School', onChange: function (s) { if (s.campuses[0]) selectSchool(s.campuses[0]); } });
 }
 
 // Re-points every tab at the newly selected school. Submit and Principal
@@ -1029,9 +1024,6 @@ function setupSchoolPicker() {
 // than re-fetching, since that one call already covers every campus.
 function selectSchool(campusId) {
   SELECTED_CAMPUS_ID = campusId;
-  document.querySelectorAll('#schoolPicker .campus-btn').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.campus === campusId);
-  });
   // 'submit' (Teacher SS) is the default-active sub-tab, so it loads like
   // before; the other 5 SS forms only get (re-)pointed at the new School
   // if the Principal has actually opened them already -- see

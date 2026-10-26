@@ -8,8 +8,9 @@
   <meta name="theme-color" content="#1f3a5f" />
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="../assets/style.css" />
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="office.css" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
 </head>
 <body>
   <header class="site">
@@ -20,7 +21,7 @@
       </a>
       <nav class="roles" id="header-status">
         <span id="sync-indicator" role="status" aria-live="polite"></span>
-        <select id="campus-pick" aria-label="Campus" hidden></select>
+        <div id="campus-pick" hidden></div>
       </nav>
     </div>
   </header>
@@ -41,7 +42,8 @@
     </div>
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
-  <script src="../assets/auth.js"></script>
+  <script src="../assets/auth.js?v=01effdcf"></script>
+  <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     import { showClose } from './js/close.js';
