@@ -1,0 +1,70 @@
+/* The floating Buddy (assets/game/buddy-dock.js): the corner button and its help panel. Loaded by assets/auth.js on every
+   portal page once someone is signed in. game.css's tokens (--lg-*) are set here too, so its .lg-go / .lg-btn buttons
+   look the same inside the panel; every class of its own is prefixed bd-. --bd-lift = the height to clear (the next-step
+   bar, LMCSDock.avoid), set by the script. */
+.bd-btn, .bd-panel {
+  --lg-red: var(--red, #ce0000);
+  --lg-red-ink: var(--red-dark, #a70000);
+  --lg-red-soft: var(--red-pale, #fde8e8);
+  --lg-ink: var(--dark, #1a1a1a);
+  --lg-muted: var(--gray, #555555);
+  --lg-line: var(--border, #dddddd);
+  --lg-surface: var(--lgray, #f5f5f5);
+  --lg-paper: var(--white, #ffffff);
+  --lg-focus: #1d4fa3;
+  box-sizing: border-box;
+  font-family: var(--font, "Segoe UI", Arial, sans-serif);
+}
+.bd-panel *, .bd-btn * { box-sizing: border-box; }
+.bd-panel [hidden] { display: none !important; }
+
+/* the button: 44 px, 16 px from the bottom-right corner, above the next-step bar (z 900), under the game's layers (z 1000) */
+.bd-btn { position: fixed; z-index: 950; right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--bd-lift, 0px));
+  width: 44px; height: 44px; padding: 0; border: 2px solid var(--lg-red); border-radius: 50%; background: var(--lg-paper);
+  box-shadow: 0 4px 14px rgba(40, 25, 10, .22); cursor: pointer; overflow: hidden; }
+.bd-btn .bd-av { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bd-btn[aria-busy] { opacity: .7; }
+.bd-btn:focus-visible, .bd-x:focus-visible, .bd-q:focus-visible, .bd-results a:focus-visible, .bd-guide:focus-visible, .bd-panel .lg-go:focus-visible,
+.bd-panel .lg-btn:focus-visible { outline: 3px solid var(--lg-focus); outline-offset: 2px; }
+
+/* the panel: a bottom sheet on phones (max 70vh, scrolls) */
+.bd-panel { position: fixed; z-index: 960; left: 0; right: 0; bottom: 0; max-height: 70vh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--lg-paper); color: var(--lg-ink); line-height: 1.45; border-top: 4px solid var(--lg-red); border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 30px rgba(20, 10, 0, .25);
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.bd-head { display: flex; align-items: center; gap: 10px; }
+.bd-head .bd-av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid var(--lg-red); background: var(--lg-surface); flex: none; }
+.bd-head h2 { flex: 1; margin: 0; font-size: 17px; line-height: 1.25; font-weight: 800; color: var(--lg-red-ink); }
+.bd-head h2:focus { outline: none; }
+.bd-x { flex: none; width: 44px; height: 44px; margin-right: -10px; border: 0; border-radius: 50%; background: none; color: var(--lg-muted);
+  font: inherit; font-size: 26px; line-height: 1; cursor: pointer; }
+.bd-x:hover { background: var(--lg-surface); }
+.bd-part { padding: 10px 0; border-top: 1px solid var(--lg-line); }
+.bd-head + .bd-part { border-top: 0; }
+.bd-part h3 { margin: 0 0 4px; font-size: 12.5px; font-weight: 700; color: var(--lg-muted); letter-spacing: .02em; }
+.bd-part p { margin: 0; font-size: 14.5px; max-width: 60ch; }
+.bd-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.bd-t { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.bd-t small { display: block; font-size: 12px; font-weight: 700; color: var(--lg-red-ink); }
+.bd-show { width: 100%; margin: 2px 0 10px; }
+.bd-q { display: block; width: 100%; min-height: 44px; padding: 8px 10px; font: inherit; font-size: 16px; /* 16 px: no zoom on iOS */
+  border: 1px solid #8a837b; border-radius: 8px; background: var(--lg-paper); color: var(--lg-ink); }
+.bd-results { list-style: none; margin: 4px 0 0; padding: 0; }
+.bd-results a, .bd-guide { display: flex; align-items: center; min-height: 44px; color: var(--lg-ink); font-size: 14.5px; font-weight: 600;
+  text-decoration: underline; text-decoration-color: var(--lg-red-ink); text-underline-offset: 3px; }
+.bd-results a { border-bottom: 1px solid var(--lg-line); }
+.bd-none { padding: 10px 0; font-size: 14px; color: var(--lg-muted); }
+.bd-guide { color: var(--lg-red-ink); }
+
+/* desktop: a 360 px card above the button */
+@media (min-width: 768px) {
+  .bd-panel { left: auto; right: 16px; width: 360px; bottom: calc(16px + 44px + 10px + var(--bd-lift, 0px));
+    max-height: min(70vh, calc(100vh - 96px - var(--bd-lift, 0px))); border-radius: 14px; box-shadow: 0 10px 30px rgba(20, 10, 0, .25); padding: 10px 16px 14px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bd-panel { animation: bd-in .2s cubic-bezier(.2, .8, .2, 1) both; }
+  .bd-btn { transition: bottom .2s ease-out; }
+  @keyframes bd-in { from { transform: translateY(12px); opacity: 0; } }
+}
+@media print { .bd-btn, .bd-panel { display: none !important; } }

@@ -195,6 +195,14 @@ assert.ok(/\['due', 'due '/.test(src), 'mission due tag uses the neutral due cla
   assert.strictEqual(G.onlyModule(Object.assign({}, d, { next: d.missions[0] }), 'fleet').next.id, 'fleet_papers:HP1');
   assert.strictEqual(d.missions.length, 2, 'the response itself is not changed'); }
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');
+// one tour UI: LMCSGame.tour (the floating Buddy's "Show me how"), the home tour and mount's page tour all run runTour
+assert.strictEqual(typeof G.tour, 'function');
+assert.strictEqual((src.match(/lg-tourcard/g) || []).length, 1, 'the tour card is built in one place');
+assert.strictEqual((src.match(/runTour\(beats, \{/g) || []).length, 2, "mount's tour() and LMCSGame.tour both call runTour");
+assert.ok(/function tour\(beats, after, tourId\) \{\s*runTour\(/.test(src), "mount's home and page tours go through runTour");
+assert.strictEqual(G.tour([], {}), undefined); // no beats: nothing happens, no DOM touched
+assert.strictEqual(G.last(), null);            // no mount yet
+for (const k of ['h', 'img', 'trap', 'reduced']) assert.strictEqual(typeof G.ui[k], 'function', 'ui.' + k);
 // mount with no backendUrl renders nothing and touches nothing else
 let cleared = 0;
 G.mount({ set textContent(v) { cleared++; } }, { session: {}, backendUrl: '' });

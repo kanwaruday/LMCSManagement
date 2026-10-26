@@ -42,6 +42,7 @@ const NO_SOURCES = {
   'docs/mockups/transport-visual/template.html': 'design mock-up with no data in it (data is injected locally, never committed)',
   'owner/transport/index.html': 'GPS checks through the Coordinator backend (same data as coordinator/transport/live.html); the vendor id stays out of page source',
   'teacher/plan-activity.html': 'one-line write to the Game backend; shows no sheet data',
+  'guide/index.html': 'the user guide: feature help from assets/game/guide.js, no data',
   'coordinator/transport/capture.html': 'phone capture page: writes photos and run rows through the Roster web app (apps-script/transport-capture.gs); it shows no sheet data',
 };
 function pages(dir, out = []) {
