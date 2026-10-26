@@ -62,7 +62,7 @@ var LMCSDock = window.LMCSDock = (function () {
     if (!BACKEND || !s) return Promise.resolve(null);
     return fetch(BACKEND + '?action=gametoday&idToken=' + encodeURIComponent(s.idToken || ''), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
-      .then(function (d) { if (!d || d.success === false) return null; keep(d); return d; })
+      .then(function (d) { if (!d || d.success === false || d.error) return null; keep(d); return d; })
       .catch(function () { return null; });
   }
 
@@ -80,7 +80,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return Promise.all([
       load('link', { rel: 'stylesheet', href: BASE + 'game.css' + V }, css).catch(function () { /* unstyled buttons still work */ }),
       load('script', { src: BASE + 'game.js' + V }, !!window.LMCSGame),
-      load('script', { src: BASE + 'guide.js' + V }, !!window.LMCSGuide),
+      load('script', { src: BASE + 'guide.js' + V }, !!window.LMCSGuide).catch(function () { /* the panel copes with no guide */ }),
     ]);
   }
 
@@ -92,8 +92,8 @@ var LMCSDock = window.LMCSDock = (function () {
   function open() {
     if (!session()) { close(); btn.remove(); return; }
     btn.setAttribute('aria-busy', 'true');
-    deps().then(function () { btn.removeAttribute('aria-busy'); if (!panel) build(); },
-      function () { btn.removeAttribute('aria-busy'); if (PATH !== 'guide/index.html') location.href = GUIDE; }); // offline or blocked: the guide page is the help that's left
+    deps().then(function () { if (!btn) return; btn.removeAttribute('aria-busy'); if (!panel) build(); },
+      function () { if (btn) btn.removeAttribute('aria-busy'); if (PATH !== 'guide/index.html') location.href = GUIDE; }); // offline or blocked: the guide page is the help that's left
   }
   function close(keepFocus) {
     if (!panel) return;
@@ -162,6 +162,7 @@ var LMCSDock = window.LMCSDock = (function () {
   var queued = false;
   function lift() {
     queued = false;
+    if (btn && !session()) { close(); btn.remove(); btn = null; return; } // signed out or dropped by the allowlist re-check: no button over the gate
     var vh = window.innerHeight, up = 0, els;
     try { els = document.querySelectorAll('.lg-nextbar' + (api.avoid ? ',' + api.avoid : '')); } catch (e) { els = document.querySelectorAll('.lg-nextbar'); }
     [].forEach.call(els, function (el) {
