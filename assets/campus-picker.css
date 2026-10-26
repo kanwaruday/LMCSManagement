@@ -1,0 +1,33 @@
+/* Shared campus picker (assets/campus-picker.js). Campus hues are mid-tones: each is >= 3:1 against white and
+   against #1a1a1a, so the same token works on a light or a dark surface. */
+:root {
+  --campus-lms1: #2f6fd6;
+  --campus-lms2: #2e8540;
+  --campus-lms3: #c4620a;
+  --campus-lms4: #8a4fd0;
+  --campus-lms5: #0f8a8a;
+  --campus-lms6: #c2387a;
+  --campus-hes: #6b7280;
+}
+
+.lmcs-campus-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.lmcs-campus-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 4px 12px;
+  font: inherit; font-size: 0.875rem; color: var(--dark, #1a1a1a);
+  background: var(--white, #fff); border: 1px solid var(--border, #ddd); border-radius: 999px;
+  cursor: pointer; white-space: nowrap;
+}
+.lmcs-campus-chip[data-code]:not([data-code="ALL"])::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--chip-dot, var(--gray, #555));
+}
+.lmcs-campus-chip:hover { border-color: var(--gray, #555); }
+.lmcs-campus-chip[aria-pressed="true"] {
+  background: var(--red-pale, #fde8e8); border-color: var(--red, #ce0000); color: var(--red-dark, #a70000); font-weight: 600;
+}
+.lmcs-campus-chip:focus-visible { outline: 2px solid var(--red, #ce0000); outline-offset: 2px; }
+
+/* Overlay: one colour-dotted value per selected school. */
+.lmcs-ov { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.lmcs-ov-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.lmcs-ov-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
