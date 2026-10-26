@@ -75,7 +75,7 @@ const APR_COMMENTS_TAB = 'Comments';
 // Dashboard for that specific candidate -- see hiring.gs's
 // hirEffectiveStatus_/hirSalaryOfferDecisions_/hirSalaryOfferGateCheck_,
 // and the gate in aprDecide_ below that calls the latter.
-const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no
@@ -110,7 +110,7 @@ const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // set. Extend this list, not the Teacher-role check in aprSubmit_,
 // when that happens. Neither category triggers the amount/item/qty
 // fields, so the Teacher Portal's submit form skips them entirely.
-const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Other'];
+const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Leave', 'Other']; // 'Leave' 2026-10-26, see approvals-leave.gs
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
@@ -172,6 +172,7 @@ function aprRowToObj_(row) {
     archived: String(row[18] || '').toUpperCase() === 'TRUE',
     // 2026-10-08, per Uday: who is following up an approved request, due when, and whether it is done. Written by the Coordinator backend
     // (coordinator-approvals.gs) into columns 20-25 of this row; both portals show it.
+    leave: aprLvRowLeave_(row), // 2026-10-26: {type, from, to, dayPart, workingDays, deduction, noticeDays} for category Leave, else null
     followUp: row[19] ? { assignee: String(row[19]), assigneeName: String(row[20] || ''), due: String(row[21] || ''), status: String(row[22] || 'open'), note: String(row[23] || ''), doneAt: String(row[24] || '') } : null,
   };
 }
@@ -290,7 +291,14 @@ function aprSubmit_(caller, body) {
     const picked = String(body.campusId || '').trim().toUpperCase();
     if (/^LMS[1-6]$/.test(picked)) campusId = picked;
   }
-  const title = String(body.title || '').trim();
+  let title = String(body.title || '').trim();
+  // 2026-10-26: teacher leave -- validated and costed by approvals-leave.gs; the title is generated from type and dates.
+  let leave = null;
+  if (category === APR_LEAVE_CATEGORY) {
+    const lv = aprLvPrepare_(caller, body, campusId);
+    if (!lv.ok) return { success: false, error: lv.error };
+    leave = lv.leave; title = lv.title;
+  }
   if (!title) return { success: false, error: 'Title required' };
   const description = String(body.description || '').trim();
   if (!description) return { success: false, error: 'Description required -- explain the reasoning' };
@@ -309,6 +317,11 @@ function aprSubmit_(caller, body) {
   lock.waitLock(20000);
   try {
     const existing = aprValues_();
+    if (leave) { // the same teacher cannot have two open or approved leaves on the same dates; an identical repeat (double click) is a no-op
+      const clash = aprLvFindOverlap_(existing, caller.email, leave);
+      if (clash && clash.same) return { success: true, id: clash.id, duplicate: true, status: clash.status };
+      if (clash) return { success: false, error: 'You already have a leave request on some of these dates (' + clash.status + ').' };
+    }
     for (let i = 1; i < existing.length; i++) {
       const r = existing[i];
       if (!r[0] || String(r[1]).trim() !== campusId || norm(r[11]) !== norm(caller.email)) continue;
@@ -319,11 +332,11 @@ function aprSubmit_(caller, body) {
       const recent = r[12] && (new Date().getTime() - new Date(r[12]).getTime()) < 10 * 60 * 1000;
       if (open || recent) return { success: true, id: String(r[0]), duplicate: true, status: String(r[13]) };
     }
-    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId);
+    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave);
   } finally { lock.releaseLock(); }
 }
 
-function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId) {
+function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave) {
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
     id, campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
@@ -334,6 +347,7 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
   ]);
+  if (leave) aprLvWrite_(aprSheet_(), aprSheet_().getLastRow(), leave); // inside the submit lock, so the last row is this one
   aprNotifyDeciders_(caller, title, category, campusId);
   return { success: true, id: id };
 }
