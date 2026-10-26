@@ -256,7 +256,11 @@ A separate reviewer examined each of P1 to P4 without seeing the build reasoning
 - **Teacher form:** retries also on a network failure, and says "check My Requests before filing again" if the reply could not be confirmed.
 - **Server helper** now returns `employeeCode` like the action, and throws on an empty email or bad dates.
 
-Known and accepted (tell Uday): the reason text is visible to Management and the campus's Principals through the existing request list, as for every
+A re-review of those fixes found one more: the sandwich note missed a school Calendar holiday just outside the leave. The holiday lookup is now padded a day each side (tested). Also tightened: header cells are read in one call per filing, and the in-project helper caps its window at 400 days like the action.
+
+Known and accepted (tell Uday):
+- If the leave write fails AND the clean-up `deleteRow` also fails (two failures in a row), a Leave row with no dates stays in the list; it never reaches the contract or the overlap guard, and Management can reject it.
+- the reason text is visible to Management and the campus's Principals through the existing request list, as for every
 category (medical reasons included); the contract itself never returns it. Short Leave is charged 0.33 per instance, so three shorts sum to 0.99
 leave days; the Payroll prefill (P6) must count instances (3 = 1 day), not sum `deduction`. `approvedleave` makes one Calendar read per approved
 leave row, so very wide network-wide queries are slow; the game should ask per teacher or per week. A second request of the same type and dates is

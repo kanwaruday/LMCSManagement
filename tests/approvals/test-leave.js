@@ -182,8 +182,13 @@ function world(opts) {
     insertColumnsAfter: (after, n) => { maxCols += n; log.inserted += n; },
     deleteRow: (n) => { sheetRows.splice(n - 1, 1); log.deleted.push(n); },
     getRange: (r, c, nr, nc) => ({
-      getValues: () => sheetRows.slice(r - 1, r - 1 + (nr || 1)).map((row) => row.slice(c - 1, c - 1 + (nc || 1))),
+      getValues: () => {
+        if (r === 1 && nc > 1) { log.headerReads = (log.headerReads || 0) + 1; return [Array.from({ length: nc }, (_, j) => (log.headersSet[c + j] ? 'h' : ''))]; }
+        return sheetRows.slice(r - 1, r - 1 + (nr || 1)).map((row) => row.slice(c - 1, c - 1 + (nc || 1)));
+      },
       getValue: () => (r === 1 ? (log.headersSet[c] ? 'h' : '') : ''),
+      // one read of the header cells: which are already filled (header reads are counted, to keep them to one per write)
+      // (getValues for row 1 with a single row returns the header cells)
       setValue: (v) => { if (r === 1) log.headersSet[c] = v; },
       setNumberFormat: () => {},
       setValues: (v) => {
@@ -308,14 +313,35 @@ T('submit: the leave goes to the row with this id even if another row was append
 });
 function APR_COL_TYPE() { return run('APR_LV_COL').TYPE; }
 
-T('a junk "to" date cannot switch the holiday check off for a single-day type', () => {
+T('holiday lookup: single-day types ignore a junk "to"; the window is padded a day each side for the sandwich note', () => {
   const W = world({ maxCols: 40 }); const day = nextTuesday();
   const prep = (b) => W.call('aprLvPrepare_')(teacher, b, 'LMS4');
-  prep({ leaveType: 'Half Leave', fromDate: day, toDate: 'x' });
+  const local = (iso, plus) => { const d = new Date(iso + 'T00:00:00Z'); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + plus).getTime(); };
+  prep({ leaveType: 'Half Leave', fromDate: day, toDate: 'x' });                    // junk to: must still look the day up
   prep({ leaveType: 'Casual Leave', fromDate: day, toDate: day });
   const [half, casual] = W.log.calendarCalls;
-  assert.equal(half[2].getTime(), new Date(new Date(day + 'T00:00:00Z').getUTCFullYear(), new Date(day + 'T00:00:00Z').getUTCMonth(), new Date(day + 'T00:00:00Z').getUTCDate() + 1).getTime(), 'Half Leave looked up for its own date only');
-  assert.equal(casual[2].getTime(), half[2].getTime());
+  assert.equal(half[1].getTime(), local(day, -1), 'starts the day before'); assert.equal(half[2].getTime(), local(day, 2), 'ends after the day after (exclusive)');
+  assert.equal(casual[1].getTime(), half[1].getTime()); assert.equal(casual[2].getTime(), half[2].getTime());
+  W.log.calendarCalls.length = 0;
+  prep({ leaveType: 'Casual Leave', fromDate: day, toDate: '2020-01-01' });          // to before from: no lookup, validation rejects it
+  assert.equal(W.log.calendarCalls.length, 0);
+});
+
+T('a school holiday just outside the leave reaches the sandwich warning', () => {
+  const day = nextTuesday(); const dayBefore = new Date(Date.parse(day + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const W = world({ maxCols: 40 });
+  // make the calendar report a GH holiday on the day before
+  W.w.pdrSchoolCalendarEvents_ = (campus, a, b) => [{ getTitle: () => 'GH Founders Day', getStartTime: () => new Date(dayBefore.slice(0, 4), +dayBefore.slice(5, 7) - 1, +dayBefore.slice(8, 10)), getEndTime: () => new Date(dayBefore.slice(0, 4), +dayBefore.slice(5, 7) - 1, +dayBefore.slice(8, 10) + 1) }];
+  W.w.pdrFormatISO_ = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const r = JSON.parse(JSON.stringify(W.call('aprLvPrepare_')(teacher, { leaveType: 'Casual Leave', fromDate: day, toDate: day }, 'LMS4')));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.warnings.some((x) => /Sandwich/.test(x)), 'holiday on the day before the leave');
+});
+
+T('header cells are read once per filing, not once per column', () => {
+  const W = world({ maxCols: 26 }); const day = nextTuesday();
+  const r = submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: day, toDate: day, description: 'x' });
+  assert.equal(r.success, true); assert.equal(W.log.headerReads, 1);
 });
 
 T('approvedleave: a Principal with a blank campus is refused, not shown everything', () => {
@@ -344,7 +370,7 @@ T('approver seam: Management decides all leave now; the Principal hand-over is c
     APR_DECISIONS: ['Approved', 'Rejected', 'Info Requested', 'Revoked'], APR_NO_REFER_CATEGORIES: [],
     aprSheet_: () => ({ getDataRange: () => ({ getValues: () => rowsStore }), getRange: (r, c) => ({ setValue: (v) => log.writes.push([r, c, v]), getValue: () => 'h' }) }),
     aprNotifyRequester_: () => { log.mail++; }, hirSalaryOfferGateCheck_: () => ({ ok: true }),
-    aprParseReferees_: () => ({ action: [], accountability: [], information: [] }), APR_REFER_KINDS: ['action', 'accountability', 'information'], APR_REFER_LABELS: {}, aprNotifyReferees_: () => '',
+    aprParseReferees_: () => ({ action: ['x@lms.org.in'], accountability: [], information: [] }), APR_REFER_KINDS: ['action', 'accountability', 'information'], APR_REFER_LABELS: { action: 'For Action' }, aprNotifyReferees_: () => { log.refMail = (log.refMail || 0) + 1; return ''; },
   });
   vm.runInContext(read('approvals-leave.gs'), w);
   const src = read('approvals.gs');
@@ -385,7 +411,8 @@ T('approver seam: Management decides all leave now; the Principal hand-over is c
   let r = decide(principal, 'a2'); assert.match(r.error, /campus/); r = decide(principal, 'a3'); assert.match(r.error, /decide this request/); r = decide(principal, 'a4', 'Revoked'); assert.match(r.error, /decide this request/);
   assert.equal(log.writes.length, 0, 'nothing written for any refusal'); assert.equal(log.mail, 0);
   r = decide(principal, 'a1'); assert.equal(r.success, true); assert.ok(log.writes.length >= 4, 'the allowed decision is written'); assert.equal(log.mail, 1);
-  r = decide(owner, 'a3'); assert.equal(r.success, true, 'Management can still decide everything');
+  assert.equal(log.refMail || 0, 0, 'a Principal deciding leave sends no referral email, even if one was asked for');
+  r = decide(owner, 'a3'); assert.equal(r.success, true, 'Management can still decide everything'); assert.equal(log.refMail, 1, 'Management still refers');
   // archiving stays with Management even after the hand-over
   const w2 = log.writes.length;
   assert.match(JSON.parse(JSON.stringify(w.aprArchive_(principal, { ids: ['a4'], archive: true }))).error, /Not authorized/);

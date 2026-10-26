@@ -178,8 +178,11 @@ function aprLvPrepare_(caller, body, campusId) {
   const nowIst = aprLvNowIst_(new Date());
   const type = APR_LV_TYPES[String(body.leaveType || '').trim()];
   const fromDate = String(body.fromDate || '').trim();
-  // single-day types ignore "to", so the holiday lookup must too (a junk toDate must not switch the holiday check off)
-  const holidays = aprLvHolidays_(campusId, fromDate, type && type.multi ? String(body.toDate || fromDate).trim() : fromDate);
+  // single-day types ignore "to", so the holiday lookup must too (a junk toDate must not switch the holiday check off).
+  // The window is padded by a day each side so a school holiday just outside the leave is seen by the sandwich-rule warning.
+  const toDate = type && type.multi ? String(body.toDate || fromDate).trim() : fromDate;
+  const holidays = (aprLvParseISO_(fromDate) && aprLvParseISO_(toDate) && toDate >= fromDate)
+    ? aprLvHolidays_(campusId, aprLvAddDays_(fromDate, -1), aprLvAddDays_(toDate, 1)) : {};
   const v = aprLvValidate_({ type: body.leaveType, from: body.fromDate, to: body.toDate }, nowIst, holidays);
   if (!v.ok) return v;
   v.title = aprLvTitle_(v.leave);
@@ -204,7 +207,8 @@ function aprLvRowById_(sheet, id) {
 
 function aprLvWrite_(sheet, rowNum, leave) {
   const first = APR_LV_COL.TYPE + 1;
-  APR_LV_HEADERS.forEach(function (h, i) { if (!sheet.getRange(1, first + i).getValue()) sheet.getRange(1, first + i).setValue(h); }); // per column, so a later-added header is filled too
+  const have = sheet.getRange(1, first, 1, APR_LV_HEADERS.length).getValues()[0]; // one read; fill only the blank header cells (a later-added column too)
+  APR_LV_HEADERS.forEach(function (h, i) { if (!have[i]) sheet.getRange(1, first + i).setValue(h); });
   sheet.getRange(rowNum, first + 1, 1, 2).setNumberFormat('@'); // keep the two dates as text, not Sheets dates
   sheet.getRange(rowNum, first, 1, APR_LV_HEADERS.length).setValues([[leave.type, leave.from, leave.to, leave.part, leave.workingDays, leave.deduction, leave.noticeDays, leave.note || '']]);
 }
@@ -233,6 +237,7 @@ function aprApprovedLeaveDays_(email, fromISO, toISO) {
   // fail loudly: an empty email would return every teacher, and a bad date would silently look like "no leave"
   if (!String(email || '').trim()) throw new Error('aprApprovedLeaveDays_: email is required');
   if (!aprLvParseISO_(fromISO) || !aprLvParseISO_(toISO) || toISO < fromISO) throw new Error('aprApprovedLeaveDays_: from and to must be dates (YYYY-MM-DD), to not before from');
+  if (aprLvDaysBetween_(fromISO, toISO) + 1 > APR_LV_MAX_QUERY_DAYS) throw new Error('aprApprovedLeaveDays_: ask for at most ' + APR_LV_MAX_QUERY_DAYS + ' days at a time');
   return aprLvAttachCodes_(aprLvApprovedDays_(aprValues_(), { from: fromISO, to: toISO, email: email }, aprLvHolidays_));
 }
 
