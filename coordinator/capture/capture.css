@@ -312,6 +312,7 @@
 .fs-view:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
 .fs-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .fs-scaninfo{margin:12px 0 0}
+.fs-noscan{margin:6px 0 0;font-size:14px;color:var(--c-mute)} /* a field the scans could fill but did not */
 .fs-scanlinks{display:flex;flex-wrap:wrap;column-gap:16px;margin:4px 0 -6px}
 .fs-dateunk{display:flex;gap:8px}
 .fs-dateunk .cap-input{flex:1 1 auto;min-width:0}

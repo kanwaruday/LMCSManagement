@@ -133,6 +133,8 @@ window.setupLayoutTest = async function () {
     // the Vehicle papers pre-fill: each visible tag reads as the spec says, sits under a field that has a value, fits its field
     const tags = [...document.querySelectorAll('#quest .fs-scan')].filter(vis);
     facts.scanTags = tags.length;
+    facts.noScan = [...document.querySelectorAll('#quest .fs-noscan')].filter(vis).length;
+    if ([...document.querySelectorAll('#quest .fs-noscan')].some((n) => vis(n) && n.textContent.trim() !== 'No scan found')) f.push('a no-scan line does not read "No scan found"');
     tags.forEach((t) => {
       const box = t.closest('.fs-field'), input = box && box.querySelector('input, select');
       const words = t.textContent.replace(/\s+/g, ' ').replace(' (opens in a new tab)', '').trim();

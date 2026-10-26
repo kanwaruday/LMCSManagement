@@ -188,10 +188,11 @@ const optional = (step, id) => !((step.doneCheck.required || []).includes(id) ||
 // The Vehicle papers values LM Studio read off this bus's RC / fitness scans (the GET's fleet[].scan), each checked as the form
 // would save it: {fieldId: {value, doc, link, disagree}}. They pre-fill empty fields only; a value staff saved always wins.
 function scanOf(reg, step) {
-  const raw = ((S.data && S.data.rows.fleet.find((b) => FQ.normReg(b.reg) === reg)) || {}).scan || {}, out = {};
+  const bus = (S.data && S.data.rows.fleet.find((b) => FQ.normReg(b.reg) === reg)) || {}, raw = bus.scan || {}, out = {};
+  S.form.scanKnown = 'scan' in bus; // an older backend sends no scan at all: say nothing about scans then
   Object.keys(raw).forEach((id) => {
     const x = raw[id] || {}, v = id === 'mfgYear' ? { fields: { mfgYear: String(x.value || '') } } : step.fields.some((f) => f.id === id) && FQ.validateQuest(step.id, { [id]: x.value }, today());
-    if (v && !v.error && v.fields[id]) out[id] = { value: v.fields[id], doc: String(x.doc || ''), link: /^https:\/\//.test(x.link || '') ? x.link : '', disagree: x.disagree === true };
+    if (v && !v.error && v.fields[id]) out[id] = { value: v.fields[id], doc: String(x.doc || ''), link: /^https:\/\/drive\.google\.com\//.test(x.link || '') ? x.link : '', disagree: x.disagree === true };
   });
   return out;
 }
@@ -216,7 +217,9 @@ function scanLinks() {
 function fieldHtml(step, f, val, key) {
   const id = 'f-' + key, opt = optional(step, f.id) ? ' <small>(optional)</small>' : '';
   const lab = `<label class="cap-field" for="${id}">${esc(f.label)}${opt}</label>` + (f.hint ? `<p class="fs-hint" id="${id}-h">${esc(f.hint)}</p>` : '');
-  const tag = S.form.prefilled.includes(key) ? scanTag(id, key) : '';
+  // a field the scans can fill but did not, still empty: say so (staff type it off the paper)
+  const none = S.form.scanKnown && FQ.SCAN_FIELDS.includes(key) && !S.form.scan[key] && !String(val || '').trim();
+  const tag = S.form.prefilled.includes(key) ? scanTag(id, key) : none ? `<p class="fs-noscan" id="${id}-s">No scan found</p>` : '';
   const descIds = [f.hint && id + '-h', tag && id + '-s'].filter(Boolean), desc = descIds.length ? ` aria-describedby="${descIds.join(' ')}"` : '';
   if (f.type === 'photo') {
     const ph = S.form.photos[key], has = ph || (val && !/^pending-photo/.test(val)), queued = /^pending-photo/.test(val || '');
@@ -243,7 +246,8 @@ function fieldHtml(step, f, val, key) {
 }
 function drawQuest(p, questId) {
   const step = stepOf(questId), data = p.data[questId] || {};
-  S.form = { reg: p.reg, quest: questId, values: JSON.parse(JSON.stringify(data)), photos: {}, scan: questId === 'papers' ? scanOf(p.reg, step) : {}, prefilled: [] };
+  S.form = { reg: p.reg, quest: questId, values: JSON.parse(JSON.stringify(data)), photos: {}, scan: {}, prefilled: [], scanKnown: false };
+  if (questId === 'papers') S.form.scan = scanOf(p.reg, step);
   // an empty field starts with what the scans read (tagged to confirm); the quest is still done only by a save (Ruling P2)
   Object.keys(S.form.scan).forEach((k) => { if (k !== 'mfgYear' && !String(data[k] || '').trim()) { S.form.values[k] = S.form.scan[k].value; S.form.prefilled.push(k); } });
   const link = (mode, text) => `<a class="cap-primary fs-link" href="capture.html?mode=${mode}&reg=${encodeURIComponent(p.reg)}">${text}</a>`;
@@ -295,7 +299,12 @@ function setVal(key, v) {
   const [a, b] = key.split('.');
   if (b) (S.form.values[a] = S.form.values[a] || {})[b] = v; else S.form.values[key] = v;
   S.form.dirty = true; $('qmsg').textContent = ''; need();
-  const tag = $('f-' + key + '-s'); if (tag) tag.hidden = v !== S.form.scan[key].value; // changed: no longer the scan's value
+  const tag = S.form.scan[key] && $('f-' + key + '-s'), input = $('f-' + key);
+  if (tag) { // changed away from the scan's value: the tag hides, and the field stops pointing at it
+    tag.hidden = v !== S.form.scan[key].value;
+    const ids = (input.getAttribute('aria-describedby') || '').split(' ').filter((x) => x && x !== tag.id);
+    input.setAttribute('aria-describedby', ids.concat(tag.hidden ? [] : [tag.id]).join(' '));
+  }
 }
 // "Needed to finish": the quest's missing list, worked out live from what is on the form.
 function need() {

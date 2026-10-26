@@ -114,7 +114,8 @@ function coordTransportPush_(body) {
   const label = {};
   COORD_TRANSPORT_DOCS.forEach(function (d) { label[d[0]] = d[1]; });
   const fleet = [], docs = [], papers = [], txt = function (v) { return String(v == null ? '' : v).replace(/^[=+\-@\s]+/, '').slice(0, 200); }; // never a formula
-  // a push from before the papers (no `papers` on any bus) leaves the papers tab as it is: never wiped with nothing
+  // a push from before the papers (no `papers` on any bus), or one that read no paper values at all (every bus {}: the scan
+  // descriptions were missing), leaves the papers tab as it is: never wiped with nothing
   const hasPapers = p.fleet.some(function (b) { return b.papers && typeof b.papers === 'object' && !Array.isArray(b.papers); });
   p.fleet.forEach(function (b) {
     COORD_PAPERS_SCAN_FIELDS.forEach(function (k) {
@@ -145,7 +146,7 @@ function coordTransportPush_(body) {
         p.people.map(function (q) { return [q.name, q.campus, q.designation, q.code, q.status, q.rosterName || '', q.rosterCampus || '', (q.vehicles || []).join(', ')]; }));
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
-    if (hasPapers) coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PAPERS, ['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], papers);
+    if (hasPapers && papers.length) coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PAPERS, ['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], papers);
     if (Array.isArray(p.pnl) && p.pnl.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
         p.pnl.map(function (r) { return [r.reg, r.campus, r.month, r.fee, r.fuel, r.loan, r.fixed, r.pay, r.note || '']; }));
@@ -157,7 +158,9 @@ function coordTransportPush_(body) {
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
   ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
-  return { success: true, vehicles: fleet.length, documents: docs.length, papers: hasPapers ? papers.length : null };
+  const out = { success: true, vehicles: fleet.length, documents: docs.length, papers: hasPapers ? papers.length : null };
+  if (hasPapers && !papers.length) out.warning = 'No paper values in this push; the Vehicle papers tab was left as it is';
+  return out;
 }
 
 /** The scans source rebuilt from the LM Studio tabs. Throws if they are missing: an unreadable source must never look like "no vehicles". */
