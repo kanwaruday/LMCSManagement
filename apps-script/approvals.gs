@@ -172,7 +172,7 @@ function aprRowToObj_(row) {
     archived: String(row[18] || '').toUpperCase() === 'TRUE',
     // 2026-10-08, per Uday: who is following up an approved request, due when, and whether it is done. Written by the Coordinator backend
     // (coordinator-approvals.gs) into columns 20-25 of this row; both portals show it.
-    leave: aprLvRowLeave_(row), // 2026-10-26: {type, from, to, dayPart, workingDays, deduction, noticeDays} for category Leave, else null
+    leave: aprLvRowLeave_(row), // 2026-10-26: {type, from, to, dayPart, workingDays, deduction, noticeDays, note} for category Leave, else null
     followUp: row[19] ? { assignee: String(row[19]), assigneeName: String(row[20] || ''), due: String(row[21] || ''), status: String(row[22] || 'open'), note: String(row[23] || ''), doneAt: String(row[24] || '') } : null,
   };
 }

@@ -7,7 +7,7 @@
 window.CoordApprovals = (function () {
   const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
   const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-  const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+  const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
   const catLabel = c => c === 'Salary Offer Approval' ? 'Appointment Confirmation' : c; // the Owner confirms an appointment (stored name unchanged)
   const NO_REFER = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
   const STATUS_PILLS = ['Needs Action', 'All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
@@ -41,6 +41,12 @@ window.CoordApprovals = (function () {
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ddmmyyyy = d => { if (!d) return '—'; const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); };
+  const leaveLine = r => { // type, dates and days, shown under the title and in the detail (decision 2: "the type, dates and days show on the row")
+    const l = r.leave; if (!l) return '';
+    const d = x => x ? x.slice(8, 10) + '/' + x.slice(5, 7) + '/' + x.slice(0, 4) : '\u2014';
+    return esc(l.type) + ' \u00b7 ' + d(l.from) + (l.to !== l.from ? ' to ' + d(l.to) : '') + ' \u00b7 ' + l.workingDays + ' working day' + (l.workingDays === 1 ? '' : 's') +
+      (l.type === 'Late' ? ' \u00b7 notice only' : ' \u00b7 ' + l.deduction + ' leave day' + (l.deduction === 1 ? '' : 's') + ' charged');
+  };
   const school = c => (window.LMCS && LMCS.campusLabel) ? LMCS.campusLabel(c) : c;
   const age = iso => { if (!iso) return '—'; const ms = Date.now() - new Date(iso).getTime(), d = Math.floor(ms / 86400000); if (d >= 1) return d + 'd ago'; const h = Math.floor(ms / 3600000); return h >= 1 ? h + 'h ago' : 'just now'; };
   const isStale = iso => iso && (Date.now() - new Date(iso).getTime()) / 86400000 >= STALE_DAYS;
@@ -209,7 +215,7 @@ window.CoordApprovals = (function () {
       const date = needs ? '<span' + (stale ? ' class="stalet"' : '') + '>' + age(r.requestedAt) + '</span>' : ddmmyyyy(r.decidedAt || r.requestedAt);
       let h = '<tr class="row' + (open ? ' open' : '') + (stale ? ' stale' : '') + '" data-act="row" data-id="' + esc(r.id) + '">' +
         (canSel ? '<td data-stop="1">' + (S.eligible[r.id] ? '<input type="checkbox" data-act="sel" data-id="' + esc(r.id) + '" ' + (S.selected[r.id] ? 'checked' : '') + '>' : '') + '</td>' : '') +
-        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + (r.awaitingMd ? '<div class="sm">\u23F3 Waiting for the MD Academics interview to be recorded on the Hiring Dashboard</div>' : '') + '</td><td>' + esc(catLabel(r.category)) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
+        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + (leaveLine(r) ? '<div class="sm">' + leaveLine(r) + '</div>' : '') + (r.awaitingMd ? '<div class="sm">\u23F3 Waiting for the MD Academics interview to be recorded on the Hiring Dashboard</div>' : '') + '</td><td>' + esc(catLabel(r.category)) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
         '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + fuCell(r) + '</td><td>' + date + '</td></tr>';
       if (open) h += '<tr class="detail"><td colspan="' + cols + '"><div class="dwrap" data-slot="detail">' + (S.detail ? detailInner(S.detail) : '<div class="empty">Loading…</div>') + '</div></td></tr>';
       return h;
@@ -245,6 +251,7 @@ window.CoordApprovals = (function () {
         meta.push(lbl + esc(r.itemName) + (r.quantity == null ? '' : r.category === 'New/ Backup Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity));
       }
       if (r.amount != null) meta.push('Amount: ₹' + r.amount);
+      if (r.leave) { meta.push(leaveLine(r)); if (r.leave.note) meta.push(esc(r.leave.note)); }
       if (r.evidenceLink) meta.push(r.category === 'New/ Backup Position' ? esc(r.evidenceLink) : 'Evidence: <a href="' + esc(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
       meta.push('Requested by ' + esc(r.requestedBy) + ' on ' + ddmmyyyy(r.requestedAt));
       if (r.decidedBy) meta.push(esc(r.status) + ' by ' + esc(r.decidedBy) + ' on ' + ddmmyyyy(r.decidedAt));

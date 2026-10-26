@@ -2094,7 +2094,7 @@ async function loadReportForDate() {
 // caller can see in one call).
 // 2026-09-10, per Uday: replaced generic 'HR' with named splits; keep
 // this list in sync with APR_CATEGORIES in apps-script/approvals.gs.
-const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Item doubles as "Item" (Financial/Purchase), "Employee" (Compensation
 // Change), "Subjects/Position Required" (New/ Backup Position), or
 // "Candidate" (EPF Exemption) -- same generic field, just relabeled per
@@ -2144,7 +2144,8 @@ function aprEsc_(s) {
   });
 }
 
-document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+// 'Leave' is filed by teachers in the Teacher portal (the server refuses it from anyone else), so it is not offered here; it stays in the list filter above.
+document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.filter(function (c) { return c !== 'Leave'; }).map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 // NOT called here -- aprOnCategoryChange() (default category is
 // New/ Backup Position) calls renderAprSubjectsMsOptions(), which
 // needs APR_HIRING_SUBJECTS_BY_ROLE, a `const` declared further down
@@ -2595,7 +2596,7 @@ function aprRowHtml_(r) {
     ? '<span' + (stale ? ' class="apr-stale"' : '') + '>' + aprAgeLabel_(r.requestedAt) + '</span>'
     : formatDDMMYYYY_(r.decidedAt || r.requestedAt);
   let html = '<tr class="apr-row' + (isExpanded ? ' expanded' : '') + (stale ? ' apr-row-stale' : '') + '" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
-    '<td>' + aprEsc_(r.title) + (aprReasonLine_(r) ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprReasonLine_(r) + '</div>' : '') + '</td><td>' + aprEsc_(aprCatLabel_(r.category)) + '</td>' +
+    '<td>' + aprEsc_(r.title) + (aprReasonLine_(r) ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprReasonLine_(r) + '</div>' : '') + (r.leave ? '<div style="font-size:10.5px;color:var(--gray);margin-top:3px">' + aprLeaveLine_(r) + '</div>' : '') + '</td><td>' + aprEsc_(aprCatLabel_(r.category)) + '</td>' +
     '<td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
     '<td><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span>' + aprFollowUpLine_(r) + '</td>' +
     '<td>' + dateCell + '</td></tr>';
@@ -2628,6 +2629,12 @@ async function toggleApprovalRow(id) {
   if (wrap) wrap.outerHTML = aprDetailHtml_(res); // still the expanded row -- swap contents in place
 }
 
+function aprLeaveLine_(r) { // type, dates and days of a teacher leave request
+  const l = r.leave;
+  const d = function (x) { return x ? x.slice(8, 10) + '/' + x.slice(5, 7) + '/' + x.slice(0, 4) : '—'; };
+  return aprEsc_(l.type) + ' · ' + d(l.from) + (l.to !== l.from ? ' to ' + d(l.to) : '') + ' · ' + l.workingDays + ' working day' + (l.workingDays === 1 ? '' : 's') +
+    (l.type === 'Late' ? ' · notice only' : ' · ' + l.deduction + ' leave day' + (l.deduction === 1 ? '' : 's') + ' charged');
+}
 function aprDetailHtml_(res) {
   const r = res.request;
   const meta = [];
@@ -2637,6 +2644,7 @@ function aprDetailHtml_(res) {
     meta.push(itemLabel + aprEsc_(r.itemName) + qtySuffix);
   }
   if (r.amount != null) meta.push('Amount: ₹' + r.amount);
+  if (r.leave) meta.push(aprLeaveLine_(r) + (r.leave.note ? ' · ' + aprEsc_(r.leave.note) : ''));
   // New/ Backup Position repurposes evidenceLink for the replacement-
   // hire note (plain text, not a URL -- see submitApprovalRequest), so
   // it renders as text here instead of a clickable "Evidence: link".

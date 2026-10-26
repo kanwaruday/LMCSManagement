@@ -94,13 +94,13 @@ T('warnings: Long Leave over 6 working days, sandwich for Single Leave', () => {
 // ── overlap guard and the contract, over fake Approvals rows ──
 const COL = run('APR_LV_COL');
 function row(o) {
-  const r = new Array(32).fill('');
+  const r = new Array(33).fill('');
   r[0] = o.id; r[1] = o.campus || 'LMS4'; r[2] = o.category || 'Leave'; r[4] = o.title || 't'; r[11] = o.email || 'asha@lms.org.in';
   r[13] = o.status || 'Approved';
   if (o.type) { r[COL.TYPE] = o.type; r[COL.FROM] = o.from; r[COL.TO] = o.to || o.from; }
   return r;
 }
-const HEADER = new Array(32).fill('h');
+const HEADER = new Array(33).fill('h');
 const rows = (...rs) => [HEADER, ...rs];
 
 T('overlap guard', () => {
@@ -145,6 +145,12 @@ T('contract: window clipping, filters and holidays', () => {
   assert.equal(A(values, { from: '2026-10-01', to: '2026-12-31', campusId: 'LMS2' }, () => ({})).length, 1, 'campus filter');
   assert.equal(A(values, { from: '2026-10-01', to: '2026-12-31', email: 'OTHER@lms.org.in' }, () => ({})).length, 1, 'email filter is case-insensitive');
   assert.equal(A(values, { from: '2026-10-29', to: '2026-11-03', email: 'asha@lms.org.in' }, () => ({ '2026-10-30': true })).length, 4, 'a school holiday inside the leave is not a leave day');
+});
+
+T('the filing warnings are stored on the row for the decider', () => {
+  const r = row({ id: 'c1', type: 'Casual Leave', from: '2026-10-29', to: '2026-11-10' });
+  r[COL.NOTE] = 'Long Leave: more than 6 working days.';
+  assert.equal(JSON.parse(JSON.stringify(run('aprLvRowLeave_')(r))).note, 'Long Leave: more than 6 working days.');
 });
 
 T('a date cell Sheets turned into a Date still reads back', () => {
@@ -199,6 +205,16 @@ T('submit: files a leave with generated title, writes the leave columns, stays P
   assert.equal(row[4], 'Casual Leave — ' + day, 'title is generated');
   assert.deepEqual(W.written.leave.slice(0, 3), ['Casual Leave', day, day]);
   assert.equal(W.written.leave[4], 1, 'one working day'); assert.equal(W.written.leave[5], 1, 'one leave day charged');
+  assert.equal(W.written.leave.length, 8, 'type, from, to, part, working days, deduction, notice, note');
+});
+
+T('submit: a Long Leave is filed with its warning stored for the decider', () => {
+  const W = world({}); const from = nextTuesday();
+  const to = new Date(Date.parse(from + 'T00:00:00Z') + 13 * 86400000).toISOString().slice(0, 10); // two weeks
+  const r = submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: from, toDate: to, description: 'Wedding' });
+  assert.equal(r.success, true, JSON.stringify(r));
+  assert.ok(W.written.leave[4] > 6, 'more than 6 working days');
+  assert.match(W.written.leave[7], /Long Leave/);
 });
 
 T('submit: refused for a past date, a non-teacher, a bad type; leave needs a reason', () => {

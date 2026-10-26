@@ -19,13 +19,13 @@
 // runs it in plain Node. The Apps Script glue (sheet write, calendar read, the action) is at the end.
 //
 // Column positions on the Approvals sheet (0-based into a row array; sheet column = index + 1).
-// Columns 0-24 belong to approvals.gs / the Coordinator backend; 25-31 are this feature.
+// Columns 0-24 belong to approvals.gs / the Coordinator backend; 25-32 are this feature.
 // Other Apps Script projects (Coordinator, the game backend) read these positions directly.
 // ═══════════════════════════════════════════════════════════════════
 
 const APR_LEAVE_CATEGORY = 'Leave';
-const APR_LV_COL = { TYPE: 25, FROM: 26, TO: 27, PART: 28, WORKING: 29, DEDUCTION: 30, NOTICE: 31 };
-const APR_LV_HEADERS = ['leaveType', 'fromDate', 'toDate', 'dayPart', 'workingDays', 'deduction', 'noticeDays'];
+const APR_LV_COL = { TYPE: 25, FROM: 26, TO: 27, PART: 28, WORKING: 29, DEDUCTION: 30, NOTICE: 31, NOTE: 32 };
+const APR_LV_HEADERS = ['leaveType', 'fromDate', 'toDate', 'dayPart', 'workingDays', 'deduction', 'noticeDays', 'leaveNote'];
 const APR_LV_DEADLINE_HOUR = 7;      // IST: today's leave can be filed until this hour
 const APR_LV_MAX_DAYS = 92;          // longest single request
 const APR_LV_LONG_WORKING_DAYS = 6;  // more than this many working days = Long Leave (bye-law)
@@ -116,6 +116,7 @@ function aprLvRowLeave_(row) {
     type: String(row[APR_LV_COL.TYPE]), from: aprLvCellISO_(row[APR_LV_COL.FROM]), to: aprLvCellISO_(row[APR_LV_COL.TO]),
     dayPart: String(row[APR_LV_COL.PART] || ''), workingDays: Number(row[APR_LV_COL.WORKING]) || 0,
     deduction: Number(row[APR_LV_COL.DEDUCTION]) || 0, noticeDays: Number(row[APR_LV_COL.NOTICE]) || 0,
+    note: String(row[APR_LV_COL.NOTE] || ''), // the warnings shown at filing (Long Leave, sandwich rule), for whoever decides
   };
 }
 
@@ -176,6 +177,7 @@ function aprLvPrepare_(caller, body, campusId) {
   const v = aprLvValidate_({ type: body.leaveType, from: body.fromDate, to: body.toDate }, nowIst, holidays);
   if (!v.ok) return v;
   v.title = aprLvTitle_(v.leave);
+  v.leave.note = v.warnings.join(' ');
   return v;
 }
 
@@ -184,7 +186,7 @@ function aprLvWrite_(sheet, rowNum, leave) {
   const first = APR_LV_COL.TYPE + 1;
   if (!sheet.getRange(1, first).getValue()) sheet.getRange(1, first, 1, APR_LV_HEADERS.length).setValues([APR_LV_HEADERS]);
   sheet.getRange(rowNum, first + 1, 1, 2).setNumberFormat('@'); // keep the two dates as text, not Sheets dates
-  sheet.getRange(rowNum, first, 1, APR_LV_HEADERS.length).setValues([[leave.type, leave.from, leave.to, leave.part, leave.workingDays, leave.deduction, leave.noticeDays]]);
+  sheet.getRange(rowNum, first, 1, APR_LV_HEADERS.length).setValues([[leave.type, leave.from, leave.to, leave.part, leave.workingDays, leave.deduction, leave.noticeDays, leave.note || '']]);
 }
 
 // {iso: true} for every school-Calendar "GH..." holiday day of this campus between the two dates. A Calendar failure
