@@ -16,10 +16,9 @@ export const isOwner = (s) => roles(s).includes('Owner');
 
 // Buddy's first-visit tour of this page (work/LMS Mascot Voice Guide.md: plain, warm, verb first).
 export const DAYBOOK_TOUR_BEATS = [
-  { target: '#sd-board', text: 'Pick a school: each card holds the starting figures it still needs.' },
-  { target: '.sd-ring', text: 'Watch the ring fill: green is confirmed, amber stripes are figures we already know that wait for your check.' },
-  { target: '.sd-known', text: 'Check each amber field: we filled it in from our records, so please confirm it.' },
-  { target: '.sd-confirm', text: 'Tap Confirm when it matches, or fix it first and save.' },
+  { target: '#sd-board', text: 'Pick a school. Each card shows the starting figures it still needs.' },
+  { target: '.sd-ring', text: 'The ring fills as you go: green is confirmed, and amber stripes are figures we already know, waiting for your check.' },
+  { text: 'Inside a school, amber fields come from our records. Check each one against your books, then tap Confirm, or correct it and save.' },
 ];
 
 // counts {confirmed, known, total} -> what a ring shows
@@ -48,32 +47,35 @@ export function formModel(quest, item) {
   return quest.fields.map((f) => {
     const s = item && item.fields[f.id], v = s ? s.value : '';
     const text = v === '' || v == null ? '' : f.type === 'rupees' ? rupeesText(v) : String(v);
-    return { id: f.id, label: f.label, type: f.type, required: !!f.required, choices: f.choices || null, value: s && s.status === 'skipped' ? '' : text,
-      known: !!s && s.status === 'known', hint: f.type === 'last4' ? 'Last 4 digits only' : f.type === 'rupees' ? 'In rupees, like 1,23,456.50' : '' };
+    return { id: f.id, label: f.label, type: f.type, required: !!f.required, choices: f.choices || null, allowNegative: !!f.allowNegative, value: s && s.status === 'skipped' ? '' : text,
+      known: !!s && s.status === 'known', hint: f.type === 'last4' ? 'Last 4 digits only' : f.type === 'rupees' ? 'In rupees, like 1,23,456.50' + (f.allowNegative ? ' (an overdraft starts with a minus: -5,000)' : '') : '' };
   });
 }
 
 // The save body for one item from the typed text: {ok, data} or {ok:false, code, field}. Rupees go as plain rupees
-// ('123456.50'); a field is sent when it has text or had a value before (cleared). Mirrors the backend's checks.
+// ('123456.50'); a field is sent when it has text or had a value before (cleared). Mirrors the backend's checks: the 8+ digit
+// guard is for free text only. Only a loan names its school (campus): cash takes it from the item, the rest from their
+// campus field, so a FinanceHead is never refused a school outside their own list.
+const TYPED = ['rupees', 'km', 'last4', 'choice', 'date'];
 export function savePayload(quest, key, values, model, campus) {
   const fields = {};
   for (const f of model) {
     const raw = String(values[f.id] == null ? '' : values[f.id]).trim();
     let v = raw;
     if (f.type === 'rupees') v = raw.replace(/[₹,\s]/g, '');
-    if (/\d{8,}/.test(v)) return { ok: false, code: 'ACCOUNT_NUMBER_REFUSED', field: f.id };
+    if (!TYPED.includes(f.type) && /\d{8,}/.test(v)) return { ok: false, code: 'ACCOUNT_NUMBER_REFUSED', field: f.id };
     if (v === '') {
       if (f.required) return { ok: false, code: 'START_FIELD_REQUIRED', field: f.id };
       if (f.value !== '') fields[f.id] = '';
       continue;
     }
-    if (f.type === 'rupees' && !/^\d+(\.\d{1,2})?$/.test(v)) return { ok: false, code: 'BAD_AMOUNT', field: f.id };
+    if (f.type === 'rupees' && !(f.allowNegative ? /^-?\d{1,10}(\.\d{1,2})?$/ : /^\d{1,10}(\.\d{1,2})?$/).test(v)) return { ok: false, code: 'BAD_AMOUNT', field: f.id };
     if (f.type === 'last4' && !/^\d{4}$/.test(v)) return { ok: false, code: 'BAD_LAST4', field: f.id };
     if (f.type === 'km' && !/^\d+$/.test(v)) return { ok: false, code: 'BAD_KM', field: f.id };
     fields[f.id] = v;
   }
   const data = { quest: quest.id, item: key, fields };
-  if (campus && campus !== 'ALL') data.campus = campus;
+  if (quest.id === 'loan' && campus && campus !== 'ALL') data.campus = campus;
   return { ok: true, data };
 }
 
@@ -190,7 +192,7 @@ export async function showStartingData(root, session, api) {
       let c;
       if (f.type === 'choice') c = h('select', {}, h('option', { value: '' }, 'Pick one'), f.choices.map((o) => h('option', { value: o, selected: o === f.value }, o === 'ALL' ? 'All schools' : o)));
       else c = h('input', { type: f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : 'text', value: f.value, autocomplete: 'off',
-        inputmode: f.type === 'rupees' ? 'decimal' : f.type === 'km' || f.type === 'last4' ? 'numeric' : null, maxlength: f.type === 'last4' ? '4' : null });
+        inputmode: f.type === 'rupees' && !f.allowNegative ? 'decimal' : f.type === 'km' || f.type === 'last4' ? 'numeric' : null, maxlength: f.type === 'last4' ? '4' : null });
       const fl = field(id, '', c, f.hint || null);
       fl.root.querySelector('label').append(f.label, f.required ? '' : h('span', { class: 'opt' }, ' (optional)'));
       ctl[f.id] = c; errs[f.id] = fl.err;
@@ -236,7 +238,7 @@ export async function showStartingData(root, session, api) {
     form.addEventListener('submit', (e) => {
       e.preventDefault(); clear();
       const values = {}; Object.keys(ctl).forEach((k) => { values[k] = ctl[k].value; });
-      const p = savePayload(quest, key, values, model, quest.fields.some((f) => f.id === 'campus') ? null : campus);
+      const p = savePayload(quest, key, values, model, campus);
       if (!p.ok) return showErr(p.code, p.field);
       send(p.data, hasKnown && !changed() ? 'Confirmed.' : 'Saved.');
     });

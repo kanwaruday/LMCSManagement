@@ -61,8 +61,16 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(S.savePayload(bank, 'b1', vals({ branch: '' }), m2, null).data.fields.branch, '', 'a cleared value is sent as empty');
   const odo = { id: 'odometer', fields: [{ id: 'km', label: 'Km', type: 'km', required: true }] };
   assert.deepStrictEqual(S.savePayload(odo, 'v', { km: '12.5' }, S.formModel(odo, null), 'LMS4'), { ok: false, code: 'BAD_KM', field: 'km' });
-  assert.deepStrictEqual(S.savePayload(odo, 'v', { km: '45000' }, S.formModel(odo, null), 'LMS4').data, { quest: 'odometer', item: 'v', fields: { km: '45000' }, campus: 'LMS4' });
-  assert.strictEqual(S.savePayload(odo, 'v', { km: '1' }, S.formModel(odo, null), 'ALL').data.campus, undefined, 'ALL is no campus'); ok('payload builder');
+  assert.deepStrictEqual(S.savePayload(odo, 'v', { km: '45000' }, S.formModel(odo, null), 'LMS4').data, { quest: 'odometer', item: 'v', fields: { km: '45000' } }, 'campus comes from the campus field');
+  assert.strictEqual(S.savePayload(odo, 'v', { km: '123456789' }, S.formModel(odo, null), 'LMS4').ok, true, 'no account-number guard on km');
+  const loan = { id: 'loan', fields: [{ id: 'reg', label: 'Reg', type: 'text', required: true }] };
+  assert.strictEqual(S.savePayload(loan, 'l', { reg: 'X' }, S.formModel(loan, null), 'LMS4').data.campus, 'LMS4', 'a loan names its school');
+  assert.strictEqual(S.savePayload(loan, 'l', { reg: 'X' }, S.formModel(loan, null), 'ALL').data.campus, undefined, 'ALL is no campus');
+  assert.strictEqual(S.savePayload(bank, 'b1', vals({ balance: '1,00,00,000' }), m, null).data.fields.balance, '10000000', 'a crore is an amount, not an account number');
+  assert.deepStrictEqual(S.savePayload(bank, 'b1', vals({ balance: '12345678901' }), m, null), { ok: false, code: 'BAD_AMOUNT', field: 'balance' });
+  const od = { id: 'bank', fields: [{ id: 'balance', label: 'Balance', type: 'rupees', required: true, allowNegative: true }] };
+  assert.strictEqual(S.formModel(od, { fields: { balance: { value: -250050, status: 'known' } } })[0].value, '-2,500.50');
+  assert.strictEqual(S.savePayload(od, 'b', { balance: '-2,500.50' }, S.formModel(od, null), null).data.fields.balance, '-2500.50', 'overdraft'); ok('payload builder');
 
   // refusal codes
   assert.deepStrictEqual(S.parseError({ success: false, error: 'BAD_LAST4: last4', code: 'BAD_LAST4' }), { code: 'BAD_LAST4', field: 'last4' });
@@ -88,13 +96,21 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.ok(/^bank-[a-z0-9]+$/.test(S.newKey('bank', 1761465600000)) && S.newKey('bank', 1761465600000).length <= 64); ok('school quests, items, keys');
 
   // Buddy: the tour beats and the backend URL the homes use
-  assert.strictEqual(S.DAYBOOK_TOUR_BEATS.length, 4);
-  assert.deepStrictEqual(S.DAYBOOK_TOUR_BEATS.map((b) => b.target), ['#sd-board', '.sd-ring', '.sd-known', '.sd-confirm']);
-  assert.ok(S.DAYBOOK_TOUR_BEATS.every((b) => b.text.length < 140));
+  assert.deepStrictEqual(S.DAYBOOK_TOUR_BEATS.map((b) => b.target), ['#sd-board', '.sd-ring', undefined]);
+  assert.strictEqual(S.DAYBOOK_TOUR_BEATS[2].text, 'Inside a school, amber fields come from our records. Check each one against your books, then tap Confirm, or correct it and save.');
   const { GAME_BACKEND_URL } = await import('../../office/js/config.js');
   const home = /const GAME_BACKEND_URL = '([^']*)'/.exec(fs.readFileSync(__dirname + '/../../owner/index.html', 'utf8'))[1];
   assert.strictEqual(GAME_BACKEND_URL, home, 'same game backend as the homes');
   const page = fs.readFileSync(__dirname + '/../../office/starting-data.html', 'utf8');
   assert.ok(/assets\/game\/game\.css/.test(page) && /assets\/game\/game\.js/.test(page) && /id="game-root"/.test(page)); ok('Buddy wiring');
+  // the page's payload reaches the real backend: a FinanceHead of LMS1,LMS2 saves LMS5's cash (no campus sent, no refusal)
+  const { boot } = require('./harness');
+  const hb = boot({ tokens: { 'fh-token': 'fh@example.org' }, allowlist: [['Email', 'Name', 'Campuses', 'Roles'], ['fh@example.org', 'FH', 'LMS1,LMS2', 'FinanceHead']] });
+  hb.addConfig(); hb.addBook('LMS1', '2026-27'); hb.setNow(new Date('2026-10-26T10:00:00Z'));
+  const cq = hb.call('start.get', {}, 'fh-token').quests.find((q) => q.id === 'cash');
+  const cp = S.savePayload(cq, 'LMS5', { amount: '1,234.50', held_by: 'Desk box', counted_by: '' }, S.formModel(cq, null), 'LMS5');
+  assert.strictEqual(cp.data.campus, undefined);
+  const sr = hb.call('start.save', cp.data, 'fh-token');
+  assert.strictEqual(sr.success, true, JSON.stringify(sr)); assert.strictEqual(sr.saved.fields.amount.value, 123450); ok('payload accepted by the backend across schools');
   console.log('starting data view: ok');
 })().catch((e) => { console.error(e); process.exit(1); });
