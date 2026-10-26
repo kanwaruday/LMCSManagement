@@ -4,6 +4,8 @@ const ctx = { console };
 vm.createContext(ctx);
 // either order must work in Apps Script; the test loads game.gs first, then the windows file
 for (const f of ['game.gs', 'game-actions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+// these tests pin a three-campus pilot (LMS4-6) so the outside-the-pilot paths stay covered; the shipped default is all six
+vm.runInContext("var gameConfigDefaults0_ = gameConfigDefaults_; gameConfigDefaults_ = function () { var d = gameConfigDefaults0_(); d.pilotCampuses.Principal = ['LMS4', 'LMS5', 'LMS6']; d.pilotCampuses.Coordinator = ['LMS4', 'LMS5', 'LMS6']; return d; };", ctx);
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 const now = new Date('2026-11-05T05:00:00Z'); // Thu 5 Nov, 10:30 IST

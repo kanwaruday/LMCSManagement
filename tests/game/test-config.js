@@ -57,3 +57,8 @@ assert.strictEqual(r.success, true); assert.strictEqual(r.who, 't@lms.org.in'); 
 assert.strictEqual(vm.runInContext("gameDispatch_({}, 'constructor', {}).success", ctx), false);
 assert.strictEqual(vm.runInContext("gameDispatch_({}, 'nope', {}).error", ctx), 'Unknown action');
 console.log('game config: ok');
+
+// shipped default (Uday, 2026-10-26: review on the live site from day one): Principals and Coordinators at all six campuses
+{ const vm = require('vm'), fs = require('fs'), c = {}; vm.createContext(c); vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/game.gs', 'utf8'), c);
+  const all = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], d = JSON.parse(JSON.stringify(c.gameConfigDefaults_().pilotCampuses));
+  require('assert').deepStrictEqual(d, { Principal: all, Coordinator: all, Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL' }); }

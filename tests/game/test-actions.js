@@ -34,6 +34,8 @@ function setup(opts) {
   const ctx = { console, JSON };
   vm.createContext(ctx);
   for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+  // these tests pin a three-campus pilot (LMS4-6) so the outside-the-pilot paths stay covered; the shipped default is all six
+  vm.runInContext("var gameConfigDefaults0_ = gameConfigDefaults_; gameConfigDefaults_ = function () { var d = gameConfigDefaults0_(); d.pilotCampuses.Principal = ['LMS4', 'LMS5', 'LMS6']; d.pilotCampuses.Coordinator = ['LMS4', 'LMS5', 'LMS6']; return d; };", ctx);
   const T = vm.runInContext('GAME_TABS', ctx);
   const win = (o) => T['Game Windows'].map((h) => (o && h in o ? o[h] : {
     WindowId: 'trackSuit', Title: "Choose your campus's track-suit days", Question: 'Which 3 days?', Scope: 'campus', ScopeId: '*', Decider: 'Principal',
