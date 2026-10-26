@@ -403,7 +403,7 @@ var FleetQuests = (function () {
   }
 
   return { DEFAULT_ROWS: DEFAULT_ROWS, questConfig: questConfig, setConfigRows: setConfigRows, profilesFromRows: profilesFromRows, driverKey: driverKey,
-    applySave: applySave, normReg: normReg,
+    applySave: applySave, normReg: normReg, SCAN_FIELDS: SCAN_FIELDS,
     questsFor: questsFor, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
     transportMissions: transportMissions, teamBar: teamBar, gaps: gaps, validateQuest: validateQuest, ageOn: ageOn };
 })();

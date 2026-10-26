@@ -98,6 +98,13 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM
 payload.fleet.forEach(b => { delete b.papers; });
 assert.strictEqual(run('coordTransportPush_({secret:"S3CRET",payload:payload})').success, true);
 assert.strictEqual(papersTab().getDataRange().getValues().length, 5, 'a push without papers keeps the papers tab');
+// a push that read no paper values at all (descriptions missing, every bus {}) never wipes the tab either, and says so
+payload.fleet.forEach(b => { b.papers = {}; });
+const empty = run('coordTransportPush_({secret:"S3CRET",payload:payload})');
+assert.strictEqual(empty.success, true);
+assert.match(String(empty.warning), /no paper values/i, 'the response warns that the papers tab was left as it is');
+assert.strictEqual(papersTab().getDataRange().getValues().length, 5, 'an all-empty papers push keeps the papers tab');
+payload.fleet.forEach(b => { delete b.papers; });
 // Fee Clerks see only their own campus or comma list, never a whole district
 const cg = fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8');
 const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + cg.match(/function coordVisibleCampuses_[\s\S]*?\n\}/)[0] + '; return coordVisibleCampuses_;')();

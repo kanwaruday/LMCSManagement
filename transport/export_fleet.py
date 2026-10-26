@@ -123,15 +123,18 @@ def norm_emission(v):
 
 
 def norm_date(v):
-    """yyyy-mm-dd from 2017-04-05, 05/04/2017 (day first), 05.04.2017 or 05-Apr-2017; None when it is not a real date."""
-    s = str(v or "")
-    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    """yyyy-mm-dd from 2017-04-05 or 2017/04/05, 05/04/2017 (day first), 05.04.2017, 05-Apr-2017, 5th April 2017 or April 5, 2017;
+    None when it is not a real date (a two-digit year is left unread: 05/04/17 could be either century's)."""
+    s = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", str(v or ""), flags=re.I)  # 5th April 2017
+    m = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
     if m:
         y, mo, d = m[1], m[2], m[3]
     elif m := re.search(r"(\d{1,2})[/.\- ](\d{1,2})[/.\- ](\d{4})", s):
         d, mo, y = m[1], m[2], m[3]
     elif (m := re.search(r"(\d{1,2})[-/ ,]*([A-Za-z]{3})[A-Za-z]*[-/ ,]*(\d{4})", s)) and m[2].lower() in MONTHS:
         d, mo, y = m[1], MONTHS[m[2].lower()], m[3]
+    elif (m := re.search(r"([A-Za-z]{3})[A-Za-z]*[ .]+(\d{1,2}),?\s+(\d{4})", s)) and m[1].lower() in MONTHS:  # April 5, 2017
+        mo, d, y = MONTHS[m[1].lower()], m[2], m[3]
     else:
         return None
     try:
@@ -174,7 +177,8 @@ def same_paper_value(field, a, b):
             return True
     else:
         a, b = norm(a), norm(b)
-    if a == b or (field in ("make", "modelAndVariant", "chassisNo", "engineNo") and a and b and (a in b or b in a)):
+    short = min(len(a), len(b)) < (8 if field in ("chassisNo", "engineNo") else 1)  # a number read short never passes as a match
+    if a == b or (field in ("make", "modelAndVariant", "chassisNo", "engineNo") and not short and (a in b or b in a)):
         return True
     return field in ("make", "modelAndVariant") and len(a) >= 4 and a[:4] == b[:4]
 
@@ -218,6 +222,14 @@ def paper_records():
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     return [{"reg": reg, "key": DB_TYPES.get(t) or t, "when": max(norm_date(x) or "" for x in (iss, vf, vt)), "file": Path(rel).name,
              "link": link or "", "body": bodies.get(rel, "")} for reg, t, rel, link, iss, vf, vt in db.execute(q)]
+
+
+def papers_guard(papers):
+    """Why the papers must not go out, or None. An empty read (descriptions folder missing or moved, or no value for any bus)
+    would otherwise reach the backend as "no papers" for every bus."""
+    if not DESCRIPTIONS.is_dir() or not any(papers.values()):
+        return f"no scan descriptions found at {DESCRIPTIONS}; refusing to push empty papers"
+    return None
 
 
 def paper_overrides(papers, ov):
@@ -421,7 +433,7 @@ def selftest():
 def selftest_papers():
     """The papers builder on SYNTHETIC scans (fake regs and numbers, never real paper values: the repo is public)."""
     import tempfile
-    global OVERRIDES
+    global OVERRIDES, DESCRIPTIONS
     n = 0
     def ok(cond, msg):
         nonlocal n
@@ -486,6 +498,20 @@ def selftest_papers():
     ok(p["TEST01"]["dateOfRegistration"] == {"value": "2012-01-02", "doc": "overrides", "file": "Transport overrides note", "link": "", "disagree": True},
        "the override beats the RC scan, and an RC that says otherwise is flagged")
     ok(p["TEST02"]["dateOfRegistration"]["value"] == "2016-03-15" and not p["TEST02"]["dateOfRegistration"].get("disagree"), "an insurance scan that differs is not")
+    # Fix round 1: an empty read never goes out as "no papers"; short reads never pass as a match; more date shapes
+    keep = DESCRIPTIONS
+    try:
+        DESCRIPTIONS = Path(tempfile.mkdtemp()) / "missing"
+        ok("refusing to push empty papers" in (papers_guard(p) or "") and str(DESCRIPTIONS) in papers_guard(p), "no descriptions folder: refuse")
+        DESCRIPTIONS = Path(tempfile.mkdtemp())
+        ok("refusing to push empty papers" in (papers_guard({"TEST01": {}, "TEST02": {}}) or ""), "descriptions there but no paper values for any bus: refuse")
+        ok(papers_guard(p) is None, "paper values present: push")
+    finally:
+        DESCRIPTIONS = keep
+    ok(not same_paper_value("chassisNo", "TEST1", "TEST12345") and same_paper_value("chassisNo", "TESTCHAS", "XTESTCHASSIS9"),
+       "a chassis / engine no. read short (under 8 characters) never passes as a match")
+    ok([norm_date(x) for x in ("5th April 2017", "April 5, 2017", "2017/04/05", "05/04/17")] == ["2017-04-05", "2017-04-05", "2017-04-05", None],
+       "ordinal, month-first and yyyy/mm/dd dates; a two-digit year stays unread")
     print(f"export_fleet papers selftest: {n} checks passed")
 
 
@@ -530,6 +556,11 @@ def main():
                 v[k] = [u for u in v[k] if u["key"] != key]
     if len(fleet) < MIN_FLEET:
         sys.exit(f"only {len(fleet)} vehicles read from {a.xlsx}; not writing")
+    bad = papers_guard(papers)
+    if bad and not a.out:
+        sys.exit(bad)
+    if bad:
+        print("warning:", bad, file=sys.stderr)
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        "source": "transport workbook + drive-index/records.db and descriptions + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "people": people, "seen": seen_ids(), "fleet": fleet}, separators=(",", ":"))
     if a.out:
