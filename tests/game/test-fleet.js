@@ -4,7 +4,7 @@ const dir = __dirname + '/../../apps-script/';
 const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} } }; // the expected failures below log through console.error
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
-load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-quests.gs');
+load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs'); load('../coordinator/transport-rank.js');
 const zlib = require('zlib');
 // Apps Script services, small: a counting SpreadsheetApp (the quests must never open the workbook) and a real-ish cache
 let opened = 0, store = {};
@@ -42,8 +42,8 @@ const rows = () => J({
     medicalCertificateValidTill: '2030-01-01', policeVerificationDone: 'yes', driverPhoto: 'photo_test_0002' }) }],
   parts: allParts(), inspected: { TEST02: { by: 'coord@test.invalid', at: '2026-10-01' } }, captured: {},
 });
-const run = (caller, r, c) => { ctx.fleetRows_ = () => r || rows(); return J(ctx.fleetMissions_(caller, c || cfg, NOW)); };
-const quests = (caller, r, c) => { ctx.fleetRows_ = () => { throw new Error('quests read the workbook'); }; ctx.fleetCachedRows_ = () => r || rows(); return J(ctx.fleetQuests_(caller, c || cfg, NOW)); };
+const run = (caller, r, c) => { ctx.fleetRows_ = () => r || rows(); return J(ctx.fleetMissions_(caller, c || cfg, NOW)).filter((m) => !/^fleet_ops_/.test(m.kind)); }; // Fleet Operations missions: test-fleet-ops.js
+const quests = (caller, r, c) => { ctx.fleetRows_ = () => { throw new Error('quests read the workbook'); }; ctx.fleetCachedRows_ = () => r || rows(); return J(ctx.fleetQuests_(caller, c || cfg, NOW)).filter((q) => !/^fleet-(ops|pnl):/.test(q.questId)); }; // the operations quests: test-fleet-ops.js
 const profileOf = (r, reg) => FQ.profilesFromRows(r).filter((p) => p.reg === reg)[0];
 
 // ---- registration: Coordinator and FeeClerk missions, Coordinator and Owner quests, never Owner missions
@@ -155,8 +155,8 @@ const down = []; ctx.gameMissionsFor_(coord, {}, Object.assign({}, cfg, { recomm
 assert.ok(down.includes('module fleetMissions_'), JSON.stringify(down));
 // cache round trip, chunked past 90,000 characters; a lost chunk is a miss
 const big = rows(); big.fleet[0].route = require('crypto').randomBytes(150000).toString('hex');
-ctx.fleetCachePut_('fleet_rows_v1', big, 300);
-assert.ok(+store.fleet_rows_v1_n > 1, 'chunked'); assert.deepStrictEqual(J(ctx.fleetCachedRows_()), J(big));
+ctx.fleetCachePut_('fleet_rows_v2', big, 300);
+assert.ok(+store.fleet_rows_v2_n > 1, 'chunked'); assert.deepStrictEqual(J(ctx.fleetCachedRows_()), J(big));
 assert.strictEqual(quests(coord, null).length, 5); store = {}; ctx.fleetCachedRows_ = real.fleetCachedRows_;
 ctx.fleetCachePut_('k', { a: 1 }, 1); delete store.k_0; assert.strictEqual(ctx.fleetCacheGet_('k'), null);
 opened = 0; assert.strictEqual(J(ctx.fleetQuests_(owner, cfg, NOW)).length, 0); assert.strictEqual(opened, 0);

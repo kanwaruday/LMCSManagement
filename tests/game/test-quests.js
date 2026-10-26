@@ -117,4 +117,13 @@ assert.deepStrictEqual(nd(principalQ(), 'Principal', ev({ missionsDoneByMe: [mis
 // gameSetup seeds the rows only if absent: the seed helper skips ids already present
 assert.deepStrictEqual(J(ctx.gameQuestRowsToSeed_([QH, seeds[0]])).map((r) => r[0]), ['coordinator1']);
 assert.strictEqual(ctx.gameQuestRowsToSeed_([QH]).length, 2);
+// Fleet Operations: a done fleet_ops_* mission counts toward the follow-up step under the same rules (director's contract)
+{
+  const fq = (o) => state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('fleet_ops_gps_dead', o)] }))[0].steps.find((x) => x.id === 'followup').done;
+  assert.strictEqual(fq({}), true, 'a done fleet_ops_ mission counts');
+  assert.strictEqual(fq({ shared: true }), false); assert.strictEqual(fq({ gone: true }), false);
+  assert.strictEqual(fq({ doneBy: 'someone@lms.org.in' }), false); assert.strictEqual(fq({ doneBy: 'system (condition cleared)' }), false);
+  assert.strictEqual(state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('fleet_setup_x')] }))[0].steps.find((x) => x.id === 'followup').done, false, 'only the fleet_ops_ prefix');
+  assert.strictEqual(state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('pdr_report', {})] }))[0].steps.find((x) => x.id === 'recommend').done, false, 'other steps untouched');
+}
 console.log('quests OK');

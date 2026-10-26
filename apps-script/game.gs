@@ -87,6 +87,11 @@ function gameConfigDefaults_() {
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
     approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
     recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
+    // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
+    // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).
+    fleet: { renewDays: 30, rollCallBy: '10:00', partDueDays: 30, busAgeLimit: 15, policeValidYears: 3, speedCount: 3, speedDays: 30,
+      heat: { warm: 1, hot: 3 },
+      weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, speed: 1 } },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }

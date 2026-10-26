@@ -486,6 +486,12 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   const t1 = rc().filter(x => x[1] === 'TEST01');
   assert.strictEqual(t1.length, 1, 'still one row for TEST01 on that date');
   assert.deepStrictEqual(t1[0].slice(3, 8), ['Driver B', 'Attendant A', 'yes', 'no', 'c4@x.org']);
+  // the server works out the substitute flags from the usual pair; the client's flags are ignored
+  assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver B', attendant: 'Attendant B', driverSub: false, attendantSub: false }).success, true);
+  assert.deepStrictEqual(rc().filter(x => x[1] === 'TEST01')[0].slice(3, 7), ['Driver B', 'Attendant B', 'yes', 'yes'], 'a name that differs from the usual one is a substitute, whatever the client sent');
+  assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver A', attendant: '', driverSub: true, attendantSub: true }).success, true);
+  assert.deepStrictEqual(rc().filter(x => x[1] === 'TEST01')[0].slice(3, 7), ['Driver A', '', 'no', 'no'], 'the usual driver is never a substitute; no attendant is not one either');
+  assert.strictEqual(roll(co4, { reg: 'test-01', date: '2026-10-25', driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false }).success, true);
   assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-24', driver: 'Driver A', attendant: 'Attendant A' }).success, true, 'yesterday is allowed');
   assert.strictEqual(rc().filter(x => x[1] === 'TEST01').length, 2, 'another date is another row');
   // a date two days back (or ahead) is refused; so are names off the staff list
@@ -501,7 +507,8 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual(g.buses.map(b => b.reg), ['HP1', 'TEST01'], 'the Fee Clerk\'s running buses only');
   const tb1 = g.buses.find(b => b.reg === 'TEST01');
   assert.deepStrictEqual(tb1.usual, { driver: 'Driver A', attendant: 'Attendant A' }, 'the usual pair: the roster driver and the safety quest attendant');
-  assert.deepStrictEqual(tb1.roll, { driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false, by: 'c4@x.org' });
+  assert.deepStrictEqual(tb1.roll, { driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false }, 'no recorder email in the GET (review M)');
+  assert.ok(!/@/.test(JSON.stringify(g)), 'no email anywhere in the roll-call GET');
   assert.strictEqual(g.buses.find(b => b.reg === 'HP1').roll, null, 'no roll call yet: null');
   assert.deepStrictEqual(g.names.LMS4, ['Attendant A', 'Attendant B', 'Driver A', 'Driver B'], 'the substitute pick: the campus\'s transport staff names');
   assert.ok(!g.names.LMS1, 'no other campus\'s staff');

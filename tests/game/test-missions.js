@@ -250,3 +250,20 @@ const copyMs = ctx.gamePrincipalMissions_(principal, { ss: ssFix(), reports: [['
 copyMs.forEach((m) => { assert.ok(!/\d{4}-\d{2}-\d{2}|LMS\d/.test(m.title), 'no codes in title: ' + m.title); });
 assert.strictEqual(kinds(copyMs, 'pdr_report')[0].title, "Submit today's daily report");
 console.log('game missions: ok');
+
+// ── follow-up skip registry (game director's contract, Fleet Operations): a domain a module lists in GAME_FOLLOWUP_SKIP makes no generic follow-up ──
+{
+  const T = [task('s1', 'gps_dead', 'LMS4', 'TEST01: tracker silent', { assignee: 'c@lms.org.in' }), task('s2', 'transport', 'LMS4', 'Other domain', { assignee: 'c@lms.org.in' }),
+    task('s3', 'bus_speed', 'LMS4', 'TEST01: fast', { status: 'resolved', resolvedAt: ago(0.2), resolvedBy: 'c@lms.org.in' })];
+  const ids = () => cm(csrc([], [], T), coord).filter((m) => m.kind === 'followup').map((m) => m.id).sort();
+  assert.deepStrictEqual(J(ids()), ['followup:s1', 'followup:s2', 'followup:s3'], 'no registry entry: every follow-up is generic (as before)');
+  assert.strictEqual(vm.runInContext('typeof GAME_FOLLOWUP_SKIP', ctx), 'object', 'declared next to the other registries');
+  vm.runInContext("GAME_FOLLOWUP_SKIP.fleet = ['gps_dead','bus_speed']", ctx);
+  assert.deepStrictEqual(J(ids()), ['followup:s2'], 'a registered domain makes no generic follow-up (open or resolved); other domains are unchanged');
+  vm.runInContext("GAME_FOLLOWUP_SKIP.other = 'transport'; GAME_FOLLOWUP_SKIP.bad = null", ctx);
+  assert.deepStrictEqual(J(ids()), [], 'every registered list is collected at call time (a string or a null entry is tolerated)');
+  vm.runInContext('GAME_FOLLOWUP_SKIP = undefined', ctx);
+  assert.deepStrictEqual(J(ids()), ['followup:s1', 'followup:s2', 'followup:s3'], 'a missing registry is fine');
+  vm.runInContext('GAME_FOLLOWUP_SKIP = {}', ctx);
+  console.log('game followup skip: ok');
+}

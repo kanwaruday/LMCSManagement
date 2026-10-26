@@ -655,8 +655,9 @@ function coordFleetWorkshops_(reg, quest, fields) {
 // The usual pair: the roster's driver (the Driver column of the fleet push, the name the Driver card shows) and the Safety kit quest's
 // attendantHelperName. A substitute is a name of the Transport Staff tab (the transport people roster) of the bus's campus.
 // GET  action=coordinatortransportrollcall {date}  -> {date, today, buses: [{reg, campus, campusId, route, usual: {driver, attendant},
-//                                                     roll: {driver, attendant, driverSub, attendantSub, by} | null}], names: {LMSn: [names]}}
-// POST action=coordinatortransportrollcall {reg, date, driver, attendant, driverSub, attendantSub} -> {success}
+//                                                     roll: {driver, attendant, driverSub, attendantSub} | null}], names: {LMSn: [names]}}
+// POST action=coordinatortransportrollcall {reg, date, driver, attendant} -> {success}. The substitute flags are worked out here (a name that
+// differs from the bus's usual driver or attendant is a substitute); any flags the client sends are ignored.
 // Same scope as the fleet setup: Fee Clerk own campus, Coordinator their district, Owner all (coordVisibleCampuses_).
 const COORD_ROLLCALL_TAB = 'Duty Roll Call';
 const COORD_ROLLCALL_COLS = ['Date', 'Reg', 'Campus', 'Driver', 'Attendant', 'Driver is substitute', 'Attendant is substitute', 'Recorded by', 'Recorded at'];
@@ -706,7 +707,7 @@ function coordRollCall_(caller, date) {
     buses: buses.map(function (b) {
       const r = rows[b.reg];
       return { reg: b.reg, campus: b.campus, campusId: b.campusId, route: b.route, usual: usual[b.reg],
-        roll: r ? { driver: String(r.Driver), attendant: String(r.Attendant), driverSub: r['Driver is substitute'] === 'yes', attendantSub: r['Attendant is substitute'] === 'yes', by: String(r['Recorded by']) } : null };
+        roll: r ? { driver: String(r.Driver), attendant: String(r.Attendant), driverSub: r['Driver is substitute'] === 'yes', attendantSub: r['Attendant is substitute'] === 'yes' } : null }; // never the recorder's email
     }) };
 }
 
@@ -730,7 +731,7 @@ function coordRollCallSave_(caller, body) {
     const all = gpsRows_(COORD_ROLLCALL_TAB).filter(function (r) { return !(String(r.Date) === d && FleetQuests.normReg(r.Reg) === reg); });
     const row = {};
     row[COORD_ROLLCALL_COLS[0]] = d; row.Reg = reg; row.Campus = bus.campusId; row.Driver = driver; row.Attendant = attendant;
-    row['Driver is substitute'] = body.driverSub === true ? 'yes' : 'no'; row['Attendant is substitute'] = body.attendantSub === true ? 'yes' : 'no';
+    row['Driver is substitute'] = driver !== u.driver ? 'yes' : 'no'; row['Attendant is substitute'] = attendant && attendant !== u.attendant ? 'yes' : 'no';
     row['Recorded by'] = caller.email; row['Recorded at'] = new Date().toISOString();
     all.push(row);
     gpsWrite_(COORD_ROLLCALL_TAB, COORD_ROLLCALL_COLS, all);

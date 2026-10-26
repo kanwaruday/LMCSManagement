@@ -12,6 +12,7 @@
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+var GAME_FOLLOWUP_SKIP = GAME_FOLLOWUP_SKIP || {}; // { module: [follow-up domains] }: domains a module turns into its own missions; the generic follow-up builder skips them (game-fleet.gs: transport)
 
 const GAME_DAY_MS = 86400000;
 const GAME_DONE_LOOKBACK_DAYS = 2;    // a finished (or gone) record stays visible for today and yesterday: yesterday's day is finalized this morning
@@ -221,7 +222,9 @@ function gameApprovalsGo_(cfg) { return cfg.approvalsGo; }
 
 function gameCoordinatorMissions_(caller, src, cfg, now) {
   const out = [], role = 'Coordinator', me = gameLower_(caller.email), since = gameLookbackStart_(now);
-  const tasks = (src.tasks || []).slice(1);
+  const tasks = (src.tasks || []).slice(1), skip = {};
+  // read here, not at load: a module file may run before or after this one (load order). Each registered list is a domain list (a bare string or null is tolerated).
+  Object.keys(GAME_FOLLOWUP_SKIP || {}).forEach(function (k) { [].concat(GAME_FOLLOWUP_SKIP[k] || []).forEach(function (d) { skip[String(d)] = true; }); });
 
   if (cfg.recommendationsReady) {
     const recs = gameLatestRecs_(src.recommendations);
@@ -248,6 +251,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
     const id = String(t[0] || '').trim(), domain = String(t[1] || '').trim(), campus = gameCampusKey_(t[2]);
     if (!id) return;
     if (cfg.recommendationsReady && /^approval\|.*\|Pending$/.test(id)) return; // approval_recommend already covers it
+    if (skip[domain]) return; // a module (fleet operations) shows this follow-up as its own mission
     const assignee = gameLower_(t[13]), resolved = String(t[5]).trim() === 'resolved', at = gameIso_(t[9]), by = String(t[10] || '').trim();
     const stall = domain === 'hiring_stall';
     if (!stall && assignee && assignee !== me) return; // another person's follow-up
