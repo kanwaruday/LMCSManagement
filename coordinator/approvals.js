@@ -40,6 +40,11 @@ window.CoordApprovals = (function () {
   const fuState = r => FOLLOW_SKIP.indexOf(r.category) !== -1 ? 'hiring' : r.status !== 'Approved' ? 'na' : !r.followUp ? 'none' : r.followUp.status === 'done' ? 'done' : (r.followUp.due && r.followUp.due < isoDay(new Date()) ? 'overdue' : 'open');
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // The latest Coordinator recommendation (from coordinatordecision), shown to the decider above the decision buttons. The Owner still decides.
+  const REC_WORD = { Approve: 'Approve', Reject: 'Reject', Info: 'Ask for information' };
+  const recBlock = rec => '<div class="fu"><b>Coordinator recommendation</b><br>' + (rec
+    ? esc(rec.byName || 'A Coordinator') + ' recommends ' + esc(REC_WORD[rec.recommendation] || rec.recommendation) + ': ' + esc(rec.reason) + (rec.checked ? '<br><span class="sm">Checked: ' + esc(rec.checked) + '</span>' : '')
+    : 'No recommendation yet.') + '</div>';
   const ddmmyyyy = d => { if (!d) return '—'; const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); };
   const school = c => (window.LMCS && LMCS.campusLabel) ? LMCS.campusLabel(c) : c;
   const age = iso => { if (!iso) return '—'; const ms = Date.now() - new Date(iso).getTime(), d = Math.floor(ms / 86400000); if (d >= 1) return d + 'd ago'; const h = Math.floor(ms / 3600000); return h >= 1 ? h + 'h ago' : 'just now'; };
@@ -101,15 +106,15 @@ window.CoordApprovals = (function () {
 `;
 
   function mount(root, ctx) {
-    ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply)
+    ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply), ctx.get(params) -> its GET (throws on failure; optional)
     if (!document.getElementById('apro-css')) { const st = document.createElement('style'); st.id = 'apro-css'; st.textContent = CSS; document.head.appendChild(st); }
     root.className = 'apro';
     root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div>' +
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
       '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
-    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null,
-      refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
+    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
+      seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
 
     const setBar = (state, text, retry) => { const b = $('bar'); b.className = 'stbar' + (state === 'loading' ? '' : ' ' + state); b.innerHTML = (state === 'loading' ? '<span class="sp"></span>' : '') + '<span>' + text + '</span>' + (retry ? '<button type="button" data-act="refresh">Retry</button>' : ''); };
@@ -215,13 +220,28 @@ window.CoordApprovals = (function () {
       return h;
     }
 
+    // The Coordinator's latest recommendation, fetched alongside the request so the detail is drawn once (never re-drawn under the Owner's typing).
+    // undefined = unavailable (no ctx.get, a failure, "Not authorized", or no answer within REC_MS): the block is simply left out.
+    const REC_MS = 4000;
+    function loadRec(id) {
+      if (!ctx.get) return Promise.resolve(undefined);
+      let timer;
+      return Promise.race([Promise.resolve().then(() => ctx.get({ action: 'coordinatordecision', id: id })), new Promise((ok, no) => { timer = setTimeout(no, REC_MS); })])
+        .then(d => d && d.success && d.decision ? (d.decision.recommendation || null) : undefined, () => undefined)
+        .then(v => { clearTimeout(timer); return v; });
+    }
     async function toggleRow(id) {
-      if (S.openId === id) { S.openId = null; S.detail = null; renderList(); return; }
-      S.openId = id; S.detail = null; renderList();
+      if (S.openId === id) { S.openId = null; S.detail = null; S.rec = undefined; renderList(); return; }
+      const tok = ++S.seq; // an answer from an earlier open of the same row (A, B, A) must not land on this one
+      S.openId = id; S.detail = null; S.rec = undefined; renderList();
+      const recP = loadRec(id);
       let res;
       try { res = await get('action=approvaldetail&id=' + encodeURIComponent(id)); } catch (err) { res = { success: false, error: err.message }; }
-      if (S.openId !== id) return; // another row was opened meanwhile
+      if (S.openId !== id || S.seq !== tok) return; // another row was opened meanwhile
       if (!res.success) { authFail(res); const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = '<div class="empty">Couldn’t load this request: ' + esc(res.error || 'unknown error') + '</div>'; return; }
+      const rec = await recP;
+      if (S.openId !== id || S.seq !== tok) return;
+      S.rec = res.canDecide ? rec : undefined;
       S.detail = res; const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = detailInner(res);
     }
     const reopen = id => { S.openId = null; S.detail = null; return toggleRow(id); };
@@ -263,7 +283,7 @@ window.CoordApprovals = (function () {
         (c.authorEmail === sess().email ? ' · <a href="#" data-act="cdel" data-id="' + esc(c.id) + '" data-ap="' + esc(r.id) + '">Delete</a>' : '') + '</div>' + esc(c.body) + '</div>').join('') : '<div class="empty">No comments yet.</div>';
       return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div>' + (reasonLine(r) ? '<div class="fu"><b>Reason:</b> ' + reasonLine(r) + '</div>' : '') + followHtml(r, res.canDecide) + '<div style="margin:10px 0">' + comments + '</div>' +
         (reply ? '<div class="hint">The Owner asked for more before deciding — your reply below sends this back to Pending.</div>' : '') +
-        '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + bar;
+        '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + (S.rec !== undefined && res.canDecide ? recBlock(S.rec) : '') + bar;
     }
 
     // ── comments ──
@@ -397,5 +417,5 @@ window.CoordApprovals = (function () {
     return { refresh: refresh };
   }
 
-  return { mount: mount };
+  return { mount: mount, recBlock: recBlock };
 })();

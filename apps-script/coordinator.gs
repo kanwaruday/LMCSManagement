@@ -20,7 +20,8 @@
 // GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
 // GET action=coordinatortransportfleet + POST action=coordinatortransportfleetsave (Fleet setup quests, coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
-// Coordinator or Owner only; a locked Coordinator sees their district.
+// Coordinator or Owner only; a locked Coordinator sees their district. The one exception is the daily-report issues of
+// coordinator-principal.gs (GET principalissues, POST principalissueresolve), which also admit a Principal of one campus.
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Coordinator Backend",
@@ -44,7 +45,7 @@ const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examinat
   COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations';
 const COORD_APPROVAL_DEPT = {
   'New/ Backup Position': COORD_DEPT_HR, 'Salary Offer Approval': COORD_DEPT_HR, 'Compensation Change': COORD_DEPT_HR,
-  'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
+  'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
   'Financial / Purchase': COORD_DEPT_FINANCE, 'Academic Change': COORD_DEPT_ACADEMICS,
   'Event / Invitation': COORD_DEPT_EVENTS, 'Off-Campus Trip / Excursion': COORD_DEPT_EVENTS, 'Holiday / Calendar': COORD_DEPT_EVENTS,
 }; // anything else ('Other', new categories) lands in School Operations
@@ -139,9 +140,10 @@ function coordJson_(obj) {
 
 function doGet(e) {
   try {
+    const action = String(e.parameter.action || '').toLowerCase();
+    if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken)); // its own gates (coordinator-principal.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
-    const action = String(e.parameter.action || '').toLowerCase();
     if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
@@ -154,6 +156,8 @@ function doGet(e) {
     if (action === 'coordinatortransportfleet') return coordJson_(coordFleet_(caller)); // Fleet setup quests: the caller's campuses
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
+    if (action === 'coordinatortrackrecord') return coordJson_(coordTrackRecordGet_(caller));
+    if (action === 'coordinatordecision') return coordJson_(coordDecision_(caller, e.parameter.id));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -174,6 +178,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportcapturepull') return coordJson_(coordCapturePull_(body)); // capture.py on the Mac
     if (String(body.action || '').toLowerCase() === 'transportcapturepush') return coordJson_(coordCapturePush_(body));
     if (String(body.action || '').toLowerCase() === 'transportcatalogpush') return coordJson_(coordCatalogPush_(body)); // agency_import.py on the Mac
+    if (String(body.action || '').toLowerCase() === 'principalissueresolve') return coordJson_(coordPrincipalResolve_(coordVerifyPrincipal_(body.idToken), body)); // Principal gate only
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body)); // Fee Clerks too (own campus, checked inside)
@@ -184,6 +189,7 @@ function doPost(e) {
     if (action === 'coordinatorallocate') return coordJson_(coordAprAllocate_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
     if (action === 'coordinatortransportloadout') return coordJson_(coordLoadoutSet_(caller, body)); // Owner only (checked inside)
+    if (action === 'coordinatorrecommend') return coordJson_(coordRecommend_(caller, body));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
@@ -201,12 +207,8 @@ function coordVerifyCaller_(idToken) {
   const hit = cache.get(key);
   if (hit) return JSON.parse(hit);
   try {
-    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) return null;
-    const payload = JSON.parse(res.getContentText());
-    if (payload.aud !== COORD_GOOGLE_CLIENT_ID) return null;
-    if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
-    const email = (payload.email || '').toLowerCase();
+    const email = coordTokenEmail_(idToken);
+    if (!email) return null;
     const rows = SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
@@ -220,6 +222,22 @@ function coordVerifyCaller_(idToken) {
       return caller;
     }
     return null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Google ID token -> the lower-cased email it was issued to, or null unless Google verifies it, it was issued to this
+ *  portal (aud) and the email is present and verified. Shared by coordVerifyCaller_ and coordVerifyPrincipal_ (coordinator-principal.gs). */
+function coordTokenEmail_(idToken) {
+  try {
+    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return null;
+    const payload = JSON.parse(res.getContentText());
+    if (payload.aud !== COORD_GOOGLE_CLIENT_ID) return null;
+    if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
+    const email = String(payload.email || '').trim().toLowerCase();
+    return email || null; // a missing email must never match a blank allowlist row
   } catch (err) {
     return null;
   }
@@ -362,8 +380,7 @@ function coordApprovalWanted_(rows, now) {
     const high = status === 'Pending' ? (urgent ? COORD_APR_URGENT_HIGH_DAYS : COORD_APR_PENDING_HIGH_DAYS) : COORD_APR_INFO_HIGH_DAYS;
     if (days < med) continue;
     const campus = String(r[1] || '').trim();
-    // The same request submitted several times (same campus, category, text, status and day) is one follow-up, not one per copy.
-    const key = [campus, r[2], r[4], status, since.toISOString().slice(0, 10)].join('|');
+    const key = coordAprCopyKey_(r);
     const sev = days >= high ? 'high' : 'medium';
     if (byKey[key]) { byKey[key].ids.push(r[0]); if (sev === 'high') byKey[key].task.severity = 'high'; continue; }
     const task = {
@@ -383,6 +400,13 @@ function coordApprovalWanted_(rows, now) {
     delete t.category; delete t.days; delete t.waitingOn;
   });
   return wanted;
+}
+
+/** The same request submitted several times (same campus, category, text, status and day) is one follow-up, not one per copy.
+ *  Approvals row -> that grouping key; the day is when it started waiting (submitted, or info asked for). */
+function coordAprCopyKey_(r) {
+  const status = String(r[13] || ''), since = new Date(status === 'Pending' ? r[12] : (r[15] || r[12]));
+  return [String(r[1] || '').trim(), r[2], r[4], status, isNaN(since.getTime()) ? '' : since.toISOString().slice(0, 10)].join('|');
 }
 
 function coordRefreshApprovals_() {
@@ -888,7 +912,70 @@ function coordTasksList_(caller, idToken) {
     });
   }
   tasks.sort(function (a, b) { return (rank[a.severity] - rank[b.severity]) || (a.createdAt < b.createdAt ? -1 : 1); });
-  return { success: true, tasks: tasks };
+  try { coordRecAttach_(tasks); } catch (err) { console.error('Recommendations: ' + err.message); } // the tasks show without them rather than not at all
+  let fresh = []; // requests too new for a follow-up, so the HQ can still recommend on them (coordinator-recommend.gs)
+  try { fresh = coordFreshApprovals_(coordAprRows_(), rows, visible, coordRecLatest_(coordRecRows_()), coordRecNames_()); } catch (err) { console.error('Fresh requests: ' + err.message); fresh = []; }
+  return { success: true, tasks: tasks, fresh: fresh };
+}
+
+// ── Scheduled refresh and HQ History ─────────────────────────────────
+// Time-triggered at 05:30 IST, after the game layer's 04:00 daily missions, so the Tasks tab is fresh
+// without anyone opening the page. Run coordInstallTriggers() once from the editor.
+const COORD_HISTORY_TAB = 'HQ History'; // long format: Date, Campus, Measure, Value (counts only)
+
+function coordScheduledRefresh() {
+  // ponytail: SS needs a script-to-script secret to join the 05:30 run (coordRefreshSsCompliance_ takes a caller's token); it stays page-load-refreshed
+  try { coordRefreshApprovals_(); } catch (err) { console.error('Approvals adapter: ' + err.message); }
+  try { coordRefreshHiring_(); } catch (err) { console.error('Hiring adapter: ' + err.message); }
+  try { coordRefreshDocuments_(); } catch (err) { console.error('Documents adapter: ' + err.message); }
+  try { coordTransportRetireTasks_(); } catch (err) { console.error('Transport retire: ' + err.message); }
+  try { coordHistoryAppend_(); } catch (err) { console.error('HQ History: ' + err.message); }
+}
+
+function coordInstallTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'coordScheduledRefresh') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('coordScheduledRefresh').timeBased().atHour(5).nearMinute(30).everyDays(1).create(); // appsscript.json timeZone is Asia/Kolkata
+}
+
+/** One row per campus per measure: open, overdue (Due before dayKey, or severity high) and open.<domain>.
+ *  `existing` is the tab's rows; a (dayKey, campus) pair already in it is skipped, so a rerun adds nothing. */
+function coordHistoryRows_(taskRows, dayKey, existing) {
+  const done = {}, byCampus = {}, out = [];
+  (existing || []).forEach(function (r) { done[r[0] + '|' + r[1]] = true; });
+  for (let i = 1; i < taskRows.length; i++) {
+    const r = taskRows[i], campus = r[2];
+    if (r[5] !== 'open' || !campus || done[dayKey + '|' + campus]) continue;
+    const c = byCampus[campus] || (byCampus[campus] = { open: 0, overdue: 0, domains: {} });
+    const due = coordDueIso_(r[14]);
+    c.open++;
+    if (r[6] === 'high' || (due && due < dayKey)) c.overdue++;
+    c.domains[r[1]] = (c.domains[r[1]] || 0) + 1;
+  }
+  Object.keys(byCampus).forEach(function (campus) {
+    const c = byCampus[campus];
+    out.push([dayKey, campus, 'open', c.open], [dayKey, campus, 'overdue', c.overdue]);
+    Object.keys(c.domains).forEach(function (d) { out.push([dayKey, campus, 'open.' + d, c.domains[d]]); });
+  });
+  return out;
+}
+
+function coordHistoryAppend_() {
+  const ss = SpreadsheetApp.openById(COORD_SHEET_ID);
+  let sh = ss.getSheetByName(COORD_HISTORY_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(COORD_HISTORY_TAB);
+    sh.getRange(1, 1, 1, 4).setValues([['Date', 'Campus', 'Measure', 'Value']]).setFontWeight('bold');
+    sh.getRange('A:A').setNumberFormat('@'); // keep 2026-11-03 as text, not a date
+    sh.setFrozenRows(1);
+  }
+  const dayKey = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+  const existing = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().map(function (r) {
+    return [r[0] instanceof Date ? Utilities.formatDate(r[0], 'Asia/Kolkata', 'yyyy-MM-dd') : r[0], r[1], r[2], r[3]];
+  }) : [];
+  const rows = coordHistoryRows_(coordSheet_().getDataRange().getValues(), dayKey, existing);
+  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
 }
 
 // POST action=coordinatorresolvetask {taskId, note}. A follow-up raised from a Systems issue (pdr_issue|<id>) also marks that issue resolved.

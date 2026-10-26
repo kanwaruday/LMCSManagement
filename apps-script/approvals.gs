@@ -338,6 +338,15 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
   return { success: true, id: id };
 }
 
+// Status a comment causes, or null for none. Only a decider's comment pauses a
+// Pending request (Info Requested); a Coordinator's or Principal's stays a comment.
+// The requester's reply puts an Info Requested one back to Pending.
+function aprCommentStatus_(canDecide, isRequester, current) {
+  if (canDecide && !isRequester && current === APR_STATUS.PENDING) return APR_STATUS.INFO_REQUESTED;
+  if (isRequester && current === APR_STATUS.INFO_REQUESTED) return APR_STATUS.PENDING;
+  return null;
+}
+
 // action=addapprovalcomment (doPost) -- anyone with view access to the
 // request (campus-scoped, same rule as aprDetail_) can post into its
 // thread: the requester explaining more, a Coordinator flagging
@@ -345,9 +354,10 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
 //
 // 2026-09-10, per Uday: a comment now also nudges status, reusing the
 // existing Pending/Info Requested values instead of adding a new one
-// -- whoever ISN'T the requester commenting on a Pending request
+// -- a decider (not the requester) commenting on a Pending request
 // flips it to Info Requested (signals "principal, I need something
-// before I can decide"), and the requester replying on an Info
+// before I can decide"; a Coordinator's or Principal's comment no
+// longer does, see aprCommentStatus_), and the requester replying on an Info
 // Requested request flips it back to Pending (signals "answered,
 // back to you"). Only toggles between those two -- a comment on an
 // already-decided (Approved/Rejected/Revoked) request never reopens
@@ -375,12 +385,7 @@ function aprAddComment_(caller, body) {
 
   const requesterEmail = String(target[11]);
   const currentStatus = String(target[13]);
-  let newStatus = null;
-  if (caller.email !== requesterEmail && currentStatus === APR_STATUS.PENDING) {
-    newStatus = APR_STATUS.INFO_REQUESTED;
-  } else if (caller.email === requesterEmail && currentStatus === APR_STATUS.INFO_REQUESTED) {
-    newStatus = APR_STATUS.PENDING;
-  }
+  const newStatus = aprCommentStatus_(aprCanDecide_(caller), caller.email === requesterEmail, currentStatus);
   if (newStatus) sheet.getRange(rowIdx + 1, 14).setValue(newStatus);
 
   aprNotifyThread_(caller, target, text);
