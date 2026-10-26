@@ -75,7 +75,7 @@ const APR_COMMENTS_TAB = 'Comments';
 // Dashboard for that specific candidate -- see hiring.gs's
 // hirEffectiveStatus_/hirSalaryOfferDecisions_/hirSalaryOfferGateCheck_,
 // and the gate in aprDecide_ below that calls the latter.
-const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+const APR_CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
 // Categories that show the Amount + Item fields -- Item doubles as
 // "Item" (Financial/Purchase) or "Employee" (Compensation Change),
 // same generic string column, just a different frontend label, so no
@@ -110,7 +110,7 @@ const APR_ITEM_QTY_CATEGORIES = ['Financial / Purchase'];
 // set. Extend this list, not the Teacher-role check in aprSubmit_,
 // when that happens. Neither category triggers the amount/item/qty
 // fields, so the Teacher Portal's submit form skips them entirely.
-const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Other'];
+const APR_TEACHER_CATEGORIES = ['Compensatory Leave', 'Leave', 'Other']; // 'Leave' 2026-10-26, see approvals-leave.gs
 const APR_STATUS = { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' };
 const APR_DECISIONS = [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.INFO_REQUESTED, APR_STATUS.REVOKED];
 
@@ -157,6 +157,24 @@ function aprCanDecide_(caller) {
   return callerHasRole_(caller, 'Owner') || (callerHasRole_(caller, 'Coordinator') && !!caller.canApprove);
 }
 
+// 2026-10-26, teacher leave decision 1 (Uday): ALL leave goes to Management (Owner / delegated Coordinator) for now. Every decide path
+// asks aprCanDecideRow_ about the row it is about to change, so handing routine leave to a campus Principal later is a configuration
+// change: put the leave types (e.g. 'Casual Leave', 'Single Leave', 'Half Leave', 'Short Leave', 'Emergency Leave') in the list below.
+// Compensatory, Long Leave and Special Day stay with Management by simply not being listed. Empty = nothing changes.
+const APR_LEAVE_PRINCIPAL_TYPES = [];
+function aprCanDecideAny_(caller) {
+  return aprCanDecide_(caller) || (APR_LEAVE_PRINCIPAL_TYPES.length > 0 && callerHasRole_(caller, 'Principal'));
+}
+function aprCanDecideRow_(caller, row) {
+  if (aprCanDecide_(caller)) return true;
+  // A Principal decides (never archives or revokes), only own campus, only listed types, only a request still waiting, and never their own.
+  const status = String(row[13]);
+  return String(row[2]) === APR_LEAVE_CATEGORY && APR_LEAVE_PRINCIPAL_TYPES.indexOf(String(row[APR_LV_COL.TYPE])) !== -1 &&
+    (status === APR_STATUS.PENDING || status === APR_STATUS.INFO_REQUESTED) &&
+    callerHasRole_(caller, 'Principal') && !!caller.campusId && caller.campusId !== 'ALL' && String(row[1]).trim() === caller.campusId &&
+    String(row[11]).trim().toLowerCase() !== String(caller.email || '').trim().toLowerCase();
+}
+
 function aprISO_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
 
 function aprRowToObj_(row) {
@@ -172,6 +190,7 @@ function aprRowToObj_(row) {
     archived: String(row[18] || '').toUpperCase() === 'TRUE',
     // 2026-10-08, per Uday: who is following up an approved request, due when, and whether it is done. Written by the Coordinator backend
     // (coordinator-approvals.gs) into columns 20-25 of this row; both portals show it.
+    leave: aprLvRowLeave_(row), // 2026-10-26: {type, from, to, dayPart, workingDays, deduction, noticeDays, note} for category Leave, else null
     followUp: row[19] ? { assignee: String(row[19]), assigneeName: String(row[20] || ''), due: String(row[21] || ''), status: String(row[22] || 'open'), note: String(row[23] || ''), doneAt: String(row[24] || '') } : null,
   };
 }
@@ -198,7 +217,7 @@ function aprList_(caller) {
   }
   out.sort(function (a, b) { return b.requestedAt.localeCompare(a.requestedAt); });
   aprAnnotateAwaitingMd_(out);
-  return { success: true, requests: out, canDecide: aprCanDecide_(caller) };
+  return { success: true, requests: out, canDecide: aprCanDecideAny_(caller) };
 }
 
 // action=approvaldetail&id=... -- same Teacher-only-vs-everyone-else
@@ -217,7 +236,7 @@ function aprDetail_(caller, id) {
     }
     const req = aprRowToObj_(values[i]);
     aprAnnotateAwaitingMd_([req]);
-    return { success: true, request: req, comments: aprComments_(id), canDecide: aprCanDecide_(caller) };
+    return { success: true, request: req, comments: aprComments_(id), canDecide: aprCanDecideRow_(caller, values[i]) };
   }
   return { success: false, error: 'Request not found' };
 }
@@ -274,7 +293,7 @@ function aprFindRowIndex_(values, id) {
 // rights here, not just literal Principal.
 function aprSubmit_(caller, body) {
   const canFullSubmit = !pdrIsTeacherOnly_(caller);
-  const canTeacherSubmit = callerHasRole_(caller, 'Teacher');
+  const canTeacherSubmit = callerHasRole_(caller, 'Teacher') || callerHasRole_(caller, 'Staff'); // Staff: Employee Master auto sign-in, same limited categories
   if (!canFullSubmit && !canTeacherSubmit) return { success: false, error: 'Only Principals and Teachers submit approval requests' };
   const category = String(body.category || '').trim();
   if (APR_CATEGORIES.indexOf(category) === -1) return { success: false, error: 'Invalid category' };
@@ -290,7 +309,14 @@ function aprSubmit_(caller, body) {
     const picked = String(body.campusId || '').trim().toUpperCase();
     if (/^LMS[1-6]$/.test(picked)) campusId = picked;
   }
-  const title = String(body.title || '').trim();
+  let title = String(body.title || '').trim();
+  // 2026-10-26: teacher leave -- validated and costed by approvals-leave.gs; the title is generated from type and dates.
+  let leave = null;
+  if (category === APR_LEAVE_CATEGORY) {
+    const lv = aprLvPrepare_(caller, body, campusId);
+    if (!lv.ok) return { success: false, error: lv.error };
+    leave = lv.leave; title = lv.title;
+  }
   if (!title) return { success: false, error: 'Title required' };
   const description = String(body.description || '').trim();
   if (!description) return { success: false, error: 'Description required -- explain the reasoning' };
@@ -309,6 +335,12 @@ function aprSubmit_(caller, body) {
   lock.waitLock(20000);
   try {
     const existing = aprValues_();
+    if (leave) aprLvEnsureColumns_(aprSheet_()); // before anything is appended: a missing column must not leave a half-filed row
+    if (leave) { // the same teacher cannot have two open or approved leaves on the same dates; an identical repeat (double click) is a no-op
+      const clash = aprLvFindOverlap_(existing, caller.email, leave);
+      if (clash && clash.same) return { success: true, id: clash.id, duplicate: true, status: clash.status };
+      if (clash) return { success: false, error: 'You already have a leave request on some of these dates (' + clash.status + ').' };
+    }
     for (let i = 1; i < existing.length; i++) {
       const r = existing[i];
       if (!r[0] || String(r[1]).trim() !== campusId || norm(r[11]) !== norm(caller.email)) continue;
@@ -319,11 +351,11 @@ function aprSubmit_(caller, body) {
       const recent = r[12] && (new Date().getTime() - new Date(r[12]).getTime()) < 10 * 60 * 1000;
       if (open || recent) return { success: true, id: String(r[0]), duplicate: true, status: String(r[13]) };
     }
-    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId);
+    return aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave);
   } finally { lock.releaseLock(); }
 }
 
-function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId) {
+function aprAppendRequest_(caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave) {
   const id = 'apr-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
   aprSheet_().appendRow([
     id, campusId, category, String(body.urgency || '') === 'Urgent' ? 'Urgent' : 'Normal',
@@ -334,8 +366,22 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
   ]);
+  if (leave) {
+    const sheet = aprSheet_();
+    try { aprLvWrite_(sheet, aprLvRowById_(sheet, id), leave); }
+    catch (err) { try { sheet.deleteRow(aprLvRowById_(sheet, id)); } catch (e2) { /* nothing more to do */ } throw err; } // never leave a Leave row without its dates
+  }
   aprNotifyDeciders_(caller, title, category, campusId);
   return { success: true, id: id };
+}
+
+// Status a comment causes, or null for none. Only a decider's comment pauses a
+// Pending request (Info Requested); a Coordinator's or Principal's stays a comment.
+// The requester's reply puts an Info Requested one back to Pending.
+function aprCommentStatus_(canDecide, isRequester, current) {
+  if (canDecide && !isRequester && current === APR_STATUS.PENDING) return APR_STATUS.INFO_REQUESTED;
+  if (isRequester && current === APR_STATUS.INFO_REQUESTED) return APR_STATUS.PENDING;
+  return null;
 }
 
 // action=addapprovalcomment (doPost) -- anyone with view access to the
@@ -345,9 +391,10 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
 //
 // 2026-09-10, per Uday: a comment now also nudges status, reusing the
 // existing Pending/Info Requested values instead of adding a new one
-// -- whoever ISN'T the requester commenting on a Pending request
+// -- a decider (not the requester) commenting on a Pending request
 // flips it to Info Requested (signals "principal, I need something
-// before I can decide"), and the requester replying on an Info
+// before I can decide"; a Coordinator's or Principal's comment no
+// longer does, see aprCommentStatus_), and the requester replying on an Info
 // Requested request flips it back to Pending (signals "answered,
 // back to you"). Only toggles between those two -- a comment on an
 // already-decided (Approved/Rejected/Revoked) request never reopens
@@ -375,12 +422,7 @@ function aprAddComment_(caller, body) {
 
   const requesterEmail = String(target[11]);
   const currentStatus = String(target[13]);
-  let newStatus = null;
-  if (caller.email !== requesterEmail && currentStatus === APR_STATUS.PENDING) {
-    newStatus = APR_STATUS.INFO_REQUESTED;
-  } else if (caller.email === requesterEmail && currentStatus === APR_STATUS.INFO_REQUESTED) {
-    newStatus = APR_STATUS.PENDING;
-  }
+  const newStatus = aprCommentStatus_(aprCanDecide_(caller), caller.email === requesterEmail, currentStatus);
   if (newStatus) sheet.getRange(rowIdx + 1, 14).setValue(newStatus);
 
   aprNotifyThread_(caller, target, text);
@@ -413,7 +455,7 @@ function aprDeleteComment_(caller, body) {
 // is required on every decision -- that's half the point of this
 // portal existing.
 function aprDecide_(caller, body) {
-  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to decide approvals' };
+  if (!aprCanDecideAny_(caller)) return { success: false, error: 'Not authorized to decide approvals' };
   const decision = String(body.decision || '');
   if (APR_DECISIONS.indexOf(decision) === -1) return { success: false, error: 'Invalid decision' };
   const note = String(body.note || '').trim();
@@ -426,6 +468,7 @@ function aprDecide_(caller, body) {
   if (caller.campusId !== 'ALL' && String(values[rowIdx][1]).trim() !== caller.campusId) {
     return { success: false, error: 'Not authorized for that campus' };
   }
+  if (!aprCanDecideRow_(caller, values[rowIdx])) return { success: false, error: 'Not authorized to decide this request' };
   if (decision === APR_STATUS.REVOKED && String(values[rowIdx][13]) !== APR_STATUS.APPROVED) {
     return { success: false, error: 'Only an Approved request can be revoked' };
   }
@@ -455,7 +498,7 @@ function aprDecide_(caller, body) {
   // 2026-10-02, per Uday: any decision can tell people in 3 groups -- For Action /
   // For Accountability / For Information, max 2 each (Approvals only).
   // Column 18 "referredTo" (header self-created) is the audit trail.
-  if (APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
+  if (aprCanDecide_(caller) && APR_NO_REFER_CATEGORIES.indexOf(category) === -1) { // referrals are Management's; a Principal deciding leave later does not refer
     const groups = aprParseReferees_(body.referTo);
     const parts = APR_REFER_KINDS.filter(function (k) { return groups[k].length; })
       .map(function (k) { return APR_REFER_LABELS[k] + ': ' + groups[k].join(', '); });
@@ -507,7 +550,7 @@ function aprReferees_(caller) {
 // Decider-only, same campus scoping as aprDecide_. body.ids = [id,...] (max 200),
 // body.archive = true|false.
 function aprArchive_(caller, body) {
-  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to archive approvals' };
+  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to archive approvals' }; // archiving stays with Management even after leave moves to Principals
   const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { success: false, error: 'Nothing to archive' };
   const archive = body.archive !== false;

@@ -604,10 +604,11 @@ function renderPanel_(row) {
     if (a.status === 'Hiring Approved') h += '<div class="grid"><label class="fld">Date of Joining<input class="inp" type="date" id="pDoj" value="' + esc_(a.dateOfJoining || '') + '"></label></div><div class="foot"><button type="button" class="btn" data-act="savedoj" data-row="' + row + '">Save joining date</button><span class="formmsg" id="dojMsg"></span></div>';
     else if (a.dateOfJoining) h += '<div class="note">Joining ' + esc_(a.dateOfJoining) + '</div>';
     if (a.employeeCode) h += '<div style="margin-top:8px">Employee ID <b>' + esc_(a.employeeCode) + '</b> 🔒' + (a.employeeCodeNote ? '<div class="note">' + esc_(a.employeeCodeNote) + '</div>' : '') + '</div>';
-    else if (a.expectedEmployeeCode) h += '<div style="margin-top:8px">Employee ID <b>' + esc_(a.expectedEmployeeCode) + '</b> <span class="note">expected — permanent once every document is in</span></div>';
-    else if (!a.dateOfJoining && a.status === 'Hiring Approved') h += '<div class="note" style="margin-top:8px">The Employee ID and the document form appear once the joining date is saved.</div>';
-    if (a.docsMissing && a.docsMissing.length) h += '<div class="note" style="margin-top:6px">Still waiting on: <b>' + esc_(a.docsMissing.join(', ')) + '</b></div>';
-    else if (a.docsComplete) h += '<div class="note" style="margin-top:6px">✓ All compulsory documents are in.</div>';
+    else if (a.expectedEmployeeCode) h += '<div style="margin-top:8px">Employee ID <b>' + esc_(a.expectedEmployeeCode) + '</b> <span class="note">expected — locked when you press Start Hiring Process</span></div>';
+    else if (!a.dateOfJoining && a.status === 'Hiring Approved') h += '<div class="note" style="margin-top:8px">The Employee ID and Start Hiring Process appear once the joining date is saved.</div>';
+    if (a.status === 'Hiring Approved' && a.noOpenRole) h += '<div class="note" style="margin-top:6px;color:#b45309">⚠ No approved position is open for this candidate any more (it may have been closed). Hired will be refused until the Owner approves a New/ Backup Position — check the Approvals tab.</div>';
+    if (a.docsMissing && a.docsMissing.length) h += '<div class="note" style="margin-top:6px">Still needed before Hired: <b>' + esc_(a.docsMissing.join(', ')) + '</b> — upload it on the Documents page.</div>';
+    else if (a.docsComplete) h += '<div class="note" style="margin-top:6px">✓ Bio-Data is in. The other documents follow within 30 days, tracked on the Documents page.</div>';
     // 2026-10-23, per Uday: "Start Hiring Process" adds the hire to the Employee Master (so the Fee Clerk can upload documents on
     // the Staff Portal's Documents page) and takes the Principal there; replaces the Google Document Submission Form link.
     if (a.status === 'Hiring Approved' && a.dateOfJoining) {
@@ -850,7 +851,7 @@ function doAdd_(btn) {
     const row = parseInt(String(res.applicantId).replace(/^T-0*/, ''), 10);
     const open = function () {
       if (byRow_(row)) { renderPanel_(row); if (res.duplicate) msg_('notesMsg', 'Already on file — this is their record.', 'ok'); }
-      else { msg_('adMsg', (res.duplicate ? 'Already on file as ' : 'Added as ') + res.applicantId + '. They are not in your view — check the school.', 'ok'); }
+      else { msg_('adMsg', (res.duplicate ? (res.applicantId ? 'Already on file as ' + res.applicantId : 'Already on file at another school') : 'Added as ' + res.applicantId) + '. They are not in your view — check the school.', 'ok'); }
     };
     // A Principal seeing a walk-in on the spot: a direct booking (accepted, and it shortlists them).
     if (interviewAt && !res.duplicate) gasPost_('apptpropose', { row: row, kind: 'interview', start: interviewAt }).then(function (r2) {
@@ -1018,7 +1019,7 @@ function showAppointmentLetter_(row) {
   const d = a.dateOfJoining ? a.dateOfJoining.split('-').reverse().join('-') : '';
   const t = new Date(), today = ('0' + t.getDate()).slice(-2) + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + t.getFullYear();
   const e = function (v, ph) { return '<span contenteditable="true">' + (v === undefined || v === '' ? (ph || '_____') : esc_(v)) + '</span>'; };
-  const n = function (v) { return '<span contenteditable="true">' + (v ? v : 0) + '</span>'; };
+  const n = function (v) { return '<span contenteditable="true">' + (Number(v) || 0) + '</span>'; };
   const row2 = function (l1, v1, l2, v2, l3, v3) {
     return '<tr><td>' + l1 + '<span style="float:right">' + v1 + '</span></td><td>' + l2 + '<span style="float:right">' + v2 + '</span></td><td>' + l3 + '<span style="float:right">' + v3 + '</span></td></tr>';
   };

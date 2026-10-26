@@ -7,7 +7,7 @@ window.TransportChecks = (function () {
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // same as shared.js
   const DIESEL_RS = 95; // per litre, Kullu Oct 2026: values km driven away from base in the leakage estimate
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const DOMAIN = { gps_dead: 'Tracker silent', gps_blind: 'Tracker dark while driving', gps_none: 'No tracker', bus_away: 'Parked away', bus_speed: 'Speeding', fuel_check: 'Fuel', bus_age: 'Vehicle age' };
+  const DOMAIN = { gps_dead: 'Tracker silent', gps_blind: 'Tracker dark while driving', gps_none: 'No tracker', bus_away: 'Parked away', bus_speed: 'Speeding', fuel_check: 'Fuel', fuel_proof: 'Fill video', bus_age: 'Vehicle age', bus_inspection: 'Safety check', bus_equipment: 'Safety kit', capture_route: 'Route timelapse' };
   const TRACKER = { ok: ['ok', 'Working'], blind: ['soon', 'Dark while driving'], dead: ['expired', 'Silent'], none: ['missing', 'No tracker'], unknown: ['missing', 'GPS provider not answering'] };
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -78,15 +78,21 @@ window.TransportChecks = (function () {
     function render() {
       const d = S.d, open = d.tasks.filter(t => t.status === 'open');
       const late = open.filter(t => t.due && t.due < d.today);
-      const tabs = (opts.owner ? [['overview', 'Overview']] : []).concat([['checks', 'Follow-ups (' + open.length + ')'], ['map', 'Map'], ['trackers', 'Trackers'], ['driving', 'Driving'], ['fuel', 'Fuel'], ['stops', 'Stops']]);
+      // the route views (transport-views.js) are tabs every role may get; a page narrows them with opts.views
+      const views = window.TransportViews ? (opts.views || Object.keys(TransportViews.VIEWS)) : [];
+      const tabs = (opts.owner ? [['overview', 'Overview']] : []).concat([['checks', 'Follow-ups (' + open.length + ')']], views.map(v => [v, TransportViews.VIEWS[v][0]]),
+        [['map', 'Live map'], ['trackers', 'Trackers'], ['driving', 'Driving'], ['fuel', 'Fuel'], ['stops', 'Stop times']]);
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       body.innerHTML = '<p class="note">GPS facts as of ' + (synced ? '<b' + (ageH > 30 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</b>' + (ageH > 30 ? ' (the daily GPS sync on the Mac has not run; numbers may be old)' : '') : '<b class="stale">never: the GPS sync has not run yet</b>') + '.</p>' +
-        '<div class="ctl"><span class="seg">' + tabs.map(x => '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (S.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
+        '<div class="ctl"><span class="seg tc-tabs">' + tabs.map(x => '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (S.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
         '<div class="tc-tab"></div>';
       body.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { S.tab = b.dataset.tab; render(); }));
+      const bar = body.querySelector('.tc-tabs'), on = bar.querySelector('.on');
+      if (on) bar.scrollLeft = on.offsetLeft - bar.offsetLeft - 24; // on a phone the open tab stays in sight
       const tab = body.querySelector('.tc-tab');
       mapEl.hidden = S.tab !== 'map';
       if (S.tab === 'map') { if (!S.mapMounted) { TransportLive.mount(mapEl, session); S.mapMounted = true; } return; }
+      if (views.indexOf(S.tab) !== -1) { TransportViews.render(tab, d, S.tab, (S.view = S.view || {})[S.tab] = S.view[S.tab] || {}); return; }
       ({ overview, checks, trackers, driving, fuel, stops })[S.tab](tab, d, open, late);
     }
 
@@ -128,7 +134,7 @@ window.TransportChecks = (function () {
       const waiting = d.checks.filter(c => c.flag === 'yes' && !c.answer);
       tab.innerHTML = (late.length ? '<p class="miss">' + late.length + ' follow-up' + (late.length > 1 ? 's are' : ' is') + ' past due. The Owner sees who is late.</p>' : '') +
         (list.length ? list.map(t => '<div class="task ' + esc(t.severity) + '" data-id="' + esc(t.taskId) + '"><div><div class="t"><span class="chip">' + esc(DOMAIN[t.domain]) + '</span>' + esc(t.title) + '</div>' +
-          '<div>' + esc(t.detail) + '</div><div class="d">' + esc(t.campus) + ' · ' + (t.assignee ? (t.assignee === me ? 'yours' : esc(t.assignee.split('@')[0])) : 'no owner') + ' · ' + dueText(t, d.today) + '</div>' +
+          '<div>' + esc(t.detail) + '</div>' + (t.domain === 'fuel_proof' ? '<div class="d">The fee clerk attaches it in the Day Book (Add fill video). This closes by itself once it is attached.</div>' : '') + (/^bus_(inspection|equipment)$/.test(t.domain) ? '<div class="d"><a href="../../coordinator/transport/capture.html">Open the capture portal</a> (Inspection). This closes by itself the day after the check is sent.</div>' : '') + (t.domain === 'capture_route' ? '<div class="d"><a href="../../coordinator/transport/capture.html">Open the capture portal</a> (Timelapse). This closes by itself the morning after the run is sent.</div>' : '') + '<div class="d">' + esc(t.campus) + ' · ' + (t.assignee ? (t.assignee === me ? 'yours' : esc(t.assignee.split('@')[0])) : 'no owner') + ' · ' + dueText(t, d.today) + '</div>' +
           '<div class="tc-close" hidden style="margin-top:8px"><label class="sm">What did you do? (required)<br><input class="tc-note" style="width:min(520px,100%);padding:6px" placeholder="For example: driver warned on 24 Oct / Blackbox complaint 12345"></label> <button class="btn tc-save">Save and close</button><div class="sm tc-err" role="alert"></div></div></div>' +
           '<button class="btn tc-done">Mark done</button></div>').join('') : '<p class="note">No open transport follow-ups. Well done.</p>') +
         (waiting.length ? '<h3 class="tc-h">Fuel bills waiting for the fee clerk (' + waiting.length + ')</h3><p class="note">Each comes to you if the clerk has not answered in 2 days.</p><div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Km per litre</th></tr></thead><tbody>' +
@@ -175,12 +181,15 @@ window.TransportChecks = (function () {
           '<td>' + (o.over7 >= 10 ? '<b class="miss">' + o.over7 + '</b>' : o.over7) + ' / ' + o.over30 + '</td><td>' + (o.maxKmh > 50 ? '<b class="miss">' + o.maxKmh + '</b>' : o.maxKmh) + ' km/h</td></tr>').join('') + '</tbody></table></div>';
     }
 
+    // on a phone the table scrolls sideways: the bus stays in sight next to its Result and Proof
+    const STICK = 'position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--border);';
     function fuel(tab, d) {
       const rows = d.checks.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
       tab.innerHTML = '<p class="note">Each fuel fill in the day book against the km the GPS recorded since the bus\'s previous fill. Flagged: below 80% of the bus\'s normal km per litre, or the bill odometer and the GPS disagree by more than 20%.</p>' +
-        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Fee clerk</th></tr></thead><tbody>' +
-          rows.map(c => '<tr><td>' + day(c.date) + '</td><td><b>' + esc(c.reg) + '</b></td><td>' + esc(c.litres) + '</td><td>' + esc(c.gpsKm) + '</td><td>' + esc(c.billKm) + '</td><td>' + esc(c.kmpl) + ' <span class="sm">(normal ' + esc(c.norm) + ')</span></td>' +
+        (rows.length ? '<div class="tw"><table class="l"><thead><tr><th>Date</th><th style="' + STICK + 'background:var(--lgray)">Bus</th><th>Litres</th><th>GPS km</th><th>Bill odometer km</th><th>Km per litre</th><th>Result</th><th>Proof</th><th>Fee clerk</th></tr></thead><tbody>' +
+          rows.map(c => '<tr><td>' + day(c.date) + '</td><td style="' + STICK + 'background:var(--white)"><b>' + esc(c.reg) + '</b></td><td>' + esc(c.litres) + '</td><td>' + esc(c.gpsKm) + '</td><td>' + esc(c.billKm) + '</td><td>' + esc(c.kmpl) + ' <span class="sm">(normal ' + esc(c.norm) + ')</span></td>' +
             '<td>' + (c.flag === 'yes' ? '<span class="pl expired">' + esc(c.reason.indexOf('low') !== -1 ? 'Too much fuel' : 'Odometer differs') + '</span>' + (Number(c.excessRs) ? '<div class="sm">about ' + rs(c.excessRs) + ' extra</div>' : '') : '<span class="pl ok">OK</span>') + (/gps_gap/.test(c.reason) ? '<div class="sm">tracker missed some days</div>' : '') + '</td>' +
+            '<td>' + (c.proof === 'video+bill' ? '<span class="pl ok">Video and bill</span>' : c.proof === 'none' ? '<span class="pl expired">No video, no bill</span>' : c.proof === 'bill' ? '<span class="pl soon">Bill only</span>' : '') + '</td>' +
             '<td>' + (c.answer ? esc(c.answer === 'matches' ? 'slip matches' : 'bill corrected') + '<div class="sm">' + esc(String(c.answeredBy).split('@')[0]) + '</div>' : c.flag === 'yes' ? '<span class="stale">waiting</span>' : '') + '</td></tr>').join('') + '</tbody></table></div>'
           : '<p class="note">No fills to check yet. Fee clerks record fuel in the day book (litres and odometer) since 23 Oct 2026; each fill is checked once the bus has a previous fill and 50 km of GPS driving since.</p>');
     }

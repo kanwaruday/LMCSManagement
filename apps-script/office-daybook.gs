@@ -5,6 +5,7 @@ function officeDaybookActions_() {
   return {
     'daybook.add': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookAdd_ },
     'daybook.reverse': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookReverse_ },
+    'daybook.attach_video': { roles: ['FeeClerk', 'Owner'], write: true, run: officeDaybookAttachVideo_ },
     'daybook.list': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookList_ },
     'daybook.balances': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookBalances_ },
   };
@@ -99,6 +100,23 @@ function officeDaybookAdd_(ctx, data) {
       return officeRows_(b, 'Files').some(function (f) { return f.id === String(data.file_id) && f.campus === data.campus; });
     })) throw officeCoded_('FILE_MISSING'); // same check as deposit.add
   }
+  // A fuel fill may carry the driver's video of the fill (a fuel_video file of this campus); the fuel check shows it as proof.
+  const videoId = officeBlank_(data.video_file_id) ? '' : String(data.video_file_id);
+  if (videoId) {
+    if (!isFuel) throw new Error('BAD_FIELD');
+    if (!officeRecentBooks_(data.campus).some(function (b) {
+      return officeRows_(b, 'Files').some(function (f) { return f.id === videoId && f.campus === data.campus && f.category === 'fuel_video'; });
+    })) throw officeCoded_('VIDEO_MISSING');
+  }
+  // Garage data: a service bill says which parts it was for (comma-separated ids, in the order tapped). Other categories ignore the field.
+  const offered = officeComponentsFor_(cat.id).map(function (c) { return c.id; });
+  let components = '';
+  if (offered.length) {
+    const picked = Array.isArray(data.components) ? data.components : officeBlank_(data.components) ? [] : null;
+    if (picked && !picked.length) throw officeCoded_('COMPONENTS_REQUIRED');
+    if (!picked || picked.some(function (c) { return offered.indexOf(c) === -1; })) throw officeCoded_('BAD_COMPONENT');
+    components = picked.filter(function (c, i) { return picked.indexOf(c) === i; }).join(',');
+  }
   const odometerNote = isFuel ? String(data.odometer_note || '').trim() : '';
 
   // Student collections are tracked per head; no other category carries one.
@@ -118,7 +136,7 @@ function officeDaybookAdd_(ctx, data) {
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
     account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
-    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection,
+    settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   }, 'daybook.add');
 }
 
@@ -165,8 +183,31 @@ function officeDaybookReverse_(ctx, data) {
     narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
     account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
-    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection,
+    source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
   }, 'daybook.reverse');
+}
+
+// Attaches the driver's fill video to a saved fuel entry. The day book stays append-only: the link is a new Files row (category
+// fuel_video, belongs_to = the entry id, the same Drive file) in the book that holds the entry. A second video needs replace:true; the
+// latest link wins. Same-campus Fee Clerk or Owner (campus enforced by the caller check); fuel entries that are not reversed only.
+function officeDaybookAttachVideo_(ctx, data) {
+  if (!data.id) throw new Error('MISSING_ID');
+  const books = officeRecentBooks_(data.campus);
+  const files = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Files')); }, []);
+  if (files.some(function (f) { return f.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
+  const home = books.filter(function (b) { return officeRows_(b, 'DayBook').some(function (r) { return r.id === String(data.entry_id) && r.campus === data.campus; }); })[0];
+  if (!home) throw new Error('NOT_FOUND');
+  const all = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  const entry = all.filter(function (r) { return r.id === String(data.entry_id); })[0];
+  if (entry.category !== 'fuel') throw officeCoded_('NOT_FUEL');
+  if (entry.reverses || all.some(function (r) { return r.reverses === entry.id; })) throw new Error('ALREADY_REVERSED');
+  const video = files.filter(function (f) { return f.id === String(data.file_id) && f.campus === data.campus && f.category === 'fuel_video'; })[0];
+  if (!video) throw officeCoded_('VIDEO_MISSING');
+  if ((entry.video_file_id || officeVideoLinks_(files)[entry.id]) && data.replace !== true) throw officeCoded_('VIDEO_EXISTS');
+  officeAppend_(home, 'Files', { id: data.id, campus: data.campus, drive_id: video.drive_id, name: video.name, size: video.size, fingerprint: video.fingerprint,
+    category: 'fuel_video', belongs_to: entry.id }, ctx.caller, { action: 'daybook.attach_video' });
+  try { officeFuelMirror_(data.campus); } catch (err) { console.error('Fuel mirror: ' + err.message); } // the Coordinator sees hasVideo on its next push
+  return { id: String(data.id) };
 }
 
 function officeDaybookList_(ctx, data) {
@@ -176,7 +217,9 @@ function officeDaybookList_(ctx, data) {
   const fy = officeFy_(data.from);
   if (officeFy_(to) !== fy) throw new Error('RANGE_SPANS_YEARS');
   const ss = officeOpen_(data.campus, fy);
-  return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; }) };
+  const links = officeVideoLinks_(officeRows_(ss, 'Files')); // a fill video attached after the save shows as the entry's video_file_id
+  return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; })
+    .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; }) };
 }
 
 function officeDaybookBalances_(ctx, data) {

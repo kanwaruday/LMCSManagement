@@ -62,7 +62,7 @@
 //                         see verifyCallerToken_ below and approvals.gs's
 //                         own header for the delegation model.
 //   hiring.gs           -- action=hiringapplicants/hiringapprovalstatus/
-//                         hiringcheckinterviewreport/hiringcheckdocuments
+//                         hiringcheckinterviewreport
 //                         (GET), updatehiringstatus/hiringrefreshtracker
 //                         (POST, latter Owner-only). Hiring
 //                         Dashboard: browse the Teaching
@@ -128,11 +128,20 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // their own Approvals requests instead of gaining access to every
 // other action by accident. Extend this list, not verifyCallerToken_'s
 // role check, when Teacher Portal grows a new self-scoped action.
-const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'approvedleave', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 // Fee Clerk (2026-10-22, per Uday): hiring legwork only -- browse, add an applicant, propose interview/demo
 // slots (hiring v2: apptpropose, never hiringschedule), upload scanned reports. Never a decision (shortlist,
 // accept, reject, revive, Hired): those stay with the Principal.
+// Staff (2026-10-25, per Uday): every Active employee signs in from the Employee Master, see pdrStaffFromEmployeeMaster_.
+// Non-teaching Staff get Requests, Evaluations and Events only -- no Teacher score (myrankscore). Teacher callers keep the lists above.
+const PDR_STAFF_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myemployeecode'];
+const PDR_STAFF_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
+// EmpSalary.Department -> role (Uday's Q9, 2026-10-25). Not listed (AdminTM, AdminHead, blank...) = no auto sign-in, allowlist only.
+// The fallback can only ever produce Teacher or Staff.
+const PDR_AUTO_ROLE_BY_DEPARTMENT = { teaching: 'Teacher', adminpti: 'Teacher', adminit: 'Teacher', adminclerk: 'Staff', 'non-teaching': 'Staff', transport: 'Staff' };
+// Employee-code prefix -> campus. HES (head office) is deliberately absent: those staff use the allowlist.
+const PDR_CAMPUS_BY_PREFIX = { KUL: 'LMS1', KEL: 'LMS2', DUN: 'LMS3', NCM: 'LMS4', SAY: 'LMS5', JOG: 'LMS6' };
 const PDR_FEECLERK_GET_ACTIONS = ['hiringapplicants', 'hiringapprovalstatus', 'apptlist'];
 const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'apptpropose', 'apptcancel', 'hiringuploadreport'];
 
@@ -143,6 +152,11 @@ function doGet(e) {
     if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
 
     const action = (e.parameter.action || 'teacherstats').toLowerCase();
+    // assets/auth.js asks this after an allowlist miss, to open a Teacher/Staff session. Only a caller that came from the
+    // Employee Master fallback gets an answer; an allowlisted caller never needs it.
+    if (action === 'staffsignin') {
+      return jsonOut_(caller.autoSignIn ? { success: true, role: caller.roles[0], campusId: caller.campusId, employeeCode: caller.employeeCode } : { success: false, error: 'Not authorized' });
+    }
     if (!pdrIsElevated_(caller) && !pdrLimitedAllows_(caller, action, false)) {
       return jsonOut_({ success: false, error: 'Not authorized' });
     }
@@ -159,12 +173,12 @@ function doGet(e) {
     if (action === 'approvalslist') return jsonOut_(aprList_(caller));
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
     if (action === 'approvalreferees') return jsonOut_(aprReferees_(caller));
+    if (action === 'approvedleave') return jsonOut_(aprLvApprovedLeaveAction_(caller, e.parameter));
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
     if (action === 'apptlist') return jsonOut_(apptList_(caller));
     if (action === 'hiringcheckinterviewreport') return jsonOut_(hiringCheckInterviewReport_(e.parameter.phone));
-    if (action === 'hiringcheckdocuments') return jsonOut_(hiringCheckDocuments_(e.parameter.campusId, e.parameter.name));
     if (action === 'hiringrownotes') return jsonOut_(hiringRowNotes_(e.parameter.row));
     if (action === 'salaryepfexemptionstatus') return jsonOut_({ success: true, approved: salEpfExemptionApproved_(e.parameter.name) });
     if (action === 'salaryconfig') return jsonOut_(salaryConfig_());
@@ -322,10 +336,41 @@ function verifyCallerToken_(idToken) {
       cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
       return caller;
     }
-    return null; // not on the allowlist at all
+    // Not on the allowlist: the Employee Master fallback (off unless STAFF_AUTO_SIGNIN is exactly 'on'). An allowlist row, even one
+    // with an unrecognised role (returned null above), always wins -- this runs only when there is no row at all.
+    const staff = pdrStaffFromEmployeeMaster_(email);
+    if (!staff) return null;
+    const caller = { email: staff.email, campusId: staff.campusId, role: staff.roles[0], roles: staff.roles, name: '', canApprove: false, employeeCode: staff.employeeCode, autoSignIn: true };
+    cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
+    return caller;
   } catch (err) {
     return null;
   }
+}
+
+// Employee Master fallback for the allowlist: AuthEmail (EmpPersonal) -> code, Active in EmpMaster, role from EmpSalary.Department.
+// Returns {email, campusId, roles:[role], employeeCode} or null. Never logs emails or codes.
+// ponytail: three sheet reads per uncached sign-in; the caller result is cached per token for PDR_AUTH_CACHE_SECONDS like an allowlist caller.
+function pdrStaffFromEmployeeMaster_(email) {
+  if (PropertiesService.getScriptProperties().getProperty('STAFF_AUTO_SIGNIN') !== 'on') return null;
+  email = String(email || '').trim().toLowerCase();
+  const code = email && tpAuthEmailToCode_()[email];
+  if (!code) return null;
+  const campusId = PDR_CAMPUS_BY_PREFIX[code.split('/')[0]];
+  if (!campusId) return null;
+  const book = SpreadsheetApp.openById(TP_EMP_SHEET_ID);
+  const cell = function (v) { return String(v || '').replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim(); }; // same cleaning as ss-forms-sync.gs normalizeCell_
+  const find = function (tab, valueCol) { // -> the valueCol cell of this code's row, or null
+    const rows = book.getSheetByName(tab).getDataRange().getValues();
+    const codeAt = rows[0].indexOf('EmployeeCode'), valAt = rows[0].indexOf(valueCol);
+    if (codeAt < 0 || valAt < 0) return null;
+    for (let i = 1; i < rows.length; i++) if (cell(rows[i][codeAt]) === code) return cell(rows[i][valAt]);
+    return null;
+  };
+  if ((find('EmpMaster', 'Status') || '').toLowerCase() !== 'active') return null;
+  const role = PDR_AUTO_ROLE_BY_DEPARTMENT[(find('EmpSalary', 'Department') || '').toLowerCase()];
+  if (!role) return null;
+  return { email: email, campusId: campusId, roles: [role], employeeCode: code };
 }
 
 // Shared role-membership check -- every permission check in this
@@ -343,7 +388,7 @@ function callerHasRole_(caller, role) {
 // keep their full Coordinator-level access, Teacher is additive for
 // their own personal requests, not a downgrade.
 function pdrIsTeacherOnly_(caller) {
-  return callerHasRole_(caller, 'Teacher')
+  return (callerHasRole_(caller, 'Teacher') || callerHasRole_(caller, 'Staff')) // Staff (auto sign-in) is scoped exactly like a Teacher
     && !callerHasRole_(caller, 'Principal')
     && !callerHasRole_(caller, 'Coordinator')
     && !callerHasRole_(caller, 'Owner');
@@ -359,6 +404,7 @@ function pdrIsElevated_(caller) {
 function pdrLimitedAllows_(caller, action, isPost) {
   const lists = [];
   if (callerHasRole_(caller, 'Teacher')) lists.push(isPost ? PDR_TEACHER_POST_ACTIONS : PDR_TEACHER_GET_ACTIONS);
+  if (callerHasRole_(caller, 'Staff')) lists.push(isPost ? PDR_STAFF_POST_ACTIONS : PDR_STAFF_GET_ACTIONS);
   if (callerHasRole_(caller, 'FeeClerk')) lists.push(isPost ? PDR_FEECLERK_POST_ACTIONS : PDR_FEECLERK_GET_ACTIONS);
   return lists.some(function (l) { return l.indexOf(action) !== -1; });
 }

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Game UI stub</title>
+<!-- UI check for the game layer without the live backend. NEVER deployed as a portal page; every name is fictional.
+     Serve the repo root (python3 -m http.server 8000) and open /tests/game/ui-stub.html?f=five
+     ?f=     five | zero | down | window | teacher | decide | arrived | noauth   (fixture; default five)
+             (teacher is generated from the real Teacher module: node tests/game/make-teacher-fixture.js)
+     &greet= 0 | 1   force firstLoadToday off / on (default: on, except down, which is off as ruling R24 makes it)
+     &done=  N       finish the first N quests (the quest panel shows the first unfinished one only)
+     &tour=  0 | 1   0 = the home tour was already seen (default 1 = first visit)
+     &load=  error   the first gametoday call fails (Retry then succeeds)   &load=slow  2.5 s per call (skeleton)
+     &data=1         pass the fixture as opts.data (no gametoday fetch at all)
+     gamedecide answers like the backend: success for exactly 3 distinct days of Mon-Sat, else "Pick exactly 3 days.";
+     a note of "closed" returns the closed-window error. Every POST is listed under "Stub log". -->
+<link rel="stylesheet" href="../../assets/style.css">
+<link rel="stylesheet" href="../../assets/game/game.css">
+<style>
+  .stub-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .stub-nav a { border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; font-size: 14px; color: var(--dark); text-decoration: none; }
+  .stub-nav a[aria-current] { background: var(--dark); color: #fff; }
+  .stub-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stub-tiles div { border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-height: 70px; background: #fff; }
+  .stub-tiles b { display: block; }
+  #stub-log { font-size: 12px; white-space: pre-wrap; background: var(--lgray); padding: 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header class="site"><div class="wrap"><a class="brand" href="#"><span>LMCS Portal <span class="tagline">Game UI stub</span></span></a></div></header>
+<main class="wrap">
+  <h1 style="margin:20px 0 4px" id="stub-h1">Principal portal</h1>
+  <p style="margin:0;color:var(--gray)" id="stub-sub">LMS 4 · sample host content. The game panel renders below it.</p>
+  <nav class="stub-nav" aria-label="Fixtures" id="stub-nav"></nav>
+  <div class="stub-tiles">
+    <div><b>Daily report</b>Today</div><div><b>Approvals</b>Requests</div><div><b>Hiring</b>Applicants</div>
+    <div><b>Staff</b>Documents</div><div><b>Curriculum</b>CW/HW</div><div><b>Evaluations</b>SS</div>
+  </div>
+  <section id="game" hidden></section>
+  <details style="margin:8px 0 24px"><summary>Stub log</summary><div id="stub-log"></div></details>
+  <p style="color:var(--gray);font-size:13px">Last line of the host page: it must stay visible above the next-step bar.</p>
+</main>
+<script src="fixtures/teacher-today.js"></script>
+<script src="../../assets/game/game.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), f = q.get('f') || 'five';
+  var STUB = 'https://stub.invalid/game';
+  var today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  var M = function (kind, id, title, x) {
+    return Object.assign({ id: kind + ':' + id, kind: kind, title: title, why: '', owner: 'principal@example.org', campus: 'LMS4', go: 'principals-daily-reporting/index.html',
+      due: null, core: false, shared: false, done: false, doneAt: null, doneBy: null, rolledOver: false, gone: false }, x || {});
+  };
+  var quest = { questId: 'principal1', title: 'Your portal', complete: false, reward: 'Quest badge: Your portal', steps: [
+    { id: 'report', kind: 'pdr_report', title: "Submit today's daily report", go: 'principals-daily-reporting/index.html', done: true, locked: false },
+    { id: 'ss', kind: 'ss_submit', title: 'Submit one SS evaluation', go: 'principals-daily-reporting/index.html', done: true, locked: false },
+    { id: 'issue', kind: 'pdr_issue', title: 'Close one daily-report issue with a note', go: 'principal/issues.html', done: false, locked: false },
+    { id: 'suit', kind: 'decision', title: "Choose your campus's track-suit days", go: '', done: false, locked: true } ] };
+  var days = { onTrack: 18, counted: 21, lastMonthOnTrack: 15, lastMonthCounted: 22, showDenominator: true };
+  var base = { success: true, day: today, firstLoadToday: true, role: 'Principal', campus: 'LMS4', speaker: 'buddy', windows: [], quests: [quest],
+    daysOnTrack: days, sourcesDown: [], toursSeen: [],
+    config: { trackSuitDays: { LMS4: ['Mon', 'Wed', 'Fri'] }, uniform: { winterFrom: '2026-10-26', summerFrom: '2027-05-03', festivals: [] } } };
+  // titles and small lines as game-missions.gs now writes them (R30); one title carries markup that must render as text
+  var five = [
+    M('ss_pace', 'LMS4', 'Submit 2 SS evaluations today', { why: '6 still needed for October', core: true, progress: { done: 0, total: 2 } }),
+    M('pdr_issue', 'I-104', 'Close the issue \u201cFan <b>not</b> working in Room 3 & the corridor\u201d', { go: 'principal/issues.html', why: 'From the daily reports \u00b7 raised yesterday', core: true, rolledOver: true }),
+    M('info_requested', 'A-77', 'Reply to Management about \u201cClass 5 nature walk\u201d', { go: 'coordinator/followups/index.html', why: 'They asked for more information' }),
+    M('pdr_issue', 'I-109', 'Close the issue \u201cWater tank cover, Block B\u201d', { go: 'principal/issues.html', why: 'From the daily reports \u00b7 raised today', core: true }),
+    M('pdr_report', 'LMS4:' + today, "Submit today's daily report", { done: true, doneBy: 'principal@example.org' }),
+  ];
+  var FIX = {
+    five: Object.assign({}, base, { missions: five, next: five[0] }),
+    zero: Object.assign({}, base, { missions: [], next: null }),
+    down: Object.assign({}, base, { firstLoadToday: false, sourcesDown: ['ssdashboard'], missions: five.slice(1, 4), next: five[1] }),
+    window: Object.assign({}, base, { missions: five.slice(0, 3), next: five[0], windows: [{ windowId: 'trackSuit', title: "Choose your campus's track-suit days",
+      question: 'Which 3 days a week do students come in track suits?', scopeId: 'LMS4', choice: { type: 'pickN', n: 3, options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
+      current: ['Mon', 'Wed', 'Fri'], closes: 'Sat 8 Nov', decided: null }] }),
+    // what the Teacher module really returns for a synthetic teacher: fixtures/teacher-today.js, GENERATED by make-teacher-fixture.js
+    teacher: Object.assign({}, base, { role: 'Teacher', campus: 'LMS2', speaker: 'teacher-owl' }, window.TEACHER_FIXTURE),
+  };
+  // decide: the quest's next open step is the decision (a button that opens the card); arrived: today's set is done and one
+  // more came in; noauth: the backend says Not authorized (renders nothing)
+  FIX.decide = JSON.parse(JSON.stringify(FIX.window));
+  FIX.decide.quests[0].steps[2].done = true; FIX.decide.quests[0].steps[3].locked = false;
+  FIX.arrived = Object.assign({}, base, { missions: [], next: five[2] });
+  FIX.noauth = { success: false, error: 'Not authorized' };
+
+  var data = JSON.parse(JSON.stringify(FIX[f] || FIX.five));
+  if (q.get('greet')) data.firstLoadToday = q.get('greet') === '1';
+  // the quest panel shows the first unfinished quest only; &done=N finishes the first N quests so the next one shows (teacher: 1 = Quest 1 done, 2 = also the term quest, 3.. = chapter quests)
+  (data.quests || []).slice(0, +q.get('done') || 0).forEach(function (qq) { qq.complete = true; qq.steps.forEach(function (st) { st.done = true; st.locked = false; }); });
+  if (q.get('tour') === '0') data.toursSeen = ['home-' + data.role];
+
+  document.getElementById('stub-h1').textContent = (data.role || 'Signed-out') + ' portal';
+  document.getElementById('stub-sub').textContent = String(data.campus || '').replace('LMS', 'LMS ') + ' · sample host content. The game panel renders below it.';
+  var nav = document.getElementById('stub-nav');
+  Object.keys(FIX).forEach(function (k) {
+    var a = document.createElement('a');
+    a.href = '?f=' + k; a.textContent = k;
+    if (k === f) a.setAttribute('aria-current', 'page');
+    nav.appendChild(a);
+  });
+  var logEl = document.getElementById('stub-log');
+  function log(x) { logEl.textContent += JSON.stringify(x) + '\n'; console.log('[stub]', x); }
+
+  var failNext = q.get('load') === 'error', delay = q.get('load') === 'slow' ? 2500 : 450, realFetch = window.fetch;
+  function reply(x) { return new Response(JSON.stringify(x), { headers: { 'Content-Type': 'application/json' } }); }
+  window.fetch = function (u, o) {
+    if (String(u).indexOf(STUB) !== 0) return realFetch.apply(this, arguments);
+    return new Promise(function (resolve, reject) {
+      setTimeout(function () {
+        if (!o || o.method !== 'POST') {
+          log({ GET: String(u).replace(/idToken=[^&]*/, 'idToken=…') });
+          if (failNext) { failNext = false; reject(new TypeError('Failed to fetch')); return; }
+          resolve(reply(data)); return;
+        }
+        var b = JSON.parse(o.body);
+        log(b);
+        if (b.action !== 'gamedecide') { resolve(reply({ success: true })); return; }
+        var v = Array.isArray(b.value) ? b.value : [], days6 = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var ok = v.length === 3 && v.every(function (d, i) { return days6.indexOf(d) !== -1 && v.indexOf(d) === i; });
+        if (b.note === 'closed') resolve(reply({ success: false, error: 'This window closed on Sat 8 Nov.' }));
+        else resolve(reply(ok ? { success: true } : { success: false, error: 'Pick exactly 3 days.' }));
+      }, delay);
+    });
+  };
+
+  LMCSGame.mount(document.getElementById('game'), {
+    backendUrl: STUB, root: '../../',
+    session: { name: f === 'teacher' ? 'Kavya Thakur' : 'Dr. Ritika Sood', email: 'stub@example.org', role: data.role, campusId: data.campus, idToken: 'stub-token' },
+    data: q.get('data') === '1' ? data : undefined,
+  });
+})();
+</script>
+</body>
+</html>

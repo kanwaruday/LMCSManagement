@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // Coordinator Backend -- Systems department: Principals' daily report analysis (third file of the same
-// "LMCS Coordinator Backend" project, next to coordinator.gs). Coordinator-only; principals never see this.
+// "LMCS Coordinator Backend" project, next to coordinator.gs). Coordinator-only; principals never see this, except their own
+// campus's issues, which they read and close through coordinator-principal.gs.
 //
 // Reads the "Daily Reports" tab of the Principal DR workbook live (written by principal-dr.gs in the OTHER project),
 // plus the "LM Studio Tags" tab in that same workbook: topic tags for each Important Message, written by
@@ -19,7 +20,8 @@ const COORD_FEES_SHEET_ID = '1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4'; // "
 const COORD_FEES_CAMPUS = { Kullu: 'LMS1', Kelheli: 'LMS2', Dunkhra: 'LMS3', NerChowk: 'LMS4', Sayoli: 'LMS5', Jogindernagar: 'LMS6' }; // campus name in the email subject -> id
 const COORD_PDR_HISTORY_TAB = 'PDR History'; // Jan to 22 Sep 2026 reports parsed from the old Google Spaces group (push from the Mac)
 const COORD_PDR_ADMISSIONS_TAB = 'PDR Admissions'; // daily admission status posts from the campuses' WhatsApp admissions group (push from the Mac)
-const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what coordinators did with each issue: acknowledged / assigned / resolved
+const COORD_PDR_ACTIONS_TAB = 'PDR Issue Actions'; // what was done with each issue: acknowledged / assigned / resolved (Coordinator or Principal) / reopened
+const COORD_PDR_ACTIONS_LOG_TAB = 'PDR Issue Actions Log'; // append-only: each action row as it was just before it was replaced, plus LoggedAt
 const COORD_PDR_REPEATS_TAB = 'PDR Repeats'; // how much of each report repeats the campus's previous one (push from the Mac)
 const COORD_PDR_MERGES_TAB = 'PDR Issue Merges'; // 'this issue is the same problem as that one': source id -> target id, applied by the page
 const COORD_PDR_ISSUES_TAB = 'PDR Issues';   // issues grouped from the principals' Important Messages (push from the Mac)
@@ -137,10 +139,12 @@ function coordPdrCoordinators_() {
   return out;
 }
 
-/** POST action=coordinatorpdrissue {idToken, id, status: open|acknowledged|assigned|resolved, assignee: email, note}: one row per issue in the actions tab. */
+/** POST action=coordinatorpdrissue {idToken, id, status: open|acknowledged|assigned|resolved|reopened, assignee: email, note}: one row per issue in the actions tab.
+ *  reopened = a Coordinator or the Owner sends a closed issue back to its Principal; the note (why) is required. */
 function coordPdrIssueAction_(caller, body) {
   const id = String(body.id || ''), status = String(body.status || '');
-  if (['open', 'acknowledged', 'assigned', 'resolved'].indexOf(status) === -1) return { success: false, error: 'Unknown status' };
+  if (['open', 'acknowledged', 'assigned', 'resolved', 'reopened'].indexOf(status) === -1) return { success: false, error: 'Unknown status' };
+  if (status === 'reopened' && !String(body.note || '').trim()) return { success: false, error: "Write why you're reopening this." };
   const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), visible = coordVisibleCampuses_(caller);
   const ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
   const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === id; })[0] : null;
@@ -151,28 +155,60 @@ function coordPdrIssueAction_(caller, body) {
     who = coordPdrCoordinators_().filter(function (c) { return c.email === String(body.assignee || '').toLowerCase(); })[0];
     if (!who) return { success: false, error: 'Pick a coordinator to assign this to' };
   }
-  const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]];
+  const rec = [id, status, who ? who.email : '', who ? who.name : '', String(body.note || '').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], coordPdrMergedLastIn_(ss, id)];
   coordPdrWriteAction_(ss, rec);
   let taskError = '';
   try { coordPdrSyncTask_(issue, status, who, caller, rec[4]); } catch (err) { taskError = err.message; } // the action is saved either way
   return { success: true, taskError: taskError, action: { status: rec[1], assignee: rec[2], assigneeName: rec[3], note: rec[4], by: rec[5], at: rec[6], lastAtAction: rec[8] } };
 }
 
-/** One row per issue in the actions tab (insert or replace). Takes the script lock, so callers must not hold it. */
+/** PDR Issue Merges rows (source id, target id, ...) -> id => the issue it finally folds into (itself if none). At most 5 hops,
+ *  the way the Systems page and coordPrincipalIssues_ follow merges. */
+function coordPdrRootOf_(mergeRows) {
+  const merges = {};
+  mergeRows.forEach(function (m) { merges[m[0]] = m[1]; });
+  return function (id) { let x = id, n = 0; while (merges[x] && n++ < 5) x = merges[x]; return x; };
+}
+
+/** The issue's last seen with every issue merged into it folded in: what "Last mention when updated" must hold, since the
+ *  raised-again check compares the merged last. With no merges it is the row's own Last seen (r[5]). Issues rows: display values. */
+function coordPdrMergedLast_(id, issueRows, mergeRows) {
+  const rootOf = coordPdrRootOf_(mergeRows);
+  let last = '';
+  issueRows.forEach(function (r) { if ((r[0] === id || rootOf(r[0]) === id) && String(r[5]) > last) last = String(r[5]); });
+  return last;
+}
+
+/** Display-value rows of the Issues and Merges tabs (headers dropped), for coordPdrMergedLast_. */
+function coordPdrMergedLastIn_(ss, id) {
+  return coordPdrMergedLast_(id, coordPrincipalTab_(ss, COORD_PDR_ISSUES_TAB), coordPrincipalTab_(ss, COORD_PDR_MERGES_TAB));
+}
+
+/** One row per issue in the actions tab (insert or replace); a replaced row is first appended to the actions log, so a later
+ *  action (a reopen, say) never destroys the closure note, who wrote it and when. Takes the script lock, so callers must not hold it. */
 function coordPdrWriteAction_(ss, rec) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    let sh = ss.getSheetByName(COORD_PDR_ACTIONS_TAB);
-    if (!sh) {
-      sh = ss.insertSheet(COORD_PDR_ACTIONS_TAB);
-      sh.getRange(1, 1, 1, 9).setValues([['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated']]).setFontWeight('bold');
-      sh.setFrozenRows(1);
-    }
+    const headers = ['Issue id', 'Status', 'Assignee email', 'Assignee name', 'Note', 'Updated by', 'Updated at', 'CampusId', 'Last mention when updated'];
+    const tab = function (name, cols) {
+      let t = ss.getSheetByName(name);
+      if (!t) {
+        t = ss.insertSheet(name);
+        t.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
+        t.setFrozenRows(1);
+      }
+      return t;
+    };
+    const sh = tab(COORD_PDR_ACTIONS_TAB, headers);
     const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
     let row = -1;
     for (let i = 0; i < ids.length; i++) if (ids[i][0] === rec[0]) { row = i + 2; break; }
     if (row < 0) row = sh.getLastRow() + 1;
+    else {
+      const lg = tab(COORD_PDR_ACTIONS_LOG_TAB, headers.concat(['LoggedAt']));
+      lg.getRange(lg.getLastRow() + 1, 1, 1, 10).setNumberFormat('@').setValues([sh.getRange(row, 1, 1, 9).getValues()[0].concat([new Date().toISOString()])]);
+    }
     sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([rec]);
   } finally { lock.releaseLock(); }
 }
@@ -180,6 +216,7 @@ function coordPdrWriteAction_(ss, rec) {
 /** Keeps the All follow-ups page in step with an issue action. Assigned -> an open follow-up for the assignee (reopened if it was resolved);
  *  resolved, acknowledged ("no action needed"), reset or merged -> the follow-up is closed. issue = the row of the PDR Issues tab. */
 function coordPdrSyncTask_(issue, status, who, caller, note) {
+  if (status === 'reopened') return; // back to the Principal; any follow-up stays as it is
   const taskId = 'pdr_issue|' + issue[0];
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -212,7 +249,7 @@ function coordPdrResolveFromTask_(issueId, caller, note) {
   const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID), ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
   const issue = ish && ish.getLastRow() > 1 ? ish.getDataRange().getDisplayValues().slice(1).filter(function (r) { return r[0] === issueId; })[0] : null;
   if (!issue) return;
-  coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], issue[5]]);
+  coordPdrWriteAction_(ss, [issueId, 'resolved', '', '', String(note || 'Resolved from All follow-ups').slice(0, 500), caller.email, new Date().toISOString().slice(0, 16).replace('T', ' '), issue[1], coordPdrMergedLastIn_(ss, issueId)]);
 }
 
 /** POST action=coordinatorpdrmerge {idToken, source, target}: the source issue is the same problem as the target (same campus only). Empty target = undo.

@@ -2,7 +2,7 @@
 // numbering/locking and the document check against stubbed sheets.
 const vm = require('vm'), fs = require('fs'), assert = require('assert'), path = require('path');
 const ctx = vm.createContext({
-  console, Logger: { log() {} }, Session: { getScriptTimeZone: () => 'Asia/Kolkata' },
+  console, Logger: { log(m) { if (process.env.DBG) console.log('LOG', m); } }, Session: { getScriptTimeZone: () => 'Asia/Kolkata' },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Utilities: { formatDate: (d, tz, f) => '26/10' },
   PropertiesService: {}, APR_STATUS: { APPROVED: 'Approved', REJECTED: 'Rejected' },
@@ -10,6 +10,7 @@ const ctx = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring.gs'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/hiring-appointments.gs'), 'utf8'), ctx);
+const realAssign = ctx.hirAssignEmployeeCodes_; // a later test stubs it on ctx
 ctx.apptAll_ = () => [];
 
 function fakeSheet(rows, maxCols) {            // rows: 2D, 1-based accessors
@@ -54,41 +55,7 @@ T('garbage preferred -> next free + note', () => {
   assert.strictEqual(r.code, 'NCM/26/10/112'); assert.ok(/not a valid NCM code/.test(r.note));
 });
 
-// documents sheet: header + old complete row (9/24) + new partial row (10/3)
-const hdr = ['Timestamp', 'Email', 'Employee Name', 'Employee ID', 'Job', 'BIODATA', 'HIRING SLIP', 'PAN CARD', 'AADHAR', 'CANCELLED CHEQUE', 'BACHELORS', 'POLICE VERIFICATION', 'MEDICAL CERTIFICATE'];
-const full = ['d', 'd', 'd', 'd', 'd', 'd', 'd', 'd'];
-const docVals = [hdr,
-  [new Date('2026-09-24'), 'e', 'Preeti Sood', 'NCM/26/07/103', 'PRT', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x'],
-  [new Date('2026-10-04'), 'e', ' preeti  SOOD', 'NCM/26/10/110', 'TGT', 'x', '', '', '', '', '', '', ''],
-];
-ctx.SpreadsheetApp = { openById: () => ({ getDataRange: () => ({ getValues: () => docVals }) }) };
-T('docs: without a cutoff the old row makes it complete (the bug)', () => assert.strictEqual(ctx.hiringCheckDocuments_('LMS4', 'Preeti Sood').complete, true));
-T('docs: cutoff ignores the pre-interview row', () => {
-  const d = ctx.hiringCheckDocuments_('LMS4', 'Preeti Sood', { notBefore: new Date('2026-10-02') });
-  assert.strictEqual(d.found, true); assert.strictEqual(d.complete, false);
-  assert.ok(d.missing.indexOf('PAN Card') !== -1); assert.strictEqual(d.employeeId, 'NCM/26/10/110');
-});
-T('docs: nothing after cutoff -> not found', () => assert.strictEqual(ctx.hiringCheckDocuments_('LMS4', 'Preeti Sood', { notBefore: new Date('2026-11-01') }).found, false));
-
-T('assign: incomplete docs -> expected code + missing list, nothing written', () => {
-  ctx.hirRosterCodes_ = () => ['NCM/26/07/103'];
-  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2026-10-15' };
-  const s2 = fakeSheet([['h'], [], [], [], []], 16); ctx.hirSheet_ = () => s2;
-  ctx.hirAssignEmployeeCodes_([a], []);
-  assert.strictEqual(a.expectedEmployeeCode, 'NCM/26/10/104'); assert.ok(a.docsMissing.length > 0);
-  assert.strictEqual(a.employeeCode, ''); assert.strictEqual(s2.rows[4][15], undefined);
-});
-T('assign: complete docs -> locked & written; Hired rows untouched', () => {
-  docVals.push([new Date('2026-10-05'), 'e', 'Preeti Sood', 'NCM/26/10/104', 'TGT', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x']);
-  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2026-10-15' };
-  const hired = { status: 'Hired', applicantId: 'T-0001', row: 3, name: 'Old Hire', branches: 'LMS-4', employeeCode: '', dateOfJoining: '2026-10-15' };
-  const s3 = fakeSheet([['h'], [], [], [], []], 16); ctx.hirSheet_ = () => s3;
-  ctx.hirAssignEmployeeCodes_([a, hired], []);
-  assert.strictEqual(a.employeeCode, 'NCM/26/10/104'); assert.strictEqual(a.employeeCodePermanent, true);
-  assert.strictEqual(s3.rows[4][15], 'NCM/26/10/104'); assert.strictEqual(hired.employeeCode, '');
-});
-console.log('ALL PASSED');
-
+ctx.hirRosterCodes_ = () => ['NCM/26/07/103'];
 T('assign: no joining date -> no code offered', () => {
   const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '' };
   ctx.hirAssignEmployeeCodes_([a], []);
@@ -96,8 +63,6 @@ T('assign: no joining date -> no code offered', () => {
 });
 T('assign: joining date sets YY/MM of the code', () => {
   const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, name: 'Preeti Sood', branches: 'LMS-4', interviewAt: '2026-10-03T10:00:00Z', employeeCode: '', dateOfJoining: '2027-01-05' };
-  const s4 = fakeSheet([['h'], [], [], [], []], 17); ctx.hirSheet_ = () => s4;
-  docVals.pop();
   ctx.hirAssignEmployeeCodes_([a], []);
   assert.strictEqual(a.expectedEmployeeCode, 'NCM/27/01/104');
 });
@@ -144,20 +109,29 @@ T('hiringApplicants_: a position picked on the report form wins over subject mis
   assert.strictEqual(res.applicants[0].matchedRoleKeys.length, 0); assert.strictEqual(res.applicants[0].noOpenRole, true);
 });
 
-// 2026-10-22: since 7 Oct the six document sheets live as "LMS n" tabs in one workbook; the check reads
-// that tab AND the old per-campus sheet, and a document present in either counts.
-T('docs: merged-workbook tab and the old sheet are unioned', () => {
-  const hdrA = ['Timestamp', 'Email', 'Employee Name', 'Employee ID', 'BIODATA', 'HIRING SLIP', 'PAN CARD', 'AADHAR'];
-  const hdrB = ['Timestamp', 'Email', 'Employee Name', 'Employee ID', 'Job', 'CANCELLED CHEQUE', 'BACHELORS', 'POLICE VERIFICATION', 'MEDICAL CERTIFICATE'];
-  const merged = [hdrA, [new Date('2026-10-20'), 'e', 'Neha Rana', 'NCM/26/10/130', 'x', 'x', 'x', 'x']];
-  const old = [hdrB, [new Date('2026-10-21'), 'e', 'Neha Rana', '', 'TGT', 'x', 'x', 'x', 'x']];
-  ctx.SpreadsheetApp = { openById: (id) => id === '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg'
-    ? { getSheetByName: (n) => (n === 'LMS 4' ? { getDataRange: () => ({ getValues: () => merged }) } : null) }
-    : { getDataRange: () => ({ getValues: () => old }) } };
-  const d = ctx.hiringCheckDocuments_('LMS4', 'Neha Rana', { notBefore: new Date('2026-10-19') });
-  assert.strictEqual(d.found, true); assert.deepStrictEqual(Array.from(d.missing), []); assert.strictEqual(d.employeeId, 'NCM/26/10/130');
+// ── Documents from the portal, by employee code (2026-10-25) ─────────────────────────────────────────────
+const docRows = [['Uploaded On', 'Employee Code', 'Employee Name', 'School', 'Document Type', 'Drive Link', 'Uploaded By', 'Source', 'ID Check'],
+  ['d', 'NCM/26/10/104', 'Preeti Sood', 'LMS4', 'BIODATA + PROFICIENCY', 'https://drive/x', 'c', 'Portal', ''],
+  ['d', 'ncm/26/10/9', 'Other', 'LMS4', 'BIODATA + PROFICIENCY', 'https://drive/y', 'c', 'Form', ''],
+  ['d', 'NCM/26/10/105', 'No link', 'LMS4', 'BIODATA + PROFICIENCY', '', 'c', 'Portal', ''],
+  ['d', 'NCM/26/10/106', 'PAN only', 'LMS4', 'PAN CARD', 'https://drive/z', 'c', 'Portal', '']];
+ctx.SpreadsheetApp = { openById: () => ({ getSheetByName: (n) => (n === 'Documents' ? { getDataRange: () => ({ getValues: () => docRows }) } : null) }) };
+T('portal docs: Bio-Data is found by employee code, padded/lower-case codes match, a row with no link does not count', () => {
+  assert.strictEqual(ctx.hirBioDataOnFile_('NCM/26/10/104'), true);
+  assert.strictEqual(ctx.hirBioDataOnFile_('NCM/26/10/009'), true);   // typed ncm/26/10/9 on the form
+  assert.strictEqual(ctx.hirBioDataOnFile_('NCM/26/10/105'), false);  // no Drive link
+  assert.strictEqual(ctx.hirBioDataOnFile_('NCM/26/10/106'), false);  // PAN is not Bio-Data
+  assert.strictEqual(ctx.hirBioDataOnFile_('NCM/26/10/999'), false);
 });
-T('docs: a source that fails to open is skipped, not fatal', () => {
-  ctx.SpreadsheetApp = { openById: (id) => { if (id === '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg') throw new Error('no access'); return { getDataRange: () => ({ getValues: () => [['Timestamp', 'Email', 'Employee Name']] }) }; } };
-  assert.strictEqual(ctx.hiringCheckDocuments_('LMS4', 'Neha Rana').found, false);
+T('assign: a started hire with no Bio-Data shows it as the one missing document; with it, complete', () => {
+  const base = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, branches: 'LMS-4', hiringStartedAt: '2026-10-25T05:00:00Z', dateOfJoining: '2026-11-02' };
+  const missing = Object.assign({}, base, { employeeCode: 'NCM/26/10/105' }), ok = Object.assign({}, base, { employeeCode: 'NCM/26/10/104' });
+  realAssign([missing, ok], []);
+  assert.strictEqual(JSON.stringify(missing.docsMissing), '["Bio-Data"]'); assert.strictEqual(missing.docsComplete, false);
+  assert.strictEqual(JSON.stringify(ok.docsMissing), '[]'); assert.strictEqual(ok.docsComplete, true);
+});
+T('assign: an applicant whose hiring has not started gets no document list (nothing to chase yet)', () => {
+  const a = { status: 'Hiring Approved', applicantId: 'T-0943', row: 5, branches: 'LMS-4', employeeCode: '', dateOfJoining: '2026-11-02' };
+  realAssign([a], []);
+  assert.strictEqual(a.docsMissing, undefined); assert.strictEqual(a.expectedEmployeeCode, 'NCM/26/11/104');
 });

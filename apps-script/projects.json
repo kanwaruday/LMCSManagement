@@ -1,5 +1,8 @@
 {
   "_note": "One entry per Apps Script project. scriptId = Apps Script editor > Project Settings > Script ID (fill in once). deploymentId = the AKfycb... id inside the live /exec URL, so redeploys keep the URL the HTML pages hardcode. See README.md and deploy.mjs.",
+  "shared": [
+    "acad-episodes"
+  ],
   "pdr": {
     "name": "LMCS Principal's Daily Reporting Backend",
     "scriptId": "1tjSRL43kWdbxlw-4wWlVzsd-tmg4iifo-HiyOoEwLWywu05yHZ3bxmSR",
@@ -12,6 +15,7 @@
       "ss-forms-sync",
       "ss-tracker",
       "approvals",
+      "approvals-leave",
       "hiring",
       "hiring-appointments",
       "hiring-audit",
@@ -31,7 +35,8 @@
       "salary-payscale-sync",
       "certificate-link-import",
       "staff-documents",
-      "transport-uploads"
+      "transport-uploads",
+      "transport-capture"
     ]
   },
   "payroll": {
@@ -53,7 +58,10 @@
       "coordinator-transport",
       "coordinator-pdr",
       "coordinator-approvals",
-      "coordinator-transport-gps"
+      "coordinator-transport-gps",
+      "coordinator-recommend",
+      "coordinator-principal",
+      "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js"
     ]
   },
   "chapter": {
@@ -91,6 +99,20 @@
       "office-setup",
       "office-ledger",
       "office-fuel-mirror"
+    ]
+  },
+  "game": {
+    "name": "LMCS Game Backend",
+    "scriptId": "1e7Sx_zoYS03eyowAaZ8tdOgSseYl2yhwqrhJOuGbjezCkDI94dWmr5EN",
+    "deploymentId": "AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA",
+    "files": [
+      "game",
+      "game-actions",
+      "game-missions",
+      "game-windows",
+      "game-quests",
+      "game-teacher",
+      "acad-episodes"
     ]
   }
 }

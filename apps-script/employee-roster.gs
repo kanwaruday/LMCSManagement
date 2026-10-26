@@ -207,6 +207,9 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
     if (body.action === 'transportupload') return staffJsonOut_(tupUpload_(body)); // transport-uploads.gs
+    if (body.action === 'capturefile') return staffJsonOut_(captureFile_(body)); // transport-capture.gs
+    if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
+    if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret
     return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
   } catch (err) {
     return staffJsonOut_({ success: false, error: err.message });

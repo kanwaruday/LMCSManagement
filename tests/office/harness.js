@@ -32,6 +32,7 @@ function sheetsLike(sheet) {
   const getRange = sheet.getRange;
   // Like Sheets: a new sheet has 26 columns, a range past the grid throws, insertColumnsAfter widens it.
   sheet.maxCols = 26; sheet.insertCalls = 0;
+  sheet.clear = () => { sheet.values.length = 0; };
   sheet.getMaxColumns = () => sheet.maxCols;
   sheet.insertColumnsAfter = (pos, n) => { sheet.insertCalls++; sheet.maxCols += n; };
   sheet.getRange = (...a) => {
@@ -69,7 +70,7 @@ function makeDrive() {
       createFolder(nm) { d.calls.push('createFolder'); return folder(nm, id); },
       createFile(blob) {
         d.calls.push('createFile'); const fid = 'D' + (++d.n);
-        d.files[fid] = { id: fid, folder: id, name: blob.getName(), mime: blob.getContentType(), bytes: blob.getBytes(), getId: () => fid, getBlob: () => d.files[fid].blob };
+        d.files[fid] = { id: fid, folder: id, name: blob.getName(), mime: blob.getContentType(), bytes: blob.getBytes(), getId: () => fid, getBlob: () => d.files[fid].blob, setTrashed: (v) => { d.files[fid].trashed = !!v; }, isTrashed: () => !!d.files[fid].trashed };
         d.files[fid].blob = blob; return d.files[fid];
       },
     };

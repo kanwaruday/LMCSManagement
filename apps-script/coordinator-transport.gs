@@ -14,7 +14,7 @@
 // date (Status "override"); "n/a" there means the vehicle does not need that paper.
 //
 // Powers GET action=coordinatortransport (the Transport page) and POST action=transportpush. No follow-up tasks: they were
-// built and switched off (see coordTransportRetireTasks_).
+// built and switched off (see coordTransportRetireTasks_). Also the safety loadout and the Fleet setup quests (sections below).
 // No Drive access is needed anywhere in here (the Workspace blocks DriveApp for scripts).
 //
 // SETUP: Project Settings > Script properties > add TRANSPORT_PUSH_SECRET (the same value as
@@ -31,6 +31,8 @@ const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
 const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
 const COORD_TRANSPORT_TAB_PEOPLE = 'Transport Staff'; // every person on the transport Man Power sheet, linked to the staff master by employee code
 const COORD_TRANSPORT_TAB_PNL = 'Transport P&L'; // per bus per month money, from the transport workbook (push)
+const COORD_TRANSPORT_TAB_PAPERS = 'LM Studio Vehicle Papers'; // what LM Studio read off each bus's RC / fitness / other scans, to pre-fill the Vehicle papers quest (push)
+const COORD_PAPERS_SCAN_FIELDS = ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'emissionNorm', 'seatingCapacityAsPerRc', 'dateOfRegistration', 'mfgYear']; // papers quest field ids; mfgYear is shown only
 const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
 const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness'], ['mv_tax', 'MV tax'],
   ['pollution', 'Pollution'], ['route_permit', 'Route permit'], ['speed_governor', 'Speed governor']];
@@ -111,8 +113,15 @@ function coordTransportPush_(body) {
   }
   const label = {};
   COORD_TRANSPORT_DOCS.forEach(function (d) { label[d[0]] = d[1]; });
-  const fleet = [], docs = [];
+  const fleet = [], docs = [], papers = [], txt = function (v) { return String(v == null ? '' : v).replace(/^[=+\-@\s]+/, '').slice(0, 200); }; // never a formula
+  // a push from before the papers (no `papers` on any bus), or one that read no paper values at all (every bus {}: the scan
+  // descriptions were missing), leaves the papers tab as it is: never wiped with nothing
+  const hasPapers = p.fleet.some(function (b) { return b.papers && typeof b.papers === 'object' && !Array.isArray(b.papers); });
   p.fleet.forEach(function (b) {
+    COORD_PAPERS_SCAN_FIELDS.forEach(function (k) {
+      const x = b.papers && b.papers[k];
+      if (x && txt(x.value)) papers.push([b.reg, k, txt(x.value), txt(x.doc), txt(x.file), txt(x.link), x.disagree === true ? 'yes' : '']);
+    });
     fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '', b.driverCode || '', b.driverStatus || '', b.driverRosterName || '']);
     Object.keys(b.docs || {}).forEach(function (k) {
       const d = b.docs[k];
@@ -137,6 +146,7 @@ function coordTransportPush_(body) {
         p.people.map(function (q) { return [q.name, q.campus, q.designation, q.code, q.status, q.rosterName || '', q.rosterCampus || '', (q.vehicles || []).join(', ')]; }));
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
+    if (hasPapers && papers.length) coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PAPERS, ['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], papers);
     if (Array.isArray(p.pnl) && p.pnl.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
         p.pnl.map(function (r) { return [r.reg, r.campus, r.month, r.fee, r.fuel, r.loan, r.fixed, r.pay, r.note || '']; }));
@@ -148,7 +158,9 @@ function coordTransportPush_(body) {
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
   ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
-  return { success: true, vehicles: fleet.length, documents: docs.length };
+  const out = { success: true, vehicles: fleet.length, documents: docs.length, papers: hasPapers ? papers.length : null };
+  if (hasPapers && !papers.length) out.warning = 'No paper values in this push; the Vehicle papers tab was left as it is';
+  return out;
 }
 
 /** The scans source rebuilt from the LM Studio tabs. Throws if they are missing: an unreadable source must never look like "no vehicles". */
@@ -219,7 +231,7 @@ function coordTransportFleet_() {
     });
     const n = String(b.campus).replace(/\D/g, ''); // roster says 'LMS-5' in one row
     return { reg: b.reg, bus: b.bus, campus: 'LMS ' + n, campusId: 'LMS' + n, operational: b.operational,
-      route: b.route, driver: b.driver, driverCode: b.driverCode || '', driverStatus: b.driverStatus || '', driverRosterName: b.driverRosterName || '', docs: docs };
+      route: b.route, driver: b.driver, seats: b.seats, driverCode: b.driverCode || '', driverStatus: b.driverStatus || '', driverRosterName: b.driverRosterName || '', docs: docs };
   });
   const known = {};
   base.fleet.forEach(function (b) { known[b.reg] = true; });
@@ -329,4 +341,310 @@ function coordBusConfig_(body) {
   if (!/^\d{3,10}$/.test(String(body.custid || ''))) return { success: false, error: 'custid must be digits' };
   PropertiesService.getScriptProperties().setProperty('TRACKMASTER_CUSTID', String(body.custid));
   return { success: true };
+}
+
+// ── Safety loadout (transport game Phase 1a): what every bus must carry, kept by the Owner ──
+// Tab 'Safety Loadout' in the transport workbook. The Owner edits it from the Owner portal (POST below); the capture portal's
+// Inspection mode shows one card per active item. Item IDs are for life: inspection answers and bus_equipment follow-ups are
+// keyed by them, so a rename keeps the ID, an item is switched off (never deleted), and a new item gets an ID no answer has
+// ever used. The seed below is the default for an empty tab: the first read writes it into the tab (so the capture server,
+// another project, can check answers against real IDs); from then on the tab is the list.
+// GET  action=coordinatortransportloadout  every transport role: {items:[{id,label,needsPhoto,needsDate,order}] (active only),
+//                                           version}; the Owner also gets `all` (with `active`) for the editor
+// POST action=coordinatortransportloadout  Owner only: {version, items:[{id?,label,needsPhoto,needsDate,active}]} in display
+//                                           order. Every known id must come back; new items come without one; `version` must be
+//                                           the one the editor loaded, else "The list changed since you opened it".
+const COORD_TRANSPORT_TAB_LOADOUT = 'Safety Loadout';
+const COORD_LOADOUT_HEADER = ['Item ID', 'Label', 'Needs photo', 'Needs date', 'Order', 'Active'];
+const COORD_LOADOUT_SEED = [ // [id, label, needs photo, needs date]: the date is the speed governor's certificate date, the extinguisher's refill date
+  ['gps_tracker', 'GPS tracker', false, false], ['speed_governor', 'Speed governor (40 km/h)', true, true],
+  ['cctv', 'CCTV camera', false, false], ['first_aid', 'First-aid box', true, false],
+  ['fire_extinguisher', 'Fire extinguisher', true, true], ['window_grills', 'Window grills', false, false],
+  ['emergency_exit', 'Emergency exit', false, false], ['door_lock', 'Door lock', false, false],
+  ['school_name_phone', 'School name and phone painted', true, false], ['attendant', 'Attendant on board', false, false]];
+const COORD_LOADOUT_MAX = 40;
+const COORD_TRANSPORT_TAB_CAPTURE = 'Capture Runs'; // written by transport-capture.gs (Roster project) in this same workbook
+const COORD_LOADOUT_STALE = 'The list changed since you opened it. Reload, then save again.';
+
+/** An item id as stored: lower case, a-z 0-9 _ only (a hand-typed 'Seat-Belts ' reads as 'seat_belts'). Same rule in transport-capture.gs. */
+function coordLoadoutId_(v) { return String(v || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40); }
+/** A label as stored: one line, at most 80 characters, never starting like a spreadsheet formula. */
+function coordLoadoutLabel_(v) { return String(v || '').replace(/\s+/g, ' ').trim().replace(/^[=+\-@\s]+/, '').slice(0, 80); }
+
+/** Every loadout item in display order, with `active`. An empty tab gets the seed written into it first. */
+function coordLoadoutAll_() {
+  const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID), sh = ss.getSheetByName(COORD_TRANSPORT_TAB_LOADOUT);
+  const rows = sh ? sh.getDataRange().getValues().slice(1).filter(function (r) { return coordLoadoutId_(r[0]); }) : [];
+  const yes = function (v) { return v === true || /^(yes|true|y)$/i.test(String(v).trim()); };
+  if (!rows.length) {
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_LOADOUT, COORD_LOADOUT_HEADER,
+      COORD_LOADOUT_SEED.map(function (x, i) { return [x[0], x[1], x[2] ? 'yes' : 'no', x[3] ? 'yes' : 'no', String(i + 1), 'yes']; }));
+    return COORD_LOADOUT_SEED.map(function (x, i) { return { id: x[0], label: x[1], needsPhoto: x[2], needsDate: x[3], order: i + 1, active: true }; });
+  }
+  return rows.map(function (r, i) {
+    return { id: coordLoadoutId_(r[0]), label: coordLoadoutLabel_(r[1]), needsPhoto: yes(r[2]), needsDate: yes(r[3]), order: Number(r[4]) || i + 1,
+      active: String(r[5]).trim() === '' || yes(r[5]) }; // a row typed into the sheet by hand with Active left blank counts as active
+  }).sort(function (a, b) { return a.order - b.order; });
+}
+
+/** A short fingerprint of the whole list: the editor sends back the one it loaded, so a stale tab cannot overwrite newer edits. */
+function coordLoadoutVersion_(all) {
+  const t = JSON.stringify(all);
+  let h = 5381;
+  for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+  return h.toString(36) + '.' + t.length;
+}
+
+function coordLoadout_(caller) {
+  const all = coordLoadoutAll_(), owner = caller.roles.indexOf('Owner') !== -1;
+  const items = all.filter(function (x) { return x.active; }).map(function (x) { return { id: x.id, label: x.label, needsPhoto: x.needsPhoto, needsDate: x.needsDate, order: x.order }; });
+  const out = { success: true, items: items, version: coordLoadoutVersion_(all) };
+  if (owner) out.all = all;
+  return out;
+}
+
+function coordLoadoutSet_(caller, body) {
+  if (caller.roles.indexOf('Owner') === -1) return { success: false, error: 'Only the Owner edits the safety loadout' };
+  const list = body.items;
+  if (!Array.isArray(list) || !list.length || list.length > COORD_LOADOUT_MAX) return { success: false, error: 'Send 1 to ' + COORD_LOADOUT_MAX + ' items' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const current = coordLoadoutAll_(), known = {}, taken = {}, used = {}, rows = [];
+    if (String(body.version || '') !== coordLoadoutVersion_(current)) return { success: false, error: COORD_LOADOUT_STALE };
+    current.forEach(function (x) { known[x.id] = true; taken[x.id] = true; });
+    (coordInspections_() || []).forEach(function (r) { Object.keys(r.items).forEach(function (k) { taken[coordLoadoutId_(k)] = true; }); }); // ids answers ever used
+    for (let i = 0; i < list.length; i++) {
+      const x = list[i] || {}, label = coordLoadoutLabel_(x.label), sent = x.id != null && String(x.id).trim() !== '';
+      if (!label) return { success: false, error: 'Item ' + (i + 1) + ' has no name' };
+      let id = sent ? String(x.id).trim() : '';
+      if (sent && !known[id]) return { success: false, error: 'Unknown item id: ' + id + '. New items are sent without an id.' };
+      if (!sent) {
+        const base = coordLoadoutId_(label).slice(0, 32) || 'item';
+        id = base;
+        for (let n = 2; taken[id] || used[id]; n++) id = base + '_' + n;
+      }
+      if (used[id]) return { success: false, error: '"' + label + '" is in the list twice' };
+      used[id] = true;
+      rows.push([id, label, x.needsPhoto === true ? 'yes' : 'no', x.needsDate === true ? 'yes' : 'no', String(i + 1), x.active === false ? 'no' : 'yes']);
+    }
+    const missing = Object.keys(known).filter(function (id) { return !used[id]; });
+    if (missing.length) return { success: false, error: 'An item cannot be removed, only switched off: switch it off instead (missing: ' + missing.join(', ') + ').' };
+    coordTransportWriteTab_(SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID), COORD_TRANSPORT_TAB_LOADOUT, COORD_LOADOUT_HEADER, rows);
+  } finally { lock.releaseLock(); }
+  const all = coordLoadoutAll_();
+  return { success: true, all: all, version: coordLoadoutVersion_(all) };
+}
+
+/** Finished safety checks from the capture portal: [{reg, runId, day: 'yyyy-MM-dd' (India), by, items: {itemId: {ok, date?, fileId?}}}],
+ *  or null when the Capture Runs tab is missing (unknown, which is not "no checks": nothing may close on it).
+ *  Counts only runs of kind 'inspection' whose end manifest arrived (Status 'ended') with answers in it. Only ok === true is
+ *  present: a hand-edited "true" or 1 reads as missing. */
+function coordInspections_() {
+  const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+  if (!sh) return null;
+  const day = function (v) { // the phone sends ms since 1970; a hand-edited cell may be a Date or ISO text
+    const d = v instanceof Date ? v : /^\d+$/.test(String(v).trim()) ? new Date(Number(v)) : new Date(String(v));
+    return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, 'Asia/Kolkata', 'yyyy-MM-dd');
+  };
+  const out = [];
+  sh.getDataRange().getValues().slice(1).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | By | ... | Inspection JSON (12th) | Status | Frame Times | Captured By
+    if (String(r[3]) !== 'inspection' || String(r[12]) !== 'ended') return;
+    let raw = null;
+    try { raw = JSON.parse(String(r[11] || 'null')); } catch (e) { raw = null; }
+    const items = {};
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) Object.keys(raw).forEach(function (k) {
+      const a = raw[k];
+      if (!a || typeof a !== 'object') return;
+      items[k] = { ok: a.ok === true };
+      if (a.ok === true && a.date) items[k].date = String(a.date);
+      if (a.ok === true && a.fileId) items[k].fileId = String(a.fileId);
+    });
+    const d = day(r[5] || r[4]);
+    // by: who did the check (Captured By), else the sender (By: a row from before the column); the shared phone, Ruling 41
+    if (Object.keys(items).length && d) out.push({ reg: String(r[1]), runId: String(r[0]), day: d, by: String(r[14] || r[6] || ''), items: items });
+  });
+  return out;
+}
+
+// ── Fleet setup quests (transport game Phase 1a): the staff questionnaire as six quests per bus ──
+// Papers, safety, parts, driver, fuel and capture. The quest definitions and the pure logic (validation, the 60+ driver rule,
+// completion, missions) are coordinator/capture/fleet-quests.js (FleetQuests): projects.json deploys it into this project and
+// the setup page (coordinator/transport/setup.html) loads the same file; FleetQuests.applySave makes the write on both. Data
+// lives in four tabs of this private transport workbook; the first three are machine-kept and rewritten whole under the
+// script lock (a few hundred rows), Workshops is edited in place (people fill it in):
+//   Fleet Profile   one row per reg: the papers, safety, fuel and capture quests, each as JSON, and `saved`: per quest who saved
+//                   it last and who saved the data that completed it (the mission's doneBy)
+//   Driver Profile  one row per driver (employee code; 'bus:<REG>' when the roster has none): the driver card as JSON, ageLimit
+//   Parts History   one row per reg x component (the day book's component ids): that part's fields as JSON
+//   Workshops       one row per workshop named in a quest (the questionnaire's column names), with the buses that go there; the
+//                   other columns are the Owner's, filled by hand, and never touched
+// Driver personal data (date of birth, licence, phone) lives only here and is served only within the caller's campuses.
+// Photos (odometer, driver) are uploaded first through the Roster's capturefile (kind 'profile'); a quest holds their file ids.
+// GET  action=coordinatortransportfleet      every transport role: {rows:{fleet (each bus with `scan`: the papers LM Studio read
+//                                             off its RC / fitness scans, {fieldId: {value, doc, link, disagree}}; `docs`: its papers on file
+//                                             {current, total, expired}, left out when the form tab cannot be read; `fills`: the day book's
+//                                             fuel fills {count, withVideo, withVideoAndBill}), profiles, drivers, parts, inspected, captured},
+//                                             campuses, owner, today}, only the caller's campuses (Fee Clerk: own campus;
+//                                             Coordinator: their district, ALL every campus; Owner: all)
+// POST action=coordinatortransportfleetsave  {reg, quest, fields}: one quest at a time, the whole quest (parts: the parts sent),
+//                                             same scope -> {success} (driver: + ageLimit, and a warning when 60 or over)
+const COORD_FLEET_TABS = { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History', workshops: 'Workshops' };
+const COORD_FLEET_COLS = { // saved: per quest {by, at, doneBy?, doneAt?}: the last save, and the save that completed it (mission doneBy)
+  profile: ['reg', 'campus', 'papers', 'safety', 'fuel', 'capture', 'saved'],
+  driver: ['driverKey', 'reg', 'campus', 'driver', 'fields', 'ageLimit', 'updatedAt', 'updatedBy'],
+  parts: ['reg', 'campus', 'component', 'fields', 'updatedAt', 'updatedBy'] };
+const COORD_ALL_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+
+function coordFleetToday_() { return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); }
+
+/** The running buses of the roster push: reg as A-Z 0-9 only, campus as 'LMS n' and campusId 'LMSn' (the roster says 'LMS-5' in one row). */
+function coordFleetBuses_() {
+  return coordTransportBase_().fleet.filter(function (b) { return b.operational; }).map(function (b) {
+    const n = String(b.campus).replace(/\D/g, '');
+    return { reg: FleetQuests.normReg(b.reg), campus: 'LMS ' + n, campusId: 'LMS' + n, route: String(b.route || ''), driver: String(b.driver || ''), driverCode: b.driverCode || '', seats: b.seats, operational: true };
+  });
+}
+
+/** {reg: {by, at}} for the given regs: the first ended safety check (Capture Runs) and the first processed route timelapse
+ *  (Capture Stops), with who captured it (the safety and capture quests' credit when the run itself completes the quest). */
+function coordFleetDone_(regs) {
+  const inspected = {}, captured = {}, cap = gpsCaptured_();
+  (coordInspections_() || []).forEach(function (x) {
+    const r = FleetQuests.normReg(x.reg);
+    if (regs[r] && (!inspected[r] || x.day < inspected[r].at)) inspected[r] = { by: x.by, at: x.day };
+  });
+  Object.keys(cap).forEach(function (x) { const r = FleetQuests.normReg(x); if (regs[r]) captured[r] = cap[x]; });
+  return { inspected: inspected, captured: captured };
+}
+
+function coordFleet_(caller) {
+  const vis = coordVisibleCampuses_(caller), T = COORD_FLEET_TABS, regs = {}, keys = {}, mine = function (r) { return regs[FleetQuests.normReg(r.reg)]; };
+  const fleet = coordFleetBuses_().filter(function (b) { return !vis || vis.indexOf(b.campusId) !== -1; });
+  fleet.forEach(function (b) { regs[b.reg] = true; keys[FleetQuests.driverKey(b)] = true; });
+  const scan = coordFleetScan_(regs);
+  fleet.forEach(function (b) { b.scan = scan[b.reg] || {}; }); // pre-fills the Vehicle papers form; never counts as done (only a staff save does)
+  const fills = coordFleetFills_(regs), docs = coordFleetDocsByReg_();
+  fleet.forEach(function (b) { b.fills = fills[b.reg]; if (docs) b.docs = docs[b.reg] || coordFleetDocs_({}, coordFleetToday_()); }); // counts only (Ruling G1/G2)
+  const done = coordFleetDone_(regs);
+  return { success: true, today: coordFleetToday_(), campuses: vis || COORD_ALL_CAMPUSES, owner: caller.roles.indexOf('Owner') !== -1,
+    rows: { fleet: fleet, inspected: done.inspected, captured: done.captured,
+      profiles: gpsRows_(T.profile).filter(mine),
+      drivers: gpsRows_(T.driver).filter(function (r) { return keys[r.driverKey]; }),
+      parts: gpsRows_(T.parts).filter(mine) } };
+}
+
+/** {reg: {current, total, expired}}: each bus's papers on file, the scans merged with the form as the Transport page shows them.
+ *  null when the form tab cannot be read: the setup page then shows no papers counter rather than a wrong one. */
+function coordFleetDocsByReg_() {
+  let all;
+  try { all = coordTransportFleet_(); } catch (e) { console.error('Fleet setup papers counter: ' + e.message); return null; }
+  const out = {}, today = coordFleetToday_();
+  all.fleet.forEach(function (b) { out[FleetQuests.normReg(b.reg)] = coordFleetDocs_(b.docs || {}, today); });
+  return out;
+}
+
+/** {current, total, expired} for one bus's resolved papers (Ruling G2: a counter of its own, never quest progress), read with the
+ *  Transport page's own rules (coordinator/transport-rank.js, pushed here as transport-rank.gs): current is a valid paper (ok, due
+ *  soon or later, the one-time speed governor on file) that is not the wrong document; expired as the page shows it; n/a is not
+ *  counted. Unread, no-expiry, wrong, pending and missing papers are neither. */
+function coordFleetDocs_(docs, today) {
+  const out = { current: 0, total: 0, expired: 0 };
+  COORD_TRANSPORT_DOCS.forEach(function (d) {
+    const c = TransportRank.cellState(docs[d[0]] || {}, d[0], today);
+    if (c.t === 'na') return;
+    out.total++;
+    if (c.t === 'expired') out.expired++;
+    else if (['ok', 'soon', 'later', 'onfile'].indexOf(c.t) !== -1 && !c.bad) out.current++;
+  });
+  return out;
+}
+
+/** {reg: {count, withVideo, withVideoAndBill}} for the given regs: the day book's fuel fills mirrored into Fuel Fills
+ *  (coordinator-transport-gps.gs). A fill with its video suggests the driver has a smartphone; nothing else is read from them. */
+function coordFleetFills_(regs) {
+  let all = coordCacheGetBig_('coord_fleet_fills_v1'); // every bus's counts (tiny), cached: the tab grows with every fill
+  if (!all) {
+    all = {};
+    gpsRows_(GPS_TAB_FILLS).forEach(function (f) {
+      const r = FleetQuests.normReg(f.reg), o = all[r] = all[r] || [0, 0, 0];
+      o[0]++;
+      if (String(f.hasVideo) === 'yes') { o[1]++; if (String(f.hasBill) === 'yes') o[2]++; }
+    });
+    coordCachePutBig_('coord_fleet_fills_v1', all, 300); // a fill shows here within 5 minutes
+  }
+  const out = {}; // scoped here, after the cache: only the caller's buses
+  Object.keys(regs).forEach(function (r) { const o = all[r] || [0, 0, 0]; out[r] = { count: o[0], withVideo: o[1], withVideoAndBill: o[2] }; });
+  return out;
+}
+
+/** {reg: {fieldId: {value, doc, link, disagree}}} from the papers tab, for the given regs only (the caller's scope). No tab yet: {}. */
+function coordFleetScan_(regs) {
+  const out = {};
+  gpsRows_(COORD_TRANSPORT_TAB_PAPERS).forEach(function (r) {
+    const reg = FleetQuests.normReg(r.Reg), k = String(r.Field || '');
+    if (!regs[reg] || COORD_PAPERS_SCAN_FIELDS.indexOf(k) === -1 || String(r.Value || '') === '') return;
+    (out[reg] = out[reg] || {})[k] = { value: String(r.Value), doc: String(r['Source document'] || ''), link: String(r.Link || ''), disagree: String(r.Disagree) === 'yes' };
+  });
+  return out;
+}
+
+function coordFleetSave_(caller, body) {
+  const fail = function (m) { return { success: false, error: m }; };
+  const reg = FleetQuests.normReg(body.reg), quest = String(body.quest || '');
+  const bus = coordFleetBuses_().filter(function (b) { return b.reg === reg; })[0];
+  if (!bus) return fail('Vehicle ' + (reg || '(none)') + ' is not in the fleet');
+  const vis = coordVisibleCampuses_(caller);
+  if (vis && vis.indexOf(bus.campusId) === -1) return fail('You can only set up buses of your own campuses');
+  const v = FleetQuests.validateQuest(quest, body.fields, coordFleetToday_());
+  if (v.error) return fail(v.error);
+  const T = COORD_FLEET_TABS, C = COORD_FLEET_COLS, one = {};
+  one[reg] = true;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const done = coordFleetDone_(one);
+    const rows = { fleet: [bus], profiles: gpsRows_(T.profile), drivers: gpsRows_(T.driver), parts: gpsRows_(T.parts), inspected: done.inspected, captured: done.captured };
+    FleetQuests.applySave(rows, reg, quest, v.fields, { by: caller.email, at: new Date().toISOString(), ageLimit: v.ageLimit }); // the same write the page makes
+    gpsWrite_(T.profile, C.profile, rows.profiles); // machine-kept tabs, rewritten whole (a few hundred rows)
+    if (quest === 'driver') gpsWrite_(T.driver, C.driver, rows.drivers);
+    if (quest === 'parts') gpsWrite_(T.parts, C.parts, rows.parts);
+    coordFleetWorkshops_(reg, quest, v.fields);
+  } finally { lock.releaseLock(); }
+  const out = { success: true };
+  if (quest === 'driver') { out.ageLimit = v.ageLimit; if (v.warning) out.warning = v.warning; }
+  return out;
+}
+
+/** A workshop named in the papers (usual workshop) or a part joins the Workshops tab, with the bus in its list. The tab is filled in
+ *  by hand too, so it is never rewritten: an existing workshop's row gets only its buses cell set, a new one is appended with
+ *  only its name and bus, and the header is written only when the tab is new. Columns are found by their header text. */
+function coordFleetWorkshops_(reg, quest, fields) {
+  const names = [];
+  if (quest === 'papers' && fields.usualWorkshop) names.push(fields.usualWorkshop);
+  if (quest === 'parts') Object.keys(fields).forEach(function (k) { if (fields[k].workshop) names.push(fields[k].workshop); });
+  if (!names.length) return;
+  const cols = FleetQuests.questConfig().workshopCols, ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
+  let sh = ss.getSheetByName(COORD_FLEET_TABS.workshops);
+  if (!sh) { sh = ss.insertSheet(COORD_FLEET_TABS.workshops); sh.appendRow(cols); sh.setFrozenRows(1); }
+  const v = sh.getDataRange().getValues(), head = (v[0] || []).map(function (h) { return String(h).trim(); });
+  const iName = head.indexOf(cols[0]), iBus = head.indexOf(cols[4]);
+  if (iName === -1 || iBus === -1) return; // the columns were renamed by hand: leave the tab alone
+  names.forEach(function (n) {
+    const name = coordLoadoutLabel_(n);
+    if (!name) return;
+    let at = -1;
+    for (let i = 1; i < v.length; i++) if (String(v[i][iName]).trim().toLowerCase() === name.toLowerCase()) { at = i; break; }
+    if (at === -1) {
+      const row = head.map(function () { return ''; });
+      row[iName] = name; row[iBus] = reg;
+      sh.appendRow(row); v.push(row);
+      return;
+    }
+    const buses = String(v[at][iBus] || '').split(/,\s*/).filter(String);
+    if (buses.indexOf(reg) !== -1) return;
+    buses.push(reg);
+    v[at][iBus] = buses.join(', ');
+    sh.getRange(at + 1, iBus + 1).setValue(v[at][iBus]);
+  });
 }

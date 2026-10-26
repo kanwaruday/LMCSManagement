@@ -4,7 +4,7 @@ import { cacheGet, cacheSet } from './shell.js';
 import { h, field } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
-import { resizeImage } from './image.js';
+import { resizeImage, toBase64 } from './image.js';
 
 export const BUCKETS = { petty: 'Petty cash', fee: 'Fee cash', other: 'Other cash' };
 export const MODES = { cash: 'Cash', bank: 'Bank', upi: 'UPI' };
@@ -25,19 +25,20 @@ export const rolledNote = (iso) => 'It is past midnight: the date has moved on t
 // Rows from daybook.list may span several dates (the range runs on to today so that a reversal dated
 // later still marks its original). Result: the rows of `date` plus queued daybook.add entries for `date`.
 // Each item: {id, entry_date, direction, mode, bucket, category, amount_paise, payee, narration, reverses,
-//   synced, queued (alias !synced), status ('waiting'|'attention'|undefined), error, reversed, reversalQueued, reversalError}.
+//   synced, queued (alias !synced), status ('waiting'|'attention'|undefined), error, reversed, reversalQueued, reversalError, videoQueued}.
 export function mergeQueued(rows, outboxEntries, date) {
   const entries = outboxEntries || [];
   const reversedIds = new Set(rows.filter((r) => r.reverses).map((r) => r.reverses));
   const pendingRev = new Map(); // original id -> queued daybook.reverse entry (a later one wins)
   entries.filter((e) => e.action === 'daybook.reverse' && e.data).forEach((e) => pendingRev.set(e.data.reverses, e));
+  const pendingVid = new Set(entries.filter((e) => e.action === 'daybook.attach_video' && e.data).map((e) => e.data.entry_id)); // a fill video on its way
   const synced = rows.filter((r) => r.entry_date === date).map((r) => {
     const rev = pendingRev.get(r.id);
-    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, reversalError: rev && rev.status === 'attention' ? entryReason(rev) : '' };
+    return { ...r, synced: true, reversed: reversedIds.has(r.id), reversalQueued: !!rev, videoQueued: pendingVid.has(r.id), reversalError: rev && rev.status === 'attention' ? entryReason(rev) : '' };
   });
   const have = new Set(rows.map((r) => r.id));
   const queued = entries.filter((e) => e.action === 'daybook.add' && e.data && e.data.entry_date === date && !have.has(e.id))
-    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? entryReason(e) : '', reversed: false, reversalQueued: false, reversalError: '' }));
+    .map((e) => ({ ...e.data, id: e.id, reverses: '', synced: false, status: e.status, error: e.status === 'attention' ? entryReason(e) : '', reversed: false, reversalQueued: false, reversalError: '', videoQueued: false }));
   return synced.concat(queued); // stable: server rows keep their append order, queued ones follow in outbox order
 }
 
@@ -51,6 +52,9 @@ export function inflightGuard() {
 const LEG_CATEGORIES = ['deposit_cash_out', 'deposit_bank_in'];
 const isLeg = (item) => /:(out|in)$/.test(item.id) || LEG_CATEGORIES.includes(item.category);
 export const canReverse = (item) => item.synced && !item.reverses && !item.reversed && !item.reversalQueued && !isLeg(item);
+
+// A saved fuel entry that has no fill video yet (and none on its way) can be given one from the list.
+export const canAddVideo = (item) => item.synced && item.category === 'fuel' && !item.reverses && !item.reversed && !item.reversalQueued && !item.video_file_id && !item.videoQueued;
 
 // Roles of the portal session (comma list). P8: the clerk-level limits lift with FinanceHead or Owner (Accounts counts as FinanceHead).
 const hasAnyRole = (session, roles) => String((session && session.role) || '').split(',').map((r) => r.trim()).some((r) => roles.includes(r));
@@ -85,6 +89,31 @@ export function vehicleOptions(vehicles, campus, categoryId) {
 // Active student collection heads as select options.
 export const collectionOptions = (collections) => (collections || []).filter((c) => c.active).map((c) => ({ value: c.id, label: c.label }));
 export const COLLECTION_CATEGORIES = ['student_collection', 'student_collection_paid'];
+// Parts a vehicle service bill can be for (garage data), by category. Keep in step with OFFICE_COMPONENTS in
+// apps-script/office-config.gs; tests/office/test-daybook-view.js fails if the two lists differ.
+export const COMPONENT_LABEL = 'Which parts? (tap all that apply)';
+const SERVICE = ['vehicle_service', 'vehicle_parts'], ALL_SERVICE = ['vehicle_washing', 'vehicle_service', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'];
+const COMPONENTS = [
+  ...[['engine_oil', 'Engine oil'], ['oil_filter', 'Oil filter'], ['fuel_filter', 'Fuel filter'], ['air_filter', 'Air filter'], ['coolant', 'Coolant'], ['belts', 'Belts'],
+    ['brake_front', 'Front brakes'], ['brake_rear', 'Rear brakes'], ['brake_fluid', 'Brake fluid'], ['clutch', 'Clutch'], ['gearbox_oil', 'Gearbox oil'], ['axle_grease', 'Axle grease'],
+    ['suspension', 'Suspension'], ['steering', 'Steering'], ['wheel_bearing', 'Wheel bearing']].map(([id, label]) => [id, label, SERVICE]),
+  ...[['battery', 'Battery'], ['lights_wiring', 'Lights and wiring'], ['starter_alternator', 'Starter / alternator']].map(([id, label]) => [id, label, ['vehicle_electrical']]),
+  ...[['tyre_fl', 'Tyre front left'], ['tyre_fr', 'Tyre front right'], ['tyre_rl', 'Tyre rear left'], ['tyre_rr', 'Tyre rear right'], ['tyre_spare', 'Spare tyre'], ['puncture', 'Puncture']].map(([id, label]) => [id, label, ['tyres']]),
+  ...[['body_paint', 'Body and paint'], ['seats_windows', 'Seats and windows'], ['door', 'Door']].map(([id, label]) => [id, label, ['vehicle_body']]),
+  ['washing_greasing', 'Washing / greasing', ['vehicle_washing']],
+  ['other', 'Other', ALL_SERVICE],
+];
+// [{id, label}] for the chips of a category; empty (no chips) for every category that does not ask which parts.
+export const componentOptions = (categoryId) => COMPONENTS.filter((c) => c[2].includes(categoryId)).map(([id, label]) => ({ id, label }));
+// The driver's video of a fuel fill (proof for the fuel check). Optional; the backend enforces the same types and size.
+export const VIDEO_LABEL = 'Video of the fill (from the driver)';
+export const VIDEO_HINT = 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.';
+export const VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/3gpp'], VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+// '14.2 MB', counted the way the 25 MB limit is (1 MB = 1024 × 1024 bytes).
+export const mbText = (bytes) => (bytes / 1048576).toFixed(1) + ' MB';
+// '' when the chosen file ({size, type}) is fine as a fill video, else the sentence to show.
+export const videoProblem = (f) => !VIDEO_MIMES.includes(f.type) ? 'Choose a video file (MP4, MOV or 3GP).'
+  : f.size > VIDEO_MAX_BYTES ? 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).' : '';
 export const PAYMENT_PHOTO_HINT = 'Photo of the bill, or of the hand-written receipt signed by the person paid.';
 
 // The value a repainted select should show: the user's current one if it is still offered, else the fallback (P13).
@@ -108,7 +137,7 @@ export function parseLitresToMl(text) {
 const parseOdometer = (text) => { const m = /^\s*(\d+)\s*$/.exec(String(text)); const n = m && Number(m[1]); return m && Number.isSafeInteger(n) ? n : null; };
 
 // form: {campus, date, account (object), category (object), mode (bank accounts only: bank|upi), bucket, amount, payee, narration,
-//   charged_to, vehicle, collection, litres, odometer, odometer_note, hasFile, supplier_bill_no, settles_account, settles}.
+//   charged_to, vehicle, components (ids in tap order), collection, litres, odometer, odometer_note, hasFile, video ({size, type} of the chosen fill video, if any), supplier_bill_no, settles_account, settles}.
 // Returns {ok, data, errors}. Direction comes from the category, mode from the account kind, bucket only for cash;
 // file_id is added by the caller once the photo is queued (every payment has one: bill or signed receipt).
 export function entryPayload(form) {
@@ -136,6 +165,11 @@ export function entryPayload(form) {
     if (data.odometer_km === null) errors.odometer = 'Enter the odometer reading in whole km.';
     data.odometer_note = (form.odometer_note || '').trim();
     if (!form.hasFile) errors.file = 'Add a photo of the fuel bill (showing the odometer).';
+    if (form.video && videoProblem(form.video)) errors.video = videoProblem(form.video);
+  }
+  if (cat && componentOptions(cat.id).length) {
+    data.components = form.components || [];
+    if (!data.components.length) errors.components = 'Tap the parts this bill was for.';
   }
   if (cat && COLLECTION_CATEGORIES.includes(cat.id)) {
     data.collection = form.collection || '';
@@ -205,6 +239,32 @@ export async function showDayBook(root, session, api, outbox) {
   const odoNoteF = field('db-odonote', 'Odometer note (only if the reading is lower, e.g. meter replaced)', odoNoteIn);
   const fileIn = h('input', { type: 'file', accept: 'image/*,application/pdf', capture: 'environment' });
   const fileF = field('db-file', 'Photo', fileIn, PAYMENT_PHOTO_HINT);
+  const videoIn = h('input', { type: 'file', accept: VIDEO_MIMES.join(',') });
+  const videoPick = h('input', { type: 'file', accept: VIDEO_MIMES.join(','), hidden: true }); // the list's Add fill video button opens this
+  const videoF = field('db-video', VIDEO_LABEL, videoIn, VIDEO_HINT);
+  videoF.root.querySelector('label').append(h('span', { class: 'opt' }, ' Optional'));
+  // The chosen video, banked: the picker gives way to a tick, its size and name, and a way to take it off again (the field
+  // is optional). The file stays in the hidden input.
+  const videoSize = h('b', {}), videoName = h('span', { class: 'fname' });
+  const videoDrop = h('button', { type: 'button', class: 'secondary', 'aria-label': 'Remove the video', onclick: () => { clearVideo(); videoIn.focus(); } }, 'Remove');
+  const videoChosen = h('div', { class: 'picked', hidden: true }, h('span', {}, videoSize, videoName), videoDrop);
+  videoF.root.insertBefore(videoChosen, videoIn.nextSibling);
+  const clearVideo = () => { videoIn.value = ''; videoIn.hidden = false; videoChosen.hidden = true; };
+  // Checked the moment it is picked, so a wrong file is named in place and never blocks the save (the entry can go without it).
+  videoIn.addEventListener('change', () => {
+    const f = videoIn.files && videoIn.files[0];
+    videoF.err.textContent = f ? videoProblem(f) : '';
+    if (!f || videoF.err.textContent) { clearVideo(); return; }
+    videoSize.textContent = 'Video chosen · ' + mbText(f.size); videoName.textContent = f.name || '';
+    const had = document.activeElement === videoIn;
+    videoChosen.hidden = false; videoIn.hidden = true;
+    if (had) videoDrop.focus({ preventScroll: true }); // keyboard focus is not dropped with the hidden picker
+  });
+  // Garage data: one tap per part. Toggle buttons (aria-pressed) in a fieldset, so keyboard and screen readers get the same thing.
+  let picked = [];
+  const chipsEl = h('div', { class: 'chips' });
+  const compErr = h('p', { class: 'err', role: 'alert', id: 'db-comps-err' });
+  const compF = { root: h('fieldset', { class: 'parts', 'aria-describedby': 'db-comps-err' }, h('legend', {}, COMPONENT_LABEL), chipsEl, compErr), err: compErr };
   const collSel = h('select', {});
   const collF = field('db-coll', 'Collection', collSel);
   const billIn = h('input', { type: 'text', autocomplete: 'off' });
@@ -236,6 +296,15 @@ export async function showDayBook(root, session, api, outbox) {
   const paintCharged = () => keep(chargedSel, () => chargedSel.replaceChildren(...[...(cfg.campuses && cfg.campuses.length ? cfg.campuses : [campus]), CHAIRMAN].map((c) => h('option', { value: c }, chargedLabel(c)))), campus);
   const paintSettles = () => keep(settlesSel, () => settlesSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...(cfg.accounts || []).filter((a) => a.active && a.kind === 'credit').map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'))));
   const paintVehicles = () => keep(vehSel, () => { const c = curCat(); vehSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...vehicleOptions(cfg.vehicles, campus, c && c.id).map((o) => h('option', { value: o.value }, o.label))); });
+  const paintChips = () => { // picks that this category does not offer are dropped
+    const c = curCat(), opts = componentOptions(c && c.id);
+    picked = picked.filter((id) => opts.some((o) => o.id === id));
+    chipsEl.replaceChildren(...opts.map((o) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(picked.includes(o.id)), onclick: (e) => {
+      picked = picked.includes(o.id) ? picked.filter((id) => id !== o.id) : [...picked, o.id];
+      e.currentTarget.setAttribute('aria-pressed', String(picked.includes(o.id)));
+      if (picked.length) compErr.textContent = ''; // the "tap the parts" error goes as soon as one is tapped
+    } }, o.label)));
+  };
   const paintCollections = () => keep(collSel, () => collSel.replaceChildren(h('option', { value: '' }, 'Choose…'), ...collectionOptions(cfg.collections).map((o) => h('option', { value: o.value }, o.label))));
   const sync = () => {
     const a = curAcct(), c = curCat();
@@ -244,6 +313,8 @@ export async function showDayBook(root, session, api, outbox) {
     billF.root.hidden = !(a && a.kind === 'credit');
     vehF.root.hidden = !(c && c.needs_vehicle);
     [litresF, odoF, odoNoteF].forEach((f) => { f.root.hidden = !(c && c.id === 'fuel'); });
+    videoF.root.hidden = !(c && c.id === 'fuel');
+    compF.root.hidden = !(c && componentOptions(c.id).length);
     collF.root.hidden = !(c && COLLECTION_CATEGORIES.includes(c.id));
     fileF.root.hidden = !(c && c.direction === 'OUT'); // every payment carries a photo
     fileIn.required = !fileF.root.hidden;
@@ -251,9 +322,9 @@ export async function showDayBook(root, session, api, outbox) {
     [settlesF, settlesF2].forEach((f) => { f.root.hidden = !(c && c.id === 'credit_settlement'); });
     dirNote.textContent = c ? (c.direction === 'IN' ? 'Money in' : 'Money out') : '';
   };
-  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); paintCollections(); sync(); };
-  acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); sync(); });
-  catSel.addEventListener('change', () => { paintVehicles(); sync(); });
+  const paintForm = () => { paintAccts(); paintCats(); paintCharged(); paintSettles(); paintVehicles(); paintCollections(); paintChips(); sync(); };
+  acctSel.addEventListener('change', () => { paintCats(); paintVehicles(); paintChips(); sync(); });
+  catSel.addEventListener('change', () => { paintVehicles(); paintChips(); sync(); });
   paintForm();
 
   let auto = date;
@@ -266,18 +337,25 @@ export async function showDayBook(root, session, api, outbox) {
   };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') roll(); });
 
-  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, litres: litresF, odometer: odoF, file: fileF, settles_account: settlesF };
+  const FIELDS = { collection: collF, account: acctF, category: catF, mode: modeF, bucket: bucketF, amount: amountF, vehicle: vehF, components: compF, litres: litresF, odometer: odoF, file: fileF, video: videoF, settles_account: settlesF };
   const form = h('form', { class: 'office-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (roll()) return;
     Object.values(FIELDS).forEach((f) => { f.err.textContent = ''; });
-    const file = fileIn.files && fileIn.files[0];
+    const file = fileIn.files && fileIn.files[0], video = !videoF.root.hidden && videoIn.files && videoIn.files[0];
     const r = entryPayload({
       campus, date, account: curAcct(), category: curCat(), mode: modeSel.value, bucket: bucketSel.value, amount: amountIn.value, payee: payeeIn.value, narration: narrIn.value,
-      charged_to: chargedSel.value, vehicle: vehSel.value, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      charged_to: chargedSel.value, vehicle: vehSel.value, components: picked, collection: collSel.value, litres: litresIn.value, odometer: odoIn.value, odometer_note: odoNoteIn.value, hasFile: !!file,
+      video: video ? { size: video.size, type: video.type } : null,
       supplier_bill_no: billIn.value, settles_account: settlesSel.value, settles: settlesIn.value,
     });
-    if (!r.ok) { Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; }); return; }
+    if (!r.ok) {
+      Object.entries(FIELDS).forEach(([k, f]) => { f.err.textContent = r.errors[k] || ''; });
+      // On a phone Add entry sits far below most fields: bring the first error (in screen order) to the clerk.
+      const bad = form.querySelector('.err:not(:empty)');
+      if (bad) { bad.parentElement.scrollIntoView({ block: 'center' }); const c = bad.parentElement.querySelector('input, select, textarea, button'); if (c) c.focus({ preventScroll: true }); }
+      return;
+    }
     saveBtn.disabled = true; // double-tap guard; the id is assigned once per enqueue
     try {
       if (r.data.direction === 'OUT') { // photo first (FIFO, R7), then the entry that names it
@@ -285,15 +363,21 @@ export async function showDayBook(root, session, api, outbox) {
         const img = await resizeImage(file);
         r.data.file_id = await outbox.enqueue('file.upload', { campus, category: 'bill', belongs_to: '', name: file.name || (r.data.category === 'fuel' ? 'fuel-bill' : 'payment-bill'), mime: img.mime, base64: img.base64 });
       }
+      if (video) { // the fill video goes the same way, after the bill and before the entry that names it
+        saveMsg.textContent = 'Preparing the video…';
+        r.data.video_file_id = await outbox.enqueue('file.upload', { campus, category: 'fuel_video', belongs_to: '', name: video.name || 'fuel-video', mime: video.type, base64: await toBase64(video) });
+      }
       await outbox.enqueue('daybook.add', r.data);
-      [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
+      [amountIn, payeeIn, narrIn, litresIn, odoIn, odoNoteIn, fileIn, videoIn, billIn, settlesIn].forEach((i) => { i.value = ''; });
+      clearVideo();
+      picked = []; paintChips();
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
-  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg);
+  dateF.root, acctF.root, catF.root, dirNote, modeF.root, bucketF.root, vehF.root, compF.root, collF.root, litresF.root, odoF.root, odoNoteF.root, fileF.root, videoF.root, billF.root, settlesF.root, settlesF2.root, chargedF.root, amountF.root, payeeF.root, narrF.root, saveBtn, saveMsg, videoPick);
 
   dateIn.addEventListener('change', () => { if (dateIn.value && dateIn.value <= todayIst()) { date = dateIn.value; refresh(); } else dateIn.value = date; });
 
@@ -309,7 +393,32 @@ export async function showDayBook(root, session, api, outbox) {
     if (!ran || btn.isConnected) btn.disabled = false;
   }
 
+  // Add fill video: the same picker, then file.upload and daybook.attach_video through the outbox (FIFO: the file first).
+  // Its messages show on the entry itself ({id, text, bad}), not at the form far above.
+  let pickFor = null, rowMsg = null;
+  const say = (id, text, bad) => { rowMsg = { id, text, bad }; paintList(); };
+  videoPick.addEventListener('change', async () => {
+    const file = videoPick.files && videoPick.files[0], item = pickFor;
+    videoPick.value = '';
+    if (!file || !item) return;
+    const bad = videoProblem(file);
+    if (bad) { say(item.id, bad, true); return; }
+    await guard('video:' + item.id, async () => {
+      say(item.id, 'Preparing the video…', false);
+      const fileId = await outbox.enqueue('file.upload', { campus, category: 'fuel_video', belongs_to: '', name: file.name || 'fuel-video', mime: file.type, base64: await toBase64(file) });
+      await outbox.enqueue('daybook.attach_video', { campus, entry_id: item.id, file_id: fileId });
+      rowMsg = null; // the row now says the video is on its way
+      await refresh();
+      outbox.flush().then(refresh).catch(() => {});
+    }).catch((err) => { say(item.id, err && err.message || String(err), true); });
+  });
+  const addVideo = (item) => { pickFor = item; videoPick.click(); };
+
   // Second line of a list row: account, mode/bucket, charged-to (when not the campus), vehicle, fuel figures, then the free text.
+  const partsLabel = (v) => { // stored as 'tyre_fl,puncture' (a queued entry still holds the array)
+    const ids = Array.isArray(v) ? v : String(v || '').split(',').filter(Boolean);
+    return ids.map((id) => (COMPONENTS.find((c) => c[0] === id) || [id, id])[1]).join(', ');
+  };
   const collLabel = (id) => ((cfg.collections || []).find((c) => c.id === id) || {}).label || id;
   const rowMeta = (it) => [
     rowAccountLabel(cfg.accounts, { ...it, campus }),
@@ -317,7 +426,7 @@ export async function showDayBook(root, session, api, outbox) {
     it.charged_to && it.charged_to !== (it.campus || campus) ? 'Charged to ' + chargedLabel(it.charged_to) : '',
     it.vehicle === 'FLEET' ? 'Shared / whole fleet' : it.vehicle ? 'Vehicle ' + ((cfg.vehicles.find((v) => v.reg === it.vehicle) || {}).label || it.vehicle) : '',
     it.litres_ml ? Number(it.litres_ml) / 1000 + ' L' : '', it.odometer_km !== undefined && it.odometer_km !== '' && it.litres_ml ? Number(it.odometer_km) + ' km' : '',
-    it.collection ? collLabel(it.collection) : '',
+    it.collection ? collLabel(it.collection) : '', partsLabel(it.components),
     it.supplier_bill_no ? 'Bill ' + it.supplier_bill_no : '', it.payee, it.narration, it.reverses ? 'Reversal' : '',
   ].filter(Boolean);
 
@@ -326,10 +435,15 @@ export async function showDayBook(root, session, api, outbox) {
     listEl.replaceChildren(...(items.length ? items.map((it) => h('li', {},
       h('div', {}, (it.direction === 'IN' ? '+ ' : '− ') + formatInr(it.amount_paise) + ' · ' + catLabel(it.category)),
       h('div', { class: 'meta' }, rowMeta(it).join(' · ')),
+      it.video_file_id && it.category === 'fuel' ? h('div', { class: 'proof' }, 'Fill video attached') : null, // proof banked
       it.synced ? null : h('div', { class: 'flag' + (it.status === 'attention' ? ' bad' : '') }, it.status === 'attention' ? 'Needs attention: ' + it.error : 'Not yet synced'),
       it.reversed ? h('div', { class: 'meta' }, 'Reversed') : null,
       it.reversalQueued ? h('div', { class: 'flag' + (it.reversalError ? ' bad' : '') }, it.reversalError ? 'Reversal needs attention: ' + it.reversalError : 'Reversal not yet synced') : null,
-      canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null,
+      it.videoQueued ? h('div', { class: 'flag' }, 'Fill video not yet synced') : null,
+      rowMsg && rowMsg.id === it.id ? h('div', rowMsg.bad ? { class: 'flag bad', role: 'alert' } : { class: 'meta' }, rowMsg.text) : null,
+      canAddVideo(it) || canReverse(it) ? h('div', { class: 'row-actions' },
+        canAddVideo(it) ? h('button', { type: 'button', class: 'secondary', onclick: () => addVideo(it) }, 'Add fill video') : null,
+        canReverse(it) ? h('button', { type: 'button', class: 'secondary', onclick: (e) => reverse(it, e.currentTarget) }, 'Reverse') : null) : null,
     )) : [h('li', {}, 'No entries for ' + isoToDmy(date) + '.')]));
   }
 

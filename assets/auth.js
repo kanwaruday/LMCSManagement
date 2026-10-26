@@ -36,6 +36,24 @@ window.LMCS = (function () {
   // and the two are now in one shared action-namespace.
   const ALLOWLIST_API_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
 
+  // Staff sign-in (2026-10-25, per Uday): someone missing from the allowlist is asked here (the Principal's Daily Reporting backend,
+  // same exec URL as PDR_URL below) whether they are an Active employee in the Employee Master. Answers only while the backend's
+  // STAFF_AUTO_SIGNIN property is 'on'. Only role Teacher or Staff is ever accepted back -- never a management role.
+  const STAFF_SIGNIN_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+  async function fetchStaffSignIn_(idToken) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl && setTimeout(function () { ctl.abort(); }, 10000); // a hung backend must not leave the gate on "checking"
+    try {
+      const res = await fetch(STAFF_SIGNIN_URL + '?action=staffsignin&idToken=' + encodeURIComponent(idToken), { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      const d = await res.json();
+      if (d && d.success === true && (d.role === 'Teacher' || d.role === 'Staff') && /^LMS[1-6]$/.test(d.campusId) && d.employeeCode) {
+        return { campusId: d.campusId, name: '', role: d.role, employeeCode: String(d.employeeCode), autoSignIn: true };
+      }
+    } catch (err) { /* unreachable, timed out or malformed -- treated as not on the list */ }
+    finally { if (timer) clearTimeout(timer); }
+    return null;
+  }
+
   const CAMPUS_NAMES = {
     LMS1: 'LMS 1 — Dhalpur',
     LMS2: 'LMS 2 — Kelheli',
@@ -280,7 +298,7 @@ window.LMCS = (function () {
   // Teacher Portal (teacher/index.html) is the lowest tier, so every tier above it can open it too
   // (2026-10-08, per Uday): Teacher, Principal, Coordinator, Owner.
   function canViewTeacherPortal(session) {
-    return hasRole(session, 'Teacher') || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+    return hasRole(session, 'Teacher') || hasRole(session, 'Staff') || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   // How far a session may "view as" a teacher inside the Teacher Portal: 'network' = any employee on the
@@ -307,7 +325,8 @@ window.LMCS = (function () {
       if (existing) {
         loadAllowlist().then((allowlist) => {
           // Re-validate the cached session is still on the live allowlist.
-          if (allowlist[existing.email]) { startExpiryWatch_(); resolve(existing); return; }
+          // An Employee Master sign-in (autoSignIn) was never on the list: keep it, unless they have since been added -- then sign in again for the listed role.
+          if (existing.autoSignIn ? !allowlist[existing.email] : allowlist[existing.email]) { startExpiryWatch_(); resolve(existing); return; }
           localStorage.removeItem(SESSION_KEY);
           renderGate();
         }).catch(() => {
@@ -346,6 +365,7 @@ window.LMCS = (function () {
             expiresAt: nextSixPM(now),
             idToken: response.credential,
           };
+          if (match.autoSignIn) { session.autoSignIn = true; session.employeeCode = match.employeeCode; }
           setSession(session);
           if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // fresh login starts from clean data
           startExpiryWatch_();
@@ -401,8 +421,9 @@ window.LMCS = (function () {
             document.getElementById('lmcs-auth-retry').onclick = function () { window.onGoogleSignIn(response); };
             return;
           }
+          let match = allowlist[email];
+          if (!match && payload.email_verified) match = await fetchStaffSignIn_(response.credential); // Employee Master fallback
           stopChecking();
-          const match = allowlist[email];
 
           if (!match || !payload.email_verified) {
             statusEl.innerHTML =

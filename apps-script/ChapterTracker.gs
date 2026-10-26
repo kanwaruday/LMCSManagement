@@ -112,8 +112,18 @@ function chapterNormalizeSubject(s) {
 // chapter names are long and distinctive enough that truncation risks
 // false collisions ("The Lost Chi..." matching two different chapters),
 // where subjects (short, few distinct values) don't have that risk.
+//
+// Unicode-aware (2026-10-26, matches ownAcadNormChapter_ in acad-episodes.gs
+// so the two agree): the old [^a-z0-9] strip blanked every non-Latin chapter
+// name to '' -- confirmed against real data, 159 of 173 distinct Devanagari
+// chapter names in current gap-report exports collapsed to the same empty
+// key, so overrides and CW/HW matching for Hindi/Sanskrit (and any other
+// non-Latin script) chapters were colliding with each other. Now keeps
+// letters, combining marks (Devanagari vowel signs, virama) and digits of
+// any script, collapsing each run of anything else to one space:
+// 'Light' -> 'light', 'The Lost-Child!' -> 'the lost child'.
 function chapterNormalizeName(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(s || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
 }
 
 function chapterIsSubjectExempt(subject) {

@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Coordinator HQ</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <style>
+    /* Page-only styles. Tokens come from assets/style.css. */
+    :root { --rule: #e8e8e8; --ctl: #c8c8c8; --warm: #b45f06; --warm-bg: #fdf1de; --cool: #8f8f8f; }
+    main.hq { max-width: 1200px; padding-top: 20px; padding-bottom: 48px; }
+    .back { display: inline-block; font-size: 0.85rem; color: var(--gray); text-decoration: none; padding: 6px 0; }
+    .back:hover { color: var(--red); text-decoration: underline; }
+    .title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .title-row h1 { font-size: 1.5rem; color: var(--red); margin: 6px 0 4px; letter-spacing: -0.01em; }
+    .title-row a { font-size: 0.88rem; font-weight: 600; color: var(--dark); }
+    .finding { margin: 0 0 18px; color: var(--gray); font-size: 0.95rem; max-width: 75ch; }
+    .finding b { color: var(--dark); }
+
+    /* the bases: 6 campuses in their two districts (the signature element) */
+    .bases { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 20px; }
+    .district { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px 12px; min-width: 0; }
+    .district h2 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 600; color: var(--gray); }
+    .district ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .base { min-width: 0; padding: 8px 10px; border-radius: var(--radius); background: var(--lgray); }
+    .base .bn { display: block; font-weight: 700; font-size: 0.95rem; }
+    .base .place { display: block; font-size: 0.78rem; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .base .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+    .meter { display: inline-flex; gap: 2px; align-items: flex-end; flex: none; }
+    .meter i { display: block; width: 5px; border-radius: 1px; background: #d6d6d6; }
+    .meter i:nth-child(1) { height: 6px; } .meter i:nth-child(2) { height: 9px; } .meter i:nth-child(3) { height: 12px; }
+    .lvl { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; white-space: nowrap; }
+    .cool .lvl { color: var(--gray); } .cool .meter i:nth-child(1) { background: var(--cool); }
+    .warm .lvl { color: var(--warm); } .warm .meter i:nth-child(-n+2) { background: var(--warm); }
+    .hot { background: var(--red-pale); } .hot .lvl { color: var(--red-dark); } .hot .meter i { background: var(--red); }
+    .base.sk-b { height: 74px; }
+    .bases:empty, .tabs:empty { display: none; }
+    .district.off { opacity: 0.5; } /* the district the board isn't showing */
+
+    /* layout: the board, and beside it the open request or the track record */
+    .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); gap: 28px; align-items: start; }
+    .side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+    .tabs { display: inline-flex; border: 1px solid var(--ctl); border-radius: var(--radius); overflow: hidden; margin-bottom: 4px; }
+    .tabs button { font: inherit; font-size: 0.88rem; font-weight: 600; min-height: 36px; padding: 6px 14px; border: 0; border-right: 1px solid var(--ctl); background: var(--white); color: var(--gray); cursor: pointer; }
+    .tabs button:last-child { border-right: 0; }
+    .tabs button[aria-pressed="true"] { background: var(--dark); color: var(--white); }
+    .tabs .n { font-weight: 400; font-variant-numeric: tabular-nums; margin-left: 4px; }
+
+    .board { list-style: none; margin: 0; padding: 0; }
+    .contract { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+    .contract.sel { background: var(--lgray); margin: 0 -10px; padding-left: 10px; padding-right: 10px; border-radius: var(--radius); }
+    .contract .what { margin: 0; font-size: 0.98rem; font-weight: 700; overflow-wrap: anywhere; }
+    .flag { display: inline-block; margin-right: 6px; vertical-align: 1px; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid; }
+    .flag.stuck { color: var(--dark); border-color: var(--dark); }
+    .flag.waiting { color: var(--gray); border-color: var(--ctl); }
+    .flag.missing { color: var(--warm); background: var(--warm-bg); border-color: #f1d3a8; }
+    .flag.new { color: var(--dark); background: var(--lgray); border-color: var(--border); }
+    .contract .meta { margin: 0; font-size: 0.85rem; color: var(--gray); font-variant-numeric: tabular-nums; }
+    .contract .meta .late { color: var(--red-dark); font-weight: 600; }
+    .contract .detail { margin: 0; font-size: 0.85rem; color: var(--gray); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .contract .rec { margin: 2px 0 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+    .contract .rec.need { font-weight: 600; }
+    .contract .acts { grid-column: 2; grid-row: 1 / span 4; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .go { font-size: 0.88rem; font-weight: 600; color: var(--dark); white-space: nowrap; padding: 4px 0; }
+    .more { margin-top: 12px; }
+
+    .btn { min-height: 38px; padding: 7px 14px; font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: var(--radius); cursor: pointer; color: var(--white); background: var(--dark); border: 1px solid var(--dark); white-space: nowrap; }
+    .btn:hover { background: #000; }
+    .btn:disabled { cursor: not-allowed; color: var(--gray); background: var(--lgray); border-color: var(--border); }
+    .btn.quiet { color: var(--dark); background: var(--white); border-color: var(--ctl); }
+    .btn.quiet:hover { border-color: var(--dark); }
+    a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+    .panel h2 { font-size: 1rem; margin: 0; }
+    .panel .sub { margin: 2px 0 12px; font-size: 0.85rem; color: var(--gray); }
+    .dv-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .dv-top .cat { font-size: 0.85rem; color: var(--gray); text-align: right; }
+    .nw { white-space: nowrap; }
+    .dv h2 { font-size: 1.15rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+    .dv h2:focus { outline: none; }
+    .facts { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+    .facts li { padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 0.9rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .facts .src { display: block; font-size: 0.78rem; color: var(--gray); }
+    .facts .wait { color: var(--gray); }
+    .note-box { margin: 12px 0 0; padding: 9px 12px; background: var(--lgray); border-radius: var(--radius); font-size: 0.9rem; overflow-wrap: anywhere; }
+    .note-box span { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray); }
+    .outcome { background: var(--color-live-bg); color: #14532d; }
+    .outcome span { color: #14532d; }
+    .rec-form { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .rec-form fieldset { border: 0; margin: 0; padding: 0; }
+    .rec-form legend { font-weight: 700; font-size: 0.95rem; padding: 0; margin-bottom: 8px; }
+    .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+    .choices label { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--ctl); border-radius: var(--radius); font-size: 0.9rem; cursor: pointer; }
+    .choices label:hover { border-color: var(--dark); }
+    .choices input { margin: 0; accent-color: var(--dark); width: 16px; height: 16px; }
+    .choices label:has(input:checked) { border-color: var(--dark); box-shadow: inset 0 0 0 1px var(--dark); font-weight: 600; }
+    .field { margin-top: 12px; }
+    .field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; }
+    .field label .opt { font-weight: 400; color: var(--gray); }
+    .field textarea { display: block; width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; font: inherit; font-size: 0.92rem; color: var(--dark); background: var(--white); border: 1px solid var(--ctl); border-radius: var(--radius); }
+    .field textarea:hover { border-color: #9a9a9a; }
+    .form-acts { display: flex; justify-content: flex-end; margin-top: 10px; }
+    .err { margin: 8px 0 0; font-size: 0.85rem; color: var(--red-dark); }
+    .err:empty, .flash:empty { display: none; }
+    .flash { margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius); font-size: 0.9rem; color: var(--color-live); background: var(--color-live-bg); }
+    .flash:focus { outline: none; }
+
+    .tr table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+    .tr th { font-size: 0.78rem; font-weight: 600; color: var(--gray); text-align: right; padding: 6px 0 6px 10px; border-bottom: 1px solid var(--border); }
+    .tr td { text-align: right; padding: 7px 0 7px 10px; border-bottom: 1px solid var(--rule); }
+    .tr th:first-child, .tr td:first-child { text-align: left; padding-left: 0; }
+    .tr h3 { font-size: 0.9rem; margin: 18px 0 4px; }
+    .recent { list-style: none; margin: 0; padding: 0; }
+    .recent li { padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem; overflow-wrap: anywhere; }
+    .recent .t { font-weight: 600; }
+    .recent .m { display: block; color: var(--gray); font-size: 0.82rem; }
+
+    .status-box { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.92rem; }
+    .status-box p { margin: 0 0 10px; } .status-box p:last-child { margin-bottom: 0; }
+    .empty { margin: 14px 0 0; padding: 12px 14px; border: 1px dashed var(--ctl); border-radius: var(--radius); color: var(--gray); font-size: 0.92rem; list-style: none; }
+    .sk { height: 76px; margin-top: 12px; border-radius: var(--radius); background: var(--lgray); list-style: none; }
+    .sk.s { height: 22px; width: 60%; }
+    .denied { padding: 40px 0; color: var(--gray); }
+    a:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--red-dark); outline-offset: 2px; }
+    ::selection { background: var(--red-pale); color: var(--dark); }
+    .back-board { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    @media (max-width: 1000px) {
+      .cols { grid-template-columns: minmax(0, 1fr); }
+      .side { position: static; max-height: none; overflow: visible; }
+      /* one region at a time: the open request replaces the board, Back returns to it */
+      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
+      .back-board { display: inline-flex; }
+      .dv-top .close-dv { display: none; }
+    }
+    @media (max-width: 760px) { .bases { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 640px) {
+      .wrap { padding: 0 16px; }
+      .brand .tagline { display: none; }
+      nav.roles span { white-space: nowrap; }
+      .tabs { display: flex; } .tabs button { flex: 1 1 auto; min-height: 44px; padding: 6px 8px; }
+      .contract { grid-template-columns: minmax(0, 1fr); }
+      .contract .acts { grid-column: 1; grid-row: auto; flex-direction: row; justify-content: flex-end; margin-top: 2px; }
+      /* a row action on a phone is an ink text action, not a stack of grey blocks */
+      .contract .acts .btn { min-height: 44px; padding: 8px 0 8px 12px; border: 0; background: none; text-decoration: underline; text-underline-offset: 3px; }
+      .district { padding: 8px 10px 10px; }
+      .district h2 { margin-bottom: 6px; }
+      .base { padding: 7px 8px; }
+      .base .place { display: none; }
+      .base .row { flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 2px; }
+      .bases { gap: 10px; margin-bottom: 16px; }
+      .btn { min-height: 44px; }
+      .form-acts .btn { width: 100%; }
+      .choices label { flex: 1 1 auto; min-height: 44px; }
+    }
+    @media (prefers-reduced-motion: no-preference) { .contract, .choices label, .btn { transition: background-color .15s ease, border-color .15s ease; } }
+  </style>
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+      <nav class="roles" id="header-status"></nav>
+    </div>
+  </header>
+
+  <main class="wrap hq" id="hq">
+    <a class="back" href="index.html">&larr; Coordinator home</a>
+    <div id="authRoot"></div>
+    <div id="appBody" style="display:none">
+      <div class="title-row">
+        <h1>Coordinator HQ</h1>
+        <a href="systems/index.html#closed">Closed this week</a>
+      </div>
+      <p class="finding" id="finding">Loading the network&hellip;</p>
+      <section class="bases" id="bases" aria-label="The six campuses"><div class="district"><h2>LMS 1–3</h2><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div><div class="district"><h2>LMS 4–6</h2><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div></section>
+      <div class="cols">
+        <section class="main-col" aria-labelledby="board-h">
+          <h2 id="board-h" class="sr-only">Contracts</h2>
+          <div class="tabs" id="tabs" role="group" aria-label="Show campuses"></div>
+          <ul class="board" id="board"><li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li></ul>
+        </section>
+        <aside class="side">
+          <section class="panel dv" id="decision" hidden aria-labelledby="dv-title"></section>
+          <section class="panel tr" id="track" aria-labelledby="tr-h">
+            <h2 id="tr-h">My track record</h2>
+            <p class="sub">Your recommendations and the Owner's decisions. Only you and the Owner see it.</p>
+            <div id="track-body"><div class="sk s"></div><div class="sk s"></div></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js?v=afd06314"></script>
+  <script src="./shared.js?v=1e6a11b7"></script>
+  <script src="./hq-logic.js?v=88b872ef"></script>
+  <script>
+    // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
+    // where a Coordinator recommends on an approval. The Owner decides every approval (on the Approvals page); no control
+    // here decides anything. Backends: the Coordinator backend through Coord.api / Coord.postJson, and the Office
+    // backend's daybook.list for Financial / Purchase spend.
+    const H = window.CoordHQ;
+    // "LMCS Office" Apps Script project (apps-script/projects.json office.deploymentId)
+    const OFFICE_URL = 'https://script.google.com/macros/s/AKfycbzdVhCwnTnMybe6cdcDC87PbINCFG1n6U7UncMHDvk9eHFG6hC4dn7oEiqJKki4-lULEw/exec';
+    const DAYBOOK_TIMEOUT_MS = 12000;
+    const BOARD_CAP = 30;
+    const CHOICES = [['Approve', 'Approve'], ['Reject', 'Reject'], ['Info', 'Ask for information']];
+    const CHOICE_LABEL = { Approve: 'Approve', Reject: 'Reject', Info: 'Ask for information' };
+    const FLAG_LABEL = { stuck: 'Stuck', waiting: 'Waiting', missing: 'Missing' };
+    const DISTRICTS = [['LMS 1–3', ['LMS1', 'LMS2', 'LMS3']], ['LMS 4–6', ['LMS4', 'LMS5', 'LMS6']]];
+    const esc = Coord.esc;
+    const $ = (id) => document.getElementById(id);
+    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, FILTER = 'All', SHOW_ALL = false; // FRESH: requests too new for a follow-up card
+    const DECISIONS = {}, SPEND = {};
+    let OPEN = null, BOARD_Y = 0; // the approval id whose decision view is open; where the board was scrolled when it opened
+
+    function isoDay(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    function today() { return isoDay(new Date()); }
+    function me() { return String((SESSION && SESSION.email) || '').toLowerCase(); }
+    function isOwner() { return LMCS.hasRole(SESSION, 'Owner'); }
+
+    // The backend says "Not authorized" for an expired sign-in (the idToken lasts about an hour). Only signing in again
+    // helps: raise auth.js's banner (it holds "Sign in again") and say so in plain words, with no Retry that can't work.
+    function isAuthError(msg) { return msg === 'Not authorized'; }
+    function authText(keepsNote) {
+      LMCS.notifyAuthFailure();
+      return 'Your sign-in has expired. Sign in again at the top' + (keepsNote ? '; your note is kept.' : '.');
+    }
+    function plain(msg) {
+      if (/failed to fetch|networkerror|load failed/i.test(msg)) return 'Could not reach the server. Check the connection and try again.';
+      if (/unexpected token|json/i.test(msg)) return 'The server answered with an error page. It is probably waking up: wait a minute and try again.';
+      return msg;
+    }
+    // A failed block: plain words, and Retry unless the problem is the sign-in.
+    function failHtml(what, msg, retryId) {
+      const auth = isAuthError(msg);
+      return '<div class="status-box" role="alert"><p>' + esc(auth ? authText(false) : what + ' ' + plain(msg)) + '</p>' +
+        (auth ? '' : '<button type="button" class="btn quiet" id="' + retryId + '">Retry</button>') + '</div>';
+    }
+
+    // ── The bases and the filter tabs ──
+    function inView(t) { return FILTER === 'All' || H.districtOf(t.campus) === FILTER; }
+    function renderBases() {
+      const heat = H.campusHeat(TASKS, today());
+      $('bases').innerHTML = DISTRICTS.map(([name, camps]) => '<div class="district' + (FILTER === 'All' || FILTER === name ? '' : ' off') + '"><h2>' + name + '</h2><ul>' + camps.map((c) => {
+        const n = TASKS.filter((t) => t.campus === c).length, lv = heat[c].level, place = String(LMCS.campusLabel(c)).split(' — ')[1] || '';
+        return '<li class="base ' + lv + '"><span class="bn">' + esc(H.shortCampus(c)) + '</span><span class="place">' + esc(place) + '</span>' +
+          '<span class="row"><span>' + n + ' open</span><span class="lvl"><span class="meter" aria-hidden="true"><i></i><i></i><i></i></span>' + lv[0].toUpperCase() + lv.slice(1) + '</span></span></li>';
+      }).join('') + '</ul></div>').join('');
+      $('tabs').innerHTML = ['All', 'LMS 1–3', 'LMS 4–6'].map((f) => {
+        const n = TASKS.concat(FRESH).filter((t) => f === 'All' || H.districtOf(t.campus) === f).length;
+        return '<button type="button" data-f="' + f + '" aria-pressed="' + (FILTER === f) + '">' + f + '<span class="n">' + n + '</span></button>';
+      }).join('');
+    }
+    function renderFinding() {
+      const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length + FRESH.filter((f) => f.status === 'Pending' && !f.recommendation).length;
+      if (!TASKS.length && !need) { $('finding').textContent = 'All six campuses are cool.'; return; }
+      const heat = H.campusHeat(TASKS, today()), hot = H.CAMPUSES.filter((c) => heat[c].level === 'hot').map(H.shortCampus);
+      $('finding').innerHTML = (TASKS.length ? '<b>' + TASKS.length + ' open</b> across the network.' : 'All six campuses are cool.') +
+        (need ? ' <b>' + need + (need > 1 ? ' requests wait' : ' request waits') + (isOwner() ? ' for a Coordinator\'s recommendation.' : ' for your recommendation.') + '</b>' : '') +
+        (hot.length ? ' ' + esc(hot.join(' and ')) + (hot.length > 1 ? ' are' : ' is') + ' hot.' : '');
+    }
+
+    // ── The board ──
+    function recLine(t) { return t.domain === 'approval' ? recHtml(t.recommendation) : ''; }
+    function recHtml(r) {
+      if (!r) return isOwner() ? '<p class="rec">No recommendation yet</p>' : '<p class="rec need">Needs your recommendation</p>';
+      return '<p class="rec">' + esc(r.byName || r.by) + ' recommends ' + esc(CHOICE_LABEL[r.recommendation] || r.recommendation) + ': ' + esc(r.reason) + '</p>';
+    }
+    function cardHtml(t) {
+      const flag = H.flagOf(t), id = H.approvalId(t), go = H.goHref(Coord.WORK_LINKS, t.domain), late = H.pastDue(t, today());
+      const meta = [esc(H.shortCampus(t.campus) || 'No campus'), 'waiting since ' + H.dayLabel(t.createdAt)];
+      if (t.due) meta.push(late ? '<span class="late">past its due date, ' + H.dayLabel(t.due) + '</span>' : 'due ' + H.dayLabel(t.due));
+      if (t.assignee && t.assignee.toLowerCase() === me()) meta.push('assigned to you');
+      return '<li class="contract' + (id && id === OPEN ? ' sel' : '') + '">' +
+        '<p class="what">' + (flag ? '<span class="flag ' + flag + '">' + FLAG_LABEL[flag] + '</span>' : '') + esc(t.title) + '</p>' +
+        '<p class="meta">' + meta.join(', ') + '</p>' +
+        (t.detail ? '<p class="detail">' + esc(t.detail) + '</p>' : '') + recLine(t) +
+        // Go opens the exact record: an approval's decision view here, anything else its own page
+        '<div class="acts">' + (id ? '<button type="button" class="btn quiet" data-open="' + esc(id) + '">Open request</button>'
+          : go ? '<a class="btn quiet" href="' + esc(go) + '">Go</a>' : '') + '</div>' +
+      '</li>';
+    }
+    // A request too new for a follow-up card (coordinatortasks' fresh): recommend on it at once, in the same decision view.
+    function freshHtml(f) {
+      const meta = [esc(H.shortCampus(f.campus) || 'No campus'), esc(f.category), 'raised ' + H.dayLabel(f.requestedAt)];
+      if (f.status === 'Info Requested') meta.push('waiting for more information');
+      return '<li class="contract' + (f.approvalId === OPEN ? ' sel' : '') + '">' +
+        '<p class="what"><span class="flag new">New request</span>' + esc(f.title || 'Request ' + f.approvalId) + '</p>' +
+        '<p class="meta">' + meta.join(', ') + '</p>' + recHtml(f.recommendation) +
+        '<div class="acts"><button type="button" class="btn quiet" data-open="' + esc(f.approvalId) + '">Open request</button></div>' +
+      '</li>';
+    }
+    function renderBoard() {
+      // the follow-up contracts first, then the new requests
+      const list = H.rankContracts(TASKS.filter(inView), me(), today()).map(cardHtml).concat(H.rankFresh(FRESH.filter(inView)).map(freshHtml));
+      const board = $('board');
+      if (!TASKS.length && !FRESH.length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
+      if (!list.length) { board.innerHTML = '<li class="empty">Nothing open in ' + esc(FILTER) + ' right now.</li>'; return; }
+      const shown = SHOW_ALL ? list : list.slice(0, BOARD_CAP);
+      board.innerHTML = shown.join('') +
+        (shown.length < list.length ? '<li class="more"><button type="button" class="btn quiet" id="show-all">Show all ' + list.length + '</button></li>' : '');
+    }
+    function renderAll() { renderBases(); renderFinding(); renderBoard(); }
+
+    // ── My track record (private: the backend sends a Coordinator only their own key) ──
+    function renderTrack() {
+      const box = $('track-body');
+      if (isOwner()) { box.innerHTML = '<p class="sub">The Owner decides on the Approvals page, where each request shows its recommendation.</p>'; return; }
+      const mine = (TRACK || {})[me()];
+      if (!mine) { box.innerHTML = '<p class="empty">No recommendations yet. Open a request on the board to make your first.</p>'; return; }
+      const cats = Object.keys(mine.byCategory).sort();
+      box.innerHTML = '<table><thead><tr><th>Category</th><th>Made</th><th>Decided</th><th>Matched</th></tr></thead><tbody>' +
+        cats.map((c) => { const x = mine.byCategory[c]; return '<tr><td>' + esc(c) + '</td><td>' + x.made + '</td><td>' + x.decided + '</td><td>' + x.matched + '</td></tr>'; }).join('') + '</tbody></table>' +
+        '<h3>Last ' + mine.recent.length + '</h3><ul class="recent">' + mine.recent.map((r) =>
+          '<li><span class="t">' + esc(r.title || 'Request ' + r.approvalId) + '</span> <span class="m">' + esc(H.shortCampus(r.campus)) + ', you recommended ' + esc(CHOICE_LABEL[r.recommendation] || r.recommendation) + '. ' +
+          esc(H.outcomeLine(r.recommendation, r) || 'Waiting for the Owner\'s decision.') + '</span></li>').join('') + '</ul>';
+    }
+
+    // ── The decision view ──
+    function formHtml(dec, mine) {
+      const pick = mine ? mine.recommendation : '', reason = mine ? mine.reason : '', checked = mine ? mine.checked || '' : '';
+      return '<form class="rec-form" id="rec-form" novalidate><fieldset><legend>Your recommendation</legend><div class="choices">' +
+        CHOICES.map(([v, label]) => '<label><input type="radio" name="rec" value="' + v + '"' + (pick === v ? ' checked' : '') + '>' + label + '</label>').join('') + '</div></fieldset>' +
+        '<div class="field"><label for="rec-reason">Reason</label><textarea id="rec-reason" name="reason" maxlength="500" rows="3" aria-describedby="rec-err">' + esc(reason) + '</textarea></div>' +
+        '<div class="field"><label for="rec-checked">What I checked <span class="opt">(optional)</span></label><textarea id="rec-checked" name="checked" maxlength="500" rows="2" placeholder="For example: the quotation matches the day-book rate">' + esc(checked) + '</textarea></div>' +
+        '<div class="form-acts"><button type="submit" class="btn"' + (H.recReady(pick, reason) ? '' : ' disabled') + '>' + (mine ? 'Update my recommendation' : 'Send my recommendation') + '</button></div>' +
+        '<p class="err" id="rec-err" role="alert"></p></form>';
+    }
+    function previewHtml(dec) {
+      const p = dec.preview, at = H.shortCampus(dec.campus), out = [];
+      const since = new Date(); since.setDate(since.getDate() - (dec.waitingDays || 0));
+      out.push('<li>Waiting since ' + H.dayLabel(isoDay(since)) + '.<span class="src">From the Approvals sheet</span></li>');
+      if (dec.category === 'Financial / Purchase') {
+        const s = SPEND[dec.campus];
+        out.push('<li><span id="dv-spend"' + (s ? '>' + esc(spendText(dec)) : ' class="wait">Reading the day book&hellip;') + '</span><span class="src">From the Office day book</span></li>');
+      }
+      if (!p) {
+        out.push('<li>No preview for this category. Recommend from the request itself, with a reason.</li>');
+        return out.join('');
+      }
+      out.push('<li>The same category at ' + esc(at) + ', last 12 months: ' + p.history.approved + ' approved, ' + p.history.rejected + ' rejected.<span class="src">From the Approvals sheet</span></li>');
+      if (p.staff) out.push('<li>' + esc(at) + ' has ' + p.staff.active + ' active staff. ' + (p.staff.openStalls ? p.staff.openStalls + (p.staff.openStalls > 1 ? ' hires are' : ' hire is') + ' stalled.' : 'No hire is stalled.') + '<span class="src">From the Employee Master and the follow-ups</span></li>');
+      if (p.events) out.push('<li>' + (p.events.length ? 'Approved at ' + esc(at) + ' in the last 30 days: ' + p.events.map((e) => esc(e.title) + ' (' + H.dayLabel(e.decidedAt) + ')').join(', ') + '.' : 'No other event was approved at ' + esc(at) + ' in the last 30 days.') + '<span class="src">From the Approvals sheet</span></li>');
+      return out.join('');
+    }
+    function decisionHtml(dec) {
+      const rec = dec.recommendation, mine = rec && rec.by === me() ? rec : null;
+      const done = ((TRACK || {})[me()] || { recent: [] }).recent.filter((r) => r.approvalId === dec.id && r.decision)[0];
+      const outcome = done ? H.outcomeLine(done.recommendation, done) : '';
+      return '<div class="dv-top"><button type="button" class="btn quiet back-board" data-close>&larr; Back to the board</button><span class="cat">' + esc(dec.category) + ', <span class="nw">' + esc(H.shortCampus(dec.campus)) + '</span></span>' +
+          '<button type="button" class="btn quiet close-dv" data-close>Close</button></div>' +
+        '<h2 id="dv-title" tabindex="-1">' + esc(dec.title || 'Request ' + dec.id) + '</h2>' +
+        '<a class="go" href="systems/index.html#approvals">Read the full request on the Approvals page</a>' +
+        '<ul class="facts">' + previewHtml(dec) + '</ul>' +
+        (rec ? '<p class="note-box"><span>Current recommendation</span>' + esc(rec.byName || rec.by) + ' recommends ' + esc(CHOICE_LABEL[rec.recommendation] || rec.recommendation) + ': ' + esc(rec.reason) + (rec.checked ? ' Checked: ' + esc(rec.checked) : '') + '</p>' : '') +
+        (outcome ? '<p class="note-box outcome"><span>The Owner\'s decision</span>' + esc(outcome) + '</p>' : '') +
+        '<p class="flash" id="dv-flash" role="status" tabindex="-1"></p>' +
+        (isOwner() ? '<p class="note-box">The Owner decides this on the <a href="systems/index.html#approvals">Approvals page</a>.</p>' : formHtml(dec, mine));
+    }
+    function paintDecision() {
+      const dec = DECISIONS[OPEN], box = $('decision');
+      if (!dec) return;
+      box.innerHTML = decisionHtml(dec);
+    }
+
+    function spendText(dec) { const s = SPEND[dec.campus]; return H.spendSummary(s.entries, s.error, dec.amount, { campus: dec.campus, from: s.from }); }
+    async function loadSpend(campus) {
+      if (SPEND[campus]) return;
+      const range = H.daybookRange(today()), ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = setTimeout(() => ctl && ctl.abort(), DAYBOOK_TIMEOUT_MS);
+      let res = null;
+      try {
+        const url = OFFICE_URL + '?action=daybook.list&idToken=' + encodeURIComponent(SESSION.idToken) + '&data=' + encodeURIComponent(JSON.stringify({ campus: campus, from: range.from, to: range.to }));
+        res = await (await fetch(url, ctl ? { signal: ctl.signal } : {})).json();
+      } catch (e) { res = { success: false, error: e && e.name === 'AbortError' ? 'timeout' : 'unreadable' }; }
+      clearTimeout(timer);
+      SPEND[campus] = res && res.success ? { entries: res.entries || [], error: null, from: range.from } : { entries: null, error: (res && res.error) || 'unreadable', from: range.from };
+      // the answer can land seconds after the form is in use: fill in the spend line only, never repaint the form under the Coordinator
+      const line = $('dv-spend'), dec = OPEN && DECISIONS[OPEN];
+      if (line && dec && dec.campus === campus) { line.textContent = spendText(dec); line.className = ''; }
+    }
+
+    async function openDecision(id, fromBtn) {
+      if (!OPEN) BOARD_Y = window.scrollY || 0;
+      OPEN = id;
+      $('hq').classList.add('detail-open');
+      $('track').hidden = true;
+      const box = $('decision');
+      box.hidden = false;
+      renderBoard();
+      if (fromBtn !== 'pop' && !(history.state && history.state.d === id)) history.pushState({ d: id }, '', '#d=' + encodeURIComponent(id)); // phone Back pops the request, as a screen stack
+      if (!DECISIONS[id]) {
+        box.innerHTML = '<div class="dv-top"><button type="button" class="btn quiet back-board" data-close>&larr; Back to the board</button><span></span><button type="button" class="btn quiet close-dv" data-close>Close</button></div><div class="sk"></div><div class="sk s"></div><div class="sk s"></div>';
+        try { DECISIONS[id] = (await Coord.api({ action: 'coordinatordecision', id: id })).decision; }
+        catch (e) {
+          if (OPEN !== id) return;
+          box.innerHTML = '<div class="dv-top"><button type="button" class="btn quiet back-board" data-close>&larr; Back to the board</button><span></span><button type="button" class="btn quiet close-dv" data-close>Close</button></div>' + failHtml('Could not open this request.', e.message, 'dv-retry');
+          const r = $('dv-retry');
+          if (r && r.addEventListener) r.addEventListener('click', () => openDecision(id, 'pop'));
+          return;
+        }
+      }
+      if (OPEN !== id) return;
+      paintDecision();
+      // the open request is the screen now: focus lands on its title (on a phone it replaced the board, so start at the top)
+      const h = $('dv-title'); if (h && h.focus) h.focus({ preventScroll: true });
+      if (window.matchMedia && window.matchMedia('(max-width: 1000px)').matches) window.scrollTo(0, 0);
+      if (DECISIONS[id].category === 'Financial / Purchase') loadSpend(DECISIONS[id].campus);
+    }
+    function closeDecision() {
+      const was = OPEN;
+      OPEN = null;
+      if (/^#d=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); // a closed request must not reopen on reload
+      $('hq').classList.remove('detail-open');
+      $('decision').hidden = true;
+      $('track').hidden = false;
+      renderBoard();
+      const btn = was && document.querySelector('[data-open="' + CSS.escape(was) + '"]');
+      if (window.matchMedia && window.matchMedia('(max-width: 1000px)').matches) window.scrollTo(0, BOARD_Y); // back to the list where it was left
+      if (btn) btn.focus({ preventScroll: true }); // and to the request it was opened from
+    }
+
+    async function submitRec(form) {
+      const dec = DECISIONS[OPEN], btn = form.querySelector('[type="submit"]'), err = $('rec-err');
+      const choice = (form.querySelector('input[name="rec"]:checked') || {}).value || '', reason = form.querySelector('#rec-reason').value.trim(), checked = form.querySelector('#rec-checked').value.trim();
+      if (!dec || !H.recReady(choice, reason) || btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = 'Sending…'; err.textContent = '';
+      let res;
+      try { res = await Coord.postJson({ action: 'coordinatorrecommend', approvalId: dec.id, recommendation: choice, reason: reason, checked: checked }); }
+      catch (e) { res = { success: false, error: plain(e.message) }; }
+      if (!res || !res.success) {
+        delete btn.dataset.busy; btn.disabled = false; btn.textContent = dec.recommendation && dec.recommendation.by === me() ? 'Update my recommendation' : 'Send my recommendation';
+        const msg = (res && res.error) || 'The recommendation was not saved. Try again.';
+        err.textContent = isAuthError(msg) ? authText(true) : msg; // the backend's sentences are shown as they come
+        form.querySelector('#rec-reason').focus();
+        return;
+      }
+      dec.recommendation = res.recommendation;
+      TASKS.forEach((t) => { if (H.approvalId(t) === dec.id) t.recommendation = res.recommendation; });
+      FRESH.forEach((f) => { if (f.approvalId === dec.id) f.recommendation = res.recommendation; });
+      renderAll();
+      paintDecision();
+      const flash = $('dv-flash');
+      flash.textContent = 'Your note is with the Owner. ' + H.shortCampus(dec.campus) + '\'s ' + dec.category + ' request is ready for a decision.';
+      flash.focus();
+      loadTrack();
+    }
+
+    async function loadTrack() {
+      try { TRACK = (await Coord.api({ action: 'coordinatortrackrecord' })).records || {}; renderTrack(); }
+      catch (e) {
+        $('track-body').innerHTML = failHtml('Could not load your track record.', e.message, 'tr-retry');
+        const r = $('tr-retry'); if (r && r.addEventListener) r.addEventListener('click', loadTrack);
+      }
+    }
+    async function load() {
+      $('board').innerHTML = '<li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li>';
+      const track = loadTrack();
+      try {
+        const res = await Coord.api({ action: 'coordinatortasks' });
+        TASKS = res.tasks || []; FRESH = res.fresh || [];
+        renderAll();
+      } catch (e) {
+        $('finding').textContent = 'The board could not be loaded.';
+        $('bases').innerHTML = ''; $('tabs').innerHTML = '';
+        $('board').innerHTML = '<li style="list-style:none">' + failHtml('Could not load the board.', e.message, 'board-retry') + '</li>';
+        const r = $('board-retry'); if (r && r.addEventListener) r.addEventListener('click', () => { $('finding').textContent = 'Loading the network…'; load(); });
+      }
+      await track;
+      const m = /^#d=(.+)$/.exec(location.hash || ''); // a reload with a request open reopens it
+      if (m && TASKS) openDecision(decodeURIComponent(m[1]), 'pop');
+    }
+
+    // ── Wiring: one listener per region ──
+    $('tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-f]'); if (!b) return;
+      FILTER = b.dataset.f; SHOW_ALL = false; renderBases(); renderBoard();
+      const on = $('tabs').querySelector('[aria-pressed="true"]'); if (on) on.focus(); // the tabs were redrawn: keep keyboard focus on the chosen one
+    });
+    $('board').addEventListener('click', (e) => {
+      const o = e.target.closest('[data-open]'); if (o) { openDecision(o.dataset.open); return; }
+      if (e.target.closest('#show-all')) { SHOW_ALL = true; renderBoard(); }
+    });
+    $('decision').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) { if (history.state && history.state.d) history.back(); else closeDecision(); } });
+    $('decision').addEventListener('input', (e) => {
+      const form = e.target.closest('#rec-form'); if (!form) return;
+      const choice = (form.querySelector('input[name="rec"]:checked') || {}).value || '';
+      form.querySelector('[type="submit"]').disabled = !H.recReady(choice, form.querySelector('#rec-reason').value);
+      $('rec-err').textContent = '';
+    });
+    $('decision').addEventListener('submit', (e) => { e.preventDefault(); submitRec(e.target); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && OPEN) { if (history.state && history.state.d) history.back(); else closeDecision(); } });
+    window.addEventListener('popstate', (e) => { const d = e.state && e.state.d; if (d) openDecision(d, 'pop'); else if (OPEN) closeDecision(); });
+
+    Coord.boot(function (body, session) {
+      SESSION = session;
+      $('header-status').innerHTML = '<span>' + esc(session.campusName) + '</span>';
+      load();
+    });
+  </script>
+
+</body>
+</html>

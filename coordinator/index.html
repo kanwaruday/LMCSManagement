@@ -6,7 +6,8 @@
   <title>LMCS Portal — Coordinator</title>
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="../assets/style.css" />
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
 </head>
 <body>
 
@@ -36,6 +37,8 @@
 
       <div class="welcome" id="welcome-strip"></div>
 
+      <section id="game-root" aria-label="Today with Buddy" hidden></section>
+
       <section class="block" id="modules">
         <h2>Departments</h2>
         <div class="modules" id="modules-grid"></div>
@@ -51,9 +54,11 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js"></script>
+  <script src="../assets/auth.js?v=afd06314"></script>
+  <script src="../assets/game/game.js?v=eb99c739"></script>
   <script src="shared.js"></script>
   <script>
+    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     // The inbox first, then one card per department (Coord.DEPARTMENTS). A department with no page yet is a
     // non-clickable "To be built" card.
     function renderCards(counts) {
@@ -92,6 +97,7 @@
       Coord.setSession(session);
       renderCards(null);
       Coord.counts().then(renderCards, function () { renderCards('error'); });
+      if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
 
     const cachedSession = LMCS.getSession();

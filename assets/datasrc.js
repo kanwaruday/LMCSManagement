@@ -43,17 +43,20 @@
   // folder path -> source keys. Order is the order shown.
   const PAGES = {
     '/principal/':               ['allowlist'],
+    '/principal/issues.html':    ['dailyreports'],   // the PDR Issues tabs live in the Daily Reports sheet
     '/teacher/':                 ['teacherss', 'staff', 'approvals', 'daily', 'cal1', 'cal2', 'cal4', 'cal5', 'cal6', 'timetable'],
     '/salary/':                  ['payscale', 'hiring', 'approvals', 'payroll', 'staff'],
     '/payroll/':                 ['payroll', 'payscale', 'staff', 'approvals', 'hiring'],
     '/coordinator/':             FOLLOWUP_SOURCES,
     '/coordinator/followups/':   FOLLOWUP_SOURCES,
+    '/coordinator/hq.html':      FOLLOWUP_SOURCES,  // the board is the follow-ups; recommendations live in the Approvals sheet
     '/coordinator/hr/':          ['hiring', 'staff', 'docs', 'teacherss', 'nonteaching', 'driver', 'approvals'],
     '/coordinator/academics/':   ['daily', 'staff'],
     '/coordinator/finance/':     ['approvals'],
     '/coordinator/operations/':  ['approvals'],
     '/coordinator/events/':      ['approvals'],
     '/coordinator/transport/':   ['transport'],
+    '/coordinator/transport/setup.html': ['transport'], // Fleet setup quests: the Fleet Profile, Driver Profile, Parts History and Workshops tabs of the same workbook
     '/coordinator/documents/':   ['docs', 'staff'],
     '/coordinator/systems/':     ['dailyreports', 'fees', 'allowlist'],
   };

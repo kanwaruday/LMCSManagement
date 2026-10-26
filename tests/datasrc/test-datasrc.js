@@ -39,7 +39,10 @@ const NO_SOURCES = {
   'office/transport.html': OFFICE_REASON,
   'office/buses.html': OFFICE_REASON,
   'coordinator/transport/live.html': 'live GPS positions from the vendor through the Coordinator backend; no sheet behind it, and the vendor id stays out of page source',
+  'docs/mockups/transport-visual/template.html': 'design mock-up with no data in it (data is injected locally, never committed)',
   'owner/transport/index.html': 'GPS checks through the Coordinator backend (same data as coordinator/transport/live.html); the vendor id stays out of page source',
+  'teacher/plan-activity.html': 'one-line write to the Game backend; shows no sheet data',
+  'coordinator/transport/capture.html': 'phone capture page: writes photos and run rows through the Roster web app (apps-script/transport-capture.gs); it shows no sheet data',
 };
 function pages(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

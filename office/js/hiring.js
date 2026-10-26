@@ -317,7 +317,7 @@ export async function mountHiring(root, session, deps = {}) {
       section('Booked', b.booked, ({ a, x }) => row([person(a), h('div', {}, x.kind + ' · ' + fmt(x.start)), h('div', { class: 'meta' }, 'Call the candidate to confirm')]), 'Nothing booked in the next 7 days.'),
       section('Reports to upload', b.reports, ({ a, x }) => row([person(a), h('div', {}, x.kind + ' · ' + fmt(x.start))], 'Upload report', reportForm(a, x)), 'No reports waiting.'),
       section('Demos to book', b.demos, (a) => row([person(a), dn(a, 'demo')], 'Propose demo time', proposeForm(a, 'demo')), 'Nobody needs a demo time.'),
-      section('Documents to chase', b.docs, (a) => { const u = docFormUrl(a, session.campus); return row([person(a), h('div', { class: 'flag' }, 'Missing: ' + a.docsMissing.join(', ')), u ? h('a', { href: u, target: '_blank', rel: 'noopener' }, 'Document Submission Form') : null]); }, 'No documents to chase.'),
+      section('Documents to chase', b.docs, (a) => row([person(a), h('div', { class: 'flag' }, 'Needed before Hired: ' + a.docsMissing.join(', ')), h('a', { href: '../staff/add-employee.html?view=documents' }, 'Open Documents page')]), 'No documents to chase.'),
       h('section', { class: 'block' }, h('h2', {}, 'Add walk-in'), walkinForm()));
   }
 

@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#CE0000">
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="preconnect" href="https://kanwaruday.github.io">
+<link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.08);--dark:#1a1a1a;--gray:#5b6472;--lgray:#f4f5f7;--border:#e6e8ec;--white:#fff;--green:#15803d;--green-lt:#dcfce7;--amber:#b45309;--amber-lt:#fef3c7;--blue:#1d4ed8;--blue-lt:#dbeafe;--purple:#6d28d9;--purple-lt:#ede9fe;--shadow:0 2px 10px rgba(20,20,30,.06);--shadow-lg:0 8px 28px rgba(20,20,30,.10)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -172,7 +173,8 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=afd06314"></script>
+<script src="../assets/game/game.js?v=eb99c739"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -199,6 +201,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 
     <!-- ══════════════════ HOME ══════════════════ -->
     <div class="tab-panel active" id="panel-home">
+      <section id="game-root" aria-label="Today with Buddy" hidden></section>
       <div class="card" id="rankCard" style="background:linear-gradient(135deg,var(--red),#ff5b5b);color:#fff;border:none">
         <p class="card-title" style="color:#fff">📊 My Score<span style="font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;font-size:10.5px">Draft — not yet your official incentive</span></p>
         <div id="rankBody"><div class="loading-state"><div class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>Loading…</div></div>
@@ -243,22 +246,39 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
         <div class="row-2col">
           <div>
             <label class="field-label">Category</label>
-            <select id="aprCategory"></select>
+            <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
           </div>
-          <div>
+          <div id="aprUrgencyWrap">
             <label class="field-label">Urgency</label>
             <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
           </div>
         </div>
-        <div style="margin-top:10px">
+        <div id="aprLeaveFields" style="display:none;margin-top:10px">
+          <div>
+            <label class="field-label">Leave type</label>
+            <select id="aprLeaveType" onchange="aprLeaveChanged()"></select>
+          </div>
+          <div class="row-2col" style="margin-top:10px">
+            <div>
+              <label class="field-label" id="aprLeaveFromLabel">From</label>
+              <input type="date" id="aprLeaveFrom" onchange="aprLeaveChanged()">
+            </div>
+            <div id="aprLeaveToWrap">
+              <label class="field-label">To</label>
+              <input type="date" id="aprLeaveTo" onchange="aprLeaveChanged()">
+            </div>
+          </div>
+          <div id="aprLeaveHint" style="margin-top:8px;font-size:12px;color:var(--gray)"></div>
+        </div>
+        <div style="margin-top:10px" id="aprTitleWrap">
           <label class="field-label">Title</label>
           <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;2 days CL — family event&quot;">
         </div>
         <div style="margin-top:10px">
-          <label class="field-label">Description</label>
+          <label class="field-label" id="aprDescLabel">Description</label>
           <textarea id="aprDescription" rows="4" placeholder="Explain why, with dates and any relevant details"></textarea>
         </div>
-        <div style="margin-top:10px">
+        <div style="margin-top:10px" id="aprEvidenceWrap">
           <label class="field-label">Evidence link (optional)</label>
           <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link if relevant">
         </div>
@@ -302,6 +322,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 </div>
 
 <script>
+const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
 // ── PDR_BACKEND_URL: same "LMCS Principal's Daily Reporting Backend"
 // Apps Script project every other module in this portal family calls.
 // Keep in sync with LMCSManagement's principals-daily-reporting/index.html
@@ -348,7 +369,44 @@ async function fetchCwHwWithRetry_() {
 }
 
 // Mirrors APR_TEACHER_CATEGORIES in apps-script/approvals.gs.
-const APR_CATEGORIES = ['Compensatory Leave', 'Other'];
+const APR_CATEGORIES = ['Leave', 'Compensatory Leave', 'Other'];
+// Leave types a teacher can request (decisions 3 and 4 in docs/superpowers/specs/2026-10-25-teacher-leave-in-approvals-design.md); keep in sync with APR_LV_TYPES in apps-script/approvals-leave.gs.
+// [value, label, single-day only]
+const LEAVE_TYPES = [
+  ['Casual Leave', 'Casual Leave (paid, 1 a month)', false], ['Single Leave', 'Single Leave (unpaid)', false],
+  ['Half Leave', 'Half day', true], ['Short Leave', 'Short leave (up to 60 minutes)', true],
+  ['Special Day Leave', 'Special Day absence', true], ['Emergency Leave', 'Emergency (death in the immediate family)', false],
+  ['Late', 'Late arrival (notice only)', true],
+];
+const LV_UNREADABLE = /JSON|DOCTYPE|Failed to fetch|NetworkError|Load failed/; // an unreadable or lost reply from the backend (the request may still have been saved)
+const LEAVE_PAST_MESSAGE = 'Leave must be applied for in advance: pick a future date, or today before 7:00 AM.';
+function lvFmt_(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—'; }
+// Today in IST as YYYY-MM-DD plus the hour, from this device's clock (the server re-checks with its own).
+function lvNowIst_() { const t = new Date(Date.now() + 330 * 60000); return { iso: t.toISOString().slice(0, 10), hour: t.getUTCHours() }; } // IST wall clock read with UTC getters; no DST in India
+function lvIsNonWorking_(iso) { const d = new Date(iso + 'T00:00:00Z'), dow = d.getUTCDay(); return dow === 0 || (dow === 6 && Math.ceil(d.getUTCDate() / 7) === 2); }
+function lvCountWorking_(from, to) { let n = 0; for (let d = from; d <= to; d = new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10)) if (!lvIsNonWorking_(d)) n++; return n; }
+function aprOnCategoryChange() {
+  const isLeave = document.getElementById('aprCategory').value === 'Leave';
+  document.getElementById('aprLeaveFields').style.display = isLeave ? '' : 'none';
+  document.getElementById('aprTitleWrap').style.display = isLeave ? 'none' : '';
+  document.getElementById('aprUrgencyWrap').style.visibility = isLeave ? 'hidden' : ''; // leave has no urgency or evidence link (the layout keeps its place)
+  document.getElementById('aprEvidenceWrap').style.display = isLeave ? 'none' : '';
+  document.getElementById('aprDescLabel').textContent = isLeave ? 'Reason' : 'Description';
+  if (isLeave) aprLeaveChanged();
+}
+function aprLeaveChanged() {
+  const type = document.getElementById('aprLeaveType').value, single = (LEAVE_TYPES.filter(function (t) { return t[0] === type; })[0] || [])[2];
+  document.getElementById('aprLeaveToWrap').style.display = single ? 'none' : '';
+  document.getElementById('aprLeaveFromLabel').textContent = single ? 'Date' : 'From';
+  const from = document.getElementById('aprLeaveFrom').value, to = single ? from : (document.getElementById('aprLeaveTo').value || from);
+  const hint = document.getElementById('aprLeaveHint');
+  if (!from) { hint.textContent = 'Pick the date(s). Leave must be applied for in advance, or today before 7:00 AM.'; return; }
+  const now = lvNowIst_();
+  if (from < now.iso || (from === now.iso && now.hour >= 7)) { hint.innerHTML = '<span style="color:var(--red)">' + LEAVE_PAST_MESSAGE + '</span>'; return; }
+  if (to < from) { hint.innerHTML = '<span style="color:var(--red)">The “to” date is before the “from” date.</span>'; return; }
+  const n = lvCountWorking_(from, to);
+  hint.textContent = n ? n + ' working day' + (n === 1 ? '' : 's') + ' (Sundays and 2nd Saturdays are not counted; school holidays are checked when you submit).' : 'No working days in these dates.';
+}
 const APR_STATUS_PILLS = ['All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
 let APR_STATUS_FILTER = 'All';
 let aprRes = null;
@@ -452,7 +510,7 @@ function aprCardHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
   let html = '<div class="req-card" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
     '<div class="req-top"><span class="req-title">' + esc_(r.title) + '</span><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></div>' +
-    '<div class="req-meta">' + esc_(r.category) + (r.urgency === 'Urgent' ? ' · <span class="pill urgent">Urgent</span>' : '') + ' · ' + formatDDMMYYYY_(r.requestedAt) + '</div>';
+    '<div class="req-meta">' + esc_(r.category) + (r.leave ? ' · ' + lvFmt_(r.leave.from) + (r.leave.to !== r.leave.from ? ' to ' + lvFmt_(r.leave.to) : '') : '') + (r.urgency === 'Urgent' ? ' · <span class="pill urgent">Urgent</span>' : '') + ' · ' + formatDDMMYYYY_(r.requestedAt) + '</div>';
   if (isExpanded) html += '<div class="req-detail" id="aprDetailWrap"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>';
   html += '</div>';
   return html;
@@ -470,6 +528,7 @@ function aprDetailInnerHtml_(res) {
   const r = res.request;
   const meta = [];
   if (r.evidenceLink) meta.push('Evidence: <a href="' + esc_(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
+  if (r.leave) meta.push(esc_(r.leave.type) + ': ' + lvFmt_(r.leave.from) + (r.leave.to !== r.leave.from ? ' to ' + lvFmt_(r.leave.to) : '') + ', ' + r.leave.workingDays + ' working day' + (r.leave.workingDays === 1 ? '' : 's') + (r.leave.note ? ' · ' + esc_(r.leave.note) : ''));
   meta.push('Requested ' + formatDDMMYYYY_(r.requestedAt));
   if (r.decidedBy) meta.push(r.status + ' by ' + esc_(r.decidedBy) + ' on ' + formatDDMMYYYY_(r.decidedAt));
   if (r.decisionNote) meta.push('Note: ' + esc_(r.decisionNote));
@@ -517,15 +576,31 @@ async function submitApprovalRequest() {
   const btn = document.getElementById('aprSubmitBtn');
   if (btn.disabled) return;
   const category = document.getElementById('aprCategory').value;
-  const title = document.getElementById('aprTitle').value.trim();
+  const isLeave = category === 'Leave';
+  const title = isLeave ? '' : document.getElementById('aprTitle').value.trim();
   const description = document.getElementById('aprDescription').value.trim();
-  if (!title || !description) { alert('Title and description are both required.'); return; }
+  if (isLeave) {
+    if (!document.getElementById('aprLeaveFrom').value) { alert('Pick the date for your leave.'); return; }
+    if (!description) { alert('Please give a reason for the leave.'); return; }
+  } else if (!title || !description) { alert('Title and description are both required.'); return; }
   btn.disabled = true; const originalLabel = btn.textContent; btn.textContent = 'Submitting…';
   try {
-    const res = await pdrPost_('submitapproval', { category: category, urgency: document.getElementById('aprUrgency').value, title: title, description: description, evidenceLink: document.getElementById('aprEvidenceLink').value.trim() });
-    if (!res.success) { pdrReportAuthFailureIfNeeded_(res); alert('Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.'); return; }
+    const payload = isLeave ? { category: 'Leave', urgency: 'Normal', leaveType: document.getElementById('aprLeaveType').value, fromDate: document.getElementById('aprLeaveFrom').value, toDate: document.getElementById('aprLeaveTo').value, description: description } : { category: category, urgency: document.getElementById('aprUrgency').value, title: title, description: description, evidenceLink: document.getElementById('aprEvidenceLink').value.trim() };
+    // A filed leave is idempotent on the server (an identical repeat is a no-op), so an unreadable reply from Google can safely be retried.
+    let res;
+    for (let attempt = 1; attempt <= (isLeave ? 3 : 1); attempt++) {
+      res = await pdrPost_('submitapproval', payload);
+      if (res.success || !LV_UNREADABLE.test(String(res.error || ''))) break;
+      await new Promise(function (ok) { setTimeout(ok, 2000); });
+    }
+    if (!res.success) {
+      pdrReportAuthFailureIfNeeded_(res);
+      alert(isLeave ? (LV_UNREADABLE.test(String(res.error || '')) ? 'The connection was unreliable, so we could not confirm your request. Please check My Requests before filing again.' : (res.error || 'Could not file the leave request.')) : 'Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.');
+      return;
+    }
     document.getElementById('aprTitle').value = ''; document.getElementById('aprDescription').value = ''; document.getElementById('aprEvidenceLink').value = '';
-    alert('Request submitted.');
+    document.getElementById('aprLeaveFrom').value = ''; document.getElementById('aprLeaveTo').value = ''; aprLeaveChanged();
+    alert(res.duplicate ? 'This request was already filed (status: ' + (res.status || 'Pending') + '). No second copy was created.' : 'Request submitted.');
     refreshApprovals();
   } finally { btn.disabled = false; btn.textContent = originalLabel; }
 }
@@ -1000,20 +1075,33 @@ function init() {
   // own school (LMCS.viewAsScope; enforced server-side). Someone who ALSO has Teacher (e.g.
   // "Owner,Teacher") sees their own real data by default until they pick someone to view as.
   if (!SESSION || !LMCS.canViewTeacherPortal(SESSION)) {
-    showDenied_('The Teacher Portal is open to Teachers, Principals, Coordinators and the Owner.');
+    showDenied_('The Teacher Portal is open to Teachers, staff, Principals, Coordinators and the Owner.');
     return;
   }
   document.getElementById('hdrGreeting').textContent = 'Hey, ' + (SESSION.name ? SESSION.name.split(' ')[0] : 'there') + ' 👋';
   document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+  document.getElementById('aprLeaveType').innerHTML = LEAVE_TYPES.map(function (t) { return '<option value="' + t[0] + '">' + t[1] + '</option>'; }).join('');
+  aprOnCategoryChange();
   document.getElementById('appArea').style.display = '';
   document.getElementById('bottomNav').style.display = 'flex';
   renderViewAsBar_();
   loadApprovals();
   loadEvals();
-  loadTags();
   loadEvents_();
+  // Non-teaching Staff (Employee Master sign-in, role 'Staff'): Requests, Evaluations and Events only -- no score, CW/HW patterns or timetable.
+  if (LMCS.hasRole(SESSION, 'Staff') && !LMCS.hasRole(SESSION, 'Teacher')) {
+    ['rankCard', 'timetableCard'].forEach(function (id) { document.getElementById(id).style.display = 'none'; });
+    document.querySelectorAll('[data-tab="tags"], .quick-link[onclick*="\'tags\'"]').forEach(function (el) { el.style.display = 'none'; });
+    document.getElementById('hdrSub').textContent = 'Your requests and evaluations';
+    return;
+  }
+  loadTags();
   loadTimetable_();
   loadRank_();
+  // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
+  // A Principal, Coordinator or Owner has their panel on their own home: here it would cover the bottom nav.
+  var gameOwnHome = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(SESSION, r); });
+  if (!gameOwnHome && typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: SESSION, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
 }
 init();
 </script>

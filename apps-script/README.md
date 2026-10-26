@@ -69,6 +69,12 @@ and fill each `scriptId`. The remote `appsscript.json` and any remote-only files
 - Files, in load order: `office.gs` (doGet/doPost, token + allowlist check, action registry), `office-store.gs` (books, append-only rows, audit), `office-config.gs`, `office-daybook.gs`, `office-close.gs`, `office-report.gs`, `office-files.gs`, `office-deposits.gs`, `office-today.gs`, `office-backup.gs` (nightly copy trigger), `office-import.gs` (one-off legacy import, editor only).
 - Deploy as Web app, Execute as **Me**, access **Anyone**; data lives in Sheets/Drive IDs held in Script Properties only. Setup, pilot checklist, operations: [`docs/office-runbook.md`](../docs/office-runbook.md).
 
+**One deployment** ("LMCS Game Backend" — `GAME_BACKEND_URL` in the Principal, Coordinator, Owner and Teacher home pages, `game` in [`projects.json`](projects.json), not deployed yet): the game layer (Buddy, Today's list, quests, decision windows).
+- Files: `game.gs` (config, game-day clock, caller check, doGet/doPost, `gameSetup`), `game-actions.gs` (gametoday, gamedecide, gametourseen), `game-missions.gs`, `game-windows.gs`, `game-quests.gs`. Source data (Approvals, Tasks, Daily Reports, the PDR and Coordinator backends) is only read; the "LMCS Game" workbook stores ids, flags and counts only.
+- Script Properties: `GAME_SHEET_ID` (written by `gameSetup`), `STAFF_AUTO_SIGNIN` (exactly `on` lets Active employees off the allowlist in as Teacher/Staff; off by default).
+- Run `gameSetup()` once from the editor: creates the workbook, its tabs and the seed config, window and quest rows. Safe to re-run.
+- Deploy with `node apps-script/deploy.mjs game` (dry run, then `--push` / `--deploy "message"`); Web app, Execute as **Me**, access **Anyone** (every call is token-checked). Then put the /exec URL in the four pages' `GAME_BACKEND_URL`.
+
 **Separate deployments**, one file each:
 - `ChapterTracker.gs` — `proxyUrl` in [`curriculum-progress/daily-progress.html`](../curriculum-progress/daily-progress.html) and [`cwa-gap-report.html`](../curriculum-progress/cwa-gap-report.html) ("CWHWTracker" project)
 

@@ -7,7 +7,7 @@
 window.CoordApprovals = (function () {
   const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
   const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-  const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
+  const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
   const catLabel = c => c === 'Salary Offer Approval' ? 'Appointment Confirmation' : c; // the Owner confirms an appointment (stored name unchanged)
   const NO_REFER = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
   const STATUS_PILLS = ['Needs Action', 'All', 'Pending', 'Info Requested', 'Approved', 'Rejected', 'Revoked'];
@@ -40,7 +40,18 @@ window.CoordApprovals = (function () {
   const fuState = r => FOLLOW_SKIP.indexOf(r.category) !== -1 ? 'hiring' : r.status !== 'Approved' ? 'na' : !r.followUp ? 'none' : r.followUp.status === 'done' ? 'done' : (r.followUp.due && r.followUp.due < isoDay(new Date()) ? 'overdue' : 'open');
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // The latest Coordinator recommendation (from coordinatordecision), shown to the decider above the decision buttons. The Owner still decides.
+  const REC_WORD = { Approve: 'Approve', Reject: 'Reject', Info: 'Ask for information' };
+  const recBlock = rec => '<div class="fu"><b>Coordinator recommendation</b><br>' + (rec
+    ? esc(rec.byName || 'A Coordinator') + ' recommends ' + esc(REC_WORD[rec.recommendation] || rec.recommendation) + ': ' + esc(rec.reason) + (rec.checked ? '<br><span class="sm">Checked: ' + esc(rec.checked) + '</span>' : '')
+    : 'No recommendation yet.') + '</div>';
   const ddmmyyyy = d => { if (!d) return '—'; const x = new Date(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); };
+  const leaveLine = r => { // type, dates and days, shown under the title and in the detail (decision 2: "the type, dates and days show on the row")
+    const l = r.leave; if (!l) return '';
+    const d = x => x ? x.slice(8, 10) + '/' + x.slice(5, 7) + '/' + x.slice(0, 4) : '\u2014';
+    return esc(l.type) + ' \u00b7 ' + d(l.from) + (l.to !== l.from ? ' to ' + d(l.to) : '') + ' \u00b7 ' + l.workingDays + ' working day' + (l.workingDays === 1 ? '' : 's') +
+      (l.type === 'Late' ? ' \u00b7 notice only' : ' \u00b7 ' + l.deduction + ' leave day' + (l.deduction === 1 ? '' : 's') + ' charged');
+  };
   const school = c => (window.LMCS && LMCS.campusLabel) ? LMCS.campusLabel(c) : c;
   const age = iso => { if (!iso) return '—'; const ms = Date.now() - new Date(iso).getTime(), d = Math.floor(ms / 86400000); if (d >= 1) return d + 'd ago'; const h = Math.floor(ms / 3600000); return h >= 1 ? h + 'h ago' : 'just now'; };
   const isStale = iso => iso && (Date.now() - new Date(iso).getTime()) / 86400000 >= STALE_DAYS;
@@ -101,15 +112,15 @@ window.CoordApprovals = (function () {
 `;
 
   function mount(root, ctx) {
-    ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply)
+    ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply), ctx.get(params) -> its GET (throws on failure; optional)
     if (!document.getElementById('apro-css')) { const st = document.createElement('style'); st.id = 'apro-css'; st.textContent = CSS; document.head.appendChild(st); }
     root.className = 'apro';
     root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div>' +
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
       '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
-    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null,
-      refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
+    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
+      seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
 
     const setBar = (state, text, retry) => { const b = $('bar'); b.className = 'stbar' + (state === 'loading' ? '' : ' ' + state); b.innerHTML = (state === 'loading' ? '<span class="sp"></span>' : '') + '<span>' + text + '</span>' + (retry ? '<button type="button" data-act="refresh">Retry</button>' : ''); };
@@ -209,19 +220,34 @@ window.CoordApprovals = (function () {
       const date = needs ? '<span' + (stale ? ' class="stalet"' : '') + '>' + age(r.requestedAt) + '</span>' : ddmmyyyy(r.decidedAt || r.requestedAt);
       let h = '<tr class="row' + (open ? ' open' : '') + (stale ? ' stale' : '') + '" data-act="row" data-id="' + esc(r.id) + '">' +
         (canSel ? '<td data-stop="1">' + (S.eligible[r.id] ? '<input type="checkbox" data-act="sel" data-id="' + esc(r.id) + '" ' + (S.selected[r.id] ? 'checked' : '') + '>' : '') + '</td>' : '') +
-        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + (r.awaitingMd ? '<div class="sm">\u23F3 Waiting for the MD Academics interview to be recorded on the Hiring Dashboard</div>' : '') + '</td><td>' + esc(catLabel(r.category)) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
+        '<td>' + esc(school(r.campusId)) + '</td><td>' + esc(r.title) + (reasonLine(r) ? '<div class="sm">' + reasonLine(r) + '</div>' : '') + (leaveLine(r) ? '<div class="sm">' + leaveLine(r) + '</div>' : '') + (r.awaitingMd ? '<div class="sm">\u23F3 Waiting for the MD Academics interview to be recorded on the Hiring Dashboard</div>' : '') + '</td><td>' + esc(catLabel(r.category)) + '</td><td>' + (r.urgency === 'Urgent' ? '<span class="pill urgent">Urgent</span>' : '—') + '</td>' +
         '<td><span class="pill ' + pillClass(r.status) + '">' + esc(r.status) + '</span></td><td>' + fuCell(r) + '</td><td>' + date + '</td></tr>';
       if (open) h += '<tr class="detail"><td colspan="' + cols + '"><div class="dwrap" data-slot="detail">' + (S.detail ? detailInner(S.detail) : '<div class="empty">Loading…</div>') + '</div></td></tr>';
       return h;
     }
 
+    // The Coordinator's latest recommendation, fetched alongside the request so the detail is drawn once (never re-drawn under the Owner's typing).
+    // undefined = unavailable (no ctx.get, a failure, "Not authorized", or no answer within REC_MS): the block is simply left out.
+    const REC_MS = 4000;
+    function loadRec(id) {
+      if (!ctx.get) return Promise.resolve(undefined);
+      let timer;
+      return Promise.race([Promise.resolve().then(() => ctx.get({ action: 'coordinatordecision', id: id })), new Promise((ok, no) => { timer = setTimeout(no, REC_MS); })])
+        .then(d => d && d.success && d.decision ? (d.decision.recommendation || null) : undefined, () => undefined)
+        .then(v => { clearTimeout(timer); return v; });
+    }
     async function toggleRow(id) {
-      if (S.openId === id) { S.openId = null; S.detail = null; renderList(); return; }
-      S.openId = id; S.detail = null; renderList();
+      if (S.openId === id) { S.openId = null; S.detail = null; S.rec = undefined; renderList(); return; }
+      const tok = ++S.seq; // an answer from an earlier open of the same row (A, B, A) must not land on this one
+      S.openId = id; S.detail = null; S.rec = undefined; renderList();
+      const recP = loadRec(id);
       let res;
       try { res = await get('action=approvaldetail&id=' + encodeURIComponent(id)); } catch (err) { res = { success: false, error: err.message }; }
-      if (S.openId !== id) return; // another row was opened meanwhile
+      if (S.openId !== id || S.seq !== tok) return; // another row was opened meanwhile
       if (!res.success) { authFail(res); const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = '<div class="empty">Couldn’t load this request: ' + esc(res.error || 'unknown error') + '</div>'; return; }
+      const rec = await recP;
+      if (S.openId !== id || S.seq !== tok) return;
+      S.rec = res.canDecide ? rec : undefined;
       S.detail = res; const w = root.querySelector('[data-slot="detail"]'); if (w) w.innerHTML = detailInner(res);
     }
     const reopen = id => { S.openId = null; S.detail = null; return toggleRow(id); };
@@ -245,6 +271,7 @@ window.CoordApprovals = (function () {
         meta.push(lbl + esc(r.itemName) + (r.quantity == null ? '' : r.category === 'New/ Backup Position' ? ' (' + r.quantity + ' opening' + (r.quantity === 1 ? '' : 's') + ')' : ' × ' + r.quantity));
       }
       if (r.amount != null) meta.push('Amount: ₹' + r.amount);
+      if (r.leave) { meta.push(leaveLine(r)); if (r.leave.note) meta.push(esc(r.leave.note)); }
       if (r.evidenceLink) meta.push(r.category === 'New/ Backup Position' ? esc(r.evidenceLink) : 'Evidence: <a href="' + esc(r.evidenceLink) + '" target="_blank" rel="noopener">link</a>');
       meta.push('Requested by ' + esc(r.requestedBy) + ' on ' + ddmmyyyy(r.requestedAt));
       if (r.decidedBy) meta.push(esc(r.status) + ' by ' + esc(r.decidedBy) + ' on ' + ddmmyyyy(r.decidedAt));
@@ -263,7 +290,7 @@ window.CoordApprovals = (function () {
         (c.authorEmail === sess().email ? ' · <a href="#" data-act="cdel" data-id="' + esc(c.id) + '" data-ap="' + esc(r.id) + '">Delete</a>' : '') + '</div>' + esc(c.body) + '</div>').join('') : '<div class="empty">No comments yet.</div>';
       return '<div class="desc">' + esc(r.description) + '</div><div class="meta"><span>' + meta.join('</span><span>') + '</span></div>' + (reasonLine(r) ? '<div class="fu"><b>Reason:</b> ' + reasonLine(r) + '</div>' : '') + followHtml(r, res.canDecide) + '<div style="margin:10px 0">' + comments + '</div>' +
         (reply ? '<div class="hint">The Owner asked for more before deciding — your reply below sends this back to Pending.</div>' : '') +
-        '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + bar;
+        '<div class="addrow"><input type="text" data-cin="' + esc(r.id) + '" placeholder="' + (reply ? 'Reply with the info requested' : 'Add a comment') + '"><button type="button" data-act="cpost" data-id="' + esc(r.id) + '">' + (reply ? 'Reply' : 'Post') + '</button></div>' + (S.rec !== undefined && res.canDecide ? recBlock(S.rec) : '') + bar;
     }
 
     // ── comments ──
@@ -397,5 +424,5 @@ window.CoordApprovals = (function () {
     return { refresh: refresh };
   }
 
-  return { mount: mount };
+  return { mount: mount, recBlock: recBlock };
 })();
