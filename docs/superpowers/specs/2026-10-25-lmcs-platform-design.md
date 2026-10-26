@@ -4,7 +4,7 @@ Date: 2026-10-25. Asked for by Uday ("Design platform first", in the LMCS Master
 that shapes every module gets its own design instead of being made inside the messaging plan. **Uday's decisions
 are marked "Uday"; everything else is Claude's call** and open to his correction.
 
-Status: **draft, not approved.** Nothing is built, no account exists, nothing is deployed.
+Status: **draft, ready for Uday's approval** (2026-10-26). Nothing is built, no account exists, nothing is deployed.
 
 Belongs to the umbrella project in the vault, `work/active/lmcs-software-platform.md`. Builds on:
 - the approved messaging design (branch `portal-messaging-design`, 703ae2f,
@@ -48,7 +48,7 @@ Belongs to the umbrella project in the vault, `work/active/lmcs-software-platfor
 
 - Building anything now. This is a design; the build plan comes after approval, and messaging's plan after that.
 - Replacing the third-party ERP (fees, marks, statutory payroll) in this design.
-- Moving any existing module in the first release. The first release is the platform core plus messaging.
+- Moving any existing module except Approvals in 2026 (Uday asked for Approvals in November; section 12).
 - Parent or student access.
 - Multi-region, high-availability, Kubernetes, message brokers, microservices. ~170 users is one small server.
 
@@ -227,7 +227,7 @@ mirror** of them.
   broken or half-filtered Sheet must not lock out a campus). Every run is logged (rows in, changed, deactivated,
   refused).
 - **The secret** is set by Uday in two places: Script Properties of the roster project and the host's environment.
-- When staff data later becomes platform-owned (migration step 6), the direction flips: Postgres is the source and
+- When staff data later becomes platform-owned (migration step 7), the direction flips: Postgres is the source and
   the Sheet becomes an export for anything still reading it.
 
 ### 8. Web push
@@ -274,8 +274,9 @@ mirror** of them.
   database, encrypted with a key from the environment. (Claude's call: a service account with domain-wide delegation
   is the alternative, but needs a key file that newer Google Cloud orgs block by default.)
 - If this isn't set up, each channel stores a fixed Meet link the channel owner pastes in (messaging fallback).
-- Nothing else uses Workspace APIs in the core; later modules that need them (Calendar for hiring, say) reuse the same
-  client.
+- The same client and the platform's own Workspace account (section 12) also cover Sheets (the Approvals copy and
+  reads), Gmail (Approvals mails) and Calendar (school holidays). One Google credential for the platform, never
+  Uday's own account.
 
 ### 11. Coexistence with GitHub Pages and Apps Script
 
@@ -293,7 +294,8 @@ The old portal keeps working, untouched, for as long as any module lives there.
   |---|---|---|
   | Employee Master, allowlist | Sheets | read-only mirror, pushed (section 7) |
   | Messaging (all of it) | Platform | new; no Sheet copy |
-  | Approvals, Coordinator tasks, game progress and Game Config, Office, hiring, PDR, CW/HW, transport, payroll | Sheets / Apps Script | nothing until the module moves |
+  | Approvals, Comments, Recommendations (from mid-November) | Platform | owner; write-through copy kept in the Sheet for Apps Script readers (section 12) |
+  | Coordinator Tasks, HQ History, game workbook, Office, hiring, PDR, CW/HW, transport, payroll | Sheets / Apps Script | nothing until the module moves |
 
 - **Bridges, only where a module needs one before its partner moves:**
   - *Sheet → platform:* the push pattern of section 7, for read-only copies.
@@ -355,25 +357,138 @@ origin change.
 
 ### 12. Migration order
 
-Messaging requirement 3 assumed Approvals, Coordinator tasks, staff data and the game backend would already be in
-Postgres. They won't be at first; the order below says what stays on Apps Script and what bridges it. The guiding
-rule (Claude's call): **no live module moves during the game layer's two-campus pilot and go-live, February to
-April 2027**; new work (messaging) can be built at any time because it moves no data.
+**Uday (2026-10-26) on Approvals and Coordinator tasks:** "as soon as we think we are ready, i am hoping 2nd week of
+november". So **Approvals moves first, targeted for 9–15 November 2026**, behind the readiness gates below. If a gate
+isn't met by Friday 13 November, the move slips, and the Master Agent gets told which gate failed and why. The rule
+that no live module moves during the game's two-campus pilot and go-live (February to April 2027) still holds, and
+an early move keeps the pilot clear of it.
 
-| Step | What | Why here | Bridge until then |
+#### What "Approvals" and "Coordinator tasks" turned out to be (code survey of `origin/main`, 2026-10-26)
+
+- **Approvals** is one workbook ("LMCS Approvals") with the tabs **Approvals**, **Comments**, **Tasks**,
+  **Recommendations** and **HQ History**. An Approvals row is shared by position: columns 0–18 are the core
+  (PDR project), 19–24 the follow-up allocation (Coordinator project) and 25–32 leave (`approvals-leave.gs`). Both
+  projects write the same row.
+- **About ten readers in four Apps Script projects read the Approvals sheet directly, by column position**: hiring
+  (approved requisitions, Salary Offer decisions, the Hired gate, the Interview form dropdown, appointments, audit),
+  salary (EPF exemption), payroll (the join gate), the game (missions, the 04:00 roll-over, teacher Staff missions)
+  and the Coordinator adapters and HQ.
+- **Salary Offer Approval is a state machine across modules.** Salary files it, the Owner decides it (gated on the
+  MD-interview column in Teaching Applicants), hiring derives Hired and locks the Employee Code, and payroll's join is
+  gated on it.
+- **"Coordinator tasks" is not a module of its own.** The Tasks tab is the shared follow-up store that transport GPS
+  (`gpsRaise_`), PDR issues (`coordPdrSyncTask_`, both directions), the hiring, documents and SS adapters (05:30
+  trigger) and the game all write or read.
+
+#### The recommendation that follows (Claude's call; Uday asked for both, so this needs his OK)
+
+- **Move Approvals now:** Approvals, Comments, the follow-up allocation (columns 19–24, `coordinatorallocate`) and
+  Recommendations. **Keep the Tasks tab (and HQ History) on Sheets** until the modules that write it (transport GPS,
+  PDR issues) move, at the earliest after the game go-live. Moving Tasks in November would need a write API for
+  three Apps Script modules, ports of four adapters and a game rewiring, all at once.
+- **The platform owns Approvals and keeps a write-through copy in the Sheet.** Every change on the platform is written
+  to the same tabs in the same columns 0–32, in the same request. **If the Sheet write fails, the change fails and
+  the user is told to retry**, so hiring, salary, payroll, the game and the Coordinator adapters never see a stale or
+  half-written row. The Sheet's tabs are protected so only the platform's Google account can edit them. This keeps
+  "one owner per dataset": the platform is the owner and the Sheet is a read-only copy for the readers that stay.
+- **The leave contract (`GET PDR?action=approvedleave`) stays on Apps Script unchanged**, reading the copied columns
+  25–32. The Teacher game's "days on track" and the later payroll prefill keep their one URL.
+- **Google access for the copy:** a dedicated Workspace account for the platform (e.g. a `portal-bot@` user, Uday's
+  call on the name and licence), shared as editor on the Approvals workbook and as viewer on Teaching Applicants and
+  the school calendar only. Its OAuth refresh token is the same server-side Google client as section 10a, and also
+  sends the Approvals mails (Gmail API) that MailApp sends today. Uday authorises it and sets the token; it is never
+  his own account's token.
+
+#### Bridges for the November move
+
+| # | Direction | What | Why |
 |---|---|---|---|
-| 0 | **Platform core**: sign-in, staff/allowlist sync, rollout switches, notify + push, files, audit log, jobs, backups, health page | Everything else stands on it | — |
-| 1 | **Messaging phase 1**: chat, channels, threads, search, PWA, push | New, no data to move; proves the platform with real users behind switches | — |
-| 2 | **Messaging phase 2**: contracts, job board | Missions via the read API into the Apps Script game backend | Platform → game backend read API |
-| 3 | **Approvals (incl. leave) + Coordinator tasks** | Messaging phase 3 hands forms into Approvals; both gain push | Messaging phase 3 waits for this step |
-| 4 | **Game backend** (progress, Game Config, adapters) | Move at a season (term) boundary after go-live, never mid-season | — |
-| 5 | **Office** (Fee Clerk + PRO, Day Book) | Built migration-ready; benefits most from Postgres' ledgers | — |
-| 6 | **Staff data becomes platform-owned**, with Staff Management and Hiring | Biggest dependency; done once the platform has run for months | Sheet becomes an export |
-| 7 | **PDR, Teacher SS, CW/HW tracker, Transport / Fleet Command** | Daily-use pages; move one at a time, a campus first | — |
-| 8 | **Payroll, Salary, incentives** | Money; last, and still parallel to the ERP | — |
+| B1 | Platform → Sheet | Write-through copy of Approvals, Comments, Recommendations (columns 0–32, same formats as today) | All readers that stay on Apps Script |
+| B2 | Platform → Sheet (read) | Teaching Applicants MD-interview column, read before approving a Salary Offer and for `awaitingMd` on lists | Same gate `hirSalaryOfferGateCheck_` applies today |
+| B3 | Platform → PDR project | A secret-protected action that runs `hirQueuePositionSync_` after a New/Backup Position is decided or closed, and `aprRaiseClosedHiringTask_` on `closehiring` | Hiring form dropdown and the closed-hiring task stay on Apps Script |
+| B4 | Coordinator project → platform | When a Coordinator resolves an `apr_follow|` task, the follow-up columns are written through the platform API (secret-protected), not straight into the Sheet | Tasks stays; columns 19–24 are now the platform's |
+| B5 | Old pages → platform | Pages that write Approvals call the platform API instead of PDR (list below). `assets/auth.js` swaps the Google ID token for a platform session token at sign-in (same origin, so the token is shared) and holds one switch, `APPROVALS_BACKEND`, that every page reads | No page waits for its React rewrite |
+| B6 | Platform ← Google Calendar | School holidays for leave working-day counts (`pdrSchoolCalendarEvents_` today) | Leave rules must give the same days |
 
-The Coordinator + Owner React rebuild screens are folded in at each step whose data they show.
-**Timing of step 3 relative to the March go-live is waiting on Uday (Q4).**
+Pages that switch (B5): `principals-daily-reporting/index.html`, `teacher/index.html`, `salary/index.html`
+(submitapproval only), `coordinator/approvals.js`, `coordinator/hq.html` + `hq-logic.js` (recommend, track record,
+decision), and the `assets/auth.js` fetch-cache and warm-up entries for `approvalslist`, `approvaldetail` and
+`approvalreferees`. `coordinator/shared.js` and `transport-checks.js` stay on the Coordinator project (Tasks).
+`hiring/index.html` keeps reading `hiringapprovalstatus` from PDR, which reads the copy.
+
+#### What must exist first (in this order)
+
+1. **Platform core on Render** (section 9): sign-in, sessions, the permission module, audit log, rollout switches,
+   jobs, health page, backups with one restore test passed. Push and files can wait; Approvals uses mail today.
+2. **Sign-in parity**: the allowlist, `CanApprove`, the Teacher/Staff scoping (`pdrIsTeacherOnly_`), the Employee
+   Master automatic sign-in behind `STAFF_AUTO_SIGNIN`, and the Coordinator and Fee Clerk rules, giving the same
+   answers as `verifyCallerToken_` and `aprCanDecideRow_`.
+3. **Staff sync** (section 7), including the fields `approvalreferees` and the email-to-Employee-Code lookup need.
+4. **The Google account and client** for B1, B2, B6 and mail.
+5. **The Approvals module** on the platform with the same actions and response shapes, then the bridges.
+
+#### Readiness gates (all must pass; each one has a written result in the build log)
+
+| Gate | Passes when |
+|---|---|
+| G1 Core | Platform running on Render; nightly backup ran; one restore test passed |
+| G2 Access parity | A role × action matrix built from today's rules (Owner, Coordinator with and without CanApprove, Principal, Teacher, Staff, Fee Clerk, signed-out, view-as) gives the same allow/deny on the platform as on Apps Script |
+| G3 Response parity | A replay script calls every Approvals read action on both backends for the same callers and data and the JSON matches field for field (diffs kept in the scratchpad, never committed, since they hold real data) |
+| G4 Data dry run | Approvals, Comments and Recommendations loaded into a copy; row counts, counts per status and category, amount totals and leave working days all match; re-writing the copy from Postgres gives the Sheet back cell for cell in columns 0–32 |
+| G5 Downstream readers | Against a copy of the workbook written by the platform: the Hiring dashboard's open roles and Hired states, the payroll join gate, salary's EPF status, a game day roll-over (missions for an Owner, Coordinator and teacher) and the Coordinator 05:30 refresh give the same results as from the original |
+| G6 Leave contract | `approvedleave` returns identical output for a month range across all campuses, before and after |
+| G7 Mail | Decider, requester, referee and comment mails arrive from the platform account with the same content |
+| G8 Rollback rehearsed | Flipping `APPROVALS_BACKEND` back sends every page to PDR again with no data loss. The Sheet is always current because of B1, so rollback is that one switch plus re-enabling the Apps Script write actions |
+| G9 Go | Uday's OK in the Master Agent chat |
+
+**Cut-over** (one quiet evening in the window): Apps Script's Approvals write actions start answering "moved" (reads
+keep working), a final import picks up anything since the dry run, G3 and G4 are re-run on that import, and then
+`APPROVALS_BACKEND` flips. The rollback window is two weeks; after that the Apps Script write actions are removed.
+
+#### The order after that
+
+| Step | What | Notes |
+|---|---|---|
+| 0 | **Platform core** | By about 6 November, for the Approvals gates |
+| 1 | **Approvals** (incl. leave, follow-up allocation, Recommendations) | **9–15 November 2026** (Uday), behind G1–G9 |
+| 2 | **Messaging phase 1**: chat, channels, threads, search, PWA, push | New; no data moves. Push and files are built here |
+| 3 | **Messaging phases 2–3**: contracts, job board, announcements, reports, forms into Approvals | Approvals is already on the platform, so forms need no bridge. Contracts reach the Apps Script game backend through the read API (section 11) |
+| 4 | **Tasks / Coordinator follow-ups, HQ History**, with the PDR-issue and transport-GPS write paths | After the game go-live, at a term break (the game reads Tasks every day). Until then Tasks stays on Sheets |
+| 5 | **Game backend** (Game Config, Daily, Progress, Windows, Decisions, Quests) | At a season (term) boundary after go-live, never mid-season |
+| 6 | **Office** (Fee Clerk + PRO, Day Book) | Already built migration-ready (snake_case columns, ids, paise, append-only) |
+| 7 | **Staff data becomes platform-owned**, with Staff Management and Hiring | Hiring's Salary Offer chain then reads Postgres directly and B2/B3 go away |
+| 8 | **PDR, Teacher SS, CW/HW, Transport / Fleet Command** | One at a time, a campus first |
+| 9 | **Payroll, Salary, incentives** | Money; last, still parallel to the ERP |
+
+The Coordinator + Owner React rebuild screens fold in at each step whose data they show. The old pages keep working
+throughout: a page moves to the platform API through a switch in `assets/auth.js` (as B5), not a rewrite.
+
+#### Stores added in the last week, and their target tables
+
+Checked against the data conventions (vault: `work/Portal Data Conventions.md`). Target tables are for the step
+that moves them; "flag" means something to fix in the Sheet now or in the import.
+
+| Store (where) | Target table | Moves at | Flags |
+|---|---|---|---|
+| Approvals core, cols 0–18 (LMCS Approvals) | `approvals` | 1 | Columns found by **position, not header**. `requestedAt`/`decidedAt` written as Sheets dates (timezone-dependent), not ISO text. **No updated-at or version** column. Ids are time + random (`apr-…`), fine as keys |
+| Approvals follow-up cols 19–24 | `approvals` (allocation fields) | 1 | Written by a second project into the same row; position-based |
+| Approvals leave cols 25–32 (`leaveType`…`leaveNote`) | `approval_leave` (one row per leave approval) | 1 | Position-based. Dates are ISO `YYYY-MM-DD` (good). Working days are recomputed, not stored per day |
+| Comments | `approval_comments` | 1 | `postedAt` as a Sheets date |
+| Recommendations (`RecId`…`Superseded`) | `approval_recommendations` | 1 | Conforms: id, append-only with a Superseded flag |
+| Tasks (`TaskId`…`Due`) | `followups` | 4 | Rows are updated in place (Status, LastSeenAt, ResolvedAt) with **no history log**; Assignee is free text |
+| HQ History (Date, Campus, Measure, Value) | `hq_history` | 4 | **No id column** (key is Date + Campus + Measure); counts only, good |
+| PDR Issue Actions + PDR Issue Actions Log | `pdr_issue_actions`, `pdr_issue_actions_log` | 8 | Conforms: the log is append-only. Keeps an Assignee name beside the email, display only |
+| Game workbook: Game Config (Key, Value JSON) | `game_config` (jsonb) | 5 | No updated-at / who-changed; a config change leaves no history. **Add an append-only change log** before go-live |
+| Game Daily (daily snapshots, JSON id lists) | `game_daily` | 5 | No row id (key Day + Email); JSON in cells (fine → jsonb) |
+| Game Progress (Email, Kind, Key, Value, At) | `game_progress` | 5 | Conforms |
+| Game Windows, Game Decisions | `game_windows`, `game_decisions` | 5 | Decisions are append-only (good) |
+| Game Quests | `game_quests` | 5 | Seeded by code; fine |
+| Fleet quest inputs: LM Studio Vehicle Papers, Portal Uploads (transport workbook) | `vehicle_papers`, `transport_uploads` | 8 | Papers is a push snapshot (rewritten each sync): fine as a mirror, not a history. Check Uploads has an id column |
+| Safety Loadout (Item ID…Active) | `safety_loadout_items` | 8 | Conforms; no updated-at |
+| Capture Runs (`Run ID`…`Captured By`) | `capture_runs` | 8 | JSON in cells (fine). Check `By` / `Captured By` hold an email, not a name |
+| Day Book starting data (paper import, `tools/office-import-sheet.mjs --paper`, branch `daybook-paper-import`) and Opening | `daybook_entries`, `daybook_openings` | 6 | Conforms (id, `source`, append-only, paise) |
+| Office day book (campus books: DayBook, Opening, Closes, Reopens, Reports, Deposits, …, Audit) | one table each | 6 | Conforms; the model the others should follow |
+
 
 ## Messaging's 12 platform requirements, covered
 
@@ -381,7 +496,7 @@ The Coordinator + Owner React rebuild screens are folded in at each step whose d
 |---|---|---|
 | 1 | Long-running server, WebSocket per open app | Section 1 (Fastify, one process), section 4 (always-on host) |
 | 2 | Web push, own VAPID keys, PWA, quiet hours at send time | Sections 2, 8 |
-| 3 | One Postgres with Approvals, Coordinator tasks, staff data, game backend | **Only partly at first.** Staff data is a read-only mirror from step 0 (HOD role and subject per teacher included in the sync). Approvals and Coordinator tasks move at step 3; messaging phase 3 waits for it. The game backend stays on Apps Script until step 4 and reads contracts through the read API (section 11). Section 12 |
+| 3 | One Postgres with Approvals, Coordinator tasks, staff data, game backend | **Partly.** Approvals is on the platform from mid-November (step 1), so messaging's forms hand off in the same database. Staff data is a read-only mirror from step 0, including the HOD role and subject per teacher. **Tasks / Coordinator follow-ups stay on Sheets until step 4**, so the relationship map's "raise a follow-up" writes through a Coordinator-project action until then. **The game backend stays on Apps Script until step 5** and reads contracts through the read API. Section 12 |
 | 4 | Google sign-in, allowlist, roles, enforceable "view as", later phone OTP | Section 6 |
 | 5 | Private file storage | Section 5 (R2, signed links, browser-side compression) |
 | 6 | Indefinite retention, soft deletes, append-only log, backups, Owner legal hard delete | Section 5 (retention, backups), section 9 (audit log). The legal hard delete is an Owner-only action that removes the record and its files and leaves an audit entry saying a legal delete happened, without the content |
@@ -431,6 +546,9 @@ Later: SMS/WhatsApp gateway for phase 6 phone sign-in (per message, Uday's pick 
 4. VAPID key pair (`npx web-push generate-vapid-keys` on his Mac), age key pair for backups.
 5. Shared secrets for the Apps Script push and each worker token, set in both places.
 6. DNS: nothing for now; a record for the school domain at the later move.
+7. The platform's Workspace account (section 12), shared on the Approvals workbook (editor), Teaching Applicants and
+   the school calendar (viewer); he authorises it once and sets its refresh token.
+8. Secrets for the PDR and Coordinator bridge actions (B3, B4), in Script Properties and on Render.
 
 The build plan will list the exact environment variable names; Uday fills in the values.
 
@@ -452,8 +570,11 @@ The build plan will list the exact environment variable names; Uday fills in the
 3. ~~Address~~ **Answered (Uday, 2026-10-26): "for the time being can we not use something over github? Once this
    is done we are any ways going professional."** App on GitHub Pages, API on Render; school domain later
    (sections 2, 11a).
-4. **Approvals timing** (section 12): move Approvals and Coordinator tasks before the February pilot, or after
-   go-live (recommended), with messaging phase 3 waiting until then?
+4. ~~Approvals timing~~ **Answered (Uday, 2026-10-26): "as soon as we think we are ready, i am hoping 2nd week of
+   november".** Section 12: 9–15 November behind gates G1–G9.
+5. **New, for Uday's OK:** move Approvals (with Comments, follow-up allocation and Recommendations) in November, but
+   keep the Coordinator **Tasks** tab on Sheets until after the game go-live (section 12 explains why). Also: a
+   dedicated Workspace account for the platform's Google access (name and licence his call).
 
 ## Left to the builder
 
