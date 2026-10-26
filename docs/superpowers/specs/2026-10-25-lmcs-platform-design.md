@@ -95,8 +95,19 @@ Each has options and a recommendation. Ones Uday has answered are marked; the re
 - **Installable PWA:** web app manifest plus a hand-written service worker for push, notification clicks and the
   offline outbox. (Claude's call: hand-written, since push handling is ~50 lines; the builder may use
   `vite-plugin-pwa` in `injectManifest` mode if precaching gets fiddly.)
-- **Served by the same Fastify server** from the built files, so the app and API share one origin: no CORS, and the
-  session cookie works on API calls and WebSockets alike.
+- **Where the app is served: GitHub Pages for now** (Uday, 2026-10-26: "for the time being can we not use something
+  over github? Once this is done we are any ways going professional"). The built React app lives at
+  `kanwaruday.github.io/LMCSManagement/app/`; the API, WebSockets and Postgres are on Render at Render's own address
+  (e.g. `lmcs-platform.onrender.com`). The move to a school domain such as `app.lms.org.in` comes later. See
+  "Serving from GitHub Pages" below for what this changes.
+- **How it gets onto Pages** (Claude's call): Pages publishes `main` from the repo root ("deploy from branch"), so the
+  build output is committed to an `app/` folder by a deploy script, `platform/deploy-web.mjs`, the same way
+  `deploy.mjs` ships Apps Script: build, replace `app/` (stale hashed files removed), commit, push. No change to the
+  repo's Pages settings, so the live portal's publishing can't break. (A sibling repo with its own Pages is the
+  alternative; it splits the code across two repos for no gain.)
+- **The address lives in config, in two values only:** `APP_ORIGIN` + `APP_BASE` on the server (CORS, WebSocket
+  origin check, links in notifications) and `VITE_API_URL` in the web build. Moving to the school domain later is
+  changing those, a DNS record and the OAuth origin; no code.
 - **375 px Android first**, then desktop, using the project's LMCS design skills (frontend-design-for-lmcs,
   impeccable-for-lmcs, taste-for-lmcs) already installed for the rebuild.
 - **Outbox for every write** (Fee Clerk pattern): the client gives each create a UUID and sends it as an
@@ -178,8 +189,8 @@ before rollout.
 - **The domain check is new** (today's `auth.js` doesn't check `hd`). Before it goes live, the first build task
   checks the allowlist for non-lms.org.in addresses (counting domains only) so no one, an Owner say, is locked out
   on day one; any such address is moved to an lms.org.in account first. (Claude's call.)
-- **Session:** the server issues its own session in an httpOnly, Secure, SameSite=Lax cookie, stored server-side
-  in a `sessions` table so it can be revoked (sign out everywhere, or the Owner revoking a person). **Sessions last
+- **Session:** the server issues its own session token (sent as an `Authorization: Bearer` header, not a cookie;
+  see "Serving from GitHub Pages"), stored server-side in a `sessions` table so it can be revoked (sign out everywhere, or the Owner revoking a person). **Sessions last
   30 days, sliding** (Claude's call: today's portal ends every session at 6 PM, which would make a messaging app
   useless after hours and would break notification taps; revocation replaces the daily expiry as the safety net).
   Removing someone from the allowlist ends their sessions at the next sync.
@@ -270,11 +281,9 @@ mirror** of them.
 
 The old portal keeps working, untouched, for as long as any module lives there.
 
-- **Two addresses.** The old portal stays at `kanwaruday.github.io/LMCSManagement`. The platform gets its own address
-  (Q3: a school subdomain such as `app.lms.org.in`, recommended, or the host's free address). The address must be
-  settled before launch: an installed app and its push subscriptions are tied to it, and changing it later means
-  everyone re-installs.
-- **One sign-in, two sessions.** Same Google account and allowlist; the platform has its own session cookie. The old
+- **Two addresses, one site.** The old portal stays at `kanwaruday.github.io/LMCSManagement/`; the platform app is at
+  `kanwaruday.github.io/LMCSManagement/app/` for now (Uday), with its API on Render.
+- **One sign-in, two sessions.** Same Google account and allowlist; the platform has its own session token, stored under its own key so it never collides with the old portal's `lmcs_session`. The old
   portal gets a tile or link for each module that has moved; the platform links back to old-portal pages not yet
   moved. No attempt to share sessions across the two origins.
 - **One owner per dataset.** At any moment every dataset is owned by exactly one system; the other side only reads a
@@ -302,6 +311,47 @@ The old portal keeps working, untouched, for as long as any module lives there.
   4. The old page shows "this has moved" with a link. The Sheet stays as a read-only archive; nothing is deleted.
   5. Rollback within the first two weeks: turn the switch off, re-open the Sheet, and write back the rows created on
      the platform since cut-over with the module's export script.
+
+### 11a. Serving from GitHub Pages (checked against Uday's "something over github")
+
+What works from a github.io path:
+- **Installable app (PWA):** yes. The manifest's `scope` and `start_url` are `/LMCSManagement/app/`, and the service
+  worker is served from that folder, so its scope covers only the app and never the old portal's pages.
+- **Web push:** yes. Push needs HTTPS and a service worker, both of which github.io has. The push subscription belongs to
+  the origin `kanwaruday.github.io` plus the service worker's scope, and is sent through the browser's push service
+  using our VAPID keys. Render's address plays no part, so the API host can change without breaking push. iPhones
+  still need iOS 16.4+ and "Add to Home Screen".
+- **Google sign-in:** yes. `kanwaruday.github.io` is already an authorised origin on the existing OAuth client.
+- **WebSockets to Render:** yes. Cross-origin WebSockets are allowed; the server checks the `Origin` header against
+  `APP_ORIGIN`.
+
+What has to change from the design above, and the design now says so:
+1. **No session cookie.** A cookie set by `*.onrender.com` on a page at `github.io` is a third-party cookie, which
+   Safari on iPhone blocks, and Chrome is restricting. So the session is a **bearer token**: an opaque random value,
+   stored server-side as a hash and revocable as before, kept by the app in IndexedDB (so the service worker can send
+   the outbox too), and sent in an `Authorization` header. WebSockets send it in the first message, never in the URL.
+2. **CORS:** the API answers only `APP_ORIGIN` (`https://kanwaruday.github.io`), with credentials off (tokens, not
+   cookies).
+3. **Shared origin.** Every page on `kanwaruday.github.io` (the old portal and any other repo Uday publishes there)
+   is the same origin and can read the app's stored token. That is acceptable only because Uday controls everything
+   published there, and it is the same exposure the old portal's ID token in localStorage has today. Rule until the
+   move: nothing else gets published under `kanwaruday.github.io` that runs third-party scripts. (Claude's call.)
+4. **Security headers:** GitHub Pages can't set response headers, so the Content-Security-Policy goes in a `<meta>`
+   tag (no `frame-ancestors`; clickjacking protection waits for the school domain). The API on Render sets full
+   headers itself.
+5. **Routing:** Pages has no server rewrites, so the app uses hash routes (`/app/#/channels/...`) or a 404.html
+   redirect. (Builder's pick.)
+6. **Public build files.** The built app in `app/` is code only; data comes from the API after sign-in. The
+   `verify.mjs` scan covers `app/` like `platform/`.
+
+**The cost Uday accepts for the later move to a school domain** (Uday: "Once this is done we are any ways going
+professional"): a new address is a new origin to the browser, so on that day everyone
+- re-installs the app (the old home-screen icon goes to a "we've moved" page that links to the new one);
+- turns notifications on again (old push subscriptions are dropped; the VAPID keys stay the same);
+- signs in once more (stored tokens don't carry across origins);
+- and the app's outbox must be empty first (the old app shows "sending…" until it is, before it redirects).
+Nothing on the server or in Postgres moves; only `APP_ORIGIN`, `VITE_API_URL`, the DNS record and the OAuth
+origin change.
 
 ### 12. Migration order
 
@@ -352,7 +402,7 @@ Owner switches: section 11 and the migration steps.
   the environment; logs never print them. Each machine consumer (Apps Script push, Mac workers, WhatsApp Hub) has
   its own token, revocable alone.
 - All permission checks server-side in one module; every write audited.
-- HTTPS only; strict Content-Security-Policy; cookies httpOnly + Secure + SameSite; sign-in and sync endpoints rate
+- HTTPS only; strict Content-Security-Policy; bearer session tokens (hashed server-side, revocable); sign-in and sync endpoints rate
   limited; uploads size- and type-checked.
 - Backups encrypted with a key the server can't decrypt with.
 - The roster project's public `/exec` URL never starts serving staff data because of this platform (option C of
@@ -367,7 +417,7 @@ Owner switches: section 11 and the migration steps.
 | Render Postgres (1 GB plan) | $19 |
 | Backup cron job | ~$1 |
 | Cloudflare R2 (under 10 GB) | $0 |
-| Domain (subdomain of lms.org.in) | $0 |
+| GitHub Pages (app) + Render's own address (API) | $0 |
 | **Total** | **~$27 (~₹2,300)** |
 
 Later: SMS/WhatsApp gateway for phase 6 phone sign-in (per message, Uday's pick of provider).
@@ -376,10 +426,11 @@ Later: SMS/WhatsApp gateway for phase 6 phone sign-in (per message, Uday's pick 
 
 1. Render account (Singapore region), connected to the GitHub repo; Postgres created there.
 2. Cloudflare account with an R2 bucket and an API token limited to that bucket.
-3. Google Cloud console: add the platform's address to the existing OAuth client's authorised origins.
+3. Google Cloud console: nothing for now (`kanwaruday.github.io` is already an authorised origin); at the later
+   domain move, add the new origin.
 4. VAPID key pair (`npx web-push generate-vapid-keys` on his Mac), age key pair for backups.
 5. Shared secrets for the Apps Script push and each worker token, set in both places.
-6. DNS: a CNAME for the subdomain (Q3), if chosen.
+6. DNS: nothing for now; a record for the school domain at the later move.
 
 The build plan will list the exact environment variable names; Uday fills in the values.
 
@@ -398,8 +449,9 @@ The build plan will list the exact environment variable names; Uday fills in the
 1. ~~Hosting~~ **Answered (Uday, 2026-10-25): "Render, Singapore."**
 2. ~~Who may sign in~~ **Answered (Uday, 2026-10-25, for the current portal): "Automatic, but all employees."**
    Section 6 follows the same rule.
-3. **Address** (section 11): a school subdomain such as `app.lms.org.in` (recommended; needs a DNS record on
-   lms.org.in), or the host's free address?
+3. ~~Address~~ **Answered (Uday, 2026-10-26): "for the time being can we not use something over github? Once this
+   is done we are any ways going professional."** App on GitHub Pages, API on Render; school domain later
+   (sections 2, 11a).
 4. **Approvals timing** (section 12): move Approvals and Coordinator tasks before the February pilot, or after
    go-live (recommended), with messaging phase 3 waiting until then?
 
