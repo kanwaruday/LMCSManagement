@@ -296,14 +296,14 @@ function render_() {
   const lockedEs = entitiesInScope_().filter(isLocked_);
   const hasErp = rows.some(function (r) { return r.erpNet != null; });
   const nd = sum_(rows, netDiff_), cd = sum_(rows, ctiDiff_);
-  const erpStat = function (v) { return hasErp ? '<span class="' + cls_(v) + '">' + inr_(v) + '</span>' : '<span class="muted">no ERP data</span>'; };
+  const erpStat = function (v, fn) { return hasErp && SCOPE === 'MULTI' ? ov_(rows, fn) : hasErp ? '<span class="' + cls_(v) + '">' + inr_(v) + '</span>' : '<span class="muted">no ERP data</span>'; };
   let html = '<div class="status">' +
     stat_('Month', monthLabel_(M.month)) + stat_('Scope', SCOPE === 'ALL' ? 'All schools' : esc_(scopeName_())) +
-    stat_('Staff', rows.length) + stat_('Gross', ov_(rows, function (r) { return r.gross; })) +
+    stat_('Staff', ov_(rows, function () { return 1; }, String)) + stat_('Gross', ov_(rows, function (r) { return r.gross; })) +
     stat_('Net pay', ov_(rows, function (r) { return r.net; })) +
     stat_('Bank transfer', ov_(rows, function (r) { return r.bankPayable; })) +
     stat_('CTI', ov_(rows, function (r) { return r.cti; })) +
-    stat_('vs ERP net', erpStat(nd)) + stat_('vs ERP CTI', erpStat(cd)) +
+    stat_('vs ERP net', erpStat(nd, netDiff_)) + stat_('vs ERP CTI', erpStat(cd, ctiDiff_)) +
     '<span class="deadline">Lock by 8 ' + nextLabel + ' · pay on 10 ' + nextLabel + (lockedEs.length ? ' · 🔒 ' + lockedEs.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') : '') + '</span></div>';
 
   // Checklist cards
@@ -322,10 +322,10 @@ function render_() {
 }
 
 // Per-entity totals through the picker's overlay: one value per school when 2+ are picked, else the single total.
-function ov_(rows, fn) {
+function ov_(rows, fn, fmt) {
   const v = {};
   entitiesInScope_().forEach(function (e) { v[e] = sum_(rows.filter(function (r) { return r.entity === e; }), fn); });
-  return LMCSCampus.overlay(v, SEL, function (n) { return '₹' + inr_(n); });
+  return LMCSCampus.overlay(v, SEL, fmt || function (n) { return '₹' + inr_(n); });
 }
 
 // By-school totals (always every school); click a row to switch to that school.

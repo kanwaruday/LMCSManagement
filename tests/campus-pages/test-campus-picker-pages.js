@@ -38,12 +38,19 @@ T('payroll: overlay - Gross, Net, Bank and CTI are one value per school, never s
   const p = payroll(S('ALL'));
   chip(p.pick, 'LMS1').click(); chip(p.pick, 'LMS2').click();
   const s = p.stats();
-  assert.strictEqual(s('Staff'), '3');
+  assert.strictEqual(ov(s('Staff')), 2); assert.ok(s('Staff').includes('<b>2</b>') && s('Staff').includes('<b>1</b>') && !s('Staff').includes('<b>3</b>'), 'Staff per school');
   [['Gross', ['₹200', '₹300'], '₹500'], ['Net pay', ['₹180', '₹250'], '₹430'], ['Bank transfer', ['₹160', '₹200'], '₹360'], ['CTI', ['₹240', '₹330'], '₹570']].forEach(([k, vals, sum]) => {
     assert.strictEqual(ov(s(k)), 2, k + ': two items');
     vals.forEach((v) => assert.ok(s(k).includes('<b>' + v + '</b>'), k + ' ' + v));
     assert.ok(!s(k).includes(sum), k + ' not summed');
   });
+});
+T('payroll: ERP diffs overlay per school too', () => {
+  const p = payroll(S('ALL'));
+  p.run("M.rows[0].erpNet = 80; M.rows[0].erpCti = 100; M.rows[2].erpNet = 200; M.rows[2].erpCti = 300;");
+  chip(p.pick, 'LMS1').click(); chip(p.pick, 'LMS2').click();
+  const s = p.stats();
+  assert.strictEqual(ov(s('vs ERP net')), 2); assert.strictEqual(ov(s('vs ERP CTI')), 2);
 });
 T('payroll: scope - a comma list offers only its own schools, no HES', () => {
   const p = payroll(S('LMS1,LMS2'));
@@ -202,4 +209,19 @@ T('daily-progress: Principal lock - one school only, picker hidden, even under A
   assert.strictEqual(daily(S('LMS1,LMS6', { roles: ['Principal'] })).idxs(), '0,0,5');
 });
 if (failed) { console.log(failed + ' failed'); process.exit(1); }
+T('curriculum: fail closed - no session or a blank campus shows no rows', () => {
+  assert.strictEqual(daily(null).idxs(), '');
+  assert.strictEqual(daily(S('')).idxs(), '');
+  assert.strictEqual(unmapped(S('')).run('CurrPick.pick(allRows).length'), 0);
+});
+T('curriculum: a stale saved choice outside the session scope shows only the session school', () => {
+  const store = { 'lmcs-campus:u-LMS4@x': JSON.stringify({ v: 1, sel: ['LMS1', 'LMS4'] }) };
+  const mk = (page, st) => loadPage(page, { session: S('LMS4', { roles: ['Principal'] }), store: st });
+  const d = mk('curriculum-progress/daily-progress.html', store); d.run('activeDateFrom = activeDateTo = null');
+  assert.strictEqual(d.run(`filtered([0,3,3,5].map(function (i) { return { lmsIdx: i, dateStr: 'x', subject: 's' }; })).map(function (r) { return r.lmsIdx; }).join()`), '3,3');
+  const only1 = { 'lmcs-campus:u-LMS4@x': JSON.stringify({ v: 1, sel: ['LMS1'] }) };
+  const g = mk('curriculum-progress/unmapped-chapters.html', only1);
+  g.run(`allRows = [0,3,3].map(function (i) { return { lmsIdx: i, cls: 'c', subject: 's', teacher: 't', chapterName: 'n', actualDate: new Date() }; })`);
+  g.run('renderPanel()'); assert.strictEqual(g.els.cUnmapped.innerHTML, '2', 'LMS1-only stale choice falls back to LMS4');
+});
 console.log('campus picker pages: ok');

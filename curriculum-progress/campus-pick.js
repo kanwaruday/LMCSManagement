@@ -10,7 +10,7 @@ window.CurrPick = (function () {
   // Mounts the picker in slot. onChange (optional) fires on later changes only; the page paints itself after its data loads.
   function mount(slot, session, onChange) {
     const id = session && String(session.campusId || '').toUpperCase();
-    limit = id && id !== 'ALL' ? LMCSCampus.scope(session) : null;
+    limit = id === 'ALL' ? null : LMCSCampus.scope(session); // no or blank session: scope is [], so no rows (fails closed)
     let ready = false;
     handle = LMCSCampus.mount(slot, { session, label: 'School', onChange: function (s) { sel = s; if (ready && onChange) onChange(s); } });
     ready = true;
