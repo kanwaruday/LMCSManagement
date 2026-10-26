@@ -236,6 +236,16 @@ out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, new Date('2026-12-02T05:00:00
 assert.strictEqual(out[1].questId, Q2ID); assert.strictEqual(out[1].complete, true);
 assert.deepStrictEqual(out[1].steps.map((x) => x.title), ['Plan the activity for Ratio', 'Plan the activity for Angles']);
 assert.strictEqual(keysOf().length, 7);                                                    // nothing appended, no second _done
+// peek: the same quests, nothing written
+{
+  const keep = prog.rows, kept = store.get('tch_' + CODE);
+  prog.rows = keep.slice(0, 1); store.set('tch_' + CODE, JSON.stringify(nextState(Object.assign({ episodes: [ep()] }, q1done))));
+  const pk = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW, { peek: true }));
+  assert.ok(pk.length > 0); assert.strictEqual(prog.rows.length, 1, 'peek appends no rows');
+  ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW, { peek: false }); assert.ok(prog.rows.length > 1);
+  prog.rows = keep.slice(0, 1); ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW); assert.ok(prog.rows.length > 1, 'no opts: writes as before');
+  prog.rows = keep; store.set('tch_' + CODE, kept);
+}
 // no state (or no code): no quests, no writes, no refresh
 store.delete('tch_' + CODE);
 assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW)), []);

@@ -13,15 +13,25 @@ import { dirname, join, normalize, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGES = ['principal/index.html', 'coordinator/index.html', 'owner/index.html', 'teacher/index.html', 'teacher/plan-activity.html', 'coordinator/transport/index.html', 'office/transport.html', 'coordinator/transport/live.html', 'office/buses.html', 'office/starting-data.html', 'owner/transport/index.html', 'coordinator/transport/capture.html', 'coordinator/transport/setup.html', 'principal/issues.html', 'coordinator/hq.html'];
+const PAGES = ['principal/index.html', 'coordinator/index.html', 'owner/index.html', 'teacher/index.html', 'teacher/plan-activity.html', 'coordinator/transport/index.html', 'office/transport.html', 'coordinator/transport/live.html', 'office/buses.html', 'office/starting-data.html', 'owner/transport/index.html', 'coordinator/transport/capture.html', 'coordinator/transport/setup.html', 'principal/issues.html', 'coordinator/hq.html', 'guide/index.html'];
 const check = process.argv.includes('--check');
 const indexed = (path) => { try { return execFileSync('git', ['show', ':' + path], { cwd: root, encoding: 'buffer', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return readFileSync(join(root, path)); } };
+// auth.js carries DOCK_V: a hash of the floating Buddy's lazy-loaded files, so the pages' stamp of auth.js moves with them.
+const DOCK_FILES = ['buddy-dock.js', 'buddy-dock.css', 'game.js', 'game.css', 'guide.js'].map((f) => 'assets/game/' + f);
+const dockV = createHash('sha1').update(Buffer.concat(DOCK_FILES.map((f) => indexed(f)))).digest('hex').slice(0, 8);
+const DOCK_RE = /(const DOCK_V = ')[0-9a-f]*(';[ ]*\/\/ stamp-assets)/;
 const stale = [];
+{
+  const authJs = check ? indexed('assets/auth.js').toString() : readFileSync(join(root, 'assets/auth.js'), 'utf8');
+  const out = authJs.replace(DOCK_RE, `$1${dockV}$2`);
+  if (out !== authJs) { if (check) stale.push('assets/auth.js (DOCK_V)'); else writeFileSync(join(root, 'assets/auth.js'), out); }
+}
 for (const page of PAGES) {
   const html = check ? indexed(page).toString() : readFileSync(join(root, page), 'utf8');
   const out = html.replace(/(src|href)="(\.\.?\/[^"?#]+\.(?:js|css))(?:\?v=[0-9a-f]*)?"/g, (m, attr, rel) => {
     const path = relative(root, normalize(join(root, dirname(page), rel)));
-    return `${attr}="${rel}?v=${createHash('sha1').update(indexed(path)).digest('hex').slice(0, 8)}"`;
+    const bytes = path === 'assets/auth.js' && !check ? Buffer.from(readFileSync(join(root, path), 'utf8').replace(DOCK_RE, `$1${dockV}$2`)) : indexed(path); // write mode: the auth.js just stamped
+    return `${attr}="${rel}?v=${createHash('sha1').update(bytes).digest('hex').slice(0, 8)}"`;
   });
   if (out === html) continue;
   if (check) stale.push(page); else writeFileSync(join(root, page), out);

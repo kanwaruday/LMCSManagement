@@ -1061,7 +1061,7 @@ GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
 // gameToday_ calls this INSIDE gameWithLock_, so it never runs tchStateFor_ (a cold cache would run the refresh under the lock): it reads the cached
 // state, which GAME_MODULE_MISSIONS.Teacher (outside the lock, earlier in the same load) has just warmed. No state is no quests. For the same reason
 // the quest_step rows are appended here directly: the caller already holds the lock.
-GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now) {
+GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now, opts) {
   const code = tchCodeFor_(caller), state = code ? tchReadJson_(CacheService.getScriptCache(), 'tch_' + code) : null;
   if (!state) return [];
   const tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), me = gameLower_(caller.email), ss = gameBook_();
@@ -1082,7 +1082,7 @@ GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now) {
     }
   });
   // view-as never reaches this hook: the game backend has no view-as caller (no marker in game.gs), every caller is the signed-in person
-  gameAppendText_(progSheet, fresh);
+  if (!(opts && opts.peek)) gameAppendText_(progSheet, fresh); // a peek writes nothing (and holds no lock)
   return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code, tcfg), tcfg, now));
 };
 

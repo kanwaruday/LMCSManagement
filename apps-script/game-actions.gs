@@ -235,12 +235,12 @@ function gamePersistDaily_(sh, caller, dayKey, missionsNow, cfg, sourcesOk, now)
 }
 
 // Closed windows: append each undecided campus's default and write it to Game Config (lazily, on read)
-function gameSyncWindows_(ss, now) {
+function gameSyncWindows_(ss, now, peek) {
   const cfgSheet = ss.getSheetByName('Game Config'), cfgRows = cfgSheet.getDataRange().getValues();
   const winRows = ss.getSheetByName('Game Windows').getDataRange().getValues();
   const decSheet = ss.getSheetByName('Game Decisions'), decRows = decSheet.getDataRange().getValues();
   const defaults = gameApplyDefaults_(winRows, decRows, now, gameParseConfig_(cfgRows));
-  if (defaults.length) {
+  if (defaults.length && !peek) { // peek (the floating Buddy) writes nothing: a closed window's default lands on the next real load
     const rows = defaults.map(gameDecisionRow_), byId = {};
     gameAppendText_(decSheet, rows);
     rows.forEach(function (r) { decRows.push(r); });
@@ -260,9 +260,14 @@ function gameToday_(caller, params) {
   if (!Array.isArray(missionsNow)) return { success: true, notYet: true }; // no missions for this role yet
   if (role === 'Coordinator') missionsNow = missionsNow.filter(function (m) { return !m.campus || gameInPilot_(cfg0.pilotCampuses.Coordinator, m.campus); });
 
-  return gameWithLock_(function () {
-    const daily = gamePersistDaily_(ss.getSheetByName('Game Daily'), caller, dayKey, missionsNow, cfg0, loaded.down.length === 0, now);
-    const win = gameSyncWindows_(ss, now), cfg = win.cfg;
+  const peek = String(params.peek || '') === '1'; // same view, no writes, no lock: opening Buddy must not use up the home greeting
+  return (peek ? function (fn) { return fn(); } : gameWithLock_)(function () {
+    let daily;
+    if (peek) {
+      const rows = ss.getSheetByName('Game Daily').getDataRange().getValues(), plan = gameDailyPlan_(rows, caller, dayKey, missionsNow, cfg0, loaded.down.length === 0);
+      daily = { rows: rows, carried: plan.carried, snapshotIds: plan.newIds || plan.snapshotIds, created: false };
+    } else daily = gamePersistDaily_(ss.getSheetByName('Game Daily'), caller, dayKey, missionsNow, cfg0, loaded.down.length === 0, now);
+    const win = gameSyncWindows_(ss, now, peek), cfg = win.cfg;
     const view = gameTodayView_(daily.snapshotIds, missionsNow, daily.carried, cfg, role);
     const days = gameDaysOnTrack_(daily.rows, me, dayKey.slice(0, 7));
     days.showDenominator = !(cfg.daysDenominator && cfg.daysDenominator[role] === false);
@@ -277,10 +282,10 @@ function gameToday_(caller, params) {
       daysOnTrack: days,
     };
     const newly = gameQuestNewlyDone_(questRows, role, evidence, progRows, me, cfg);
-    gameAppendText_(progSheet, newly.map(function (n) { return [me, 'quest_step', n.questId + ':' + n.stepId, 'done', now.toISOString()]; }));
+    if (!peek) gameAppendText_(progSheet, newly.map(function (n) { return [me, 'quest_step', n.questId + ':' + n.stepId, 'done', now.toISOString()]; }));
     let quests = gameQuestState_(questRows, role, evidence, progRows, me, cfg);
     gameModuleHooks_(GAME_MODULE_QUESTS, role).forEach(function (fn) { // runs under the lock: modules keep this cheap; a throw drops only its quests
-      try { const q = fn(caller, cfg, now); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
+      try { const q = fn(caller, cfg, now, { peek: !!peek }); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
     });
 
     const out = {

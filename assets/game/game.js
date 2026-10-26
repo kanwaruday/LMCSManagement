@@ -9,6 +9,7 @@
 //   questId start with it, no decisions, days line, greeting or home tour; title replaces the 'Today' heading.
 //   tour = { id, beats: [{ target: CSS selector (optional), text }] }: that page's tour, once per person (Game Progress
 //   'tour' row keyed id), shown when the home greeting isn't (always, on an `only` page).
+// LMCSGame.tour(beats, opts) runs the same tour on its own (see tour() below).
 // Every piece of text reaches the DOM through text nodes / setAttribute (h() below), never as parsed HTML.
 var LMCSGame = window.LMCSGame = (function () {
   var IST_MS = 330 * 60000;
@@ -123,7 +124,7 @@ var LMCSGame = window.LMCSGame = (function () {
   var ERROR_LINE = "Today's list didn't load. Your work in the portal is safe; only this list is missing.";
   // art paths resolve next to this script, whatever page loads it
   var BASE = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '').replace(/[^/?#]*([?#].*)?$/, '');
-  var uid = 0, live = null; // live = the current mount: its body-level pieces, torn down on remount
+  var uid = 0, live = null, last = null; // live = the current mount: its body-level pieces, torn down on remount; last = its gametoday
 
   // h('a', {class, href, onclick}, ['text', node, [nested]]) -- strings always land as text nodes
   function h(tag, attrs, kids) {
@@ -172,6 +173,82 @@ var LMCSGame = window.LMCSGame = (function () {
       var target = to === false ? null : to || prev;
       if (target && target.focus && document.contains(target)) target.focus();
     };
+  }
+
+  // a beat's target: an element, a CSS selector (absent or invalid -> null: the beat sits centred), or nothing
+  function beatTarget(x) {
+    if (typeof x !== 'string') return x || null;
+    try { var el = document.querySelector(x); return el && el.getClientRects().length ? el : null; } catch (e) { return null; }
+  }
+  // a string body goes as text/plain: no CORS preflight to Apps Script
+  function postTo(url, session, action, body) {
+    return fetch(url, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: (session || {}).idToken }, body)) })
+      .then(function (r) { return r.json(); });
+  }
+  // The spotlight tour: a spotlight on each target in turn, a centred card when a beat has none; Next / Skip / Done,
+  // focus trapped, Esc ends it. c = { a: art(), after, post: () => promise (gametourseen), cover(on), piece(remove) ->
+  // forget, fixed: an element never scrolled to (the next-step bar) }. mount's tours pass their own cover/piece.
+  function runTour(beats, c) {
+    var cover = c.cover || function () {}, piece = c.piece || function () { return function () {}; };
+    var a = c.a, i = 0, release, n = ++uid;
+    beats = beats.map(function (b) { return Object.assign({}, b, { target: beatTarget(b.target), text: String(b.text || '') }); });
+    if (c.post) c.post().catch(function () { /* offered again next time; nothing lost */ });
+    var spot = h('div', { class: 'lg-spot', 'aria-hidden': 'true' });
+    var who = h('div', { class: 'lg-who', id: 'lg-t-who' + n }), text = h('p', { id: 'lg-t-text' + n }), count = h('small', { class: 'lg-count' });
+    var av = img(a.avatar, 'lg-av'), fig = img(a.figure, 'lg-fig lg-fig-sm');
+    var nextBtn = h('button', { type: 'button', class: 'lg-btn', onclick: function () { show(i + 1); } }, 'Next');
+    var card = h('div', { class: 'lg-tourcard', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': who.id, 'aria-describedby': text.id }, [
+      fig, h('div', { class: 'lg-tour-head' }, [av, who, count]), text,
+      h('div', { class: 'lg-btns' }, [nextBtn, h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: function () { end(); } }, 'Skip')]),
+    ]);
+    var layer = h('div', { class: 'lg-layer lg-tour' }, [spot, card]);
+    function place() {
+      var b = beats[i], vw = document.documentElement.clientWidth, vh = window.innerHeight, cw = card.offsetWidth, ch = card.offsetHeight;
+      layer.classList.toggle('lg-tour-dim', !b.target);
+      if (!b.target) { card.style.left = Math.max(16, (vw - cw) / 2) + 'px'; card.style.top = Math.max(16, (vh - ch) / 2) + 'px'; return; }
+      var r = b.target.getBoundingClientRect(), pad = 6;
+      spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
+      spot.style.width = (r.width + 2 * pad) + 'px'; spot.style.height = (r.height + 2 * pad) + 'px';
+      var top = r.bottom + 14 + ch <= vh - 16 ? r.bottom + 14 : r.top - 14 - ch >= 16 ? r.top - 14 - ch : vh - ch - 16;
+      card.style.top = Math.max(16, top) + 'px';
+      card.style.left = Math.min(Math.max(16, r.left), Math.max(16, vw - cw - 16)) + 'px';
+    }
+    function show(k) {
+      if (k >= beats.length) { end(); return; }
+      var b = beats[i = k];
+      who.textContent = b.who || a.name;
+      av.src = BASE + (b.avatar || a.avatar);
+      fig.hidden = !b.fig;
+      if (b.fig) fig.src = BASE + b.fig;
+      text.textContent = b.text;
+      count.textContent = (i + 1) + ' of ' + beats.length;
+      nextBtn.textContent = i === beats.length - 1 ? 'Done' : 'Next';
+      if (b.target && b.target !== c.fixed) b.target.scrollIntoView({ block: 'center', behavior: 'auto' });
+      place();
+      nextBtn.focus();
+    }
+    function unhook() { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); layer.remove(); cover(false); }
+    var forget = piece(function () { unhook(); release(); });
+    function end() {
+      forget(); unhook();
+      release();
+      if (c.after) c.after();
+    }
+    document.body.appendChild(layer);
+    cover(true, false);
+    window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
+    release = trap(card, end);
+    show(0);
+  }
+  // LMCSGame.tour(beats, opts): the same tour outside mount (the floating Buddy's "Show me how"). beats = [{ target:
+  // Element | CSS selector | null, text }]; opts = { session, backendUrl, tourId, campus, speaker, config?, after? };
+  // gametourseen is posted when backendUrl and tourId are both set.
+  function tour(beats, opts) {
+    opts = opts || {};
+    if (!(beats || []).length) return;
+    var url = opts.backendUrl, id = String(opts.tourId || '');
+    runTour(beats, { a: art({ campus: opts.campus, speaker: opts.speaker, config: opts.config }), after: opts.after,
+      post: url && id ? function () { return postTo(url, opts.session, 'gametourseen', { tourId: id }); } : null });
   }
 
   // A Today row's small line: the mission's own `why`, else the page its link opens. Empty when a progress bar
@@ -240,11 +317,7 @@ var LMCSGame = window.LMCSGame = (function () {
       return fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=gametoday&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); });
     }
-    function post_(action, body) {
-      // a string body goes as text/plain: no CORS preflight to Apps Script
-      return fetch(url, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: session.idToken }, body)) })
-        .then(function (r) { return r.json(); });
-    }
+    function post_(action, body) { return postTo(url, session, action, body); }
 
     function failed() {
       me.teardown();
@@ -365,6 +438,7 @@ var LMCSGame = window.LMCSGame = (function () {
         var wait = s.waiting && !s.done, open = !s.done && !s.locked && !wait && !linked, win = null, href = null;
         if (open && s.kind === 'decision') win = (t.windows || []).filter(function (w) { return !w.decided; })[0] || null;
         else if (open) href = safeHref(s.go, root);
+        if (open && !href && !win && /^[\w-]+$/.test(s.guide || '')) href = root + 'guide/index.html#' + s.guide; // no usable go: the guide says what to click
         if (href || win) linked = true;
         return h('li', { class: 'lg-step' + (s.done ? ' ok' : wait ? ' wait' : s.locked ? ' lock' : '') }, [
           h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
@@ -465,54 +539,8 @@ var LMCSGame = window.LMCSGame = (function () {
       return beats;
     }
     function tour(beats, after, tourId) {
-      post_('gametourseen', { tourId: tourId || 'home-' + (t.role || '') }).catch(function () { /* offered again next time; nothing lost */ });
-      var a = art(t, now), i = 0, release;
-      var spot = h('div', { class: 'lg-spot', 'aria-hidden': 'true' });
-      var who = h('div', { class: 'lg-who', id: 'lg-t-who' + n }), text = h('p', { id: 'lg-t-text' + n }), count = h('small', { class: 'lg-count' });
-      var av = img(a.avatar, 'lg-av'), fig = img(a.figure, 'lg-fig lg-fig-sm');
-      var nextBtn = h('button', { type: 'button', class: 'lg-btn', onclick: function () { show(i + 1); } }, 'Next');
-      var card = h('div', { class: 'lg-tourcard', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': who.id, 'aria-describedby': text.id }, [
-        fig, h('div', { class: 'lg-tour-head' }, [av, who, count]), text,
-        h('div', { class: 'lg-btns' }, [nextBtn, h('button', { type: 'button', class: 'lg-btn lg-btn-alt', onclick: function () { end(); } }, 'Skip')]),
-      ]);
-      var layer = h('div', { class: 'lg-layer lg-tour' }, [spot, card]);
-      function place() {
-        var b = beats[i], vw = document.documentElement.clientWidth, vh = window.innerHeight, cw = card.offsetWidth, ch = card.offsetHeight;
-        layer.classList.toggle('lg-tour-dim', !b.target);
-        if (!b.target) { card.style.left = Math.max(16, (vw - cw) / 2) + 'px'; card.style.top = Math.max(16, (vh - ch) / 2) + 'px'; return; }
-        var r = b.target.getBoundingClientRect(), pad = 6;
-        spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
-        spot.style.width = (r.width + 2 * pad) + 'px'; spot.style.height = (r.height + 2 * pad) + 'px';
-        var top = r.bottom + 14 + ch <= vh - 16 ? r.bottom + 14 : r.top - 14 - ch >= 16 ? r.top - 14 - ch : vh - ch - 16;
-        card.style.top = Math.max(16, top) + 'px';
-        card.style.left = Math.min(Math.max(16, r.left), Math.max(16, vw - cw - 16)) + 'px';
-      }
-      function show(k) {
-        if (k >= beats.length) { end(); return; }
-        var b = beats[i = k];
-        who.textContent = b.who || a.name;
-        av.src = BASE + (b.avatar || a.avatar);
-        fig.hidden = !b.fig;
-        if (b.fig) fig.src = BASE + b.fig;
-        text.textContent = b.text;
-        count.textContent = (i + 1) + ' of ' + beats.length;
-        nextBtn.textContent = i === beats.length - 1 ? 'Done' : 'Next';
-        if (b.target && b.target !== me.bar) b.target.scrollIntoView({ block: 'center', behavior: 'auto' });
-        place();
-        nextBtn.focus();
-      }
-      function unhook() { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); layer.remove(); cover(false); }
-      var forget = piece(function () { unhook(); release(); });
-      function end() {
-        forget(); unhook();
-        release();
-        if (after) after();
-      }
-      document.body.appendChild(layer);
-      cover(true, false);
-      window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
-      release = trap(card, end);
-      show(0);
+      runTour(beats, { a: art(t, now), after: after, cover: cover, piece: piece, fixed: me.bar,
+        post: function () { return post_('gametourseen', { tourId: tourId || 'home-' + (t.role || '') }); } });
     }
 
     // ── the decision card: the question, what stands now, the options, an optional note, Save ──
@@ -584,6 +612,7 @@ var LMCSGame = window.LMCSGame = (function () {
     }
 
     function start(d) {
+      last = d; // LMCSGame.last(): the floating Buddy reads it instead of asking the backend again
       if (d.notYet) { el.textContent = ''; el.hidden = true; return; }
       t = opts.only ? onlyModule(d, String(opts.only)) : d;
       var firstVisit = (t.toursSeen || []).indexOf('home-' + (t.role || '')) === -1;
@@ -591,17 +620,15 @@ var LMCSGame = window.LMCSGame = (function () {
       renderPanels();
       renderBar(a);
       if (t.firstLoadToday) greet(a, firstVisit, tourBeats(a));
-      else if (pageTour && (t.toursSeen || []).indexOf(pageTour.id) === -1) tour(pageTourBeats(), null, pageTour.id);
+      else if (pageTour && (t.toursSeen || []).indexOf(pageTour.id) === -1) tour(pageTour.beats, null, pageTour.id);
     }
     // a module page's own first-visit tour (mount's `tour`): each beat spotlights its selector, or sits centred when absent
     var pageTour = opts.tour && /^[\w-]{1,60}$/.test(String(opts.tour.id || '')) && (opts.tour.beats || []).length ? opts.tour : null;
-    function pageTourBeats() {
-      return pageTour.beats.map(function (b) { return { target: (b.target && document.querySelector(b.target)) || null, text: String(b.text || '') }; });
-    }
 
     if (opts.data) safeStart(opts.data); else load();
   }
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
-    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount };
+    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount, tour: tour, last: function () { return last; },
+    ui: { h: h, img: img, trap: trap, reduced: reduced } }; // ui: the DOM helpers, shared with assets/game/buddy-dock.js
 })();

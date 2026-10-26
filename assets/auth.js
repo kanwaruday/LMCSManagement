@@ -20,6 +20,7 @@
 window.LMCS = (function () {
   const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
   const SESSION_KEY = 'lmcs_session';
+  const SELF_SRC = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || ''; // this file's URL, read while it runs
 
   // One source of truth for who can sign in and which campus they see --
   // the live "LMCS Principal Allowlist" sheet, via principal-allowlist.gs.
@@ -374,6 +375,7 @@ window.LMCS = (function () {
           // pages that don't (the home screens) get it right away.
           if (window.LMCS && window.LMCS.warmUp) window.LMCS.warmUp(session);
           if (window.LMCS_renderDataSources) window.LMCS_renderDataSources(); // home screens don't reload after sign-in
+          loadDock_();
         }
 
         // Shows elapsed time + what's happening instead of a silent wait; returns a function that stops it.
@@ -461,6 +463,25 @@ window.LMCS = (function () {
       }
     });
   }
+
+  // The floating Buddy (assets/game/buddy-dock.js + .css) on every page, once, as soon as someone is signed in: on load
+  // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, so the path is
+  // right at any depth, with ?v=DOCK_V (a hash of the dock's files, written by tools/stamp-assets.mjs) so a release reaches
+  // every browser at once. The dock passes the same ?v= on to game.js, game.css and guide.js. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
+  const DOCK_V = '1f1a51f5'; // stamp-assets
+  let docked = false;
+  function loadDock_() {
+    if (docked || window.LMCS_NO_DOCK || !SELF_SRC) return;
+    docked = true;
+    try {
+      const base = SELF_SRC.replace(/auth\.js(\?.*)?$/, 'game/buddy-dock'), v = '?v=' + DOCK_V;
+      const css = document.createElement('link'), js = document.createElement('script');
+      css.rel = 'stylesheet'; css.href = base + '.css' + v;
+      js.src = base + '.js' + v; js.async = true;
+      document.head.appendChild(css); document.head.appendChild(js);
+    } catch (_) { /* a help button -- never let it break a page */ }
+  }
+  if (getSession()) loadDock_();
 
   return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();

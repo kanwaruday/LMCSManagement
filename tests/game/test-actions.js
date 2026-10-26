@@ -452,4 +452,32 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.ok(t.fetches.some((f) => f.url.indexOf('AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec?action=principalissues&idToken=tok') !== -1));
   assert.deepStrictEqual(a.sourcesDown, ['principalissues']);
 }
+// peek: the same view, nothing written, no lock, never the greeting
+{
+  const snap = (t) => JSON.stringify(Object.keys(t.game).map((k) => t.game[k].rows));
+  const t = setup(), before = snap(t);
+  const a = t.call(P4, 'gametoday', { peek: '1' });
+  assert.strictEqual(a.success, true);
+  assert.strictEqual(a.firstLoadToday, false);
+  assert.deepStrictEqual(a.missions.map((m) => m.id), ['ss_pace:LMS4:2026-11-05', 'pdr_report:LMS4:2026-11-05', 'info_requested:A1']); // picked as a real load would
+  assert.strictEqual(snap(t), before, 'every sheet unchanged');
+  assert.strictEqual(t.lock.waits, 0);
+  // a closed window's default is not written by a peek, and a later real load is still the first
+  const c = setup({ window: { Opens: '2026-10-20', Closes: '2026-10-25' } }), cb = snap(c);
+  c.call(P4, 'gametoday', { peek: '1' });
+  assert.strictEqual(snap(c), cb, 'no window default written');
+  assert.strictEqual(c.call(P4, 'gametoday').firstLoadToday, true);
+  // an existing snapshot is reused, and the peek leaves its DoneIds alone
+  const d = setup({ daily: [dailyRow('2026-11-05', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-05', 'pdr_report:LMS4:2026-11-05'], [])] }), db = snap(d);
+  const e = d.call(P4, 'gametoday', { peek: '1' });
+  assert.deepStrictEqual(e.missions.map((m) => m.id), ['ss_pace:LMS4:2026-11-05', 'pdr_report:LMS4:2026-11-05']);
+  assert.strictEqual(snap(d), db);
+}
+// quest hooks are told whether it is a peek (so a module that writes can skip it), and a real load says peek: false
+{
+  const t = setup(), seen = [];
+  t.ctx.GAME_MODULE_QUESTS.Principal = function (caller, cfg, now, opts) { seen.push(opts); return []; };
+  t.call(P4, 'gametoday', { peek: '1' }); t.call(P4, 'gametoday');
+  assert.deepStrictEqual(J(seen), [{ peek: true }, { peek: false }]);
+}
 console.log('test-actions OK');

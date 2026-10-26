@@ -177,6 +177,10 @@ assert.strictEqual(G.pickedText(3, 3), '3 of 3 picked');
 assert.strictEqual(G.pickedText(5, 3), '5 picked. Untick 2 to save.');
 assert.strictEqual(G.pickedText(1, 0), '');
 
+// a quest step with a guide id and no usable go links to the guide (root-relative); it is the next action like any other step
+assert.ok(/s\.guide/.test(src) && /root \+ 'guide\/index\.html#' \+ s\.guide/.test(src), 'guide link on quest steps');
+assert.ok(/open && !href && !win && \/\^\[\\w-\]\+\$\/\.test\(s\.guide/.test(src), 'only an open step with a plain id gets the guide link');
+
 // R28 structurally: game.js never parses HTML -- every text goes in as a text node or an attribute
 // quest panel source checks (DOM-free): parallel quests are folded and unnumbered; waiting steps are never the next action; due is neutral
 assert.ok(/q\.parallel/.test(src) && /'details'/.test(src), 'parallel quests render in <details>');
@@ -195,6 +199,21 @@ assert.ok(/\['due', 'due '/.test(src), 'mission due tag uses the neutral due cla
   assert.strictEqual(G.onlyModule(Object.assign({}, d, { next: d.missions[0] }), 'fleet').next.id, 'fleet_papers:HP1');
   assert.strictEqual(d.missions.length, 2, 'the response itself is not changed'); }
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');
+// one tour UI: LMCSGame.tour (the floating Buddy's "Show me how"), the home tour and mount's page tour all run runTour
+assert.strictEqual(typeof G.tour, 'function');
+assert.strictEqual((src.match(/lg-tourcard/g) || []).length, 1, 'the tour card is built in one place');
+assert.strictEqual((src.match(/runTour\(beats, \{/g) || []).length, 2, "mount's tour() and LMCSGame.tour both call runTour");
+assert.ok(/function tour\(beats, after, tourId\) \{\s*runTour\(/.test(src), "mount's home and page tours go through runTour");
+assert.strictEqual(G.tour([], {}), undefined); // no beats: nothing happens, no DOM touched
+{ // a hidden target (no client rects) gets the centred card, like an absent one
+  const bt = new Function('document', /function beatTarget\(x\) \{[\s\S]*?\n  \}/.exec(src)[0] + '; return beatTarget;');
+  const shown = { getClientRects: () => [1] }, hidden = { getClientRects: () => [] };
+  assert.strictEqual(bt({ querySelector: () => hidden })('#x'), null);
+  assert.strictEqual(bt({ querySelector: () => shown })('#x'), shown);
+  assert.strictEqual(bt({ querySelector: () => null })('#x'), null);
+}
+assert.strictEqual(G.last(), null);            // no mount yet
+for (const k of ['h', 'img', 'trap', 'reduced']) assert.strictEqual(typeof G.ui[k], 'function', 'ui.' + k);
 // mount with no backendUrl renders nothing and touches nothing else
 let cleared = 0;
 G.mount({ set textContent(v) { cleared++; } }, { session: {}, backendUrl: '' });

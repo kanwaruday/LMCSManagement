@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — User guide</title>
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <style>
+    /* The user guide: role chips, a search box, one <section id> per article (assets/game/guide.js). Mobile-first. */
+    .g-main { max-width: 760px; padding-top: 24px; padding-bottom: 48px; }
+    .g-main h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+    .g-lead { margin: 0 0 16px; color: var(--gray); font-size: 15px; }
+    .g-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; border: 0; }
+    .g-chip { min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--white); color: var(--dark);
+      font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .g-chip[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+    .g-label { display: block; font-weight: 700; font-size: 14px; margin: 6px 0 4px; }
+    .g-q { display: block; width: 100%; box-sizing: border-box; min-height: 44px; padding: 8px 12px; font: inherit; font-size: 16px;
+      border: 1px solid #8a837b; border-radius: 8px; }
+    .g-count { margin: 8px 0 0; font-size: 13.5px; color: var(--gray); }
+    .g-article { padding: 16px 0; border-top: 1px solid var(--border); scroll-margin-top: 16px; }
+    .g-article h2 { font-size: 19px; line-height: 1.25; margin: 0 0 4px; }
+    .g-article p { margin: 6px 0 0; font-size: 15.5px; line-height: 1.5; max-width: 65ch; }
+    .g-for { display: block; font-size: 12.5px; font-weight: 600; color: var(--red-dark); }
+    .g-article:focus { outline: none; }
+    .g-article:focus-visible, .g-chip:focus-visible, .g-q:focus-visible { outline: 3px solid #1d4fa3; outline-offset: 2px; border-radius: 6px; }
+    .g-empty { margin: 16px 0; color: var(--gray); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+    </div>
+  </header>
+
+  <main class="wrap g-main">
+    <h1>User guide</h1>
+    <p class="g-lead">How the portal's Today list, quests and Buddy work, by role.</p>
+    <div class="g-chips" role="group" aria-label="Show articles for" id="chips"></div>
+    <label class="g-label" for="q">Search the guide</label>
+    <input class="g-q" id="q" type="search" autocomplete="off" placeholder="A word or two" />
+    <p class="g-count" id="count" aria-live="polite"></p>
+    <div id="articles"></div>
+    <p class="g-empty" id="empty" hidden>Nothing here matches. Try another word, or All.</p>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js?v=01effdcf"></script>
+  <script src="../assets/game/guide.js?v=4e288597"></script>
+  <script>
+  // Renders LMCSGuide.articles as text nodes only; a #hash scrolls to and focuses that article.
+  (function () {
+    var ROLES = ['All', 'Owner', 'Principal', 'Coordinator', 'Teacher', 'Fee Clerk', 'Staff'];
+    var arts = (window.LMCSGuide && window.LMCSGuide.articles) || [], role = 'All';
+    var q = document.getElementById('q'), list = document.getElementById('articles');
+    function el(tag, attrs, text) {
+      var n = document.createElement(tag);
+      Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      if (text) n.textContent = text;
+      return n;
+    }
+    var chips = ROLES.map(function (r) {
+      var b = el('button', { type: 'button', class: 'g-chip', 'aria-pressed': String(r === role) }, r);
+      b.addEventListener('click', function () { role = r; filter(); });
+      document.getElementById('chips').appendChild(b);
+      return b;
+    });
+    var items = arts.map(function (a) {
+      var roles = a.roles || [], s = el('section', { id: String(a.id), class: 'g-article', tabindex: '-1', 'aria-labelledby': 'h-' + a.id });
+      var hd = el('h2', { id: 'h-' + a.id }, String(a.title || ''));
+      s.appendChild(hd);
+      if (roles.length) s.insertBefore(el('span', { class: 'g-for' }, 'For ' + roles.join(', ')), hd);
+      [].concat(a.body || []).forEach(function (p) { s.appendChild(el('p', {}, String(p))); });
+      list.appendChild(s);
+      return { a: a, s: s, text: (a.title + ' ' + [].concat(a.body || []).join(' ')).toLowerCase() };
+    });
+    function filter() {
+      var t = q.value.trim().toLowerCase(), shown = 0;
+      chips.forEach(function (b) { b.setAttribute('aria-pressed', String(b.textContent === role)); });
+      items.forEach(function (x) {
+        var roles = x.a.roles || [];
+        x.s.hidden = !((role === 'All' || !roles.length || roles.indexOf(role) !== -1) && (!t || x.text.indexOf(t) !== -1));
+        if (!x.s.hidden) shown++;
+      });
+      document.getElementById('empty').hidden = shown > 0;
+      document.getElementById('count').textContent = shown === items.length ? '' : shown + ' of ' + items.length + ' articles';
+    }
+    function toHash() {
+      var id = location.hash.slice(1);
+      try { id = decodeURIComponent(id); } catch (e) { /* use it as it is */ }
+      var x = items.filter(function (i) { return String(i.a.id) === id; })[0];
+      if (!x) return;
+      if (x.s.hidden) { role = 'All'; q.value = ''; filter(); }
+      x.s.scrollIntoView({ block: 'start' });
+      x.s.focus({ preventScroll: true });
+    }
+    q.addEventListener('input', filter);
+    window.addEventListener('hashchange', toHash);
+    filter();
+    toHash();
+  })();
+  </script>
+</body>
+</html>
