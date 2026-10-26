@@ -41,13 +41,16 @@ window.LMCS = (function () {
   // STAFF_AUTO_SIGNIN property is 'on'. Only role Teacher or Staff is ever accepted back -- never a management role.
   const STAFF_SIGNIN_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
   async function fetchStaffSignIn_(idToken) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl && setTimeout(function () { ctl.abort(); }, 10000); // a hung backend must not leave the gate on "checking"
     try {
-      const res = await fetch(STAFF_SIGNIN_URL + '?action=staffsignin&idToken=' + encodeURIComponent(idToken), { cache: 'no-store' });
+      const res = await fetch(STAFF_SIGNIN_URL + '?action=staffsignin&idToken=' + encodeURIComponent(idToken), { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
       const d = await res.json();
       if (d && d.success === true && (d.role === 'Teacher' || d.role === 'Staff') && /^LMS[1-6]$/.test(d.campusId) && d.employeeCode) {
         return { campusId: d.campusId, name: '', role: d.role, employeeCode: String(d.employeeCode), autoSignIn: true };
       }
-    } catch (err) { /* unreachable or malformed -- treated as not on the list */ }
+    } catch (err) { /* unreachable, timed out or malformed -- treated as not on the list */ }
+    finally { if (timer) clearTimeout(timer); }
     return null;
   }
 
