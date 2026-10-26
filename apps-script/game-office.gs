@@ -64,7 +64,7 @@ function daybookMissions_(caller, cfg, now) {
         title: back ? 'Fix and resend ' + daybookPlace_(campus) + '\'s ' + daybookNoun_(q[0], full.labels)
           : 'Confirm ' + (n.total - n.confirmed) + ' starting figure' + (n.total - n.confirmed === 1 ? '' : 's') + ' for ' + daybookPlace_(campus),
         why: back ? String(st.note || '') : q[1], owner: caller.email, campus: campus, go: daybookGo_(campus, q[0]),
-        progress: { done: n.confirmed, total: n.total }, done: n.confirmed === n.total, core: false, shared: true,
+        progress: { done: back ? Math.min(n.confirmed, n.total - 1) : n.confirmed, total: n.total }, done: back ? false : n.confirmed === n.total, core: false, shared: true,
       }));
     });
   });
@@ -74,7 +74,9 @@ function daybookMissions_(caller, cfg, now) {
 // Coordinator -> one mission per submitted (or already decided) cash / odometer count in their schools: approve or return it.
 // Shared (no personal credit); done once approved or returned.
 function daybookApproveMissions_(caller, cfg, now) {
-  const full = daybookProgress_(caller), out = [];
+  const out = [];
+  try {
+  const full = daybookProgress_(caller);
   Object.keys(full.states).forEach(function (campus) {
     Object.keys(full.states[campus]).forEach(function (quest) {
       const st = full.states[campus][quest];
@@ -86,6 +88,7 @@ function daybookApproveMissions_(caller, cfg, now) {
       }));
     });
   });
+  } catch (err) { console.error('daybook approve', err); return []; } // never marks the day down
   return out;
 }
 
@@ -100,9 +103,8 @@ function daybookOwnerWarm_(caller) {
 function daybookQuests_(caller, cfg, now) {
   const role = caller.primaryRole;
   if (role !== 'Owner' && role !== 'Accounts') return [];
-  const prog = daybookProgress_(caller).progress;
+  const full = daybookProgress_(caller), prog = full.progress;
   return Object.keys(prog).map(function (campus) {
-    const full = daybookProgress_(caller);
     const steps = daybookHere_(prog[campus], full.labels).map(function (q) {
       return { id: q[0], title: q[1], go: daybookGo_(campus, q[0]), done: q[2].total > 0 && q[2].confirmed === q[2].total, locked: false };
     });
