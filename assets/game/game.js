@@ -336,6 +336,8 @@ var LMCSGame = window.LMCSGame = (function () {
       var days = daysLine(t.daysOnTrack), cut = days.indexOf(' Last month: ');
       el.textContent = '';
       el.hidden = false;
+      // a module page with no missions of its own (e.g. the Owner, quests only): no Today box, and nothing at all without quests
+      if (opts.only && !all.length) { todayEl.hidden = true; if (!questEl && !parEls.length) { el.hidden = true; return; } }
       rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, parEls, days && h('p', { class: 'lg-days' },
         cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
       el.appendChild(rootEl);
