@@ -1,8 +1,8 @@
 # Teacher leave in Approvals (design and plan)
 
 Date: 2026-10-25. Asked for by Uday ("Leave into Approvals", Q6 of the Teacher game design), routed through the LMCS
-Master Agent. **Status: plan complete. All 8 questions are answered (2026-10-25/26, see "Uday's decisions"); waiting for Uday's go-ahead to
-build. Nothing is built or deployed.** Where the body below differs from a numbered decision, the decision wins.
+Master Agent. **Status: P1-P4 built on branch `teacher-leave-in-approvals` (not merged, not deployed); see "As built" at the end. P5 and P6 are later.**
+All 8 questions were answered (2026-10-25/26, see "Uday's decisions"). Where the body below differs from a numbered decision, the decision wins.
 
 Inputs: Teacher game spec (`teacher-portal-game-design`, e6ce8e8), LMCS Bye Laws 2026 leave section (OO-09/26, 11 Sep
 2026), Payroll's leave fields (`payroll-calc.gs`, `PAY_LEAVE_FIELDS`), current `approvals.gs` on `origin/main`.
@@ -182,3 +182,57 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 8. **Payroll prefill (2026-10-26):** "Later, as a review button" (option A). Payroll stays exactly as it is in this build. After the
    February pilot, a "Fill from approved leave" button pre-fills the counts for Management to review and change. Absent, Double
    Leave and Non-Compliance stay typed by hand.
+
+## As built (P1-P4, branch `teacher-leave-in-approvals`, 2026-10-26)
+
+Not deployed and not merged to main; deploying is Uday's, through `apps-script/deploy.mjs` (dry run first). Where this section differs from
+the plan above, **this section is what the code does**.
+
+### What changed against the plan
+
+- `leaveDays` was split in two, because Emergency Leave covers days but charges none: **`workingDays`** (working days covered) and
+  **`deduction`** (leave days charged: Casual and Single 1 per day, Half 0.5, Short 0.33, Late 0.25, Special Day 2 or 3 by notice, Emergency 0).
+- An eighth column, **`leaveNote`**, stores the filing warnings (Long Leave, sandwich rule) so the decider sees them on the request.
+- `dayPart` also takes `late`. Late is stored (type, date) but never returned by the contract.
+- Columns on the Approvals sheet, sheet columns 26 to 33 (0-based 25 to 32), written inside the submit lock, header self-created:
+  `leaveType, fromDate, toDate, dayPart, workingDays, deduction, noticeDays, leaveNote`. Dates are stored as text `YYYY-MM-DD`.
+- New file `apps-script/approvals-leave.gs` (PDR project, in `projects.json`); small hooks in `approvals.gs`; `main.gs` routes `approvedleave`.
+- The category is mirrored in the Teacher portal, the Coordinator Systems > Approvals page and the principals' page; the principals' request
+  form does not offer it (the server also refuses it from non-teachers).
+- Filing rules enforced on the server: future date, or today before 7:00 AM IST; Half, Short, Late and Special Day are single-day; an overlap
+  with the same teacher's open or approved leave is refused, an identical repeat is a no-op (double-click safe).
+- The approver seam is `aprCanDecideRow_` with an empty `APR_LEAVE_PRINCIPAL_TYPES`; nothing changes for Management.
+- Not built (later): P5 rules (10% cap / Double Leave, Special Day tier from the calendar, CL balance, same-role overlap) and P6 (Payroll prefill).
+
+### The contract the Teacher game reads
+
+Two ways in, same data:
+
+1. **HTTP (any signed-in caller, scoped):** `GET <PDR /exec>?action=approvedleave&from=YYYY-MM-DD&to=YYYY-MM-DD&idToken=...[&email=][&campusId=]`.
+   A teacher gets only their own days (their `email` is forced), a Principal their campus, Owner/Coordinator anyone. At most 400 days per call.
+2. **Server code in the PDR project (Teacher game backend, teacher-portal.gs):** `aprApprovedLeaveDays_(email, fromISO, toISO)`, the same list, no
+   HTTP and no scoping, so call it only for a person you already decided to show.
+
+Response: `{ success: true, days: [ ... ] }`, sorted by date then email, one entry per **working day** of **Approved** leave in the window:
+
+```
+{ date: '2026-10-29',        // working days only: Sundays, 2nd Saturdays and the school's "GH" calendar holidays are never returned
+  fraction: 1,               // share of the day away: 1 (full), 0.5 (Half Leave), 0.33 (Short Leave)
+  excused: true,             // the game's yes/no: true for Casual, Single, Emergency, Special Day, Half Leave; false for Short Leave
+  type: 'Casual Leave', approvalId: 'apr-...', email: 'asha@lms.org.in', campusId: 'LMS4', employeeCode: 'KUL/..' }
+```
+
+Rules the game can rely on: Pending, Rejected and Revoked requests never appear; **Late is never returned** (a Late day is a normal working day);
+the reason text is never returned; a day with no entry is a normal working day. For "days on track": skip a day if it has an entry with
+`excused: true`; a Short Leave entry (`excused: false`) leaves the day as an ordinary working day. Revoking an approval removes its days on the
+next read, so cache by short TTL, not forever.
+
+Server readers in other Apps Script projects can read the Approvals sheet directly: category (index 2) = 'Leave', status (13) = 'Approved',
+requester email (11), campus (1), and the leave columns at indexes 25 to 32 (`APR_LV_COL` in approvals-leave.gs is the single definition).
+
+### Before this goes live
+
+1. `node apps-script/deploy.mjs pdr` (dry run), then `--push --deploy "teacher leave"`, then `node tests/verify.mjs --live`.
+2. The Coordinator project's `coordinator.gs` maps categories to departments (`COORD_APPROVAL_DEPT`): add `'Leave': COORD_DEPT_HR` so
+   leave follow-ups do not land in School Operations (a one-line change in the Coordinator project, separate from this branch).
+3. Try one teacher request end to end (file, see it on Coordinator > Systems > Approvals, approve, read it back through `approvedleave`).

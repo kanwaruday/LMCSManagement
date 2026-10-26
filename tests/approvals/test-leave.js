@@ -252,6 +252,13 @@ T('action approvedleave: teacher sees only their own, principal their campus', (
   assert.equal(act(teacher, { from: day, to: '2020-01-01' }).success, false, 'bad window');
 });
 
+T('server-side helper for code in the same project: aprApprovedLeaveDays_(email, from, to)', () => {
+  const day = nextTuesday();
+  const W = world({ rows: [row({ id: 'm1', type: 'Half Leave', from: day }), row({ id: 'o1', type: 'Casual Leave', from: day, email: 'other@lms.org.in' })] });
+  const r = JSON.parse(JSON.stringify(W.call('aprApprovedLeaveDays_')('ASHA@lms.org.in', day, day)));
+  assert.equal(r.length, 1); assert.equal(r[0].approvalId, 'm1'); assert.equal(r[0].excused, true); assert.equal(r[0].fraction, 0.5);
+});
+
 T('approver seam: Management decides all leave now; the Principal hand-over is configuration only', () => {
   const w = vm.createContext({ console, callerHasRole_: (c, r) => (c.roles || []).includes(r) });
   vm.runInContext(read('approvals-leave.gs'), w);

@@ -207,6 +207,12 @@ function aprLvHolidays_(campusId, fromISO, toISO) {
   return set;
 }
 
+// The same contract for code inside the PDR project (the Teacher game backend, teacher-portal.gs, ...): no HTTP, no caller scoping,
+// so call it only from server code that has already decided who may see this teacher. Returns the entries described at aprLvApprovedDays_.
+function aprApprovedLeaveDays_(email, fromISO, toISO) {
+  return aprLvApprovedDays_(aprValues_(), { from: fromISO, to: toISO, email: email }, aprLvHolidays_);
+}
+
 // action=approvedleave&from=YYYY-MM-DD&to=YYYY-MM-DD[&email=][&campusId=] (GET). The contract other modules read.
 // A teacher sees only their own days; a Principal their campus; Owner/Coordinator any.
 function aprLvApprovedLeaveAction_(caller, params) {
