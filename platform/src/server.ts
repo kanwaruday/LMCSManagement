@@ -1,0 +1,34 @@
+// HTTP API. Run: node src/server.ts (Render), after node src/migrate.ts.
+import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
+import { fileURLToPath } from 'node:url';
+import type { Config } from './config.ts';
+import type { Sql } from './db.ts';
+
+export type Deps = { sql: Sql; config: Pick<Config, 'APP_ORIGIN'>; logger?: boolean };
+
+export function buildServer({ sql, config, logger = false }: Deps): FastifyInstance {
+  const app = Fastify({ logger });
+  // Array form: the header is sent only when the request Origin matches APP_ORIGIN.
+  app.register(cors, { origin: [config.APP_ORIGIN], credentials: false });
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
+    reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  });
+
+  app.get('/api/health', async () => {
+    const db = await sql`select 1`.then(() => true, () => false);
+    // ponytail: google/hooks/lastSync/lastBackup/lastRestoreTest are filled in by Tasks 3, 6, 10, 11.
+    return { ok: db, db, google: false, hooks: { pdr: false, coord: false }, lastSync: null, lastBackup: null, lastRestoreTest: null };
+  });
+  return app;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { loadConfig } = await import('./config.ts');
+  const { sql } = await import('./db.ts');
+  const config = loadConfig(process.env);
+  await buildServer({ sql, config, logger: true }).listen({ host: '0.0.0.0', port: config.PORT });
+}

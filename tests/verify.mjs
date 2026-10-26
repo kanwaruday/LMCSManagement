@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // One command that says whether the repo is safe to ship:  node tests/verify.mjs [--live]
 //   1. every test under tests/ passes     2. every .gs compiles     3. .gs files map to projects exactly once
+//   4. platform/ typechecks and its tests pass (when platform/node_modules and TEST_DATABASE_URL exist)
 //   --live: the published GitHub Pages portal pages and the Apps Script /exec deployments answer.
 // Exit code 0 = all good. Claude: run this before every commit/push, and with --live after a deploy.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -19,6 +20,16 @@ for (const t of tests) step(`test ${t}`, () => execFileSync('node', [join(root, 
 
 for (const f of readdirSync(join(root, 'apps-script')).filter((f) => f.endsWith('.gs')))
   step(`compile ${f}`, () => new vm.Script(readFileSync(join(root, 'apps-script', f), 'utf8'), { filename: f }));
+
+// Platform (Node + Postgres): needs `npm ci` in platform/ and a test database; skipped (not failed) without them.
+const platform = join(root, 'platform');
+const platformSkip = !existsSync(join(platform, 'node_modules')) ? 'no platform/node_modules: run npm ci in platform/'
+  : !process.env.TEST_DATABASE_URL ? 'TEST_DATABASE_URL unset: export TEST_DATABASE_URL=postgres://postgres@localhost:54329/lmcs_test' : '';
+if (platformSkip) console.log(`skip  platform (${platformSkip})`);
+else {
+  step('platform typecheck', () => execFileSync('npx', ['tsc', '--noEmit'], { cwd: platform, stdio: 'pipe', encoding: 'utf8' }));
+  step('platform tests', () => execFileSync('npm', ['test'], { cwd: platform, stdio: 'pipe', encoding: 'utf8' }));
+}
 
 step('gs files mapped to projects', () => execFileSync('node', [join(root, 'apps-script/deploy.mjs'), '--check'], { stdio: 'pipe', encoding: 'utf8' }));
 

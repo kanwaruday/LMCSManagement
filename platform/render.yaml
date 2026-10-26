@@ -1,0 +1,58 @@
+# Render blueprint for the LMCS platform API + Postgres (Singapore).
+# Secrets are `sync: false`: Render asks Uday for each value; none is stored in this repo.
+services:
+  - type: web
+    name: lmcs-platform
+    runtime: node
+    region: singapore
+    plan: starter
+    repo: https://github.com/kanwaruday/LMCSManagement
+    branch: claude/platform-design-91d594   # main publishes the live GitHub Pages site; move here later
+    rootDir: platform
+    buildCommand: npm ci
+    startCommand: node src/migrate.ts && node src/server.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lmcs-db
+          property: connectionString
+      - key: APP_ORIGIN
+        value: https://kanwaruday.github.io
+      - key: GOOGLE_SIGNIN_CLIENT_ID
+        value: 697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com
+      - key: GOOGLE_BOT_CLIENT_ID
+        sync: false
+      - key: GOOGLE_BOT_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_BOT_REFRESH_TOKEN
+        sync: false
+      - key: APPROVALS_SHEET_ID
+        sync: false
+      - key: TEACHING_APPLICANTS_SHEET_ID
+        sync: false
+      - key: SYNC_SECRET
+        sync: false
+      - key: PDR_HOOK_URL
+        sync: false
+      - key: PDR_HOOK_SECRET
+        sync: false
+      - key: COORD_HOOK_SECRET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: BACKUP_AGE_RECIPIENT
+        sync: false
+
+databases:
+  - name: lmcs-db
+    plan: basic-1gb
+    region: singapore
+    postgresMajorVersion: "17"
+    ipAllowList: []   # private network only: reachable from lmcs-platform, not the internet

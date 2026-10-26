@@ -8,3 +8,6 @@ transport/game-data/
 
 # Real CW/HW feed snapshots (staff names); never commit
 tools/private/
+
+# Platform dependencies
+platform/node_modules/
