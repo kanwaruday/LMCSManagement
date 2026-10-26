@@ -283,16 +283,28 @@ function gameOwnerMissions_(caller, src, cfg, now) {
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────────
-// Owner beats Coordinator beats Principal (primaryRole is already chosen that way). Other roles come from their
-// module's registration (Teacher), else "not available yet".
-function gameMissionsFor_(caller, src, cfg, now) {
+// Owner beats Coordinator beats Principal (primaryRole is already chosen that way). Every module registered for the role
+// (GAME_MODULE_MISSIONS[role]: one function or an array of them, e.g. Teacher, fleet for Coordinator) adds its missions to
+// the built-in list. A role with no built-ins and no module answering with a list is "not available yet". A module that
+// throws is skipped and its name pushed onto `down` (optional), so the day is not snapshotted while it is broken.
+function gameMissionsFor_(caller, src, cfg, now, down) {
+  let out = null;
   switch (caller.primaryRole) {
-    case 'Principal': return gamePrincipalMissions_(caller, src, cfg, now);
-    case 'Coordinator': return gameCoordinatorMissions_(caller, src, cfg, now);
-    case 'Owner': return gameOwnerMissions_(caller, src, cfg, now);
+    case 'Principal': out = gamePrincipalMissions_(caller, src, cfg, now); break;
+    case 'Coordinator': out = gameCoordinatorMissions_(caller, src, cfg, now); break;
+    case 'Owner': out = gameOwnerMissions_(caller, src, cfg, now); break;
   }
-  if (Object.prototype.hasOwnProperty.call(GAME_MODULE_MISSIONS, caller.primaryRole)) return GAME_MODULE_MISSIONS[caller.primaryRole](caller, cfg, now);
-  return { notYet: true };
+  gameModuleHooks_(GAME_MODULE_MISSIONS, caller.primaryRole).forEach(function (fn) {
+    let got;
+    try { got = fn(caller, cfg, now); } catch (err) { if (down) down.push('module ' + (fn.name || '?')); console.error('game module', fn.name, err); return; }
+    if (Array.isArray(got)) out = (out || []).concat(got);
+  });
+  return out || { notYet: true };
+}
+
+// The functions registered for a role in a module registry: none, one, or an array (several modules for one role).
+function gameModuleHooks_(registry, role) {
+  return [].concat(Object.prototype.hasOwnProperty.call(registry, role) ? registry[role] : []).filter(function (fn) { return typeof fn === 'function'; });
 }
 
 // ── Today: fixed daily set, roll-over, days on track ─────────────────

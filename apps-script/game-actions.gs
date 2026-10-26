@@ -123,8 +123,11 @@ function gameIssueActionsBy_(rows, email) {
 // earlier day's ids (roll-over), and today's ids: the existing snapshot, or newIds picked now.
 function gameDailyPlan_(dailyRows, caller, dayKey, missionsNow, cfg, sourcesOk) {
   const role = caller.primaryRole, who = gameLower_(caller.email), core = (cfg.core && cfg.core[role]) || [];
-  const hook = GAME_MODULE_DONE_AT[role];
-  const doneAtFn = typeof hook === 'function' ? function (id) { return hook(caller, id); } : null;
+  const hooks = gameModuleHooks_(GAME_MODULE_DONE_AT, role); // first module with an answer wins; a throw is null (finalize's rule)
+  const doneAtFn = hooks.length ? function (id) {
+    for (let i = 0; i < hooks.length; i++) { let at = null; try { at = hooks[i](caller, id); } catch (err) { at = null; } if (typeof at === 'number' && isFinite(at)) return at; }
+    return null;
+  } : null;
   const finalize = [];
   let latest = null;
   for (let i = 1; i < dailyRows.length; i++) {
@@ -253,7 +256,7 @@ function gameToday_(caller, params) {
   const cfg0 = gameParseConfig_(ss.getSheetByName('Game Config').getDataRange().getValues());
   if (!gamePilotPasses_(caller, cfg0)) return { success: true, notYet: true };
   const loaded = gameLoadSources_(caller, params.idToken, cfg0, now);
-  let missionsNow = gameMissionsFor_(caller, loaded.src, cfg0, now);
+  let missionsNow = gameMissionsFor_(caller, loaded.src, cfg0, now, loaded.down);
   if (!Array.isArray(missionsNow)) return { success: true, notYet: true }; // no missions for this role yet
   if (role === 'Coordinator') missionsNow = missionsNow.filter(function (m) { return !m.campus || gameInPilot_(cfg0.pilotCampuses.Coordinator, m.campus); });
 
@@ -275,8 +278,10 @@ function gameToday_(caller, params) {
     };
     const newly = gameQuestNewlyDone_(questRows, role, evidence, progRows, me, cfg);
     gameAppendText_(progSheet, newly.map(function (n) { return [me, 'quest_step', n.questId + ':' + n.stepId, 'done', now.toISOString()]; }));
-    const quests = gameQuestState_(questRows, role, evidence, progRows, me, cfg)
-      .concat(Object.prototype.hasOwnProperty.call(GAME_MODULE_QUESTS, role) ? GAME_MODULE_QUESTS[role](caller, cfg, now) : []);
+    let quests = gameQuestState_(questRows, role, evidence, progRows, me, cfg);
+    gameModuleHooks_(GAME_MODULE_QUESTS, role).forEach(function (fn) { // runs under the lock: modules keep this cheap; a throw drops only its quests
+      try { const q = fn(caller, cfg, now); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
+    });
 
     const out = {
       success: true, day: dayKey, firstLoadToday: daily.created, role: role, campus: caller.campusId,
