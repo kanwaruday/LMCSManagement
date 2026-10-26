@@ -76,6 +76,7 @@ approvedLeaveDays(email, fromISO, toISO) ->
 ```
 
 - **One entry per calendar day**, so the Teacher game never does its own range maths.
+- **Late is never returned as a leave day** (Uday, Q5): it is notice and record only, and the day stays a working day.
 - Only requests with status **Approved** (Revoked and Rejected never appear), not archived-filtered.
 - `fraction` is how much of the day is on leave: a full-day leave is 1, a half leave 0.5, a short leave about 0.33.
   The game decides how a partial day counts toward "days on track" (open question 4).
@@ -144,7 +145,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 
 1. ~~Who approves teacher leave~~ **Answered: B (Management), seam for later.**
 2. ~~One "Leave" category with a type dropdown, or separate categories?~~ **Answered: one "Leave" + type dropdown (A).**
-3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). Open follow-up: what a requested "Late" means (it was management-recorded).
+3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). **Late: answered in Q5 below.**
 4. In "days on track", does a half-day leave excuse the whole day or half of it? (recommend: the whole day, so a teacher is never penalised)
 5. Can a teacher file leave for a past date or the same day? (recommend: same day until 7:00 AM, past dates only by a Principal on their behalf)
 6. Should approved leave later prefill Payroll's monthly leave counts? (recommend yes, as a separate step after the game)
@@ -161,3 +162,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 4. **Casual and Emergency added (2026-10-25):** "Add Casual + Emergency" (option A, so every day off has dates in Approvals and the game
    never counts a Casual or Emergency day as missed). The teacher dropdown is **Single (unpaid), Short, Half day, Special Day
    absence, Late, Casual, Emergency**. Compensatory stays out of the teacher form (Management grants it).
+5. **What an approved Late means (2026-10-26):** "approval is just the notice and record; it still counts as a Late (0.25 day,
+   4 = 1 day deducted)." Nothing is excused; an approved Late replaces the Principal's register entry. **For the game and the
+   contract it is not leave:** `approvedLeaveDays` does not return Late as a leave day (a Late day is a normal working day).
+   Late stays readable on the row (type, date, minutes late if given) so Payroll can count Lates later.
