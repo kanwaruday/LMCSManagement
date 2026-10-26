@@ -158,8 +158,8 @@ t('team bar and gaps: counts only, nobody ranked', () => {
   assert.strictEqual(FQ.teamBar('LMS 4', ps).text, 'LMS 4 fleet: 1 of 3 buses ready');
   assert.strictEqual(FQ.teamBar('LMS 6', ps).text, 'LMS 6 fleet: 0 of 0 buses ready');
   const g = FQ.gaps(ps);
-  assert.deepStrictEqual(g.find((x) => x.quest === 'parts'), { quest: 'parts', count: 2, text: '2 buses still need parts history' });
-  assert.ok(g.every((x) => Object.keys(x).join() === 'quest,count,text'), 'gaps carry no names');
+  assert.deepStrictEqual(g.find((x) => x.quest === 'parts'), { quest: 'parts', count: 2, known: 0, text: '2 buses still need parts history' });
+  assert.ok(g.every((x) => Object.keys(x).join() === 'quest,count,known,text'), 'gaps carry no names: counts only');
   assert.strictEqual(FQ.gaps([ps[1]]).find((x) => x.quest === 'papers').text, '1 bus still needs vehicle papers');
 });
 
@@ -189,5 +189,52 @@ t('papers: scanAccepted records which fields were confirmed unchanged from the s
   assert.match(FQ.validateQuest('fuel', { scanAccepted: [] }, TODAY).error, /Unknown field/, 'only the papers quest has scans');
   const p = { data: { papers: { scanAccepted: ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'seatingCapacityAsPerRc'] } } };
   assert.strictEqual(FQ.questsFor(p)[0].done, false, 'scan provenance alone never completes the papers quest');
+});
+// ── Two-level progress (Ruling G1): confirmed (saved, or the run that IS the requirement) and known (a scan value, a fill video:
+// suggests the answer, needs confirming). Done and ready never change. SYNTHETIC values only.
+const prog = (p, id) => FQ.progressFor(p).find((x) => x.id === id);
+t('progress: each quest counts its required items (fields, each part, each run it needs)', () => {
+  assert.deepStrictEqual(FQ.progressFor({}).map((x) => x.id + ' ' + x.total + ' ' + x.confirmed + ' ' + x.known),
+    ['papers 8 0 0', 'safety 2 0 0', 'parts 20 0 0', 'driver 7 0 0', 'fuel 4 0 0', 'capture 1 0 0']);
+  const p = FQ.profilesFromRows(fullRows())[0];
+  assert.ok(FQ.progressFor(p).every((x) => x.confirmed === x.total && x.known === 0), 'a ready bus: everything confirmed, nothing left to confirm');
+  const noRun = FQ.profilesFromRows(Object.assign(fullRows(), { captured: {}, inspected: {} }))[0];
+  FQ.progressFor(noRun).forEach((x) => assert.strictEqual(x.total - x.confirmed, FQ.questsFor(noRun).find((q) => q.id === x.id).missing.length, x.id + ': confirmed matches missingFor exactly'));
+  assert.deepStrictEqual([prog(noRun, 'safety').confirmed, prog(noRun, 'capture').confirmed], [1, 0], 'no safety check or timelapse on record: those items are not confirmed');
+});
+const SCAN = { make: { value: 'Testmake', doc: 'RC' }, chassisNo: { value: 'TESTCHASSIS01', doc: 'RC', disagree: true }, fuel: { value: 'Steam', doc: 'RC' },
+  modelAndVariant: { value: '', doc: 'RC' }, dateOfRegistration: { value: '2017-04-05', doc: 'RC' } };
+t('progress: scan values count as known, not confirmed', () => {
+  const p = { reg: 'TEST01', data: {}, scan: SCAN };
+  assert.deepStrictEqual(prog(p, 'papers'), { id: 'papers', total: 8, confirmed: 0, known: 2 },
+    'make and chassis no. (even when the scans disagree) are known; a value the form would refuse, a blank one and a field the quest does not require are not');
+  assert.strictEqual(FQ.questsFor(p)[0].done, false); assert.strictEqual(FQ.completion(p), 0); assert.strictEqual(FQ.isReady(p), false);
+});
+t('progress: a saved value moves an item from known to confirmed', () => {
+  const p = { reg: 'TEST01', data: { papers: { make: 'Testmake', odometerToday: '84560' } }, scan: SCAN };
+  assert.deepStrictEqual(prog(p, 'papers'), { id: 'papers', total: 8, confirmed: 2, known: 1 }, 'make is confirmed now, chassis no. still only known');
+});
+t('progress: a fill with a video is known for "driver has a smartphone"; nothing else is inferred', () => {
+  const fuel = (fills, data) => prog({ reg: 'TEST01', data: { fuel: data || {} }, fills }, 'fuel');
+  assert.deepStrictEqual(fuel({ count: 4, withVideo: 3, withVideoAndBill: 3 }), { id: 'fuel', total: 4, confirmed: 0, known: 1 });
+  assert.strictEqual(fuel({ count: 4, withVideo: 0, withVideoAndBill: 0 }).known, 0, 'fills without a video say nothing');
+  assert.strictEqual(fuel(undefined).known, 0, 'an older backend sends no fills');
+  assert.deepStrictEqual(fuel({ count: 1, withVideo: 1, withVideoAndBill: 1 }, { driverHasASmartphoneForTheFillVideo: 'no' }), { id: 'fuel', total: 4, confirmed: 1, known: 0 }, 'a saved answer wins, whatever it says');
+  const p = { reg: 'TEST01', data: {}, fills: { count: 9, withVideo: 9, withVideoAndBill: 9 } };
+  assert.strictEqual(FQ.questsFor(p).find((q) => q.id === 'fuel').done, false, 'fills never complete the quest');
+});
+t('progress: profilesFromRows carries the scan, the papers on file and the fills; fleetProgress sums them; gaps say how many have values to confirm', () => {
+  const rows = fullRows();
+  rows.fleet = [Object.assign({}, fleetRow, { reg: 'TEST01', driverCode: 'E103', scan: SCAN, docs: { current: 5, total: 6, expired: 1 }, fills: { count: 4, withVideo: 3, withVideoAndBill: 3 } }),
+    Object.assign({}, fleetRow, { reg: 'TEST02', driverCode: 'E102' }), fleetRow];
+  const ps = FQ.profilesFromRows(rows), a = ps.find((p) => p.reg === 'TEST01');
+  assert.deepStrictEqual([a.scan.make.value, a.docs, a.fills.withVideo], ['Testmake', { current: 5, total: 6, expired: 1 }, 3]);
+  assert.deepStrictEqual(ps.find((p) => p.reg === 'TEST02').scan, {}, 'no scan: an empty object');
+  assert.deepStrictEqual(FQ.fleetProgress(ps), { confirmed: 42, known: 3, total: 126 }, 'items over every bus: the ready bus is all confirmed, TEST01 has 2 scan values and a fill video');
+  assert.deepStrictEqual(FQ.fleetProgress([]), { confirmed: 0, known: 0, total: 0 });
+  const g = FQ.gaps(ps);
+  assert.deepStrictEqual(g.map((x) => x.quest + ' ' + x.count + ' ' + x.known), ['papers 2 1', 'safety 2 0', 'parts 2 0', 'driver 2 0', 'fuel 2 1', 'capture 2 0']);
+  assert.strictEqual(g[0].text, '2 buses still need vehicle papers', 'the gap text is unchanged');
+  assert.strictEqual(FQ.teamBar('LMS 4', ps).text, 'LMS 4 fleet: 1 of 3 buses ready', 'ready counts only confirmed quests');
 });
 console.log('fleet quests: all checks passed');

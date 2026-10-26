@@ -99,7 +99,9 @@ window.captureLayoutTest = async function () {
 // Owner's gap row does not lead with its count, the waiting banner shows empty, or on a quest its strip of slots does not fit or
 // the pinned HUD takes over 30% of the screen. Vehicle papers pre-filled from the scans: a "From the RC scan · please confirm"
 // tag (or "Scans disagree: check the paper"), with "View scan" (new tab, rel=noopener) or "No scan found", under an empty field,
-// its link under 48 px, or wrapping past the field's width.
+// its link under 48 px, or wrapping past the field's width. Two-level progress (Ruling G1): a team bar without its "Fleet data:
+// N% confirmed" line, a ring without its words (aria-label) or with a known arc and no "found ... confirm them" line, a quest card
+// whose strip shows light (known) slots without saying "needs confirming", or a strip that does not fit its card.
 window.setupLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement, vis = (e) => e.getClientRects().length > 0;
   facts.viewport = innerWidth + 'x' + innerHeight;
@@ -117,6 +119,21 @@ window.setupLayoutTest = async function () {
     const cards = [...document.querySelectorAll('.fs-bus')];
     facts.buses = cards.length;
     if (cards.some((c) => { const r = c.querySelector('.fs-ring'); return !r || r.getBoundingClientRect().width < 48; })) f.push('a bus card has no ring, or its ring is squeezed');
+    const data = [...document.querySelectorAll('#teams li .fs-data')].map((x) => x.textContent);
+    if (data.length !== bars.length || data.some((t) => !/^Fleet data: \d+% confirmed( · \d+% found, to\sconfirm)?$/.test(t))) f.push('a team bar has no "Fleet data: N% confirmed" line');
+    if (cards.some((c) => c.querySelector('.fs-ring circle.known') && !/found in .+ · confirm\sthem/.test(c.textContent))) f.push('a ring shows known values without saying so');
+    facts.known = cards.filter((c) => c.querySelector('.fs-ring circle.known')).length;
+    const gk = [...document.querySelectorAll('#gapList .fs-gapk')].filter(vis).map((x) => x.textContent);
+    if (gk.some((t) => !/^\d+ (has|have) .+ to confirm$/.test(t))) f.push('a gap\'s known line reads "' + gk.join(' | ') + '"');
+  }
+  if ([...document.querySelectorAll('.fs-ring')].some((r) => !/(% confirmed, \d of 6 quests done|^Ready: all 6 quests done)/.test(r.getAttribute('aria-label') || ''))) f.push('a ring has no words for screen readers');
+  if (facts.screen === 'bus') {
+    [...document.querySelectorAll('#bus .fs-quest')].forEach((q) => {
+      const st = q.querySelector('.fs-strip'), line = q.querySelector('.fs-qtext>span').textContent;
+      if (q.dataset.done === 'false' && !q.querySelector('.cap-todo, .fs-bad') && !/^\d+ of \d+ done · /.test(line)) f.push('a quest line reads "' + line + '"');
+      if (st && st.querySelector('[data-s="k"]') && !/needs confirming/.test(line)) f.push('a strip shows known items without saying so');
+      if (st && st.getBoundingClientRect().right > q.getBoundingClientRect().right - 8) f.push('a quest strip does not fit its card');
+    });
   }
   if (facts.screen === 'bus' && document.querySelectorAll('#bus .fs-quest').length !== 6) f.push('the bus does not list its six quests');
   // the Owner's gaps: every row leads with its count; the waiting banner never shows empty (all refused: only the refused list)

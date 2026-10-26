@@ -251,16 +251,18 @@
 .cap-missing span{min-width:0;overflow-wrap:anywhere}
 .cap-resume .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff} /* the second tap throws the check away */
 
-/* Fleet setup (setup.html): the same sunlight page. Team bars, then one card per bus with a ring of six segments (one per
-   quest, green when done), a bus's six quests, a quest's short form. Green marks done only; nothing moves but the ring filling. */
+/* Fleet setup (setup.html): the same sunlight page. Team bars, then one card per bus with its ring, a bus's six quests, a quest's
+   short form. Two levels (Ruling G1): solid green is confirmed (saved, or the run itself); light green with stripes is known (a
+   scan value, a fill video: still to confirm), always with words saying so. Nothing moves but the ring filling. */
 .cap a:focus-visible,.cap summary:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
 #loadMsg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #loadMsg[hidden]{display:none}
-.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
+.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:14px}
 .fs-teams p{margin:0 0 3px;font-size:15px;font-weight:800;line-height:1.3;font-variant-numeric:tabular-nums}
 .fs-teams .cap-bar{height:8px;border-color:#8a8a8a}
 .fs-teams:has(li:only-child) p{font-size:18px} /* a Fee Clerk's one campus: the team bar is the page's headline */
 .fs-teams:has(li:only-child) .cap-bar{height:16px}
+.fs-teams:has(li:only-child) .fs-bar2{height:10px}
 .fs-gaps{margin:0 0 14px}
 .fs-gaps ul,.fs-buses,.fs-quests,.fs-refused{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .fs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 12px 6px 14px;border:2px solid var(--c-line);border-radius:10px;background:#fff;font-weight:700;text-align:left}
@@ -280,6 +282,7 @@
 .fs-ring>svg{position:absolute;inset:0;width:100%;height:100%}
 .fs-ring circle{fill:none;stroke:#d4d4d4;stroke-width:5}
 .fs-ring circle.on{stroke:var(--c-ok)}
+.fs-ring circle.known{stroke:var(--c-known)}
 .fs-ring b{position:relative;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
 .fs-ring.ready b{color:var(--c-ok);display:flex}
 .fs-ring-big{width:88px;height:88px}
@@ -343,6 +346,18 @@
 .fs-gaps .fs-row[aria-pressed="true"] span{font-weight:800}
 .fs-gaps .fs-row:focus-visible{outline-offset:-5px}
 .fs-gaps li.cap-note{margin:0;padding:14px}
+.fs-gaps .fs-row .fs-gapk{display:block;font-size:14px;font-weight:600;color:var(--c-mute)} /* "3 have scan values to confirm" */
+/* the two levels on the team bar, the quest cards' strips */
+.fs{--c-known:#9ad3aa;--known-stripes:repeating-linear-gradient(135deg,var(--c-known) 0 3px,#fff 3px 5px)}
+.fs-data{display:block;margin:8px 0 3px;font-size:14px;font-weight:700;color:var(--c-mute);font-variant-numeric:tabular-nums}
+.fs-teams .fs-bar2{display:flex;height:8px}
+.fs-bar2 i{flex:none}
+.fs-bar2 i.fs-k{background:var(--known-stripes)}
+.fs-strip{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:3px;width:min(100%,calc(var(--n) * 26px));margin:6px 0 2px}
+.fs-strip i{height:10px;border:1.5px solid #8a8a8a;border-radius:3px}
+.fs-strip [data-s="ok"]{border-color:var(--c-ok);background:var(--c-ok)}
+.fs-strip [data-s="k"]{border-color:var(--c-ok);background:var(--known-stripes)}
+.fs-fact{margin:12px 0 0}
 .fs-filter{scroll-margin-top:12px}
 /* wider screens: buses two across, campus bars two across; a bus and a quest form stay one phone-width column */
 .fs-buses{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}

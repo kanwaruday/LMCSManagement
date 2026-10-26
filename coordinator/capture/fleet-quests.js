@@ -173,7 +173,9 @@ var FleetQuests = (function () {
   function driverKey(bus) { return bus.driverCode ? String(bus.driverCode) : 'bus:' + bus.reg; }
 
   /** rows {fleet, profiles, drivers, parts, inspected:{reg: {by, at} | true}, captured:{reg: {by, at} | true}} -> one profile per
-   *  running bus. {by, at}: who captured the first safety check / route timelapse, and when (the quest's credit). */
+   *  running bus. {by, at}: who captured the first safety check / route timelapse, and when (the quest's credit). A fleet row's
+   *  scan (the papers the scans read), docs ({current, total, expired} papers on file) and fills ({count, withVideo,
+   *  withVideoAndBill}) ride along: they show progress, never done. */
   function profilesFromRows(rows) {
     rows = rows || {};
     var prof = {}, drv = {}, parts = {}, out = [];
@@ -187,7 +189,7 @@ var FleetQuests = (function () {
         driverName: b.driver || '', driverKey: k,
         data: { papers: obj(p.papers), safety: obj(p.safety), parts: parts[reg] || {}, driver: d ? obj(d.fields) : {}, fuel: obj(p.fuel), capture: obj(p.capture) },
         saved: obj(p.saved), ageLimit: !!d && (d.ageLimit === true || d.ageLimit === 'yes'),
-        inspected: !!ins, captured: !!cap, credit: { inspected: ins, captured: cap } });
+        inspected: !!ins, captured: !!cap, credit: { inspected: ins, captured: cap }, scan: obj(b.scan), docs: b.docs, fills: b.fills });
     });
     return out;
   }
@@ -203,6 +205,31 @@ var FleetQuests = (function () {
   function questsFor(profile) {
     profile = profile || {};
     return active().steps.map(function (s) { var m = missingFor(s, profile); return { id: s.id, label: s.title, done: !m.length, missing: m }; });
+  }
+  // Known (Ruling G1): an item not confirmed that the portal has an unconfirmed value for. A papers field the scans read, if the
+  // form would accept it; "driver has a smartphone" when a fill on record has its video. Nothing else is inferred.
+  function knownItem(s, id, profile) {
+    if (s.id === 'fuel') return id === 'driverHasASmartphoneForTheFillVideo' && ((profile.fills || {}).withVideo || 0) > 0;
+    var x = s.id === 'papers' && SCAN_FIELDS.indexOf(id) !== -1 && (profile.scan || {})[id], f = null;
+    (s.fields || []).forEach(function (d) { if (d.id === id) f = d; });
+    return !!x && !!f && !blank(x.value) && !checkValue(f, x.value, '9999-12-31').error;
+  }
+  /** [{id, total, confirmed, known}] for the six quests. total: the quest's required items (fields, each part, each run it needs);
+   *  confirmed: total less missingFor (saved data, or the run that IS the requirement); known: of the rest, the ones with a value
+   *  to confirm. Only confirmed items complete a quest. */
+  function progressFor(profile) {
+    profile = profile || {};
+    return active().steps.map(function (s) {
+      var dc = s.doneCheck || {}, m = missingFor(s, profile);
+      var total = (dc.required || []).length + (dc.eachPart ? (s.parts || []).length : 0) + (dc.needs || []).filter(function (n) { return NEEDS[n]; }).length;
+      return { id: s.id, total: total, confirmed: total - m.length, known: m.filter(function (id) { return knownItem(s, id, profile); }).length };
+    });
+  }
+  /** The items of every quest of every bus given: {confirmed, known, total} (the team bar's data bar). */
+  function fleetProgress(profiles) {
+    var out = { confirmed: 0, known: 0, total: 0 };
+    (profiles || []).forEach(function (p) { progressFor(p).forEach(function (x) { out.confirmed += x.confirmed; out.known += x.known; out.total += x.total; }); });
+    return out;
   }
   function completion(profile) {
     var q = questsFor(profile), n = q.filter(function (x) { return x.done; }).length;
@@ -295,11 +322,13 @@ var FleetQuests = (function () {
     return { campus: campus, ready: ready, total: mine.length, text: campus + ' fleet: ' + ready + ' of ' + mine.length + ' buses ready' };
   }
 
-  /** The Owner's gaps: per quest, how many buses still need it ("14 buses still need parts history"). No names. */
+  /** The Owner's gaps: per quest, how many buses still need it ("14 buses still need parts history"), and how many of those have
+   *  values to confirm (known). No names. */
   function gaps(profiles) {
-    return active().steps.map(function (s) {
-      var n = (profiles || []).filter(function (p) { return missingFor(s, p).length > 0; }).length;
-      return { quest: s.id, count: n, text: n + (n === 1 ? ' bus still needs ' : ' buses still need ') + s.gap };
+    return active().steps.map(function (s, i) {
+      var need = (profiles || []).filter(function (p) { return missingFor(s, p).length > 0; }), n = need.length;
+      var known = need.filter(function (p) { return progressFor(p)[i].known > 0; }).length;
+      return { quest: s.id, count: n, known: known, text: n + (n === 1 ? ' bus still needs ' : ' buses still need ') + s.gap };
     });
   }
 
@@ -404,7 +433,7 @@ var FleetQuests = (function () {
 
   return { DEFAULT_ROWS: DEFAULT_ROWS, questConfig: questConfig, setConfigRows: setConfigRows, profilesFromRows: profilesFromRows, driverKey: driverKey,
     applySave: applySave, normReg: normReg, SCAN_FIELDS: SCAN_FIELDS,
-    questsFor: questsFor, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
+    questsFor: questsFor, progressFor: progressFor, fleetProgress: fleetProgress, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
     transportMissions: transportMissions, teamBar: teamBar, gaps: gaps, validateQuest: validateQuest, ageOn: ageOn };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FleetQuests;
