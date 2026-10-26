@@ -2,9 +2,13 @@
 // Today panel, the next-step bar, the quest panel, the decision card and the first-visit tour.
 // Everything date-based is read in IST (UTC+5:30), never the browser's own time zone.
 // Host page: <link rel="stylesheet" href=".../assets/game/game.css"> + <script src=".../assets/game/game.js">, then
-//   LMCSGame.mount(el, { session, backendUrl, root?, data? }) after the page's own content has rendered.
+//   LMCSGame.mount(el, { session, backendUrl, root?, data?, only?, title? }) after the page's own content has rendered.
 //   root = the portal root relative to the page ('' on the home page, '../' one folder down): mission links are
 //   root-relative. data = a gametoday response, to skip the fetch. Empty backendUrl = render nothing.
+//   only = a module prefix (e.g. 'fleet') for a module's own page: just the missions whose kind and the quests whose
+//   questId start with it, no decisions, days line, greeting or home tour; title replaces the 'Today' heading.
+//   tour = { id, beats: [{ target: CSS selector (optional), text }] }: that page's tour, once per person (Game Progress
+//   'tour' row keyed id), shown when the home greeting isn't (always, on an `only` page).
 // Every piece of text reaches the DOM through text nodes / setAttribute (h() below), never as parsed HTML.
 var LMCSGame = window.LMCSGame = (function () {
   var IST_MS = 330 * 60000;
@@ -191,6 +195,16 @@ var LMCSGame = window.LMCSGame = (function () {
 
   // The next-step bar's mission: when the server's next is in Today's set, the first open mission in panel order (so
   // the bar and the first solid Go agree); a mission from outside the set (arrived mid-day) is kept as the server sent it.
+  // A module page's view of a gametoday response (mount's `only`): its own missions and quests, nothing of the home's
+  function onlyModule(d, prefix) {
+    var mine = function (m) { return !!m && String(m.kind || '').indexOf(prefix) === 0; };
+    return Object.assign({}, d, {
+      missions: (d.missions || []).filter(mine), next: mine(d.next) ? d.next : null,
+      quests: (d.quests || []).filter(function (q) { return String(q.questId || '').indexOf(prefix) === 0; }),
+      windows: [], daysOnTrack: null, firstLoadToday: false, // no greeting, so no home tour either
+    });
+  }
+
   function nextMission(today) {
     var nx = today && today.next;
     if (!nx) return null;
@@ -309,7 +323,7 @@ var LMCSGame = window.LMCSGame = (function () {
       var segs = [];
       for (var i = 0; i < total; i++) segs.push(h('i', { class: i < done ? 'on' : null }));
       todayEl = h('section', { class: 'lg-panel lg-today', 'aria-labelledby': 'lg-today-h' + n }, [
-        h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-today-h' + n, tabindex: '-1' }, 'Today'), total ? h('small', {}, done + ' of ' + total + ' done') : null]),
+        h('div', { class: 'lg-ph' }, [h('h2', { id: 'lg-today-h' + n, tabindex: '-1' }, opts.title || 'Today'), total ? h('small', {}, done + ' of ' + total + ' done') : null]),
         total >= 2 ? h('div', { class: 'lg-bar', 'aria-hidden': 'true' }, segs) : null,
         (t.sourcesDown || []).length ? h('p', { class: 'lg-down' }, DOWN_LINE) : null,
         rows.length ? h('ul', { class: 'lg-rows' }, rows)
@@ -322,6 +336,8 @@ var LMCSGame = window.LMCSGame = (function () {
       var days = daysLine(t.daysOnTrack), cut = days.indexOf(' Last month: ');
       el.textContent = '';
       el.hidden = false;
+      // a module page with no missions of its own (e.g. the Owner, quests only): no Today box, and nothing at all without quests
+      if (opts.only && !all.length) { todayEl.hidden = true; if (!questEl && !parEls.length) { el.hidden = true; return; } }
       rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, parEls, days && h('p', { class: 'lg-days' },
         cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
       el.appendChild(rootEl);
@@ -448,8 +464,8 @@ var LMCSGame = window.LMCSGame = (function () {
       if (questEl || parEls[0]) beats.push({ target: questEl || parEls[0], text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
       return beats;
     }
-    function tour(beats, after) {
-      post_('gametourseen', { tourId: 'home-' + (t.role || '') }).catch(function () { /* offered again next time; nothing lost */ });
+    function tour(beats, after, tourId) {
+      post_('gametourseen', { tourId: tourId || 'home-' + (t.role || '') }).catch(function () { /* offered again next time; nothing lost */ });
       var a = art(t, now), i = 0, release;
       var spot = h('div', { class: 'lg-spot', 'aria-hidden': 'true' });
       var who = h('div', { class: 'lg-who', id: 'lg-t-who' + n }), text = h('p', { id: 'lg-t-text' + n }), count = h('small', { class: 'lg-count' });
@@ -569,17 +585,23 @@ var LMCSGame = window.LMCSGame = (function () {
 
     function start(d) {
       if (d.notYet) { el.textContent = ''; el.hidden = true; return; }
-      t = d;
+      t = opts.only ? onlyModule(d, String(opts.only)) : d;
       var firstVisit = (t.toursSeen || []).indexOf('home-' + (t.role || '')) === -1;
       var a = art(t, now, firstVisit);
       renderPanels();
       renderBar(a);
       if (t.firstLoadToday) greet(a, firstVisit, tourBeats(a));
+      else if (pageTour && (t.toursSeen || []).indexOf(pageTour.id) === -1) tour(pageTourBeats(), null, pageTour.id);
+    }
+    // a module page's own first-visit tour (mount's `tour`): each beat spotlights its selector, or sits centred when absent
+    var pageTour = opts.tour && /^[\w-]{1,60}$/.test(String(opts.tour.id || '')) && (opts.tour.beats || []).length ? opts.tour : null;
+    function pageTourBeats() {
+      return pageTour.beats.map(function (b) { return { target: (b.target && document.querySelector(b.target)) || null, text: String(b.text || '') }; });
     }
 
     if (opts.data) safeStart(opts.data); else load();
   }
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
-    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, mount: mount };
+    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount };
 })();
