@@ -72,13 +72,14 @@ One read action on the PDR backend, `approvedleave`, plus a pure function other 
 
 ```
 approvedLeaveDays(email, fromISO, toISO) ->
-  [{ date: 'YYYY-MM-DD', fraction: 1 | 0.5 | 0.33, type: 'Casual Leave', approvalId: 'apr-...', employeeCode: '...' }]
+  [{ date: 'YYYY-MM-DD', fraction: 1 | 0.5 | 0.33, excused: true | false, type: 'Casual Leave', approvalId: 'apr-...', employeeCode: '...' }]
 ```
 
 - **One entry per calendar day**, so the Teacher game never does its own range maths.
 - **Late is never returned as a leave day** (Uday, Q5): it is notice and record only, and the day stays a working day.
 - Only requests with status **Approved** (Revoked and Rejected never appear), not archived-filtered.
-- `fraction` is how much of the day is on leave: a full-day leave is 1, a half leave 0.5, a short leave about 0.33.
+- `fraction` is how much of the day is on leave: a full-day leave is 1, a half leave 0.5, a short leave about 0.33. `excused` is the
+  game's yes/no: true for Single, Casual, Emergency, Special Day and Half day; false for Short (decision 6).
   The game decides how a partial day counts toward "days on track" (open question 4).
 - Server callers in other Apps Script projects (Coordinator, game backend) read the sheet directly with the
   same column positions, as `coordinator.gs` already does for approvals; the contract is documented in code next to the columns.
@@ -146,7 +147,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 1. ~~Who approves teacher leave~~ **Answered: B (Management), seam for later.**
 2. ~~One "Leave" category with a type dropdown, or separate categories?~~ **Answered: one "Leave" + type dropdown (A).**
 3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). **Late: answered in Q5 below.**
-4. In "days on track", does a half-day leave excuse the whole day or half of it? (recommend: the whole day, so a teacher is never penalised)
+4. ~~In "days on track", does a half-day leave excuse the whole day or half of it?~~ **Answered (decision 6): the whole day; Short and Late do not.**
 5. Can a teacher file leave for a past date or the same day? (recommend: same day until 7:00 AM, past dates only by a Principal on their behalf)
 6. Should approved leave later prefill Payroll's monthly leave counts? (recommend yes, as a separate step after the game)
 
@@ -166,3 +167,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
    4 = 1 day deducted)." Nothing is excused; an approved Late replaces the Principal's register entry. **For the game and the
    contract it is not leave:** `approvedLeaveDays` does not return Late as a leave day (a Late day is a normal working day).
    Late stays readable on the row (type, date, minutes late if given) so Payroll can count Lates later.
+6. **Partial days in "days on track" (2026-10-26):** "full-day types and Half day excuse the whole day; Short leave and Late don't."
+   So Single, Casual, Emergency, Special Day and Half day excuse the whole day; Short leave and Late leave it an ordinary working
+   day. The contract returns each day with the real `fraction` (1, 0.5, 0.33) **and** a ready-made `excused` yes/no (true for
+   full-day types and Half day, false for Short), so the game never encodes the bye-law. Late is not returned (decision 5).
