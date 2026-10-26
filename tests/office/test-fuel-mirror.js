@@ -36,3 +36,27 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(written)).map(r => r.length), [
 assert.deepStrictEqual(JSON.parse(JSON.stringify(written))[0].slice(8), ['hasVideo', 'hasBill']);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(written))[1].slice(8), ['', ''], 'an old row of another campus stays unknown until its campus refreshes');
 console.log('  ok  - fuel mirror keeps old-width rows of other campuses');
+
+// ── Service Bills: the day book's service entries per bus (Fleet Operations), same pattern as Fuel Fills. SYNTHETIC rows. ──
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/office-config.gs'), 'utf8').replace(/^const /gm, 'var '), ctx);
+const svc = (id, o) => row(id, Object.assign({ category: 'vehicle_service', vehicle: 'TEST01', components: 'brake_front,tyre_fl', litres_ml: '', odometer_km: '', amount_paise: 1250000,
+  payee: 'Driver A', narration: 'free text note', account: 'credit:TESTGARAGE', file_id: 'b2' }, o));
+const sb = JSON.parse(JSON.stringify(ctx.officeServiceBills_([
+  svc('s1'), svc('s2', { category: 'tyres', components: 'tyre_fl', account: 'cash:LMS4', file_id: '' }),
+  svc('s3'), svc('s3-rev', { reverses: 's3' }),           // reversed: both out
+  row('f1'),                                               // fuel: not a service bill
+  svc('n1', { category: 'stationery', vehicle: '' }),      // not a vehicle service
+  svc('o1', { entry_date: '2026-05-01' }),                 // older than the window
+], '2026-06-26', { 'credit:TESTGARAGE': 'Test Garage' })));
+assert.deepStrictEqual(sb.map(r => r[0]), ['s1', 's2']);
+assert.deepStrictEqual(sb[0], ['s1', 'LMS4', '2026-10-24', 'TEST01', 'brake_front,tyre_fl', 12500, '', 'Test Garage', 'yes'], 'components, amount, the credit workshop, the bill photo');
+assert.deepStrictEqual(sb[1].slice(4), ['tyre_fl', 12500, '', '', 'no'], 'a cash bill: no workshop on record; no photo');
+assert.ok(!JSON.stringify(sb).includes('Driver A') && !JSON.stringify(sb).includes('free text'), 'no payee names, no notes');
+console.log('  ok  - service bill rows');
+tabRows = [['id', 'campus', 'date', 'reg', 'components', 'amount_rs', 'odometer', 'vendor', 'hasBill'], ['z', 'LMS2', '2026-10-20', 'TEST02', 'battery', '900', '', '', 'no'], ['y', 'LMS4', '2026-10-01', 'TEST01', 'clutch', '1', '', '', 'no']];
+rowsNow = [svc('s1')];
+ctx.officeAccounts_ = () => [{ id: 'credit:TESTGARAGE', label: 'Test Garage', kind: 'credit' }];
+ctx.officeServiceMirror_('LMS4');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(written)).map(r => r[0]), ['id', 'z', 's1'], 'another campus kept; this campus rewritten from the book');
+assert.strictEqual(vm.runInContext('OFFICE_SERVICE_MIRROR_TAB', ctx), 'Service Bills');
+console.log('  ok  - service mirror writes the Service Bills tab');

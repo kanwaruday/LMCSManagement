@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#CE0000">
+<title>LMCS — Roll call</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../shared.css?v=14149e6e">
+<link rel="stylesheet" href="../capture/capture.css?v=829c42df">
+<style>
+  .rc-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+  .rc-list>li{border:2px solid var(--c-line);border-radius:12px;padding:10px 12px}
+  .rc-list b{font-size:17px}
+  .rc-list p{margin:2px 0;font-size:15px}
+  .rc-acts{display:flex;gap:8px;margin-top:8px}
+  .rc-acts .cap-btn{flex:1 1 0}
+  .rc-on{background:var(--c-ink);color:#fff}
+  .rc-sub label{display:block;font-weight:700;margin:10px 0 4px}
+  .rc-done{color:var(--c-ok);font-weight:700}
+  .rc-wait{color:var(--c-warn);font-weight:700}
+  .rc-list .fs-bad{color:var(--c-bad);font-weight:700}
+</style>
+</head>
+<body>
+<header class="hdr"><div><h1>Today's roll call</h1><p>LMCS Transport</p></div><a id="back" href="setup.html">&larr; Fleet setup</a></header>
+<div id="authRoot"></div>
+<main id="appBody" class="cap" hidden>
+  <div id="pending" class="cap-offline" hidden><span id="pendingText"></span> <button type="button" id="sendNow" class="cap-btn">Send now</button></div>
+  <ul id="refused" class="fs-refused"></ul>
+  <p id="others" class="cap-note"></p>
+  <div class="cap-modes" role="group" aria-label="Day"><button type="button" data-day="0" aria-pressed="true">Today</button><button type="button" data-day="1" aria-pressed="false">Yesterday</button></div>
+  <p id="loadMsg" class="cap-note"><span>Loading the buses…</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
+  <p id="summary" class="cap-note"></p>
+  <ul id="buses" class="rc-list"></ul>
+  <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
+</main>
+<script src="../../assets/auth.js?v=385e2fb1"></script>
+<script type="module" src="../capture/rollcall.js?v=7940a6b9"></script>
+</body>
+</html>

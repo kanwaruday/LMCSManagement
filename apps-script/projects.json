@@ -117,7 +117,8 @@
       "game-fleet",
       "game-setup",
       "acad-episodes",
-      "../coordinator/capture/fleet-quests.js"
+      "../coordinator/capture/fleet-quests.js",
+      "../coordinator/transport-rank.js"
     ]
   }
 }

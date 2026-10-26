@@ -1,12 +1,17 @@
 // LMCS Office Backend -- copies every campus's fuel fills (last 120 days, reversed entries removed) to the "Fuel Fills" tab of the
 // transport workbook, where the Coordinator backend checks each fill against the km the bus's GPS recorded
-// (coordinator-transport-gps.gs). Runs whenever a fuel fill or its reversal is saved, for that campus only.
+// (coordinator-transport-gps.gs). Also the Service Bills tab (below). Runs whenever a fuel fill or its reversal is saved, for that campus only.
 // Columns: id | campus | date | reg | litres | odometer | amount_rs | odometer_note (a meter change: no odometer comparison) |
 // hasVideo | hasBill ('yes'/'no': the driver's fill video and the bill photo are attached; the fuel check's proof).
 
 const OFFICE_FUEL_MIRROR_SS = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // "LMCS TRANSPORT DOCUMENT SUBMISSION FORM (Responses)"
 const OFFICE_FUEL_MIRROR_TAB = 'Fuel Fills';
 const OFFICE_FUEL_MIRROR_DAYS = 120;
+// Fleet Operations: the same for service bills, so part-due checks can see them. Columns: id | campus | date | reg | components (the
+// day book's component ids, comma-separated) | amount_rs | odometer (blank: the day book asks it only at fuel fills) | vendor (the
+// supplier credit account's name; blank for a cash bill) | hasBill ('yes'/'no'). No payee names, no notes.
+const OFFICE_SERVICE_MIRROR_TAB = 'Service Bills';
+const OFFICE_SERVICE_MIRROR_HEAD = ['id', 'campus', 'date', 'reg', 'components', 'amount_rs', 'odometer', 'vendor', 'hasBill'];
 
 /** DayBook rows -> fill rows, oldest first. A reversal row and the entry it reverses are both left out. `linked` = {entry id: true} for
  *  entries whose video was attached after the save (officeVideoLinks_). */
@@ -41,6 +46,37 @@ function officeFuelMirror_(campus, written) {
   sh.getRange(1, 1, out.length, head.length).setNumberFormat('@').setValues(out.map(function (r) { return r.map(String); })); // text: dates stay yyyy-MM-dd
 }
 
+/** DayBook rows -> service bill rows (categories with P&L column 'service'), oldest first; reversals out as for fuel.
+ *  `vendors` = {account id: label} of the credit accounts: the workshop. Payee is free text (it can be a person): never copied. */
+function officeServiceBills_(rows, since, vendors) {
+  const reversed = {};
+  rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  return rows.filter(function (r) {
+    const cat = officeCategory_(r.category);
+    return cat && cat.pnl_column === 'service' && !r.reverses && !reversed[r.id] && r.vehicle && String(r.entry_date) >= since;
+  }).map(function (r) {
+    return [String(r.id), r.campus, String(r.entry_date), r.vehicle, String(r.components || ''), r.amount_paise === '' || r.amount_paise == null ? '' : Number(r.amount_paise) / 100,
+      r.odometer_km === '' || r.odometer_km == null ? '' : Number(r.odometer_km), (vendors && vendors[r.account]) || '', r.file_id ? 'yes' : 'no'];
+  }).sort(function (a, b) { return a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0; });
+}
+
+/** Rewrites one campus's rows of the Service Bills tab, as officeFuelMirror_ does for fuel. */
+function officeServiceMirror_(campus, written) {
+  const since = officeAddDays_(officeToday_(), -OFFICE_FUEL_MIRROR_DAYS), head = OFFICE_SERVICE_MIRROR_HEAD;
+  let rows = officeRecentBooks_(campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, [])
+    .filter(function (r) { return r.campus === campus; });
+  if (written && !rows.some(function (r) { return r.id === written.id; })) rows.push(written);
+  const vendors = {};
+  officeAccounts_().forEach(function (a) { if (a.kind === 'credit') vendors[a.id] = a.label; });
+  const ss = SpreadsheetApp.openById(OFFICE_FUEL_MIRROR_SS);
+  const sh = ss.getSheetByName(OFFICE_SERVICE_MIRROR_TAB) || ss.insertSheet(OFFICE_SERVICE_MIRROR_TAB);
+  const keep = sh.getLastRow() > 1 ? sh.getDataRange().getValues().slice(1).filter(function (r) { return r[1] !== campus; })
+    .map(function (r) { return head.map(function (_, i) { return i < r.length ? r[i] : ''; }); }) : [];
+  const out = [head].concat(keep, officeServiceBills_(rows, since, vendors));
+  sh.clear();
+  sh.getRange(1, 1, out.length, head.length).setNumberFormat('@').setValues(out.map(function (r) { return r.map(String); }));
+}
+
 /** From the Today screen: refresh this campus's rows once a day, so fills saved before the mirror existed (or while it failed)
  *  still reach the checks. Errors are logged, never shown. */
 function officeFuelMirrorDaily_(campus) {
@@ -52,6 +88,7 @@ function officeFuelMirrorDaily_(campus) {
     if (!l.tryLock(3000)) return;
     lock = l;
     cache.put(key, '1', 6 * 3600); // set first: a failing mirror must not slow every Today load
-    officeFuelMirror_(campus);
-  } catch (err) { console.error('Fuel mirror: ' + err.message); } finally { if (lock) lock.releaseLock(); }
+    try { officeFuelMirror_(campus); } catch (err) { console.error('Fuel mirror: ' + err.message); }
+    officeServiceMirror_(campus);
+  } catch (err) { console.error('Service mirror: ' + err.message); } finally { if (lock) lock.releaseLock(); }
 }
