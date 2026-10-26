@@ -248,18 +248,15 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
             <label class="field-label">Category</label>
             <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
           </div>
-          <div>
+          <div id="aprUrgencyWrap">
             <label class="field-label">Urgency</label>
             <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
           </div>
         </div>
         <div id="aprLeaveFields" style="display:none;margin-top:10px">
-          <div class="row-2col">
-            <div>
-              <label class="field-label">Leave type</label>
-              <select id="aprLeaveType" onchange="aprLeaveChanged()"></select>
-            </div>
-            <div></div>
+          <div>
+            <label class="field-label">Leave type</label>
+            <select id="aprLeaveType" onchange="aprLeaveChanged()"></select>
           </div>
           <div class="row-2col" style="margin-top:10px">
             <div>
@@ -281,7 +278,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
           <label class="field-label" id="aprDescLabel">Description</label>
           <textarea id="aprDescription" rows="4" placeholder="Explain why, with dates and any relevant details"></textarea>
         </div>
-        <div style="margin-top:10px">
+        <div style="margin-top:10px" id="aprEvidenceWrap">
           <label class="field-label">Evidence link (optional)</label>
           <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link if relevant">
         </div>
@@ -392,6 +389,8 @@ function aprOnCategoryChange() {
   const isLeave = document.getElementById('aprCategory').value === 'Leave';
   document.getElementById('aprLeaveFields').style.display = isLeave ? '' : 'none';
   document.getElementById('aprTitleWrap').style.display = isLeave ? 'none' : '';
+  document.getElementById('aprUrgencyWrap').style.visibility = isLeave ? 'hidden' : ''; // leave has no urgency or evidence link (the layout keeps its place)
+  document.getElementById('aprEvidenceWrap').style.display = isLeave ? 'none' : '';
   document.getElementById('aprDescLabel').textContent = isLeave ? 'Reason' : 'Description';
   if (isLeave) aprLeaveChanged();
 }
