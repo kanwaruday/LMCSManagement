@@ -46,6 +46,15 @@ Sections 6, 7, 9, 11, 11a, 12 and 13 are the ones this plan implements.
 - **A staff sync from a half-filtered Sheet** must not lock out a campus: a push that deactivates >10% of active people is refused (Task 3 test `refuses mass deactivation`).
 - **Leave across a holiday or Sunday, and half days**: working days and the per-day contract must equal `aprLvApprovedDays_` exactly (Task 8 test `leave days match oracle across holidays and half days`).
 
+## Local first, Render before the switch (Uday, 26 Oct: "Mac now, Render before Nov")
+
+Building and testing run on Uday's Mac: a local Postgres 17 cluster (`~/.lmcs-pgtest`, port 54329) and, when needed, the
+server started locally (`node platform/src/server.ts`, or a launchd service if it must stay up while he works). A free
+Cloudflare Tunnel for phone testing is proposed as its own setup step only when it is useful. `platform/render.yaml`
+stays as written, so the move to Render is a drop-in. **Nothing staff depend on runs on the Mac**: the old portal keeps
+serving everyone until the cut-over, and the cut-over happens only on Render (gate G1). Q1 (Render) therefore moves to
+just before the switch, around 5–6 November.
+
 ## Uday's setup quests (one at a time, each sent through the LMCS Master Agent when its task needs it)
 
 Each quest says what to do, where, and how Claude checks it's done without seeing a secret. Buddy-style progress:
@@ -53,7 +62,7 @@ Each quest says what to do, where, and how Claude checks it's done without seein
 
 | Quest | When (needed by) | What Uday does | Done when (Claude checks) |
 |---|---|---|---|
-| Q1 Render | Task 1 deploy (~28 Oct) | Sign up at render.com with his Google account, connect GitHub repo `kanwaruday/LMCSManagement`, then "New → Blueprint" pointing at `platform/render.yaml` on branch `main`. Render creates the web service and the Postgres in Singapore | `GET https://<service>.onrender.com/api/health` returns `{ ok:true, db:true }` |
+| Q1 Render | Gate G1, before the switch (~5–6 Nov) | Sign up at render.com with his Google account, connect GitHub repo `kanwaruday/LMCSManagement`, then "New → Blueprint" pointing at `platform/render.yaml` on branch `main`. Render creates the web service and the Postgres in Singapore | `GET https://<service>.onrender.com/api/health` returns `{ ok:true, db:true }` |
 | Q2 Platform Google account | Task 6 (~30 Oct) | Create a Workspace user for the platform (name his call, e.g. `portal-bot@lms.org.in`). Share with it: "LMCS Approvals" workbook (Editor), Teaching Applicants sheet (Viewer), the school holidays calendar (See all event details) | Health shows `google:true` after Q3 |
 | Q3 Google authorisation | Task 6 | In Google Cloud console (project of the existing sign-in client), create an OAuth client of type "Desktop app"; put its id and secret into Render as `GOOGLE_BOT_CLIENT_ID` / `GOOGLE_BOT_CLIENT_SECRET`; on his Mac run `node platform/tools/google-authorize.mjs`, sign in **as the platform account**, and paste the refresh token it shows into Render as `GOOGLE_BOT_REFRESH_TOKEN`. Also set `APPROVALS_SHEET_ID`, `TEACHING_APPLICANTS_SHEET_ID` | `GET /api/health` → `google:true` (a read of the Approvals header row succeeds) |
 | Q4 Sync secret | Task 3 (~31 Oct) | Generate a random secret (`openssl rand -base64 32`), put it in Render as `SYNC_SECRET` and in the Roster Apps Script project's Script Properties as `PLATFORM_SYNC_SECRET`, plus `PLATFORM_URL`. Then run `platformInstallTriggers` once from the editor | Health shows last staff sync and allowlist sync `ok` with row counts |
@@ -79,7 +88,7 @@ Each quest says what to do, where, and how Claude checks it's done without seein
 - [ ] **Step 3:** Implement the files above. `render.yaml`: web service `lmcs-platform`, `region: singapore`, `plan: starter`, `runtime: node`, `rootDir: platform`, `buildCommand: npm ci`, `startCommand: node src/migrate.ts && node src/server.ts`, `healthCheckPath: /api/health`; database `lmcs-db`, `plan: basic-1gb`, `region: singapore`, Postgres 17; every secret env var listed with `sync: false`. Server sets CORS and security headers (CSP `default-src 'none'` on API responses).
 - [ ] **Step 4:** `node --test` → PASS; `npx tsc --noEmit` → no errors. Add to `tests/verify.mjs`: `platform typecheck` and `platform tests` steps (fail if `TEST_DATABASE_URL` is unset, with a message saying how to set it).
 - [ ] **Step 5:** `node tests/verify.mjs` → all checks passed. Commit `platform: skeleton, core schema with tenants and RLS, health, render blueprint`.
-- [ ] **Step 6:** Send Uday quest Q1. When done, check `/api/health`.
+- [ ] **Step 6:** (moved) Quest Q1 is sent around 5–6 Nov as part of gate G1; until then the server runs locally.
 
 ### Task 2: Sign-in, sessions, view-as, permission module
 
