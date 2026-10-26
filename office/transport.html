@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../coordinator/shared.css?v=14149e6e" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
   <link rel="stylesheet" href="office.css" />
   <style>
     /* Clerks need the grid only: no Coordinator title, data-freshness line or summary tiles. */
@@ -48,14 +49,15 @@
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
   <script src="../assets/auth.js?v=afd06314"></script>
+  <script src="../assets/campus-picker.js?v=415bc090"></script>
   <script src="../coordinator/transport-rank.js?v=b7edf91e"></script>
-  <script src="../coordinator/shared.js?v=1e6a11b7"></script>
+  <script src="../coordinator/shared.js?v=a1d7941a"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
     // The Coordinator Transport view, reused as is: the Coordinator backend scopes a Fee Clerk to their own campus.
     bootOffice({ onReady: (session) => {
       window.Coord.setSession(session);
-      window.Coord.transportView(document.getElementById('today'), { via: 'Fee Clerk Portal', tabs: ['matrix'], campus: session.campusId === 'ALL' ? session.campus : '' });
+      window.Coord.transportView(document.getElementById('today'), { via: 'Fee Clerk Portal', tabs: ['matrix'] });
     } });
   </script>
 </body>

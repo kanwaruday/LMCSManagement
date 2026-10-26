@@ -6,7 +6,6 @@
    Click handling is delegated from one root listener (data-act attributes), so nothing here touches window globals. */
 window.CoordApprovals = (function () {
   const PDR_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-  const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   const CATEGORIES = ['New/ Backup Position', 'Salary Offer Approval', 'Compensation Change', 'Disciplinary / Termination', 'Compensatory Leave', 'Leave', 'Event / Invitation', 'Off-Campus Trip / Excursion', 'Holiday / Calendar', 'Financial / Purchase', 'Academic Change', 'EPF Exemption', 'Other'];
   const catLabel = c => c === 'Salary Offer Approval' ? 'Appointment Confirmation' : c; // the Owner confirms an appointment (stored name unchanged)
   const NO_REFER = ['Compensation Change', 'Disciplinary / Termination', 'Salary Offer Approval', 'EPF Exemption']; // keep in sync with approvals.gs
@@ -115,13 +114,19 @@ window.CoordApprovals = (function () {
     ctx = ctx || {}; // ctx.people() -> coordinators you can allocate to, ctx.post(body) -> the Coordinator backend (retries a slow reply), ctx.get(params) -> its GET (throws on failure; optional)
     if (!document.getElementById('apro-css')) { const st = document.createElement('style'); st.id = 'apro-css'; st.textContent = CSS; document.head.appendChild(st); }
     root.className = 'apro';
-    root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div>' +
+    root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div><div data-slot="pick"></div>' +
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
       '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
-    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', school: 'All', search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
+    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', sel: null, search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
       seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
+    // The shared campus picker chooses which schools' requests are listed. It sits in the bar, outside the list, so it keeps focus.
+    let ready = false;
+    S.sel = { all: true, campuses: [] }; // without the picker script: every request, as the backend scoped them
+    const pk = window.LMCSCampus && LMCSCampus.mount($('pick'), { session: sess(), label: 'Show schools', onChange: s => { S.sel = s; if (ready && S.res) { S.openId = null; S.detail = null; S.selected = {}; renderList(); okBar(); } } });
+    ready = true;
+    const inView = () => pk ? LMCSCampus.filter(S.res.requests, S.sel, 'campusId') : S.res.requests.slice();
 
     const setBar = (state, text, retry) => { const b = $('bar'); b.className = 'stbar' + (state === 'loading' ? '' : ' ' + state); b.innerHTML = (state === 'loading' ? '<span class="sp"></span>' : '') + '<span>' + text + '</span>' + (retry ? '<button type="button" data-act="refresh">Retry</button>' : ''); };
     const authFail = res => { if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) LMCS.notifyAuthFailure(); };
@@ -138,6 +143,11 @@ window.CoordApprovals = (function () {
       catch (err) { return { success: false, error: String(err) }; }
     }
 
+    // the status line counts what the picked schools show, so it agrees with the list
+    function okBar() {
+      const rs = inView(), needs = rs.filter(r => isNeed(r)).length, unallocated = rs.filter(r => !r.archived && fuState(r) === 'none').length;
+      setBar('ok', '✓ Loaded ' + rs.length + ' request' + (rs.length === 1 ? '' : 's') + ' · ' + needs + ' need action' + (unallocated ? ' · ' + unallocated + ' approved with no follow-up' : '') + ' · ' + S.loadedAt + (S.res.canDecide ? '' : ' · view only: you do not have decision rights'));
+    }
     async function load() {
       setBar('loading', 'Loading approvals…');
       try {
@@ -146,9 +156,8 @@ window.CoordApprovals = (function () {
         S.res = res;
         if (res.canDecide) loadReferees();
         renderPickers(); renderList();
-        const needs = res.requests.filter(r => isNeed(r)).length;
-        const unallocated = res.requests.filter(r => !r.archived && fuState(r) === 'none').length;
-        setBar('ok', '✓ Loaded ' + res.requests.length + ' request' + (res.requests.length === 1 ? '' : 's') + ' · ' + needs + ' need action' + (unallocated ? ' · ' + unallocated + ' approved with no follow-up' : '') + ' · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (res.canDecide ? '' : ' · view only: you do not have decision rights'));
+        S.loadedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        okBar();
       } catch (err) { $('list').innerHTML = '<div class="dash-empty">Couldn’t reach the Approvals backend: ' + esc(err.message) + '</div>'; setBar('err', 'Couldn’t reach the Approvals backend: ' + esc(err.message), true); }
     }
     // reload the list, then reopen the request the person was working on so they see the result
@@ -156,7 +165,7 @@ window.CoordApprovals = (function () {
     function refresh() { S.selected = {}; S.openId = null; S.detail = null; $('list').innerHTML = ''; load(); }
 
     function renderPickers() {
-      const archived = S.res ? S.res.requests.filter(r => r.archived).length : 0;
+      const archived = S.res ? inView().filter(r => r.archived).length : 0;
       $('view').innerHTML = [['Requests', 'Requests'], ['Archive', 'Archive (' + archived + ')']].map(v => '<button type="button" class="rb' + (v[0] === S.view ? ' on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>').join('');
       const pills = S.view === 'Archive' ? ['All'].concat(DECIDED) : STATUS_PILLS;
       if (pills.indexOf(S.status) === -1) S.status = S.view === 'Archive' ? 'All' : 'Needs Action';
@@ -177,10 +186,9 @@ window.CoordApprovals = (function () {
 
     function renderList() {
       if (!S.res) return;
-      let rows = S.res.requests.slice();
+      let rows = inView();
       if (S.status === 'Needs Action') rows = rows.filter(r => isNeed(r)); else if (S.status !== 'All') rows = rows.filter(r => r.status === S.status);
       if (S.cat !== 'All') rows = rows.filter(r => r.category === S.cat);
-      if (S.school !== 'All') rows = rows.filter(r => r.campusId === S.school);
       if (S.fu !== 'All') rows = rows.filter(r => fuState(r) === S.fu);
       rows = rows.filter(r => S.view === 'Archive' ? r.archived : !r.archived);
       if (S.search) { const q = S.search.toLowerCase(); rows = rows.filter(r => (r.title + ' ' + r.category + ' ' + r.requestedBy + ' ' + r.itemName + ' ' + r.description + ' ' + school(r.campusId)).toLowerCase().indexOf(q) !== -1); }
@@ -194,7 +202,7 @@ window.CoordApprovals = (function () {
       const th = (key, label, extra) => '<th data-act="sort" data-v="' + key + '">' + label + (S.sortKey === key ? (S.sortDir > 0 ? ' ▲' : ' ▼') : '') + (extra || '') + '</th>';
       const opts = (list, cur, all) => '<option value="All">' + all + '</option>' + list.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('');
       const head = '<thead><tr>' + (canSel ? '<th style="width:28px;cursor:default"><input type="checkbox" data-act="selall" title="Select all" ' + (elig && sel === elig ? 'checked ' : '') + (elig ? '' : 'disabled') + '></th>' : '') +
-        th('school', 'School', '<select class="hsel" data-f="school">' + opts(CAMPUSES.map(c => [c, school(c)]), S.school, 'All schools') + '</select>') +
+        th('school', 'School') +
         th('title', 'Title', '<input class="hsel" data-f="search" type="text" placeholder="Search…" value="' + esc(S.search) + '" style="width:100%">') +
         th('category', 'Category', '<select class="hsel" data-f="cat">' + opts(CATEGORIES.map(c => [c, catLabel(c)]), S.cat, 'All categories') + '</select>') + th('urgency', 'Urgency') + th('status', 'Status') +
         '<th style="cursor:default;vertical-align:top">Follow-up<select class="hsel" data-f="fu">' + opts([['none', 'Not allocated'], ['open', 'Open'], ['overdue', 'Overdue'], ['done', 'Done']], S.fu, 'All follow-ups') + '</select></th>' +
@@ -408,7 +416,6 @@ window.CoordApprovals = (function () {
       const t = e.target, a = t.getAttribute('data-act'), f = t.getAttribute('data-f');
       if (a === 'sel') { if (t.checked) S.selected[t.getAttribute('data-id')] = true; else delete S.selected[t.getAttribute('data-id')]; renderList(); }
       else if (a === 'selall') { S.selected = t.checked ? Object.assign({}, S.eligible) : {}; renderList(); }
-      else if (f === 'school') { S.school = t.value; S.openId = null; S.detail = null; renderList(); }
       else if (f === 'cat') { S.cat = t.value; S.openId = null; S.detail = null; renderList(); }
       else if (f === 'fu') { S.fu = t.value; S.openId = null; S.detail = null; renderList(); }
     });
@@ -421,7 +428,7 @@ window.CoordApprovals = (function () {
     root.addEventListener('keydown', e => { const t = e.target; if (e.key === 'Enter' && t.hasAttribute && t.hasAttribute('data-ref')) { e.preventDefault(); addRef(t.getAttribute('data-id'), t.getAttribute('data-k')); } });
 
     load();
-    return { refresh: refresh };
+    return { refresh: refresh, syncCampus: () => { if (pk) pk.set(LMCSCampus.get(sess())); } };
   }
 
   return { mount: mount, recBlock: recBlock };

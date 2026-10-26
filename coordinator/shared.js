@@ -140,11 +140,24 @@ window.Coord = (function () {
     return { all: sum(tasks), byDept: byDept };
   }
 
+  // The shared campus picker (assets/campus-picker.js) owns each view's campus choice. It sits in a slot render() never
+  // rewrites, so it keeps keyboard focus; onSel(sel, live) gets the choice at mount (live=false) and on every change (live=true).
+  function pickInto(slot, label, onSel) {
+    let live = false;
+    const pk = LMCSCampus.mount(slot, { session: SESSION, label: label, onChange: s => onSel(s, live) });
+    live = true;
+    return pk;
+  }
+  // 'LMS4' from a row's campusId, or from its campus label ('LMS 4'); '' when it has neither
+  const cidOf = r => { const n = String(r.campusId || r.campus || '').replace(/\D/g, ''); return n ? 'LMS' + n : String(r.campusId || r.campus || ''); };
+  const inSel = (rows, sel) => LMCSCampus.filter((rows || []).map(r => Object.assign({}, r, { cid: cidOf(r) })), sel, 'cid');
+
   // ── Academics: CW/HW tag analysis ─────────────────────────────────
   function academicsView(body) {
-    const AC = { window: 'ay', side: 'cw', campus: '', q: '', sortKey: 'entries', sortDir: -1, open: null, data: {} };
-    body.innerHTML = '<h2 class="pagetitle">Academics: CW/HW tag analysis</h2><p class="pagesub">How each teacher uses the classwork and homework tags in their daily logs.</p><div class="ac-body"></div>';
+    const AC = { window: 'ay', side: 'cw', sel: null, q: '', sortKey: 'entries', sortDir: -1, open: null, data: {} };
+    body.innerHTML = '<h2 class="pagetitle">Academics: CW/HW tag analysis</h2><p class="pagesub">How each teacher uses the classwork and homework tags in their daily logs.</p><div class="ac-pick"></div><div class="ac-body"></div>';
     const box = body.querySelector('.ac-body');
+    pickInto(body.querySelector('.ac-pick'), 'Show campuses', (s, live) => { AC.sel = s; if (live && AC.data[AC.window]) render(); });
 
     async function load() {
       box.innerHTML = '<div class="status">Loading CW/HW analysis (the first load after a few hours can take up to a minute)...</div>';
@@ -163,8 +176,7 @@ window.Coord = (function () {
 
     function render() {
       const d = AC.data[AC.window], side = AC.side, tags = d.tags[side];
-      const campuses = Array.from(new Set(d.teachers.map(t => t.campus))).sort();
-      const rows = d.teachers.filter(t => (!AC.campus || t.campus === AC.campus) && (!AC.q || t.name.toLowerCase().indexOf(AC.q.toLowerCase()) !== -1));
+      const rows = LMCSCampus.filter(d.teachers, AC.sel).filter(t => (!AC.q || t.name.toLowerCase().indexOf(AC.q.toLowerCase()) !== -1));
       const val = t => {
         if (AC.sortKey === 'avg') return avgTags(t, side);
         if (AC.sortKey.indexOf('tag:') === 0) { const p = pct(t[side][AC.sortKey.slice(4)], t[side + 'N']); return p == null ? -1 : p; }
@@ -181,7 +193,6 @@ window.Coord = (function () {
       let html = '<div class="ctl">' +
         '<span class="seg"><button data-win="ay" class="' + (AC.window === 'ay' ? 'on' : '') + '">Since ' + esc(d.ayStart || '') + '</button><button data-win="d30" class="' + (AC.window === 'd30' ? 'on' : '') + '">Last 30 days</button></span>' +
         '<span class="seg"><button data-side="cw" class="' + (side === 'cw' ? 'on' : '') + '">Classwork tags</button><button data-side="hw" class="' + (side === 'hw' ? 'on' : '') + '">Homework tags</button></span>' +
-        '<select class="ac-campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (AC.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         '<input class="ac-q" placeholder="Search teacher" value="' + esc(AC.q) + '"></div>' +
         '<div class="note">' + rows.length + ' teachers. Each % is the share of that teacher\'s ' + (side === 'cw' ? 'classwork' : 'homework') +
         ' entries carrying the tag (an entry can carry several, so a row can add up to more than 100%). "Tags / entry" is the average number of tags ticked per entry; at 5 or more the percentages say little about how the teacher actually teaches. Click a teacher for the class and subject breakdown. Feed generated ' + esc((d.generated || '').slice(0, 16).replace('T', ' ')) + ' UTC.</div>' +
@@ -202,7 +213,6 @@ window.Coord = (function () {
 
       box.querySelectorAll('[data-win]').forEach(b => b.addEventListener('click', () => { AC.window = b.dataset.win; AC.open = null; load(); }));
       box.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click', () => { AC.side = b.dataset.side; if (AC.sortKey.indexOf('tag:') === 0) AC.sortKey = 'entries'; render(); }));
-      box.querySelector('.ac-campus').addEventListener('change', e => { AC.campus = e.target.value; render(); });
       box.querySelector('.ac-q').addEventListener('input', e => {
         AC.q = e.target.value; render();
         const i = box.querySelector('.ac-q'); i.focus(); i.setSelectionRange(AC.q.length, AC.q.length);
@@ -284,15 +294,16 @@ window.Coord = (function () {
   }
 
   // ── Transport: fleet document compliance ──────────────────────────
-  // opts (optional): {via: upload source label, campus: initial campus filter, tabs: the only tabs shown, first
+  // opts (optional): {via: upload source label, tabs: the only tabs shown, first
   // one opened} -- the Fee Clerk Portal reuses this view with tabs: ['matrix'].
   function transportView(body, opts) {
     opts = opts || {};
-    const T = { campus: opts.campus || '', tier: 'all', q: '', tab: (opts.tabs && opts.tabs[0]) || 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
+    const T = { sel: null, tier: 'all', q: '', tab: (opts.tabs && opts.tabs[0]) || 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
     const UP_MAX = 10 * 1024 * 1024, UP_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
     const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
-    body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-body"></div>';
+    body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-pick"></div><div class="tr-body"></div>';
     const box = body.querySelector('.tr-body');
+    pickInto(body.querySelector('.tr-pick'), 'Show campuses', (s, live) => { T.sel = s; if (live && T.data) render(); });
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => iso ? iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4) : '-';
     const fmtD = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '-'; // DD/MM/YYYY in tables
@@ -321,16 +332,16 @@ window.Coord = (function () {
       const days = iso => Math.round((new Date(iso + 'T00:00:00') - now) / 86400000);
       const when = (iso, t) => !iso ? '-' : days(iso) < 0 ? -days(iso) + ' days ago' : days(iso) === 0 ? 'Today' : 'in ' + days(iso) + ' days';
       const todayIso = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-      const rk = TransportRank.analyse(d.fleet, d.docs, todayIso); // every ranking rule lives in transport-rank.js (unit-tested)
-      const tracked = d.fleet, idle = rk.vehicles.filter(v => v.tier === 'eol'), nr = b => b.operational ? '' : ' &middot; past service life';
+      const fleet = inSel(d.fleet, T.sel); // the picked campuses only, so every count below is the list's count
+      const rk = TransportRank.analyse(fleet, d.docs, todayIso); // every ranking rule lives in transport-rank.js (unit-tested)
+      const tracked = fleet, idle = rk.vehicles.filter(v => v.tier === 'eol'), nr = b => b.operational ? '' : ' &middot; past service life';
       const seenNone = {}; // a vehicle with no documents is one row ("all 6 papers"), not six
       const items = rk.items.filter(i => i.v.tier !== 'none' || (!seenNone[i.b.reg] && (seenNone[i.b.reg] = true))).map(i => i.v.tier === 'none'
         ? Object.assign({}, i, { t: 'missing', kind: 'missing', doc: { label: 'All ' + rk.keys.length + ' papers' }, src: '', link: '', unread: [], other: [], date: '', n: 0 })
         : Object.assign({ t: i.kind, doc: { label: i.label }, src: i.e.src, link: i.e.link, unread: i.e.unread, other: i.e.other || [] }, i));
       const count = k => items.filter(i => i.kind === k).length;
       const cnt = k => items.filter(i => i.kind === k && i.v.tier !== 'none').length; // vehicles with no documents are counted once, in their own tile
-      const campuses = Array.from(new Set(tracked.map(b => b.campus))).sort();
-      const vmatch = b => (!T.campus || b.campus === T.campus) && (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
+      const vmatch = b => (!T.q || (b.reg + ' ' + b.driver + ' ' + b.route).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
       const pick = i => vmatch(i.b) && (T.tier === 'all' || (T.tier === 'none' ? i.v.tier === 'none' : i.kind === T.tier));
       const rows = items.filter(pick); // already in the order the work should be done
       const pl = t => '<span class="pl ' + t + '">' + LABEL[t] + '</span>';
@@ -341,7 +352,7 @@ window.Coord = (function () {
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       const pend = d.pending && d.pending.files || [];
       const hrs = iso => (Date.now() - Date.parse(iso)) / 3600000;
-      const late = []; d.fleet.forEach(b => Object.keys(b.docs).forEach(k => { const p = b.docs[k].pending; if (p && hrs(p.at) > LATE_H) late.push(b.reg); }));
+      const late = []; fleet.forEach(b => Object.keys(b.docs).forEach(k => { const p = b.docs[k].pending; if (p && hrs(p.at) > LATE_H) late.push(b.reg); }));
 
 
       // ── Bus P&L: per bus totals from the monthly rows the sync pushed (Transport P&L tab) ──
@@ -350,8 +361,8 @@ window.Coord = (function () {
       const metaOf = reg => d.fleet.find(b => b.reg === reg);
       const pnlMonths = Array.from(new Set((d.pnl || []).map(r => r.month))).sort();
       const byBus = {};
-      (d.pnl || []).forEach(r => {
-        const o = byBus[r.reg] = byBus[r.reg] || { reg: r.reg, campus: r.campus, fee: 0, fuel: 0, loan: 0, fixed: 0, pay: 0, net: {}, note: r.note };
+      inSel(d.pnl, T.sel).forEach(r => {
+        const o = byBus[r.reg] = byBus[r.reg] || { reg: r.reg, campus: r.campus, cid: r.cid, fee: 0, fuel: 0, loan: 0, fixed: 0, pay: 0, net: {}, note: r.note };
         o.fee += r.fee; o.fuel += r.fuel; o.loan += r.loan; o.fixed += r.fixed; o.pay += r.pay;
         o.net[r.month] = r.fee - r.fuel - r.loan - r.fixed - (T.pay === 'after' ? r.pay : 0);
       });
@@ -363,9 +374,15 @@ window.Coord = (function () {
         if (o.note) flags.push(o.note);
         return Object.assign(o, { m: m, cost: cost, result: o.fee - cost, margin: o.fee ? (o.fee - cost) / o.fee : null, flags: flags });
       });
-      const pfilter = o => (!T.campus || o.campus === T.campus) && (!T.q || (o.reg + ' ' + (o.m ? o.m.driver + ' ' + o.m.route : '')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
+      const pfilter = o => (!T.q || (o.reg + ' ' + (o.m ? o.m.driver + ' ' + o.m.route : '')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1);
       const pRows = buses.filter(pfilter).sort((a, b) => ((a[T.pk] == null ? -1e12 : a[T.pk]) - (b[T.pk] == null ? -1e12 : b[T.pk])) * T.pd || a.reg.localeCompare(b.reg));
       const sum = (list, k) => list.reduce((x, o) => x + o[k], 0);
+      // P&L tiles: with 2+ campuses picked, one value per campus in its colour (a rate would need its own per-campus value, not a sum)
+      const multi = !T.sel.all && T.sel.campuses.length >= 2;
+      const perCampus = f => { const v = {}; pRows.forEach(o => { v[o.cid] = f(v[o.cid], o); }); return v; };
+      const tot = (k, f) => multi ? LMCSCampus.overlay(perCampus((a, o) => (a || 0) + o[k]), T.sel, f) : f(sum(pRows, k));
+      const losing = multi ? LMCSCampus.overlay(perCampus((a, o) => ({ l: ((a && a.l) || 0) + (o.result < 0 ? 1 : 0), n: ((a && a.n) || 0) + 1 })), T.sel, x => x.l + ' of ' + x.n)
+        : pRows.filter(o => o.result < 0).length + ' of ' + pRows.length;
       const spark = o => {
         const v = pnlMonths.map(mo => o.net[mo] || 0), lo = Math.min(0, ...v), hi = Math.max(0, ...v), span = hi - lo || 1;
         const pts = v.map((x, i) => (i * 56 / Math.max(1, v.length - 1) + 2).toFixed(1) + ',' + (16 - (x - lo) / span * 14).toFixed(1)).join(' ');
@@ -377,7 +394,7 @@ window.Coord = (function () {
       const period = pnlMonths.length ? fmt(pnlMonths[0] + '-01').slice(3) + ' to ' + fmt(pnlMonths[pnlMonths.length - 1] + '-01').slice(3) : '';
 
       const drvNote = b => b.driverCode || b.driverStatus ? '<div class="sm">' + esc(b.driverCode || 'no code') + (b.driverStatus && b.driverStatus !== 'verified' ? ' &middot; <span class="miss">' + esc(b.driverStatus) + '</span>' : ' &middot; in staff master') + '</div>' : '';
-      const staff = (d.people || []).filter(p => (!T.campus || p.campus === T.campus) && (!T.q || (p.name + ' ' + p.code + ' ' + p.rosterName + ' ' + p.vehicles.join(' ')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
+      const staff = inSel(d.people, T.sel).filter(p => (!T.q || (p.name + ' ' + p.code + ' ' + p.rosterName + ' ' + p.vehicles.join(' ')).toLowerCase().indexOf(T.q.toLowerCase()) !== -1))
         .sort((a, b) => (a.status === 'verified') - (b.status === 'verified') || a.campus.localeCompare(b.campus) || a.name.localeCompare(b.name));
       const bad = staff.filter(p => p.status !== 'verified').length;
       let html = '<div class="note">' + (synced ? 'Scan dates and workbook figures were last refreshed <b' + (ageH > 6 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) +
@@ -385,10 +402,10 @@ window.Coord = (function () {
       (pend.length ? '<br><b class="stale">' + pend.length + (d.pending.capped ? '+' : '') + ' new file' + (pend.length > 1 ? 's' : '') + ' in the Transport folder waiting to be read:</b> ' + pend.slice(0, 8).map(f => a(f.url, f.name)).join(', ') + (pend.length > 8 ? ' and ' + (pend.length - 8) + ' more' : '') : '') +
       (late.length ? '<br><b class="stale">Uploaded more than ' + LATE_H + ' hours ago and not read yet (' + esc(Array.from(new Set(late)).join(', ')) + '):</b> the AI Coordinator on the Mac may be off.' : '') + '</div>' +
       (d.warnings && d.warnings.length ? '<div class="note"><b class="stale">Transport Overrides note:</b> ' + d.warnings.map(esc).join('; ') + '</div>' : '') +
-      (T.tab === 'drivers' ? '<div class="tiles"><div class="tile"><b>' + staff.length + '</b>people on the transport staff list</div><div class="tile"><b>' + (staff.length - bad) + '</b>verified against the staff master</div><div class="tile ' + (bad ? 'warn' : '') + '"><b>' + bad + '</b>need checking</div></div>' : T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + lakh(sum(pRows, 'fee')) + '</b>fee collected</div>' +
-        '<div class="tile"><b>' + lakh(sum(pRows, 'cost')) + '</b>' + (T.pay === 'after' ? 'total cost' : 'cost before driver pay') + '</div>' +
-        '<div class="tile ' + (sum(pRows, 'result') < 0 ? 'bad' : '') + '"><b>' + lakh(sum(pRows, 'result')) + '</b>result over ' + pnlMonths.length + ' months</div>' +
-        '<div class="tile ' + (pRows.some(o => o.result < 0) ? 'warn' : '') + '"><b>' + pRows.filter(o => o.result < 0).length + ' of ' + pRows.length + '</b>vehicles losing money</div></div>' : '<div class="tiles">' +
+      (T.tab === 'drivers' ? '<div class="tiles"><div class="tile"><b>' + staff.length + '</b>people on the transport staff list</div><div class="tile"><b>' + (staff.length - bad) + '</b>verified against the staff master</div><div class="tile ' + (bad ? 'warn' : '') + '"><b>' + bad + '</b>need checking</div></div>' : T.tab === 'pnl' ? '<div class="tiles"><div class="tile"><b>' + tot('fee', lakh) + '</b>fee collected</div>' +
+        '<div class="tile"><b>' + tot('cost', lakh) + '</b>' + (T.pay === 'after' ? 'total cost' : 'cost before driver pay') + '</div>' +
+        '<div class="tile ' + (sum(pRows, 'result') < 0 ? 'bad' : '') + '"><b>' + tot('result', lakh) + '</b>result over ' + pnlMonths.length + ' months</div>' +
+        '<div class="tile ' + (pRows.some(o => o.result < 0) ? 'warn' : '') + '"><b>' + losing + '</b>vehicles losing money</div></div>' : '<div class="tiles">' +
         '<div class="tile"><b>' + tracked.length + '</b>vehicles tracked (' + (tracked.length - idle.length) + ' in service' + (idle.length ? ', ' + idle.length + ' past service life' : '') + ')</div>' +
         '<div class="tile ' + (rk.vehicles.some(v => v.tier === 'none') ? 'bad' : '') + '"><b>' + rk.vehicles.filter(v => v.tier === 'none').length + '</b>vehicles with no documents</div>' +
         '<div class="tile bad"><b>' + cnt('expired') + '</b>papers expired (' + new Set(items.filter(i => i.kind === 'expired').map(i => i.b.reg)).size + ' vehicles)</div>' +
@@ -397,7 +414,6 @@ window.Coord = (function () {
         '<div class="tile warn"><b>' + cnt('soon') + '</b>due within 30 days</div></div>') +
         '<div class="ctl"><span class="seg">' + [['list', 'Action list'], ['matrix', 'Vehicle by document']].concat(d.pnl && d.pnl.length ? [['pnl', 'Bus P&L']] : [], d.people && d.people.length ? [['drivers', 'Drivers']] : []).filter(x => !opts.tabs || opts.tabs.indexOf(x[0]) !== -1).map(x =>
           '<button data-tab="' + x[0] + '" class="' + (T.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (T.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' +
-        '<select class="tr-campus" aria-label="Filter by campus"><option value="">All campuses</option>' + campuses.map(c => '<option' + (T.campus === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
         (T.tab === 'list' ? '<span class="seg">' + [['all', 'All'], ['none', 'No documents'], ['expired', 'Expired'], ['wrong', 'Wrong paper'], ['missing', 'No record'], ['check', 'Scan, date unread'], ['soon', 'Due in 30 days'], ['later', 'Due in 90 days']].map(x =>
           '<button data-tier="' + x[0] + '" class="' + (T.tier === x[0] ? 'on' : '') + '" aria-pressed="' + (T.tier === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         (T.tab === 'pnl' ? '<span class="seg">' + [['after', 'After driver pay'], ['before', 'Before driver pay']].map(x => '<button data-pay="' + x[0] + '" class="' + (T.pay === x[0] ? 'on' : '') + '" aria-pressed="' + (T.pay === x[0]) + '">' + x[1] + '</button>').join('') + '</span>' : '') +
@@ -505,7 +521,6 @@ window.Coord = (function () {
       box.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { T.pay = b.dataset.pay; if (T.pay === 'before' && T.pk === 'pay') T.pk = 'result'; render(); }));
       box.querySelectorAll('[data-psort]').forEach(th => th.addEventListener('click', () => { const k = th.dataset.psort; T.pd = T.pk === k ? -T.pd : (k === 'fee' ? -1 : 1); T.pk = k; render(); }));
       box.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { T.tier = b.dataset.tier; render(); }));
-      box.querySelector('.tr-campus').addEventListener('change', e => { T.campus = e.target.value; render(); });
       box.querySelector('.tr-q').addEventListener('input', e => { T.q = e.target.value; render(); const i = box.querySelector('.tr-q'); i.focus(); i.setSelectionRange(T.q.length, T.q.length); });
       box.querySelectorAll('[data-up]').forEach(btn => btn.addEventListener('click', () => {
         const pick = document.createElement('input');
@@ -516,8 +531,8 @@ window.Coord = (function () {
       const copyBtn = box.querySelector('.tr-copy');
       if (copyBtn) copyBtn.addEventListener('click', e => {
         const lines = ['Transport documents: action needed (' + fmt(todayIso) + ')'];
-        campuses.forEach(c => {
-          const vs2 = rk.vehicles.filter(v => v.b.campus === c && ['ok', 'later', 'pending', 'eol'].indexOf(v.tier) === -1);
+        T.sel.campuses.forEach(c => {
+          const vs2 = rk.vehicles.filter(v => v.b.cid === c && ['ok', 'later', 'pending', 'eol'].indexOf(v.tier) === -1);
           if (vs2.length) { lines.push('', c); vs2.forEach(v => lines.push('  ' + v.b.reg + ': ' + v.lines.filter(l => l.kind !== 'later' && l.kind !== 'pending').map(l => l.text).join('; '))); }
         });
         const up = {};
@@ -559,12 +574,13 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, campus: '', itype: '', istatus: location.hash === '#closed' ? 'closed' : 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
-    body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-body"></div>';
-    const box = body.querySelector('.pd-body');
+    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, sel: null, itype: '', istatus: location.hash === '#closed' ? 'closed' : 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
+    body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-pickwrap"><div class="pd-pick"></div></div><div class="pd-body"></div>';
+    const box = body.querySelector('.pd-body'), pickWrap = body.querySelector('.pd-pickwrap');
+    // The Approvals tab carries its own picker (approvals.js); both read and write the same remembered choice, so each re-reads it when its tab is shown.
+    P.pick = pickInto(body.querySelector('.pd-pick'), 'Show campuses', (s, live) => { P.sel = s; if (live && P.data) render(); });
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const fmt = iso => +iso.slice(8, 10) + ' ' + MONTHS[+iso.slice(5, 7) - 1];
-    const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
     const QUIET_DAYS = 14, STUCK_DAYS = 7;
     const now = new Date(), today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
     const ago = iso => Math.round((new Date(today + 'T00:00:00') - new Date(iso + 'T00:00:00')) / 86400000);
@@ -579,14 +595,14 @@ window.Coord = (function () {
     }
 
     function render() {
-      const d = P.data, reps = d.reports, tags = d.tags, hist = d.history || [];
+      const d = P.data, reps = LMCSCampus.filter(d.reports, P.sel), tags = d.tags, hist = LMCSCampus.filter(d.history, P.sel);
       const has = {}; hist.forEach(h => { has[h.date + '|' + h.campus] = 1; }); reps.forEach(r => { has[r.date + '|' + r.campus] = r;});
-      const camps = CAMPUSES.filter(c => Object.keys(has).some(k => k.slice(11) === c));
+      const camps = P.sel.campuses.filter(c => Object.keys(has).some(k => k.slice(11) === c));
       // ponytail: a day counts as a reporting day when any campus reported and it is not a Sunday; a campus closed on its own
       // (no school calendar here) shows as missed. Add the school calendar if that becomes noisy.
       const days = [...new Set(Object.keys(has).map(k => k.slice(0, 10)))].filter(x => new Date(x + 'T00:00:00').getDay() !== 0).sort();
       // Merges ("this is the same problem as that one", set by a coordinator): the merged-away issue's mentions move onto the one it was merged into.
-      const mergeMap = d.merges || {}, raw = (d.issues || []).map(i => Object.assign({ kids: [] }, i)), byId = {};
+      const mergeMap = d.merges || {}, raw = LMCSCampus.filter(d.issues, P.sel).map(i => Object.assign({ kids: [] }, i)), byId = {};
       raw.forEach(i => { byId[i.id] = i; });
       const rootOf = id => { let x = id, n = 0; while (mergeMap[x] && n++ < 5) x = mergeMap[x]; return x; };
       const kept = raw.filter(i => { const r = byId[rootOf(i.id)]; if (r && r !== i) { r.kids.push(i); return false; } return true; });
@@ -621,7 +637,7 @@ window.Coord = (function () {
 
       const hrs = iso => iso ? (Date.now() - new Date(iso).getTime()) / 3600000 : null, tm = iso => { const t = new Date(iso); return t.getDate() + ' ' + MONTHS[t.getMonth()] + ' ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2); };
       const agoTxt = h => h < 1 ? 'under an hour ago' : h < 48 ? Math.round(h) + ' h ago' : Math.round(h / 24) + ' days ago';
-      const fsAll = (d.fees && d.fees.series) || [], feeLast = fsAll.length ? fsAll[fsAll.length - 1][0] : '', admLast = (d.admissions || []).reduce((m, a) => a.date > m ? a.date : m, '');
+      const fsRaw = (d.fees && d.fees.series) || [], fsAll = LMCSCampus.filter(fsRaw.map(x => ({ x: x, campus: x[1] })), P.sel).map(o => o.x), feeLast = fsRaw.length ? fsRaw[fsRaw.length - 1][0] : '', admLast = (d.admissions || []).reduce((m, a) => a.date > m ? a.date : m, '');
       const fresh = [
         [d.latestReportAt ? 'Latest form report ' + tm(d.latestReportAt) : 'No form reports', false],
         [d.pushedAt ? 'Issues refreshed ' + agoTxt(hrs(d.pushedAt)) : 'Issues not pushed from the Mac yet', !d.pushedAt || hrs(d.pushedAt) > 5],
@@ -687,13 +703,13 @@ window.Coord = (function () {
         repeat: ['Most repeated', (a, b) => b.count - a.count || byAge(a, b)], campus: ['School', (a, b) => a.campus.localeCompare(b.campus, undefined, { numeric: true }) || byAge(a, b)],
         type: ['Type', (a, b) => a.type.localeCompare(b.type) || byAge(a, b)] };
       const sel = (cls, label, opts, cur) => '<select class="' + cls + '"><option value="">' + label + '</option>' + opts.map(o => '<option' + (Array.isArray(o) ? ' value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + esc(o[1]) : (cur === o ? ' selected' : '') + '>' + esc(o)) + '</option>').join('') + '</select>';
-      const filterBar = full => '<div class="ctl">' + sel('pd-campus', 'All schools', camps, P.campus) + sel('pd-itype', 'All types', issueTypes, P.itype) +
+      const filterBar = full => '<div class="ctl">' + sel('pd-itype', 'All types', issueTypes, P.itype) +
         (full ? '<span class="seg">' + [['open', 'Open'], ['all', 'Open and quiet'], ['closed', 'Closed this week (' + closedWk.length + ')'], ['archive', 'Archive (' + archive.length + ')']].map(x => '<button data-st="' + x[0] + '" class="' + (P.istatus === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</span>' : '') +
         '<select class="pd-whof"><option value="">Anyone</option><option value="me"' + (P.who === 'me' ? ' selected' : '') + '>Assigned to me</option><option value="none"' + (P.who === 'none' ? ' selected' : '') + '>Not assigned</option></select>' +
         '<label>Sort <select class="pd-sort">' + Object.keys(SORTS).map(k => '<option value="' + k + '"' + (P.sort === k ? ' selected' : '') + '>' + SORTS[k][0] + '</option>').join('') + '</select></label>' +
         '<label>Group by <select class="pd-group"><option value="">Nothing</option><option value="campus"' + (P.group === 'campus' ? ' selected' : '') + '>School</option><option value="type"' + (P.group === 'type' ? ' selected' : '') + '>Type</option></select></label>' +
         (full ? '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label> ' : '') + '<label><input type="checkbox" class="pd-rep"' + (P.repeat ? ' checked' : '') + '> raised 3+ days</label></div>';
-      const applyFilters = (list, full) => list.filter(i => (!full || (P.istatus === 'archive' ? i.archived : P.istatus === 'closed' ? i.closedWk : P.istatus === 'all' ? !i.archived : i.open)) && (!P.campus || i.campus === P.campus) && (!P.itype || i.type === P.itype) && (!full || !P.act || P.istatus === 'closed' || i.needsAction) && (!P.repeat || i.count >= 3) &&
+      const applyFilters = (list, full) => list.filter(i => (!full || (P.istatus === 'archive' ? i.archived : P.istatus === 'closed' ? i.closedWk : P.istatus === 'all' ? !i.archived : i.open)) && (!P.itype || i.type === P.itype) && (!full || !P.act || P.istatus === 'closed' || i.needsAction) && (!P.repeat || i.count >= 3) &&
         (!P.who || (P.who === 'me' ? !!i.act && i.act.assignee === me : !i.handled))).sort(SORTS[P.sort][1]);
       const grouped = list => {
         if (!list.length) return issueTable(list);
@@ -737,7 +753,7 @@ window.Coord = (function () {
         const filedWk = filedIn(wkDays), expWk = wkDays.length * camps.length, filedPrev = filedIn(prevDays), expPrev = prevDays.length * camps.length;
         const missedWk = camps.map(c => [c, wkDays.filter(x => !has[x + '|' + c]).length]).filter(x => x[1] >= 2).sort((a, b) => b[1] - a[1]);
         const sumF = (xs, a, b, i) => xs.filter(x => ago(x[0]) >= a && ago(x[0]) <= b).reduce((t, x) => t + x[i], 0);
-        const feeRows = CAMPUSES.map(feeCycle).filter(Boolean).map(f => ({ c: f.c, got: sumF(f.xs, 1, 7, 2), prev: sumF(f.xs, 8, 14, 2), fol: sumF(f.xs, 1, 7, 3), out: f.last[4], vsEnd: f.prev ? f.last[4] - f.prev[4] : null }));
+        const feeRows = P.sel.campuses.map(feeCycle).filter(Boolean).map(f => ({ c: f.c, got: sumF(f.xs, 1, 7, 2), prev: sumF(f.xs, 8, 14, 2), fol: sumF(f.xs, 1, 7, 3), out: f.last[4], vsEnd: f.prev ? f.last[4] - f.prev[4] : null }));
         const newWk = issues.filter(i => ago(i.first) <= 7 && i.open).sort(byAge);
         const resolvedWk = issues.filter(i => i.act && i.act.status === 'resolved' && ago(i.act.at.slice(0, 10)) <= 7), notedWk = issues.filter(i => i.act && i.act.status === 'acknowledged' && ago(i.act.at.slice(0, 10)) <= 7);
         const stuck = open.filter(i => i.stuck).sort((a, b) => (b.span + b.age) - (a.span + a.age));
@@ -768,7 +784,7 @@ window.Coord = (function () {
           '<h3 style="font-size:13px;margin:16px 0 6px">Last ' + last.length + ' reporting days</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + last.map(x => '<th>' + fmt(x) + '</th>').join('') + '<th>Missed since Jan</th></tr></thead><tbody>' +
           camps.map(c => '<tr><td><b>' + c + '</b></td>' + last.map(x => has[x + '|' + c] ? '<td>&#10003;</td>' : '<td class="dt expired">-</td>').join('') + '<td class="' + (missed(c) > days.length / 4 ? 'miss' : '') + '">' + missed(c) + ' of ' + days.length + '</td></tr>').join('') + '</tbody></table></div>';
       } else if (P.tab === 'repeats') {
-        const rp = (d.repeats || []).filter(x => x.tasks !== null), THR = 70;
+        const rp = LMCSCampus.filter(d.repeats, P.sel).filter(x => x.tasks !== null), THR = 70;
         const rows = camps.map(c => {
           const xs = rp.filter(x => x.campus === c), hit = xs.filter(x => x.tasks >= THR), rec = xs.filter(x => ago(x.date) <= 30), recHit = rec.filter(x => x.tasks >= THR), lastHit = hit.length ? hit[hit.length - 1].date : '';
           return '<tr><td><b>' + c + '</b></td><td>' + xs.length + '</td><td>' + hit.length + ' <span class="sm">(' + (xs.length ? Math.round(100 * hit.length / xs.length) : 0) + '%)</span></td><td class="' + (recHit.length >= 3 ? 'miss' : '') + '">' + recHit.length + ' of ' + rec.length + '</td><td class="sm">' + (lastHit ? fmt(lastHit) : '-') + '</td></tr>';
@@ -780,8 +796,8 @@ window.Coord = (function () {
           '<h3 style="font-size:13px;margin:16px 0 6px">Copied reports in the last 30 days (' + recent.length + ')</h3><div class="tw"><table class="l"><thead><tr><th>Date</th><th>Campus</th><th>Tasks the same as</th><th>Message the same</th><th>Tasks written</th></tr></thead><tbody>' +
           (recent.map(x => '<tr><td>' + fmt(x.date) + '</td><td>' + x.campus + '</td><td class="' + (x.tasks >= 90 ? 'miss' : '') + '">' + x.tasks + '% of ' + fmt(x.prev) + '</td><td>' + (x.message === null ? '-' : x.message + '%') + '</td><td class="sm">' + esc(x.sample) + '</td></tr>').join('') || '<tr><td colspan="5">None in the last 30 days.</td></tr>') + '</tbody></table></div>';
       } else if (P.tab === 'fees') {
-        const cyc = CAMPUSES.map(feeCycle), day = cyc.find(Boolean) ? cyc.find(Boolean).day : 0, ym = fsAll.length ? fsAll[fsAll.length - 1][0].slice(0, 7) : '';
-        const rows = CAMPUSES.map((c, i) => {
+        const cyc = P.sel.campuses.map(feeCycle), day = cyc.find(Boolean) ? cyc.find(Boolean).day : 0, ym = fsAll.length ? fsAll[fsAll.length - 1][0].slice(0, 7) : '';
+        const rows = P.sel.campuses.map((c, i) => {
           const f = cyc[i];
           if (!f) return '<tr><td><b>' + c + '</b></td><td colspan="7" class="sm">No fee emails received from this campus</td></tr>';
           const pf = principalFee(c), recovered = f.high - f.last[4];
@@ -792,7 +808,7 @@ window.Coord = (function () {
         // true defaulters at each completed month-end: the last email of the month, if it is from its final days
         const months = [...new Set(fsAll.map(x => x[0].slice(0, 7)))].filter(m => m < ym);
         const endVal = (c, m) => { const e = fsAll.filter(x => x[1] === c && x[0].slice(0, 7) === m).pop(); return e && +e[0].slice(8, 10) >= 27 ? e[4] : null; };
-        const trend = CAMPUSES.map(c => { if (!cyc[CAMPUSES.indexOf(c)]) return ''; const vals = months.map(m => endVal(c, m));
+        const trend = P.sel.campuses.map(c => { if (!cyc[P.sel.campuses.indexOf(c)]) return ''; const vals = months.map(m => endVal(c, m));
           return '<tr><td><b>' + c + '</b></td>' + vals.map((v, i) => '<td>' + (v === null ? '<span class="sm">no email</span>' : lk(v) + (i && vals[i - 1] !== null ? ' <span class="' + (v > vals[i - 1] ? 'miss' : 'sm') + '">(' + (v > vals[i - 1] ? '+' : '-') + lk(Math.abs(v - vals[i - 1])) + ')</span>' : '')) + '</td>').join('') + '</tr>'; }).join('');
         html += '<div class="note">Fees follow a monthly cycle: they fall due on the 1st, the 1st to the 10th are fee days, so <b>outstanding jumps to its monthly high on day 1 and falls through the fee days</b>. ' +
           'The last day of the month is the true defaulter figure, so that is what to compare. ' + (day && day <= 10 ? 'Today is day ' + day + ' of the fee days, so outstanding is expected to be falling.' : 'The fee days are over, so outstanding now should be close to the true defaulters.') +
@@ -802,8 +818,8 @@ window.Coord = (function () {
           (months.length ? '<h3 style="font-size:13px;margin:16px 0 6px">True defaulters at each month-end</h3><div class="tw"><table class="l"><thead><tr><th>Campus</th>' + months.map(m => '<th>' + MONTHS[+m.slice(5) - 1] + ' ' + m.slice(0, 4) + '</th>').join('') + '</tr></thead><tbody>' + trend + '</tbody></table></div>' +
             '<div class="note">Red means higher than the month before. A month shows "no email" when the fee system sent nothing in its last days.</div>' : '');
       } else if (P.tab === 'admissions') {
-        const ad = d.admissions || [], MONT = ['M-I', 'M-II', 'M-III'];
-        const rows = CAMPUSES.map(c => {
+        const ad = LMCSCampus.filter(d.admissions, P.sel), MONT = ['M-I', 'M-II', 'M-III'];
+        const rows = P.sel.campuses.map(c => {
           const xs = ad.filter(x => x.campus === c).sort((a, b) => a.date.localeCompare(b.date));
           if (!xs.length) return '<tr><td><b>' + c + '</b></td><td colspan="7" class="sm">No admission status posts from this campus</td></tr>';
           const f = xs[0], l = xs[xs.length - 1], by = k => (l.byClass[k] ? l.byClass[k].admitted + l.byClass[k].registered : 0);
@@ -815,9 +831,9 @@ window.Coord = (function () {
           '<div class="tw"><table class="l"><thead><tr><th>Campus</th><th>Admitted (last post)</th><th>Montessori wing</th><th>Classes</th><th>Registered, not yet admitted</th><th>TCs issued</th><th>Pace</th><th>Posts covered</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
           '<h3 style="font-size:13px;margin:16px 0 6px">Admission items in the principals\' reports (latest 12, all year)</h3>' + issueTable(adIssues);
       } else if (P.tab === 'messages') {
-        const shown = msgs.filter(m => (!P.topic || m.t.topics.indexOf(P.topic) !== -1) && (!P.act || m.t.action) && (!P.campus || m.r.campus === P.campus));
+        const shown = msgs.filter(m => (!P.topic || m.t.topics.indexOf(P.topic) !== -1) && (!P.act || m.t.action));
         html += '<div class="note">Form reports since 23 Sep, with the local model\'s topics and one-line summary (refreshed when the Mac syncs' + (d.taggedAt ? '; last ' + esc(d.taggedAt.slice(0, 10)) : '') + '); the principal\'s own words are in the last column.</div>' +
-          '<div class="ctl"><select class="pd-campus"><option value="">All campuses</option>' + camps.map(c => '<option' + (P.campus === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>' +
+          '<div class="ctl">' +
           '<select class="pd-topic"><option value="">All topics</option>' + topics.map(t => '<option' + (P.topic === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select>' +
           '<label><input type="checkbox" class="pd-act"' + (P.act ? ' checked' : '') + '> needs action only</label></div>' +
           '<div class="tw"><table class="l"><thead><tr><th>Date</th><th>Campus</th><th>Topics</th><th>Summary</th><th>Principal wrote</th></tr></thead><tbody>' +
@@ -841,13 +857,17 @@ window.Coord = (function () {
       box.querySelectorAll('.pd-as').forEach(sel => sel.addEventListener('change', () => { sel.closest('.pd-edit').querySelector('.pd-who').style.display = sel.value === 'assigned' ? '' : 'none'; })); // the name only matters for "Assign to"
       const aprSlot = box.querySelector('.pd-apr-slot');
       if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
-        if (!P.aprEl) { P.aprEl = document.createElement('div'); CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson, get: api }); }
+        if (!P.aprEl) { P.aprEl = document.createElement('div'); P.aprCtl = CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson, get: api }); }
         aprSlot.appendChild(P.aprEl);
       }
-      box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); P.tab = b.dataset.tab; render(); }));
+      pickWrap.hidden = P.tab === 'approvals'; // that tab has its own picker
+      box.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => {
+        e.preventDefault(); P.tab = b.dataset.tab;
+        if (P.tab === 'approvals') { if (P.aprCtl && P.aprCtl.syncCampus) P.aprCtl.syncCampus(); } else P.pick.set(LMCSCampus.get(SESSION)); // pick up a choice made in the other tab
+        render();
+      }));
       box.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => { P.istatus = b.dataset.st; render(); }));
       const on = (sel, ev, fn) => { const el = box.querySelector(sel); if (el) el.addEventListener(ev, fn); };
-      on('.pd-campus', 'change', e => { P.campus = e.target.value; render(); });
       on('.pd-topic', 'change', e => { P.topic = e.target.value; render(); });
       on('.pd-itype', 'change', e => { P.itype = e.target.value; render(); });
       on('.pd-act', 'change', e => { P.act = e.target.checked; render(); });
