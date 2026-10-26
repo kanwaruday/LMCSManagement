@@ -223,18 +223,32 @@ t('progress: a fill with a video is known for "driver has a smartphone"; nothing
   const p = { reg: 'TEST01', data: {}, fills: { count: 9, withVideo: 9, withVideoAndBill: 9 } };
   assert.strictEqual(FQ.questsFor(p).find((q) => q.id === 'fuel').done, false, 'fills never complete the quest');
 });
-t('progress: profilesFromRows carries the scan, the papers on file and the fills; fleetProgress sums them; gaps say how many have values to confirm', () => {
+t('progress: profilesFromRows carries the scan, the papers on file and the fills; fleetProgress averages the buses; gaps say how many have values to confirm', () => {
   const rows = fullRows();
   rows.fleet = [Object.assign({}, fleetRow, { reg: 'TEST01', driverCode: 'E103', scan: SCAN, docs: { current: 5, total: 6, expired: 1 }, fills: { count: 4, withVideo: 3, withVideoAndBill: 3 } }),
     Object.assign({}, fleetRow, { reg: 'TEST02', driverCode: 'E102' }), fleetRow];
   const ps = FQ.profilesFromRows(rows), a = ps.find((p) => p.reg === 'TEST01');
   assert.deepStrictEqual([a.scan.make.value, a.docs, a.fills.withVideo], ['Testmake', { current: 5, total: 6, expired: 1 }, 3]);
   assert.deepStrictEqual(ps.find((p) => p.reg === 'TEST02').scan, {}, 'no scan: an empty object');
-  assert.deepStrictEqual(FQ.fleetProgress(ps), { confirmed: 42, known: 3, total: 126 }, 'items over every bus: the ready bus is all confirmed, TEST01 has 2 scan values and a fill video');
-  assert.deepStrictEqual(FQ.fleetProgress([]), { confirmed: 0, known: 0, total: 0 });
+  const fp = FQ.fleetProgress(ps), near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, a + ' != ' + b);
+  near(fp.confirmed, 1 / 3); near(fp.known, (2 / 8 / 6 + 1 / 4 / 6) / 3); assert.strictEqual(fp.buses, 3);
+  assert.deepStrictEqual(FQ.fleetProgress([]), { confirmed: 0, known: 0, buses: 0 });
   const g = FQ.gaps(ps);
   assert.deepStrictEqual(g.map((x) => x.quest + ' ' + x.count + ' ' + x.known), ['papers 2 1', 'safety 2 0', 'parts 2 0', 'driver 2 0', 'fuel 2 1', 'capture 2 0']);
   assert.strictEqual(g[0].text, '2 buses still need vehicle papers', 'the gap text is unchanged');
   assert.strictEqual(FQ.teamBar('LMS 4', ps).text, 'LMS 4 fleet: 1 of 3 buses ready', 'ready counts only confirmed quests');
+});
+t('progress (Ruling G3): the six quests weigh the same, whatever the part count', () => {
+  const papers = {}; FQ.questConfig().steps[0].doneCheck.required.forEach((id) => { papers[id] = id === 'odometerPhoto' ? 'FILEID0123456789' : id === 'fuel' ? 'Diesel' : '1'; });
+  const p = { reg: 'TEST01', data: { papers } };
+  assert.strictEqual(FQ.percent(FQ.busProgress(p).confirmed), 17, 'only the papers confirmed: one sixth');
+  assert.strictEqual(FQ.percent(FQ.busProgress(p).confirmed), FQ.completion(p), 'the same weighting as completion()');
+  FQ.setConfigRows({ config: [{ Key: 'transportSetupForms', Value: JSON.stringify({ parts: Object.assign({}, FQ.questConfig().steps[2], { parts: [{ id: 'engine_oil', label: 'Engine oil' }, { id: 'battery', label: 'Battery' }] }) }) }] });
+  assert.strictEqual(FQ.progressFor(p)[2].total, 2, 'two parts now');
+  assert.strictEqual(FQ.percent(FQ.busProgress(p).confirmed), 17, 'still one sixth');
+  FQ.setConfigRows(null);
+  const half = { reg: 'TEST01', data: { parts: { engine_oil: { lastReplacedOn: 'not known' } } } };
+  assert.strictEqual(FQ.percent(FQ.busProgress(half).confirmed), 1, 'one part of twenty: a sliver, never 0');
+  assert.deepStrictEqual([FQ.percent(0), FQ.percent(0.996), FQ.percent(1)], [0, 99, 100], 'never 100 before it is all there');
 });
 console.log('fleet quests: all checks passed');

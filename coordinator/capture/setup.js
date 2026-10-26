@@ -104,11 +104,10 @@ function render() {
   else if (!S.form || S.form.reg !== p.reg || S.form.quest !== S.view.quest) drawQuest(p, S.view.quest);
 }
 
-// Progress in two levels (Ruling G1), over the items of all six quests: confirmed (saved, or the run itself) and known (the scans
-// or a fill video suggest the answer: staff confirm it). Only confirmed items finish a quest or make a bus ready.
+// Progress in two levels (Ruling G1): confirmed (saved, or the run itself) and known (the scans or a fill video suggest the answer:
+// staff confirm it). Each of the six quests weighs one sixth (Ruling G3). Only confirmed items finish a quest or make a bus ready.
 const KNOWN_IN = { papers: 'scans', fuel: 'fuel fills' }, KNOWN_GAP = { papers: 'scan values', fuel: 'fill videos' };
-const pct = (n, t) => (n && t ? Math.max(1, Math.floor(100 * n / t)) : 0); // rounded down: never 100% before it is
-function progress(p) { const qs = FQ.progressFor(p), sum = (k) => qs.reduce((a, x) => a + x[k], 0); return { qs, c: sum('confirmed'), k: sum('known'), t: sum('total') }; }
+function progress(p) { const qs = FQ.progressFor(p, today()), sum = (k) => qs.reduce((a, x) => a + x[k], 0); return { qs, c: sum('confirmed'), k: sum('known'), t: sum('total') }; }
 // the line under a bus's ring: "3 found in scans · confirm them", else "12 to confirm"
 function toConfirm(p) {
   const g = progress(p);
@@ -119,14 +118,17 @@ function toConfirm(p) {
 const papersOnFile = (p) => (p.docs && p.docs.total ? `Papers on file: ${p.docs.current} of ${p.docs.total} current` + (p.docs.expired ? ` · ${p.docs.expired}\u00a0expired` : '') : '');
 const fillsOnRecord = (p) => (!p.fills ? '' : p.fills.count ? `${p.fills.count} ${p.fills.count === 1 ? 'fill' : 'fills'} on record, ${p.fills.withVideoAndBill} with video and bill` : 'No fuel fills on record yet');
 function ring(p, big, fresh) { // fresh: a quest this save just finished (the confirmed arc pops)
-  const g = progress(p), n = FQ.questsFor(p).filter((q) => q.done).length, r = 16, C = 2 * Math.PI * r, L = (x) => (g.t ? C * x / g.t : 0);
-  const arc = (from, len, cls) => (len ? `<circle cx="20" cy="20" r="${r}" class="${cls}" stroke-dasharray="${len.toFixed(3)} ${C.toFixed(3)}" stroke-dashoffset="${(-from).toFixed(3)}"/>` : '');
-  const label = n === 6 ? 'Ready: all 6 quests done' : `${pct(g.c, g.t)}% confirmed, ${n} of 6 quests done` + (g.k ? `, ${g.k} found to confirm` : '');
+  const g = progress(p), b = FQ.busProgress(p, today()), n = FQ.questsFor(p).filter((q) => q.done).length, r = 16, C = 2 * Math.PI * r;
+  const arc = (from, dash, cls) => `<circle cx="20" cy="20" r="${r}" class="${cls}" stroke-dasharray="${dash}" stroke-dashoffset="${(-from).toFixed(3)}"/>`;
+  const dashes = (len) => { const a = []; for (let x = 0; x < len; x += 2.3) a.push(Math.min(1.5, len - x).toFixed(3), '0.8'); a[a.length - 1] = C.toFixed(3); return a.join(' '); }; // known: amber stripes
+  const kc = C * b.confirmed, kk = C * b.known;
+  const arcs = (kk > 0.05 ? arc(kc, dashes(kk), 'known') : '') + (kc > 0.05 ? arc(0, kc.toFixed(3) + ' ' + C.toFixed(3), 'on' + (fresh ? ' fresh' : '')) : '');
+  const label = n === 6 ? 'Ready: all 6 quests done' : `${FQ.percent(b.confirmed)}% confirmed, ${n} of 6 quests done` + (g.k ? `, ${g.k} found to confirm` : '');
   return `<span class="fs-ring${big ? ' fs-ring-big' : ''}${n === 6 ? ' ready' : ''}" role="img" aria-label="${label}">` +
-    `<svg viewBox="0 0 40 40" aria-hidden="true"><g transform="rotate(-90 20 20)"><circle cx="20" cy="20" r="${r}"/>${arc(L(g.c), L(g.k), 'known')}${arc(0, L(g.c), 'on' + (fresh ? ' fresh' : ''))}</g></svg>` +
-    `<b>${n === 6 ? SVG.ok : pct(g.c, g.t) + '%'}</b></span>`;
+    `<svg viewBox="0 0 40 40" aria-hidden="true"><g transform="rotate(-90 20 20)"><circle cx="20" cy="20" r="${r}"/>${arcs}</g></svg>` +
+    `<b>${n === 6 ? SVG.ok : FQ.percent(b.confirmed) + '%'}</b></span>`;
 }
-// a quest's items as a strip: confirmed filled, known light (striped), the rest empty. The words beside it say the same.
+// a quest's items as a strip: confirmed filled, known amber stripes (to confirm), the rest empty. The words beside it say the same.
 const strip = (x) => (x.total < 2 ? '' : `<span class="fs-strip" style="--n:${x.total}" aria-hidden="true">` +
   Array.from({ length: x.total }, (_, i) => `<i${i < x.confirmed ? ' data-s="ok"' : i < x.confirmed + x.known ? ' data-s="k"' : ''}></i>`).join('') + '</span>');
 const badge = '<span class="fs-ready">' + SVG.ok + 'Ready</span>';
@@ -144,8 +146,8 @@ function drawBoardNow() {
   const ps = S.profiles.filter(inScope);
   const campuses = [...new Set(ps.map((p) => p.campus))].sort();
   $('teams').innerHTML = campuses.map((c) => {
-    const t = FQ.teamBar(c, ps), d = FQ.fleetProgress(ps.filter((p) => p.campus === c)), w = (n) => (d.total ? 100 * n / d.total : 0);
-    const data = `Fleet data: ${pct(d.confirmed, d.total)}% confirmed` + (d.known ? ` · ${pct(d.known, d.total)}% found, to\u00a0confirm` : '');
+    const t = FQ.teamBar(c, ps), d = FQ.fleetProgress(ps.filter((p) => p.campus === c), today()), w = (f) => 100 * f;
+    const data = `Fleet data: ${FQ.percent(d.confirmed)}% confirmed` + (d.known ? ` · ${FQ.percent(d.known)}% found, to\u00a0confirm` : '');
     return `<li><p>${esc(t.text)}</p><div class="cap-bar cap-pips" style="--n:${Math.max(1, t.total)}" role="progressbar" aria-label="${esc(t.text)}" aria-valuemin="0" aria-valuemax="${t.total}" aria-valuenow="${t.ready}"><i style="width:${t.total ? 100 * t.ready / t.total : 0}%"></i></div>` +
       `<span class="fs-data">${esc(data)}</span><div class="cap-bar fs-bar2" aria-hidden="true"><i style="width:${w(d.confirmed)}%"></i><i class="fs-k" style="width:${w(d.known)}%"></i></div></li>`;
   }).join('');
@@ -182,13 +184,13 @@ function questLine(p, q) {
   if (w && w.status === 'error') return '<span class="fs-bad">Not saved. See the message at the top.</span>';
   if (w) return '<span class="cap-todo">Saved on this phone. Sends when you are online.</span>';
   if (q.done) return '<span class="cap-good">Done</span>';
-  const x = FQ.progressFor(p).find((y) => y.id === q.id);
+  const x = FQ.progressFor(p, today()).find((y) => y.id === q.id);
   return `${x.confirmed} of ${x.total} done · ` + (x.known ? `${x.known} found in ${KNOWN_IN[q.id]}, needs confirming` : 'still needs ' + esc(FQ.missingLabels(q.id, q.missing.slice(0, 1))[0].toLowerCase()));
 }
 // under a quest's line: its facts (papers on file, fuel fills) and its strip of items
 function questExtra(p, q) {
   const fact = q.id === 'papers' ? papersOnFile(p) : q.id === 'fuel' ? fillsOnRecord(p) : '';
-  return (fact ? `<span>${esc(fact)}</span>` : '') + strip(FQ.progressFor(p).find((y) => y.id === q.id));
+  return (fact ? `<span>${esc(fact)}</span>` : '') + strip(FQ.progressFor(p, today()).find((y) => y.id === q.id));
 }
 // The 60+ rule, said where the bus is: the line-up board (Phase 1b) is what keeps the driver off it.
 function ageLine(p) {
@@ -202,7 +204,7 @@ function drawBusNow(p) {
   $('bus').innerHTML = `<button type="button" class="fs-back" data-a="back">← All buses</button>` +
     `<div class="fs-bushead">${ring(p, true, fresh)}<div><h2 class="cap-h">${esc(p.reg)}</h2><p class="cap-note">${esc(meta)}</p>${p.driverName ? `<p class="cap-note">Driver: ${esc(p.driverName)}</p>` : ''}` +
     `<p class="fs-count${fresh && n === 6 ? ' fs-fresh' : ''}">${n === 6 ? badge : n + ' of 6 quests done'}</p>` +
-    [toConfirm(p), papersOnFile(p)].filter(Boolean).map((x) => `<p class="cap-note">${esc(x)}</p>`).join('') + '</div></div>' +
+    (toConfirm(p) ? `<p class="cap-note">${esc(toConfirm(p))}</p>` : '') + '</div></div>' + // papers on file: on the papers card
     (p.ageLimit ? `<p class="fs-warn">${esc(ageLine(p))}</p>` : '') +
     `<ul class="fs-quests">${qs.map((q) => `<li><button type="button" class="fs-quest${q.id === fresh ? ' fs-fresh' : ''}" data-q="${q.id}" data-done="${q.done}"${q.done ? ' data-s="ok"' : ''}>` +
       `<span class="cap-mark">${q.done ? SVG.ok : ''}</span><span class="fs-qtext"><b>${esc(q.label)}</b><span>${questLine(p, q)}</span>${questExtra(p, q)}</span>${SVG.go}</button></li>`).join('')}</ul>`;
@@ -340,14 +342,17 @@ function need() {
   const p = S.profiles.find((x) => x.reg === S.form.reg), trial = { ...p, data: { ...p.data, [S.form.quest]: formFields(true) } };
   const q = FQ.questsFor(trial).find((x) => x.id === S.form.quest), names = FQ.missingLabels(q.id, q.missing);
   const parts = stepOf(q.id).parts; // 20 parts: a count, and each card's own mark says which
-  $('need').textContent = q.done ? 'Everything this quest needs is here.' : parts ? `${parts.length - q.missing.length} of ${parts.length} parts answered. Each needs a date or Not known.`
-    : `Needed to finish (${names.length}): ` + names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more.` : '.');
+  // a value still as the scans read it is not confirmed until this form is saved (Ruling G5): amber, "to confirm", never ticked
+  const unconfirmed = (id) => S.form.prefilled.includes(id) && getVal(id) === S.form.scan[id].value;
+  const all = FQ.questsFor({ data: {} }).find((x) => x.id === q.id).missing, slots = $('needSlots'); // everything this quest can need, in form order
+  const k = all.filter((id) => !q.missing.includes(id) && unconfirmed(id)).length, conf = k ? ` Saving confirms the ${k} from the scans.` : '';
+  $('need').textContent = (q.done ? 'Everything this quest needs is here.' : parts ? `${parts.length - q.missing.length} of ${parts.length} parts answered. Each needs a date or Not known.`
+    : `Needed to finish (${names.length}): ` + names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more.` : '.')) + conf;
   $('need').classList.toggle('cap-good', q.done);
   $('quest').style.setProperty('--hud', $('need').parentNode.offsetHeight + 'px'); // focused fields scroll to below it (capture.css)
-  const all = FQ.questsFor({ data: {} }).find((x) => x.id === q.id).missing, slots = $('needSlots'); // everything this quest can need, in form order
   slots.hidden = all.length < 2;
   slots.style.setProperty('--n', Math.min(all.length, 12));
-  slots.innerHTML = all.map((id) => (q.missing.includes(id) ? '<li></li>' : `<li data-s="ok">${SVG.ok}</li>`)).join('');
+  slots.innerHTML = all.map((id) => (q.missing.includes(id) ? '<li></li>' : unconfirmed(id) ? '<li data-s="k"></li>' : `<li data-s="ok">${SVG.ok}</li>`)).join('');
   if (S.form.quest === 'parts') document.querySelectorAll('[data-part]').forEach((li) => {
     const ok = !q.missing.includes(li.dataset.part);
     li.dataset.s = ok ? 'ok' : ''; li.querySelector('.cap-mark').innerHTML = ok ? SVG.ok : '';

@@ -544,17 +544,18 @@ function coordFleetDocsByReg_() {
   return out;
 }
 
-/** {current, total, expired} for one bus's resolved papers (Ruling G2: a counter of its own, never quest progress). A paper marked
- *  n/a is not counted; the speed governor is a one-time fitment certificate, current once any proof of it is on file (as the
- *  Transport page reads it); every other paper is current until its date passes. */
+/** {current, total, expired} for one bus's resolved papers (Ruling G2: a counter of its own, never quest progress), read with the
+ *  Transport page's own rules (coordinator/transport-rank.js, pushed here as transport-rank.gs): current is a valid paper (ok, due
+ *  soon or later, the one-time speed governor on file) that is not the wrong document; expired as the page shows it; n/a is not
+ *  counted. Unread, no-expiry, wrong, pending and missing papers are neither. */
 function coordFleetDocs_(docs, today) {
   const out = { current: 0, total: 0, expired: 0 };
   COORD_TRANSPORT_DOCS.forEach(function (d) {
-    const e = docs[d[0]] || {};
-    if (e.na) return;
+    const c = TransportRank.cellState(docs[d[0]] || {}, d[0], today);
+    if (c.t === 'na') return;
     out.total++;
-    if (d[0] === 'speed_governor') { if (e.date || (e.noexp || []).length || (e.unread || []).length) out.current++; }
-    else if (e.date) out[e.date < today ? 'expired' : 'current']++;
+    if (c.t === 'expired') out.expired++;
+    else if (['ok', 'soon', 'later', 'onfile'].indexOf(c.t) !== -1 && !c.bad) out.current++;
   });
   return out;
 }
@@ -562,14 +563,18 @@ function coordFleetDocs_(docs, today) {
 /** {reg: {count, withVideo, withVideoAndBill}} for the given regs: the day book's fuel fills mirrored into Fuel Fills
  *  (coordinator-transport-gps.gs). A fill with its video suggests the driver has a smartphone; nothing else is read from them. */
 function coordFleetFills_(regs) {
-  const out = {};
-  Object.keys(regs).forEach(function (r) { out[r] = { count: 0, withVideo: 0, withVideoAndBill: 0 }; });
-  gpsRows_(GPS_TAB_FILLS).forEach(function (f) {
-    const o = out[FleetQuests.normReg(f.reg)];
-    if (!o) return;
-    o.count++;
-    if (String(f.hasVideo) === 'yes') { o.withVideo++; if (String(f.hasBill) === 'yes') o.withVideoAndBill++; }
-  });
+  let all = coordCacheGetBig_('coord_fleet_fills_v1'); // every bus's counts (tiny), cached: the tab grows with every fill
+  if (!all) {
+    all = {};
+    gpsRows_(GPS_TAB_FILLS).forEach(function (f) {
+      const r = FleetQuests.normReg(f.reg), o = all[r] = all[r] || [0, 0, 0];
+      o[0]++;
+      if (String(f.hasVideo) === 'yes') { o[1]++; if (String(f.hasBill) === 'yes') o[2]++; }
+    });
+    coordCachePutBig_('coord_fleet_fills_v1', all, 300); // a fill shows here within 5 minutes
+  }
+  const out = {}; // scoped here, after the cache: only the caller's buses
+  Object.keys(regs).forEach(function (r) { const o = all[r] || [0, 0, 0]; out[r] = { count: o[0], withVideo: o[1], withVideoAndBill: o[2] }; });
   return out;
 }
 

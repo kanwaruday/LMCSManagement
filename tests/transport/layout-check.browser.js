@@ -101,7 +101,8 @@ window.captureLayoutTest = async function () {
 // tag (or "Scans disagree: check the paper"), with "View scan" (new tab, rel=noopener) or "No scan found", under an empty field,
 // its link under 48 px, or wrapping past the field's width. Two-level progress (Ruling G1): a team bar without its "Fleet data:
 // N% confirmed" line, a ring without its words (aria-label) or with a known arc and no "found ... confirm them" line, a quest card
-// whose strip shows light (known) slots without saying "needs confirming", or a strip that does not fit its card.
+// whose strip shows amber (known) slots without saying "needs confirming", a strip that does not fit its card, or a papers form
+// whose checklist shows scan values still to confirm (Ruling G5) without "Saving confirms the N from the scans.".
 window.setupLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement, vis = (e) => e.getClientRects().length > 0;
   facts.viewport = innerWidth + 'x' + innerHeight;
@@ -146,6 +147,7 @@ window.setupLayoutTest = async function () {
   if (facts.screen === 'quest') {
     const hud = document.querySelector('#quest .cap-hud'), strip = document.getElementById('needSlots');
     if (strip && vis(strip) && strip.scrollWidth > strip.clientWidth + 1) f.push('the quest strip of slots does not fit');
+    if (strip && strip.querySelector('[data-s="k"]') && !/Saving confirms the \d+ from the scans\.$/.test(document.getElementById('need').textContent)) f.push('the checklist shows values to confirm without saying so');
     if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned quest HUD takes over 30% of the screen (' + Math.round(hud.getBoundingClientRect().height) + 'px)');
     // the Vehicle papers pre-fill: each visible tag reads as the spec says, sits under a field that has a value, fits its field
     const tags = [...document.querySelectorAll('#quest .fs-scan')].filter(vis);

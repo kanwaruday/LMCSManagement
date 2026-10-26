@@ -252,8 +252,8 @@
 .cap-resume .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff} /* the second tap throws the check away */
 
 /* Fleet setup (setup.html): the same sunlight page. Team bars, then one card per bus with its ring, a bus's six quests, a quest's
-   short form. Two levels (Ruling G1): solid green is confirmed (saved, or the run itself); light green with stripes is known (a
-   scan value, a fill video: still to confirm), always with words saying so. Nothing moves but the ring filling. */
+   short form. Two levels (Ruling G1): solid green is confirmed (saved, or the run itself); amber stripes are known (a scan value, a
+   fill video: still to confirm), the amber of the form's "please confirm" tag (Ruling G4), always with words saying so. */
 .cap a:focus-visible,.cap summary:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
 #loadMsg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #loadMsg[hidden]{display:none}
@@ -282,7 +282,7 @@
 .fs-ring>svg{position:absolute;inset:0;width:100%;height:100%}
 .fs-ring circle{fill:none;stroke:#d4d4d4;stroke-width:5}
 .fs-ring circle.on{stroke:var(--c-ok)}
-.fs-ring circle.known{stroke:var(--c-known)}
+.fs-ring circle.known{stroke:var(--c-warn)} /* dashed by the page: stripes; amber on the grey track is about 3.9:1 */
 .fs-ring b{position:relative;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
 .fs-ring.ready b{color:var(--c-ok);display:flex}
 .fs-ring-big{width:88px;height:88px}
@@ -348,7 +348,7 @@
 .fs-gaps li.cap-note{margin:0;padding:14px}
 .fs-gaps .fs-row .fs-gapk{display:block;font-size:14px;font-weight:600;color:var(--c-mute)} /* "3 have scan values to confirm" */
 /* the two levels on the team bar, the quest cards' strips */
-.fs{--c-known:#9ad3aa;--known-stripes:repeating-linear-gradient(135deg,var(--c-known) 0 3px,#fff 3px 5px)}
+.fs{--known-stripes:repeating-linear-gradient(135deg,var(--c-warn) 0 2px,#fff 2px 4.5px)}
 .fs-data{display:block;margin:8px 0 3px;font-size:14px;font-weight:700;color:var(--c-mute);font-variant-numeric:tabular-nums}
 .fs-teams .fs-bar2{display:flex;height:8px}
 .fs-bar2 i{flex:none}
@@ -356,7 +356,8 @@
 .fs-strip{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:3px;width:min(100%,calc(var(--n) * 26px));margin:6px 0 2px}
 .fs-strip i{height:10px;border:1.5px solid #8a8a8a;border-radius:3px}
 .fs-strip [data-s="ok"]{border-color:var(--c-ok);background:var(--c-ok)}
-.fs-strip [data-s="k"]{border-color:var(--c-ok);background:var(--known-stripes)}
+.fs-strip [data-s="k"],.fs-hud .cap-slots [data-s="k"]{border:1.5px solid var(--c-warn);background:var(--known-stripes)}
+.fs-hud .cap-slots [data-s="k"]{border-width:2px}
 .fs-fact{margin:12px 0 0}
 .fs-filter{scroll-margin-top:12px}
 /* wider screens: buses two across, campus bars two across; a bus and a quest form stay one phone-width column */

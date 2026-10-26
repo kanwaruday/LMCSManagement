@@ -208,29 +208,38 @@ var FleetQuests = (function () {
   }
   // Known (Ruling G1): an item not confirmed that the portal has an unconfirmed value for. A papers field the scans read, if the
   // form would accept it; "driver has a smartphone" when a fill on record has its video. Nothing else is inferred.
-  function knownItem(s, id, profile) {
+  function knownItem(s, id, profile, today) {
     if (s.id === 'fuel') return id === 'driverHasASmartphoneForTheFillVideo' && ((profile.fills || {}).withVideo || 0) > 0;
     var x = s.id === 'papers' && SCAN_FIELDS.indexOf(id) !== -1 && (profile.scan || {})[id], f = null;
     (s.fields || []).forEach(function (d) { if (d.id === id) f = d; });
-    return !!x && !!f && !blank(x.value) && !checkValue(f, x.value, '9999-12-31').error;
+    return !!x && !!f && !blank(x.value) && !checkValue(f, x.value, today || '9999-12-31').error; // no today: a past-only date is not checked
   }
   /** [{id, total, confirmed, known}] for the six quests. total: the quest's required items (fields, each part, each run it needs);
    *  confirmed: total less missingFor (saved data, or the run that IS the requirement); known: of the rest, the ones with a value
-   *  to confirm. Only confirmed items complete a quest. */
-  function progressFor(profile) {
+   *  to confirm. Only confirmed items complete a quest. today ('yyyy-MM-dd'): a scan date the form would refuse as future is not known. */
+  function progressFor(profile, today) {
     profile = profile || {};
     return active().steps.map(function (s) {
       var dc = s.doneCheck || {}, m = missingFor(s, profile);
       var total = (dc.required || []).length + (dc.eachPart ? (s.parts || []).length : 0) + (dc.needs || []).filter(function (n) { return NEEDS[n]; }).length;
-      return { id: s.id, total: total, confirmed: total - m.length, known: m.filter(function (id) { return knownItem(s, id, profile); }).length };
+      return { id: s.id, total: total, confirmed: total - m.length, known: m.filter(function (id) { return knownItem(s, id, profile, today); }).length };
     });
   }
-  /** The items of every quest of every bus given: {confirmed, known, total} (the team bar's data bar). */
-  function fleetProgress(profiles) {
-    var out = { confirmed: 0, known: 0, total: 0 };
-    (profiles || []).forEach(function (p) { progressFor(p).forEach(function (x) { out.confirmed += x.confirmed; out.known += x.known; out.total += x.total; }); });
+  /** A bus's progress as two shares (0..1) where each of the six quests weighs one sixth, as in completion() (Ruling G3: the 20
+   *  parts never outweigh the rest): {confirmed, known}, the means of each quest's confirmed and known fractions. */
+  function busProgress(profile, today) {
+    var q = progressFor(profile, today), c = 0, k = 0;
+    q.forEach(function (x) { c += x.total ? x.confirmed / x.total : 1; k += x.total ? x.known / x.total : 0; });
+    return { confirmed: q.length ? c / q.length : 0, known: q.length ? k / q.length : 0 };
+  }
+  /** The buses given, each weighing the same: {confirmed, known} (means of busProgress) and buses (the team bar's data bar). */
+  function fleetProgress(profiles, today) {
+    var out = { confirmed: 0, known: 0, buses: (profiles || []).length };
+    (profiles || []).forEach(function (p) { var b = busProgress(p, today); out.confirmed += b.confirmed / out.buses; out.known += b.known / out.buses; });
     return out;
   }
+  /** A share as a whole percent: rounded, but 100 only when it is all there, and never 0 when something is. */
+  function percent(f) { return f >= 1 - 1e-9 ? 100 : f <= 0 ? 0 : Math.min(99, Math.max(1, Math.round(100 * f))); }
   function completion(profile) {
     var q = questsFor(profile), n = q.filter(function (x) { return x.done; }).length;
     return Math.round(100 * n / q.length);
@@ -433,7 +442,7 @@ var FleetQuests = (function () {
 
   return { DEFAULT_ROWS: DEFAULT_ROWS, questConfig: questConfig, setConfigRows: setConfigRows, profilesFromRows: profilesFromRows, driverKey: driverKey,
     applySave: applySave, normReg: normReg, SCAN_FIELDS: SCAN_FIELDS,
-    questsFor: questsFor, progressFor: progressFor, fleetProgress: fleetProgress, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
+    questsFor: questsFor, progressFor: progressFor, busProgress: busProgress, fleetProgress: fleetProgress, percent: percent, completion: completion, isReady: isReady, missingLabels: missingLabels, questFor: questFor,
     transportMissions: transportMissions, teamBar: teamBar, gaps: gaps, validateQuest: validateQuest, ageOn: ageOn };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FleetQuests;
