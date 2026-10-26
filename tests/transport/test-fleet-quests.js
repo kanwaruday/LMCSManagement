@@ -181,4 +181,13 @@ t('validation: types, unknown fields, the 60+ driver rule', () => {
   assert.strictEqual(old.ageLimit, true); assert.match(old.warning, /60 or over/);
   assert.strictEqual(FQ.validateQuest('driver', { dateOfBirth: '1966-10-26' }, TODAY).ageLimit, false);
 });
+t('papers: scanAccepted records which fields were confirmed unchanged from the scans; it never counts towards done', () => {
+  const v = FQ.validateQuest('papers', { chassisNo: 'TESTCHASSIS01', make: 'TESTMAKER', scanAccepted: ['chassisNo', 'engineNo', 'odometerToday', 'colour', 7] }, TODAY);
+  assert.deepStrictEqual(v.fields, { chassisNo: 'TESTCHASSIS01', make: 'TESTMAKER', scanAccepted: ['chassisNo'] }, 'only scan fields that were saved stay in the list');
+  assert.deepStrictEqual(FQ.validateQuest('papers', { make: 'TESTMAKER', scanAccepted: [] }, TODAY).fields, { make: 'TESTMAKER' }, 'an empty list is dropped');
+  assert.match(FQ.validateQuest('papers', { scanAccepted: 'chassisNo' }, TODAY).error, /scanAccepted/, 'a list, nothing else');
+  assert.match(FQ.validateQuest('fuel', { scanAccepted: [] }, TODAY).error, /Unknown field/, 'only the papers quest has scans');
+  const p = { data: { papers: { scanAccepted: ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'seatingCapacityAsPerRc'] } } };
+  assert.strictEqual(FQ.questsFor(p)[0].done, false, 'scan provenance alone never completes the papers quest');
+});
 console.log('fleet quests: all checks passed');

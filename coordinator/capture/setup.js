@@ -27,6 +27,7 @@ const SVG = {
   ok: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   cam: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
   go: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  ext: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M10 5H4v15h15v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 const S = { session: null, data: null, rows: null, profiles: [], scope: 'all', gap: null, view: { v: 'board' }, form: null, sending: false, queued: [], others: 0 };
@@ -184,10 +185,39 @@ function drawBusNow(p) {
 
 // ── A quest: a short form ──
 const optional = (step, id) => !((step.doneCheck.required || []).includes(id) || step.doneCheck.eachPart === id);
+// The Vehicle papers values LM Studio read off this bus's RC / fitness scans (the GET's fleet[].scan), each checked as the form
+// would save it: {fieldId: {value, doc, link, disagree}}. They pre-fill empty fields only; a value staff saved always wins.
+function scanOf(reg, step) {
+  const raw = ((S.data && S.data.rows.fleet.find((b) => FQ.normReg(b.reg) === reg)) || {}).scan || {}, out = {};
+  Object.keys(raw).forEach((id) => {
+    const x = raw[id] || {}, v = id === 'mfgYear' ? { fields: { mfgYear: String(x.value || '') } } : step.fields.some((f) => f.id === id) && FQ.validateQuest(step.id, { [id]: x.value }, today());
+    if (v && !v.error && v.fields[id]) out[id] = { value: v.fields[id], doc: String(x.doc || ''), link: /^https:\/\//.test(x.link || '') ? x.link : '', disagree: x.disagree === true };
+  });
+  return out;
+}
+// The scan file in Drive, in a new tab: Drive's own sharing decides who can open it.
+const viewScan = (link, text) => `<a class="fs-view" href="${esc(link)}" target="_blank" rel="noopener">${esc(text)} ${SVG.ext}<span class="fs-sr"> (opens in a new tab)</span></a>`;
+// "From the RC scan · please confirm · View scan", red when the scans disagree, "No scan found" when no file backs it.
+// A hand-typed value from the Transport Overrides note has no scan by design. Hidden once the value is changed.
+function scanTag(id, key) {
+  const x = S.form.scan[key], over = x.doc === 'overrides';
+  const text = (over ? 'From the Transport Overrides note' : `From the ${x.doc} scan`) + ' · ' + (x.disagree ? 'Scans disagree: check the paper' : 'please confirm');
+  return `<p class="fs-scan${x.disagree ? ' fs-disagree' : ''}" id="${id}-s"><span>${esc(text)}</span>` +
+    (over ? '' : x.link ? ` <span class="fs-viewgrp"><span aria-hidden="true">·</span> ${viewScan(x.link, 'View scan')}</span>` : ' <span>· No scan found</span>') + '</p>';
+}
+// One "View RC scan" link per scan file that backs two or more of the values, above the form.
+function scanLinks() {
+  const by = {};
+  Object.values(S.form.scan).forEach((x) => { if (x.link) (by[x.link] = by[x.link] || { doc: x.doc, n: 0 }).n++; });
+  const seen = {}, links = Object.keys(by).filter((l) => by[l].n > 1).map((l) => { const d = by[l].doc, k = (seen[d] = (seen[d] || 0) + 1);
+    return viewScan(l, `View ${d} scan` + (k > 1 ? ' ' + k : '')); });
+  return links.length ? `<div class="fs-scanlinks">${links.join('')}</div>` : '';
+}
 function fieldHtml(step, f, val, key) {
   const id = 'f-' + key, opt = optional(step, f.id) ? ' <small>(optional)</small>' : '';
   const lab = `<label class="cap-field" for="${id}">${esc(f.label)}${opt}</label>` + (f.hint ? `<p class="fs-hint" id="${id}-h">${esc(f.hint)}</p>` : '');
-  const desc = f.hint ? ` aria-describedby="${id}-h"` : '';
+  const tag = S.form.prefilled.includes(key) ? scanTag(id, key) : '';
+  const descIds = [f.hint && id + '-h', tag && id + '-s'].filter(Boolean), desc = descIds.length ? ` aria-describedby="${descIds.join(' ')}"` : '';
   if (f.type === 'photo') {
     const ph = S.form.photos[key], has = ph || (val && !/^pending-photo/.test(val)), queued = /^pending-photo/.test(val || '');
     return `<div class="fs-field" data-key="${key}"><p class="cap-field" id="${id}">${esc(f.label)}${opt}</p>${f.hint ? `<p class="fs-hint">${esc(f.hint)}</p>` : ''}` +
@@ -200,7 +230,7 @@ function fieldHtml(step, f, val, key) {
   }
   if (f.type === 'choice') {
     return `<div class="fs-field">${lab}<select id="${id}" class="cap-select" data-key="${key}"${desc}><option value="">Pick one</option>` +
-      f.options.map((o) => `<option${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('') + '</select></div>';
+      f.options.map((o) => `<option${o === val ? ' selected' : ''}>${esc(o)}</option>`).join('') + `</select>${tag}</div>`;
   }
   if (f.type === 'dateOrUnknown') {
     const unknown = val === 'not known';
@@ -209,11 +239,13 @@ function fieldHtml(step, f, val, key) {
   }
   const type = f.type === 'date' ? 'date' : f.type === 'phone' ? 'tel' : 'text';
   const extra = f.type === 'number' ? ' inputmode="decimal"' : f.type === 'date' && f.past ? ` max="${today()}"` : '';
-  return `<div class="fs-field">${lab}<input type="${type}" id="${id}" class="cap-input" data-key="${key}" value="${esc(val || '')}"${extra}${desc} autocomplete="off"></div>`;
+  return `<div class="fs-field">${lab}<input type="${type}" id="${id}" class="cap-input" data-key="${key}" value="${esc(val || '')}"${extra}${desc} autocomplete="off">${tag}</div>`;
 }
 function drawQuest(p, questId) {
   const step = stepOf(questId), data = p.data[questId] || {};
-  S.form = { reg: p.reg, quest: questId, values: JSON.parse(JSON.stringify(data)), photos: {} };
+  S.form = { reg: p.reg, quest: questId, values: JSON.parse(JSON.stringify(data)), photos: {}, scan: questId === 'papers' ? scanOf(p.reg, step) : {}, prefilled: [] };
+  // an empty field starts with what the scans read (tagged to confirm); the quest is still done only by a save (Ruling P2)
+  Object.keys(S.form.scan).forEach((k) => { if (k !== 'mfgYear' && !String(data[k] || '').trim()) { S.form.values[k] = S.form.scan[k].value; S.form.prefilled.push(k); } });
   const link = (mode, text) => `<a class="cap-primary fs-link" href="capture.html?mode=${mode}&reg=${encodeURIComponent(p.reg)}">${text}</a>`;
   let body = '';
   if (questId === 'safety') {
@@ -231,7 +263,12 @@ function drawQuest(p, questId) {
         fieldHtml(step, step.fields[0], v.lastReplacedOn, pt.id + '.lastReplacedOn') +
         `<details${more.some((f) => v[f.id]) ? ' open' : ''}><summary>Kilometres, workshop, cost</summary>${more.map((f) => fieldHtml(step, f, v[f.id], pt.id + '.' + f.id)).join('')}</details></li>`;
     }).join('')}</ul>`;
-  } else body += fields.map((f) => fieldHtml(step, f, S.form.values[f.id], f.id)).join('');
+  } else {
+    const y = S.form.scan.mfgYear; // no quest field for it: shown, not saved
+    if (y) body += `<p class="cap-note fs-scaninfo">Year of manufacture on the ${esc(y.doc)} scan: ${esc(y.value)}</p>`;
+    body += scanLinks();
+    body += fields.map((f) => fieldHtml(step, f, S.form.values[f.id], f.id)).join('');
+  }
   $('quest').innerHTML = `<button type="button" class="fs-back" data-a="back">← ${esc(p.reg)}</button>` +
     `<h2 class="cap-h">${esc(step.title)}</h2><p class="cap-note">${esc([routeName(p), p.campus].filter(Boolean).join(', '))}</p>` +
     `<div class="cap-hud fs-hud"><p id="need" class="cap-hudcount" aria-live="polite"></p><ol id="needSlots" class="cap-slots" aria-hidden="true"></ol></div>` +
@@ -258,6 +295,7 @@ function setVal(key, v) {
   const [a, b] = key.split('.');
   if (b) (S.form.values[a] = S.form.values[a] || {})[b] = v; else S.form.values[key] = v;
   S.form.dirty = true; $('qmsg').textContent = ''; need();
+  const tag = $('f-' + key + '-s'); if (tag) tag.hidden = v !== S.form.scan[key].value; // changed: no longer the scan's value
 }
 // "Needed to finish": the quest's missing list, worked out live from what is on the form.
 function need() {
@@ -322,6 +360,11 @@ async function saveQuest() {
   if (v.error) { $('qmsg').textContent = v.error; return; }
   // keep only the checked values; a photo still waiting from an earlier save keeps its place in that save
   fields = v.fields;
+  if (quest === 'papers') { // provenance for audits: the fields saved exactly as the scans read them (pre-filled now, or accepted before)
+    const was = (p.data.papers || {}).scanAccepted || [];
+    const acc = Object.keys(S.form.scan).filter((k) => fields[k] === S.form.scan[k].value && (S.form.prefilled.includes(k) || was.includes(k)));
+    if (acc.length) fields.scanAccepted = acc; else delete fields.scanAccepted;
+  }
   Object.keys(S.form.photos).forEach((k) => { delete fields[k]; });
   Object.keys(fields).forEach((k) => { if (fields[k] === 'pendingphoto0000') delete fields[k]; });
   $('qsave').disabled = true;
