@@ -97,6 +97,18 @@ Files: create `apps-script/game-setup.gs` (add it to projects.json `game.files`)
   step flips on its data; the quest is complete only when all 6 are done; steps carry their `guide` ids; the
   registry is an array with other modules preserved.
 
+### Task 2 additions (rulings after Task 1)
+- **Peek:** `gametoday` takes `peek=1`. It returns the same view but writes nothing: no Game Daily row, no DoneIds
+  update, no finalize, no quest_step rows, no window defaults. With no snapshot yet today, the missions are picked as
+  they would be, without persisting them. The dock always calls with `peek=1`, so opening Buddy on any page never
+  uses up the home greeting (`firstLoadToday`) or the first-visit tour. Test: a peek call leaves every sheet unchanged
+  and returns `firstLoadToday: false`.
+- **Dock cache version:** `tools/stamp-assets.mjs` writes a hash of buddy-dock.js, buddy-dock.css, game.js, game.css
+  and guide.js into a marked constant in `assets/auth.js` (e.g. `const DOCK_V = '…'; // stamp-assets`). The loader
+  appends `?v=DOCK_V` to each lazy-loaded file. Changing auth.js changes its own hash, so pages restamp as usual.
+  verify.mjs fails when DOCK_V is stale.
+- **avoid default:** `LMCSDock.avoid` defaults to `'#lmcs-warm-chip'`.
+
 ## Task 3: The user guide content
 Files: `assets/game/guide.js` (fill it in). Inputs: `page-facts.json` (LM Studio's per-page facts; the path is given
 in the dispatch), the voice guide, the framework contract, and the live features listed in the dispatch.
