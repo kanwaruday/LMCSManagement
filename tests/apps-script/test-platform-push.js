@@ -14,7 +14,7 @@ const SECRET = 'test-sync-secret';
 const sheets = {
   EmpMaster: [['EmployeeCode', 'Name', 'SchoolCode', 'ReportsTo', 'Status', 'AuthEmail', 'DateOfBirth'],
     ['KUL/T-0001', ' Person One' + ZW, 'LMS6', 'KUL/T-0009', 'Active', '17', 'DOB-SECRET'],
-    ['HES/T-0002', 'Person Two', 'HES', '', 'Inactive', '18', 'DOB-SECRET'],
+    ['HES/T-0002', 'Ánya Śarmā', 'HES', '', 'Inactive', '18', 'DOB-SECRET'],
     ['', 'Blank Code', '', '', 'Active', '', '']],
   EmpSalary: [['EmployeeCode', 'Designation', 'Department', 'BasicPay', 'BankAccount'],
     ['KUL/T-0001', 'PRT', ZW + 'Teaching ', 'SALARY-SECRET', 'BANK-SECRET'], ['HES/T-0002', 'Clerk', 'AdminClerk', 'SALARY-SECRET', 'BANK-SECRET']],
@@ -64,7 +64,7 @@ gas.platformPushStaff();
 let f = fetches.pop();
 assert.strictEqual(f.url, 'https://platform.example.test/api/sync/staff');
 assert.strictEqual(f.opts.method, 'post');
-assert.strictEqual(f.opts.contentType, 'application/json');
+assert.strictEqual(f.opts.contentType, 'application/json; charset=utf-8', 'UTF-8 on the wire, the bytes the signature covers');
 let body = JSON.parse(f.opts.payload);
 assert.deepStrictEqual(Object.keys(body).sort(), ['rows', 'sentAt']);
 assert.ok(Math.abs(Date.parse(body.sentAt) - Date.now()) < 5000, 'sentAt is now, ISO');
@@ -77,7 +77,7 @@ for (const r of body.rows) {
 }
 assert.deepStrictEqual(body.rows[0], { employeeCode: 'KUL/T-0001', authEmail: 'person1@example.test', name: 'Person One', department: 'Teaching',
   designation: 'PRT', reportsTo: 'KUL/T-0009', subjects: ['C4_Science', 'C5_Maths'], active: true });
-assert.deepStrictEqual(body.rows[1], { employeeCode: 'HES/T-0002', authEmail: 'person2@example.test', name: 'Person Two', department: 'AdminClerk',
+assert.deepStrictEqual(body.rows[1], { employeeCode: 'HES/T-0002', authEmail: 'person2@example.test', name: 'Ánya Śarmā', department: 'AdminClerk',
   designation: 'Clerk', reportsTo: '', subjects: [], active: false });
 
 // ── allowlist ─────────────────────────────────────────────────────
@@ -102,7 +102,18 @@ assert.strictEqual(f.opts.headers['X-Sync-Signature'], hmac(sentAt + '.'), 'GET 
 pending = true;
 gas.platformPollRequest();
 assert.deepStrictEqual(fetches.map((x) => x.url.replace('https://platform.example.test', '').split('?')[0]),
-  ['/api/sync/pending', '/api/sync/staff', '/api/sync/allowlist']);
+  ['/api/sync/pending', '/api/sync/allowlist', '/api/sync/staff'], 'allowlist first (sign-in), then staff');
+fetches.length = 0;
+
+// one push failing: the other is still attempted, then the failure is rethrown (the server keeps the request pending)
+const realFetch = gas.UrlFetchApp.fetch;
+gas.UrlFetchApp.fetch = (url, opts) => {
+  if (url.includes('/api/sync/allowlist')) { fetches.push({ url, opts }); return { getResponseCode: () => 500, getContentText: () => '{"ok":false,"error":"SERVER_ERROR"}' }; }
+  return realFetch(url, opts);
+};
+assert.throws(() => gas.platformPollRequest(), /allowlist 500: SERVER_ERROR/);
+assert.deepStrictEqual(fetches.map((x) => x.url.split('/api/sync/')[1].split('?')[0]).sort(), ['allowlist', 'pending', 'staff'], 'staff still pushed after the allowlist failed');
+gas.UrlFetchApp.fetch = realFetch;
 
 // ── refused or unset: fails loudly (the trigger's failure mail reaches Uday) ──
 gas.UrlFetchApp.fetch = () => ({ getResponseCode: () => 409, getContentText: () => JSON.stringify({ ok: false, refused: 'MASS_DEACTIVATION' }) });

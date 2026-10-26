@@ -12,7 +12,7 @@ after(async () => { await db?.close(); });
 const asLmcs = <T>(fn: Parameters<typeof withTenant<T>>[1]) => withTenant(LMCS_TENANT_ID, fn, db.sql);
 
 test('migrations apply to an empty database', async () => {
-  assert.deepEqual(applied, ['001_core.sql', '002_sync.sql']);
+  assert.deepEqual(applied, ['001_core.sql', '002_sync.sql', '003_sync_order.sql']);
   assert.deepEqual(await db.migrate(), [], 'second run applies nothing');
   // tenants is readable without a tenant set (sign-in resolves the tenant from the hd domain)
   const [t] = await db.sql`select name, allowed_domains from tenants where id = ${LMCS_TENANT_ID}`;
@@ -46,6 +46,9 @@ test('loadConfig names missing vars without values', () => {
   const c = loadConfig({ DATABASE_URL: 'postgres://x@localhost/y', APP_ORIGIN: 'https://app.example.test' });
   assert.equal(c.APP_ORIGIN, 'https://app.example.test');
   assert.equal(c.PORT, 10000);
+  const t = loadConfig({ DATABASE_URL: 'x', APP_ORIGIN: 'y', SYNC_SECRET_T2: 'two', OTHER_SECRET: 'no' }) as Record<string, unknown>;
+  assert.equal(t.SYNC_SECRET_T2, 'two', 'per-tenant sync secrets pass through');
+  assert.equal(t.OTHER_SECRET, undefined, 'unlisted vars do not');
 });
 
 test('health reports db true', async () => {

@@ -17,7 +17,7 @@
 
 // Same cleaning as main.gs pdrStaffFromEmployeeMaster_ (and the platform's clean()): zero-width characters out, trimmed.
 function platformCell_(v) {
-  return String(v == null ? '' : v).replace(/[​-‏﻿⁠]/g, '').trim();
+  return String(v == null ? '' : v).replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim();
 }
 
 // One tab, only the named columns, cleaned. Throws when a column is missing (a renamed header must not read as
@@ -105,7 +105,8 @@ function platformPost_(kind, rows) {
   const sentAt = new Date().toISOString();
   const payload = JSON.stringify({ sentAt: sentAt, rows: rows });
   const out = platformFetch_(c.url + '/api/sync/' + kind, {
-    method: 'post', contentType: 'application/json', payload: payload,
+    // the string goes out UTF-8 encoded (charset below); the signature is over the same UTF-8 bytes (platformSign_)
+    method: 'post', contentType: 'application/json; charset=utf-8', payload: payload,
     headers: { 'X-Sync-Signature': platformSign_(c.secret, sentAt + '.' + payload) },
   });
   Logger.log('platform ' + kind + ' sync: received ' + out.received + ', changed ' + out.changed + ', deactivated ' + out.deactivated);
@@ -115,7 +116,8 @@ function platformPost_(kind, rows) {
 function platformPushStaff() { return platformPost_('staff', platformStaffRows_()); }
 function platformPushAllowlist() { return platformPost_('allowlist', platformAllowlistRows_()); }
 
-// Every 5 minutes: an Owner's "sync now" on the platform sets a flag; this picks it up and pushes both.
+// Every 5 minutes: an Owner's "sync now" on the platform stays pending until a push of each kind succeeds. Allowlist first
+// (sign-in depends on it); both are attempted even if one fails, then the first failure is rethrown.
 function platformPollRequest() {
   const c = platformConfig_();
   const sentAt = new Date().toISOString();
@@ -123,8 +125,11 @@ function platformPollRequest() {
     method: 'get', headers: { 'X-Sync-Signature': platformSign_(c.secret, sentAt + '.') },
   });
   if (!out.pending) return;
-  platformPushStaff();
-  platformPushAllowlist();
+  let failure = null;
+  [platformPushAllowlist, platformPushStaff].forEach(function (push) {
+    try { push(); } catch (err) { failure = failure || err; }
+  });
+  if (failure) throw failure;
 }
 
 // Run ONCE from the editor (asks for the trigger permission); re-running replaces these triggers, never adds a second set.

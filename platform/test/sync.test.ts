@@ -6,8 +6,10 @@ import { withTenant, type Tx } from '../src/db.ts';
 import { buildServer } from '../src/server.ts';
 
 const SECRET = 'test-sync-secret';
+const SECRET_T2 = 'test-sync-secret-two';
+const T2 = '0e9a7c55-1b2d-4f3e-8a6b-2c4d6e8f0a12';
 const ORIGIN = 'https://app.example.test';
-const ZW = '​';
+const ZW = '\u200B';
 const at = (n: string) => `${n}@example.test`;
 
 const dbs: Awaited<ReturnType<typeof testDb>>[] = [];
@@ -18,18 +20,23 @@ async function setup() {
   const db = await testDb();
   dbs.push(db);
   await db.migrate();
-  const app = buildServer({ sql: db.sql, config: { APP_ORIGIN: ORIGIN, SYNC_SECRET: SECRET } });
+  const app = buildServer({ sql: db.sql, config: { APP_ORIGIN: ORIGIN, SYNC_SECRET: SECRET, SYNC_SECRET_T2: SECRET_T2 } });
   const asLmcs = <T>(fn: (tx: Tx) => Promise<T>) => withTenant(LMCS_TENANT_ID, fn, db.sql);
   return { db, app, asLmcs };
 }
 type Setup = Awaited<ReturnType<typeof setup>>;
 
 const sign = (secret: string, sentAt: string, raw: string) => createHmac('sha256', secret).update(`${sentAt}.${raw}`).digest('hex');
-function push(s: Setup, kind: 'staff' | 'allowlist', rows: unknown[], { secret = SECRET, sentAt = new Date().toISOString() } = {}) {
+// Each push is newer than the last (the platform refuses a sentAt at or before the last accepted one).
+let clock = 0;
+const nextSentAt = () => new Date((clock = Math.max(Date.now(), clock + 1))).toISOString();
+function push(s: Setup, kind: 'staff' | 'allowlist', rows: unknown[], { secret = SECRET, sentAt = nextSentAt() } = {}) {
   const raw = JSON.stringify({ sentAt, rows });
-  return s.app.inject({ method: 'POST', url: `/api/sync/${kind}`, payload: raw,
-    headers: { 'content-type': 'application/json', 'x-sync-signature': sign(secret, sentAt, raw) } });
+  return s.app.inject({ method: 'POST', url: `/api/sync/${kind}`, payload: Buffer.from(raw, 'utf8'),
+    headers: { 'content-type': 'application/json; charset=utf-8', 'x-sync-signature': sign(secret, sentAt, raw) } });
 }
+const poll = (s: Setup, { secret = SECRET, sentAt = nextSentAt() } = {}) => s.app.inject({ method: 'GET',
+  url: `/api/sync/pending?sentAt=${encodeURIComponent(sentAt)}`, headers: { 'x-sync-signature': sign(secret, sentAt, '') } });
 const staff = (code: string, extra: Record<string, unknown> = {}) => ({
   employeeCode: code, authEmail: at(code.replace(/\W/g, '').toLowerCase()), name: `Name ${code}`, department: 'Teaching',
   designation: 'PRT', reportsTo: '', subjects: [], active: true, ...extra,
@@ -42,7 +49,7 @@ test('upsert by employee code', async () => {
   const s = await setup();
   const first = await push(s, 'staff', [
     staff('KUL/T-0001', { authEmail: ` ${ZW}Person1@Example.TEST `, department: `${ZW}Teaching${ZW} `, subjects: ['C4_Science', ` ${ZW}`, 'C5_Maths'], campusId: 'LMS6' }),
-    staff('HES/T-0002'),
+    staff('HES/T-0002', { name: 'Ánya Śarmā' }), // non-ASCII: the signature is over the UTF-8 bytes
     staff('XYZ/T-0003'),
     staff('JOG/T-0004', { authEmail: '12' }), // not an email (EmpMaster.AuthEmail holds row numbers): stored as null
   ]);
@@ -54,12 +61,13 @@ test('upsert by employee code', async () => {
     campus_code: 'LMS1', department: 'Teaching', designation: 'PRT', reports_to: null, subjects: ['C4_Science', 'C5_Maths'], active: true },
     'cleaned, emails lowercased, campus from the code prefix (the payload campusId is ignored)');
   assert.equal(rows.find((r) => r.employee_code === 'HES/T-0002')!.campus_code, null, 'HES has no campus prefix: never guessed');
+  assert.equal(rows.find((r) => r.employee_code === 'HES/T-0002')!.name, 'Ánya Śarmā');
   assert.equal(rows.find((r) => r.employee_code === 'XYZ/T-0003')!.campus_code, null, 'unknown prefix: null');
   assert.equal(rows.find((r) => r.employee_code === 'JOG/T-0004')!.campus_code, 'LMS6');
   assert.equal(rows.find((r) => r.employee_code === 'JOG/T-0004')!.auth_email, null);
 
   const same = await push(s, 'staff', [staff('KUL/T-0001', { authEmail: 'person1@example.test', subjects: ['C4_Science', 'C5_Maths'] }),
-    staff('HES/T-0002'), staff('XYZ/T-0003'), staff('JOG/T-0004', { authEmail: '12', name: 'Renamed' })]);
+    staff('HES/T-0002', { name: 'Ánya Śarmā' }), staff('XYZ/T-0003'), staff('JOG/T-0004', { authEmail: '12', name: 'Renamed' })]);
   assert.deepEqual(same.json(), { ok: true, received: 4, changed: 1, deactivated: 0 }, 'only the renamed row changed');
   rows = await people(s);
   assert.equal(rows.length, 4, 'updated in place, no duplicates');
@@ -186,29 +194,90 @@ test('run logged in sync_runs', async () => {
     { kind: 'staff', ok: true, received: 2, changed: 2, deactivated: 0, refused: null, finished: true },
     { kind: 'allowlist', ok: true, received: 1, changed: 1, deactivated: 0, refused: null, finished: true },
   ]);
-  const health = (await s.app.inject({ method: 'GET', url: '/api/health' })).json();
-  assert.equal(health.lastSync.LMCS.staff.ok, true);
-  assert.equal(health.lastSync.LMCS.staff.received, 2);
-  assert.equal(health.lastSync.LMCS.allowlist.changed, 1);
 });
 
-test('sync request: Owner only, picked up once by the signed poll', async () => {
+test('public health shows only aggregates; Owner admin health shows own tenant detail', async () => {
+  const s = await setup();
+  await s.asLmcs((tx) => tx`update tenants set allowed_domains = ${['example.test']} where id = ${LMCS_TENANT_ID}`);
+  const pub = async () => (await s.app.inject({ method: 'GET', url: '/api/health' })).json().lastSync;
+  assert.deepEqual(await pub(), { staff: null, allowlist: null }, 'no runs yet');
+  await push(s, 'staff', [staff('KUL/T-0001'), staff('KUL/T-0002')]);
+  await push(s, 'allowlist', [allowRow(at('owner'), { roles: 'Owner', campusId: 'ALL' }), allowRow(at('principal'))]);
+  const body = (await s.app.inject({ method: 'GET', url: '/api/health' })).body;
+  assert.deepEqual(JSON.parse(body).lastSync, { staff: { ok: true, staleMinutes: 0 }, allowlist: { ok: true, staleMinutes: 0 } });
+  assert.doesNotMatch(body, /LMCS|received|changed|deactivated|refused|error/, 'no tenant name, no counts');
+  await push(s, 'staff', []); // refused: 100% deactivation
+  assert.equal((await pub()).staff.ok, false, 'a refused last run shows not ok');
+
+  const admin = async (email: string) => s.app.inject({ method: 'GET', url: '/api/admin/health',
+    headers: { authorization: `Bearer ${await sessionFor(s, email)}` } });
+  assert.equal((await admin(at('principal'))).statusCode, 403);
+  assert.equal((await s.app.inject({ method: 'GET', url: '/api/admin/health' })).statusCode, 401);
+  const detail = (await admin(at('owner'))).json();
+  assert.equal(detail.ok, true);
+  assert.deepEqual({ ...detail.lastSync.staff, at: undefined }, { at: undefined, ok: false, received: 0, changed: 0, deactivated: 0, refused: 'MASS_DEACTIVATION', error: null });
+  assert.equal(detail.lastSync.allowlist.received, 2);
+});
+
+test('sync request: Owner only, pending until a push of each kind succeeds', async () => {
   const s = await setup();
   await s.asLmcs((tx) => tx`update tenants set allowed_domains = ${['example.test']} where id = ${LMCS_TENANT_ID}`);
   await push(s, 'allowlist', [allowRow(at('owner'), { roles: 'Owner', campusId: 'ALL' }), allowRow(at('principal'))]);
-  const poll = (secret = SECRET) => {
-    const sentAt = new Date().toISOString();
-    return s.app.inject({ method: 'GET', url: `/api/sync/pending?sentAt=${encodeURIComponent(sentAt)}`,
-      headers: { 'x-sync-signature': sign(secret, sentAt, '') } });
-  };
-  assert.deepEqual((await poll()).json(), { ok: true, pending: false });
-  assert.equal((await poll('another-secret')).statusCode, 401);
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: false });
+  assert.equal((await poll(s, { secret: 'another-secret' })).statusCode, 401);
   const ask = async (email: string) => s.app.inject({ method: 'POST', url: '/api/sync/request',
     headers: { authorization: `Bearer ${await sessionFor(s, email)}` } });
   assert.equal((await ask(at('principal'))).statusCode, 403);
-  assert.deepEqual((await poll()).json(), { ok: true, pending: false });
-  const ok = await ask(at('owner'));
-  assert.deepEqual(ok.json(), { ok: true });
-  assert.deepEqual((await poll()).json(), { ok: true, pending: true });
-  assert.deepEqual((await poll()).json(), { ok: true, pending: false }, 'the flag clears once picked up');
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: false });
+  assert.deepEqual((await ask(at('owner'))).json(), { ok: true });
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: true });
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: true }, 'a poll alone never clears it');
+  await push(s, 'allowlist', [allowRow(at('owner'), { roles: 'Owner', campusId: 'ALL' }), allowRow(at('principal'))]);
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: true }, 'staff still owed');
+  await push(s, 'staff', []); // 0 active people, so an empty staff push is accepted
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: false }, 'both kinds pushed successfully');
+  await push(s, 'staff', [staff('KUL/T-0001')]);
+  await ask(at('owner'));
+  assert.equal((await push(s, 'staff', [])).statusCode, 409);
+  assert.deepEqual((await poll(s)).json(), { ok: true, pending: true }, 'a refused push does not clear it');
+});
+
+test('replayed or out-of-order pushes and polls are refused', async () => {
+  const s = await setup();
+  const sentAt = nextSentAt();
+  assert.equal((await push(s, 'staff', [staff('KUL/T-0001')], { sentAt })).statusCode, 200);
+  const replay = await push(s, 'staff', [staff('KUL/T-0001', { name: 'Replayed' })], { sentAt });
+  assert.equal(replay.statusCode, 409);
+  assert.equal(replay.json().error, 'STALE_PUSH');
+  const older = await push(s, 'staff', [staff('KUL/T-0001', { name: 'Older' })], { sentAt: new Date(Date.parse(sentAt) - 1000).toISOString() });
+  assert.equal(older.json().error, 'STALE_PUSH');
+  assert.equal((await people(s))[0].name, 'Name KUL/T-0001', 'neither replay changed anything');
+  assert.equal((await push(s, 'allowlist', [allowRow(at('owner'))], { sentAt })).statusCode, 200, 'per kind: the allowlist has its own clock');
+  const p = nextSentAt();
+  assert.equal((await poll(s, { sentAt: p })).statusCode, 200);
+  assert.equal((await poll(s, { sentAt: p })).json().error, 'STALE_PUSH', 'a replayed poll is refused too');
+  const [{ n }] = await s.asLmcs((tx) => tx`select count(*)::int as n from sync_runs where kind = 'staff'`);
+  assert.equal(n, 1, 'a refused replay is not logged as a run');
+});
+
+test('the tenant is the one whose secret verifies; two verifying is refused', async () => {
+  const s = await setup();
+  await withTenant(T2, (tx) => tx`insert into tenants (id, name, sync_secret_env) values (${T2}, 'Other', 'SYNC_SECRET_T2')`, s.db.sql);
+  assert.equal((await push(s, 'staff', [staff('KUL/T-0001')])).statusCode, 200);
+  const res = await push(s, 'staff', [staff('KUL/T-0002', { name: 'Other Person' })], { secret: SECRET_T2 });
+  assert.equal(res.statusCode, 200, res.body);
+  const other = await withTenant(T2, (tx) => tx`select employee_code, campus_code from people`, s.db.sql);
+  assert.deepEqual(other.map((r) => ({ ...r })), [{ employee_code: 'KUL/T-0002', campus_code: null }], 'T2 has no prefixes seeded');
+  assert.deepEqual((await people(s)).map((r) => r.employee_code), ['KUL/T-0001'], 'LMCS untouched');
+
+  // both tenants on the same secret: refused, nothing written anywhere
+  await withTenant(T2, (tx) => tx`update tenants set sync_secret_env = 'SYNC_SECRET' where id = ${T2}`, s.db.sql);
+  const both = await push(s, 'staff', [staff('KUL/T-0003')]);
+  assert.equal(both.statusCode, 401);
+  assert.equal(both.json().error, 'AMBIGUOUS_TENANT');
+  assert.equal((await people(s)).length, 1);
+
+  // a tenant naming any env var other than SYNC_SECRET* can never verify
+  await withTenant(T2, (tx) => tx`update tenants set sync_secret_env = 'APP_ORIGIN' where id = ${T2}`, s.db.sql);
+  assert.equal((await push(s, 'staff', [staff('KUL/T-0004')], { secret: ORIGIN })).json().error, 'BAD_SIGNATURE');
 });
