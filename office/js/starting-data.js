@@ -8,10 +8,10 @@ import { formatInr, isoToDmy } from './format.js';
 import { explainCode } from './codes.js';
 import { GAME_BACKEND_URL } from './config.js';
 
-const FULL = ['FinanceHead', 'Accounts', 'Owner'], DESK = ['FeeClerk', 'AdminManager'];
+const FULL = ['FinanceHead', 'Accounts', 'Owner'], DESK = ['FeeClerk', 'AdminManager'], APPROVER = ['Coordinator'];
 const roles = (s) => String((s && s.role) || '').split(',').map((r) => r.trim());
-// 'full' (every quest, every school), 'desk' (own school's cash and odometers), or null (not for this role)
-export const startScope = (s) => (roles(s).some((r) => FULL.includes(r)) ? 'full' : roles(s).some((r) => DESK.includes(r)) ? 'desk' : null);
+// 'full' (every quest, every school), 'desk' (own school's cash and odometers), 'approve' (a Coordinator: the same two, to approve), or null
+export const startScope = (s) => (roles(s).some((r) => FULL.includes(r)) ? 'full' : roles(s).some((r) => DESK.includes(r)) ? 'desk' : roles(s).some((r) => APPROVER.includes(r)) ? 'approve' : null);
 export const isOwner = (s) => roles(s).includes('Owner');
 
 // Buddy's first-visit tour of this page (work/LMS Mascot Voice Guide.md: plain, warm, verb first).
@@ -20,6 +20,41 @@ export const DAYBOOK_TOUR_BEATS = [
   { target: '.sd-ring', text: 'The ring fills as you go: green is confirmed, and amber stripes are figures we already know, waiting for your check.' },
   { text: 'Inside a school, amber fields come from our records. Check each one against your books, then tap Confirm, or correct it and save.' },
 ];
+
+// ── hand-in and approval (the backend's start.submit / start.approve; states come with start.get and start.save)
+const CHIPS = { draft: 'Draft', submitted: 'Sent for approval', approved: 'Approved', returned: 'Returned' };
+const NO_STATE = { state: 'draft', by: '', at: '', note: '' };
+// A school's or quest's lifecycle state -> the chip {state, label} (anything unknown is a draft)
+export const stateChip = (st) => { const k = st && CHIPS[st.state] ? st.state : 'draft'; return { state: k, label: CHIPS[k], note: k === 'returned' ? String((st && st.note) || '') : '' }; };
+export const questState = (data, campus, quest) => (((data && data.states) || {})[campus] || {})[quest] || null;
+// A school's chip over its approval quests: returned if any was, approved if all are, sent if all are in or past, else a draft; null when none are tracked
+export function schoolState(data, campus) {
+  const all = Object.values(((data && data.states) || {})[campus] || {});
+  if (!all.length) return null;
+  const is = (k) => (x) => x.state === k;
+  const k = all.some(is('returned')) ? all.find(is('returned')) : all.every(is('approved')) ? { state: 'approved' } : all.every((x) => x.state === 'submitted' || x.state === 'approved') ? { state: 'submitted' } : NO_STATE;
+  return k;
+}
+// What one quest screen may do: the chip, whether its forms are read-only, and the buttons. quest = the definition from start.get
+// (approval, fillRoles, approveRoles), counts = the quest's {confirmed, total} at this school.
+export function questActions(quest, st, session, counts) {
+  const rs = roles(session), has = (list) => (list || []).some((r) => rs.includes(r)), top = rs.includes('Owner') || rs.includes('FinanceHead');
+  const chip = stateChip(st), lockedNow = chip.state === 'submitted' || chip.state === 'approved';
+  const tracked = !!(quest && quest.approval && st);
+  const fill = tracked && (top || has(quest.fillRoles)), approve = tracked && (rs.includes('Owner') || has(quest.approveRoles));
+  const n = counts || {}, ready = n.total > 0 && n.confirmed === n.total;
+  return { chip, tracked, readOnly: tracked && lockedNow,
+    submit: { show: fill && !lockedNow, enabled: ready, hint: ready ? '' : 'START_INCOMPLETE' },
+    waiting: fill && !approve && lockedNow ? (chip.state === 'approved' ? 'Approved by your Coordinator.' : 'Waiting for your Coordinator.') : '',
+    decide: { show: approve && chip.state === 'submitted' } };
+}
+export const submitPayload = (campus, quest) => ({ quest, campus });
+// decision 'approve' | 'return'; a return needs a note
+export function approvePayload(campus, quest, decision, note) {
+  const text = String(note || '').trim();
+  if (decision === 'return' && !text) return { ok: false, code: 'NOTE_REQUIRED', field: 'note' };
+  return { ok: true, data: { quest, campus, decision, note: decision === 'return' ? text : '' } };
+}
 
 // counts {confirmed, known, total} -> what a ring shows
 export function ringModel(n) {
@@ -141,8 +176,9 @@ export async function showStartingData(root, session, api) {
     drawBoard();
   }
 
-  function card(n, title, line, onclick, cls) {
-    return h('li', {}, h('button', { type: 'button', class: 'sd-card' + (cls ? ' ' + cls : ''), onclick }, ringEl(n), h('span', { class: 'sd-text' }, h('b', {}, title), h('span', {}, line)), h('span', { class: 'sd-go', 'aria-hidden': 'true' }, GO)));
+  const chipEl = (st) => { const c = stateChip(st); return h('span', { class: 'sd-chip sd-chip-' + c.state }, c.label); };
+  function card(n, title, line, onclick, st) {
+    return h('li', {}, h('button', { type: 'button', class: 'sd-card', onclick }, ringEl(n), h('span', { class: 'sd-text' }, h('b', {}, title), h('span', {}, line), st ? chipEl(st) : null), h('span', { class: 'sd-go', 'aria-hidden': 'true' }, GO)));
   }
 
   function drawBoard() {
@@ -150,7 +186,7 @@ export async function showStartingData(root, session, api) {
     setKids(body,
       h('p', { class: 'meta' }, 'Figures as at close of ' + isoToDmy(d.cutoff) + '. Amber means we already know it: please confirm.'),
       h('ul', { class: 'sd-cards', id: 'sd-board', 'aria-label': 'Schools' }, campuses.length
-        ? campuses.map((c) => card(d.rings[c], placeName(c), confirmLine(d.rings[c]), () => go({ v: 'school', campus: c })))
+        ? campuses.map((c) => card(d.rings[c], placeName(c), confirmLine(d.rings[c]), () => go({ v: 'school', campus: c }), schoolState(d, c)))
         : h('li', {}, 'Nothing for your school yet.')),
       scope === 'full' ? [h('h3', {}, 'Each quest, all schools'), h('ul', { class: 'sd-cards sd-small' },
         d.quests.filter((q) => d.overall[q.id]).map((q) => h('li', { class: 'sd-row' }, ringEl(d.overall[q.id]), h('span', { class: 'sd-text' }, h('b', {}, q.label), h('span', {}, confirmLine(d.overall[q.id]))))))] : null,
@@ -160,10 +196,10 @@ export async function showStartingData(root, session, api) {
   function drawSchool(campus) {
     const d = S.data, ring = d.rings[campus];
     setKids(body, back('All schools'),
-      h('div', { class: 'sd-head' }, ringEl(ring, true), h('div', {}, h('h3', {}, placeName(campus)), h('p', { class: 'meta' }, confirmLine(ring)))),
+      h('div', { class: 'sd-head' }, ringEl(ring, true), h('div', {}, h('h3', {}, placeName(campus)), h('p', { class: 'meta' }, confirmLine(ring)), schoolState(d, campus) ? chipEl(schoolState(d, campus)) : null)),
       h('ul', { class: 'sd-cards' }, schoolQuests(d, campus).map((id) => {
         const q = d.quests.find((x) => x.id === id), n = (d.progress[campus] || {})[id] || { confirmed: 0, known: 0, total: 0 };
-        return card(n, q.label + (q.optional ? ' (optional)' : ''), confirmLine(n), () => go({ v: 'quest', campus, quest: id }));
+        return card(n, q.label + (q.optional ? ' (optional)' : ''), confirmLine(n), () => go({ v: 'quest', campus, quest: id }), questState(d, campus, id));
       })));
   }
 
@@ -172,17 +208,58 @@ export async function showStartingData(root, session, api) {
     if (!quest || !schoolQuests(d, campus).includes(questId)) { S.view = { v: 'school', campus }; return drawSchool(campus); }
     const list = h('div', { class: 'sd-items' });
     const items = itemsFor(d, campus, questId);
-    setKids(list, items.length ? items.map((it) => itemForm(quest, campus, it)) : h('p', { class: 'meta' }, 'Nothing here yet.' + (quest.addable ? ' Tap + Add.' : '')));
-    const add = quest.addable ? h('button', { type: 'button', class: 'btn-lg sd-add', onclick: () => {
+    const act = questActions(quest, questState(d, campus, questId), session, (d.progress[campus] || {})[questId]);
+    setKids(list, items.length ? items.map((it) => itemForm(quest, campus, it, act.readOnly)) : h('p', { class: 'meta' }, 'Nothing here yet.' + (quest.addable && !act.readOnly ? ' Tap + Add.' : '')));
+    const add = quest.addable && !act.readOnly ? h('button', { type: 'button', class: 'btn-lg sd-add', onclick: () => {
       const f = itemForm(quest, campus, null);
       if (!list.querySelector('.office-form')) list.replaceChildren();
       list.append(f); f.querySelector('input,select').focus();
     } }, '+ Add') : null;
     setKids(body, back(placeName(campus)), h('h3', {}, quest.label + ' · ' + placeName(campus)),
-      quest.id === 'loan' ? h('p', { class: 'meta' }, 'Optional: only vehicles bought on a loan.') : null, list, add);
+      quest.id === 'loan' ? h('p', { class: 'meta' }, 'Optional: only vehicles bought on a loan.') : null, act.tracked ? statusBlock(quest, campus, act) : null, list, add, act.tracked ? actionBlock(quest, campus, act) : null);
   }
 
-  function itemForm(quest, campus, it) {
+  // the chip, the Coordinator's return note, and the waiting line
+  function statusBlock(quest, campus, act) {
+    return h('div', { class: 'sd-status' }, h('span', { class: 'sd-chip sd-chip-' + act.chip.state }, act.chip.label),
+      act.chip.note ? h('p', { class: 'sd-return', role: 'note' }, 'Sent back: ' + act.chip.note) : null,
+      act.waiting ? h('p', { class: 'meta' }, act.waiting) : null);
+  }
+  // Send for approval (a clerk) / Approve and Return (an approver)
+  function actionBlock(quest, campus, act) {
+    const msg = h('p', { class: 'err', role: 'alert' }), kids = [];
+    async function call(action, data, done, btns) {
+      if (!navigator.onLine) { msg.textContent = 'You are offline. Connect to the internet, then try again.'; return; }
+      btns.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api.write(action, data);
+        if (!r.success) { const e = parseError(r); msg.textContent = r.network ? 'Not sent: no connection. Try again.' : explainCode(e.code); return; }
+        S.data.states = Object.assign({}, S.data.states, { [campus]: Object.assign({}, (S.data.states || {})[campus], { [quest.id]: r.state }) });
+        render(); say(done);
+      } finally { btns.forEach((b) => { b.disabled = false; }); }
+    }
+    if (act.submit.show) {
+      const b = h('button', { type: 'button', class: 'btn-lg', disabled: !act.submit.enabled }, 'Send for approval');
+      b.addEventListener('click', () => call('start.submit', submitPayload(campus, quest.id), 'Sent for approval.', [b]));
+      kids.push(b, act.submit.enabled ? null : h('p', { class: 'meta' }, explainCode(act.submit.hint)));
+    }
+    if (act.decide.show) {
+      const note = h('input', { type: 'text', 'aria-label': 'What needs fixing', placeholder: 'What needs fixing?', hidden: true, autocomplete: 'off' });
+      const ok = h('button', { type: 'button', class: 'btn-lg sd-confirm' }, 'Approve'), no = h('button', { type: 'button', class: 'secondary' }, 'Return');
+      ok.addEventListener('click', () => { msg.textContent = ''; const p = approvePayload(campus, quest.id, 'approve'); call('start.approve', p.data, 'Approved.', [ok, no]); });
+      no.addEventListener('click', () => {
+        msg.textContent = '';
+        if (note.hidden) { note.hidden = false; note.focus(); no.textContent = 'Send back'; return; }
+        const p = approvePayload(campus, quest.id, 'return', note.value);
+        if (!p.ok) { msg.textContent = explainCode(p.code); note.focus(); return; }
+        call('start.approve', p.data, 'Sent back.', [ok, no]);
+      });
+      kids.push(h('div', { class: 'sd-btns' }, ok, no), note);
+    }
+    return h('div', { class: 'sd-actions' }, kids, msg);
+  }
+
+  function itemForm(quest, campus, it, readOnly) {
     const model = formModel(quest, it), key = it ? it.item : newKey(quest.id, Date.now());
     if (!it) { const c = model.find((f) => f.id === 'campus'); if (c && campus && c.choices.includes(campus)) c.value = campus; }
     const msg = h('p', { class: 'err', role: 'alert' });
@@ -210,10 +287,11 @@ export async function showStartingData(root, session, api) {
     const changed = () => model.some((f) => ctl[f.id].value !== f.value);
     const hasKnown = model.some((f) => f.known);
     const n = it ? ringModel(countsOf(quest, it)) : null;
-    const save = h('button', { type: 'submit' });
+    const save = h('button', { type: 'submit', hidden: !!readOnly });
     const label = () => { const conf = hasKnown && !changed(); save.textContent = conf ? 'Confirm' : 'Save'; save.classList.toggle('sd-confirm', conf); };
     label();
-    const skip = quest.optional ? h('button', { type: 'button', class: 'secondary' }, 'No loan for this vehicle') : null;
+    const skip = quest.optional && !readOnly ? h('button', { type: 'button', class: 'secondary' }, 'No loan for this vehicle') : null;
+    if (readOnly) Object.values(ctl).forEach((c) => { c.disabled = true; });
     const form = h('form', { class: 'office-form sd-item', novalidate: true },
       h('h4', {}, itemTitle(quest, it, model), n && n.done ? h('span', { class: 'sd-ok' }, ' · Confirmed') : null), kids, msg, h('div', { class: 'sd-btns' }, save, skip));
     form.addEventListener('input', () => { label(); msg.textContent = ''; });
@@ -231,7 +309,7 @@ export async function showStartingData(root, session, api) {
         if (!r.success) { const e = parseError(r); return r.network ? (msg.textContent = 'Not saved: no connection. Try again.') : showErr(e.code, e.field); }
         const i = S.data.items.findIndex((x) => x.quest === r.saved.quest && x.item === r.saved.item);
         if (i === -1) S.data.items.push(r.saved); else S.data.items[i] = r.saved;
-        Object.assign(S.data, { progress: r.progress, rings: r.rings, overall: r.overall });
+        Object.assign(S.data, { progress: r.progress, rings: r.rings, overall: r.overall }, r.states ? { states: r.states } : {});
         render(); say(done);
       } finally { save.disabled = false; if (skip) skip.disabled = false; }
     }
