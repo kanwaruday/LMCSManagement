@@ -3,20 +3,21 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- the Day Book starting data module (Office: office/starting-data.html).
-//   Accounts, Fee Clerk  missions: per (quest, school) "Confirm N starting figures for LMS 4" (shared: no personal credit)
+//   Accounts, Fee Clerk  missions (and a Coordinator who also holds Accounts): per (quest, school) "Confirm N starting figures for LMS 4" (shared: no personal credit)
 //   Owner, Accounts      quests: one parallel quest per school, a step per starting-data quest
 // One source of truth: the Office backend's start.progress, fetched as the caller (caller.idToken), so the Office applies its
-// own role and campus scope and the counts match the page's rings exactly. Cached per caller for DAYBOOK_CACHE_S.
-// The missions hook runs before the script lock and warms the cache; the quests hook runs under the lock and reads it.
-// ponytail: the Owner has no missions hook to warm the cache, so an Owner's cold load fetches under the lock (one call,
-//   once per DAYBOOK_CACHE_S); add an Owner warm hook if that ever shows up as lock contention.
+// own role and campus scope and the counts match the page's rings exactly. gameFetchJson_ does the call (its timeout
+// pattern, GAME_FETCH_TIMEOUT_MS) and caches successes per (url, caller) for GAME_FETCH_CACHE_S.
+// The missions hooks run before the script lock and warm the cache (the Owner's: daybookOwnerWarm_, no missions); the
+// quests hook runs under the lock and reads it.
+// ponytail: a cache that expires between the warm and the quests (or a warm that failed) still fetches under the lock,
+//   one call per cache period; read the cache only there if that ever shows up as lock contention.
 // A failed fetch or {success:false} THROWS (missions: the framework marks the day down; quests: only these are dropped).
 // Only this file's own functions are used at top level (load order: tests/apps-script/test-load-order.js).
 // ═══════════════════════════════════════════════════════════════════
 
 // = office/js/config.js OFFICE_BACKEND_URL; Script Property OFFICE_BACKEND_URL overrides it (a redeploy under a new URL)
 var DAYBOOK_OFFICE_URL = 'https://script.google.com/macros/s/AKfycbzdVhCwnTnMybe6cdcDC87PbINCFG1n6U7UncMHDvk9eHFG6hC4dn7oEiqJKki4-lULEw/exec';
-var DAYBOOK_CACHE_S = 300;
 // keep in sync with officeStartQuests_() in office-start.gs (play order and labels)
 var DAYBOOK_QUESTS = [['cash', 'Cash in hand'], ['bank', 'Bank balances'], ['supplier', 'Credit suppliers'], ['odometer', 'Vehicle odometers'],
   ['loan', 'Vehicle loans'], ['users', 'Portal users']];
@@ -26,21 +27,15 @@ function daybookUrl_() {
   return String(p || '').trim() || DAYBOOK_OFFICE_URL;
 }
 
-// The caller's start.progress {progress, rings, overall}, cached per caller. Throws on any failure.
+// The caller's start.progress {progress, rings, overall}, cached per caller. Throws on any failure (HTTP error, HTML page,
+// success:false), which gameFetchJson_ reports as null and never caches.
 function daybookProgress_(caller) {
-  const cache = CacheService.getScriptCache(), key = 'daybook_start_' + String(caller.email || '').trim().toLowerCase();
-  const hit = cache.get(key);
-  if (hit) return JSON.parse(hit);
   if (!caller.idToken) throw new Error('daybook: no caller token');
   const url = daybookUrl_();
-  const res = UrlFetchApp.fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=start.progress&idToken=' + encodeURIComponent(caller.idToken),
-    { muteHttpExceptions: true, followRedirects: true });
-  if (res.getResponseCode() !== 200) throw new Error('daybook: Office answered HTTP ' + res.getResponseCode());
-  const json = JSON.parse(res.getContentText()); // an HTML error page throws here
-  if (!json || json.success !== true) throw new Error('daybook: ' + ((json && json.error) || 'start.progress failed'));
-  const out = { progress: json.progress || {}, rings: json.rings || {}, overall: json.overall || {} };
-  cache.put(key, JSON.stringify(out), DAYBOOK_CACHE_S);
-  return out;
+  const json = gameFetchJson_(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=start.progress', caller.idToken, GAME_FETCH_TIMEOUT_MS, caller.email,
+    function (j) { return { progress: j.progress || {}, rings: j.rings || {}, overall: j.overall || {} }; });
+  if (!json) throw new Error('daybook: start.progress failed');
+  return json;
 }
 
 function daybookPlace_(campus) { return campus === 'ALL' ? 'all schools' : gameCampusLabel_(campus); }
@@ -54,7 +49,7 @@ function daybookHere_(p) {
 // mission finished today still shows as done on today's list; the framework keeps only today's snapshot ids.
 function daybookMissions_(caller, cfg, now) {
   const role = caller.primaryRole;
-  if (role !== 'Accounts' && role !== 'FeeClerk') return [];
+  if (role === 'Coordinator' ? (caller.roles || []).indexOf('Accounts') === -1 : role !== 'Accounts' && role !== 'FeeClerk') return [];
   const prog = daybookProgress_(caller).progress, out = [];
   Object.keys(prog).forEach(function (campus) {
     daybookHere_(prog[campus]).forEach(function (q) {
@@ -68,6 +63,13 @@ function daybookMissions_(caller, cfg, now) {
     });
   });
   return out;
+}
+
+// The Owner's missions hook: warms the start.progress cache outside the lock for the Owner's quests. Never throws (an Office
+// outage must not mark the Owner's day down) and never returns a mission.
+function daybookOwnerWarm_(caller) {
+  try { daybookProgress_(caller); } catch (err) { console.error('daybook warm', err); }
+  return [];
 }
 
 // Owner / Accounts -> one parallel quest per school: a step per quest it has (loan only when present, as start.progress sends it).
@@ -87,5 +89,7 @@ function daybookQuests_(caller, cfg, now) {
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_MISSIONS.Accounts = [].concat(GAME_MODULE_MISSIONS.Accounts || [], daybookMissions_);
 GAME_MODULE_MISSIONS.FeeClerk = [].concat(GAME_MODULE_MISSIONS.FeeClerk || [], daybookMissions_);
+GAME_MODULE_MISSIONS.Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], daybookMissions_);
+GAME_MODULE_MISSIONS.Owner = [].concat(GAME_MODULE_MISSIONS.Owner || [], daybookOwnerWarm_);
 GAME_MODULE_QUESTS.Owner = [].concat(GAME_MODULE_QUESTS.Owner || [], daybookQuests_);
 GAME_MODULE_QUESTS.Accounts = [].concat(GAME_MODULE_QUESTS.Accounts || [], daybookQuests_);

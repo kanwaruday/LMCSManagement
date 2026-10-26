@@ -10,6 +10,7 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 // Apps Script services: a recording UrlFetchApp, a real-ish cache, Script Properties
 let store = {}, props = {}, calls = [], answer;
 ctx.CacheService = { getScriptCache: () => ({ get: (k) => (k in store ? store[k] : null), put: (k, v) => { store[k] = v; } }) };
+ctx.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, t) => Array.from(require('crypto').createHash('md5').update(t).digest()), base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64url') };
 ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) };
 ctx.UrlFetchApp = { fetch: (url) => { calls.push(url); const a = typeof answer === 'function' ? answer(url) : answer; return { getResponseCode: () => a.code || 200, getContentText: () => a.body }; } };
 const ok = (body) => ({ body: JSON.stringify(Object.assign({ success: true }, body)) });
@@ -34,6 +35,8 @@ const hooks = (reg, role) => J(ctx.gameModuleHooks_(ctx[reg], role).map((f) => f
 assert.ok(hooks('GAME_MODULE_MISSIONS', 'Accounts').includes('daybookMissions_'));
 assert.ok(hooks('GAME_MODULE_MISSIONS', 'FeeClerk').includes('daybookMissions_'));
 assert.ok(!hooks('GAME_MODULE_MISSIONS', 'Owner').includes('daybookMissions_'));
+assert.ok(hooks('GAME_MODULE_MISSIONS', 'Owner').includes('daybookOwnerWarm_'), 'warms the cache outside the lock');
+assert.ok(hooks('GAME_MODULE_MISSIONS', 'Coordinator').includes('daybookMissions_'), 'an Accounts + Coordinator person');
 assert.ok(hooks('GAME_MODULE_QUESTS', 'Owner').includes('daybookQuests_'));
 assert.ok(hooks('GAME_MODULE_QUESTS', 'Accounts').includes('daybookQuests_'));
 
@@ -52,7 +55,7 @@ delete props.OFFICE_BACKEND_URL;
 reset(ok(PROG));
 ctx.daybookMissions_(acc, cfg, NOW); ctx.daybookQuests_(acc, cfg, NOW); ctx.daybookMissions_(acc, cfg, NOW);
 assert.strictEqual(calls.length, 1);
-assert.ok('daybook_start_acc@test.invalid' in store, 'keyed on the lower-cased email');
+assert.strictEqual(Object.keys(store).length, 1, 'cached once for this caller');
 ctx.daybookMissions_(clerk, cfg, NOW);
 assert.strictEqual(calls.length, 2);
 
@@ -75,6 +78,22 @@ assert.strictEqual(J(ctx.daybookMissions_(clerk, cfg, NOW))[0].title, 'Confirm 1
 reset(ok(PROG));
 assert.deepStrictEqual(J(ctx.daybookMissions_(owner, cfg, NOW)), [], 'the Owner gets quests, not missions');
 assert.strictEqual(calls.length, 0);
+
+// ---- Owner warm: fetches once (so the quests under the lock read the cache), never a mission, never throws
+reset(ok(PROG));
+assert.deepStrictEqual(J(ctx.daybookOwnerWarm_(owner, cfg, NOW)), []);
+ctx.daybookQuests_(owner, cfg, NOW);
+assert.strictEqual(calls.length, 1, 'the quests read what the warm fetched');
+reset({ code: 500, body: '' });
+assert.deepStrictEqual(J(ctx.daybookOwnerWarm_(owner, cfg, NOW)), [], 'a failing warm never throws');
+
+// ---- a Coordinator gets missions only when they also hold Accounts
+const coordAcc = { email: 'ca@test.invalid', campusId: 'ALL', roles: ['Accounts', 'Coordinator'], primaryRole: 'Coordinator', idToken: 'tok-ca' };
+const coord = { email: 'co@test.invalid', campusId: 'LMS4', roles: ['Coordinator'], primaryRole: 'Coordinator', idToken: 'tok-co' };
+reset(ok(PROG));
+assert.strictEqual(J(ctx.daybookMissions_(coordAcc, cfg, NOW)).length, 7);
+assert.deepStrictEqual(J(ctx.daybookMissions_(coord, cfg, NOW)), []);
+assert.strictEqual(calls.length, 1, 'a plain Coordinator never fetches');
 
 // ---- quests: one parallel quest per school, a step per quest it has
 reset(ok(PROG));
