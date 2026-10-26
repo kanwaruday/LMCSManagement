@@ -92,5 +92,17 @@
       "office-ledger",
       "office-fuel-mirror"
     ]
+  },
+  "game": {
+    "name": "LMCS Game Backend",
+    "scriptId": "",
+    "deploymentId": "",
+    "files": [
+      "game",
+      "game-actions",
+      "game-missions",
+      "game-windows",
+      "game-quests"
+    ]
   }
 }

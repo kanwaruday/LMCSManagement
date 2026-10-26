@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#CE0000">
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="preconnect" href="https://kanwaruday.github.io">
+<link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.08);--dark:#1a1a1a;--gray:#5b6472;--lgray:#f4f5f7;--border:#e6e8ec;--white:#fff;--green:#15803d;--green-lt:#dcfce7;--amber:#b45309;--amber-lt:#fef3c7;--blue:#1d4ed8;--blue-lt:#dbeafe;--purple:#6d28d9;--purple-lt:#ede9fe;--shadow:0 2px 10px rgba(20,20,30,.06);--shadow-lg:0 8px 28px rgba(20,20,30,.10)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -172,7 +173,8 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=ffa8751c"></script>
+<script src="../assets/game/game.js?v=eb99c739"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -199,6 +201,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 
     <!-- ══════════════════ HOME ══════════════════ -->
     <div class="tab-panel active" id="panel-home">
+      <section id="game-root" aria-label="Today with Buddy" hidden></section>
       <div class="card" id="rankCard" style="background:linear-gradient(135deg,var(--red),#ff5b5b);color:#fff;border:none">
         <p class="card-title" style="color:#fff">📊 My Score<span style="font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;font-size:10.5px">Draft — not yet your official incentive</span></p>
         <div id="rankBody"><div class="loading-state"><div class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>Loading…</div></div>
@@ -302,6 +305,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 </div>
 
 <script>
+const GAME_BACKEND_URL = ''; // Task 11 sets this at deploy; empty = the game panel renders nothing
 // ── PDR_BACKEND_URL: same "LMCS Principal's Daily Reporting Backend"
 // Apps Script project every other module in this portal family calls.
 // Keep in sync with LMCSManagement's principals-daily-reporting/index.html
@@ -1014,6 +1018,10 @@ function init() {
   loadEvents_();
   loadTimetable_();
   loadRank_();
+  // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
+  // A Principal, Coordinator or Owner has their panel on their own home: here it would cover the bottom nav.
+  var gameOwnHome = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(SESSION, r); });
+  if (!gameOwnHome && typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: SESSION, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
 }
 init();
 </script>
