@@ -5,3 +5,5 @@ export const OFFICE_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzdVh
 // Hiring lives on the PDR backend (same value as hiring/index.html PDR_BACKEND_URL).
 export const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
 export const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
+// Game backend /exec URL (Buddy on the Starting data page): the same value as GAME_BACKEND_URL in the four homes (tests/office/test-starting-data-view.js checks).
+export const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec';

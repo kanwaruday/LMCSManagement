@@ -51,9 +51,11 @@
     import { showToday, showBusChecks } from './js/today.js';
     import { showOfficeHiring } from './js/hiring.js';
     import { canSeeAccounts, liveToken } from './js/accounts.js';
+    import { startScope } from './js/starting-data.js';
     import { PDR_BACKEND_URL, COORD_BACKEND_URL } from './js/config.js';
     bootOffice({ onReady: (session, api) => {
       if (canSeeAccounts(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'accounts.html'; a.textContent = 'Accounts'; document.querySelector('.office-nav').append(a); }
+      if (startScope(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'starting-data.html'; a.textContent = 'Starting data'; document.querySelector('.office-nav').append(a); }
       try { showOfficeHiring(document.getElementById('hiring-link'), document.getElementById('hiring-banner'), (...a) => fetch(...a), PDR_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { showBusChecks(document.getElementById('buses-link'), document.getElementById('bus-banner'), (...a) => fetch(...a), COORD_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { window.LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: window.LMCS.getSession() || session }); } catch (e) { /* box is optional */ }

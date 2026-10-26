@@ -38,6 +38,7 @@ const NO_SOURCES = {
   'office/report.html': OFFICE_REASON,
   'office/transport.html': OFFICE_REASON,
   'office/buses.html': OFFICE_REASON,
+  'office/starting-data.html': OFFICE_REASON,
   'coordinator/transport/live.html': 'live GPS positions from the vendor through the Coordinator backend; no sheet behind it, and the vendor id stays out of page source',
   'docs/mockups/transport-visual/template.html': 'design mock-up with no data in it (data is injected locally, never committed)',
   'owner/transport/index.html': 'GPS checks through the Coordinator backend (same data as coordinator/transport/live.html); the vendor id stays out of page source',
