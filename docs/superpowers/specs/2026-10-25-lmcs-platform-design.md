@@ -490,6 +490,39 @@ that moves them; "flag" means something to fix in the Sheet now or in the import
 | Office day book (campus books: DayBook, Opening, Closes, Reopens, Reports, Deposits, …, Audit) | one table each | 6 | Conforms; the model the others should follow |
 
 
+### 13. Many schools, and setting a school up as a game
+
+**Uday (2026-10-26):** "this game eventually becomes central point to our School Management Contracts, so all of the
+setup process must also be gamified. A School owner would be asked to setup this game for their school. SO while
+building always keep that in mind". The rest of this section is Claude's calls.
+
+- **A tenant is a school organisation** (the party that signs a contract). LMCS is tenant 1, with its six campuses
+  plus HES inside it. Every table has a `tenant_id` from the first migration, and **Postgres row-level security**
+  limits every query to the signed-in person's tenant, so one school can never see another's data, even through a
+  bug in a module. The platform's own admin (Uday) is the only cross-tenant role.
+- **Nothing LMCS-specific is in code.** Campuses, roles and what each may do, departments and the
+  department-to-role mapping, approval categories and approvers, leave types and rules, fee heads, subjects, term
+  dates (seasons), Game Config, the Google Workspace domain(s) allowed to sign in, the school's name and logo: all
+  are per-tenant data, seeded for LMCS from today's values. Code that moves from Apps Script with hard-coded lists
+  (`CAMPUS_NAMES`, `APR_CATEGORIES`, the subject lists) turns them into seed data as part of its move. Sign-in looks
+  up the tenant from the verified Google domain (or, later, the phone number).
+- **Setup is a quest chain for the school's Owner**, using the game layer's quest framework, with Buddy guiding and a
+  progress ring per quest. Each step is done when its data exists, never by ticking a box:
+  1. *Your school*: name, logo, the Google Workspace domain, the Owner's sign-in.
+  2. *Your campuses*.
+  3. *Your people*: upload the staff list (CSV or a Google Sheet), match its columns to the platform's, review
+     problems (missing emails, duplicates).
+  4. *Roles and departments*: which department gets which automatic role; who is Principal, Coordinator, HOD.
+  5. *Your year*: terms (the game's seasons), holidays calendar.
+  6. *Switch modules on*: the rollout switches (section 9), one module at a time.
+  7. *Module quests*: each module brings its own setup quests (approval categories and approvers, leave types,
+     fee heads, Fleet Command's fleet setup quests, and so on).
+- **LMCS goes through the same quests**, already filled in by the imports, so Uday sees every quest done and can
+  check the seeded settings. That's also how the quests get tested.
+- **Not now:** contracts, billing, self-service sign-up (Uday creates a new tenant by hand), and a separate address
+  per school (comes with the move to a school-owned domain). The November Approvals move needs only `tenant_id` and
+  row-level security in the schema, with LMCS as the only tenant; the setup quests are built after messaging.
+
 ## Messaging's 12 platform requirements, covered
 
 | # | Requirement | Where |
