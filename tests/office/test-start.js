@@ -4,7 +4,7 @@ const assert = require('assert');
 const { boot } = require('./harness');
 
 const fixture = {
-  tokens: { 'clerk-token': 'clerk@example.org', 'am-token': 'am@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'pr-token': 'pr@example.org', 'acc-token': 'acc@example.org' },
+  tokens: { 'clerk-token': 'clerk@example.org', 'am-token': 'am@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'pr-token': 'pr@example.org', 'acc-token': 'acc@example.org', 'co1-token': 'co1@example.org', 'co2-token': 'co2@example.org' },
   allowlist: [
     ['Email', 'Name', 'Campuses', 'Roles'],
     ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
@@ -13,6 +13,8 @@ const fixture = {
     ['owner@example.org', 'Owner', 'ALL', 'Owner'],
     ['pr@example.org', 'Principal', 'LMS1', 'Principal'],
     ['acc@example.org', 'Accounts', 'LMS3', 'Accounts'],
+    ['co1@example.org', 'Coordinator One', 'LMS1,LMS3', 'Coordinator'],
+    ['co2@example.org', 'Coordinator Two', 'LMS2', 'Coordinator'],
   ],
 };
 const J = (x) => JSON.parse(JSON.stringify(x));
@@ -225,13 +227,116 @@ module.exports = function run(t) {
     save(h, { quest: 'bank', item: 'b1', fields: { campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1500.5', used_for: 'fees' } });
     save(h, { quest: 'supplier', item: 's1', fields: { name: 'Pump X', buys: 'Diesel', owed: '700' } });
     save(h, { quest: 'loan', item: 'L2', campus: 'LMS1', skip: true });
-    const r = h.call('start.export', {}, 'fh-token');
+    let r = h.call('start.export', {}, 'fh-token');
+    assert.deepEqual(J(r.actual), {}, 'confirmed but not approved');
+    assert.deepEqual(J(r.unapproved.cash), ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
+    h.call('start.submit', { quest: 'cash', campus: 'LMS1' }, 'clerk-token');
+    h.call('start.approve', { quest: 'cash', campus: 'LMS1', decision: 'approve' }, 'co1-token');
+    r = h.call('start.export', {}, 'fh-token');
     assert.equal(r.success, true); assert.equal(r.cutoff, '2026-10-22');
     assert.deepEqual(J(r.actual), { LMS1: 12345.5 });
+    assert.deepEqual(J(r.unapproved.cash), ['LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
+    assert.equal(r.unapproved.odometer.length, 7);
     assert.deepEqual(J(r.banks[0]), { item: 'b1', campus: 'LMS1', confirmed: true, skipped: false, bank: 'Some Bank', branch: '', last4: '0042', used_for: 'fees', balance: 1500.5 });
     assert.equal(r.suppliers[0].owed, 700);
     assert.equal(r.loans[0].skipped, true);
     assert.deepEqual(r.odometers, []); assert.deepEqual(r.users, []);
     assert.deepEqual(J(r.unconfirmed), { cash: 6, bank: 0, supplier: 0, odometer: 0, loan: 0, users: 0 });
+  });
+  const st = (r, campus, quest) => r.states[campus][quest];
+  const sub = (h, quest, campus, tok) => h.call('start.submit', { quest, campus }, tok || 'clerk-token');
+  const appr = (h, quest, campus, decision, note, tok) => h.call('start.approve', { quest, campus, decision, note }, tok || 'co1-token');
+
+  t.test('SetupQuests tab is seeded; a later row overrides label and approveRoles; school list stays the campus list', () => {
+    const h = fresh();
+    const sh = h.ctx.officeConfigBook_().getSheetByName('SetupQuests');
+    assert.deepEqual(Array.from(sh.values[0]), ['id', 'label', 'fillRoles', 'approveRoles', 'approval', 'cutoff', 'optional', 'active']);
+    const cashCfg = h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'SetupQuests').find((r) => r.id === 'cash');
+    assert.deepEqual([cashCfg.fillRoles, cashCfg.approveRoles, cashCfg.approval, cashCfg.cutoff], ['FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-22']);
+    let q = h.call('start.get', {}).quests.find((x) => x.id === 'cash');
+    assert.deepEqual([Array.from(q.fillRoles), Array.from(q.approveRoles), q.approval, q.cutoff], [['FeeClerk', 'AdminManager'], ['Coordinator', 'Owner'], true, '2026-10-22']);
+    h.ctx.officeWriteRow_(h.ctx.officeConfigBook_(), 'SetupQuests', { id: 'cash', label: 'Cash box', fillRoles: 'FeeClerk,AdminManager', approveRoles: 'Owner', approval: 'yes', cutoff: '2026-10-22', optional: 'no', active: 'yes' });
+    q = h.call('start.get', {}).quests.find((x) => x.id === 'cash');
+    assert.equal(q.label, 'Cash box'); assert.deepEqual(Array.from(q.approveRoles), ['Owner']);
+    save(h, cash('LMS1', '10'), 'clerk-token'); sub(h, 'cash', 'LMS1');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve').error, 'FORBIDDEN_ROLE', 'Coordinator no longer approves cash');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve', '', 'owner-token').success, true);
+    h.ctx.officeWriteRow_(h.ctx.officeConfigBook_(), 'SetupQuests', { id: 'loan', label: '', fillRoles: '', approveRoles: '', approval: 'no', cutoff: '', optional: 'yes', active: 'no' });
+    assert.deepEqual(h.call('start.get', {}).quests.map((x) => x.id), ['cash', 'bank', 'supplier', 'odometer', 'users'], 'inactive quest dropped');
+  });
+
+  t.test('start.submit: only when every required field is confirmed; then the clerk is locked out, the Owner is not', () => {
+    const h = fresh();
+    assert.equal(sub(h, 'cash', 'LMS1').code, 'START_INCOMPLETE');
+    h.call('start.seed', { rows: [{ quest: 'cash', item: 'LMS1', field: 'amount', value: '40' }, { quest: 'cash', item: 'LMS1', field: 'held_by', value: 'Desk' }] });
+    assert.equal(sub(h, 'cash', 'LMS1').code, 'START_INCOMPLETE', 'known is not confirmed');
+    assert.deepEqual(J(st(h.call('start.get', {}, 'clerk-token'), 'LMS1', 'cash')), { state: 'draft', by: '', at: '', note: '' });
+    save(h, cash('LMS1', '40'), 'clerk-token');
+    assert.equal(sub(h, 'cash', 'LMS2').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(sub(h, 'bank', 'LMS1', 'owner-token').code, 'START_NO_APPROVAL');
+    const r = sub(h, 'cash', 'LMS1');
+    assert.equal(r.success, true, JSON.stringify(r));
+    assert.deepEqual(J(r.state), { state: 'submitted', by: 'clerk@example.org', at: '2026-10-26T10:00:00.000Z', note: '' });
+    assert.equal(sub(h, 'cash', 'LMS1').code, 'START_LOCKED', 'already submitted');
+    assert.equal(save(h, cash('LMS1', '41'), 'clerk-token').code, 'START_LOCKED');
+    assert.equal(st(h.call('start.progress', {}, 'clerk-token'), 'LMS1', 'cash').state, 'submitted');
+    assert.equal(save(h, cash('LMS1', '42')).success, true, 'Owner may still edit');
+    // odometer: by the vehicle's campus, new vehicles too
+    save(h, { quest: 'odometer', item: 'V1', fields: { reg: 'HP 01 V 1', campus: 'LMS1', km: 10, active: 'yes' } }, 'clerk-token');
+    save(h, { quest: 'odometer', item: 'V2', fields: { reg: 'HP 01 V 2', campus: 'LMS1', km: 10, active: 'yes' } });
+    h.call('start.seed', { rows: [{ quest: 'odometer', item: 'V2', field: 'km', value: '11' }] }); // kept: V2 is confirmed
+    h.call('start.seed', { rows: [{ quest: 'odometer', item: 'V3', field: 'reg', value: 'HP 01 V 3' }, { quest: 'odometer', item: 'V3', field: 'campus', value: 'LMS1' }] });
+    assert.equal(sub(h, 'odometer', 'LMS1').code, 'START_INCOMPLETE', 'V3 is only known');
+    save(h, { quest: 'odometer', item: 'V3', fields: { km: 5, active: 'no', reg: 'HP 01 V 3', campus: 'LMS1' } }, 'clerk-token');
+    const so = sub(h, 'odometer', 'LMS1'); assert.equal(so.success, true, JSON.stringify(so));
+    assert.equal(save(h, { quest: 'odometer', item: 'V1', fields: { km: 12 } }, 'clerk-token').code, 'START_LOCKED');
+    assert.equal(save(h, { quest: 'odometer', item: 'V9', fields: { reg: 'X', campus: 'LMS1', km: 1, active: 'no' } }, 'clerk-token').code, 'START_LOCKED');
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit').filter((a) => a.action === 'start.submit');
+    assert.equal(au.length, 2); assert.equal(au[0].row_id, 'cash:LMS1'); assert.equal(au[0].campus, 'LMS1');
+  });
+
+  t.test('Coordinator: reviews cash + odometer of own campuses only, never banks; approves only their schools', () => {
+    const h = fresh();
+    save(h, { quest: 'bank', item: 'b1', fields: { campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1' } });
+    save(h, { quest: 'odometer', item: 'V2', fields: { reg: 'HP 02 V 2', campus: 'LMS2', km: 20, active: 'yes' } });
+    save(h, cash('LMS1', '5'), 'clerk-token'); sub(h, 'cash', 'LMS1');
+    save(h, cash('LMS2', '6'), 'am-token'); sub(h, 'cash', 'LMS2', 'am-token');
+    const g = h.call('start.get', {}, 'co1-token');
+    assert.deepEqual(g.quests.map((q) => q.id), ['cash', 'odometer']);
+    assert.deepEqual(g.items.map((i) => i.quest + ':' + i.item), ['cash:LMS1', 'cash:LMS3']);
+    assert.deepEqual(Object.keys(g.states), ['LMS1', 'LMS3']); assert.equal(st(g, 'LMS1', 'cash').state, 'submitted');
+    assert.deepEqual(Object.keys(h.call('start.progress', {}, 'co1-token').progress), ['LMS1', 'LMS3']);
+    assert.equal(save(h, cash('LMS1', '7'), 'co1-token').error, 'FORBIDDEN_ROLE', 'review only');
+    assert.equal(save(h, { quest: 'bank', item: 'b1', fields: { balance: '2' } }, 'co1-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('start.export', {}, 'co1-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(sub(h, 'cash', 'LMS3', 'co1-token').error, 'FORBIDDEN_ROLE', 'a reviewer does not submit');
+    assert.equal(appr(h, 'cash', 'LMS2', 'approve').error, 'FORBIDDEN_CAMPUS', 'not their school');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve', '', 'co2-token').error, 'FORBIDDEN_CAMPUS', 'another coordinator');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve', '', 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve', '', 'fh-token').error, 'FORBIDDEN_ROLE', 'FinanceHead is not an approver');
+    assert.equal(appr(h, 'cash', 'LMS3', 'approve').code, 'START_NOT_SUBMITTED');
+    const r = appr(h, 'cash', 'LMS1', 'approve');
+    assert.equal(r.success, true, JSON.stringify(r));
+    assert.deepEqual(J(r.state), { state: 'approved', by: 'co1@example.org', at: '2026-10-26T10:00:00.000Z', note: '' });
+    assert.equal(appr(h, 'cash', 'LMS2', 'approve', '', 'co2-token').success, true);
+    assert.equal(appr(h, 'cash', 'LMS1', 'approve').code, 'START_NOT_SUBMITTED', 'only from submitted');
+    assert.equal(save(h, cash('LMS1', '9'), 'clerk-token').code, 'START_LOCKED', 'approved stays locked');
+    assert.equal(h.call('start.get', {}, 'pr-token').error, 'FORBIDDEN_ROLE');
+  });
+
+  t.test('return needs a note and reopens the quest; Owner approves any school; audited', () => {
+    const h = fresh();
+    save(h, cash('LMS2', '6'), 'am-token'); sub(h, 'cash', 'LMS2', 'am-token');
+    assert.equal(appr(h, 'cash', 'LMS2', 'return', '', 'co2-token').code, 'NOTE_REQUIRED');
+    assert.equal(appr(h, 'cash', 'LMS2', 'maybe', 'x', 'co2-token').code, 'START_BAD_DECISION');
+    assert.equal(appr(h, 'cash', 'LMS2', 'return', 'acct 12345678', 'co2-token').code, 'ACCOUNT_NUMBER_REFUSED');
+    const r = appr(h, 'cash', 'LMS2', 'return', 'Recount the drawer', 'co2-token');
+    assert.deepEqual(J(r.state), { state: 'returned', by: 'co2@example.org', at: '2026-10-26T10:00:00.000Z', note: 'Recount the drawer' });
+    assert.equal(st(h.call('start.get', {}, 'am-token'), 'LMS2', 'cash').note, 'Recount the drawer');
+    assert.equal(save(h, cash('LMS2', '7'), 'am-token').success, true, 'reopened');
+    assert.equal(sub(h, 'cash', 'LMS2', 'am-token').success, true);
+    assert.equal(appr(h, 'cash', 'LMS2', 'approve', '', 'owner-token').state.state, 'approved');
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS2', '2026-27'), 'Audit').filter((a) => a.action === 'start.approve');
+    assert.equal(au.length, 2); assert.equal(au[0].row_id, 'cash:LMS2'); assert.equal(au[0].campus, 'LMS2');
   });
 };

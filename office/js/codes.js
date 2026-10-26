@@ -80,6 +80,12 @@ export const CODES = {
   START_FIELD_REQUIRED: 'A required field is empty. Fill it in and save again.',
   START_NOT_OPTIONAL: 'Only vehicle loans can be skipped. Fill this one in.',
   START_NO_ROWS: 'No starting data rows were sent.',
+  START_INCOMPLETE: 'Some required fields are not confirmed yet. Confirm every item, then submit.',
+  START_LOCKED: 'This has been submitted for approval, so it cannot be changed now. Ask your Coordinator to return it if something is wrong.',
+  START_NOT_SUBMITTED: 'This school has not submitted this section (or it was already decided). Refresh and try again.',
+  START_NO_APPROVAL: 'This section is not approved per school, so there is nothing to submit or approve.',
+  START_BAD_DECISION: 'Choose approve or return.',
+  NOTE_REQUIRED: 'Say what needs fixing: a note is required to return it.',
   HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');

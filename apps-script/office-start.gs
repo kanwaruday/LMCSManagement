@@ -3,23 +3,41 @@
 // Stored in the Config book's StartData tab (private to the Owner), append-only: the latest row per
 // (quest, item, field) wins. Status: 'known' only from start.seed, 'confirmed' from a person's save, 'skipped'
 // for an optional item a person skipped. Bank accounts keep the last 4 digits only: any 8+ digit run is refused.
+// Who fills / approves each quest comes from the Config SetupQuests tab (office-config.gs). A quest with approval has a
+// lifecycle per (quest, campus): draft -> submitted (by a filler) -> approved | returned (by an approver, a return needs a
+// note; returned reopens it). Stored as StartData rows with field '_state' (item = the campus). Submitted or approved
+// locks the quest+campus for fillers; Owner/FinanceHead and approvers may still edit.
 
-var OFFICE_START_CUTOFF = '2026-10-22';
-var OFFICE_START_ROLES = ['Owner', 'FinanceHead']; // every quest, every campus
-var OFFICE_START_DESK_ROLES = ['FeeClerk', 'AdminManager']; // own campus(es), these quests only
-var OFFICE_START_DESK_QUESTS = ['cash', 'odometer'];
+var OFFICE_START_CUTOFF = '2026-10-22'; // when a SetupQuests row names none
+var OFFICE_START_ROLES = ['Owner', 'FinanceHead']; // see and fill every quest, every campus
 
-// The six quests in play order. Built on first use (it names OFFICE_CAMPUSES, which another file defines: load order).
-var OFFICE_START_QUESTS = null;
+// The six quests in play order: fields from code, the rest merged from SetupQuests (latest row per id wins; a quest with
+// no row keeps its code label/optional, and nobody but Owner/FinanceHead fills it). Built once per request.
 function officeStartQuests_() {
-  if (OFFICE_START_QUESTS) return OFFICE_START_QUESTS;
+  if (OFFICE_MEMO && OFFICE_MEMO.startQuests) return OFFICE_MEMO.startQuests;
+  const cfg = {};
+  officeRows_(officeConfigBook_(), 'SetupQuests').forEach(function (r) { cfg[r.id] = r; });
+  const list = function (v) { return String(v || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); };
+  const yes = function (v) { return /^(yes|true)$/i.test(String(v).trim()); };
+  const out = officeStartQuestDefaults_().filter(function (q) { return !cfg[q.id] || !/^(no|false)$/i.test(String(cfg[q.id].active).trim()); }).map(function (q) {
+    const c = cfg[q.id];
+    return Object.assign(q, c ? {
+      label: c.label || q.label, fillRoles: list(c.fillRoles), approveRoles: list(c.approveRoles), approval: yes(c.approval),
+      cutoff: c.cutoff || OFFICE_START_CUTOFF, optional: c.optional === '' ? q.optional : yes(c.optional),
+    } : { fillRoles: [], approveRoles: [], approval: false, cutoff: OFFICE_START_CUTOFF });
+  });
+  if (OFFICE_MEMO) OFFICE_MEMO.startQuests = out;
+  return out;
+}
+
+function officeStartQuestDefaults_() {
   const f = function (id, label, type, required, choices, allowNegative) {
     const o = { id: id, label: label, type: type, required: !!required };
     if (choices) o.choices = choices;
     if (allowNegative) o.allowNegative = true;
     return o;
   };
-  return (OFFICE_START_QUESTS = [
+  return [
     { id: 'cash', label: 'Cash in hand', perCampus: true, optional: false, addable: false, fields: [
       f('amount', 'Cash counted', 'rupees', true), f('held_by', 'Who holds it', 'text', true), f('counted_by', 'Counted by', 'text')] },
     { id: 'bank', label: 'Bank balances', perCampus: false, optional: false, addable: true, fields: [
@@ -38,15 +56,18 @@ function officeStartQuests_() {
     { id: 'users', label: 'Portal users', perCampus: false, optional: false, addable: true, fields: [
       f('name', 'Name', 'text', true), f('email', 'Email', 'email', true), f('campus', 'School', 'choice', true, OFFICE_CAMPUSES.concat(['ALL'])),
       f('role', 'Role', 'choice', true, ['Fee Clerk', 'Admin Manager', 'Accounts', 'Accounts + Coordinator']), f('starts', 'Starts on', 'date')] },
-  ]);
+  ];
 }
 
 function officeStartActions_() {
-  const all = OFFICE_START_ROLES.concat(OFFICE_START_DESK_ROLES);
+  // Any role may ask; officeStartScope_ refuses a caller SetupQuests gives nothing to.
+  const all = OFFICE_ALL_ROLES;
   return {
     'start.get': { roles: all, write: false, run: officeStartGet_ },
     'start.progress': { roles: all, write: false, run: officeStartProgressGet_ },
     'start.save': { roles: all, write: true, run: officeStartSave_ },
+    'start.submit': { roles: all, write: true, run: officeStartSubmit_ },
+    'start.approve': { roles: all, write: true, run: officeStartApprove_ },
     'start.seed': { roles: ['Owner'], write: true, run: officeStartSeed_ },
     'start.export': { roles: OFFICE_START_ROLES, write: false, run: officeStartExport_ },
   };
@@ -61,12 +82,41 @@ function officeStartErr_(code, field) {
   return e;
 }
 
-// What the caller may see: {full, quests[], campuses[]}. Callers reaching here hold a start role (officeHandle_).
+// What the caller may do: {full, quests[] (see), fill[], approve[], campuses[]}. Fillers and approvers see their quests
+// on their own campuses; Owner/FinanceHead see and fill everything. Nothing to see = FORBIDDEN_ROLE.
 function officeStartScope_(caller) {
-  const full = OFFICE_START_ROLES.some(function (r) { return caller.roles.indexOf(r) !== -1; });
-  if (full) return { full: true, quests: officeStartQuests_().map(function (q) { return q.id; }), campuses: OFFICE_CAMPUSES.concat(['ALL']) };
+  const has = function (roles) { return roles.some(function (r) { return caller.roles.indexOf(r) !== -1; }); };
+  const ids = function (qs) { return qs.map(function (q) { return q.id; }); };
+  const qs = officeStartQuests_();
+  const approve = ids(qs.filter(function (q) { return q.approval && has(q.approveRoles); }));
+  if (has(OFFICE_START_ROLES)) return { full: true, quests: ids(qs), fill: ids(qs), approve: approve, campuses: OFFICE_CAMPUSES.concat(['ALL']) };
+  const fill = ids(qs.filter(function (q) { return has(q.fillRoles); }));
+  const quests = ids(qs.filter(function (q) { return fill.indexOf(q.id) !== -1 || approve.indexOf(q.id) !== -1; }));
+  if (!quests.length) throw new Error('FORBIDDEN_ROLE');
   const own = caller.campuses.indexOf('ALL') !== -1 ? OFFICE_CAMPUSES : OFFICE_CAMPUSES.filter(function (c) { return caller.campuses.indexOf(c) !== -1; });
-  return { full: false, quests: OFFICE_START_DESK_QUESTS, campuses: own };
+  return { full: false, quests: quests, fill: fill, approve: approve, campuses: own };
+}
+
+// Latest lifecycle row per 'quest|campus': {state, by, at, note}.
+function officeStartStateMap_() {
+  const m = {};
+  officeRows_(officeConfigBook_(), 'StartData').forEach(function (r) {
+    if (r.field === '_state') m[r.quest + '|' + r.item] = { state: r.value, by: r.by, at: r.at, note: r.note };
+  });
+  return m;
+}
+function officeStartState_(m, questId, campus) { return m[questId + '|' + campus] || { state: 'draft', by: '', at: '', note: '' }; }
+
+// {[campus]: {[quest]: state}} for the approval quests the caller sees.
+function officeStartStates_(scope) {
+  const m = officeStartStateMap_(), out = {};
+  scope.campuses.forEach(function (c) {
+    if (c === 'ALL') return;
+    officeStartQuests_().forEach(function (q) {
+      if (q.approval && scope.quests.indexOf(q.id) !== -1) (out[c] = out[c] || {})[q.id] = officeStartState_(m, q.id, c);
+    });
+  });
+  return out;
 }
 
 // Validates one value for its field; returns the stored text. '' is allowed here (required is checked per item).
@@ -115,7 +165,7 @@ function officeStartItems_() {
   OFFICE_CAMPUSES.forEach(function (c) { get('cash', c); });
   officeRows_(officeConfigBook_(), 'StartData').forEach(function (r) {
     const q = officeStartQuest_(r.quest);
-    if (!q) return;
+    if (!q || r.field === '_state') return;
     const it = get(r.quest, r.item);
     if (r.campus) it.campus = r.campus;
     const fd = q.fields.filter(function (f) { return f.id === r.field; })[0];
@@ -166,7 +216,7 @@ function officeStartProgress_(items, scope) {
   officeStartQuests_().forEach(function (q) {
     if (scope.quests.indexOf(q.id) !== -1) overall[q.id] = officeStartCount_(items.filter(function (i) { return i.quest === q.id; }));
   });
-  return { progress: progress, rings: rings, overall: overall };
+  return { progress: progress, rings: rings, overall: overall, states: officeStartStates_(scope) };
 }
 
 function officeStartGet_(ctx) {
@@ -236,7 +286,7 @@ function officeStartSave_(ctx, data) {
   const quest = officeStartQuest_(String(data.quest || ''));
   if (!quest) throw officeStartErr_('START_BAD_QUEST', 'quest');
   const scope = officeStartScope_(ctx.caller);
-  if (scope.quests.indexOf(quest.id) === -1) throw new Error('FORBIDDEN_ROLE');
+  if (scope.fill.indexOf(quest.id) === -1) throw new Error('FORBIDDEN_ROLE');
   const key = officeStartItemKey_(quest, data.item);
   const note = officeStartValue_({ id: 'note', type: 'text' }, data.note);
   const items = officeStartItems_();
@@ -261,11 +311,59 @@ function officeStartSave_(ctx, data) {
   }
   const campus = officeStartCampus_(quest, key, vals, prior, data.campus, items);
   if (!scope.full) [campus, prior && prior.campus].forEach(function (c) { if (c !== undefined && scope.campuses.indexOf(c) === -1) throw new Error('FORBIDDEN_CAMPUS'); });
+  if (quest.approval && !scope.full && scope.approve.indexOf(quest.id) === -1) {
+    const m = officeStartStateMap_();
+    [campus, prior && prior.campus].forEach(function (c) {
+      const st = c && officeStartState_(m, quest.id, c).state;
+      if (st === 'submitted' || st === 'approved') throw officeStartErr_('START_LOCKED', c);
+    });
+  }
   const auditSs = officeCollectionAuditBook_(ctx.caller), iso = officeNow_().toISOString();
   const written = officeStartWrite_(officeConfigBook_(), quest, key, campus, vals, status, note, ctx.caller, iso);
   officeStartAudit_(auditSs, ctx.caller, 'start.save', quest.id + ':' + key, campus, written, iso);
   const after = officeStartItems_();
   return Object.assign({ saved: after.filter(function (i) { return i.quest === quest.id && i.item === key; })[0] }, officeStartProgress_(officeStartVisible_(after, scope), scope));
+}
+
+// The approval quest and school a lifecycle action names, or throws.
+function officeStartLife_(data) {
+  const quest = officeStartQuest_(String(data.quest || ''));
+  if (!quest) throw officeStartErr_('START_BAD_QUEST', 'quest');
+  if (!quest.approval) throw officeStartErr_('START_NO_APPROVAL', 'quest');
+  const campus = String(data.campus || '');
+  if (OFFICE_CAMPUSES.indexOf(campus) === -1) throw officeStartErr_('BAD_CHOICE', 'campus');
+  return { quest: quest, campus: campus, state: officeStartState_(officeStartStateMap_(), quest.id, campus).state };
+}
+
+// Appends the lifecycle row and audits it in the school's own book (resolved first: NO_BOOK writes nothing).
+function officeStartSetState_(ctx, action, life, state, note) {
+  const auditSs = officeOpen_(life.campus, officeFy_(officeToday_())), iso = officeNow_().toISOString();
+  const row = { id: Utilities.getUuid(), quest: life.quest.id, item: life.campus, campus: life.campus, field: '_state', value: state, status: '', note: note, at: iso, by: ctx.caller.email };
+  officeWriteRow_(officeConfigBook_(), 'StartData', row);
+  officeStartAudit_(auditSs, ctx.caller, action, life.quest.id + ':' + life.campus, life.campus, row, iso);
+  return { quest: life.quest.id, campus: life.campus, state: { state: state, by: ctx.caller.email, at: iso, note: note } };
+}
+
+// {quest, campus}: a filler of the quest (or Owner/FinanceHead) hands it in once every required field of every item of
+// that quest+campus is confirmed. From draft or returned only.
+function officeStartSubmit_(ctx, data) {
+  const life = officeStartLife_(data);
+  if (officeStartScope_(ctx.caller).fill.indexOf(life.quest.id) === -1) throw new Error('FORBIDDEN_ROLE');
+  if (life.state === 'submitted' || life.state === 'approved') throw officeStartErr_('START_LOCKED', life.campus);
+  const n = officeStartCount_(officeStartItems_().filter(function (i) { return i.quest === life.quest.id && i.campus === life.campus; }));
+  if (n.confirmed !== n.total) throw officeStartErr_('START_INCOMPLETE', life.quest.id);
+  return officeStartSetState_(ctx, 'start.submit', life, 'submitted', '');
+}
+
+// {quest, campus, decision: 'approve'|'return', note}: an approver of the quest (campus checked by officeHandle_).
+function officeStartApprove_(ctx, data) {
+  const life = officeStartLife_(data);
+  if (officeStartScope_(ctx.caller).approve.indexOf(life.quest.id) === -1) throw new Error('FORBIDDEN_ROLE');
+  if (data.decision !== 'approve' && data.decision !== 'return') throw officeStartErr_('START_BAD_DECISION', 'decision');
+  const note = officeStartValue_({ id: 'note', type: 'text' }, data.note);
+  if (data.decision === 'return' && !note) throw officeStartErr_('NOTE_REQUIRED', 'note');
+  if (life.state !== 'submitted') throw officeStartErr_('START_NOT_SUBMITTED', life.campus);
+  return officeStartSetState_(ctx, 'start.approve', life, data.decision === 'approve' ? 'approved' : 'returned', note);
 }
 
 // Owner: {rows: [{quest, item, campus?, field, value}]}, all validated before any write. Writes 'known' and keeps any
@@ -300,20 +398,25 @@ function officeStartSeed_(ctx, data) {
   return out;
 }
 
-// FinanceHead/Owner: everything the Day Book starts from. `actual` (confirmed cash only, rupees) is the shape the
-// Sheet importer's --actual reads. Each list entry: {item, campus, confirmed, skipped, <field>: value (rupees as rupees)}.
+// FinanceHead/Owner: everything the Day Book starts from. `actual` (confirmed cash of approved schools only, rupees) is
+// the shape the Sheet importer's --actual reads; `unapproved` lists, per approval quest, the schools not yet approved. Each list entry: {item, campus, confirmed, skipped, <field>: value (rupees as rupees)}.
 function officeStartExport_() {
   const items = officeStartItems_();
-  const out = { cutoff: OFFICE_START_CUTOFF, actual: {}, banks: [], suppliers: [], odometers: [], loans: [], users: [], unconfirmed: {} };
+  const out = { cutoff: OFFICE_START_CUTOFF, actual: {}, banks: [], suppliers: [], odometers: [], loans: [], users: [], unconfirmed: {}, unapproved: {} };
   const list = { bank: 'banks', supplier: 'suppliers', odometer: 'odometers', loan: 'loans', users: 'users' };
-  officeStartQuests_().forEach(function (q) { out.unconfirmed[q.id] = 0; });
+  const m = officeStartStateMap_();
+  const approved = function (q, c) { return !q.approval || officeStartState_(m, q.id, c).state === 'approved'; };
+  officeStartQuests_().forEach(function (q) {
+    out.unconfirmed[q.id] = 0;
+    if (q.approval) out.unapproved[q.id] = OFFICE_CAMPUSES.filter(function (c) { return !approved(q, c); });
+  });
   items.forEach(function (i) {
     const q = officeStartQuest_(i.quest), n = officeStartCount_([i]);
     const done = n.confirmed === n.total;
     if (!done) out.unconfirmed[q.id]++;
     if (q.id === 'cash') {
       const a = i.fields.amount;
-      if (a && a.status === 'confirmed' && a.value !== '') out.actual[i.item] = a.value / 100;
+      if (a && a.status === 'confirmed' && a.value !== '' && approved(q, i.item)) out.actual[i.item] = a.value / 100;
       return;
     }
     const e = { item: i.item, campus: i.campus, confirmed: done, skipped: q.fields.some(function (f) { return i.fields[f.id] && i.fields[f.id].status === 'skipped'; }) };
