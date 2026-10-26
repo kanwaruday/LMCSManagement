@@ -4,11 +4,21 @@ import cors from '@fastify/cors';
 import { fileURLToPath } from 'node:url';
 import type { Config } from './config.ts';
 import type { Sql } from './db.ts';
+import { registerAuth, googleVerifyIdToken, type VerifyIdToken } from './auth.ts';
 
-export type Deps = { sql: Sql; config: Pick<Config, 'APP_ORIGIN'>; logger?: boolean };
+export type Deps = {
+  sql: Sql; config: Pick<Config, 'APP_ORIGIN' | 'GOOGLE_SIGNIN_CLIENT_ID'>; logger?: boolean;
+  verifyIdToken?: VerifyIdToken; // tests inject a fake; Google's verifier otherwise
+};
 
-export function buildServer({ sql, config, logger = false }: Deps): FastifyInstance {
+export function buildServer({ sql, config, logger = false, verifyIdToken = googleVerifyIdToken }: Deps): FastifyInstance {
   const app = Fastify({ logger });
+  // Errors as { ok:false, error:CODE }; a 500 is logged, never echoed.
+  app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, req, reply) => {
+    const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
+    if (status === 500) req.log.error(err);
+    reply.code(status).send({ ok: false, error: status === 500 ? 'SERVER_ERROR' : err.code ?? 'BAD_REQUEST' });
+  });
   // Array form: the header is sent only when the request Origin matches APP_ORIGIN.
   app.register(cors, { origin: [config.APP_ORIGIN], credentials: false });
   app.addHook('onSend', async (_req, reply) => {
@@ -24,6 +34,7 @@ export function buildServer({ sql, config, logger = false }: Deps): FastifyInsta
     // ponytail: google/hooks/lastSync/lastBackup/lastRestoreTest are filled in by Tasks 3, 6, 10, 11.
     return { ok: db, db, google: false, hooks: { pdr: false, coord: false }, lastSync: null, lastBackup: null, lastRestoreTest: null };
   });
+  registerAuth(app, { sql, clientId: config.GOOGLE_SIGNIN_CLIENT_ID, verifyIdToken });
   return app;
 }
 

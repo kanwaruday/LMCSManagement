@@ -2,7 +2,9 @@
   "name": "lmcs-platform",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18 <23" },
+  "engines": {
+    "node": ">=22.18 <23"
+  },
   "scripts": {
     "start": "node src/migrate.ts && node src/server.ts",
     "test": "node --test \"test/**/*.test.ts\"",
@@ -11,6 +13,7 @@
   "dependencies": {
     "@fastify/cors": "^11.3.1",
     "fastify": "^5.12.7",
+    "google-auth-library": "^10.9.1",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
