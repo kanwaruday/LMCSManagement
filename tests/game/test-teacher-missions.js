@@ -13,9 +13,9 @@ const NOW = (iso) => new Date(iso);                       // game-day instants
 const TUE = '2026-11-10', now = NOW('2026-11-10T05:00:00Z'); // Tue 10 Nov, 10:30 IST
 const ep = (o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 'fractions', name: 'Fractions', first: at('2026-10-28T06:00:00Z'), last: at('2026-10-30T06:00:00Z'),
   cwaAt: null, cwaFrom: null, remediatedAt: null, plannedCwaDate: null }, o || {});
-// by default the teacher logged a chapter recently (no CWA, no planned date: no mission of its own), so the state is linked (Ruling 28)
+// by default the teacher logged a chapter recently (no CWA, no planned date: no mission of its own), so the state is linked (Ruling 34)
 const state = (o) => Object.assign({ code: CODE, campus: 'LMS4', builtAt: now.getTime(), classSubjects: [], episodes: [ep({ cls: 'Class 5', ch: 'earlier', name: 'Earlier' })], loggedDays: {}, periodsByDay: null, nextChapters: [] }, o || {});
-const run = (st, day, working, plans, cfg, n) => J(ctx.tchMissions_(st, day, working, plans || {}, cfg || {}, n || NOW(day + 'T05:00:00Z')));
+const run = (st, day, working, plans, cfg, n, um) => J(ctx.tchMissions_(st, day, working, plans || {}, cfg || {}, n || NOW(day + 'T05:00:00Z'), undefined, um));
 
 // ---- tchWorkingDay_: pure, takes the calendar as data
 const W = (day, events, cfg) => ctx.tchWorkingDay_('LMS4', day, events || [], cfg || {});
@@ -188,26 +188,30 @@ assert.strictEqual(kinds(run(state({ episodes: [ep({ plannedCwaDate: '2026-04-20
 // Ruling 29: a tracker-only CWA (no CWA tag, so its remediation is not knowable) gives no remediation_due at all, open or gone
 for (const day of [TUE, '2026-11-16']) assert.strictEqual(kinds(run(state({ episodes: [Object.assign({}, cwa1, { cwaFrom: 'tracker' })] }), day, true), 'remediation_due').length, 0);
 
-// Ruling 28: no feed entry resolved to this teacher within taughtLookbackDays (e.g. the typed name differs from the roster's) -> one plain line only
-const UNL = "Your entries aren't linked to you yet; your Principal can fix this.";
-for (const st of [state({ episodes: [], periodsByDay: tt, nextChapters: [nxt('2026-11-15')] }), state({ episodes: [ep({ last: at('2026-10-01T06:00:00Z'), plannedCwaDate: '2026-11-05' })], periodsByDay: tt }),
-  state({ episodes: [], loggedDays: { '2026-10-05': [ent('Class 7', 'Math', '2026-10-05T04:00:00Z')] } })]) {
-  ms = run(st, TUE, true);
+// Ruling 34: unlinked only when the index resolved ZERO entries to this code in the whole feed (state.resolvedEntries === 0) AND the campus has an unmatched feed name
+const UNL = "Your entries aren't linked to you yet; your Principal can fix this.", UM = ['Tee Six maam'];
+const z = (o) => state(Object.assign({ resolvedEntries: 0 }, o));
+for (const st of [z({ episodes: [], periodsByDay: tt, nextChapters: [nxt('2026-11-15')] }), z({ periodsByDay: tt }), z({ episodes: [], loggedDays: { '2026-10-05': [ent('Class 7', 'Math', '2026-10-05T04:00:00Z')] } })]) {
+  ms = run(st, TUE, true, {}, {}, null, UM);
   assert.strictEqual(ms.length, 1); assert.strictEqual(ms[0].id, 'teacher:unlinked:' + CODE); assert.strictEqual(ms[0].kind, 'unlinked');
   assert.strictEqual(ms[0].title, UNL); assert.strictEqual(ms[0].go, ''); assert.strictEqual(ms[0].why, '');
   assert.strictEqual(ms[0].core, false); assert.strictEqual(ms[0].shared, false); assert.strictEqual(ms[0].done, false); assert.strictEqual(ms[0].due, null);
 }
-assert.strictEqual(run(state({ episodes: [] }), TUE, true, {}, { teacher: { core: ['cwhw_log', 'unlinked'] } })[0].core, false);   // never core, whatever the config says
-assert.strictEqual(run(state({ episodes: [], loggedDays: { '2026-10-12': [ent('Class 7', 'Math', '2026-10-12T04:00:00Z')] } }), TUE, true)[0].kind, 'cwhw_log');   // one entry inside 30 days links
-assert.strictEqual(run(state({ episodes: [] }), TUE, true, {}, { teacher: { taughtLookbackDays: 400 } }).length, 1);
-// it never counts for or against days on track: not core, so the day's snapshot holds no core id for it, and DONE_AT has nothing to say about it
-{
-  const only = run(state({ episodes: [], periodsByDay: tt }), TUE, true), coreIds = only.filter((m) => m.core && !m.shared).map((m) => m.id);   // what gamePersistDaily_ snapshots
-  assert.deepStrictEqual(coreIds, []);
-  assert.deepStrictEqual(J(ctx.gameFinalizeDay_({ coreIds, doneIds: [] }, only, TUE, () => null)), { counted: false, onTrack: false });   // a day with nothing counted
+assert.strictEqual(run(z({ episodes: [] }), TUE, true, {}, { teacher: { core: ['cwhw_log', 'unlinked'] } }, null, UM)[0].core, false);   // never core, whatever the config says
+// 1. winter break: logged 40 days ago, nothing since, resolved to this teacher -> the normal log card (the old 30-day rule said "unlinked")
+for (const um of [UM, [], undefined]) {
+  ms = run(state({ resolvedEntries: 25, episodes: [ep({ last: at('2026-09-30T06:00:00Z') })], periodsByDay: tt }), TUE, true, {}, {}, null, um);
+  assert.strictEqual(ms[0].kind, 'cwhw_log'); assert.ok(!ms.some((m) => m.kind === 'unlinked'));
 }
+// 2. new joiner: zero resolved entries but the campus has no unmatched names -> the normal log card
+for (const um of [[], undefined, null]) assert.strictEqual(run(z({ episodes: [], periodsByDay: tt }), TUE, true, {}, {}, null, um)[0].kind, 'cwhw_log');
+// 4. a state cached before resolvedEntries existed never shows "unlinked", whatever the campus's unmatched list
+assert.strictEqual(run(state({ episodes: [], periodsByDay: tt }), TUE, true, {}, {}, null, UM)[0].kind, 'cwhw_log');
+assert.strictEqual(ctx.tchLinked_({}, UM), true);
+assert.strictEqual(ctx.tchLinked_({ resolvedEntries: 0 }, UM), false);
+assert.strictEqual(ctx.tchLinked_({ resolvedEntries: 1 }, UM), true);
 
-// ... through the index: a roster teacher (EmpAcademic + timetable) whose typed feed name differs from the roster's gets exactly that mission
+// 3. ... through the index: a roster teacher (EmpAcademic + timetable) with ZERO resolved entries (the feed has her typed name, which differs from the roster's) on a campus with an unmatched name gets exactly that mission
 {
   const C6 = 'NCM/99/01/906', D = 86400000;
   const roster = { employees: [{ employeeCode: C6, name: 'T Six', school: 'LMS 4' }], academic: [{ employeeCode: C6, class: 'Class 7', subject: 'Math' }] };
@@ -215,8 +219,18 @@ assert.strictEqual(run(state({ episodes: [] }), TUE, true, {}, { teacher: { taug
   const tt6 = { campuses: { LMS4: { [C6]: { periods: [{ day: 'Tue', period: 1, subject: 'Maths', class: 'Class 7', free: false }] } } } };
   const built = ctx.tchBuildIndex_({ cwRecords: [r(1), r(2), r(3)], cmData: { 3: { 'Class 7': [{ subject: 'Maths', chapterName: 'Fractions', startDate: '2026-11-01', cwaDate: '2026-11-05' }] } } }, roster, [], tt6, null, { now: now.getTime() });
   assert.deepStrictEqual(J(built.meta.unmatched), { 3: ['Tee Six maam'] });
-  ms = J(ctx.tchMissions_(built.byCode[C6], TUE, true, {}, {}, now, 't6@example.org'));
+  assert.strictEqual(built.byCode[C6].resolvedEntries, 0);
+  ms = J(ctx.tchMissions_(built.byCode[C6], TUE, true, {}, {}, now, 't6@example.org', built.meta.unmatched[3]));
   assert.deepStrictEqual(ms.map((m) => [m.id, m.title, m.go, m.core]), [['teacher:unlinked:' + C6, UNL, '', false]]);
+  ms = J(ctx.tchMissions_(built.byCode[C6], TUE, true, {}, {}, now, 't6@example.org', []));   // same teacher, campus with no unmatched names: normal missions
+  assert.strictEqual(ms[0].kind, 'cwhw_log');
+}
+
+// it never counts for or against days on track: not core, so the day's snapshot holds no core id for it, and DONE_AT has nothing to say about it
+{
+  const only = run(z({ episodes: [], periodsByDay: tt }), TUE, true, {}, {}, null, UM), coreIds = only.filter((m) => m.core && !m.shared).map((m) => m.id);   // what gamePersistDaily_ snapshots
+  assert.deepStrictEqual(coreIds, []);
+  assert.deepStrictEqual(J(ctx.gameFinalizeDay_({ coreIds, doneIds: [] }, only, TUE, () => null)), { counted: false, onTrack: false });   // a day with nothing counted
 }
 
 // I2: an index older than 2 h (the feed has been failing) says "as of" on the log card; a fresh one says nothing
@@ -292,6 +306,14 @@ ctx.SpreadsheetApp = { openById: (id) => (id === '1OjVMUvpLM8JkdAwjmljCtZUI1VUqG
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 const noCode = Object.assign({}, caller); delete noCode.employeeCode;
 assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);
+// Ruling 34 wiring: the module reads tch_meta.unmatched for the state's campus (LMS4 -> index 3)
+store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt, resolvedEntries: 0 })));
+assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);   // no tch_meta: never unlinked
+store.set('tch_meta', JSON.stringify({ builtAt: now.getTime(), codes: [CODE], unmatched: { 2: ['Other campus'] } }));
+assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);   // another campus's unmatched name does not count
+store.set('tch_meta', JSON.stringify({ builtAt: now.getTime(), codes: [CODE], unmatched: { 3: ['Tee Six maam'] } }));
+assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)).map((m) => m.kind), ['unlinked']);
+store.delete('tch_meta'); store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 // email -> code is cached 6 h: the second load does not open the Employee Master (it is down now and the answer still comes)
 assert.strictEqual(ttls['tch_code_t@lms.org.in'], 21600);
 ctx.SpreadsheetApp = { openById: () => { throw new Error('down'); } };
@@ -317,7 +339,7 @@ assert.strictEqual(DA(caller, logId(TUE)), at(TUE + 'T04:10:00Z'));             
 assert.strictEqual(DA(caller, 'teacher:remediation_due:' + CODE + ':Class 7|Math|fractions'), null);   // other kinds
 assert.strictEqual(DA(caller, 'teacher:cwhw_log:OTHER/01/01/001:' + TUE), null);   // another person's id
 assert.strictEqual(DA(caller, 'info_requested:A1'), null); assert.strictEqual(DA(caller, undefined), null);
-assert.strictEqual(DA(caller, 'teacher:unlinked:' + CODE), null);                  // Ruling 28: the unlinked line has no done time, ever
+assert.strictEqual(DA(caller, 'teacher:unlinked:' + CODE), null);                  // Ruling 28/34: the unlinked line has no done time, ever
 store.delete('tch_' + CODE);
 assert.strictEqual(DA(caller, logId(TUE)), null);                                   // not cached: null, and no refresh runs inside the lock
 ctx.CacheService = { getScriptCache: () => { throw new Error('down'); } };

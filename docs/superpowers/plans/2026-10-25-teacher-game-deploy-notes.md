@@ -68,11 +68,12 @@ Plan: `2026-10-25-teacher-game-chapter-quest.md`. Spec: `../specs/2026-10-25-tea
 
 ## Known residuals (follow-ups, not fixed in this run)
 
-1. **Load-bearing before go-live: the "not linked" line after a long break.** A teacher with no CW/HW entries in the
-   last `taughtLookbackDays` (30) sees "Your entries aren't linked to you yet; your Principal can fix this." instead
-   of a log card. That's right for a teacher whose typed name doesn't resolve. It's wrong after any break longer than
-   30 days: winter vacation at the Kullu/Mandi campuses, long leave, or a new joiner. Suggested fix: base it on
-   `meta.unmatched`, so it fires only when the name really is unresolved.
+1. **Fixed (Ruling 34): the "not linked" line after a long break.** The 30-day rule is gone. A teacher now sees
+   "Your entries aren't linked to you yet; your Principal can fix this." only when BOTH hold: (a) the index resolved
+   zero feed entries to their employee code in the whole feed (`resolvedEntries === 0` on the TeacherState, counted
+   at index build), and (b) their campus has at least one name in `tch_meta.unmatched`. Winter vacation, long leave
+   and new joiners get the normal missions and log card. A state cached before this change has no `resolvedEntries`
+   and never shows "unlinked", so it fails safe until the next rebuild (at most 30 minutes after deploy).
 2. **A thrown fetch or build during the 30-minute refresh skips the keep-previous path.** On a timeout, DNS failure
    or malformed feed, the refresh doesn't re-put the cached states or set the failure time. They then lapse after 6 h
    and each load retries the 15 MB fetch. One `catch` around the fetch and build closes it

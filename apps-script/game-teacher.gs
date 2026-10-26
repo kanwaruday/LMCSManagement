@@ -247,7 +247,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
   });
 
   // pass 1: resolve every entry's teacher; note which chapters have started (any teacher, resolved or not)
-  const nameCache = {}, unmatchedBy = {}, resolution = {}, started = {}, rawName = {}, chCache = {}, campusPairs = {}, codePairs = {}, lastDescribed = {};
+  const nameCache = {}, unmatchedBy = {}, resolvedBy = {}, resolution = {}, started = {}, rawName = {}, chCache = {}, campusPairs = {}, codePairs = {}, lastDescribed = {};
   const slim = [];
   recs.forEach(function (r) {
     const idx = Number(r.lmsIdx), res = resolution[idx] = resolution[idx] || { records: 0, resolved: 0 };
@@ -269,6 +269,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
       return;
     }
     res.resolved++;
+    resolvedBy[code] = (resolvedBy[code] || 0) + 1;
     const cand = tchCandidate_(r, ch, now);
     if (cand) { const dk = code + '|' + cand.key; if (!tchHas_(lastDescribed, dk) || cand.t > lastDescribed[dk]) lastDescribed[dk] = cand.t; }
     const pk = r.classMapped + '|' + tchSubjKey_(r.subject), cp = codePairs[code] = codePairs[code] || {};
@@ -342,6 +343,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
   const nextFrom = tchIstDay_(now - TCH_NEXT_GRACE_DAYS * TCH_DAY_MS);
   Object.keys(states).forEach(function (code) {
     const st = states[code];
+    st.resolvedEntries = resolvedBy[code] || 0; // Ruling 34: whole-feed count (loggedDays is trimmed to 60 days), read by tchLinked_
     st.episodes.sort(function (a, b) { return b.last - a.last; });
     // upcoming chapters: per class-subject the course map's chapters nobody has started, soonest planned start first
     const seen = {};
@@ -572,12 +574,11 @@ function tchLogProgress_(state, dayKey) {
     missing: want.filter(function (w) { return !tchHas_(first, w.k); }).map(function (w) { return w.label; }) };
 }
 
-// Ruling 28: did any feed entry resolve to this teacher within taughtLookbackDays? (loggedDays carries every resolved entry of its window, an
-// episode's `last` is its newest resolved entry.) No: the typed name in the feed does not match the roster, and the state has nothing honest to say.
-function tchLinked_(state, T, nowMs) {
-  const cutoff = nowMs - T.taughtLookbackDays * TCH_DAY_MS, days = state.loggedDays || {};
-  return (state.episodes || []).some(function (e) { return e.last >= cutoff; }) ||
-    Object.keys(days).some(function (d) { return (days[d] || []).some(function (x) { return x.at >= cutoff; }); });
+// Ruling 34 (replaces the 30-day rule of Ruling 28): a state is unlinked only when the index resolved ZERO feed entries to this employee code in the
+// whole feed (resolvedEntries, counted at build time) AND the campus has at least one unmatched feed name (campusUnmatched = meta.unmatched[idx]).
+// A winter break, long leave or a new joiner has neither. A state cached before resolvedEntries existed is never unlinked (fail safe).
+function tchLinked_(state, campusUnmatched) {
+  return !(state.resolvedEntries === 0 && Array.isArray(campusUnmatched) && campusUnmatched.length > 0);
 }
 
 // "(as of 08:30 IST)" for an index built more than TCH_STALE_MS before now (the feed has been failing); '' otherwise. Another day names the day.
@@ -587,10 +588,10 @@ function tchAsOf_(builtAt, nowMs, dayKey) {
   return '(as of ' + (day === dayKey ? '' : gameDateLabel_(day) + ', ') + ist.slice(11, 16) + ' IST)';
 }
 
-// state = TeacherState; email = the caller's (owner / doneBy: quest evidence matches doneBy against the caller's email; defaults to the code); plans = {"cls|subj|ch": {activity, plannedAt}}; cfg = the parsed Game Config (with its `teacher` row); now = Date
+// state = TeacherState; email = the caller's (owner / doneBy: quest evidence matches doneBy against the caller's email; defaults to the code); campusUnmatched = tch_meta.unmatched[campus idx] (optional); plans = {"cls|subj|ch": {activity, plannedAt}}; cfg = the parsed Game Config (with its `teacher` row); now = Date
 // Pending, done and gone rules: the plan's Task 4 table. A finished mission shows only while it is fresh (today and yesterday, like the
 // other roles); a closed-without-remediation chapter shows as gone until remediationShowDays, never as a mission after that.
-function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
+function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email, campusUnmatched) {
   if (!state) return [];
   const T = tchConfig_(cfg), code = state.code, who = gameLower_(email) || code, campus = state.campus, out = [], since = gameLookbackStart_(now);
   const mk = function (kind, key, f) {
@@ -601,8 +602,8 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email) {
   };
   const fresh = function (ms) { return ms !== null && ms >= since; };
 
-  // Ruling 28: nothing resolved to this teacher lately -> one plain line, no Go, never core (it never counts for or against days on track)
-  if (!tchLinked_(state, T, now.getTime())) {
+  // Ruling 34: nothing resolved to this teacher in the whole feed, and the campus has unmatched names -> one plain line, no Go, never core (it never counts for or against days on track)
+  if (!tchLinked_(state, campusUnmatched)) {
     const m = gameMission_('unlinked', '', { title: "Your entries aren't linked to you yet; your Principal can fix this.", why: '', owner: who, campus: campus, go: '', core: false });
     m.id = 'teacher:unlinked:' + code;
     return [m];
@@ -1052,7 +1053,9 @@ GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
   if (!state) return [];
   const dayKey = gameDayKey_(now), tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), events = tchCalendarEvents_(state.campus, dayKey);
   // events === null: the calendar is unreadable, so whether today is a holiday or an exam day is unknown; no log card rather than an invented one
-  return tchMissions_(state, dayKey, events !== null && tchWorkingDay_(state.campus, dayKey, events, tcfg), tchPlansFor_(code), tcfg, now, caller.email);
+  const meta = tchReadJson_(CacheService.getScriptCache(), 'tch_meta'), idx = tchCampusIdx_(String(state.campus).replace(/^LMS/, 'LMS '));
+  return tchMissions_(state, dayKey, events !== null && tchWorkingDay_(state.campus, dayKey, events, tcfg), tchPlansFor_(code), tcfg, now, caller.email,
+    meta && meta.unmatched ? meta.unmatched[idx] : null);
 };
 
 // gameToday_ calls this INSIDE gameWithLock_, so it never runs tchStateFor_ (a cold cache would run the refresh under the lock): it reads the cached

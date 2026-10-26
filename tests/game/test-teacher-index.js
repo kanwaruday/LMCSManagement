@@ -113,6 +113,10 @@ assert.strictEqual(out.meta.records, recs.length);
 assert.strictEqual(typeof out.meta.builtAt, 'number');
 assert.deepStrictEqual(J(out.meta.resolution[3]), { records: recs.length, resolved: recs.length - 1 });
 
+// Ruling 34: resolvedEntries counts every entry resolved to the code over the WHOLE feed (loggedDays is trimmed to 60 days; the 60/59-day-old entries still count)
+assert.strictEqual(s1.resolvedEntries, recs.filter((r) => /^T One/.test(r.teacher)).length);
+assert.strictEqual(s2.resolvedEntries, recs.filter((r) => /^T Two/.test(r.teacher)).length);
+
 // class-subjects from EmpAcademic: deduped, labels in the feed's spelling, Games dropped
 assert.deepStrictEqual(s1.classSubjects, [{ cls: 'Class 7', subj: 'Math' }, { cls: 'Class 8', subj: 'Science' }]);
 
