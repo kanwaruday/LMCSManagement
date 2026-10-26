@@ -102,11 +102,11 @@ module.exports = function run(t) {
     return b;
   };
 
-  t.test('old 14-column DayBook gains the 13 columns at the end and old rows read with blanks', () => {
+  t.test('old 14-column DayBook gains the 15 columns at the end and old rows read with blanks', () => {
     const h = boot(); oldBook(h, '2026-27'); const ss = open(h);
     const sh = ss.getSheetByName('DayBook');
     assert.deepEqual(Array.from(sh.values[0]), Array.from(h.ctx.OFFICE_TABLES.DayBook));
-    assert.equal(sh.values[0].length, 27);
+    assert.equal(sh.values[0].length, 29);
     assert.equal(sh.values[1][0], 'o1'); assert.equal(sh.values[1].length, 14, 'old row untouched');
     const r = rows(h, ss, 'DayBook')[0];
     assert.equal(r.id, 'o1'); assert.strictEqual(r.account, ''); assert.strictEqual(r.source, '');
@@ -123,7 +123,7 @@ module.exports = function run(t) {
     const h = boot(); oldBook(h, '2026-27'); const ss = open(h);
     h.ctx.officeAppend_(ss, 'DayBook', entry('n1', { account: 'cash:LMS1', vehicle: 'FLEET', source: 'live', mapped_by: 'm' }), caller, {});
     const row = ss.getSheetByName('DayBook').values[2];
-    assert.equal(row.length, 27);
+    assert.equal(row.length, 29);
     const cols = h.ctx.OFFICE_TABLES.DayBook;
     assert.equal(row[cols.indexOf('account')], 'cash:LMS1'); assert.equal(row[cols.indexOf('vehicle')], 'FLEET');
     assert.equal(row[cols.indexOf('source')], 'live'); assert.equal(row[cols.indexOf('mapped_by')], 'm');
@@ -149,7 +149,7 @@ module.exports = function run(t) {
   t.test('old book with exactly 14 columns migrates without throwing; a wide sheet gets no insertColumnsAfter', () => {
     const h = boot(); const b = oldBook(h, '2026-27'); const sh = b.getSheetByName('DayBook'); sh.maxCols = 14;
     const ss = open(h);
-    assert.equal(sh.values[0].length, 27); assert.ok(sh.maxCols >= 27); assert.equal(sh.insertCalls, 1);
+    assert.equal(sh.values[0].length, 29); assert.ok(sh.maxCols >= 29); assert.equal(sh.insertCalls, 1);
     const wide = boot(); oldBook(wide, '2026-27').getSheetByName('DayBook').maxCols = 30; open(wide);
     assert.equal(wide.books['BOOK-LMS1-2026-27'].getSheetByName('DayBook').insertCalls, 0);
     assert.ok(ss);

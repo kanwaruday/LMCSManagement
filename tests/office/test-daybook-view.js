@@ -3,7 +3,8 @@
 const assert = require('assert');
 if (require.main !== module) { module.exports = () => {}; return; }
 (async () => {
-  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig } = await import('../../office/js/daybook.js');
+  const t_ok = (name, fn) => { fn(); console.log('  ok  - ' + name); };
+  const { collectionOptions, PAYMENT_PHOTO_HINT, mergeQueued, canReverse, formAccounts, categoriesFor, entryPayload, vehicleOptions, rowAccountLabel, keepChoice, inflightGuard, fyEnd, todayIst, loadConfig, componentOptions, COMPONENT_LABEL, VIDEO_LABEL, VIDEO_HINT, VIDEO_MAX_BYTES, videoProblem, canAddVideo } = await import('../../office/js/daybook.js');
   const { reportDraftToPayload, mismatchLines, reportQueueState } = await import('../../office/js/report.js');
   const { createOutbox } = await import('../../office/js/outbox.js');
   const row = (id, extra = {}) => ({ id, entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 500, reverses: '', ...extra });
@@ -37,6 +38,23 @@ if (require.main !== module) { module.exports = () => {}; return; }
   console.log('  ok  - loadConfig refreshes once and keeps the cache on failure');
   console.log('  ok  - mergeQueued marks unsynced, dates, reversals');
 
+  // attach a fill video to a saved fuel entry from the list
+  t_ok('Add fill video shows for a synced fuel entry without a video, until one is queued', () => {
+    const fr = row('fz', { category: 'fuel', direction: 'OUT', vehicle: 'HP1', litres_ml: 40000 });
+    const merged = (rows, entries) => mergeQueued(rows, entries, '2026-10-21');
+    assert.strictEqual(canAddVideo(merged([fr], [])[0]), true);
+    assert.strictEqual(canAddVideo(merged([{ ...fr, video_file_id: 'v1' }], [])[0]), false, 'already has one');
+    assert.strictEqual(canAddVideo(merged([row('o')], [])[0]), false, 'not a fuel entry');
+    assert.strictEqual(canAddVideo(merged([fr, { ...fr, id: 'fz-rev', direction: 'IN', reverses: 'fz' }], [])[0]), false, 'reversed');
+    assert.strictEqual(canAddVideo(merged([fr, { ...fr, id: 'fz-rev', direction: 'IN', reverses: 'fz' }], [])[1]), false, 'a reversal row');
+    const waiting = merged([fr], [q('a1', 'waiting', { entry_id: 'fz', file_id: 'f' }, 'daybook.attach_video')])[0];
+    assert.strictEqual(waiting.videoQueued, true); assert.strictEqual(canAddVideo(waiting), false, 'one is on its way');
+    assert.strictEqual(canAddVideo(merged([], [q('n9', 'waiting', { entry_date: '2026-10-21', category: 'fuel' })])[0]), false, 'not synced yet');
+    assert.strictEqual(videoProblem({ size: 20 * 1024 * 1024, type: 'video/quicktime' }), '');
+    assert.match(videoProblem({ size: 30 * 1024 * 1024, type: 'video/mp4' }), /larger than 25 MB/);
+    assert.match(videoProblem({ size: 3, type: 'application/pdf' }), /Choose a video file/);
+  });
+
   // v2 form helpers
   const CAT = (id, direction, group, nv = false, active = true) => ({ id, label: id, direction, group, needs_vehicle: nv, active });
   const cfgCats = [CAT('fee_collection', 'IN', 'fee'), CAT('fee_cheque', 'IN', 'fee', false, false), CAT('donation', 'IN', 'income'), CAT('stationery', 'OUT', 'school'),
@@ -65,8 +83,8 @@ if (require.main !== module) { module.exports = () => {}; return; }
   let r = entryPayload(base);
   assert.ok(r.ok); assert.deepStrictEqual(r.data, { campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', account: 'cash:LMS1', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 123450, payee: 'Raju', narration: '', charged_to: 'LMS1', file_id: '' });
   r = entryPayload({ ...base, account: A('bank:LMS1', 'bank', 'LMS1'), mode: 'upi', bucket: 'petty' }); assert.strictEqual(r.data.mode, 'upi'); assert.strictEqual(r.data.bucket, ''); // bank: client picks bank/upi
-  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.mode, 'credit');
-  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.supplier_bill_no, 'B7');
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), components: ['puncture'], vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.mode, 'credit');
+  assert.strictEqual(entryPayload({ ...base, account: A('pump1', 'credit', 'LMS1'), category: CAT('tyres', 'OUT', 'transport', true), components: ['puncture'], vehicle: 'HP01A1', supplier_bill_no: ' B7 ' }).data.supplier_bill_no, 'B7');
   assert.ok(entryPayload({ ...base, bucket: '' }).errors.bucket);
   assert.ok(entryPayload({ ...base, account: null }).errors.account);
   assert.ok(entryPayload({ ...base, category: null }).errors.category);
@@ -87,13 +105,47 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(collectionOptions([{ id: 'a', label: 'A', active: true }, { id: 'b', label: 'B', active: false }]), [{ value: 'a', label: 'A' }]);
   assert.deepStrictEqual(collectionOptions(undefined), []);
   // vehicle categories
-  const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true) };
+  const tyres = { ...base, category: CAT('tyres', 'OUT', 'transport', true), components: ['tyre_fl'] };
   assert.ok(entryPayload(tyres).errors.vehicle); assert.strictEqual(entryPayload({ ...tyres, vehicle: 'FLEET' }).data.vehicle, 'FLEET');
   assert.ok(!('vehicle' in entryPayload(base).data), 'no vehicle key for other categories');
+  // garage data: which parts a vehicle service bill was for
+  assert.strictEqual(COMPONENT_LABEL, 'Which parts? (tap all that apply)');
+  t_ok('chips show for vehicle_service and hide for fuel', () => {
+    assert.ok(componentOptions('vehicle_service').length > 0);
+    ['vehicle_washing', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'].forEach((c) => assert.ok(componentOptions(c).length > 0, c));
+    ['fuel', 'vehicle_insurance', 'parking', 'stationery', 'transport_income', 'nope', undefined].forEach((c) => assert.deepStrictEqual(componentOptions(c), [], String(c)));
+    assert.deepStrictEqual(componentOptions('tyres').map((o) => o.id), ['tyre_fl', 'tyre_fr', 'tyre_rl', 'tyre_rr', 'tyre_spare', 'puncture', 'other']);
+    assert.ok(componentOptions('tyres').every((o) => o.id && o.label));
+  });
+  t_ok('the client list matches the server list for every category', () => {
+    const { boot } = require('./harness'); const srv = boot();
+    srv.ctx.OFFICE_CATEGORIES.forEach((c) => assert.deepStrictEqual(componentOptions(c.id), JSON.parse(JSON.stringify(srv.ctx.officeComponentsFor_(c.id))), c.id));
+  });
+  t_ok('a service category needs at least one part, and sends them in tap order', () => {
+    assert.ok(entryPayload({ ...tyres, components: [] }).errors.components);
+    assert.ok(entryPayload({ ...tyres, components: undefined }).errors.components);
+    assert.deepStrictEqual(entryPayload({ ...tyres, vehicle: 'V1', components: ['tyre_fl', 'puncture'] }).data.components, ['tyre_fl', 'puncture']);
+    assert.ok(!('components' in entryPayload({ ...base, components: ['tyre_fl'] }).data), 'other categories send none');
+    const fuelCat = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12', odometer: '5', hasFile: true };
+    assert.ok(!('components' in entryPayload(fuelCat).data), 'fuel sends none');
+  });
   // fuel: litres edge cases, odometer, photo
   const fuel = { ...tyres, category: CAT('fuel', 'OUT', 'transport', true), vehicle: 'HP01A1', litres: '12.5', odometer: '45210', odometer_note: ' meter changed ', hasFile: true };
   r = entryPayload(fuel);
   assert.ok(r.ok, JSON.stringify(r.errors)); assert.strictEqual(r.data.litres_ml, 12500); assert.strictEqual(r.data.odometer_km, 45210); assert.strictEqual(r.data.odometer_note, 'meter changed'); assert.strictEqual(r.data.vehicle, 'HP01A1');
+  // the driver's fill video: optional, mp4/mov/3gp, 25 MB
+  t_ok('fuel video: optional, checked for type and size, copy as briefed', () => {
+    assert.strictEqual(VIDEO_LABEL, 'Video of the fill (from the driver)');
+    assert.strictEqual(VIDEO_HINT, 'Ask the driver for a 10–20 second video: meter at zero, nozzle in the tank, final reading.');
+    assert.strictEqual(VIDEO_MAX_BYTES, 25 * 1024 * 1024);
+    assert.ok(entryPayload(fuel).ok, 'no video is fine');
+    for (const type of ['video/mp4', 'video/quicktime', 'video/3gpp']) assert.ok(entryPayload({ ...fuel, video: { size: 20 * 1024 * 1024, type } }).ok, type);
+    assert.ok(entryPayload({ ...fuel, video: { size: 25 * 1024 * 1024, type: 'video/mp4' } }).ok, 'exactly 25 MB');
+    assert.strictEqual(entryPayload({ ...fuel, video: { size: 25 * 1024 * 1024 + 1, type: 'video/mp4' } }).errors.video, 'This video is larger than 25 MB. Ask the driver for a shorter one (10–20 seconds).');
+    assert.strictEqual(entryPayload({ ...fuel, video: { size: 5, type: 'image/jpeg' } }).errors.video, 'Choose a video file (MP4, MOV or 3GP).');
+    assert.ok(!('video' in entryPayload({ ...fuel, video: { size: 5, type: 'video/mp4' } }).data), 'the file id is added by the caller once the video is queued');
+    assert.ok(entryPayload({ ...tyres, vehicle: 'V1', video: { size: 5, type: 'image/jpeg' } }).ok, 'only a fuel entry looks at it');
+  });
   assert.strictEqual(entryPayload({ ...fuel, litres: '0.001' }).data.litres_ml, 1);
   assert.strictEqual(entryPayload({ ...fuel, litres: '12' }).data.litres_ml, 12000);
   for (const bad of ['0', '0.000', '-1', '12.3456', '', 'abc', '1e3', '.5', '1,5']) assert.ok(entryPayload({ ...fuel, litres: bad }).errors.litres, 'litres ' + bad);

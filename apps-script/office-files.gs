@@ -3,10 +3,15 @@
 // made anywhere; the only way to read one is file.view, which writes an Audit row.
 
 var OFFICE_FILE_MAX_BYTES = 3 * 1024 * 1024; // chunked upload for larger PDFs is deferred
-var OFFICE_FILE_MIMES = ['image/jpeg', 'image/png', 'application/pdf'];
-// Leading bytes (unsigned) each allowed type must start with: the declared mime is never trusted alone.
-var OFFICE_FILE_MAGIC = { 'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2D], 'image/jpeg': [0xFF, 0xD8, 0xFF], 'image/png': [0x89, 0x50, 0x4E, 0x47] };
-var OFFICE_FILE_CATEGORIES = ['deposit_proof', 'bill', 'document'];
+var OFFICE_FILE_MAX_BYTES_BY_CAT = { fuel_video: 25 * 1024 * 1024 }; // a category not named here uses OFFICE_FILE_MAX_BYTES
+var OFFICE_VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/3gpp']; // allowed in category fuel_video only, and nothing else is
+var OFFICE_FILE_MIMES = ['image/jpeg', 'image/png', 'application/pdf'].concat(OFFICE_VIDEO_MIMES);
+// Bytes (unsigned) each allowed type must carry at its offset: the declared mime is never trusted alone.
+// MP4, MOV and 3GP are all ISO-BMFF: a box type 'ftyp' at byte 4 (bytes 0-3 are the box size).
+var OFFICE_FILE_FTYP = [0x66, 0x74, 0x79, 0x70];
+var OFFICE_FILE_MAGIC = { 'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2D], 'image/jpeg': [0xFF, 0xD8, 0xFF], 'image/png': [0x89, 0x50, 0x4E, 0x47],
+  'video/mp4': { offset: 4, bytes: OFFICE_FILE_FTYP }, 'video/quicktime': { offset: 4, bytes: OFFICE_FILE_FTYP }, 'video/3gpp': { offset: 4, bytes: OFFICE_FILE_FTYP } };
+var OFFICE_FILE_CATEGORIES = ['deposit_proof', 'bill', 'document', 'fuel_video'];
 
 function officeFilesActions_() {
   return {
@@ -24,12 +29,13 @@ function officeFolder_(parent, name) {
 function officeFileUpload_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   if (OFFICE_FILE_CATEGORIES.indexOf(data.category) === -1) throw new Error('BAD_CATEGORY');
-  if (OFFICE_FILE_MIMES.indexOf(data.mime) === -1) throw new Error('BAD_MIME');
+  if (OFFICE_FILE_MIMES.indexOf(data.mime) === -1 || (OFFICE_VIDEO_MIMES.indexOf(data.mime) !== -1) !== (data.category === 'fuel_video')) throw new Error('BAD_MIME');
   let bytes;
   try { bytes = Utilities.base64Decode(String(data.base64 || '')); } catch (err) { throw new Error('BAD_FILE'); }
   if (!bytes || !bytes.length) throw new Error('BAD_FILE');
-  if (!OFFICE_FILE_MAGIC[data.mime].every(function (m, i) { return (bytes[i] + 256) % 256 === m; })) throw new Error('BAD_MIME');
-  if (bytes.length > OFFICE_FILE_MAX_BYTES) throw new Error('TOO_LARGE');
+  const magic = OFFICE_FILE_MAGIC[data.mime], at = magic.offset || 0; // a bare array = prefix from byte 0
+  if (!(magic.bytes || magic).every(function (m, i) { return (bytes[at + i] + 256) % 256 === m; })) throw new Error('BAD_MIME');
+  if (bytes.length > (OFFICE_FILE_MAX_BYTES_BY_CAT[data.category] || OFFICE_FILE_MAX_BYTES)) throw new Error('TOO_LARGE');
   const fy = officeFy_(officeToday_());
   const ss = officeOpen_(data.campus, fy);
   const rows = officeRows_(ss, 'Files');
@@ -63,4 +69,12 @@ function officeFileView_(ctx, data) {
   const blob = DriveApp.getFileById(row.drive_id).getBlob();
   officeAuditWrite_(ss, ctx.caller, 'file.view', row.id, data.campus, { name: row.name });
   return { name: row.name, mime: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
+}
+
+// {entry id: id of its latest fuel_video link row}. A video attached after the day book entry was saved is a Files row of category
+// fuel_video whose belongs_to is the entry id (daybook.attach_video); later rows win, so a replacement shows instead of the first.
+function officeVideoLinks_(filesRows) {
+  const out = {};
+  filesRows.forEach(function (f) { if (f.category === 'fuel_video' && f.belongs_to) out[f.belongs_to] = f.id; });
+  return out;
 }

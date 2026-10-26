@@ -5,26 +5,157 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Owner · Transport</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
-<link rel="stylesheet" href="../../coordinator/shared.css?v=29f58300">
+<link rel="stylesheet" href="../../coordinator/shared.css?v=ae425320">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<style>.tc-h{font-size:14px;margin:22px 0 8px}</style>
+<style>.tc-h{font-size:14px;margin:22px 0 8px}
+/* Safety loadout editor: one row per item (number, name, move up / down, needs photo / date, switch off), in that order on
+   screen and for the keyboard. On a phone the name takes the first line; the arrows, Photo, Date and Switch off go under
+   it. Every control is 48 px. Save stays in view at the bottom of the screen while the list is longer, and a field reached
+   with Tab scrolls clear of it. */
+html{scroll-padding-bottom:112px}
+.lo{max-width:820px;margin:32px 0 16px;padding-top:16px;border-top:1px solid var(--border)}
+.lo h2{font-size:16px;margin:0 0 4px}
+.lo ol{list-style:none;margin:10px 0;padding:0;counter-reset:lo}
+.lo li{display:grid;grid-template-columns:24px minmax(0,1fr) 48px 48px auto;grid-template-areas:"n name up down opts";align-items:center;gap:8px 10px;padding:8px 0;border-bottom:1px solid var(--border);counter-increment:lo}
+.lo li::before{grid-area:n;content:counter(lo);text-align:right;font-size:13px;color:var(--gray);font-variant-numeric:tabular-nums}
+.lo-name{grid-area:name;min-width:0;min-height:48px;padding:4px 10px;border:1px solid #bbb;border-radius:4px;font:inherit;font-size:14px;background:var(--white);color:var(--dark)}
+.lo li.off .lo-name{background:var(--lgray);color:var(--gray);text-decoration:line-through}
+.lo li.off::before{text-decoration:line-through}
+.lo-opts{grid-area:opts;display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px}
+.lo-up{grid-area:up}.lo-down{grid-area:down}
+.lo label{display:inline-flex;align-items:center;gap:6px;font-size:13px;min-height:48px;cursor:pointer;white-space:nowrap}
+.lo label input{width:20px;height:20px;margin:0;accent-color:var(--dark);cursor:pointer}
+.lo-s{display:none}
+.lo button.btn{min-height:48px;font-size:13px}
+.lo .lo-up,.lo .lo-down{width:100%;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.lo .lo-up:disabled,.lo .lo-down:disabled{opacity:.3}
+.lo-up svg,.lo-down svg{width:18px;height:18px}
+.lo li.off [data-a="act"]{border-color:var(--dark)}
+.lo button:focus-visible,.lo input:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.lo-add{display:flex;gap:8px;margin:12px 0}
+.lo-add input{flex:1;min-width:0;min-height:48px;padding:4px 10px;border:1px solid #bbb;border-radius:4px;font:inherit;font-size:14px}
+.lo-save{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:10px 0;background:var(--white);border-top:1px solid var(--border)}
+.lo-save .btn.primary{background:var(--dark);color:#fff;border-color:var(--dark);min-height:48px;font-size:14px;padding:0 20px}
+.lo-save .btn.primary:hover{background:#000;color:#fff}
+.lo-save .btn{min-height:48px}
+.lo-err{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;color:var(--red);font-weight:600}
+.lo-st{font-size:13px;font-weight:600}.lo-st.warn{color:var(--amber)}.lo-st.bad{color:var(--red);font-weight:700}.lo-st.good{color:#15803d;font-weight:700}
+@media (max-width:600px){
+  .lo li{grid-template-columns:48px 48px minmax(0,1fr);grid-template-areas:"n name name" "up down opts";gap:6px;padding:10px 0}
+  .lo li::before{padding-right:4px}
+  .lo-name,.lo-add input{min-height:48px;font-size:16px}
+  .lo-opts{gap:4px}
+  .lo-opts label{gap:4px;padding-right:4px}
+  .lo-opts [data-a="act"]{padding:0 8px}
+  .lo label{min-height:48px;font-size:14px}
+  .lo-l{display:none}.lo-s{display:inline}
+  .lo button.btn{min-height:48px;font-size:14px}
+  .lo-opts [data-a="act"]{margin-left:auto}
+  .lo-save .btn,.lo-save .btn.primary{min-height:52px;flex:1 1 auto}
+  .lo-st{order:3;flex-basis:100%} /* the message under the buttons, so Save and Reload stay side by side */
+}
+</style>
 </head>
 <body>
 <header class="hdr"><div><h1>LMCS — Owner Portal</h1><p>Transport</p></div><a href="../index.html">&larr; Owner home</a></header>
+<nav class="tlinks" aria-label="Transport pages"><a href="../../coordinator/transport/setup.html"><b>Fleet setup</b>: what each bus still needs (papers, safety kit, parts, driver, fuel, capture plan), and the gaps across the network</a></nav>
 <div id="authRoot"></div>
 <main id="appBody" style="display:none"></main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="../../assets/auth.js?v=afd06314"></script>
 <script src="../../coordinator/transport-rank.js?v=99053049"></script>
-<script src="../../coordinator/shared.js?v=67cfface"></script>
+<script src="../../coordinator/shared.js?v=d2fcce53"></script>
 <script src="../../coordinator/transport-live.js?v=9eeb093f"></script>
 <script src="../../coordinator/transport-views.js?v=458a31fa"></script>
-<script src="../../coordinator/transport-checks.js?v=55c64160"></script>
+<script src="../../coordinator/transport-checks.js?v=6428b866"></script>
 <script>
 Coord.boot(function (body, session) {
   if (!LMCS.canViewOwnerPortal(session)) { body.innerHTML = '<div class="denied">This page is for the Owner. Coordinators: <a href="../../coordinator/transport/live.html">Transport checks</a>.</div>'; return; }
   TransportChecks.mount(body, session, { owner: true });
+  const box = document.createElement('section');
+  box.className = 'lo'; box.setAttribute('aria-labelledby', 'loH');
+  body.appendChild(box);
+  Loadout(box, session);
 });
+
+/* The safety loadout every bus must carry: the Coordinator checks it monthly in the capture portal (Inspection), one card per
+   active item. Kept in the 'Safety Loadout' tab via Coordinator backend action=coordinatortransportloadout (GET; POST is
+   Owner only). Items keep their id for life (the monthly answers are keyed by it): rename and switch off, never delete. */
+function Loadout(box, session) {
+  const URL_ = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
+  const esc = Coord.esc;
+  const ARROW_UP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ARROW_DOWN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5.5 12.5L12 19l6.5-6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  let items = [], version = '', dirty = false;
+  addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } }); // unsaved edits are not lost silently
+  box.innerHTML = '<h2 id="loH">Safety loadout</h2><p class="note">What every bus must carry. Coordinators check each running bus once a month in the capture portal. Tick Photo or Date when the check needs one. A switched-off item is not asked.</p><div class="lo-body"><p class="note">Loading the safety loadout…</p></div>';
+  const el = box.querySelector('.lo-body');
+  const say = (t, cls) => { const s = box.querySelector('.lo-st'); if (s) { s.textContent = t; s.className = 'lo-st ' + (cls || ''); } };
+  async function load() {
+    try {
+      const r = await (await fetch(URL_ + '?action=coordinatortransportloadout&idToken=' + encodeURIComponent(session.idToken), { cache: 'no-store' })).json();
+      if (!r.success) throw new Error(r.error || 'Request failed');
+      items = r.all; version = r.version; dirty = false; draw();
+    } catch (err) { el.innerHTML = '<p class="note lo-err" role="alert">Could not load the safety loadout: ' + esc(err.message) + ' <button class="btn lo-retry">Try again</button></p>'; el.querySelector('.lo-retry').addEventListener('click', load); }
+  }
+  function draw(focus) {
+    el.innerHTML = '<ol>' + items.map(function (x, i) {
+      const n = esc(x.label || 'item ' + (i + 1));
+      return '<li class="' + (x.active ? '' : 'off') + '" data-i="' + i + '"><input class="lo-name" value="' + esc(x.label) + '" aria-label="Name of item ' + (i + 1) + '" maxlength="80">' +
+        '<button class="btn lo-up" data-a="up" title="Move up" aria-label="Move ' + n + ' up"' + (i ? '' : ' disabled') + '>' + ARROW_UP + '</button><button class="btn lo-down" data-a="down" title="Move down" aria-label="Move ' + n + ' down"' + (i < items.length - 1 ? '' : ' disabled') + '>' + ARROW_DOWN + '</button>' +
+        '<span class="lo-opts"><label><input type="checkbox" data-k="needsPhoto" aria-label="' + n + ' needs a photo"' + (x.needsPhoto ? ' checked' : '') + '><span class="lo-l">Needs photo</span><span class="lo-s">Photo</span></label>' +
+        '<label><input type="checkbox" data-k="needsDate" aria-label="' + n + ' needs a date"' + (x.needsDate ? ' checked' : '') + '><span class="lo-l">Needs date</span><span class="lo-s">Date</span></label>' +
+        '<button class="btn" data-a="act" aria-label="' + (x.active ? 'Switch off ' : 'Switch on ') + n + '">' + (x.active ? 'Switch off' : 'Switch on') + '</button></span></li>';
+    }).join('') + '</ol>' +
+      '<div class="lo-add"><input id="loNew" maxlength="80" placeholder="New item, for example Seat belts" aria-label="New item"><button class="btn" data-a="add">Add item</button></div>' +
+      '<div class="lo-save"><button class="btn primary" data-a="save">Save loadout</button><span class="lo-st" role="status"></span></div>';
+    el.querySelectorAll('li').forEach(function (li) {
+      const i = +li.dataset.i;
+      li.querySelector('.lo-name').addEventListener('input', function (e) {
+        items[i].label = e.target.value; touch();
+        const n = e.target.value.trim() || 'item ' + (i + 1); // the controls' labels name the item: keep them current without a redraw (focus stays put)
+        li.querySelector('[data-k="needsPhoto"]').setAttribute('aria-label', n + ' needs a photo'); li.querySelector('[data-k="needsDate"]').setAttribute('aria-label', n + ' needs a date');
+        li.querySelector('[data-a="up"]').setAttribute('aria-label', 'Move ' + n + ' up'); li.querySelector('[data-a="down"]').setAttribute('aria-label', 'Move ' + n + ' down');
+        li.querySelector('[data-a="act"]').setAttribute('aria-label', (items[i].active ? 'Switch off ' : 'Switch on ') + n);
+      });
+      li.querySelectorAll('[data-k]').forEach(function (c) { c.addEventListener('change', function () { items[i][c.dataset.k] = c.checked; touch(); }); });
+      li.querySelectorAll('[data-a]').forEach(function (b) { b.addEventListener('click', function () {
+        const a = b.dataset.a, j = a === 'up' ? i - 1 : i + 1;
+        if (a === 'act') { items[i].active = !items[i].active; touch(); draw({ i: i, a: 'act' }); return say((items[i].label || 'Item') + (items[i].active ? ' switched on' : ' switched off') + '. Not saved yet.', 'warn'); }
+        const t = items[i]; items[i] = items[j]; items[j] = t; touch();
+        draw({ i: j, a: (a === 'up' && j === 0) || (a === 'down' && j === items.length - 1) ? (a === 'up' ? 'down' : 'up') : a }); // the moved item keeps focus
+        say('Moved ' + (items[j].label || 'item') + ' to position ' + (j + 1) + '. Not saved yet.', 'warn');
+      }); });
+    });
+    const add = function () {
+      const v = el.querySelector('#loNew').value.trim();
+      if (!v) return el.querySelector('#loNew').focus();
+      items.push({ label: v, needsPhoto: false, needsDate: false, active: true }); touch();
+      draw({ i: items.length - 1, name: true });
+    };
+    el.querySelector('[data-a="add"]').addEventListener('click', add);
+    el.querySelector('#loNew').addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
+    el.querySelector('[data-a="save"]').addEventListener('click', save);
+    if (dirty) say('Not saved yet.', 'warn');
+    if (focus) { const li = el.querySelector('[data-i="' + focus.i + '"]'), f = li && (focus.name ? li.querySelector('.lo-name') : li.querySelector('[data-a="' + focus.a + '"]')); if (f) f.focus(); }
+  }
+  function touch() { dirty = true; say('Not saved yet.', 'warn'); }
+  async function save() {
+    const blank = items.findIndex(function (x) { return !String(x.label || '').trim(); });
+    if (blank !== -1) { say('Item ' + (blank + 1) + ' has no name.', 'bad'); el.querySelectorAll('.lo-name')[blank].focus(); return; }
+    const b = el.querySelector('[data-a="save"]'); b.disabled = true; say('Saving…');
+    try {
+      const r = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ action: 'coordinatortransportloadout', idToken: session.idToken, version: version,
+        items: items.map(function (x) { return { id: x.id, label: x.label, needsPhoto: !!x.needsPhoto, needsDate: !!x.needsDate, active: x.active !== false }; }) }) })).json();
+      if (!r.success) throw new Error(r.error || 'Could not save');
+      items = r.all; version = r.version; dirty = false; draw(); say('Saved. The next safety check on any bus uses this list.', 'good');
+    } catch (err) {
+      b.disabled = false; say('Not saved: ' + err.message, 'bad');
+      if (/Reload/.test(err.message)) { const re = document.createElement('button'); re.className = 'btn'; re.textContent = 'Reload the list'; re.addEventListener('click', function () { dirty = false; load(); }); box.querySelector('.lo-save').appendChild(re); }
+    }
+  }
+  load();
+}
 </script>
 </body>
 </html>

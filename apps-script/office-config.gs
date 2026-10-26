@@ -92,6 +92,27 @@ var OFFICE_CATEGORIES = [
   return { id: c[0], label: c[1], direction: c[2], group: c[3], needs_vehicle: !!c[4], pnl_column: c[5], active: !!c[6] };
 });
 
+// Parts a vehicle service bill can be for (garage data): [id, label, categories]. A clerk taps these in the day book.
+var OFFICE_SERVICE_CATS_ = ['vehicle_service', 'vehicle_parts'];
+var OFFICE_COMPONENTS = [
+  ['engine_oil', 'Engine oil', OFFICE_SERVICE_CATS_], ['oil_filter', 'Oil filter', OFFICE_SERVICE_CATS_], ['fuel_filter', 'Fuel filter', OFFICE_SERVICE_CATS_],
+  ['air_filter', 'Air filter', OFFICE_SERVICE_CATS_], ['coolant', 'Coolant', OFFICE_SERVICE_CATS_], ['belts', 'Belts', OFFICE_SERVICE_CATS_],
+  ['brake_front', 'Front brakes', OFFICE_SERVICE_CATS_], ['brake_rear', 'Rear brakes', OFFICE_SERVICE_CATS_], ['brake_fluid', 'Brake fluid', OFFICE_SERVICE_CATS_],
+  ['clutch', 'Clutch', OFFICE_SERVICE_CATS_], ['gearbox_oil', 'Gearbox oil', OFFICE_SERVICE_CATS_], ['axle_grease', 'Axle grease', OFFICE_SERVICE_CATS_],
+  ['suspension', 'Suspension', OFFICE_SERVICE_CATS_], ['steering', 'Steering', OFFICE_SERVICE_CATS_], ['wheel_bearing', 'Wheel bearing', OFFICE_SERVICE_CATS_],
+  ['battery', 'Battery', ['vehicle_electrical']], ['lights_wiring', 'Lights and wiring', ['vehicle_electrical']], ['starter_alternator', 'Starter / alternator', ['vehicle_electrical']],
+  ['tyre_fl', 'Tyre front left', ['tyres']], ['tyre_fr', 'Tyre front right', ['tyres']], ['tyre_rl', 'Tyre rear left', ['tyres']], ['tyre_rr', 'Tyre rear right', ['tyres']],
+  ['tyre_spare', 'Spare tyre', ['tyres']], ['puncture', 'Puncture', ['tyres']],
+  ['body_paint', 'Body and paint', ['vehicle_body']], ['seats_windows', 'Seats and windows', ['vehicle_body']], ['door', 'Door', ['vehicle_body']],
+  ['washing_greasing', 'Washing / greasing', ['vehicle_washing']],
+  ['other', 'Other', ['vehicle_washing', 'vehicle_service', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres']],
+];
+
+// [{id, label}] offered for a category; empty for every category that asks no parts (fuel, insurance, non-vehicle...).
+function officeComponentsFor_(categoryId) {
+  return OFFICE_COMPONENTS.filter(function (c) { return c[2].indexOf(categoryId) !== -1; }).map(function (c) { return { id: c[0], label: c[1] }; });
+}
+
 function officeCategory_(id) {
   return OFFICE_CATEGORIES.filter(function (c) { return c.id === id; })[0] || null;
 }

@@ -1,0 +1,357 @@
+/* Capture page: a phone in a dashboard mount, in bright daylight, worked one-handed in a moving bus.
+   High contrast on white, big targets (48 px at the least, 56 px and up for the capture actions), STOP HERE the one loud
+   thing. Green means done, amber still needs something, red missing or refused. Layered on ../shared.css. */
+:root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
+[hidden]{display:none!important}
+:root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or STOP HERE */
+.hdr{padding:0 16px}
+.hdr a{position:relative;font-size:13px} /* the back link: a small pill, a thumb-sized target */
+.hdr a::after{content:"";position:absolute;inset:-12px -8px}
+.hdr a:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.cap{font-size:16px;line-height:1.45;color:var(--c-ink)}
+#appBody.cap{padding:12px 16px 32px;max-width:640px} /* #appBody in shared.css is 1200 px wide */
+.cap ::selection{background:#ffd6d6}
+.cap :where(button){color:inherit}
+.cap button{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.cap button:focus-visible,.cap input:focus-visible,.cap select:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
+.cap button:disabled{opacity:.45;cursor:default}
+
+/* tabs and mode picker: two big segmented rows */
+.cap-tabs,.cap-modes{display:flex;border:2px solid var(--c-ink);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.cap-tabs button,.cap-modes button{flex:1 1 0;min-width:0;min-height:48px;border:0;background:#fff;font-weight:700;font-size:15px;padding:0 6px;white-space:nowrap}
+.cap-tabs button+button,.cap-modes button+button{border-left:2px solid var(--c-ink)}
+.cap-tabs [aria-pressed="true"],.cap-modes [aria-pressed="true"]{background:var(--c-ink);color:#fff}
+.cap-modes{border-color:var(--c-line)}
+.cap-modes button+button{border-left-color:var(--c-line)}
+
+.cap-h{font-size:20px;font-weight:800;margin:4px 0 6px}
+.cap-help{font-size:15px;margin:0 0 14px}
+.cap-note{font-size:14px;color:var(--c-mute);margin:4px 0 10px}
+.cap-hint{font-size:15px;font-weight:600;margin:12px 0 4px}
+.cap-msg{font-size:15px;font-weight:700;color:var(--c-bad);margin:8px 0}
+.cap-msg:empty,.cap-note:empty{display:none}
+.cap-bad{color:var(--c-bad);font-weight:700}
+.cap-good{color:var(--c-ok);font-weight:700}
+.cap-field{display:block;font-weight:700;font-size:15px;margin:6px 0 4px}
+.cap-select,.cap-input{width:100%;min-height:52px;border:2px solid var(--c-ink);border-radius:10px;padding:0 12px;font:inherit;font-size:17px;background:#fff;color:var(--c-ink)}
+.cap-check{display:flex;gap:12px;align-items:center;min-height:60px;border:2px solid var(--c-ink);border-radius:10px;padding:10px 14px;margin:14px 0 4px;font-weight:700;cursor:pointer}
+.cap-check input{width:28px;height:28px;flex:none;accent-color:var(--c-red)}
+.cap-primary{display:block;width:100%;min-height:60px;margin:14px 0 6px;border:0;border-radius:12px;background:var(--c-ink);color:#fff;font-size:18px;font-weight:800}
+.cap-primary:active{background:#333}
+.cap-btn{min-height:48px;padding:0 18px;border:2px solid var(--c-ink);border-radius:10px;background:#fff;font-weight:700}
+.cap-end{display:block;width:100%;min-height:52px;margin:10px 0 0;border:2px solid var(--c-line);border-radius:12px;background:#fff;font-weight:700;color:var(--c-mute)}
+.cap-end[data-armed]{border-color:var(--c-bad);color:var(--c-bad)}
+.cap-resume{border:2px solid var(--c-warn);border-radius:10px;padding:10px 14px;margin-bottom:12px;background:#fffbeb}
+.cap-resume p{margin:0 0 8px}
+.cap-offline{display:flex;align-items:center;justify-content:space-between;gap:8px;border:2px solid var(--c-warn);background:#fffbeb;border-radius:10px;padding:6px 6px 6px 12px;margin:0 0 12px;font-size:15px;font-weight:700}
+.cap-offline .cap-btn{flex:none;min-height:48px;padding:0 12px}
+
+/* the run: mission, camera (or the on-board count), status, STOP HERE */
+.cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}
+.cap-mission{grid-area:mission}
+.cap-mission h2{font-size:18px;font-weight:800;line-height:1.25;margin:0 0 6px;overflow-wrap:anywhere}
+.cap-bar{position:relative;height:10px;background:var(--c-soft);border:1px solid var(--c-line);border-radius:6px;overflow:hidden}
+/* the mission bar: one pip per stop, so "6 of 14" reads at a glance */
+.cap-mission .cap-bar{height:16px;border-color:#8a8a8a}
+.cap-bar.cap-pips::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(100% / var(--n) - 3px),#fff calc(100% / var(--n) - 3px) calc(100% / var(--n)))}
+.cap-bar i{display:block;height:100%;width:0;background:var(--c-ok)}
+.cap-view{grid-area:view;min-width:0}
+.cap-cam{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.cap-cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cap-chip{position:absolute;top:8px;padding:2px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.cap-chip-l{left:8px}
+.cap-count{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid var(--c-line);border-radius:12px;padding:10px;min-height:150px;text-align:center}
+.cap-count b{font-size:64px;line-height:1.05;font-variant-numeric:tabular-nums}
+.cap-count span{font-size:15px;color:var(--c-mute);font-weight:600}
+.cap-countnum{display:flex;align-items:baseline;justify-content:center;gap:10px} /* the number, then the seats beside it */
+.cap-count .cap-fix{margin-top:8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px} /* a miscount, put right */
+.cap-status{grid-area:status;font-size:15px;font-weight:700;margin:0}
+.cap-status[data-s="wait"],.cap-status[data-s="weak"]{color:var(--c-warn)}
+.cap-status[data-s="bad"]{color:var(--c-bad)}
+.cap-run .cap-msg{grid-area:msg;margin:0}
+.cap-stop{grid-area:stop;width:100%;min-height:112px;border:0;border-radius:16px;background:var(--c-red);color:#fff;font-size:34px;font-weight:900;letter-spacing:.02em;box-shadow:0 6px 16px rgba(158,0,0,.35)}
+.cap-stop:active{background:var(--c-red-d)}
+.cap-run .cap-end{grid-area:end;margin:0}
+
+/* During a run the page is a HUD: it fills the screen, the camera (or the count) takes the space that is left, and
+   STOP HERE stays in one place at the bottom. A message or a longer GPS line shrinks the camera; it never moves the
+   button under the thumb. Browsers without :has() keep the plain stacked layout. */
+@supports selector(:has(*)){
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])){display:flex;flex-direction:column;height:100vh;height:100dvh}
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{flex:none}
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{flex:1 1 0;min-height:0;display:flex;flex-direction:column;width:100%;margin:0 auto;padding-bottom:16px}
+  #tabCapture:has(#running:not([hidden])){flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+  #tabCapture #running:not([hidden]){flex:1 1 0;min-height:0;grid-template-rows:auto minmax(96px,1fr) auto auto auto auto}
+  #running:not([hidden]) .cap-view{display:flex;flex-direction:column;min-height:0}
+  #running:not([hidden]) .cap-cam,#running:not([hidden]) .cap-count{flex:1 1 0;aspect-ratio:auto;min-height:96px}
+  #running:not([hidden]) .cap-count b{font-size:76px}
+}
+
+/* a short phone held upright (320x568): give the camera's room back so a message still fits above STOP HERE */
+@media (orientation:portrait) and (max-height:620px){
+  .cap-mission h2{font-size:16px}
+  .cap-stop{min-height:100px;font-size:32px}
+  .cap-run .cap-end{min-height:48px}
+  #running:not([hidden]) .cap-count b{font-size:56px}
+  .cap-count{padding:6px 10px}
+  .cap-count .cap-fix{margin-top:4px}
+}
+
+/* phone on its side in the mount: the mission across the top, camera left, STOP HERE right, all on one screen */
+@media (orientation:landscape) and (max-height:520px){
+  .hdr{height:40px}
+  .hdr p{display:none}
+  #appBody.cap{max-width:none;padding-top:8px}
+  .cap-tabs{margin-bottom:8px}
+  .cap-run{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"mission mission" "view status" "view msg" "view stop" "view end";align-content:start}
+  .cap-mission h2{font-size:17px;margin-bottom:4px}
+  .cap-stop{min-height:96px}
+  .cap-cam{aspect-ratio:auto;height:calc(100vh - 120px)}
+  @supports selector(:has(*)){
+    body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{display:none} /* the run is the whole screen; End run is the way out */
+    body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{max-width:none;padding-bottom:8px}
+    #tabCapture #running:not([hidden]){grid-template-rows:auto auto auto minmax(88px,1fr) auto}
+    #running:not([hidden]) .cap-stop{min-height:88px;height:100%}
+    #running:not([hidden]) .cap-cam{height:auto}
+  }
+  .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over STOP HERE */
+  .cap-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start} /* the safety check: two cards across, half the scrolling */
+  .cap-sheetwrap.cap-aim{justify-content:flex-end} /* the photo sheet sits over the controls, the camera stays in view */
+  .cap-aim .cap-sheet{max-width:44vw;border-radius:16px 0 0 0}
+  /* the count sheet fits the short screen whole: Save and Back side by side, no scrolling inside the sheet */
+  .cap-sheet{max-height:calc(100vh - 12px);padding:12px 16px 14px}
+  .cap-sheet h2{margin-bottom:6px}
+  .cap-ctr{margin:6px 0}
+  .cap-sheetbtns{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:10px}
+  .cap-sheetbtns>*{margin:0}
+}
+
+/* STOP HERE sheet */
+.cap-sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.cap-sheetwrap.cap-aim{background:rgba(0,0,0,.12)} /* taking the stop photo: the viewfinder stays clear */
+.cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
+.cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}
+.cap-sheethead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+.cap-sheethead h2{margin:0}
+.cap-sheethead .cap-btn{flex:none}
+.cap-picks{display:grid;gap:8px;margin-bottom:12px}
+.cap-pick{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:56px;padding:6px 14px;border:2px solid var(--c-ink);border-radius:10px;background:#fff;font-weight:700;text-align:left}
+.cap-pick span{min-width:0;overflow-wrap:anywhere}
+.cap-pick small{flex:none;font-size:14px;color:var(--c-mute);font-variant-numeric:tabular-nums}
+.cap-row{display:flex;gap:8px}
+.cap-row .cap-input{flex:1;min-width:0}
+.cap-ctr{display:grid;grid-template-columns:1fr 64px 72px 64px;align-items:center;gap:8px;margin:10px 0}
+.cap-ctr span{font-weight:700;font-size:18px}
+.cap-ctr b{text-align:center;font-size:36px;font-variant-numeric:tabular-nums}
+.cap-pm{height:64px;border:2px solid var(--c-ink);border-radius:12px;background:#fff;font-size:32px;font-weight:800;line-height:1}
+.cap-pm:active{background:var(--c-soft)}
+@media (prefers-reduced-motion:no-preference){
+  .cap-sheet{animation:cap-up .18s cubic-bezier(.2,.8,.2,1)}
+  .cap-bar i{transition:width .3s ease-out}
+  @keyframes cap-up{from{transform:translateY(24px);opacity:.6}}
+}
+.cap-toast{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;margin:0 auto;max-width:480px;padding:12px 16px;border-radius:10px;background:var(--c-ink);color:#fff;font-weight:700;text-align:center;pointer-events:none} /* taps go through to the button under it */
+.cap-toast:empty{display:none}
+
+/* summary and upload */
+.cap-facts{font-size:18px;font-weight:700}
+/* the run's debrief: three plain figures */
+.cap-stats{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);border:2px solid var(--c-line);border-radius:12px;margin:10px 0}
+.cap-stats div{padding:10px 12px;min-width:0}
+.cap-stats div+div{border-left:2px solid var(--c-line)}
+.cap-stats dt{font-size:14px;font-weight:600;color:var(--c-mute)}
+.cap-stats dd{margin:0;font-size:28px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cap-stats dd small{font-size:16px;font-weight:700;color:var(--c-mute)}
+.cap-peak{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;margin:10px 0;display:flex;flex-direction:column}
+.cap-peak b{font-size:48px;line-height:1.1;font-variant-numeric:tabular-nums}
+.cap-peak p{margin:6px 0 0;font-weight:800}
+.cap-peak.ok{border-color:var(--c-ok)}.cap-peak.ok p{color:var(--c-ok)}
+.cap-peak.warn{border-color:var(--c-warn)}.cap-peak.warn p{color:var(--c-warn)}
+.cap-peak.bad{border-color:var(--c-bad)}.cap-peak.bad p{color:var(--c-bad)}
+.cap-table{width:100%;font-size:15px;margin:8px 0}
+.cap-table th,.cap-table td{padding:8px 6px;text-align:right;white-space:normal}
+.cap-table th:first-child,.cap-table td:first-child{text-align:left;overflow-wrap:anywhere}
+.cap-table td{font-variant-numeric:tabular-nums}
+.cap-table th{cursor:default;font-size:13px}
+.cap-runs{list-style:none;margin:12px 0 0;padding:0}
+.cap-runs>li{border-top:1px solid var(--c-line);padding:12px 0}
+.cap-runhead{display:flex;justify-content:space-between;gap:10px;font-size:17px}
+.cap-runhead span{color:var(--c-mute);font-weight:600}
+.cap-runs .cap-note{margin:2px 0}
+.cap-line{font-size:17px;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
+#authRoot{padding:0 16px}
+
+/* Safety check: the bus's loadout. The bus, then a HUD ("3 of 10 done" over a strip of slots: ticked green, red cross for missing, empty
+   while open, amber while a Yes still needs its photo or date) and one card per item. Colour carries the answer only; nothing
+   moves. On a phone held upright the HUD stays pinned at the top while the cards scroll under it. */
+.cap-hud{margin:0 -16px 4px;padding:6px 16px 10px;background:#fff}
+.cap-hudcount{margin:0 0 6px;font-size:16px;font-weight:800;line-height:1.25;font-variant-numeric:tabular-nums}
+.cap-hud .cap-slots{margin:0}
+@media (min-height:540px){
+  .cap-hud{position:sticky;top:0;z-index:5;box-shadow:0 1px 0 var(--c-line),0 8px 10px -10px rgba(0,0,0,.45)}
+  /* a card scrolled to, or a field focused (keyboard, Tab), lands below the pinned HUD, not under it. --hud: its height, set by
+     the page */
+  .cap-slot{scroll-margin-top:calc(var(--hud,120px) + 12px)}
+  .cap-hud~* :is(button,input,select,summary,a){scroll-margin-top:calc(var(--hud,120px) + 40px)} /* its label in view too */
+}
+.cap-slots:has(li:nth-child(13)) li{height:20px;border-radius:4px} /* a long list: four short rows, not four tall ones */
+.cap-slots:has(li:nth-child(13)) svg{width:14px;height:14px}
+.cap-slots{display:grid;grid-template-columns:repeat(var(--n,10),minmax(0,48px));gap:4px;list-style:none;margin:0 0 8px;padding:0}
+.cap-slots li{height:28px;border:2px dashed #8a8a8a;border-radius:6px;display:flex;align-items:center;justify-content:center;min-width:0}
+.cap-slots svg{width:18px;height:18px}
+.cap-slots [data-s="ok"]{border:2px solid var(--c-ok);background:var(--c-ok);color:#fff}
+.cap-slots [data-s="no"]{border:2px solid var(--c-bad);background:#fee2e2;color:var(--c-bad)}
+.cap-slots [data-s="todo"]{border:2px solid var(--c-warn);border-style:dashed}
+/* the HUD's slots are a shortcut: a tap opens that item's card (the cards themselves are the full-size targets) */
+#slots li{position:relative;cursor:pointer;touch-action:manipulation}
+#slots li::before{content:"";position:absolute;inset:-8px -2px}
+#slots:has(li:nth-child(13)) li::before{inset:-2px}
+.cap-cards{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
+.cap-slot{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;background:#fff}
+.cap-slot[data-s="ok"]{border-color:var(--c-ok)}
+.cap-slot[data-s="todo"]{border-color:var(--c-warn)}
+.cap-slot[data-s="no"]{border-color:var(--c-bad);background:#fff5f5}
+/* a finished card folds to one line (mark, name, answer); a tap opens it again */
+.cap-slot.cap-folded{padding:0}
+.cap-fold{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:8px 14px;border:0;border-radius:10px;background:none;text-align:left;font:inherit}
+.cap .cap-fold:focus-visible{outline-offset:-5px}
+.cap-foldname{flex:1;min-width:0;font-size:17px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}
+.cap-fold small{flex:none;font-size:15px;font-weight:700}
+[data-s="ok"] .cap-fold small{color:var(--c-ok)}
+[data-s="no"] .cap-fold small{color:var(--c-bad)}
+@media (max-width:360px){.cap-fold small{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}} /* a narrow phone: the mark says it, the name gets the room */
+.cap-fold::after{content:"";flex:none;width:9px;height:9px;margin:0 4px 4px 2px;border-right:2.6px solid var(--c-mute);border-bottom:2.6px solid var(--c-mute);transform:rotate(45deg)}
+.cap-slothead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.cap-slothead h3{margin:0;font-size:18px;font-weight:800;line-height:1.25;min-width:0;overflow-wrap:anywhere}
+.cap-mark{flex:none;width:30px;height:30px;border:2px dashed #8a8a8a;border-radius:8px;display:flex;align-items:center;justify-content:center}
+[data-s="ok"] .cap-mark{border:0;background:var(--c-ok);color:#fff}
+[data-s="no"] .cap-mark{border:0;background:var(--c-bad);color:#fff}
+[data-s="todo"] .cap-mark{border-color:var(--c-warn)}
+.cap-yn{display:flex;border:2px solid var(--c-ink);border-radius:10px;overflow:hidden}
+.cap-yn button{flex:1 1 0;min-height:56px;border:0;background:#fff;font-size:18px;font-weight:800}
+.cap-yn button+button{border-left:2px solid var(--c-ink)}
+.cap-yn [data-a="yes"][aria-pressed="true"]{background:var(--c-ok);color:#fff}
+.cap-yn [data-a="no"][aria-pressed="true"]{background:var(--c-bad);color:#fff}
+.cap-slot .cap-note{margin:8px 0 0}
+.cap-slotnote{margin:8px 0 0;font-weight:700;color:var(--c-bad)}
+.cap-photo{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:10px;min-height:56px;font-size:17px;background:var(--c-ink);color:#fff}
+.cap-photo:active{background:#333}
+.cap-todo{color:var(--c-warn)}
+.cap-took{display:flex;align-items:center;gap:10px;margin-top:10px;font-weight:700;color:var(--c-ok)}
+.cap-took img{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-line);flex:none}
+.cap-took span{flex:1;min-width:0}
+.cap-took .cap-btn{flex:none;color:var(--c-ink)}
+.cap-slot .cap-field{margin-top:10px}
+.cap-peak>span{font-size:15px;color:var(--c-mute);font-weight:600}
+/* the safety check's debrief: the saved loadout as slots, then what is missing, one per line */
+.cap-debrief .cap-slots{margin:10px 0 4px}
+.cap-missing{list-style:none;margin:6px 0 10px;padding:0;display:grid;gap:6px}
+.cap-missing li{display:flex;align-items:flex-start;gap:10px;font-size:17px;font-weight:700;line-height:1.3}
+.cap-missing svg{flex:none;width:24px;height:24px;padding:2px;border-radius:6px;background:var(--c-bad);color:#fff}
+.cap-missing span{min-width:0;overflow-wrap:anywhere}
+.cap-resume .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff} /* the second tap throws the check away */
+
+/* Fleet setup (setup.html): the same sunlight page. Team bars, then one card per bus with a ring of six segments (one per
+   quest, green when done), a bus's six quests, a quest's short form. Green marks done only; nothing moves but the ring filling. */
+.cap a:focus-visible,.cap summary:focus-visible{outline:3px solid #1d4ed8;outline-offset:2px}
+#loadMsg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#loadMsg[hidden]{display:none}
+.fs-teams{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
+.fs-teams p{margin:0 0 3px;font-size:15px;font-weight:800;line-height:1.3;font-variant-numeric:tabular-nums}
+.fs-teams .cap-bar{height:8px;border-color:#8a8a8a}
+.fs-teams:has(li:only-child) p{font-size:18px} /* a Fee Clerk's one campus: the team bar is the page's headline */
+.fs-teams:has(li:only-child) .cap-bar{height:16px}
+.fs-gaps{margin:0 0 14px}
+.fs-gaps ul,.fs-buses,.fs-quests,.fs-refused{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.fs-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 12px 6px 14px;border:2px solid var(--c-line);border-radius:10px;background:#fff;font-weight:700;text-align:left}
+.fs-row span{min-width:0;overflow-wrap:anywhere}
+.fs-row svg,.fs-bus>svg,.fs-quest>svg{flex:none;color:var(--c-mute)}
+.fs-row[aria-pressed="true"]{border-color:var(--c-ink);background:var(--c-soft)}
+.fs-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;font-weight:700}
+.fs-filter:empty{display:none}
+.fs-bus,.fs-quest{display:flex;align-items:center;gap:12px;width:100%;min-height:76px;padding:10px 12px;border:2px solid var(--c-line);border-radius:12px;background:#fff;text-align:left}
+.fs-bus:active,.fs-quest:active,.fs-row:active{background:var(--c-soft)}
+.fs-bustext,.fs-qtext{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;line-height:1.3}
+.fs-bustext b,.fs-qtext b{font-size:18px;font-weight:800;overflow-wrap:anywhere}
+.fs-bustext>span,.fs-qtext>span{font-size:14px;color:var(--c-mute);overflow-wrap:anywhere} /* direct only: Done stays green, Saved on this phone amber */
+.fs-bad{color:var(--c-bad);font-weight:700}
+.fs-bustext .fs-next{font-size:15px;font-weight:700;color:var(--c-ink)}
+.fs-ring{position:relative;flex:none;width:56px;height:56px;display:flex;align-items:center;justify-content:center}
+.fs-ring>svg{position:absolute;inset:0;width:100%;height:100%}
+.fs-ring circle{fill:none;stroke:#d4d4d4;stroke-width:5}
+.fs-ring circle.on{stroke:var(--c-ok)}
+.fs-ring b{position:relative;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.fs-ring.ready b{color:var(--c-ok);display:flex}
+.fs-ring-big{width:88px;height:88px}
+.fs-ring-big b{font-size:20px}
+.fs-ring-big b svg{width:30px;height:30px}
+@media (prefers-reduced-motion:no-preference){.fs-ring circle{transition:stroke .3s ease-out}}
+.fs-ready{display:inline-flex;align-items:center;gap:4px;flex:none;padding:4px 12px 4px 8px;border-radius:999px;background:var(--c-ok);color:#fff;font-size:15px;font-weight:800}
+.fs-back{display:inline-flex;align-items:center;min-height:48px;padding:0 4px;margin:0 0 4px -4px;border:0;background:none;font-size:16px;font-weight:700}
+.fs-bushead{display:flex;align-items:center;gap:14px;margin:0 0 12px}
+.fs-bushead>div{min-width:0}
+.fs-bushead .cap-h{margin:0}
+.fs-bushead .cap-note{margin:0}
+.fs-bushead .fs-count{margin-top:4px}
+.fs-count{margin:0;font-size:16px;font-weight:800}
+.fs-quest[data-done="true"]{border-color:var(--c-ok)}
+.fs-quest .cap-mark{width:32px;height:32px}
+.fs-warn{border:2px solid var(--c-bad);background:#fff5f5;color:var(--c-bad);border-radius:10px;padding:10px 14px;margin:0 0 12px;font-weight:800}
+.fs-hud{margin-top:6px}
+.fs-hud .cap-hudcount{margin:0}
+.fs-field{margin:14px 0 0}
+.fs-field .cap-field{margin-top:0}
+.cap-field small{font-size:14px;font-weight:600;color:var(--c-mute)}
+.fs-hint{margin:-2px 0 6px;font-size:14px;color:var(--c-mute)}
+.fs-dateunk{display:flex;gap:8px}
+.fs-dateunk .cap-input{flex:1 1 auto;min-width:0}
+.fs-dateunk .cap-btn{flex:none;min-height:52px;padding:0 10px;font-size:15px}
+.fs-dateunk .cap-btn[aria-pressed="true"]{background:var(--c-ink);color:#fff}
+.cap-input:disabled{background:var(--c-soft);border-color:var(--c-line)}
+.fs-callout{border:2px solid var(--c-line);border-radius:12px;padding:12px 14px;margin:12px 0 0}
+.fs-callout p{margin:0}
+.fs-link{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center;margin-bottom:0}
+.fs .cap-slot details{margin-top:10px}
+.fs .cap-slot summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;font-weight:700;cursor:pointer;list-style:none}
+.fs .cap-slot summary::-webkit-details-marker{display:none}
+.fs .cap-slot summary::after{content:"";flex:none;width:10px;height:10px;margin-right:6px;border-right:2.6px solid var(--c-mute);border-bottom:2.6px solid var(--c-mute);transform:translateY(-3px) rotate(45deg)}
+.fs .cap-slot details[open] summary::after{transform:translateY(3px) rotate(-135deg)}
+.fs .cap-slot .fs-field:first-of-type{margin-top:0}
+.fs-refused li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:2px solid var(--c-bad);background:#fff5f5;border-radius:10px;padding:10px 12px;margin:0 0 4px;font-weight:700}
+.fs-refused li p{flex:1 1 100%;margin:0;color:var(--c-bad);font-weight:600}
+.fs-refused li b{font-weight:800}
+.fs-refused .cap-btn[data-armed]{background:var(--c-bad);border-color:var(--c-bad);color:#fff}
+.fs .cap-offline .cap-btn{min-height:48px}
+/* the Owner's gaps: one divided list, the count a figure in its own column so the eye runs down the numbers */
+.fs-gaps ul{gap:0;border:2px solid var(--c-line);border-radius:12px;overflow:hidden}
+.fs-gaps li+li{border-top:1px solid var(--c-line)}
+.fs-gaps .fs-row{border:0;border-radius:0;min-height:52px;gap:10px;padding-left:12px}
+.fs-gaps .fs-row span{flex:1;font-size:15px;font-weight:600}
+.fs-gapn{flex:none;min-width:2ch;text-align:right;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.fs-gaps .fs-row[aria-pressed="true"]{background:var(--c-soft);box-shadow:inset 0 0 0 2px var(--c-ink)}
+.fs-gaps .fs-row[aria-pressed="true"] span{font-weight:800}
+.fs-gaps .fs-row:focus-visible{outline-offset:-5px}
+.fs-gaps li.cap-note{margin:0;padding:14px}
+.fs-filter{scroll-margin-top:12px}
+/* wider screens: buses two across, campus bars two across; a bus and a quest form stay one phone-width column */
+.fs-buses{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
+.fs-buses>li>.fs-bus{height:100%}
+@media (min-width:600px){.fs-teams:not(:has(li:only-child)){grid-template-columns:1fr 1fr;column-gap:24px}}
+@media (min-width:1024px){#appBody.cap.fs{max-width:960px} .fs #bus,.fs #quest{max-width:640px}}
+/* a quest just finished: its row tints, its tick and its ring segment pop once (nothing at all with reduced motion) */
+.fs-quest.fs-fresh{background:#f0fdf4}
+@media (prefers-reduced-motion:no-preference){
+  .fs-fresh .cap-mark,.fs-fresh .fs-ready{animation:fs-pop .32s cubic-bezier(.2,.8,.2,1)}
+  .fs-ring circle.fresh{animation:fs-seg .5s cubic-bezier(.2,.8,.2,1)}
+  @keyframes fs-pop{from{transform:scale(.55)}}
+  @keyframes fs-seg{from{stroke-width:9}}
+}
+.fs-hud .cap-slots{margin:8px 0 0}
+.fs-hud .cap-slots li{height:20px;border-radius:4px}
+.fs-hud .cap-slots svg{width:14px;height:14px}
+/* the quest just saved lands above the toast, with room under the last quest to scroll it there */
+.fs #bus{padding-bottom:72px}
+.fs-quest{scroll-margin:16px 0 96px}
+.fs #scope button:first-child{flex-grow:1.35} /* "All campuses" fits at 320 px */
+#loadMsg:has(#retry:not([hidden])){color:var(--c-ink);font-size:16px} /* a failed load reads as the message it is, not a grey note */
+#loadMsg .cap-btn{display:block;margin-top:10px;color:var(--c-ink)}

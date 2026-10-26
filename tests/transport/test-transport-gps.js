@@ -27,6 +27,7 @@ vm.createContext(ctx);
 const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
 load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs');
 const run = c => vm.runInContext(c, ctx);
+const realRefresh = ctx.gpsRefresh_; // later sections stub it; the capture section needs the real one
 
 // ── fuel checks ──
 const days = [];
@@ -34,12 +35,17 @@ for (let d = 1; d <= 10; d++) days.push({ reg: 'HP1', date: '2026-10-' + String(
 ctx.days = days;
 ctx.fills = [
   { id: 'f1', campus: 'LMS 4', date: '2026-10-01', reg: 'HP1', litres: 40, odometer: 1000, amount_rs: 3800 },   // first fill: no check
-  { id: 'f2', campus: 'LMS 4', date: '2026-10-06', reg: 'HP1', litres: 60, odometer: 1300, amount_rs: 5700 },   // 300 km / 60 L = 5 vs 7.5
-  { id: 'f3', campus: 'LMS 4', date: '2026-10-10', reg: 'HP1', litres: 30, odometer: 1600, amount_rs: 2850 },   // 240 km / 30 L = 8: ok km/L, odometer off by 60
+  { id: 'f2', campus: 'LMS 4', date: '2026-10-06', reg: 'HP1', litres: 60, odometer: 1300, amount_rs: 5700, hasVideo: 'yes', hasBill: 'yes' },   // 300 km / 60 L = 5 vs 7.5
+  { id: 'f3', campus: 'LMS 4', date: '2026-10-10', reg: 'HP1', litres: 30, odometer: 1600, amount_rs: 2850, hasVideo: 'no', hasBill: 'yes' },   // 240 km / 30 L = 8: ok km/L, odometer off by 60
   { id: 'x1', campus: 'LMS 4', date: '2026-10-05', reg: 'HP9', litres: 50, odometer: 10, amount_rs: 4750 },     // bus without GPS: never checked
 ];
 const checks = J(run('gpsFuelChecks_(fills, days, {HP1: 15})'));
 assert.deepStrictEqual(checks.map(c => c.id), ['f2', 'f3'], 'first fill and untracked buses give no check');
+assert.deepStrictEqual(checks.map(c => c.proof), ['video+bill', 'bill'], "fuel check proof is 'video+bill' / 'bill'");
+ctx.noBill = [ctx.fills[0], Object.assign({}, ctx.fills[1], { hasVideo: 'no', hasBill: 'no' })];
+assert.strictEqual(J(run('gpsFuelChecks_(noBill, days, {HP1: 15})'))[0].proof, 'none', 'neither video nor bill: proof is none');
+assert.strictEqual(J(run('gpsFuelChecks_([fills[0], Object.assign({}, fills[1], {hasVideo: undefined, hasBill: undefined})], days, {HP1: 15})'))[0].proof, 'bill', 'a row from before the columns existed reads as bill only');
+assert.ok(run('GPS_CHECK_COLS').indexOf('proof') !== -1, 'proof is stored with the check');
 const c2 = checks[0];
 assert.deepStrictEqual([c2.gpsKm, c2.kmpl, c2.norm, c2.flag, c2.reason, c2.excessL, c2.excessRs], [300, 5, 7.5, 'yes', 'low', 20, 1900]);
 assert.deepStrictEqual([checks[1].flag, checks[1].reason, checks[1].billKm], ['yes', 'odometer', 300]);
@@ -87,6 +93,20 @@ ctx.holiday.live.push({ reg: 'HPX', at: '2026-10-24T08:00:00+05:30' }); ctx.holi
 assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'another bus of the district reported: the silent one is flagged');
 ctx.holiday.live = [{ reg: 'HP1', at: '2026-10-20T15:00:00+05:30' }, { reg: 'HP3', at: '2025-01-20T09:00:00+05:30' }]; ctx.holiday.fleet = ctx.facts.fleet;
 assert.ok(J(run('gpsFollowUps_(holiday)')).some(x => x.taskId === 'gps_dead|HP3'), 'silent for months is dead even in a holiday');
+// ── fuel_proof: no video once the fill is 2 days old (dates carry no time of day, so "yesterday" may be under 24 hours ago) ──
+run('GPS.proofFrom = "2026-10-26"'); // these fixtures assume the video rule began on 26 Oct; the shipped value is set on deploy day
+const fill = (id, date, hasVideo, o) => Object.assign({ id, campus: 'LMS 4', date, reg: 'HP1', litres: 40, odometer: 1000, amount_rs: 3800, hasVideo, hasBill: 'yes' }, o);
+ctx.pf = { today: '2026-10-28', fleet, live: [{ reg: 'HP1', at: '2026-10-28T09:00:00+05:30' }], health: [], days: [], answers: [], checks: [],
+  fills: [fill('p1', '2026-10-26', 'no'), fill('p2', '2026-10-27', 'no'), fill('p3', '2026-10-26', 'yes'), fill('p4', '2026-10-20', 'no'), fill('p5', '2026-10-26', 'no', { reg: 'HP9', campus: 'LMS 5' }), fill('p6', '2026-10-26', ''), fill('p7', '2026-10-26', 'no', { hasBill: 'no' }), fill('p8', '2026-10-28', 'no')] };
+const pf = J(run('gpsFollowUps_(pf)')).filter(x => x.domain === 'fuel_proof');
+assert.deepStrictEqual(pf.map(x => x.taskId).sort(), ['fuel_proof|p1', 'fuel_proof|p5', 'fuel_proof|p7'],
+  'a fill dated 2 days ago with no video raises it, checked or not (p5 is an untracked bus, p1 a first fill); not a fill dated yesterday (p2) or today (p8), not with video (p3), not before the video rule (p4), not a mirror row whose video state is unknown (p6)');
+assert.ok(!pf.some(x => x.taskId === 'fuel_proof|p2'), 'a fill dated yesterday raises nothing: 23:30 yesterday is not yet 24 hours at 00:30 today');
+assert.deepStrictEqual([pf[0].due, pf[0].campus, pf[0].auto], ['2026-10-29', 'LMS4', true], 'due in 1 day, closes itself');
+assert.deepStrictEqual(pf.filter(x => x.taskId === 'fuel_proof|p5').map(x => x.campus), ['LMS5']);
+assert.match(pf[0].detail, /Get the fill video from the driver and attach it to the fuel entry/);
+assert.match(pf[0].title, /^HP1, fuel on 26 Oct: no video of the fill/);
+assert.strictEqual(run('GPS_DOMAINS').indexOf('fuel_proof') !== -1, true);
 ctx.facts.live = null;
 assert.ok(!J(run('gpsFollowUps_(facts)')).some(x => /^gps_(none|dead)/.test(x.taskId)), 'vendor down: no tracker presence follow-ups');
 
@@ -126,6 +146,19 @@ r3[9] = new Date(Date.now() - 10 * 86400000);
 run('gpsRaise_(wanted, all3)');
 rows = book('TASKS').getSheetByName('Tasks')._rows();
 assert.strictEqual(row('gps_dead|HP3')[5], 'open', 'still silent after the repair window: back on the list');
+// fuel_proof raises at 24 h without a video and closes itself when the video is there (or the fill is gone)
+ctx.fp = pf;
+run('gpsRaise_(fp, {fuel_proof: true})');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.deepStrictEqual([row('fuel_proof|p1')[1], row('fuel_proof|p1')[5], row('fuel_proof|p1')[13], row('fuel_proof|p1')[14]], ['fuel_proof', 'open', 'c4@x.org', '2026-10-29']);
+ctx.pf.fills[4].hasVideo = 'yes'; // the untracked bus's video is attached later: the mirror row now says so
+run('gpsRaise_(gpsFollowUps_(pf), {fuel_proof: true})');
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('fuel_proof|p5')[5], 'resolved', 'the video exists: the follow-up closes itself');
+assert.strictEqual(row('fuel_proof|p1')[5], 'open', 'the other fills still have no video');
+run('gpsRaise_([], {fuel_proof: true})'); // the fill was reversed and re-entered (new id): the old follow-up is not left open
+rows = book('TASKS').getSheetByName('Tasks')._rows();
+assert.strictEqual(row('fuel_proof|p1')[5], 'resolved');
 ctx.coordVisibleCampuses_ = () => null;
 assert.match(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"  "})')).error, /Write what was done/);
 assert.strictEqual(J(run('coordTaskResolveCore_({email:"o@x.org"}, {taskId:"bus_away|HP1|2026-10-22", note:"Driver went to hospital"})')).success, true);
@@ -164,4 +197,170 @@ assert.deepStrictEqual([coord.vehicles[0].rounds, coord.vehicles[0].students, co
 assert.deepStrictEqual(coord.proposals, {}, 'proposals stay with the Owner');
 const own = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})'));
 assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v => v.reg === 'HP7').rounds], [2, 2, null], 'the Owner sees all; a bus missing from the roster extras has no rounds, not a guess');
+
+// ── capture runs (Task 7): the Mac pulls the ended timelapse runs and pushes back the processed ones; stops carry counts only ──
+book(run('COORD_TRANSPORT_FORM_ID')).insertSheet('Capture Runs')._rows().push(
+  ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'],
+  ['HP1-20261025-071500-ab12', 'HP1', 'LMS4', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 40, '[]', JSON.stringify([{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, takenAt: 5, boardOn: 2, boardOff: 0 }]), '', 'ended', '[0,4,9,null,15]', 'rider@x.org'],
+  ['HP1-20261025-090000-cd34', 'HP1', 'LMS4', 'timelapse', 1, '', 'c4@x.org', 'Coordinator', 10, '[]', '[]', '', 'running'],
+  ['HP7-20261025-071500-ef56', 'HP7', 'LMS1', 'count', 1, 2, 'c4@x.org', 'Coordinator', 0, '[]', '[]', '', 'ended'],
+  ['HP7-20261025-080000-gh78', 'HP7', 'LMS1', 'inspection', 1, 2, 'c4@x.org', 'Coordinator', 3, '[]', '[]', '{}', 'ended'],
+  ['HP7-20261024-071500-zz99', 'HP7', 'LMS1', 'timelapse', 1000, 2000, 'c4@x.org', 'Coordinator', 2, '[]', '[]', '', 'ended', 'not json']);
+assert.strictEqual(J(run('coordCapturePull_({secret:"X"})')).error, 'Not authorized', 'transportcapturepull with a wrong secret refused');
+let pulled = J(run('coordCapturePull_({secret:" S\\n"})'));
+assert.deepStrictEqual(pulled.runs.map(r => r.runId), ['HP1-20261025-071500-ab12', 'HP7-20261024-071500-zz99'], 'only ended timelapse runs are pulled');
+assert.deepStrictEqual([pulled.runs[0].reg, pulled.runs[0].kind, pulled.runs[0].status, pulled.runs[0].frames, pulled.runs[0].stops[0].name, pulled.runs[0].startedAt],
+  ['HP1', 'timelapse', 'ended', 40, 'Nalwari', 1000]);
+assert.deepStrictEqual([pulled.runs[0].frameTimes, pulled.runs[1].frameTimes, pulled.runs[0].done], [[0, 4, 9, null, 15], null, false], 'frame times come along (null when unreadable); not pushed yet');
+// capture_route: every operational bus with no processed timelapse, due in 14 days, closes itself; nothing before GPS.captureFrom (Ruling 30)
+assert.strictEqual(run('GPS.captureFrom'), '2026-12');
+ctx.cr = { today: '2026-12-01', fleet, live: null, health: [], days: [], checks: [], answers: [], captured: { HP2: true } };
+const cr = J(run('gpsFollowUps_(cr)')).filter(x => x.domain === 'capture_route');
+assert.deepStrictEqual(cr.map(x => x.taskId), ['capture_route|HP1', 'capture_route|HP3'], 'raised for an operational bus with no processed run (not HP2, processed; not HP4, off the road; not AF)');
+assert.deepStrictEqual([cr[0].due, cr[0].campus, cr[0].auto], ['2026-12-15', 'LMS4', true]);
+assert.strictEqual(cr[0].detail, 'Ask the Fee Clerk to send the school phone on this route\'s next empty run, and do the timelapse run');
+assert.ok(!J(run('gpsFollowUps_(Object.assign({}, cr, {captured: undefined}))')).some(x => x.domain === 'capture_route'), 'no captured facts: nothing said');
+assert.ok(!J(run('gpsFollowUps_(Object.assign({}, cr, {today: "2026-11-30"}))')).some(x => x.domain === 'capture_route'), 'before the start month: nothing raised');
+run('GPS.captureFrom = "2026-10"'); // the real refresh below runs on today's date
+ctx.gpsRefresh_ = realRefresh;
+run('gpsRefresh_([], [])');
+const capRow = id => book('TASKS').getSheetByName('Tasks')._rows().find(r => r[0] === id);
+assert.deepStrictEqual([capRow('capture_route|HP1')[5], capRow('capture_route|HP7')[5], capRow('capture_route|HP1')[13]], ['open', 'open', 'c4@x.org'], 'the refresh raises it, owned by the Coordinator');
+// Ruling 29: the push carries no file ids; the backend asks the Roster project (Drive access) for the processed copies' ids
+const fetched = [];
+let roster = {};
+ctx.UrlFetchApp = { fetch: (url, o) => { fetched.push({ url, body: JSON.parse(o.payload) }); return { getResponseCode: () => 200, getContentText: () => JSON.stringify(roster) }; } };
+ctx.capPush = { runs: [
+  { runId: 'HP1-20261025-071500-ab12', reg: 'HP1', stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', boardOn: 2, boardOff: 0, child: 'Asha', photoFileId: 'ORIGINAL123456', photo: true }] },
+  { runId: 'HP7-20261024-071500-zz99', reg: 'HP7', stops: [] },
+  { runId: 'HP9-20261024-071500-zz99', reg: 'HP9', stops: [] }] };
+assert.strictEqual(J(run('coordCapturePush_({secret:"X", payload: capPush})')).error, 'Not authorized', 'transportcapturepush with a wrong secret refused');
+assert.strictEqual(run('gpsRows_(GPS_TAB_CAPTURE).length') + fetched.length, 0, 'a refused push stores and asks nothing');
+assert.strictEqual(J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP7-20261024-071500-zz99", reg: "HP7", stops: "nope"}]}})')).success, false, 'a run whose stops are not a list is refused');
+assert.match(J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP7-20261024-071500-zz99", reg: "HP1", stops: []}]}})')).error, /run 1/, 'a runId of another bus is refused');
+// I-a: Drive uploads route.mp4 and the stop photos one by one: the video alone is not enough
+roster = { success: true, found: { 'HP1-20261025-071500-ab12': { videoFileId: 'VIDblurred123', photos: {} } }, notYet: ['HP7-20261024-071500-zz99'] };
+const half = J(run('coordCapturePush_({secret:"S", payload: capPush})'));
+assert.deepStrictEqual([half.success, half.runs, half.notYet], [true, 0, ['HP1-20261025-071500-ab12', 'HP7-20261024-071500-zz99']], 'video there, a stop photo not yet: the whole run is not yet');
+assert.strictEqual(run('gpsRows_(GPS_TAB_CAPTURE).length'), 0, 'and nothing is stored');
+assert.deepStrictEqual(J(run('coordCapturePull_({secret:"S"})')).runs.map(r => r.done), [false, false], 'so it is not done: the Mac pushes it again tomorrow');
+fetched.length = 0;
+roster = { success: true, found: { 'HP1-20261025-071500-ab12': { videoFileId: 'VIDblurred123', photos: { 3: 'PHOTOblurred1' } } }, notYet: ['HP7-20261024-071500-zz99'] };
+const pushed = J(run('coordCapturePush_({secret:"S", payload: capPush})'));
+assert.deepStrictEqual([pushed.success, pushed.runs, pushed.notYet, pushed.skipped], [true, 1, ['HP7-20261024-071500-zz99'], ['HP9-20261024-071500-zz99']], 'an unsynced run is "not yet"; a bus not in the fleet is skipped');
+assert.deepStrictEqual([fetched[0].url, fetched[0].body.action, fetched[0].body.secret, fetched[0].body.runs],
+  [run('COORD_ROSTER_URL'), 'captureprocessed', 'S', [{ reg: 'HP1', runId: 'HP1-20261025-071500-ab12', stops: [3] }, { reg: 'HP7', runId: 'HP7-20261024-071500-zz99', stops: [] }]]);
+assert.deepStrictEqual([capRow('capture_route|HP1')[5], capRow('capture_route|HP7')[5]], ['resolved', 'open'], 'resolved by the push; the bus still without a timelapse keeps it');
+pulled = J(run('coordCapturePull_({secret:"S"})'));
+assert.deepStrictEqual(pulled.runs.map(r => r.done), [true, false], 'a stored run is not pushed again; the "not yet" one is');
+roster = { success: false, error: 'Not authorized' };
+assert.match(J(run('coordCapturePush_({secret:"S", payload: capPush})')).error, /Roster.*Not authorized/, 'the Roster refusing is an error the Mac sees');
+roster = { success: true, found: { 'HP7-20261024-071500-zz99': { videoFileId: 'VID7blurred12', photos: {} } }, notYet: [] };
+assert.strictEqual(J(run('coordCapturePush_({secret:"S", payload: {runs: [capPush.runs[1]]}})')).runs, 1);
+const capCoord = J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).capture;
+assert.deepStrictEqual(Object.keys(capCoord.byReg), ['HP1'], 'an LMS 4 coordinator sees only LMS 4 capture stops');
+assert.deepStrictEqual(capCoord.byReg.HP1, { runId: 'HP1-20261025-071500-ab12', videoFileId: 'VIDblurred123',
+  stops: [{ seq: 3, name: 'Nalwari', lat: 31.6, lng: 76.9, at: '2026-10-25T01:45:00Z', photoFileId: 'PHOTOblurred1', boardOn: 2, boardOff: 0 }] }, 'the processed ids from the Roster, never one the push sent; counts only');
+assert.deepStrictEqual(Object.keys(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg).sort(), ['HP1', 'HP7'], 'the second push kept the first (upsert by run)');
+assert.deepStrictEqual(J(run('gpsRows_(GPS_TAB_CAPTURE)')).map(r => r.runId.slice(0, 3) + ' ' + r.capturedBy), ['HP1 rider@x.org', 'HP7 c4@x.org'], 'each processed run keeps its capturer (Captured By, else By: a row from before the column)');
+assert.deepStrictEqual(J(run('gpsCaptured_()')).HP1.by, 'rider@x.org', 'the route timelapse credits its capturer');
+roster = { success: true, found: { 'HP1-20261026-071500-ab99': { videoFileId: 'VID2blurred12', photos: {} } }, notYet: [] };
+run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "HP1-20261026-071500-ab99", reg: "HP1", stops: []}]}})');
+assert.strictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP1.runId, 'HP1-20261026-071500-ab99', 'the newest run per bus is served');
+// one push asks the Roster about at most GPS.captureBatch runs (UrlFetch's ~60 s); the rest wait for the next daily run
+assert.strictEqual(run('GPS.captureBatch'), 20);
+roster = { success: true, found: {}, notYet: [] }; fetched.length = 0;
+ctx.many = { runs: Array.from({ length: 22 }, (_, i) => ({ runId: 'HP1-20261101-0700' + String(i).padStart(2, '0') + '-zz' + String(i).padStart(2, '0'), reg: 'HP1', stops: [] })) };
+const capped = J(run('coordCapturePush_({secret:"S", payload: many})'));
+assert.deepStrictEqual([fetched.length, fetched[0].body.runs.length, capped.notYet.length, capped.later], [1, 20, 20, ['HP1-20261101-070020-zz20', 'HP1-20261101-070021-zz21']], 'capped at 20 runs; the rest come back as later');
+const capTab = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Stops')._rows();
+capTab.find(r => r[0] === 'HP7-20261024-071500-zz99')[4] = '[{"seq":1,'; // a cut-off or hand-edited cell
+assert.deepStrictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP7.stops, [], 'one bad cell does not break the page');
+// ── parts catalog (Task 9): the agencies' service data, pushed from the Mac; models and parts fleet-wide, vehicles and history by reg ──
+const part = (o) => Object.assign({ lifeKm: 40000, lifeMonths: 24, price: 9500, labour: 300, spec: '', components: ['tyre_fl', 'tyre_fr'], asOf: '2026-10-01T10:00:00' }, o);
+ctx.catPush = {
+  models: [{ model: 'MODEL ALPHA 36', parts: { tyre: part(), engine_oil: part({ lifeKm: 10000, lifeMonths: 6, price: null, labour: null, components: ['engine_oil'] }) } },
+    { model: 'MODEL BETA 26', parts: { brake_front: part({ lifeKm: 30000, components: ['brake_front'] }) } }],
+  vehicles: [{ chassis: 'TESTCH0001', reg: 'HP1', model: 'MODEL ALPHA 36', catalogModel: 'MODEL ALPHA 36', asOf: '2026-10-01T10:00:00', recalls: 'Open campaign 7', variant: 'Skool', year: 2022, warrantyDate: '2027-03-11', warrantyKm: 200000 },
+    { chassis: 'TESTCH0007', reg: 'HP7', model: 'MODEL BETA 26', year: 2018, asOf: '2026-10-01T10:00:00' }],
+  history: [{ asOf: '2026-10-01T10:00:00', reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Engine oil', partNo: 'P1', qty: '7 L', partAmount: 3150, labour: 700 },
+    { reg: 'HP1', chassis: 'TESTCH0001', jobCard: 'JC-1', date: '2026-09-05', odometer: 81200, work: '10,000 km service', part: 'Oil filter', partNo: 'P2', qty: '1', partAmount: 450, labour: null },
+    { reg: 'HP7', chassis: 'TESTCH0007', jobCard: 'JC-7', date: '2026-10-17', odometer: 40000, work: 'Brakes', part: 'Liner', partNo: 'P3', qty: '4', partAmount: 2400, labour: 900 }],
+};
+assert.strictEqual(J(run('coordCatalogPush_({secret:"X", payload: catPush})')).error, 'Not authorized', 'catalogpush with a wrong secret refused');
+assert.strictEqual(run('gpsRows_("Parts Catalog").length + gpsRows_("Agency Vehicles").length + gpsRows_("Agency History").length'), 0, 'a refused push stores nothing');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: "nope", vehicles: [], history: []}})')).success, false, 'models must be a list');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [{model: "", parts: {}}], vehicles: [], history: []}})')).success, false, 'a model needs a name');
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [{reg: "HP1"}], history: []}})')).success, false, 'a vehicle needs its chassis');
+const cp = J(run('coordCatalogPush_({secret:" S\\n", payload: catPush})'));
+assert.deepStrictEqual([cp.success, cp.parts, cp.vehicles, cp.history], [true, 3, 2, 3]);
+const counts = () => run('[gpsRows_("Parts Catalog").length, gpsRows_("Agency Vehicles").length, gpsRows_("Agency History").length]');
+assert.deepStrictEqual(J(counts()), [3, 2, 3]);
+run('coordCatalogPush_({secret:"S", payload: catPush})'); run('coordCatalogPush_({secret:"S", payload: catPush})');
+assert.deepStrictEqual(J(counts()), [3, 2, 3], 're-pushing the same file adds no rows');
+// a push of one model leaves the others; an older file never overwrites a newer part; a newer one does
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 99, asOf: '2026-09-01T00:00:00' })) + '}}], vehicles: [], history: []}})');
+let catRows = J(run('gpsRows_("Parts Catalog")'));
+assert.strictEqual(catRows.find(r => r.code === 'tyre').lifeKm, '40000', 'an older file does not overwrite a newer part');
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 45000, price: 9800, asOf: '2026-10-20T00:00:00' })) + '}}], vehicles: [], history: []}})');
+catRows = J(run('gpsRows_("Parts Catalog")'));
+assert.deepStrictEqual([catRows.length, catRows.find(r => r.code === 'tyre').lifeKm, catRows.find(r => r.code === 'tyre').price], [3, '45000', '9800'], 'a newer file replaces the part');
+const catOwn = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog;
+assert.deepStrictEqual(Object.keys(catOwn.models).sort(), ['MODEL ALPHA 36', 'MODEL BETA 26']);
+assert.deepStrictEqual(catOwn.models['MODEL ALPHA 36'].parts.tyre, { lifeKm: 45000, lifeMonths: 24, price: 9800, labour: 300, spec: '', components: ['tyre_fl', 'tyre_fr'], asOf: '2026-10-20T00:00:00' }, 'numbers and component ids, as the garage reads them');
+assert.deepStrictEqual([catOwn.models['MODEL ALPHA 36'].parts.engine_oil.price, catOwn.models['MODEL ALPHA 36'].parts.engine_oil.lifeKm], [null, 10000], 'an empty price is null, not 0');
+assert.deepStrictEqual([catOwn.vehicles.length, catOwn.history.length], [2, 3], 'the Owner sees every bus');
+const catCoord = J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).catalog;
+assert.deepStrictEqual(catCoord.vehicles.map(v => v.reg), ['HP1'], 'a coordinator gets the vehicles of their campuses only');
+assert.deepStrictEqual(catCoord.history.map(h => h.part), ['Engine oil', 'Oil filter'], 'and their history');
+assert.deepStrictEqual([catCoord.vehicles[0].warrantyKm, catCoord.history[0].partAmount, catCoord.history[0].odometer, catCoord.history[1].labour], [200000, 3150, 81200, null]);
+assert.deepStrictEqual(Object.keys(catCoord.models).sort(), ['MODEL ALPHA 36', 'MODEL BETA 26'], 'models and parts are fleet-wide');
+
+// fix round 1: registrations like the repo's other normalisers, the catalog model key, no blanking, a bounded history, stricter rows
+assert.strictEqual(catCoord.vehicles[0].catalogModel, 'MODEL ALPHA 36', 'the resolved catalog model key is stored and served');
+// Ruling 40: the newest asOf wins per row, whole, blanks included; only identity (reg, catalog model key) is never blanked; an older row is ignored
+const ownCat = () => J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog;
+const veh1 = () => ownCat().vehicles.find(v => v.chassis === 'TESTCH0001');
+const pushVeh = (o) => run('coordCatalogPush_({secret:"S", payload: {models: [], history: [], vehicles: [' + JSON.stringify(Object.assign({ chassis: 'TESTCH0001' }, o)) + ']}})');
+pushVeh({ asOf: '2026-11-01T00:00:00', reg: '', model: '', catalogModel: '', variant: '', year: '', warrantyKm: null, recalls: '' });
+let kept = veh1();
+assert.deepStrictEqual([kept.reg, kept.catalogModel], ['HP1', 'MODEL ALPHA 36'], 'a newer blank never blanks the identity: reg and the catalog model key');
+assert.deepStrictEqual([kept.variant, kept.year, kept.warrantyKm, kept.recalls, kept.warrantyDate], ['', null, null, '', ''], 'but it clears the rest: a closed recall, a dropped warranty, a cleared variant');
+pushVeh({ asOf: '2026-09-01T00:00:00', reg: 'HP1', variant: 'OLD FILE', recalls: 'Open campaign 7', year: 2001 });
+kept = veh1();
+assert.deepStrictEqual([kept.variant, kept.recalls, kept.year], ['', '', null], 'a row with an OLDER asOf overwrites nothing');
+pushVeh({ asOf: '2026-11-02T00:00:00', reg: 'H-p 1', variant: 'Skool 36', year: 2022 });
+kept = veh1();
+assert.deepStrictEqual([kept.reg, kept.variant, kept.year], ['HP1', 'Skool 36', 2022], 'a reg typed "H-p 1" is HP1 (every non-alphanumeric dropped, upper case); a newer row applies whole');
+// a part: a newer file clears a wrong price; an older one is ignored (the tyre was set to 45000 km / 9800 above)
+const tyre = () => ownCat().models['MODEL ALPHA 36'].parts.tyre;
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 46000, price: '', asOf: '2026-11-01T00:00:00' })) + '}}], vehicles: [], history: []}})');
+assert.deepStrictEqual([tyre().lifeKm, tyre().price], [46000, null], 'a newer part row clears the price it no longer states');
+run('coordCatalogPush_({secret:"S", payload: {models: [{model: "MODEL ALPHA 36", parts: {tyre: ' + JSON.stringify(part({ lifeKm: 1, price: 1, asOf: '2026-10-05T00:00:00' })) + '}}], vehicles: [], history: []}})');
+assert.deepStrictEqual([tyre().lifeKm, tyre().price], [46000, null], 'an older part row is ignored');
+run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [{reg: "HP-1", chassis: "TESTCH0001", jobCard: "JC-8", date: "2026-10-01", part: "Wipers", partAmount: 100, asOf: "2026-11-01T00:00:00"}]}})');
+assert.ok(J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).catalog.history.some(h => h.part === 'Wipers' && h.reg === 'HP1'), 'a hyphenated reg in a history row still reaches its bus');
+const histOf = () => ownCat().history.find(h => h.part === 'Engine oil');
+const oldH = Object.assign({}, ctx.catPush.history[0], { reg: '', odometer: 1, labour: 1, asOf: '2026-09-01T00:00:00' });
+assert.strictEqual(J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(oldH) + ']}})')).success, true);
+assert.deepStrictEqual([histOf().odometer, histOf().labour], [81200, 700], 'an older history row is ignored');
+run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(Object.assign({}, oldH, { odometer: null, labour: null, asOf: '2026-11-03T00:00:00' })) + ']}})');
+assert.deepStrictEqual([histOf().reg, histOf().odometer, histOf().labour], ['HP1', null, null], 'a newer history row clears what it leaves empty; its reg (blank) is found from the stored vehicle');
+// N4: a history row for a chassis known only from an earlier push resolves through the stored vehicles; an unknown chassis is not stored and is reported
+const hrow = (o) => Object.assign({ asOf: '2026-11-03T00:00:00', date: '2026-10-02', jobCard: 'JC-9', part: 'Belt' }, o);
+const nres = J(run('coordCatalogPush_({secret:"S", payload: {models: [], vehicles: [], history: [' + JSON.stringify(hrow({ chassis: 'TESTCH0001' })) + ',' + JSON.stringify(hrow({ chassis: 'NOSUCHCHASSIS' })) + ']}})'));
+assert.deepStrictEqual([nres.success, nres.history, nres.unresolved], [true, 1, ['NOSUCHCHASSIS']]);
+assert.deepStrictEqual(ownCat().history.filter(h => h.part === 'Belt').map(h => h.reg), ['HP1']);
+// the insight carries the newest GPS.catalogHistory rows per bus, not all years
+assert.strictEqual(run('GPS.catalogHistory'), 100);
+run('GPS.catalogHistory = 2');
+const bounded = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).catalog.history.filter(h => h.reg === 'HP1');
+assert.deepStrictEqual(bounded.map(h => h.part), ['Belt', 'Wipers'], 'newest first, two per bus (HP1 has 4 rows: the oldest dropped)');
+run('GPS.catalogHistory = 100');
+const rej = (payload) => J(run('coordCatalogPush_({secret:"S", payload: ' + JSON.stringify(payload) + '})'));
+assert.strictEqual(rej({ models: [{ model: 'M', parts: { 'a|b': part() } }], vehicles: [], history: [] }).success, false, 'a part code with | is refused (it is half the key)');
+assert.strictEqual(rej({ models: [], vehicles: [], history: [{ chassis: 'C', date: '5-9-26' }] }).success, false, 'a history date must be yyyy-mm-dd');
+assert.strictEqual(rej({ models: [], vehicles: [{ chassis: 'C', warrantyDate: 'soon' }], history: [] }).success, false, 'so must a warranty date');
+assert.strictEqual(rej({ models: [{ model: 'M', parts: { tyre: part({ asOf: 'yesterday' }) } }], vehicles: [], history: [] }).success, false, 'and asOf an ISO stamp');
+assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model === 'M'), [], 'a refused payload stores nothing');
 console.log('transport gps: all checks passed');

@@ -213,7 +213,7 @@ module.exports = function run(t) {
     assert.equal(o({}).code, 'FORBIDDEN_ACCOUNT', 'fee_collection IN');
     assert.equal(o({ category: 'transport_income', vehicle: 'HP665805' }).code, 'FORBIDDEN_ACCOUNT', 'transport IN');
     assert.equal(o({ direction: 'OUT', category: 'cash_transfer' }).code, 'FORBIDDEN_ACCOUNT', 'movement');
-    assert.equal(o({ direction: 'OUT', category: 'vehicle_service', vehicle: 'HP665805' }).success, true);
+    assert.equal(o({ direction: 'OUT', category: 'vehicle_service', vehicle: 'HP665805', components: ['other'] }).success, true);
     assert.equal(as(h, 'owner-token', { account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'cash_transfer' }).code, 'FORBIDDEN_ACCOUNT', 'cash transfer only from cash');
   });
 
@@ -379,10 +379,10 @@ module.exports = function run(t) {
   const sc = (o) => e(Object.assign({ category: 'student_collection', collection: 'mun', bucket: 'other' }, o));
   const scPaid = (o) => e(Object.assign({ category: 'student_collection_paid', direction: 'OUT', collection: 'mun', bucket: 'other', file_id: 'slip' }, o));
 
-  t.test('DayBook has a trailing collection column', () => {
+  t.test('DayBook has the collection column, then components and video_file_id last', () => {
     const h = v2();
     const head = h.ctx.OFFICE_TABLES.DayBook;
-    assert.equal(head[head.length - 1], 'collection');
+    assert.deepEqual(Array.from(head.slice(-3)), ['collection', 'components', 'video_file_id']);
   });
 
   t.test('student collection categories need an active head (COLLECTION_REQUIRED / BAD_COLLECTION) and it is stored', () => {
@@ -433,5 +433,164 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.add', e({ id: 'in1' }), 'clerk-token').success, true, 'money in needs no photo');
     // a reversal of a photographed payment needs none
     assert.equal(h.call('daybook.reverse', { id: 'rok1', campus: 'LMS1', reverses: 'ok1' }, 'clerk-token').success, true);
+  });
+  // ── garage data: which parts a vehicle service bill was for ──
+  const svc = (o) => e(Object.assign({ direction: 'OUT', category: 'tyres', bucket: 'petty', vehicle: 'HP665805', components: ['tyre_fl', 'puncture'] }, o));
+
+  t.test('entry with category tyres and components [tyre_fl, puncture] is saved with components "tyre_fl,puncture"', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', svc({ id: 'k1' }), 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'k1').components, 'tyre_fl,puncture');
+  });
+
+  t.test('service category with no components is refused with COMPONENTS_REQUIRED', () => {
+    const h = v2();
+    [[], undefined, '', null].forEach((c) => assert.equal(h.call('daybook.add', svc({ components: c }), 'clerk-token').code, 'COMPONENTS_REQUIRED', String(c)));
+    ['vehicle_washing', 'vehicle_service', 'vehicle_parts', 'vehicle_electrical', 'vehicle_body', 'tyres'].forEach((category) =>
+      assert.equal(h.call('daybook.add', svc({ category, components: [] }), 'clerk-token').code, 'COMPONENTS_REQUIRED', category));
+    assert.equal(rowsOf(h).length, 0);
+  });
+
+  t.test('component not valid for the category (battery on tyres) is refused with BAD_COMPONENT', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', svc({ components: ['battery'] }), 'clerk-token').code, 'BAD_COMPONENT');
+    assert.equal(h.call('daybook.add', svc({ components: ['tyre_fl', 'nope'] }), 'clerk-token').code, 'BAD_COMPONENT');
+    assert.equal(h.call('daybook.add', svc({ components: 'tyre_fl' }), 'clerk-token').code, 'BAD_COMPONENT', 'must be a list');
+    assert.equal(h.call('daybook.add', svc({ category: 'vehicle_parts', components: ['engine_oil', 'brake_front'] }), 'clerk-token').success, true, 'parts take service components');
+    assert.equal(h.call('daybook.add', svc({ category: 'vehicle_electrical', components: ['other'] }), 'clerk-token').success, true, 'other fits every service category');
+    assert.equal(rowsOf(h).length, 2);
+  });
+
+  t.test('non-vehicle category ignores components', () => {
+    const h = v2();
+    assert.equal(h.call('daybook.add', e({ components: ['battery'] }), 'clerk-token').success, true);
+    const fill = fuel({ id: 'f1', components: ['engine_oil'] });
+    assert.equal(h.call('daybook.add', fill, 'clerk-token').success, true);
+    assert.deepEqual(rowsOf(h).map((r) => r.components), ['', '']);
+  });
+
+  t.test('old row without the column reads back components "" and the first open adds the column', () => {
+    const h = boot(fixture); h.addConfig();
+    const cols = Array.from(h.ctx.OFFICE_TABLES.DayBook), old = cols.slice(0, cols.indexOf('components'));
+    assert.ok(old.length === cols.length - 2, 'components and video_file_id are the new trailing columns');
+    const sh = h.addBook('LMS1', '2026-27').insertSheet('DayBook'); // a live sheet from before this column
+    h.ctx.officeWidenGrid_(sh, cols.length);
+    sh.getRange(1, 1, 1, old.length).setNumberFormat('@').setValues([old]);
+    sh.getRange(2, 1, 1, old.length).setNumberFormat('@').setValues([old.map((c) => (c === 'id' ? 'old1' : c === 'campus' ? 'LMS1' : ''))]);
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27');
+    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 2], 'components');
+    assert.equal(ss.getSheetByName('DayBook').values[0][cols.length - 1], 'video_file_id');
+    assert.equal(h.ctx.officeRows_(ss, 'DayBook')[0].components, '');
+    assert.equal(h.ctx.officeRows_(ss, 'DayBook')[0].video_file_id, '');
+  });
+
+  // ── fuel fill video ──
+  const withVideo = () => {
+    const h = v2();
+    const w = (campus, id, category) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(campus, '2026-27'), 'Files', { id, campus, drive_id: 'DV' + id, name: id + '.mp4', category });
+    w('LMS1', 'vid', 'fuel_video'); w('LMS2', 'vid2', 'fuel_video');
+    return h;
+  };
+
+  t.test('a fuel fill stores video_file_id; it is optional', () => {
+    const h = withVideo();
+    assert.equal(h.call('daybook.add', fuel({ id: 'fv', video_file_id: 'vid' }), 'clerk-token').success, true);
+    assert.equal(h.call('daybook.add', fuel({ id: 'fn', odometer_km: 1100 }), 'clerk-token').success, true);
+    const by = Object.fromEntries(rowsOf(h).map((r) => [r.id, r]));
+    assert.equal(by.fv.video_file_id, 'vid'); assert.equal(by.fn.video_file_id, '');
+  });
+
+  t.test('video_file_id must be a fuel_video file of this campus (VIDEO_MISSING)', () => {
+    const h = withVideo();
+    ['nope', 'slip', 'vid2'].forEach((v) => assert.equal(h.call('daybook.add', fuel({ video_file_id: v }), 'clerk-token').code, 'VIDEO_MISSING', v)); // unknown, a bill photo, another campus's video
+    assert.equal(rowsOf(h).length, 0);
+  });
+
+  t.test('video_file_id on a category other than fuel is BAD_FIELD', () => {
+    const h = withVideo();
+    assert.equal(h.call('daybook.add', fuel({ category: 'parking', litres_ml: '', odometer_km: '', video_file_id: 'vid' }), 'clerk-token').error, 'BAD_FIELD');
+    assert.equal(add(h, { video_file_id: 'vid' }).error, 'BAD_FIELD');
+  });
+
+  t.test('reversal row carries no video (the video stays on the original fill)', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fr', video_file_id: 'vid' }), 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'rfr').video_file_id, '');
+  });
+
+  // ── attach a fill video after the entry is saved (side record: a Files row whose belongs_to is the entry id) ──
+  const attach = (h, o, tok) => h.call('daybook.attach_video', Object.assign({ id: 'at' + (++n), campus: 'LMS1', entry_id: 'fa', file_id: 'vid' }, o), tok || 'clerk-token');
+  const filesOf = (h) => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files');
+  const listed = (h) => h.call('daybook.list', { campus: 'LMS1', from: '2026-10-20' }, 'clerk-token').entries;
+
+  t.test('attach_video links a video to a saved fuel entry of the own campus; the entry row is not rewritten', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    const r = attach(h, { id: 'at1' });
+    assert.equal(r.success, true); assert.equal(r.id, 'at1');
+    const link = filesOf(h).find((f) => f.id === 'at1');
+    assert.deepEqual([link.category, link.belongs_to, link.drive_id, link.campus], ['fuel_video', 'fa', 'DVvid', 'LMS1']);
+    assert.equal(rowsOf(h).find((x) => x.id === 'fa').video_file_id, '', 'append-only: the day book row is untouched');
+    assert.equal(listed(h).find((x) => x.id === 'fa').video_file_id, 'at1', 'the list shows the link');
+    assert.equal(h.call('daybook.attach_video', { id: 'at1', campus: 'LMS1', entry_id: 'fa', file_id: 'vid' }, 'clerk-token').duplicate, true, 'a retry is a duplicate');
+    assert.equal(filesOf(h).filter((f) => f.belongs_to === 'fa').length, 1);
+    assert.equal(attach(h, {}, 'owner-token').code, 'VIDEO_EXISTS', 'the Owner may attach, but the entry has one');
+  });
+
+  t.test('attach_video is refused for another campus, a non-fuel entry, a reversed entry, a reversal, a bad file or role', () => {
+    const h = withVideo();
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', e({ id: 'nf' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fr', odometer_km: 1100 }), 'clerk-token');
+    h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token');
+    assert.equal(attach(h, {}, 'other-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(h.call('daybook.attach_video', { id: 'x1', campus: 'LMS2', entry_id: 'fa', file_id: 'vid2' }, 'other-token').error, 'NOT_FOUND', 'the entry is not in that campus');
+    assert.equal(attach(h, { entry_id: 'nf' }).code, 'NOT_FUEL');
+    assert.equal(attach(h, { entry_id: 'fr' }).error, 'ALREADY_REVERSED');
+    assert.equal(attach(h, { entry_id: 'rfr' }).error, 'ALREADY_REVERSED', 'a reversal row is not a fill');
+    assert.equal(attach(h, { entry_id: 'nope' }).error, 'NOT_FOUND');
+    ['nope', 'slip', 'vid2'].forEach((f) => assert.equal(attach(h, { file_id: f }).code, 'VIDEO_MISSING', f));
+    assert.equal(attach(h, {}, 'am-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(filesOf(h).filter((f) => f.belongs_to).length, 0);
+  });
+
+  t.test('a second video needs replace:true and then the latest wins; an entry saved with a video counts as having one', () => {
+    const h = withVideo();
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'vid3', campus: 'LMS1', drive_id: 'DVvid3', name: 'b.mp4', category: 'fuel_video' });
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fb', odometer_km: 1100, video_file_id: 'vid' }), 'clerk-token');
+    assert.equal(attach(h, { id: 'a1' }).success, true);
+    assert.equal(attach(h, { id: 'a2', file_id: 'vid3' }).code, 'VIDEO_EXISTS');
+    assert.equal(attach(h, { id: 'a3', file_id: 'vid3', replace: true }).success, true);
+    assert.equal(listed(h).find((x) => x.id === 'fa').video_file_id, 'a3', 'latest wins');
+    assert.equal(attach(h, { id: 'b1', entry_id: 'fb', file_id: 'vid3' }).code, 'VIDEO_EXISTS');
+    assert.equal(attach(h, { id: 'b2', entry_id: 'fb', file_id: 'vid3', replace: true }).success, true);
+  });
+
+  t.test('after an attach the fuel mirror says hasVideo for that fill', () => {
+    const h = withVideo(); h.addBookById(h.run('OFFICE_FUEL_MIRROR_SS'));
+    h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
+    h.call('daybook.add', fuel({ id: 'fb', odometer_km: 1100, video_file_id: 'vid' }), 'clerk-token');
+    const tab = () => J(h.books[h.run('OFFICE_FUEL_MIRROR_SS')].getSheetByName('Fuel Fills').values).slice(1).map((r) => [r[0], r[8], r[9]]);
+    assert.deepEqual(tab(), [['fa', 'no', 'yes'], ['fb', 'yes', 'yes']]);
+    attach(h, { id: 'at9' });
+    assert.deepEqual(tab(), [['fa', 'yes', 'yes'], ['fb', 'yes', 'yes']]);
+  });
+
+  t.test('reversal copies the components', () => {
+    const h = v2();
+    h.call('daybook.add', svc({ id: 'k2', entry_date: '2026-10-21' }), 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rk2', campus: 'LMS1', reverses: 'k2' }, 'clerk-token').success, true);
+    assert.equal(rowsOf(h).find((r) => r.id === 'rk2').components, 'tyre_fl,puncture');
+  });
+
+  t.test('officeComponentsFor_ lists {id, label} for service categories only, "other" last', () => {
+    const h = v2();
+    const of = (c) => J(h.ctx.officeComponentsFor_(c));
+    assert.deepEqual(of('vehicle_washing').map((x) => x.id), ['washing_greasing', 'other']);
+    assert.deepEqual(of('vehicle_body').map((x) => x.id), ['body_paint', 'seats_windows', 'door', 'other']);
+    assert.ok(of('tyres').every((x) => x.label) && !of('tyres').some((x) => x.id === 'battery'));
+    assert.deepEqual(of('fuel'), []);
   });
 };

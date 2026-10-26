@@ -18,6 +18,7 @@
 // Actions: GET action=coordinatortasks, GET action=coordinatoracademics (CW/HW tag analysis),
 // GET action=coordinatordocuments (document compliance page),
 // GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
+// GET action=coordinatortransportfleet + POST action=coordinatortransportfleetsave (Fleet setup quests, coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district.
 //
@@ -141,7 +142,7 @@ function doGet(e) {
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(e.parameter.action || '').toLowerCase();
-    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
+    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
@@ -149,6 +150,8 @@ function doGet(e) {
     if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
     if (action === 'coordinatorbuschecks') return coordJson_(coordGpsClerkChecks_(caller));
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
+    if (action === 'coordinatortransportloadout') return coordJson_(coordLoadout_(caller)); // the safety loadout list: every transport role reads it
+    if (action === 'coordinatortransportfleet') return coordJson_(coordFleet_(caller)); // Fleet setup quests: the caller's campuses
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
@@ -168,14 +171,19 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
     if (String(body.action || '').toLowerCase() === 'transportpushcheck') return coordJson_(coordTransportPushCheck_(body));
     if (String(body.action || '').toLowerCase() === 'transportgpspush') return coordJson_(coordGpsPush_(body));
+    if (String(body.action || '').toLowerCase() === 'transportcapturepull') return coordJson_(coordCapturePull_(body)); // capture.py on the Mac
+    if (String(body.action || '').toLowerCase() === 'transportcapturepush') return coordJson_(coordCapturePush_(body));
+    if (String(body.action || '').toLowerCase() === 'transportcatalogpush') return coordJson_(coordCatalogPush_(body)); // agency_import.py on the Mac
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
+    if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body)); // Fee Clerks too (own campus, checked inside)
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();
     if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));
     if (action === 'coordinatorpdrmerge') return coordJson_(coordPdrMerge_(caller, body));
     if (action === 'coordinatorallocate') return coordJson_(coordAprAllocate_(caller, body));
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
+    if (action === 'coordinatortransportloadout') return coordJson_(coordLoadoutSet_(caller, body)); // Owner only (checked inside)
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
