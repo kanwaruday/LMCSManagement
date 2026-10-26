@@ -122,10 +122,36 @@ assert.ok(read('tools/stamp-assets.mjs').includes("'guide/index.html'"), 'guide 
 assert.ok(read('tests/datasrc/test-datasrc.js').includes("'guide/index.html'"), 'guide page is in the data-source exemptions');
 assert.ok(/<script src="\.\.\/assets\/game\/guide\.js(\?v=[0-9a-f]+)?"/.test(guideHtml), 'guide page loads guide.js');
 assert.ok(/<script src="\.\.\/assets\/auth\.js(\?v=[0-9a-f]+)?"/.test(guideHtml), 'guide page loads auth.js (the dock shows there too)');
-// every sample tour target exists on its page
-for (const [p, g] of Object.entries(ctx.LMCSGuide.pages)) {
+// the guide's content: every page entry exists, every tour target is an #id that is in its page (static HTML, or the office
+// pages' own scripts), every portal page is covered, every setup step has an article, no honorifics
+const G = ctx.LMCSGuide;
+const html = (p) => read(p) + (p.startsWith('office/') ? fs.readdirSync(path.join(root, 'office/js')).map((f) => read('office/js/' + f)).join('') : '');
+for (const [p, g] of Object.entries(G.pages)) {
   assert.ok(fs.existsSync(path.join(root, p)), 'guide page entry exists: ' + p);
-  for (const b of g.tour || []) assert.ok(read(p).includes('id="' + b.target.slice(1) + '"'), p + ': tour target ' + b.target);
+  assert.ok(g.purpose && g.purpose.length < 140 && Array.isArray(g.roles), p + ': a one-sentence purpose and roles');
+  const beats = g.tour || [];
+  assert.ok(!beats.length || (beats.length >= 2 && beats.length <= 5), p + ': 2-5 tour beats');
+  for (const b of beats) {
+    assert.ok(/^#[\w-]+$/.test(b.target) && b.text, p + ': tour beat is an #id with text');
+    assert.ok(html(p).includes('id="' + b.target.slice(1) + '"'), p + ': tour target ' + b.target);
+  }
 }
+const portalPages = require('child_process').execSync('git ls-files "*.html"', { cwd: root }).toString().trim().split('\n').filter((p) => !/^(docs|tests)\//.test(p));
+for (const p of portalPages) assert.ok(G.pages[p], 'guide covers ' + p);
+for (const p of ['principal/index.html', 'coordinator/index.html', 'owner/index.html', 'teacher/index.html', 'coordinator/transport/setup.html', 'teacher/plan-activity.html', 'office/index.html', 'office/daybook.html'])
+  assert.ok((G.pages[p].tour || []).length >= 2, p + ' has a tour');
+const ids = G.articles.map((a) => a.id);
+assert.strictEqual(new Set(ids).size, ids.length, 'article ids are unique');
+for (const a of G.articles) {
+  assert.ok(/^[a-z0-9]+(-[a-z0-9]+)*$/.test(a.id), a.id + ': kebab-case');
+  assert.ok(a.title && a.body.length >= 2 && a.body.length <= 5, a.id + ': 2-5 paragraphs');
+}
+for (const id of ['meet-buddy', 'setup-signin', 'setup-secret', 'setup-refresh', 'setup-form', 'setup-term', 'setup-suit']) assert.ok(ids.includes(id), 'article ' + id);
+for (const m of read('apps-script/game-setup.gs').matchAll(/^\s+\['(\w+)', /gm)) assert.ok(ids.includes('setup-' + m[1]), 'setup step ' + m[1] + ' has an article');
+const text = JSON.stringify(G);
+assert.ok(!/\b(Sir|Ma'am|Mr|Mrs|Ms|Dr)\b/.test(text), 'no honorifics (no people in the guide)');
+assert.ok(!/@[\w-]+\.|\b\d{10}\b/.test(text), 'no emails or phone numbers');
+assert.ok(!/!/.test(text), "Buddy's voice: no exclamation marks");
+assert.ok(!/Day Book starting data/i.test(text), 'Day Book starting data is not live on this branch');
 
 console.log('test-dock: ok');
