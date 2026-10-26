@@ -80,7 +80,7 @@ approvedLeaveDays(email, fromISO, toISO) ->
 - Only requests with status **Approved** (Revoked and Rejected never appear), not archived-filtered.
 - `fraction` is how much of the day is on leave: a full-day leave is 1, a half leave 0.5, a short leave about 0.33. `excused` is the
   game's yes/no: true for Single, Casual, Emergency, Special Day and Half day; false for Short (decision 6).
-  The game decides how a partial day counts toward "days on track" (open question 4).
+  The game uses `excused` directly; it does not decide how a partial day counts.
 - Server callers in other Apps Script projects (Coordinator, game backend) read the sheet directly with the
   same column positions, as `coordinator.gs` already does for approvals; the contract is documented in code next to the columns.
 - A caller sees only their own leave, their campus (Principal), or everyone (Owner/Coordinator), the same scoping as `aprList_`.
