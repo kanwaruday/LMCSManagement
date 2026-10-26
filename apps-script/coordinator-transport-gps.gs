@@ -35,8 +35,8 @@ const GPS_STOP_COLS = ['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'a
 const GPS_CHECK_COLS = ['id', 'campus', 'date', 'reg', 'litres', 'gpsKm', 'billKm', 'kmpl', 'norm', 'flag', 'reason', 'excessL', 'excessRs', 'proof'];
 const GPS = {
   speedLimit: 40, speedMinutes: 10, awayKm: 2, deadDays: 2, longSilentDays: 14, blindShare: 0.2, blindMinKm: 30, ageLimit: 15,
-  // CONFIRM ON DEPLOY DAY: proofFrom = the deploy date (fuel_proof is asked only for fills on or after it)
-  proofFrom: '2026-10-27', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
+  // the deploy date (Uday, 2026-10-26): fuel_proof is asked only for fills on or after it
+  proofFrom: '2026-10-26', normSmall: 7.5, normBig: 5.0, smallSeats: 26, lowShare: 0.8, odoShare: 0.2, odoMinKm: 25, minCheckKm: 50, clerkDays: 2,
   due: { gps_dead: 3, gps_blind: 7, gps_none: 14, bus_away: 2, bus_speed: 3, fuel_check: 3, fuel_proof: 1, bus_age: 30, bus_inspection: 5, bus_equipment: 3, capture_route: 14 },
   inspectionDay: 5, // the monthly safety check is due by the 5th
   inspectionFrom: '2026-11', // set at deploy: the first month a safety check is asked for (no follow-up for months before it)
