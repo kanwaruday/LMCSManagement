@@ -31,6 +31,8 @@ const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
 const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
 const COORD_TRANSPORT_TAB_PEOPLE = 'Transport Staff'; // every person on the transport Man Power sheet, linked to the staff master by employee code
 const COORD_TRANSPORT_TAB_PNL = 'Transport P&L'; // per bus per month money, from the transport workbook (push)
+const COORD_TRANSPORT_TAB_PAPERS = 'LM Studio Vehicle Papers'; // what LM Studio read off each bus's RC / fitness / other scans, to pre-fill the Vehicle papers quest (push)
+const COORD_PAPERS_SCAN_FIELDS = ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'emissionNorm', 'seatingCapacityAsPerRc', 'dateOfRegistration', 'mfgYear']; // papers quest field ids; mfgYear is shown only
 const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
 const COORD_TRANSPORT_DOCS = [['insurance', 'Insurance'], ['fitness', 'Fitness'], ['mv_tax', 'MV tax'],
   ['pollution', 'Pollution'], ['route_permit', 'Route permit'], ['speed_governor', 'Speed governor']];
@@ -111,8 +113,14 @@ function coordTransportPush_(body) {
   }
   const label = {};
   COORD_TRANSPORT_DOCS.forEach(function (d) { label[d[0]] = d[1]; });
-  const fleet = [], docs = [];
+  const fleet = [], docs = [], papers = [], txt = function (v) { return String(v == null ? '' : v).replace(/^[=+\-@\s]+/, '').slice(0, 200); }; // never a formula
+  // a push from before the papers (no `papers` on any bus) leaves the papers tab as it is: never wiped with nothing
+  const hasPapers = p.fleet.some(function (b) { return b.papers && typeof b.papers === 'object' && !Array.isArray(b.papers); });
   p.fleet.forEach(function (b) {
+    COORD_PAPERS_SCAN_FIELDS.forEach(function (k) {
+      const x = b.papers && b.papers[k];
+      if (x && txt(x.value)) papers.push([b.reg, k, txt(x.value), txt(x.doc), txt(x.file), txt(x.link), x.disagree === true ? 'yes' : '']);
+    });
     fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '', b.driverCode || '', b.driverStatus || '', b.driverRosterName || '']);
     Object.keys(b.docs || {}).forEach(function (k) {
       const d = b.docs[k];
@@ -137,6 +145,7 @@ function coordTransportPush_(body) {
         p.people.map(function (q) { return [q.name, q.campus, q.designation, q.code, q.status, q.rosterName || '', q.rosterCampus || '', (q.vehicles || []).join(', ')]; }));
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_DOCS, ['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'], docs);
+    if (hasPapers) coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PAPERS, ['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], papers);
     if (Array.isArray(p.pnl) && p.pnl.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
         p.pnl.map(function (r) { return [r.reg, r.campus, r.month, r.fee, r.fuel, r.loan, r.fixed, r.pay, r.note || '']; }));
@@ -148,7 +157,7 @@ function coordTransportPush_(body) {
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
   ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
-  return { success: true, vehicles: fleet.length, documents: docs.length };
+  return { success: true, vehicles: fleet.length, documents: docs.length, papers: hasPapers ? papers.length : null };
 }
 
 /** The scans source rebuilt from the LM Studio tabs. Throws if they are missing: an unreadable source must never look like "no vehicles". */
@@ -469,7 +478,8 @@ function coordInspections_() {
 //                   other columns are the Owner's, filled by hand, and never touched
 // Driver personal data (date of birth, licence, phone) lives only here and is served only within the caller's campuses.
 // Photos (odometer, driver) are uploaded first through the Roster's capturefile (kind 'profile'); a quest holds their file ids.
-// GET  action=coordinatortransportfleet      every transport role: {rows:{fleet, profiles, drivers, parts, inspected, captured},
+// GET  action=coordinatortransportfleet      every transport role: {rows:{fleet (each bus with `scan`: the papers LM Studio read
+//                                             off its RC / fitness scans, {fieldId: {value, doc, link, disagree}}), profiles, drivers, parts, inspected, captured},
 //                                             campuses, owner, today}, only the caller's campuses (Fee Clerk: own campus;
 //                                             Coordinator: their district, ALL every campus; Owner: all)
 // POST action=coordinatortransportfleetsave  {reg, quest, fields}: one quest at a time, the whole quest (parts: the parts sent),
@@ -507,12 +517,25 @@ function coordFleet_(caller) {
   const vis = coordVisibleCampuses_(caller), T = COORD_FLEET_TABS, regs = {}, keys = {}, mine = function (r) { return regs[FleetQuests.normReg(r.reg)]; };
   const fleet = coordFleetBuses_().filter(function (b) { return !vis || vis.indexOf(b.campusId) !== -1; });
   fleet.forEach(function (b) { regs[b.reg] = true; keys[FleetQuests.driverKey(b)] = true; });
+  const scan = coordFleetScan_(regs);
+  fleet.forEach(function (b) { b.scan = scan[b.reg] || {}; }); // pre-fills the Vehicle papers form; never counts as done (only a staff save does)
   const done = coordFleetDone_(regs);
   return { success: true, today: coordFleetToday_(), campuses: vis || COORD_ALL_CAMPUSES, owner: caller.roles.indexOf('Owner') !== -1,
     rows: { fleet: fleet, inspected: done.inspected, captured: done.captured,
       profiles: gpsRows_(T.profile).filter(mine),
       drivers: gpsRows_(T.driver).filter(function (r) { return keys[r.driverKey]; }),
       parts: gpsRows_(T.parts).filter(mine) } };
+}
+
+/** {reg: {fieldId: {value, doc, link, disagree}}} from the papers tab, for the given regs only (the caller's scope). No tab yet: {}. */
+function coordFleetScan_(regs) {
+  const out = {};
+  gpsRows_(COORD_TRANSPORT_TAB_PAPERS).forEach(function (r) {
+    const reg = FleetQuests.normReg(r.Reg), k = String(r.Field || '');
+    if (!regs[reg] || COORD_PAPERS_SCAN_FIELDS.indexOf(k) === -1 || String(r.Value || '') === '') return;
+    (out[reg] = out[reg] || {})[k] = { value: String(r.Value), doc: String(r['Source document'] || ''), link: String(r.Link || ''), disagree: String(r.Disagree) === 'yes' };
+  });
+  return out;
 }
 
 function coordFleetSave_(caller, body) {

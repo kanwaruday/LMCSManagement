@@ -97,7 +97,9 @@ window.captureLayoutTest = async function () {
 // edge, a button, link button, field, select or "Kilometres, workshop, cost" toggle is under 48 px tall, a team bar does not read
 // "<campus> fleet: N of M buses ready", a bus card has no ring or its ring is squeezed, a bus does not list its six quests, an
 // Owner's gap row does not lead with its count, the waiting banner shows empty, or on a quest its strip of slots does not fit or
-// the pinned HUD takes over 30% of the screen.
+// the pinned HUD takes over 30% of the screen. Vehicle papers pre-filled from the scans: a "From the RC scan · please confirm"
+// tag (or "Scans disagree: check the paper"), with "View scan" (new tab, rel=noopener) or "No scan found", under an empty field,
+// its link under 48 px, or wrapping past the field's width.
 window.setupLayoutTest = async function () {
   const f = [], facts = {}, de = document.documentElement, vis = (e) => e.getClientRects().length > 0;
   facts.viewport = innerWidth + 'x' + innerHeight;
@@ -105,7 +107,7 @@ window.setupLayoutTest = async function () {
   const out = [...document.querySelectorAll('body *')].filter((e) => vis(e) && e.getBoundingClientRect().right > innerWidth + 1);
   if (out.length) f.push('sticks out on the right: ' + out.slice(0, 5).map((e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '.' + e.className)).join(', '));
   facts.screen = ['quest', 'bus', 'board'].find((id) => !document.getElementById(id).hidden) || 'none';
-  const small = [...document.querySelectorAll('.fs button, .fs a.cap-primary, .fs input:not([type=file]), .fs select, .fs summary')]
+  const small = [...document.querySelectorAll('.fs button, .fs a.cap-primary, .fs a.fs-view, .fs input:not([type=file]), .fs select, .fs summary')]
     .filter((e) => vis(e) && e.getBoundingClientRect().height < 47.5).map((e) => (e.textContent || e.id || e.tagName).trim().slice(0, 20) + ':' + Math.round(e.getBoundingClientRect().height));
   if (small.length) f.push('under 48 px: ' + small.slice(0, 5).join(', '));
   if (facts.screen === 'board') {
@@ -128,6 +130,18 @@ window.setupLayoutTest = async function () {
     const hud = document.querySelector('#quest .cap-hud'), strip = document.getElementById('needSlots');
     if (strip && vis(strip) && strip.scrollWidth > strip.clientWidth + 1) f.push('the quest strip of slots does not fit');
     if (hud && getComputedStyle(hud).position === 'sticky' && hud.getBoundingClientRect().height > innerHeight * 0.3) f.push('the pinned quest HUD takes over 30% of the screen (' + Math.round(hud.getBoundingClientRect().height) + 'px)');
+    // the Vehicle papers pre-fill: each visible tag reads as the spec says, sits under a field that has a value, fits its field
+    const tags = [...document.querySelectorAll('#quest .fs-scan')].filter(vis);
+    facts.scanTags = tags.length;
+    tags.forEach((t) => {
+      const box = t.closest('.fs-field'), input = box && box.querySelector('input, select');
+      const words = t.textContent.replace(/\s+/g, ' ').replace(' (opens in a new tab)', '').trim();
+      if (!/^From the (.+ scan · (please confirm|Scans disagree: check the paper) · (View scan|No scan found)|Transport Overrides note · please confirm)$/.test(words)) f.push('a scan tag reads "' + words + '"');
+      const a = t.querySelector('a');
+      if (a && (a.target !== '_blank' || !/noopener/.test(a.rel))) f.push('a View scan link does not open a new tab with rel=noopener');
+      if (!input || !input.value) f.push('a scan tag under an empty field');
+      if (t.getBoundingClientRect().right > box.getBoundingClientRect().right + 1) f.push('a scan tag is wider than its field');
+    });
     const a = document.activeElement; // whole-screen pass: a focused field is never left under the pinned HUD
     if (hud && a && hud.parentNode.contains(a) && !hud.contains(a) && getComputedStyle(hud).position === 'sticky' && a.getBoundingClientRect().top < hud.getBoundingClientRect().bottom - 1) f.push('the focused field is under the pinned quest HUD');
   }

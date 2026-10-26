@@ -79,6 +79,25 @@ assert.strictEqual(p1.fitness.pending, undefined);
 const fc = JSON.parse(JSON.stringify(run('coordTransport_({feeClerkOnly:true})')));
 assert.ok(fc.fleet.length && !fc.pnl.length && !fc.people.length, 'Fee Clerks get the papers but no bus money or staff list');
 assert.strictEqual(fc.fleet.find(b => b.reg === 'HP1').seats, 40, 'Fee Clerks get the seats (the capture page\'s count-run summary needs them)');
+// the Vehicle papers LM Studio read off the RC / fitness scans (SYNTHETIC values): their own tab, columns untouched elsewhere
+const papersTab = () => sheets.find(s => s.name === 'LM Studio Vehicle Papers');
+payload.fleet[0].papers = { chassisNo: { value: 'TESTCHASSIS01', doc: 'RC', file: 'rc.jpg', link: 'L-RC', disagree: true },
+  fuel: { value: 'Diesel', doc: 'RC', file: 'rc.jpg', link: 'L-RC' }, mfgYear: { value: '2017', doc: 'fitness', file: 'f.jpg', link: 'L-F' },
+  make: { value: '=HYPERLINK("x")', doc: 'RC', file: 'rc.jpg', link: 'L-RC' }, colour: { value: 'red', doc: 'RC', file: 'rc.jpg', link: 'L-RC' } };
+payload.fleet[1].papers = {};
+assert.strictEqual(run('coordTransportPush_({secret:"S3CRET",payload:payload})').success, true);
+const pt = JSON.parse(JSON.stringify(papersTab().getDataRange().getValues())); // arrays made inside the vm
+assert.deepStrictEqual(pt[0], ['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], 'the papers tab header');
+assert.deepStrictEqual(pt.slice(1).find(r => r[1] === 'chassisNo'), ['HP1', 'chassisNo', 'TESTCHASSIS01', 'RC', 'rc.jpg', 'L-RC', 'yes'], 'one row per bus and field, disagreement as yes');
+assert.deepStrictEqual(pt.slice(1).find(r => r[1] === 'fuel').slice(6), [''], 'agreeing scans: Disagree empty');
+assert.strictEqual(pt.slice(1).find(r => r[1] === 'make')[2], 'HYPERLINK("x")', 'a value never starts like a formula');
+assert.ok(!pt.some(r => r[1] === 'colour'), 'only the papers quest fields (and mfgYear) are stored');
+assert.strictEqual(pt.length, 5, 'header + chassisNo, fuel, mfgYear, make');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM Studio Fleet').getDataRange().getValues()[0])), ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name'], 'the fleet tab keeps its columns');
+// an older push (from before the papers) never wipes the tab with nothing
+payload.fleet.forEach(b => { delete b.papers; });
+assert.strictEqual(run('coordTransportPush_({secret:"S3CRET",payload:payload})').success, true);
+assert.strictEqual(papersTab().getDataRange().getValues().length, 5, 'a push without papers keeps the papers tab');
 // Fee Clerks see only their own campus or comma list, never a whole district
 const cg = fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8');
 const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + cg.match(/function coordVisibleCampuses_[\s\S]*?\n\}/)[0] + '; return coordVisibleCampuses_;')();
@@ -373,7 +392,14 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   runs.appendRow(['HP1-j', 'HP1', 'LMS4', 'inspection', 1, Date.parse('2026-10-22T06:00:00Z'), 'c', 'Coordinator', 0, '', '', '{"cctv":{"ok":true}}', 'ended', '', 'later@x.org']);
   runs.appendRow(['HP1-i', 'HP1', 'LMS4', 'inspection', 1, Date.parse('2026-10-20T06:00:00Z'), 'clerk@x.org', 'FeeClerk', 0, '', '', '{"cctv":{"ok":true}}', 'ended', '', 'rider@x.org']);
   const caps = book(FORM).insertSheet('Capture Stops'); caps.appendRow(['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy']); caps.appendRow(['HP5-x', 'HP5', 'LMS5', 'VID', '[]', 'P5', 'r5@x.org']);
+  const vp = book(FORM).insertSheet('LM Studio Vehicle Papers');
+  [['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], ['HP1', 'chassisNo', 'TESTCHASSIS01', 'RC', 'rc.jpg', 'L-RC', 'yes'],
+    ['HP1', 'mfgYear', '2017', 'fitness', 'f.jpg', 'L-F', ''], ['HP2', 'chassisNo', 'TESTCHASSIS02', 'RC', 'rc.jpg', 'L-RC2', ''],
+    ['HP 6-7', 'fuel', 'CNG', 'pollution', 'p.jpg', 'L-P', '']].forEach(x => vp.appendRow(x));
   const g4 = r('coordFleet_(' + fc4 + ')');
+  assert.deepStrictEqual(g4.rows.fleet[0].scan, { chassisNo: { value: 'TESTCHASSIS01', doc: 'RC', link: 'L-RC', disagree: true }, mfgYear: { value: '2017', doc: 'fitness', link: 'L-F', disagree: false } },
+    'GET: each bus carries what the scans read (value, doc, link, disagree)');
+  assert.ok(!JSON.stringify(g4).includes('TESTCHASSIS02'), 'a Fee Clerk never gets another campus\'s scan values');
   assert.strictEqual(g4.success, true);
   assert.deepStrictEqual(g4.rows.fleet.map(b => b.reg + ' ' + b.campusId), ['HP1 LMS4'], 'a Fee Clerk gets their campus (running buses only)');
   assert.deepStrictEqual(g4.rows.drivers, [], 'and no other campus\'s drivers');
@@ -384,6 +410,10 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual(gc.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP5', 'HP67'], 'a district Coordinator gets LMS 4-6');
   assert.deepStrictEqual(gc.rows.drivers.map(d => d.driverKey), ['E5']); assert.deepStrictEqual(gc.rows.captured, { HP5: { by: 'r5@x.org', at: 'P5' } });
   const go = r('coordFleet_(' + own + ')');
+  assert.strictEqual(go.rows.fleet.find(b => b.reg === 'HP2').scan.chassisNo.value, 'TESTCHASSIS02', 'the Owner gets every bus\'s scan');
+  assert.strictEqual(go.rows.fleet.find(b => b.reg === 'HP67').scan.fuel.value, 'CNG', 'a reg written with a space or hyphen still matches');
+  assert.deepStrictEqual(go.rows.fleet.find(b => b.reg === 'HP5').scan, {}, 'no scan: an empty object');
+  assert.ok(!JSON.stringify(gc.rows.fleet).includes('TESTCHASSIS02'), 'a district Coordinator gets only their district\'s scans');
   assert.deepStrictEqual(go.rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67']);
   assert.deepStrictEqual(r('coordFleet_(' + coAll + ')').rows.fleet.map(b => b.reg).sort(), ['HP1', 'HP2', 'HP5', 'HP67'], 'an ALL Coordinator sees every campus'); assert.deepStrictEqual(go.campuses, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], 'network-wide');
   c.rows = gc.rows;

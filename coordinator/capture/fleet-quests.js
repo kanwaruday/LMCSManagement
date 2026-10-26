@@ -104,6 +104,8 @@ var FleetQuests = (function () {
         { id: 'notes', col: 'Notes', type: 'text', label: 'Notes' }
       ] }
   ];
+  // the papers fields the RC / fitness scans can pre-fill (the setup page tags them "From the RC scan · please confirm")
+  var SCAN_FIELDS = ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'emissionNorm', 'seatingCapacityAsPerRc', 'dateOfRegistration'];
   var NEEDS = { inspection: { flag: 'inspected', label: 'the first safety check' }, routeTimelapse: { flag: 'captured', label: 'a route timelapse' } };
   // The Workshops tab's header: the questionnaire's own column names, because people fill this tab in by hand.
   var WORKSHOP_COLS = ['Workshop name', 'Place', 'Contact person', 'Phone', 'Which of our buses go there',
@@ -374,7 +376,21 @@ var FleetQuests = (function () {
       }
       return r;
     }
+    // the papers form may say which fields staff confirmed unchanged from the RC / fitness scans (provenance for audits;
+    // stored with the quest, never counted towards done): kept only for scan fields that are saved
+    var acc = null;
+    if (questId === 'papers' && given && typeof given === 'object' && !Array.isArray(given) && given.scanAccepted !== undefined) {
+      acc = given.scanAccepted;
+      if (!Array.isArray(acc)) return { error: 'scanAccepted: send a list of field ids' };
+      var rest = {};
+      Object.keys(given).forEach(function (k) { if (k !== 'scanAccepted') rest[k] = given[k]; });
+      given = rest;
+    }
     r = checkFields(s.fields, given, today);
+    if (acc && !r.error) {
+      var ids = SCAN_FIELDS.filter(function (id) { return acc.indexOf(id) !== -1 && r.fields[id] != null; });
+      if (ids.length) r.fields.scanAccepted = ids;
+    }
     if (r.error || questId !== 'driver') return r;
     r.ageLimit = false;
     if (r.fields.dateOfBirth) {
