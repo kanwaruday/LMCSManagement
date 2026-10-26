@@ -53,6 +53,7 @@ async function boot() {
   await load();
   const reg = String(q.get('reg') || '').toUpperCase();
   if (S.profiles.some((p) => p.reg === reg)) { go({ v: 'bus', reg }); if (stepOf(q.get('quest'))) go({ v: 'quest', reg, quest: q.get('quest') }); }
+  if (window.mountFleetBuddy) window.mountFleetBuddy(s); // Buddy's fleet missions (setup.html), after the buses are drawn
   sendQueued();
 }
 
