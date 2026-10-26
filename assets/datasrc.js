@@ -56,6 +56,7 @@
     '/coordinator/operations/':  ['approvals'],
     '/coordinator/events/':      ['approvals'],
     '/coordinator/transport/':   ['transport'],
+    '/coordinator/transport/rollcall.html': ['transport'], // daily duty roll call: the Duty Roll Call tab of the same workbook
     '/coordinator/transport/setup.html': ['transport'], // Fleet setup quests: the Fleet Profile, Driver Profile, Parts History and Workshops tabs of the same workbook
     '/coordinator/documents/':   ['docs', 'staff'],
     '/coordinator/systems/':     ['dailyreports', 'fees', 'allowlist'],

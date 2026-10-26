@@ -19,6 +19,7 @@
 // GET action=coordinatordocuments (document compliance page),
 // GET action=coordinatortransport (fleet document compliance; logic in coordinator-transport.gs),
 // GET action=coordinatortransportfleet + POST action=coordinatortransportfleetsave (Fleet setup quests, coordinator-transport.gs),
+// GET + POST action=coordinatortransportrollcall (daily duty roll call, coordinator-transport.gs),
 // POST action=coordinatorresolvetask.
 // Coordinator or Owner only; a locked Coordinator sees their district. The one exception is the daily-report issues of
 // coordinator-principal.gs (GET principalissues, POST principalissueresolve), which also admit a Principal of one campus.
@@ -144,7 +145,7 @@ function doGet(e) {
     if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken)); // its own gates (coordinator-principal.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
-    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
+    if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet', 'coordinatortransportrollcall'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
@@ -154,6 +155,7 @@ function doGet(e) {
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
     if (action === 'coordinatortransportloadout') return coordJson_(coordLoadout_(caller)); // the safety loadout list: every transport role reads it
     if (action === 'coordinatortransportfleet') return coordJson_(coordFleet_(caller)); // Fleet setup quests: the caller's campuses
+    if (action === 'coordinatortransportrollcall') return coordJson_(coordRollCall_(caller, e.parameter.date)); // daily duty roll call: the caller's campuses
     if (action === 'coordinatorpdr') return coordJson_(coordPdr_(caller));
     if (action === 'coordinatorpdrday') return coordJson_(coordPdrDay_(caller, e.parameter.date));
     if (action === 'coordinatortrackrecord') return coordJson_(coordTrackRecordGet_(caller));
@@ -182,6 +184,7 @@ function doPost(e) {
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body)); // Fee Clerks too (own campus, checked inside)
+    if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportrollcall') return coordJson_(coordRollCallSave_(caller, body)); // Fee Clerks too (own campus, checked inside)
     if (!caller || caller.feeClerkOnly) return coordJson_({ success: false, error: 'Not authorized' });
     const action = String(body.action || '').toLowerCase();
     if (action === 'coordinatorpdrissue') return coordJson_(coordPdrIssueAction_(caller, body));

@@ -648,3 +648,92 @@ function coordFleetWorkshops_(reg, quest, fields) {
     sh.getRange(at + 1, iBus + 1).setValue(v[at][iBus]);
   });
 }
+
+// ── Daily duty roll call (Fleet Operations): who drove and who attended each running bus, today or yesterday ──
+// Duty Roll Call tab, one row per reg per date (a resave replaces it): Date | Reg | Campus | Driver | Attendant | Driver is substitute |
+// Attendant is substitute | Recorded by | Recorded at. Names only: no phone, date of birth or licence ever comes here.
+// The usual pair: the roster's driver (the Driver column of the fleet push, the name the Driver card shows) and the Safety kit quest's
+// attendantHelperName. A substitute is a name of the Transport Staff tab (the transport people roster) of the bus's campus.
+// GET  action=coordinatortransportrollcall {date}  -> {date, today, buses: [{reg, campus, campusId, route, usual: {driver, attendant},
+//                                                     roll: {driver, attendant, driverSub, attendantSub, by} | null}], names: {LMSn: [names]}}
+// POST action=coordinatortransportrollcall {reg, date, driver, attendant, driverSub, attendantSub} -> {success}
+// Same scope as the fleet setup: Fee Clerk own campus, Coordinator their district, Owner all (coordVisibleCampuses_).
+const COORD_ROLLCALL_TAB = 'Duty Roll Call';
+const COORD_ROLLCALL_COLS = ['Date', 'Reg', 'Campus', 'Driver', 'Attendant', 'Driver is substitute', 'Attendant is substitute', 'Recorded by', 'Recorded at'];
+
+/** The roll call may be for today or yesterday only (India). '' = today. Returns the date, or null. */
+function coordRollCallDate_(d) {
+  const today = coordFleetToday_(), s = String(d || '').trim() || today;
+  return s === today || s === gpsAddDays_(today, -1) ? s : null;
+}
+
+/** {reg: {driver, attendant}} for the given running buses: the usual pair. 'none' (the quest's word for no attendant) reads as ''. */
+function coordRollCallUsual_(buses) {
+  const att = {};
+  gpsRows_(COORD_FLEET_TABS.profile).forEach(function (r) {
+    let s = {};
+    try { s = JSON.parse(r.safety || '{}') || {}; } catch (e) { s = {}; }
+    const a = String(s.attendantHelperName || '').trim();
+    att[FleetQuests.normReg(r.reg)] = /^(none|no|nil|-)$/i.test(a) ? '' : a;
+  });
+  const out = {};
+  buses.forEach(function (b) { out[b.reg] = { driver: String(b.driver || '').trim(), attendant: att[b.reg] || '' }; });
+  return out;
+}
+
+/** {LMSn: [names, sorted]} from the Transport Staff tab, for the given campus ids. Names only. */
+function coordRollCallNames_(campusIds) {
+  const out = {};
+  gpsRows_(COORD_TRANSPORT_TAB_PEOPLE).forEach(function (r) {
+    const id = 'LMS' + String(r.Campus || '').replace(/\D/g, ''), n = String(r.Name || '').replace(/\s+/g, ' ').trim();
+    if (!n || campusIds.indexOf(id) === -1) return;
+    if ((out[id] = out[id] || []).indexOf(n) === -1) out[id].push(n);
+  });
+  Object.keys(out).forEach(function (k) { out[k].sort(); });
+  return out;
+}
+
+function coordRollCall_(caller, date) {
+  const d = coordRollCallDate_(date);
+  if (!d) return { success: false, error: 'The roll call is for today or yesterday only' };
+  const vis = coordVisibleCampuses_(caller);
+  const buses = coordFleetBuses_().filter(function (b) { return !vis || vis.indexOf(b.campusId) !== -1; })
+    .sort(function (a, b) { return a.reg < b.reg ? -1 : a.reg > b.reg ? 1 : 0; });
+  const usual = coordRollCallUsual_(buses), rows = {};
+  gpsRows_(COORD_ROLLCALL_TAB).forEach(function (r) { if (String(r.Date) === d) rows[FleetQuests.normReg(r.Reg)] = r; });
+  return { success: true, date: d, today: coordFleetToday_(),
+    names: coordRollCallNames_(vis || COORD_ALL_CAMPUSES),
+    buses: buses.map(function (b) {
+      const r = rows[b.reg];
+      return { reg: b.reg, campus: b.campus, campusId: b.campusId, route: b.route, usual: usual[b.reg],
+        roll: r ? { driver: String(r.Driver), attendant: String(r.Attendant), driverSub: r['Driver is substitute'] === 'yes', attendantSub: r['Attendant is substitute'] === 'yes', by: String(r['Recorded by']) } : null };
+    }) };
+}
+
+function coordRollCallSave_(caller, body) {
+  const fail = function (m) { return { success: false, error: m }; };
+  const reg = FleetQuests.normReg(body.reg), d = coordRollCallDate_(body.date);
+  const bus = coordFleetBuses_().filter(function (b) { return b.reg === reg; })[0];
+  if (!bus) return fail('Vehicle ' + (reg || '(none)') + ' is not a running bus');
+  const vis = coordVisibleCampuses_(caller);
+  if (vis && vis.indexOf(bus.campusId) === -1) return fail('You can only record buses of your own campuses');
+  if (!d || !body.date) return fail('The roll call is for today or yesterday only');
+  const clean = function (v) { return String(v || '').replace(/\s+/g, ' ').trim(); };
+  const driver = clean(body.driver), attendant = clean(body.attendant);
+  if (!driver) return fail('Pick the driver');
+  const u = coordRollCallUsual_([bus])[reg], ok = (coordRollCallNames_([bus.campusId])[bus.campusId] || []).concat([u.driver, u.attendant].filter(String));
+  if (ok.indexOf(driver) === -1 || (attendant && ok.indexOf(attendant) === -1)) return fail('Pick a name from the staff list');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    // ponytail: the tab is rewritten whole (~25 buses a day, ~9k rows a year); keep a year or move to in-place writes if it slows
+    const all = gpsRows_(COORD_ROLLCALL_TAB).filter(function (r) { return !(String(r.Date) === d && FleetQuests.normReg(r.Reg) === reg); });
+    const row = {};
+    row[COORD_ROLLCALL_COLS[0]] = d; row.Reg = reg; row.Campus = bus.campusId; row.Driver = driver; row.Attendant = attendant;
+    row['Driver is substitute'] = body.driverSub === true ? 'yes' : 'no'; row['Attendant is substitute'] = body.attendantSub === true ? 'yes' : 'no';
+    row['Recorded by'] = caller.email; row['Recorded at'] = new Date().toISOString();
+    all.push(row);
+    gpsWrite_(COORD_ROLLCALL_TAB, COORD_ROLLCALL_COLS, all);
+  } finally { lock.releaseLock(); }
+  return { success: true };
+}
