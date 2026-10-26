@@ -107,11 +107,11 @@ Built so the later hand-over is a configuration change, not a rewrite:
 
 | v1 (this build) | Later (needs data we don't hold in Approvals) |
 |---|---|
-| Valid dates, `toDate >= fromDate`, no past dates beyond a grace period | 10% cap / auto Double Leave (needs each branch's teacher headcount by day) |
+| Valid dates, `toDate >= fromDate`; **future dates, or today until 7:00 AM IST; a past date or today after 7:00 AM is refused** (decision 7) | 10% cap / auto Double Leave (needs each branch's teacher headcount by day) |
 | Working-day count excluding Sundays, 2nd Saturdays and calendar holidays | Special Day tier from the campus special-day calendar |
 | Overlap guard: same teacher, overlapping Pending/Approved dates is refused (extends the existing duplicate guard) | CL balance and the 31 March lapse (the balance lives in Payroll's Owner-only backend) |
 | Long Leave auto-flag (over 6 working days) and sandwich note shown to the decider | Same-role overlap check |
-| Same-day request after 7:00 AM IST is labelled "late notice: may be recorded as Absent" | Prefilling Payroll's leave counts from approved leave |
+| The form's refusal after the deadline reads: "This can no longer be applied for. Your Principal will record it (as Absent if it was not notified by 7:00 AM)." | Prefilling Payroll's leave counts from approved leave (open question 6) |
 
 ### 6. Screens
 
@@ -148,7 +148,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
 2. ~~One "Leave" category with a type dropdown, or separate categories?~~ **Answered: one "Leave" + type dropdown (A).**
 3. ~~Which types can a teacher request~~ **Answered (Uday): "Single, Short, Half, Special Day Leaves, Late".** Casual, Compensatory and Emergency are NOT on the dropdown. Casual and Emergency were then added (Q4 below). **Late: answered in Q5 below.**
 4. ~~In "days on track", does a half-day leave excuse the whole day or half of it?~~ **Answered (decision 6): the whole day; Short and Late do not.**
-5. Can a teacher file leave for a past date or the same day? (recommend: same day until 7:00 AM, past dates only by a Principal on their behalf)
+5. ~~Can a teacher file leave for a past date or the same day?~~ **Answered (decision 7): future dates, and today until 7:00 AM IST.**
 6. Should approved leave later prefill Payroll's monthly leave counts? (recommend yes, as a separate step after the game)
 
 ## Uday's decisions
@@ -171,3 +171,7 @@ Target: P1 to P3 in November 2026, so the game has real data before the February
    So Single, Casual, Emergency, Special Day and Half day excuse the whole day; Short leave and Late leave it an ordinary working
    day. The contract returns each day with the real `fraction` (1, 0.5, 0.33) **and** a ready-made `excused` yes/no (true for
    full-day types and Half day, false for Short), so the game never encodes the bye-law. Late is not returned (decision 5).
+7. **Past-date and same-day requests (2026-10-26):** "Future + today till 7 AM" (option A). The form accepts future dates, and today's
+   date until 7:00 AM IST. After that, or for any past date, it refuses and says the Principal will record it. Management can still enter
+   an exceptional case directly in the sheet. Late is same-day by nature, so it is allowed until 7:00 AM that day. The 7:00 AM check is
+   done on the server clock (IST), never the teacher's device.
