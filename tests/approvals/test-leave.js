@@ -252,4 +252,33 @@ T('action approvedleave: teacher sees only their own, principal their campus', (
   assert.equal(act(teacher, { from: day, to: '2020-01-01' }).success, false, 'bad window');
 });
 
+T('approver seam: Management decides all leave now; the Principal hand-over is configuration only', () => {
+  const w = vm.createContext({ console, callerHasRole_: (c, r) => (c.roles || []).includes(r) });
+  vm.runInContext(read('approvals-leave.gs'), w);
+  const src = read('approvals.gs');
+  const grab = (name) => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i), e; for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}') { d--; if (!d) { e = k; break; } } } return src.slice(i, e + 1); };
+  vm.runInContext(['aprCanDecide_', 'aprCanDecideAny_', 'aprCanDecideRow_'].map(grab).join('\n') + '\nconst APR_LEAVE_PRINCIPAL_TYPES = [];', w);
+  const owner = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'] };
+  const coord = { email: 'c@lms.org.in', campusId: 'ALL', roles: ['Coordinator'], canApprove: true };
+  const coordNo = { email: 'c2@lms.org.in', campusId: 'ALL', roles: ['Coordinator'] };
+  const principal = { email: 'p@lms.org.in', campusId: 'LMS4', roles: ['Principal'] };
+  const principal2 = { email: 'p2@lms.org.in', campusId: 'LMS2', roles: ['Principal'] };
+  const leaveRow = (type, campus) => row({ id: 'z', type, from: '2026-10-28', campus, status: 'Pending' });
+  const can = (c, r) => w.aprCanDecideRow_(c, r), any = (c) => w.aprCanDecideAny_(c);
+  // today: empty list
+  assert.equal(can(owner, leaveRow('Casual Leave', 'LMS4')), true); assert.equal(can(coord, leaveRow('Casual Leave', 'LMS4')), true);
+  assert.equal(can(coordNo, leaveRow('Casual Leave', 'LMS4')), false, 'a Coordinator without CanApprove still cannot');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4')), false, 'Principal cannot decide leave yet');
+  assert.equal(any(principal), false); assert.equal(any(owner), true);
+  // later: fill the list, nothing else changes
+  vm.runInContext("APR_LEAVE_PRINCIPAL_TYPES.push('Casual Leave', 'Single Leave')", w);
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4')), true, 'own campus, listed type');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS2')), false, 'another campus');
+  assert.equal(can(principal2, leaveRow('Casual Leave', 'LMS4')), false, 'another campus (reverse)');
+  assert.equal(can(principal, leaveRow('Special Day Leave', 'LMS4')), false, 'a type left with Management');
+  assert.equal(can(principal, row({ id: 'q', category: 'Financial / Purchase', campus: 'LMS4' })), false, 'never a non-leave category');
+  assert.equal(can(teacher, leaveRow('Casual Leave', 'LMS4')), false, 'a teacher cannot decide');
+  assert.equal(any(principal), true); assert.equal(any(teacher), false);
+});
+
 console.log('all approvals leave tests passed');

@@ -157,6 +157,20 @@ function aprCanDecide_(caller) {
   return callerHasRole_(caller, 'Owner') || (callerHasRole_(caller, 'Coordinator') && !!caller.canApprove);
 }
 
+// 2026-10-26, teacher leave decision 1 (Uday): ALL leave goes to Management (Owner / delegated Coordinator) for now. Every decide path
+// asks aprCanDecideRow_ about the row it is about to change, so handing routine leave to a campus Principal later is a configuration
+// change: put the leave types (e.g. 'Casual Leave', 'Single Leave', 'Half Leave', 'Short Leave', 'Emergency Leave') in the list below.
+// Compensatory, Long Leave and Special Day stay with Management by simply not being listed. Empty = nothing changes.
+const APR_LEAVE_PRINCIPAL_TYPES = [];
+function aprCanDecideAny_(caller) {
+  return aprCanDecide_(caller) || (APR_LEAVE_PRINCIPAL_TYPES.length > 0 && callerHasRole_(caller, 'Principal'));
+}
+function aprCanDecideRow_(caller, row) {
+  if (aprCanDecide_(caller)) return true;
+  return String(row[2]) === APR_LEAVE_CATEGORY && APR_LEAVE_PRINCIPAL_TYPES.indexOf(String(row[APR_LV_COL.TYPE])) !== -1 &&
+    callerHasRole_(caller, 'Principal') && caller.campusId !== 'ALL' && String(row[1]).trim() === caller.campusId;
+}
+
 function aprISO_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
 
 function aprRowToObj_(row) {
@@ -199,7 +213,7 @@ function aprList_(caller) {
   }
   out.sort(function (a, b) { return b.requestedAt.localeCompare(a.requestedAt); });
   aprAnnotateAwaitingMd_(out);
-  return { success: true, requests: out, canDecide: aprCanDecide_(caller) };
+  return { success: true, requests: out, canDecide: aprCanDecideAny_(caller) };
 }
 
 // action=approvaldetail&id=... -- same Teacher-only-vs-everyone-else
@@ -218,7 +232,7 @@ function aprDetail_(caller, id) {
     }
     const req = aprRowToObj_(values[i]);
     aprAnnotateAwaitingMd_([req]);
-    return { success: true, request: req, comments: aprComments_(id), canDecide: aprCanDecide_(caller) };
+    return { success: true, request: req, comments: aprComments_(id), canDecide: aprCanDecideRow_(caller, values[i]) };
   }
   return { success: false, error: 'Request not found' };
 }
@@ -427,7 +441,7 @@ function aprDeleteComment_(caller, body) {
 // is required on every decision -- that's half the point of this
 // portal existing.
 function aprDecide_(caller, body) {
-  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to decide approvals' };
+  if (!aprCanDecideAny_(caller)) return { success: false, error: 'Not authorized to decide approvals' };
   const decision = String(body.decision || '');
   if (APR_DECISIONS.indexOf(decision) === -1) return { success: false, error: 'Invalid decision' };
   const note = String(body.note || '').trim();
@@ -440,6 +454,7 @@ function aprDecide_(caller, body) {
   if (caller.campusId !== 'ALL' && String(values[rowIdx][1]).trim() !== caller.campusId) {
     return { success: false, error: 'Not authorized for that campus' };
   }
+  if (!aprCanDecideRow_(caller, values[rowIdx])) return { success: false, error: 'Not authorized to decide this request' };
   if (decision === APR_STATUS.REVOKED && String(values[rowIdx][13]) !== APR_STATUS.APPROVED) {
     return { success: false, error: 'Only an Approved request can be revoked' };
   }
@@ -521,7 +536,7 @@ function aprReferees_(caller) {
 // Decider-only, same campus scoping as aprDecide_. body.ids = [id,...] (max 200),
 // body.archive = true|false.
 function aprArchive_(caller, body) {
-  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to archive approvals' };
+  if (!aprCanDecideAny_(caller)) return { success: false, error: 'Not authorized to archive approvals' };
   const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { success: false, error: 'Nothing to archive' };
   const archive = body.archive !== false;
@@ -533,6 +548,7 @@ function aprArchive_(caller, body) {
     const i = aprFindRowIndex_(values, id);
     if (i === -1) return;
     if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) return;
+    if (!aprCanDecideRow_(caller, values[i])) return;
     if (archive && [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.REVOKED].indexOf(String(values[i][13])) === -1) return; // only decided ones
     sheet.getRange(i + 1, 19).setValue(archive ? 'TRUE' : '');
     count++;
