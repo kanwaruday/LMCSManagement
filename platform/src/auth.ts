@@ -9,8 +9,10 @@
 // at most once an hour. The caller is re-resolved on every request (like Apps Script, minus its 5-minute cache), so an
 // allowlist removal or a deactivation takes effect at once.
 //
-// View as (pdrResolveViewAsCaller_): the session carries the viewed employee's code; the caller keeps the viewer's own
-// email but the employee's campus and code, as a Teacher, never a decider. Every write is refused while it is on.
+// View as: the session carries the viewed employee's code. req.caller stays the REAL signed-in caller (flagged viewAs),
+// because PDR applies pdrResolveViewAsCaller_ only to the "my..." views (main.gs doGet), never to Approvals.
+// req.viewAsTarget is that resolved view-as caller (viewer's email, employee's campus and code, Teacher), for those views
+// only. Every write is refused while it is on. Re-authorised on every request: a viewer who lost the right drops out of it.
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { OAuth2Client } from 'google-auth-library';
@@ -26,7 +28,7 @@ export type VerifyIdToken = (idToken: string, audience: string) => Promise<Googl
 export type SessionInfo = { tenantId: string; tokenHash: string; email: string };
 
 declare module 'fastify' {
-  interface FastifyRequest { caller: Caller; session: SessionInfo }
+  interface FastifyRequest { caller: Caller; viewAsTarget: Caller | null; session: SessionInfo }
   interface FastifyContextConfig { viewAsAllowed?: boolean } // session routes that must work while viewing as someone
 }
 
@@ -87,7 +89,8 @@ export function assertWritable(caller: Caller): void {
   if (caller.viewAs) throw Object.assign(new Error('VIEW_AS_READ_ONLY'), { code: 'VIEW_AS_READ_ONLY', statusCode: 403 });
 }
 
-// preHandler: Bearer token -> req.caller, req.session; 401 when missing/expired/revoked, 403 on a write while viewing as.
+// preHandler: Bearer token -> req.caller, req.viewAsTarget, req.session; 401 when missing/expired/revoked or the person
+// (or their domain) is no longer allowed, 403 on a write while viewing as.
 export function requireSession(sql: Sql) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
@@ -99,14 +102,22 @@ export function requireSession(sql: Sql) {
                            from sessions where token_hash = ${tokenHash} and revoked_at is null and expires_at > now()`;
       if (!s) return null;
       if (s.stale) await tx`update sessions set last_seen_at = now(), expires_at = now() + interval '30 days' where token_hash = ${tokenHash}`;
-      const real = await resolvePerson(tx, s.person_email);
+      const email = s.person_email as string;
+      const real = await resolveCaller(tx, email, email.split('@')[1] ?? ''); // domain re-checked: a removed domain ends its sessions
       if (!real) return null;
-      // a viewed employee who has since left: stay read-only as yourself rather than silently allowing writes
-      const caller = s.view_as ? ((await viewAsCaller(tx, real, s.view_as)) ?? { ...real, viewAs: true }) : real;
-      return { caller, email: s.person_email as string };
+      if (!s.view_as) return { caller: real, target: null, email };
+      // re-authorise view-as now: the viewer may have been demoted, or the employee moved school or left
+      const scope = viewAsScope(real);
+      const target = scope && (await viewAsCaller(tx, real, s.view_as));
+      if (!target || (scope === 'school' && target.campusId !== real.campusId)) {
+        await tx`update sessions set view_as = null where token_hash = ${tokenHash}`;
+        return { caller: real, target: null, email };
+      }
+      return { caller: { ...real, viewAs: true }, target, email };
     }, sql);
     if (!found) return fail(reply, 401, 'NOT_SIGNED_IN');
     req.caller = found.caller;
+    req.viewAsTarget = found.target;
     req.session = { tenantId, tokenHash, email: found.email };
     if (found.caller.viewAs && !READS.includes(req.method) && !req.routeOptions.config.viewAsAllowed) return fail(reply, 403, 'VIEW_AS_READ_ONLY');
   };
@@ -144,7 +155,8 @@ export function registerAuth(app: FastifyInstance, { sql, clientId, verifyIdToke
   });
 
   app.get('/api/session', { preHandler: session }, async (req) =>
-    withTenant(req.session.tenantId, async (tx) => ({ person: await personOf(tx, req.caller), viewAs: req.caller.viewAs }), sql));
+    withTenant(req.session.tenantId, async (tx) => ({ person: await personOf(tx, req.caller), viewAs: req.caller.viewAs,
+      viewAsPerson: req.viewAsTarget && await personOf(tx, req.viewAsTarget) }), sql));
 
   app.delete('/api/session', { preHandler: session, config: { viewAsAllowed: true } }, async (req) => {
     await withTenant(req.session.tenantId, (tx) => tx`update sessions set revoked_at = now() where token_hash = ${req.session.tokenHash}`, sql);

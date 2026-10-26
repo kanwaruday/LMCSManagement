@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { testDb, LMCS_TENANT_ID } from './helpers.ts';
-import { loadPdrOracle, loadCoordOracle, type Rows } from './oracle.ts';
+import { loadPdrOracle, loadCoordOracle, type Oracle, type Rows } from './oracle.ts';
 import { withTenant, type Tx } from '../src/db.ts';
 import { buildServer } from '../src/server.ts';
 import { resolveCaller, requireSession, assertWritable, type Caller, type GooglePayload } from '../src/auth.ts';
@@ -47,12 +47,16 @@ const payloads = new Map<string, GooglePayload>();
 const fakeVerify = async (idToken: string) => payloads.get(idToken) ?? null;
 const asLmcs = <T>(fn: (tx: Tx) => Promise<T>) => withTenant(LMCS_TENANT_ID, fn, db.sql);
 const setAutoSignIn = (on: boolean) => asLmcs((tx) => tx`update switches set "on" = ${on} where feature = 'staff_auto_signin'`);
+// Shared state a test changes is put back in t.after, so one failing test can't leave it changed for the next.
+type T = { after(fn: () => unknown): void };
+const autoSignIn = async (t: T, on: boolean) => { t.after(() => setAutoSignIn(false)); await setAutoSignIn(on); };
+const restoreAfter = (t: T, fn: (tx: Tx) => Promise<unknown>) => t.after(() => asLmcs(fn));
 
 function app() {
   const a = buildServer({ sql: db.sql, config: { APP_ORIGIN: ORIGIN, GOOGLE_SIGNIN_CLIENT_ID: CLIENT }, verifyIdToken: fakeVerify });
   const guard = requireSession(db.sql);
   for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const) {
-    a.route({ method, url: '/api/test-echo', preHandler: guard, handler: async (req) => ({ caller: req.caller }) });
+    a.route({ method, url: '/api/test-echo', preHandler: guard, handler: async (req) => ({ caller: req.caller, target: req.viewAsTarget }) });
   }
   return a;
 }
@@ -129,8 +133,8 @@ test('rejects hd outside tenant domains', async () => {
   await a.close();
 });
 
-test('allowlist role wins over department role', async () => {
-  await setAutoSignIn(true);
+test('allowlist role wins over department role', async (t) => {
+  await autoSignIn(t, true);
   const dual = await asLmcs((tx) => resolveCaller(tx, at('dual'), DOMAIN));
   assert.deepEqual([dual?.roles, dual?.campusId, dual?.employeeCode], [['Principal'], 'LMS3', 'KUL/T-0002']);
   assert.equal(await asLmcs((tx) => resolveCaller(tx, at('odd'), DOMAIN)), null, 'an allowlist row with no recognised role is refused, never falls back');
@@ -139,11 +143,10 @@ test('allowlist role wins over department role', async () => {
   const coord = await asLmcs((tx) => resolveCaller(tx, at('coord.yes'), DOMAIN));
   assert.equal(coord?.canApprove, true);
   assert.equal((await asLmcs((tx) => resolveCaller(tx, at('coord.no'), DOMAIN)))?.canApprove, false);
-  await setAutoSignIn(false);
 });
 
-test('department rules give Teacher/Staff/none', async () => {
-  await setAutoSignIn(true);
+test('department rules give Teacher/Staff/none', async (t) => {
+  await autoSignIn(t, true);
   const want: Record<string, string | null> = { Teaching: 'Teacher', AdminPTI: 'Teacher', AdminIT: 'Teacher', AdminClerk: 'Staff',
     'Non-Teaching': 'Staff', Transport: 'Staff', AdminTM: null, AdminHead: null };
   for (const [dept, role] of Object.entries(want)) {
@@ -153,39 +156,37 @@ test('department rules give Teacher/Staff/none', async () => {
   }
   assert.equal(await asLmcs((tx) => resolveCaller(tx, at('head.office'), DOMAIN)), null, 'no campus: allowlist only');
   assert.equal(await asLmcs((tx) => resolveCaller(tx, at('nobody'), DOMAIN)), null);
-  await setAutoSignIn(false);
 });
 
-test('auto roles only when staff_auto_signin is on', async () => {
+test('auto roles only when staff_auto_signin is on', async (t) => {
   const a = app();
   await setAutoSignIn(false);
   assert.equal((await signIn(a, at('staff1'))).statusCode, 401);
   assert.equal((await signIn(a, at('owner'))).statusCode, 200, 'the allowlist does not depend on the switch');
-  await setAutoSignIn(true);
+  await autoSignIn(t, true);
   const res = await signIn(a, at('staff1'));
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json().person, { email: at('staff1'), name: 'Staff One', campusId: 'LMS1', campusName: 'LMS 1',
     role: 'Staff', roles: ['Staff'], employeeCode: 'KUL/T-0001' });
   // a campus-scoped switch row turns it on for that campus only
   await setAutoSignIn(false);
+  restoreAfter(t, (tx) => tx`delete from switches where scope_kind = 'campus'`);
   await asLmcs((tx) => tx`insert into switches (tenant_id, feature, scope_kind, scope_id, "on") values (${LMCS_TENANT_ID}, 'staff_auto_signin', 'campus', 'LMS2', true)`);
   assert.equal((await signIn(a, at('staff1'))).statusCode, 401, 'LMS1 still off');
   assert.equal((await signIn(a, at('teacher2'))).statusCode, 200, 'LMS2 on');
-  await asLmcs((tx) => tx`delete from switches where scope_kind = 'campus'`);
   await a.close();
 });
 
-test('inactive person refused', async () => {
-  await setAutoSignIn(true);
+test('inactive person refused', async (t) => {
+  await autoSignIn(t, true);
   const a = app();
   assert.equal((await signIn(a, at('inactive'))).statusCode, 401);
   // an Active person signed in, then deactivated by the sync: the next request is refused
   const { token } = (await signIn(a, at('teacher2'))).json();
   assert.equal((await a.inject({ method: 'GET', url: '/api/session', headers: bearer(token) })).statusCode, 200);
+  restoreAfter(t, (tx) => tx`update people set active = true where employee_code = 'KEL/T-0006'`);
   await asLmcs((tx) => tx`update people set active = false where employee_code = 'KEL/T-0006'`);
   assert.equal((await a.inject({ method: 'GET', url: '/api/session', headers: bearer(token) })).statusCode, 401);
-  await asLmcs((tx) => tx`update people set active = true where employee_code = 'KEL/T-0006'`);
-  await setAutoSignIn(false);
   await a.close();
 });
 
@@ -237,8 +238,11 @@ test('view-as refuses every write', async () => {
   const echo = await a.inject({ method: 'GET', url: '/api/test-echo', headers: h });
   assert.equal(echo.statusCode, 200);
   const c: Caller = echo.json().caller;
-  // same as pdrResolveViewAsCaller_: the viewer's own email, the viewed employee's campus and code, Teacher, never a decider
-  assert.deepEqual([c.email, c.campusId, c.roles, c.employeeCode, c.canApprove, c.viewAs], [at('owner'), 'LMS2', ['Teacher'], 'KEL/T-0006', false, true]);
+  // req.caller: the REAL signed-in Owner, flagged (Approvals keep the real caller, as PDR does)
+  assert.deepEqual([c.email, c.campusId, c.roles, c.canApprove, c.viewAs], [at('owner'), 'ALL', ['Owner'], false, true]);
+  // req.viewAsTarget: pdrResolveViewAsCaller_'s caller, for the "my..." views: the viewer's email, the employee's campus and code
+  const v: Caller = echo.json().target;
+  assert.deepEqual([v.email, v.campusId, v.roles, v.employeeCode, v.canApprove, v.viewAs], [at('owner'), 'LMS2', ['Teacher'], 'KEL/T-0006', false, true]);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
     const res = await a.inject({ method, url: '/api/test-echo', headers: h, payload: {} });
     assert.equal(res.statusCode, 403, method);
@@ -248,8 +252,8 @@ test('view-as refuses every write', async () => {
   assert.doesNotThrow(() => assertWritable({ ...c, viewAs: false }));
   // leaving view-as is allowed and restores the real caller
   assert.equal((await a.inject({ method: 'DELETE', url: '/api/session/view-as', headers: h })).statusCode, 200);
-  const back = (await a.inject({ method: 'POST', url: '/api/test-echo', headers: h, payload: {} })).json().caller;
-  assert.deepEqual([back.roles, back.viewAs], [['Owner'], false]);
+  const back = (await a.inject({ method: 'POST', url: '/api/test-echo', headers: h, payload: {} })).json();
+  assert.deepEqual([back.caller.roles, back.caller.viewAs, back.target], [['Owner'], false, null]);
   // who may view as whom (pdrViewAsScope_): a Teacher nobody, a one-school Principal only their own school
   const teacher = (await signIn(a, at('teacher1'))).json().token;
   assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: bearer(teacher), payload: { employeeCode: 'KEL/T-0006' } })).statusCode, 403);
@@ -257,6 +261,48 @@ test('view-as refuses every write', async () => {
   assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: bearer(principal), payload: { employeeCode: 'KEL/T-0006' } })).statusCode, 403, 'LMS2 employee');
   assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: bearer(principal), payload: { employeeCode: 'KUL/T-0001' } })).statusCode, 200, 'own school');
   assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: h, payload: { employeeCode: 'KUL/T-0004' } })).statusCode, 404, 'inactive employee');
+  await a.close();
+});
+
+test('view-as is re-authorised on every request: a demoted viewer drops out of it', async (t) => {
+  const a = app();
+  const { token } = (await signIn(a, at('principal1'))).json();
+  const h = bearer(token);
+  assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: h, payload: { employeeCode: 'KUL/T-0001' } })).statusCode, 200);
+  assert.equal((await a.inject({ method: 'GET', url: '/api/test-echo', headers: h })).json().caller.viewAs, true);
+  restoreAfter(t, (tx) => tx`update allowlist set roles = '{Principal}' where email = ${at('principal1')}`);
+  await asLmcs((tx) => tx`update allowlist set roles = '{Teacher}' where email = ${at('principal1')}`);
+  const echo = (await a.inject({ method: 'GET', url: '/api/test-echo', headers: h })).json();
+  assert.deepEqual([echo.caller.roles, echo.caller.viewAs, echo.target], [['Teacher'], false, null]);
+  const [s] = await asLmcs((tx) => tx`select view_as from sessions where token_hash = ${hashOf(token)}`);
+  assert.equal(s.view_as, null, 'view-as cleared on the session');
+  assert.equal((await a.inject({ method: 'POST', url: '/api/test-echo', headers: h, payload: {} })).statusCode, 200, 'writes as themselves again');
+  // a one-school Principal whose viewed employee moves to another school also drops out
+  await asLmcs((tx) => tx`update allowlist set roles = '{Principal}' where email = ${at('principal1')}`);
+  assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: h, payload: { employeeCode: 'KUL/T-0001' } })).statusCode, 200);
+  restoreAfter(t, (tx) => tx`update people set campus_code = 'LMS1' where employee_code = 'KUL/T-0001'`);
+  await asLmcs((tx) => tx`update people set campus_code = 'LMS2' where employee_code = 'KUL/T-0001'`);
+  assert.equal((await a.inject({ method: 'GET', url: '/api/test-echo', headers: h })).json().caller.viewAs, false);
+  await a.close();
+});
+
+test('allowlist row deleted: the next request is refused', async (t) => {
+  const a = app();
+  const { token } = (await signIn(a, at('coord.no'))).json();
+  assert.equal((await a.inject({ method: 'GET', url: '/api/session', headers: bearer(token) })).statusCode, 200);
+  const [row] = await asLmcs((tx) => tx`select * from allowlist where email = ${at('coord.no')}`);
+  restoreAfter(t, (tx) => tx`insert into allowlist ${tx(row)}`);
+  await asLmcs((tx) => tx`delete from allowlist where email = ${at('coord.no')}`);
+  assert.equal((await a.inject({ method: 'GET', url: '/api/session', headers: bearer(token) })).statusCode, 401);
+  await a.close();
+});
+
+test('domain removed from the tenant: existing sessions are refused', async (t) => {
+  const a = app();
+  const { token } = (await signIn(a, at('owner'))).json();
+  restoreAfter(t, (tx) => tx`update tenants set allowed_domains = ${[DOMAIN]} where id = ${LMCS_TENANT_ID}`);
+  await asLmcs((tx) => tx`update tenants set allowed_domains = '{lms.org.in}' where id = ${LMCS_TENANT_ID}`);
+  assert.equal((await a.inject({ method: 'GET', url: '/api/session', headers: bearer(token) })).statusCode, 401);
   await a.close();
 });
 
@@ -328,9 +374,12 @@ function allowed(res: any): boolean {
   return true;
 }
 
-test('can() matches the PDR oracle for every role × action × row', async () => {
-  await setAutoSignIn(true);
-  const fx = { allowlist: ALLOWLIST, tabs: EMP_TABS, props: { STAFF_AUTO_SIGNIN: 'on' } };
+test('can() matches the PDR oracle for every role × action × row', async (t) => {
+  await autoSignIn(t, true);
+  // the Roster proxy's action=employees, which pdrResolveViewAsCaller_ reads
+  const roster = PEOPLE.filter((p) => p[5] && p[3]).map((p) => ({ employeeCode: p[0], name: p[2], school: 'LMS ' + p[3]!.slice(3) }));
+  const fx = { allowlist: ALLOWLIST, tabs: EMP_TABS, props: { STAFF_AUTO_SIGNIN: 'on' },
+    fetch: (url: string) => (url.endsWith('?action=employees') ? { code: 200, body: { success: true, employees: roster } } : undefined) };
   const pdr = loadPdrOracle(fx);
   const pdrFuture = loadPdrOracle({ ...fx, consts: { APR_LEAVE_PRINCIPAL_TYPES: PRINCIPAL_TYPES } });
   const coord = loadCoordOracle(fx);
@@ -354,6 +403,26 @@ test('can() matches the PDR oracle for every role × action × row', async () =>
     if (g.employeeCode) assert.equal(c.employeeCode, g.employeeCode, email);
     callers.set(email, c);
   }
+  // view-as subjects (R9): the oracle gets viewAsCode on every call; can() gets the caller the approvals handlers see,
+  // i.e. req.caller from the real session hook while view-as is on
+  const subjects: { key: string; email: string; viewAsCode?: string }[] = CALLERS.map((email) => ({ key: email, email }));
+  const a = app();
+  for (const [viewer, code] of [['owner', 'KEL/T-0006'], ['coord.no', 'KUL/T-0001'], ['principal1', 'KUL/T-0001']]) {
+    const email = at(viewer), key = `${email} viewing ${code}`;
+    const h = bearer((await signIn(a, email)).json().token);
+    assert.equal((await a.inject({ method: 'POST', url: '/api/session/view-as', headers: h, payload: { employeeCode: code } })).statusCode, 200, key);
+    const seen = (await a.inject({ method: 'GET', url: '/api/test-echo', headers: h })).json();
+    assert.equal(seen.caller.viewAs, true, key);
+    callers.set(key, seen.caller);
+    subjects.push({ key, email, viewAsCode: code });
+    // the oracle really does resolve this viewAsCode (for the "my..." views), to the same person as req.viewAsTarget
+    const resolved = JSON.parse(JSON.stringify(pdr.as(email).ctx.pdrResolveViewAsCaller_(pdr.ctx.verifyCallerToken_('tok-' + email), code)));
+    assert.deepEqual([resolved.employeeCode, resolved.campusId, resolved.roles], [seen.target.employeeCode, seen.target.campusId, seen.target.roles], key);
+  }
+  await a.close();
+  const viaViewAs = (o: Oracle, code?: string): Oracle => (!code ? o : { ...o,
+    get: (e, action, params = {}) => o.get(e, action, { ...params, viewAsCode: code }),
+    post: (e, body) => o.post(e, { ...body, viewAsCode: code }) });
 
   const rows: Row[] = [];
   for (const category of pdr.top('APR_CATEGORIES') as string[]) {
@@ -368,13 +437,13 @@ test('can() matches the PDR oracle for every role × action × row', async () =>
   let checks = 0;
   const check = (o: ReturnType<typeof loadPdrOracle>, calls: Partial<Record<ApprovalAction, Call>>, r: Row, rules = LMCS_APPROVAL_RULES) => {
     for (const [action, call] of Object.entries(calls) as [ApprovalAction, Call][]) {
-      for (const email of CALLERS) {
+      for (const { key, email, viewAsCode } of subjects) {
         o.reset(tabsFor(r));
-        const want = allowed(call(o, email, r));
-        const got = can(callers.get(email)!, action, { ...r, authorEmail: r.requestedBy }, rules);
+        const want = allowed(call(viaViewAs(o, viewAsCode), email, r));
+        const got = can(callers.get(key)!, action, { ...r, authorEmail: r.requestedBy }, rules);
         checks++;
-        if (got !== want) mismatches.push(`${email} ${action} ${r.category}${r.leaveType ? '/' + r.leaveType : ''} ${r.campusId} ${r.status} by ${r.requestedBy}: oracle ${want}, can ${got}`);
-        if (rules === LMCS_APPROVAL_RULES && want) anyAllowed.set(`${email} ${action}`, true);
+        if (got !== want) mismatches.push(`${key} ${action} ${r.category}${r.leaveType ? '/' + r.leaveType : ''} ${r.campusId} ${r.status} by ${r.requestedBy}: oracle ${want}, can ${got}`);
+        if (rules === LMCS_APPROVAL_RULES && want) anyAllowed.set(`${key} ${action}`, true);
       }
     }
   };
@@ -384,19 +453,20 @@ test('can() matches the PDR oracle for every role × action × row', async () =>
     if (r.category === LMCS_APPROVAL_RULES.leaveCategory) check(pdrFuture, PDR_CALLS, r, future);
   }
   // actions without a row are exact; for row actions, can(caller, action) is the gate: never narrower than some row it allows
-  for (const email of CALLERS) {
-    const c = callers.get(email)!;
+  for (const { key, email, viewAsCode } of subjects) {
+    const c = callers.get(key)!;
     pdr.reset(tabsFor(rows[0])); coord.reset(tabsFor(rows[0]));
-    for (const [action, want] of [['referees', allowed(pdr.get(email, 'approvalreferees'))], ['trackRecord', allowed(coord.get(email, 'coordinatortrackrecord'))]] as const) {
+    const p = viaViewAs(pdr, viewAsCode), k = viaViewAs(coord, viewAsCode);
+    for (const [action, want] of [['referees', allowed(p.get(email, 'approvalreferees'))], ['trackRecord', allowed(k.get(email, 'coordinatortrackrecord'))]] as const) {
       checks++;
-      if (can(c, action) !== want) mismatches.push(`${email} ${action}: oracle ${want}, can ${can(c, action)}`);
+      if (can(c, action) !== want) mismatches.push(`${key} ${action}: oracle ${want}, can ${can(c, action)}`);
     }
     for (const action of [...Object.keys(PDR_CALLS), ...Object.keys(COORD_CALLS)] as ApprovalAction[]) {
-      if (anyAllowed.get(`${email} ${action}`) && !can(c, action)) mismatches.push(`${email} ${action} (no row): oracle allows a row, can refuses`);
+      if (anyAllowed.get(`${key} ${action}`) && !can(c, action)) mismatches.push(`${key} ${action} (no row): oracle allows a row, can refuses`);
     }
   }
   assert.deepEqual([...unknownErrors], [], 'every oracle error is a known refusal or validation');
   assert.equal(mismatches.length, 0, `${mismatches.length} of ${checks} differ:\n${mismatches.slice(0, 30).join('\n')}`);
-  assert.ok(checks > 20000, `matrix ran ${checks} checks`);
-  await setAutoSignIn(false);
+  assert.ok(checks > 30000, `matrix ran ${checks} checks`);
+  console.log(`# parity: ${checks} checks, ${subjects.length} callers (${subjects.length - CALLERS.length} in view-as), ${mismatches.length} differences`);
 });
