@@ -606,6 +606,7 @@ function filesUnder_(folder, depth, top, out) {
   return out;
 }
 
+const UPLOAD_STATUS_CACHE_TTL_SECONDS_ = 3600; // 1 hour: how long action=uploadstatus reuses its last Drive scan (deleted by mistake in 5f2363d)
 function checkNewUploads_(forceCheck) {
   const cache = CacheService.getScriptCache();
   if (!forceCheck) {
