@@ -84,6 +84,7 @@ export const CODES = {
   START_LOCKED: 'This has been submitted for approval, so it cannot be changed now. Ask your Coordinator to return it if something is wrong.',
   START_NOT_SUBMITTED: 'This school has not submitted this section (or it was already decided). Refresh and try again.',
   START_NO_APPROVAL: 'This section is not approved per school, so there is nothing to submit or approve.',
+  START_SELF_APPROVE: 'You submitted this yourself, so someone else has to approve or return it.',
   START_BAD_DECISION: 'Choose approve or return.',
   NOTE_REQUIRED: 'Say what needs fixing: a note is required to return it.',
   HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',

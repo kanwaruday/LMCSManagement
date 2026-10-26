@@ -73,6 +73,9 @@ function officeStartActions_() {
   };
 }
 
+// The Day Book's starting date: the cash quest's cutoff (SetupQuests), else the default.
+function officeStartCutoff_() { const q = officeStartQuest_('cash'); return q ? q.cutoff : OFFICE_START_CUTOFF; }
+
 function officeStartQuest_(id) { return officeStartQuests_().filter(function (q) { return q.id === id; })[0] || null; }
 
 // Error naming the field: code for the client, message 'CODE: field'.
@@ -88,7 +91,8 @@ function officeStartScope_(caller) {
   const has = function (roles) { return roles.some(function (r) { return caller.roles.indexOf(r) !== -1; }); };
   const ids = function (qs) { return qs.map(function (q) { return q.id; }); };
   const qs = officeStartQuests_();
-  const approve = ids(qs.filter(function (q) { return q.approval && has(q.approveRoles); }));
+  // The Owner approves every approval quest whatever approveRoles say.
+  const approve = ids(qs.filter(function (q) { return q.approval && (has(q.approveRoles) || has(['Owner'])); }));
   if (has(OFFICE_START_ROLES)) return { full: true, quests: ids(qs), fill: ids(qs), approve: approve, campuses: OFFICE_CAMPUSES.concat(['ALL']) };
   const fill = ids(qs.filter(function (q) { return has(q.fillRoles); }));
   const quests = ids(qs.filter(function (q) { return fill.indexOf(q.id) !== -1 || approve.indexOf(q.id) !== -1; }));
@@ -162,7 +166,7 @@ function officeStartItems_() {
     if (at[k] === undefined) { at[k] = out.length; out.push({ quest: quest, item: item, campus: quest === 'cash' ? item : '', fields: {} }); }
     return out[at[k]];
   };
-  OFFICE_CAMPUSES.forEach(function (c) { get('cash', c); });
+  if (officeStartQuest_('cash')) OFFICE_CAMPUSES.forEach(function (c) { get('cash', c); }); // cash may be switched off in SetupQuests
   officeRows_(officeConfigBook_(), 'StartData').forEach(function (r) {
     const q = officeStartQuest_(r.quest);
     if (!q || r.field === '_state') return;
@@ -223,7 +227,7 @@ function officeStartGet_(ctx) {
   const scope = officeStartScope_(ctx.caller);
   const items = officeStartVisible_(officeStartItems_(), scope);
   return Object.assign({
-    cutoff: OFFICE_START_CUTOFF,
+    cutoff: officeStartCutoff_(),
     quests: officeStartQuests_().filter(function (q) { return scope.quests.indexOf(q.id) !== -1; }).map(function (q) {
       return Object.assign({}, q, { fields: q.fields.map(function (f) {
         return f.id === 'campus' ? Object.assign({}, f, { choices: f.choices.filter(function (c) { return scope.campuses.indexOf(c) !== -1; }) }) : f;
@@ -318,9 +322,17 @@ function officeStartSave_(ctx, data) {
       if (st === 'submitted' || st === 'approved') throw officeStartErr_('START_LOCKED', c);
     });
   }
+  // A save to an approved quest+campus (only Owner/FinanceHead/approvers get past the lock) puts it back to draft, so
+  // changed figures never stay approved. Its books are opened before any write (NO_BOOK leaves nothing half-written).
+  const sm = quest.approval ? officeStartStateMap_() : {};
+  const reopen = [campus, prior && prior.campus].filter(function (c, i, a) {
+    return c && a.indexOf(c) === i && quest.approval && officeStartState_(sm, quest.id, c).state === 'approved';
+  });
+  reopen.forEach(function (c) { officeOpen_(c, officeFy_(officeToday_())); });
   const auditSs = officeCollectionAuditBook_(ctx.caller), iso = officeNow_().toISOString();
   const written = officeStartWrite_(officeConfigBook_(), quest, key, campus, vals, status, note, ctx.caller, iso);
   officeStartAudit_(auditSs, ctx.caller, 'start.save', quest.id + ':' + key, campus, written, iso);
+  reopen.forEach(function (c) { officeStartSetState_(ctx, 'start.reopen', { quest: quest, campus: c }, 'draft', ''); });
   const after = officeStartItems_();
   return Object.assign({ saved: after.filter(function (i) { return i.quest === quest.id && i.item === key; })[0] }, officeStartProgress_(officeStartVisible_(after, scope), scope));
 }
@@ -332,7 +344,8 @@ function officeStartLife_(data) {
   if (!quest.approval) throw officeStartErr_('START_NO_APPROVAL', 'quest');
   const campus = String(data.campus || '');
   if (OFFICE_CAMPUSES.indexOf(campus) === -1) throw officeStartErr_('BAD_CHOICE', 'campus');
-  return { quest: quest, campus: campus, state: officeStartState_(officeStartStateMap_(), quest.id, campus).state };
+  const cur = officeStartState_(officeStartStateMap_(), quest.id, campus);
+  return { quest: quest, campus: campus, state: cur.state, by: cur.by };
 }
 
 // Appends the lifecycle row and audits it in the school's own book (resolved first: NO_BOOK writes nothing).
@@ -363,6 +376,7 @@ function officeStartApprove_(ctx, data) {
   const note = officeStartValue_({ id: 'note', type: 'text' }, data.note);
   if (data.decision === 'return' && !note) throw officeStartErr_('NOTE_REQUIRED', 'note');
   if (life.state !== 'submitted') throw officeStartErr_('START_NOT_SUBMITTED', life.campus);
+  if (life.by === ctx.caller.email && ctx.caller.roles.indexOf('Owner') === -1) throw officeStartErr_('START_SELF_APPROVE', life.campus);
   return officeStartSetState_(ctx, 'start.approve', life, data.decision === 'approve' ? 'approved' : 'returned', note);
 }
 
@@ -402,7 +416,7 @@ function officeStartSeed_(ctx, data) {
 // the shape the Sheet importer's --actual reads; `unapproved` lists, per approval quest, the schools not yet approved. Each list entry: {item, campus, confirmed, skipped, <field>: value (rupees as rupees)}.
 function officeStartExport_() {
   const items = officeStartItems_();
-  const out = { cutoff: OFFICE_START_CUTOFF, actual: {}, banks: [], suppliers: [], odometers: [], loans: [], users: [], unconfirmed: {}, unapproved: {} };
+  const out = { cutoff: officeStartCutoff_(), actual: {}, banks: [], suppliers: [], odometers: [], loans: [], users: [], unconfirmed: {}, unapproved: {} };
   const list = { bank: 'banks', supplier: 'suppliers', odometer: 'odometers', loan: 'loans', users: 'users' };
   const m = officeStartStateMap_();
   const approved = function (q, c) { return !q.approval || officeStartState_(m, q.id, c).state === 'approved'; };
@@ -411,7 +425,9 @@ function officeStartExport_() {
     if (q.approval) out.unapproved[q.id] = OFFICE_CAMPUSES.filter(function (c) { return !approved(q, c); });
   });
   items.forEach(function (i) {
-    const q = officeStartQuest_(i.quest), n = officeStartCount_([i]);
+    const q = officeStartQuest_(i.quest);
+    if (!q) return;
+    const n = officeStartCount_([i]);
     const done = n.confirmed === n.total;
     if (!done) out.unconfirmed[q.id]++;
     if (q.id === 'cash') {
