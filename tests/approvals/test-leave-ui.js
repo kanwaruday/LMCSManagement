@@ -42,4 +42,24 @@ T('page date helpers', () => {
   assert.match(now.iso, /^\d{4}-\d{2}-\d{2}$/); assert.ok(now.hour >= 0 && now.hour <= 23);
 });
 
+T('the page and the server read the same IST day and hour (so the 7:00 AM hint matches the server refusal)', () => {
+  const instants = ['2026-10-26T01:00:00Z', '2026-10-26T01:29:59Z', '2026-10-26T01:30:00Z', '2026-10-25T18:29:59Z', '2026-10-25T18:30:00Z', '2026-12-31T20:00:00Z'];
+  const RealDate = Date;
+  for (const t of instants) {
+    class FakeDate extends RealDate { static now() { return new RealDate(t).getTime(); } }
+    const pageCtx = vm.createContext({ console, Date: FakeDate, Math });
+    vm.runInContext(grab(html, 'lvNowIst_'), pageCtx);
+    const p = JSON.parse(JSON.stringify(vm.runInContext('lvNowIst_', pageCtx)()));
+    const s = JSON.parse(JSON.stringify(vm.runInContext('aprLvNowIst_', server)(new RealDate(t))));
+    assert.deepEqual(p, s, t);
+  }
+});
+
+T('the unreadable-reply pattern covers the failure texts the page can see', () => {
+  const re = vm.runInContext(html.match(/const LV_UNREADABLE = (\/.*?\/);/)[1], page);
+  for (const m of ["SyntaxError: Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON", 'TypeError: Failed to fetch', 'TypeError: NetworkError when attempting to fetch resource.', 'TypeError: Load failed'])
+    assert.ok(re.test(m), m);
+  assert.ok(!re.test('This can no longer be applied for. Your Principal will record it.'), 'a real server refusal is not retried');
+});
+
 console.log('all leave UI tests passed');

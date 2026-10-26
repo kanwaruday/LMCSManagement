@@ -79,16 +79,20 @@ T('Special Day: 2 days with 7+ days notice, else 3; never 5 from the form', () =
   assert.equal(validate({ type: 'Special Day Leave', from: '2026-10-26' }, MON).leave.deduction, 3, 'same day before 7:00 AM');
 });
 
-T('warnings: Long Leave over 6 working days, sandwich for Single Leave', () => {
+T('warnings: Long Leave over 6 working days; sandwich rule before, after or between leave days', () => {
+  const warn = (input, h) => validate(input, MON, h).warnings;
   const long = validate({ type: 'Casual Leave', from: '2026-10-27', to: '2026-11-05' }, MON); // Tue 27 Oct .. Thu 5 Nov = 9 working days (Sunday 1 Nov out)
   assert.equal(long.leave.workingDays, 9);
   assert.ok(long.warnings.some((w) => /Long Leave/.test(w)));
-  assert.equal(validate({ type: 'Casual Leave', from: '2026-10-27', to: '2026-11-02' }, MON).warnings.length, 0, '6 days is not Long Leave');
-  const sand = validate({ type: 'Single Leave', from: '2026-10-30' }, MON); // Friday: Saturday 31 is a working Saturday (1st-ish), Sunday 1 follows the Saturday
-  assert.equal(sand.warnings.length, 0, 'Saturday 31 Oct is a working day, so no sandwich');
-  const sand2 = validate({ type: 'Single Leave', from: '2026-10-31' }, MON); // Saturday: next day Sunday
-  assert.ok(sand2.warnings.some((w) => /Sandwich/.test(w)));
-  assert.equal(validate({ type: 'Casual Leave', from: '2026-10-31' }, MON).warnings.length, 0, 'sandwich note is for Single Leave');
+  assert.ok(!warn({ type: 'Casual Leave', from: '2026-10-27', to: '2026-10-30' }).some((w) => /Long Leave/.test(w)), '4 days is not Long Leave');
+  assert.ok(!validate({ type: 'Casual Leave', from: '2026-10-27', to: '2026-11-02' }, MON).warnings.some((w) => /Long Leave/.test(w)), 'exactly 6 working days is not Long Leave');
+  // sandwich: before, after, and BETWEEN (Fri-Mon spans the Sunday)
+  assert.equal(warn({ type: 'Single Leave', from: '2026-10-28', to: '2026-10-29' }).length, 0, 'Wed-Thu: nothing next to a holiday');
+  assert.ok(warn({ type: 'Single Leave', from: '2026-10-31' }).some((w) => /Sandwich/.test(w)), 'Saturday: next day is a Sunday');
+  assert.ok(warn({ type: 'Single Leave', from: '2026-10-30', to: '2026-11-02' }).some((w) => /Sandwich/.test(w)), 'Fri to Mon: the Sunday is between');
+  assert.ok(warn({ type: 'Casual Leave', from: '2026-10-31' }).some((w) => /Sandwich/.test(w)), 'applies to Casual too (general rule)');
+  assert.ok(warn({ type: 'Casual Leave', from: '2026-10-28', to: '2026-10-29' }, { '2026-10-30': true }).some((w) => /Sandwich/.test(w)), 'a school holiday next to the leave');
+  for (const type of ['Short Leave', 'Late', 'Emergency Leave']) assert.equal(warn({ type, from: '2026-10-31' }).length, 0, type + ' carries no sandwich note');
 });
 
 // ── overlap guard and the contract, over fake Approvals rows ──
@@ -162,19 +166,41 @@ T('a date cell Sheets turned into a Date still reads back', () => {
 });
 
 // ── the action's scoping and aprSubmit_'s wiring, with Apps Script globals faked ──
+// The fake sheet has a column limit (a fresh Google Sheet has 26), real getValues for id lookup, header cells and deleteRow.
 function world(opts) {
+  opts = opts || {};
   const sheetRows = [HEADER.slice(), ...(opts.rows || [])];
-  const written = { appended: [], leave: null, headers: false };
+  const log = { leave: null, headersSet: {}, inserted: 0, deleted: [], calendarCalls: [] };
+  let maxCols = opts.maxCols || 26;
   const sheet = {
-    appendRow: (r) => { sheetRows.push(r); written.appended.push(r); },
+    appendRow: (r) => {
+      if (r.length > maxCols) throw new Error('appendRow past the sheet width');
+      sheetRows.push(r);
+    },
     getLastRow: () => sheetRows.length,
+    getMaxColumns: () => maxCols,
+    insertColumnsAfter: (after, n) => { maxCols += n; log.inserted += n; },
+    deleteRow: (n) => { sheetRows.splice(n - 1, 1); log.deleted.push(n); },
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => sheetRows.slice(r - 1, r - 1 + (nr || 1)).map((row) => row.slice(c - 1, c - 1 + (nc || 1))),
+      getValue: () => (r === 1 ? (log.headersSet[c] ? 'h' : '') : ''),
+      setValue: (v) => { if (r === 1) log.headersSet[c] = v; },
+      setNumberFormat: () => {},
+      setValues: (v) => {
+        if (opts.failLeaveWrite && r > 1) throw new Error('simulated write failure');
+        if (c - 1 + v[0].length > maxCols) throw new Error('coordinates outside the dimensions of the sheet');
+        if (r === 1) { v[0].forEach((h, j) => { log.headersSet[c + j] = h; }); return; }
+        log.leave = v[0]; v[0].forEach((x, j) => { sheetRows[r - 1][c - 1 + j] = x; }); // persist, so the overlap guard can read it back
+      },
+    }),
   };
   const w = vm.createContext({
     console, LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    APR_STATUS: { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested' },
+    APR_STATUS: { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' },
     pdrIsTeacherOnly_: (c) => !!c.teacherOnly, callerHasRole_: (c, r) => (c.roles || []).includes(r),
     aprValues_: () => sheetRows, aprSheet_: () => sheet, aprNotifyDeciders_() {},
-    pdrSchoolCalendarEvents_: () => [], pdrFormatISO_: () => '', tpAuthEmailToCode_: () => ({ 'asha@lms.org.in': 'KUL/1' }),
+    pdrSchoolCalendarEvents_: (campus, a, b) => { log.calendarCalls.push([campus, a, b]); return []; }, pdrFormatISO_: () => '',
+    tpAuthEmailToCode_: () => ({ 'asha@lms.org.in': 'KUL/1' }),
     APR_AMOUNT_CATEGORIES: [], APR_ITEM_CATEGORIES: [], APR_ITEM_QTY_CATEGORIES: [],
   });
   vm.runInContext(read('approvals-leave.gs'), w);
@@ -182,12 +208,7 @@ function world(opts) {
   const src = read('approvals.gs');
   const grab = (name) => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i), e; for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}') { d--; if (!d) { e = k; break; } } } return src.slice(i, e + 1); };
   vm.runInContext(['aprSubmit_', 'aprAppendRequest_'].map(grab).join('\n') + '\nvar APR_CATEGORIES = ["Leave","Other"]; var APR_TEACHER_CATEGORIES = ["Leave","Other"];', w);
-  // the sheet needs getRange for aprLvWrite_
-  sheet.getRange = (r, c, nr, nc) => ({
-    getValue: () => (r === 1 ? (written.headers ? 'leaveType' : '') : ''), setValues: (v) => { if (r === 1) written.headers = true; else { written.leave = v[0]; v[0].forEach((x, j) => { sheetRows[r - 1][c - 1 + j] = x; }); } }, // persist, so the overlap guard can read it back
-    setNumberFormat: () => {},
-  });
-  return { w, sheetRows, written, call: (code) => vm.runInContext(code, w) };
+  return { w, sheetRows, log, get appended() { return sheetRows.slice(1 + (opts.rows || []).length); }, call: (code) => vm.runInContext(code, w) };
 }
 const teacher = { email: 'asha@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], teacherOnly: true };
 const submit = (W, caller, body) => JSON.parse(JSON.stringify(W.call('aprSubmit_')(caller, body)));
@@ -199,13 +220,13 @@ T('submit: files a leave with generated title, writes the leave columns, stays P
   const W = world({}); const day = nextTuesday();
   const r = submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: day, toDate: day, description: 'Family function' });
   assert.equal(r.success, true, JSON.stringify(r)); assert.ok(r.id);
-  assert.equal(W.written.appended.length, 1);
-  const row = W.written.appended[0];
+  assert.equal(W.appended.length, 1);
+  const row = W.appended[0];
   assert.equal(row[2], 'Leave'); assert.equal(row[1], 'LMS4'); assert.equal(row[11], 'asha@lms.org.in'); assert.equal(row[13], 'Pending');
   assert.equal(row[4], 'Casual Leave — ' + day, 'title is generated');
-  assert.deepEqual(W.written.leave.slice(0, 3), ['Casual Leave', day, day]);
-  assert.equal(W.written.leave[4], 1, 'one working day'); assert.equal(W.written.leave[5], 1, 'one leave day charged');
-  assert.equal(W.written.leave.length, 8, 'type, from, to, part, working days, deduction, notice, note');
+  assert.deepEqual(W.log.leave.slice(0, 3), ['Casual Leave', day, day]);
+  assert.equal(W.log.leave[4], 1, 'one working day'); assert.equal(W.log.leave[5], 1, 'one leave day charged');
+  assert.equal(W.log.leave.length, 8, 'type, from, to, part, working days, deduction, notice, note');
 });
 
 T('submit: a Long Leave is filed with its warning stored for the decider', () => {
@@ -213,8 +234,8 @@ T('submit: a Long Leave is filed with its warning stored for the decider', () =>
   const to = new Date(Date.parse(from + 'T00:00:00Z') + 13 * 86400000).toISOString().slice(0, 10); // two weeks
   const r = submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: from, toDate: to, description: 'Wedding' });
   assert.equal(r.success, true, JSON.stringify(r));
-  assert.ok(W.written.leave[4] > 6, 'more than 6 working days');
-  assert.match(W.written.leave[7], /Long Leave/);
+  assert.ok(W.log.leave[4] > 6, 'more than 6 working days');
+  assert.match(W.log.leave[7], /Long Leave/);
 });
 
 T('submit: refused for a past date, a non-teacher, a bad type; leave needs a reason', () => {
@@ -223,7 +244,7 @@ T('submit: refused for a past date, a non-teacher, a bad type; leave needs a rea
   assert.match(submit(W, { email: 'p@lms.org.in', campusId: 'LMS4', roles: ['Principal'] }, { category: 'Leave', leaveType: 'Casual Leave', fromDate: nextTuesday(), description: 'x' }).error, /filed by teachers/);
   assert.match(submit(W, teacher, { category: 'Leave', leaveType: 'Holiday', fromDate: nextTuesday(), description: 'x' }).error, /Choose a leave type/);
   assert.match(submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: nextTuesday(), description: '' }).error, /Description required/);
-  assert.equal(W.written.appended.length, 0, 'nothing was written');
+  assert.equal(W.appended.length, 0, 'nothing was written');
 });
 
 T('submit: a double click is a no-op; an overlapping different request is refused', () => {
@@ -232,7 +253,7 @@ T('submit: a double click is a no-op; an overlapping different request is refuse
   const first = submit(W, teacher, body);
   const again = submit(W, teacher, body);
   assert.equal(again.success, true); assert.equal(again.duplicate, true); assert.equal(again.id, first.id);
-  assert.equal(W.written.appended.length, 1, 'still one row');
+  assert.equal(W.appended.length, 1, 'still one row');
   const other = submit(W, teacher, { category: 'Leave', leaveType: 'Single Leave', fromDate: day, toDate: day, description: 'Different reason' });
   assert.equal(other.success, false); assert.match(other.error, /already have a leave request/);
 });
@@ -259,18 +280,82 @@ T('server-side helper for code in the same project: aprApprovedLeaveDays_(email,
   assert.equal(r.length, 1); assert.equal(r[0].approvalId, 'm1'); assert.equal(r[0].excused, true); assert.equal(r[0].fraction, 0.5);
 });
 
+T('submit: columns are widened first, and a failed leave write never leaves a half-filed row', () => {
+  const day = nextTuesday();
+  const body = { category: 'Leave', leaveType: 'Casual Leave', fromDate: day, toDate: day, description: 'Family function' };
+  const W = world({ maxCols: 26 }); // a fresh sheet
+  const r = submit(W, teacher, body);
+  assert.equal(r.success, true, JSON.stringify(r));
+  assert.ok(W.log.inserted >= 7, 'columns inserted up to 33'); assert.equal(W.log.leave.length, 8);
+  assert.equal(W.log.headersSet[26], 'leaveType'); assert.equal(W.log.headersSet[33], 'leaveNote', 'every header cell, including the last');
+  // a write that fails after the row was appended removes the row again
+  const F = world({ maxCols: 40, failLeaveWrite: true });
+  let threw = null; try { F.call('aprSubmit_')(teacher, body); } catch (e) { threw = e; }
+  assert.ok(threw && /simulated write failure/.test(threw.message), 'the error reaches the caller');
+  assert.equal(F.appended.length, 0, 'no half-filed Leave row is left behind'); assert.equal(F.log.deleted.length, 1);
+});
+
+T('submit: the leave goes to the row with this id even if another row was appended meanwhile', () => {
+  const day = nextTuesday(); const W = world({ maxCols: 40 });
+  const realAppend = W.sheetRows.push.bind(W.sheetRows);
+  // simulate another writer appending right after ours, before the leave columns are written
+  const sheet = W.call('aprSheet_()'); const orig = sheet.appendRow;
+  sheet.appendRow = (r) => { orig(r); realAppend(row({ id: 'intruder', category: 'Other', status: 'Pending' })); };
+  const r = submit(W, teacher, { category: 'Leave', leaveType: 'Casual Leave', fromDate: day, toDate: day, description: 'x' });
+  assert.equal(r.success, true);
+  const mine = W.sheetRows.find((x) => x[0] === r.id), intruder = W.sheetRows.find((x) => x[0] === 'intruder');
+  assert.equal(mine[APR_COL_TYPE()], 'Casual Leave'); assert.equal(intruder[APR_COL_TYPE()], '', "the other row is untouched");
+});
+function APR_COL_TYPE() { return run('APR_LV_COL').TYPE; }
+
+T('a junk "to" date cannot switch the holiday check off for a single-day type', () => {
+  const W = world({ maxCols: 40 }); const day = nextTuesday();
+  const prep = (b) => W.call('aprLvPrepare_')(teacher, b, 'LMS4');
+  prep({ leaveType: 'Half Leave', fromDate: day, toDate: 'x' });
+  prep({ leaveType: 'Casual Leave', fromDate: day, toDate: day });
+  const [half, casual] = W.log.calendarCalls;
+  assert.equal(half[2].getTime(), new Date(new Date(day + 'T00:00:00Z').getUTCFullYear(), new Date(day + 'T00:00:00Z').getUTCMonth(), new Date(day + 'T00:00:00Z').getUTCDate() + 1).getTime(), 'Half Leave looked up for its own date only');
+  assert.equal(casual[2].getTime(), half[2].getTime());
+});
+
+T('approvedleave: a Principal with a blank campus is refused, not shown everything', () => {
+  const day = nextTuesday();
+  const W = world({ rows: [row({ id: 'm1', type: 'Casual Leave', from: day })] });
+  const r = JSON.parse(JSON.stringify(W.call('aprLvApprovedLeaveAction_')({ email: 'p@lms.org.in', campusId: '', roles: ['Principal'] }, { from: day, to: day })));
+  assert.equal(r.success, false); assert.equal(r.error, 'Not authorized');
+});
+
+T('server helper fails loudly on an empty email or bad dates, and carries employeeCode', () => {
+  const day = nextTuesday(); const W = world({ rows: [row({ id: 'm1', type: 'Casual Leave', from: day })] });
+  const h = W.call('aprApprovedLeaveDays_');
+  assert.throws(() => h('', day, day), /email is required/);
+  assert.throws(() => h('asha@lms.org.in', 'x', day), /must be dates/);
+  assert.throws(() => h('asha@lms.org.in', day, '2020-01-01'), /must be dates/);
+  const days = JSON.parse(JSON.stringify(h('asha@lms.org.in', day, day)));
+  assert.equal(days[0].employeeCode, 'KUL/1', 'same shape as the action');
+});
+
 T('approver seam: Management decides all leave now; the Principal hand-over is configuration only', () => {
-  const w = vm.createContext({ console, callerHasRole_: (c, r) => (c.roles || []).includes(r) });
+  const log = { writes: [], mail: 0 };
+  const rowsStore = [HEADER.slice()];
+  const w = vm.createContext({
+    console, callerHasRole_: (c, r) => (c.roles || []).includes(r),
+    APR_STATUS: { PENDING: 'Pending', INFO_REQUESTED: 'Info Requested', APPROVED: 'Approved', REJECTED: 'Rejected', REVOKED: 'Revoked' },
+    APR_DECISIONS: ['Approved', 'Rejected', 'Info Requested', 'Revoked'], APR_NO_REFER_CATEGORIES: [],
+    aprSheet_: () => ({ getDataRange: () => ({ getValues: () => rowsStore }), getRange: (r, c) => ({ setValue: (v) => log.writes.push([r, c, v]), getValue: () => 'h' }) }),
+    aprNotifyRequester_: () => { log.mail++; }, hirSalaryOfferGateCheck_: () => ({ ok: true }),
+    aprParseReferees_: () => ({ action: [], accountability: [], information: [] }), APR_REFER_KINDS: ['action', 'accountability', 'information'], APR_REFER_LABELS: {}, aprNotifyReferees_: () => '',
+  });
   vm.runInContext(read('approvals-leave.gs'), w);
   const src = read('approvals.gs');
   const grab = (name) => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i), e; for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}') { d--; if (!d) { e = k; break; } } } return src.slice(i, e + 1); };
-  vm.runInContext(['aprCanDecide_', 'aprCanDecideAny_', 'aprCanDecideRow_'].map(grab).join('\n') + '\nconst APR_LEAVE_PRINCIPAL_TYPES = [];', w);
+  vm.runInContext(['aprCanDecide_', 'aprCanDecideAny_', 'aprCanDecideRow_', 'aprDecide_', 'aprArchive_', 'aprFindRowIndex_'].map(grab).join('\n') + '\nconst APR_LEAVE_PRINCIPAL_TYPES = [];', w);
   const owner = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'] };
   const coord = { email: 'c@lms.org.in', campusId: 'ALL', roles: ['Coordinator'], canApprove: true };
   const coordNo = { email: 'c2@lms.org.in', campusId: 'ALL', roles: ['Coordinator'] };
   const principal = { email: 'p@lms.org.in', campusId: 'LMS4', roles: ['Principal'] };
   const principal2 = { email: 'p2@lms.org.in', campusId: 'LMS2', roles: ['Principal'] };
-  const leaveRow = (type, campus) => row({ id: 'z', type, from: '2026-10-28', campus, status: 'Pending' });
+  const leaveRow = (type, campus, o) => row(Object.assign({ id: 'z', type, from: '2026-10-28', campus, status: 'Pending' }, o || {}));
   const can = (c, r) => w.aprCanDecideRow_(c, r), any = (c) => w.aprCanDecideAny_(c);
   // today: empty list
   assert.equal(can(owner, leaveRow('Casual Leave', 'LMS4')), true); assert.equal(can(coord, leaveRow('Casual Leave', 'LMS4')), true);
@@ -279,13 +364,32 @@ T('approver seam: Management decides all leave now; the Principal hand-over is c
   assert.equal(any(principal), false); assert.equal(any(owner), true);
   // later: fill the list, nothing else changes
   vm.runInContext("APR_LEAVE_PRINCIPAL_TYPES.push('Casual Leave', 'Single Leave')", w);
-  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4')), true, 'own campus, listed type');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4')), true, 'own campus, listed type, still waiting');
   assert.equal(can(principal, leaveRow('Casual Leave', 'LMS2')), false, 'another campus');
   assert.equal(can(principal2, leaveRow('Casual Leave', 'LMS4')), false, 'another campus (reverse)');
+  assert.equal(can(principal, leaveRow('Casual Leave', ' LMS4 ')), true, 'whitespace in the campus cell is tolerated');
   assert.equal(can(principal, leaveRow('Special Day Leave', 'LMS4')), false, 'a type left with Management');
+  assert.equal(can(principal, leaveRow('', 'LMS4')), false, 'a blank type');
   assert.equal(can(principal, row({ id: 'q', category: 'Financial / Purchase', campus: 'LMS4' })), false, 'never a non-leave category');
   assert.equal(can(teacher, leaveRow('Casual Leave', 'LMS4')), false, 'a teacher cannot decide');
+  assert.equal(can({ email: 'x@lms.org.in', campusId: 'ALL', roles: ['Principal'] }, leaveRow('Casual Leave', 'LMS4')), false, "a Principal with campus ALL is not a campus Principal");
+  assert.equal(can({ email: 'x@lms.org.in', campusId: '', roles: ['Principal'] }, leaveRow('Casual Leave', '')), false, 'a blank campus fails closed');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4', { email: 'p@lms.org.in' })), false, 'never their own request (a Principal who also teaches)');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4', { status: 'Approved' })), false, 'no revoking an approved leave');
+  assert.equal(can(principal, leaveRow('Casual Leave', 'LMS4', { status: 'Info Requested' })), true);
   assert.equal(any(principal), true); assert.equal(any(teacher), false);
+
+  // the call sites, end to end: refusals write nothing and send nothing
+  const decide = (c, id, decision) => JSON.parse(JSON.stringify(w.aprDecide_(c, { id, decision: decision || 'Approved', note: 'ok' })));
+  rowsStore.push(leaveRow('Casual Leave', 'LMS4', { id: 'a1' }), leaveRow('Casual Leave', 'LMS2', { id: 'a2' }), leaveRow('Special Day Leave', 'LMS4', { id: 'a3' }), leaveRow('Casual Leave', 'LMS4', { id: 'a4', status: 'Approved' }));
+  let r = decide(principal, 'a2'); assert.match(r.error, /campus/); r = decide(principal, 'a3'); assert.match(r.error, /decide this request/); r = decide(principal, 'a4', 'Revoked'); assert.match(r.error, /decide this request/);
+  assert.equal(log.writes.length, 0, 'nothing written for any refusal'); assert.equal(log.mail, 0);
+  r = decide(principal, 'a1'); assert.equal(r.success, true); assert.ok(log.writes.length >= 4, 'the allowed decision is written'); assert.equal(log.mail, 1);
+  r = decide(owner, 'a3'); assert.equal(r.success, true, 'Management can still decide everything');
+  // archiving stays with Management even after the hand-over
+  const w2 = log.writes.length;
+  assert.match(JSON.parse(JSON.stringify(w.aprArchive_(principal, { ids: ['a4'], archive: true }))).error, /Not authorized/);
+  assert.equal(JSON.parse(JSON.stringify(w.aprArchive_(owner, { ids: ['a4'], archive: true }))).count, 1); assert.ok(log.writes.length > w2);
 });
 
 console.log('all approvals leave tests passed');

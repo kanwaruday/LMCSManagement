@@ -377,6 +377,7 @@ const LEAVE_TYPES = [
   ['Special Day Leave', 'Special Day absence', true], ['Emergency Leave', 'Emergency (death in the immediate family)', false],
   ['Late', 'Late arrival (notice only)', true],
 ];
+const LV_UNREADABLE = /JSON|DOCTYPE|Failed to fetch|NetworkError|Load failed/; // an unreadable or lost reply from the backend (the request may still have been saved)
 const LEAVE_PAST_MESSAGE = 'Leave must be applied for in advance: pick a future date, or today before 7:00 AM.';
 function lvFmt_(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—'; }
 // Today in IST as YYYY-MM-DD plus the hour, from this device's clock (the server re-checks with its own).
@@ -586,12 +587,12 @@ async function submitApprovalRequest() {
     let res;
     for (let attempt = 1; attempt <= (isLeave ? 3 : 1); attempt++) {
       res = await pdrPost_('submitapproval', payload);
-      if (res.success || !/JSON|DOCTYPE/.test(String(res.error || ''))) break;
+      if (res.success || !LV_UNREADABLE.test(String(res.error || ''))) break;
       await new Promise(function (ok) { setTimeout(ok, 2000); });
     }
     if (!res.success) {
       pdrReportAuthFailureIfNeeded_(res);
-      alert(isLeave ? (res.error || 'Could not file the leave request.') : 'Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.');
+      alert(isLeave ? (LV_UNREADABLE.test(String(res.error || '')) ? 'The connection was unreliable, so we could not confirm your request. Please check My Requests before filing again.' : (res.error || 'Could not file the leave request.')) : 'Something went wrong submitting the request' + (res.error ? ': ' + res.error : '') + ' — please try again.');
       return;
     }
     document.getElementById('aprTitle').value = ''; document.getElementById('aprDescription').value = ''; document.getElementById('aprEvidenceLink').value = '';

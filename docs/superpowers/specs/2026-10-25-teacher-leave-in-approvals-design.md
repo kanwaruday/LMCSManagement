@@ -211,21 +211,24 @@ Two ways in, same data:
 1. **HTTP (any signed-in caller, scoped):** `GET <PDR /exec>?action=approvedleave&from=YYYY-MM-DD&to=YYYY-MM-DD&idToken=...[&email=][&campusId=]`.
    A teacher gets only their own days (their `email` is forced), a Principal their campus, Owner/Coordinator anyone. At most 400 days per call.
 2. **Server code in the PDR project (Teacher game backend, teacher-portal.gs):** `aprApprovedLeaveDays_(email, fromISO, toISO)`, the same list, no
-   HTTP and no scoping, so call it only for a person you already decided to show.
+   HTTP and no scoping, so call it only for a person you already decided to show. It throws on an empty email or a bad date (it never returns "everyone" or a silent empty list).
 
 Response: `{ success: true, days: [ ... ] }`, sorted by date then email, one entry per **working day** of **Approved** leave in the window:
 
 ```
-{ date: '2026-10-29',        // working days only: Sundays, 2nd Saturdays and the school's "GH" calendar holidays are never returned
+{ date: '2026-10-29',        // working days only: Sundays, 2nd Saturdays and the school's "GH" calendar holidays (holidays only when the Calendar read works)
   fraction: 1,               // share of the day away: 1 (full), 0.5 (Half Leave), 0.33 (Short Leave)
   excused: true,             // the game's yes/no: true for Casual, Single, Emergency, Special Day, Half Leave; false for Short Leave
-  type: 'Casual Leave', approvalId: 'apr-...', email: 'asha@lms.org.in', campusId: 'LMS4', employeeCode: 'KUL/..' }
+  type: 'Casual Leave', approvalId: 'apr-...', email: 'asha@lms.org.in', campusId: 'LMS4',
+  employeeCode: 'KUL/..' }   // may be '' when the roster lookup is unavailable: email is the real key
 ```
 
 Rules the game can rely on: Pending, Rejected and Revoked requests never appear; **Late is never returned** (a Late day is a normal working day);
 the reason text is never returned; a day with no entry is a normal working day. For "days on track": skip a day if it has an entry with
 `excused: true`; a Short Leave entry (`excused: false`) leaves the day as an ordinary working day. Revoking an approval removes its days on the
-next read, so cache by short TTL, not forever.
+next read, so cache by short TTL, not forever. **Approval or revocation can come after the day has passed**, so a nightly job that only scores
+"yesterday" will miss it: recompute a trailing window (about 30 days), not just the last day. A date can appear twice only if two Approved rows
+were hand-edited to overlap (the form refuses overlaps); treat any `excused: true` entry as excusing the day.
 
 Server readers in other Apps Script projects can read the Approvals sheet directly: category (index 2) = 'Leave', status (13) = 'Approved',
 requester email (11), campus (1), and the leave columns at indexes 25 to 32 (`APR_LV_COL` in approvals-leave.gs is the single definition).
@@ -236,3 +239,25 @@ requester email (11), campus (1), and the leave columns at indexes 25 to 32 (`AP
 2. The Coordinator project's `coordinator.gs` maps categories to departments (`COORD_APPROVAL_DEPT`): add `'Leave': COORD_DEPT_HR` so
    leave follow-ups do not land in School Operations (a one-line change in the Coordinator project, separate from this branch).
 3. Try one teacher request end to end (file, see it on Coordinator > Systems > Approvals, approve, read it back through `approvedleave`).
+
+### Independent review (2026-10-26) and what changed because of it
+
+A separate reviewer examined each of P1 to P4 without seeing the build reasoning. Fixed after review:
+
+- **Half-filed rows.** The leave columns run to sheet column 33 and a fresh Google Sheet has 26. The grid is now widened *before* the request row
+  is appended, the leave values are written to the row found **by its id** (not "the last row"), a header is written per column, and if the leave
+  write fails the just-appended row is deleted again, so a Leave row never exists without its dates.
+- **`approvedleave` for a Principal with a blank campus** now fails closed ("Not authorized"), like `approvalslist`.
+- **Single-day types and the holiday lookup:** a junk `toDate` can no longer switch the school-holiday check off for Half, Short, Late or Special Day.
+- **Sandwich note** now covers a holiday before, after or *between* leave days, for Single, Casual, Half and Special Day (not Short, Late, Emergency).
+- **Approver seam, tightened for later:** when the list is filled a Principal decides only requests still waiting (Pending, Info Requested), only own
+  campus, only listed types, never their own request, and cannot revoke or archive; archiving and referrals stay with Management. For the future
+  Principal screen: the list-level `canDecide` is wider than the per-row one, so that screen must use the detail response's `canDecide`.
+- **Teacher form:** retries also on a network failure, and says "check My Requests before filing again" if the reply could not be confirmed.
+- **Server helper** now returns `employeeCode` like the action, and throws on an empty email or bad dates.
+
+Known and accepted (tell Uday): the reason text is visible to Management and the campus's Principals through the existing request list, as for every
+category (medical reasons included); the contract itself never returns it. Short Leave is charged 0.33 per instance, so three shorts sum to 0.99
+leave days; the Payroll prefill (P6) must count instances (3 = 1 day), not sum `deduction`. `approvedleave` makes one Calendar read per approved
+leave row, so very wide network-wide queries are slow; the game should ask per teacher or per week. A second request of the same type and dates is
+treated as a repeat (the reason is not compared); to change a request, ask Management to reject it and file again.

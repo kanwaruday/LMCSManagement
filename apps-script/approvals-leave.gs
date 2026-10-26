@@ -101,8 +101,11 @@ function aprLvValidate_(input, nowIst, holidays) {
   const deduction = type === 'Special Day Leave' ? (noticeDays >= 7 ? 2 : 3) : aprLvRound2_(t.weight * working.length);
   const warnings = [];
   if (working.length > APR_LV_LONG_WORKING_DAYS) warnings.push('Long Leave: more than ' + APR_LV_LONG_WORKING_DAYS + ' working days. It needs MD Operations approval and sits outside the 10% cap.');
-  if (type === 'Single Leave' && (aprLvIsNonWorking_(aprLvAddDays_(from, -1), holidays) || aprLvIsNonWorking_(aprLvAddDays_(to, 1), holidays))) {
-    warnings.push('Sandwich rule: this leave touches a holiday, so the holiday may also count as leave.');
+  // Sandwich rule (general leave rules): a holiday just before, just after, or between the leave days may also count as leave.
+  const touchesHoliday = aprLvIsNonWorking_(aprLvAddDays_(from, -1), holidays) || aprLvIsNonWorking_(aprLvAddDays_(to, 1), holidays) ||
+    aprLvRange_(from, to).some(function (d) { return d > from && d < to && aprLvIsNonWorking_(d, holidays); });
+  if (t.weight > 0 && t.part !== 'short' && t.part !== 'late' && touchesHoliday) {
+    warnings.push('Sandwich rule: this leave is next to a holiday, so the holiday may also count as leave.');
   }
   return { ok: true, leave: { type: type, from: from, to: to, part: t.part, workingDays: working.length, deduction: deduction, noticeDays: noticeDays }, warnings: warnings };
 }
@@ -173,7 +176,10 @@ function aprLvApprovedDays_(values, q, holidaysFor) {
 function aprLvPrepare_(caller, body, campusId) {
   if (!callerHasRole_(caller, 'Teacher')) return { ok: false, error: 'Leave requests are filed by teachers.' };
   const nowIst = aprLvNowIst_(new Date());
-  const holidays = aprLvHolidays_(campusId, String(body.fromDate || '').trim(), String(body.toDate || body.fromDate || '').trim());
+  const type = APR_LV_TYPES[String(body.leaveType || '').trim()];
+  const fromDate = String(body.fromDate || '').trim();
+  // single-day types ignore "to", so the holiday lookup must too (a junk toDate must not switch the holiday check off)
+  const holidays = aprLvHolidays_(campusId, fromDate, type && type.multi ? String(body.toDate || fromDate).trim() : fromDate);
   const v = aprLvValidate_({ type: body.leaveType, from: body.fromDate, to: body.toDate }, nowIst, holidays);
   if (!v.ok) return v;
   v.title = aprLvTitle_(v.leave);
@@ -182,9 +188,23 @@ function aprLvPrepare_(caller, body, campusId) {
 }
 
 // Called by aprAppendRequest_ right after appendRow, inside the script lock (so getLastRow is this row).
+// A fresh Google Sheet has 26 columns; the leave columns run to 33. Called BEFORE the row is appended, so a missing column can never
+// leave a half-filed request behind.
+function aprLvEnsureColumns_(sheet) {
+  const need = APR_LV_COL.NOTE + 1;
+  if (sheet.getMaxColumns() < need) sheet.insertColumnsAfter(sheet.getMaxColumns(), need - sheet.getMaxColumns());
+}
+
+// The sheet row (1-based) holding this approval id, searched from the bottom; throws if it is not there.
+function aprLvRowById_(sheet, id) {
+  const ids = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
+  for (let i = ids.length - 1; i >= 1; i--) if (String(ids[i][0]) === String(id)) return i + 1;
+  throw new Error('Could not find the new request row to write its leave dates');
+}
+
 function aprLvWrite_(sheet, rowNum, leave) {
   const first = APR_LV_COL.TYPE + 1;
-  if (!sheet.getRange(1, first).getValue()) sheet.getRange(1, first, 1, APR_LV_HEADERS.length).setValues([APR_LV_HEADERS]);
+  APR_LV_HEADERS.forEach(function (h, i) { if (!sheet.getRange(1, first + i).getValue()) sheet.getRange(1, first + i).setValue(h); }); // per column, so a later-added header is filled too
   sheet.getRange(rowNum, first + 1, 1, 2).setNumberFormat('@'); // keep the two dates as text, not Sheets dates
   sheet.getRange(rowNum, first, 1, APR_LV_HEADERS.length).setValues([[leave.type, leave.from, leave.to, leave.part, leave.workingDays, leave.deduction, leave.noticeDays, leave.note || '']]);
 }
@@ -208,9 +228,20 @@ function aprLvHolidays_(campusId, fromISO, toISO) {
 }
 
 // The same contract for code inside the PDR project (the Teacher game backend, teacher-portal.gs, ...): no HTTP, no caller scoping,
-// so call it only from server code that has already decided who may see this teacher. Returns the entries described at aprLvApprovedDays_.
+// so call it only from server code that has already decided who may see this teacher. Same entries as the action, employeeCode included.
 function aprApprovedLeaveDays_(email, fromISO, toISO) {
-  return aprLvApprovedDays_(aprValues_(), { from: fromISO, to: toISO, email: email }, aprLvHolidays_);
+  // fail loudly: an empty email would return every teacher, and a bad date would silently look like "no leave"
+  if (!String(email || '').trim()) throw new Error('aprApprovedLeaveDays_: email is required');
+  if (!aprLvParseISO_(fromISO) || !aprLvParseISO_(toISO) || toISO < fromISO) throw new Error('aprApprovedLeaveDays_: from and to must be dates (YYYY-MM-DD), to not before from');
+  return aprLvAttachCodes_(aprLvApprovedDays_(aprValues_(), { from: fromISO, to: toISO, email: email }, aprLvHolidays_));
+}
+
+// employeeCode is a convenience (email is the key): '' when the roster lookup is unavailable.
+function aprLvAttachCodes_(days) {
+  let codes = {};
+  try { codes = tpAuthEmailToCode_(); } catch (err) { /* see above */ }
+  days.forEach(function (d) { d.employeeCode = codes[d.email] || ''; });
+  return days;
 }
 
 // action=approvedleave&from=YYYY-MM-DD&to=YYYY-MM-DD[&email=][&campusId=] (GET). The contract other modules read.
@@ -224,13 +255,10 @@ function aprLvApprovedLeaveAction_(caller, params) {
     if (q.email && q.email !== caller.email) return { success: false, error: 'Not authorized' };
     q.email = caller.email;
   } else if (caller.campusId !== 'ALL') {
+    if (!caller.campusId) return { success: false, error: 'Not authorized' }; // a blank campus must fail closed, like aprList_ does
     if (q.campusId && q.campusId !== caller.campusId) return { success: false, error: 'Not authorized for that campus' };
     q.campusId = caller.campusId;
   }
-  const days = aprLvApprovedDays_(aprValues_(), q, aprLvHolidays_);
-  let codes = {};
-  try { codes = tpAuthEmailToCode_(); } catch (err) { /* employeeCode is a convenience; email is the key */ }
-  days.forEach(function (d) { d.employeeCode = codes[d.email] || ''; });
-  return { success: true, days: days };
+  return { success: true, days: aprLvAttachCodes_(aprLvApprovedDays_(aprValues_(), q, aprLvHolidays_)) };
 }
 

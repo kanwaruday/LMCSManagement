@@ -167,8 +167,12 @@ function aprCanDecideAny_(caller) {
 }
 function aprCanDecideRow_(caller, row) {
   if (aprCanDecide_(caller)) return true;
+  // A Principal decides (never archives or revokes), only own campus, only listed types, only a request still waiting, and never their own.
+  const status = String(row[13]);
   return String(row[2]) === APR_LEAVE_CATEGORY && APR_LEAVE_PRINCIPAL_TYPES.indexOf(String(row[APR_LV_COL.TYPE])) !== -1 &&
-    callerHasRole_(caller, 'Principal') && caller.campusId !== 'ALL' && String(row[1]).trim() === caller.campusId;
+    (status === APR_STATUS.PENDING || status === APR_STATUS.INFO_REQUESTED) &&
+    callerHasRole_(caller, 'Principal') && !!caller.campusId && caller.campusId !== 'ALL' && String(row[1]).trim() === caller.campusId &&
+    String(row[11]).trim().toLowerCase() !== String(caller.email || '').trim().toLowerCase();
 }
 
 function aprISO_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
@@ -331,6 +335,7 @@ function aprSubmit_(caller, body) {
   lock.waitLock(20000);
   try {
     const existing = aprValues_();
+    if (leave) aprLvEnsureColumns_(aprSheet_()); // before anything is appended: a missing column must not leave a half-filed row
     if (leave) { // the same teacher cannot have two open or approved leaves on the same dates; an identical repeat (double click) is a no-op
       const clash = aprLvFindOverlap_(existing, caller.email, leave);
       if (clash && clash.same) return { success: true, id: clash.id, duplicate: true, status: clash.status };
@@ -361,7 +366,11 @@ function aprAppendRequest_(caller, body, category, title, description, amountVal
     String(body.linkedPlannedActivityId || ''), String(body.evidenceLink || '').trim(),
     caller.email, new Date(), APR_STATUS.PENDING, '', '', '',
   ]);
-  if (leave) aprLvWrite_(aprSheet_(), aprSheet_().getLastRow(), leave); // inside the submit lock, so the last row is this one
+  if (leave) {
+    const sheet = aprSheet_();
+    try { aprLvWrite_(sheet, aprLvRowById_(sheet, id), leave); }
+    catch (err) { try { sheet.deleteRow(aprLvRowById_(sheet, id)); } catch (e2) { /* nothing more to do */ } throw err; } // never leave a Leave row without its dates
+  }
   aprNotifyDeciders_(caller, title, category, campusId);
   return { success: true, id: id };
 }
@@ -484,7 +493,7 @@ function aprDecide_(caller, body) {
   // 2026-10-02, per Uday: any decision can tell people in 3 groups -- For Action /
   // For Accountability / For Information, max 2 each (Approvals only).
   // Column 18 "referredTo" (header self-created) is the audit trail.
-  if (APR_NO_REFER_CATEGORIES.indexOf(category) === -1) {
+  if (aprCanDecide_(caller) && APR_NO_REFER_CATEGORIES.indexOf(category) === -1) { // referrals are Management's; a Principal deciding leave later does not refer
     const groups = aprParseReferees_(body.referTo);
     const parts = APR_REFER_KINDS.filter(function (k) { return groups[k].length; })
       .map(function (k) { return APR_REFER_LABELS[k] + ': ' + groups[k].join(', '); });
@@ -536,7 +545,7 @@ function aprReferees_(caller) {
 // Decider-only, same campus scoping as aprDecide_. body.ids = [id,...] (max 200),
 // body.archive = true|false.
 function aprArchive_(caller, body) {
-  if (!aprCanDecideAny_(caller)) return { success: false, error: 'Not authorized to archive approvals' };
+  if (!aprCanDecide_(caller)) return { success: false, error: 'Not authorized to archive approvals' }; // archiving stays with Management even after leave moves to Principals
   const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { success: false, error: 'Nothing to archive' };
   const archive = body.archive !== false;
@@ -548,7 +557,6 @@ function aprArchive_(caller, body) {
     const i = aprFindRowIndex_(values, id);
     if (i === -1) return;
     if (caller.campusId !== 'ALL' && String(values[i][1]).trim() !== caller.campusId) return;
-    if (!aprCanDecideRow_(caller, values[i])) return;
     if (archive && [APR_STATUS.APPROVED, APR_STATUS.REJECTED, APR_STATUS.REVOKED].indexOf(String(values[i][13])) === -1) return; // only decided ones
     sheet.getRange(i + 1, 19).setValue(archive ? 'TRUE' : '');
     count++;
