@@ -89,7 +89,7 @@ const answer = (bodies) => { calls = []; ctx.fetch = (url, init) => { calls.push
   // the sync line from pushedAt (hq-logic's syncLine): shown fresh or stale, empty without it
   assert.ok(/hq-logic\.js/.test(html), 'the page loads hq-logic.js');
   const ok = (extra) => JSON.stringify(Object.assign({ success: true, campus: 'LMS4', issues: [] }, extra));
-  answer([ok({ pushedAt: '2026-01-02 08:30' })]);
+  answer([ok({ pushedAt: '2026-01-02T03:00:00.000Z' })]);
   await ctx.load();
   assert.ok(/^Daily-report issues last synced 2 Jan, 08:30 \(the Mac hasn't pushed since then\)$/.test(els['issue-sync'].textContent), els['issue-sync'].textContent);
   answer([ok({})]);

@@ -210,7 +210,7 @@
   <script src="../assets/auth.js?v=385e2fb1"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script src="./shared.js?v=26aa5692"></script>
-  <script src="./hq-logic.js?v=d1b7f813"></script>
+  <script src="./hq-logic.js?v=d069dc36"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
     // where a Coordinator recommends on an approval. The Owner decides every approval (on the Approvals page); no control
@@ -469,7 +469,7 @@
         return;
       }
       dec.recommendation = res.recommendation;
-      TASKS.forEach((t) => { if (H.approvalId(t) === dec.id) t.recommendation = res.recommendation; });
+      (TASKS || []).forEach((t) => { if (H.approvalId(t) === dec.id) t.recommendation = res.recommendation; });
       FRESH.forEach((f) => { if (f.approvalId === dec.id) f.recommendation = res.recommendation; });
       renderAll();
       paintDecision();

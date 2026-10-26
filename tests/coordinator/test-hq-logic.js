@@ -116,10 +116,12 @@ assert.strictEqual(H.closedCount(cl, TODAY), 2, '19 Oct is 7 days back (in), 18 
 assert.strictEqual(H.closedCount([], TODAY), 0);
 
 // ── syncLine: fresh, stale (over 24 hours), missing ──
-const NOW = new Date(2026, 9, 26, 9, 0);
-assert.strictEqual(H.syncLine('2026-10-25 10:00', NOW), 'Daily-report issues last synced 25 Oct, 10:00');
-assert.strictEqual(H.syncLine('2026-10-25 09:00', NOW), 'Daily-report issues last synced 25 Oct, 09:00', 'exactly 24 hours is not stale yet');
-assert.strictEqual(H.syncLine('2026-10-25 08:00', NOW), "Daily-report issues last synced 25 Oct, 08:00 (the Mac hasn't pushed since then)");
+const NOW = new Date('2026-10-26T04:00:00.000Z'); // what coordPdrPush_ writes: new Date().toISOString(), shown in IST
+assert.strictEqual(H.syncLine('2026-10-25T04:00:00.000Z', new Date('2026-10-26T03:59:00.000Z')), 'Daily-report issues last synced 25 Oct, 09:30', 'IST: 04:00Z is 09:30');
+assert.strictEqual(H.syncLine('2026-10-25T05:00:00.000Z', NOW), 'Daily-report issues last synced 25 Oct, 10:30');
+assert.strictEqual(H.syncLine('2026-10-25T04:00:00.000Z', NOW), 'Daily-report issues last synced 25 Oct, 09:30', 'exactly 24 hours is not stale yet');
+assert.strictEqual(H.syncLine('2026-10-25T03:00:00.000Z', NOW), "Daily-report issues last synced 25 Oct, 08:30 (the Mac hasn't pushed since then)");
+assert.strictEqual(H.syncLine('2026-10-25T20:00:00.000Z', NOW), 'Daily-report issues last synced 26 Oct, 01:30', 'IST date rolls over');
 assert.strictEqual(H.syncLine('', NOW), '');
 assert.strictEqual(H.syncLine(undefined, NOW), '');
 assert.strictEqual(H.syncLine('not a date', NOW), '');

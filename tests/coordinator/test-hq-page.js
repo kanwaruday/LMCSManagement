@@ -107,7 +107,7 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
     if (/action=principalissues/.test(url)) return failIssues ? Promise.reject(new Error('Failed to fetch')) : Promise.resolve({ json: () => Promise.resolve({ success: true, issues, pushedAt }) });
     return Promise.resolve({ json: () => Promise.resolve({ success: true, tasks: [freshT], fresh: [] }) });
   };
-  ctx.fetch = hqFetch(daysAgo(0) + ' 06:00');
+  ctx.fetch = hqFetch(new Date().toISOString());
   await ctx.load();
   let bd = els.board.innerHTML;
   assert.ok(fetches.some((u) => /action=principalissues/.test(u)), 'load calls principalissues');
@@ -125,7 +125,7 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   assert.ok(bd.includes('Subj r2') && !bd.includes('Subj r3') && !bd.includes('Docs missing'), 'the picker filters report issues by campus');
   assert.ok(/Closed to review: 1/.test(els['closed-review'].innerHTML), 'closed count follows the picker');
   vm.runInContext("SEL = LMCSCampus.get({ campusId: 'ALL' })", ctx);
-  ctx.fetch = hqFetch('2026-01-01 08:00');
+  ctx.fetch = hqFetch('2026-01-01T03:00:00.000Z');
   await ctx.load();
   assert.ok(/Mac hasn't pushed since then/.test(els['issue-sync'].textContent), 'stale sync line');
   ctx.fetch = hqFetch('');

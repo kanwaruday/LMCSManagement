@@ -103,12 +103,12 @@
     const since = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
     return (issues || []).filter((i) => i.status === 'resolved' && i.resolvedAt >= since).length;
   }
-  // pushedAt: the Mac's last push, 'YYYY-MM-DD HH:MM' in the sheet's time zone. '' when unknown.
+  // pushedAt: an ISO timestamp as coordPdrPush_ writes it ('2026-10-25T04:00:00.000Z'), shown in IST. '' when missing or invalid.
   function syncLine(pushedAt, now) {
-    const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/.exec(String(pushedAt || ''));
-    if (!m) return '';
-    const at = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
-    return 'Daily-report issues last synced ' + +m[3] + ' ' + MONTHS[+m[2] - 1] + ', ' + m[4] + ':' + m[5] + (now - at > 864e5 ? " (the Mac hasn't pushed since then)" : '');
+    const t = Date.parse(pushedAt || '');
+    if (isNaN(t)) return '';
+    const d = new Date(t + 19800000), p2 = (n) => ('0' + n).slice(-2); // UTC+5:30, read with the UTC getters
+    return 'Daily-report issues last synced ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ', ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + (now - t > 864e5 ? " (the Mac hasn't pushed since then)" : '');
   }
 
   function recReady(choice, reason) { return !!choice && !!String(reason || '').trim(); }

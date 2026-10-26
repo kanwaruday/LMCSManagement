@@ -18,13 +18,13 @@ const book = (tabs) => {
 };
 
 const items = (...dates) => JSON.stringify(dates.map((d) => ({ date: d, text: 'x' })));
-const issue = (id, campus, subject, first, last, count, needs) => [id, campus, 'Facilities', subject, first, last, count, needs ? 'yes' : 'no', items(first, last), '2026-10-25 08:00'];
+const issue = (id, campus, subject, first, last, count, needs) => [id, campus, 'Facilities', subject, first, last, count, needs ? 'yes' : 'no', items(first, last), '2026-10-25T04:00:00.000Z'];
 const issueRows = [issue('i1', 'LMS4', 'Water tank leaking', '2026-10-01', '2026-10-10', 3, true),
   issue('i2', 'LMS4', 'Broken bench', '2026-10-02', '2026-10-12', 2, false),
   issue('i3', 'LMS4', 'Tank overflow', '2026-10-05', '2026-10-08', 2, true),
   issue('i9', 'LMS2', 'Bus late', '2026-10-03', '2026-10-09', 4, true)];
 const act = (id, status, note, by, at, campus, lastAt) => [id, status, '', '', note, by, at, campus, lastAt || '2026-10-10'];
-issueRows[3][9] = '2026-10-25 09:30'; // the latest push, on another campus's row
+issueRows[3][9] = '2026-10-25T06:00:00.000Z'; // the latest push, on another campus's row
 const actionRows = [act('i1', 'reopened', 'Still leaking', 'c@lms.org.in', '2026-10-21 11:00', 'LMS4'),
   act('i2', 'resolved', 'Bench replaced', 'p4@lms.org.in', '2026-10-20 09:30', 'LMS4', '2026-10-12'),
   act('gone', 'resolved', 'old', 'p4@lms.org.in', '2026-10-01 09:00', 'LMS4')]; // id the Issues tab no longer has
@@ -235,5 +235,5 @@ assert.strictEqual(ctx.coordPdrMergedLast_('i2', issueRows, mergeRows), '2026-10
 assert.strictEqual(ctx.coordPdrMergedLast_('i1', issueRows, mergeRows), '2026-10-10'); // i3 (10-08) merged in, earlier
 books[pdrId] = pdrSaved;
 // ── pushedAt: the latest "Pushed at" of the whole Issues tab, the same for every scope ──
-['tok-p4', 'tok-p2', 'tok-c', 'tok-c4'].forEach((t) => assert.strictEqual(get('principalissues', t).pushedAt, '2026-10-25 09:30', t));
+['tok-p4', 'tok-p2', 'tok-c', 'tok-c4'].forEach((t) => assert.strictEqual(get('principalissues', t).pushedAt, '2026-10-25T06:00:00.000Z', t));
 console.log('coordinator principal issues: ok');
