@@ -154,19 +154,26 @@ function fleetShapeOps_(tabs, today, fleet, objs) {
   // an unread, no-expiry or other-document row says nothing; n/a with no newer form date is not needed
   const keyOf = {}, scan = {}, form = {}, paperDates = {};
   FLEET_PAPERS.forEach(function (p) { keyOf[p[1]] = p[0]; });
+  const fid = TransportRank.fid, scanLink = {}, formLink = {}, other = {}, paperDocs = {}; // file ids only (the Transport page's wrong-document check compares ids)
   objs(tabs.docs).forEach(function (r) {
     const reg = FQ.normReg(r.Reg), key = keyOf[String(r.Document)], st = String(r.Status);
-    if (!regs[reg] || !key || ['unread', 'no expiry', 'other document'].indexOf(st) !== -1) return;
+    if (!regs[reg] || !key) return;
+    if (st === 'other document') { (other[reg + '|' + key] = other[reg + '|' + key] || []).push(fid(r.Link)); return; }
+    if (['unread', 'no expiry'].indexOf(st) !== -1) return;
     scan[reg + '|' + key] = st === 'n/a' ? { na: true, date: '' } : { date: fleetDay_(r['Valid to']) };
+    scanLink[reg + '|' + key] = fid(r.Link);
   });
   (tabs.form || []).slice(1).forEach(function (r) {
     const reg = FQ.normReg(r[1]), key = fleetFormType_(r[2]), date = fleetDay_(r[3]);
     if (!regs[reg] || !key || !date) return;
-    if (!form[reg + '|' + key] || date > form[reg + '|' + key]) form[reg + '|' + key] = date;
+    if (!form[reg + '|' + key] || date > form[reg + '|' + key]) { form[reg + '|' + key] = date; formLink[reg + '|' + key] = fid((String(r[4] || '').match(/https?:\/\/[^\s,;]+/) || [''])[0]); }
   });
   Object.keys(scan).concat(Object.keys(form)).forEach(function (k) {
     const sc = scan[k], l = form[k], d = l && (!sc || l >= sc.date) ? l : sc && !sc.na ? sc.date : '', reg = k.split('|')[0];
-    if (d) (paperDates[reg] = paperDates[reg] || {})[k.split('|')[1]] = d;
+    if (!d) return;
+    (paperDates[reg] = paperDates[reg] || {})[k.split('|')[1]] = d;
+    const link = d === l ? formLink[k] : scanLink[k], oth = (other[k] || []).filter(String);
+    if (link || oth.length) (paperDocs[reg] = paperDocs[reg] || {})[k.split('|')[1]] = { link: link || '', other: oth };
   });
   // driver documents: only the three dates, only when they read as a date
   const driverDocs = {}, isDay = function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; };
@@ -184,7 +191,8 @@ function fleetShapeOps_(tabs, today, fleet, objs) {
     const domain = String(r[1] || '').trim(), status = String(r[5] || '').trim(), id = String(r[0] || '').trim();
     if (!id || FLEET_OPS_DOMAINS.indexOf(domain) === -1 || (status !== 'open' && status !== 'resolved')) return;
     const title = String(r[3] || '').replace(/\s+/g, ' ').trim().slice(0, 160), reg = fleetTaskReg_(id, title, regs), at = fleetIso_(r[9]);
-    if (!reg || (status === 'resolved' && (!at || fleetIstDay_(Date.parse(at)) < from))) return;
+    if (status === 'resolved' && (!at || fleetIstDay_(Date.parse(at)) < from)) return;
+    // every task of the 11 domains stays, whether or not it names a running bus (reg '' then): it is scoped by its own campus
     tasks.push({ id: id, domain: domain, campus: String(r[2] || '').trim() ? num(r[2]) : '', reg: reg, title: title, status: status, assignee: String(r[13] || '').trim().toLowerCase(),
       due: fleetDay_(r[14]), createdAt: fleetDay_(r[7]), resolvedAt: status === 'resolved' ? at : '', resolvedBy: status === 'resolved' ? String(r[10] || '').trim() : '' });
   });
@@ -222,7 +230,7 @@ function fleetShapeOps_(tabs, today, fleet, objs) {
     if (String(c.flag) !== 'yes' || !regs[reg] || day < add(today, -14)) return;
     checks.push({ id: String(c.id), campus: num(c.campus), reg: reg, date: day, answered: !!a, by: a ? String(a.by || '').trim().toLowerCase() : '', at: a ? fleetIso_(a.at) : '' });
   });
-  return { paperDates: paperDates, driverDocs: driverDocs, tasks: tasks, rolls: rolls, ran: ran, service: service, partLife: partLife, catModel: catModel, checks: checks };
+  return { paperDates: paperDates, paperDocs: paperDocs, driverDocs: driverDocs, tasks: tasks, rolls: rolls, ran: ran, service: service, partLife: partLife, catModel: catModel, checks: checks };
 }
 
 // the form's "Document Type" (upper case) -> the paper's key (coordinator-transport.gs COORD_TRANSPORT_FORM_TYPES)
@@ -341,8 +349,11 @@ function fleetMissions_(caller, cfg, now) {
       (q.done ? done : open).push({ m: m, follow: follow, known: pr.known, bus: bus, i: bi * 10 + qi });
     });
   });
+  // the setup missions still open: their follow-ups (monthly safety check, route timelapse) are the same job, so they are not shown a second time
+  const setupOpen = {};
+  open.forEach(function (x) { const k = x.m.kind === 'fleet_safety' ? 'bus_inspection' : x.m.kind === 'fleet_capture' ? 'capture_route' : ''; if (k) setupOpen[k + '|' + x.m.id.split(':')[1]] = true; });
   open.sort(function (a, b) { return (a.follow - b.follow) || (b.known - a.known) || (b.bus - a.bus) || (a.i - b.i); });
-  return open.concat(done).map(function (x) { return x.m; }).concat(fleetOpsMissions_(caller, cfg, now, rows));
+  return open.concat(done).map(function (x) { return x.m; }).concat(fleetOpsMissions_(caller, cfg, now, rows, setupOpen));
 }
 
 // ── Fleet Operations ─────────────────────────────────────────────────
@@ -359,8 +370,10 @@ function fleetPaperStates_(rows, reg, today) {
   const dates = (rows.paperDates || {})[reg] || {}, out = [];
   FLEET_PAPERS.forEach(function (p) {
     if (!dates[p[0]]) return;
-    const c = TransportRank.cellState({ date: dates[p[0]], noexp: [], other: [], unread: [] }, p[0], today);
-    if (c.n !== null && c.t !== 'na') out.push({ key: p[0], label: p[2], date: dates[p[0]], n: c.n });
+    // the file link and the other-document list go into the Transport page's own check, as the "papers on file" counter does: a wrong document is not current
+    const d = ((rows.paperDocs || {})[reg] || {})[p[0]] || {};
+    const c = TransportRank.cellState({ date: dates[p[0]], link: d.link || '', other: (d.other || []).map(function (l) { return { link: l }; }), noexp: [], unread: [] }, p[0], today);
+    if (c.n !== null && c.t !== 'na') out.push({ key: p[0], label: p[2], date: dates[p[0]], n: c.n, bad: !!c.bad });
   });
   return out;
 }
@@ -372,6 +385,8 @@ function fleetHeat_(bus, fleet) {
   let score = 0;
   const add = function (w, text) { score += Number(w) || 0; why.push(text); };
   (bus.expired || []).forEach(function (l) { add(W.expiredPaper, l + ' expired'); });
+  (bus.wrong || []).forEach(function (l) { add(W.expiredPaper, l + ' is the wrong document'); });
+  (bus.driverExpired || []).forEach(function (l) { add(W.expiredDriverDoc, l + ' expired'); });
   if (open.gps_dead) add(W.trackerDead, 'tracker silent');
   if (open.gps_none) add(W.trackerNone, 'no tracker');
   if (open.gps_blind) add(W.trackerBlind, 'tracker dark on part of its trips');
@@ -381,8 +396,15 @@ function fleetHeat_(bus, fleet) {
   if (bus.overAge) add(W.overAge, 'past the ' + F.busAgeLimit + '-year limit');
   if (bus.driver60) add(W.driver60, 'driver is 60 or over');
   if (bus.noAttendant) add(W.noAttendant, 'no attendant on record');
+  if (bus.rollMissing) add(W.rollCallMissing, 'roll call missing yesterday');
   if (open.bus_speed >= F.speedCount) add(W.speed, 'repeated over-speed');
   return { level: score >= F.heat.hot ? 'hot' : score >= F.heat.warm ? 'warm' : 'cool', reasons: why };
+}
+
+// a driver document's expiry day: the licence and medical certificate print one; police verification only when cfg.fleet.policeVerificationYears is set (Ruling O1)
+function fleetDriverDocExpiry_(date, key, F) {
+  if (!date) return '';
+  return key === 'police' ? (F.policeVerificationYears > 0 ? fleetAddMonths_(date, 12 * F.policeVerificationYears) : '') : date;
 }
 
 // {reg: {level, reasons}} for every bus in rows.fleet, from the cached rows (open follow-ups, papers, the driver card's age flag, the safety kit's attendant)
@@ -401,8 +423,12 @@ function fleetHeats_(rows, today, cfg) {
   });
   (rows.drivers || []).forEach(function (d) { drivers[d.driverKey] = d.ageLimit === true || d.ageLimit === 'yes'; });
   rows.fleet.forEach(function (b) {
+    const states = fleetPaperStates_(rows, b.reg, today), docs = (rows.driverDocs || {})[FQ.driverKey(b)] || {}, yesterday = fleetAddDays_(today, -1);
     out[b.reg] = fleetHeat_({
-      expired: fleetPaperStates_(rows, b.reg, today).filter(function (p) { return p.n < 0; }).map(function (p) { return p.label; }), open: open[b.reg] || {},
+      expired: states.filter(function (p) { return p.n < 0 && !p.bad; }).map(function (p) { return p.label; }), wrong: states.filter(function (p) { return p.bad; }).map(function (p) { return p.label; }),
+      driverExpired: FLEET_DRIVER_DOCS.filter(function (d) { const e = fleetDriverDocExpiry_(docs[d[0]], d[0], F); return e && e < today; }).map(function (d) { return d[1]; }),
+      rollMissing: yesterday >= F.rollCallFrom && ((rows.ran || {})[b.reg] || []).indexOf(yesterday) !== -1 && !((rows.rolls || {})[b.reg] || {})[yesterday],
+      open: open[b.reg] || {},
       overAge: !!b.year && Number(today.slice(0, 4)) - b.year >= F.busAgeLimit, driver60: !!drivers[FQ.driverKey(b)],
       noAttendant: !safety[b.reg] || /^(none|no|nil|-)$/i.test(safety[b.reg]),
     }, F);
@@ -415,7 +441,7 @@ var FLEET_WHY = { gps_dead: 'School buses must have a working tracker', gps_none
   bus_inspection: 'A safety check is due every month', bus_age: 'School buses may run up to 15 years' };
 
 // Buddy's line for one follow-up (work/LMS Mascot Voice Guide.md: verb first, plain, no speed language). late: a Fee Clerk item shown to the Coordinator.
-function fleetOpsTitle_(t, late) {
+function fleetOpsTitle_(t, late, b, today) {
   const reg = t.reg, part = t.id.split('|')[2] || '', day = /^\d{4}-\d{2}-\d{2}$/.test(part) ? gameDateLabel_(part) : '';
   const fill = (String(t.title).match(/fuel on (\d{1,2} [A-Za-z]{3})/) || [])[1] || 'a recent day';
   switch (t.domain) {
@@ -429,24 +455,27 @@ function fleetOpsTitle_(t, late) {
     case 'bus_inspection': return 'Record the monthly safety check for ' + reg;
     case 'bus_equipment': return ((String(t.title).match(/^\S+: (.+?) missing in the safety check/) || [])[1] || 'A safety item') + ' on ' + reg + ' failed the safety check: fix it and check again';
     case 'capture_route': return 'Run the route timelapse for ' + reg;
-    case 'bus_age': return reg + ' has reached the 15-year limit: plan its replacement';
+    case 'bus_age': return b.year && b.year + 15 > Number(today.slice(0, 4)) ? reg + ' reaches the 15-year limit in ' + (b.year + 15) + ': plan its replacement' : reg + ' has reached the 15-year limit: plan its replacement';
     default: return t.title;
   }
 }
 
 // Fee Clerk: fuel proof, fuel check answers, renewals, roll call. Coordinator: the other follow-ups, parts due, and "get it done" copies (shared, no personal
 // credit) of the clerk's items that have gone late. Open ones first, then the ones done since the start of yesterday's game day. rows = the caller's scope.
-function fleetOpsMissions_(caller, cfg, now, rows) {
+function fleetOpsMissions_(caller, cfg, now, rows, setupOpen) {
+  setupOpen = setupOpen || {};
   const role = caller.primaryRole, clerk = role === 'FeeClerk', F = fleetCfg_(cfg), today = fleetIstDay_(now.getTime()), yesterday = fleetAddDays_(today, -1);
   const since = gameLookbackStart_(now), me = gameLower_(caller.email), bus = {}, open = [], done = [];
   const hm = new Date(now.getTime() + 330 * 60000).toISOString().slice(11, 16), dow = new Date(today + 'T00:00:00Z').getUTCDay();
   rows.fleet.forEach(function (b) { bus[b.reg] = b; });
+  const scope = fleetScope_(caller, cfg), inScope = function (c) { return !scope || scope.indexOf(c) !== -1; };
   const put = function (kind, id, f) { const m = gameMission_(kind, id, f); (m.done || m.gone ? done : open).push(m); };
 
   // 1. the transport follow-ups, from the Tasks rows (the same rules as the generic builder: resolved by a person is done, by the system is gone)
   (rows.tasks || []).forEach(function (t) {
-    const b = bus[t.reg], resolved = t.status === 'resolved', by = gameLower_(t.resolvedBy), gone = resolved && /^system/i.test(by), own = t.domain === 'fuel_proof';
-    if (!b || (resolved && !(t.resolvedAt && Date.parse(t.resolvedAt) >= since))) return;
+    const b = bus[t.reg], campus = t.campus || (b && b.campusId) || '', resolved = t.status === 'resolved', by = gameLower_(t.resolvedBy), gone = resolved && /^system/i.test(by), own = t.domain === 'fuel_proof';
+    if (!inScope(campus) || (resolved && !(t.resolvedAt && Date.parse(t.resolvedAt) >= since))) return; // scoped by the task row's own campus, not by the roster
+    if (!resolved && setupOpen[t.domain + '|' + t.reg]) return; // the setup mission for this bus is the same job
     let late = false;
     if (clerk) { if (!own) return; }
     else {
@@ -454,7 +483,7 @@ function fleetOpsMissions_(caller, cfg, now, rows) {
       if (own) { if (resolved || !(t.due && t.due < today)) return; late = true; } // the clerk's until it has gone late
     }
     put('fleet_ops_' + t.domain, t.id, {
-      title: fleetOpsTitle_(t, late), why: gone ? 'No longer needed' : FLEET_WHY[t.domain] || '', owner: t.assignee, campus: t.campus || b.campusId,
+      title: b ? fleetOpsTitle_(t, late, b, today) : t.title, why: gone ? 'No longer needed' : FLEET_WHY[t.domain] || '', owner: t.assignee, campus: campus,
       go: clerk ? 'office/daybook.html' : GAME_PORTAL_FOLLOWUPS, due: t.due || null,
       shared: clerk ? resolved && !gone && by !== me : late || !t.assignee,
       done: resolved && !gone, doneAt: resolved && !gone ? t.resolvedAt : null, doneBy: resolved && !gone ? by : null, gone: gone,
@@ -462,7 +491,11 @@ function fleetOpsMissions_(caller, cfg, now, rows) {
   });
 
   // 2. renewals: papers expiring within cfg.fleet.renewDays (or expired, overdue); the driver's licence, medical certificate and police verification
-  const renew = function (kind, id, b, label, date, n, go) {
+  const renew = function (kind, id, b, label, date, n, go, bad) {
+    if (bad) { // a paper read as the wrong document is not current, whatever its date
+      if (clerk) put(kind, id, { title: 'Upload the right ' + label.paper + ' for ' + b.reg, why: 'The file on record is another document', campus: b.campusId, go: go });
+      return;
+    }
     if (n > F.renewDays || (!clerk && n >= 0)) return; // the Coordinator only hears of the ones that are overdue
     const dl = gameDateLabel_(date);
     put(kind, id, clerk ? { title: 'Renew ' + label.what + ': ' + (n < 0 ? 'expired ' : 'expires ') + dl, why: label.why, campus: b.campusId, go: go, due: date }
@@ -471,15 +504,15 @@ function fleetOpsMissions_(caller, cfg, now, rows) {
   const seen = {};
   rows.fleet.forEach(function (b) {
     fleetPaperStates_(rows, b.reg, today).forEach(function (p) {
-      renew('fleet_ops_paper', b.reg + ':' + p.key, b, { what: p.label + ' for ' + b.reg, who: p.label.replace(/^./, function (c) { return c.toUpperCase(); }) + ' for ' + b.reg, why: 'The bus cannot run on an expired paper' }, p.date, p.n, 'coordinator/transport/index.html');
+      renew('fleet_ops_paper', b.reg + ':' + p.key, b, { what: p.label + ' for ' + b.reg, who: p.label.replace(/^./, function (c) { return c.toUpperCase(); }) + ' for ' + b.reg, why: 'The bus cannot run on an expired paper', paper: p.label }, p.date, p.n, 'coordinator/transport/index.html', p.bad);
     });
     const key = FleetQuests.driverKey(b), docs = (rows.driverDocs || {})[key];
     if (!docs || seen[key]) return;
     seen[key] = true;
     const name = String(b.driver || '').trim();
     FLEET_DRIVER_DOCS.forEach(function (d) {
-      if (!docs[d[0]]) return;
-      const date = d[0] === 'police' ? fleetAddMonths_(docs[d[0]], 12 * F.policeValidYears) : docs[d[0]];
+      const date = fleetDriverDocExpiry_(docs[d[0]], d[0], F);
+      if (!date) return;
       const what = name ? name + "'s " + d[1] : 'the ' + d[1] + ' of the driver of ' + b.reg;
       renew('fleet_ops_driver_doc', b.reg + ':' + d[0], b, { what: what, who: name ? name + "'s " + d[1] : 'The ' + d[1] + ' of the driver of ' + b.reg, why: 'Drivers need valid documents' }, date, fleetDayDiff_(date, today), fleetGo_(b.reg, 'driver'));
     });
@@ -489,6 +522,7 @@ function fleetOpsMissions_(caller, cfg, now, rows) {
   rows.fleet.forEach(function (b) {
     const rl = (rows.rolls || {})[b.reg] || {}, ran = ((rows.ran || {})[b.reg] || []).indexOf(yesterday) !== -1;
     [[today, true], [yesterday, ran]].forEach(function (x) {
+      if (x[0] < F.rollCallFrom) return; // nothing for a day before the roll call existed
       const day = x[0], rec = rl[day], word = day === today ? 'today' : 'yesterday', id = b.reg + ':' + day;
       if (rec) {
         if (clerk && rec.at && Date.parse(rec.at) >= since) put('fleet_ops_rollcall', id, { title: (word === 'today' ? "Mark today's" : "Mark yesterday's") + ' roll call for ' + b.reg, campus: b.campusId,
@@ -504,7 +538,7 @@ function fleetOpsMissions_(caller, cfg, now, rows) {
   // 4. the Fee Clerk's fuel bill checks (the slip against the bill), while still with the clerk
   if (clerk) (rows.checks || []).forEach(function (c) {
     const b = bus[c.reg];
-    if (!b || (c.answered && !(c.at && Date.parse(c.at) >= since))) return;
+    if (!b || (c.answered ? !(c.at && Date.parse(c.at) >= since) : c.date < fleetAddDays_(today, -F.fuelClerkDays))) return; // unanswered past the clerk's days: it is the Coordinator's fuel_check now
     put('fleet_ops_fuel_answer', c.id, { title: 'Check the pump slip for ' + c.reg + "'s fill on " + gameDateLabel_(c.date), why: 'The slip should agree with the bill', campus: c.campus || b.campusId, go: 'office/index.html',
       shared: c.answered && c.by !== me, done: c.answered, doneAt: c.answered ? c.at : null, doneBy: c.answered ? c.by : null });
   });
@@ -553,8 +587,8 @@ function fleetQuests_(caller, cfg, now) {
 }
 
 // The campus operations quest (Coordinator and Owner): per campus, "every bus cool this week". A first step with the campus's heat count, then a step per bus,
-// the hot ones first, each done when the bus is cool. A team quest about buses, never a ranking of people. The Owner also gets the monthly P&L reminder:
-// no read signal exists (and none is tracked), so it is a decision-free step, done once the month has passed. Cached rows only (the quests run under the lock).
+// the hot ones first, each done when the bus is cool. A team quest about buses, never a ranking of people. No P&L review step (Ruling O2: no read signal
+// exists, so it would always be open). Cached rows only (the quests run under the lock).
 function fleetOpsQuests_(rows, role, cfg, now) {
   const today = fleetIstDay_(now.getTime()), heats = fleetHeats_(rows, today, cfg), order = { hot: 0, warm: 1, cool: 2 }, out = [], campuses = {};
   rows.fleet.forEach(function (b) { (campuses[b.campusId] = campuses[b.campusId] || { label: b.campus, buses: [] }).buses.push(b); });
@@ -568,11 +602,6 @@ function fleetOpsQuests_(rows, role, cfg, now) {
     }));
     out.push({ questId: 'fleet-ops:' + id, title: c.label + ' operations: every bus cool this week', parallel: true, steps: steps, complete: !n.hot && !n.warm });
   });
-  if (role === 'Owner') {
-    const month = today.slice(0, 7);
-    out.push({ questId: 'fleet-pnl:' + month, title: 'Review the ' + GAME_MONTHS[Number(month.slice(5)) - 1] + ' bus P&L', parallel: true, complete: month < today.slice(0, 7),
-      steps: [{ id: 'review', title: 'Open the bus P&L and look it over', go: 'coordinator/transport/index.html', done: month < today.slice(0, 7), locked: false }] });
-  }
   return out;
 }
 

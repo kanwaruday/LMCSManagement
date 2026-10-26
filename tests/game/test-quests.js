@@ -119,8 +119,10 @@ assert.deepStrictEqual(J(ctx.gameQuestRowsToSeed_([QH, seeds[0]])).map((r) => r[
 assert.strictEqual(ctx.gameQuestRowsToSeed_([QH]).length, 2);
 // Fleet Operations: a done fleet_ops_* mission counts toward the follow-up step under the same rules (director's contract)
 {
+  vm.runInContext("GAME_FOLLOWUP_SKIP.fleet = ['gps_dead']", ctx);
   const fq = (o) => state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('fleet_ops_gps_dead', o)] }))[0].steps.find((x) => x.id === 'followup').done;
   assert.strictEqual(fq({}), true, 'a done fleet_ops_ mission counts');
+  assert.strictEqual(state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('fleet_ops_rollcall')] }))[0].steps.find((x) => x.id === 'followup').done, false, 'only the follow-up domains of the registry (M4)');
   assert.strictEqual(fq({ shared: true }), false); assert.strictEqual(fq({ gone: true }), false);
   assert.strictEqual(fq({ doneBy: 'someone@lms.org.in' }), false); assert.strictEqual(fq({ doneBy: 'system (condition cleared)' }), false);
   assert.strictEqual(state(coordQ, 'Coordinator', ev({ missionsDoneByMe: [mis('fleet_setup_x')] }))[0].steps.find((x) => x.id === 'followup').done, false, 'only the fleet_ops_ prefix');

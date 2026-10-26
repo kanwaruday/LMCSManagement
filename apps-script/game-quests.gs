@@ -68,8 +68,10 @@ function gameQuestCount_(check, ev, me) {
   // pdr_report, pdr_issue, approval_recommend, followup: finished missions of that kind (a follow-up also counts as fleet_ops_*, the transport
   // follow-ups the fleet module shows as its own missions: GAME_FOLLOWUP_SKIP). Shared missions give
   // no personal credit; gone ones and anything a "system" resolver closed never count.
+  const skipped = {}; // the follow-up domains modules show as their own fleet_ops_<domain> missions (GAME_FOLLOWUP_SKIP), read here so load order never matters
+  Object.keys(GAME_FOLLOWUP_SKIP || {}).forEach(function (k) { [].concat(GAME_FOLLOWUP_SKIP[k] || []).forEach(function (d) { skipped['fleet_ops_' + d] = true; }); });
   return (ev.missionsDoneByMe || []).filter(function (m) {
-    return (m.kind === kind || (kind === 'followup' && String(m.kind).indexOf('fleet_ops_') === 0)) && m.done && !m.shared && !m.gone && gameLower_(m.doneBy) === me && !/^system/i.test(gameLower_(m.doneBy));
+    return (m.kind === kind || (kind === 'followup' && skipped[m.kind])) && m.done && !m.shared && !m.gone && gameLower_(m.doneBy) === me && !/^system/i.test(gameLower_(m.doneBy));
   }).length;
 }
 

@@ -16,6 +16,8 @@ const owner = { email: 'owner@test.invalid', campusId: 'ALL', roles: ['Owner'], 
 
 // ---- config defaults (Game Config key `fleet`)
 const F = cfg.fleet;
+assert.strictEqual(F.policeVerificationYears, null, 'O1: no police-verification renewal by default'); assert.strictEqual(F.rollCallFrom, '2026-10-27', 'I4: the deploy date (placeholder)');
+const defaults = J(cfg); cfg.fleet.rollCallFrom = '2026-10-01'; // the missions below run from before the deploy date; I4 has its own test
 assert.ok(F, 'cfg.fleet exists');
 assert.strictEqual(F.renewDays, 30); assert.strictEqual(F.rollCallBy, '10:00');
 assert.deepStrictEqual(J(ctx.gameParseConfig_([['Key', 'Value'], ['fleet', '{"renewDays":45}']]).fleet.renewDays), 45);
@@ -41,6 +43,9 @@ assert.deepStrictEqual(heat({ open: { bus_equipment: 1 } }).reasons, ['1 safety 
 assert.deepStrictEqual(heat({ open: { fuel_proof: 1 } }).reasons, ['fuel without proof']);
 assert.deepStrictEqual(heat({ overAge: true }).reasons, ['past the 15-year limit']);
 assert.deepStrictEqual(heat({ driver60: true }).reasons, ['driver is 60 or over']);
+assert.deepStrictEqual(heat({ wrong: ['insurance'] }), { level: 'hot', reasons: ['insurance is the wrong document'] }, 'I3: a wrong document counts like an expired paper');
+assert.deepStrictEqual(heat({ driverExpired: ['licence'] }), { level: 'warm', reasons: ['licence expired'] }, 'M1: an expired driver document');
+assert.deepStrictEqual(heat({ rollMissing: true }), { level: 'warm', reasons: ['roll call missing yesterday'] }, 'M1: no roll call on a day the bus ran');
 assert.deepStrictEqual(heat({ open: { bus_speed: 2 } }), { level: 'cool', reasons: [] }, 'two over-speed follow-ups are not "repeated"');
 assert.deepStrictEqual(heat({ open: { bus_speed: 3 } }), { level: 'warm', reasons: ['repeated over-speed'] }, 'three or more: a breach, counted once');
 assert.deepStrictEqual(heat({ open: { bus_speed: 9 } }).reasons, ['repeated over-speed']);
@@ -50,6 +55,7 @@ assert.deepStrictEqual(J(ctx.fleetHeat_({ expired: ['insurance'], open: {} }, { 
 
 // ---- the cache shape: new tabs in, compact masked rows out
 const H = (h, ...r) => [h].concat(r);
+const ID0 = 'a'.repeat(28), ID1 = 'b'.repeat(28), ID2 = 'c'.repeat(28);
 const TASKH = ['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity', 'CreatedAt', 'LastSeenAt', 'ResolvedAt', 'ResolvedBy', 'Note', 'Department', 'Assignee', 'Due'];
 const trow = (id, domain, campus, title, o) => { o = o || {}; const r = new Array(15).fill(''); r[0] = id; r[1] = domain; r[2] = campus; r[3] = title; r[4] = 'Call the driver Driver One'; r[5] = o.status || 'open'; r[7] = o.created || '2026-10-20T04:00:00.000Z'; r[9] = o.at || ''; r[10] = o.by || ''; r[13] = o.assignee || ''; r[14] = o.due || ''; return r; };
 const fleetTab = H(['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver', 'Seats', 'Year', 'Driver code'],
@@ -57,17 +63,18 @@ const fleetTab = H(['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Dr
 const tabs = {
   fleet: fleetTab,
   driver: H(['driverKey', 'reg', 'campus', 'driver', 'fields', 'ageLimit', 'updatedAt', 'updatedBy'],
-    ['bus:TEST01', 'TEST01', 'LMS4', 'Driver One', JSON.stringify({ driverPhone: '9000000001', dateOfBirth: '1980-01-01', licenceValidTill: '2026-11-10', medicalCertificateValidTill: '2026-10-20', policeVerificationDate: '2023-11-05', licenceClass: 'HTV' }), 'no', '', ''],
+    ['bus:TEST01', 'TEST01', 'LMS4', 'Driver One', JSON.stringify({ driverPhone: '0000000001', dateOfBirth: '1900-01-01', licenceValidTill: '2026-11-10', medicalCertificateValidTill: '2026-10-20', policeVerificationDate: '2023-11-05', licenceClass: 'HTV' }), 'no', '', ''],
     ['E2', 'TEST02', 'LMS5', 'Driver Two', JSON.stringify({ licenceValidTill: 'soon', medicalCertificateValidTill: '2027-01-01' }), 'yes', '', '']),
   docs: H(['Reg', 'Document', 'Valid to', 'Status', 'Source', 'File', 'Link', 'Note'],
-    ['TEST01', 'Insurance', '2026-12-01', 'read', '', '', '', ''], ['TEST01', 'Fitness', '2026-11-20', 'override', '', '', '', ''], ['TEST01', 'MV tax', '', 'n/a', '', '', '', 'n'],
+    ['TEST01', 'Insurance', '2026-12-01', 'read', '', '', 'https://x/' + ID0, ''], ['TEST01', 'Insurance', '', 'other document', '', '', 'https://x/' + ID2, ''], ['TEST01', 'Fitness', '2026-11-20', 'override', '', '', '', ''], ['TEST01', 'MV tax', '', 'n/a', '', '', '', 'n'],
     ['TEST01', 'Pollution', '', 'unread', '', '', '', ''], ['TEST02', 'Insurance', '2026-10-20', 'read', '', '', '', ''], ['TEST09', 'Insurance', '2026-10-01', 'read', '', '', '', '']),
-  form: H(['Timestamp', 'Reg', 'Document Type', 'Valid till', 'Upload'], ['t', 'TEST01', 'INSURANCE', '12/15/2026', ''], ['t', 'test-02', 'Insurance', '10/30/2026', ''], ['t', 'TEST01', 'RC', '1/1/2030', '']),
+  form: H(['Timestamp', 'Reg', 'Document Type', 'Valid till', 'Upload'], ['t', 'TEST01', 'INSURANCE', '12/15/2026', 'https://x/' + ID1], ['t', 'test-02', 'Insurance', '10/30/2026', ''], ['t', 'TEST01', 'RC', '1/1/2030', '']),
   tasks: H(TASKH,
     trow('gps_dead|TEST01', 'gps_dead', 'LMS4', 'TEST01: GPS tracker silent since 20 Oct', { due: '2026-10-29' }),
     trow('fuel_proof|fillx', 'fuel_proof', 'LMS5', 'TEST02, fuel on 24 Oct: no video of the fill', { assignee: 'Coord@Test.invalid' }),
     trow('bus_age|TEST02', 'bus_age', 'LMS5', 'TEST02: registered 2010', { status: 'resolved', at: '2026-10-25T10:00:00.000Z', by: 'coord@test.invalid' }),
     trow('capture_route|TEST01', 'capture_route', 'LMS4', 'old', { status: 'resolved', at: '2026-10-10T10:00:00.000Z', by: 'coord@test.invalid' }),
+    trow('fuel_proof|zz', 'fuel_proof', 'LMS4', 'GONE9, fuel on 23 Oct: no video of the fill'),
     trow('hiring|x', 'hiring_stall', 'LMS4', 'not transport')),
   roll: H(['Date', 'Reg', 'Campus', 'Driver', 'Attendant', 'Driver is substitute', 'Attendant is substitute', 'Recorded by', 'Recorded at'],
     ['2026-10-26', 'TEST02', 'LMS5', 'Driver Two', 'Attendant Two', 'no', 'no', 'clerk@test.invalid', '2026-10-26T04:15:00.000Z'], ['2026-10-10', 'TEST01', 'LMS4', 'Driver One', '', 'no', 'no', 'x@test.invalid', '2026-10-10T04:00:00.000Z']),
@@ -84,20 +91,22 @@ const sh = J(ctx.fleetShape_(tabs, '2026-10-26'));
 assert.strictEqual(sh.fleet[0].year, 2020); assert.strictEqual(sh.fleet[1].year, 2010);
 assert.deepStrictEqual(sh.paperDates, { TEST01: { insurance: '2026-12-15', fitness: '2026-11-20' }, TEST02: { insurance: '2026-10-30' } }, 'the form wins when newer; n/a and unread leave no date; not-running buses are dropped');
 assert.deepStrictEqual(sh.driverDocs, { 'bus:TEST01': { licence: '2026-11-10', medical: '2026-10-20', police: '2023-11-05' }, E2: { medical: '2027-01-01' } }, 'dates only, and only real dates');
-assert.deepStrictEqual(sh.tasks.map((t) => t.id), ['gps_dead|TEST01', 'fuel_proof|fillx', 'bus_age|TEST02'], 'the 11 transport domains; open ones and ones resolved in the last 3 days');
+assert.deepStrictEqual(sh.tasks.map((t) => t.id), ['gps_dead|TEST01', 'fuel_proof|fillx', 'bus_age|TEST02', 'fuel_proof|zz'], 'I2: every task of the 11 transport domains, open or resolved in the last 3 days, whether or not its reg is a running bus');
+assert.strictEqual(sh.tasks[3].reg, ''); assert.strictEqual(sh.tasks[3].campus, 'LMS4');
 assert.deepStrictEqual(sh.tasks[0], { id: 'gps_dead|TEST01', domain: 'gps_dead', campus: 'LMS4', reg: 'TEST01', title: 'TEST01: GPS tracker silent since 20 Oct', status: 'open', assignee: '', due: '2026-10-29', createdAt: '2026-10-20', resolvedAt: '', resolvedBy: '' });
 assert.strictEqual(sh.tasks[1].reg, 'TEST02', 'the reg comes from the title when the id carries a fill id'); assert.strictEqual(sh.tasks[1].assignee, 'coord@test.invalid');
 assert.deepStrictEqual(sh.tasks[2], { id: 'bus_age|TEST02', domain: 'bus_age', campus: 'LMS5', reg: 'TEST02', title: 'TEST02: registered 2010', status: 'resolved', assignee: '', due: '', createdAt: '2026-10-20', resolvedAt: '2026-10-25T10:00:00.000Z', resolvedBy: 'coord@test.invalid' });
+assert.deepStrictEqual(sh.paperDocs, { TEST01: { insurance: { link: ID1, other: [ID2] } } }, 'I3: file ids only (never links): the chosen paper and the other-document scans');
 assert.deepStrictEqual(sh.rolls, { TEST02: { '2026-10-26': { by: 'clerk@test.invalid', at: '2026-10-26T04:15:00.000Z' } } }, 'the last 3 days only; no names');
 assert.deepStrictEqual(sh.ran, { TEST01: ['2026-10-24', '2026-10-25'] }, 'days the bus moved, last 3 days');
 assert.deepStrictEqual(sh.service, { TEST01: { brake_front: '2026-04-30', clutch: '2026-04-30' } }, 'last replacement per component; running buses; no money, no vendor');
 assert.deepStrictEqual(sh.partLife, [{ model: 'M1', code: 'P1', name: 'Brake pads', months: 6, components: ['brake_front', 'brake_rear'] }], 'parts with a life in months only');
 assert.deepStrictEqual(sh.catModel, { TEST01: 'M1' });
 assert.deepStrictEqual(sh.checks, [{ id: 'chk1', campus: 'LMS4', reg: 'TEST01', date: '2026-10-24', answered: false, by: '', at: '' }, { id: 'chk3', campus: 'LMS4', reg: 'TEST01', date: '2026-10-23', answered: true, by: 'clerk@test.invalid', at: '2026-10-26T03:00:00.000Z' }], 'flagged checks of the last 14 days');
-assert.ok(!/9000000001|1980-01-01|Test Garage|9999|Attendant/.test(JSON.stringify(sh)), 'no phone, date of birth, money or other names in the cached rows');
+assert.ok(!/0000000001|1900-01-01|Test Garage|9999|Attendant/.test(JSON.stringify(sh)), 'no phone, date of birth, money or other names in the cached rows');
 assert.ok(!/Driver One|Driver Two/.test(JSON.stringify(Object.assign({}, sh, { fleet: [] }))), 'the roster driver name stays in the fleet rows only (as before)');
 const none = J(ctx.fleetShape_({ fleet: fleetTab }, '2026-10-26')); // the new tabs not made yet: empty, not an outage
-assert.deepStrictEqual([none.paperDates, none.driverDocs, none.tasks, none.rolls, none.ran, none.service, none.partLife, none.checks], [{}, {}, [], {}, {}, {}, [], []]);
+assert.deepStrictEqual([none.paperDocs, none.paperDates, none.driverDocs, none.tasks, none.rolls, none.ran, none.service, none.partLife, none.checks], [{}, {}, {}, [], {}, {}, {}, [], []]);
 
 // ---- fixtures for the missions
 const rows = () => {
@@ -134,7 +143,7 @@ const rows = () => {
     t('fuel_check|chk7', 'fuel_check', 'LMS4', 'TEST05', 'TEST05: fuel use looks high', { assignee: 'coord@test.invalid' }),
     t('gps_none|TEST03', 'gps_none', 'LMS1', 'TEST03', 'TEST03: no GPS tracker'),
   ];
-  r.checks = [{ id: 'chkA', campus: 'LMS4', reg: 'TEST05', date: '2026-10-24', answered: false, by: '', at: '' }, { id: 'chkB', campus: 'LMS4', reg: 'TEST05', date: '2026-10-23', answered: true, by: 'clerk@test.invalid', at: '2026-10-26T03:00:00.000Z' }];
+  r.checks = [{ id: 'chkOld', campus: 'LMS4', reg: 'TEST05', date: '2026-10-20', answered: false, by: '', at: '' }, { id: 'chkA', campus: 'LMS4', reg: 'TEST05', date: '2026-10-24', answered: false, by: '', at: '' }, { id: 'chkB', campus: 'LMS4', reg: 'TEST05', date: '2026-10-23', answered: true, by: 'clerk@test.invalid', at: '2026-10-26T03:00:00.000Z' }];
   r.partLife = [{ model: 'M1', code: 'P1', name: 'Brake pads', months: 6, components: ['brake_front'] }];
   r.catModel = { TEST01: 'M1', TEST02: 'M1', TEST03: 'M1' };
   r.service = { TEST01: { brake_front: '2026-04-30' }, TEST02: { brake_front: '2026-10-01' } };
@@ -157,7 +166,9 @@ assert.strictEqual(m.campus, 'LMS4'); assert.strictEqual(m.due, '2026-10-29'); a
 assert.strictEqual(m.shared, true, 'no assignee: shared, no personal credit'); assert.strictEqual(m.owner, ''); assert.strictEqual(m.done, false); assert.strictEqual(m.core, false);
 m = cm['fleet_ops_bus_equipment:bus_equipment|TEST01|first_aid'];
 assert.strictEqual(m.title, 'First-aid box on TEST01 failed the safety check: fix it and check again'); assert.strictEqual(m.owner, 'coord@test.invalid'); assert.strictEqual(m.shared, false);
-assert.strictEqual(cm['fleet_ops_capture_route:capture_route|TEST02'].title, 'Run the route timelapse for TEST02');
+assert.ok(!cm['fleet_ops_capture_route:capture_route|TEST02'], 'I1: the setup mission for the timelapse is open, so the follow-up is not a second one');
+const capDone = rows(); capDone.captured = { TEST02: { by: 'c@test.invalid', at: '2026-10-01T00:00:00Z' } };
+assert.strictEqual(by(ops(run(coord, capDone)))['fleet_ops_capture_route:capture_route|TEST02'].title, 'Run the route timelapse for TEST02', 'once the setup one is done the follow-up shows');
 assert.strictEqual(cm['fleet_ops_bus_away:bus_away|TEST05|2026-10-24'].title, 'TEST05 stayed away from its base on Sat 24 Oct: ask the driver why');
 assert.strictEqual(cm['fleet_ops_bus_speed:bus_speed|TEST01|2026-10-12'].title, 'Talk to the driver of TEST01 about the 40 km/h limit: week of Mon 12 Oct');
 assert.strictEqual(cm['fleet_ops_gps_none:gps_none|TEST03'].title, 'TEST03 has no GPS tracker: get one fitted');
@@ -217,7 +228,9 @@ assert.ok(by(ops(run(clerk, null, wide)))['fleet_ops_paper:TEST01:fitness'], 'cf
 // driver documents: the driver's name and the document only
 assert.strictEqual(km['fleet_ops_driver_doc:TEST01:licence'].title, "Renew Driver One's licence: expires Tue 10 Nov");
 assert.strictEqual(km['fleet_ops_driver_doc:TEST01:medical'].title, "Renew Driver One's medical certificate: expired Tue 20 Oct");
-assert.strictEqual(km['fleet_ops_driver_doc:TEST01:police'].title, "Renew Driver One's police verification: expires Thu 5 Nov");
+assert.ok(!km['fleet_ops_driver_doc:TEST01:police'], 'O1: no police-verification renewal by default');
+const pol = J(cfg); pol.fleet.policeVerificationYears = 3;
+assert.strictEqual(by(ops(run(clerk, null, pol)))['fleet_ops_driver_doc:TEST01:police'].title, "Renew Driver One's police verification: expires Thu 5 Nov", 'configured: date plus the years');
 assert.strictEqual(km['fleet_ops_driver_doc:TEST01:licence'].go, 'coordinator/transport/setup.html?reg=TEST01&quest=driver');
 // roll call: after 10:00 IST, today's missing; yesterday's when the bus ran
 assert.strictEqual(km['fleet_ops_rollcall:TEST01:2026-10-26'].title, "Mark today's roll call for TEST01");
@@ -252,7 +265,7 @@ assert.ok(!ops(run(clerk)).some((x) => x.kind === 'fleet_ops_part'));
 // ---- heat from the rows
 const heats = J(ctx.fleetHeats_(rows(), '2026-10-26', cfg));
 assert.strictEqual(heats.TEST01.level, 'hot');
-assert.deepStrictEqual(heats.TEST01.reasons, ['PUC expired', 'tracker silent', '1 safety item missing', 'repeated over-speed'], 'only the 3 over-speed weeks inside 30 days count: ' + JSON.stringify(heats.TEST01.reasons));
+assert.deepStrictEqual(heats.TEST01.reasons, ['PUC expired', 'medical certificate expired', 'tracker silent', '1 safety item missing', 'roll call missing yesterday', 'repeated over-speed'], 'only the 3 over-speed weeks inside 30 days count: ' + JSON.stringify(heats.TEST01.reasons));
 assert.deepStrictEqual(heats.TEST02, { level: 'warm', reasons: ['fuel without proof', 'no attendant on record'] });
 assert.deepStrictEqual(heats.TEST03, { level: 'hot', reasons: ['no tracker', 'driver is 60 or over'] });
 assert.strictEqual(heats.TEST05.level, 'cool');
@@ -265,23 +278,17 @@ let q4 = qs[1];
 assert.strictEqual(q4.title, 'LMS 4 operations: every bus cool this week'); assert.strictEqual(q4.parallel, true); assert.strictEqual(q4.complete, false);
 assert.deepStrictEqual(q4.steps.map((s) => [s.id, s.done]), [['heat', false], ['TEST01', false], ['TEST02', false], ['TEST05', true]], 'the hot ones first, then the warm, then the cool');
 assert.strictEqual(q4.steps[0].title, 'LMS 4: 1 hot, 1 warm, 1 cool');
-assert.strictEqual(q4.steps[1].title, 'TEST01 · hot: PUC expired, tracker silent, 1 safety item missing, repeated over-speed');
+assert.strictEqual(q4.steps[1].title, 'TEST01 · hot: PUC expired, medical certificate expired, tracker silent, 1 safety item missing, roll call missing yesterday, repeated over-speed');
 assert.strictEqual(q4.steps[3].title, 'TEST05 · cool'); assert.strictEqual(q4.steps[1].go, 'coordinator/transport/setup.html?reg=TEST01');
 assert.ok(q4.steps.every((s) => s.locked === false));
 assert.deepStrictEqual(quests(coord4).filter((q) => /^fleet-ops:/.test(q.questId)).map((q) => q.questId), ['fleet-ops:LMS4', 'fleet-ops:LMS5']);
-const allCool = rows(); allCool.tasks = []; allCool.paperDates = {}; allCool.driverDocs = {}; allCool.drivers = [];
+const allCool = rows(); allCool.tasks = []; allCool.paperDates = {}; allCool.driverDocs = {}; allCool.drivers = []; allCool.ran = {};
 allCool.profiles.forEach((p) => { p.safety = JSON.stringify({ attendantHelperName: 'A' }); });
 const qc = quests(coord, allCool).filter((q) => /^fleet-ops:LMS4/.test(q.questId))[0];
 assert.strictEqual(qc.complete, true, JSON.stringify(qc)); assert.strictEqual(qc.steps[0].title, 'LMS 4: 0 hot, 0 warm, 3 cool'); assert.strictEqual(qc.steps[0].done, true);
 let oq = quests(owner);
 assert.deepStrictEqual(oq.filter((q) => /^fleet-ops:/.test(q.questId)).map((q) => q.questId), ['fleet-ops:LMS1', 'fleet-ops:LMS4', 'fleet-ops:LMS5'], 'the Owner sees every campus');
-const pnl = oq.filter((q) => /^fleet-pnl:/.test(q.questId));
-assert.deepStrictEqual(pnl.map((q) => q.questId), ['fleet-pnl:2026-10']);
-assert.strictEqual(pnl[0].title, 'Review the October bus P&L'); assert.strictEqual(pnl[0].complete, false);
-assert.deepStrictEqual(pnl[0].steps.map((s) => [s.id, s.done, s.go]), [['review', false, 'coordinator/transport/index.html']]);
-assert.deepStrictEqual(quests(coord).filter((q) => /^fleet-pnl:/.test(q.questId)), [], 'the Owner\'s reminder only');
-const nov = J(ctx.fleetQuests_(owner, cfg, new Date('2026-11-02T05:00:00Z'))).filter((q) => /^fleet-pnl:/.test(q.questId));
-assert.deepStrictEqual(nov.map((q) => [q.questId, q.complete]), [['fleet-pnl:2026-11', false]], 'a new month, a new reminder (done = the month has passed, so only a past month is done)');
+assert.ok(!quests(owner).concat(quests(coord)).some((q) => /^fleet-pnl:/.test(q.questId)), 'O2: no P&L review step');
 // the quests read the cache only; a cold cache gives no quests
 let opened = 0; ctx.SpreadsheetApp = { openById() { opened++; throw new Error('workbook read'); } };
 ctx.fleetCachedRows_ = () => null;
@@ -289,10 +296,61 @@ assert.deepStrictEqual(J(ctx.fleetQuests_(owner, cfg, NOW)), []); assert.deepStr
 ctx.fleetRows_ = () => { throw new Error('workbook down'); };
 assert.throws(() => ctx.fleetMissions_(clerk, cfg, NOW), /workbook down/, 'read failures throw');
 
+// ---- fix round 1
+// I1: one job, one mission: a never-inspected bus with an open bus_inspection follow-up gets exactly one safety mission
+{
+  const r = rows(); r.tasks.push({ id: 'bus_inspection|TEST01', domain: 'bus_inspection', campus: 'LMS4', reg: 'TEST01', title: 'TEST01: no safety check in October', status: 'open', assignee: '', due: '', createdAt: '2026-10-20', resolvedAt: '', resolvedBy: '' });
+  const safety = run(coord, r).filter((m) => m.campus === 'LMS4' && /monthly safety check/.test(m.title) && /TEST01/.test(m.title));
+  assert.deepStrictEqual(safety.map((m) => m.id), ['fleet_safety:TEST01'], 'exactly one safety mission: ' + JSON.stringify(safety.map((m) => m.id)));
+  r.inspected = { TEST01: { by: 'c@test.invalid', at: '2026-10-02' } };
+  assert.ok(by(run(coord, r))['fleet_ops_bus_inspection:bus_inspection|TEST01'], 'once the setup safety check is done, the monthly follow-up shows');
+}
+// I2: every transport follow-up appears somewhere, scoped by its own campus
+{
+  const r = rows(), t = (id, domain, campus, title, o) => Object.assign({ id: id, domain: domain, campus: campus, reg: '', title: title, status: 'open', assignee: '', due: '', createdAt: '2026-10-20', resolvedAt: '', resolvedBy: '' }, o || {});
+  r.tasks.push(t('fuel_proof|zz', 'fuel_proof', 'LMS4', 'GONE9, fuel on 23 Oct: no video of the fill'), t('gps_dead|GONE8', 'gps_dead', 'LMS4', 'GONE8: GPS tracker silent since 20 Oct', { assignee: 'coord@test.invalid' }),
+    t('fuel_proof|zy', 'fuel_proof', 'LMS1', 'GONE7, fuel on 23 Oct: no video of the fill'));
+  m = by(ops(run(clerk, r)))['fleet_ops_fuel_proof:fuel_proof|zz'];
+  assert.ok(m, 'a fuel_proof for a vehicle that is not a running bus still reaches the Fee Clerk'); assert.strictEqual(m.title, 'GONE9, fuel on 23 Oct: no video of the fill', 'its own title'); assert.strictEqual(m.campus, 'LMS4');
+  assert.ok(!by(ops(run(clerk, r)))['fleet_ops_fuel_proof:fuel_proof|zy'], "another campus's clerk does not get it");
+  assert.ok(by(ops(run(Object.assign({}, clerk, { campusId: 'LMS1' }), r)))['fleet_ops_fuel_proof:fuel_proof|zy']);
+  assert.ok(by(ops(run(coord, r)))['fleet_ops_gps_dead:gps_dead|GONE8'], 'a Coordinator gets a follow-up for a vehicle outside the roster');
+  assert.ok(!by(ops(run(coord4, r)))['fleet_ops_fuel_proof:fuel_proof|zy'] && by(ops(run(coord4, r)))['fleet_ops_gps_dead:gps_dead|GONE8'], 'scoped by the task row\'s campus');
+}
+// I3: a paper read as the wrong document (or unread) is never current
+{
+  const L = 'd'.repeat(28), r = rows(); r.paperDocs = { TEST01: { fitness: { link: L, other: [{ link: L }].map((x) => x.link) } }, TEST03: { insurance: { link: L, other: [L] } } };
+  const km2 = by(ops(run(clerk, r)));
+  m = km2['fleet_ops_paper:TEST01:fitness'];
+  assert.ok(m, 'a wrong document gets a mission even 31 days out'); assert.strictEqual(m.title, 'Upload the right fitness for TEST01'); assert.strictEqual(m.due, null);
+  assert.strictEqual(by(ops(run(Object.assign({}, clerk, { campusId: 'LMS1' }), r)))['fleet_ops_paper:TEST03:insurance'].title, 'Upload the right insurance for TEST03', 'inside the window too: the wrong-document wording wins');
+  assert.ok(!by(ops(run(coord, r)))['fleet_ops_paper:TEST01:fitness'], 'not overdue: the clerk\'s');
+  assert.ok(J(ctx.fleetHeats_(r, '2026-10-26', cfg)).TEST01.reasons.indexOf('fitness is the wrong document') !== -1, 'heat counts it');
+  const r2 = rows(); r2.paperDocs = { TEST01: { fitness: { link: 'e'.repeat(28), other: [L] } } }; // another file is "other": the paper itself is fine
+  assert.ok(!by(ops(run(clerk, r2)))['fleet_ops_paper:TEST01:fitness']);
+}
+// I4: no roll-call mission for a day before cfg.fleet.rollCallFrom
+{
+  const rc = (c, now) => ops(run(clerk, null, c, now)).filter((m) => m.kind === 'fleet_ops_rollcall').map((m) => m.id);
+  assert.deepStrictEqual(rc(defaults, NOW), [], 'before the deploy date: no roll-call mission, today\'s or yesterday\'s');
+  const d27 = rc(defaults, new Date('2026-10-27T05:00:00Z'));
+  assert.ok(d27.indexOf('fleet_ops_rollcall:TEST01:2026-10-27') !== -1 && !d27.some((id) => /2026-10-26$/.test(id)), 'from the deploy date: today\'s only');
+  const ex = J(defaults); ex.fleet.rollCallFrom = '2026-10-25';
+  assert.ok(rc(ex, NOW).indexOf('fleet_ops_rollcall:TEST01:2026-10-25') !== -1, 'yesterday on the date itself');
+}
+// M3: the bus_age title says what is true; M8: a fuel check leaves the clerk after cfg days
+{
+  const r = rows(); r.fleet[2].year = 2012;
+  r.tasks.push({ id: 'bus_age|TEST03', domain: 'bus_age', campus: 'LMS1', reg: 'TEST03', title: 'x', status: 'open', assignee: '', due: '', createdAt: '2026-10-20', resolvedAt: '', resolvedBy: '' });
+  assert.strictEqual(by(ops(run(coord, r)))['fleet_ops_bus_age:bus_age|TEST03'].title, 'TEST03 reaches the 15-year limit in 2027: plan its replacement');
+  r.fleet[2].year = 2010; assert.strictEqual(by(ops(run(coord, r)))['fleet_ops_bus_age:bus_age|TEST03'].title, 'TEST03 has reached the 15-year limit: plan its replacement');
+  assert.ok(!km['fleet_ops_fuel_answer:chkOld'] && km['fleet_ops_fuel_answer:chkA'], 'an unanswered check older than the clerk window has gone to the Coordinator');
+}
+
 // ---- privacy and voice across every mission and quest
 const all = run(coord).concat(run(clerk)); const allQ = quests(owner).concat(quests(coord));
 const text = JSON.stringify(all.map((m) => [m.title, m.why]).concat(allQ));
-assert.ok(!/9000000001|1980|\b\d{10}\b|dateOfBirth|driverPhone|licenceNo|DL-?\d/.test(text), 'no DOB, phone or licence number');
+assert.ok(!/0000000001|1900|\b\d{10}\b|dateOfBirth|driverPhone|licenceNo|DL-?\d/.test(text), 'no DOB, phone or licence number');
 all.filter((m) => /^fleet_ops_/.test(m.kind)).forEach((m) => {
   assert.ok(!/\b(fast|quick|speed up|hurry|rank|best|worst|great|well done)\b/i.test(m.title + ' ' + m.why), 'no praise or speed words: ' + m.title);
   assert.ok(!/\d{4}-\d{2}-\d{2}/.test(m.title), 'no ISO dates in titles: ' + m.title);
