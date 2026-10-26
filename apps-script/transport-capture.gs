@@ -35,13 +35,16 @@ const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: 
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
 const CAP_MAX_FRAME_TIMES_ = 40000; // characters of frameTimes JSON kept: well inside Sheets' 50,000 per cell (a 75 km run is ~10,000)
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
-const CAP_PATH_ = TUP_PATH_.slice(0, -1).concat(['Capture']); // sibling of 'Bus Wise Documents'
+// sibling of 'Bus Wise Documents'. A function, not a top-level const: TUP_PATH_ lives in transport-uploads.gs, which Apps Script
+// loads after this file, so reading it at load time took the whole Roster web app down (v49). tests/apps-script/test-load-order.js
+function capPath_() { return TUP_PATH_.slice(0, -1).concat(['Capture']); }
 
 // Capture/<REG>/<runId>/, created on first use.
 function capFolder_(reg, runId) {
   let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
-  CAP_PATH_.forEach(function (n, i) {
-    f = f && (getSubfolder_(f, n) || (i === CAP_PATH_.length - 1 ? f.createFolder(n) : null));
+  const path = capPath_();
+  path.forEach(function (n, i) {
+    f = f && (getSubfolder_(f, n) || (i === path.length - 1 ? f.createFolder(n) : null));
   });
   if (!f) throw new Error('Transport folder not found');
   const bus = getSubfolder_(f, reg) || f.createFolder(reg);
@@ -183,7 +186,7 @@ function captureProcessed_(body) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
   if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
   let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
-  CAP_PATH_.forEach(function (n) { f = f && getSubfolder_(f, n); });
+  capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
   const found = {}, notYet = [], one = function (dir, name) { const it = dir.getFilesByName(name); return it.hasNext() ? it.next().getId() : ''; };
   (Array.isArray(body.runs) ? body.runs : []).forEach(function (r) {
     const runId = String(r.runId || ''), reg = String(r.reg || '');
