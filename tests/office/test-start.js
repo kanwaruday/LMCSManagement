@@ -51,7 +51,7 @@ module.exports = function run(t) {
     const h = fresh();
     const bank = (f) => ({ quest: 'bank', item: 'b1', fields: Object.assign({ campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1500.5' }, f) });
     const code = (d) => save(h, d).code;
-    assert.equal(code(bank({ balance: '-1' })), 'BAD_AMOUNT');
+    assert.equal(code(bank({ balance: '-1.x' })), 'BAD_AMOUNT');
     assert.equal(code(bank({ balance: '1.234' })), 'BAD_AMOUNT');
     assert.equal(code(bank({ balance: 'abc' })), 'BAD_AMOUNT');
     assert.equal(code(bank({ last4: '123' })), 'BAD_LAST4');
@@ -82,6 +82,40 @@ module.exports = function run(t) {
     assert.equal(code(user({ role: 'Boss' })), 'BAD_CHOICE');
     assert.equal(code(user({ starts: '2026-02-30' })), 'BAD_DATE');
     assert.equal(save(h, user({ starts: '2026-10-23' })).saved.fields.email.value, 'test.clerk@lms.org.in');
+  });
+
+  t.test('8+ digit runs are refused in text only; big rupees, km and a negative bank balance are fine', () => {
+    const h = fresh();
+    const bank = (f) => ({ quest: 'bank', item: 'b1', fields: Object.assign({ campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1' }, f) });
+    let r = save(h, bank({ balance: '10000000' }));
+    assert.equal(r.success, true, JSON.stringify(r)); assert.equal(r.saved.fields.balance.value, 1000000000);
+    r = save(h, bank({ balance: '-2500.50' }));
+    assert.equal(r.success, true, 'overdraft'); assert.equal(r.saved.fields.balance.value, -250050);
+    assert.equal(save(h, bank({ balance: '12345678901' })).code, 'BAD_AMOUNT', 'more than 10 rupee digits');
+    assert.equal(save(h, { quest: 'supplier', item: 's1', fields: { name: 'X', buys: 'Y', owed: '-1' } }).code, 'BAD_AMOUNT', 'only the bank balance may be negative');
+    assert.equal(save(h, { quest: 'odometer', item: 'V1', fields: { reg: 'HP 01 V 1', campus: 'LMS1', km: '123456789', active: 'yes' } }).success, true);
+    assert.equal(save(h, bank({ bank: 'Bank 12345678' })).code, 'ACCOUNT_NUMBER_REFUSED');
+    assert.equal(save(h, Object.assign(bank(), { note: 'acct 12345678' })).code, 'ACCOUNT_NUMBER_REFUSED');
+  });
+
+  t.test('NO_BOOK is found before anything is written (save and seed)', () => {
+    const h = boot(fixture); h.addConfig(); h.setNow(new Date('2026-10-26T10:00:00Z')); // no campus book at all
+    const n = () => rows(h).length;
+    assert.equal(save(h, cash('LMS1', '5'), 'clerk-token').error, 'NO_BOOK');
+    assert.equal(h.call('start.seed', { rows: [{ quest: 'cash', item: 'LMS2', field: 'amount', value: '40' }] }).error, 'NO_BOOK');
+    assert.equal(n(), 0);
+  });
+
+  t.test('an explicit campus must be a school (or ALL); start.get narrows campus choices to the caller', () => {
+    const h = fresh();
+    assert.equal(save(h, { quest: 'loan', item: 'L1', campus: 'LMS9', skip: true }).code, 'BAD_CHOICE');
+    assert.equal(save(h, { quest: 'loan', item: 'L1', campus: 'ALL', skip: true }).success, true);
+    const g = h.call('start.get', {}, 'clerk-token');
+    assert.deepEqual(Array.from(g.quests.find((q) => q.id === 'odometer').fields.find((f) => f.id === 'campus').choices), ['LMS1']);
+    const o = h.call('start.get', {});
+    assert.equal(o.quests.find((q) => q.id === 'users').fields.find((f) => f.id === 'campus').choices.length, 8);
+    assert.equal(o.quests.find((q) => q.id === 'bank').fields.find((f) => f.id === 'balance').allowNegative, true);
+    assert.equal(h.ctx.officeStartQuests_().find((q) => q.id === 'odometer').fields.find((f) => f.id === 'campus').choices.length, 7, 'the definition is not changed');
   });
 
   t.test('saves are confirmed, append-only, and the latest row per field wins; each save is audited', () => {
