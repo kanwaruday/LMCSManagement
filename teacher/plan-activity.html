@@ -52,7 +52,7 @@
 </main>
 
 <script>
-const GAME_BACKEND_URL = ''; // set at deploy (same value as teacher/index.html); empty = saving is not open yet
+const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // set at deploy (same value as teacher/index.html); empty = saving is not open yet
 (function () {
   var q = new URLSearchParams(location.search);
   var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim(), name = (q.get('name') || '').trim(); // ch is the key a save is filed under; name is what the heading shows and the sheet's Chapter column keeps
