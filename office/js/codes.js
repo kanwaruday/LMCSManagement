@@ -69,6 +69,17 @@ export const CODES = {
   BAD_EMAIL: 'The email address was not accepted.',
   NO_BOOK: 'The books for that year are not set up yet. Tell Uday.',
   BAD_HEADER: 'The import file does not have the expected columns.',
+  ACCOUNT_NUMBER_REFUSED: 'That looks like a full account number (8 or more digits in a row). Never type one here: enter only the last 4 digits of a bank account.',
+  BAD_KM: 'Enter the odometer reading in whole km (0 or more).',
+  BAD_LAST4: 'Enter exactly the last 4 digits of the account number.',
+  NOT_LMS_EMAIL: 'Use the person\'s school address ending in @lms.org.in.',
+  BAD_CHOICE: 'That choice was not accepted. Choose one from the list.',
+  START_BAD_QUEST: 'That starting-data section does not exist. Refresh and try again.',
+  START_BAD_ITEM: 'That item was not accepted. Refresh and try again.',
+  START_UNKNOWN_FIELD: 'A field was sent that this section does not have. Refresh and try again.',
+  START_FIELD_REQUIRED: 'A required field is empty. Fill it in and save again.',
+  START_NOT_OPTIONAL: 'Only vehicle loans can be skipped. Fill this one in.',
+  START_NO_ROWS: 'No starting data rows were sent.',
   HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');

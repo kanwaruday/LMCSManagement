@@ -1,0 +1,203 @@
+// Day Book starting data (apps-script/office-start.gs): figures as at close of 22 Oct 2026. Synthetic data only.
+'use strict';
+const assert = require('assert');
+const { boot } = require('./harness');
+
+const fixture = {
+  tokens: { 'clerk-token': 'clerk@example.org', 'am-token': 'am@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'pr-token': 'pr@example.org', 'acc-token': 'acc@example.org' },
+  allowlist: [
+    ['Email', 'Name', 'Campuses', 'Roles'],
+    ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
+    ['am@example.org', 'Admin Manager', 'LMS2', 'AdminManager'],
+    ['fh@example.org', 'Finance Head', 'LMS1,LMS2', 'FinanceHead'],
+    ['owner@example.org', 'Owner', 'ALL', 'Owner'],
+    ['pr@example.org', 'Principal', 'LMS1', 'Principal'],
+    ['acc@example.org', 'Accounts', 'LMS3', 'Accounts'],
+  ],
+};
+const J = (x) => JSON.parse(JSON.stringify(x));
+
+module.exports = function run(t) {
+  const fresh = () => {
+    const h = boot(fixture);
+    h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS2', '2026-27');
+    h.setNow(new Date('2026-10-26T10:00:00Z'));
+    return h;
+  };
+  const rows = (h) => h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'StartData');
+  const item = (r, quest, key) => r.items.find((i) => i.quest === quest && i.item === key);
+  const save = (h, d, tok) => h.call('start.save', d, tok || 'owner-token');
+  const cash = (campus, amount, extra) => ({ quest: 'cash', item: campus, fields: Object.assign({ amount: amount, held_by: 'Desk box' }, extra) });
+
+  t.test('StartData tab is created with its header and checked like the other Config tabs', () => {
+    const h = fresh();
+    assert.deepEqual(Array.from(h.ctx.officeConfigBook_().getSheetByName('StartData').values[0]), ['id', 'quest', 'item', 'campus', 'field', 'value', 'status', 'note', 'at', 'by']);
+  });
+
+  t.test('start.get returns the six quests in order with their fields', () => {
+    const h = fresh();
+    const r = h.call('start.get', {});
+    assert.equal(r.success, true);
+    assert.deepEqual(r.quests.map((q) => q.id), ['cash', 'bank', 'supplier', 'odometer', 'loan', 'users']);
+    const loan = r.quests[4];
+    assert.equal(loan.optional, true); assert.equal(r.quests[0].perCampus, true);
+    assert.deepEqual(J(r.quests[1].fields.find((f) => f.id === 'last4')), { id: 'last4', label: r.quests[1].fields.find((f) => f.id === 'last4').label, type: 'last4', required: true });
+    assert.deepEqual(r.quests[5].fields.find((f) => f.id === 'campus').choices, ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES', 'ALL']);
+    assert.deepEqual(r.items.filter((i) => i.quest === 'cash').map((i) => i.item), ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
+    assert.equal(h.call('start.get', {}, 'pr-token').error, 'FORBIDDEN_ROLE');
+  });
+
+  t.test('save validation per type: rupees to paise, km, last4, email, choice, date, 8+ digits refused', () => {
+    const h = fresh();
+    const bank = (f) => ({ quest: 'bank', item: 'b1', fields: Object.assign({ campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1500.5' }, f) });
+    const code = (d) => save(h, d).code;
+    assert.equal(code(bank({ balance: '-1' })), 'BAD_AMOUNT');
+    assert.equal(code(bank({ balance: '1.234' })), 'BAD_AMOUNT');
+    assert.equal(code(bank({ balance: 'abc' })), 'BAD_AMOUNT');
+    assert.equal(code(bank({ last4: '123' })), 'BAD_LAST4');
+    assert.equal(code(bank({ last4: '12a4' })), 'BAD_LAST4');
+    assert.equal(code(bank({ campus: 'LMS9' })), 'BAD_CHOICE');
+    assert.equal(code(bank({ used_for: 'party' })), 'BAD_CHOICE');
+    assert.equal(code(bank({ branch: 'A/c 123456789012' })), 'ACCOUNT_NUMBER_REFUSED');
+    assert.equal(code(bank({ bank: '' })), 'START_FIELD_REQUIRED');
+    assert.equal(code(bank({ colour: 'red' })), 'START_UNKNOWN_FIELD');
+    assert.equal(save(h, bank({ last4: '123' })).error, 'BAD_LAST4: last4', 'the error names the field');
+    assert.equal(code(Object.assign(bank(), { note: 'acct 12345678' })), 'ACCOUNT_NUMBER_REFUSED');
+    assert.equal(code(Object.assign(bank(), { item: '12345678' })), 'ACCOUNT_NUMBER_REFUSED');
+    assert.equal(code({ quest: 'nope', item: 'x', fields: {} }), 'START_BAD_QUEST');
+    assert.equal(code({ quest: 'cash', item: 'LMS9', fields: { amount: 1, held_by: 'x' } }), 'START_BAD_ITEM');
+    assert.equal(code({ quest: 'bank', item: '', fields: {} }), 'START_BAD_ITEM');
+    const r = save(h, bank({ balance: 1500.5, used_for: 'fees' }));
+    assert.equal(r.success, true);
+    assert.equal(rows(h).find((x) => x.field === 'balance').value, '150050', 'rupees stored as integer paise');
+    assert.equal(r.saved.fields.balance.value, 150050);
+    assert.equal(r.saved.campus, 'LMS1');
+    const odo = (f) => ({ quest: 'odometer', item: 'HP01A1', fields: Object.assign({ reg: 'HP 01 A 1', campus: 'LMS1', km: '45000', active: 'yes' }, f) });
+    assert.equal(code(odo({ km: '12.5' })), 'BAD_KM'); assert.equal(code(odo({ km: '-3' })), 'BAD_KM');
+    assert.equal(code(odo({ active: 'maybe' })), 'BAD_CHOICE');
+    assert.equal(save(h, odo()).saved.fields.km.value, 45000);
+    const user = (f) => ({ quest: 'users', item: 'u1', fields: Object.assign({ name: 'Test Clerk', email: 'Test.Clerk@LMS.org.in', campus: 'ALL', role: 'Fee Clerk' }, f) });
+    assert.equal(code(user({ email: 'not an email' })), 'BAD_EMAIL');
+    assert.equal(code(user({ email: 'someone@gmail.com' })), 'NOT_LMS_EMAIL');
+    assert.equal(code(user({ role: 'Boss' })), 'BAD_CHOICE');
+    assert.equal(code(user({ starts: '2026-02-30' })), 'BAD_DATE');
+    assert.equal(save(h, user({ starts: '2026-10-23' })).saved.fields.email.value, 'test.clerk@lms.org.in');
+  });
+
+  t.test('saves are confirmed, append-only, and the latest row per field wins; each save is audited', () => {
+    const h = fresh();
+    save(h, cash('LMS1', '100'));
+    save(h, cash('LMS1', '250.25'));
+    assert.equal(rows(h).filter((x) => x.field === 'amount').length, 2, 'append-only');
+    assert.equal(new Set(rows(h).map((x) => x.id)).size, rows(h).length, 'unique ids');
+    const it = item(h.call('start.get', {}), 'cash', 'LMS1');
+    assert.equal(it.campus, 'LMS1');
+    assert.deepEqual(J(it.fields.amount), { value: 25025, status: 'confirmed', note: '', at: '2026-10-26T10:00:00.000Z', by: 'owner@example.org' });
+    const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit').filter((a) => a.action === 'start.save');
+    assert.equal(au.length, 2); assert.equal(au[0].tab, 'StartData'); assert.equal(au[0].row_id, 'cash:LMS1');
+  });
+
+  t.test('a new item needs every required field; later saves may send only some', () => {
+    const h = fresh();
+    assert.equal(save(h, { quest: 'cash', item: 'LMS1', fields: { amount: '10' } }).code, 'START_FIELD_REQUIRED');
+    save(h, cash('LMS1', '10'));
+    assert.equal(save(h, { quest: 'cash', item: 'LMS1', fields: { amount: '11' } }).success, true);
+  });
+
+  t.test('start.seed: Owner only, writes known, never overwrites a confirmed field', () => {
+    const h = fresh();
+    save(h, cash('LMS1', '500'));
+    const seed = { rows: [
+      { quest: 'cash', item: 'LMS1', field: 'amount', value: '999' },
+      { quest: 'cash', item: 'LMS2', field: 'amount', value: '40' },
+      { quest: 'cash', item: 'LMS2', field: 'held_by', value: 'Office' },
+      { quest: 'odometer', item: 'HP02B2', field: 'reg', value: 'HP 02 B 2' },
+      { quest: 'odometer', item: 'HP02B2', field: 'campus', value: 'LMS2' },
+    ] };
+    assert.equal(h.call('start.seed', seed, 'fh-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('start.seed', { rows: [{ quest: 'cash', item: 'LMS2', field: 'amount', value: 'x' }] }).code, 'BAD_AMOUNT');
+    const before = rows(h).length;
+    assert.equal(h.call('start.seed', { rows: [seed.rows[1], { quest: 'bank', item: 'b', field: 'last4', value: '1' }] }).code, 'BAD_LAST4');
+    assert.equal(rows(h).length, before, 'all rows validated before any write');
+    const r = h.call('start.seed', seed);
+    assert.equal(r.success, true); assert.deepEqual([r.written, r.kept], [4, 1]);
+    const g = h.call('start.get', {});
+    assert.equal(item(g, 'cash', 'LMS1').fields.amount.value, 50000);
+    assert.equal(item(g, 'cash', 'LMS1').fields.amount.status, 'confirmed');
+    assert.equal(item(g, 'cash', 'LMS2').fields.amount.status, 'known');
+    assert.equal(item(g, 'odometer', 'HP02B2').campus, 'LMS2');
+    assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit').filter((a) => a.action === 'start.seed').length, 1);
+  });
+
+  t.test('progress counts required fields only; loan is shown only with items and never in a ring', () => {
+    const h = fresh();
+    save(h, cash('LMS1', '100', { counted_by: 'Someone' }));
+    h.call('start.seed', { rows: [{ quest: 'cash', item: 'LMS2', field: 'amount', value: '40' }] });
+    let p = h.call('start.progress', {});
+    assert.equal(p.success, true);
+    assert.deepEqual(J(p.progress.LMS1.cash), { confirmed: 2, known: 0, total: 2 }, 'counted_by is optional');
+    assert.deepEqual(J(p.progress.LMS2.cash), { confirmed: 0, known: 1, total: 2 });
+    assert.equal(p.progress.LMS1.loan, undefined, 'no loan item, no loan quest');
+    assert.deepEqual(J(p.overall.cash), { confirmed: 2, known: 1, total: 14 });
+    save(h, { quest: 'odometer', item: 'V1', fields: { reg: 'HP 01 V 1', campus: 'LMS1', km: 10, active: 'yes' } });
+    save(h, { quest: 'loan', item: 'L1', fields: { reg: 'HP 01 V 1', lender: 'Some Finance', emi: '12000' } });
+    save(h, { quest: 'loan', item: 'L2', campus: 'LMS1', skip: true });
+    p = h.call('start.progress', {});
+    assert.deepEqual(J(p.progress.LMS1.loan), { confirmed: 6, known: 0, total: 6 }, 'skipped counts as done; loan campus comes from the vehicle');
+    assert.deepEqual(J(p.progress.LMS1.odometer), { confirmed: 4, known: 0, total: 4 });
+    const ring = p.rings.LMS1;
+    assert.equal(ring.total, Object.keys(p.progress.LMS1).filter((q) => q !== 'loan').reduce((s, q) => s + p.progress.LMS1[q].total, 0), 'loan left out of the ring');
+    assert.equal(item(h.call('start.get', {}), 'loan', 'L2').fields.reg.status, 'skipped');
+    assert.equal(save(h, { quest: 'cash', item: 'LMS3', skip: true }).code, 'START_NOT_OPTIONAL');
+    assert.ok(p.progress.ALL.supplier, 'suppliers have no single campus');
+  });
+
+  t.test('Fee Clerk and Admin Manager: own campus cash + odometer only, in get, progress and save', () => {
+    const h = fresh();
+    save(h, { quest: 'odometer', item: 'V1', fields: { reg: 'HP 01 V 1', campus: 'LMS1', km: 10, active: 'yes' } });
+    save(h, { quest: 'odometer', item: 'V2', fields: { reg: 'HP 02 V 2', campus: 'LMS2', km: 20, active: 'yes' } });
+    save(h, { quest: 'bank', item: 'b1', fields: { campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1' } });
+    const g = h.call('start.get', {}, 'clerk-token');
+    assert.deepEqual(g.quests.map((q) => q.id), ['cash', 'odometer']);
+    assert.deepEqual(g.items.map((i) => i.quest + ':' + i.item), ['cash:LMS1', 'odometer:V1']);
+    assert.deepEqual(Object.keys(g.progress), ['LMS1']); assert.deepEqual(Object.keys(g.progress.LMS1), ['cash', 'odometer']);
+    assert.deepEqual(Object.keys(h.call('start.progress', {}, 'am-token').progress), ['LMS2']);
+    assert.equal(save(h, cash('LMS1', '5'), 'clerk-token').success, true);
+    assert.equal(save(h, cash('LMS2', '5'), 'clerk-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(save(h, { quest: 'odometer', item: 'V1', fields: { km: 11 } }, 'clerk-token').success, true);
+    assert.equal(save(h, { quest: 'odometer', item: 'V2', fields: { km: 21 } }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(save(h, { quest: 'odometer', item: 'V1', fields: { campus: 'LMS2' } }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
+    assert.equal(save(h, { quest: 'odometer', item: 'V3', fields: { reg: 'X', campus: 'LMS1', km: 1, active: 'no' } }, 'clerk-token').success, true, 'may add a vehicle of their own campus');
+    assert.equal(save(h, { quest: 'bank', item: 'b1', fields: { balance: '2' } }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('start.progress', {}, 'pr-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('start.export', {}, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    const fh = h.call('start.get', {}, 'fh-token');
+    assert.equal(fh.quests.length, 6); assert.ok(fh.progress.LMS5, 'FinanceHead sees every campus');
+    assert.equal(h.call('start.get', {}, 'acc-token').quests.length, 6, 'Accounts maps to FinanceHead');
+  });
+
+  t.test('start.progress works over the POST transport with the caller token', () => {
+    const h = fresh();
+    const r = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'start.progress', idToken: 'clerk-token', data: {} }) } }));
+    assert.equal(r.success, true); assert.deepEqual(Object.keys(r.progress), ['LMS1']);
+    assert.equal(JSON.parse(h.ctx.doGet({ parameter: { action: 'start.progress', idToken: 'clerk-token' } })).success, true);
+    assert.equal(JSON.parse(h.ctx.doGet({ parameter: { action: 'start.progress', idToken: 'bad' } })).error, 'Not authorized');
+  });
+
+  t.test('start.export: cutoff, actual from confirmed cash only, lists, unconfirmed counts', () => {
+    const h = fresh();
+    save(h, cash('LMS1', '12345.5'));
+    h.call('start.seed', { rows: [{ quest: 'cash', item: 'LMS2', field: 'amount', value: '40' }] });
+    save(h, { quest: 'bank', item: 'b1', fields: { campus: 'LMS1', bank: 'Some Bank', last4: '0042', balance: '1500.5', used_for: 'fees' } });
+    save(h, { quest: 'supplier', item: 's1', fields: { name: 'Pump X', buys: 'Diesel', owed: '700' } });
+    save(h, { quest: 'loan', item: 'L2', campus: 'LMS1', skip: true });
+    const r = h.call('start.export', {}, 'fh-token');
+    assert.equal(r.success, true); assert.equal(r.cutoff, '2026-10-22');
+    assert.deepEqual(J(r.actual), { LMS1: 12345.5 });
+    assert.deepEqual(J(r.banks[0]), { item: 'b1', campus: 'LMS1', confirmed: true, skipped: false, bank: 'Some Bank', branch: '', last4: '0042', used_for: 'fees', balance: 1500.5 });
+    assert.equal(r.suppliers[0].owed, 700);
+    assert.equal(r.loans[0].skipped, true);
+    assert.deepEqual(r.odometers, []); assert.deepEqual(r.users, []);
+    assert.deepEqual(J(r.unconfirmed), { cash: 6, bank: 0, supplier: 0, odometer: 0, loan: 0, users: 0 });
+  });
+};
