@@ -152,7 +152,7 @@ function drawBoardNow() {
     const g = FQ.gaps(ps).filter((x) => x.count), per = {}; // per[quest][campus]: a school's own count, for the overlay
     S.sel.campuses.forEach((c) => FQ.gaps(ps.filter((p) => p.campusId === c)).forEach((x) => { (per[x.quest] = per[x.quest] || {})[c] = x.count; }));
     $('gapList').innerHTML = g.length ? g.map((x) => { const sp = x.text.indexOf(' ');
-      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${LMCSCampus.overlay(per[x.quest], S.sel)}</b><span>${esc(x.text.slice(sp + 1).replace(' still ', ' '))}` +
+      return `<li><button type="button" class="fs-row fs-gap" data-q="${x.quest}" aria-pressed="${S.gap === x.quest}"><b class="fs-gapn">${S.sel.all ? x.count : LMCSCampus.overlay(per[x.quest], S.sel)}</b><span>${esc(x.text.slice(sp + 1).replace(' still ', ' '))}` +
         `${x.known ? `<span class="fs-gapk">${x.known} ${x.known === 1 ? 'has' : 'have'} ${KNOWN_GAP[x.quest] || 'values'} to confirm</span>` : ''}</span>${SVG.go}</button></li>`; }).join('')
       : '<li class="cap-note">Every bus is set up.</li>';
     $('gapList').querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {

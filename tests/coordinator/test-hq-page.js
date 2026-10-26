@@ -85,6 +85,10 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   vm.runInContext("SEL = { all: false, campuses: ['LMS4'] }", ctx);
   ctx.renderBases();
   assert.ok(!/lmcs-ov/.test(els.tabcount.innerHTML) && els.tabcount.innerHTML.endsWith('1'), 'one school: a single total');
+  // All: the count matches the board, no-campus rows included
+  vm.runInContext("SEL = LMCSCampus.get({ campusId: 'ALL' }); TASKS = TASKS.concat([Object.assign({}, TASKS[0], { taskId: 'doc_missing|nc', campus: '' })])", ctx);
+  ctx.renderBases(); ctx.renderBoard();
+  assert.ok(els.tabcount.innerHTML.endsWith('4') && (els.board.innerHTML.match(/class="contract/g) || []).length === 4, 'All: count equals the cards on the board (2 cards + 2 new requests incl. no-campus)');
   vm.runInContext("TASKS = []; SEL = LMCSCampus.get({ campusId: 'ALL' })", ctx);
   ctx.renderBoard();
   assert.ok(els.board.innerHTML.includes('Fan') && !els.board.innerHTML.includes('Nothing in the network'), 'new requests show even with no follow-ups');

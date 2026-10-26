@@ -103,8 +103,10 @@ window.LMCSCampus = (function () {
     return present.length ? esc(f(present.reduce((s, c) => s + Number(v[c]), 0))) : '–';
   }
 
+  // All: every row as given. Schools picked: only rows of those schools (rows with no campus are hidden).
   function filter(rows, sel, k) {
     const f = k || 'campus';
+    if (sel.all) return (rows || []).slice(); // All: the backend already scoped the rows, keep every one (even with no campus)
     return (rows || []).filter((r) => r && sel.campuses.includes(r[f]));
   }
 

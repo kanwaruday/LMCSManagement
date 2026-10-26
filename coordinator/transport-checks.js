@@ -91,7 +91,7 @@ window.TransportChecks = (function () {
       if (on) bar.scrollLeft = on.offsetLeft - bar.offsetLeft - 24; // on a phone the open tab stays in sight
       const tab = body.querySelector('.tc-tab');
       mapEl.hidden = S.tab !== 'map';
-      if (S.tab === 'map') { if (!S.mapMounted) { TransportLive.mount(mapEl, session); S.mapMounted = true; } return; }
+      if (S.tab === 'map') { if (!S.live) S.live = TransportLive.mount(mapEl, session); else S.live.sync(); return; }
       if (views.indexOf(S.tab) !== -1) { TransportViews.render(tab, d, S.tab, (S.view = S.view || {})[S.tab] = S.view[S.tab] || {}); return; }
       ({ overview, checks, trackers, driving, fuel, stops })[S.tab](tab, d, open, late);
     }

@@ -69,17 +69,22 @@ window.TransportViews = (function () {
   }
 
   // ── A. Route map ──
+  // The picker lives outside the redraw so it keeps focus; its choice is read fresh from storage each time the tab opens.
   function metro(el, d, S) {
+    el.innerHTML = '<div class="tv-pick"></div><div class="tv-body"></div>';
+    const body = el.querySelector('.tv-body'), draw = () => metroBody(body, d, S, draw);
+    let ready = false;
+    if (window.LMCSCampus) LMCSCampus.mount(el.querySelector('.tv-pick'), { label: 'Show lines for', onChange: s => { S.sel = s; if (ready) draw(); } });
+    ready = true;
+    draw();
+  }
+  function metroBody(el, d, S, redraw) {
     const m = model(d);
     S.half = S.half || 'AM';
     el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; <b>dashed</b> lines have a tracker problem, so their stops are incomplete; <b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits. The badge is the line\'s result ' + esc(m.period) + '.</p>' +
-      '<div class="ctl"><div class="tv-pick"></div><span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
+      '<div class="ctl"><span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
       '<div class="tv-split"><svg class="tv-metro" viewBox="0 0 1000 640" role="img" aria-label="Route map: one line per bus"></svg><div class="tv-info"><b>Tap a line or a station.</b><p class="note">A line shows its children, seats, km a day and money, and stops within 2 minutes of each other. A station shows every bus that stops there and when.</p></div></div>';
-    // the shared campus picker chooses which buses are drawn; its first onChange (at mount) only records the choice
-    let ready = false;
-    if (window.LMCSCampus) LMCSCampus.mount(el.querySelector('.tv-pick'), { label: 'Show lines for', onChange: s => { S.sel = s; if (ready) metro(el, d, S); } });
-    ready = true;
-    el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; metro(el, d, S); }));
+    el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; redraw(); }));
     const svg = el.querySelector('.tv-metro'), info = el.querySelector('.tv-info');
     const routes = (S.sel ? LMCSCampus.filter(m.buses.map(reg => ({ reg, campusId: (m.veh[reg] || {}).campusId })), S.sel, 'campusId').map(x => x.reg) : m.buses).map(b => {
       const name = Object.keys(m.trips[b] || {}).filter(k => k.indexOf(S.half) === 0).sort()[0];

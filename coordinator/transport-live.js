@@ -35,17 +35,17 @@ window.TransportLive = (function () {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const layer = L.layerGroup().addTo(map);
     // opts.campus: the page fixes the campus (the Office header's); otherwise the shared picker chooses
-    let data = null, fitted = false, sel = { all: true, campuses: [] };
+    let data = null, pick = null, fitted = false, sel = { all: true, campuses: [] };
     if (opts.campus) sel = { all: false, campuses: [opts.campus] };
-    else if (window.LMCSCampus) LMCSCampus.mount(pickEl, { session, label: 'Show buses for', onChange: (s) => { sel = s; fitted = false; if (data) render(); } });
+    else if (window.LMCSCampus) pick = LMCSCampus.mount(pickEl, { session, label: 'Show buses for', onChange: (s) => { sel = s; fitted = false; if (data) render(); } });
 
     function render() {
-      const now = Date.now(), list = LMCSCampus.filter(data.buses, sel, 'campusId').concat(sel.all ? data.buses.filter(b => !b.campusId) : []) // off-roster buses only when nothing is narrowed
+      const now = Date.now(), list = LMCSCampus.filter(data.buses, sel, 'campusId')
         .map(b => Object.assign({ st: state(b, now) }, b))
         .sort((a, b) => ['moving', 'stopped', 'offline'].indexOf(a.st) - ['moving', 'stopped', 'offline'].indexOf(b.st) || a.reg.localeCompare(b.reg));
       // one count per picked school when 2+ are picked (overlay), else one total
       const count = s => { const v = {}; sel.campuses.forEach(c => { v[c] = list.filter(b => b.st === s && b.campusId === c).length; }); return LMCSCampus.overlay(v, sel); };
-      const total = s => sel.all ? String(list.filter(b => b.st === s).length) : count(s); // All also counts off-roster buses
+      const total = s => sel.all ? String(list.filter(b => b.st === s).length) : count(s); // All counts every bus the backend sent
       status.innerHTML = '<b>' + total('moving') + '</b> moving, <b>' + total('stopped') + '</b> stopped, <b>' + total('offline') + '</b> with no signal for over ' + SEEN_MIN + ' min. ' +
         'Updated ' + new Date(data.fetchedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + '.';
       layer.clearLayers();
@@ -77,6 +77,8 @@ window.TransportLive = (function () {
 
     load();
     setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+    // another picker on the page (the Route map's) may have changed the shared choice: re-read it when this tab is shown
+    return { sync: () => { if (pick) pick.set(LMCSCampus.get(session)); } };
   }
 
   return { mount, state, ago };

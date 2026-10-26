@@ -129,7 +129,7 @@
       .cols { grid-template-columns: minmax(0, 1fr); }
       .side { position: static; max-height: none; overflow: visible; }
       /* one region at a time: the open request replaces the board, Back returns to it */
-      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
+      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open #campus-pick, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
       .back-board { display: inline-flex; }
       .dv-top .close-dv { display: none; }
     }
@@ -206,7 +206,7 @@
   </footer>
 
   <script src="../assets/auth.js?v=afd06314"></script>
-  <script src="../assets/campus-picker.js?v=0f048459"></script>
+  <script src="../assets/campus-picker.js?v=415bc090"></script>
   <script src="./shared.js?v=1e6a11b7"></script>
   <script src="./hq-logic.js?v=f0528b25"></script>
   <script>
@@ -265,7 +265,8 @@
       // open count for the picked campuses: one number, or one per school when 2+ are picked
       const counts = {};
       H.CAMPUSES.forEach((c) => { counts[c] = TASKS.concat(FRESH).filter((t) => t.campus === c).length; });
-      $('tabcount').innerHTML = 'Open in view: ' + LMCSCampus.overlay(counts, SEL);
+      // All: every row the board shows, even with no campus; picked schools: the overlay
+      $('tabcount').innerHTML = 'Open in view: ' + (SEL.all ? String(LMCSCampus.filter(TASKS.concat(FRESH), SEL).length) : LMCSCampus.overlay(counts, SEL));
     }
     function renderFinding() {
       const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length + FRESH.filter((f) => f.status === 'Pending' && !f.recommendation).length;

@@ -121,7 +121,7 @@ const ALL6 = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   assert.deepStrictEqual(chips(el).map((b) => b.getAttribute('data-code')), ['ALL', 'LMS2', 'LMS5'], 'only in-scope chips');
   p.set(['LMS1', 'LMS3']);
   assert.deepStrictEqual(plain(p.get()), { all: true, campuses: ['LMS2', 'LMS5'] }, 'set() with out-of-scope codes cannot widen');
-  assert.deepStrictEqual(plain(C.filter([{ campus: 'LMS1' }, { campus: 'LMS2' }], p.get())), [{ campus: 'LMS2' }]);
+  assert.deepStrictEqual(plain(C.filter([{ campus: 'LMS1' }, { campus: 'LMS2' }], { all: false, campuses: p.get().campuses })), [{ campus: 'LMS2' }], 'scope clips when schools are picked (All keeps the backend rows, per P3)');
   // Fee Clerk / single-campus session
   const fee = load({ store: { 'lmcs-campus:f@lms.org.in': JSON.stringify({ v: 1, sel: ['LMS1'] }) } });
   assert.deepStrictEqual(plain(fee.C.get({ email: 'f@lms.org.in', campusId: 'LMS6', roles: ['Fee Clerk'] })), { all: true, campuses: ['LMS6'] });
@@ -199,6 +199,11 @@ const ALL6 = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
   const rows = [{ campus: 'LMS1' }, { campus: 'LMS2' }, { school: 'LMS2' }];
   assert.deepStrictEqual(plain(C.filter(rows, { all: false, campuses: ['LMS2'] })), [{ campus: 'LMS2' }]);
   assert.deepStrictEqual(plain(C.filter(rows, { all: false, campuses: ['LMS2'] }, 'school')), [{ school: 'LMS2' }]);
+  // P3: All keeps every row, even one with no campus or an unknown one; picked schools hide them; All returns a copy
+  const odd = [{ campus: 'LMS1' }, { campus: '' }, {}, { campus: 'XX' }];
+  assert.strictEqual(C.filter(odd, { all: true, campuses: ['LMS1', 'LMS2'] }).length, 4);
+  assert.notStrictEqual(C.filter(odd, { all: true, campuses: [] }), odd);
+  assert.deepStrictEqual(plain(C.filter(odd, { all: false, campuses: ['LMS1'] })), [{ campus: 'LMS1' }]);
 }
 
 console.log('campus picker: all checks passed');
