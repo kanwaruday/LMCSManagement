@@ -114,7 +114,9 @@
       "game-quests",
       "game-teacher",
       "game-office",
-      "acad-episodes"
+      "game-fleet",
+      "acad-episodes",
+      "../coordinator/capture/fleet-quests.js"
     ]
   }
 }
