@@ -30,6 +30,8 @@ var OFFICE_CONFIG_SEED = {
     ['FinanceHead', '0'],
     ['Principal', '0'],
   ],
+  // Day Book starting data (office-start.gs). Append-only; the latest row per (quest, item, field) wins.
+  StartData: [['id', 'quest', 'item', 'campus', 'field', 'value', 'status', 'note', 'at', 'by']],
 };
 // Categories are code, not config (P2). group: fee|income|school|transport|movement. active false = not offered for typing.
 // [id, label, direction, group, needs_vehicle, pnl_column, active]
@@ -267,7 +269,7 @@ function officeConfigActions_() {
   };
 }
 
-// The Office Config book with every seed tab present (created if missing). Only Accounts, Vehicles and Collections get a
+// The Office Config book with every seed tab present (created if missing). Only Accounts, Vehicles, Collections and StartData get a
 // header check (Limits and the retired Categories tab are left as they are). Checked once per request.
 function officeConfigBook_() {
   const ss = officeConfig_();
@@ -275,7 +277,7 @@ function officeConfigBook_() {
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { if (tab === 'Accounts' || tab === 'Vehicles' || tab === 'Collections') officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (tab === 'Accounts' || tab === 'Vehicles' || tab === 'Collections' || tab === 'StartData') officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
