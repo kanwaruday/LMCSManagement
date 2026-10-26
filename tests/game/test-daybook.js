@@ -147,9 +147,9 @@ reset(ok(Object.assign(P2({ cash: S('draft'), odometer: S('draft') }), { labels:
 assert.strictEqual(J(ctx.daybookClerkQuests_(clerk, cfg, NOW))[0].steps[0].title, 'Look it over', 'server label wins');
 
 // ---- Fee Clerk: a returned count becomes "Fix and resend", the note as why
-reset(ok(P2({ cash: S('returned', 'Recount the box.'), odometer: S('draft') }, C(1, 1, 2), C(3, 0, 8))));
+reset(ok(P2({ cash: S('returned', 'Recount the box.'), odometer: S('draft') }, C(2, 0, 2), C(3, 0, 8))));
 ms = J(ctx.daybookMissions_(clerk, cfg, NOW));
-assert.strictEqual(ms[0].title, 'Fix and resend LMS 4\'s cash count'); assert.strictEqual(ms[0].why, 'Recount the box.');
+assert.strictEqual(ms[0].title, 'Fix and resend LMS 4\'s cash count'); assert.strictEqual(ms[0].why, 'Recount the box.'); assert.strictEqual(ms[0].done, false, 'returned is open again'); assert.ok(ms[0].progress.done < ms[0].progress.total);
 assert.strictEqual(ms[1].title, 'Confirm 5 starting figures for LMS 4'); assert.strictEqual(ms[1].why, 'Vehicle odometers');
 reset(ok(P2({ cash: S('returned', 'Recount.'), odometer: S('draft') }, C(1, 1, 2), C(3, 0, 8))));
 assert.strictEqual(J(ctx.daybookMissions_(acc, cfg, NOW))[0].title, 'Confirm 1 starting figure for LMS 4', 'only Fee Clerks see the fix wording');
@@ -166,6 +166,13 @@ reset(ok(P2({ cash: S('approved'), odometer: S('submitted') })));
 assert.deepStrictEqual(J(ctx.daybookApproveMissions_(coord, cfg, NOW)).map((m) => m.done), [true, false]);
 reset(ok(P2({ cash: S('submitted'), odometer: S('draft') })));
 assert.strictEqual(J(ctx.daybookMissions_(coordAcc, cfg, NOW)).length, 2, 'an Accounts Coordinator keeps the confirm missions');
+
+reset({ code: 500, body: '' });
+assert.deepStrictEqual(J(ctx.daybookApproveMissions_(coord, cfg, NOW)), [], 'a failing fetch never throws');
+reset(ok(PROG)); assert.deepStrictEqual(J(ctx.daybookApproveMissions_(coord, cfg, NOW)), [], 'no states: nothing');
+reset({ code: 500, body: '' }); const dn = []; ctx.gameMissionsFor_(coord, {}, cfg, NOW, dn);
+assert.ok(!dn.some((d) => /daybookApproveMissions_/.test(d)), 'not marked down');
+reset(ok(PROG)); ctx.daybookQuests_(owner, cfg, NOW); assert.strictEqual(calls.length, 1, 'quests fetch once');
 
 // ---- Owner: an Approved step per school
 reset(ok(P2({ cash: S('approved'), odometer: S('submitted') })));
