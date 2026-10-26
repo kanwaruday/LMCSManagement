@@ -128,7 +128,7 @@ const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.goo
 // their own Approvals requests instead of gaining access to every
 // other action by accident. Extend this list, not verifyCallerToken_'s
 // role check, when Teacher Portal grows a new self-scoped action.
-const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
+const PDR_TEACHER_GET_ACTIONS = ['approvalslist', 'approvaldetail', 'approvedleave', 'myssstats', 'myupcomingevents', 'myrankscore', 'myemployeecode'];
 const PDR_TEACHER_POST_ACTIONS = ['submitapproval', 'addapprovalcomment', 'deleteapprovalcomment'];
 // Fee Clerk (2026-10-22, per Uday): hiring legwork only -- browse, add an applicant, propose interview/demo
 // slots (hiring v2: apptpropose, never hiringschedule), upload scanned reports. Never a decision (shortlist,
@@ -173,6 +173,7 @@ function doGet(e) {
     if (action === 'approvalslist') return jsonOut_(aprList_(caller));
     if (action === 'approvaldetail') return jsonOut_(aprDetail_(caller, e.parameter.id));
     if (action === 'approvalreferees') return jsonOut_(aprReferees_(caller));
+    if (action === 'approvedleave') return jsonOut_(aprLvApprovedLeaveAction_(caller, e.parameter));
     if (action === 'ssformmeta') return jsonOut_(ssFormMeta_(caller, e.parameter.role, e.parameter.school));
     if (action === 'hiringapplicants') return jsonOut_(hiringApplicants_(caller));
     if (action === 'hiringapprovalstatus') return jsonOut_(hiringApprovalStatus_(caller));
