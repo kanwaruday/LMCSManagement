@@ -157,6 +157,10 @@ function officeDaybookWrite_(ss, ctx, row, action) {
   if (row.category === 'fuel' && !res.duplicate) { // feeds the GPS fuel checks; a failure here never loses the entry
     try { officeFuelMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Fuel mirror: ' + err.message); }
   }
+  const cat = officeCategory_(row.category);
+  if (cat && cat.pnl_column === 'service' && !res.duplicate) { // Fleet Operations' service bills (and their reversals); same rule as fuel
+    try { officeServiceMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Service mirror: ' + err.message); }
+  }
   return { id: res.id, duplicate: res.duplicate };
 }
 

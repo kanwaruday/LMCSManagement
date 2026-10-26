@@ -111,10 +111,12 @@ const vis = new Function(cg.match(/const COORD_DISTRICTS = \{[\s\S]*?\};/)[0] + 
 assert.deepStrictEqual(vis({ campusId: 'LMS1,LMS2', feeClerkOnly: true }), ['LMS1', 'LMS2']);
 assert.deepStrictEqual(vis({ campusId: 'LMS1', feeClerkOnly: true }), ['LMS1'], 'a Fee Clerk of LMS1 does not see LMS2 and LMS3');
 assert.deepStrictEqual(vis({ campusId: 'LMS1' }), ['LMS1', 'LMS2', 'LMS3'], 'a Coordinator still sees their district');
-assert.match(cg, /caller\.feeClerkOnly && \['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet'\]\.indexOf\(action\) === -1/, 'Fee Clerks are refused every other read (the loadout and the fleet setup are reads for every transport role)');
+assert.match(cg, /caller\.feeClerkOnly && \['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet', 'coordinatortransportrollcall'\]\.indexOf\(action\) === -1/, 'Fee Clerks are refused every other read (the loadout and the fleet setup are reads for every transport role)');
 assert.match(cg, /!caller \|\| caller\.feeClerkOnly\) return coordJson_/, 'Fee Clerks are refused every write');
 assert.ok(cg.indexOf("=== 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_") < cg.indexOf('!caller || caller.feeClerkOnly) return coordJson_'), 'the clerk fuel answer is a write a Fee Clerk may make');
 assert.ok(cg.indexOf("=== 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body))") < cg.indexOf('!caller || caller.feeClerkOnly) return coordJson_'), 'and so is a fleet setup quest (scope checked inside)');
+assert.ok(cg.indexOf("=== 'coordinatortransportrollcall') return coordJson_(coordRollCallSave_(caller, body))") < cg.indexOf('!caller || caller.feeClerkOnly) return coordJson_'), 'and so is a duty roll call (scope checked inside)');
+assert.match(cg, /action === 'coordinatortransportrollcall'\) return coordJson_\(coordRollCall_\(caller, e\.parameter\.date\)\)/, 'roll call GET route');
 assert.match(cg, /action === 'coordinatortransportfleet'\) return coordJson_\(coordFleet_\(caller\)\)/, 'fleet setup GET route');
 
 // an old-shaped cached form entry (no links) must not break the page
@@ -457,5 +459,61 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   assert.deepStrictEqual(r('FleetQuests.questsFor(FleetQuests.profilesFromRows(rows)[0]).find(function (q) { return q.id === "safety"; }).missing'), ['attendantHelperName'], 'the page reads the GET rows with the same pure logic');
   assert.strictEqual(p1.data.papers.chassisNo, 'MAT4X');
   assert.ok(r('FleetQuests.transportMissions(rows)').every(m => ['LMS4', 'LMS5', 'LMS6'].includes(m.campus)), 'missions only for the caller\'s district');
+
+  // ── Daily duty roll call (Fleet Operations): who drove and attended each running bus today. SYNTHETIC names only. ──
+  fleetTab.appendRow(['TEST01', 'Bus', 'LMS 4', 'yes', '7', '', 'Driver A', 40, 2020, 'E91', '', '']);
+  fleetTab.appendRow(['TEST02', 'Bus', 'LMS 1', 'yes', '8', '', 'Driver C', 40, 2020, 'E92', '', '']);
+  const people = book(FORM).insertSheet('Transport Staff');
+  [['Name', 'Campus', 'Designation', 'Employee code', 'Link to staff master', 'Staff master name', 'Staff master campus', 'Buses'],
+    ['Driver A', 'LMS 4', 'Driver', 'E91', 'linked', '', '', 'TEST01'], ['Driver B', 'LMS-4', 'Driver', 'E93', 'linked', '', '', ''],
+    ['Attendant A', 'LMS 4', 'Helper', 'E94', 'linked', '', '', 'TEST01'], ['Attendant B', 'LMS 4', 'Lady attendant', 'E95', 'linked', '', '', ''],
+    ['Driver C', 'LMS 1', 'Driver', 'E92', 'linked', '', '', 'TEST02']].forEach(x => people.appendRow(x));
+  assert.strictEqual(save(fc4, { reg: 'TEST01', quest: 'safety', fields: { attendantHelperName: 'Attendant A' } }).success, true, 'the usual attendant comes from the safety quest');
+  const roll = (who, b) => { c.b = b; return r('coordRollCallSave_(' + who + ', b)'); };
+  const rc = () => J(tb('Duty Roll Call')._rows());
+  // Fee Clerk LMS 4 records TEST01 (LMS 4); refused for an LMS 1 bus
+  const r1 = roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver A', attendant: 'Attendant A', driverSub: false, attendantSub: false });
+  assert.strictEqual(r1.success, true, JSON.stringify(r1));
+  assert.deepStrictEqual(rc()[0], ['Date', 'Reg', 'Campus', 'Driver', 'Attendant', 'Driver is substitute', 'Attendant is substitute', 'Recorded by', 'Recorded at']);
+  assert.deepStrictEqual(rc()[1].slice(0, 8), ['2026-10-25', 'TEST01', 'LMS4', 'Driver A', 'Attendant A', 'no', 'no', 'f4@x.org']);
+  const r2 = roll(fc4, { reg: 'TEST02', date: '2026-10-25', driver: 'Driver C', attendant: '' });
+  assert.strictEqual(r2.success, false); assert.match(r2.error, /your own campus/);
+  assert.strictEqual(rc().length, 2, 'nothing written for LMS 1');
+  assert.strictEqual(roll(own, { reg: 'TEST02', date: '2026-10-25', driver: 'Driver C', attendant: '' }).success, true, 'the Owner records any bus');
+  assert.match(roll(co1, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver A', attendant: '' }).error, /your own campus/, 'a Coordinator of LMS 1-3 is refused for LMS 4');
+  // a resave replaces the row (one row per reg per date)
+  assert.strictEqual(roll(co4, { reg: 'test-01', date: '2026-10-25', driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false }).success, true);
+  const t1 = rc().filter(x => x[1] === 'TEST01');
+  assert.strictEqual(t1.length, 1, 'still one row for TEST01 on that date');
+  assert.deepStrictEqual(t1[0].slice(3, 8), ['Driver B', 'Attendant A', 'yes', 'no', 'c4@x.org']);
+  // the server works out the substitute flags from the usual pair; the client's flags are ignored
+  assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver B', attendant: 'Attendant B', driverSub: false, attendantSub: false }).success, true);
+  assert.deepStrictEqual(rc().filter(x => x[1] === 'TEST01')[0].slice(3, 7), ['Driver B', 'Attendant B', 'yes', 'yes'], 'a name that differs from the usual one is a substitute, whatever the client sent');
+  assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver A', attendant: '', driverSub: true, attendantSub: true }).success, true);
+  assert.deepStrictEqual(rc().filter(x => x[1] === 'TEST01')[0].slice(3, 7), ['Driver A', '', 'no', 'no'], 'the usual driver is never a substitute; no attendant is not one either');
+  assert.strictEqual(roll(co4, { reg: 'test-01', date: '2026-10-25', driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false }).success, true);
+  assert.strictEqual(roll(fc4, { reg: 'TEST01', date: '2026-10-24', driver: 'Driver A', attendant: 'Attendant A' }).success, true, 'yesterday is allowed');
+  assert.strictEqual(rc().filter(x => x[1] === 'TEST01').length, 2, 'another date is another row');
+  // a date two days back (or ahead) is refused; so are names off the staff list
+  assert.match(roll(fc4, { reg: 'TEST01', date: '2026-10-23', driver: 'Driver A', attendant: '' }).error, /today or yesterday/);
+  assert.match(roll(fc4, { reg: 'TEST01', date: '2026-10-26', driver: 'Driver A', attendant: '' }).error, /today or yesterday/);
+  assert.match(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Somebody', attendant: '' }).error, /staff list/);
+  assert.match(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: 'Driver C', attendant: '' }).error, /staff list/, 'another campus\'s driver is not on this bus\'s list');
+  assert.match(roll(fc4, { reg: 'TEST01', date: '2026-10-25', driver: '', attendant: '' }).error, /driver/i);
+  assert.strictEqual(rc().length, 4, 'refusals write nothing');
+  // GET: the caller's running buses, the usual pair and the day's row; names only
+  const g = r('coordRollCall_(' + fc4 + ', "2026-10-25")');
+  assert.strictEqual(g.success, true); assert.strictEqual(g.date, '2026-10-25'); assert.strictEqual(g.today, '2026-10-25');
+  assert.deepStrictEqual(g.buses.map(b => b.reg), ['HP1', 'TEST01'], 'the Fee Clerk\'s running buses only');
+  const tb1 = g.buses.find(b => b.reg === 'TEST01');
+  assert.deepStrictEqual(tb1.usual, { driver: 'Driver A', attendant: 'Attendant A' }, 'the usual pair: the roster driver and the safety quest attendant');
+  assert.deepStrictEqual(tb1.roll, { driver: 'Driver B', attendant: 'Attendant A', driverSub: true, attendantSub: false }, 'no recorder email in the GET (review M)');
+  assert.ok(!/@/.test(JSON.stringify(g)), 'no email anywhere in the roll-call GET');
+  assert.strictEqual(g.buses.find(b => b.reg === 'HP1').roll, null, 'no roll call yet: null');
+  assert.deepStrictEqual(g.names.LMS4, ['Attendant A', 'Attendant B', 'Driver A', 'Driver B'], 'the substitute pick: the campus\'s transport staff names');
+  assert.ok(!g.names.LMS1, 'no other campus\'s staff');
+  assert.strictEqual(r('coordRollCall_(' + fc4 + ', "2026-10-24")').buses.find(b => b.reg === 'TEST01').roll.driver, 'Driver A', 'yesterday\'s row');
+  assert.match(r('coordRollCall_(' + fc4 + ', "2026-10-20")').error, /today or yesterday/);
+  assert.ok(!/98000|dateOfBirth|driverPhone|licen/i.test(JSON.stringify(r('coordRollCall_(' + co4 + ', "2026-10-25")'))), 'names only: no phones, DOB or licence anywhere');
 }
 console.log('transport .gs: all checks passed');
