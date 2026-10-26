@@ -36,7 +36,8 @@
       "certificate-link-import",
       "staff-documents",
       "transport-uploads",
-      "transport-capture"
+      "transport-capture",
+      "platform-push"
     ]
   },
   "payroll": {

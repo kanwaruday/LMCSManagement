@@ -12,7 +12,7 @@ after(async () => { await db?.close(); });
 const asLmcs = <T>(fn: Parameters<typeof withTenant<T>>[1]) => withTenant(LMCS_TENANT_ID, fn, db.sql);
 
 test('migrations apply to an empty database', async () => {
-  assert.deepEqual(applied, ['001_core.sql']);
+  assert.deepEqual(applied, ['001_core.sql', '002_sync.sql']);
   assert.deepEqual(await db.migrate(), [], 'second run applies nothing');
   // tenants is readable without a tenant set (sign-in resolves the tenant from the hd domain)
   const [t] = await db.sql`select name, allowed_domains from tenants where id = ${LMCS_TENANT_ID}`;

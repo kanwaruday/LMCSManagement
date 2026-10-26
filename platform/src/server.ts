@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url';
 import type { Config } from './config.ts';
 import type { Sql } from './db.ts';
 import { registerAuth, googleVerifyIdToken, type VerifyIdToken } from './auth.ts';
+import { registerSync, lastSyncs } from './sync.ts';
 
 export type Deps = {
-  sql: Sql; config: Pick<Config, 'APP_ORIGIN' | 'GOOGLE_SIGNIN_CLIENT_ID'>; logger?: boolean;
+  sql: Sql; config: Pick<Config, 'APP_ORIGIN' | 'GOOGLE_SIGNIN_CLIENT_ID' | 'SYNC_SECRET'>; logger?: boolean;
   verifyIdToken?: VerifyIdToken; // tests inject a fake; Google's verifier otherwise
 };
 
@@ -31,10 +32,12 @@ export function buildServer({ sql, config, logger = false, verifyIdToken = googl
   app.get('/api/health', async () => {
     const timeout = new Promise<boolean>((resolve) => setTimeout(resolve, 2000, false).unref());
     const db = await Promise.race([sql`select 1`.then(() => true, () => false), timeout]);
-    // ponytail: google/hooks/lastSync/lastBackup/lastRestoreTest are filled in by Tasks 3, 6, 10, 11.
-    return { ok: db, db, google: false, hooks: { pdr: false, coord: false }, lastSync: null, lastBackup: null, lastRestoreTest: null };
+    const lastSync = db ? await lastSyncs(sql).catch(() => null) : null;
+    // ponytail: google/hooks/lastBackup/lastRestoreTest are filled in by Tasks 6, 10, 11.
+    return { ok: db, db, google: false, hooks: { pdr: false, coord: false }, lastSync, lastBackup: null, lastRestoreTest: null };
   });
   registerAuth(app, { sql, clientId: config.GOOGLE_SIGNIN_CLIENT_ID, verifyIdToken });
+  registerSync(app, { sql, secrets: config }); // a tenant's sync secret is looked up by env var name (tenants.sync_secret_env)
   return app;
 }
 
