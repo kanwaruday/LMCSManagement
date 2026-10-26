@@ -10,7 +10,12 @@ var GAME_MODULE_DONE_AT = GAME_MODULE_DONE_AT || {};
 //   Fee Clerk    daily missions for their own campus's papers, driver, fuel and parts quests
 //   Coordinator  daily missions for the safety check and the route timelapse, then "get it done" follow-ups for the rest
 //                (shared: the Fee Clerk does them, so no personal credit); one parallel quest per bus
-//   Owner        quests only: per campus "LMS 4 fleet: N of M buses ready" (a step per bus), that campus's bus quests after it
+//   Owner        quests only: per campus "LMS 4 fleet: N of M buses ready" (a step per bus), that campus's bus quests after it.
+//                Its missions hook (fleetWarm_) only warms the cache and returns no missions
+// Scope (Ruling B4): exactly the Coordinator backend's (coordVisibleCampuses_), so no mission points at a bus the setup page
+// won't open: Owner or ALL every campus, a Coordinator their district, a Fee Clerk their campus or comma list.
+// LOCK (review I1): the quests run under the script lock, so they read ONLY the cache (fleetCachedRows_), never the workbook;
+// a cold cache is no fleet quests for that load. The missions hooks run before the lock and warm it (fleetRows_).
 // One source of truth (B2): fleetRows_ reads the transport workbook read-only, shaped exactly as the Coordinator backend's
 // coordFleet_ shapes it (coordinator-transport.gs), and FleetQuests (coordinator/capture/fleet-quests.js, pushed into this
 // project as fleet-quests.gs by projects.json) turns it into done / {done, total}, so missions agree with the Fleet setup
@@ -26,6 +31,9 @@ var FLEET_BOOK_ID = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // the trans
 var FLEET_TABS = { fleet: 'LM Studio Fleet', profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History',
   papers: 'LM Studio Vehicle Papers', runs: 'Capture Runs', stops: 'Capture Stops', fills: 'Fuel Fills' };
 var FLEET_CACHE_KEY = 'fleet_rows_v1', FLEET_CACHE_S = 300; // a save on the setup page shows here within 5 minutes
+// keep in sync with COORD_DISTRICTS in coordinator.gs (the Coordinator backend's scope)
+var FLEET_DISTRICTS = { LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS3: ['LMS1', 'LMS2', 'LMS3'],
+  LMS4: ['LMS4', 'LMS5', 'LMS6'], LMS5: ['LMS4', 'LMS5', 'LMS6'], LMS6: ['LMS4', 'LMS5', 'LMS6'] };
 var FLEET_CLERK_QUESTS = ['papers', 'driver', 'fuel', 'parts'];
 var FLEET_FOLLOW = { papers: 'papers for {reg} wait', driver: 'driver card for {reg} waits', fuel: 'fuel pump details for {reg} wait',
   parts: 'parts history for {reg} waits' }; // + ' on the Fee Clerk'
@@ -40,6 +48,15 @@ function fleetRows_() {
   const rows = fleetShape_(tabs);
   fleetCachePut_(FLEET_CACHE_KEY, rows, FLEET_CACHE_S);
   return rows;
+}
+// the cached rows only (null when cold): what code under the script lock may read
+function fleetCachedRows_() { return fleetCacheGet_(FLEET_CACHE_KEY); }
+
+// The Owner's missions hook: warms the cache outside the lock for the Owner's quests. Never throws (a transport outage must not
+// mark the Owner's day down) and never returns a mission.
+function fleetWarm_() {
+  try { fleetRows_(); } catch (err) { console.error('fleet warm', err); }
+  return [];
 }
 
 // tabs = {fleet, profile, driver, parts, papers, runs, stops, fills}: sheet values, header first (null = no tab) -> {fleet,
@@ -87,7 +104,15 @@ function fleetShape_(tabs) {
     if (first[reg] && first[reg] < r.runId) return;
     first[reg] = r.runId; captured[reg] = { by: String(r.capturedBy || ''), at: String(r.pushedAt || '') };
   });
-  return { fleet: fleet, profiles: objs(tabs.profile), drivers: objs(tabs.driver), parts: objs(tabs.parts), inspected: inspected, captured: captured };
+  // the driver card only as "filled in or not" (the quest's done check): no date of birth, licence or phone in the cache (review M1)
+  const drivers = objs(tabs.driver).map(function (d) {
+    let f = {};
+    try { f = JSON.parse(String(d.fields || '{}')) || {}; } catch (e) { f = {}; }
+    const kept = {};
+    Object.keys(f).forEach(function (k) { kept[k] = f[k] == null || String(f[k]).trim() === '' ? '' : 1; });
+    return { driverKey: d.driverKey, reg: d.reg, fields: JSON.stringify(kept), ageLimit: d.ageLimit };
+  });
+  return { fleet: fleet, profiles: objs(tabs.profile), drivers: drivers, parts: objs(tabs.parts), inspected: inspected, captured: captured };
 }
 
 function fleetIstDay_(ms) { return new Date(ms + 330 * 60000).toISOString().slice(0, 10); }
@@ -112,14 +137,13 @@ function fleetCacheGet_(key) {
 }
 
 // ── scope ────────────────────────────────────────────────────────────
-// The campuses whose buses the caller plays (null = every campus). Coordinators as the framework scopes their other missions
-// (gameVisibleCampuses_: network-wide) narrowed to pilotCampuses.Coordinator, as gameToday_ does; a Fee Clerk their own campus
-// or comma list (as the Coordinator backend reads a Fee Clerk's row); the Owner every campus.
+// The campuses whose buses the caller plays (null = every campus): coordVisibleCampuses_'s rule (B4). A Coordinator's district is
+// further narrowed by pilotCampuses.Coordinator, as gameToday_ narrows their missions (it never widens).
 function fleetScope_(caller, cfg) {
   const role = caller.primaryRole, own = String(caller.campusId || '').toUpperCase();
   if (role === 'Owner') return null;
   if (role === 'Coordinator') {
-    const vis = gameVisibleCampuses_(caller), pilot = fleetPilot_(cfg);
+    const vis = own === 'ALL' ? null : FLEET_DISTRICTS[own] || [own], pilot = fleetPilot_(cfg);
     return vis && pilot ? vis.filter(function (c) { return pilot.indexOf(c) !== -1; }) : vis || pilot;
   }
   return own === 'ALL' ? null : own.split(',').map(function (c) { return c.trim(); }).filter(Boolean);
@@ -127,8 +151,11 @@ function fleetScope_(caller, cfg) {
 function fleetPilot_(cfg) { const p = cfg && cfg.pilotCampuses && cfg.pilotCampuses.Coordinator; return Array.isArray(p) ? p : null; }
 
 // the caller's buses' rows (fleet filtered; the other rows join by reg inside FleetQuests)
-function fleetScopedRows_(caller, cfg) {
-  const rows = fleetRows_(), scope = fleetScope_(caller, cfg);
+// cacheOnly: under the script lock (the quests); null when the cache is cold
+function fleetScopedRows_(caller, cfg, cacheOnly) {
+  const rows = cacheOnly ? fleetCachedRows_() : fleetRows_();
+  if (!rows) return null;
+  const scope = fleetScope_(caller, cfg);
   return Object.assign({}, rows, { fleet: rows.fleet.filter(function (b) { return !scope || scope.indexOf(b.campusId) !== -1; }) });
 }
 function fleetGo_(reg, quest) { return 'coordinator/transport/setup.html?reg=' + reg + (quest ? '&quest=' + quest : ''); }
@@ -162,10 +189,11 @@ function fleetMissions_(caller, cfg, now) {
     FQ.questsFor(p).forEach(function (q, qi) {
       if (role === 'FeeClerk' && FLEET_CLERK_QUESTS.indexOf(q.id) === -1) return;
       const tm = credit['transport:setup_' + q.id + ':' + p.reg], pr = prog[qi], follow = role === 'Coordinator' && FLEET_CLERK_QUESTS.indexOf(q.id) !== -1;
-      if (q.done && !(tm.doneAt && new Date(tm.doneAt).getTime() >= since)) return; // confirmed a while ago: not today's story
+      const run = q.done && !tm.doneAt && (p.credit || {})[q.id === 'safety' ? 'inspected' : q.id === 'capture' ? 'captured' : ''], doneAt = tm.doneAt || (run && run.at) || null; // a run with no capturer named still has its time
+      if (q.done && !(doneAt && new Date(doneAt).getTime() >= since)) return; // confirmed a while ago: not today's story
       const m = gameMission_('fleet_' + q.id, p.reg, {
         title: fleetTitle_(role, p, q, pr, steps[q.id]), why: tm.why, campus: p.campusId, go: fleetGo_(p.reg, q.id),
-        shared: follow || (q.done && gameLower_(tm.doneBy) !== me), done: q.done, doneAt: q.done ? tm.doneAt : null, doneBy: q.done ? tm.doneBy || null : null,
+        shared: follow || (q.done && gameLower_(tm.doneBy) !== me), done: q.done, doneAt: q.done ? doneAt : null, doneBy: q.done ? tm.doneBy || null : null,
         progress: { done: pr.confirmed, total: pr.total },
       });
       (q.done ? done : open).push({ m: m, follow: follow, known: pr.known, bus: bus, i: bi * 10 + qi });
@@ -181,7 +209,9 @@ function fleetMissions_(caller, cfg, now) {
 function fleetQuests_(caller, cfg, now) {
   const role = caller.primaryRole;
   if (role !== 'Coordinator' && role !== 'Owner') return [];
-  const FQ = FleetQuests, profiles = FQ.profilesFromRows(fleetScopedRows_(caller, cfg));
+  const rows = fleetScopedRows_(caller, cfg, true);
+  if (!rows) return []; // cold cache: never read the workbook under the lock
+  const FQ = FleetQuests, profiles = FQ.profilesFromRows(rows);
   const busQuest = function (p) {
     const steps = FQ.questsFor(p).map(function (q) { return { id: q.id, title: q.label, go: fleetGo_(p.reg, q.id), done: q.done, locked: false }; });
     return { questId: 'fleet:' + p.reg, title: p.reg + ' · Fleet setup', parallel: true, steps: steps, complete: steps.every(function (s) { return s.done; }) };
@@ -204,5 +234,6 @@ function fleetQuests_(caller, cfg, now) {
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_MISSIONS.Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], fleetMissions_);
 GAME_MODULE_MISSIONS.FeeClerk = [].concat(GAME_MODULE_MISSIONS.FeeClerk || [], fleetMissions_);
+GAME_MODULE_MISSIONS.Owner = [].concat(GAME_MODULE_MISSIONS.Owner || [], fleetWarm_);
 GAME_MODULE_QUESTS.Coordinator = [].concat(GAME_MODULE_QUESTS.Coordinator || [], fleetQuests_);
 GAME_MODULE_QUESTS.Owner = [].concat(GAME_MODULE_QUESTS.Owner || [], fleetQuests_);
