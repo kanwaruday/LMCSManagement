@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Add / Transfer Staff</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -161,7 +161,8 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=01effdcf"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -188,6 +189,8 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
 
     <div class="datasrc-links" id="datasrcStaff"></div>
 
+    <div id="campusPickWrap"><div id="campusPick"></div></div>
+
     <div class="tabs">
       <button class="tab-btn active" data-tab="directory" onclick="switchTab('directory')">📋 Directory</button>
       <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
@@ -202,7 +205,6 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
         <label class="dir-toggle"><input type="checkbox" id="dirShowAll" onchange="renderDirectory()"> Show inactive &amp; transferred too</label>
         <span class="dir-count" id="dirCount"></span>
       </div>
-      <div class="dir-school-tabs" id="dirSchoolTabs"></div>
       <div id="dirBody">Loading…</div>
     </div>
 
@@ -212,7 +214,6 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
       <div class="dir-toolbar">
         <span class="dir-count" id="docCount"></span>
       </div>
-      <div class="dir-school-tabs" id="docSchoolTabs"></div>
       <div id="docNotes"></div>
       <div id="docBody">Loading…</div>
     </div>
@@ -315,6 +316,26 @@ const DOC_TYPES = [
   { full: 'DRIVING LICENCE', short: 'Licence' },
 ];
 let SESSION = null;
+// The shared campus picker drives the Directory and Documents tabs (HES too; scope comes from the session).
+let SEL = { all: true, campuses: [] };
+function mountPicker() {
+  LMCSCampus.mount('#campusPick', { session: SESSION, hes: true, label: 'School', onChange: function (sel) {
+    SEL = sel;
+    if (directoryRows.length) renderDirectory();
+    if (documentStatusRows.length) renderDocumentStatus();
+  } });
+}
+// 'N employees', or one count per picked school when 2+ are picked.
+function countHtml(rows, key, noun) {
+  const multi = !SEL.all && SEL.campuses.length > 1, v = {};
+  SEL.campuses.forEach(function (c) { v[c] = rows.filter(function (r) { return r[key] === c; }).length; });
+  return (multi ? LMCSCampus.overlay(v, SEL) : rows.length) + ' ' + noun + (!multi && rows.length === 1 ? '' : 's');
+}
+// Rows of the picked schools in school order, then by name.
+function pickedRows(rows) {
+  const order = Object.keys(CAMPUS_LABELS);
+  return LMCSCampus.filter(rows, SEL, 'school').sort(function (a, b) { return (order.indexOf(a.school) - order.indexOf(b.school)) || a.name.localeCompare(b.name); });
+}
 let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -353,6 +374,7 @@ async function init() {
   }
 
   document.getElementById('formArea').style.display = 'block';
+  mountPicker();
 
   if (principalView) {
     document.querySelectorAll('.tab-btn').forEach(function (b) { if (b.dataset.tab !== 'directory' && b.dataset.tab !== 'documents') b.style.display = 'none'; });
@@ -383,6 +405,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
+  document.getElementById('campusPickWrap').style.display = tab === 'directory' || tab === 'documents' ? '' : 'none';
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -417,12 +440,11 @@ async function loadAllEmployees() {
    'list' action -- unlike loadAllEmployees()'s public roster proxy,
    this includes Role/DOJ/Status and Inactive/Transferred rows,
    scoped server-side to the caller's campus for Coordinators.
-   One school shown at a time via dir-school-tab buttons; "Reports
+   Schools are picked with the shared campus picker; "Reports
    To" and everything else lives in the per-employee detail modal
    (openEmployeeDetail below) instead of a table column.
 ═══════════════════════════════════════════════════════════ */
 let directoryRows = [];
-let currentDirSchool = null;
 
 async function loadDirectory() {
   try {
@@ -431,43 +453,24 @@ async function loadDirectory() {
     directoryRows = json.employees;
     renderDirectory();
   } catch (e) {
-    document.getElementById('dirSchoolTabs').innerHTML = '';
     document.getElementById('dirBody').innerHTML = '<div class="dir-empty">Could not load directory: ' + esc(e.message) + '</div>';
   }
 }
 
-function selectDirSchool(school) {
-  currentDirSchool = school;
-  renderDirectory();
-}
-
 function renderDirectory() {
   const showAll = document.getElementById('dirShowAll').checked;
-  const rows = showAll ? directoryRows : directoryRows.filter(function (r) { return r.status === 'Active'; });
+  const list = pickedRows(showAll ? directoryRows : directoryRows.filter(function (r) { return r.status === 'Active'; }));
+  document.getElementById('dirCount').innerHTML = countHtml(list, 'school', 'employee');
 
-  document.getElementById('dirCount').textContent = rows.length + (rows.length === 1 ? ' employee' : ' employees');
-
-  const bySchool = {};
-  rows.forEach(function (r) { (bySchool[r.school] = bySchool[r.school] || []).push(r); });
-  const schools = Object.keys(CAMPUS_LABELS).filter(function (s) { return bySchool[s] && bySchool[s].length; });
-
-  if (!schools.length) {
-    document.getElementById('dirSchoolTabs').innerHTML = '';
+  if (!list.length) {
     document.getElementById('dirBody').innerHTML = '<div class="dir-empty">No employees to show.</div>';
     return;
   }
-  if (!currentDirSchool || schools.indexOf(currentDirSchool) === -1) currentDirSchool = schools[0];
-
-  document.getElementById('dirSchoolTabs').innerHTML = schools.map(function (s) {
-    return '<button type="button" class="dir-school-tab' + (s === currentDirSchool ? ' active' : '') + '" data-school="' + esc(s) + '">' +
-      esc(CAMPUS_LABELS[s]) + ' <span class="n">' + bySchool[s].length + '</span></button>';
-  }).join('');
-
-  const list = bySchool[currentDirSchool].slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+  const manySchools = list.some(function (r) { return r.school !== list[0].school; });
   document.getElementById('dirBody').innerHTML =
-    '<table><thead><tr><th>Name</th><th>Code</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
+    '<table><thead><tr><th>Name</th>' + (manySchools ? '<th>School</th>' : '') + '<th>Code</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
     list.map(function (r) {
-      return '<tr><td class="name">' + esc(r.name) + '</td><td>' + esc(r.employeeCode) + '</td>' +
+      return '<tr><td class="name">' + esc(r.name) + '</td>' + (manySchools ? '<td>' + esc(CAMPUS_LABELS[r.school] || r.school) + '</td>' : '') + '<td>' + esc(r.employeeCode) + '</td>' +
         '<td>' + esc(r.role || '—') + '</td>' +
         '<td><span class="pill ' + esc(r.status.toLowerCase()) + '">' + esc(r.status) + '</span></td>' +
         '<td>' + (LMCS.canManageStaff(SESSION) ? '<a href="#" class="view-link" data-code="' + esc(r.employeeCode) + '">View →</a>' : '') + '</td></tr>';
@@ -475,10 +478,6 @@ function renderDirectory() {
     '</tbody></table>';
 }
 
-document.getElementById('dirSchoolTabs').addEventListener('click', function (e) {
-  const btn = e.target.closest('.dir-school-tab');
-  if (btn) selectDirSchool(btn.dataset.school);
-});
 document.getElementById('dirBody').addEventListener('click', function (e) {
   const link = e.target.closest('.view-link');
   if (link) { e.preventDefault(); openEmployeeDetail(link.dataset.code); }
@@ -494,7 +493,6 @@ document.getElementById('dirBody').addEventListener('click', function (e) {
 ═══════════════════════════════════════════════════════════ */
 let documentStatusRows = [];
 let documentRules = {}; // STAFF_DOC_RULES_ from staff-documents.gs: rule key -> {R: [required types], N: [n/a types]}
-let currentDocSchool = null;
 
 // 'R' required, 'O' optional, 'N' not applicable -- for this person's designation.
 function docNeed(row, type) {
@@ -511,7 +509,6 @@ async function loadDocumentStatus() {
     documentRules = json.rules || {};
     renderDocumentStatus();
   } catch (e) {
-    document.getElementById('docSchoolTabs').innerHTML = '';
     document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(e.message) + '</div>';
   }
 }
@@ -546,32 +543,16 @@ async function loadUploadStatus(force) {
   }
 }
 
-function selectDocSchool(school) {
-  currentDocSchool = school;
-  renderDocumentStatus();
-}
-
 function renderDocumentStatus() {
-  document.getElementById('docCount').textContent = documentStatusRows.length + (documentStatusRows.length === 1 ? ' employee' : ' employees');
+  const list = pickedRows(documentStatusRows);
+  document.getElementById('docCount').innerHTML = countHtml(list, 'school', 'employee');
 
-  const bySchool = {};
-  documentStatusRows.forEach(function (r) { (bySchool[r.school] = bySchool[r.school] || []).push(r); });
-  const schools = Object.keys(CAMPUS_LABELS).filter(function (s) { return bySchool[s] && bySchool[s].length; });
-
-  if (!schools.length) {
-    document.getElementById('docSchoolTabs').innerHTML = '';
+  if (!list.length) {
     document.getElementById('docNotes').innerHTML = '';
     document.getElementById('docBody').innerHTML = '<div class="dir-empty">No employees to show.</div>';
     return;
   }
-  if (!currentDocSchool || schools.indexOf(currentDocSchool) === -1) currentDocSchool = schools[0];
-
-  document.getElementById('docSchoolTabs').innerHTML = schools.map(function (s) {
-    return '<button type="button" class="dir-school-tab' + (s === currentDocSchool ? ' active' : '') + '" data-school="' + esc(s) + '">' +
-      esc(CAMPUS_LABELS[s]) + ' <span class="n">' + bySchool[s].length + '</span></button>';
-  }).join('');
-
-  const list = bySchool[currentDocSchool].slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+  const manySchools = list.some(function (r) { return r.school !== list[0].school; });
   // A column shows only if someone in this school needs it or already has that file.
   const types = DOC_TYPES.filter(function (t) {
     return list.some(function (r) { return r.documents[t.full] || docNeed(r, t.full) !== 'N'; });
@@ -599,16 +580,12 @@ function renderDocumentStatus() {
         }
         return '<td><a class="dm dm-ok" href="' + esc(info.driveLink) + '" target="_blank" rel="noopener" title="' + esc(t.short) + (info.count > 1 ? ' — ' + info.count + ' files, opens the first' : ' — open') + '">✓</a></td>';
       }).join('');
-      return '<tr><td class="dm-name"><span class="name">' + esc(r.name) + '</span><span class="sub">' + esc(r.employeeCode) + '</span></td>' +
+      return '<tr><td class="dm-name"><span class="name">' + esc(r.name) + '</span><span class="sub">' + esc(r.employeeCode) + (manySchools ? ' · ' + esc(CAMPUS_LABELS[r.school] || r.school) : '') + '</span></td>' +
         '<td>' + (missing ? '<span class="dm dm-count">' + missing + '</span>' : '<span class="dm dm-ok" title="Nothing required is missing">✓</span>') + '</td>' + cells + '</tr>';
     }).join('') +
     '</tbody></table>';
 }
 
-document.getElementById('docSchoolTabs').addEventListener('click', function (e) {
-  const btn = e.target.closest('.dir-school-tab');
-  if (btn) selectDocSchool(btn.dataset.school);
-});
 
 /* ═══════════════════════════════════════════════════════════
    DOCUMENT RULES (Owner, 2026-10-21) -- designation x document grid of

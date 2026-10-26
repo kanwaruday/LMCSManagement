@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Daily Progress & CWA Tracking</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -280,7 +280,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=01effdcf"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
+<script src="./campus-pick.js?v=440aaefc"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -310,6 +312,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 </div>
 
 <div class="datasrc-links" id="datasrcLinks"></div>
+<div id="campusPick" style="padding:8px 24px 0"></div>
 
 <!-- TODAY SUMMARY -->
 <div class="today-summary" id="todaySummary">
@@ -351,21 +354,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 <div class="filter-bar">
   <label>📅 From <input type="date" id="dateFrom" onchange="applyFilters()"></label>
   <label>To <input type="date" id="dateTo" onchange="applyFilters()"></label>
-
-  <label>🏫
-    <div class="ms-wrap" id="msSchool">
-      <button class="ms-btn" type="button" id="msSchoolBtn" onclick="toggleMs('msSchool')">
-        <span id="msSchoolLabel">All Schools</span><span class="ms-arrow">▾</span>
-      </button>
-      <div class="ms-panel" id="msSchoolPanel">
-        <div class="ms-actions">
-          <a href="#" onclick="event.preventDefault();msAll('msSchool')">Select all</a>
-          <a href="#" onclick="event.preventDefault();msNone('msSchool')">Clear</a>
-        </div>
-        <label class="ms-opt ms-all"><input type="checkbox" id="msSchoolAll" checked onchange="msAllToggle('msSchool',this)"> All Schools</label>
-      </div>
-    </div>
-  </label>
 
   <label>📚
     <div class="ms-wrap" id="msSubject">
@@ -518,6 +506,8 @@ function getPrincipalSession() {
   return s;
 }
 const PRINCIPAL_SESSION = getPrincipalSession();
+// The shared campus picker (scope comes from the session). A later change repaints the report and the Today cards.
+CurrPick.mount('#campusPick', LMCS.getSession(), function () { _rerender(); renderTodayCards(); });
 
 /* ═══════════════════════════════════════════════════════════
    CONFIGURATION
@@ -717,7 +707,6 @@ let cmStore       = {};   // Course Mapping data: cmStore[lmsIdx][tabName] = {su
 let cmLoaded      = false;
 let activeDateFrom  = null; // date-range from (inclusive, YYYY-MM-DD)
 let activeDateTo    = null; // date-range to   (inclusive, YYYY-MM-DD)
-let activeSchools   = [];   // [] = all schools; otherwise array of lmsIdx numbers
 let activeSubjects  = [];   // [] = all subjects; otherwise array of subject name strings
 let activeClasses   = [];   // [] = all classes; otherwise array of class display strings
 let subjectSortDir  = null; // null = date order (default); 'asc' | 'desc' = sort activity feed rows by Subject
@@ -1044,7 +1033,7 @@ function filtered(records) {
   let r = records;
   if (activeDateFrom) r = r.filter(x => x.dateStr >= activeDateFrom);
   if (activeDateTo)   r = r.filter(x => x.dateStr <= activeDateTo);
-  if (activeSchools.length)  r = r.filter(x => activeSchools.includes(x.lmsIdx));
+  r = CurrPick.pick(r); // the campus picker (and a Principal's session scope)
   if (activeSubjects.length) r = r.filter(x => activeSubjects.includes(x.subject));
   if (activeClasses.length)  r = r.filter(x => activeClasses.includes(recClass(x)));
   return r;
@@ -1076,17 +1065,6 @@ function buildChips() {
     $('cLastTime').textContent  = last.dateObj.toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'});
   }
   document.getElementById('chipsStrip')?.classList?.remove('hidden');
-
-  // Populate school multi-select (static — CM_SCHOOLS never changes)
-  const schoolPanel = document.getElementById('msSchoolPanel');
-  // Remove previously added item checkboxes (keep actions + All row)
-  schoolPanel.querySelectorAll('.ms-item').forEach(el => el.remove());
-  CM_SCHOOLS.forEach((s, i) => {
-    const lbl = document.createElement('label');
-    lbl.className = 'ms-opt ms-item';
-    lbl.innerHTML = `<input type="checkbox" class="ms-item-cb" value="${i}" checked onchange="msItemToggle('msSchool')"> ${esc(s.name)}`;
-    schoolPanel.appendChild(lbl);
-  });
 
   // Populate subject multi-select (dynamic — depends on loaded data)
   const subjects = [...new Set(allRecords.map(r => r.subject).filter(Boolean))].sort();
@@ -1291,7 +1269,7 @@ const NOT_DONE_STATUSES = new Set(['Overdue', 'Critical']);
 
 async function checkOverdueFromTracker() {
   const rows = await fetchTrackerStatusRows();
-  const inScope = rows.filter(r => activeSchools.length === 0 || activeSchools.includes(r.lmsIdx));
+  const inScope = CurrPick.pick(rows);
   const flagged = inScope.filter(r => NOT_DONE_STATUSES.has(r.status));
   return {
     total: flagged.length,
@@ -1390,10 +1368,8 @@ function renderWeekly() {
     </div>`;
   }).join('');
 
-  // Per-school breakdown — respects activeSchools filter
-  const visibleSchools = activeSchools.length
-    ? CM_SCHOOLS.filter((_, i) => activeSchools.includes(i)).map((s, _, arr) => ({ school: s, idx: CM_SCHOOLS.indexOf(s) }))
-    : CM_SCHOOLS.map((school, idx) => ({ school, idx }));
+  // Per-school breakdown — respects the campus picker
+  const visibleSchools = CurrPick.pick(CM_SCHOOLS.map((school, idx) => ({ school, idx })), 'idx');
 
   const schoolRows = visibleSchools.map(({ school, idx }) => {
     const dayCells = days.map(d => {
@@ -1570,9 +1546,7 @@ async function renderMissing() {
 
 function _renderMissingFromAllocation(panel, checkDate, allocation) {
   // Apply school filter
-  const allocFiltered = activeSchools.length
-    ? allocation.filter(e => activeSchools.includes(e.lmsIdx))
-    : allocation;
+  const allocFiltered = CurrPick.pick(allocation);
 
   // uploadedByCombo[lmsIdx|cls|subject] → Map of lowercased teacher name -> the
   // name as it actually appears in the Daily sheet (kept for display).
@@ -1714,7 +1688,7 @@ function _renderMissingFromHistory(panel, checkDate) {
     return;
   }
 
-  const filtMissing = activeSchools.length ? missing.filter(e=>activeSchools.includes(e.lmsIdx)) : missing;
+  const filtMissing = CurrPick.pick(missing);
   const bySchool = {};
   filtMissing.forEach(e => { if(!bySchool[e.lmsIdx]) bySchool[e.lmsIdx]=[]; bySchool[e.lmsIdx].push(e); });
   const lookbackDays = [...new Set(lookbackRecs.map(r=>r.dateStr))].length;
@@ -1806,14 +1780,7 @@ function _msSyncState(id) {
   const checked = items.filter(cb => cb.checked);
   const label   = document.getElementById(id + 'Label');
 
-  if (id === 'msSchool') {
-    activeSchools = checked.length === items.length ? [] : checked.map(cb => parseInt(cb.value));
-    label.textContent = activeSchools.length === 0
-      ? 'All Schools'
-      : activeSchools.length === 1
-        ? (CM_SCHOOLS[activeSchools[0]]?.name || `LMS ${activeSchools[0]+1}`)
-        : `${activeSchools.length} schools`;
-  } else if (id === 'msClass') {
+  if (id === 'msClass') {
     activeClasses = checked.length === items.length ? [] : checked.map(cb => cb.value);
     label.textContent = activeClasses.length === 0
       ? 'All Classes'
@@ -1872,7 +1839,7 @@ function clearAllFilters() {
   document.getElementById('dateTo').value   = '';
   document.querySelectorAll('.filt-btn').forEach(b => b.classList.remove('active'));
   // Reset all multi-selects to "all"
-  msAll('msSchool');
+  CurrPick.reset();
   msAll('msSubject');
   msAll('msClass');
   // _msSyncState is called inside msAll → _rerender already triggered
@@ -2040,7 +2007,10 @@ async function renderTodaySummary() {
     section.style.display = '';
     btn.textContent = 'Hide full report ▲';
   }
+  renderTodayCards();
+}
 
+function renderTodayCards() {
   // Both checks hit slow, independent data sources (allocation sheet vs. course
   // mapping) -- run them concurrently and let each card update on its own,
   // rather than making one wait on the other.
@@ -2063,7 +2033,7 @@ async function renderTodaySummary() {
     try {
       // checkOverdueFromTracker() reads the LMCS Chapter Completion Tracker
       // sheet directly (small, server-precomputed) -- it already applies the
-      // same campus lock (activeSchools) the rest of this page uses.
+      // same campus picker the rest of this page uses.
       const { total: overdueCt, critical } = await checkOverdueFromTracker();
       document.getElementById('tsOverdueCount').textContent = overdueCt;
       document.getElementById('cardOverdue').className = 'today-card ' + (overdueCt > 0 ? 'alert' : 'ok');
@@ -2094,24 +2064,10 @@ function expandAndShowTab(tabName) {
   document.getElementById('fullReportSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// Principal-mode: restricts the school multi-select to one campus and locks it
+// Principal-mode: the campus picker's scope already limits the schools (hidden at one school), and CurrPick keeps the
+// session scope on top of it. What's left is hiding the cross-campus Pulse tab and the admin link.
 function applyPrincipalLock() {
   if (!PRINCIPAL_SESSION) return;
-  const idx = parseInt(PRINCIPAL_SESSION.campusId.replace('LMS', ''), 10) - 1;
-  if (idx < 0 || idx >= CM_SCHOOLS.length) return;
-
-  activeSchools = [idx];
-
-  const panel = document.getElementById('msSchoolPanel');
-  panel.querySelectorAll('.ms-item-cb').forEach(cb => { cb.checked = (parseInt(cb.value, 10) === idx); });
-  const allCb = panel.querySelector('#msSchoolAll');
-  if (allCb) allCb.checked = false;
-
-  const label = document.getElementById('msSchoolLabel');
-  if (label) label.textContent = CM_SCHOOLS[idx]?.name || `LMS ${idx + 1}`;
-
-  const btn = document.getElementById('msSchoolBtn');
-  if (btn) btn.disabled = true;
 
   // Pulse is a cross-campus trend view (coordinator/owner territory) -- not
   // useful sliced to one school, and not part of what a principal needs day

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Hiring Dashboard</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--green-lt:#dcfce7;--amber:#92400e;--amber-lt:#fef3c7;--blue:#1d4ed8;--blue-lt:#dbeafe}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -166,7 +166,7 @@ textarea{min-height:56px;resize:vertical}
         <input type="search" class="search" id="search" placeholder="Find anyone — name or phone" aria-label="Find an applicant by name or phone">
         <button type="button" class="btn primary" data-act="add">+ Add applicant</button>
       </div>
-      <div class="campus-row" id="campusRow" role="group" aria-label="School"></div>
+      <div id="campusRow" style="margin-bottom:12px"></div>
       <div id="view"></div>
     </div>
   </div>
@@ -179,8 +179,9 @@ textarea{min-height:56px;resize:vertical}
   </div>
 </div>
 
-<script src="../assets/auth.js"></script>
-<script src="hiring-view.js"></script>
+<script src="../assets/auth.js?v=01effdcf"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
+<script src="./hiring-view.js?v=7389ceb1"></script>
 <script>
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
 const DOC_FORM_URLS = {
@@ -201,7 +202,6 @@ const DATASRC_APPLICANTS_GID = '1181288827';
 const DATASRC_IR_GID = '1241435504';
 const DATASRC_TRACKER_GID = '1351967428';
 const DATASRC_DOC_WORKBOOK_ID = '1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg'; // one workbook, one tab per campus
-const CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 const CLASSES = ['M1', 'M2', 'M3', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12'];
 const SOURCES = ['Walk-in', 'Referral', 'Paper CV', 'Phone call', 'Other'];
 const BED_OPTIONS = ['', 'Yes - TET qualified', 'Yes - TET not qualified', 'Yes', 'No', 'Not applicable'];
@@ -214,7 +214,7 @@ let DATA = { applicants: [], statuses: [], rejectReasons: [], positions: [] };
 let APPROVAL_STATUS = { campuses: [] };
 let ROLES = [];             // every approved role in scope (from hiringapprovalstatus)
 let VIEW = 'today';
-let campusFilter = 'ALL';
+let SEL = { all: true, campuses: [] }; // the shared campus picker's selection
 let selectedRoleKey = null;
 let OPEN_ROW = null;        // the candidate panel's row, so it re-renders after a save
 let IS_PRINCIPAL = false;   // role Principal: an interview/demo time they set is booked at once (accepted); anyone else proposes
@@ -237,16 +237,13 @@ function gasPost_(action, body) {
   return fetch(PDR_BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: SESSION.idToken }, body)) })
     .then(function (r) { return r.json(); });
 }
-function myCampuses_() {
-  const ids = String(SESSION.campusId || '').split(',').map(function (c) { return c.trim().toUpperCase(); }).filter(Boolean);
-  return ids.indexOf('ALL') !== -1 ? CAMPUSES.slice() : ids.filter(function (c) { return CAMPUSES.indexOf(c) !== -1; });
-}
+function myCampuses_() { return LMCSCampus.scope(SESSION); } // the shared picker's scope: from the session only, LMS 1-6 (no HES here)
 function campusesOf_(a) { return (String(a.branches || '').match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); }); }
 function campusOf_(a) {
   const mine = myCampuses_(), tags = campusesOf_(a);
   return tags.filter(function (c) { return mine.indexOf(c) !== -1; })[0] || tags[0] || '';
 }
-function inFilter_(a) { return campusFilter === 'ALL' || campusesOf_(a).indexOf(campusFilter) !== -1; }
+function inFilter_(a) { return HV.inSel_(campusesOf_(a), SEL); }
 function dayKey_(d) { d = new Date(d); return isNaN(d) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function todayKey_() { return dayKey_(new Date()); }
 function fmtTime_(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -386,7 +383,7 @@ function renderToday_() {
 }
 
 // Appointments: proposals waiting for me (Accept, or Decline with a note), then what I proposed.
-function inCampus_(x) { return campusFilter === 'ALL' || x.campus === campusFilter; }
+function inCampus_(x) { return HV.inSel_([x.campus], SEL); }
 // Accept, or Decline with a note: a proposal waiting for me, or (Owner override) any proposed interview/demo in the panel.
 function overrideBtns_(x) {
   return '<button type="button" class="btn primary" data-act="accept" data-id="' + esc_(x.id) + '">Accept</button>' +
@@ -427,7 +424,7 @@ function renderActions_() {
 }
 
 function renderRole_() {
-  const campuses = (APPROVAL_STATUS.campuses || []).filter(function (c) { return campusFilter === 'ALL' || c.campusId === campusFilter; });
+  const campuses = LMCSCampus.filter(APPROVAL_STATUS.campuses || [], SEL, 'campusId');
   const roles = [];
   campuses.forEach(function (c) { c.newPositions.forEach(function (r) { roles.push({ campusId: c.campusId, roleLevel: r.roleLevel, subjects: r.subjects, roleKey: r.roleKey }); }); });
   if (!roles.length) return '<div class="empty">No approved "New/ Backup Position" roles here. Request one on the <a href="../principals-daily-reporting/index.html#approvals">Approvals</a> tab.</div>';
@@ -466,22 +463,12 @@ function renderSearch_(q) {
     'No one by that name or number is visible to you. Applicants who match no open role and haven\'t been interviewed stay hidden — add them with "+ Add applicant" (an existing number just opens their record).');
 }
 
-function renderCampusRow_() {
-  const mine = myCampuses_();
-  const el = document.getElementById('campusRow');
-  const opts = mine.length > 1 ? ['ALL'].concat(mine) : [];
-  el.innerHTML = opts.map(function (c) {
-    return '<button type="button" class="chip-btn" data-act="campus" data-campus="' + c + '" aria-pressed="' + (c === campusFilter) + '">' + (c === 'ALL' ? 'All schools' : esc_(LMCS.campusLabel(c))) + '</button>';
-  }).join('');
-}
-
 function render_(keepPanel) { // keepPanel: leave an open candidate panel as it is (its form messages survive)
   const q = document.getElementById('search').value.trim();
   document.querySelectorAll('.tab').forEach(function (t) { t.setAttribute('aria-pressed', String(t.dataset.view === VIEW && !q)); });
   document.getElementById('poolCount').textContent = visible_().filter(function (a) { return a.status === 'Rejected'; }).length;
   document.getElementById('apptCount').textContent = (APPTS.toAccept || []).filter(inCampus_).length;
   document.getElementById('actCount').textContent = HV.myActions_(visible_(), Date.now()).length;
-  renderCampusRow_();
   document.getElementById('view').innerHTML = q ? renderSearch_(q) : VIEW === 'role' ? renderRole_() : VIEW === 'pool' ? renderPool_() :
     VIEW === 'appts' ? renderAppts_() : VIEW === 'actions' ? renderActions_() : renderToday_();
   if (!keepPanel && OPEN_ROW && document.getElementById('modal').hasAttribute('open') && byRow_(OPEN_ROW) && document.getElementById('panel')) renderPanel_(OPEN_ROW);
@@ -727,7 +714,7 @@ function demoFormHtml_(a) {
 
 function addFormHtml_() {
   const mine = myCampuses_();
-  const def = campusFilter !== 'ALL' ? campusFilter : (mine.length === 1 ? mine[0] : '');
+  const def = !SEL.all && SEL.campuses.length === 1 ? SEL.campuses[0] : (mine.length === 1 ? mine[0] : '');
   return '<h3 id="modalTitle">Add applicant</h3><p class="note">For someone who didn\'t fill the online form: a walk-in, a referral, a paper CV. If the number is already on file, their existing record opens instead.</p>' +
     '<div class="block"><div class="grid">' +
     '<label class="fld"><span class="req">Name</span><input class="inp" id="adName" autocomplete="off"></label>' +
@@ -871,7 +858,6 @@ document.addEventListener('click', function (e) {
   switch (b.dataset.act) {
     case 'view': VIEW = b.dataset.view; document.getElementById('search').value = ''; render_(); if (VIEW === 'appts') loadAppts_(); break;
     case 'slfilter': SL_FILTER = b.dataset.f; render_(); break;
-    case 'campus': campusFilter = b.dataset.campus; selectedRoleKey = null; render_(); break;
     case 'role': selectedRoleKey = b.dataset.key; render_(); break;
     case 'jump': { const s = document.getElementById('sec-' + b.dataset.to); if (s) s.scrollIntoView({ behavior: 'smooth' }); break; }
     case 'add': openModal_(addFormHtml_()); break;
@@ -1071,8 +1057,9 @@ function showApp(session) {
   if (!['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(session, r); })) { location.replace('../office/hiring.html'); return; } // Fee Clerks have their own screen
   IS_PRINCIPAL = LMCS.hasRole(session, 'Principal');
   if (LMCS.canViewCoordinatorPortal(session)) document.getElementById('aprLink').href = '../coordinator/systems/index.html#approvals';
-  const mine = myCampuses_();
-  campusFilter = mine.length === 1 ? mine[0] : (String(session.campusId).toUpperCase() === 'ALL' ? 'ALL' : mine[0] || 'ALL');
+  let mounted = false; // the picker's first onChange fires inside mount, before anything is loaded
+  LMCSCampus.mount('#campusRow', { session: session, label: 'School', onChange: function (sel) { SEL = sel; selectedRoleKey = null; if (mounted) render_(); } });
+  mounted = true;
   document.getElementById('authRoot').style.display = 'none';
   document.getElementById('appRoot').style.display = '';
   document.getElementById('welcomeStrip').innerHTML = '<span>Signed in as <b>' + esc_(session.name) + '</b> — ' + esc_(session.campusName || session.campusId) + '</span><a href="#" class="signout" id="signoutLink">Sign out</a>';
