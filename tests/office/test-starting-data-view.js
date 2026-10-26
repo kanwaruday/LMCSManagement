@@ -13,6 +13,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(S.startScope({ role: 'FinanceHead' }), 'full');
   assert.strictEqual(S.startScope({ role: 'FeeClerk' }), 'desk');
   assert.strictEqual(S.startScope({ role: 'AdminManager' }), 'desk');
+  assert.strictEqual(S.startScope({ role: 'Coordinator' }), 'approve');
   assert.strictEqual(S.startScope({ role: 'Principal' }), null);
   assert.strictEqual(S.startScope(null), null);
   assert.ok(S.isOwner({ role: 'Owner' }) && !S.isOwner({ role: 'Accounts' })); ok('role gate');
@@ -83,6 +84,35 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(S.parseDeepLink('?campus=ALL&quest=supplier'), { campus: 'ALL', quest: 'supplier' });
   assert.deepStrictEqual(S.parseDeepLink('?campus=LMS9&quest=<x>'), { campus: null, quest: null });
   assert.deepStrictEqual(S.parseDeepLink(''), { campus: null, quest: null }); ok('deep link');
+
+  // hand-in and approval
+  assert.deepStrictEqual(['draft', 'submitted', 'approved', 'returned'].map((k) => S.stateChip({ state: k }).label), ['Draft', 'Sent for approval', 'Approved', 'Returned']);
+  assert.strictEqual(S.stateChip(null).label, 'Draft'); assert.strictEqual(S.stateChip({ state: 'returned', note: 'Recount' }).note, 'Recount'); assert.strictEqual(S.stateChip({ state: 'draft', note: 'old' }).note, '');
+  const st = (a, b, note) => ({ states: { LMS4: { cash: { state: a, note }, odometer: { state: b } } } });
+  assert.strictEqual(S.schoolState(st('approved', 'approved'), 'LMS4').state, 'approved');
+  assert.strictEqual(S.schoolState(st('submitted', 'approved'), 'LMS4').state, 'submitted');
+  assert.strictEqual(S.schoolState(st('submitted', 'draft'), 'LMS4').state, 'draft');
+  assert.strictEqual(S.schoolState(st('approved', 'returned', 'x'), 'LMS4').state, 'returned');
+  assert.strictEqual(S.schoolState(st('draft', 'draft'), 'HES'), null);
+  const aq = { id: 'cash', approval: true, fillRoles: ['FeeClerk'], approveRoles: ['Coordinator'] }, full = { confirmed: 2, total: 2 }, part = { confirmed: 1, total: 2 };
+  const clerk = { role: 'FeeClerk' }, coord = { role: 'Coordinator' }, own = { role: 'Owner' };
+  let a = S.questActions(aq, { state: 'draft' }, clerk, part);
+  assert.ok(a.submit.show && !a.submit.enabled && a.submit.hint === 'START_INCOMPLETE' && !a.readOnly && !a.decide.show);
+  a = S.questActions(aq, { state: 'draft' }, clerk, full); assert.ok(a.submit.enabled);
+  assert.ok(!S.questActions(aq, { state: 'draft' }, clerk, { confirmed: 0, total: 0 }).submit.enabled, 'nothing entered is not ready');
+  a = S.questActions(aq, { state: 'submitted' }, clerk, full);
+  assert.ok(a.readOnly && !a.submit.show && a.waiting === 'Waiting for your Coordinator.' && !a.decide.show);
+  assert.strictEqual(S.questActions(aq, { state: 'approved' }, clerk, full).readOnly, true);
+  a = S.questActions(aq, { state: 'returned', note: 'Recount' }, clerk, full);
+  assert.ok(!a.readOnly && a.submit.show && a.chip.note === 'Recount' && !a.waiting, 'returned reopens editing');
+  a = S.questActions(aq, { state: 'submitted' }, coord, full); assert.ok(a.decide.show && !a.submit.show && a.readOnly);
+  assert.ok(!S.questActions(aq, { state: 'draft' }, coord, full).decide.show && !S.questActions(aq, { state: 'approved' }, coord, full).decide.show);
+  assert.ok(S.questActions(aq, { state: 'submitted' }, own, full).decide.show && S.questActions(aq, { state: 'draft' }, own, full).submit.show);
+  assert.ok(!S.questActions({ id: 'bank' }, null, own, full).tracked && !S.questActions({ id: 'bank' }, null, own, full).readOnly, 'untracked quests are plain');
+  assert.deepStrictEqual(S.submitPayload('LMS4', 'cash'), { quest: 'cash', campus: 'LMS4' });
+  assert.deepStrictEqual(S.approvePayload('LMS4', 'cash', 'approve', 'ignored'), { ok: true, data: { quest: 'cash', campus: 'LMS4', decision: 'approve', note: '' } });
+  assert.deepStrictEqual(S.approvePayload('LMS4', 'cash', 'return', '  Recount  '), { ok: true, data: { quest: 'cash', campus: 'LMS4', decision: 'return', note: 'Recount' } });
+  assert.strictEqual(S.approvePayload('LMS4', 'cash', 'return', '  ').code, 'NOTE_REQUIRED'); ok('hand-in and approval helpers');
 
   // a school's quests and items
   const quests = ['cash', 'bank', 'supplier', 'odometer', 'loan', 'users'].map((id) => ({ id }));

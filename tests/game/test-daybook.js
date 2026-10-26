@@ -92,8 +92,8 @@ const coordAcc = { email: 'ca@test.invalid', campusId: 'ALL', roles: ['Accounts'
 const coord = { email: 'co@test.invalid', campusId: 'LMS4', roles: ['Coordinator'], primaryRole: 'Coordinator', idToken: 'tok-co' };
 reset(ok(PROG));
 assert.strictEqual(J(ctx.daybookMissions_(coordAcc, cfg, NOW)).length, 7);
-assert.deepStrictEqual(J(ctx.daybookMissions_(coord, cfg, NOW)), []);
-assert.strictEqual(calls.length, 1, 'a plain Coordinator never fetches');
+assert.deepStrictEqual(J(ctx.daybookMissions_(coord, cfg, NOW)), [], 'a plain Coordinator has no figures to confirm');
+assert.ok(hooks('GAME_MODULE_MISSIONS', 'Coordinator').includes('daybookApproveMissions_'));
 
 // ---- quests: one parallel quest per school, a step per quest it has
 reset(ok(PROG));
@@ -122,5 +122,57 @@ reset({ code: 500, body: '' });
 const down = [];
 ctx.gameMissionsFor_(clerk, {}, cfg, NOW, down);
 assert.ok(down.some((d) => /daybookMissions_/.test(d)), JSON.stringify(down));
+
+// ---- Fee Clerk setup quest (states come from start.progress)
+const P2 = (st, cash, odo) => ({ progress: { LMS4: { cash: cash || C(2, 0, 2), odometer: odo || C(8, 0, 8) } }, rings: {}, overall: {}, states: { LMS4: st } });
+const S = (state, note) => ({ state: state, by: 'x@test.invalid', at: '', note: note || '' });
+assert.ok(hooks('GAME_MODULE_QUESTS', 'FeeClerk').includes('daybookClerkQuests_'));
+const stepsOf = (p) => { reset(ok(p)); const q = J(ctx.daybookClerkQuests_(clerk, cfg, NOW)); return q; };
+let cq = stepsOf(P2({ cash: S('draft'), odometer: S('draft') }, C(0, 2, 2), C(0, 1, 8)));
+assert.strictEqual(cq.length, 1);
+assert.strictEqual(cq[0].questId, 'daybook-setup:LMS4'); assert.strictEqual(cq[0].title, 'LMS 4 · Start your Day Book'); assert.strictEqual(cq[0].parallel, false);
+assert.deepStrictEqual(cq[0].steps.map((s) => [s.id, s.title, s.done, s.locked]), [['check', 'Check what we know', false, false], ['cash', 'Count the cash', false, true],
+  ['odometer', 'Record the odometers', false, true], ['submit', 'Send for approval', false, true], ['approved', 'Approved', false, true]]);
+assert.strictEqual(cq[0].steps[0].go, 'office/starting-data.html?campus=LMS4&quest=cash');
+assert.strictEqual(cq[0].steps[2].go, 'office/starting-data.html?campus=LMS4&quest=odometer');
+cq = stepsOf(P2({ cash: S('draft'), odometer: S('draft') }, C(2, 0, 2), C(0, 0, 0)));
+assert.deepStrictEqual(cq[0].steps.map((s) => s.done), [true, true, true, false, false], '0/0 odometers count as recorded');
+assert.deepStrictEqual(cq[0].steps.map((s) => s.locked), [false, false, false, false, true], 'only the next step is open');
+cq = stepsOf(P2({ cash: S('submitted'), odometer: S('approved') }));
+assert.deepStrictEqual(cq[0].steps.map((s) => s.done), [true, true, true, true, false]); assert.strictEqual(cq[0].complete, false);
+cq = stepsOf(P2({ cash: S('approved'), odometer: S('approved') })); assert.strictEqual(cq[0].complete, true);
+cq = stepsOf(P2({ cash: S('returned', 'Recount'), odometer: S('submitted') })); assert.strictEqual(cq[0].steps[3].done, false, 'returned is not sent');
+assert.deepStrictEqual(J(ctx.daybookClerkQuests_(owner, cfg, NOW)), [], 'FeeClerk only');
+reset(ok(Object.assign(P2({ cash: S('draft'), odometer: S('draft') }), { labels: { check: 'Look it over' } })));
+assert.strictEqual(J(ctx.daybookClerkQuests_(clerk, cfg, NOW))[0].steps[0].title, 'Look it over', 'server label wins');
+
+// ---- Fee Clerk: a returned count becomes "Fix and resend", the note as why
+reset(ok(P2({ cash: S('returned', 'Recount the box.'), odometer: S('draft') }, C(1, 1, 2), C(3, 0, 8))));
+ms = J(ctx.daybookMissions_(clerk, cfg, NOW));
+assert.strictEqual(ms[0].title, 'Fix and resend LMS 4\'s cash count'); assert.strictEqual(ms[0].why, 'Recount the box.');
+assert.strictEqual(ms[1].title, 'Confirm 5 starting figures for LMS 4'); assert.strictEqual(ms[1].why, 'Vehicle odometers');
+reset(ok(P2({ cash: S('returned', 'Recount.'), odometer: S('draft') }, C(1, 1, 2), C(3, 0, 8))));
+assert.strictEqual(J(ctx.daybookMissions_(acc, cfg, NOW))[0].title, 'Confirm 1 starting figure for LMS 4', 'only Fee Clerks see the fix wording');
+
+// ---- Coordinator: approve missions
+reset(ok(P2({ cash: S('submitted'), odometer: S('returned', 'x') }, C(2, 0, 2), C(8, 0, 8))));
+let am = J(ctx.daybookApproveMissions_(coord, cfg, NOW));
+assert.deepStrictEqual(am.map((m) => [m.id, m.kind, m.title, m.done, m.shared]), [
+  ['daybook_approve:cash:LMS4', 'daybook_approve', 'Approve LMS 4\'s starting cash count', false, true],
+  ['daybook_approve:odometer:LMS4', 'daybook_approve', 'Approve LMS 4\'s starting odometers', true, true]]);
+assert.strictEqual(am[0].go, 'office/starting-data.html?campus=LMS4&quest=cash');
+reset(ok(P2({ cash: S('draft'), odometer: S('draft') }))); assert.deepStrictEqual(J(ctx.daybookApproveMissions_(coord, cfg, NOW)), [], 'nothing sent yet');
+reset(ok(P2({ cash: S('approved'), odometer: S('submitted') })));
+assert.deepStrictEqual(J(ctx.daybookApproveMissions_(coord, cfg, NOW)).map((m) => m.done), [true, false]);
+reset(ok(P2({ cash: S('submitted'), odometer: S('draft') })));
+assert.strictEqual(J(ctx.daybookMissions_(coordAcc, cfg, NOW)).length, 2, 'an Accounts Coordinator keeps the confirm missions');
+
+// ---- Owner: an Approved step per school
+reset(ok(P2({ cash: S('approved'), odometer: S('submitted') })));
+let oq = J(ctx.daybookQuests_(owner, cfg, NOW))[0];
+assert.deepStrictEqual(oq.steps.map((s) => s.id), ['cash', 'odometer', 'approved']); assert.strictEqual(oq.steps[2].done, false);
+reset(ok(P2({ cash: S('approved'), odometer: S('approved') })));
+assert.strictEqual(J(ctx.daybookQuests_(owner, cfg, NOW))[0].steps[2].done, true);
+reset(ok(PROG)); assert.ok(J(ctx.daybookQuests_(owner, cfg, NOW)).every((q) => !q.steps.some((s) => s.id === 'approved')), 'no states: no Approved step');
 
 console.log('game daybook module: ok');
