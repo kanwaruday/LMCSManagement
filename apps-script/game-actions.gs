@@ -285,7 +285,7 @@ function gameToday_(caller, params) {
     if (!peek) gameAppendText_(progSheet, newly.map(function (n) { return [me, 'quest_step', n.questId + ':' + n.stepId, 'done', now.toISOString()]; }));
     let quests = gameQuestState_(questRows, role, evidence, progRows, me, cfg);
     gameModuleHooks_(GAME_MODULE_QUESTS, role).forEach(function (fn) { // runs under the lock: modules keep this cheap; a throw drops only its quests
-      try { const q = fn(caller, cfg, now); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
+      try { const q = fn(caller, cfg, now, { peek: !!peek }); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
     });
 
     const out = {

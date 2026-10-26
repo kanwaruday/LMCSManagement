@@ -205,6 +205,13 @@ assert.strictEqual((src.match(/lg-tourcard/g) || []).length, 1, 'the tour card i
 assert.strictEqual((src.match(/runTour\(beats, \{/g) || []).length, 2, "mount's tour() and LMCSGame.tour both call runTour");
 assert.ok(/function tour\(beats, after, tourId\) \{\s*runTour\(/.test(src), "mount's home and page tours go through runTour");
 assert.strictEqual(G.tour([], {}), undefined); // no beats: nothing happens, no DOM touched
+{ // a hidden target (no client rects) gets the centred card, like an absent one
+  const bt = new Function('document', /function beatTarget\(x\) \{[\s\S]*?\n  \}/.exec(src)[0] + '; return beatTarget;');
+  const shown = { getClientRects: () => [1] }, hidden = { getClientRects: () => [] };
+  assert.strictEqual(bt({ querySelector: () => hidden })('#x'), null);
+  assert.strictEqual(bt({ querySelector: () => shown })('#x'), shown);
+  assert.strictEqual(bt({ querySelector: () => null })('#x'), null);
+}
 assert.strictEqual(G.last(), null);            // no mount yet
 for (const k of ['h', 'img', 'trap', 'reduced']) assert.strictEqual(typeof G.ui[k], 'function', 'ui.' + k);
 // mount with no backendUrl renders nothing and touches nothing else

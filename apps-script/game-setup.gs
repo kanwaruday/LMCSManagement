@@ -6,7 +6,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 function setupSteps_(cfg) {
   const props = PropertiesService.getScriptProperties();
   const meta = tchReadJson_(CacheService.getScriptCache(), 'tch_meta');
-  const T = tchConfig_(cfg);
+  const T = tchConfig_(cfg && cfg.teacher ? cfg : tchLoadCfg_());
   let suit = null;
   try { suit = gameParseWindows_(gameBook_().getSheetByName('Game Windows').getDataRange().getValues()).filter(function (w) { return w.windowId === 'trackSuit'; })[0] || null; } catch (err) { suit = null; }
   const steps = [

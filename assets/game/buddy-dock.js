@@ -39,7 +39,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return (q && (q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; })[0]) || null;
   }
 
-  var api = { avoid: '#lmcs-warm-chip', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
+  var api = { avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -93,7 +93,7 @@ var LMCSDock = window.LMCSDock = (function () {
     if (!session()) { close(); btn.remove(); return; }
     btn.setAttribute('aria-busy', 'true');
     deps().then(function () { if (!btn) return; btn.removeAttribute('aria-busy'); if (!panel) build(); },
-      function () { if (btn) btn.removeAttribute('aria-busy'); if (PATH !== 'guide/index.html') location.href = GUIDE; }); // offline or blocked: the guide page is the help that's left
+      function () { if (btn) btn.removeAttribute('aria-busy'); if (navigator.onLine && PATH !== 'guide/index.html') location.href = GUIDE; }); // blocked while online: the guide page is the help that's left; offline it would not load either
   }
   function close(keepFocus) {
     if (!panel) return;

@@ -7,7 +7,7 @@ function build(o) {
   const ctx = { console, JSON }; vm.createContext(ctx);
   const rows = [['WindowId', 'Title', 'Question', 'Scope', 'ScopeId', 'Decider', 'Choice', 'DefaultIfUndecided', 'Opens', 'Closes'],
     ['trackSuit', 't', 'q', 'campus', '*', 'Principal', '', '', o.opens || '', o.closes || '']];
-  ctx.SpreadsheetApp = { openById: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => rows }) }) }) };
+  ctx.SpreadsheetApp = { openById: () => ({ getSheetByName: (n) => ({ getDataRange: () => ({ getValues: () => (n === 'Game Config' ? o.cfgRows || [['Key', 'Value']] : rows) }) }) }) };
   const props = Object.assign({ GAME_SHEET_ID: 'B' }, o.props || {});
   ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) };
   const cache = o.cache || {};
@@ -45,6 +45,13 @@ const all = build({ props: { STAFF_AUTO_SIGNIN: 'on', GAME_PUSH_SECRET: 's3' }, 
   cfg: { teacher: { cwhwFormUrl: FORM, quests: { termEnd: '2027-03-31' } } }, opens: '2026-11-01', closes: '2026-11-08' });
 assert.strictEqual(all.done.length, 6);
 assert.strictEqual(all.q.complete, true);
+
+// the framework config drops the teacher key: the steps read the Game Config sheet's teacher row themselves
+{
+  const row = ['teacher', JSON.stringify({ cwhwFormUrl: FORM, quests: { termEnd: '2027-03-31' } })];
+  const b = build({ cfg: { trackSuitDays: {} }, cfgRows: [['Key', 'Value'], row] });
+  assert.deepStrictEqual(b.done, ['form', 'term']);
+}
 
 // registry: an array on Owner, other modules kept; the hook is the function this file defines
 const reg = none.ctx.GAME_MODULE_QUESTS.Owner;

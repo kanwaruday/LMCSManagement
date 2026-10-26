@@ -473,4 +473,11 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.deepStrictEqual(e.missions.map((m) => m.id), ['ss_pace:LMS4:2026-11-05', 'pdr_report:LMS4:2026-11-05']);
   assert.strictEqual(snap(d), db);
 }
+// quest hooks are told whether it is a peek (so a module that writes can skip it), and a real load says peek: false
+{
+  const t = setup(), seen = [];
+  t.ctx.GAME_MODULE_QUESTS.Principal = function (caller, cfg, now, opts) { seen.push(opts); return []; };
+  t.call(P4, 'gametoday', { peek: '1' }); t.call(P4, 'gametoday');
+  assert.deepStrictEqual(J(seen), [{ peek: true }, { peek: false }]);
+}
 console.log('test-actions OK');

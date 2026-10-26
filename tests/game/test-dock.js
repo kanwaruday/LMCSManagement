@@ -10,7 +10,8 @@ const ctx = { console }; ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext(read('assets/game/guide.js'), ctx);
 vm.runInContext(src, ctx); // no document: helpers only, nothing mounts
 const D = ctx.LMCSDock;
-assert.strictEqual(D.avoid, '#lmcs-warm-chip', 'avoid defaults to the warm-up chip');
+assert.strictEqual(D.avoid, '#lmcs-warm-chip, .bottom-nav', 'avoid defaults to the warm-up chip and the Teacher home bottom nav');
+assert.ok(/if \(navigator\.onLine && PATH !== 'guide\/index\.html'\)/.test(src), 'offline: no navigation to the guide page');
 assert.ok(/action=gametoday&peek=1&/.test(src), 'the dock only peeks: opening Buddy never uses up the home greeting');
 
 // the page's path relative to the portal root

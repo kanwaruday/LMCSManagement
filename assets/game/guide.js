@@ -37,7 +37,7 @@ window.LMCSGuide = {
     'coordinator/transport/live.html': { purpose: "Live buses, route timelapses and the monthly safety checks.", roles: ['Coordinator'] },
     'coordinator/transport/capture.html': { purpose: "Record a timelapse, a passenger count or a bus safety check from your phone.", roles: ['Coordinator'] },
     'coordinator/transport/setup.html': {
-      purpose: "Fleet setup: six small quests per bus, so every bus has its papers, kit and plan on record.", roles: ['Coordinator', 'Fee Clerk'],
+      purpose: "Fleet setup: six small quests per bus, so every bus has its papers, kit and plan on record.", roles: ['Coordinator', 'Fee Clerk', 'Owner'],
       tour: [
         { target: '#scope', text: "Pick a campus here when you can see more than one." },
         { target: '#board', text: "Each bus has six quests. Amber means we already found a value: check it and confirm." },
@@ -55,7 +55,7 @@ window.LMCSGuide = {
     },
     'owner/transport/index.html': { purpose: "Fleet readiness for every campus: papers, safety kit, parts, drivers and fuel.", roles: ['Owner'] },
     'teacher/index.html': {
-      purpose: "Your home: Today with Buddy, your score, events and timetable, then requests, evaluations and CW/HW.", roles: ['Teacher'],
+      purpose: "Your home: Today with Buddy, your score, events and timetable, then requests, evaluations and CW/HW.", roles: ['Teacher', 'Staff'],
       tour: [
         { target: '#game-root', text: "This is Today: your missions, the daily classwork and homework log, and your chapter quests." },
         { target: '#rankCard', text: "Your score so far. It is a draft, not your official incentive." },
@@ -67,7 +67,7 @@ window.LMCSGuide = {
       tour: [
         { target: '#chapter', text: "The chapter you're planning for." },
         { target: '#activity', text: "One line is plenty: what will the children do?" },
-        { target: '#save', text: "Save. Overnight, Buddy looks for it in your classwork and marks it." },
+        { target: '#save', text: "Save, and Plan the activity shows Done. Overnight, Buddy looks for it in your classwork; Run the activity is marked when it's found." },
       ],
     },
     'office/index.html': {
@@ -128,8 +128,8 @@ window.LMCSGuide = {
       "Go opens the form. Once your entry is in, the card shows Done. If a day is a holiday, there is no card.",
     ] },
     { id: 'teacher-plan-activity', title: 'Plan an activity', roles: ['Teacher'], body: [
-      "In a chapter quest, tap the step called Plan an activity for that chapter. Write one line about what the children will do, then Save.",
-      "Overnight, Buddy looks for that activity in your classwork. When it finds it, the plan is marked. Until then it shows that it is being checked overnight.",
+      "In a chapter quest, tap the step called Plan the activity for that chapter. Write one line about what the children will do, then Save. The step shows Done once it is saved.",
+      "Overnight, Buddy looks for that activity in your classwork. When it finds it, Run the activity is marked. Until then it shows that it is being checked overnight.",
     ] },
     { id: 'decisions', title: 'Decisions: track-suit days', roles: ['Principal', 'Owner'], body: [
       "Sometimes Buddy asks for a school decision. The first one is which days students come in track suits.",
@@ -170,7 +170,7 @@ window.LMCSGuide = {
       "Teachers' Go button then opens that form.",
     ] },
     { id: 'setup-term', title: "Setup 5: Set this term's end date", roles: ['Owner'], body: [
-      "In the Game Config tab, open the same teacher row. Inside it, find quests and set termEnd to a date written as YYYY-MM-DD.",
+      "In the Game Config tab, open the same teacher row. Inside it, find or add \"quests\": {\"termEnd\": \"YYYY-MM-DD\"} with the date written that way.",
       "Chapters that start after that date drop out of the teachers' chapter quests.",
     ] },
     { id: 'setup-suit', title: 'Setup 6: Open the track-suit decision', roles: ['Owner'], body: [

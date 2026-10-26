@@ -178,7 +178,7 @@ var LMCSGame = window.LMCSGame = (function () {
   // a beat's target: an element, a CSS selector (absent or invalid -> null: the beat sits centred), or nothing
   function beatTarget(x) {
     if (typeof x !== 'string') return x || null;
-    try { return document.querySelector(x); } catch (e) { return null; }
+    try { var el = document.querySelector(x); return el && el.getClientRects().length ? el : null; } catch (e) { return null; }
   }
   // a string body goes as text/plain: no CORS preflight to Apps Script
   function postTo(url, session, action, body) {
