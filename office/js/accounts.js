@@ -121,6 +121,13 @@ export function summaryOverlay(results, cfg, overlay) {
   return line('Account balances', 'balance') + line('Owed to suppliers', 'owed') + line('Held for student collections', 'held');
 }
 
+// Which ledger.summary calls the picker's selection means. ALL is one call only for an ALL sign-in; any other session's "All" is
+// one call per school in its own scope (scope = LMCSCampus.scope(session,{hes:true})), so nothing outside the sign-in is asked for.
+export function summaryTargets(session, sel, scope) {
+  if (!(sel && sel.all)) return (sel && sel.campuses) || [];
+  return session.campusId === 'ALL' ? ['ALL'] : scope.slice();
+}
+
 export function summaryView(sum, cfg, campusLabel) {
   const label = (id) => chargedLabel(id);
   const credit = sum.accounts.filter((a) => a.kind === 'credit');
@@ -258,7 +265,7 @@ export async function showAccounts(root, session, api, outbox) {
     if (!cfg.categories.length) await loadConfig();
     if (!cfg.categories.length) return say(sumBox, 'Still loading the category list — try again in a moment.');
     // ALL (or a non-ALL Accounts user's own scope) is one backend call; picked schools are one call each, shown side by side
-    const targets = !allCampus ? [campus] : sumSel.all ? ['ALL'] : sumSel.campuses;
+    const targets = !allCampus ? [campus] : summaryTargets(session, sumSel, window.LMCSCampus.scope(session, { hes: true }));
     if (!targets.length || !targets[0]) return say(sumBox, 'No campus in your sign-in to show.');
     const rs = await Promise.all(targets.map((c) => api.read('ledger.summary', { campus: c, from, to }, 'acsum:' + c)));
     if (rs.some((r) => r.stale)) return;

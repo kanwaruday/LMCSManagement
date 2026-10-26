@@ -44,6 +44,18 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     });
   });
 
+  await T('office boot: a blank campus stops before onReady and queues nothing', async () => {
+    const el = () => ({ style: {}, textContent: '', innerHTML: '' }), els = {};
+    global.document = { getElementById: (i) => els[i] || (els[i] = el()) };
+    global.navigator = {};
+    global.window = { LMCS: { getSession: () => ({ email: 'a', name: 'N', campusId: 'XYZ' }), campusLabel: (c) => c } };
+    let ready = false;
+    const { bootOffice } = await import('../../office/js/shell.js');
+    await bootOffice({ onReady: () => { ready = true; } });
+    assert.ok(!ready && /doesn&#39;t include a school/.test(els.today.innerHTML), els.today.innerHTML);
+    delete global.document; delete global.navigator; delete global.window;
+  });
+
   await T('accounts summary: 2+ schools show a total per school (never summed); one school a plain total', () => {
     const cfg = { collections: [] }, ov = pickerCtx().LMCSCampus.overlay;
     const sum = (bal, owed) => ({ accounts: [{ kind: 'bank', balance_paise: bal }, { kind: 'credit', owed_paise: owed }], collections: [] });
@@ -52,9 +64,14 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     assert.strictEqual((html.match(/lmcs-ov-item/g) || []).length, 6, 'three lines x two schools');
     assert.ok(/LMS 1 <b>[^<]*10[^<]*<\/b>/.test(html) && /LMS 2 <b>[^<]*50[^<]*<\/b>/.test(html));
     assert.ok(!/60\.00|₹60\b/.test(html), 'not summed');
-    const src = fs.readFileSync(path.join(root, 'office/js/accounts.js'), 'utf8');
-    assert.ok(/sumSel\.all \? \['ALL'\] : sumSel\.campuses/.test(src) && /LMCSCampus\.mount\(campPick, \{ session, hes: true/.test(src), 'multi picker; All = one ALL call, picks = one call each');
-    assert.ok(/!allCampus \? \[campus\]/.test(src), 'a non-ALL Accounts user stays on their own campus');
+    const sc = (x) => [...pickerCtx().LMCSCampus.scope(x, { hes: true })], all = { all: true, campuses: [] };
+    const acct = { campusId: 'LMS2,LMS3', roles: ['Accounts'] };
+    assert.deepStrictEqual(A.summaryTargets(acct, all, sc(acct)), ['LMS2', 'LMS3'], 'scoped Accounts user: All = their schools, never ALL');
+    assert.deepStrictEqual(A.summaryTargets({ campusId: 'LMS5', roles: ['Accounts'] }, all, ['LMS5']), ['LMS5']);
+    assert.deepStrictEqual(A.summaryTargets({ campusId: 'ALL' }, all, sc({ campusId: 'ALL' })), ['ALL'], 'ALL sign-in: one ALL call');
+    assert.deepStrictEqual(A.summaryTargets({ campusId: 'ALL' }, { all: false, campuses: ['LMS1', 'LMS4'] }, []), ['LMS1', 'LMS4'], 'picks: one call each');
+    assert.deepStrictEqual(A.summaryTargets({ campusId: 'XYZ' }, all, []), [], 'nothing in scope: no calls');
+    assert.ok(/summaryTargets\(session, sumSel/.test(fs.readFileSync(path.join(root, 'office/js/accounts.js'), 'utf8')), 'showAccounts uses it');
   });
 
   await T("daily reporting: single-select, no All chip; a Principal gets no picker", () => {

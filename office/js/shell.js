@@ -78,6 +78,11 @@ export async function bootOffice({ onReady }) {
   const session = { ...session0, campus: pickCampus(session0) };
   $('auth-root').style.display = 'none';
   $('app-root').style.display = '';
+  if (!session.campus) { // no school in the sign-in: nothing may be queued with a blank campus
+    $('who').textContent = session.name || '';
+    $('today').innerHTML = '<p><b>' + esc("Your sign-in doesn't include a school for the Office pages. Ask the Owner to check your access.") + '</b></p>';
+    return;
+  }
 
   if (!OFFICE_BACKEND_URL) {
     $('who').textContent = session.name;
