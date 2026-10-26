@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — CWA Gap Report</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -142,7 +142,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=afd06314"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
+<script src="./campus-pick.js?v=2cf53f66"></script>
 <script>
 // ExcelJS (vendored, not CDN, so export/upload works without a third-party
 // script host being reachable -- MIT licensed, https://github.com/exceljs/exceljs)
@@ -194,6 +196,7 @@ function loadExcelJs_() {
 </div>
 
 <div class="datasrc-links" id="datasrcLinks"></div>
+<div id="campusPick" style="padding:8px 24px 0"></div>
 
 <!-- PROGRESS BAR -->
 <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
@@ -253,6 +256,8 @@ function getPrincipalSession() {
   return s;
 }
 const PRINCIPAL_SESSION = getPrincipalSession();
+// The shared campus picker. Its scope comes from the session, so a Principal's school is the only chip (hidden at one school).
+CurrPick.mount('#campusPick', LMCS.getSession(), function () { if (gapData.length) { paintCwaTotal(); renderGapPanel(); } });
 
 const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
 
@@ -291,12 +296,6 @@ const CM_SCHOOLS = savedCfg?.schools ?? [
   {name:'LMS 5 — Sayoli',       id:'172YKw1cMMcG5UZ0jjI8RzO2tGxnVWG3QVCEsDY6CZHg'},
   {name:'LMS 6 — Jogindernagar',id:'1PkZYbeVCdKeqCbbX2eXAwk7c8w7NAHUOSQKmO6nDZtE'},
 ];
-
-const PRINCIPAL_LOCK_IDX = (() => {
-  if (!PRINCIPAL_SESSION) return -1;
-  const idx = parseInt(PRINCIPAL_SESSION.campusId.replace('LMS', ''), 10) - 1;
-  return (idx >= 0 && idx < CM_SCHOOLS.length) ? idx : -1;
-})();
 
 // Same academic-year label logic as chapterAcademicYear() in ChapterTracker.gs
 // -- picks which year-tab of the tracker sheet to read.
@@ -439,7 +438,7 @@ const COORD_XLSX_EDITABLE = new Set(['ActualCWADate','Note']); // only these sta
 // unfiltered export still gets the plain "CWA-Gap-Report-<date>" name.
 function gapExportFilenameSuffix_() {
   const parts = [];
-  if (gapFiltSchool)  parts.push(lmsPlainName(+gapFiltSchool).replace(/\s+/g,''));
+  if (CurrPick.tag()) parts.push(CurrPick.tag());
   if (gapFiltClass)   parts.push(gapFiltClass.replace(/[^a-z0-9]/gi,''));
   if (gapFiltSubject) parts.push(gapFiltSubject.replace(/[^a-z0-9]/gi,''));
   if (gapFiltType && gapFiltType !== 'gaps') parts.push(gapFiltType);
@@ -757,7 +756,6 @@ let trackerRows = [];
 let gapData     = [];
 let gapSortKey  = 'days';
 let gapSortDir  = -1;
-let gapFiltSchool  = PRINCIPAL_LOCK_IDX >= 0 ? String(PRINCIPAL_LOCK_IDX) : '';
 let gapFiltClass   = '';
 let gapFiltSubject = '';
 let gapFiltType    = 'gaps'; // 'gaps' (default/face view) = overdue+critical only; 'all' = +behind pace; exact type = that type only
@@ -830,7 +828,7 @@ function getFilteredSortedGapRows() {
   if (gapFiltType === 'gaps') rows = rows.filter(g => g.type==='overdue' || g.type==='critical');
   else if (gapFiltType && gapFiltType !== 'all') rows = rows.filter(g => g.type===gapFiltType);
 
-  if (gapFiltSchool)  rows = rows.filter(g=>g.lmsIdx===parseInt(gapFiltSchool));
+  rows = CurrPick.pick(rows);
   if (gapFiltClass)   rows = rows.filter(g=>g.cls===gapFiltClass);
   if (gapFiltSubject) rows = rows.filter(g=>g.subject===gapFiltSubject);
 
@@ -851,7 +849,6 @@ function getFilteredSortedGapRows() {
 ═══════════════════════════════════════════════════════════ */
 function renderGapPanel() {
   const panel = document.getElementById('gapPanel');
-  if (PRINCIPAL_LOCK_IDX >= 0) gapFiltSchool = String(PRINCIPAL_LOCK_IDX);
   chipRefs = []; // reset each render pass -- markAsTaken(idx) refs are only valid for the current DOM
 
   const { visible, rows } = getFilteredSortedGapRows();
@@ -867,8 +864,8 @@ function renderGapPanel() {
   const totalFlaggedChs = rows.length; // one row = one chapter now
 
   // Update top-strip chips to match filtered view
-  document.getElementById('cOverdue').textContent  = overdueCt;
-  document.getElementById('cCritical').textContent = criticalCt;
+  document.getElementById('cOverdue').innerHTML  = CurrPick.count(rows.filter(g=>g.type==='overdue'));
+  document.getElementById('cCritical').innerHTML = CurrPick.count(rows.filter(g=>g.type==='critical'));
   document.getElementById('cSchools').textContent  = new Set(rows.map(g=>g.lmsIdx)).size;
 
   let html = '';
@@ -913,14 +910,6 @@ function renderGapPanel() {
         <option value="behind"${gapFiltType==='behind'?' selected':''}>🟡 Behind Pace only — dig deeper</option>
       </select>
     </label>
-    <label>🏫 School
-      <select onchange="gapFiltSchool=this.value;renderGapPanel()"${PRINCIPAL_LOCK_IDX>=0?' disabled':''}>
-        ${PRINCIPAL_LOCK_IDX>=0
-          ? `<option value="${PRINCIPAL_LOCK_IDX}" selected>${esc(CM_SCHOOLS[PRINCIPAL_LOCK_IDX].name)}</option>`
-          : `<option value="">All Schools</option>` +
-            CM_SCHOOLS.map((s,i)=>`<option value="${i}"${gapFiltSchool!==''&&+gapFiltSchool===i?' selected':''}>${esc(s.name)}</option>`).join('')}
-      </select>
-    </label>
     <label>📚 Class
       <select onchange="gapFiltClass=this.value;renderGapPanel()">
         <option value="">All Classes</option>
@@ -942,8 +931,8 @@ function renderGapPanel() {
         <option value="school|1">School</option>
       </select>
     </label>
-    ${(gapFiltType!=='gaps'||gapFiltSchool!==(PRINCIPAL_LOCK_IDX>=0?String(PRINCIPAL_LOCK_IDX):'')||gapFiltClass||gapFiltSubject)?
-      `<button class="filt-btn" onclick="gapFiltType='gaps';gapFiltSchool='${PRINCIPAL_LOCK_IDX>=0?PRINCIPAL_LOCK_IDX:''}';gapFiltClass='';gapFiltSubject='';renderGapPanel()">✕ Clear filters</button>`:''}
+    ${(gapFiltType!=='gaps'||gapFiltClass||gapFiltSubject)?
+      `<button class="filt-btn" onclick="gapFiltType='gaps';gapFiltClass='';gapFiltSubject='';renderGapPanel()">✕ Clear filters</button>`:''}
     <button class="filt-btn" onclick="reloadAll()" title="Re-fetch from the Chapter Completion Tracker sheet">↺ Refresh all</button>
     ${CAN_OVERRIDE ? `
     <button class="filt-btn" onclick="exportForCoordinator()" title="Download the rows currently shown (respects all filters above) as a protected Excel file — every column is locked except Actual CWA Date and Note">⬇ Export for Coordinator</button>
@@ -954,12 +943,12 @@ function renderGapPanel() {
   <div class="gap-chips">
     <div class="gap-chip${overdueCt?' alert':''}">
       <div class="gap-chip-lbl">🟠 Overdue</div>
-      <div class="gap-chip-val" style="color:#c2410c">${overdueCt}</div>
+      <div class="gap-chip-val" style="color:#c2410c">${CurrPick.count(rows.filter(g=>g.type==='overdue'))}</div>
       <div style="font-size:.7rem;color:#9ca3af">stronger signal — month missed</div>
     </div>
     <div class="gap-chip${criticalCt?' alert':''}">
       <div class="gap-chip-lbl">🔴 Critical</div>
-      <div class="gap-chip-val" style="color:var(--red)">${criticalCt}</div>
+      <div class="gap-chip-val" style="color:var(--red)">${CurrPick.count(rows.filter(g=>g.type==='critical'))}</div>
       <div style="font-size:.7rem;color:#9ca3af">harsh signal — Term missed · ${totalFlaggedChs} chapters flagged total</div>
     </div>
     <div class="gap-chip" style="opacity:.7" title="Soft signal — select &quot;Behind Pace only&quot; above to review">
@@ -1144,14 +1133,19 @@ async function init() {
   buildAndRender();
 }
 
+// Total CWA events logged, for the picked schools (one number, or one per school when 2+ are picked).
+function paintCwaTotal() {
+  document.getElementById('cCWATotal').innerHTML = CurrPick.count(CurrPick.pick(trackerRows.filter(r => r.status==='OnTime' || r.status==='Late' || r.status==='Unmapped')));
+}
+
 function buildAndRender() {
   setProgress(90, 'Building gap report…', '');
 
   gapData = buildGapDataFromTracker(trackerRows);
 
-  const totalCWA = trackerRows.filter(r => r.status==='OnTime' || r.status==='Late' || r.status==='Unmapped').length;
+  const totalCWA = trackerRows.filter(r => r.status==='OnTime' || r.status==='Late' || r.status==='Unmapped').length; // header: whole tracker
 
-  document.getElementById('cCWATotal').textContent  = totalCWA;
+  paintCwaTotal();
   document.getElementById('cAcYear').textContent    = TRACKER_TAB;
   document.getElementById('cAcYearSub').textContent = `1 Apr – 31 Mar`;
   document.getElementById('hdrCtx').textContent     =
@@ -1166,7 +1160,7 @@ function buildAndRender() {
 
 async function reloadAll() {
   trackerRows = []; gapData = [];
-  gapFiltType='gaps'; gapFiltSchool=PRINCIPAL_LOCK_IDX>=0?String(PRINCIPAL_LOCK_IDX):''; gapFiltClass=''; gapFiltSubject='';
+  gapFiltType='gaps'; gapFiltClass=''; gapFiltSubject='';
   init();
 }
 

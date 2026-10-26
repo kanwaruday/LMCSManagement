@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Salary Dashboard · Monthly Payroll</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff;--green:#15803d;--green-lt:#f0fdf4;--amber:#b45309;--blue:#1e3a8a;--blue-lt:#eff6ff}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -101,6 +101,7 @@ tr.cur td{background:#fef9c3}
         <label>Month <input type="month" id="fMonth"></label>
         <button class="btn" id="loadBtn">Open month</button>
       </div>
+      <div id="campusPick"></div>
       <div class="viewbar" id="viewBar"></div>
       <div id="msgRoot"></div>
       <div id="monthRoot"></div>
@@ -110,7 +111,8 @@ tr.cur td{background:#fef9c3}
   </div>
 </div>
 
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=afd06314"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
 <script>
 // "LMCS Payroll Backend" -- its own Apps Script project (apps-script/payroll.gs).
 const PAYROLL_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbziOoYaIol_jeiAjJw4uVKlI5HNpV2BT2MGkQ0AcSdnYGq3MZnHW0ju2W46JrIHovUv/exec';
@@ -143,7 +145,13 @@ const STEPS = [
 ];
 // 2026-09-30, per Uday: school-wise by default feel (tabs + by-school table, like the
 // first payroll screen), with All schools kept as an option.
-let SESSION = null, M = null, SCOPE = 'ALL', OPEN = 'staff', ONLY_DIFF = false;
+let SESSION = null, M = null, OPEN = 'staff', ONLY_DIFF = false;
+// The shared campus picker (HES too). SEL is its selection; SCOPE is what writes can take: 'ALL', one entity code, or 'MULTI' (2+ picked).
+let SEL = { all: true, campuses: [] }, SCOPE = 'ALL', PICKER = null;
+function scopeOf_(sel) { return sel.all ? 'ALL' : sel.campuses.length === 1 ? sel.campuses[0] : 'MULTI'; }
+function scopeName_() { return SCOPE === 'ALL' ? 'all schools' : SCOPE === 'MULTI' ? SEL.campuses.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') : ENTITY_LABEL[SCOPE]; }
+function entIn_(e) { return LMCSCampus.filter([{ entity: e }], SEL, 'entity').length > 0; }
+function pickSchool_(e) { if (PICKER) PICKER.set([e]); }
 
 // ── Backend ──────────────────────────────────────────────────────────
 function payGet_(action, data) {
@@ -254,11 +262,11 @@ function sum_(rows, fn) { return rows.reduce(function (a, r) { return a + (Numbe
 function cls_(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
 function netDiff_(r) { return r.erpNet == null ? null : r.net - r.erpNet; }
 function ctiDiff_(r) { return r.erpCti == null ? null : r.cti - r.erpCti; }
-function inScope_(r) { return SCOPE === 'ALL' || r.entity === SCOPE; }
+function inScope_(r) { return entIn_(r.entity); }
 function scopeRows_() { return M.rows.filter(inScope_); }
 function isLocked_(entity) { return !!M.locked[entity]; }
 function openRows_() { return scopeRows_().filter(function (r) { return !isLocked_(r.entity); }); }
-function entitiesInScope_() { return Object.keys(ENTITY_LABEL).filter(function (e) { return (SCOPE === 'ALL' || SCOPE === e) && M.rows.some(function (r) { return r.entity === e; }); }); }
+function entitiesInScope_() { return Object.keys(ENTITY_LABEL).filter(function (e) { return entIn_(e) && M.rows.some(function (r) { return r.entity === e; }); }); }
 function label_(r) { return r.code + ' — ' + r.name + ' (' + ENTITY_LABEL[r.entity] + ')'; }
 function pick_(inputId) {
   const v = document.getElementById(inputId).value;
@@ -289,12 +297,12 @@ function render_() {
   const hasErp = rows.some(function (r) { return r.erpNet != null; });
   const nd = sum_(rows, netDiff_), cd = sum_(rows, ctiDiff_);
   const erpStat = function (v) { return hasErp ? '<span class="' + cls_(v) + '">' + inr_(v) + '</span>' : '<span class="muted">no ERP data</span>'; };
-  let html = schoolTabs_() + '<div class="status">' +
-    stat_('Month', monthLabel_(M.month)) + stat_('Scope', SCOPE === 'ALL' ? 'All schools' : ENTITY_LABEL[SCOPE]) +
-    stat_('Staff', rows.length) + stat_('Gross', '₹' + inr_(sum_(rows, function (r) { return r.gross; }))) +
-    stat_('Net pay', '₹' + inr_(sum_(rows, function (r) { return r.net; }))) +
-    stat_('Bank transfer', '₹' + inr_(sum_(rows, function (r) { return r.bankPayable; }))) +
-    stat_('CTI', '₹' + inr_(sum_(rows, function (r) { return r.cti; }))) +
+  let html = '<div class="status">' +
+    stat_('Month', monthLabel_(M.month)) + stat_('Scope', SCOPE === 'ALL' ? 'All schools' : esc_(scopeName_())) +
+    stat_('Staff', rows.length) + stat_('Gross', ov_(rows, function (r) { return r.gross; })) +
+    stat_('Net pay', ov_(rows, function (r) { return r.net; })) +
+    stat_('Bank transfer', ov_(rows, function (r) { return r.bankPayable; })) +
+    stat_('CTI', ov_(rows, function (r) { return r.cti; })) +
     stat_('vs ERP net', erpStat(nd)) + stat_('vs ERP CTI', erpStat(cd)) +
     '<span class="deadline">Lock by 8 ' + nextLabel + ' · pay on 10 ' + nextLabel + (lockedEs.length ? ' · 🔒 ' + lockedEs.map(function (e) { return ENTITY_LABEL[e]; }).join(', ') : '') + '</span></div>';
 
@@ -313,13 +321,11 @@ function render_() {
   wire_();
 }
 
-function schoolTabs_() {
-  const present = Object.keys(ENTITY_LABEL).filter(function (e) { return M.rows.some(function (r) { return r.entity === e; }); });
-  return '<div class="schools">' + ['ALL'].concat(present).map(function (e) {
-    const n = e === 'ALL' ? M.rows.length : M.rows.filter(function (r) { return r.entity === e; }).length;
-    return '<span class="school' + (SCOPE === e ? ' on' : '') + '" data-scope="' + e + '">' + (e === 'ALL' ? 'All schools' : ENTITY_LABEL[e]) +
-      (e !== 'ALL' && isLocked_(e) ? ' 🔒' : '') + '<span class="n">' + n + '</span></span>';
-  }).join('') + '</div>';
+// Per-entity totals through the picker's overlay: one value per school when 2+ are picked, else the single total.
+function ov_(rows, fn) {
+  const v = {};
+  entitiesInScope_().forEach(function (e) { v[e] = sum_(rows.filter(function (r) { return r.entity === e; }), fn); });
+  return LMCSCampus.overlay(v, SEL, function (n) { return '₹' + inr_(n); });
 }
 
 // By-school totals (always every school); click a row to switch to that school.
@@ -334,7 +340,7 @@ function bySchool_() {
   let h = '<div class="wrap"><table><tr><th class="l">School</th>' + cols.map(function (c) { return '<th>' + c[0] + '</th>'; }).join('') + '<th class="l">Status</th></tr>';
   present.concat(['ALL']).forEach(function (e) {
     const rs = M.rows.filter(function (r) { return e === 'ALL' || r.entity === e; });
-    const cls = e === 'ALL' ? 'total' : 'pick' + (SCOPE === e ? ' cur' : '');
+    const cls = e === 'ALL' ? 'total' : 'pick' + (entIn_(e) && SCOPE !== 'ALL' ? ' cur' : '');
     h += '<tr class="' + cls + '"' + (e === 'ALL' ? '' : ' data-scope="' + e + '"') + '><td class="l">' + (e === 'ALL' ? 'TOTAL' : ENTITY_LABEL[e]) + '</td>' + cols.map(function (c) {
       if (!c[1]) return '<td>' + rs.length + '</td>';
       const v = sum_(rs, c[1]);
@@ -369,7 +375,7 @@ function cardSummary_(id) {
     return (h ? h + ' held this month' : 'No holds') + (rel ? ' · ' + rel + ' with earlier held salary' : '');
   }
   if (id === 'review') {
-    const w = M.warnings.filter(function (w) { return SCOPE === 'ALL' || !w.entity || w.entity === SCOPE; }).length;
+    const w = M.warnings.filter(function (w) { return !w.entity || entIn_(w.entity); }).length;
     return (w ? w + ' warning(s) · ' : '') + bigChanges_().length + ' big change(s) vs last month';
   }
   if (id === 'lock') {
@@ -381,8 +387,9 @@ function cardSummary_(id) {
 
 function tick_(step) {
   if (entitiesInScope_().every(isLocked_)) return '';
+  if (SCOPE === 'MULTI') return '<span class="muted">Pick one school, or All, to tick this step</span>'; // markstep takes one entity or ALL
   const done = scopeStepDone_(step);
-  return '<span class="tick' + (done ? ' done' : '') + '" data-tick="' + step + '">' + (done ? '✓ Done — click to undo' : '☐ Mark done for ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE])) + '</span>';
+  return '<span class="tick' + (done ? ' done' : '') + '" data-tick="' + step + '">' + (done ? '✓ Done — click to undo' : '☐ Mark done for ' + scopeName_()) + '</span>';
 }
 
 function panel_(id) {
@@ -395,7 +402,7 @@ function panel_(id) {
 }
 
 // ① Staff changes -- offers awaiting joining, and the Employee Master vs payroll.
-function staffList_(list) { return (list || []).filter(function (x) { return SCOPE === 'ALL' || x.entity === SCOPE || x.from === SCOPE || x.to === SCOPE; }); }
+function staffList_(list) { return (list || []).filter(function (x) { return entIn_(x.entity) || entIn_(x.from) || entIn_(x.to); }); }
 function staffPanel_() {
   const st = M.staff || {};
   let h = '<h2>① Staff changes <span class="grow"></span>' + tick_('staff') + '</h2>';
@@ -525,7 +532,7 @@ function leavePanel_() {
   const rows = scopeRows_().filter(function (r) { return r.paidDays !== M.daysInMonth || r.clEncashment || r.leave; });
   let h = '<h2>② Leave &amp; paid days <span class="grow"></span>' + tick_('leave') + '</h2>';
   if (openRows_().length) {
-    h += '<div class="note"><b>Monthly leave file:</b> download the template (every open employee in ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) +
+    h += '<div class="note"><b>Monthly leave file:</b> download the template (every open employee in ' + esc_(scopeName_()) +
       ', with this month’s entries if any), fill in the counts, and upload it. Each count is converted by the bye-law leave norms, charged to Compensatory Leave → CL → unpaid, and becomes paid days. ' +
       'You see a preview before anything is saved. Everyone not listed below is paid the full month (' + M.daysInMonth + ' days).</div>' +
       '<div class="addrow"><button class="btn" id="lvTemplate">⬇ Download leave template</button> <button class="mini-btn" id="lvUpload">⬆ Upload filled template</button>' +
@@ -613,7 +620,7 @@ function downloadLeaveTemplate_() {
 
     const hs = wb.addWorksheet('How to fill');
     hs.getColumn(1).width = 110;
-    ['LEAVE TEMPLATE — ' + monthLabel_(M.month) + ' (' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) + ')', '',
+    ['LEAVE TEMPLATE — ' + monthLabel_(M.month) + ' (' + scopeName_() + ')', '',
       'Leave sheet: one row per employee. Grey columns are fixed. Leave counts are NUMBER OF INSTANCES this month (whole numbers); leave blank for none.',
       'Leave days per instance (bye-laws, OO-09/26): ' + M.leaveFields.map(function (f) { return f[1] + ' ' + (Math.round(f[2] * 100) / 100); }).join(' · '),
       'The month’s total leave days are charged to Compensatory Leave first, then CL, then unpaid. Half-day CL counts as one full CL.',
@@ -627,7 +634,7 @@ function downloadLeaveTemplate_() {
     return wb.xlsx.writeBuffer().then(function (buf) {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      a.download = 'Leave ' + M.month + (SCOPE === 'ALL' ? '' : ' ' + ENTITY_LABEL[SCOPE]) + '.xlsx';
+      a.download = 'Leave ' + M.month + (SCOPE === 'ALL' ? '' : ' ' + SEL.campuses.map(function (e) { return ENTITY_LABEL[e]; }).join(' ')) + '.xlsx';
       a.click();
     });
   }).catch(function (err) { document.getElementById('msgRoot').innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; });
@@ -759,7 +766,7 @@ function bigChanges_() {
   });
 }
 function reviewPanel_() {
-  const w = M.warnings.filter(function (x) { return SCOPE === 'ALL' || !x.entity || x.entity === SCOPE; });
+  const w = M.warnings.filter(function (x) { return !x.entity || entIn_(x.entity); });
   let h = '<h2>⑤ Review <span class="grow"></span>' + tick_('review') + '</h2>';
   if (w.length) h += '<div class="warn"><b>' + w.length + ' warning(s) — fix before locking:</b><br>' + w.map(function (x) { return esc_(x.text); }).join('<br>') + '</div>';
   const big = bigChanges_();
@@ -779,7 +786,7 @@ function reviewPanel_() {
   const hasErp = scopeRows_().some(function (r) { return r.erpNet != null; });
   // No ERP data (months after the parallel run) -> the review table is simply the full register.
   const erpRows = scopeRows_().filter(function (r) { return !hasErp || !ONLY_DIFF || netDiff_(r) || ctiDiff_(r); });
-  h += '<h2 style="font-size:12px">Register — ' + (SCOPE === 'ALL' ? 'all schools' : ENTITY_LABEL[SCOPE]) + (hasErp ? ', with the ERP parallel run' : ' <span class="muted">— no ERP Reference rows for this month</span>') +
+  h += '<h2 style="font-size:12px">Register — ' + esc_(scopeName_()) + (hasErp ? ', with the ERP parallel run' : ' <span class="muted">— no ERP Reference rows for this month</span>') +
     ' <span class="grow"></span>' + (hasErp ? '<label class="muted"><input type="checkbox" id="erpDiff"' + (ONLY_DIFF ? ' checked' : '') + '> only rows that differ from ERP</label> ' : '') +
     '<button class="mini-btn" id="csvBtn">⬇ Export CSV</button></h2>';
   const cols = registerCols_();
@@ -990,7 +997,7 @@ function wire_() {
     c.onchange = function () { const r = M.rows.find(function (x) { return x.code === c.dataset.release; }); post_('saveinputs', { rows: [inputFor_(r, { release: c.checked ? r.heldBalance : '' })] }, 'Saving…'); };
   });
   if (q('#erpDiff')) q('#erpDiff').onchange = function () { ONLY_DIFF = this.checked; render_(); };
-  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; LEAVE_PREVIEW = null; render_(); }; });
+  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { LEAVE_PREVIEW = null; pickSchool_(el.dataset.scope); }; });
   if (q('#csvBtn')) q('#csvBtn').onclick = exportCsv_;
   document.querySelectorAll('[data-unlock]').forEach(function (b) {
     b.onclick = function () {
@@ -1016,7 +1023,7 @@ function exportCsv_() {
   const csv = lines.map(function (l) { return l.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = 'payroll-' + M.month + (SCOPE === 'ALL' ? '' : '-' + SCOPE) + '.csv';
+  a.download = 'payroll-' + M.month + (SCOPE === 'ALL' ? '' : '-' + SEL.campuses.join('-')) + '.csv';
   a.click();
 }
 
@@ -1131,16 +1138,16 @@ function postAcc_(action, data, label, okMsg) {
     return loadAccounts_(okMsg).then(function () { return true; });
   }).catch(function (err) { document.getElementById('loadingPill').classList.remove('on'); msg.innerHTML = '<div class="err">' + esc_(err.message) + '</div>'; return false; });
 }
-function accInScope_(a) { return SCOPE === 'ALL' || a.entity === SCOPE; }
+function accInScope_(a) { return entIn_(a.entity); }
 function schoolOf_(a) { return a.former ? 'Former' : ENTITY_LABEL[a.entity] || a.entity; }
 
 function renderView_() {
   const root = document.getElementById('monthRoot');
-  if (VIEW === 'outputs') { root.innerHTML = schoolTabs_() + '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
-  if (VIEW === 'dataquality') { root.innerHTML = DQ ? schoolTabs_() + '<div class="panel">' + dataQualityView_() + '</div>' : ''; wireViews_(); return; }
-  if (VIEW === 'increment') { root.innerHTML = INC ? schoolTabs_() + '<div class="panel">' + incrementView_() + '</div>' : ''; wireViews_(); return; }
+  if (VIEW === 'outputs') { root.innerHTML = '<div class="panel">' + outputsView_() + '</div>'; wireViews_(); wireOutputs_(); return; }
+  if (VIEW === 'dataquality') { root.innerHTML = DQ ? '<div class="panel">' + dataQualityView_() + '</div>' : ''; wireViews_(); return; }
+  if (VIEW === 'increment') { root.innerHTML = INC ? '<div class="panel">' + incrementView_() + '</div>' : ''; wireViews_(); return; }
   if (!ACC) { root.innerHTML = ''; return; }
-  root.innerHTML = schoolTabs_() + '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
+  root.innerHTML = '<div class="panel">' + (VIEW === 'accounts' ? accountsView_() : VIEW === 'fnf' ? fnfView_() : openingView_()) + '</div>';
   wireViews_();
 }
 
@@ -1307,7 +1314,7 @@ function parseOpening_(wb, accept) {
 
 function wireViews_() {
   const q = function (s) { return document.querySelector(s); };
-  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { SCOPE = el.dataset.scope; render_(); }; });
+  document.querySelectorAll('[data-scope]').forEach(function (el) { el.onclick = function () { pickSchool_(el.dataset.scope); }; });
   if (q('#incTimes')) q('#incTimes').onchange = function () {
     const n = Math.max(1, Math.min(12, Math.round(Number(this.value) || 1)));
     INC_TIMES = n;
@@ -1470,13 +1477,13 @@ function outputsView_() {
     '<div class="addrow"><button class="btn" id="ecrBtn">⬇ EPF ECR file (.txt)</button> <button class="btn" id="esiBtn">⬇ ESI contribution file (.xlsx)</button>' +
     ' <button class="btn" id="tallyBtn">⬇ Tally journal (.xml)</button>' +
     ' <button class="btn" id="epfRepBtn">⬇ EPF report (.xlsx)</button> <button class="btn" id="esiRepBtn">⬇ ESI report, school-wise (.xlsx)</button>' +
-    ' <button class="btn" id="salAllBtn">⬇ Salary sheets, all schools (.xlsx)</button></div>';
-  if (SCOPE === 'ALL') {
-    h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.map(function (e) {
+    ' <button class="btn" id="salAllBtn">⬇ Salary sheets, ' + (SCOPE === 'ALL' ? 'all schools' : 'picked schools') + ' (.xlsx)</button></div>';
+  if (SCOPE === 'ALL' || SCOPE === 'MULTI') { // a list; a letter, sheet or slips need one school
+    h += '<div class="wrap"><table><tr><th class="l">School</th><th>Staff</th><th>Bank transfer</th><th class="l">Status</th><th class="l">Bank letter</th></tr>' + es.filter(entIn_).map(function (e) {
       const rs = outRows_(e), lt = OUT.letters.filter(function (l) { return l.entity === e && l.month === M.month; })[0];
       return '<tr class="pick" data-scope="' + e + '"><td class="l">' + ENTITY_LABEL[e] + '</td><td>' + rs.length + '</td><td>' + inr_(sum_(rs, function (r) { return r.bankPayable; })) + '</td><td class="l">' +
         (M.locked[e] ? '🔒 locked' : 'draft') + '</td><td class="l">' + (lt ? esc_(lt.ref) + ' · cheque ' + esc_(lt.cheque) : '—') + '</td></tr>';
-    }).join('') + '</table></div><div class="muted">Pick a school for its bank letter, salary sheet and pay slips.</div>';
+    }).join('') + '</table></div><div class="muted">Pick one school for its bank letter, salary sheet and pay slips.</div>';
     return h;
   }
   const e = SCOPE, rs = outRows_(e);
@@ -1554,9 +1561,9 @@ function sheetTab_(wb, e, name) {
 function sheetXlsx_(all) {
   loadExcelJs_().then(function () {
     const wb = new ExcelJS.Workbook();
-    const es = all === true ? Object.keys(ENTITY_LABEL).filter(function (e) { return OUT.rows.some(function (r) { return r.entity === e; }); }) : [SCOPE];
+    const es = all === true ? Object.keys(ENTITY_LABEL).filter(function (e) { return entIn_(e) && OUT.rows.some(function (r) { return r.entity === e; }); }) : [SCOPE];
     es.forEach(function (e) { sheetTab_(wb, e, all === true ? ENTITY_LABEL[e] : 'SalaryReport'); });
-    return wb.xlsx.writeBuffer().then(function (buf) { download_(all === true ? 'Salary all schools ' + M.month + '.xlsx' : 'Salary ' + ENTITY_LABEL[SCOPE] + ' ' + M.month + '.xlsx', new Blob([buf])); });
+    return wb.xlsx.writeBuffer().then(function (buf) { download_(all === true ? 'Salary ' + (SCOPE === 'ALL' ? 'all schools' : scopeName_()) + ' ' + M.month + '.xlsx' : 'Salary ' + ENTITY_LABEL[SCOPE] + ' ' + M.month + '.xlsx', new Blob([buf])); });
   });
 }
 function download_(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
@@ -1759,6 +1766,7 @@ function showApp(session) {
     return;
   }
   document.getElementById('mainRoot').style.display = '';
+  PICKER = LMCSCampus.mount('#campusPick', { session: session, hes: true, label: 'School', onChange: function (sel) { SEL = sel; SCOPE = scopeOf_(sel); LEAVE_PREVIEW = null; render_(); } });
   // Salary for a month is worked on until about the 15th of the next one, so up to the 15th the page
   // opens on the PREVIOUS month (per Uday, 2026-10-05); from the 16th it opens on the current month.
   const now = new Date(), open = now.getDate() <= 15 ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;

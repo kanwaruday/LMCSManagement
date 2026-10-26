@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LMCS — Unmapped Chapters</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com"><link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.07);--dark:#1a1a1a;--gray:#555;--lgray:#f5f5f5;--border:#ddd;--white:#fff}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -105,7 +105,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js"></script>
+<script src="../assets/auth.js?v=afd06314"></script>
+<script src="../assets/campus-picker.js?v=415bc090"></script>
+<script src="./campus-pick.js?v=2cf53f66"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -142,6 +144,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
 
 <!-- CHIPS STRIP -->
+<div id="campusPick" style="padding:8px 24px 0"></div>
 <div class="chips-strip">
   <div class="chip"><div class="chip-lbl">⚪ Unmapped Rows</div><div class="chip-val muted" id="cUnmapped">—</div><div class="chip-sub">CWA logged, no CM entry</div></div>
   <div class="chip"><div class="chip-lbl">Schools Affected</div><div class="chip-val blue" id="cSchools">—</div><div class="chip-sub">at least one unmapped row</div></div>
@@ -180,6 +183,8 @@ function getPrincipalSession() {
   return s;
 }
 const PRINCIPAL_SESSION = getPrincipalSession();
+// The shared campus picker. Its scope comes from the session, so a Principal's school is the only chip (hidden at one school).
+CurrPick.mount('#campusPick', LMCS.getSession(), function () { if (allRows.length) renderPanel(); });
 
 const TRACKER_SHEET_ID = savedCfg?.chapterTrackerSheetId ?? '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
 
@@ -206,12 +211,6 @@ const CM_SCHOOLS = savedCfg?.schools ?? [
       }));
     el.innerHTML = '📄 ' + links.join('');
   });
-})();
-
-const PRINCIPAL_LOCK_IDX = (() => {
-  if (!PRINCIPAL_SESSION) return -1;
-  const idx = parseInt(PRINCIPAL_SESSION.campusId.replace('LMS', ''), 10) - 1;
-  return (idx >= 0 && idx < CM_SCHOOLS.length) ? idx : -1;
 })();
 
 const TRACKER_TAB = (() => {
@@ -286,7 +285,6 @@ function parseUnmappedRows(table) {
 }
 
 let allRows = [];
-let filtSchool = PRINCIPAL_LOCK_IDX >= 0 ? String(PRINCIPAL_LOCK_IDX) : '';
 let filtClass  = '';
 let filtSubject= '';
 
@@ -301,10 +299,8 @@ applyPrincipalNavLock();
 
 function renderPanel() {
   const panel = document.getElementById('gapPanel');
-  if (PRINCIPAL_LOCK_IDX >= 0) filtSchool = String(PRINCIPAL_LOCK_IDX);
 
-  let rows = allRows;
-  if (filtSchool)  rows = rows.filter(r=>r.lmsIdx===parseInt(filtSchool));
+  let rows = CurrPick.pick(allRows);
   if (filtClass)   rows = rows.filter(r=>r.cls===filtClass);
   if (filtSubject) rows = rows.filter(r=>r.subject===filtSubject);
   rows = [...rows].sort((a,b)=> (b.actualDate||0)-(a.actualDate||0));
@@ -312,20 +308,12 @@ function renderPanel() {
   const allClasses  = [...new Set(allRows.map(r=>r.cls))].sort();
   const allSubjects = [...new Set(allRows.map(r=>r.subject))].sort();
 
-  document.getElementById('cUnmapped').textContent = rows.length;
+  document.getElementById('cUnmapped').innerHTML = CurrPick.count(rows);
   document.getElementById('cSchools').textContent  = new Set(rows.map(r=>r.lmsIdx)).size;
 
   let html = `<div class="info-note">⚪ These are CWA events logged against a chapter name that doesn't match anything in that class/subject's Course Mapping — either a naming mismatch (e.g. a typo, or a chapter renamed after Course Mapping was filled in) or the combo has no Course Mapping data at all yet. Fixing Course Mapping for the listed subject usually resolves these on the next 30-min refresh.</div>
 
   <div class="gap-filter-bar">
-    <label>🏫 School
-      <select onchange="filtSchool=this.value;renderPanel()"${PRINCIPAL_LOCK_IDX>=0?' disabled':''}>
-        ${PRINCIPAL_LOCK_IDX>=0
-          ? `<option value="${PRINCIPAL_LOCK_IDX}" selected>${esc(CM_SCHOOLS[PRINCIPAL_LOCK_IDX].name)}</option>`
-          : `<option value="">All Schools</option>` +
-            CM_SCHOOLS.map((s,i)=>`<option value="${i}"${filtSchool!==''&&+filtSchool===i?' selected':''}>${esc(s.name)}</option>`).join('')}
-      </select>
-    </label>
     <label>📚 Class
       <select onchange="filtClass=this.value;renderPanel()">
         <option value="">All Classes</option>
@@ -338,8 +326,8 @@ function renderPanel() {
         ${allSubjects.map(s=>`<option value="${esc(s)}"${filtSubject===s?' selected':''}>${esc(s)}</option>`).join('')}
       </select>
     </label>
-    ${(filtSchool!==(PRINCIPAL_LOCK_IDX>=0?String(PRINCIPAL_LOCK_IDX):'')||filtClass||filtSubject)?
-      `<button class="filt-btn" onclick="filtSchool='${PRINCIPAL_LOCK_IDX>=0?PRINCIPAL_LOCK_IDX:''}';filtClass='';filtSubject='';renderPanel()">✕ Clear filters</button>`:''}
+    ${(filtClass||filtSubject)?
+      `<button class="filt-btn" onclick="filtClass='';filtSubject='';renderPanel()">✕ Clear filters</button>`:''}
     <button class="filt-btn" onclick="reloadAll()" style="margin-left:auto">↺ Refresh</button>
   </div>`;
 
@@ -435,7 +423,6 @@ async function init() {
 async function reloadAll() {
   allRows = [];
   filtClass=''; filtSubject='';
-  filtSchool = PRINCIPAL_LOCK_IDX>=0 ? String(PRINCIPAL_LOCK_IDX) : '';
   init();
 }
 

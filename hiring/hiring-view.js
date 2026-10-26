@@ -108,7 +108,14 @@
     return String(role || '').split(',').map((r) => r.trim()).indexOf('Owner') !== -1 && x.status === 'proposed' && (x.kind === 'interview' || x.kind === 'demo');
   }
 
-  const api = { openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
+  // Is a record in the picked schools? campuses = the schools it belongs to (an applicant can span several; none is fine).
+  // Goes through the shared picker's filter, so All keeps everything, even a record with no school tag.
+  function inSel_(campuses, sel) {
+    const rows = (campuses || []).length ? campuses.map((c) => ({ campus: c })) : [{ campus: '' }];
+    return root.LMCSCampus.filter(rows, sel).length > 0;
+  }
+
+  const api = { inSel_, openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HiringView = api;
 })(typeof window !== 'undefined' ? window : this);
