@@ -10,8 +10,6 @@
   const MATCH = { Approve: ['Approved'], Reject: ['Rejected', 'Revoked'], Info: ['Info Requested'] };
   const VERB = { Approved: 'approved', Rejected: 'rejected', Revoked: 'revoked it', 'Info Requested': 'asked for more information' };
 
-  // Districts are display filters, never locks: every Coordinator sees all 6 campuses.
-  function districtOf(campus) { return /^LMS[123]$/.test(campus) ? 'LMS 1–3' : /^LMS[456]$/.test(campus) ? 'LMS 4–6' : ''; }
 
   // approval|<id>|<status> -> the status / the id
   function statusOf(t) { return t.domain === 'approval' ? String(t.taskId).split('|')[2] || '' : ''; }
@@ -100,7 +98,7 @@
   // WORK_LINKS (coordinator/shared.js) are written for pages at coordinator/<page>/; the HQ sits one level up.
   function goHref(links, domain) { const l = links && links[domain]; return l ? l.replace(/^\.\.\//, '') : null; }
 
-  const api = { CAMPUSES, districtOf, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, rankFresh, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, recReady, goHref };
+  const api = { CAMPUSES, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, rankFresh, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, recReady, goHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.CoordHQ = api;
 })(typeof window !== 'undefined' ? window : null);

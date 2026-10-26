@@ -8,8 +8,8 @@ const ids = (list) => list.map((t) => t.taskId);
 const rank = (list) => ids(H.rankContracts(list, ME, TODAY));
 const REC = { by: ME, byName: 'C', recommendation: 'Approve', reason: 'ok' };
 
-// ── districtOf: display filters only ──
-assert.deepStrictEqual(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map(H.districtOf), ['LMS 1–3', 'LMS 1–3', 'LMS 1–3', 'LMS 4–6', 'LMS 4–6', 'LMS 4–6']);
+// ── districtOf is gone: the shared campus picker replaced the district tabs ──
+assert.strictEqual(H.districtOf, undefined);
 
 // ── flagOf ──
 assert.strictEqual(H.flagOf(task('approval|A1|Pending')), 'stuck');

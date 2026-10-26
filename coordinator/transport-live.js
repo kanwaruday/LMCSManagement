@@ -27,24 +27,26 @@ window.TransportLive = (function () {
     opts = opts || {};
     el.innerHTML = '<h2 class="pagetitle">Live buses</h2><p class="pagesub">Where every bus is now, from the GPS devices. Refreshes every minute.</p>' +
       '<div class="note tl-status" role="status">Loading bus positions...</div>' +
-      '<div class="ctl"><select class="tl-campus" aria-label="Filter by campus"><option value="">All campuses</option></select></div>' +
+      '<div class="tl-pick"></div>' +
       '<div class="tl-map" style="height:60vh;min-height:320px;border-radius:8px;margin:8px 0"></div><div class="tw"><table class="l"><thead><tr>' +
       '<th>Bus</th><th>Campus</th><th>Route / driver</th><th>Status</th><th>Speed</th><th>Last seen</th><th>Where</th></tr></thead><tbody class="tl-rows"></tbody></table></div>';
-    const status = el.querySelector('.tl-status'), sel = el.querySelector('.tl-campus'), rowsEl = el.querySelector('.tl-rows');
+    const status = el.querySelector('.tl-status'), pickEl = el.querySelector('.tl-pick'), rowsEl = el.querySelector('.tl-rows');
     const map = L.map(el.querySelector('.tl-map')).setView([31.85, 77.15], 9);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const layer = L.layerGroup().addTo(map);
-    let data = null, campus = opts.campus || '', fitted = false;
+    // opts.campus: the page fixes the campus (the Office header's); otherwise the shared picker chooses
+    let data = null, fitted = false, sel = { all: true, campuses: [] };
+    if (opts.campus) sel = { all: false, campuses: [opts.campus] };
+    else if (window.LMCSCampus) LMCSCampus.mount(pickEl, { session, label: 'Show buses for', onChange: (s) => { sel = s; fitted = false; if (data) render(); } });
 
     function render() {
-      const now = Date.now(), list = data.buses.filter(b => !campus || b.campus === campus)
+      const now = Date.now(), list = LMCSCampus.filter(data.buses, sel, 'campusId').concat(sel.all ? data.buses.filter(b => !b.campusId) : []) // off-roster buses only when nothing is narrowed
         .map(b => Object.assign({ st: state(b, now) }, b))
         .sort((a, b) => ['moving', 'stopped', 'offline'].indexOf(a.st) - ['moving', 'stopped', 'offline'].indexOf(b.st) || a.reg.localeCompare(b.reg));
-      const campuses = Array.from(new Set(data.buses.map(b => b.campus).filter(Boolean))).sort();
-      sel.innerHTML = '<option value="">All campuses</option>' + campuses.map(c => '<option' + (c === campus ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
-      sel.parentNode.style.display = campuses.length > 1 ? '' : 'none';
-      const n = s => list.filter(b => b.st === s).length;
-      status.innerHTML = '<b>' + n('moving') + '</b> moving, <b>' + n('stopped') + '</b> stopped, <b>' + n('offline') + '</b> with no signal for over ' + SEEN_MIN + ' min. ' +
+      // one count per picked school when 2+ are picked (overlay), else one total
+      const count = s => { const v = {}; sel.campuses.forEach(c => { v[c] = list.filter(b => b.st === s && b.campusId === c).length; }); return LMCSCampus.overlay(v, sel); };
+      const total = s => sel.all ? String(list.filter(b => b.st === s).length) : count(s); // All also counts off-roster buses
+      status.innerHTML = '<b>' + total('moving') + '</b> moving, <b>' + total('stopped') + '</b> stopped, <b>' + total('offline') + '</b> with no signal for over ' + SEEN_MIN + ' min. ' +
         'Updated ' + new Date(data.fetchedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + '.';
       layer.clearLayers();
       const sv = b => 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + b.lat + ',' + b.lng;
@@ -73,7 +75,6 @@ window.TransportLive = (function () {
       }
     }
 
-    sel.addEventListener('change', () => { campus = sel.value; fitted = false; if (data) render(); });
     load();
     setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
   }
