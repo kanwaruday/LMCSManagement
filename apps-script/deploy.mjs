@@ -15,9 +15,13 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = dirname(fileURLToPath(import.meta.url));
+const args = process.argv.slice(2);
+// --dir <folder> points --check at another folder holding projects.json + .gs files (used by tests/game/test-deploy-check.js)
+const here = args.includes('--dir') ? args[args.indexOf('--dir') + 1] : dirname(fileURLToPath(import.meta.url));
 const projects = JSON.parse(readFileSync(join(here, 'projects.json'), 'utf8'));
 delete projects._note;
+const shared = projects.shared || []; // .gs files deployed to several projects: one source, never forked
+delete projects.shared;
 const clasp = (cwd, ...a) => execFileSync('npx', ['-y', '@google/clasp@3', ...a], { cwd, encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
 const read = (p) => readFileSync(p, 'utf8');
 
@@ -29,10 +33,10 @@ function check() {
   const bad = [
     ...onDisk.filter((f) => !count[f]).map((f) => `unmapped: ${f}.gs`),
     ...Object.keys(count).filter((f) => !onDisk.includes(f)).map((f) => `missing on disk: ${f}.gs`),
-    ...Object.keys(count).filter((f) => count[f] > 1).map((f) => `mapped twice: ${f}.gs`),
+    ...Object.keys(count).filter((f) => count[f] > 1 && !shared.includes(f)).map((f) => `mapped twice: ${f}.gs`),
   ];
   if (bad.length) { console.error(bad.join('\n')); process.exit(1); }
-  console.log(`ok: ${onDisk.length} .gs files, each in exactly one project`);
+  console.log(`ok: ${onDisk.length} .gs files, each in exactly one project (shared: ${shared.join(', ') || 'none'})`);
 }
 
 function run(key, { push, deploy }) {
@@ -70,7 +74,6 @@ function run(key, { push, deploy }) {
   console.log(`live deployment ${p.deploymentId.slice(0, 12)}... now at version ${v}.`);
 }
 
-const args = process.argv.slice(2);
 if (args.includes('--check')) check();
 else if (!args[0]) { console.error('usage: deploy.mjs <project>|--check [--push] [--deploy "msg"]'); process.exit(1); }
 else {

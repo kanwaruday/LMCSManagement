@@ -129,10 +129,14 @@ function doGet(e) {
 // Plain-text JSON body (no Content-Type) so the browser skips a preflight; this project has no doOptions.
 function doPost(e) {
   try {
-    const body = JSON.parse(e.postData.contents);
+    const body = JSON.parse(e.postData.contents), action = String(body.action || '').toLowerCase();
+    // The Mac's nightly activity check (tools/teacher_activity_match.py) has no Google token: exactly these two actions are gated by the shared secret
+    // GAME_PUSH_SECRET instead (checked inside each), as the Coordinator backend does for transportpush. Every other action needs a verified caller.
+    if (action === 'teachermatchpull') return gameJson_(tchMatchPull_(body));
+    if (action === 'teachermatchpush') return gameJson_(tchMatchPush_(body));
     const caller = gameVerifyCaller_(body.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
-    return gameJson_(gameDispatch_(caller, String(body.action || '').toLowerCase(), body));
+    return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });
   }

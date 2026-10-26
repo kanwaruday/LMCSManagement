@@ -199,9 +199,15 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     });
   }
 
-  // ponytail: done for info_requested (the requester answered, status left Info Requested) is not visible in one row;
-  // the framework sees the id vanish from the open set. A response log would make it exact.
-  gameApprovals_(src.approvals, now).forEach(function (a) {
+  return out.concat(gameInfoRequested_(src.approvals, mine, role, cfg, now, go));
+}
+
+// ponytail: done for info_requested (the requester answered, status left Info Requested) is not visible in one row;
+// the framework sees the id vanish from the open set. A response log would make it exact.
+// The caller's own Approvals rows (requested by `mine`, an email) that Management sent back for more information. Shared with the Staff role (game-teacher.gs).
+function gameInfoRequested_(approvalsRows, mine, role, cfg, now, go) {
+  const out = [];
+  gameApprovals_(approvalsRows, now).forEach(function (a) {
     if (a.by !== mine || a.status !== 'Info Requested' || a.archived) return;
     out.push(gameMission_('info_requested', a.id, {
       title: gameTitle_('info_requested', { title: a.title }), why: 'They asked for more information', owner: mine, campus: a.campus, go: go, core: gameIsCore_(cfg, role, 'info_requested'),

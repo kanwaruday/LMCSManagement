@@ -173,7 +173,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=ffa8751c"></script>
+<script src="../assets/auth.js?v=cef835b5"></script>
 <script src="../assets/game/game.js?v=eb99c739"></script>
 <script>
 (function () {
@@ -1004,7 +1004,7 @@ function init() {
   // own school (LMCS.viewAsScope; enforced server-side). Someone who ALSO has Teacher (e.g.
   // "Owner,Teacher") sees their own real data by default until they pick someone to view as.
   if (!SESSION || !LMCS.canViewTeacherPortal(SESSION)) {
-    showDenied_('The Teacher Portal is open to Teachers, Principals, Coordinators and the Owner.');
+    showDenied_('The Teacher Portal is open to Teachers, staff, Principals, Coordinators and the Owner.');
     return;
   }
   document.getElementById('hdrGreeting').textContent = 'Hey, ' + (SESSION.name ? SESSION.name.split(' ')[0] : 'there') + ' 👋';
@@ -1014,8 +1014,15 @@ function init() {
   renderViewAsBar_();
   loadApprovals();
   loadEvals();
-  loadTags();
   loadEvents_();
+  // Non-teaching Staff (Employee Master sign-in, role 'Staff'): Requests, Evaluations and Events only -- no score, CW/HW patterns or timetable.
+  if (LMCS.hasRole(SESSION, 'Staff') && !LMCS.hasRole(SESSION, 'Teacher')) {
+    ['rankCard', 'timetableCard'].forEach(function (id) { document.getElementById(id).style.display = 'none'; });
+    document.querySelectorAll('[data-tab="tags"], .quick-link[onclick*="\'tags\'"]').forEach(function (el) { el.style.display = 'none'; });
+    document.getElementById('hdrSub').textContent = 'Your requests and evaluations';
+    return;
+  }
+  loadTags();
   loadTimetable_();
   loadRank_();
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.

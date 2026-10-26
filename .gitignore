@@ -2,3 +2,9 @@
 # Transport: generated files carry driver names, employee codes, salaries and fees; repo is public
 transport/master_bus_table.csv
 transport/master_flags.txt
+
+# Transport game: staff questionnaires and agency data (driver data, prices); repo is public
+transport/game-data/
+
+# Real CW/HW feed snapshots (staff names); never commit
+tools/private/
