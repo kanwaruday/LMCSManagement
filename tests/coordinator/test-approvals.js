@@ -30,6 +30,8 @@ const oth = row('o1', 'LMS1', 'Pending', 'Normal', day(5)); oth[2] = 'Other';
 const evt = row('e1', 'LMS1', 'Pending', 'Normal', day(5)); evt[2] = 'Off-Campus Trip / Excursion';
 const dep = ctx.coordApprovalWanted_([['h'], fin, oth, evt], now).map((t) => t.department);
 assert.strictEqual(JSON.stringify(dep), JSON.stringify(['School Financials', 'School Operations', 'Events & House System']));
+const lv = row('l1', 'LMS1', 'Pending', 'Normal', day(5)); lv[2] = 'Leave';
+assert.strictEqual(ctx.coordApprovalWanted_([['h'], lv], now)[0].department, 'HR & Staff'); // Leave files under HR, not the School Operations fallback
 
 // upsert / auto-resolve against a fake sheet
 const store = [['TaskId', 'Domain', 'Campus', 'Title', 'Detail', 'Status', 'Severity']];

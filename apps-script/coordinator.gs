@@ -44,7 +44,7 @@ const COORD_DEPT_HR = 'HR & Staff', COORD_DEPT_ACADEMICS = 'Academics & Examinat
   COORD_DEPT_EVENTS = 'Events & House System', COORD_DEPT_OPS = 'School Operations';
 const COORD_APPROVAL_DEPT = {
   'New/ Backup Position': COORD_DEPT_HR, 'Salary Offer Approval': COORD_DEPT_HR, 'Compensation Change': COORD_DEPT_HR,
-  'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
+  'Disciplinary / Termination': COORD_DEPT_HR, 'Compensatory Leave': COORD_DEPT_HR, 'Leave': COORD_DEPT_HR, 'EPF Exemption': COORD_DEPT_HR,
   'Financial / Purchase': COORD_DEPT_FINANCE, 'Academic Change': COORD_DEPT_ACADEMICS,
   'Event / Invitation': COORD_DEPT_EVENTS, 'Off-Campus Trip / Excursion': COORD_DEPT_EVENTS, 'Holiday / Calendar': COORD_DEPT_EVENTS,
 }; // anything else ('Other', new categories) lands in School Operations
