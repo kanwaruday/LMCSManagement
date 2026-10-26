@@ -7,6 +7,8 @@
 //   root-relative. data = a gametoday response, to skip the fetch. Empty backendUrl = render nothing.
 //   only = a module prefix (e.g. 'fleet') for a module's own page: just the missions whose kind and the quests whose
 //   questId start with it, no decisions, days line, greeting or home tour; title replaces the 'Today' heading.
+//   tour = { id, beats: [{ target: CSS selector (optional), text }] }: that page's tour, once per person (Game Progress
+//   'tour' row keyed id), shown when the home greeting isn't (always, on an `only` page).
 // Every piece of text reaches the DOM through text nodes / setAttribute (h() below), never as parsed HTML.
 var LMCSGame = window.LMCSGame = (function () {
   var IST_MS = 330 * 60000;
@@ -199,7 +201,7 @@ var LMCSGame = window.LMCSGame = (function () {
     return Object.assign({}, d, {
       missions: (d.missions || []).filter(mine), next: mine(d.next) ? d.next : null,
       quests: (d.quests || []).filter(function (q) { return String(q.questId || '').indexOf(prefix) === 0; }),
-      windows: [], daysOnTrack: null, firstLoadToday: false, toursSeen: ['home-' + (d.role || '')],
+      windows: [], daysOnTrack: null, firstLoadToday: false, // no greeting, so no home tour either
     });
   }
 
@@ -460,8 +462,8 @@ var LMCSGame = window.LMCSGame = (function () {
       if (questEl || parEls[0]) beats.push({ target: questEl || parEls[0], text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
       return beats;
     }
-    function tour(beats, after) {
-      post_('gametourseen', { tourId: 'home-' + (t.role || '') }).catch(function () { /* offered again next time; nothing lost */ });
+    function tour(beats, after, tourId) {
+      post_('gametourseen', { tourId: tourId || 'home-' + (t.role || '') }).catch(function () { /* offered again next time; nothing lost */ });
       var a = art(t, now), i = 0, release;
       var spot = h('div', { class: 'lg-spot', 'aria-hidden': 'true' });
       var who = h('div', { class: 'lg-who', id: 'lg-t-who' + n }), text = h('p', { id: 'lg-t-text' + n }), count = h('small', { class: 'lg-count' });
@@ -587,6 +589,12 @@ var LMCSGame = window.LMCSGame = (function () {
       renderPanels();
       renderBar(a);
       if (t.firstLoadToday) greet(a, firstVisit, tourBeats(a));
+      else if (pageTour && (t.toursSeen || []).indexOf(pageTour.id) === -1) tour(pageTourBeats(), null, pageTour.id);
+    }
+    // a module page's own first-visit tour (mount's `tour`): each beat spotlights its selector, or sits centred when absent
+    var pageTour = opts.tour && /^[\w-]{1,60}$/.test(String(opts.tour.id || '')) && (opts.tour.beats || []).length ? opts.tour : null;
+    function pageTourBeats() {
+      return pageTour.beats.map(function (b) { return { target: (b.target && document.querySelector(b.target)) || null, text: String(b.text || '') }; });
     }
 
     if (opts.data) safeStart(opts.data); else load();

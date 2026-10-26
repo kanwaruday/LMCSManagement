@@ -191,7 +191,7 @@ assert.ok(/\['due', 'due '/.test(src), 'mission due tag uses the neutral due cla
   assert.deepStrictEqual(f.missions.map((m) => m.id), ['fleet_papers:HP1']);
   assert.deepStrictEqual(f.quests.map((q) => q.questId), ['fleet:HP1']);
   assert.strictEqual(f.next, null); assert.strictEqual(JSON.stringify(f.windows), '[]'); assert.strictEqual(f.daysOnTrack, null);
-  assert.strictEqual(f.firstLoadToday, false); assert.strictEqual(JSON.stringify(f.toursSeen), '["home-Coordinator"]');
+  assert.strictEqual(f.firstLoadToday, false); assert.strictEqual(JSON.stringify(f.toursSeen), '[]'); // kept: a page tour checks it
   assert.strictEqual(G.onlyModule(Object.assign({}, d, { next: d.missions[0] }), 'fleet').next.id, 'fleet_papers:HP1');
   assert.strictEqual(d.missions.length, 2, 'the response itself is not changed'); }
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');

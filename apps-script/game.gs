@@ -76,7 +76,7 @@ const GAME_TABS = {
 // Season-0 defaults. Never constants in logic: a Game Config row (Value = JSON) overrides its key.
 function gameConfigDefaults_() {
   return {
-    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL' },
+    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL', FeeClerk: 'ALL' }, // FeeClerk: fleet setup missions (Fleet Command's module)
     speaker: { Teacher: 'teacher-owl' }, // every other role: Buddy
     cap: { Principal: 5, Coordinator: 5, Owner: 5 },
     core: { Principal: ['ss_pace', 'pdr_issue'], Coordinator: ['approval_recommend', 'hiring_stall'], Owner: ['approval_wait'] },
