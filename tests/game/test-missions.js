@@ -208,6 +208,18 @@ const tm = J(ctx.gameMissionsFor_(teacher, {}, cfg(), now));
 assert.strictEqual(tm.length, 1); assert.deepStrictEqual(tm[0].progress, { done: 2, total: 4 });
 assert.strictEqual(typeof ctx.gameMissionsFor_(owner, { approvals: [APR_H], recommendations: [REC_H] }, cfg(), now).length, 'number'); // dispatch by primary role: Owner
 
+// several modules per role: a Coordinator's module missions join the built-ins; an array registers two; a throwing module is skipped and named in `down`
+{ const csrc0 = { approvals: [APR_H], recommendations: [REC_H], tasks: [TASK_H] };
+  const base = ctx.gameMissionsFor_(coord, csrc0, cfg(), now).length;
+  vm.runInContext("GAME_MODULE_MISSIONS.Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], function fleetA_() { return [{ id: 'fleet_papers:HP1', kind: 'fleet_papers', done: false }]; });", ctx);
+  vm.runInContext("GAME_MODULE_MISSIONS.Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], function boom_() { throw new Error('x'); }, function fleetB_() { return { notYet: true }; });", ctx);
+  const down = [], got = J(ctx.gameMissionsFor_(coord, csrc0, cfg(), now, down));
+  assert.strictEqual(got.length, base + 1);
+  assert.strictEqual(got[got.length - 1].id, 'fleet_papers:HP1');
+  assert.deepStrictEqual(J(down), ['module boom_']);
+  assert.strictEqual(ctx.gameMissionsFor_(coord, csrc0, cfg(), now).length, base + 1, 'down is optional');
+  vm.runInContext("delete GAME_MODULE_MISSIONS.Coordinator;", ctx); }
+
 // ── shape and copy ─────────────────────────────────────────────────────
 const sample = cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task('f1', 'transport', 'LMS5', 'Fix the route')]), coord, { recommendationsReady: true });
 sample.forEach((m) => {

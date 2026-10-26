@@ -182,6 +182,18 @@ assert.strictEqual(G.pickedText(1, 0), '');
 assert.ok(/q\.parallel/.test(src) && /'details'/.test(src), 'parallel quests render in <details>');
 assert.ok(/!s\.locked && !wait && !linked/.test(src), 'a waiting step is never the next action');
 assert.ok(/\['due', 'due '/.test(src), 'mission due tag uses the neutral due class');
+// onlyModule (a module page, mount's `only`): just that module's missions and quests; no windows, days, greeting or home tour
+{ const d = { role: 'Coordinator', firstLoadToday: true, toursSeen: [], daysOnTrack: { onTrack: 3, counted: 4 }, windows: [{ windowId: 'w' }],
+    missions: [{ id: 'fleet_papers:HP1', kind: 'fleet_papers' }, { id: 'approval_recommend:A1', kind: 'approval_recommend' }],
+    next: { id: 'approval_recommend:A2', kind: 'approval_recommend' },
+    quests: [{ questId: 'fleet:HP1', steps: [] }, { questId: 'coord1', steps: [] }] };
+  const f = G.onlyModule(d, 'fleet');
+  assert.deepStrictEqual(f.missions.map((m) => m.id), ['fleet_papers:HP1']);
+  assert.deepStrictEqual(f.quests.map((q) => q.questId), ['fleet:HP1']);
+  assert.strictEqual(f.next, null); assert.strictEqual(JSON.stringify(f.windows), '[]'); assert.strictEqual(f.daysOnTrack, null);
+  assert.strictEqual(f.firstLoadToday, false); assert.strictEqual(JSON.stringify(f.toursSeen), '[]'); // kept: a page tour checks it
+  assert.strictEqual(G.onlyModule(Object.assign({}, d, { next: d.missions[0] }), 'fleet').next.id, 'fleet_papers:HP1');
+  assert.strictEqual(d.missions.length, 2, 'the response itself is not changed'); }
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/.test(src), 'game.js must not build HTML from strings');
 // mount with no backendUrl renders nothing and touches nothing else
 let cleared = 0;

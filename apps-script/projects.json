@@ -112,7 +112,9 @@
       "game-windows",
       "game-quests",
       "game-teacher",
-      "acad-episodes"
+      "game-fleet",
+      "acad-episodes",
+      "../coordinator/capture/fleet-quests.js"
     ]
   }
 }

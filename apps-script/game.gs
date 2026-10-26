@@ -76,7 +76,7 @@ const GAME_TABS = {
 // Season-0 defaults. Never constants in logic: a Game Config row (Value = JSON) overrides its key.
 function gameConfigDefaults_() {
   return {
-    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL' },
+    pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL', FeeClerk: 'ALL' }, // FeeClerk: fleet setup missions (Fleet Command's module)
     speaker: { Teacher: 'teacher-owl' }, // every other role: Buddy
     cap: { Principal: 5, Coordinator: 5, Owner: 5 },
     core: { Principal: ['ss_pace', 'pdr_issue'], Coordinator: ['approval_recommend', 'hiring_stall'], Owner: ['approval_wait'] },
@@ -95,7 +95,7 @@ function gameConfigDefaults_() {
 // picking, roll-over, done display and days on track for every role.
 // var, not const, guarded: a module file may run before this one (see header).
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};   // { action: fn(caller, params) }, looked up after the built-ins
-var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }
+var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {}; // { Teacher: fn(caller, cfg, now) -> Mission[] }; a role's value may be an array of fns (several modules), e.g. Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], fleetMissions_). Same for QUESTS and DONE_AT
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};     // { Teacher: fn(caller, cfg, now) -> QuestState[] }
 var GAME_MODULE_DONE_AT = GAME_MODULE_DONE_AT || {};   // { Teacher: fn(caller, missionId) -> time in ms | null }, used only by day finalize for core ids not in DoneIds; a module registers it when its source keeps history (e.g. the Teacher log timestamps)
 var GAME_CALLER_FALLBACKS = GAME_CALLER_FALLBACKS || {}; // { employee: fn(verifiedEmail) -> { campusId, employeeCode, role } | null }; see header

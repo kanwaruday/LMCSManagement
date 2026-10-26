@@ -128,3 +128,13 @@ details.legend summary{cursor:pointer;color:var(--dark);font-weight:600}details.
 .tlinks b{color:var(--red);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 .tlinks a:hover b{color:var(--red-h)}
 .tlinks a:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+/* Buddy's fleet missions (game layer) on the transport pages: a collapsed panel under the header, hidden until the game has something to say (the page's mount unhides it) */
+.fs-buddy{background:#fff;border-bottom:1px solid var(--border)}
+.fs-buddy[hidden]{display:none}
+.fs-buddy>summary{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 16px;font-size:15px;font-weight:700;color:var(--dark);cursor:pointer;list-style:none}
+.fs-buddy>summary::-webkit-details-marker{display:none}
+.fs-buddy>summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .15s ease-out}
+.fs-buddy[open]>summary::after{transform:translateY(2px) rotate(-135deg)}
+.fs-buddy>summary:focus-visible{outline:3px solid #1d4fa3;outline-offset:-3px}
+.fs-buddy .lg-root{margin:0 auto;padding:0 16px 16px}
+@media (prefers-reduced-motion:reduce){.fs-buddy>summary::after{transition:none}}
