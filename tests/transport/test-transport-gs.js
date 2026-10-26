@@ -294,7 +294,7 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   const J = x => JSON.parse(JSON.stringify(x));
   function sheet3(name) {
     let data = [];
-    return { name, clears: 0, getLastRow: () => data.length, setFrozenRows() {}, clear() { this.clears++; data = []; }, appendRow(r) { data.push(r.slice()); }, _rows: () => data,
+    return { name, clears: 0, getSheetId: () => 0, getLastRow: () => data.length, setFrozenRows() {}, clear() { this.clears++; data = []; }, appendRow(r) { data.push(r.slice()); }, _rows: () => data,
       getDataRange: () => ({ getValues: () => data.map(r => r.slice()) }),
       getRange(r, c) { return { setNumberFormat() { return this; }, setFontWeight() { return this; },
         setValues(v) { v.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; }); }); return this; },
@@ -311,8 +311,8 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), c));
   const proj = JSON.parse(fs.readFileSync(path.join(__dirname, '../../apps-script/projects.json'), 'utf8')).coordinator.files;
   const shared = proj.filter(f => f.indexOf('/') !== -1);
-  assert.deepStrictEqual(shared, ['../coordinator/capture/fleet-quests.js'], 'deploy.mjs puts the shared quest logic into the Coordinator project');
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', shared[0]), 'utf8'), c);
+  assert.deepStrictEqual(shared, ['../coordinator/capture/fleet-quests.js', '../coordinator/transport-rank.js'], 'deploy.mjs puts the shared quest logic and the Transport page\'s paper rules into the Coordinator project');
+  shared.forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), c));
   vm.runInContext('coordCacheGetBig_ = function () { return null; }; coordCachePutBig_ = function () {}; coordFleetToday_ = function () { return "2026-10-25"; };', c);
   const r = code => J(vm.runInContext(code, c));
   const FORM = vm.runInContext('COORD_TRANSPORT_FORM_ID', c), tb = n => book(FORM).getSheetByName(n);
@@ -403,6 +403,35 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   [['Reg', 'Field', 'Value', 'Source document', 'File', 'Link', 'Disagree'], ['HP1', 'chassisNo', 'TESTCHASSIS01', 'RC', 'rc.jpg', 'L-RC', 'yes'],
     ['HP1', 'mfgYear', '2017', 'fitness', 'f.jpg', 'L-F', ''], ['HP2', 'chassisNo', 'TESTCHASSIS02', 'RC', 'rc.jpg', 'L-RC2', ''],
     ['HP 6-7', 'fuel', 'CNG', 'pollution', 'p.jpg', 'L-P', '']].forEach(x => vp.appendRow(x));
+  // papers on file (Ruling G2: their own counter, not quest progress) from the scans tab merged with the form, and the day book's
+  // fuel fills from the mirror: per bus, counts only, for the caller's buses only. SYNTHETIC rows.
+  [['HP1', 'Insurance', '2027-04-04', 'read', '', 'i.pdf', 'L-I', ''], ['HP1', 'Fitness', '2026-01-01', 'read', '', 'f.pdf', 'L-F', ''],
+    ['HP1', 'Speed governor', '', 'no expiry', '', 's.pdf', 'L-S', 'fitment certificate'], ['HP1', 'MV tax', '', 'n/a', '', '', '', 'not needed'],
+    ['HP2', 'Fitness', '2027-01-01', 'read', '', 'f2.pdf', 'L-F2', ''],
+    // the three cases the Transport page reads differently from a date alone (review Minor 1):
+    ['HP2', 'Insurance', '2027-05-05', 'read', '', 'i2.pdf', 'https://drive.google.com/file/d/TESTWRONGPAPER000000000001/view', ''], // (a) its scan is the wrong document
+    ['HP2', 'Insurance', '', 'other document', '', 'i2.pdf', 'https://drive.google.com/file/d/TESTWRONGPAPER000000000001/view', 'a refusal letter'],
+    ['HP2', 'Route permit', '', 'unread', '', 'r2.pdf', 'L-R2', ''], // (b) only an unreadable scan
+    ['HP2', 'Pollution', '2026-01-01', 'read', '', 'p2.pdf', 'L-P2', '']].forEach(x => tb('LM Studio Documents').appendRow(x)); // (c) + a newer upload below
+  book(FORM).insertSheet('Portal Uploads').appendRow(['Uploaded On', 'Reg', 'Paper', 'File ID', 'Link', 'Uploaded By', '', '', '', 'Status']);
+  tb('Portal Uploads').appendRow([new Date('2026-10-24T05:00:00Z'), 'HP2', 'pollution', 'TESTUPLOAD01', 'L-U', 'u@x.org', '', '', '', '']);
+  const formTab = book(FORM).insertSheet('Form Responses 1'); formTab.getSheetId = () => vm.runInContext('COORD_TRANSPORT_FORM_GID', c);
+  [['Timestamp', 'Reg', 'Doc', 'VALID TILL', 'Upload'], ['x', 'HP1', 'POLLUTION', '9/1/2027', '']].forEach(x => formTab.appendRow(x));
+  const fills = book(FORM).insertSheet('Fuel Fills');
+  [['id', 'campus', 'date', 'reg', 'litres', 'odometer', 'amount_rs', 'odometer_note', 'hasVideo', 'hasBill'], ['f1', 'LMS4', '2026-10-20', 'HP1', 40, 1, 1, '', 'yes', 'yes'],
+    ['f2', 'LMS4', '2026-10-21', 'hp-1', 40, 1, 1, '', 'no', 'yes'], ['f3', 'LMS4', '2026-10-22', 'HP1', 40, 1, 1, '', 'yes', 'no'], ['f4', 'LMS1', '2026-10-22', 'HP2', 40, 1, 1, '', 'yes', 'yes']].forEach(x => fills.appendRow(x));
+  const gp = r('coordFleet_(' + fc4 + ')');
+  assert.deepStrictEqual(gp.rows.fleet[0].docs, { current: 3, total: 5, expired: 1 },
+    'papers on file: insurance, the form\'s pollution and the one-time speed governor are current, fitness expired, route permit missing, MV tax not needed');
+  assert.deepStrictEqual(gp.rows.fleet[0].fills, { count: 3, withVideo: 2, withVideoAndBill: 1 }, 'fills on record: a reg written with a hyphen still counts');
+  assert.ok(!('fills' in gp.rows) && !('docs' in gp.rows), 'counts per bus only: no fill or paper rows are served');
+  const gpo = r('coordFleet_(' + own + ')');
+  assert.deepStrictEqual([gpo.rows.fleet.find(b => b.reg === 'HP2').docs, gpo.rows.fleet.find(b => b.reg === 'HP2').fills], [{ current: 1, total: 6, expired: 0 }, { count: 1, withVideo: 1, withVideoAndBill: 1 }],
+    'as the Transport page reads them: a dated wrong document, an unread scan and a pending upload over an expired date are neither current nor expired');
+  assert.deepStrictEqual([gpo.rows.fleet.find(b => b.reg === 'HP5').docs, gpo.rows.fleet.find(b => b.reg === 'HP5').fills], [{ current: 0, total: 6, expired: 0 }, { count: 0, withVideo: 0, withVideoAndBill: 0 }], 'nothing on record: zeros');
+  assert.deepStrictEqual(r('coordFleet_(' + co1 + ')').rows.fleet.map(b => b.reg + ' ' + b.fills.count), ['HP2 1'], 'a district Coordinator gets only their district\'s counts');
+  formTab.getSheetId = () => 0; // the form tab unreadable: the page still loads, without the papers counter
+  assert.strictEqual(r('coordFleet_(' + fc4 + ')').rows.fleet[0].docs, undefined, 'no papers counter rather than a wrong one');
   const g4 = r('coordFleet_(' + fc4 + ')');
   assert.deepStrictEqual(g4.rows.fleet[0].scan, { chassisNo: { value: 'TESTCHASSIS01', doc: 'RC', link: 'L-RC', disagree: true }, mfgYear: { value: '2017', doc: 'fitness', link: 'L-F', disagree: false } },
     'GET: each bus carries what the scans read (value, doc, link, disagree)');

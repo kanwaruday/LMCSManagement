@@ -482,7 +482,9 @@ function coordInspections_() {
 // Driver personal data (date of birth, licence, phone) lives only here and is served only within the caller's campuses.
 // Photos (odometer, driver) are uploaded first through the Roster's capturefile (kind 'profile'); a quest holds their file ids.
 // GET  action=coordinatortransportfleet      every transport role: {rows:{fleet (each bus with `scan`: the papers LM Studio read
-//                                             off its RC / fitness scans, {fieldId: {value, doc, link, disagree}}), profiles, drivers, parts, inspected, captured},
+//                                             off its RC / fitness scans, {fieldId: {value, doc, link, disagree}}; `docs`: its papers on file
+//                                             {current, total, expired}, left out when the form tab cannot be read; `fills`: the day book's
+//                                             fuel fills {count, withVideo, withVideoAndBill}), profiles, drivers, parts, inspected, captured},
 //                                             campuses, owner, today}, only the caller's campuses (Fee Clerk: own campus;
 //                                             Coordinator: their district, ALL every campus; Owner: all)
 // POST action=coordinatortransportfleetsave  {reg, quest, fields}: one quest at a time, the whole quest (parts: the parts sent),
@@ -522,12 +524,58 @@ function coordFleet_(caller) {
   fleet.forEach(function (b) { regs[b.reg] = true; keys[FleetQuests.driverKey(b)] = true; });
   const scan = coordFleetScan_(regs);
   fleet.forEach(function (b) { b.scan = scan[b.reg] || {}; }); // pre-fills the Vehicle papers form; never counts as done (only a staff save does)
+  const fills = coordFleetFills_(regs), docs = coordFleetDocsByReg_();
+  fleet.forEach(function (b) { b.fills = fills[b.reg]; if (docs) b.docs = docs[b.reg] || coordFleetDocs_({}, coordFleetToday_()); }); // counts only (Ruling G1/G2)
   const done = coordFleetDone_(regs);
   return { success: true, today: coordFleetToday_(), campuses: vis || COORD_ALL_CAMPUSES, owner: caller.roles.indexOf('Owner') !== -1,
     rows: { fleet: fleet, inspected: done.inspected, captured: done.captured,
       profiles: gpsRows_(T.profile).filter(mine),
       drivers: gpsRows_(T.driver).filter(function (r) { return keys[r.driverKey]; }),
       parts: gpsRows_(T.parts).filter(mine) } };
+}
+
+/** {reg: {current, total, expired}}: each bus's papers on file, the scans merged with the form as the Transport page shows them.
+ *  null when the form tab cannot be read: the setup page then shows no papers counter rather than a wrong one. */
+function coordFleetDocsByReg_() {
+  let all;
+  try { all = coordTransportFleet_(); } catch (e) { console.error('Fleet setup papers counter: ' + e.message); return null; }
+  const out = {}, today = coordFleetToday_();
+  all.fleet.forEach(function (b) { out[FleetQuests.normReg(b.reg)] = coordFleetDocs_(b.docs || {}, today); });
+  return out;
+}
+
+/** {current, total, expired} for one bus's resolved papers (Ruling G2: a counter of its own, never quest progress), read with the
+ *  Transport page's own rules (coordinator/transport-rank.js, pushed here as transport-rank.gs): current is a valid paper (ok, due
+ *  soon or later, the one-time speed governor on file) that is not the wrong document; expired as the page shows it; n/a is not
+ *  counted. Unread, no-expiry, wrong, pending and missing papers are neither. */
+function coordFleetDocs_(docs, today) {
+  const out = { current: 0, total: 0, expired: 0 };
+  COORD_TRANSPORT_DOCS.forEach(function (d) {
+    const c = TransportRank.cellState(docs[d[0]] || {}, d[0], today);
+    if (c.t === 'na') return;
+    out.total++;
+    if (c.t === 'expired') out.expired++;
+    else if (['ok', 'soon', 'later', 'onfile'].indexOf(c.t) !== -1 && !c.bad) out.current++;
+  });
+  return out;
+}
+
+/** {reg: {count, withVideo, withVideoAndBill}} for the given regs: the day book's fuel fills mirrored into Fuel Fills
+ *  (coordinator-transport-gps.gs). A fill with its video suggests the driver has a smartphone; nothing else is read from them. */
+function coordFleetFills_(regs) {
+  let all = coordCacheGetBig_('coord_fleet_fills_v1'); // every bus's counts (tiny), cached: the tab grows with every fill
+  if (!all) {
+    all = {};
+    gpsRows_(GPS_TAB_FILLS).forEach(function (f) {
+      const r = FleetQuests.normReg(f.reg), o = all[r] = all[r] || [0, 0, 0];
+      o[0]++;
+      if (String(f.hasVideo) === 'yes') { o[1]++; if (String(f.hasBill) === 'yes') o[2]++; }
+    });
+    coordCachePutBig_('coord_fleet_fills_v1', all, 300); // a fill shows here within 5 minutes
+  }
+  const out = {}; // scoped here, after the cache: only the caller's buses
+  Object.keys(regs).forEach(function (r) { const o = all[r] || [0, 0, 0]; out[r] = { count: o[0], withVideo: o[1], withVideoAndBill: o[2] }; });
+  return out;
 }
 
 /** {reg: {fieldId: {value, doc, link, disagree}}} from the papers tab, for the given regs only (the caller's scope). No tab yet: {}. */

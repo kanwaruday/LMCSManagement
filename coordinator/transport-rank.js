@@ -1,5 +1,6 @@
 /* Transport: what each vehicle needs done, and in what order. Pure functions (no DOM, no network) so the rules are unit-tested
-   (tests/transport/test-rank.js) and the page only renders what this returns.
+   (tests/transport/test-rank.js) and the page only renders what this returns. The Coordinator backend runs the same file
+   (apps-script/projects.json, pushed as transport-rank.gs) for the Fleet setup page's "Papers on file" count.
 
    Per paper (one cell):
      expired / soon (<=30 days) / later (<=90 days) / ok   by the date on file
@@ -87,4 +88,4 @@
 
   const api = { analyse: analyse, cellState: cellState, TIERS: TIERS, KINDS: KINDS, ORDER: ORDER, LEGAL: LEGAL, fid: fid };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.TransportRank = api;
-})(typeof window !== 'undefined' ? window : this);
+})(typeof window !== 'undefined' ? window : globalThis); // the Transport page; the Coordinator backend (pushed as transport-rank.gs)
