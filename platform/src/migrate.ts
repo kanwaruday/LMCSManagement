@@ -1,4 +1,5 @@
 // Applies db/migrations/*.sql in name order, each in its own transaction, recorded in schema_migrations.
+// schema_migrations is deliberately exempt from tenant_id/RLS: it is per-database, not per-tenant.
 // Run as the database owner (Render start command: node src/migrate.ts && node src/server.ts).
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -23,8 +24,8 @@ export async function migrate(sql: Sql): Promise<string[]> {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { loadConfig } = await import('./config.ts');
-  const postgres = (await import('postgres')).default;
-  const sql = postgres(loadConfig(process.env).DATABASE_URL, { max: 1, onnotice: () => {} });
+  const { connect } = await import('./db.ts');
+  const sql = connect(loadConfig(process.env).DATABASE_URL, { max: 1 });
   const applied = await migrate(sql);
   console.log(applied.length ? `migrations applied: ${applied.join(', ')}` : 'migrations: up to date');
   await sql.end();

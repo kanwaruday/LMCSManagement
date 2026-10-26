@@ -19,7 +19,8 @@ export function buildServer({ sql, config, logger = false }: Deps): FastifyInsta
   });
 
   app.get('/api/health', async () => {
-    const db = await sql`select 1`.then(() => true, () => false);
+    const timeout = new Promise<boolean>((resolve) => setTimeout(resolve, 2000, false).unref());
+    const db = await Promise.race([sql`select 1`.then(() => true, () => false), timeout]);
     // ponytail: google/hooks/lastSync/lastBackup/lastRestoreTest are filled in by Tasks 3, 6, 10, 11.
     return { ok: db, db, google: false, hooks: { pdr: false, coord: false }, lastSync: null, lastBackup: null, lastRestoreTest: null };
   });
@@ -28,7 +29,8 @@ export function buildServer({ sql, config, logger = false }: Deps): FastifyInsta
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { loadConfig } = await import('./config.ts');
-  const { sql } = await import('./db.ts');
+  const { connect } = await import('./db.ts');
   const config = loadConfig(process.env);
+  const sql = connect(config.DATABASE_URL);
   await buildServer({ sql, config, logger: true }).listen({ host: '0.0.0.0', port: config.PORT });
 }

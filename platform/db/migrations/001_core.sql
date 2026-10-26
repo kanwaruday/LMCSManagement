@@ -1,15 +1,6 @@
 -- Core platform schema. Every table carries tenant_id and is ENABLE + FORCE row level security,
 -- filtered on current_setting('app.tenant_id') (set per transaction by withTenant in src/db.ts).
--- The app queries as role lmcs_app (no BYPASSRLS); the migrating user owns the tables.
-
-do $$ begin
-  create role lmcs_app nologin;
-exception when duplicate_object or unique_violation then null;
-end $$;
-do $$ begin
-  execute format('grant lmcs_app to %I', current_user);          -- lets the server SET ROLE lmcs_app
-  execute format('grant usage on schema %I to lmcs_app', current_schema());
-end $$;
+-- The app connects as the table owner (a non-superuser on Render); FORCE makes RLS bind the owner too.
 
 create table tenants (
   id uuid primary key default gen_random_uuid(),
@@ -60,6 +51,7 @@ create table role_rules (
   primary key (tenant_id, department)
 );
 
+-- Session tokens are '<tenantId>.<random>': the tenant is read from the token before this lookup.
 create table sessions (
   tenant_id uuid not null references tenants(id),
   token_hash text primary key,
@@ -140,8 +132,11 @@ create table health_events (
 do $$
 declare t text;
 begin
+  -- tenants: readable by all (resolve a tenant from a sign-in domain before one is set);
+  -- writable only for the transaction's own tenant.
   execute 'alter table tenants enable row level security';
   execute 'alter table tenants force row level security';
+  execute $p$create policy tenant_read on tenants for select using (true)$p$;
   execute $p$create policy tenant_isolation on tenants
     using (id = nullif(current_setting('app.tenant_id', true), '')::uuid)
     with check (id = nullif(current_setting('app.tenant_id', true), '')::uuid)$p$;
@@ -155,14 +150,15 @@ begin
   end loop;
 end $$;
 
--- App role grants. audit_log is append-only; tenants are read-only to the app.
-grant select on tenants to lmcs_app;
-grant select, insert, update, delete on campuses, people, allowlist, role_rules, sessions, switches,
-  idempotency, jobs, sync_runs, health_events to lmcs_app;
-grant select, insert on audit_log to lmcs_app;
-do $$ begin
-  execute format('grant usage on all sequences in schema %I to lmcs_app', current_schema());
+-- audit_log is append-only: no update, delete or truncate, even for the owner.
+create function audit_log_append_only() returns trigger language plpgsql as $$
+begin
+  raise exception 'audit_log is append-only';
 end $$;
+create trigger audit_log_no_change before update or delete on audit_log
+  for each row execute function audit_log_append_only();
+create trigger audit_log_no_truncate before truncate on audit_log
+  for each statement execute function audit_log_append_only();
 
 -- Seed: LMCS is the only tenant. FORCE RLS applies to the (non-superuser) owner on Render,
 -- so the seed sets the tenant for this migration's transaction.
