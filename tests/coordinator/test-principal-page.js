@@ -20,6 +20,7 @@ const ctx = vm.createContext({
   document: { getElementById: el },
   LMCS: { getSession: () => null, requireSession: () => new Promise(() => {}), campusLabel: (c) => c, notifyAuthFailure: () => { banners++; } },
 });
+ctx.CoordHQ = require('../../coordinator/hq-logic.js'); // the page loads it for the shared sync line
 vm.runInContext(inline, ctx);
 
 // the button is disabled until the note has text
@@ -85,5 +86,14 @@ const answer = (bodies) => { calls = []; ctx.fetch = (url, init) => { calls.push
   assert.strictEqual(banners, 1, 'close raises the sign-in banner');
   assert.ok(/Sign in again/.test(err.textContent) && /note is kept/.test(err.textContent), err.textContent);
   assert.ok(ta.value === 'Plumber fixed the tank' && !ta.readOnly && !btn.disabled, 'the typed note is kept and can be sent again');
+  // the sync line from pushedAt (hq-logic's syncLine): shown fresh or stale, empty without it
+  assert.ok(/hq-logic\.js/.test(html), 'the page loads hq-logic.js');
+  const ok = (extra) => JSON.stringify(Object.assign({ success: true, campus: 'LMS4', issues: [] }, extra));
+  answer([ok({ pushedAt: '2026-01-02 08:30' })]);
+  await ctx.load();
+  assert.ok(/^Daily-report issues last synced 2 Jan, 08:30 \(the Mac hasn't pushed since then\)$/.test(els['issue-sync'].textContent), els['issue-sync'].textContent);
+  answer([ok({})]);
+  await ctx.load();
+  assert.strictEqual(els['issue-sync'].textContent, '', 'no pushedAt: nothing shown');
   console.log('principal issues page: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

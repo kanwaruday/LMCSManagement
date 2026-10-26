@@ -90,6 +90,7 @@
 
     <div id="app-root" style="display:none">
       <p class="finding" id="finding">Loading your school's issues&hellip;</p>
+      <p class="finding" id="issue-sync"></p>
       <div class="flash" id="flash" role="status" tabindex="-1"></div>
       <div id="body">
         <div class="sk"></div><div class="sk"></div><div class="sk"></div>
@@ -104,6 +105,7 @@
   </footer>
 
   <script src="../assets/auth.js?v=385e2fb1"></script>
+  <script src="../coordinator/hq-logic.js?v=d1b7f813"></script>
   <script>
     // "LMCS Coordinator Backend" (apps-script/coordinator-principal.gs). Same URL as BACKEND_URL in coordinator/shared.js.
     const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
@@ -206,6 +208,7 @@
 
     function render(data) {
       const body = document.getElementById('body');
+      document.getElementById('issue-sync').textContent = CoordHQ.syncLine(data.pushedAt, new Date());
       if (data.campus === 'ALL') { // a Coordinator or the Owner: they close and reopen on the Systems page
         document.getElementById('finding').textContent = 'This page is for Principals. It lists the issues from their own school\'s daily reports.';
         body.innerHTML = '<div class="status-box"><p>Coordinators close and reopen issues on the Systems page.</p><a class="btn quiet" href="../coordinator/systems/index.html">Open the Systems page</a></div>';

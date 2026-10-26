@@ -93,12 +93,30 @@
     return 'The Owner ' + VERB[d] + (note ? ': ' + note : '.');
   }
 
+  // Daily-report issues (principalissues rows). A board card = open, reopened or raised again, and nobody holds it; oldest last mention first.
+  function reportIssues(issues) {
+    return (issues || []).filter((i) => (i.status === 'open' || i.status === 'reopened' || i.raisedAgain) && !i.assignee).sort((a, b) => String(a.last).localeCompare(String(b.last)));
+  }
+  // resolved in the last `days` days (default 7), today counted
+  function closedCount(issues, today, days) {
+    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - (days || 7));
+    const since = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    return (issues || []).filter((i) => i.status === 'resolved' && i.resolvedAt >= since).length;
+  }
+  // pushedAt: the Mac's last push, 'YYYY-MM-DD HH:MM' in the sheet's time zone. '' when unknown.
+  function syncLine(pushedAt, now) {
+    const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/.exec(String(pushedAt || ''));
+    if (!m) return '';
+    const at = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    return 'Daily-report issues last synced ' + +m[3] + ' ' + MONTHS[+m[2] - 1] + ', ' + m[4] + ':' + m[5] + (now - at > 864e5 ? " (the Mac hasn't pushed since then)" : '');
+  }
+
   function recReady(choice, reason) { return !!choice && !!String(reason || '').trim(); }
 
   // WORK_LINKS (coordinator/shared.js) are written for pages at coordinator/<page>/; the HQ sits one level up.
   function goHref(links, domain) { const l = links && links[domain]; return l ? l.replace(/^\.\.\//, '') : null; }
 
-  const api = { CAMPUSES, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, rankFresh, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, recReady, goHref };
+  const api = { CAMPUSES, statusOf, approvalId, flagOf, isCore, pastDue, rankContracts, rankFresh, campusHeat, inr, dayLabel, shortCampus, daybookRange, spendSummary, outcomeLine, reportIssues, closedCount, syncLine, recReady, goHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.CoordHQ = api;
 })(typeof window !== 'undefined' ? window : null);

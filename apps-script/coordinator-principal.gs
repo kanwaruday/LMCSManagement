@@ -86,7 +86,7 @@ function coordPrincipalIssuesGet_(idToken) {
   const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID);
   const issues = coordPrincipalIssues_(coordPrincipalTab_(ss, COORD_PDR_ISSUES_TAB), coordPrincipalTab_(ss, COORD_PDR_ACTIONS_TAB), coordPrincipalTab_(ss, COORD_PDR_MERGES_TAB), campus, viewer)
     .filter(function (i) { return !visible || visible.indexOf(i.campus) !== -1; });
-  return { success: true, campus: campus || 'ALL', issues: issues };
+  return { success: true, campus: campus || 'ALL', issues: issues, pushedAt: coordPdrPushedAt_(ss.getSheetByName(COORD_PDR_ISSUES_TAB)) };
 }
 
 /** POST action=principalissueresolve {idToken, id, note}. principal = coordVerifyPrincipal_'s result. Writes nothing on a refusal. */

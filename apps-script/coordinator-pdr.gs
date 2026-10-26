@@ -51,15 +51,14 @@ function coordPdr_(caller) {
   }
   const history = [], issues = [];
   const hsh = ss.getSheetByName(COORD_PDR_HISTORY_TAB), ish = ss.getSheetByName(COORD_PDR_ISSUES_TAB);
-  let pushedAt = '';
   if (hsh && hsh.getLastRow() > 1) hsh.getDataRange().getDisplayValues().slice(1).forEach(function (h) { if (ok(h[1])) history.push({ date: h[0], campus: h[1] }); });
   if (ish && ish.getLastRow() > 1) {
     ish.getDataRange().getDisplayValues().slice(1).forEach(function (r) {
       if (!ok(r[1])) return;
-      if (r[9] > pushedAt) pushedAt = r[9];
       issues.push({ id: r[0], campus: r[1], type: r[2], subject: r[3], first: r[4], last: r[5], count: +r[6], needsAction: r[7] === 'yes', items: JSON.parse(r[8] || '[]') });
     });
   }
+  const pushedAt = coordPdrPushedAt_(ish, ok);
   let fees = null;
   try { fees = coordFees_(ok); } catch (e) { fees = { error: e.message, series: [] }; } // a fee-sheet problem must not blank the rest of the page
   const admissions = [], ash = ss.getSheetByName(COORD_PDR_ADMISSIONS_TAB);
@@ -73,6 +72,13 @@ function coordPdr_(caller) {
   const merges = {}, msh = ss.getSheetByName(COORD_PDR_MERGES_TAB);
   if (msh && msh.getLastRow() > 1) msh.getDataRange().getDisplayValues().slice(1).forEach(function (r) { if (ok(r[4])) merges[r[0]] = r[1]; });
   return { success: true, merges: merges, repeats: repeats, latestReportAt: latestReportAt, actions: actions, coordinators: coordPdrCoordinators_(), fees: fees, admissions: admissions, reports: reports, tags: tags, taggedAt: taggedAt, history: history, issues: issues, pushedAt: pushedAt };
+}
+
+/** The latest "Pushed at" (column 9) of the Issues tab, over the rows whose campus passes ok (omit ok for every row). '' when empty. */
+function coordPdrPushedAt_(ish, ok) {
+  let at = '';
+  if (ish && ish.getLastRow() > 1) ish.getDataRange().getDisplayValues().slice(1).forEach(function (r) { if ((!ok || ok(r[1])) && r[9] > at) at = r[9]; });
+  return at;
 }
 
 /** POST action=pdrtagpush {secret, tags:[{date, campus, topics:[], action, summary, hash}]}: replaces the "LM Studio Tags" tab. */

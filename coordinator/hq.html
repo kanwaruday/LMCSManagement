@@ -184,7 +184,9 @@
       <div class="cols">
         <section class="main-col" aria-labelledby="board-h">
           <h2 id="board-h" class="sr-only">Contracts</h2>
+          <p class="sub" id="issue-sync"></p>
           <p class="sub" id="tabcount"></p>
+          <p class="sub" id="closed-review"></p>
           <ul class="board" id="board"><li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li></ul>
         </section>
         <aside class="side">
@@ -208,7 +210,7 @@
   <script src="../assets/auth.js?v=385e2fb1"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script src="./shared.js?v=26aa5692"></script>
-  <script src="./hq-logic.js?v=f0528b25"></script>
+  <script src="./hq-logic.js?v=d1b7f813"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
     // where a Coordinator recommends on an approval. The Owner decides every approval (on the Approvals page); no control
@@ -224,7 +226,7 @@
     const FLAG_LABEL = { stuck: 'Stuck', waiting: 'Waiting', missing: 'Missing' };
     const esc = Coord.esc;
     const $ = (id) => document.getElementById(id);
-    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, SEL = { all: true, campuses: H.CAMPUSES.slice() }, SHOW_ALL = false; // FRESH: requests too new for a follow-up card
+    let SESSION = null, TASKS = null, FRESH = [], TRACK = null, SEL = { all: true, campuses: H.CAMPUSES.slice() }, SHOW_ALL = false, ISSUES = null, PUSHED = ''; // ISSUES: the daily-report issues (principalissues), null if not loaded; FRESH: requests too new for a follow-up card
     const DECISIONS = {}, SPEND = {};
     let OPEN = null, BOARD_Y = 0; // the approval id whose decision view is open; where the board was scrolled when it opened
 
@@ -264,9 +266,9 @@
       }).join('') + '</ul></div>';
       // open count for the picked campuses: one number, or one per school when 2+ are picked
       const counts = {};
-      H.CAMPUSES.forEach((c) => { counts[c] = TASKS.concat(FRESH).filter((t) => t.campus === c).length; });
+      H.CAMPUSES.forEach((c) => { counts[c] = TASKS.concat(FRESH, H.reportIssues(ISSUES)).filter((t) => t.campus === c).length; });
       // All: every row the board shows, even with no campus; picked schools: the overlay
-      $('tabcount').innerHTML = 'Open in view: ' + (SEL.all ? String(LMCSCampus.filter(TASKS.concat(FRESH), SEL).length) : LMCSCampus.overlay(counts, SEL));
+      $('tabcount').innerHTML = 'Open in view: ' + (SEL.all ? String(LMCSCampus.filter(TASKS.concat(FRESH, H.reportIssues(ISSUES)), SEL).length) : LMCSCampus.overlay(counts, SEL));
     }
     function renderFinding() {
       const need = TASKS.filter((t) => t.domain === 'approval' && H.statusOf(t) === 'Pending' && !t.recommendation).length + FRESH.filter((f) => f.status === 'Pending' && !f.recommendation).length;
@@ -307,11 +309,25 @@
         '<div class="acts"><button type="button" class="btn quiet" data-open="' + esc(f.approvalId) + '">Open request</button></div>' +
       '</li>';
     }
+    // A daily-report issue nobody holds yet: Go opens the Systems page, where it is assigned, acknowledged or closed.
+    function issueHtml(i) {
+      const tag = i.status === 'reopened' ? ' <span class="flag waiting">Reopened</span>' : i.raisedAgain ? ' <span class="flag waiting">Raised again</span>' : '';
+      return '<li class="contract"><p class="what"><span class="flag new">Report issue</span>' + esc(i.subject) + tag + '</p>' +
+        '<p class="meta">' + esc(H.shortCampus(i.campus) || 'No campus') + ', raised ' + H.dayLabel(i.first) + ', last ' + H.dayLabel(i.last) + '</p>' +
+        '<div class="acts"><a class="btn quiet" href="systems/index.html">Go</a></div></li>';
+    }
+    // the sync line and the closure count come from principalissues; with no answer they show nothing
+    function renderIssueMeta() {
+      $('issue-sync').textContent = ISSUES ? H.syncLine(PUSHED, new Date()) : '';
+      $('closed-review').innerHTML = ISSUES ? '<a href="systems/index.html#closed">Closed to review: ' + H.closedCount(LMCSCampus.filter(ISSUES, SEL), today()) + '</a>' : '';
+    }
     function renderBoard() {
-      // the follow-up contracts first, then the new requests
-      const list = H.rankContracts(LMCSCampus.filter(TASKS, SEL), me(), today()).map(cardHtml).concat(H.rankFresh(LMCSCampus.filter(FRESH, SEL)).map(freshHtml));
+      renderIssueMeta();
+      // the follow-up contracts first, then the new requests, then the report issues
+      const reports = LMCSCampus.filter(H.reportIssues(ISSUES), SEL);
+      const list = H.rankContracts(LMCSCampus.filter(TASKS, SEL), me(), today()).map(cardHtml).concat(H.rankFresh(LMCSCampus.filter(FRESH, SEL)).map(freshHtml), reports.map(issueHtml));
       const board = $('board');
-      if (!TASKS.length && !FRESH.length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
+      if (!TASKS.length && !FRESH.length && !H.reportIssues(ISSUES).length) { board.innerHTML = '<li class="empty">Nothing in the network is past its line today.</li>'; return; }
       if (!list.length) { board.innerHTML = '<li class="empty">Nothing open in the campuses you picked right now.</li>'; return; }
       const shown = SHOW_ALL ? list : list.slice(0, BOARD_CAP);
       board.innerHTML = shown.join('') +
@@ -470,20 +486,28 @@
         const r = $('tr-retry'); if (r && r.addEventListener) r.addEventListener('click', loadTrack);
       }
     }
+    // Report issues are extra: a failure here never blocks the board. An expired sign-in still raises the banner.
+    async function loadIssues() {
+      ISSUES = null; PUSHED = '';
+      try { const res = await Coord.api({ action: 'principalissues' }); ISSUES = res.issues || []; PUSHED = res.pushedAt || ''; }
+      catch (e) { if (isAuthError(e.message)) LMCS.notifyAuthFailure(); }
+      if (TASKS) renderAll();
+    }
     async function load() {
       $('board').innerHTML = '<li class="sk"></li><li class="sk"></li><li class="sk"></li><li class="sk"></li>';
-      const track = loadTrack();
+      TASKS = null;
+      const track = loadTrack(), issues = loadIssues();
       try {
         const res = await Coord.api({ action: 'coordinatortasks' });
         TASKS = res.tasks || []; FRESH = res.fresh || [];
-        renderAll();
+        renderAll(); // report issues that landed first are in; the ones that land later repaint
       } catch (e) {
         $('finding').textContent = 'The board could not be loaded.';
         $('bases').innerHTML = ''; $('tabcount').innerHTML = '';
         $('board').innerHTML = '<li style="list-style:none">' + failHtml('Could not load the board.', e.message, 'board-retry') + '</li>';
         const r = $('board-retry'); if (r && r.addEventListener) r.addEventListener('click', () => { $('finding').textContent = 'Loading the network…'; load(); });
       }
-      await track;
+      await Promise.all([track, issues]);
       const m = /^#d=(.+)$/.exec(location.hash || ''); // a reload with a request open reopens it
       if (m && TASKS) openDecision(decodeURIComponent(m[1]), 'pop');
     }

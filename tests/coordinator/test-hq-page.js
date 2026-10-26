@@ -96,6 +96,50 @@ ctx.fetch = (url) => { fetches.push(url); return Promise.resolve({ json: () => P
   await ctx.load();
   assert.strictEqual(vm.runInContext('FRESH.length', ctx), 2, 'load keeps fresh from coordinatortasks');
 
+  // ── daily-report issues on the board (principalissues): cards, filter, rank, sync line, closed count, and a failure that leaves the board whole ──
+  const mk = (id, extra) => Object.assign({ id, subject: 'Subj ' + id, campus: 'LMS4', first: '2026-10-01', last: '2026-10-10', count: 2, status: 'open', assignee: '', raisedAgain: false, resolvedAt: '' }, extra);
+  const iso = (d) => d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
+  const issues = [mk('r1', { subject: 'Leak <b>x</b>', last: '2026-10-12' }), mk('r2', { campus: 'LMS2', status: 'reopened', last: '2026-10-05' }), mk('r3', { raisedAgain: true, last: '2026-10-08' }),
+    mk('r4', { assignee: 'x@lms.test', status: 'assigned' }), mk('r5', { status: 'resolved', resolvedAt: daysAgo(2) }), mk('r6', { campus: 'LMS2', status: 'resolved', resolvedAt: daysAgo(3) }), mk('r7', { status: 'resolved', resolvedAt: daysAgo(30) })];
+  const hqFetch = (pushedAt, failIssues) => (url) => {
+    fetches.push(url);
+    if (/action=principalissues/.test(url)) return failIssues ? Promise.reject(new Error('Failed to fetch')) : Promise.resolve({ json: () => Promise.resolve({ success: true, issues, pushedAt }) });
+    return Promise.resolve({ json: () => Promise.resolve({ success: true, tasks: [freshT], fresh: [] }) });
+  };
+  ctx.fetch = hqFetch(daysAgo(0) + ' 06:00');
+  await ctx.load();
+  let bd = els.board.innerHTML;
+  assert.ok(fetches.some((u) => /action=principalissues/.test(u)), 'load calls principalissues');
+  assert.strictEqual((bd.match(/class="contract/g) || []).length, 4, '1 contract + 3 report-issue cards (assigned and resolved are not cards)');
+  assert.ok(bd.indexOf('Docs missing') < bd.indexOf('Subj r2') && bd.indexOf('Subj r2') < bd.indexOf('Subj r3') && bd.indexOf('Subj r3') < bd.indexOf('Leak &lt;b&gt;x&lt;/b&gt;'), 'after the contracts, oldest last first');
+  assert.ok(!bd.includes('<b>x</b>'), 'subject escaped');
+  assert.ok(/Report issue/.test(bd) && bd.includes('raised 1 Oct, last 5 Oct') && /Reopened/.test(bd) && /Raised again/.test(bd), 'tag, dates, reopened and raised-again tags');
+  assert.ok(bd.includes('href="systems/index.html"') || bd.includes('../coordinator/systems/index.html'), 'Go link to the Systems page');
+  assert.ok(/Open in view: 4/.test(els.tabcount.innerHTML) || els.tabcount.innerHTML.endsWith('4'), 'All: Open in view counts them (' + els.tabcount.innerHTML + ')');
+  assert.ok(/Closed to review: 2/.test(els['closed-review'].innerHTML) && /systems\/index\.html#closed/.test(els['closed-review'].innerHTML), 'closed in the last 7 days, all campuses');
+  assert.ok(/Daily-report issues last synced/.test(els['issue-sync'].textContent) && !/Mac hasn't/.test(els['issue-sync'].textContent), 'fresh sync line');
+  vm.runInContext("SEL = { all: false, campuses: ['LMS2'] }", ctx);
+  ctx.renderBases(); ctx.renderBoard();
+  bd = els.board.innerHTML;
+  assert.ok(bd.includes('Subj r2') && !bd.includes('Subj r3') && !bd.includes('Docs missing'), 'the picker filters report issues by campus');
+  assert.ok(/Closed to review: 1/.test(els['closed-review'].innerHTML), 'closed count follows the picker');
+  vm.runInContext("SEL = LMCSCampus.get({ campusId: 'ALL' })", ctx);
+  ctx.fetch = hqFetch('2026-01-01 08:00');
+  await ctx.load();
+  assert.ok(/Mac hasn't pushed since then/.test(els['issue-sync'].textContent), 'stale sync line');
+  ctx.fetch = hqFetch('');
+  await ctx.load();
+  assert.strictEqual(els['issue-sync'].textContent, '', 'no pushedAt: nothing shown');
+  ctx.fetch = hqFetch('', true);
+  await ctx.load();
+  assert.strictEqual((els.board.innerHTML.match(/class="contract/g) || []).length, 1, 'principalissues failing leaves the contract board intact');
+  assert.ok(els['issue-sync'].textContent === '' && els['closed-review'].innerHTML === '', 'and shows nothing extra');
+  banners = 0;
+  ctx.fetch = (url) => /action=principalissues/.test(url) ? Promise.resolve({ json: () => Promise.resolve({ success: false, error: 'Not authorized' }) }) : Promise.resolve({ json: () => Promise.resolve({ success: true, tasks: [freshT], fresh: [] }) });
+  await ctx.load();
+  assert.ok(banners >= 1 && (els.board.innerHTML.match(/class="contract/g) || []).length === 1, 'Not authorized on principalissues raises the sign-in banner, board intact');
+
   // a late day-book answer fills in the spend line only: the form the Coordinator is typing in is never repainted
   vm.runInContext("SESSION = { idToken: 'tok', email: 'c@lms.test' }; OPEN = 'APR-1'; DECISIONS['APR-1'] = " + JSON.stringify(dec), ctx);
   const preview = ctx.previewHtml(dec);

@@ -103,4 +103,25 @@ assert.deepStrictEqual(H.rankFresh(freshIn).map((f) => f.approvalId), ['old', 'n
 assert.deepStrictEqual(freshIn.map((f) => f.approvalId), ['rec', 'info', 'new', 'old'], 'the input is not reordered in place');
 assert.deepStrictEqual(H.rankFresh(undefined), []);
 
+// ── report issues: open or reopened or raised again, and nobody holds them; oldest last mention first ──
+const is = (id, extra) => Object.assign({ id, subject: 'S ' + id, campus: 'LMS4', first: '2026-10-01', last: '2026-10-10', status: 'open', assignee: '', raisedAgain: false, resolvedAt: '' }, extra);
+const isIn = [is('a', { last: '2026-10-12' }), is('b', { status: 'reopened', last: '2026-10-05' }), is('c', { assignee: 'x@lms.test', status: 'assigned' }), is('d', { status: 'resolved', resolvedAt: '2026-10-20' }),
+  is('e', { status: 'acknowledged' }), is('f', { raisedAgain: true, last: '2026-10-08' }), is('g', { status: 'open', assignee: 'x@lms.test' })];
+assert.deepStrictEqual(H.reportIssues(isIn).map((i) => i.id), ['b', 'f', 'a'], 'open/reopened/raised again, no assignee, oldest last first');
+assert.deepStrictEqual(H.reportIssues(undefined), []);
+
+// ── closedCount: resolved in the last 7 days (today included) ──
+const cl = [is('1', { status: 'resolved', resolvedAt: '2026-10-19' }), is('2', { status: 'resolved', resolvedAt: '2026-10-18' }), is('3', { status: 'resolved', resolvedAt: '2026-10-26' }), is('4', { status: 'open' })];
+assert.strictEqual(H.closedCount(cl, TODAY), 2, '19 Oct is 7 days back (in), 18 Oct is out');
+assert.strictEqual(H.closedCount([], TODAY), 0);
+
+// ── syncLine: fresh, stale (over 24 hours), missing ──
+const NOW = new Date(2026, 9, 26, 9, 0);
+assert.strictEqual(H.syncLine('2026-10-25 10:00', NOW), 'Daily-report issues last synced 25 Oct, 10:00');
+assert.strictEqual(H.syncLine('2026-10-25 09:00', NOW), 'Daily-report issues last synced 25 Oct, 09:00', 'exactly 24 hours is not stale yet');
+assert.strictEqual(H.syncLine('2026-10-25 08:00', NOW), "Daily-report issues last synced 25 Oct, 08:00 (the Mac hasn't pushed since then)");
+assert.strictEqual(H.syncLine('', NOW), '');
+assert.strictEqual(H.syncLine(undefined, NOW), '');
+assert.strictEqual(H.syncLine('not a date', NOW), '');
+
 console.log('hq logic: ok');
