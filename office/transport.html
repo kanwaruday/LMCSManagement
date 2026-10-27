@@ -5,32 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LMCS Portal — Transport Papers</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#1f3a5f" />
+  <meta name="theme-color" content="#CE0000" />
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../coordinator/shared.css?v=a40f2ce7" />
   <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
   <link rel="stylesheet" href="office.css" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=f652543a" />
   <style>
     /* Clerks need the grid only: no Coordinator title, data-freshness line or summary tiles. */
     #today .pagetitle, #today .pagesub, #today .tiles, #today .tr-body > .note:first-child { display: none; }
   </style>
 </head>
-<body>
-  <header class="site">
-    <div class="wrap">
-      <a class="brand" href="../index.html">
-        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
-        <span>LMCS Portal <span class="tagline">Fee Clerk + PRO</span></span>
-      </a>
-      <nav class="roles" id="header-status">
-        <span id="sync-indicator" role="status" aria-live="polite"></span>
-        <div id="campus-pick" hidden></div>
-      </nav>
-    </div>
-  </header>
-  <main class="wrap">
+<body class="gb">
+  <header class="gb-head"><div><div><h1>Transport Papers</h1><p id="gb-sub"></p></div><div class="gb-head-r"><span id="sync-indicator" role="status" aria-live="polite"></span><div id="campus-pick" hidden></div><a href="index.html">‹ Today</a></div></div></header>
+  <main class="gb-page">
     <section class="hero" id="auth-root" style="padding-top:40px;">
       <span class="eyebrow">Internal · Staff use only</span>
       <h1>Transport Papers</h1>
@@ -42,7 +32,6 @@
         <a href="#" class="signout" id="signout-link">Sign out</a>
       </div>
       <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
-      <nav class="office-nav"><a class="btn-lg" href="index.html">Today</a></nav>
       <p class="hint">Vehicle by document for your campus. Upload a renewed paper from any cell that needs action; it needs an internet connection and is read by LM Studio on the next AI Coordinator run.</p>
       <section class="block" id="today"></section><!-- id "today" is the shell's message slot too -->
     </div>

@@ -176,7 +176,8 @@ export async function showStartingData(root, session, api) {
     drawBoard();
   }
 
-  const chipEl = (st) => { const c = stateChip(st); return h('span', { class: 'sd-chip sd-chip-' + c.state }, c.label); };
+  const PILL = { submitted: 'gb-pill-warn', approved: 'gb-pill-ok', returned: 'gb-pill-low' }; // a draft carries no meaning: no chip
+  const chipEl = (st) => { const c = stateChip(st); return PILL[c.state] ? h('span', { class: 'gb-pill ' + PILL[c.state] }, c.label) : null; };
   function card(n, title, line, onclick, st) {
     return h('li', {}, h('button', { type: 'button', class: 'sd-card', onclick }, ringEl(n), h('span', { class: 'sd-text' }, h('b', {}, title), h('span', {}, line), st ? chipEl(st) : null), h('span', { class: 'sd-go', 'aria-hidden': 'true' }, GO)));
   }
@@ -221,7 +222,7 @@ export async function showStartingData(root, session, api) {
 
   // the chip, the Coordinator's return note, and the waiting line
   function statusBlock(quest, campus, act) {
-    return h('div', { class: 'sd-status' }, h('span', { class: 'sd-chip sd-chip-' + act.chip.state }, act.chip.label),
+    return h('div', { class: 'sd-status' }, PILL[act.chip.state] ? h('span', { class: 'gb-pill ' + PILL[act.chip.state] }, act.chip.label) : null,
       act.chip.note ? h('p', { class: 'sd-return', role: 'note' }, 'Sent back: ' + act.chip.note) : null,
       act.waiting ? h('p', { class: 'meta' }, act.waiting) : null);
   }
