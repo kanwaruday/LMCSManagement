@@ -89,6 +89,7 @@ window.LMCSGuide = {
     'office/starting-data.html': {
       purpose: "Confirm the Day Book's starting figures for each school, as of the close on 22 Oct 2026.", roles: ['Accounts', 'Fee Clerk', 'Owner'],
     },
+    'setup/index.html': { purpose: "Check the details we already know about you and your school, then confirm or fix them.", roles: ['Teacher', 'Principal', 'Coordinator', 'Owner'] },
     'office/accounts.html': { purpose: "Accounts entries for your campus.", roles: ['Fee Clerk'] },
     'office/deposits.html': { purpose: "Record and send bank deposits for your campus.", roles: ['Fee Clerk'] },
     'office/close.html': { purpose: "Close the day for your campus.", roles: ['Fee Clerk', 'Staff'] },
