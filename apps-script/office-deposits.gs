@@ -9,6 +9,7 @@ function officeDepositsActions_() {
     'erp.set': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeErpSet_ },
     'deposit.list': { roles: OFFICE_ALL_ROLES, write: false, run: officeDepositList_ },
     'recon.get': { roles: OFFICE_ALL_ROLES, write: false, run: officeReconGet_ },
+    'fund.transfer': { roles: ['FinanceHead', 'Owner'], write: true, run: officeFundTransfer_ },
   };
 }
 
@@ -160,4 +161,64 @@ function officeReconGet_(ctx, data) {
     overdue: officeToday_() > officeAddDays_(date, 1) && deposited < daybook, // due by the end of the next IST day
     differences: differences,
   };
+}
+
+// ── Fund transfers: bank to bank between two campuses (school <-> HES, school <-> school) ──
+// One request writes two Day Book legs: <id>-out (OUT, from-account, from campus's book) and <id>-in (IN, to-account, to
+// campus's book). Each leg's `settles` names the other leg and `payee` the other account. Movement categories: never
+// income or cost; ledger.summary shows the pair under interSchool. Bank rows are never frozen by a day close.
+var OFFICE_FUND_LEG_CATEGORIES = ['fund_transfer_out', 'fund_transfer_in'];
+
+function officeFundTransfer_(ctx, data) {
+  if (!data.id) throw new Error('MISSING_ID');
+  if (!officeIsoDate_(data.date)) throw new Error('BAD_DATE');
+  if (data.date > officeToday_()) throw new Error('FUTURE_DATE');
+  const from = officeAccount_(String(data.from_account || '')), to = officeAccount_(String(data.to_account || ''));
+  if (!from || !to) throw new Error('BAD_ACCOUNT');
+  officeAssertCampus_(ctx.caller, from.campus);
+  officeAssertCampus_(ctx.caller, to.campus);
+  const id = String(data.id), fy = officeFy_(data.date);
+  const outSs = officeOpen_(from.campus, fy), inSs = officeOpen_(to.campus, fy); // both books open before any write
+  const has = function (ss, legId) { return officeRows_(ss, 'DayBook').some(function (r) { return r.id === legId; }); };
+  const hasOut = has(outSs, id + '-out'), hasIn = has(inSs, id + '-in');
+  if (hasOut && hasIn) return { id: id, duplicate: true }; // retry before validation, so a later config change never strands it (P9)
+  // A repair (one leg saved) still writes the other even if an account was switched off since.
+  if (from.kind !== 'bank' || to.kind !== 'bank' || (!(hasOut || hasIn) && (!from.active || !to.active))) throw new Error('BAD_ACCOUNT');
+  if (from.campus === to.campus) throw officeCoded_('FUND_SAME_CAMPUS');
+  if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
+  const ref = String(data.reference || '').trim();
+  if (!ref) throw new Error('BANK_REF_REQUIRED');
+  const note = String(data.narration || '').trim(), narration = 'Fund transfer ' + ref + (note ? ': ' + note : '');
+  const leg = function (ss, suffix, other, acct, otherAcct, direction, category) {
+    return officeDaybookWrite_(ss, ctx, {
+      id: id + '-' + suffix, campus: acct.campus, entry_date: data.date, direction: direction, mode: 'bank', bucket: '', category: category,
+      amount_paise: data.amount_paise, payee: otherAcct.id, narration: narration, file_id: '', reverses: '', account: acct.id, charged_to: acct.campus,
+      settles: id + '-' + other, source: 'live',
+    }, 'fund.transfer');
+  };
+  const a = leg(outSs, 'out', 'in', from, to, 'OUT', 'fund_transfer_out'), b = leg(inSs, 'in', 'out', to, from, 'IN', 'fund_transfer_in');
+  return { id: id, duplicate: a.duplicate || b.duplicate };
+}
+
+// daybook.reverse on either leg: reverses both, dated today, each in its own campus's book, with fixed ids <leg>-rv so a retry
+// (or reversing the other leg afterwards) only fills what is missing. The caller must hold both campuses and be FinanceHead/Owner.
+function officeFundReverse_(ctx, orig, narration) {
+  const other = officeAccount_(String(orig.payee || ''));
+  const partner = other && officeRecentBooks_(other.campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, [])
+    .filter(function (r) { return r.id === orig.settles; })[0];
+  if (!partner) throw officeCoded_('FUND_INCOMPLETE'); // the transfer's retry repairs the missing leg first
+  const legs = [orig, partner];
+  legs.forEach(function (leg) {
+    officeAssertCampus_(ctx.caller, leg.campus);
+    officeAssertAccountAllowed_(ctx.caller, officeAccount_(leg.account) || { id: leg.account, kind: 'bank', campus: leg.campus }, officeCategory_(leg.category));
+  });
+  const today = officeToday_(), books = legs.map(function (leg) { return officeOpen_(leg.campus, officeFy_(today)); });
+  const res = legs.map(function (leg, i) {
+    return officeDaybookWrite_(books[i], ctx, {
+      id: leg.id + '-rv', campus: leg.campus, entry_date: today, direction: leg.direction === 'IN' ? 'OUT' : 'IN', mode: leg.mode, bucket: '',
+      category: leg.category, amount_paise: leg.amount_paise, payee: leg.payee, narration: narration || 'Reversal of ' + leg.id, file_id: '',
+      reverses: leg.id, account: leg.account, charged_to: leg.charged_to, settles: legs[1 - i].id + '-rv', source: 'live',
+    }, 'daybook.reverse');
+  });
+  return { id: orig.id + '-rv', duplicate: res[0].duplicate || res[1].duplicate };
 }

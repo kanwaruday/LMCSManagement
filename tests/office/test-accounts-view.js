@@ -34,6 +34,18 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.throws(() => A.liveToken(L(null), { email: 'a@x.org' }), (e) => e.message === A.SIGNED_OUT);
   assert.throws(() => A.liveToken(L({ email: 'b@x.org', idToken: 'T' }), { email: 'a@x.org' }), (e) => e.message === A.SIGNED_OUT);
   ok('token and not-authorized');
+  {
+    const L1 = { id: 'bank:LMS1', campus: 'LMS1' }, L1b = { id: 'hdfc', campus: 'LMS1' }, HES = { id: 'sbi-hes', campus: 'HES' };
+    const ft = (o) => A.fundTransferPayload(o.from === undefined ? L1 : o.from, o.to === undefined ? HES : o.to, o.amt || '5000.50', o.date || '2026-10-20', o.ref === undefined ? ' UTR9 ' : o.ref, o.note, '2026-10-21');
+    assert.deepStrictEqual(ft({}), { ok: true, data: { date: '2026-10-20', from_account: 'bank:LMS1', to_account: 'sbi-hes', amount_paise: 500050, reference: 'UTR9', narration: '' } });
+    assert.strictEqual(ft({ to: null }).ok, false);
+    assert.match(ft({ to: L1b }).error, /same school/);
+    assert.strictEqual(ft({ amt: '0' }).ok, false);
+    assert.strictEqual(ft({ amt: 'abc' }).ok, false);
+    assert.strictEqual(ft({ date: '2026-10-22' }).ok, false);
+    assert.strictEqual(ft({ ref: '  ' }).ok, false);
+    ok('fundTransferPayload');
+  }
   assert.strictEqual(A.canSeeAccounts({ role: 'Owner' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FeeClerk, Accounts' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FinanceHead' }), true);

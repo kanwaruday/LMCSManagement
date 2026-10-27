@@ -175,6 +175,11 @@ function officeDaybookReverse_(ctx, data) {
   if (!orig) throw new Error('NOT_FOUND');
   // A leg reversed alone would split a deposit; correcting a deposit is a later feature (R37).
   if (/:(out|in)$/.test(orig.id) || OFFICE_DEPOSIT_LEG_CATEGORIES.indexOf(orig.category) !== -1) throw officeCoded_('DEPOSIT_LEG');
+  // A fund transfer leg reverses both legs, each in its own book (a reversal row itself is not reversed again).
+  if (OFFICE_FUND_LEG_CATEGORIES.indexOf(orig.category) !== -1) {
+    if (orig.reverses) throw officeCoded_('FUND_LEG');
+    return officeFundReverse_(ctx, orig, data.narration);
+  }
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
   const account = officeRowAccount_(orig);
   const acct = officeAccount_(account) || { id: account, kind: orig.mode === 'cash' ? 'cash' : orig.mode === 'credit' ? 'credit' : 'bank', campus: orig.campus };

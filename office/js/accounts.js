@@ -61,6 +61,18 @@ export function accountOpeningPayload(account, text) {
   return p === null ? { ok: false, error: 'Enter the opening in rupees, like 1234.50 (or 0).' } : { ok: true, data: { account: account.id, campus: account.campus, amount_paise: p } };
 }
 
+// fund.transfer from the form: two bank accounts of different campuses, rupees, date (not future), bank reference.
+export function fundTransferPayload(from, to, text, date, reference, narration, today) {
+  if (!from || !to) return { ok: false, error: 'Choose both bank accounts.' };
+  if (from.campus === to.campus) return { ok: false, error: explainCode('FUND_SAME_CAMPUS') };
+  const p = cashToPaise(text);
+  if (!p) return { ok: false, error: 'Enter the amount in rupees, like 1234.50.' };
+  if (!date || date > today) return { ok: false, error: 'Choose today or an earlier date.' };
+  const ref = String(reference || '').trim();
+  if (!ref) return { ok: false, error: 'Enter the bank reference (UTR or cheque number).' };
+  return { ok: true, data: { date, from_account: from.id, to_account: to.id, amount_paise: p, reference: ref, narration: String(narration || '').trim() } };
+}
+
 // New collection head from a typed name: id is a slug of it. Refuses a name that is already a head (switch it on instead).
 export function collectionPayload(label, heads) {
   const l = String(label || '').trim();
@@ -199,6 +211,16 @@ export async function showAccounts(root, session, api, outbox) {
     if (!r.ok) return say(opMsg, r.error);
     if (await send('account.opening', r.data, opMsg, 'Opening saved.')) opAmt.querySelector('input').value = '';
   });
+  // --- fund transfer (bank to bank between campuses)
+  const ftFrom = h('select', { id: 'ft-from' }), ftTo = h('select', { id: 'ft-to' }), ftMsg = h('p', { role: 'status' });
+  const ftAmt = txt('ft-amt', 'Amount (rupees)', { inputmode: 'decimal' }), ftRef = txt('ft-ref', 'Bank reference (UTR or cheque number)', { maxlength: 40 });
+  const ftNote = txt('ft-note', 'Narration (optional)', { maxlength: 120 }), ftDate = h('input', { type: 'date', id: 'ft-date', value: todayIst() });
+  const ftBtn = btn('ft', 'Record transfer', async () => {
+    const acc = (id) => cfg.accounts.find((a) => a.id === id);
+    const r = fundTransferPayload(acc(ftFrom.value), acc(ftTo.value), ftAmt.querySelector('input').value, ftDate.value, ftRef.querySelector('input').value, ftNote.querySelector('input').value, todayIst());
+    if (!r.ok) return say(ftMsg, r.error);
+    if (await send('fund.transfer', r.data, ftMsg, 'Transfer recorded in both day books.')) [ftAmt, ftRef, ftNote].forEach((f) => { f.querySelector('input').value = ''; });
+  });
   // --- vehicles
   const vList = h('ul', { class: 'office-list' }), vMsg = h('p', { role: 'status' }), impMsg = h('p', { role: 'status' });
   const vKind = sel('v-kind', Object.entries(KINDS), 'Type'), vReg = txt('v-reg', 'Registration number'), vLabel = txt('v-label', 'Name (for example Innova)');
@@ -241,6 +263,8 @@ export async function showAccounts(root, session, api, outbox) {
 
   function paintConfig() {
     const mine = cfg.accounts.filter((a) => a.kind !== 'cash' && a.active && (allCampus || a.campus === campus));
+    const banks = () => cfg.accounts.filter((a) => a.kind === 'bank' && a.active).map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ')'));
+    setKids(ftFrom, banks()); setKids(ftTo, banks());
     setKids(opAcc, mine.map((a) => h('option', { value: a.id }, a.label + ' (' + a.campus + ', ' + a.kind + ')')));
     setKids(vList, cfg.vehicles.length ? cfg.vehicles.filter((v) => allCampus || v.campus === campus).map((v) => h('li', {}, h('b', {}, v.label), ' · ', v.reg, ' · ', v.kind, ' · ', v.campus, v.active ? '' : ' · inactive')) : [h('li', {}, 'No vehicles yet.')]);
     paintCollections();
@@ -281,6 +305,9 @@ export async function showAccounts(root, session, api, outbox) {
   root.replaceChildren(h('h2', {}, 'Accounts'),
     form('Add a bank or supplier account for ' + campus, acKind, acName, acBtn, acMsg),
     form('Opening balance of a bank or supplier account', h('label', { for: 'op-acc' }, 'Account'), opAcc, opAmt, opBtn, opMsg),
+    form('Fund transfer (bank to bank)', h('p', { class: 'meta' }, 'Money sent by bank from one school (or HES) to another. Both day books get their entry.'),
+      h('label', { for: 'ft-from' }, 'From account'), ftFrom, h('label', { for: 'ft-to' }, 'To account'), ftTo, ftAmt,
+      h('label', { for: 'ft-date' }, 'Date'), ftDate, ftRef, ftNote, ftBtn, ftMsg),
     form('Vehicles', vList, impBtn, impMsg, h('h4', {}, 'Add a vehicle for ' + campus), vKind, vReg, vLabel, vBtn, vMsg),
     form('Student collections', h('p', { class: 'meta' }, 'Heads you can collect under. A switched-off head is not offered on the Day Book form; its past entries still show in reports.'), cList, cName, cBtn, cMsg),
     form('Summary', h('label', { for: 'sm-from' }, 'From'), fromIn, h('label', { for: 'sm-to' }, 'To'), toIn,

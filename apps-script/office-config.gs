@@ -97,6 +97,8 @@ var OFFICE_CATEGORIES = [
   ['credit_settlement', 'Settle a supplier credit account', 'OUT', 'movement', 0, '', 1],
   ['cash_transfer', 'Cash transfer between cash boxes', 'OUT', 'movement', 0, '', 1],
   ['cash_received', 'Cash received (from another cash box or bank withdrawal)', 'IN', 'movement', 0, '', 1],
+  ['fund_transfer_out', 'Fund transfer out (bank to bank)', 'OUT', 'movement', 0, '', 0], // written only by fund.transfer
+  ['fund_transfer_in', 'Fund transfer in (bank to bank)', 'IN', 'movement', 0, '', 0],
   ['import_adjustment_in', 'Sheet import adjustment (in)', 'IN', 'movement', 0, '', 0],
   ['import_adjustment_out', 'Sheet import adjustment (out)', 'OUT', 'movement', 0, '', 0],
 ].map(function (c) {
