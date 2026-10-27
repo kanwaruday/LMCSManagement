@@ -42,7 +42,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     'Salary Offer Approval': 'hr', 'EPF Exemption': 'hr', 'Disciplinary / Termination': 'hr' };
   // the Darbar (HES) holds the network-wide quests: their campus is '' on the wire
   function assignBody(tier, campus, email, note, clear) {
-    var b = { action: 'kingdomassign', quest: tier.questId, campus: campus === 'HES' ? '' : campus, assignee: email, note: note };
+    var b = { action: 'kingdomassign', quest: tier.questId, campus: typeof tier.campus === 'string' ? tier.campus : campus === 'HES' ? '' : campus, assignee: email, note: note };
     if (clear) { b.clear = true; b.assignee = ''; }
     return b;
   }
@@ -57,11 +57,13 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var fn = (deptMap || KINGDOM_DEPT_FUNCTION)[card && card.category];
     return (fn && (heads || []).filter(function (x) { return (x.functions || []).indexOf(fn) !== -1; })[0]) || null;
   }
+  // a setup step's How link: only a plain guide id becomes a link (the server's string never builds a path)
+  function guideGo(s) { return s && /^[\w-]+$/.test(String(s.guide || '')) ? 'guide/index.html#' + s.guide : ''; }
   function cardText(c) { return 'Approved: ' + c.title + (c.campus ? ' · ' + c.campus : ''); }
 
   var api = { tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
-    deptFunction: KINGDOM_DEPT_FUNCTION, cardText: cardText, hooks: { tier: null, base: null, after: null } };
+    deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, hooks: { tier: null, base: null, after: null } };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -89,20 +91,25 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (!L) return;
     S.layer = null;
     L.release(L.opener);
+    if (L.opener && !L.opener.isConnected && S.baseId) { // the opener was inside a dialog that closed: land on the base's map button
+      [].slice.call(S.el.querySelectorAll('.kg-base')).forEach(function (b) { if (b.getAttribute('data-base') === S.baseId) b.focus(); });
+    }
     if (L.dlg.open) L.dlg.close();
     L.dlg.remove();
   }
+  // the user's ways out (X, Esc, backdrop, Cancel): ignored while a write is in flight
+  function dismiss() { if (!W.busy) closeLayer(); }
   function openLayer(title, sub, body, opener) {
     closeLayer();
     var id = 'kg-t' + Date.now(), dlg = h('dialog', { class: 'kg-dlg', 'aria-labelledby': id });
     var head = h('div', { class: 'kg-dh' }, [h('div', { class: 'kg-dt' }, [h('h2', { id: id, tabindex: '-1' }, [title]), sub ? h('p', {}, [sub]) : null]),
-      h('button', { type: 'button', class: 'kg-x', 'aria-label': 'Close', onclick: closeLayer }, ['×'])]);
+      h('button', { type: 'button', class: 'kg-x', 'aria-label': 'Close', onclick: dismiss }, ['×'])]);
     dlg.appendChild(head); dlg.appendChild(h('div', { class: 'kg-db' }, body));
-    dlg.addEventListener('cancel', function (e) { e.preventDefault(); closeLayer(); });
-    dlg.addEventListener('click', function (e) { if (e.target === dlg) closeLayer(); }); // the backdrop
+    dlg.addEventListener('cancel', function (e) { e.preventDefault(); dismiss(); });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) dismiss(); }); // the backdrop
     document.body.appendChild(dlg);
     dlg.showModal();
-    S.layer = { dlg: dlg, opener: opener || document.activeElement, release: LMCSGame.ui.trap(dlg, closeLayer) };
+    S.layer = { dlg: dlg, opener: opener || document.activeElement, release: LMCSGame.ui.trap(dlg, dismiss) };
     return dlg;
   }
 
@@ -117,7 +124,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var kids = [h('span', { class: 'kg-tt kg-s-' + t.state }, [tierText(t)])];
     if (t.state === 'done' || t.state === 'open') kids.push(goLink(t.go, 'Go'));
     if (t.owner && t.owner.name) kids.push(h('span', { class: 'kg-with' }, ['With: ' + t.owner.name]));
-    if (t.steps && t.steps.length) kids.push(h('ul', { class: 'kg-steps' }, t.steps.map(function (s) { return h('li', {}, [(s.done ? '✓ ' : '') + s.title]); })));
+    if (t.steps && t.steps.length) kids.push(h('ul', { class: 'kg-steps' }, t.steps.map(function (s) { return h('li', {}, [(s.done ? '✓ ' : '') + s.title, guideGo(s) ? goLink(guideGo(s), 'How') : null]); })));
     if (extra) kids.push(extra);
     return h('li', { class: 'kg-tier' }, kids);
   }
@@ -132,6 +139,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function openBase(id, opener) {
     var base = ((S.data && S.data.kingdom && S.data.kingdom.campuses) || []).filter(function (b) { return b.id === id; })[0];
     if (!base) return;
+    S.baseId = id;
     var body = [h('div', { class: 'kg-bgrid' }, (base.buildings || []).map(function (b) { return buildingCard(b, base); }))];
     if (!(base.buildings || []).length) body = [h('p', { class: 'kg-quiet' }, ['Nothing to build here yet.'])];
     if (api.hooks.base) body.push(api.hooks.base(base));
@@ -166,7 +174,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var id = baseOfGo(a.go), bubble = [h('span', { class: 'kg-who' }, ['Buddy, royal advisor']), h('p', {}, [a.text || ''])];
     if (id) bubble.push(h('a', { class: 'kg-go', href: '#base-' + id, onclick: function (e) { e.preventDefault(); openBase(id, e.currentTarget); } }, ['Open it']));
     else { var l = goLink(a.go, 'Go'); if (l) bubble.push(l); }
-    return h('div', { class: 'kg-advisor', 'aria-live': 'polite' }, [buddyImg('winter-formal-neutral'), h('div', { class: 'kg-bubble' }, bubble)]);
+    return h('div', { class: 'kg-advisor' }, [buddyImg('winter-formal-neutral'), h('div', { class: 'kg-bubble' }, bubble)]);
   }
   function top(d) {
     return h('header', { class: 'kg-top' }, [
@@ -220,6 +228,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // ═══ K5: tap-to-assign (Owner only; the server checks the Owner again) ═══
   // One sheet at a time. Pick, then an explicit confirm button; only that button posts. While a request is in flight every control is disabled.
   var W = { busy: false };
+  var SEND_ERR = "That didn't go through. Nothing was changed. Please try again.";
   function toast(text) {
     var old = document.getElementById('kg-toast'); if (old) old.remove();
     var t = h('div', { id: 'kg-toast', class: 'kg-toast', role: 'status' }, [text]);
@@ -236,7 +245,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     ctl.err.textContent = '';
     ctl.controls.forEach(function (c) { c.disabled = true; });
     post(body).then(function (d) {
-      if (!d || !d.success) throw new Error((d && d.error) || 'That did not go through. Nothing was changed. Please try again.');
+      if (!d || !d.success) { var se = new Error((d && d.error) || SEND_ERR); se.server = true; throw se; } // only the server's own sentence is shown
       var msg = ctl.done(d);
       closeLayer(); toast(msg);
       return load().then(function () {
@@ -244,24 +253,24 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus(); }
       });
     }).catch(function (e) {
-      ctl.err.textContent = (e && e.message && e.message !== 'Failed to fetch') ? e.message : "Couldn't reach the Kingdom. Please check your connection and try again.";
+      ctl.err.textContent = e && e.server ? e.message : SEND_ERR;
       ctl.controls.forEach(function (c) { c.disabled = false; });
     }).then(function () { W.busy = false; });
   }
-  function radios(name, people, suggestEmail) {
-    return h('fieldset', { class: 'kg-pick' }, people.map(function (p, i) {
+  function radios(name, people, suggestEmail, legend) {
+    return h('fieldset', { class: 'kg-pick' }, [h('legend', { class: 'kg-sr' }, [legend])].concat(people.map(function (p, i) {
       var id = 'kg-r-' + name + i;
       return h('label', { class: 'kg-opt', for: id }, [
         h('input', { type: 'radio', name: name, id: id, value: p.email, checked: p.email === suggestEmail ? true : null }),
         h('span', {}, [h('b', {}, [p.name || p.email]), p.name ? h('small', {}, [p.email]) : null,
           p.email === suggestEmail ? h('em', { class: 'kg-sug' }, ['Buddy suggests']) : null])]);
-    }));
+    })));
   }
   function picked(form, name) { var r = form.querySelector('input[name=' + name + ']:checked'); return r ? r.value : ''; }
   function sheet(title, sub, intro, fields, confirmText, onConfirm, opener) {
     var err = h('p', { class: 'kg-err', role: 'alert' }, []);
     var go = h('button', { type: 'button', class: 'kg-btn kg-primary' }, [confirmText]);
-    var cancel = h('button', { type: 'button', class: 'kg-btn', onclick: closeLayer }, ['Cancel']);
+    var cancel = h('button', { type: 'button', class: 'kg-btn', onclick: dismiss }, ['Cancel']);
     var form = h('div', { class: 'kg-form' }, [intro ? h('p', {}, [intro]) : null].concat(fields, [err, h('div', { class: 'kg-acts' }, [go, cancel])]));
     go.onclick = function () { onConfirm(form, { err: err, controls: [go, cancel].concat([].slice.call(form.querySelectorAll('input,textarea'))) }); };
     var dlg = openLayer(title, sub, [form], opener);
@@ -275,7 +284,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var people = tier.assignees || [];
     if (!people.length) return sheet('Assign ' + tier.label, base.full || base.name, "Nobody on the allowlist can take this step yet, so there is no one to pick.", [], 'Assign', function () {}, opener).querySelector('.kg-primary').remove();
     sheet('Assign ' + tier.label, base.full || base.name, 'Who should set this up? They will see it in their Today list.',
-      [radios('kg-who', people, ''), noteField('kg-note')], 'Assign', function (form, ctl) {
+      [radios('kg-who', people, '', 'Who should set this up?'), noteField('kg-note')], 'Assign', function (form, ctl) {
         var who = picked(form, 'kg-who');
         if (!who) { ctl.err.textContent = 'Pick a person first.'; return; }
         ctl.done = function () { return "Assigned. They'll see it in their Today list."; };
@@ -298,7 +307,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var today = d.day || '', sug = suggestHead(card, heads), days = Number(d.kingdom && d.kingdom.followupDueDays) || 7;
     var due = h('input', { type: 'date', id: 'kg-due', value: defaultDue(today, days), min: today || null, required: true });
     sheet(title, card.campus, 'Who should follow this approved request up, and by when?',
-      [radios('kg-head', heads, sug ? sug.email : ''), h('label', { class: 'kg-fld', for: 'kg-due' }, ['Due date', due]), noteField('kg-note')], 'Assign', function (form, ctl) {
+      [radios('kg-head', heads, sug ? sug.email : '', 'Who should follow this up?'), h('label', { class: 'kg-fld', for: 'kg-due' }, ['Due date', due]), noteField('kg-note')], 'Assign', function (form, ctl) {
         var who = picked(form, 'kg-head'), dv = due.value;
         if (!who) { ctl.err.textContent = 'Pick a head first.'; return; }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dv) || (today && dv < today)) { ctl.err.textContent = 'Pick a due date that is today or later.'; return; }

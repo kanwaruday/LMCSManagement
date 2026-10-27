@@ -173,6 +173,9 @@ assert.deepStrictEqual(r.heads.map((h) => h.id), ['h1', 'h2', 'h3'], 'config ord
 assert.ok(r.heads.every((h) => !('email' in h)), 'heads leave the server without emails');
 assert.deepStrictEqual(r.followHeads, [{ id: 'h1', name: 'Accounts head', email: 'head1@example.org', functions: ['finance'] }], 'follow-up picker: only heads who are Coordinators on the allowlist');
 assert.strictEqual(r.heads[0].missions.length, 1);
+// M4: a head's mission leaves the server as {id, title, go, done} only: no owner email, no why (it names people)
+assert.deepStrictEqual(Object.keys(r.heads[0].missions[0]).sort(), ['done', 'go', 'id', 'title']);
+assert.ok(!JSON.stringify(r.heads).includes('@') && !JSON.stringify(r.heads).includes('Clerk'), 'no email or name in heads');
 assert.strictEqual(r.heads[1].missions.length, 0);
 
 // ---- owners: latest _owner row wins, cleared removes it
@@ -190,6 +193,8 @@ r = run(owner);
 assert.deepStrictEqual(r.advice, { text: 'Assign Sections and class teachers at LMS 1. One tap does it.', go: '#base-LMS1' });
 assert.strictEqual(bld(baseOf(r, 'LMS1'), 'hall').tiers[0].assignable, true);
 assert.strictEqual(bld(baseOf(r, 'LMS1'), 'hall').tiers[0].questId, 'p1');
+// M3: the tier carries its engine scope's campus ('' for a network quest)
+assert.strictEqual(bld(baseOf(r, 'LMS1'), 'hall').tiers[0].campus, 'LMS1');
 setupRows = ['LMS1', 'LMS2'].map((c, i) => orow('p1', 'campus:' + c, 'head1@example.org', 'assigned', String(i)));
 r = run(owner);
 assert.strictEqual(r.advice.go, '#base-LMS3', 'owned tiers are skipped');

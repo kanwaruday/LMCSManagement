@@ -110,6 +110,7 @@ function kingdomTier_(ctx, campusId, tier, n) {
     const def = kingdomCqDef_(ctx, ref.slice(3)), scope = def && kingdomCqScope_(def, campusId), view = scope && kingdomCqView_(ctx, def, scope);
     if (view) out.go = cqGo_(view);
     if (def) {
+      out.campus = scope ? scope.campus || '' : ''; // the engine scope's campus ('' = network-wide): what kingdomassign takes
       out.questId = def.id; // the bare engine quest id (what kingdomassign takes), assignable only when the tier lists it in `owners`
       const o = scope && ctx.owners && ctx.owners[def.id + '|' + scope.scopeKey];
       if (o && ctx.names) out.owner = { email: o.email, name: ctx.names[o.email] || '' };
@@ -239,7 +240,7 @@ function kingdomGet_(caller, params) {
       let cards = [];
       try { cards = kingdomCards_(SpreadsheetApp.openById(GAME_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues(), now.getTime(), cfgK); } catch (err) { console.error('kingdom approvals: ' + (err && err.message)); sourcesDown.push('approvals'); }
       const missions = kingdomHeadMissions_(ctx, cfgK);
-      res.heads = cfgK.heads.filter(function (h) { return h && h.id; }).map(function (h) { return { id: h.id, name: h.name, functions: h.functions, colour: h.colour, missions: missions[h.id] || [] }; });
+      res.heads = cfgK.heads.filter(function (h) { return h && h.id; }).map(function (h) { return { id: h.id, name: h.name, functions: h.functions, colour: h.colour, missions: (missions[h.id] || []).map(function (m) { return { id: m.id, title: m.title, go: m.go, done: m.done }; }) }; });
       res.cards = cards;
       // follow-up picker: only heads who are Coordinators on the allowlist (the Coordinator backend refuses anyone else); Owner response only
       const rows = allowRows();
@@ -270,6 +271,11 @@ var KINGDOM_CODES = { KINGDOM_NO_RIGHT: 'Only the Owner can assign work for now.
   KINGDOM_BAD_INPUT: 'Something in the request does not look right.', KINGDOM_BUSY: 'The system was busy. Please try again.',
   KINGDOM_UPSTREAM: 'The Coordinator system could not be reached. Nothing was changed.', KINGDOM_ERROR: 'Something went wrong. Please try again.' };
 
+// the Coordinator's refusal as a page sentence: only a short plain sentence passes (no stack shape, no markup); else the fixed one
+function kingdomSentence_(v) {
+  const s = String(v || '').trim();
+  return s && s.length <= 200 && !/[\r\n<>{}]|\bat \S+ ?\(|\.(gs|js):\d|Exception|Error:|\bstack\b/i.test(s) ? s : KINGDOM_CODES.KINGDOM_ERROR;
+}
 function kingdomFail_(code) { return { success: false, code: code, error: KINGDOM_CODES[code] }; }
 // a user-typed value as an audit cell: plain text, formula prefix neutralised, capped
 function kingdomCell_(v, max) { return gameSafeNote_(typeof v === 'string' || typeof v === 'number' ? v : '').slice(0, max); }
@@ -333,7 +339,7 @@ function kingdomAssign_(caller, body) {
     const quest = typeof body.quest === 'string' ? body.quest : '', campus = typeof body.campus === 'string' ? body.campus.trim().toUpperCase() : '';
     const assignee = clear ? '' : (typeof body.assignee === 'string' ? gameLower_(body.assignee) : ''), note = gameSafeNote_(typeof body.note === 'string' ? body.note : '');
     const row = function (phase, result, code, who) {
-      return [at, by, clear ? 'setup_owner_clear' : 'setup_owner', 'setup', kingdomCell_(quest, 80), kingdomCell_(campus, 10), who === undefined ? kingdomCell_(assignee, 200) : who, '', note, phase, result, code];
+      return [at, by, clear ? 'setup_owner_clear' : 'setup_owner', 'setup', kingdomCell_(quest, 80), kingdomCell_(campus, 10), who === undefined ? kingdomCell_(assignee, 200) : who, '', note, phase, result, kingdomCell_(String(code), 200)];
     };
     const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return kingdomFail_(code); };
 
@@ -397,7 +403,7 @@ function kingdomAllocate_(caller, body) {
     const cancel = body.cancel === true, approvalId = str(body.approvalId), assignee = str(body.assignee).toLowerCase(), due = str(body.due);
     const note = typeof body.note === 'string' ? body.note.trim() : '', by = gameLower_(caller.email), at = gameNow_().toISOString();
     const row = function (phase, result, code) {
-      return [at, by, cancel ? 'approval_followup_cancel' : 'approval_followup', 'approval', kingdomCell_(approvalId, 80), '', kingdomCell_(assignee, 200), kingdomCell_(due, 10), kingdomCell_(note, 300), phase, result, String(code).slice(0, 200)];
+      return [at, by, cancel ? 'approval_followup_cancel' : 'approval_followup', 'approval', kingdomCell_(approvalId, 80), '', kingdomCell_(assignee, 200), kingdomCell_(due, 10), kingdomCell_(note, 300), phase, result, kingdomCell_(String(code), 200)];
     };
     const ok = KINGDOM_APPROVAL_ID.test(approvalId) && (body.cancel === undefined || typeof body.cancel === 'boolean') &&
       [body.approvalId, body.assignee, body.due, body.note].every(function (v) { return v === undefined || v === null || typeof v === 'string'; }) &&
@@ -411,7 +417,7 @@ function kingdomAllocate_(caller, body) {
     let out, audit;
     if (!res) { out = kingdomFail_('KINGDOM_UPSTREAM'); audit = row('done', 'error', 'KINGDOM_UPSTREAM'); }
     else if (!res.success) {
-      const sentence = String(res.error || '').slice(0, 200) || 'The Coordinator system refused this.';
+      const sentence = kingdomSentence_(res.error);
       out = { success: false, code: 'KINGDOM_REFUSED', error: sentence }; audit = row('done', 'refused', sentence);
     } else { out = { success: true, followUp: res.followUp || null, cancelled: res.cancelled === true }; audit = row('done', 'ok', ''); }
     try { kingdomAudit_(audit, false); } catch (err) { console.error('kingdom audit (done) not written: ' + (err && err.message)); } // the upstream answer stands

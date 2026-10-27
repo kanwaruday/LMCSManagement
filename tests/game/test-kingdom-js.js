@@ -82,4 +82,18 @@ assert.strictEqual((src.match(/method: 'POST'/g) || []).length, 1, 'one write pa
 assert.ok(/if \(W\.busy\) return;/.test(src) && /c\.disabled = true/.test(src) && /c\.disabled = false/.test(src), 'controls disabled in flight, re-enabled on failure');
 assert.ok(/d\.role !== 'Owner'/.test(src) && /S\.data\.role === 'Owner'/.test(src), 'tray and buttons are Owner only');
 assert.ok(/ctl\.err\.textContent = /.test(src), 'server sentence shown as text');
+// K6 fixes
+assert.strictEqual(K.guideGo({ guide: 'setup-signin' }), 'guide/index.html#setup-signin', 'I1: a step gets a How link');
+assert.strictEqual(K.guideGo({ guide: 'x"><b' }), '', 'I1: a non-id guide never becomes a link');
+assert.strictEqual(K.guideGo({}), '');
+assert.ok(/guideGo\(s\) \? goLink\(guideGo\(s\), 'How'\)/.test(src), 'I1: tierRow renders the How link');
+const sentTo = (tier, base) => K.assignBody(tier, base, 'a@x.org', '').campus;
+assert.strictEqual(sentTo({ questId: 'p1', campus: 'LMS4' }, 'HES'), 'LMS4', 'M3: tier.campus wins over the base');
+assert.strictEqual(sentTo({ questId: 'p3', campus: '' }, 'LMS4'), '', 'M3: network quest sends empty campus');
+assert.ok(/e && e\.server \? e\.message : SEND_ERR/.test(src) && !/e\.message !== 'Failed to fetch'/.test(src), 'M6: only the server sentence passes through');
+assert.ok(/function dismiss\(\) \{ if \(!W\.busy\) closeLayer\(\); \}/.test(src) && !/onclick: closeLayer|, closeLayer\)|dlg, closeLayer/.test(src), 'M7: every way out goes through dismiss');
+assert.ok(/!L\.opener\.isConnected/.test(src), 'M8: focus returns to the base button when the opener is gone');
+assert.ok(/h\('legend'/.test(src), 'M10: radio groups have a legend');
+assert.ok(!/aria-live/.test(src) && !/aria-live/.test(read('owner/kingdom.html')), 'M10: no live region on the root or advisor');
+assert.ok(/\.kg-go \{[^}]*min-width:44px/.test(read('assets/game/kingdom.css')), 'M10: .kg-go is 44px both ways');
 console.log('kingdom js: all passed');

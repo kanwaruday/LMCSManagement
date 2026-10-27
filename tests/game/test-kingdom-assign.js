@@ -212,8 +212,18 @@ test('allocate: upstream refusal is audited as refused with its sentence', () =>
   assert.deepStrictEqual([col(a, 'Phase'), col(a, 'Result'), col(a, 'Code')], ['done', 'refused', 'Pick a coordinator to allocate this to']);
   reset();
   fetchReply = { success: false, error: 'x'.repeat(500) };
-  assert.strictEqual(allocate(OWN, { approvalId: 'apr-1', assignee: 'p4@example.org', due: '2026-11-05' }).error.length, 200);
-  assert.strictEqual(col(audit()[1], 'Code').length, 200);
+  // M5: a long reply or one shaped like a stack trace never reaches the page; the fixed sentence does
+  const FIXED = 'Something went wrong. Please try again.';
+  assert.strictEqual(allocate(OWN, { approvalId: 'apr-1', assignee: 'p4@example.org', due: '2026-11-05' }).error, FIXED);
+  assert.ok(col(audit()[1], 'Code').length <= 200);
+  for (const bad of ['TypeError: x is undefined\n    at foo (Code.gs:12)', 'Error: boom', 'oops at run (a.gs:3)']) {
+    reset(); fetchReply = { success: false, error: bad };
+    assert.strictEqual(allocate(OWN, { approvalId: 'apr-1', assignee: 'p4@example.org', due: '2026-11-05' }).error, FIXED, bad);
+  }
+  // the audit cell is formula-safe
+  reset(); fetchReply = { success: false, error: '=HYPERLINK("x")' };
+  allocate(OWN, { approvalId: 'apr-1', assignee: 'p4@example.org', due: '2026-11-05' });
+  assert.ok(!/^[=+\-@]/.test(col(audit()[1], 'Code')), 'audit Code cell has no formula prefix');
 });
 test('allocate: fetch failure -> KINGDOM_UPSTREAM, audit error', () => {
   for (const reply of ['throw', 'http500', 'not json shaped']) {
