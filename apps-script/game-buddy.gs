@@ -12,7 +12,9 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //     if the worker is gone altogether (no pull for staleClaimMs), the Owner's next ask closes it as `failed` offline first;
 //   - a confirmed proposal (forward) is claimed (`fclaim`) when pulled, so asks are served while it is being sent; a
 //     reported `forward_failed` or a stale fclaim counts one failure; after maxForwardAttempts its proposalState is
-//     `failed` (terminal, proposalNote tells the Owner) and it is never offered again.
+//     `failed` (terminal, proposalNote tells the Owner) and it is never offered again; so does one still unsent proposalMs
+//     after the confirm;
+//   - with the desk offline (no pull within deskMs), a new ask replaces the caller's unclaimed queued one (`failed` superseded).
 // Gates:
 //   buddyask / buddythread / buddyconfirm: POST only, a verified caller with the Owner role (game.gs doPost calls
 //     buddyOwnerAction_ directly). Deliberately NOT in GAME_MODULE_ACTIONS, so a GET (whose text lands in logs and
@@ -97,14 +99,15 @@ function buddyThreads_(rows, nowMs) {
     } else if (kind === 'failed' && open) { t.state = 'failed'; t.failReason = typeof meta.reason === 'string' ? meta.reason : null; }
     else if ((kind === 'confirm' || kind === 'decline') && t.proposal && !t._decision) { t._decision = kind === 'confirm' ? 'confirmed' : 'declined'; t._decidedAt = at; }
     else if (kind === 'fclaim' && t._decision === 'confirmed' && !t._forwarded) { t.fwdAttempts++; t.fwdClaimedAt = at; t._fwdFailed = false; }
-    else if (kind === 'forward_failed' && t.fwdAttempts > 0 && !t._fwdFailed) t._fwdFailed = true;
+    else if (kind === 'forward_failed' && t._decision === 'confirmed' && !t._fwdFailed) t._fwdFailed = true;
     else if (kind === 'forwarded' && t.proposal) t._forwarded = true;
   }
   Object.keys(out).forEach(function (id) {
     const t = out[id];
     if (t.proposal) {
       t.proposalState = t._forwarded ? 'forwarded' : t._decision ? t._decision : (nowMs - buddyMs_(t.repliedAt) > BUDDY_LIMITS.proposalMs ? 'expired' : 'open');
-      if (t.proposalState === 'confirmed' && t.fwdAttempts >= BUDDY_LIMITS.maxForwardAttempts && (t._fwdFailed || buddyFwdStale_(t, nowMs))) {
+      if (t.proposalState === 'confirmed' && ((t.fwdAttempts >= BUDDY_LIMITS.maxForwardAttempts && (t._fwdFailed || buddyFwdStale_(t, nowMs))) ||
+          nowMs - buddyMs_(t._decidedAt) > BUDDY_LIMITS.proposalMs)) { // 3 failures, or still unsent proposalMs after the confirm
         t.proposalState = 'failed'; t.proposalNote = BUDDY_FORWARD_FAILED;
       }
     }
@@ -179,10 +182,15 @@ function buddyRows_(sh) { return sh ? sh.getDataRange().getValues() : [BUDDY_HEA
 function buddyMark_() { CacheService.getScriptCache().put('buddy_pending', '1', BUDDY_CACHE_S); }
 
 // ── Owner actions (verified caller) ──────────────────────────────────
-// Ask Buddy v1 is hard-gated to the Owner whatever any config says. Phase 3 adds `buddy.staffAsk` behind its own review.
+// Ask Buddy v1 is hard-gated to ONE person: the Owner role AND the verified email equal to Script Property BUDDY_OWNER_EMAIL
+// (case-insensitive). Forwards go to the master agent labelled as Uday's own words and answers read his vault, so another
+// allowlist row with the Owner role is not enough. Property missing = everyone refused (fail closed). No email in the repo.
+// Phase 3 adds `buddy.staffAsk` behind its own review.
 function buddyOwnerAction_(caller, action, body) {
   try {
     if (!caller || !Array.isArray(caller.roles) || caller.roles.indexOf('Owner') === -1) throw buddyErr_('BUDDY_OWNER_ONLY');
+    const owner = String(PropertiesService.getScriptProperties().getProperty('BUDDY_OWNER_EMAIL') || '').trim().toLowerCase();
+    if (!owner || String(caller.email || '').trim().toLowerCase() !== owner) throw buddyErr_('BUDDY_OWNER_ONLY');
     body = body || {};
     if (action === 'buddyask') return buddyAsk_(caller, body);
     if (action === 'buddythread') return buddyThread_(caller);
@@ -200,10 +208,17 @@ function buddyAsk_(caller, body) {
     // so the one-at-a-time rule cannot block them forever. With a live worker the pull handles stale claims itself.
     // staleClaimMs, not less: a live worker does not poll while one answer runs (claude timeout 15 min).
     const hb = Number(CacheService.getScriptCache().get('buddy_hb')), gone = !(nowMs - hb <= BUDDY_LIMITS.staleClaimMs);
-    if (gone) {
-      const off = Object.keys(threads).map(function (k) { return threads[k]; }).filter(function (t) { return t.email === email && buddyStale_(t, nowMs); });
-      gameAppendText_(sh, off.map(function (t) { t.state = 'failed'; t.failReason = 'offline'; return [t.id, 'failed', '', '', JSON.stringify({ reason: 'offline' }), nowIso, 'system']; }));
-    }
+    // Desk offline (no pull within deskMs): the caller's unclaimed queued ask is replaced by the new one ('superseded').
+    const offline = !(nowMs - hb <= BUDDY_LIMITS.deskMs), close = [];
+    Object.keys(threads).forEach(function (k) {
+      const t = threads[k];
+      if (t.email !== email) return;
+      const reason = gone && buddyStale_(t, nowMs) ? 'offline' : offline && t.state === 'queued' ? 'superseded' : '';
+      if (!reason) return;
+      t.state = 'failed'; t.failReason = reason;
+      close.push([t.id, 'failed', '', '', JSON.stringify({ reason: reason }), nowIso, 'system']);
+    });
+    gameAppendText_(sh, close);
     const code = buddyRateCheck_(threads, email, nowMs);
     if (code) throw buddyErr_(code);
     const newId = buddyNewId_(nowMs);
@@ -264,8 +279,9 @@ function buddyPull_(body) {
           out.push([id, 'failed', '', '', JSON.stringify({ reason: 'gave_up' }), nowIso, 'worker']);
           t.state = 'failed'; t.failReason = 'gave_up';
         }
-        if (t.proposalState === 'failed' && !t._fwdFailed) { // last forward attempt went stale: record it
-          out.push([id, 'forward_failed', '', '', JSON.stringify({ reason: 'gave_up' }), nowIso, 'worker']);
+        if (t.proposalState === 'failed' && !t._fwdFailed) { // last forward attempt went stale, or the confirm expired: record it
+          const why = t.fwdAttempts >= BUDDY_LIMITS.maxForwardAttempts ? 'gave_up' : 'expired';
+          out.push([id, 'forward_failed', '', '', JSON.stringify({ reason: why }), nowIso, 'worker']);
           t._fwdFailed = true;
         }
       });

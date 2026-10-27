@@ -37,7 +37,8 @@ const MIN = 60000;
 const responses = [];
 const R = (x) => { const j = J(x); responses.push(JSON.stringify(j)); return j; };
 const mk = (o) => Object.assign({ email: 'owner@test.invalid', campusId: 'ALL', roles: ['Owner'] }, o || {});
-const OWN = mk(), OWN2 = mk({ email: 'owner2@test.invalid' });
+const OWN = mk(), OWN2 = mk({ email: 'owner2@test.invalid' }); // a second allowlist row with the Owner role
+const as2 = (fn) => { props.BUDDY_OWNER_EMAIL = OWN2.email; try { return fn(); } finally { props.BUDDY_OWNER_EMAIL = OWN.email; } };
 const PR = mk({ email: 'p@test.invalid', roles: ['Principal'], campusId: 'LMS4' });
 const STAFF = mk({ email: 's@test.invalid', roles: ['Staff'], campusId: 'LMS4' }); // the employee fallback's shape
 const ask = (c, text, context) => R(ctx.buddyOwnerAction_(c, 'buddyask', { text: text === undefined ? 'How many campuses?' : text, context }));
@@ -52,6 +53,7 @@ const reset = () => {
   book.tabs = {}; store.clear(); events.length = 0; lockFails = false; opens = 0; clock = T0;
   for (const k of Object.keys(props)) delete props[k];
   props.GAME_SHEET_ID = 'GAME_BOOK'; props.BUDDY_WORKER_SECRET = SECRET + '\n'; // a pasted property often carries a newline
+  props.BUDDY_OWNER_EMAIL = ' Owner@Test.invalid '; // compared trimmed and case-insensitive
 };
 // seed rows straight into the tab (ids are valid, times relative to T0)
 const seedAsk = (email, atMs, extra) => {
@@ -108,6 +110,7 @@ test('ask: empty and too long', () => {
 });
 test('ask: one in flight', () => {
   reset();
+  store.set('buddy_hb', String(T0)); // desk open (offline is the superseded case below)
   const a = ask(OWN);
   assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT');
   pull();
@@ -203,7 +206,7 @@ test('pull: claims the oldest ask once', () => {
   reset();
   const a = ask(OWN, 'first');
   clock += MIN;
-  const b = ask(OWN2, 'second');
+  const b = as2(() => ask(OWN2, 'second'));
   const r = pull();
   assert.deepStrictEqual(r, { success: true, items: [{ id: a.id, kind: 'ask', text: 'first', context: {}, attempt: 1 }] });
   const claim = inbox()[2];
@@ -275,7 +278,7 @@ test('reply: refuses wrong state', () => {
 test('confirm: only own thread, once, within 24 h', () => {
   reset();
   const id = answered();
-  assert.strictEqual(confirm(OWN2, id).code, 'BUDDY_NOT_FOUND');
+  assert.strictEqual(as2(() => confirm(OWN2, id)).code, 'BUDDY_NOT_FOUND');
   assert.strictEqual(confirm(OWN, 'nope').code, 'BUDDY_NOT_FOUND');
   assert.strictEqual(confirm(OWN, id, 'maybe').code, 'BUDDY_BAD_STATE');
   assert.strictEqual(confirm(PR, id).code, 'BUDDY_OWNER_ONLY');
@@ -376,11 +379,65 @@ test('ask: a claim stuck while the worker is gone closes as offline', () => {
   assert.deepStrictEqual(kinds(), ['ask', 'claim', 'failed', 'ask']);
   assert.strictEqual(inbox()[2][6], 'system');
   assert.strictEqual(reply({ id: a, kind: 'reply', text: 'late', route: 'claude' }).code, 'BUDDY_BAD_STATE');
+  store.set('buddy_hb', String(clock)); // desk open again
   assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT'); // still one at a time
-  // a queued (never claimed) question is not closed: it waits for the Mac
+});
+test('ask: desk offline, a new ask replaces the unclaimed queued one', () => {
   reset();
-  ask(OWN); clock = T0 + 3 * 3600000;
+  store.set('buddy_hb', String(T0));
+  const a = ask(OWN, 'first').id;
+  assert.strictEqual(ask(OWN, 'again').code, 'BUDDY_IN_FLIGHT'); // desk open: one at a time
+  clock = T0 + 2 * MIN + 1; // no pull for over 2 minutes
+  const r = ask(OWN, 'again');
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  const th = thread().threads;
+  assert.deepStrictEqual(th.map((t) => t.state + ':' + t.failReason), ['failed:superseded', 'queued:null']);
+  assert.deepStrictEqual(kinds(), ['ask', 'failed', 'ask']);
+  assert.deepStrictEqual(meta(inbox()[1]), { reason: 'superseded' });
+  assert.strictEqual(pull().items[0].text, 'again'); // only the new one is pulled
+  assert.strictEqual(reply({ id: a, kind: 'reply', text: 'x', route: 'claude' }).code, 'BUDDY_BAD_STATE');
+  // a claimed (working) ask is not superseded while the worker may still be on it
+  clock += 3 * MIN;
   assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT');
+});
+test('owner: only BUDDY_OWNER_EMAIL may use Ask Buddy, fail closed', () => {
+  reset();
+  for (const c of [OWN2, mk({ email: 'OWNER@test.invalid', roles: ['Principal'] })]) {
+    assert.strictEqual(ask(c).code, 'BUDDY_OWNER_ONLY');
+    assert.strictEqual(thread(c).code, 'BUDDY_OWNER_ONLY');
+    assert.strictEqual(confirm(c, 'b' + T0 + '-0000abcd').code, 'BUDDY_OWNER_ONLY');
+  }
+  assert.strictEqual(opens, 0); assert.strictEqual(inbox().length, 0);
+  assert.strictEqual(ask(mk({ email: 'OWNER@TEST.INVALID' })).success, true); // case-insensitive
+  delete props.BUDDY_OWNER_EMAIL;
+  assert.strictEqual(thread().code, 'BUDDY_OWNER_ONLY');
+  assert.strictEqual(thread(mk({ email: '' })).code, 'BUDDY_OWNER_ONLY'); // unset never matches an empty email
+  props.BUDDY_OWNER_EMAIL = '  ';
+  assert.strictEqual(thread().code, 'BUDDY_OWNER_ONLY');
+});
+test('forward: a confirmed proposal unsent after 24 h fails with its note', () => {
+  reset();
+  const id = answered();
+  store.set('buddy_hb', String(T0)); // keep the desk open for the asks below
+  clock += MIN;
+  confirm(OWN, id);
+  const decided = clock;
+  clock = decided + 24 * 3600000; // exactly 24 h: still open
+  store.set('buddy_hb', String(clock - 5000));
+  assert.strictEqual(thread().threads[0].proposalState, 'confirmed');
+  clock += 1;
+  const t = thread().threads[0];
+  assert.strictEqual(t.proposalState, 'failed');
+  assert.strictEqual(t.proposalNote, "Buddy couldn't pass this on. Try again later or send it on Telegram.");
+  store.set('buddy_pending', '1');
+  assert.deepStrictEqual(pull().items, []);
+  const last = inbox()[inbox().length - 1];
+  assert.deepStrictEqual([last[1], meta(last)], ['forward_failed', { reason: 'expired' }]);
+  const n = inbox().length;
+  store.set('buddy_pending', '1');
+  pull();
+  assert.strictEqual(inbox().length, n); // recorded once
+  assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).code, 'BUDDY_BAD_STATE');
 });
 test('thread: only the caller\'s threads, max 20, no email field', () => {
   reset();
@@ -392,7 +449,7 @@ test('thread: only the caller\'s threads, max 20, no email field', () => {
   assert.deepStrictEqual(r.threads.map((t) => t.id), asks.slice(-20)); // newest last
   r.threads.forEach((t) => { assert.strictEqual('email' in t, false); assert.strictEqual(Object.keys(t).some((k) => k[0] === '_'), false); });
   assert.ok(!JSON.stringify(r).includes('@test.invalid'));
-  assert.deepStrictEqual(thread(OWN2).threads.length, 1);
+  assert.deepStrictEqual(as2(() => thread(OWN2)).threads.length, 1);
   reset();
   opens = 0;
   assert.deepStrictEqual(thread().threads, []); // no tab yet: nothing created
