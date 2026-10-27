@@ -45,12 +45,14 @@ export function fillTitle(template, item) {
 }
 
 const choicesOf = (f) => (f.type === 'yesno' ? ['yes', 'no'] : f.choices || null);
+// a time input wants hh:mm; the server keeps '9:05' or '09:05'
+export const padTime = (v) => v.replace(/^(\d):/, '0$1:');
 // A quest + an item (or null for a new one) -> the form's fields with their starting text.
 export function itemModel(quest, item) {
   return quest.fields.map((f) => {
     const c = item ? cell(item, f.id) : { value: '', status: '' };
     return { id: f.id, label: f.label, type: f.type, required: !!f.required, choices: choicesOf(f), hint: f.hint || '',
-      value: c.status === 'skipped' || c.value == null ? '' : String(c.value), known: c.status === 'known' };
+      value: c.status === 'skipped' || c.value == null ? '' : f.type === 'time' ? padTime(String(c.value)) : String(c.value), known: c.status === 'known' };
   });
 }
 
@@ -120,12 +122,15 @@ export const newItemKey = (now) => 'n-' + Number(now).toString(36);
 
 // The ring's markup is built from numbers only (never server text); parsed, not assigned with innerHTML.
 const ringEl = (n, big) => new DOMParser().parseFromString(ringSvg(n, big), 'text/html').body.firstElementChild;
+// Refusals that a retry may cure (anything the page does not know is treated alike); the rest need the answer fixed.
+export const isTransient = (code) => code === 'SETUP_BUSY' || code === 'SETUP_ERROR' || !CODES[code];
 const viewKey = (q) => q.id + '|' + (q.campus || '');
 const placeName = (c) => (window.LMCS && window.LMCS.campusLabel ? window.LMCS.campusLabel(c) : c);
 
 export async function mountConfirmQuests(root, { session, backendUrl, link = {}, onLoaded }) {
   const sample = !!link.sample;
-  const S = { views: [], view: { v: 'board' }, entries: [], others: 0, auth: false, dirty: false, sawWaiting: false };
+  const S = { views: [], view: { v: 'board' }, entries: [], others: 0, auth: false, dirty: false, sawWaiting: false, drafts: {}, noStore: false };
+  const dkey = (q, item) => viewKey(q) + '/' + item;
   const who = () => String((window.LMCS && window.LMCS.getSession && window.LMCS.getSession() || session || {}).email || '').toLowerCase() || null;
   const token = () => String(((window.LMCS && window.LMCS.getSession && window.LMCS.getSession()) || session || {}).idToken || '');
   const bar = h('div', { id: 'cq-bar' }), body = h('div'), toast = h('p', { class: 'sd-toast', role: 'status', 'aria-live': 'polite' });
@@ -136,11 +141,12 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
   async function write(action, data) {
     try { return await (await fetch(backendUrl, { method: 'POST', body: JSON.stringify({ action, idToken: token(), ...data }) })).json(); } catch (_) { return { success: false, network: true }; }
   }
-  const outbox = sample ? null : createOutbox({ store: createIdbStore('lmcs-confirm', 'outbox'), api: { write }, who, onChange: (c) => onOutbox(c) });
-  const mine = () => S.entries.filter((e) => outbox.owned(e));
+  let outbox = null;
+  if (!sample) { try { outbox = createOutbox({ store: createIdbStore('lmcs-confirm', 'outbox'), api: { write }, who, onChange: (c) => onOutbox(c) }); } catch (_) { S.noStore = true; } }
+  const mine = () => (outbox ? S.entries.filter((e) => outbox.owned(e)) : []);
   const shown = () => S.views.map((q) => (outbox ? applyQueued(q, mine()) : q));
 
-  async function load() {
+  async function load(silent) {
     const u = new URL(backendUrl);
     u.searchParams.set('action', 'setupget'); u.searchParams.set('idToken', token());
     if (link.quest) u.searchParams.set('quest', link.quest);
@@ -149,6 +155,7 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     let r;
     try { r = await (await fetch(u.toString(), { cache: 'no-store' })).json(); } catch (_) { r = { success: false, network: true }; }
     if (!r.success) {
+      if (silent) return false;
       const again = h('button', { type: 'button', class: 'btn-lg', onclick: () => start() }, 'Try again');
       setKids(body, h('p', {}, 'Could not load this: ' + say(r.network ? 'OFFLINE' : parseError(r).code)), again);
       return false;
@@ -157,40 +164,49 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     S.sawWaiting = false;
     return true;
   }
-  async function refreshEntries() { if (outbox) { S.entries = await outbox.entries(); S.others = (await outbox.others()).length; } }
+  async function refreshEntries() {
+    if (!outbox) return;
+    try { S.entries = await outbox.entries(); S.others = (await outbox.others()).length; } catch (_) { S.noStore = true; S.entries = []; }
+  }
   async function onOutbox(c) {
     await refreshEntries();
     if (c.authRequired) S.auth = true;
     if (c.waiting > 0) S.sawWaiting = true;
-    if (c.waiting === 0 && S.sawWaiting && !c.authRequired) { if (await load()) { if (!S.dirty) render(); return; } }
+    if (c.waiting === 0 && S.sawWaiting && !c.authRequired) { if (await load(true)) { if (!S.dirty) render(); return; } }
     if (!S.dirty) render(); else drawBar();
   }
 
   const go = (view) => { S.view = view; history.pushState(view, ''); render(); scrollTo(0, 0); };
   addEventListener('popstate', (e) => { S.view = e.state || { v: 'board' }; render(); });
-  addEventListener('online', () => { if (outbox) outbox.flush().then(() => load()).then((ok) => ok && !S.dirty && render()); });
+  addEventListener('online', () => { if (outbox) outbox.flush().then(() => load(true)).then((ok) => ok && !S.dirty && render()).catch(() => {}); });
   const back = (text) => h('button', { type: 'button', class: 'sd-back', onclick: () => history.back() }, '← ' + text);
 
   function render() {
-    S.dirty = false;
     drawBar();
     const views = shown();
     const q = S.view.v === 'quest' && views.find((x) => viewKey(x) === S.view.key);
     if (q) drawQuest(q); else drawBoard(views);
     if (q && S.view.item) { const el = body.querySelector('[data-item="' + CSS.escape(S.view.item) + '"]'); if (el) { el.scrollIntoView({ block: 'center' }); const f = el.querySelector('input,select'); if (f) f.focus(); } S.view = { ...S.view, item: null }; }
+    S.dirty = false;
   }
 
   function drawBar() {
-    if (!outbox) { setKids(bar); return; }
+    if (!outbox && !S.noStore) { setKids(bar); return; }
     const waiting = mine().filter((e) => e.status === 'waiting'), att = mine().filter((e) => e.status === 'attention');
     const kids = [];
+    if (S.noStore && !sample) kids.push(h('p', { class: 'cq-note', role: 'alert' }, "This phone can't keep answers offline. Save only while you are connected."));
     if (S.auth) kids.push(h('p', { class: 'cq-note', role: 'alert' }, 'Sign in again to send your saved answers.'));
     if (waiting.length) kids.push(h('p', { class: 'cq-note', role: 'status' }, waiting.length + ' saved on this phone, waiting to send · ',
       h('button', { type: 'button', class: 'linklike', onclick: () => { S.auth = false; outbox.flush(); } }, 'Send now')));
     att.forEach((e) => {
-      const q = S.views.find((x) => x.id === e.data.quest && (x.campus || '') === (e.data.campus || ''));
-      kids.push(h('p', { class: 'cq-note cq-attn', role: 'alert' }, (q ? q.title + ': ' : '') + say(e.code || parseError({ error: e.error }).code), ' ',
-        h('button', { type: 'button', class: 'linklike', onclick: async () => { await outbox.discard(e.id); await refreshEntries(); if (q) go({ v: 'quest', key: viewKey(q), item: e.data.item }); else render(); } }, 'Fix'), ' ',
+      const q = S.views.find((x) => x.id === e.data.quest && (x.campus || '') === (e.data.campus || '')), code = e.code || parseError({ error: e.error }).code;
+      kids.push(h('p', { class: 'cq-note cq-attn', role: 'alert' }, (q ? q.title + ': ' : '') + say(code), ' ',
+        isTransient(code)
+          ? h('button', { type: 'button', class: 'linklike', onclick: async () => { S.auth = false; await outbox.retry(e.id); } }, 'Try again')
+          : h('button', { type: 'button', class: 'linklike', onclick: async () => {
+            // reopen the form with what was typed, not what the server last held
+            if (q && e.data.skip !== true) S.drafts[dkey(q, e.data.item)] = { q: viewKey(q), item: e.data.item, values: { ...(e.data.fields || {}) } };
+            await outbox.discard(e.id); await refreshEntries(); if (q) go({ v: 'quest', key: viewKey(q), item: e.data.item }); else render(); } }, 'Fix'), ' ',
         h('button', { type: 'button', class: 'linklike', onclick: async () => { await outbox.discard(e.id); await refreshEntries(); render(); } }, 'Discard')));
     });
     if (S.others) kids.push(h('p', { class: 'cq-note', role: 'status' }, S.others + ' saved on this phone by another person. They send when that person signs in.'));
@@ -211,6 +227,7 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     const real = q.items.filter((it) => it.item !== '_none');
     const none = q.items.some((it) => it.item === '_none');
     setKids(list, real.map((it) => itemForm(q, it)));
+    Object.values(S.drafts).filter((d) => d.q === viewKey(q) && !real.some((it) => it.item === d.item)).forEach((d) => list.append(itemForm(q, null, d.item)));
     const kids = [];
     if (!real.length) {
       if (q.emptyLabel && !none) kids.push(h('button', { type: 'button', class: 'btn-lg', disabled: sample, onclick: () => submit(q, { item: '_none', skip: true }, 'Saved.') }, q.emptyLabel));
@@ -222,17 +239,30 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
       q.intro ? h('p', {}, q.intro) : null, list, kids);
   }
 
-  // Queue the save, redraw at once with it laid over the view, then try to send.
+  // Queue the save, redraw at once with it laid over the view, then try to send. Where the phone cannot keep a queue
+  // (private window, blocked site data) the save goes straight to the server. Resolves true when the answer is taken.
   async function submit(q, extra, done) {
     const data = { quest: q.id, ...extra, ...(q.scope === 'campus' ? { campus: q.campus } : {}) };
-    await outbox.enqueue('setupsave', data);
-    await refreshEntries();
-    render(); tell(navigator.onLine ? done : CODES.OFFLINE);
-    outbox.flush();
+    if (outbox && !S.noStore) {
+      try { await outbox.enqueue('setupsave', data); } catch (_) { S.noStore = true; }
+    }
+    if (outbox && !S.noStore) {
+      delete S.drafts[dkey(q, data.item)];
+      await refreshEntries();
+      render(); tell(navigator.onLine ? done : CODES.OFFLINE);
+      outbox.flush().catch(() => {});
+      return true;
+    }
+    drawBar();
+    const r = await write('setupsave', data);
+    if (!r.success) { tell(say(r.network ? 'OFFLINE' : parseError(r).code)); return false; }
+    delete S.drafts[dkey(q, data.item)];
+    await load(true); render(); tell(done);
+    return true;
   }
 
-  function itemForm(q, it) {
-    const model = itemModel(q, it), key = it ? it.item : newItemKey(Date.now());
+  function itemForm(q, it, useKey) {
+    const model = itemModel(q, it), key = it ? it.item : useKey || newItemKey(Date.now());
     const msg = h('p', { class: 'err', role: 'alert' }), ctl = {}, errs = {};
     const kids = model.map((f) => {
       const id = 'cq-' + key + '-' + f.id;
@@ -263,22 +293,31 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     if (sample) Object.values(ctl).forEach((c) => { c.disabled = true; });
     const clear = () => { msg.textContent = ''; Object.keys(errs).forEach((k) => { errs[k].textContent = ''; ctl[k].removeAttribute('aria-invalid'); }); };
     const showErr = (code, fid) => { if (fid && errs[fid]) { errs[fid].textContent = say(code); ctl[fid].setAttribute('aria-invalid', 'true'); ctl[fid].focus(); } else msg.textContent = say(code); };
-    const touched = () => { S.dirty = true; label(); msg.textContent = ''; };
+    const touched = () => {
+      S.dirty = true; label(); msg.textContent = '';
+      const values = {}; Object.keys(ctl).forEach((k) => { values[k] = ctl[k].value; });
+      S.drafts[dkey(q, key)] = { q: viewKey(q), item: key, values };
+    };
     form.addEventListener('input', touched); form.addEventListener('change', touched);
     form.addEventListener('submit', (e) => {
       e.preventDefault(); clear();
       const values = {}; Object.keys(ctl).forEach((k) => { values[k] = ctl[k].value; });
       const p = savePayload(q, key, values, model);
       if (!p.ok) return showErr(p.code, p.field);
-      submit(q, { item: key, fields: p.data.fields }, hasKnown && !changed() ? 'Confirmed.' : 'Saved.');
+      busy(submit(q, { item: key, fields: p.data.fields }, hasKnown && !changed() ? 'Confirmed.' : 'Saved.'));
     });
-    if (skip) skip.addEventListener('click', () => { clear(); submit(q, { item: key, skip: true }, 'Skipped.'); });
+    if (skip) skip.addEventListener('click', () => { clear(); busy(submit(q, { item: key, skip: true }, 'Skipped.')); });
+    // buttons stay off while the save is being taken (a second tap would queue it twice)
+    const busy = (job) => { save.disabled = true; if (skip) skip.disabled = true; job.finally(() => { if (!sample) { save.disabled = false; if (skip) skip.disabled = false; } }); };
+    // what was typed before a redraw comes back with it
+    const dr = S.drafts[dkey(q, key)];
+    if (dr) { Object.keys(dr.values).forEach((k) => { if (ctl[k] && ctl[k].value !== String(dr.values[k])) { ctl[k].value = String(dr.values[k]); ctl[k].dispatchEvent(new Event('input')); } }); label(); }
     return form;
   }
 
   async function start() {
     setKids(body, h('p', { class: 'meta' }, 'Loading…'));
-    if (outbox) await refreshEntries();
+    await refreshEntries();
     if (!await load()) return;
     history.replaceState({ v: 'board' }, '');
     S.view = { v: 'board' };
@@ -286,7 +325,7 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     if (onLoaded) onLoaded(S.views);
     const open = link.quest ? shown().filter((x) => x.id === link.quest) : [];
     if (open.length === 1) go({ v: 'quest', key: viewKey(open[0]), item: link.item || null });
-    if (outbox) outbox.flush();
+    if (outbox) outbox.flush().catch(() => {});
   }
   await start();
 }

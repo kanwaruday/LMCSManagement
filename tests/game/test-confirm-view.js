@@ -60,6 +60,14 @@ if (require.main !== module) { module.exports = () => {}; return; }
     assert.deepStrictEqual(c, { confirmed: s.confirmed, known: s.known, total: s.total });
   }); ok('itemCounts equals the server cqCount_');
 
+  const fc = (v) => ({ value: v, status: 'confirmed' });
+  [['{class} · {subject}', { class: fc('7'), subject: fc('Math') }], ['{class} · {subject}', {}], ['{class}', { class: fc('') }], ['  {class}  ', { class: fc(' Art ') }], ['{class}{nope}', { class: fc('X') }], ['plain', {}]].forEach(([t, f]) => {
+    assert.strictEqual(C.fillTitle(t, { item: 'i', fields: f }), ctx.cqStepTitle_({ itemTitle: t }, { item: 'i', fields: f }), 'fillTitle = cqStepTitle_ for ' + t);
+  }); ok('fillTitle matches the server cqStepTitle_');
+  const tm2 = C.itemModel({ fields: [F('start', 'time')] }, { item: 'i', fields: { start: { value: '9:05', status: 'known' } } });
+  assert.strictEqual(tm2[0].value, '09:05'); assert.strictEqual(C.padTime('13:40'), '13:40'); ok('time known value padded for the input');
+  assert.ok(C.isTransient('SETUP_BUSY') && C.isTransient('SETUP_ERROR') && C.isTransient('WEIRD') && !C.isTransient('SETUP_BAD_VALUE') && !C.isTransient('SETUP_BAD_ITEM')); ok('isTransient');
+
   assert.deepStrictEqual(C.parseLink('?quest=t1&campus=lms4&item=c-x'), { quest: 't1', campus: 'LMS4', item: 'c-x', sample: false, role: null });
   assert.deepStrictEqual(C.parseLink('?quest=T1;&campus=LMS9'), { quest: null, campus: null, item: null, sample: false, role: null });
   assert.deepStrictEqual(C.parseLink('?sample=1&role=Teacher'), { quest: null, campus: null, item: null, sample: true, role: 'Teacher' });
