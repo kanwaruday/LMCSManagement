@@ -169,7 +169,7 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-pips i.nx { background:var(--red); }
 .kg-tag { display:inline-block; margin-right:6px; padding:0 7px; border-radius:999px; background:var(--red); color:#fff; font-size:11.5px; font-weight:700; vertical-align:1px; }
 .kg-tnext { background:var(--gold-soft); margin:0 -11px; padding:6px 11px; border-top-color:var(--gold); }
-.kg-tbtn, .kg-sbtn { min-height:40px; padding:6px 12px; font-size:14px; }
+.kg-tbtn, .kg-sbtn { min-height:44px; padding:6px 12px; font-size:14px; }
 .kg-soonline { margin-top:12px; }
 .kg-steps { list-style:none; padding:0; margin:4px 0 0; color:var(--ink); font-size:13.5px; }
 .kg-steps li { display:flex; align-items:center; gap:8px; padding:3px 0; flex-wrap:wrap; }

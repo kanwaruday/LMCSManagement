@@ -65,11 +65,11 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // a head function id as people say it
   var FN_LABEL = { finance: 'Accounts', transport: 'Transport', academics: 'Academics', hr: 'HR', events: 'Events', systems: 'Systems', all: 'All functions' };
   function fnLabels(fns) { return (fns || []).map(function (f) { return FN_LABEL[f] || String(f); }).join(', '); }
-  // steps that can be built (coming-soon steps don't count): { done, total }
+  // steps that can be built (coming-soon and couldn't-check steps don't count): { done, total }
   function progressOf(bases) {
     var p = { done: 0, total: 0 };
     (bases || []).forEach(function (b) { (b.buildings || []).forEach(function (bl) { (bl.tiers || []).forEach(function (t) {
-      if (t.state === 'soon') return;
+      if (t.state === 'soon' || t.state === 'unknown') return;
       p.total++; if (t.state === 'done') p.done++;
     }); }); });
     return p;
@@ -91,9 +91,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       }
       for (i = 0; i < bases.length; i++) for (j = 0; j < (bases[i].buildings || []).length; j++) for (k = 0; k < (bases[i].buildings[j].tiers || []).length; k++) {
         t = bases[i].buildings[j].tiers[k];
-        if (t.state === 'open' && t.assignable && !t.owner) return { kind: 'assign', base: bases[i], building: bases[i].buildings[j], tier: t };
+        if (t.state === 'open' && t.assignable && !t.owner && (t.assignees || []).length) return { kind: 'assign', base: bases[i], building: bases[i].buildings[j], tier: t };
       }
-      if ((d.cards || []).length) return { kind: 'follow', card: d.cards[0] };
+      if ((d.cards || []).length && (d.followHeads || []).length) return { kind: 'follow', card: d.cards[0] };
     }
     for (i = 0; i < bases.length; i++) for (j = 0; j < (bases[i].buildings || []).length; j++) {
       t = nextTier(bases[i].buildings[j]);
@@ -103,10 +103,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   // Buddy's line for a next action (warm, short, no pressure; names the place)
   function nextText(a) {
-    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '. My guide walks you through it.';
+    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '.' + (guideGo(a.step) ? ' My guide walks you through it.' : '');
     if (a.kind === 'assign') return 'Hand out ' + a.tier.label + ' at ' + a.base.name + '. Pick who sets it up, and it lands in their Today list.';
     if (a.kind === 'follow') return 'An approved request is waiting for someone to follow it up: ' + a.card.title + '.';
-    if (a.kind === 'wait') return a.base.name + ' is working on ' + a.building.name + ': ' + a.tier.label + ' is next.';
+    if (a.kind === 'wait') return 'Next at ' + a.base.name + ': ' + a.tier.label + ' (' + a.building.name + ')' + (a.tier.owner && a.tier.owner.name ? ', with ' + a.tier.owner.name : '') + '.';
     return 'Every building that can be checked is up to date. Shabash.';
   }
   // buildings that went up a level since the last visit. prev = { 'LMS1|treasury': 2 } (null on a first visit: nothing to celebrate)
@@ -231,7 +231,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (!all.length) body = [h('p', { class: 'kg-quiet' }, ['Nothing to build here yet.'])];
     if (api.hooks.base) body.push(api.hooks.base(base));
     var dlg = openLayer(base.full || base.name, 'Level ' + (Number(base.level) || 0) + ' · ' + progressText(progressOf([base])), body, opener);
-    var t = dlg.querySelector('.kg-tnext .kg-btn, .kg-tnext a') || dlg.querySelector('h2'); if (t) t.focus();
+    var t = dlg.querySelector('.kg-tnext .kg-primary') || dlg.querySelector('.kg-tnext .kg-btn, .kg-tnext a') || dlg.querySelector('h2'); if (t) t.focus();
   }
   function openHead(hd, opener) {
     var ms = hd.missions || [];
@@ -285,8 +285,8 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         h('h2', { id: 'kg-nexth', class: 'kg-who' }, [a.kind === 'done' ? 'Buddy, royal advisor' : 'Your next step']),
         h('p', { class: 'kg-nextt' }, [nextText(a)]),
         act || open ? h('div', { class: 'kg-acts' }, [act, open]) : null,
-        h('div', { class: 'kg-qbar', role: 'img', 'aria-label': 'Kingdom built: ' + progressText(p) }, [h('i', { style: 'width:' + (p.total ? Math.round(100 * p.done / p.total) : 0) + '%' })]),
-        h('div', { class: 'kg-qmeta' }, [h('span', {}, ['Kingdom built']), h('span', {}, [progressText(p)])])])]);
+        h('div', { class: 'kg-qbar', role: 'img', 'aria-label': (d.role === 'Owner' ? 'Kingdom built: ' : 'School built: ') + progressText(p) }, [h('i', { style: 'width:' + (p.total ? Math.round(100 * p.done / p.total) : 0) + '%' })]),
+        h('div', { class: 'kg-qmeta' }, [h('span', {}, [d.role === 'Owner' ? 'Kingdom built' : 'School built']), h('span', {}, [progressText(p)])])])]);
   }
   function top(d) {
     var n = ((d.kingdom && d.kingdom.campuses) || []).length;
@@ -306,8 +306,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function store(get, key, val) { try { if (get) return JSON.parse(localStorage.getItem(key) || 'null'); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } return null; }
   function celebrate(d) {
     var key = LV_KEY + ':' + String(((S.session || {}).email) || '').toLowerCase(), bases = (d.kingdom && d.kingdom.campuses) || [];
-    var ups = levelUps(store(true, key), bases);
-    store(false, key, levelSnapshot(bases));
+    var prev = store(true, key), ups = levelUps(prev, bases), snap = levelSnapshot(bases);
+    if (prev && typeof prev === 'object') Object.keys(snap).forEach(function (k) { var was = Number(prev[k]); if (isFinite(was) && was > snap[k]) snap[k] = was; });
+    store(false, key, snap);
     if (!ups.length) return null;
     var card = h('section', { class: 'kg-cele', role: 'status' }, [buddyImg('winter-formal-neutral'), h('div', { class: 'kg-celeb' }, [
       h('h2', { class: 'kg-who' }, [ups.length === 1 ? 'Level up' : ups.length + ' level ups']),
@@ -318,8 +319,8 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // first visit: a short spotlight tour (once per browser; "Show me around" replays it)
   var TOUR_KEY = 'kg-tour-v1';
   function runTour(force) {
-    if (!(window.LMCSGame && LMCSGame.tour) || (!force && store(true, TOUR_KEY))) return;
-    store(false, TOUR_KEY, 1);
+    if (!(window.LMCSGame && LMCSGame.tour) || (!force && (S.toured || store(true, TOUR_KEY)))) return;
+    S.toured = true; store(false, TOUR_KEY, 1);
     var beats = [
       { target: '.kg-next', text: "I'm Buddy, your royal advisor. This card always shows your one next step, and the bar shows how much of the Kingdom is built." },
       { target: '.kg-box', text: 'Each fort is a school; the Darbar in the middle is HES. The gold shield is its level, the bar its progress. Tap a fort to see its buildings.' },
@@ -347,7 +348,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (api.hooks.after) api.hooks.after(d);
     // phones: start the map centred on the Darbar instead of its left edge
     var dar = map.querySelector('.kg-darbar');
-    if (dar && box.scrollWidth > box.clientWidth) box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2);
+    if (!S.centred && dar && box.scrollWidth > box.clientWidth) { box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2); S.centred = true; }
     runTour(false);
   }
 

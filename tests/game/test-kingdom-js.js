@@ -30,7 +30,7 @@ assert.strictEqual(K.fnLabels(['finance', 'all', 'odd']), 'Accounts, All functio
 assert.strictEqual(K.fnLabels(null), '');
 const T = (state, extra) => Object.assign({ label: state + '-step', state }, extra || {});
 const bld = (id, tiers, level) => ({ id, name: id, tiers, level: level || 0, maxLevel: tiers.length });
-assert.deepStrictEqual(JSON.parse(JSON.stringify(K.progressOf([{ buildings: [bld('a', [T('done'), T('open'), T('soon'), T('unknown')])] }]))), { done: 1, total: 3 }); // soon never counts
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.progressOf([{ buildings: [bld('a', [T('done'), T('open'), T('soon'), T('unknown')])] }]))), { done: 1, total: 2 }); // soon and unknown never count
 assert.strictEqual(K.progressText({ done: 1, total: 1 }), '1 of 1 step built');
 assert.strictEqual(K.progressText({ done: 0, total: 3 }), '0 of 3 steps built');
 assert.strictEqual(K.nextTier(bld('a', [T('done'), T('unknown'), T('open'), T('open')])).state, 'open');
@@ -40,18 +40,20 @@ assert.strictEqual(K.onlySoon(bld('a', [T('soon'), T('open')])), false);
 assert.strictEqual(K.onlySoon(bld('a', [])), false);
 // nextAction order: Owner setup step > step to hand out > approved card > a step the schools are on > done
 const steps = [{ id: 's1', title: 'One', done: true }, { id: 's2', title: 'Two', done: false }];
-const assignT = T('open', { label: 'Roles', assignable: true });
+const assignT = T('open', { label: 'Roles', assignable: true, assignees: [{ email: 'p@x' }] });
 const hes = { id: 'HES', name: 'HES Darbar', darbar: true, buildings: [bld('darbar', [T('open', { label: 'Set up the game', steps }), assignT])] };
 const l1 = { id: 'LMS1', name: 'LMS 1', buildings: [bld('treasury', [T('done'), T('open', { label: 'Count the cash' })])] };
 const card = { id: 'a1', title: 'Projector' };
-const D = (o) => Object.assign({ role: 'Owner', kingdom: { campuses: [l1, hes] }, cards: [card] }, o);
+const D = (o) => Object.assign({ role: 'Owner', kingdom: { campuses: [l1, hes] }, cards: [card], followHeads: [{ email: 'h@x' }] }, o);
 let a = K.nextAction(D());
 assert.strictEqual(a.kind, 'setup'); assert.strictEqual(a.step.id, 's2'); assert.strictEqual(a.base.id, 'HES');
 assert.ok(/Two/.test(K.nextText(a)));
 steps[1].done = true;
 a = K.nextAction(D()); assert.strictEqual(a.kind, 'assign'); assert.strictEqual(a.tier.label, 'Roles');
+assignT.assignees = []; assert.strictEqual(K.nextAction(D()).kind, 'follow', 'nobody to pick: not offered'); assignT.assignees = [{ email: 'p@x' }];
 assignT.owner = { email: 'x', name: 'X' };
 a = K.nextAction(D()); assert.strictEqual(a.kind, 'follow'); assert.strictEqual(a.card.id, 'a1');
+assert.strictEqual(K.nextAction(D({ followHeads: [] })).kind, 'wait', 'no head to send it to: not offered');
 a = K.nextAction(D({ cards: [] })); assert.strictEqual(a.kind, 'wait'); // the Darbar's own open tier comes first (sortBases)
 assert.strictEqual(a.base.id, 'HES');
 // a Principal never gets setup, assign or follow actions, even if the data carried them
