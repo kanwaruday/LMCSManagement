@@ -23,7 +23,7 @@ export const CODES = {
   SETUP_NO_NONE: 'This list cannot be marked empty.',
   SETUP_NO_SKIP: 'This entry cannot be skipped.',
   SETUP_BUSY: 'The system was busy. Please try again.',
-  SETUP_ERROR: 'Something went wrong saving this. Try again.',
+  SETUP_ERROR: 'Something went wrong. Try again.',
   AUTH: 'Sign in again to continue.',
   OFFLINE: 'No connection. Your answers are kept on this phone and will be sent when you are back online.',
 };

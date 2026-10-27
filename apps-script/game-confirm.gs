@@ -20,7 +20,7 @@ function cqErr_(code, field) { const e = new Error(field ? code + ': ' + field :
 function cqFail_(err) {
   if (err && err.code) return { success: false, code: err.code, error: err.message };
   console.error('setup quest error: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
-  return { success: false, code: 'SETUP_ERROR', error: 'Something went wrong saving this. Try again.' };
+  return { success: false, code: 'SETUP_ERROR', error: 'Something went wrong. Try again.' };
 }
 // Shipped quests. p1-p3 are drafts (active:false): invisible until Game Config sets {"p2":{"active":true}} after review in the sample view.
 function cqDefaults_() {

@@ -210,7 +210,7 @@ test('a non-coded error returns a fixed message', () => {
   ctx.cqRead_ = () => { throw new TypeError('secret detail'); };
   const r = save(TA, { quest: 'tq', item: 'a', fields: { class: 'C' } });
   ctx.cqRead_ = () => { readCalls++; return origRead(); };
-  assert.strictEqual(r.code, 'SETUP_ERROR'); assert.strictEqual(r.error, 'Something went wrong saving this. Try again.');
+  assert.strictEqual(r.code, 'SETUP_ERROR'); assert.strictEqual(r.error, 'Something went wrong. Try again.');
 });
 
 let fail = 0;
