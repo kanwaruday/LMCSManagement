@@ -120,6 +120,7 @@
       "game-confirm",
       "game-confirm-prefill",
       "game-buddy",
+      "game-kingdom",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js"

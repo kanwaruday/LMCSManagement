@@ -884,14 +884,20 @@ function cqPrefillApprovalCategories_(ctx)  // 'approvals.categories': KINGDOM_A
 - [ ] Rotation note in the vault project note: how to rotate (new value both places, `launchctl kickstart -k`).
 
 **Kingdom MVP (Thu 29 Oct, after K6 review passes)**
-- [ ] Game Config row `kingdom`: set `heads` (names, emails, functions, colours) from Uday's list. Sheet only.
+- [ ] Build `release/kingdom-1` from `origin/release/game-after-daybook` (29835dc) and merge `kingdom` into it. Never push the front end from `kingdom`.
+- [ ] The deploy worktree is not the game's source of truth: deploy only from `release/kingdom-1`.
+- [ ] Game Config row `kingdom`: set `heads` from Uday's list. Each head needs `id`, `name`, `email`, `functions`
+  (`finance`, `hr`, `academics` or `events` for the suggestions) and `colour` as `#rrggbb`. Each head must also be an
+  allowlist Coordinator, or the follow-up picker leaves them out. Sheet only.
+- [ ] No `rights` key in the `kingdom` row: the default is Owner only. `roles: []` locks Uday out.
 - [ ] Do **not** switch on P1–P3 or add function quests (Phase 2b, Uday's call later).
 - [ ] `node apps-script/deploy.mjs game --push --deploy "Kingdom MVP"`; `node tests/verify.mjs --live`.
-- [ ] Push the front end (owner/kingdom.html, kingdom.js/.css, owner/index.html, guide.js, stamps).
-- [ ] K6 live check. Post the Kingdom link to Uday through the master agent before 08:00 on 30 Oct.
+- [ ] Push the front end from `release/kingdom-1` (owner/kingdom.html, kingdom.js/.css, owner/index.html, guide.js, stamps).
+- [ ] K6 live check in Uday's own session with a real request (there is no cancel UI). Post the Kingdom link to Uday
+  through the master agent before 08:00 on 30 Oct.
 
 **Rollback**
-- Game backend: `node apps-script/deploy.mjs game --push --deploy "rollback"` from the previous release branch (same
+- Game backend: redeploy the game from `release/game-after-daybook`: `node apps-script/deploy.mjs game --push --deploy "rollback"` (same
   /exec URL). The new tabs stay; nothing reads them in the old code.
 - Worker: `launchctl unload ~/Library/LaunchAgents/org.lms.buddy-worker.plist`; the panel shows the offline state.
 - Front end: revert the page commit; the dock's Ask part is gated on the backend answering.

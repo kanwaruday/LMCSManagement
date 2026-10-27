@@ -74,21 +74,22 @@ function daybookMissions_(caller, cfg, now) {
 // Coordinator -> one mission per submitted (or already decided) cash / odometer count in their schools: approve or return it.
 // Shared (no personal credit); done once approved or returned.
 function daybookApproveMissions_(caller, cfg, now) {
+  try { return daybookApproveList_(daybookProgress_(caller), caller.email); } catch (err) { console.error('daybook approve', err); return []; } // never marks the day down
+}
+// The approve missions for one start.progress answer, owned by `owner` (the Kingdom lists a finance head's too).
+function daybookApproveList_(full, owner) {
   const out = [];
-  try {
-  const full = daybookProgress_(caller);
   Object.keys(full.states).forEach(function (campus) {
     Object.keys(full.states[campus]).forEach(function (quest) {
       const st = full.states[campus][quest];
       if (st.state !== 'submitted' && st.state !== 'approved' && st.state !== 'returned') return;
       out.push(gameMission_('daybook_approve', quest + ':' + campus, {
         title: 'Approve ' + daybookPlace_(campus) + '\'s starting ' + daybookNoun_(quest, full.labels),
-        why: 'Sent for approval by ' + (st.by || 'the Fee Clerk'), owner: caller.email, campus: campus, go: daybookGo_(campus, quest),
+        why: 'Sent for approval by ' + (st.by || 'the Fee Clerk'), owner: owner, campus: campus, go: daybookGo_(campus, quest),
         done: st.state !== 'submitted', core: false, shared: true,
       }));
     });
   });
-  } catch (err) { console.error('daybook approve', err); return []; } // never marks the day down
   return out;
 }
 
@@ -119,25 +120,29 @@ function daybookQuests_(caller, cfg, now) {
 // FeeClerk -> one sequential setup quest per school: check what we know, count the cash, record the odometers, send, approved.
 function daybookClerkQuests_(caller, cfg, now) {
   if (caller.primaryRole !== 'FeeClerk') return [];
-  const full = daybookProgress_(caller), prog = full.progress;
-  return Object.keys(prog).filter(function (c) { return c !== 'ALL' && (prog[c].cash || prog[c].odometer); }).map(function (campus) {
-    const cash = prog[campus].cash || { confirmed: 0, known: 0, total: 0 }, odo = prog[campus].odometer || { confirmed: 0, known: 0, total: 0 };
-    const lab = full.labels || {}, go = function (q) { return daybookGo_(campus, q); };
-    const defs = [
-      ['check', lab.check || 'Check what we know', go('cash'), cash.known === 0 && odo.known === 0],
-      ['cash', lab.cashStep || 'Count the cash', go('cash'), cash.total > 0 && cash.confirmed === cash.total],
-      ['odometer', lab.odometerStep || 'Record the odometers', go('odometer'), odo.confirmed === odo.total],
-      ['submit', lab.submit || 'Send for approval', go('cash'), daybookBoth_(full, campus, ['submitted', 'approved'])],
-      ['approved', lab.approved || 'Approved', go('cash'), daybookBoth_(full, campus, ['approved'])],
-    ];
-    let open = false;
-    const steps = defs.map(function (d) {
-      const locked = open; if (!d[3]) open = true;
-      return { id: d[0], title: d[1], go: d[2], done: d[3], locked: locked };
-    });
-    return { questId: 'daybook-setup:' + campus, title: daybookPlace_(campus) + ' · Start your Day Book', parallel: false,
-      steps: steps, complete: steps.every(function (s) { return s.done; }) };
+  const full = daybookProgress_(caller);
+  return Object.keys(full.progress).map(function (c) { return daybookSetupQuest_(full, c); }).filter(Boolean);
+}
+// One school's setup quest from a start.progress answer, or null (no such school, 'ALL', or nothing to count there).
+function daybookSetupQuest_(full, campus) {
+  const prog = full.progress;
+  if (campus === 'ALL' || !prog[campus] || !(prog[campus].cash || prog[campus].odometer)) return null;
+  const cash = prog[campus].cash || { confirmed: 0, known: 0, total: 0 }, odo = prog[campus].odometer || { confirmed: 0, known: 0, total: 0 };
+  const lab = full.labels || {}, go = function (q) { return daybookGo_(campus, q); };
+  const defs = [
+    ['check', lab.check || 'Check what we know', go('cash'), cash.known === 0 && odo.known === 0],
+    ['cash', lab.cashStep || 'Count the cash', go('cash'), cash.total > 0 && cash.confirmed === cash.total],
+    ['odometer', lab.odometerStep || 'Record the odometers', go('odometer'), odo.confirmed === odo.total],
+    ['submit', lab.submit || 'Send for approval', go('cash'), daybookBoth_(full, campus, ['submitted', 'approved'])],
+    ['approved', lab.approved || 'Approved', go('cash'), daybookBoth_(full, campus, ['approved'])],
+  ];
+  let open = false;
+  const steps = defs.map(function (d) {
+    const locked = open; if (!d[3]) open = true;
+    return { id: d[0], title: d[1], go: d[2], done: d[3], locked: locked };
   });
+  return { questId: 'daybook-setup:' + campus, title: daybookPlace_(campus) + ' · Start your Day Book', parallel: false,
+    steps: steps, complete: steps.every(function (s) { return s.done; }) };
 }
 // both the cash and the odometer count of a school are in one of these states
 function daybookBoth_(full, campus, states) {

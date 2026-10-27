@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Kingdom</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/kingdom.css?v=0e2feed5" />
+</head>
+<body>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>
+          LMCS Portal
+          <span class="tagline">Grooming to Excellence</span>
+        </span>
+      </a>
+      <nav class="roles" id="header-status"><a href="index.html">Owner home</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero" id="auth-root" style="padding-top:40px;">
+      <div id="gate-slot"></div>
+    </section>
+    <div id="app-root" style="display:none">
+      <div class="kg" id="kingdom-root"></div>
+    </div>
+  </main>
+
+  <script src="../assets/auth.js?v=19734029"></script>
+  <script src="../assets/game/game.js?v=b8de04a1"></script>
+  <script src="../assets/game/kingdom.js?v=d2e7bc79"></script>
+  <script>
+    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
+
+    function showKingdom(session) {
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' });
+    }
+    function gate(session) {
+      if (LMCS.canViewOwnerPortal(session)) return showKingdom(session);
+      const slot = document.getElementById('gate-slot');
+      const p = document.createElement('p');
+      p.appendChild(document.createTextNode(LMCS.hasRole(session, 'Principal') ? "Your school's view comes soon. " : 'The Kingdom is for the Owner. '));
+      const a = document.createElement('a');
+      a.href = '../index.html';
+      a.textContent = 'Back to the portals';
+      p.appendChild(a);
+      slot.textContent = '';
+      slot.appendChild(p);
+    }
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) gate(cachedSession);
+    else LMCS.requireSession('#gate-slot').then(gate);
+  </script>
+
+</body>
+</html>

@@ -54,6 +54,7 @@ window.LMCSGuide = {
         { target: '#modules', text: "Every module across all campuses sits here." },
       ],
     },
+    'owner/kingdom.html': { purpose: "See every school's setup at a glance and hand out the next steps.", roles: ['Owner'] },
     'owner/transport/index.html': { purpose: "Fleet readiness for every campus: papers, safety kit, parts, drivers and fuel.", roles: ['Owner'] },
     'teacher/index.html': {
       purpose: "Your home: Today with Buddy, your score, events and timetable, then requests, evaluations and CW/HW.", roles: ['Teacher', 'Staff'],

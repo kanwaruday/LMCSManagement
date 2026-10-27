@@ -34,6 +34,7 @@
 //   buddypull, buddyreply               -- BUDDY_WORKER_SECRET, the Mac's Ask Buddy worker (game-buddy.gs)
 // Ask Buddy's Owner actions (buddyask, buddythread, buddyconfirm) are also doPost only: they are not in
 // GAME_MODULE_ACTIONS, so a GET answers "Unknown action".
+// The Kingdom's writes (kingdomassign, kingdomallocate, game-kingdom.gs) are doPost only the same way.
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Game Backend",
@@ -81,6 +82,8 @@ const GAME_TABS = {
 
 // Season-0 defaults. Never constants in logic: a Game Config row (Value = JSON) overrides its key.
 function gameConfigDefaults_() {
+  // Kingdom tiers (below): t(label, ref) -> { label, refs: [ref] }; a cq: tier is assignable (owners: [its quest id]); setup:, daybook-setup:, buddy: and soon are not
+  const t = function (label, ref) { return ref.indexOf('cq:') === 0 ? { label: label, refs: [ref], owners: [ref.slice(3)] } : { label: label, refs: [ref] }; };
   return {
     pilotCampuses: { Principal: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Coordinator: ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'], Owner: 'ALL', Teacher: 'ALL', Staff: 'ALL', FeeClerk: 'ALL', Accounts: 'ALL' }, // FeeClerk, Accounts: module missions (fleet setup, Day Book starting data)
     speaker: { Teacher: 'teacher-owl' }, // every other role: Buddy
@@ -100,6 +103,30 @@ function gameConfigDefaults_() {
       heat: { warm: 1, hot: 3 },
       weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, expiredDriverDoc: 1, rollCallMissing: 1, speed: 1 } },
     confirmQuests: {}, // setup quests (game-confirm.gs): {questId: definition override}
+    // The Owner's Kingdom (game-kingdom.gs). Game Config key `kingdom`; a changed key replaces that whole sub-key (a new `buildings` replaces the catalogue).
+    // campuses: map positions on a 1000 x 620 valley. heads: [{ id, name, email, functions: ['finance'|'transport'|'academics'|'hr'|'events'|'systems'|'all'], colour }], Game Config only, never code.
+    // levelAt[L-1]: building points a base needs for level L. buildings: tiers in order (each ref must be done; null = cannot be checked, never counted).
+    kingdom: {
+      campuses: [
+        { id: 'HES', name: 'HES Darbar', full: 'HES (the society)', x: 500, y: 345, darbar: true },
+        { id: 'LMS1', name: 'LMS 1', full: 'LMS 1 Dhalpur', x: 690, y: 160 }, { id: 'LMS2', name: 'LMS 2', full: 'LMS 2 Kelheli', x: 845, y: 250 },
+        { id: 'LMS3', name: 'LMS 3', full: 'LMS 3 Dunkhra', x: 610, y: 250 }, { id: 'LMS4', name: 'LMS 4', full: 'LMS 4 Ner Chowk', x: 575, y: 500 },
+        { id: 'LMS5', name: 'LMS 5', full: 'LMS 5 Sayoli', x: 350, y: 470 }, { id: 'LMS6', name: 'LMS 6', full: 'LMS 6 Jogindernagar', x: 190, y: 330 } ],
+      heads: [],
+      levelAt: [0, 2, 5, 9, 14, 20, 27, 35, 44, 54],
+      rights: { allocate: { roles: ['Owner'], emails: [] } },
+      followupDueDays: 7, cardWindowDays: 60, cardsMax: 30, // approved requests waiting for a follow-up: only those decided in the last cardWindowDays, at most cardsMax
+      buildings: [
+        { id: 'darbar', name: 'Darbar', where: 'darbar', tiers: [t('Set up the game', 'setup:game'), t('Who holds each role', 'cq:o2'), t('Approval limits', 'soon'), t('Season goals', 'soon'), t('Ask Buddy on', 'buddy:desk')] },
+        { id: 'post', name: 'Messenger Post', where: 'darbar', tiers: [t('A recommender per category', 'cq:csys'), t('Escalation days', 'soon'), t('Routing from config', 'soon')] },
+        { id: 'treasury', name: 'Treasury', where: 'campus', tiers: [t('Check what we know', 'daybook-setup:check'), t('Count the cash', 'daybook-setup:cash'), t('Record the odometers', 'daybook-setup:odometer'), t('Send for approval', 'daybook-setup:submit'), t('Approved', 'daybook-setup:approved')] },
+        { id: 'hall', name: 'School Hall', where: 'campus', tiers: [t('Sections and class teachers', 'cq:p1'), t('Bell timings', 'cq:p2'), t('Houses (one shared set)', 'cq:p3'), t('Calendar and event owner', 'cq:cev')] },
+        { id: 'quarters', name: 'Staff Quarters', where: 'campus', tiers: [t('Document rules', 'cq:chr'), t('Roster confirmed', 'soon'), t('What each teacher teaches', 'soon'), t('Timetables confirmed', 'soon')] },
+        { id: 'academy', name: 'Academy', where: 'campus', tiers: [t('Course maps and terms', 'cq:cac'), t('Chapter quests running', 'soon')] },
+        { id: 'garage', name: 'Garage', where: 'campus', tiers: [t('Papers for every bus', 'soon')] }, // fleet resolver: Phase 2
+        { id: 'collections', name: 'Collection heads', where: 'campus', sub: true, tiers: [t('Collection heads', 'cq:cfin')] }, // a sub-row of the Treasury card
+      ],
+    },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }
@@ -156,6 +183,9 @@ function doPost(e) {
     caller.idToken = String(body.idToken);
     // Ask Buddy's Owner actions: POST only (never registered in GAME_MODULE_ACTIONS); the Owner check is inside buddyOwnerAction_.
     if (action === 'buddyask' || action === 'buddythread' || action === 'buddyconfirm') return gameJson_(buddyOwnerAction_(caller, action, body));
+    // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
+    if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
+    if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

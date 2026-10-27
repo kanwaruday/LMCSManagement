@@ -14,7 +14,7 @@ var CQ_HEADER = ['Quest', 'Scope', 'Item', 'Field', 'Value', 'Status', 'Note', '
 var CQ_TYPES = ['text', 'choice', 'number', 'time', 'date', 'yesno'];
 var CQ_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES'];
 var CQ_DEFAULT_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-var CQ_MEMO = null; // { key: email + '|' + now.getTime(), views } one request's status
+var CQ_MEMO = null; // { key: email + '|' + now.getTime(), views, rows } one request's status (rows: the Setup Data read, [] when none was needed)
 
 function cqErr_(code, field) { const e = new Error(field ? code + ': ' + field : code); e.code = code; return e; }
 function cqFail_(err) {
@@ -139,7 +139,7 @@ function cqRead_() {
   const v = sh.getDataRange().getValues(), out = [];
   for (let i = 1; i < v.length; i++) {
     const r = v[i];
-    out.push({ quest: String(r[0]), scope: String(r[1]), item: String(r[2]), field: String(r[3]), value: String(r[4] === undefined || r[4] === null ? '' : r[4]), status: String(r[5]), note: String(r[6] || ''), at: String(r[7] || '') });
+    out.push({ quest: String(r[0]), scope: String(r[1]), item: String(r[2]), field: String(r[3]), value: String(r[4] === undefined || r[4] === null ? '' : r[4]), status: String(r[5]), note: String(r[6] || ''), at: String(r[7] || ''), by: String(r[8] || '') });
   }
   return out;
 }
@@ -290,11 +290,12 @@ function cqStatus_(caller, cfg, now, opts) {
   if (CQ_MEMO && CQ_MEMO.key === key) return CQ_MEMO.views;
   const defs = cqMine_(caller, cqDefs_(cfg));
   const views = [];
+  let rows = [];
   if (defs.length) {
-    const rows = cqRead_();
+    rows = cqRead_();
     defs.forEach(function (def) { cqScopes_(caller, def, null).forEach(function (sc) { views.push(cqView_(caller, def, sc, rows, opts)); }); });
   }
-  CQ_MEMO = { key: key, views: views };
+  CQ_MEMO = { key: key, views: views, rows: rows };
   return views;
 }
 
@@ -409,12 +410,19 @@ function cqGo_(view, item) {
 function cqMissions_(caller, cfg, now) {
   let views;
   try { views = cqStatus_(caller, cfg, now, {}); } catch (err) { console.error('setup missions: ' + (err && err.message)); return []; }
+  // Kingdom owner rows (`_owner:<quest>`, written by kingdomassign) from the rows cqStatus_ already read: an assigned step is a
+  // mission only for its assignee ("Assigned by the Owner") and the Owner; for anyone else it drops (the setup page stays open to them)
+  const rows = (CQ_MEMO && CQ_MEMO.rows) || [];
+  const owners = rows.some(function (r) { return r.quest.indexOf('_owner:') === 0; }) ? kingdomOwners_(rows) : {};
+  const me = cqLower_(caller.email), isOwner = caller.roles.indexOf('Owner') !== -1;
   const out = [];
   views.forEach(function (v) {
     if (v.ring.total === 0 && !v.emptyLabel) return;
+    const o = v.scope === 'self' ? null : owners[v.id + '|' + (v.scope === 'network' ? 'network' : 'campus:' + v.campus)];
+    if (o && o.email !== me && !isOwner) return;
     // done missions stay listed: one finished today still shows as done today
     out.push(gameMission_('cq_' + v.id, v.scope === 'self' ? 'me' : v.campus || 'network', {
-      title: v.task, why: v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
+      title: v.task, why: o && o.email === me ? 'Assigned by the Owner' : v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
       go: cqGo_(v), progress: v.itemsTotal ? { done: v.itemsDone, total: v.itemsTotal } : undefined, done: v.ring.done, core: false, shared: v.scope !== 'self',
     }));
   });
