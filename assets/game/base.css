@@ -2,7 +2,7 @@
    Opt in with <body class="gb">; nothing here touches a page that doesn't. Tokens match the Kingdom (kingdom.css).
    Colour carries meaning only: red = the action / your next step, green = done, amber = needs a look, deep orange = a problem.
    Classes (all gb-):
-     page:    gb-head (+ gb-head-t, gb-head-s, gb-back), gb-page (forms, 720px) / gb-page-wide (boards, 1080px), gb-section
+     page:    gb-head (<header class="gb-head"><div><div><h1>Title</h1><p>Sub</p></div><a href="..">Back</a></div></header>), gb-page (forms, 720px) / gb-page-wide (boards, 1080px), gb-section
      text:    gb-h1, gb-h2, gb-lead, gb-muted, gb-note, gb-empty, gb-err
      actions: gb-btn, gb-btn-primary, gb-btn-quiet, gb-go (a whole-row link with a chevron: <a class="gb-go"><span>Title<small>detail</small></span></a>), gb-row-acts
      things:  gb-card, gb-list (cards in a column), gb-grid (cards in columns), gb-pill gb-pill-ok|warn|low|info|next, gb-bar (+ <i style="width:N%">), gb-bar-ok
@@ -10,7 +10,7 @@
 .gb {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
   --gb-gold:#e0a526; --gb-gold-ink:#7a5200; --gb-gold-soft:#fbefd3;
-  --gb-ok:#1a7f3c; --gb-ok-soft:#e3f4e8; --gb-warn:#8a5a00; --gb-warn-soft:#fbf0da; --gb-low:#b4410f; --gb-low-soft:#fde9df;
+  --gb-ok:#167034; --gb-ok-soft:#e3f4e8; --gb-warn:#8a5a00; --gb-warn-soft:#fbf0da; --gb-low:#b4410f; --gb-low-soft:#fde9df;
   --gb-info:#3b4658; --gb-info-soft:#eef1f5;
   --gb-paper:#fff; --gb-panel:#f6f4ef; --gb-ink:#1b2430; --gb-muted:#556170; --gb-line:#d9d4ca; --gb-focus:#1d4fa3;
   --gb-font:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; --gb-serif:Georgia, "Times New Roman", serif;
@@ -18,7 +18,7 @@
 }
 .gb *, .gb *::before, .gb *::after { box-sizing:border-box; }
 .gb :focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
-.gb a { color:var(--gb-red-ink); text-underline-offset:3px; }
+.gb :where(a) { color:var(--gb-red-ink); text-underline-offset:3px; } /* :where = no weight, so component links (game.css) keep their own colour */
 .gb h1, .gb h2, .gb .gb-h1, .gb .gb-h2 { font-family:var(--gb-serif); font-weight:400; line-height:1.2; margin:0 0 8px; }
 .gb h1, .gb .gb-h1 { font-size:26px; }
 .gb h2, .gb .gb-h2 { font-size:20px; }
@@ -27,9 +27,11 @@
 
 /* header: school red, title left, the way back right */
 .gb-head { background:var(--gb-red); color:#fff; border-bottom:1px solid var(--gb-red-ink); }
-.gb-head > div, .gb-head-in { display:flex; align-items:center; justify-content:space-between; gap:12px; max-width:1080px; margin:0 auto; padding:12px 16px; }
+.gb-head > div { display:flex; align-items:center; justify-content:space-between; gap:12px; max-width:1080px; margin:0 auto; padding:12px 16px; }
 .gb-head h1, .gb-head .gb-head-t { font:700 19px/1.2 var(--gb-font); color:#fff; margin:0; }
-.gb-head p, .gb-head .gb-head-s { margin:2px 0 0; font-size:13px; opacity:.9; }
+.gb-head > div > :first-child { min-width:0; }
+.gb .gb-head :focus-visible { outline-color:#fff; }
+.gb-head p, .gb-head .gb-head-s { margin:2px 0 0; font-size:13px; color:#fbe3e3; }
 .gb .gb-head a, .gb .gb-back { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,.6);
   color:#fff; font-weight:700; text-decoration:none; white-space:nowrap; }
 .gb .gb-head a:active { background:rgba(255,255,255,.18); }
@@ -54,7 +56,7 @@
 .gb-btn:active { background:var(--gb-gold-soft); border-color:var(--gb-gold); }
 .gb .gb-btn-primary, .gb-btn-primary { background:var(--gb-red); border-color:var(--gb-red-ink); color:#fff; }
 .gb-btn-primary:hover, .gb-btn-primary:active { background:var(--gb-red-ink); }
-.gb-btn-quiet { border-color:transparent; background:transparent; color:var(--gb-red-ink); }
+.gb .gb-btn-quiet { border-color:transparent; background:transparent; color:var(--gb-red-ink); }
 .gb-btn:disabled, .gb-btn[aria-disabled="true"] { opacity:.55; cursor:not-allowed; }
 .gb-row-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 /* a whole-row link: replaces a bare underlined link to another page */
