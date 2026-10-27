@@ -37,6 +37,10 @@
   <div id="cq-root"></div>
   <a class="back" href="../index.html">Back to my page</a>
 </main>
+<script>
+  // came from the Owner's Kingdom: the way back is the Kingdom (same site only)
+  (function () { try { var r = new URL(document.referrer); if (r.origin === location.origin && /\/owner\/kingdom\.html$/.test(r.pathname)) { var b = document.querySelector('.back'); b.href = '../owner/kingdom.html'; b.textContent = 'Back to the Kingdom'; } } catch (e) { /* no referrer */ } })();
+</script>
 
 <script type="module">
 import { mountConfirmQuests, parseLink, SETUP_TOUR_BEATS } from '../assets/setup/confirm-values.js';
