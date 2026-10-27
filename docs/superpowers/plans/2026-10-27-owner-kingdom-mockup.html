@@ -1,0 +1,608 @@
+<title>Owner's Kingdom</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rozha+One&family=Mukta:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sky:#d5e6f0; --sky2:#eef5f9; --peak:#9fb2c4; --snow:#fbfdff;
+  --ridge1:#8fae84; --ridge2:#6a9170; --ridge3:#46705a; --deodar:#2f5443; --field:#c9d79a;
+  --river:#7fb6d6; --path:#e6dcc4;
+  --stone:#cfc6b6; --stone2:#a99f8e; --timber:#7a4a2a; --slate:#3f4a58;
+  --red:#ce0000; --red-ink:#a10000; --red-soft:#fde8e8;
+  --gold:#e0a526; --gold-ink:#7a5200; --gold-soft:#fbefd3;
+  --paper:#ffffff; --panel:#f6f4ef; --ink:#1b2430; --muted:#556170; --line:#d9d4ca;
+  --ok:#1a7f3c; --ok-soft:#e3f4e8; --warn:#8a5a00; --warn-soft:#fbf0da; --low:#b4410f; --low-soft:#fde9df;
+  --focus:#1d4fa3; --scrim:rgba(14,20,30,.55);
+  --f-acc:#0f766e; --f-tra:#1d4ed8; --f-aca:#6d28d9; --f-all:#475569; --f-evt:#be185d; --f-own:#a16207;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --sky:#101b2e; --sky2:#1a2840; --peak:#3a4a63; --snow:#c9d6e6;
+  --ridge1:#2c4237; --ridge2:#223529; --ridge3:#182a20; --deodar:#0f1e16; --field:#34402a;
+  --river:#2f5f80; --path:#4a4536;
+  --stone:#8b8476; --stone2:#6d675b; --timber:#5a3620; --slate:#28303b;
+  --red:#ff4d4d; --red-ink:#ff7a7a; --red-soft:#3a1717;
+  --gold:#f0bb45; --gold-ink:#f5cd73; --gold-soft:#3a2f14;
+  --paper:#18212e; --panel:#121a25; --ink:#e8edf3; --muted:#a6b1bf; --line:#2f3a49;
+  --ok:#5cc685; --ok-soft:#173023; --warn:#e2b04c; --warn-soft:#352a12; --low:#ff8a5b; --low-soft:#3a1f14;
+  --focus:#8db4ff; --scrim:rgba(0,0,0,.65);
+  --f-acc:#2dd4bf; --f-tra:#7aa2ff; --f-aca:#b794f6; --f-all:#a3b1c6; --f-evt:#f472b6; --f-own:#facc15;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --sky:#101b2e; --sky2:#1a2840; --peak:#3a4a63; --snow:#c9d6e6;
+  --ridge1:#2c4237; --ridge2:#223529; --ridge3:#182a20; --deodar:#0f1e16; --field:#34402a;
+  --river:#2f5f80; --path:#4a4536;
+  --stone:#8b8476; --stone2:#6d675b; --timber:#5a3620; --slate:#28303b;
+  --red:#ff4d4d; --red-ink:#ff7a7a; --red-soft:#3a1717;
+  --gold:#f0bb45; --gold-ink:#f5cd73; --gold-soft:#3a2f14;
+  --paper:#18212e; --panel:#121a25; --ink:#e8edf3; --muted:#a6b1bf; --line:#2f3a49;
+  --ok:#5cc685; --ok-soft:#173023; --warn:#e2b04c; --warn-soft:#352a12; --low:#ff8a5b; --low-soft:#3a1f14;
+  --focus:#8db4ff; --scrim:rgba(0,0,0,.65);
+  --f-acc:#2dd4bf; --f-tra:#7aa2ff; --f-aca:#b794f6; --f-all:#a3b1c6; --f-evt:#f472b6; --f-own:#facc15;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--panel);color:var(--ink);font:15px/1.45 "Mukta",system-ui,sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));padding-bottom:24px;overflow-x:hidden}
+h1,h2,h3{font-family:"Rozha One",Georgia,serif;font-weight:400;margin:0;line-height:1.15}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+a{color:var(--red-ink)}
+.wrap{max-width:1180px;margin:0 auto}
+.sample{margin:10px 0 0;padding:6px 10px;border-radius:8px;background:var(--gold-soft);color:var(--gold-ink);font-size:13px;font-weight:600}
+/* top bar */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 0}
+.crest{display:flex;align-items:center;gap:10px;min-width:0}
+.crest h1{font-size:26px;color:var(--ink)}
+.crest .lv{font-size:13px;color:var(--muted)}
+.crest svg{flex:none}
+.quest{flex:1 1 260px;min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.quest b{font-size:13.5px}
+.qbar{position:relative;height:10px;border-radius:6px;background:var(--line);margin-top:6px}
+.qbar i{position:absolute;inset:0 auto 0 0;border-radius:6px;background:var(--gold)}
+.qbar s{position:absolute;top:-3px;width:3px;height:16px;background:var(--slate);border-radius:2px}
+.qmeta{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-top:3px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer;min-height:44px}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:var(--red-ink)}
+.btn-ghost{background:transparent;border:1.5px solid var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--muted)}
+.btn-gold{background:var(--gold);color:#2a1c00}
+.ask img{width:28px;height:28px;border-radius:50%;background:var(--gold-soft)}
+/* tabs */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.tab{background:none;border:0;padding:10px 12px;font-weight:700;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer;min-height:44px}
+.tab[aria-selected="true"]{color:var(--ink);border-color:var(--red)}
+/* buddy line */
+.advisor{display:flex;gap:10px;align-items:flex-end;margin:0 0 12px}
+.advisor img{width:62px;height:auto;flex:none}
+.bubble{position:relative;background:var(--paper);border:1.5px solid var(--gold);border-radius:14px;padding:9px 12px;flex:1;min-width:0}
+.bubble:before{content:"";position:absolute;left:-8px;bottom:14px;border:8px solid transparent;border-right-color:var(--gold);border-left:0}
+.bubble .who{font-size:12px;font-weight:700;color:var(--gold-ink)}
+.bubble p{margin:2px 0 6px}
+/* kingdom layout */
+.kingdom{display:grid;grid-template-columns:1fr;gap:12px}
+.heads{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin}
+.head{flex:0 0 132px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--paper);border:1.5px solid var(--line);border-radius:12px;padding:8px 10px 8px 12px;cursor:pointer;position:relative;min-height:74px}
+.head:before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:4px;border-radius:0 3px 3px 0;background:var(--fc)}
+.head .nm{font-weight:700}
+.head .fn{font-size:12.5px;color:var(--muted);line-height:1.25}
+.head .ms{font-size:12.5px;margin-top:auto}
+.target-on .head,.target-on .base{box-shadow:0 0 0 3px var(--gold)}
+.drop-hover{box-shadow:0 0 0 4px var(--red)!important}
+.suggest{border-color:var(--gold)!important}
+.suggest .nm:after{content:" · Buddy's pick";font-weight:600;font-size:11.5px;color:var(--gold-ink)}
+@media (min-width:980px){
+  .kingdom{grid-template-columns:150px minmax(0,1fr) 150px}
+  .heads{flex-direction:column;overflow:visible;padding:0}
+  .head{flex:none;width:100%}
+  #headsL{order:0}#mapBox{order:1}#headsR{order:2}
+}
+@media (max-width:979px){#headsR{margin-top:-6px}}
+/* map */
+#mapBox{position:relative;border-radius:16px;overflow:auto;border:1px solid var(--line);background:var(--sky);-webkit-overflow-scrolling:touch;max-height:560px}
+.map{position:relative;width:100%;min-width:640px;aspect-ratio:1000/620}
+.map svg.valley{position:absolute;inset:0;width:100%;height:100%;display:block}
+.base{position:absolute;transform:translate(-50%,-62%);background:none;border:0;padding:4px 6px;border-radius:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:92px}
+.base:hover .fort{transform:translateY(-2px)}
+.fort{width:64px;height:56px;transition:transform .15s ease}
+.base.darbar .fort{width:84px;height:72px}
+.plate{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:2px 7px 4px;text-align:center;min-width:92px}
+.plate,.plate .bn,.hp,.hp i{display:block}
+.plate .bn{font-weight:700;font-size:13px;white-space:nowrap}
+.plate .hv{font-weight:600;font-size:11.5px;color:var(--muted);margin-left:5px}
+.hp{height:6px;border-radius:4px;background:var(--line);margin-top:2px;overflow:hidden}
+.hp i{display:block;height:100%}
+.lvb{position:absolute;top:0;left:4px;width:26px;height:28px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#2a1c00;background:var(--gold);clip-path:polygon(0 0,100% 0,100% 70%,50% 100%,0 70%);padding-bottom:4px}
+.flags{position:absolute;top:2px;right:2px;display:flex;gap:2px}
+.flag{width:14px;height:18px;clip-path:polygon(0 0,100% 0,100% 100%,50% 75%,0 100%);background:var(--fc)}
+.pin{position:absolute;top:-6px;right:-6px;font-size:11px;font-weight:700;background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:0 6px}
+.pin.help{border-color:var(--f-tra);color:var(--f-tra)}
+.pin.rally{border-color:var(--red);color:var(--red-ink);top:auto;bottom:34px;right:-14px}
+.legend{position:sticky;left:0;bottom:0;display:flex;flex-wrap:wrap;gap:10px;font-size:12px;padding:6px 10px;background:color-mix(in srgb,var(--paper) 88%,transparent);color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+/* tray */
+.tray{margin-top:14px;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:12px}
+.tray-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;margin-bottom:8px}
+.tray-h h2{font-size:21px}
+.tray-h p{margin:0;color:var(--muted);font-size:13.5px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.card{text-align:left;background:var(--panel);border:1.5px solid var(--line);border-radius:12px;padding:9px 11px;cursor:grab;display:flex;flex-direction:column;gap:3px;min-height:96px;touch-action:manipulation}
+.card[aria-pressed="true"]{border-color:var(--red);background:var(--red-soft)}
+.card .src{font-size:11.5px;font-weight:700;color:var(--muted)}
+.card .t{font-weight:600;line-height:1.3}
+.card .m{font-size:12.5px;color:var(--muted);margin-top:auto}
+.card.gone{display:none}
+.helpbox{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.note{border-radius:12px;padding:10px 12px;border:1.5px solid var(--line);background:var(--paper)}
+.note h3{font-size:17px;margin-bottom:2px}
+.note p{margin:2px 0 8px;font-size:14px}
+.note .tag{font-size:12px;font-weight:700}
+.bar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:4px 0}
+.bar i{display:block;height:100%;background:var(--red)}
+/* hall */
+.hall{display:grid;gap:10px}
+.hrow{display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;text-align:left;cursor:pointer;width:100%}
+.banner{width:34px;height:44px;flex:none;background:var(--fc);clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);display:grid;place-items:center;color:#fff;font-weight:700;padding-bottom:6px}
+.hrow .nm{font-weight:700}
+.hrow .fn{color:var(--muted);font-size:13.5px}
+.hrow .ms{margin-left:auto;text-align:right;font-size:13px;white-space:nowrap}
+.hint{color:var(--muted);font-size:13.5px;margin:0 0 10px}
+/* dialogs */
+dialog{border:0;border-radius:16px;padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);background:var(--paper);color:var(--ink)}
+dialog::backdrop{background:var(--scrim)}
+.dh{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--slate);color:#fff;position:sticky;top:0;z-index:1}
+.dh h2{font-size:21px;flex:1;min-width:0}
+.x{background:transparent;border:0;color:#fff;font-size:22px;width:44px;height:44px;cursor:pointer;border-radius:10px}
+.db{padding:12px 14px 16px}
+.kv{display:flex;flex-wrap:wrap;gap:8px 14px;margin-bottom:10px;font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:12.5px;font-weight:700}
+.c-ok{background:var(--ok-soft);color:var(--ok)}.c-warn{background:var(--warn-soft);color:var(--warn)}.c-low{background:var(--low-soft);color:var(--low)}
+.sec{font-family:"Mukta",sans-serif;font-weight:700;font-size:14px;color:var(--muted);margin:14px 0 6px}
+.bldgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.bld{border:1.5px solid var(--line);border-radius:12px;padding:8px 10px;background:var(--panel);display:flex;flex-direction:column;gap:2px}
+.bld .bt{display:flex;justify-content:space-between;gap:6px;font-weight:700}
+.bld .st{font-size:12.5px;color:var(--muted)}
+.bld.none{border-style:dashed;background:transparent}
+.bld.ready{border-color:var(--gold);background:var(--gold-soft)}
+.pips{display:flex;gap:3px;margin:2px 0}
+.pips i{width:16px;height:6px;border-radius:2px;background:var(--line)}
+.pips i.on{background:var(--gold)}
+.troops{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.troop{border:1px solid var(--line);border-radius:10px;padding:6px 10px}
+.troop b{font-size:20px;font-variant-numeric:tabular-nums}
+.troop span{display:block;font-size:12.5px;color:var(--muted)}
+.hbk{width:100%;border-collapse:collapse;font-size:13.5px}
+.hbk td{padding:4px 0;border-bottom:1px solid var(--line)}
+.hbk td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.field{display:flex;flex-direction:column;gap:3px;margin:8px 0}
+.field input,.field textarea{font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);min-height:44px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.buddyline{display:flex;gap:8px;align-items:flex-start;background:var(--gold-soft);border-radius:12px;padding:8px 10px;margin-top:10px}
+.buddyline img{width:36px;height:36px;border-radius:50%;flex:none}
+.mlist{list-style:none;margin:0;padding:0}
+.mlist li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.mlist li span:last-child{color:var(--muted);white-space:nowrap}
+.rank{display:flex;align-items:center;gap:12px;border:1.5px solid var(--gold);border-radius:12px;padding:10px 12px;background:var(--gold-soft)}
+.rank .rn{font-family:"Rozha One",serif;font-size:26px;color:var(--gold-ink);white-space:nowrap}
+@media (max-width:600px){.advisor img{width:44px}.crest h1{font-size:23px}}
+.private{font-size:12.5px;color:var(--muted);margin-top:4px}
+/* chat */
+.chat{display:flex;flex-direction:column;gap:8px}
+.msg{max-width:88%;padding:8px 11px;border-radius:14px;font-size:14.5px}
+.msg.me{align-self:flex-end;background:var(--red-soft);border-bottom-right-radius:4px}
+.msg.bd{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg .via{display:block;font-size:11.5px;color:var(--muted);margin-top:3px}
+.proposal{align-self:stretch;border:2px solid var(--gold);border-radius:12px;padding:10px 12px;background:var(--paper)}
+.proposal h3{font-size:17px}
+.proposal dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0;font-size:14px}
+.proposal dt{color:var(--muted)}
+.proposal dd{margin:0}
+.desk{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.desk i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.composer{display:flex;gap:8px;margin-top:10px}
+.composer input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);min-height:44px}
+/* celebration */
+#celebrate .db{text-align:center;position:relative;overflow:hidden}
+#celebrate img{width:130px;height:auto}
+.big{font-family:"Rozha One",serif;font-size:42px;color:var(--gold-ink);line-height:1}
+.confetti{position:absolute;inset:0;pointer-events:none}
+.confetti i{position:absolute;top:-12px;width:8px;height:14px;border-radius:2px;animation:fall 1.6s ease-in forwards}
+@keyframes fall{to{transform:translateY(340px) rotate(520deg);opacity:.2}}
+@keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
+#celebrate[open] .big{animation:pop .45s cubic-bezier(.2,.8,.2,1)}
+@media (prefers-reduced-motion: reduce){.confetti{display:none}#celebrate[open] .big{animation:none}.fort{transition:none}}
+.toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--slate);color:#fff;border-radius:12px;padding:10px 14px;font-size:14px;max-width:calc(100vw - 32px);display:none;z-index:5}
+.toast.on{display:block}
+.toast button{background:none;border:0;color:var(--gold);font-weight:700;margin-left:10px;cursor:pointer;min-height:32px}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="fort" viewBox="0 0 64 56">
+      <path d="M6 54h52v-4H6z" fill="var(--stone2)"/>
+      <rect x="10" y="30" width="44" height="20" fill="var(--stone)"/>
+      <path d="M10 36h44M10 43h44" stroke="var(--stone2)" stroke-width="1.2"/>
+      <rect x="10" y="27" width="44" height="4" fill="var(--timber)"/>
+      <path d="M6 28 32 12l26 16z" fill="var(--slate)"/>
+      <path d="M12 26 32 14l20 12" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="1.2"/>
+      <rect x="28" y="38" width="8" height="12" rx="4" fill="var(--timber)"/>
+      <rect x="15" y="34" width="5" height="5" fill="var(--timber)"/><rect x="44" y="34" width="5" height="5" fill="var(--timber)"/>
+      <path d="M32 12V2" stroke="var(--timber)" stroke-width="1.6"/>
+      <path d="M32 2h11l-3 3 3 3H32z" fill="var(--red)"/>
+    </symbol>
+    <symbol id="darbar" viewBox="0 0 64 56">
+      <path d="M2 54h60v-4H2z" fill="var(--stone2)"/>
+      <rect x="6" y="32" width="52" height="18" fill="var(--stone)"/>
+      <rect x="6" y="29" width="52" height="4" fill="var(--timber)"/>
+      <path d="M2 30 32 18l30 12z" fill="var(--slate)"/>
+      <rect x="22" y="14" width="20" height="16" fill="var(--stone)"/>
+      <rect x="22" y="12" width="20" height="3" fill="var(--timber)"/>
+      <path d="M18 13 32 3l14 10z" fill="var(--slate)"/>
+      <path d="M32 3V-4" stroke="var(--timber)" stroke-width="1.6"/>
+      <circle cx="32" cy="22" r="3" fill="var(--gold)"/>
+      <rect x="28" y="38" width="8" height="12" rx="4" fill="var(--timber)"/>
+      <path d="M10 36h6v6h-6zM48 36h6v6h-6z" fill="var(--timber)"/>
+    </symbol>
+    <symbol id="tree" viewBox="0 0 10 20"><path d="M5 0 9 9H7l3 6H6v5H4v-5H0l3-6H1z" fill="var(--deodar)"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <p class="sample" role="note">Mockup with sample data only. Numbers, missions and cards are made up; only the six alliance heads' first names are real. Nothing here writes anywhere.</p>
+
+  <header class="top">
+    <div class="crest">
+      <svg width="40" height="40" viewBox="0 0 64 56" aria-hidden="true"><use href="#darbar"/></svg>
+      <div><h1>Owner's Kingdom</h1><div class="lv" id="kLevel"></div></div>
+    </div>
+    <div class="quest" aria-labelledby="qT">
+      <b id="qT">Daily alliance quest: clear 6 approvals waiting 3+ days</b>
+      <div class="qbar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="4" aria-label="Approvals cleared today"><i style="width:66.6%"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div>
+      <div class="qmeta"><span>4 of 6 cleared since 04:00, by the whole alliance</span><span>Unfinished rolls over</span></div>
+    </div>
+    <button class="btn btn-ghost ask" type="button" id="askBtn"><img src="../../../assets/game/buddy/avatar-winter-formal.webp" alt="">Ask Buddy</button>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" aria-controls="viewKingdom" id="tabK">Kingdom</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="viewHall" id="tabH">Alliance hall</button>
+  </div>
+
+  <div class="advisor" aria-live="polite">
+    <img id="advImg" src="../../../assets/game/buddy/winter-formal-nudge.webp" alt="Buddy the owl">
+    <div class="bubble"><span class="who">Buddy, royal advisor</span><p id="advText"></p><a id="advGo" href="#tray">Open the tray</a></div>
+  </div>
+
+  <section id="viewKingdom" role="tabpanel" aria-labelledby="tabK">
+    <div class="kingdom" id="kingdom">
+      <div class="heads" id="headsL" aria-label="Alliance heads"></div>
+      <div id="mapBox">
+        <div class="map" id="map">
+          <svg class="valley" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
+            <rect width="1000" height="620" fill="var(--sky)"/>
+            <path d="M0 150 90 70 160 120 250 30 330 110 420 50 520 130 600 40 700 120 790 60 880 130 1000 70V260H0z" fill="var(--peak)"/>
+            <path d="M228 50 250 30 272 52 262 48 250 58 240 48zM580 58 600 40 620 60 610 56 600 64 590 56zM772 76 790 60 808 78 798 74 790 82 782 74z" fill="var(--snow)"/>
+            <path d="M0 230C120 170 230 210 330 180S540 150 640 190 850 160 1000 200V620H0z" fill="var(--ridge1)"/>
+            <path d="M0 330C140 280 260 330 380 300S600 260 720 310 900 280 1000 300V620H0z" fill="var(--ridge2)"/>
+            <path d="M0 330C140 280 260 330 380 300" fill="none" stroke="var(--field)" stroke-width="3" stroke-dasharray="2 9" opacity=".7"/>
+            <path d="M0 470C150 430 280 470 420 450S700 420 820 455 940 440 1000 450V620H0z" fill="var(--ridge3)"/>
+            <path d="M880 0C860 90 790 150 720 200S600 300 560 360 470 470 430 620" fill="none" stroke="var(--river)" stroke-width="16" stroke-linecap="round" opacity=".9"/>
+            <path d="M880 0C860 90 790 150 720 200S600 300 560 360 470 470 430 620" fill="none" stroke="var(--sky2)" stroke-width="2" stroke-dasharray="14 18" opacity=".6"/>
+            <path d="M200 330C300 340 420 330 500 330S650 250 690 160M500 330C560 380 560 450 560 500M500 330C430 380 380 430 360 470M500 330C620 300 760 260 820 235M500 330C460 300 520 240 590 215" fill="none" stroke="var(--path)" stroke-width="4" stroke-dasharray="1 8" stroke-linecap="round"/>
+            <g>
+              <use href="#tree" x="90" y="250" width="14" height="28"/><use href="#tree" x="108" y="262" width="12" height="24"/>
+              <use href="#tree" x="300" y="215" width="12" height="24"/><use href="#tree" x="420" y="195" width="14" height="28"/>
+              <use href="#tree" x="760" y="330" width="14" height="28"/><use href="#tree" x="778" y="342" width="12" height="24"/>
+              <use href="#tree" x="900" y="360" width="14" height="28"/><use href="#tree" x="240" y="420" width="14" height="28"/>
+              <use href="#tree" x="660" y="470" width="14" height="28"/><use href="#tree" x="120" y="520" width="12" height="24"/>
+              <use href="#tree" x="840" y="520" width="14" height="28"/><use href="#tree" x="380" y="560" width="12" height="24"/>
+            </g>
+          </svg>
+          <div id="bases"></div>
+        </div>
+        <div class="legend"><span><i style="background:var(--ok)"></i>Thriving 80+</span><span><i style="background:var(--warn)"></i>Steady 50–79</span><span><i style="background:var(--low)"></i>Needs a hand</span><span>Flags = missions in progress, in the head's colour</span><span>Stylised valley, not to scale</span></div>
+      </div>
+      <div class="heads" id="headsR" aria-label="Alliance heads, continued"></div>
+    </div>
+
+    <section class="tray" id="tray" aria-labelledby="trayH">
+      <div class="tray-h">
+        <h2 id="trayH">Allocation tray</h2>
+        <p id="trayHint">Drag a card onto a head or a base. On a phone, tap a card, then tap who should take it.</p>
+      </div>
+      <div class="cards" id="cards"></div>
+      <div class="helpbox">
+        <div class="note" style="border-color:var(--f-tra)">
+          <span class="tag" style="color:var(--f-tra)">Help request · Transport head, Transport</span>
+          <h3>LMS 2 bus papers wait on one upload</h3>
+          <p>Two buses' insurance copies are with the LMS 2 Fee Clerk. Helping means uploading them; the credit shows on its own once they're in.</p>
+          <a href="#tray" data-toast="In the portal this opens the LMS 2 fleet papers page.">Go to the papers</a>
+        </div>
+        <div class="note" style="border-color:var(--red)">
+          <span class="tag" style="color:var(--red-ink)">Rally · LMS 4 Ner Chowk</span>
+          <h3>Old daily-report issues to zero by Sat 8 Nov</h3>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="9" aria-valuenow="7" aria-label="Issues closed in the rally"><i style="width:77.7%"></i></div>
+          <p>7 of 9 closed by the campus team and the heads. No timer, nothing lost at the end.</p>
+          <a href="#tray" data-base="LMS4">Open LMS 4</a>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section id="viewHall" role="tabpanel" aria-labelledby="tabH" hidden>
+    <p class="hint">Heads are listed by function. Each head's rank is their own, from their own record, and opens only on their card. Nobody is compared with anybody.</p>
+    <div class="hall" id="hall"></div>
+  </section>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgT"><div class="dh"><h2 id="dlgT"></h2><button class="x" type="button" data-close aria-label="Close">×</button></div><div class="db" id="dlgB"></div></dialog>
+<dialog id="celebrate" aria-labelledby="celT"><div class="dh"><h2 id="celT">Level up</h2><button class="x" type="button" data-close aria-label="Close">×</button></div><div class="db"><div class="confetti" id="confetti" aria-hidden="true"></div><img src="../../../assets/game/buddy/winter-formal-celebrate.webp" alt="Buddy celebrating"><div class="big" id="celBig"></div><p id="celText"></p><button class="btn btn-red" type="button" data-close>Back to the kingdom</button></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastT"></span><button type="button" id="toastUndo" hidden>Undo</button></div>
+
+<script>
+(function(){
+'use strict';
+// ---------- sample data (made up; role labels only (names live in Game Config at runtime)) ----------
+var LEVEL_AT=[0,2,5,9,14,20,27,35,44,54];             // kingdom.levelAt default
+var W={track:35,backlog:25,buses:20,docs:10,approvals:10}; // kingdom health weights default
+var BUILD=[ // id, name, tiers (next-step text by tier)
+  ['treasury','Treasury',['Opening cash count','Bank, suppliers, loans','Starting data approved','Office registers','Collection heads']],
+  ['garage','Garage',['Papers for every bus','Safety and parts','Driver profiles','Fuel pump and capture plan','30 days papers current']],
+  ['hall','School Hall',['Sections per class','Class teachers','Bell timings','Houses (shared set)','Calendar and event owner']],
+  ['quarters','Staff Quarters',['Roster confirmed','Document rules','What each teacher teaches','Timetables confirmed','Your details']],
+  ['academy','Academy',['Course maps per class','Term dates and thresholds','Chapter quests running','Activities per chapter','Remediation loop']]
+];
+var DARBAR_B=[['darbar','Darbar',['Set up the game','Who holds each role','Approval limits','Season goals','Ask Buddy on']],['post','Messenger Post',['A recommender per category','Escalation days','Routing from config']]];
+var HEADS=[
+  {id:'acc',name:'Accounts head',fn:['Accounts'],c:'--f-acc',rank:3,title:'Captain',parts:'31 of 36 missions by due date; 9 setup steps confirmed; helped clear 4 waits',last:'up one from last month',open:['Purchase request, LMS 3: recommend','Treasury Lv2 at LMS 5'],done:14},
+  {id:'tra',name:'Transport head',fn:['Transport'],c:'--f-tra',rank:2,title:'Guard',parts:'18 of 24 missions by due date; 22 fleet steps confirmed',last:'same as last month',open:['Garage Lv2 at LMS 2','Roll call gaps, LMS 6','Driver profile, LMS 1'],done:9},
+  {id:'aca',name:'Academics head',fn:['Academics','Events'],c:'--f-aca',rank:3,title:'Captain',parts:'27 of 30 missions by due date; 6 course maps confirmed',last:'up one from last month',open:['Course maps, LMS 3'],done:12},
+  {id:'hr',name:'HR head',fn:['All functions','HR'],c:'--f-all',rank:4,title:'Commander',parts:'40 of 43 missions by due date; helped clear 11 waits',last:'same as last month',open:['Hiring stall, LMS 1','Documents, LMS 6'],done:21},
+  {id:'evt',name:'Events head',fn:['Events','Ops','Student Life','Comms'],c:'--f-evt',rank:2,title:'Guard',parts:'15 of 20 missions by due date; 3 calendars linked',last:'up one from last month',open:['Sports day venue, LMS 4'],done:8},
+  {id:'own',name:'Owner head',fn:['Owner','Marketing'],c:'--f-own',rank:3,title:'Captain',parts:'12 of 13 missions by due date; brochure set confirmed',last:'same as last month',open:[],done:6}
+];
+var BASES=[ // x,y on the 1000x620 valley; b = building levels; h = health inputs 0..1 (null = not set up)
+  {id:'HES',name:'HES Darbar',full:'HES (the society)',x:500,y:345,darbar:true,b:{darbar:2,post:1},h:{track:.9,backlog:1,buses:null,docs:.95,approvals:.7},troops:{Clerks:4,Staff:6}},
+  {id:'LMS1',name:'LMS 1',full:'LMS 1 Dhalpur',x:690,y:160,b:{treasury:3,garage:2,hall:2,quarters:2,academy:1},h:{track:.88,backlog:.9,buses:.86,docs:.9,approvals:.8},troops:{Principal:1,Teachers:38,Clerks:3,Staff:14},buses:[6,7]},
+  {id:'LMS2',name:'LMS 2',full:'LMS 2 Kelheli',x:845,y:250,b:{treasury:2,garage:1,hall:1,quarters:1,academy:0},h:{track:.7,backlog:.7,buses:.5,docs:.7,approvals:.6},troops:{Principal:1,Teachers:22,Clerks:2,Staff:9},buses:[2,4],help:true},
+  {id:'LMS3',name:'LMS 3',full:'LMS 3 Dunkhra',x:610,y:250,b:{treasury:2,garage:1,hall:1,quarters:1,academy:1},h:{track:.62,backlog:.5,buses:.67,docs:.6,approvals:.4},troops:{Principal:1,Teachers:19,Clerks:2,Staff:8},buses:[2,3]},
+  {id:'LMS4',name:'LMS 4',full:'LMS 4 Ner Chowk',x:575,y:500,b:{treasury:3,garage:2,hall:2,quarters:2,academy:2},h:{track:.8,backlog:.4,buses:.8,docs:.85,approvals:.7},troops:{Principal:1,Teachers:34,Clerks:3,Staff:12},buses:[4,5],rally:true,ready:'hall'},
+  {id:'LMS5',name:'LMS 5',full:'LMS 5 Sayoli',x:350,y:470,b:{treasury:1,garage:1,hall:0,quarters:1,academy:0},h:{track:.5,backlog:.6,buses:.33,docs:.4,approvals:.5},troops:{Principal:1,Teachers:16,Clerks:1,Staff:6},buses:[1,3]},
+  {id:'LMS6',name:'LMS 6',full:'LMS 6 Jogindernagar',x:190,y:330,b:{treasury:2,garage:1,hall:1,quarters:1,academy:1},h:{track:.75,backlog:.8,buses:.6,docs:.55,approvals:.9},troops:{Principal:1,Teachers:21,Clerks:2,Staff:8},buses:[3,5]}
+];
+var CARDS=[
+  {id:'c1',src:'Approval waiting 4 days',t:'Purchase request: science lab kits, LMS 3',fn:'Accounts',campus:'LMS3',suggest:'acc',base:false},
+  {id:'c2',src:'Daily-report issue, 9 days old',t:'Class 7 ceiling fan not working, LMS 4',fn:'Ops',campus:'LMS4',suggest:'evt',base:true},
+  {id:'c3',src:'Follow-up: hiring stall',t:'PGT Physics opening at LMS 5, no shortlist for 12 days',fn:'HR',campus:'LMS5',suggest:'hr',base:false},
+  {id:'c4',src:'Setup step: Garage Lv2',t:'Safety and parts for 3 buses, LMS 6',fn:'Transport',campus:'LMS6',suggest:'tra',base:false},
+  {id:'c5',src:'Setup step: Academy Lv1',t:'Course maps for 4 classes, LMS 2',fn:'Academics',campus:'LMS2',suggest:'aca',base:false},
+  {id:'c6',src:'Setup step: School Hall Lv1',t:'Sections for every class, LMS 5',fn:'Principal',campus:'LMS5',suggest:null,base:true}
+];
+var assigned={}; // baseId -> [headColour,...]
+
+// ---------- formulas (same as the spec, section 3) ----------
+function levelOf(b){var p=0,k;for(k in b.b)p+=b.b[k];var L=1;for(var i=0;i<LEVEL_AT.length;i++)if(p>=LEVEL_AT[i])L=i+1;return {level:L,points:p};}
+function healthOf(b){var s=0,w=0,n=0,k;for(k in W){if(b.h[k]==null)continue;s+=W[k]*b.h[k];w+=W[k];n++;}return {v:Math.round(s/w*100),signs:n};}
+function band(v){return v>=80?['Thriving','c-ok','--ok']:v>=50?['Steady','c-warn','--warn']:['Needs a hand','c-low','--low'];}
+console.assert(levelOf(BASES[1]).points===10,'LMS1 points');
+console.assert(healthOf(BASES[0]).signs===4,'HES has no buses, so 4 of 5 signs');
+
+// ---------- tiny DOM helper (text nodes only) ----------
+function h(tag,attrs,kids){var e=document.createElement(tag),k;attrs=attrs||{};for(k in attrs){if(k==='style')e.setAttribute('style',attrs[k]);else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else if(attrs[k]!==false&&attrs[k]!=null)e.setAttribute(k,attrs[k]===true?'':attrs[k]);}
+  (kids||[]).forEach(function(c){if(c==null)return;e.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(String(c)):c);});return e;}
+function svgUse(id,cls){var s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 64 56');s.setAttribute('class',cls);s.setAttribute('aria-hidden','true');var u=document.createElementNS('http://www.w3.org/2000/svg','use');u.setAttribute('href','#'+id);s.appendChild(u);return s;}
+function $(id){return document.getElementById(id);}
+function head(id){return HEADS.filter(function(x){return x.id===id;})[0];}
+function base(id){return BASES.filter(function(x){return x.id===id;})[0];}
+
+// ---------- Buddy ----------
+var ADV={
+  start:['Good morning, Uday ji. LMS 5 is the newest fort. Its School Hall isn’t built yet; one card in the tray starts it.','#tray','Open the tray','winter-formal-nudge'],
+  pick:['Tap who should take it. I’ve marked the head whose work this is.','#tray','Back to the tray','winter-formal-neutral']
+};
+function advise(text,href,go,img){$('advText').textContent=text;$('advGo').textContent=go;$('advGo').setAttribute('href',href);$('advImg').src='../../../assets/game/buddy/'+img+'.webp';}
+
+// ---------- render ----------
+function kingdomLevel(){var t=0;BASES.forEach(function(b){t+=levelOf(b).level;});$('kLevel').textContent='Kingdom level '+t+' · 7 bases · sample data';}
+function renderBases(){
+  var box=$('bases');box.textContent='';
+  BASES.forEach(function(b){
+    var L=levelOf(b),H=healthOf(b),bd=band(H.v),fl=h('span',{class:'flags'});
+    (assigned[b.id]||[]).forEach(function(c){fl.appendChild(h('i',{class:'flag',style:'--fc:var('+c+')'}));});
+    var el=h('button',{type:'button',class:'base'+(b.darbar?' darbar':''),style:'left:'+(b.x/10)+'%;top:'+(b.y/6.2)+'%','data-drop':'base:'+b.id,
+      'aria-label':b.full+', level '+L.level+', health '+H.v+' ('+bd[0]+')',onclick:function(){onTarget('base',b.id);}},[
+      svgUse(b.darbar?'darbar':'fort','fort'),
+      h('span',{class:'lvb','aria-hidden':'true'},[L.level]),fl,
+      b.help?h('span',{class:'pin help','aria-hidden':'true'},['Help']):null,
+      b.rally?h('span',{class:'pin rally','aria-hidden':'true'},['Rally']):null,
+      h('span',{class:'plate'},[h('span',{class:'bn'},[b.name,h('span',{class:'hv'},['\u2665 '+H.v])]),h('span',{class:'hp'},[h('i',{style:'width:'+H.v+'%;background:var('+bd[2]+')'})])])
+    ]);
+    box.appendChild(el);
+  });
+  kingdomLevel();
+}
+function headBtn(x){
+  var n=x.open.length;
+  return h('button',{type:'button',class:'head',style:'--fc:var('+x.c+')','data-drop':'head:'+x.id,'data-head':x.id,onclick:function(){onTarget('head',x.id);}},[
+    h('span',{class:'nm'},[x.name]),h('span',{class:'fn'},[x.fn.join(', ')]),h('span',{class:'ms'},[n+(n===1?' mission open':' missions open')])]);
+}
+function renderHeads(){var l=$('headsL'),r=$('headsR');l.textContent='';r.textContent='';HEADS.forEach(function(x,i){(i<3?l:r).appendChild(headBtn(x));});}
+function renderCards(){
+  var box=$('cards');box.textContent='';
+  CARDS.forEach(function(c){
+    var el=h('button',{type:'button',class:'card',draggable:'true','aria-pressed':'false','data-card':c.id,onclick:function(){selectCard(c.id);}},[
+      h('span',{class:'src'},[c.src]),h('span',{class:'t'},[c.t]),h('span',{class:'m'},[c.fn+' · '+base(c.campus).full])]);
+    el.addEventListener('dragstart',function(e){e.dataTransfer.setData('text/plain',c.id);e.dataTransfer.effectAllowed='move';selectCard(c.id,true);});
+    el.addEventListener('dragend',function(){document.querySelectorAll('.drop-hover').forEach(function(n){n.classList.remove('drop-hover');});});
+    box.appendChild(el);
+  });
+}
+function renderHall(){
+  var box=$('hall');box.textContent='';
+  HEADS.forEach(function(x){
+    box.appendChild(h('button',{type:'button',class:'hrow',style:'--fc:var('+x.c+')',onclick:function(){openHead(x.id);}},[
+      h('span',{class:'banner','aria-hidden':'true'},[x.name[0]]),
+      h('span',{},[h('span',{class:'nm'},[x.name]),h('br'),h('span',{class:'fn'},[x.fn.join(', ')])]),
+      h('span',{class:'ms'},[x.open.length+' open'])]));
+  });
+}
+
+// ---------- allocation ----------
+var sel=null;
+function selectCard(id,keep){
+  sel=(sel===id&&!keep)?null:id;
+  document.querySelectorAll('.card').forEach(function(n){n.setAttribute('aria-pressed',String(n.getAttribute('data-card')===sel));});
+  document.querySelectorAll('.head').forEach(function(n){n.classList.toggle('suggest',!!sel&&card(sel).suggest===n.getAttribute('data-head'));});
+  $('kingdom').classList.toggle('target-on',!!sel);
+  if(sel)advise(ADV.pick[0],ADV.pick[1],ADV.pick[2],ADV.pick[3]);
+}
+function card(id){return CARDS.filter(function(c){return c.id===id;})[0];}
+function onTarget(kind,id){
+  if(!sel){ if(kind==='base')openBase(id); else openHead(id); return; }
+  confirmDrop(card(sel),kind,id);
+}
+document.addEventListener('dragover',function(e){var t=e.target.closest&&e.target.closest('[data-drop]');if(t){e.preventDefault();t.classList.add('drop-hover');}});
+document.addEventListener('dragleave',function(e){var t=e.target.closest&&e.target.closest('[data-drop]');if(t&&!t.contains(e.relatedTarget))t.classList.remove('drop-hover');});
+document.addEventListener('drop',function(e){var t=e.target.closest&&e.target.closest('[data-drop]');if(!t)return;e.preventDefault();t.classList.remove('drop-hover');
+  var c=card(e.dataTransfer.getData('text/plain'));var p=t.getAttribute('data-drop').split(':');if(c)confirmDrop(c,p[0],p[1]);});
+
+function plusDays(n){var d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function confirmDrop(c,kind,id){
+  var b=$('dlgB');b.textContent='';
+  if(kind==='base'&&!c.base){
+    var s=head(c.suggest);
+    openDialog('This needs an alliance head');
+    b.appendChild(h('p',{},['"'+c.t+'" is '+c.fn+' work, so a Principal can’t close it from the base.']));
+    b.appendChild(buddyLine('I’d give it to '+s.name+', who looks after '+s.fn.join(' and ')+'.'));
+    b.appendChild(h('div',{class:'row'},[h('button',{type:'button',class:'btn btn-red',onclick:function(){confirmDrop(c,'head',s.id);}},['Give it to '+s.name]),h('button',{type:'button',class:'btn btn-ghost','data-close':''},['Cancel'])]));
+    return;
+  }
+  var who=kind==='head'?head(id).name:base(id).full+' Principal';
+  var line=kind==='head'?(c.suggest===id?'Good call. This is '+head(id).fn[0]+' work, right in '+head(id).name+'’s lane.':'That works. '+head(id).name+' will see it as a mission, with your note.'):'The Principal will see it in their Today list, and it shows as a flag on the base.';
+  openDialog('Assign this mission');
+  var due=h('input',{type:'date',id:'due',value:plusDays(3)}),note=h('textarea',{id:'note',rows:'2',placeholder:'Optional note'});
+  b.appendChild(h('div',{class:'kv'},[h('span',{},[h('b',{},['What: ']),c.t]),h('span',{},[h('b',{},['To: ']),who])]));
+  b.appendChild(h('label',{class:'field',for:'due'},['Due date',due]));
+  b.appendChild(h('label',{class:'field',for:'note'},['Note',note]));
+  b.appendChild(h('p',{class:'private'},['In the portal this is written by the backend that owns the record (here: '+(c.src.indexOf('Approval')===0?'the approval follow-up':c.src.indexOf('Setup')===0?'the setup quest step owner':c.src.indexOf('Daily')===0?'the daily-report issue':'the Coordinator follow-up')+'), and logged.']));
+  b.appendChild(buddyLine(line));
+  b.appendChild(h('div',{class:'row'},[h('button',{type:'button',class:'btn btn-red',onclick:function(){doAssign(c,kind,id);}},['Assign to '+(kind==='head'?head(id).name:base(id).name)]),h('button',{type:'button',class:'btn btn-ghost','data-close':''},['Cancel'])]));
+}
+var lastUndo=null;
+function doAssign(c,kind,id){
+  $('dlg').close();
+  var colour=kind==='head'?head(id).c:'--red', hd=kind==='head'?head(id):null;
+  (assigned[c.campus]=assigned[c.campus]||[]).push(colour);
+  if(hd)hd.open.push(c.t);
+  document.querySelector('[data-card="'+c.id+'"]').classList.add('gone');
+  sel=null;selectCard(null,true);sel=null;$('kingdom').classList.remove('target-on');
+  document.querySelectorAll('.head').forEach(function(n){n.classList.remove('suggest');});
+  renderBases();renderHeads();renderHall();
+  var who=hd?hd.name:base(id).name+'’s Principal';
+  advise('Assigned to '+who+'. You’ll see the flag on '+base(c.campus).name+' fill as the real record moves.','#tray','Next card','winter-formal-neutral');
+  lastUndo=function(){var a=assigned[c.campus];a.splice(a.lastIndexOf(colour),1);if(hd)hd.open.pop();document.querySelector('[data-card="'+c.id+'"]').classList.remove('gone');renderBases();renderHeads();renderHall();};
+  toast('Mission assigned to '+who+' (sample: nothing written).',true);
+}
+function buddyLine(t){return h('div',{class:'buddyline'},[h('img',{src:'buddy/avatar-winter-formal.webp',alt:''}),h('span',{},[h('b',{},['Buddy: ']),t])]);}
+
+// ---------- dialogs ----------
+function openDialog(title){$('dlgT').textContent=title;if(!$('dlg').open)$('dlg').showModal();}
+document.addEventListener('click',function(e){var c=e.target.closest('[data-close]');if(c)c.closest('dialog').close();
+  var a=e.target.closest('a[data-toast]');if(a){e.preventDefault();toast(a.getAttribute('data-toast'));}
+  var bb=e.target.closest('a[data-base]');if(bb){e.preventDefault();openBase(bb.getAttribute('data-base'));}});
+['dlg','celebrate'].forEach(function(id){$(id).addEventListener('click',function(e){if(e.target===this)this.close();});});
+
+function openBase(id){
+  var b=base(id),L=levelOf(b),H=healthOf(b),bd=band(H.v),box=$('dlgB');box.textContent='';
+  openDialog(b.full);
+  box.appendChild(h('div',{class:'kv'},[h('span',{class:'chip c-warn'},['Level '+L.level]),h('span',{class:'chip '+bd[1]},['Health '+H.v+' · '+bd[0]]),h('span',{},[H.signs+' of 5 signs counted'])]));
+  if(b.rally)box.appendChild(h('div',{class:'note',style:'border-color:var(--red);margin-bottom:8px'},[h('span',{class:'tag',style:'color:var(--red-ink)'},['Rally on this base']),h('p',{},['Old daily-report issues to zero by Sat 8 Nov: 7 of 9 closed.']),h('div',{class:'bar'},[h('i',{style:'width:77.7%'})])]));
+  if(b.help)box.appendChild(h('div',{class:'note',style:'border-color:var(--f-tra);margin-bottom:8px'},[h('span',{class:'tag',style:'color:var(--f-tra)'},['Help request from Transport head']),h('p',{},['Two buses’ insurance copies wait on the Fee Clerk’s upload.'])]));
+  box.appendChild(h('h3',{class:'sec'},['Buildings']));
+  var g=h('div',{class:'bldgs'});
+  (b.darbar?DARBAR_B:BUILD).forEach(function(bl){
+    var lv=b.b[bl[0]]||0,max=bl[2].length,ready=b.ready===bl[0],pips=h('span',{class:'pips','aria-hidden':'true'});
+    for(var i=0;i<max;i++)pips.appendChild(h('i',{class:i<lv?'on':''}));
+    var state=lv===0?'Not started: '+bl[2][0]:lv>=max?'Fully built':ready?'Upgrade ready: '+bl[2][lv]+' confirmed':'Building Lv'+(lv+1)+': '+bl[2][lv];
+    var el=h('div',{class:'bld'+(lv===0?' none':'')+(ready?' ready':'')},[h('span',{class:'bt'},[bl[1],h('span',{},['Lv '+lv])]),pips,h('span',{class:'st'},[state])]);
+    if(ready)el.appendChild(h('button',{type:'button',class:'btn btn-gold',style:'margin-top:6px',onclick:function(){levelUp(b,bl);}},['Claim Lv '+(lv+1)]));
+    g.appendChild(el);
+  });
+  box.appendChild(g);
+  box.appendChild(h('h3',{class:'sec'},['Troops (counts only)']));
+  var t=h('div',{class:'troops'}),k;
+  for(k in b.troops)t.appendChild(h('div',{class:'troop'},[h('b',{},[b.troops[k]]),h('span',{},[k])]));
+  if(b.buses)t.appendChild(h('div',{class:'troop'},[h('b',{},[b.buses[0]+'/'+b.buses[1]]),h('span',{},['Buses ready'])]));
+  box.appendChild(t);
+  box.appendChild(h('h3',{class:'sec'},['Why health is '+H.v]));
+  var tb=h('table',{class:'hbk'}),names={track:'Missions on track',backlog:'Issue backlog',buses:'Buses ready',docs:'Documents current',approvals:'Approvals not stuck'};
+  for(k in W)tb.appendChild(h('tr',{},[h('td',{},[names[k]+' ('+W[k]+')']),h('td',{},[b.h[k]==null?'— not set up':Math.round(b.h[k]*100)+'%'])]));
+  box.appendChild(tb);
+  box.appendChild(buddyLine(b.ready?'The '+b.name+' Principal finished the bell timings. The School Hall can go up a level.':H.v<50?'Buses ready is the biggest pull here. The Garage cards in the tray would help most.':'Steady here. The next building step is the cheapest win.'));
+}
+function levelUp(b,bl){
+  var before=levelOf(b).level;b.b[bl[0]]++;delete b.ready;var after=levelOf(b).level;
+  $('dlg').close();renderBases();
+  $('celBig').textContent=bl[1]+' Lv '+b.b[bl[0]];
+  $('celText').textContent='The '+b.name+' Principal confirmed the bell timings, so the School Hall went up a level'+(after>before?' and '+b.name+' is now level '+after+'.':'.')+' Shabash.';
+  var cf=$('confetti');cf.textContent='';var cols=['var(--red)','var(--gold)','var(--f-acc)','var(--f-tra)'];
+  for(var i=0;i<24;i++)cf.appendChild(h('i',{style:'left:'+(4+i*4)+'%;background:'+cols[i%4]+';animation-delay:'+(i%6)*0.08+'s'}));
+  $('celebrate').showModal();
+  advise(b.name+' levelled up. Next cheapest win: Garage Lv2 at LMS 6, three buses’ safety checks.','#tray','Open the tray','winter-formal-celebrate');
+}
+function openHead(id){
+  var x=head(id),box=$('dlgB');box.textContent='';openDialog(x.name+' · '+x.fn.join(', '));
+  box.appendChild(h('div',{class:'rank'},[h('span',{class:'rn'},['Rank '+['I','II','III','IV','V'][x.rank-1]]),h('span',{},[h('b',{},[x.title]),h('br'),x.parts])]));
+  box.appendChild(h('p',{class:'private'},['Private: '+x.name+' sees only their own card, never anyone else’s. Measured only against their own last month ('+x.last+').']));
+  box.appendChild(h('h3',{class:'sec'},['Missions']));
+  var ul=h('ul',{class:'mlist'});
+  x.open.forEach(function(m){ul.appendChild(h('li',{},[h('span',{},[m]),h('span',{},['open'])]));});
+  if(!x.open.length)ul.appendChild(h('li',{},[h('span',{},['Nothing open. Assign a card when one fits.']),h('span',{},[''])]));
+  ul.appendChild(h('li',{},[h('span',{},['Done this month']),h('span',{},[String(x.done)])]));
+  box.appendChild(ul);
+  box.appendChild(h('div',{class:'row'},[h('button',{type:'button',class:'btn btn-red',onclick:function(){$('dlg').close();showTab('K');location.hash='tray';advise('Pick a card for '+x.name+'. Cards in '+x.fn.join(' or ')+' fit best.','#tray','Open the tray','winter-formal-neutral');}},['Assign work to '+x.name])]));
+}
+
+// ---------- Ask Buddy ----------
+function openAsk(){
+  var box=$('dlgB');box.textContent='';openDialog('Ask Buddy');
+  box.appendChild(h('p',{class:'desk'},[h('i',{}),'Buddy’s desk is open (office Mac awake). Owner only. Sample conversation.']));
+  var ch=h('div',{class:'chat'});
+  ch.appendChild(h('div',{class:'msg me'},['Which campus is slowest on fleet papers?']));
+  ch.appendChild(h('div',{class:'msg bd'},['LMS 5: 1 of 3 buses has current papers. Two insurance copies are the gap.',h('span',{class:'via'},['Data question · read-only'])]));
+  ch.appendChild(h('div',{class:'msg me'},['Give the LMS 5 garage to Transport head, due Friday.']));
+  ch.appendChild(h('div',{class:'msg bd'},['I can set that up. Nothing changes until you confirm.',h('span',{class:'via'},['Decision · needs your tap'])]));
+  var pr=h('div',{class:'proposal',id:'prop'},[h('h3',{},['Confirm this change?']),
+    h('dl',{},[h('dt',{},['Do']),h('dd',{},['Make Garage Lv2 at LMS 5 a mission']),h('dt',{},['For']),h('dd',{},['Transport head, Transport']),h('dt',{},['Due']),h('dd',{},['Fri 31 Oct']),h('dt',{},['Written by']),h('dd',{},['Setup quest owner row, with your sign-in'])]),
+    h('div',{class:'row'},[h('button',{type:'button',class:'btn btn-red',onclick:function(){resolveProp(true);}},['Confirm']),h('button',{type:'button',class:'btn btn-ghost',onclick:function(){resolveProp(false);}},['Not now'])])]);
+  ch.appendChild(pr);
+  box.appendChild(ch);
+  var inp=h('input',{type:'text','aria-label':'Message Buddy',placeholder:'Ask about the kingdom, or tell Buddy a decision'});
+  box.appendChild(h('form',{class:'composer',onsubmit:function(e){e.preventDefault();if(!inp.value.trim())return;ch.insertBefore(h('div',{class:'msg me'},[inp.value]),null);ch.appendChild(h('div',{class:'msg bd'},['Saved. In the real portal this goes to the queue and I answer here.',h('span',{class:'via'},['Sample reply'])]));inp.value='';}},[inp,h('button',{type:'submit',class:'btn btn-red'},['Send'])]));
+}
+function resolveProp(ok){
+  var p=$('prop');p.textContent='';
+  p.appendChild(h('p',{},[ok?'Confirmed. Transport head has the LMS 5 Garage as a mission, due Fri 31 Oct. (Sample: nothing written.)':'Left as it is. I’ll keep the suggestion for later.']));
+  if(ok){(assigned.LMS5=assigned.LMS5||[]).push('--f-tra');head('tra').open.push('Garage Lv2 at LMS 5');renderBases();renderHeads();renderHall();}
+}
+
+// ---------- tabs, toast ----------
+function showTab(k){var K=k==='K';$('tabK').setAttribute('aria-selected',String(K));$('tabH').setAttribute('aria-selected',String(!K));$('viewKingdom').hidden=!K;$('viewHall').hidden=K;}
+$('tabK').addEventListener('click',function(){showTab('K');});
+$('tabH').addEventListener('click',function(){showTab('H');});
+$('askBtn').addEventListener('click',openAsk);
+var tt;
+function toast(t,undo){$('toastT').textContent=t;$('toastUndo').hidden=!undo;$('toast').classList.add('on');clearTimeout(tt);tt=setTimeout(function(){$('toast').classList.remove('on');},5000);}
+$('toastUndo').addEventListener('click',function(){if(lastUndo){lastUndo();lastUndo=null;}$('toast').classList.remove('on');advise('Undone. The card is back in the tray.','#tray','Open the tray','winter-formal-neutral');});
+
+renderBases();renderHeads();renderCards();renderHall();
+var mb=$('mapBox');mb.scrollLeft=(mb.scrollWidth-mb.clientWidth)/2;
+advise(ADV.start[0],ADV.start[1],ADV.start[2],ADV.start[3]);
+})();
+</script>
