@@ -307,13 +307,80 @@ test('pull: confirmed proposal comes back as a forward item', () => {
   ask(OWN, 'next question');
   confirm(OWN, id);
   const r = pull();
-  assert.deepStrictEqual(r.items, [{ id, kind: 'forward', text: 'Please add a bus stop', summary: 'Add a bus stop' }]); // before the queued ask
+  assert.deepStrictEqual(r.items, [{ id, kind: 'forward', text: 'Please add a bus stop', summary: 'Add a bus stop', attempt: 1 }]); // before the queued ask
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'carrier-pigeon' }).code, 'BUDDY_BAD_STATE');
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).success, true);
   assert.strictEqual(thread().threads[0].proposalState, 'forwarded');
   const next = pull().items[0];
   assert.strictEqual(next.kind, 'ask'); assert.strictEqual(next.text, 'next question');
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).code, 'BUDDY_BAD_STATE');
+});
+test('forward: fails 3 times, stops being offered, asks are served', () => {
+  reset();
+  const id = answered('Add a bus stop');
+  confirm(OWN, id);
+  clock += MIN;
+  const a2 = ask(OWN, 'second').id;
+  assert.deepStrictEqual(pull().items.map((i) => i.kind + i.attempt), ['forward1']);
+  assert.strictEqual(pull().items[0].id, a2); // the forward being sent never holds up the queue
+  reply({ id: a2, kind: 'reply', text: 'ok', route: 'claude' });
+  assert.deepStrictEqual(pull().items, []); // in progress: not offered again
+  assert.strictEqual(reply({ id, kind: 'forward_failed' }).success, true);
+  assert.strictEqual(reply({ id, kind: 'forward_failed' }).code, 'BUDDY_BAD_STATE'); // one failure per attempt
+  assert.deepStrictEqual(pull().items.map((i) => i.kind + i.attempt), ['forward2']);
+  reply({ id, kind: 'forward_failed' });
+  assert.deepStrictEqual(pull().items.map((i) => i.kind + i.attempt), ['forward3']);
+  assert.strictEqual(thread().threads[0].proposalState, 'confirmed');
+  clock += 21 * MIN; // the third attempt goes quiet: that is the third failure
+  assert.deepStrictEqual(pull().items, []);
+  const last = inbox()[inbox().length - 1];
+  assert.deepStrictEqual([last[1], meta(last)], ['forward_failed', { reason: 'gave_up' }]);
+  const t = thread().threads[0];
+  assert.strictEqual(t.proposalState, 'failed');
+  assert.strictEqual(t.proposalNote, "Buddy couldn't pass this on. Try again later or send it on Telegram.");
+  assert.strictEqual(store.has('buddy_pending'), false);
+  const a3 = ask(OWN, 'third').id;
+  assert.strictEqual(pull().items[0].id, a3);
+  assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).code, 'BUDDY_BAD_STATE');
+  assert.strictEqual(confirm(OWN, id).code, 'BUDDY_PROPOSAL_CLOSED');
+  assert.strictEqual(inbox().filter((r) => r[1] === 'fclaim').length, 3);
+  // three reported failures settle it at once
+  reset();
+  const id2 = answered();
+  confirm(OWN, id2);
+  for (let i = 1; i <= 3; i++) { assert.strictEqual(pull().items[0].attempt, i); reply({ id: id2, kind: 'forward_failed' }); }
+  assert.strictEqual(thread().threads[0].proposalState, 'failed');
+  assert.deepStrictEqual(pull().items, []);
+  // a stale forward claim (worker died mid-send) is re-offered
+  reset();
+  const id3 = answered();
+  confirm(OWN, id3);
+  pull();
+  clock += 21 * MIN;
+  assert.deepStrictEqual(pull().items.map((i) => i.kind + i.attempt), ['forward2']);
+});
+test('ask: a claim stuck while the worker is gone closes as offline', () => {
+  reset();
+  const a = ask(OWN).id;
+  pull(); // claimed at T0; the heartbeat says T0
+  clock = T0 + 12 * MIN; // a long answer: the worker does not poll meanwhile
+  assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT');
+  clock = T0 + 21 * MIN;
+  store.set('buddy_hb', String(T0 + 20 * MIN)); // worker alive: the pull re-offers it, the ask does not touch it
+  assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT');
+  store.set('buddy_hb', String(T0)); // worker gone since the claim
+  const r = ask(OWN, 'are you there?');
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  const t = thread().threads[0];
+  assert.strictEqual(t.id, a); assert.strictEqual(t.state, 'failed'); assert.strictEqual(t.failReason, 'offline');
+  assert.deepStrictEqual(kinds(), ['ask', 'claim', 'failed', 'ask']);
+  assert.strictEqual(inbox()[2][6], 'system');
+  assert.strictEqual(reply({ id: a, kind: 'reply', text: 'late', route: 'claude' }).code, 'BUDDY_BAD_STATE');
+  assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT'); // still one at a time
+  // a queued (never claimed) question is not closed: it waits for the Mac
+  reset();
+  ask(OWN); clock = T0 + 3 * 3600000;
+  assert.strictEqual(ask(OWN).code, 'BUDDY_IN_FLIGHT');
 });
 test('thread: only the caller\'s threads, max 20, no email field', () => {
   reset();

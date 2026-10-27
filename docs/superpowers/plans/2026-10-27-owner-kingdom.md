@@ -868,7 +868,9 @@ function cqPrefillApprovalCategories_(ctx)  // 'approvals.categories': KINGDOM_A
 
 **Ask Buddy v1 (Wed 28 Oct, after B4 review passes)**
 - [ ] Generate the secret on the Mac; write `~/.lmcs/buddy_worker_secret`, `chmod 600`.
-- [ ] Game project → Project settings → Script properties: `BUDDY_WORKER_SECRET` = the same value. Never paste it in a chat or commit.
+- [ ] Game project → Project settings → Script properties: `BUDDY_WORKER_SECRET` = the same value as the Mac's
+  `~/.lmcs/buddy_worker_secret`, at least 32 characters (shorter or missing = the backend refuses every `buddypull` /
+  `buddyreply`). Never paste it in a chat or commit, never write the value into any file in the repo.
 - [ ] Write `~/.lmcs/buddy_worker.json` (`backend_url` = the game /exec, `vault` = the vault path, `master_agent` =
   `LMCS Master Agent`, `poll_s` 5, `claude_timeout_s` 900, `telegram_send` path).
 - [ ] `python3 tools/buddy_worker.py --selftest` → `selftest ok`.

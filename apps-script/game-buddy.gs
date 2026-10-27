@@ -6,7 +6,13 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 // answers with a read-only Claude run and posts the reply back. Plan: docs/superpowers/plans/2026-10-27-owner-kingdom.md
 // (Task B1 and "Security design").
 // Store: the append-only `Buddy Inbox` tab in the Game workbook. A thread's state is DERIVED from its rows (ask, claim, reply,
-// failed, confirm, decline, forwarded); nothing is ever edited or deleted.
+// failed, confirm, decline, fclaim, forward_failed, forwarded); nothing is ever edited or deleted.
+// Nothing can block the queue for good:
+//   - a claimed ask whose worker went quiet is re-offered once after staleClaimMs, then `failed` gave_up (at the next pull);
+//     if the worker is gone altogether (no pull for staleClaimMs), the Owner's next ask closes it as `failed` offline first;
+//   - a confirmed proposal (forward) is claimed (`fclaim`) when pulled, so asks are served while it is being sent; a
+//     reported `forward_failed` or a stale fclaim counts one failure; after maxForwardAttempts its proposalState is
+//     `failed` (terminal, proposalNote tells the Owner) and it is never offered again.
 // Gates:
 //   buddyask / buddythread / buddyconfirm: POST only, a verified caller with the Owner role (game.gs doPost calls
 //     buddyOwnerAction_ directly). Deliberately NOT in GAME_MODULE_ACTIONS, so a GET (whose text lands in logs and
@@ -24,7 +30,8 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 var BUDDY_TAB = 'Buddy Inbox';
 var BUDDY_HEADER = ['Id', 'Kind', 'Email', 'Text', 'Meta', 'At', 'By'];
 var BUDDY_LIMITS = { inFlight: 1, perHour: 20, perDayAll: 100, maxText: 2000, maxReply: 8000, maxSummary: 300,
-  proposalMs: 86400000, staleClaimMs: 1200000, maxAttempts: 2, deskMs: 120000, minSecret: 32 };
+  proposalMs: 86400000, staleClaimMs: 1200000, maxAttempts: 2, deskMs: 120000, minSecret: 32, maxForwardAttempts: 3 };
+var BUDDY_FORWARD_FAILED = "Buddy couldn't pass this on. Try again later or send it on Telegram."; // thread.proposalNote when proposalState is 'failed'
 var BUDDY_CODES = { BUDDY_OWNER_ONLY: 'Ask Buddy is for the Owner for now.', BUDDY_EMPTY: 'Type a question first.',
   BUDDY_TOO_LONG: 'That is a bit long. Please keep it under 2000 characters.',
   BUDDY_IN_FLIGHT: 'Buddy is still on your last question. One at a time.',
@@ -77,7 +84,7 @@ function buddyThreads_(rows, nowMs) {
       if (!buddyIdOk_(id) || out[id]) continue;
       out[id] = { id: id, email: String(r[2] || '').trim().toLowerCase(), text: buddyUncell_(r[3]), context: buddyContext_(meta.context), askedAt: at,
         state: 'queued', attempts: 0, claimedAt: null, reply: null, route: null, repliedAt: null, proposal: null, proposalState: null, failReason: null,
-        _decision: null, _decidedAt: null, _forwarded: false };
+        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
       continue;
     }
     const t = out[id];
@@ -88,13 +95,18 @@ function buddyThreads_(rows, nowMs) {
       t.state = 'answered'; t.reply = buddyUncell_(r[3]); t.route = typeof meta.route === 'string' ? meta.route : null; t.repliedAt = at;
       t.proposal = meta.proposal && typeof meta.proposal.summary === 'string' && meta.proposal.summary ? { summary: meta.proposal.summary } : null;
     } else if (kind === 'failed' && open) { t.state = 'failed'; t.failReason = typeof meta.reason === 'string' ? meta.reason : null; }
-    else if ((kind === 'confirm' || kind === 'decline') && t.proposal) { t._decision = kind === 'confirm' ? 'confirmed' : 'declined'; t._decidedAt = at; }
+    else if ((kind === 'confirm' || kind === 'decline') && t.proposal && !t._decision) { t._decision = kind === 'confirm' ? 'confirmed' : 'declined'; t._decidedAt = at; }
+    else if (kind === 'fclaim' && t._decision === 'confirmed' && !t._forwarded) { t.fwdAttempts++; t.fwdClaimedAt = at; t._fwdFailed = false; }
+    else if (kind === 'forward_failed' && t.fwdAttempts > 0 && !t._fwdFailed) t._fwdFailed = true;
     else if (kind === 'forwarded' && t.proposal) t._forwarded = true;
   }
   Object.keys(out).forEach(function (id) {
     const t = out[id];
     if (t.proposal) {
       t.proposalState = t._forwarded ? 'forwarded' : t._decision ? t._decision : (nowMs - buddyMs_(t.repliedAt) > BUDDY_LIMITS.proposalMs ? 'expired' : 'open');
+      if (t.proposalState === 'confirmed' && t.fwdAttempts >= BUDDY_LIMITS.maxForwardAttempts && (t._fwdFailed || buddyFwdStale_(t, nowMs))) {
+        t.proposalState = 'failed'; t.proposalNote = BUDDY_FORWARD_FAILED;
+      }
     }
   });
   return out;
@@ -114,13 +126,18 @@ function buddyRateCheck_(threads, email, nowMs) {
 }
 
 function buddyStale_(t, nowMs) { return t.state === 'working' && nowMs - buddyMs_(t.claimedAt) > BUDDY_LIMITS.staleClaimMs; }
+// a forward being sent: claimed, not reported failed, not done
+function buddyFwdBusy_(t) { return t.fwdAttempts > 0 && !t._fwdFailed && !t._forwarded; }
+function buddyFwdStale_(t, nowMs) { return buddyFwdBusy_(t) && nowMs - buddyMs_(t.fwdClaimedAt) > BUDDY_LIMITS.staleClaimMs; }
 
-// Next work for the worker: a confirmed proposal not yet forwarded (oldest confirm first), else the oldest queued ask,
-// else a stale claim with attempts left. Pure.
+// Next work for the worker: a confirmed proposal not yet forwarded and not being sent (oldest confirm first), else the oldest
+// queued ask, else a stale claim with attempts left. Pure. ('failed' proposals are never offered: buddyThreads_ sets it at
+// maxForwardAttempts.)
 function buddyPullable_(threads, nowMs) {
   const all = buddyList_(threads);
-  const fwd = all.filter(function (t) { return t.proposalState === 'confirmed'; }).sort(function (a, b) { return buddyMs_(a._decidedAt) - buddyMs_(b._decidedAt); })[0];
-  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal.summary };
+  const fwd = all.filter(function (t) { return t.proposalState === 'confirmed' && (!buddyFwdBusy_(t) || buddyFwdStale_(t, nowMs)); })
+    .sort(function (a, b) { return buddyMs_(a._decidedAt) - buddyMs_(b._decidedAt); })[0];
+  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal.summary, attempt: fwd.fwdAttempts + 1 };
   const t = all.filter(function (x) { return x.state === 'queued'; })[0] ||
     all.filter(function (x) { return buddyStale_(x, nowMs) && x.attempts < BUDDY_LIMITS.maxAttempts; })[0];
   return t ? { id: t.id, kind: 'ask', text: t.text, context: t.context, attempt: t.attempts + 1 } : null;
@@ -178,7 +195,16 @@ function buddyAsk_(caller, body) {
   const text = buddyClean_(body.text, BUDDY_LIMITS.maxText, false), context = buddyContext_(body.context);
   const email = String(caller.email).toLowerCase(), nowMs = gameNow_().getTime(), nowIso = new Date(nowMs).toISOString();
   const id = buddyLocked_(function () {
-    const sh = buddySheet_(true), code = buddyRateCheck_(buddyThreads_(buddyRows_(sh), nowMs), email, nowMs);
+    const sh = buddySheet_(true), threads = buddyThreads_(buddyRows_(sh), nowMs);
+    // The worker is gone (no pull for staleClaimMs, so no pull will re-offer it): close the caller's stuck claim as offline,
+    // so the one-at-a-time rule cannot block them forever. With a live worker the pull handles stale claims itself.
+    // staleClaimMs, not less: a live worker does not poll while one answer runs (claude timeout 15 min).
+    const hb = Number(CacheService.getScriptCache().get('buddy_hb')), gone = !(nowMs - hb <= BUDDY_LIMITS.staleClaimMs);
+    if (gone) {
+      const off = Object.keys(threads).map(function (k) { return threads[k]; }).filter(function (t) { return t.email === email && buddyStale_(t, nowMs); });
+      gameAppendText_(sh, off.map(function (t) { t.state = 'failed'; t.failReason = 'offline'; return [t.id, 'failed', '', '', JSON.stringify({ reason: 'offline' }), nowIso, 'system']; }));
+    }
+    const code = buddyRateCheck_(threads, email, nowMs);
     if (code) throw buddyErr_(code);
     const newId = buddyNewId_(nowMs);
     gameAppendText_(sh, [[newId, 'ask', email, buddyCell_(text), JSON.stringify({ context: context }), nowIso, email]]);
@@ -190,7 +216,7 @@ function buddyAsk_(caller, body) {
 
 function buddyPublic_(t) {
   const o = {};
-  ['id', 'text', 'context', 'askedAt', 'state', 'attempts', 'claimedAt', 'reply', 'route', 'repliedAt', 'proposal', 'proposalState', 'failReason']
+  ['id', 'text', 'context', 'askedAt', 'state', 'attempts', 'claimedAt', 'reply', 'route', 'repliedAt', 'proposal', 'proposalState', 'proposalNote', 'failReason']
     .forEach(function (k) { o[k] = t[k]; });
   return o;
 }
@@ -238,16 +264,26 @@ function buddyPull_(body) {
           out.push([id, 'failed', '', '', JSON.stringify({ reason: 'gave_up' }), nowIso, 'worker']);
           t.state = 'failed'; t.failReason = 'gave_up';
         }
+        if (t.proposalState === 'failed' && !t._fwdFailed) { // last forward attempt went stale: record it
+          out.push([id, 'forward_failed', '', '', JSON.stringify({ reason: 'gave_up' }), nowIso, 'worker']);
+          t._fwdFailed = true;
+        }
       });
       const item = buddyPullable_(threads, nowMs);
       if (item && item.kind === 'ask') {
         out.push([item.id, 'claim', '', '', JSON.stringify({ attempt: item.attempt }), nowIso, 'worker']);
         const t = threads[item.id]; t.state = 'working'; t.attempts = item.attempt; t.claimedAt = nowIso;
+      } else if (item) {
+        out.push([item.id, 'fclaim', '', '', JSON.stringify({ attempt: item.attempt }), nowIso, 'worker']);
+        const t = threads[item.id]; t.fwdAttempts = item.attempt; t.fwdClaimedAt = nowIso; t._fwdFailed = false;
       }
       gameAppendText_(sh, out);
       // Next flag: '1' while more work waits; else wake at the earliest moment a claim goes stale; else nothing to do.
-      const wake = Object.keys(threads).map(function (k) { return threads[k]; }).filter(function (t) { return t.state === 'working'; })
-        .reduce(function (m, t) { return Math.min(m, buddyMs_(t.claimedAt) + BUDDY_LIMITS.staleClaimMs + 1); }, Infinity);
+      const wake = Object.keys(threads).map(function (k) { return threads[k]; }).reduce(function (m, t) {
+        if (t.state === 'working') m = Math.min(m, buddyMs_(t.claimedAt) + BUDDY_LIMITS.staleClaimMs + 1);
+        if (t.proposalState === 'confirmed' && buddyFwdBusy_(t)) m = Math.min(m, buddyMs_(t.fwdClaimedAt) + BUDDY_LIMITS.staleClaimMs + 1);
+        return m;
+      }, Infinity);
       if (buddyPullable_(threads, nowMs)) cache.put('buddy_pending', '1', BUDDY_CACHE_S);
       else if (wake < Infinity) cache.put('buddy_pending', String(wake), BUDDY_CACHE_S);
       else cache.remove('buddy_pending');
@@ -272,6 +308,8 @@ function buddyReply_(body) {
     } else if (kind === 'failed') {
       if (['timeout', 'claude_error', 'gave_up'].indexOf(body.reason) === -1) throw buddyErr_('BUDDY_BAD_STATE');
       meta = { reason: body.reason };
+    } else if (kind === 'forward_failed') {
+      meta = { reason: 'send_error' }; // the worker's own error text stays in its local log
     } else if (kind === 'forwarded') {
       if (['sendmessage', 'telegram'].indexOf(body.via) === -1) throw buddyErr_('BUDDY_BAD_STATE');
       meta = { via: body.via };
@@ -280,8 +318,12 @@ function buddyReply_(body) {
     return buddyLocked_(function () {
       const sh = buddySheet_(false), t = buddyThreads_(buddyRows_(sh), nowMs)[id];
       if (!t) throw buddyErr_('BUDDY_NOT_FOUND');
-      if (kind === 'forwarded' ? t.proposalState !== 'confirmed' : t.state !== 'working') throw buddyErr_('BUDDY_BAD_STATE');
+      const ok = kind === 'forwarded' ? t.proposalState === 'confirmed'
+        : kind === 'forward_failed' ? t.proposalState === 'confirmed' && buddyFwdBusy_(t)
+        : t.state === 'working';
+      if (!ok) throw buddyErr_('BUDDY_BAD_STATE');
       gameAppendText_(sh, [[id, kind, '', text ? buddyCell_(text) : '', JSON.stringify(meta), nowIso, 'worker']]);
+      if (kind === 'forward_failed') buddyMark_(); // retry (or settle as failed) at the next poll
       return { success: true };
     });
   } catch (err) { return buddyFail_(err); }
