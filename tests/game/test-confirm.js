@@ -197,6 +197,21 @@ test('memo', () => {
   assert.strictEqual(ctx.CQ_MEMO, null);
 });
 
+test('adapter values pass the value guard on confirm-as-is', () => {
+  reset();
+  ctx.CQ_PREFILL['test.rows'] = () => [{ item: 'a', fields: { class: 'Class 7', subject: '9876543210' } }];
+  const r = save(TA, { quest: 'tq', item: 'a', fields: { class: 'Class 7' } });
+  assert.strictEqual(r.success, false); assert.strictEqual(r.error, 'SETUP_BAD_VALUE: subject');
+  assert.strictEqual(dataRows().length, 0);
+});
+test('a non-coded error returns a fixed message', () => {
+  reset();
+  ctx.cqRead_ = () => { throw new TypeError('secret detail'); };
+  const r = save(TA, { quest: 'tq', item: 'a', fields: { class: 'C' } });
+  ctx.cqRead_ = () => { readCalls++; return origRead(); };
+  assert.strictEqual(r.code, 'SETUP_ERROR'); assert.strictEqual(r.error, 'Something went wrong saving this. Try again.');
+});
+
 let fail = 0;
 for (const [n, fn] of tests) { try { fn(); console.log('ok  ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n  ' + (e.stack || e).split('\n').slice(0, 4).join('\n  ')); } }
 if (fail) process.exit(1);

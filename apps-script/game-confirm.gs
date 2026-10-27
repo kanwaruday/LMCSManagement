@@ -17,7 +17,11 @@ var CQ_DEFAULT_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 var CQ_MEMO = null; // { key: email + '|' + now.getTime(), views } one request's status
 
 function cqErr_(code, field) { const e = new Error(field ? code + ': ' + field : code); e.code = code; return e; }
-function cqFail_(err) { return { success: false, code: (err && err.code) || 'SETUP_ERROR', error: (err && err.message) || 'SETUP_ERROR' }; }
+function cqFail_(err) {
+  if (err && err.code) return { success: false, code: err.code, error: err.message };
+  console.error('setup quest error: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
+  return { success: false, code: 'SETUP_ERROR', error: 'Something went wrong saving this. Try again.' };
+}
 function cqDefaults_() { return {}; }
 function cqLower_(s) { return String(s || '').toLowerCase(); }
 
@@ -327,7 +331,12 @@ function cqSaveAction_(caller, p) {
         const have = Object.prototype.hasOwnProperty.call(sent, f.id) ? sent[f.id] : (c && c.status !== 'skipped' ? c.value : '');
         if (f.required && !have) throw cqErr_('SETUP_FIELD_REQUIRED', f.id);
         if (Object.prototype.hasOwnProperty.call(sent, f.id)) wrote.push([f.id, sent[f.id], 'confirmed']);
-        else if (f.required && c && c.status === 'known') wrote.push([f.id, c.value, 'confirmed']);
+        else if (f.required && c && c.status === 'known') {
+          // an adapter value is held to the same guard as typed input; a bad one must be corrected by the person
+          let v;
+          try { v = cqValue_(f, c.value); } catch (err) { throw cqErr_('SETUP_BAD_VALUE', f.id); }
+          wrote.push([f.id, v, 'confirmed']);
+        }
       });
     }
     const note = cqValue_({ id: 'note', type: 'text' }, p.note);
