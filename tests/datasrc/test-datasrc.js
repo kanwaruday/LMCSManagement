@@ -44,6 +44,7 @@ const NO_SOURCES = {
   'owner/transport/index.html': 'GPS checks through the Coordinator backend (same data as coordinator/transport/live.html); the vendor id stays out of page source',
   'teacher/plan-activity.html': 'one-line write to the Game backend; shows no sheet data',
   'guide/index.html': 'the user guide: feature help from assets/game/guide.js, no data',
+  'setup/index.html': 'setup quests: confirm-values screens backed by the game backend (setupget/setupsave), no source sheet links',
   'coordinator/transport/capture.html': 'phone capture page: writes photos and run rows through the Roster web app (apps-script/transport-capture.gs); it shows no sheet data',
 };
 function pages(dir, out = []) {

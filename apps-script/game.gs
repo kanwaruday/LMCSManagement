@@ -29,6 +29,12 @@
 // campusId (LMS1-LMS6), employeeCode and role, and the role must be Teacher or Staff. A fallback
 // caller can never be more than that, never gets canDecide, and an allowlist row always wins.
 //
+// CALLER-LESS ACTIONS (doPost only, no Google token; each gated by its own shared secret in Script Properties):
+//   teachermatchpull, teachermatchpush  -- GAME_PUSH_SECRET, the Mac's nightly activity check (game-teacher.gs)
+//   buddypull, buddyreply               -- BUDDY_WORKER_SECRET, the Mac's Ask Buddy worker (game-buddy.gs)
+// Ask Buddy's Owner actions (buddyask, buddythread, buddyconfirm) are also doPost only: they are not in
+// GAME_MODULE_ACTIONS, so a GET answers "Unknown action".
+//
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Game Backend",
 //      paste this file as game.gs (the other game-*.gs files as they land)
@@ -93,6 +99,7 @@ function gameConfigDefaults_() {
     fleet: { renewDays: 30, rollCallBy: '10:00', rollCallFrom: '2026-10-27', partDueDays: 30, busAgeLimit: 15, policeVerificationYears: null, fuelClerkDays: 2, speedCount: 3, speedDays: 30,
       heat: { warm: 1, hot: 3 },
       weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, expiredDriverDoc: 1, rollCallMissing: 1, speed: 1 } },
+    confirmQuests: {}, // setup quests (game-confirm.gs): {questId: definition override}
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }
@@ -141,9 +148,14 @@ function doPost(e) {
     // GAME_PUSH_SECRET instead (checked inside each), as the Coordinator backend does for transportpush. Every other action needs a verified caller.
     if (action === 'teachermatchpull') return gameJson_(tchMatchPull_(body));
     if (action === 'teachermatchpush') return gameJson_(tchMatchPush_(body));
+    // The Mac's Ask Buddy worker (tools/buddy_worker.py): the same pattern, gated by BUDDY_WORKER_SECRET (checked inside each, game-buddy.gs).
+    if (action === 'buddypull') return gameJson_(buddyPull_(body));
+    if (action === 'buddyreply') return gameJson_(buddyReply_(body));
     const caller = gameVerifyCaller_(body.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
     caller.idToken = String(body.idToken);
+    // Ask Buddy's Owner actions: POST only (never registered in GAME_MODULE_ACTIONS); the Owner check is inside buddyOwnerAction_.
+    if (action === 'buddyask' || action === 'buddythread' || action === 'buddyconfirm') return gameJson_(buddyOwnerAction_(caller, action, body));
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

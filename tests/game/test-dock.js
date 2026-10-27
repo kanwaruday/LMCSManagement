@@ -155,4 +155,41 @@ assert.ok(!/@[\w-]+\.|\b\d{10}\b/.test(text), 'no emails or phone numbers');
 assert.ok(!/!/.test(text), "Buddy's voice: no exclamation marks");
 // Day Book starting data went live on main (office/starting-data.html): it has a page entry and an article
 
+// Ask Buddy (Owner chat): pure helpers
+assert.strictEqual(D.deskState({ open: true }), 'open');
+assert.strictEqual(D.deskState({ open: false, seenAt: null }), 'offline');
+assert.strictEqual(D.deskState(null), 'unknown');
+assert.deepStrictEqual(J(D.threadLine({ state: 'queued' }, { open: true })), { who: 'status', text: 'Buddy is reading your question…' });
+assert.strictEqual(D.threadLine({ state: 'queued' }, { open: false }).text, 'Saved. Buddy will answer when the Mac wakes.');
+assert.strictEqual(D.threadLine({ state: 'working' }).text, 'Buddy is thinking…');
+assert.deepStrictEqual(J(D.threadLine({ state: 'answered', reply: 'Hi' })), { who: 'buddy', text: 'Hi' });
+assert.strictEqual(D.threadLine({ state: 'failed' }).text, "I couldn't finish that one. Please ask again.");
+assert.deepStrictEqual(J(D.proposalView({ proposal: { summary: 'S' }, proposalState: 'open' })), { summary: 'S', state: 'open' });
+assert.strictEqual(D.proposalView({ proposal: { summary: 'S' }, proposalState: 'expired' }).state, 'expired');
+assert.strictEqual(D.proposalView({ proposal: null, proposalState: null }), null);
+assert.strictEqual(D.proposalView({ proposal: { summary: 'S' }, proposalState: null }), null);
+assert.strictEqual(D.pollDelay([{ state: 'queued' }], true), 5000);
+assert.strictEqual(D.pollDelay([{ state: 'working' }], true), 5000);
+assert.strictEqual(D.pollDelay([{ state: 'queued' }], false), 0, 'closed: no polling');
+assert.strictEqual(D.pollDelay([{ state: 'answered' }, { state: 'failed' }], true), 0);
+assert.strictEqual(D.threadLine({ state: 'queued', failReason: 'offline' }, { open: true }).text, "I couldn't finish that one. Please ask again.", 'failReason offline');
+const pf = D.proposalView({ proposal: { summary: 'S' }, proposalState: 'failed', proposalNote: 'It did not go through.' });
+assert.ok(pf && pf.state === 'failed' && pf.note === 'It did not go through.', 'failed proposal carries its note (no confirm buttons: state is not open)');
+assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'confirmed' }], true), 5000, 'confirmed: keep polling until forwarded or failed');
+assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'forwarded' }, { state: 'answered', proposalState: 'failed' }], true), 0);
+assert.ok(/confirmed: 'Sending to the master agent when the Mac is on…'/.test(src) && /forwarded: 'Sent to the master agent'/.test(src) && !/confirmed: 'Sent/.test(src), 'confirmed vs forwarded copy');
+assert.ok(/!r\.success && !r\.code[\s\S]*signedOut = true[\s\S]*Please sign in again\./.test(src) && /signedOut \? 0 :/.test(src), 'no code and no success: sign in again, stop polling');
+assert.ok(/btns\.forEach\(function \(b\) \{ b\.disabled = true; \}\)/.test(src) && /decide\(t, 'confirm', pair\)/.test(src) && /decide\(t, 'decline', pair\)/.test(src), 'both buttons disable on the first tap');
+// Ask Buddy: source checks
+const askSrc = src.slice(src.indexOf('Ask Buddy (start)'), src.indexOf('Ask Buddy (end)'));
+assert.ok(askSrc.length > 500, 'Ask Buddy markers found');
+assert.ok(!banned.test(askSrc), 'Ask part has no innerHTML');
+for (const a of ['buddyask', 'buddythread', 'buddyconfirm']) {
+  assert.strictEqual(src.split(a).length - 1, 1, a + ' appears once');
+  assert.ok(new RegExp("buddyPost\\(\\{ action: '" + a + "'").test(src), a + ' goes through buddyPost');
+}
+assert.ok(/fetch\(BACKEND, \{ method: 'POST'/.test(src), 'buddyPost is a POST');
+assert.ok(!/action=buddy/.test(src), 'no buddy action in a URL');
+assert.ok(/clearTimeout\(pollTimer\)/.test(src.slice(src.indexOf('function close('))), 'close stops polling');
+
 console.log('test-dock: ok');

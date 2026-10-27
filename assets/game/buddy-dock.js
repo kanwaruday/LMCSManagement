@@ -39,7 +39,27 @@ var LMCSDock = window.LMCSDock = (function () {
     return (q && (q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; })[0]) || null;
   }
 
-  var api = { avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
+  // ── Ask Buddy (Owner only): pure helpers; the UI is between the "Ask Buddy" markers in build()
+  function deskState(desk) { return desk ? (desk.open ? 'open' : 'offline') : 'unknown'; }
+  function threadLine(t, desk) {
+    t = t || {};
+    if (t.failReason === 'offline') return { who: 'status', text: "I couldn't finish that one. Please ask again." };
+    if (t.state === 'queued') return { who: 'status', text: deskState(desk) === 'offline' ? 'Saved. Buddy will answer when the Mac wakes.' : 'Buddy is reading your question…' };
+    if (t.state === 'working') return { who: 'status', text: 'Buddy is thinking…' };
+    if (t.state === 'answered') return { who: 'buddy', text: t.reply || '' };
+    return { who: 'status', text: "I couldn't finish that one. Please ask again." };
+  }
+  function proposalView(t) {
+    var st = t && t.proposal && t.proposalState;
+    var v = st && /^(open|confirmed|forwarded|declined|expired|failed)$/.test(st) ? { summary: t.proposal.summary || '', state: st } : null;
+    if (v && st === 'failed') v.note = t.proposalNote || '';
+    return v || null;
+  }
+  function pollDelay(threads, open) {
+    return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working' || t.proposalState === 'confirmed'; }) ? 5000 : 0;
+  }
+
+  var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -47,9 +67,10 @@ var LMCSDock = window.LMCSDock = (function () {
   var BASE = SRC.replace(/[^/?#]*([?#].*)?$/, ''), V = (SRC.match(/\?[^#]*/) || [''])[0]; // .../assets/game/ and auth.js's ?v=
   var PATH = pagePath(location.pathname, (function () { try { return new URL(BASE + '../../').pathname; } catch (e) { return '/'; } })());
   var UP = rootFrom(PATH), GUIDE = UP + 'guide/index.html';
-  var btn = null, av = null, panel = null, release = null, data = null;
+  var btn = null, av = null, panel = null, release = null, data = null, pollTimer = null;
 
   function session() { return (window.LMCS && LMCS.getSession && LMCS.getSession()) || null; }
+  function owner() { return !!(window.LMCS && LMCS.canViewOwnerPortal && LMCS.canViewOwnerPortal(session())); }
   function key() { return 'lmcs_dock_today|' + ((session() || {}).email || ''); }
   function kept() {
     try { var c = JSON.parse(sessionStorage.getItem(key()) || 'null'); return c && Date.now() - c.t < KEEP_MS ? c.d : null; } catch (e) { return null; }
@@ -97,10 +118,89 @@ var LMCSDock = window.LMCSDock = (function () {
   }
   function close(keepFocus) {
     if (!panel) return;
+    clearTimeout(pollTimer); pollTimer = null; // no polling while closed
     panel.remove(); panel = null;
     btn.setAttribute('aria-expanded', 'false');
     release(keepFocus ? false : btn);
   }
+
+  // POST one buddy action (never a GET: the backend refuses them); resolves the parsed JSON, rejects on a network failure
+  function buddyPost(body) {
+    var s = session() || {};
+    body.idToken = s.idToken || '';
+    return fetch(BACKEND, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+  }
+
+  // ═══ Ask Buddy (start) ═══
+  function askSection(h) {
+    var threads = [], desk = null, fails = 0, me = panel, signedOut = false;
+    var banner = h('div', { class: 'bd-off', role: 'status' }), list = h('ul', { class: 'bd-threads' });
+    var err = h('p', { class: 'bd-err', role: 'alert' });
+    var box = h('textarea', { id: 'bd-ask', class: 'bd-ask', rows: 3, maxlength: 2000 });
+    var send = h('button', { type: 'button', class: 'lg-btn bd-send', onclick: function () { ask(); } }, 'Send');
+    function alive() { return panel === me; }
+    function schedule() {
+      clearTimeout(pollTimer); pollTimer = null;
+      var d = signedOut ? 0 : pollDelay(threads, alive());
+      if (d) pollTimer = setTimeout(refresh, Math.min(d * Math.pow(2, fails), 60000)); // backs off while the network fails
+    }
+    // a reply with no success and no code is the gate (e.g. "Not authorized": the sign-in expired), not a Buddy answer
+    function gate(r) { if (r && !r.success && !r.code) { signedOut = true; err.textContent = 'Please sign in again.'; return true; } return false; }
+    function decide(t, decision, btns) {
+      btns.forEach(function (b) { b.disabled = true; }); // one tap only
+      var again = function () { btns.forEach(function (b) { b.disabled = false; }); };
+      buddyPost({ action: 'buddyconfirm', id: t.id, decision: decision }).then(function (r) {
+        if (!alive()) return;
+        if (gate(r)) return;
+        if (r && r.success) refresh(); else { again(); err.textContent = (r && r.error) || 'Something went wrong. Try again.'; }
+      }, function () { if (alive()) { again(); err.textContent = "Couldn't reach Buddy. Please try again."; } });
+    }
+    function draw() {
+      banner.textContent = '';
+      if (deskState(desk) === 'offline') banner.appendChild(h('p', {}, [h('strong', {}, 'Buddy is offline — the Mac is off.'), h('br', {}), 'Your message is saved and will be answered when it wakes.']));
+      list.textContent = '';
+      threads.slice(-5).forEach(function (t) {
+        var line = threadLine(t, desk), pv = proposalView(t), extra = null, pair = [];
+        if (pv && pv.state === 'open') {
+          extra = h('div', { class: 'bd-prop' }, [h('p', {}, 'Send this to the master agent?'), h('p', { class: 'bd-sum' }, pv.summary),
+            h('div', { class: 'bd-btns' }, [
+              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'confirm', pair); } }, 'Send to the master agent'),
+              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'decline', pair); } }, 'No thanks')])]);
+          pair = [].slice.call(extra.querySelectorAll('button'));
+        } else if (pv) {
+          extra = h('p', { class: 'bd-status' }, pv.state === 'failed' ? pv.note : { confirmed: 'Sending to the master agent when the Mac is on…', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
+        }
+        list.appendChild(h('li', { class: 'bd-th' }, [h('p', { class: 'bd-me' }, t.text), h('p', { class: 'bd-' + line.who }, line.text), extra]));
+      });
+    }
+    function refresh() {
+      pollTimer = null;
+      if (!alive()) return;
+      buddyPost({ action: 'buddythread' }).then(function (r) {
+        if (!alive()) return;
+        fails = 0;
+        if (gate(r)) return;
+        if (r && r.success) { threads = r.threads || []; desk = r.desk || null; draw(); }
+        schedule();
+      }, function () { if (alive()) { fails++; schedule(); } });
+    }
+    function ask() {
+      var text = box.value.trim();
+      if (!text) { err.textContent = 'Type a question first.'; return; }
+      err.textContent = ''; send.disabled = true;
+      buddyPost({ action: 'buddyask', text: text, context: { page: PATH } }).then(function (r) {
+        send.disabled = false;
+        if (!alive()) return;
+        if (gate(r)) return;
+        if (r && r.success) { box.value = ''; refresh(); } else err.textContent = (r && r.error) || 'Something went wrong. Try again.';
+      }, function () { send.disabled = false; if (alive()) err.textContent = "Couldn't reach Buddy. Your words are still in the box."; });
+    }
+    setTimeout(refresh, 0); // after the panel is in the page
+    return h('section', { class: 'bd-part', 'aria-labelledby': 'bd-ask-h' }, [
+      h('h3', { id: 'bd-ask-h' }, 'Ask Buddy'), banner,
+      h('label', { class: 'bd-ask-l', for: 'bd-ask' }, 'Ask Buddy anything about the school or the portal'), box, err, send, list]);
+  }
+  // ═══ Ask Buddy (end) ═══
 
   function build() {
     var ui = LMCSGame.ui, h = ui.h, G = window.LMCSGuide || {}, pg = (G.pages || {})[PATH] || null;
@@ -121,6 +221,7 @@ var LMCSDock = window.LMCSDock = (function () {
         h('h3', { id: 'bd-page-h' }, 'This page'),
         h('p', {}, (pg && pg.purpose) || 'This is part of the LMCS portal.'),
       ]),
+      owner() ? askSection(h) : null,
       slot,
       pg && (pg.tour || []).length ? h('button', { type: 'button', class: 'lg-btn bd-show', onclick: function () { showMe(pg.tour); } }, 'Show me how') : null,
       h('section', { class: 'bd-part', role: 'search', 'aria-labelledby': 'bd-q-l' }, [
