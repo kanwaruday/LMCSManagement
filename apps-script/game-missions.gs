@@ -311,6 +311,16 @@ function gameModuleHooks_(registry, role) {
   return [].concat(Object.prototype.hasOwnProperty.call(registry, role) ? registry[role] : []).filter(function (fn) { return typeof fn === 'function'; });
 }
 
+// The hooks for a caller: their role's, then each function's (registered as 'fn:<function, lower-cased>', e.g.
+// GAME_MODULE_QUESTS['fn:fees & accounts']), each hook once even when it is registered under several keys.
+function gameCallerHooks_(registry, role, functions) {
+  const out = [];
+  [role].concat((functions || []).map(function (f) { return 'fn:' + String(f).trim().toLowerCase(); })).forEach(function (key) {
+    gameModuleHooks_(registry, key).forEach(function (fn) { if (out.indexOf(fn) === -1) out.push(fn); });
+  });
+  return out;
+}
+
 // ── Today: fixed daily set, roll-over, days on track ─────────────────
 // The Today set is fixed at a person's first load of the game day (a snapshot row of ids in Game Daily);
 // later loads show the same ids with live done state. Only ids are stored, never titles or names.

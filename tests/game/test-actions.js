@@ -337,6 +337,18 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.strictEqual(a.daysOnTrack.showDenominator, false);
 }
 {
+  // function-keyed quests: a module registers on 'fn:<function>'; the holder gets them whatever their role, once each
+  const t = setup();
+  const q = (id) => () => [{ questId: id, title: id, steps: [], complete: false, reward: '' }];
+  const acct = q('accountant'), both = q('both');
+  t.ctx.GAME_MODULE_QUESTS['fn:fees & accounts'] = [acct, both];
+  t.ctx.GAME_MODULE_QUESTS.Principal = [both];
+  const holder = Object.assign({}, P4, { functions: [' Fees & ACCOUNTS '] });
+  assert.deepStrictEqual(t.call(holder, 'gametoday').quests.filter((x) => ['accountant', 'both'].includes(x.questId)).map((x) => x.questId), ['both', 'accountant']);
+  assert.deepStrictEqual(t.call(P4, 'gametoday').quests.filter((x) => x.questId === 'accountant'), []);                 // no functions key (older cached caller)
+  assert.deepStrictEqual(t.call(Object.assign({}, P4, { functions: ['HR'] }), 'gametoday').quests.filter((x) => x.questId === 'accountant'), []);
+}
+{
   // Coordinator: always in, missions only for pilot campuses; issue actions feed the quest; the step is recorded once
   const t = setup();
   const a = t.call(COORD, 'gametoday');

@@ -271,7 +271,7 @@ function gameVerifyCaller_(idToken) {
       const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean);
       if (!roles.length) return null;
       const canDecide = roles.indexOf('Owner') !== -1 || (roles.indexOf('Coordinator') !== -1 && String(rows[i][4] || '').trim().toUpperCase() === 'TRUE'); // same rule as aprCanDecide_ in approvals.gs
-      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, primaryRole: gamePrimaryRole_(roles), canDecide: canDecide };
+      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, primaryRole: gamePrimaryRole_(roles), canDecide: canDecide, functions: gameFunctionsOf_(rows[0], rows[i]) };
       cache.put(key, JSON.stringify(caller), 300);
       return caller;
     }
@@ -282,6 +282,13 @@ function gameVerifyCaller_(idToken) {
   } catch (err) {
     return null;
   }
+}
+
+// A person's functions ("Fees & Accounts", ...): the allowlist column headed "Functions", found by header so its
+// position never matters; comma-separated; [] when the column or the cell is empty. Office reads the same column.
+function gameFunctionsOf_(header, row) {
+  const at = (header || []).map(function (h) { return String(h || '').trim().toLowerCase(); }).indexOf('functions');
+  return at === -1 ? [] : String(row[at] || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean);
 }
 
 // null = every campus (Owner and Coordinator are network-wide, no district scoping; campus ALL);

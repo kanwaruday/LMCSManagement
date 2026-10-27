@@ -120,11 +120,19 @@ for (const fn of [() => null, () => ({ campusId: 'ALL', role: 'Teacher' }), () =
 // an allowlist hit always wins: the fallback is never consulted, even for a higher or lower role
 const row = (roles, campus) => [['Email', '', '', 'Roles', 'CanDecide'], ['emp@lms.org.in', '', campus || 'LMS2', roles, 'TRUE']];
 w = world({ flag: 'on', fn: emp, rows: row('Principal') });
-assert.deepStrictEqual(verify(w), { email: 'emp@lms.org.in', campusId: 'LMS2', roles: ['Principal'], primaryRole: 'Principal', canDecide: false });
+assert.deepStrictEqual(verify(w), { email: 'emp@lms.org.in', campusId: 'LMS2', roles: ['Principal'], primaryRole: 'Principal', canDecide: false, functions: [] });
 assert.strictEqual(w.log.fallbackCalls, 0);
 w = world({ flag: 'on', fn: emp, rows: row('Coordinator', 'ALL') });
 assert.strictEqual(verify(w).canDecide, true);                        // allowlist semantics unchanged
 assert.strictEqual(w.log.fallbackCalls, 0);
+// functions: the column headed "Functions", found by header wherever it sits; comma list, trimmed; [] when absent or blank
+w = world({ rows: [['Email', '', '', 'Roles', 'CanApprove', ' functions '], ['emp@lms.org.in', '', 'ALL', 'Accounts', '', ' Fees & Accounts , HR ,']] });
+assert.deepStrictEqual(verify(w).functions, ['Fees & Accounts', 'HR']);
+w = world({ rows: [['Email', 'Functions', '', 'Roles'], ['emp@lms.org.in', 'Fees & Accounts', 'ALL', 'Accounts']] });
+assert.deepStrictEqual(verify(w).functions, ['Fees & Accounts']);
+w = world({ rows: [['Email', '', '', 'Roles', 'Functions'], ['emp@lms.org.in', '', 'ALL', 'Accounts', '']] });
+assert.deepStrictEqual(verify(w).functions, []);
+assert.deepStrictEqual(J(w.c.gameFunctionsOf_(undefined, [])), []);
 // an allowlisted row with no roles is a miss for the allowlist (as today: null) and does not fall through to the fallback
 w = world({ flag: 'on', fn: emp, rows: row('') });
 assert.strictEqual(w.c.gameVerifyCaller_('tok'), null); assert.strictEqual(w.log.fallbackCalls, 0);
