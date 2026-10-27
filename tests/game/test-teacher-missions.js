@@ -268,62 +268,62 @@ store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 store.set('tch_meta', JSON.stringify({ codes: [CODE], builtAt: nowMs }));
 const caller = { email: 't@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], primaryRole: 'Teacher', employeeCode: CODE };
 const fw = ctx.gameParseConfig_([['Key', 'Value']]);                                // the framework drops `teacher`: the wiring reads it itself
-assert.strictEqual(typeof ctx.GAME_MODULE_MISSIONS.Teacher, 'function');
-ms = J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now));
+assert.ok(ctx.gameModuleHooks_(ctx.GAME_MODULE_MISSIONS, 'Teacher').includes(ctx.tchMissionsHook_));
+ms = J(ctx.tchMissionsHook_(caller, fw, now));
 assert.strictEqual(kinds(ms, 'cwhw_log').length, 1); assert.strictEqual(calls, 1);
-ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now); assert.strictEqual(calls, 1);   // the campus's events are cached
+ctx.tchMissionsHook_(caller, fw, now); assert.strictEqual(calls, 1);   // the campus's events are cached
 events = ['Half-Yearly Examination']; store.clear();
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt }))); store.set('tch_meta', JSON.stringify({ codes: [CODE], builtAt: nowMs }));
-assert.strictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now)).length, 0);   // exam keyword from the sheet's teacher row
+assert.strictEqual(J(ctx.tchMissionsHook_(caller, fw, now)).length, 0);   // exam keyword from the sheet's teacher row
 // Ruling 17: an unreadable calendar is unknown, not a working day: no log card, a count-only log line, the unknown result cached 30 min
 store.delete('tch_cal_LMS4_' + TUE); events = []; calErr = true; calls = 0;
-ms = J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now));
+ms = J(ctx.tchMissionsHook_(caller, fw, now));
 assert.strictEqual(kinds(ms, 'cwhw_log').length, 0); assert.strictEqual(logs.length, 1); assert.ok(!/LMS4|@|group\.calendar|NCM/.test(logs[0]), logs[0]);
-ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now); assert.strictEqual(calls, 1); assert.strictEqual(logs.length, 1);   // cached: not retried per load
+ctx.tchMissionsHook_(caller, fw, now); assert.strictEqual(calls, 1); assert.strictEqual(logs.length, 1);   // cached: not retried per load
 assert.strictEqual(store.get('tch_cal_LMS4_' + TUE), '{"unknown":true}'); assert.strictEqual(ttls['tch_cal_LMS4_' + TUE], 1800);
 calErr = false; ctx.CalendarApp.getCalendarById = () => null;                          // the calendar object itself missing: same
 store.delete('tch_cal_LMS4_' + TUE);
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now)), 'cwhw_log').length, 0);
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(caller, fw, now)), 'cwhw_log').length, 0);
 // other missions are still produced when the calendar is unknown
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt, episodes: [ep({ plannedCwaDate: '2026-11-05' })] })));
 store.delete('tch_cal_LMS4_' + TUE);
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now)), 'cwa_due').length, 1);
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(caller, fw, now)), 'cwa_due').length, 1);
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 // the calendar recovers once the negative entry expires
 store.delete('tch_cal_LMS4_' + TUE);
 ctx.CalendarApp.getCalendarById = (id) => { calls++; return { getEvents: () => [] }; };
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now)), 'cwhw_log').length, 1);
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(caller, fw, now)), 'cwhw_log').length, 1);
 ctx.CalendarApp.getCalendarById = calendarOk;
 // plans are read through tchPlansFor_ (a stub until Task 6)
 assert.deepStrictEqual(J(ctx.tchPlansFor_(CODE)), {}); assert.deepStrictEqual(J(ctx.tchMatchesFor_(CODE)), {});
 // no state: no missions, never an error
 store.delete('tch_' + CODE); store.set('tch_meta', JSON.stringify({ codes: [], builtAt: nowMs }));
-assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(caller, fw, now)), []);
+assert.deepStrictEqual(J(ctx.tchMissionsHook_(caller, fw, now)), []);
 // a caller without an employeeCode (allowlisted) is looked up by email in the Employee Master
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows }) });
 const emp = { getSheetByName: (n) => sheet({ EmpPersonal: [['EmployeeCode', 'AuthEmail'], [CODE, 't@lms.org.in']], EmpMaster: [['EmployeeCode', 'Status'], [CODE, 'Active']], EmpSalary: [['EmployeeCode', 'Department'], [CODE, 'Teaching']] }[n]) };
 ctx.SpreadsheetApp = { openById: (id) => (id === '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0' ? emp : { getSheetByName: () => ({ getDataRange: () => ({ getValues: () => cfgRows }) }) }) };
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 const noCode = Object.assign({}, caller); delete noCode.employeeCode;
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(noCode, fw, now)), 'cwhw_log').length, 1);
 // Ruling 34 wiring: the module reads tch_meta.unmatched for the state's campus (LMS4 -> index 3)
 store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt, resolvedEntries: 0 })));
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);   // no tch_meta: never unlinked
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(noCode, fw, now)), 'cwhw_log').length, 1);   // no tch_meta: never unlinked
 store.set('tch_meta', JSON.stringify({ builtAt: now.getTime(), codes: [CODE], unmatched: { 2: ['Other campus'] } }));
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);   // another campus's unmatched name does not count
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(noCode, fw, now)), 'cwhw_log').length, 1);   // another campus's unmatched name does not count
 store.set('tch_meta', JSON.stringify({ builtAt: now.getTime(), codes: [CODE], unmatched: { 3: ['Tee Six maam'] } }));
-assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)).map((m) => m.kind), ['unlinked']);
+assert.deepStrictEqual(J(ctx.tchMissionsHook_(noCode, fw, now)).map((m) => m.kind), ['unlinked']);
 store.delete('tch_meta'); store.set('tch_' + CODE, JSON.stringify(state({ periodsByDay: tt })));
 // email -> code is cached 6 h: the second load does not open the Employee Master (it is down now and the answer still comes)
 assert.strictEqual(ttls['tch_code_t@lms.org.in'], 21600);
 ctx.SpreadsheetApp = { openById: () => { throw new Error('down'); } };
-assert.strictEqual(kinds(J(ctx.GAME_MODULE_MISSIONS.Teacher(noCode, fw, now)), 'cwhw_log').length, 1);
+assert.strictEqual(kinds(J(ctx.tchMissionsHook_(noCode, fw, now)), 'cwhw_log').length, 1);
 // a non-employee: no missions, and the miss is cached 10 min so the next load does not read again
 let reads = 0;
 ctx.SpreadsheetApp = { openById: () => { reads++; return { getSheetByName: () => sheet([['EmployeeCode', 'AuthEmail']]) }; } };
 const stranger = { email: 'Nobody@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], primaryRole: 'Teacher' };
-assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(stranger, fw, now)), []); assert.strictEqual(reads, 1);
-assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Teacher(stranger, fw, now)), []); assert.strictEqual(reads, 1);
+assert.deepStrictEqual(J(ctx.tchMissionsHook_(stranger, fw, now)), []); assert.strictEqual(reads, 1);
+assert.deepStrictEqual(J(ctx.tchMissionsHook_(stranger, fw, now)), []); assert.strictEqual(reads, 1);
 assert.strictEqual(ttls['tch_code_nobody@lms.org.in'], 600);
 
 // ---- GAME_MODULE_DONE_AT.Teacher: when the day's last due class-subject was logged (cached state only)
@@ -351,7 +351,7 @@ const rows = [['id'], apr('A1', 't@lms.org.in', 'Info Requested', { title: 'New 
   apr('A4', 't@lms.org.in', 'Info Requested', { archived: 'TRUE' }), apr('A5', 'T@lms.org.in', 'Info Requested', { title: 'Chairs' })];
 const staff = { email: 't@lms.org.in', campusId: 'LMS4', roles: ['Staff'], primaryRole: 'Staff', employeeCode: CODE };
 ctx.SpreadsheetApp = { openById: (id) => { assert.strictEqual(id, '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'); return { getSheetByName: (n) => { assert.strictEqual(n, 'Approvals'); return sheet(rows); } }; } };
-ms = J(ctx.GAME_MODULE_MISSIONS.Staff(staff, fw, now));
+ms = J(ctx.tchStaffMissionsHook_(staff, fw, now));
 assert.deepStrictEqual(ms.map((m) => m.id), ['info_requested:A1', 'info_requested:A5']);
 assert.strictEqual(ms[0].title, 'Reply to Management about “New projector”'); assert.strictEqual(ms[0].kind, 'info_requested');
 assert.strictEqual(ms[0].go, 'teacher/index.html'); assert.strictEqual(ms[0].owner, 't@lms.org.in'); assert.strictEqual(ms[0].campus, 'LMS4');
@@ -360,6 +360,6 @@ const principal = { email: 't@lms.org.in', campusId: 'LMS4', roles: ['Principal'
 const pm = J(ctx.gamePrincipalMissions_(principal, { approvals: rows }, fw, now)).filter((m) => m.kind === 'info_requested');
 assert.deepStrictEqual(pm.map((m) => m.id), ['info_requested:A1', 'info_requested:A5']);
 ctx.SpreadsheetApp = { openById: () => { throw new Error('down'); } };
-assert.deepStrictEqual(J(ctx.GAME_MODULE_MISSIONS.Staff(staff, fw, now)), []);
-assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Staff(staff, fw, now)), []);
+assert.deepStrictEqual(J(ctx.tchStaffMissionsHook_(staff, fw, now)), []);
+assert.ok(!ctx.gameModuleHooks_(ctx.GAME_MODULE_QUESTS, 'Staff').some((f) => /^tch/.test(f.name)));
 console.log('teacher-missions: ok');

@@ -358,3 +358,53 @@ function cqSaveAction_(caller, p) {
 // ── registration (this file's own functions only) ────────────────────
 GAME_MODULE_ACTIONS.setupget = cqGetAction_;
 GAME_MODULE_ACTIONS.setupsave = cqSaveAction_;
+
+// ── Buddy: missions and quests through the module hooks ──────────────
+var CQ_HOOK_ROLES = ['Owner', 'Coordinator', 'Principal', 'Teacher', 'Staff', 'FeeClerk', 'Accounts'];
+var CQ_MAX_STEPS = 12;
+
+function cqGo_(view, item) {
+  return 'setup/index.html?quest=' + view.id + (view.campus ? '&campus=' + view.campus : '') + (item ? '&item=' + encodeURIComponent(item) : '');
+}
+
+// outside the lock: this is the call that warms CQ_MEMO (adapters allowed). Never throws.
+function cqMissions_(caller, cfg, now) {
+  let views;
+  try { views = cqStatus_(caller, cfg, now, {}); } catch (err) { console.error('setup missions: ' + (err && err.message)); return []; }
+  const out = [];
+  views.forEach(function (v) {
+    if (v.ring.total === 0 && !v.emptyLabel) return;
+    // done missions stay listed: one finished today still shows as done today
+    out.push(gameMission_('cq_' + v.id, v.scope === 'self' ? 'me' : v.campus || 'network', {
+      title: v.task, why: v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
+      go: cqGo_(v), progress: v.itemsTotal ? { done: v.itemsDone, total: v.itemsTotal } : undefined, done: v.ring.done, core: false, shared: v.scope !== 'self',
+    }));
+  });
+  return out;
+}
+
+function cqStepTitle_(v, it) {
+  const t = v.itemTitle.replace(/\{(\w+)\}/g, function (m, id) { const c = it.fields[id]; return c ? c.value : ''; }).trim();
+  return t || 'New entry';
+}
+
+// under the lock: the memo cqMissions_ warmed, else cache-only adapters. Reads only: a peek writes nothing by construction. Never throws.
+function cqQuests_(caller, cfg, now, opts) {
+  let views;
+  try { views = cqStatus_(caller, cfg, now, { cacheOnly: true }); } catch (err) { console.error('setup quests: ' + (err && err.message)); return []; }
+  return views.map(function (v) {
+    const real = v.items.filter(function (it) { return it.item !== '_none'; });
+    const def = { fields: v.fields };
+    let steps = real.map(function (it) { return { id: it.item, title: cqStepTitle_(v, it), go: cqGo_(v, it.item), done: cqItemDone_(def, it), locked: false }; });
+    // ponytail: steps capped at 12; the page shows them all.
+    if (steps.length > CQ_MAX_STEPS) steps = steps.slice(0, CQ_MAX_STEPS - 1).concat({ id: '_more', title: '+' + (steps.length - (CQ_MAX_STEPS - 1)) + ' more', go: cqGo_(v), done: v.ring.done, locked: false });
+    if (!steps.length) steps = [{ id: 'start', title: v.task, go: cqGo_(v), done: v.ring.done, locked: false }];
+    return { questId: 'cq:' + v.id + (v.campus ? ':' + v.campus : ''), title: v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), parallel: true, steps: steps, complete: v.ring.done };
+  });
+}
+
+// own functions only; concatenated so game-teacher.gs (either load order) keeps its hooks
+CQ_HOOK_ROLES.forEach(function (r) {
+  GAME_MODULE_MISSIONS[r] = [].concat(GAME_MODULE_MISSIONS[r] || [], cqMissions_);
+  GAME_MODULE_QUESTS[r] = [].concat(GAME_MODULE_QUESTS[r] || [], cqQuests_);
+});

@@ -191,7 +191,7 @@ sq = setup(nextState(), {}, { onTrack: 0 }, {}, NOW, { 'teacher1:cw_today': true
 assert.strictEqual(sq[0].complete, true); assert.deepStrictEqual(done(sq[1]), [true, false]); assert.ok(sq[1].steps.every((s) => !s.locked));
 
 // ---- the wiring: GAME_MODULE_QUESTS.Teacher (runs inside gameWithLock_ in gameToday_: cache-only state, appends under the caller's lock)
-assert.strictEqual(typeof ctx.GAME_MODULE_QUESTS.Teacher, 'function');
+assert.ok(ctx.gameModuleHooks_(ctx.GAME_MODULE_QUESTS, 'Teacher').includes(ctx.tchQuestsHook_));
 const store = new Map();
 ctx.CacheService = { getScriptCache: () => ({ get: (k) => (store.has(k) ? store.get(k) : null), put: (k, v) => { store.set(k, v); }, remove: (k) => store.delete(k) }) };
 ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: () => 'GAME_BOOK' }) };
@@ -209,16 +209,16 @@ ctx.SpreadsheetApp = { openById: () => ({ getSheetByName: (n) => ({ 'Game Progre
 const caller = { email: 'Teacher@LMS.org.in', employeeCode: CODE, primaryRole: 'Teacher' };
 const fw = { teacher: {} };
 store.set('tch_' + CODE, JSON.stringify(nextState(Object.assign({ episodes: [ep()] }, q1done))));
-let out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW));
+let out = J(ctx.tchQuestsHook_(caller, fw, NOW));
 assert.deepStrictEqual(out.map((q) => q.questId), ['teacher1', 'term:' + CODE + ':Class 7:Math', 'term:' + CODE + ':Class 8:Science', 'chapter:' + CODE + ':Class 7:Math:fractions']);   // setup first, then chapter quests
 assert.deepStrictEqual(done(out[0]), [true, true, false, true]);                           // 5 on-track days this month (Nov 3, 4, 5, 6, 9); not October's, not another person's
 assert.deepStrictEqual(J(prog.rows.slice(1).map((r) => r.slice(0, 4))), [[EMAIL, 'quest_step', 'teacher1:cw_today', 'done'], [EMAIL, 'quest_step', 'teacher1:hw_today', 'done'], [EMAIL, 'quest_step', 'teacher1:days_5', 'done']]);
 assert.ok(prog.rows.slice(1).every((r) => !isNaN(Date.parse(r[4]))));
 // the same load again appends nothing; a step done earlier stays done after the data goes
-out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW)); assert.strictEqual(prog.rows.length, 4);
+out = J(ctx.tchQuestsHook_(caller, fw, NOW)); assert.strictEqual(prog.rows.length, 4);
 store.set('tch_' + CODE, JSON.stringify(nextState({ episodes: [ep()] })));                 // today's entries are gone (e.g. a new day)
 daily.rows = daily.rows.slice(0, 1);                                                       // and the on-track days
-out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, new Date('2026-11-11T05:00:00Z')));
+out = J(ctx.tchQuestsHook_(caller, fw, new Date('2026-11-11T05:00:00Z')));
 assert.deepStrictEqual(done(out[0]), [true, true, false, true]); assert.strictEqual(prog.rows.length, 4);
 // Ruling 19 through the hook: Quest 2 completes -> one '<questId>:_done' row (Value = its step titles); the window then slides: still complete, no second row
 prog.rows = prog.rows.slice(0, 1);
@@ -226,13 +226,13 @@ daily.rows = [daily.rows[0]].concat(['03', '04', '05', '06', '09'].map((d) => ['
 ctx.tchPlansFor_ = () => ({ 'Class 7|Math|ratio': { activity: 'a', plannedAt: '2026-11-02' }, 'Class 7|Math|angles': { activity: 'b', plannedAt: '2026-11-02' } });
 const two = (nc) => state({ loggedDays: day({ hw: true }), nextChapters: nc, classSubjects: [{ cls: 'Class 7', subj: 'Math' }] });
 store.set('tch_' + CODE, JSON.stringify(two([nxt(), nxt({ ch: 'angles', name: 'Angles', startDate: '2026-12-01' })])));
-out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW));
+out = J(ctx.tchQuestsHook_(caller, fw, NOW));
 const keysOf = () => J(prog.rows.slice(1).map((r) => r[2]));
 assert.deepStrictEqual(keysOf(), ['teacher1:cw_today', 'teacher1:hw_today', 'teacher1:plan_one', 'teacher1:days_5', 'term:' + CODE + ':Class 7:Math:plan:ratio', 'term:' + CODE + ':Class 7:Math:plan:angles', 'term:' + CODE + ':Class 7:Math:_done']);
 assert.deepStrictEqual(J(JSON.parse(prog.rows[7][3])), [{ id: 'plan:ratio', title: 'Plan the activity for Ratio' }, { id: 'plan:angles', title: 'Plan the activity for Angles' }]);
 assert.strictEqual(out[1].complete, true);
 store.set('tch_' + CODE, JSON.stringify(two([nxt({ ch: 'volume', name: 'Volume', startDate: '2026-12-10' })])));   // ratio and angles have started; Volume is next
-out = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, new Date('2026-12-02T05:00:00Z')));
+out = J(ctx.tchQuestsHook_(caller, fw, new Date('2026-12-02T05:00:00Z')));
 assert.strictEqual(out[1].questId, Q2ID); assert.strictEqual(out[1].complete, true);
 assert.deepStrictEqual(out[1].steps.map((x) => x.title), ['Plan the activity for Ratio', 'Plan the activity for Angles']);
 assert.strictEqual(keysOf().length, 7);                                                    // nothing appended, no second _done
@@ -240,15 +240,15 @@ assert.strictEqual(keysOf().length, 7);                                         
 {
   const keep = prog.rows, kept = store.get('tch_' + CODE);
   prog.rows = keep.slice(0, 1); store.set('tch_' + CODE, JSON.stringify(nextState(Object.assign({ episodes: [ep()] }, q1done))));
-  const pk = J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW, { peek: true }));
+  const pk = J(ctx.tchQuestsHook_(caller, fw, NOW, { peek: true }));
   assert.ok(pk.length > 0); assert.strictEqual(prog.rows.length, 1, 'peek appends no rows');
-  ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW, { peek: false }); assert.ok(prog.rows.length > 1);
-  prog.rows = keep.slice(0, 1); ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW); assert.ok(prog.rows.length > 1, 'no opts: writes as before');
+  ctx.tchQuestsHook_(caller, fw, NOW, { peek: false }); assert.ok(prog.rows.length > 1);
+  prog.rows = keep.slice(0, 1); ctx.tchQuestsHook_(caller, fw, NOW); assert.ok(prog.rows.length > 1, 'no opts: writes as before');
   prog.rows = keep; store.set('tch_' + CODE, kept);
 }
 // no state (or no code): no quests, no writes, no refresh
 store.delete('tch_' + CODE);
-assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Teacher(caller, fw, NOW)), []);
-assert.deepStrictEqual(J(ctx.GAME_MODULE_QUESTS.Teacher({ email: 'x@lms.org.in', primaryRole: 'Teacher' }, fw, NOW)), []);
+assert.deepStrictEqual(J(ctx.tchQuestsHook_(caller, fw, NOW)), []);
+assert.deepStrictEqual(J(ctx.tchQuestsHook_({ email: 'x@lms.org.in', primaryRole: 'Teacher' }, fw, NOW)), []);
 assert.strictEqual(prog.rows.length, 8);
 console.log('teacher quests OK');

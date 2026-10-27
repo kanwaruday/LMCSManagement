@@ -497,7 +497,7 @@ function tchStateFor_(code) {
 }
 
 // ── missions ─────────────────────────────────────────────────────────
-// Spec/plan: Task 4. Pure part: tchWorkingDay_ and tchMissions_ take data in, Mission[] out. The wiring (GAME_MODULE_MISSIONS.Teacher) is the
+// Spec/plan: Task 4. Pure part: tchWorkingDay_ and tchMissions_ take data in, Mission[] out. The wiring (tchMissionsHook_) is the
 // only part that touches CalendarApp / CacheService. Mission ids: teacher:<kind>:<code>:<key>.
 // Source of the campus calendars: PDR_SCHOOL_CALENDAR_IDS in principal-dr.gs. KEEP IN SYNC (LMS2 and LMS3 share one calendar).
 var TCH_CALENDAR_IDS = {
@@ -1048,7 +1048,7 @@ function tchCodeFor_(caller) {
 }
 
 // No state (not on the roster, nothing logged) is no missions, never an error. tchStateFor_ runs here, outside any gameWithLock_.
-GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
+function tchMissionsHook_(caller, cfg, now) {
   const code = tchCodeFor_(caller), state = code ? tchStateFor_(code) : null;
   if (!state) return [];
   const dayKey = gameDayKey_(now), tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), events = tchCalendarEvents_(state.campus, dayKey);
@@ -1056,12 +1056,12 @@ GAME_MODULE_MISSIONS.Teacher = function (caller, cfg, now) {
   const meta = tchReadJson_(CacheService.getScriptCache(), 'tch_meta'), idx = tchCampusIdx_(String(state.campus).replace(/^LMS/, 'LMS '));
   return tchMissions_(state, dayKey, events !== null && tchWorkingDay_(state.campus, dayKey, events, tcfg), tchPlansFor_(code), tcfg, now, caller.email,
     meta && meta.unmatched ? meta.unmatched[idx] : null);
-};
+}
 
 // gameToday_ calls this INSIDE gameWithLock_, so it never runs tchStateFor_ (a cold cache would run the refresh under the lock): it reads the cached
-// state, which GAME_MODULE_MISSIONS.Teacher (outside the lock, earlier in the same load) has just warmed. No state is no quests. For the same reason
+// state, which tchMissionsHook_ (outside the lock, earlier in the same load) has just warmed. No state is no quests. For the same reason
 // the quest_step rows are appended here directly: the caller already holds the lock.
-GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now, opts) {
+function tchQuestsHook_(caller, cfg, now, opts) {
   const code = tchCodeFor_(caller), state = code ? tchReadJson_(CacheService.getScriptCache(), 'tch_' + code) : null;
   if (!state) return [];
   const tcfg = cfg && cfg.teacher ? cfg : tchLoadCfg_(), me = gameLower_(caller.email), ss = gameBook_();
@@ -1084,7 +1084,7 @@ GAME_MODULE_QUESTS.Teacher = function (caller, cfg, now, opts) {
   // view-as never reaches this hook: the game backend has no view-as caller (no marker in game.gs), every caller is the signed-in person
   if (!(opts && opts.peek)) gameAppendText_(progSheet, fresh); // a peek writes nothing (and holds no lock)
   return setup.concat(tchChapterQuests_(state, tchPlansFor_(code), tchMatchesFor_(code, tcfg), tcfg, now));
-};
+}
 
 // Day finalize (the framework calls it for a core id that was not seen done, INSIDE gameWithLock_): when was that day's log card completed?
 // For teacher:cwhw_log:<code>:<dayKey> -> the time the last due class-subject was first logged (same rule as the mission), else null. Reads only the
@@ -1101,12 +1101,17 @@ GAME_MODULE_DONE_AT.Teacher = function (caller, missionId) {
 
 // Staff (Q9: Non-Teaching, AdminClerk, Transport) get one mission kind: their own Approvals requests that Management sent back for more
 // information, built by the framework's Principal builder. Staff are not loaded by gameLoadSources_, so the Approvals tab is read here.
-GAME_MODULE_MISSIONS.Staff = function (caller, cfg, now) {
+function tchStaffMissionsHook_(caller, cfg, now) {
   let rows;
   try { rows = SpreadsheetApp.openById(GAME_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues(); } catch (err) { return []; }
   return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_STAFF_GO);
-};
-GAME_MODULE_QUESTS.Staff = function () { return []; }; // Staff have no quests
+}
+
+// Registered by concatenation, never assigned: another file (game-confirm.gs) adds its own hooks to the same roles, in either load order.
+// Staff have no quests (no hook registered).
+GAME_MODULE_MISSIONS.Teacher = [].concat(GAME_MODULE_MISSIONS.Teacher || [], tchMissionsHook_);
+GAME_MODULE_QUESTS.Teacher = [].concat(GAME_MODULE_QUESTS.Teacher || [], tchQuestsHook_);
+GAME_MODULE_MISSIONS.Staff = [].concat(GAME_MODULE_MISSIONS.Staff || [], tchStaffMissionsHook_);
 
 // Owner only: how many names per campus the roster could not match, and the share of entries that resolved. Counts, never names.
 GAME_MODULE_ACTIONS.teacherindexaudit = function (caller) {
