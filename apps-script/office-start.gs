@@ -8,7 +8,7 @@
 // note; returned reopens it). Stored as StartData rows with field '_state' (item = the campus). Submitted or approved
 // locks the quest+campus for fillers; Owner/FinanceHead and approvers may still edit.
 
-var OFFICE_START_CUTOFF = '2026-10-22'; // when a SetupQuests row names none
+var OFFICE_START_CUTOFF = '2026-10-31'; // when a SetupQuests row names none
 var OFFICE_START_ROLES = ['Owner', 'FinanceHead']; // see and fill every quest, every campus
 
 // The six quests in play order: fields from code, the rest merged from SetupQuests (latest row per id wins; a quest with

@@ -35,12 +35,12 @@ var OFFICE_CONFIG_SEED = {
   // Who fills and who approves each starting-data quest (office-start.gs merges these over its code defaults; the
   // fields stay in code). Role lists are comma lists; approval/optional/active are yes/no. The latest row per id wins.
   SetupQuests: [['id', 'label', 'fillRoles', 'approveRoles', 'approval', 'cutoff', 'optional', 'active'],
-    ['cash', 'Cash in hand', 'FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-22', 'no', 'yes'],
-    ['bank', 'Bank balances', 'FinanceHead', '', 'no', '2026-10-22', 'no', 'yes'],
-    ['supplier', 'Credit suppliers', 'FinanceHead', '', 'no', '2026-10-22', 'no', 'yes'],
-    ['odometer', 'Vehicle odometers', 'FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-22', 'no', 'yes'],
-    ['loan', 'Vehicle loans', 'FinanceHead', '', 'no', '2026-10-22', 'yes', 'yes'],
-    ['users', 'Portal users', 'FinanceHead', '', 'no', '2026-10-22', 'no', 'yes']],
+    ['cash', 'Cash in hand', 'FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-31', 'no', 'yes'],
+    ['bank', 'Bank balances', 'FinanceHead', '', 'no', '2026-10-31', 'no', 'yes'],
+    ['supplier', 'Credit suppliers', 'FinanceHead', '', 'no', '2026-10-31', 'no', 'yes'],
+    ['odometer', 'Vehicle odometers', 'FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-31', 'no', 'yes'],
+    ['loan', 'Vehicle loans', 'FinanceHead', '', 'no', '2026-10-31', 'yes', 'yes'],
+    ['users', 'Portal users', 'FinanceHead', '', 'no', '2026-10-31', 'no', 'yes']],
 };
 // Categories are code, not config (P2). group: fee|income|school|transport|movement. active false = not offered for typing.
 // [id, label, direction, group, needs_vehicle, pnl_column, active]

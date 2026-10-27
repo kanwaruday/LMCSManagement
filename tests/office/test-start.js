@@ -233,7 +233,7 @@ module.exports = function run(t) {
     h.call('start.submit', { quest: 'cash', campus: 'LMS1' }, 'clerk-token');
     h.call('start.approve', { quest: 'cash', campus: 'LMS1', decision: 'approve' }, 'co1-token');
     r = h.call('start.export', {}, 'fh-token');
-    assert.equal(r.success, true); assert.equal(r.cutoff, '2026-10-22');
+    assert.equal(r.success, true); assert.equal(r.cutoff, '2026-10-31');
     assert.deepEqual(J(r.actual), { LMS1: 12345.5 });
     assert.deepEqual(J(r.unapproved.cash), ['LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6', 'HES']);
     assert.equal(r.unapproved.odometer.length, 7);
@@ -252,9 +252,9 @@ module.exports = function run(t) {
     const sh = h.ctx.officeConfigBook_().getSheetByName('SetupQuests');
     assert.deepEqual(Array.from(sh.values[0]), ['id', 'label', 'fillRoles', 'approveRoles', 'approval', 'cutoff', 'optional', 'active']);
     const cashCfg = h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'SetupQuests').find((r) => r.id === 'cash');
-    assert.deepEqual([cashCfg.fillRoles, cashCfg.approveRoles, cashCfg.approval, cashCfg.cutoff], ['FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-22']);
+    assert.deepEqual([cashCfg.fillRoles, cashCfg.approveRoles, cashCfg.approval, cashCfg.cutoff], ['FeeClerk,AdminManager', 'Coordinator,Owner', 'yes', '2026-10-31']);
     let q = h.call('start.get', {}).quests.find((x) => x.id === 'cash');
-    assert.deepEqual([Array.from(q.fillRoles), Array.from(q.approveRoles), q.approval, q.cutoff], [['FeeClerk', 'AdminManager'], ['Coordinator', 'Owner'], true, '2026-10-22']);
+    assert.deepEqual([Array.from(q.fillRoles), Array.from(q.approveRoles), q.approval, q.cutoff], [['FeeClerk', 'AdminManager'], ['Coordinator', 'Owner'], true, '2026-10-31']);
     h.ctx.officeWriteRow_(h.ctx.officeConfigBook_(), 'SetupQuests', { id: 'cash', label: 'Cash box', fillRoles: 'FeeClerk,AdminManager', approveRoles: 'Owner', approval: 'yes', cutoff: '2026-10-22', optional: 'no', active: 'yes' });
     q = h.call('start.get', {}).quests.find((x) => x.id === 'cash');
     assert.equal(q.label, 'Cash box'); assert.deepEqual(Array.from(q.approveRoles), ['Owner']);
