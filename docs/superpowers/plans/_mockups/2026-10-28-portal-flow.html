@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Portal flow map</title>
+<!-- Clickable mockup of the Portal Flow Map (vault: work/Portal Flow Map.md). Made-up names and numbers; nothing here is real or saves.
+     Built only from assets/game/base.css so every portal can copy it. Pick a role, then tap through: hub → task → done → back to the hub. -->
+<link rel="stylesheet" href="../../../../assets/game/base.css">
+<style>
+  .fm-roles { display:flex; flex-wrap:wrap; gap:6px; max-width:1080px; margin:0 auto; padding:10px 16px 0; }
+  .fm-roles .gb-btn[aria-pressed="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
+  .fm-sample { max-width:1080px; margin:0 auto; padding:8px 16px 0; font-size:13px; font-weight:700; color:var(--gb-warn); }
+  .fm-step { font-size:13px; color:var(--gb-muted); margin:0 0 10px; }
+  .fm-form label { display:block; font-weight:700; margin:10px 0 4px; }
+  .fm-form input { width:100%; min-height:44px; padding:8px 10px; border:1.5px solid var(--gb-line); border-radius:10px; font:inherit; }
+</style>
+</head>
+<body class="gb">
+<p class="fm-sample">Mockup with made-up data. Nothing here is real or saves.</p>
+<nav class="fm-roles" aria-label="Role" id="roles"></nav>
+<div id="screen"></div>
+<script>
+// one entry per role: hub (where sign-in lands), the next step, the day's missions, one task page and its done state
+var ROLES = {
+  owner: { label: 'Owner', hub: "Owner's Kingdom", page: 'owner/kingdom.html', who: 'Good morning, Uday ji', role: 'Owner · HES and LMS 1–6', level: 9, done: 6, total: 33, unit: 'steps built',
+    next: 'Hand out Who holds each role at the Darbar. Pick who sets it up.', go: 'Pick who sets it up',
+    missions: [['Switch on staff sign-in', 'Set up the game', 'done'], ['Who holds each role', 'Darbar · nobody has it yet', 'next'], ['Projector for Class 7 room', 'Approved · waiting for a follow-up', ''], ['LMS 1 starting cash', 'Waiting on the Accounts head', 'wait']],
+    task: 'Who holds each role', field: 'Who sets this up?', value: 'Coordinator A', save: 'Assign',
+    doneT: 'Assigned', doneP: 'Coordinator A sees Who holds each role in their Today list.' },
+  principal: { label: 'Principal', hub: 'Principal portal', page: 'principal/index.html', who: 'Good morning, Ritika ji', role: 'Principal · LMS 4 Ner Chowk', level: 3, done: 2, total: 5, unit: 'done today',
+    next: 'Close the issue "Water tank cover, Block B". Add a line on what was done.', go: 'Close the issue',
+    missions: [["Submit today's daily report", 'Daily Reporting · done at 9:10', 'done'], ['Close the issue "Water tank cover"', 'Daily-report issues · raised today', 'next'], ['Submit 2 SS evaluations', '6 still needed for October', ''], ['Reply about "Class 5 nature walk"', 'Approvals · they asked for more', '']],
+    task: 'Water tank cover, Block B', field: 'What was done', value: 'Cover fixed by the caretaker', save: 'Close the issue',
+    doneT: 'Issue closed', doneP: 'Your note is saved. A Coordinator can reopen it if anything is left.' },
+  coordinator: { label: 'Coordinator', hub: 'Coordinator portal', page: 'coordinator/index.html', who: 'Good morning, Deepshikha ji', role: 'Coordinator · Academics, Events', level: 4, done: 3, total: 5, unit: 'done today',
+    next: 'Follow up "Projector for Class 7 room" at LMS 4. Due Friday.', go: 'Open the follow-up',
+    missions: [['Approve LMS 2 starting cash', 'Treasury · done', 'done'], ['Projector for Class 7 room', 'Follow-up · LMS 4 · due 31/10/2026', 'next'], ['Course maps for Class 6', 'Academy · LMS 3', ''], ['Annual day venue', 'Waiting on LMS 2', 'wait']],
+    task: 'Projector for Class 7 room', field: 'Update', value: 'Ordered; arrives Monday', save: 'Save the update',
+    doneT: 'Update saved', doneP: 'The Principal and the Owner see it on the request.' },
+  teacher: { label: 'Teacher / Staff', hub: 'My day', page: 'teacher/index.html', who: 'Good morning, Meena ji', role: 'Teacher · LMS 4 · Class 5A', level: 2, done: 1, total: 3, unit: 'done today',
+    next: "Fill in today's class work and homework for 5A.", go: 'Fill it in',
+    missions: [['Mark attendance for 5A', 'done at 8:20', 'done'], ['Class work and homework for 5A', 'Today', 'next'], ['Plan the Chapter 4 activity', 'Due Friday', '']],
+    task: 'Class work and homework, 5A', field: 'Homework', value: 'Maths page 42, Q1–5', save: 'Save',
+    doneT: 'Saved for 5A', doneP: 'Parents and your Principal see today’s work. Shabash.' },
+  fee: { label: 'Fee Clerk', hub: 'Fee Clerk + PRO', page: 'office/index.html', who: 'Good morning, Asha ji', role: 'Fee Clerk · LMS 4 Ner Chowk', level: 3, done: 2, total: 5, unit: 'done today',
+    next: 'Count the cash in the drawer for the closing count.', go: 'Count the cash',
+    missions: [["Enter yesterday's receipts", 'Day Book · done at 9:40', 'done'], ['Count the cash', 'Close Day · next', 'next'], ['Send the daily report', 'Daily Report', ''], ['Starting cash approved', 'Waiting on the Accounts head', 'wait']],
+    task: 'Count the cash', field: 'Cash in the drawer (₹)', value: '12,450', save: 'Save the count',
+    doneT: 'Cash count saved', doneP: '₹ 12,450 counted at LMS 4. The Accounts head sees it in their list.' },
+  fleet: { label: 'Fleet (later)', hub: 'Fleet Command', page: 'coordinator/transport/index.html', who: 'Good morning, Tilak ji', role: 'Transport head · all schools', level: 2, done: 4, total: 9, unit: 'buses ready',
+    next: 'Add the insurance photo for HP 34 A 1234.', go: 'Add the photo',
+    missions: [['Papers for HP 34 B 5678', 'Garage · done', 'done'], ['Insurance for HP 34 A 1234', 'Due 12/11/2026', 'next'], ["Today's roll call", 'Who drives and attends each bus', '']],
+    task: 'Insurance, HP 34 A 1234', field: 'Valid until', value: '11/11/2027', save: 'Save the photo',
+    doneT: 'Insurance saved', doneP: 'HP 34 A 1234 has every paper now. 5 of 9 buses are ready.' }
+};
+var S = { role: 'fee', screen: 'hub' };
+function h(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  Object.keys(attrs || {}).forEach(function (k) { if (k === 'on') e.addEventListener('click', attrs.on); else e.setAttribute(k, attrs[k]); });
+  [].concat(kids || []).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return e;
+}
+function btn(text, primary, on) { return h('button', { type: 'button', class: 'gb-btn' + (primary ? ' gb-btn-primary' : ''), on: on }, [text]); }
+function go(screen) { S.screen = screen; draw(); window.scrollTo(0, 0); var f = document.querySelector('#screen h1, #screen h2'); if (f) { f.setAttribute('tabindex', '-1'); f.focus(); } }
+// the same header everywhere: page title; on a task page the way back names the hub
+function head(r, title, back) {
+  return h('header', { class: 'gb-head' }, [h('div', {}, [h('div', {}, [h('h1', {}, [title]), h('p', {}, [r.role])]),
+    back ? h('a', { href: '#', on: function (e) { e.preventDefault(); go('hub'); } }, ['‹ ' + r.hub]) : h('a', { href: '#' }, ['All tools'])])]);
+}
+function hub(r) {
+  var pct = Math.round(100 * r.done / r.total);
+  return [head(r, r.hub), h('main', { class: 'gb-page' }, [
+    h('p', { class: 'fm-step' }, ['1. Hub: where sign-in lands (' + r.page + ')']),
+    h('div', { class: 'gb-hub' }, [h('div', { class: 'gb-hub-who' }, [h('span', { class: 'gb-shield', 'aria-label': 'Level ' + r.level }, [String(r.level)]), h('div', {}, [h('h2', { class: 'gb-h1' }, [r.who]), h('span', { class: 'gb-hub-role' }, [r.role])])]),
+      h('div', { class: 'gb-hub-prog' }, [h('span', { class: 'gb-bar' }, [h('i', { style: 'width:' + pct + '%' })]), h('div', { class: 'gb-meta' }, [h('span', {}, ['Progress']), h('span', {}, [r.done + ' of ' + r.total + ' ' + r.unit])])])]),
+    h('div', { class: 'gb-next' }, [h('img', { src: '../../../../assets/game/buddy/winter-formal-neutral.webp', alt: '' }), h('div', { class: 'gb-next-b' }, [h('span', { class: 'gb-next-k' }, ['Your next step']), h('p', { class: 'gb-next-t' }, [r.next]), btn(r.go, true, function () { go('task'); })])]),
+    h('h2', {}, ['Today']),
+    h('ul', { class: 'gb-missions' }, r.missions.map(function (m) {
+      var cls = m[2] === 'done' ? ' is-done' : m[2] === 'next' ? ' is-next' : m[2] === 'wait' ? ' is-wait' : '';
+      return h('li', { class: 'gb-mission' + cls }, [h('span', { class: 'gb-mark', 'aria-hidden': 'true' }), h('span', { class: 'gb-mission-t' }, [m[0], h('small', {}, [m[1]])]),
+        m[2] === 'done' || m[2] === 'wait' ? null : btn('Go', m[2] === 'next', function () { go('task'); })]);
+    }))])];
+}
+function task(r) {
+  return [head(r, r.task, true), h('main', { class: 'gb-page' }, [
+    h('p', { class: 'fm-step' }, ['2. Task page: the same header, the way back names the hub']),
+    h('div', { class: 'gb-card fm-form' }, [h('h2', {}, [r.task]), h('label', { for: 'fm-v' }, [r.field]), h('input', { id: 'fm-v', value: r.value }),
+      h('div', { class: 'gb-row-acts' }, [btn(r.save, true, function () { go('done'); }), btn('Cancel', false, function () { go('hub'); })])])])];
+}
+function done(r) {
+  return [head(r, r.task, true), h('main', { class: 'gb-page' }, [
+    h('p', { class: 'fm-step' }, ['3. Done: what changed, then one way back']),
+    h('div', { class: 'gb-done', role: 'status' }, [h('div', { class: 'gb-done-tick', 'aria-hidden': 'true' }, ['✓']), h('h2', {}, [r.doneT]), h('p', {}, [r.doneP]),
+      h('div', { class: 'gb-row-acts' }, [btn('Back to ' + r.hub, true, function () { go('hub'); })])])])];
+}
+function draw() {
+  var r = ROLES[S.role], el = document.getElementById('screen');
+  el.textContent = '';
+  (S.screen === 'task' ? task(r) : S.screen === 'done' ? done(r) : hub(r)).forEach(function (n) { el.appendChild(n); });
+  var nav = document.getElementById('roles'); nav.textContent = '';
+  Object.keys(ROLES).forEach(function (k) { nav.appendChild(h('button', { type: 'button', class: 'gb-btn', 'aria-pressed': String(k === S.role), on: function () { S.role = k; go('hub'); } }, [ROLES[k].label])); });
+}
+draw();
+</script>
+</body>
+</html>
