@@ -25,7 +25,7 @@
   box-shadow: 0 4px 14px rgba(40, 25, 10, .22); cursor: pointer; overflow: hidden; }
 .bd-btn .bd-av { display: block; width: 100%; height: 100%; object-fit: cover; }
 .bd-btn[aria-busy] { opacity: .7; }
-.bd-btn:focus-visible, .bd-x:focus-visible, .bd-q:focus-visible, .bd-results a:focus-visible, .bd-guide:focus-visible, .bd-panel .lg-go:focus-visible,
+.bd-btn:focus-visible, .bd-x:focus-visible, .bd-ask:focus-visible, .bd-q:focus-visible, .bd-results a:focus-visible, .bd-guide:focus-visible, .bd-panel .lg-go:focus-visible,
 .bd-panel .lg-btn:focus-visible { outline: 3px solid var(--lg-focus); outline-offset: 2px; }
 
 /* the panel: a bottom sheet on phones (max 70vh, scrolls) */
@@ -56,6 +56,25 @@
 .bd-results a { border-bottom: 1px solid var(--lg-line); }
 .bd-none { padding: 10px 0; font-size: 14px; color: var(--lg-muted); }
 .bd-guide { color: var(--lg-red-ink); }
+
+/* Ask Buddy (Owner) */
+.bd-ask-l { display: block; margin: 2px 0 4px; font-size: 14px; }
+.bd-ask { display: block; width: 100%; min-height: 76px; padding: 8px 10px; font: inherit; font-size: 16px; resize: vertical;
+  border: 1px solid #8a837b; border-radius: 8px; background: var(--lg-paper); color: var(--lg-ink); }
+.bd-send, .bd-prop .lg-btn { min-height: 44px; }
+.bd-send { margin-top: 8px; }
+.bd-off { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--lg-red-soft); color: var(--lg-red-ink); font-size: 14px; }
+.bd-off:empty { display: none; }
+.bd-off p { margin: 0; }
+.bd-err { margin: 6px 0 0; font-size: 14px; color: var(--lg-red-ink); }
+.bd-err:empty { display: none; }
+.bd-threads { list-style: none; margin: 10px 0 0; padding: 0; }
+.bd-th { padding: 8px 0; border-top: 1px solid var(--lg-line); }
+.bd-th p { margin: 0 0 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.bd-th .bd-me { font-weight: 700; }
+.bd-th .bd-status { color: var(--lg-muted); font-size: 13.5px; }
+.bd-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.bd-prop { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: var(--lg-surface); }
 
 /* desktop: a 360 px card above the button */
 @media (min-width: 768px) {
