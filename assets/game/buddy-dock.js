@@ -56,7 +56,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return v || null;
   }
   function pollDelay(threads, open) {
-    return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working'; }) ? 5000 : 0;
+    return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working' || t.proposalState === 'confirmed'; }) ? 5000 : 0;
   }
 
   var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
@@ -133,7 +133,7 @@ var LMCSDock = window.LMCSDock = (function () {
 
   // ═══ Ask Buddy (start) ═══
   function askSection(h) {
-    var threads = [], desk = null, fails = 0, me = panel;
+    var threads = [], desk = null, fails = 0, me = panel, signedOut = false;
     var banner = h('div', { class: 'bd-off', role: 'status' }), list = h('ul', { class: 'bd-threads' });
     var err = h('p', { class: 'bd-err', role: 'alert' });
     var box = h('textarea', { id: 'bd-ask', class: 'bd-ask', rows: 3, maxlength: 2000 });
@@ -141,28 +141,34 @@ var LMCSDock = window.LMCSDock = (function () {
     function alive() { return panel === me; }
     function schedule() {
       clearTimeout(pollTimer); pollTimer = null;
-      var d = pollDelay(threads, alive());
+      var d = signedOut ? 0 : pollDelay(threads, alive());
       if (d) pollTimer = setTimeout(refresh, Math.min(d * Math.pow(2, fails), 60000)); // backs off while the network fails
     }
-    function decide(t, decision) {
+    // a reply with no success and no code is the gate (e.g. "Not authorized": the sign-in expired), not a Buddy answer
+    function gate(r) { if (r && !r.success && !r.code) { signedOut = true; err.textContent = 'Please sign in again.'; return true; } return false; }
+    function decide(t, decision, btns) {
+      btns.forEach(function (b) { b.disabled = true; }); // one tap only
+      var again = function () { btns.forEach(function (b) { b.disabled = false; }); };
       buddyPost({ action: 'buddyconfirm', id: t.id, decision: decision }).then(function (r) {
         if (!alive()) return;
-        if (r && r.success) refresh(); else { err.textContent = (r && r.error) || 'Something went wrong. Try again.'; }
-      }, function () { if (alive()) err.textContent = "Couldn't reach Buddy. Please try again."; });
+        if (gate(r)) return;
+        if (r && r.success) refresh(); else { again(); err.textContent = (r && r.error) || 'Something went wrong. Try again.'; }
+      }, function () { if (alive()) { again(); err.textContent = "Couldn't reach Buddy. Please try again."; } });
     }
     function draw() {
       banner.textContent = '';
       if (deskState(desk) === 'offline') banner.appendChild(h('p', {}, [h('strong', {}, 'Buddy is offline — the Mac is off.'), h('br', {}), 'Your message is saved and will be answered when it wakes.']));
       list.textContent = '';
       threads.slice(-5).forEach(function (t) {
-        var line = threadLine(t, desk), pv = proposalView(t), extra = null;
+        var line = threadLine(t, desk), pv = proposalView(t), extra = null, pair = [];
         if (pv && pv.state === 'open') {
           extra = h('div', { class: 'bd-prop' }, [h('p', {}, 'Send this to the master agent?'), h('p', { class: 'bd-sum' }, pv.summary),
             h('div', { class: 'bd-btns' }, [
-              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'confirm'); } }, 'Send to the master agent'),
-              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'decline'); } }, 'No thanks')])]);
+              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'confirm', pair); } }, 'Send to the master agent'),
+              h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'decline', pair); } }, 'No thanks')])]);
+          pair = [].slice.call(extra.querySelectorAll('button'));
         } else if (pv) {
-          extra = h('p', { class: 'bd-status' }, pv.state === 'failed' ? pv.note : { confirmed: 'Sent to the master agent', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
+          extra = h('p', { class: 'bd-status' }, pv.state === 'failed' ? pv.note : { confirmed: 'Sending to the master agent when the Mac is on…', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
         }
         list.appendChild(h('li', { class: 'bd-th' }, [h('p', { class: 'bd-me' }, t.text), h('p', { class: 'bd-' + line.who }, line.text), extra]));
       });
@@ -173,6 +179,7 @@ var LMCSDock = window.LMCSDock = (function () {
       buddyPost({ action: 'buddythread' }).then(function (r) {
         if (!alive()) return;
         fails = 0;
+        if (gate(r)) return;
         if (r && r.success) { threads = r.threads || []; desk = r.desk || null; draw(); }
         schedule();
       }, function () { if (alive()) { fails++; schedule(); } });
@@ -184,6 +191,7 @@ var LMCSDock = window.LMCSDock = (function () {
       buddyPost({ action: 'buddyask', text: text, context: { page: PATH } }).then(function (r) {
         send.disabled = false;
         if (!alive()) return;
+        if (gate(r)) return;
         if (r && r.success) { box.value = ''; refresh(); } else err.textContent = (r && r.error) || 'Something went wrong. Try again.';
       }, function () { send.disabled = false; if (alive()) err.textContent = "Couldn't reach Buddy. Your words are still in the box."; });
     }
