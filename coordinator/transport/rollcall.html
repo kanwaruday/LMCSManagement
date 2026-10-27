@@ -7,23 +7,24 @@
 <title>LMCS — Roll call</title>
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=14149e6e">
-<link rel="stylesheet" href="../capture/capture.css?v=829c42df">
+<link rel="stylesheet" href="../capture/capture.css?v=dd562771">
+<link rel="stylesheet" href="../../assets/game/base.css?v=a4c11273">
 <style>
   .rc-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-  .rc-list>li{border:2px solid var(--c-line);border-radius:12px;padding:10px 12px}
+  .rc-list>li{border:1.5px solid var(--c-line);border-radius:14px;padding:12px 14px;background:var(--gb-paper,#fff)}
   .rc-list b{font-size:17px}
   .rc-list p{margin:2px 0;font-size:15px}
   .rc-acts{display:flex;gap:8px;margin-top:8px}
   .rc-acts .cap-btn{flex:1 1 0}
-  .rc-on{background:var(--c-ink);color:#fff}
+  .rc-on,.gb .rc-on{background:var(--c-ink);border-color:var(--c-ink);color:#fff}
   .rc-sub label{display:block;font-weight:700;margin:10px 0 4px}
   .rc-done{color:var(--c-ok);font-weight:700}
   .rc-wait{color:var(--c-warn);font-weight:700}
   .rc-list .fs-bad{color:var(--c-bad);font-weight:700}
 </style>
 </head>
-<body>
-<header class="hdr"><div><h1>Today's roll call</h1><p>LMCS Transport</p></div><a id="back" href="setup.html">&larr; Fleet setup</a></header>
+<body class="gb">
+<header class="gb-head site"><div><div><h1>Today's roll call</h1><p>LMCS Transport</p></div><a id="back" href="setup.html">&larr; Fleet setup</a></div></header>
 <div id="authRoot"></div>
 <main id="appBody" class="cap" hidden>
   <div id="pending" class="cap-offline" hidden><span id="pendingText"></span> <button type="button" id="sendNow" class="cap-btn">Send now</button></div>

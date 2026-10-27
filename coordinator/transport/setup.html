@@ -8,11 +8,12 @@
 <link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
 <link rel="stylesheet" href="../shared.css?v=14149e6e">
 <link rel="stylesheet" href="../../assets/campus-picker.css?v=153d68d7">
-<link rel="stylesheet" href="../capture/capture.css?v=829c42df">
+<link rel="stylesheet" href="../capture/capture.css?v=dd562771">
 <link rel="stylesheet" href="../../assets/game/game.css?v=ee9ca522">
+<link rel="stylesheet" href="../../assets/game/base.css?v=a4c11273">
 </head>
-<body>
-<header class="hdr"><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></header>
+<body class="gb">
+<header class="gb-head site"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></div></header>
 <details id="buddy" class="fs-buddy" hidden><summary>Fleet missions with Buddy</summary><section id="game-root" aria-label="Fleet setup with Buddy" hidden></section></details>
 <div id="authRoot"></div>
 <main id="appBody" class="cap fs" hidden>
@@ -21,7 +22,7 @@
   <p id="others" class="cap-note"></p>
   <p id="loadMsg" class="cap-note"><span>Loading the buses…</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
 
-  <p class="cap-note"><a href="rollcall.html">Today's roll call: who drives and attends each bus</a></p>
+  <a class="gb-go fs-roll" href="rollcall.html"><span>Today's roll call<small>Who drives and attends each bus</small></span></a>
   <section id="board" aria-label="Buses">
     <div id="scope" class="fs-scope"></div>
     <section id="gaps" class="fs-gaps" hidden>
@@ -49,7 +50,7 @@
   // on screen sits centred. The next-step beat is only for people with fleet missions (Fee Clerks, Coordinators; not the Owner).
   function fleetTour(session) {
     const beats = [
-      { target: '.hdr', text: 'This is Fleet setup: six short quests for each of our buses, so we know every bus, its driver and its papers. A bus with all six done is ready.' },
+      { target: '.gb-head', text: 'This is Fleet setup: six short quests for each of our buses, so we know every bus, its driver and its papers. A bus with all six done is ready.' },
       { target: '#board:not([hidden]) #buses', text: 'Each card is one bus. Its ring fills a little with each quest done, and the line under it says what comes next.' },
       { target: '#board:not([hidden]) #buses', text: 'Open a bus to see its six quests: Vehicle papers, Safety kit, Parts history, Driver card, Fuel pump and Capture plan. Each is a short form or a run on the bus.' },
       { target: '#board:not([hidden]) #buses', text: "Amber means we've already found a value, mostly from the scans of the bus papers. Check it against the paper with View scan, then save it." },

@@ -382,3 +382,36 @@
 .fs #scope button:first-child{flex-grow:1.35} /* "All campuses" fits at 320 px */
 #loadMsg:has(#retry:not([hidden])){color:var(--c-ink);font-size:16px} /* a failed load reads as the message it is, not a grey note */
 #loadMsg .cap-btn{display:block;margin-top:10px;color:var(--c-ink)}
+
+/* Fleet pages (setup.html, rollcall.html) in the game baseline's look: they opt in with <body class="gb"> and link
+   ../../assets/game/base.css. The capture page itself does not opt in, so its sunlight look is unchanged. Colour keeps its
+   meaning: red = the main action, green = done, amber = needs a look, deep orange = a problem. */
+.gb .cap{--c-ink:var(--gb-ink);--c-mute:var(--gb-muted);--c-line:var(--gb-line);--c-red:var(--gb-red);--c-red-d:var(--gb-red-ink);--c-ok:var(--gb-ok);--c-warn:var(--gb-warn);--c-bad:var(--gb-low);color:var(--gb-ink)}
+.gb #appBody.cap{width:100%;max-width:720px;margin:0 auto;padding:16px 16px 40px}
+@media (min-width:1024px){.gb #appBody.cap.fs{max-width:1080px} .gb .fs-buddy{max-width:1048px} .gb .fs #bus,.gb .fs #quest{max-width:720px;margin:0 auto}}
+.gb .cap-h{font-family:var(--gb-serif);font-weight:400;font-size:22px}
+.gb .cap-note{color:var(--gb-muted)}
+.gb .cap-btn{min-height:44px;border:1.5px solid var(--gb-line);border-radius:10px;background:var(--gb-paper);color:var(--gb-ink)}
+.gb .cap-btn:hover{border-color:var(--gb-muted)}
+.gb .cap-primary{border:1.5px solid var(--gb-red-ink);border-radius:10px;background:var(--gb-red);color:#fff;font-size:17px;font-weight:700}
+.gb .cap-primary:active{background:var(--gb-red-ink)}
+.gb .fs-bus,.gb .fs-quest,.gb .fs-callout,.gb .cap-slot{border-width:1.5px;border-radius:14px;background:var(--gb-paper)}
+.gb .fs-row{border-width:1.5px;background:var(--gb-paper)}
+.gb .fs-gaps ul{border-width:1.5px;background:var(--gb-paper)}
+.gb .fs-bus:active,.gb .fs-quest:active,.gb .fs-row:active{background:var(--gb-gold-soft)}
+.gb .cap-select,.gb .cap-input,.gb .cap-yn{border-width:1.5px;border-color:var(--gb-line)}
+.gb .cap-yn button+button{border-left-width:1.5px;border-left-color:var(--gb-line)}
+.gb .cap-modes{border-width:1.5px}
+.gb .cap-modes [aria-pressed="true"]{background:var(--gb-ink)}
+.gb .cap-offline,.gb .fs-warn,.gb .fs-refused li{border-width:1.5px;border-radius:12px}
+/* the campus filter: buttons that show which campuses are on, not grey pills */
+.gb .lmcs-campus-chip{min-height:44px;padding:0 14px;border:1.5px solid var(--gb-line);border-radius:10px;background:var(--gb-paper);color:var(--gb-ink);font-size:15px;font-weight:600}
+.gb .lmcs-campus-chip[aria-pressed="true"]{background:var(--gb-ink);border-color:var(--gb-ink);color:#fff}
+.gb .lmcs-campus-chip[aria-pressed="true"]::before{box-shadow:0 0 0 1.5px #fff}
+/* Buddy's fleet missions: a card at the top of the page */
+.gb .fs-buddy{width:calc(100% - 32px);max-width:688px;margin:16px auto 0;background:var(--gb-paper);border:1.5px solid var(--gb-line);border-radius:14px}
+.gb .fs-buddy>summary{display:flex;align-items:center;min-height:52px;padding:0 14px;font-weight:700;cursor:pointer}
+.gb .fs-buddy[open]>summary{border-bottom:1px solid var(--gb-line)}
+.gb .fs-buddy>section{padding:12px 14px}
+.gb .fs-roll{margin:0 0 16px}
+.gb .fs-scope{margin:0 0 16px}
