@@ -1,5 +1,5 @@
 // Day close screen (FinanceHead / Owner). A close freezes the day; entries still queued on this device must reach the server first.
-import { h, setKids } from './dom.js';
+import { h, setKids, showDone, place } from './dom.js';
 import { cashToPaise } from './report.js';
 import { formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, balancesTable } from './daybook.js';
@@ -67,6 +67,7 @@ export async function showClose(root, session, api, outbox) {
       closeId = await outbox.enqueue('day.close', { campus, close_date: date });
       msg.textContent = 'Close saved — will sync';
       outbox.flush().then(check).catch(() => {}); watch();
+      showDone(form, 'Closing ' + isoToDmy(date) + ' for ' + place(campus) + ' is saved. Closing balances show below once it is confirmed.', { keep: true });
     } catch (err) { msg.textContent = 'Could not save on this device: ' + (err && err.message || err); closeBtn.disabled = false; }
   }) }, 'Close day');
   const form = h('div', { class: 'office-form' }, h('label', { for: 'cl-date' }, 'Day to close'), dateIn, info, notes, closeBtn, msg, result, proofEl);

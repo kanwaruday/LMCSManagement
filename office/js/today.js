@@ -1,6 +1,7 @@
 // Today screen: the clerk's day order from today.get, each task linking to its module screen.
 import { cacheGet, cacheSet, esc } from './shell.js';
 import { isoToDmy } from './format.js';
+import { place } from './dom.js';
 
 const LINKS = { report: 'report.html', deposits: 'deposits.html', close: 'close.html', daybook: 'daybook.html' };
 const LABELS = { overdue: 'Overdue', due: 'Due', waiting: 'Waiting', done: 'Done' };
@@ -8,25 +9,38 @@ const LABELS = { overdue: 'Overdue', due: 'Due', waiting: 'Waiting', done: 'Done
 // '2026-10-21 18:00' -> '21/10/2026 18:00'; '2026-10-21' -> '21/10/2026'.
 export const dueLabel = (due) => { const [d, time] = String(due || '').split(' '); return isoToDmy(d) + (time ? ' ' + time : ''); };
 
-export function renderTasks(el, data, note = '') {
-  el.innerHTML = '<h2>Today · ' + esc(isoToDmy(data.date)) + '</h2>' + (note ? '<p>' + esc(note) + '</p>' : '') +
-    (data.tasks.length ? '<div class="modules">' + data.tasks.map((t) => {
-      const href = LINKS[t.action];
-      const title = href ? '<a href="' + href + '">' + esc(t.title) + '</a>' : esc(t.title);
-      return '<div class="card"><div class="card-top"><h3>' + title + '</h3><span class="status ' + (t.status === 'done' ? 'live' : t.status === 'overdue' ? 'paused' : 'building') + '">' + LABELS[t.status] + '</span></div>' +
-        '<p>Due ' + esc(dueLabel(t.due)) + '</p></div>';
-    }).join('') + '</div>' : '<p>Nothing to do today.</p>');
+// who = {name, role, campus} paints the hub's greeting; without it only the list shows.
+export function renderTasks(el, data, note = '', who = null) {
+  const tasks = data.tasks || [], open = tasks.filter((t) => t.status !== 'done');
+  const next = open.find((t) => t.status !== 'waiting' && LINKS[t.action]);
+  const pct = tasks.length ? Math.round(100 * (tasks.length - open.length) / tasks.length) : 0;
+  const hub = who ? '<div class="gb-hub"><div class="gb-hub-who"><div><h2 class="gb-h1">Hi, ' + esc(String(who.name || '').split(' ')[0] || 'there') + '</h2>' +
+    '<span class="gb-hub-role">' + esc(who.role + ' · ' + who.campus) + '</span></div></div>' +
+    '<div class="gb-hub-prog"><span class="gb-bar gb-bar-ok" role="progressbar" aria-label="Today\'s items done" aria-valuemin="0" aria-valuemax="' + tasks.length + '" aria-valuenow="' + (tasks.length - open.length) + '"><i style="width:' + pct + '%"></i></span>' +
+    '<div class="gb-meta"><span>' + (tasks.length - open.length) + ' of ' + tasks.length + ' done today</span></div></div></div>' : '';
+  const nextCard = '<div class="gb-next"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt="" width="52" height="52"><div class="gb-next-b"><span class="gb-next-k">Your next step</span>' +
+    (next ? '<p class="gb-next-t">' + esc(next.title) + '</p><a class="gb-btn gb-btn-primary" href="' + LINKS[next.action] + '">Go</a>'
+      : '<p class="gb-next-t">' + (open.length ? 'The rest is waiting on someone else. Nothing for you right now.' : 'Everything for today is done. Thank you!') + '</p>') + '</div></div>';
+  el.innerHTML = hub + (who ? nextCard : '') + '<h2>Today · ' + esc(isoToDmy(data.date)) + '</h2>' + (note ? '<p class="gb-note">' + esc(note) + '</p>' : '') +
+    (tasks.length ? '<ul class="gb-missions">' + tasks.map((t) => {
+      const href = LINKS[t.action], isNext = t === next;
+      const cls = t.status === 'done' ? ' is-done' : isNext ? ' is-next' : t.status === 'waiting' ? ' is-wait' : '';
+      const go = t.status !== 'done' && href ? '<a class="gb-btn' + (isNext ? ' gb-btn-primary' : '') + '" href="' + href + '">Go</a>' : '';
+      return '<li class="gb-mission' + cls + '"><span class="gb-mark" aria-hidden="true"></span><span class="gb-mission-t">' + esc(t.title) +
+        '<small>' + LABELS[t.status] + ' · due ' + esc(dueLabel(t.due)) + '</small></span>' + go + '</li>';
+    }).join('') + '</ul>' : '<p class="gb-empty">Nothing to do today.</p>');
 }
 
 export async function showToday(el, session, api) {
   const key = 'today:' + session.campus;
+  const who = { name: session.name, role: String(session.role || '').split(',')[0].trim() || 'Fee Clerk', campus: place(session.campus) };
   const cached = cacheGet(key);
-  if (cached) renderTasks(el, cached, 'Showing last saved list; refreshing…');
-  else el.innerHTML = '<p>Loading…</p>';
+  if (cached) renderTasks(el, cached, 'Showing last saved list; refreshing…', who);
+  else el.innerHTML = '<p class="gb-muted">Loading…</p>';
   const r = await api.read('today.get', { campus: session.campus }, 'today');
   if (r.stale) return;
-  if (r.success) { cacheSet(key, r); renderTasks(el, r); }
-  else if (cached) renderTasks(el, cached, 'Offline or unavailable. Showing the last saved list.');
+  if (r.success) { cacheSet(key, r); renderTasks(el, r, '', who); }
+  else if (cached) renderTasks(el, cached, 'Offline or unavailable. Showing the last saved list.', who);
   else el.innerHTML = '<p>Could not load today\'s tasks: ' + esc(r.error || 'unknown error') + '</p>';
 }
 

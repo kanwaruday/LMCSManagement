@@ -1,6 +1,6 @@
 // Deposits screen: record a bank deposit with its slip photo, enter the day's ERP total, see the reconciliation.
 // Writes go through the FIFO outbox (file.upload first, then deposit.add, R7); viewing a proof is a direct audited call.
-import { h, field, setKids } from './dom.js';
+import { h, field, setKids, showDone, place } from './dom.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, inflightGuard, rollForward, rolledNote } from './daybook.js';
 import { entryReason } from './codes.js';
@@ -120,8 +120,10 @@ export async function showDeposits(root, session, api, outbox) {
         const fileId = await outbox.enqueue('file.upload', { campus, category: 'deposit_proof', belongs_to: '', name: file.name || 'deposit-slip', mime: img.mime, base64: img.base64 });
         await outbox.enqueue('deposit.add', { ...r.data, file_id: fileId });
         msg.textContent = 'Saved — will sync';
+        const saved = r.data.amount_paise;
         amtIn.value = ''; refIn.value = ''; fileIn.value = '';
         outbox.flush().then(check).catch(() => {}); watch(); await check();
+        showDone(form, formatInr(saved) + ' deposit saved for ' + place(campus) + '.', { again: 'Add another' });
       } catch (err) { msg.textContent = err && err.message || String(err); }
       saveBtn.disabled = false;
     });
@@ -145,6 +147,7 @@ export async function showDeposits(root, session, api, outbox) {
         await outbox.enqueue('erp.set', { campus, total_date: coversIn.value, amount_paise: p });
         erpIn.value = ''; erpMsg.textContent = 'Saved — will sync';
         outbox.flush().then(check).catch(() => {}); watch(); await check();
+        showDone(erpForm, 'ERP total of ' + formatInr(p) + ' saved for ' + place(campus) + '.', { again: 'Change it' });
       } catch (err) { erpMsg.textContent = 'Could not save on this device: ' + (err && err.message || err); }
       erpBtn.disabled = false;
     });

@@ -93,9 +93,38 @@ section.block h2 { font-size: 1.1rem; }
 .sd-toast:empty { display: none; }
 @media (prefers-reduced-motion: no-preference) { .sd-ring circle { transition: stroke .3s ease-out; } }
 
-.sd-chip { display: inline-block; align-self: flex-start; margin-top: 4px; padding: 2px 10px; border-radius: 999px; font-size: .85rem; font-weight: 700; background: #eef1f5; color: #3b4658; }
-.sd-chip.sd-chip-submitted { background: #fff3d6; color: #8a5a00; }
-.sd-chip.sd-chip-approved { background: #dff3e5; color: #1a7f3c; }
-.sd-chip.sd-chip-returned { background: #fde4e1; color: #a1281c; }
 .sd-return { margin: 6px 0 0; font-weight: 700; color: #a1281c; }
 .sd-status, .sd-actions { margin: 12px 0; }
+
+/* Game look (assets/game/base.css, <body class="gb">): school red main button, green confirm, quiet secondary. Copied from setup/index.html. */
+.gb .btn-lg, .gb .office-form button { border-radius: 10px; border-color: var(--gb-red-ink); background: var(--gb-red); color: #fff; font-weight: 700; }
+.gb .office-form button.secondary, .gb button.linklike { background: var(--gb-paper); color: var(--gb-red-ink); border-color: var(--gb-line); }
+.gb .office-form button.sd-confirm { background: var(--gb-ok); border-color: var(--gb-ok); }
+.gb .office-form input, .gb .office-form select, .gb .office-form textarea { border-color: var(--gb-line); border-radius: 10px; background: var(--gb-paper); }
+.gb .sd-card, .gb .sd-row, .gb .sd-item, .gb .office-list li { border-color: var(--gb-line); border-radius: 14px; background: var(--gb-paper); }
+.gb .sd-card:active { background: var(--gb-gold-soft); border-color: var(--gb-gold); }
+.gb .sd-back { color: var(--gb-red-ink); }
+.gb .sd-ok { color: var(--gb-ok); }
+.gb .sd-toast { background: var(--gb-ink); }
+.gb .office-form button.chip { background: var(--gb-paper); color: var(--gb-red-ink); }
+.gb .office-form button.chip[aria-pressed="true"] { background: var(--gb-red); color: #fff; }
+.gb .office-list .row-actions button { background: var(--gb-paper); color: var(--gb-red-ink); border-color: var(--gb-line); }
+.gb .hiring-banner { border-color: var(--gb-gold); background: var(--gb-warn-soft); border-radius: 12px; }
+/* header right side: sync state, campus picker, back link */
+.gb-head-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.gb-head-r #sync-indicator { font-size: 13px; color: #fff; }
+.gb-head-r #sync-indicator[data-state="attention"] { font-weight: 700; text-decoration: underline; }
+.gb-head-r select { min-height: 44px; border-radius: 10px; }
+.gb-head-r > a[hidden] { display: none; }
+/* hub extras */
+.gb-hub-prog .gb-meta { display: flex; justify-content: space-between; gap: 8px; }
+.gb .gb-go { margin: 0 0 8px; }
+.gb ul.gb-missions + p, .gb .gb-section > h2 { margin-top: 0; }
+.gb-done .gb-row-acts a, .gb-done .gb-row-acts button { text-decoration: none; }
+.gb-done .gb-done-queued { font-weight: 700; color: var(--gb-warn); }
+
+.sd-text .gb-pill { align-self: flex-start; margin-top: 4px; }
+.sd-text span.gb-pill-ok { color: var(--gb-ok); } .sd-text span.gb-pill-warn { color: var(--gb-warn); } .sd-text span.gb-pill-low { color: var(--gb-low); }
+.gb h2, .gb h3 { color: var(--gb-ink); border: 0; padding: 0; }
+.gb .gb-hub h2 { margin: 0; }
+.gb .welcome { border-radius: 12px; }
