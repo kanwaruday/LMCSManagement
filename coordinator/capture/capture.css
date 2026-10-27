@@ -395,12 +395,12 @@
 .gb .cap-btn:hover{border-color:var(--gb-muted)}
 .gb .cap-primary{border:1.5px solid var(--gb-red-ink);border-radius:10px;background:var(--gb-red);color:#fff;font-size:17px;font-weight:700}
 .gb .cap-primary:active{background:var(--gb-red-ink)}
-.gb .fs-bus,.gb .fs-quest,.gb .fs-callout,.gb .cap-slot{border-width:1.5px;border-radius:14px;background:var(--gb-paper)}
-.gb .fs-row{border-width:1.5px;background:var(--gb-paper)}
+.gb .fs-bus,.gb .fs-quest,.gb .fs-callout,.gb .cap-slot{border-width:1.5px;border-radius:14px}
+.gb .fs-row{border-width:1.5px}
 .gb .fs-gaps ul{border-width:1.5px;background:var(--gb-paper)}
 .gb .fs-bus:active,.gb .fs-quest:active,.gb .fs-row:active{background:var(--gb-gold-soft)}
-.gb .cap-select,.gb .cap-input,.gb .cap-yn{border-width:1.5px;border-color:var(--gb-line)}
-.gb .cap-yn button+button{border-left-width:1.5px;border-left-color:var(--gb-line)}
+.gb .cap-select,.gb .cap-input,.gb .cap-yn{border-width:1.5px;border-color:var(--gb-muted)}
+.gb .cap-yn button+button{border-left-width:1.5px;border-left-color:var(--gb-muted)}
 .gb .cap-modes{border-width:1.5px}
 .gb .cap-modes [aria-pressed="true"]{background:var(--gb-ink)}
 .gb .cap-offline,.gb .fs-warn,.gb .fs-refused li{border-width:1.5px;border-radius:12px}
