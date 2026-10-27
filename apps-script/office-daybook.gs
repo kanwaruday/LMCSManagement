@@ -187,6 +187,7 @@ function officeDaybookReverse_(ctx, data) {
   officeAssertAccountAllowed_(ctx.caller, acct, officeCategory_(orig.category)); // inactive categories still reverse
   // defence in depth: day.close refuses today, but a closed today must never take a cash row
   if (orig.mode === 'cash') officeAssertOpen_(ss, officeToday_());
+  if (handover) officeHandoverEvent_(ctx, handover, 'closed'); // before the row: a retry finding closed writes the missing reversal
   const res = officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,
@@ -195,7 +196,6 @@ function officeDaybookReverse_(ctx, data) {
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
     source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
   }, 'daybook.reverse');
-  if (handover) officeHandoverEvent_(ctx, handover, 'closed');
   return res;
 }
 

@@ -204,20 +204,24 @@ function officeFundTransfer_(ctx, data) {
 // daybook.reverse on either leg: reverses both, dated today, each in its own campus's book, with fixed ids <leg>-rv so a retry
 // (or reversing the other leg afterwards) only fills what is missing. Same people as fund.transfer, holding both campuses.
 function officeFundReverse_(ctx, orig, narration) {
+  if (!officeFundAllowed_(ctx.caller)) throw new Error('FORBIDDEN_ROLE');
   const other = officeAccount_(String(orig.payee || ''));
-  const partner = other && officeRecentBooks_(other.campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, [])
-    .filter(function (r) { return r.id === orig.settles; })[0];
+  const partner = other && officeRecentRows_(other.campus, function (r) { return r.id === orig.settles; })[0];
   if (!partner) throw officeCoded_('FUND_INCOMPLETE'); // the transfer's retry repairs the missing leg first
   const legs = [orig, partner];
-  if (!officeFundAllowed_(ctx.caller)) throw new Error('FORBIDDEN_ROLE');
   legs.forEach(function (leg) { officeAssertCampus_(ctx.caller, leg.campus); });
+  // Write only the reversals not already in the leg campus's recent books (a retry after 1 April must not write a second one).
+  const missing = legs.map(function (leg) {
+    return !officeRecentRows_(leg.campus, function (r) { return r.id === leg.id + '-rv' || r.reverses === leg.id; }).length;
+  });
   const today = officeToday_(), books = legs.map(function (leg) { return officeOpen_(leg.campus, officeFy_(today)); });
-  const res = legs.map(function (leg, i) {
-    return officeDaybookWrite_(books[i], ctx, {
+  legs.forEach(function (leg, i) {
+    if (!missing[i]) return;
+    officeDaybookWrite_(books[i], ctx, {
       id: leg.id + '-rv', campus: leg.campus, entry_date: today, direction: leg.direction === 'IN' ? 'OUT' : 'IN', mode: leg.mode, bucket: '',
       category: leg.category, amount_paise: leg.amount_paise, payee: leg.payee, narration: narration || 'Reversal of ' + leg.id, file_id: '',
       reverses: leg.id, account: leg.account, charged_to: leg.charged_to, settles: legs[1 - i].id + '-rv', source: 'live',
     }, 'daybook.reverse');
   });
-  return { id: orig.id + '-rv', duplicate: res[0].duplicate || res[1].duplicate };
+  return { id: orig.id + '-rv', duplicate: !(missing[0] && missing[1]) };
 }

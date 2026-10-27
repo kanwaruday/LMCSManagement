@@ -46,6 +46,17 @@ if (require.main !== module) { module.exports = () => {}; return; }
     assert.strictEqual(ft({ ref: '  ' }).ok, false);
     ok('fundTransferPayload');
   }
+  {
+    // A role without Accounts gets the not-available message, and nothing on the full page's path runs (no TDZ ReferenceError).
+    const prev = global.document;
+    const el = (tag) => ({ tag, kids: [], append(...k) { this.kids.push(...k); }, setAttribute() {}, addEventListener() {} });
+    global.document = { createElement: el, createTextNode: (t) => t };
+    const root = { replaceChildren(...k) { this.kids = k; } };
+    await A.showAccounts(root, { role: 'FeeClerk', campus: 'LMS1' }, null, null);
+    assert.deepStrictEqual(root.kids.map((k) => k.kids.join('')), ['Accounts', 'Accounts is not available for your role. Ask the Finance Head or Owner.']);
+    global.document = prev;
+    ok('showAccounts gate for a FeeClerk');
+  }
   assert.strictEqual(A.canSeeAccounts({ role: 'Owner' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FeeClerk, Accounts' }), true);
   assert.strictEqual(A.canSeeAccounts({ role: 'FinanceHead' }), true);

@@ -110,6 +110,55 @@ module.exports = function run(t) {
     assert.deepEqual(rows(h, 'HES').map((x) => x.entry_date), ['2026-10-22']);
   });
 
+  t.test('partial failures: accepted with no IN row is repaired; closed with no reversal row is repaired', () => {
+    const h = fresh();
+    give(h); give(h, { id: 'h2' });
+    const ho = (id) => h.ctx.officeHandovers_()[id], as = (email) => ({ caller: { email } });
+    h.ctx.officeHandoverEvent_(as('hes@example.org'), ho('h1'), 'accepted'); // crash after the event, before the IN leg
+    assert.deepEqual(list(h, 'hes-token').map((x) => x.id), ['h2']);
+    const r = accept(h);
+    assert.equal(r.success, true); assert.equal(r.duplicate, true);
+    assert.deepEqual(rows(h, 'HES').map((x) => x.id), ['h1-in']);
+    assert.equal(accept(h).duplicate, true); assert.equal(rows(h, 'HES').length, 1);
+    h.ctx.officeHandoverEvent_(as('c1@example.org'), ho('h2'), 'closed'); // crash after the closed event, before the reversal row
+    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'h2-out' }, 'c1-token').success, true);
+    assert.deepEqual(rows(h, 'LMS1').filter((x) => x.reverses).map((x) => x.reverses), ['h2-out']);
+    assert.equal(accept(h, 'h2').code, 'HANDOVER_NOT_PENDING');
+  });
+
+  t.test('rows outrank a lost state: an IN row blocks reversal; a reversed OUT blocks acceptance', () => {
+    const h = fresh();
+    give(h); give(h, { id: 'h2' });
+    const legOnly = (c, row) => h.ctx.officeDaybookWrite_(h.ctx.officeOpen_(c, '2026-27'), { caller: { email: 'x' } }, row, 'test');
+    legOnly('HES', { id: 'h1-in', campus: 'HES', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'cash_received', amount_paise: 20000, account: 'cash:HES', settles: 'h1-out' });
+    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'h1-out' }, 'c1-token').code, 'HANDOVER_ACCEPTED');
+    legOnly('LMS1', { id: 'x2', campus: 'LMS1', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'cash_transfer', amount_paise: 20000, account: 'cash:LMS1', settles: 'h2-in', reverses: 'h2-out' });
+    assert.equal(accept(h, 'h2').code, 'HANDOVER_NOT_PENDING');
+    assert.equal(rows(h, 'HES').length, 1);
+  });
+
+  t.test('the sender never accepts or disputes their own handover', () => {
+    const h = fresh();
+    give(h, { from_account: 'cash:HES', to_account: 'cash:LMS1' }, 'owner-token');
+    assert.equal(accept(h, 'h1', 'owner-token').code, 'HANDOVER_SELF');
+    assert.equal(h.call('cash.dispute', { id: 'd', handover: 'h1', note: 'x' }, 'owner-token').code, 'HANDOVER_SELF');
+    assert.deepEqual(list(h, 'owner-token').map((x) => x.receiver), [false]);
+    assert.deepEqual(list(h, 'c1-token').map((x) => x.receiver), [true]);
+    assert.equal(accept(h, 'h1', 'c1-token').success, true);
+  });
+
+  t.test('a retry of a saved handover after its day closed repairs the record only', () => {
+    const h = fresh();
+    give(h, { date: '2026-10-20' });
+    h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'Handovers'); // the record is lost:
+    const sh = h.ctx.officeConfigBook_().getSheetByName('Handovers');
+    sh.deleteRow(sh.getDataRange().getValues().findIndex((r) => r[0] === 'h1') + 1);
+    assert.equal(h.call('day.close', { id: 'cl', campus: 'LMS1', close_date: '2026-10-20' }, 'fh-token').success, true);
+    const r = give(h, { date: '2026-10-20' });
+    assert.equal(r.success, true); assert.equal(r.duplicate, true);
+    assert.deepEqual(list(h, 'hes-token').map((x) => x.id), ['h1']);
+  });
+
   t.test('ledger.summary: both legs are movement; interSchool counts the handover once', () => {
     const h = fresh();
     give(h); accept(h);

@@ -142,6 +142,22 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.reverse', { id: 'rv9', campus: 'LMS1', reverses: 't9-out' }, 'fh-token').code, 'FUND_INCOMPLETE');
   });
 
+  t.test('reversal retry across 1 April writes only the missing reversal, never a second one', () => {
+    const h = fresh();
+    h.setNow(new Date('2027-03-31T06:00:00Z'));
+    xfer(h, { date: '2027-03-31' });
+    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token');
+    const sh = h.ctx.officeOpen_('HES', '2026-27').getSheetByName('DayBook');
+    sh.deleteRow(sh.getDataRange().getValues().findIndex((r) => r[0] === 't1-in-rv') + 1);
+    ['LMS1', 'HES'].forEach((c) => h.addBook(c, '2027-28'));
+    h.setNow(new Date('2027-04-01T06:00:00Z'));
+    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').success, true);
+    const ids = (c, fy) => h.ctx.officeRows_(h.ctx.officeOpen_(c, fy), 'DayBook').map((x) => x.id);
+    assert.deepEqual(ids('LMS1', '2027-28'), [], 'the LMS1 reversal is already in last year\'s book');
+    assert.deepEqual(ids('HES', '2027-28'), ['t1-in-rv']);
+    assert.deepEqual(ids('LMS1', '2026-27'), ['t1-out', 't1-out-rv']);
+  });
+
   t.test('fund categories are not offered on the Day Book form', () => {
     const h = fresh();
     const r = h.call('daybook.add', { id: 'x', campus: 'LMS1', entry_date: '2026-10-20', account: 'bank:LMS1', direction: 'IN', mode: 'bank', category: 'fund_transfer_in', amount_paise: 1 }, 'fh-token');

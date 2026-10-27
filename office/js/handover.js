@@ -6,11 +6,16 @@ import { entryReason, explainCode } from './codes.js';
 // Receiving cash boxes: active cash accounts of the other campuses (HES included).
 export const handoverTargets = (accounts, campus) => (accounts || []).filter((a) => a.kind === 'cash' && a.active && a.campus !== campus);
 
+// The Day Book's Hand over block: a desk role signed in to one real campus (not ALL).
+const DESK = ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'];
+export const canHandOver = (session) => /^(LMS[1-6]|HES)$/.test(String((session && session.campus) || '')) &&
+  String((session && session.role) || '').split(',').map((r) => r.trim()).some((r) => DESK.includes(r));
+
 export function handoverPayload(campus, to, bucket, amountText, note, date) {
   if (!to) return { ok: false, error: 'Choose the school receiving the cash.' };
   if (!bucket) return { ok: false, error: 'Choose the cash bucket.' };
   const p = parseRupeesToPaise(amountText);
-  if (p === null) return { ok: false, error: 'Enter the amount in rupees, like 1234.50.' };
+  if (!p) return { ok: false, error: 'Enter the amount in rupees, like 1234.50.' };
   return { ok: true, data: { campus, date, from_account: 'cash:' + campus, to_account: to, bucket, amount_paise: p, note: String(note || '').trim() } };
 }
 
@@ -35,7 +40,7 @@ async function send(outbox, action, data, msg, okText) {
 
 // Day Book block. Returns {el, paint(accounts)}; paint fills the receiving list once config is loaded.
 export function handoverForm({ campus, buckets, outbox, today, onSaved }) {
-  const toSel = h('select', { id: 'ho-to' }), bucketSel = h('select', { id: 'ho-bucket' }, Object.entries(buckets).map(([v, t]) => h('option', { value: v }, t)));
+  const toSel = h('select', { id: 'ho-to' }), bucketSel = h('select', { id: 'ho-bucket' }, h('option', { value: '' }, 'Choose…'), Object.entries(buckets).map(([v, t]) => h('option', { value: v }, t)));
   const amt = h('input', { type: 'text', id: 'ho-amt', inputmode: 'decimal' }), note = h('input', { type: 'text', id: 'ho-note', maxlength: 120 }), msg = h('p', { role: 'status' });
   const btn = h('button', { type: 'button' }, 'Hand over');
   btn.addEventListener('click', async () => {

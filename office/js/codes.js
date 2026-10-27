@@ -61,6 +61,7 @@ export const CODES = {
   FUND_INCOMPLETE: 'Part of this fund transfer is missing. Let the transfer finish syncing (or retry it), then reverse it.',
   SAME_CAMPUS: 'That cash box is this school\'s own. Choose another school\'s (or HES\'s) cash box.',
   HANDOVER_NOT_PENDING: 'This handover is no longer waiting: it was already accepted, reported not received, or reversed by the sender.',
+  HANDOVER_SELF: 'You handed this cash over yourself, so someone at the receiving school has to accept it or report it.',
   HANDOVER_ACCEPTED: 'This cash handover was accepted by the receiving school, so it cannot be reversed. Tell Uday if it is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
   ALREADY_SIGNED: 'This deposit was already signed.',

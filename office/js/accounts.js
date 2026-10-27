@@ -174,12 +174,7 @@ export function summaryView(sum, cfg, campusLabel) {
 
 export async function showAccounts(root, session, api, outbox) {
   if (!canSeeAccounts(session)) {
-    // Shown only to the Owner and the people in Settings fund_transfer_emails (config.get's fund_transfer_allowed).
-  const ftForm = form('Fund transfer (bank to bank)', h('p', { class: 'meta' }, 'Money sent by bank from one school (or HES) to another. Both day books get their entry.'),
-    h('label', { for: 'ft-from' }, 'From account'), ftFrom, h('label', { for: 'ft-to' }, 'To account'), ftTo, ftAmt,
-    h('label', { for: 'ft-date' }, 'Date'), ftDate, ftRef, ftNote, ftBtn, ftMsg);
-  ftForm.hidden = true;
-  root.replaceChildren(h('h2', {}, 'Accounts'), h('p', {}, 'Accounts is not available for your role. Ask the Finance Head or Owner.'));
+    root.replaceChildren(h('h2', {}, 'Accounts'), h('p', {}, 'Accounts is not available for your role. Ask the Finance Head or Owner.'));
     return;
   }
   const guard = inflightGuard();

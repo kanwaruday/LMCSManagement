@@ -5,7 +5,7 @@ import { h, field } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { resizeImage, toBase64 } from './image.js';
-import { handoverForm } from './handover.js';
+import { handoverForm, canHandOver } from './handover.js';
 
 export const BUCKETS = { petty: 'Petty cash', fee: 'Fee cash', other: 'Other cash' };
 export const MODES = { cash: 'Cash', bank: 'Bank', upi: 'UPI' };
@@ -475,7 +475,7 @@ export async function showDayBook(root, session, api, outbox) {
     }
   }
 
-  root.replaceChildren(h('h2', {}, 'Day Book'), form, handover.el, h('h3', {}, 'Entries'), listNote, listEl, h('h3', {}, 'Balances for the day'), balEl);
+  root.replaceChildren(h('h2', {}, 'Day Book'), form, ...(canHandOver(session) ? [handover.el] : []), h('h3', {}, 'Entries'), listNote, listEl, h('h3', {}, 'Balances for the day'), balEl);
   window.addEventListener('online', () => refresh());
   setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 30000);
   loadConfig(api, (c) => cacheSet('config', c)).then((c) => { if (c) { cfg = c; paintForm(); paintList(); } }); // once per visit; paintForm keeps valid selections (P13)
