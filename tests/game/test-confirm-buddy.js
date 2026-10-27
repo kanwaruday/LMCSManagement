@@ -32,6 +32,7 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-11-10T05:00:00Z');
 const ctx = mkCtx(proj);
 ctx.gameNow_ = () => NOW;
+ctx.cqDefaults_ = () => ({}); // these tests bring their own definitions; the shipped ones are in test-confirm-t1.js
 const f = (id, type, extra) => Object.assign({ id, label: id, type, required: true }, extra || {});
 const DEFS = {
   tq: { title: 'T', task: 'Confirm your classes', scope: 'self', roles: ['Teacher'], fields: [f('class', 'text'), f('subject', 'text')], itemTitle: '{class} {subject}', addable: true, emptyLabel: 'None', prefill: 'test.rows' },

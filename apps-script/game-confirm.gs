@@ -22,7 +22,45 @@ function cqFail_(err) {
   console.error('setup quest error: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
   return { success: false, code: 'SETUP_ERROR', error: 'Something went wrong saving this. Try again.' };
 }
-function cqDefaults_() { return {}; }
+// Shipped quests. p1-p3 are drafts (active:false): invisible until Game Config sets {"p2":{"active":true}} after review in the sample view.
+function cqDefaults_() {
+  const txt = function (id, label, extra) { return Object.assign({ id: id, label: label, type: 'text', required: true }, extra || {}); };
+  return {
+    t1: {
+      title: 'Confirm what you teach', task: 'Check the classes you teach',
+      intro: 'These come from the staff records. Confirm each one, fix it, or tell us you do not teach it. Add any that are missing.',
+      roles: ['Teacher'], scope: 'self', prefill: 'roster.myClasses', addable: true,
+      emptyLabel: 'I do not teach any classes', skipLabel: 'I do not teach this', itemTitle: '{class} · {subject}',
+      fields: [txt('class', 'Class', { hint: 'As on the timetable, like Class 7' }), txt('subject', 'Subject')],
+      sample: [{ item: 's1', fields: { class: 'Class 7', subject: 'Math' } }, { item: 's2', fields: { class: 'Class 8', subject: 'Science' } }],
+      active: true,
+    },
+    p1: {
+      title: 'Your classes and sections', task: 'Set up your class sections', roles: ['Principal'], scope: 'campus',
+      prefill: 'timetable.classes', addable: true, itemTitle: '{class} {section}',
+      fields: [txt('class', 'Class'), txt('section', 'Section', { hint: 'A, B or C. One row per section' }),
+        txt('classTeacher', 'Class teacher', { hint: 'Name as on the staff list' }), { id: 'strength', label: 'Students', type: 'number', required: false }],
+      sample: [{ item: 's1', fields: { class: 'Class 7', section: 'A', classTeacher: 'Teacher A', strength: '32' } }],
+      active: false,
+    },
+    p2: {
+      title: 'Bell timings', task: 'Check your bell timings', roles: ['Principal'], scope: 'campus',
+      prefill: 'timetable.bells', addable: true, itemTitle: 'Period {period}',
+      fields: [{ id: 'period', label: 'Period', type: 'number', required: true }, { id: 'start', label: 'Starts', type: 'time', required: true },
+        { id: 'end', label: 'Ends', type: 'time', required: true },
+        { id: 'days', label: 'Days', type: 'choice', required: false, choices: ['Mon–Sat', 'Mon–Fri', 'Saturday only'] }],
+      sample: [{ item: 'p1', fields: { period: '1', start: '09:20', end: '10:00' } }],
+      active: false,
+    },
+    p3: {
+      title: 'Our houses', task: 'Name the houses', intro: 'One set of houses for every school.',
+      roles: ['Principal', 'Coordinator', 'Owner'], scope: 'network', addable: true, itemTitle: '{name}',
+      fields: [txt('name', 'House'), txt('colour', 'Colour'), txt('rule', 'How students are placed', { required: false })],
+      sample: [{ item: 's1', fields: { name: 'Red House', colour: 'Red' } }],
+      active: false,
+    },
+  };
+}
 function cqLower_(s) { return String(s || '').toLowerCase(); }
 
 // ── definitions ──────────────────────────────────────────────────────

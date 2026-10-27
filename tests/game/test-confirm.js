@@ -29,6 +29,7 @@ load('game-confirm.gs'); load('game.gs'); load('game-actions.gs'); load('game-mi
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-11-10T05:00:00Z');
 ctx.gameNow_ = () => NOW;
+ctx.cqDefaults_ = () => ({}); // own definitions here; the shipped ones are in test-confirm-t1.js
 const f = (id, type, extra) => Object.assign({ id, label: id, type, required: true }, extra || {});
 const DEFS = {
   tq: { title: 'T', scope: 'self', roles: ['Teacher'], fields: [f('class', 'text'), f('subject', 'text')], addable: true, emptyLabel: 'None', skipLabel: 'Skip', prefill: 'test.rows' },
