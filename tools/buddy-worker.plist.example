@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ask Buddy worker (tools/buddy_worker.py). Copy to ~/Library/LaunchAgents/org.lms.buddy-worker.plist, replace
+     the REPO, HOME and CLAUDE_DIR placeholders below (each written as &lt;NAME&gt;; CLAUDE_DIR is the folder that holds
+     `claude`: run `dirname "$(command -v claude)"`), then
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.lms.buddy-worker.plist
+     No secret here: the worker reads ~/.lmcs/buddy_worker_secret (mode 600) itself. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.lms.buddy-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>&lt;REPO&gt;/tools/buddy_worker.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>&lt;CLAUDE_DIR&gt;:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>&lt;HOME&gt;/.lmcs/buddy_worker.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>&lt;HOME&gt;/.lmcs/buddy_worker.launchd.log</string>
+</dict>
+</plist>
