@@ -68,6 +68,11 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(tm2[0].value, '09:05'); assert.strictEqual(C.padTime('13:40'), '13:40'); ok('time known value padded for the input');
   assert.ok(C.isTransient('SETUP_BUSY') && C.isTransient('SETUP_ERROR') && C.isTransient('WEIRD') && !C.isTransient('SETUP_BAD_VALUE') && !C.isTransient('SETUP_BAD_ITEM')); ok('isTransient');
 
+  assert.ok(/couldn't load your classes/.test(C.PREFILL_DOWN) && !/guilt|sorry/i.test(C.PREFILL_DOWN));
+  const csrc = fs.readFileSync(__dirname + '/../../assets/setup/confirm-values.js', 'utf8');
+  assert.ok(/if \(q\.prefillDown\) kids\.push[^\n]*\n\s*else if \(q\.emptyLabel/.test(csrc), 'prefillDown hides the empty button'); ok('prefillDown view');
+  assert.ok(/isTransient\(code\) \|\| !q/.test(csrc), 'no Fix without a quest to restore into');
+  assert.ok(/if \(await load\(true\)\) render\(\)/.test(csrc), 'silent load failure skips render');
   assert.deepStrictEqual(C.parseLink('?quest=t1&campus=lms4&item=c-x'), { quest: 't1', campus: 'LMS4', item: 'c-x', sample: false, role: null });
   assert.deepStrictEqual(C.parseLink('?quest=T1;&campus=LMS9'), { quest: null, campus: null, item: null, sample: false, role: null });
   assert.deepStrictEqual(C.parseLink('?sample=1&role=Teacher'), { quest: null, campus: null, item: null, sample: true, role: 'Teacher' });

@@ -10,7 +10,7 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 let store = new Map(), calls = [], answer;
 ctx.CacheService = { getScriptCache: () => ({
   get: (k) => (store.has(k) ? store.get(k) : null), put: (k, v) => { store.set(k, v); }, getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; },
-  putAll: (m) => { Object.keys(m).forEach((k) => store.set(k, m[k])); },
+  remove: (k) => { store.delete(k); }, putAll: (m) => { Object.keys(m).forEach((k) => store.set(k, m[k])); },
 }) };
 ctx.UrlFetchApp = { fetch: (url) => { calls.push(url); const a = typeof answer === 'function' ? answer(url) : answer; return { getResponseCode: () => a.code || 200, getContentText: () => a.body }; } };
 ctx.tchCodeFor_ = (c) => c.employeeCode || '';
@@ -49,6 +49,27 @@ test('roster.myClasses cache-only and failures', () => {
   assert.strictEqual(P['roster.myClasses']({ caller: T1 }, {}), null);
   assert.strictEqual(calls.length, 2); assert.strictEqual(store.size, 0);
   assert.deepStrictEqual(J(P['roster.myClasses']({ caller: {} }, {})), []);
+});
+test('roster: evicted slice is unknown, never an empty roster (F1)', () => {
+  reset({ body: JSON.stringify(ROSTER) });
+  P['roster.myClasses']({ caller: T1 }, {});
+  assert.deepStrictEqual(J(JSON.parse(store.get('cq_acad_built')).sort()), ['TST/99/01/001', 'TST/99/01/002']);
+  store.delete('cq_acad_TST/99/01/001'); calls.length = 0;
+  assert.strictEqual(P['roster.myClasses']({ caller: T1 }, { cacheOnly: true }), null);
+  assert.deepStrictEqual(J(P['roster.myClasses']({ caller: { employeeCode: 'TST/99/01/777' } }, { cacheOnly: true })), []);
+  assert.deepStrictEqual(ids(P['roster.myClasses']({ caller: T1 }, {})), ['c-class7-math', 'c-class8-science']); assert.strictEqual(calls.length, 1);
+  store.delete('cq_acad_TST/99/01/002'); reset({ code: 500, body: 'x' }); store.set('cq_acad_built', '["TST/99/01/002"]');
+  assert.strictEqual(P['roster.myClasses']({ caller: T2 }, {}), null);
+  store.set('cq_acad_built', '1'); // legacy bare flag
+  assert.strictEqual(P['roster.myClasses']({ caller: T2 }, { cacheOnly: true }), null);
+});
+test('timetable: evicted slice is unknown, never empty (F1)', () => {
+  reset({ body: JSON.stringify(TT) });
+  assert.strictEqual(J(P['timetable.myPeriods']({ caller: T1 }, {})).length, 2);
+  store.delete('cq_tt_code_TST/99/01/001'); calls.length = 0;
+  assert.strictEqual(P['timetable.myPeriods']({ caller: T1 }, { cacheOnly: true }), null);
+  assert.deepStrictEqual(J(P['timetable.myPeriods']({ caller: { employeeCode: 'TST/99/01/777' } }, { cacheOnly: true })), []);
+  assert.strictEqual(J(P['timetable.myPeriods']({ caller: T1 }, {})).length, 2); assert.strictEqual(calls.length, 1);
 });
 test('timetable.bells normalises clock times', () => {
   reset({ body: JSON.stringify(TT) });

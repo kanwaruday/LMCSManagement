@@ -8,7 +8,7 @@ Nothing here runs without Uday's go-ahead. Never push or deploy from a builder s
 - [ ] 4. Push Pages.
 - [ ] 5. `node tests/verify.mjs --live`.
 - [ ] 6. Open `setup/index.html?sample=1&role=Teacher` in the browser pane, signed in as the Owner. Console clean. Then `&role=Principal` for the P1 to P3 drafts.
-- [ ] 7. One real Teacher (Uday picks who) opens their Buddy mission "Check the classes you teach" and confirms one class. Check the new `Setup Data` row.
+- [ ] 7. One real Teacher (Uday picks who) opens their Buddy mission "Check the classes you teach" and confirms one class. Pick a teacher who has not opened Today yet today, or start from the quest panel or `setup/index.html?quest=t1` (Today's set is fixed at first load). Check the new `Setup Data` row.
 
 ## Decisions to remember
 

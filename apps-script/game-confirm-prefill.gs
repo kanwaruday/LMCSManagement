@@ -54,8 +54,10 @@ function cqRosterRows_(code, cacheOnly) {
   const cache = CacheService.getScriptCache();
   const hit = cqCacheJson_(cache, 'cq_acad_' + code);
   if (hit) return hit;
+  // the built flag lists every code that has a slice: listed but missing = evicted (unknown), not listed = teaches nothing; a legacy bare flag is unknown
+  const built = cqCacheJson_(cache, 'cq_acad_built');
+  if (Array.isArray(built) && built.indexOf(code) === -1) return [];
   if (cacheOnly) return null;
-  if (cache.get('cq_acad_built')) return [];
   const j = cqFetchJson_(TCH_ROSTER_URL + '?action=roster');
   if (!j || !Array.isArray(j.rows)) return null;
   const by = {};
@@ -67,7 +69,7 @@ function cqRosterRows_(code, cacheOnly) {
   const put = {};
   Object.keys(by).forEach(function (c) { put['cq_acad_' + c] = by[c]; });
   cqPutAll_(cache, put, CQ_ROSTER_TTL_S);
-  cache.put('cq_acad_built', '1', CQ_ROSTER_TTL_S);
+  cache.put('cq_acad_built', JSON.stringify(Object.keys(by)), CQ_ROSTER_TTL_S);
   return by[code] || [];
 }
 
@@ -89,7 +91,7 @@ function cqPrefillMyClasses_(ctx, opts) {
 // ── timetable ────────────────────────────────────────────────────────
 function cqTimetable_(cacheOnly) {
   const cache = CacheService.getScriptCache();
-  if (cache.get('cq_tt_built')) return true;
+  if (cqTtKeys_(cache)) return true;
   if (cacheOnly) return false;
   const j = cqFetchJson_(TCH_TIMETABLE_URL);
   if (!j) return false;
@@ -110,14 +112,26 @@ function cqTimetable_(cacheOnly) {
     put['cq_tt_classes_' + c] = Object.keys(names);
   });
   cqPutAll_(cache, put, CQ_TT_TTL_S);
-  cache.put('cq_tt_built', '1', CQ_TT_TTL_S);
+  cache.put('cq_tt_built', JSON.stringify(Object.keys(put)), CQ_TT_TTL_S);
   return true;
 }
 
-// the cached slice for key, [] when the timetable is built but has none, null when it is not built
+// the keys the last timetable build stored, or null when not built (a legacy bare flag counts as not built)
+function cqTtKeys_(cache) {
+  const keys = cqCacheJson_(cache, 'cq_tt_built');
+  return Array.isArray(keys) ? keys : null;
+}
+
+// the cached slice for key, [] when the timetable is built and never had one, null when it is not built or the slice was evicted
 function cqTtSlice_(key, cacheOnly) {
   if (!cqTimetable_(cacheOnly)) return null;
-  return cqCacheJson_(CacheService.getScriptCache(), key) || [];
+  const cache = CacheService.getScriptCache();
+  const hit = cqCacheJson_(cache, key);
+  if (hit) return hit;
+  if ((cqTtKeys_(cache) || []).indexOf(key) === -1) return [];
+  if (cacheOnly) return null;
+  cache.remove('cq_tt_built');
+  return cqTimetable_(false) ? (cqCacheJson_(cache, key) || null) : null;
 }
 
 function cqCampusKey_(ctx) { return String((ctx && ctx.campus) || '').replace(/[^A-Za-z0-9]/g, ''); }

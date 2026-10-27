@@ -46,6 +46,8 @@ export function fillTitle(template, item) {
 
 const choicesOf = (f) => (f.type === 'yesno' ? ['yes', 'no'] : f.choices || null);
 // a time input wants hh:mm; the server keeps '9:05' or '09:05'
+// when our records could not be read, never offer "nothing to add": that would save a false answer
+export const PREFILL_DOWN = "We couldn't load your classes from our records just now. Add them, or try again later.";
 export const padTime = (v) => v.replace(/^(\d):/, '0$1:');
 // A quest + an item (or null for a new one) -> the form's fields with their starting text.
 export function itemModel(quest, item) {
@@ -201,11 +203,11 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     att.forEach((e) => {
       const q = S.views.find((x) => x.id === e.data.quest && (x.campus || '') === (e.data.campus || '')), code = e.code || parseError({ error: e.error }).code;
       kids.push(h('p', { class: 'cq-note cq-attn', role: 'alert' }, (q ? q.title + ': ' : '') + say(code), ' ',
-        isTransient(code)
+        isTransient(code) || !q
           ? h('button', { type: 'button', class: 'linklike', onclick: async () => { S.auth = false; await outbox.retry(e.id); } }, 'Try again')
           : h('button', { type: 'button', class: 'linklike', onclick: async () => {
             // reopen the form with what was typed, not what the server last held
-            if (q && e.data.skip !== true) S.drafts[dkey(q, e.data.item)] = { q: viewKey(q), item: e.data.item, values: { ...(e.data.fields || {}) } };
+            if (q && e.data.skip !== true) S.drafts[dkey(q, e.data.item)] = { q: viewKey(q), item: e.data.item, values: { ...(e.data.fields || {}) }, err: { code, field: e.field || null } };
             await outbox.discard(e.id); await refreshEntries(); if (q) go({ v: 'quest', key: viewKey(q), item: e.data.item }); else render(); } }, 'Fix'), ' ',
         h('button', { type: 'button', class: 'linklike', onclick: async () => { await outbox.discard(e.id); await refreshEntries(); render(); } }, 'Discard')));
     });
@@ -230,7 +232,8 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     Object.values(S.drafts).filter((d) => d.q === viewKey(q) && !real.some((it) => it.item === d.item)).forEach((d) => list.append(itemForm(q, null, d.item)));
     const kids = [];
     if (!real.length) {
-      if (q.emptyLabel && !none) kids.push(h('button', { type: 'button', class: 'btn-lg', disabled: sample, onclick: () => submit(q, { item: '_none', skip: true }, 'Saved.') }, q.emptyLabel));
+      if (q.prefillDown) kids.push(h('p', { class: 'meta', role: 'status' }, PREFILL_DOWN));
+      else if (q.emptyLabel && !none) kids.push(h('button', { type: 'button', class: 'btn-lg', disabled: sample, onclick: () => submit(q, { item: '_none', skip: true }, 'Saved.') }, q.emptyLabel));
       else kids.push(h('p', { class: 'meta' }, none ? 'Marked: nothing to add.' : 'Nothing here yet.' + (q.addable ? ' Tap + Add.' : '')));
     }
     if (q.addable) kids.push(h('button', { type: 'button', class: 'btn-lg sd-add', disabled: sample, onclick: () => { const f = itemForm(q, null); if (!list.querySelector('.office-form')) list.replaceChildren(); list.append(f); f.querySelector('input,select').focus(); } }, '+ Add'));
@@ -257,7 +260,8 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     const r = await write('setupsave', data);
     if (!r.success) { tell(say(r.network ? 'OFFLINE' : parseError(r).code)); return false; }
     delete S.drafts[dkey(q, data.item)];
-    await load(true); render(); tell(done);
+    if (await load(true)) render();
+    tell(done);
     return true;
   }
 
@@ -311,7 +315,7 @@ export async function mountConfirmQuests(root, { session, backendUrl, link = {},
     const busy = (job) => { save.disabled = true; if (skip) skip.disabled = true; job.finally(() => { if (!sample) { save.disabled = false; if (skip) skip.disabled = false; } }); };
     // what was typed before a redraw comes back with it
     const dr = S.drafts[dkey(q, key)];
-    if (dr) { Object.keys(dr.values).forEach((k) => { if (ctl[k] && ctl[k].value !== String(dr.values[k])) { ctl[k].value = String(dr.values[k]); ctl[k].dispatchEvent(new Event('input')); } }); label(); }
+    if (dr) { Object.keys(dr.values).forEach((k) => { if (ctl[k] && ctl[k].value !== String(dr.values[k])) { ctl[k].value = String(dr.values[k]); ctl[k].dispatchEvent(new Event('input')); } }); label(); if (dr.err) showErr(dr.err.code, dr.err.field); }
     return form;
   }
 
