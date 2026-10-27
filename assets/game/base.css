@@ -1,0 +1,88 @@
+/* LMCS game baseline (assets/game/base.css): the one look for every page the game sends people to.
+   Opt in with <body class="gb">; nothing here touches a page that doesn't. Tokens match the Kingdom (kingdom.css).
+   Colour carries meaning only: red = the action / your next step, green = done, amber = needs a look, deep orange = a problem.
+   Classes (all gb-):
+     page:    gb-head (+ gb-head-t, gb-head-s, gb-back), gb-page (forms, 720px) / gb-page-wide (boards, 1080px), gb-section
+     text:    gb-h1, gb-h2, gb-lead, gb-muted, gb-note, gb-empty, gb-err
+     actions: gb-btn, gb-btn-primary, gb-btn-quiet, gb-go (a whole-row link with a chevron: <a class="gb-go"><span>Title<small>detail</small></span></a>), gb-row-acts
+     things:  gb-card, gb-list (cards in a column), gb-grid (cards in columns), gb-pill gb-pill-ok|warn|low|info|next, gb-bar (+ <i style="width:N%">), gb-bar-ok
+   No motion anywhere. */
+.gb {
+  --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
+  --gb-gold:#e0a526; --gb-gold-ink:#7a5200; --gb-gold-soft:#fbefd3;
+  --gb-ok:#1a7f3c; --gb-ok-soft:#e3f4e8; --gb-warn:#8a5a00; --gb-warn-soft:#fbf0da; --gb-low:#b4410f; --gb-low-soft:#fde9df;
+  --gb-info:#3b4658; --gb-info-soft:#eef1f5;
+  --gb-paper:#fff; --gb-panel:#f6f4ef; --gb-ink:#1b2430; --gb-muted:#556170; --gb-line:#d9d4ca; --gb-focus:#1d4fa3;
+  --gb-font:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; --gb-serif:Georgia, "Times New Roman", serif;
+  margin:0; background:var(--gb-panel); color:var(--gb-ink); font:16px/1.5 var(--gb-font); -webkit-text-size-adjust:100%;
+}
+.gb *, .gb *::before, .gb *::after { box-sizing:border-box; }
+.gb :focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
+.gb a { color:var(--gb-red-ink); text-underline-offset:3px; }
+.gb h1, .gb h2, .gb .gb-h1, .gb .gb-h2 { font-family:var(--gb-serif); font-weight:400; line-height:1.2; margin:0 0 8px; }
+.gb h1, .gb .gb-h1 { font-size:26px; }
+.gb h2, .gb .gb-h2 { font-size:20px; }
+.gb h3 { font-size:16px; margin:0 0 6px; }
+.gb [hidden] { display:none !important; }
+
+/* header: school red, title left, the way back right */
+.gb-head { background:var(--gb-red); color:#fff; border-bottom:1px solid var(--gb-red-ink); }
+.gb-head > div, .gb-head-in { display:flex; align-items:center; justify-content:space-between; gap:12px; max-width:1080px; margin:0 auto; padding:12px 16px; }
+.gb-head h1, .gb-head .gb-head-t { font:700 19px/1.2 var(--gb-font); color:#fff; margin:0; }
+.gb-head p, .gb-head .gb-head-s { margin:2px 0 0; font-size:13px; opacity:.9; }
+.gb .gb-head a, .gb .gb-back { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,.6);
+  color:#fff; font-weight:700; text-decoration:none; white-space:nowrap; }
+.gb .gb-head a:active { background:rgba(255,255,255,.18); }
+
+/* page width: centred; forms read in one column, boards use the width */
+.gb-page, .gb-page-wide { width:100%; margin:0 auto; padding:16px 16px 40px; }
+.gb-page { max-width:720px; }
+.gb-page-wide { max-width:1080px; }
+.gb-section { margin:20px 0; }
+.gb-lead { font-size:17px; margin:0 0 12px; }
+.gb-muted { color:var(--gb-muted); font-size:14px; }
+.gb-note { margin:0 0 10px; padding:10px 12px; background:var(--gb-paper); border:1px solid var(--gb-line); border-radius:12px; font-size:15px; }
+.gb-empty { margin:8px 0; padding:14px; border:1.5px dashed var(--gb-line); border-radius:12px; color:var(--gb-muted); background:transparent; }
+.gb-err { color:var(--gb-red-ink); font-weight:700; }
+.gb-err:empty { display:none; }
+
+/* actions: one red button per screen for the main thing; everything else quiet */
+.gb-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; min-width:44px; padding:8px 16px; border-radius:10px;
+  border:1.5px solid var(--gb-line); background:var(--gb-paper); color:var(--gb-ink); font:700 15px/1.2 var(--gb-font); text-decoration:none; cursor:pointer; }
+.gb .gb-btn { color:var(--gb-ink); }
+.gb-btn:hover { border-color:var(--gb-muted); }
+.gb-btn:active { background:var(--gb-gold-soft); border-color:var(--gb-gold); }
+.gb .gb-btn-primary, .gb-btn-primary { background:var(--gb-red); border-color:var(--gb-red-ink); color:#fff; }
+.gb-btn-primary:hover, .gb-btn-primary:active { background:var(--gb-red-ink); }
+.gb-btn-quiet { border-color:transparent; background:transparent; color:var(--gb-red-ink); }
+.gb-btn:disabled, .gb-btn[aria-disabled="true"] { opacity:.55; cursor:not-allowed; }
+.gb-row-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+/* a whole-row link: replaces a bare underlined link to another page */
+.gb .gb-go { display:flex; align-items:center; gap:12px; min-height:56px; padding:10px 14px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px;
+  color:var(--gb-ink); text-decoration:none; font-weight:600; }
+.gb .gb-go::after { content:"›"; margin-left:auto; font-size:24px; line-height:1; color:var(--gb-muted); }
+.gb .gb-go small { display:block; font-weight:400; color:var(--gb-muted); font-size:13.5px; }
+.gb .gb-go:active { background:var(--gb-gold-soft); border-color:var(--gb-gold); }
+
+/* things */
+.gb-card { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; padding:12px 14px; min-width:0; }
+.gb-card > :first-child { margin-top:0; }
+.gb-card p { margin:6px 0; }
+.gb-list { list-style:none; margin:8px 0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.gb-grid { list-style:none; margin:8px 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+.gb-pill { display:inline-flex; align-items:center; gap:4px; padding:2px 10px; border-radius:999px; font-size:13px; font-weight:700; line-height:1.5; white-space:nowrap;
+  background:var(--gb-info-soft); color:var(--gb-info); }
+.gb-pill-ok { background:var(--gb-ok-soft); color:var(--gb-ok); }
+.gb-pill-ok::before { content:"✓"; }
+.gb-pill-warn { background:var(--gb-warn-soft); color:var(--gb-warn); }
+.gb-pill-low { background:var(--gb-low-soft); color:var(--gb-low); }
+.gb-pill-next { background:var(--gb-red); color:#fff; }
+.gb-bar { display:block; height:10px; border-radius:6px; background:var(--gb-line); overflow:hidden; }
+.gb-bar > i { display:block; height:100%; background:var(--gb-gold); }
+.gb-bar-ok > i { background:var(--gb-ok); }
+
+@media (max-width:600px) {
+  .gb h1, .gb .gb-h1 { font-size:23px; }
+  .gb-head h1, .gb-head .gb-head-t { font-size:17px; }
+  .gb .gb-head a, .gb .gb-back { padding:0 10px; }
+}

@@ -8,16 +8,23 @@
 <link rel="stylesheet" href="../assets/style.css?v=0049023a">
 <link rel="stylesheet" href="../office/office.css?v=21086d0b">
 <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
+<link rel="stylesheet" href="../assets/game/base.css?v=a4c11273">
 <style>
-  body { background: var(--lgray); min-height: 100vh; }
-  .bar { background: var(--red); color: var(--white); padding: 14px 16px; font-weight: 700; }
-  main { max-width: 480px; margin: 0 auto; padding: 16px; }
-  .back { display: inline-block; margin-top: 16px; padding: 12px 0; min-height: 44px; box-sizing: border-box; color: var(--red-dark); font-size: 14px; }
-  .back:focus-visible, .cq-note button:focus-visible { outline: 3px solid var(--dark); outline-offset: 2px; }
-  .cq-banner { margin: 0 0 12px; padding: 10px 12px; background: #fdf1de; border: 2px solid #b45f06; border-radius: 8px; font-weight: 700; color: #8a5a00; }
-  .cq-note { margin: 0 0 8px; padding: 10px 12px; background: #fff; border: 1px solid #d5dbe1; border-radius: 8px; font-size: .95rem; }
-  .cq-attn { border-color: #b00020; }
-  .cq-note button.linklike { min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: none; color: #1f3a5f; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+  body { min-height: 100vh; }
+  .back { margin-top: 20px; }
+  /* the setup quests in the game baseline's look (base.css): school red for the main button, quiet for the rest */
+  .cq-banner { margin: 0 0 12px; padding: 10px 12px; background: var(--gb-warn-soft); border: 1.5px solid var(--gb-gold); border-radius: 12px; font-weight: 700; color: var(--gb-warn); }
+  .cq-note { margin: 0 0 8px; padding: 10px 12px; background: var(--gb-paper); border: 1px solid var(--gb-line); border-radius: 12px; font-size: .95rem; }
+  .cq-attn { border-color: var(--gb-red); }
+  .cq-note button.linklike { min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: none; color: var(--gb-red-ink); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+  .gb .btn-lg, .gb .office-form button { border-radius: 10px; border-color: var(--gb-red-ink); background: var(--gb-red); color: #fff; font-weight: 700; }
+  .gb .office-form button.secondary, .gb button.linklike { background: var(--gb-paper); color: var(--gb-red-ink); border-color: var(--gb-line); }
+  .gb .office-form button.sd-confirm { background: var(--gb-ok); border-color: var(--gb-ok); }
+  .gb .office-form input, .gb .office-form select, .gb .office-form textarea { border-color: var(--gb-line); border-radius: 10px; background: var(--gb-paper); }
+  .gb .sd-card, .gb .sd-row, .gb .sd-item { border-color: var(--gb-line); border-radius: 14px; background: var(--gb-paper); }
+  .gb .sd-card:active { background: var(--gb-gold-soft); border-color: var(--gb-gold); }
+  .gb .sd-back { color: var(--gb-red-ink); }
+  .gb .sd-ok { color: var(--gb-ok); }
   .sd-toast { min-height: 1.2em; font-weight: 700; color: #1a7f3c; }
   #lmcs-gate { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
   #lmcs-gate .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
@@ -26,16 +33,16 @@
   #lmcs-gate .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
 </style>
 </head>
-<body>
+<body class="gb">
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
 <script src="../assets/auth.js?v=19734029"></script>
 <script src="../assets/game/game.js?v=b8de04a1"></script>
 
-<div class="bar">Setup</div>
-<main>
+<header class="gb-head"><div><div><h1>Setup</h1><p>Confirm what the portal knows</p></div></div></header>
+<main class="gb-page">
   <section id="game-root" hidden></section>
   <div id="cq-root"></div>
-  <a class="back" href="../index.html">Back to my page</a>
+  <a class="back gb-btn" href="../index.html">Back to my page</a>
 </main>
 <script>
   // came from the Owner's Kingdom: the way back is the Kingdom (same site only)

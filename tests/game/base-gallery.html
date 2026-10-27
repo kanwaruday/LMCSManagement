@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Game baseline gallery</title>
+<!-- Reference for assets/game/base.css: every class once, so a module page can copy the markup. NEVER a portal page; every name is
+     fictional. Serve the repo root and open /tests/game/base-gallery.html -->
+<link rel="stylesheet" href="../../assets/game/base.css">
+</head>
+<body class="gb">
+<header class="gb-head"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a href="#">&larr; Checks</a></div></header>
+<main class="gb-page-wide">
+  <h1>Page title</h1>
+  <p class="gb-lead">One plain sentence that says what this page is for.</p>
+  <a class="gb-go" href="#"><span>Today's roll call<small>Who drives and attends each bus</small></span></a>
+
+  <section class="gb-section">
+    <h2>Buses</h2>
+    <ul class="gb-grid">
+      <li class="gb-card"><h3>HP 34 A 1234</h3><p class="gb-muted">Route 3 · 42 seats</p>
+        <p><span class="gb-pill gb-pill-ok">Papers current</span> <span class="gb-pill gb-pill-warn">Insurance due 12/11/2026</span></p>
+        <span class="gb-bar gb-bar-ok"><i style="width:80%"></i></span><p class="gb-muted">4 of 5 steps done</p>
+        <div class="gb-row-acts"><button class="gb-btn gb-btn-primary" type="button">Add the insurance photo</button><button class="gb-btn" type="button">Details</button></div></li>
+      <li class="gb-card"><h3>HP 34 B 5678</h3><p class="gb-muted">Route 5 · 32 seats</p>
+        <p><span class="gb-pill gb-pill-next">Next</span> <span class="gb-pill gb-pill-low">Fitness expired</span> <span class="gb-pill">Spare bus</span></p>
+        <span class="gb-bar"><i style="width:20%"></i></span><p class="gb-muted">1 of 5 steps done</p>
+        <div class="gb-row-acts"><button class="gb-btn gb-btn-primary" type="button">Renew the fitness</button><button class="gb-btn gb-btn-quiet" type="button">Skip for now</button></div></li>
+    </ul>
+  </section>
+  <section class="gb-section">
+    <h2>Notes and states</h2>
+    <p class="gb-note">Two buses are waiting on papers. Add a photo and Buddy checks the dates.</p>
+    <p class="gb-empty">Nothing missing. New buses show up here once the Fee Clerk adds them.</p>
+    <p class="gb-err">That didn't save. Nothing was changed; try again.</p>
+  </section>
+</main>
+</body>
+</html>
