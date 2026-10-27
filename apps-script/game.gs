@@ -93,6 +93,7 @@ function gameConfigDefaults_() {
     fleet: { renewDays: 30, rollCallBy: '10:00', rollCallFrom: '2026-10-27', partDueDays: 30, busAgeLimit: 15, policeVerificationYears: null, fuelClerkDays: 2, speedCount: 3, speedDays: 30,
       heat: { warm: 1, hot: 3 },
       weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, expiredDriverDoc: 1, rollCallMissing: 1, speed: 1 } },
+    confirmQuests: {}, // setup quests (game-confirm.gs): {questId: definition override}
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
   };
 }
