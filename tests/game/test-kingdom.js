@@ -200,8 +200,10 @@ assert.strictEqual(r.advice.text, 'Every building that can be checked is up to d
 approvalsRows = [[], row('a1', 'LMS4', 'Purchase', 'Approved', iso(2))];
 assert.strictEqual(run(owner).advice.text, 'An approved request is waiting for someone to follow it up.');
 
-// ---- reads only: nothing in game-kingdom.gs writes
-const src = fs.readFileSync(dir + 'game-kingdom.gs', 'utf8');
+// ---- reads only: nothing in the read part of game-kingdom.gs writes (the K3 writes sit after the "Writes:" marker, POST only)
+const srcAll = fs.readFileSync(dir + 'game-kingdom.gs', 'utf8'), cut = srcAll.indexOf('═══ Writes:');
+assert.ok(cut > 0, 'writes marker present');
+const src = srcAll.slice(0, cut);
 assert.ok(!/appendRow|setValues|gameAppendText_|gameWithLock_|\.put\(|setProperty/.test(src), 'gamekingdom is a pure read');
 assert.strictEqual(ctx.GAME_MODULE_ACTIONS.gamekingdom, ctx.kingdomGet_);
 // no staff names, emails or ids in the shipped defaults

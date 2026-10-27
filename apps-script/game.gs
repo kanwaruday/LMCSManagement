@@ -34,6 +34,7 @@
 //   buddypull, buddyreply               -- BUDDY_WORKER_SECRET, the Mac's Ask Buddy worker (game-buddy.gs)
 // Ask Buddy's Owner actions (buddyask, buddythread, buddyconfirm) are also doPost only: they are not in
 // GAME_MODULE_ACTIONS, so a GET answers "Unknown action".
+// The Kingdom's writes (kingdomassign, kingdomallocate, game-kingdom.gs) are doPost only the same way.
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Game Backend",
@@ -182,6 +183,9 @@ function doPost(e) {
     caller.idToken = String(body.idToken);
     // Ask Buddy's Owner actions: POST only (never registered in GAME_MODULE_ACTIONS); the Owner check is inside buddyOwnerAction_.
     if (action === 'buddyask' || action === 'buddythread' || action === 'buddyconfirm') return gameJson_(buddyOwnerAction_(caller, action, body));
+    // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
+    if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
+    if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

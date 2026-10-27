@@ -171,16 +171,18 @@ function kingdomHeadMissions_(ctx, cfgK) {
   return out;
 }
 
-// email -> name from the allowlist (first sheet, columns: email, name), only for the emails asked about
-function kingdomNames_(emails) {
+// the allowlist's rows without the header (first sheet: email, name, campus, roles, canDecide); [] when it cannot be read
+function kingdomAllowRows_() {
+  try { return SpreadsheetApp.openById(GAME_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues().slice(1); } catch (err) { console.error('kingdom allowlist: ' + (err && err.message)); return []; }
+}
+
+// email -> name from allowlist rows, only for the emails asked about
+function kingdomNames_(emails, allowRows) {
   const out = {};
-  if (!emails.length) return out;
-  try {
-    SpreadsheetApp.openById(GAME_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues().slice(1).forEach(function (r) {
-      const e = gameLower_(r[0]);
-      if (emails.indexOf(e) !== -1) out[e] = String(r[1] || '').trim();
-    });
-  } catch (err) { console.error('kingdom names: ' + (err && err.message)); }
+  (allowRows || []).forEach(function (r) {
+    const e = gameLower_(r[0]);
+    if (emails.indexOf(e) !== -1) out[e] = String(r[1] || '').trim();
+  });
   return out;
 }
 
@@ -210,15 +212,22 @@ function kingdomGet_(caller, params) {
     const setupRows = cqRead_();
     let daybook = null;
     try { daybook = daybookProgress_(caller); } catch (err) { console.error('kingdom office: ' + (err && err.message)); sourcesDown.push('office'); }
-    const owners = isOwner ? kingdomOwners_(setupRows) : null;
-    const names = isOwner ? kingdomNames_(Object.keys(owners).map(function (k) { return owners[k].email; })) : null;
+    const owners = isOwner ? kingdomOwners_(setupRows) : null, ownerEmails = isOwner ? Object.keys(owners).map(function (k) { return owners[k].email; }) : [];
+    let allow = null; // the allowlist, read once and only when the Owner's response needs it (owner names, assignees)
+    const allowRows = function () { if (allow === null) allow = kingdomAllowRows_(); return allow; };
+    const names = isOwner ? kingdomNames_(ownerEmails, ownerEmails.length ? allowRows() : []) : null;
     const ctx = { caller: caller, cfg: cfg, now: now, setupRows: setupRows, daybook: daybook, approvals: null, owners: owners, names: names, views: {}, defs: null };
 
     const bases = campuses.map(function (c) {
       const buildings = kingdomBuildings_(ctx, c, cfgK);
       buildings.forEach(function (b) {
         const spec = cfgK.buildings.filter(function (x) { return x.id === b.id; })[0];
-        b.tiers.forEach(function (t, i) { if (isOwner && t.state === 'open' && t.questId && ((spec.tiers[i] || {}).owners || []).length) t.assignable = true; });
+        b.tiers.forEach(function (t, i) {
+          if (!(isOwner && t.state === 'open' && t.questId && ((spec.tiers[i] || {}).owners || []).length)) return;
+          t.assignable = true;
+          const def = kingdomCqDef_(ctx, t.questId); // the people the Owner may pick (names and emails: the Owner's response only)
+          t.assignees = def ? kingdomAssignees_(allowRows(), def, def.scope === 'campus' ? c.id : '', cfg) : [];
+        });
       });
       const points = buildings.reduce(function (n, b) { return n + b.level; }, 0);
       const unknown = buildings.reduce(function (n, b) { return n + b.tiers.filter(function (t) { return t.state === 'unknown'; }).length; }, 0);
@@ -238,6 +247,172 @@ function kingdomGet_(caller, params) {
   } catch (err) {
     console.error('kingdom: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
     return { success: false, code: 'KINGDOM_ERROR', error: 'The Kingdom could not load. Try again.' };
+  }
+}
+
+// ═══ Writes: kingdomassign, kingdomallocate (doPost only, dispatched from game.gs; never in GAME_MODULE_ACTIONS, so a GET is unknown) ═══
+// Order in both: Owner + rights (kingdomCan_) first, then every input checked, then an audit row `requested`, the write, an audit row
+// `done`. Every refusal after the rights check is audited too. Audit rows go to `Game Allocations` (append-only, plain text).
+// kingdomassign writes a `_owner:<quest>` row in Setup Data (this backend owns that tab; the engine never counts that quest key).
+// kingdomallocate forwards one whitelisted call, coordinatorallocate, to the Coordinator backend with the CALLER's own token, so that
+// backend's own canDecide, scope and assignee checks decide (and it keeps its own record). Logs carry codes, never people or tokens.
+
+var KINGDOM_ALLOC_TAB = 'Game Allocations';
+var KINGDOM_ALLOC_HEADER = ['At', 'By', 'Action', 'Source', 'SourceId', 'Campus', 'Assignee', 'Due', 'Note', 'Phase', 'Result', 'Code'];
+var KINGDOM_CODES = { KINGDOM_NO_RIGHT: 'Only the Owner can assign work for now.', KINGDOM_BAD_QUEST: 'That setup step is not available.',
+  KINGDOM_BAD_CAMPUS: 'That school does not fit this step.', KINGDOM_NOT_ELIGIBLE: 'That person cannot do this step.',
+  KINGDOM_BAD_INPUT: 'Something in the request does not look right.', KINGDOM_BUSY: 'The system was busy. Please try again.',
+  KINGDOM_UPSTREAM: 'The Coordinator system could not be reached. Nothing was changed.', KINGDOM_ERROR: 'Something went wrong. Please try again.' };
+
+function kingdomFail_(code) { return { success: false, code: code, error: KINGDOM_CODES[code] }; }
+// a user-typed value as an audit cell: plain text, formula prefix neutralised, capped
+function kingdomCell_(v, max) { return gameSafeNote_(typeof v === 'string' || typeof v === 'number' ? v : '').slice(0, max); }
+
+// appends one KINGDOM_ALLOC_HEADER row. held = the caller already holds gameWithLock_; else it takes the lock.
+function kingdomAudit_(row, held) {
+  const write = function () {
+    const book = gameBook_();
+    let sh = book.getSheetByName(KINGDOM_ALLOC_TAB);
+    if (!sh) { sh = book.insertSheet(KINGDOM_ALLOC_TAB); gameAppendText_(sh, [KINGDOM_ALLOC_HEADER]); }
+    gameAppendText_(sh, [row]);
+  };
+  return held ? write() : gameWithLock_(write);
+}
+// a refusal's audit row: never throws (a busy lock or a sheet error is logged; the refusal is still returned)
+function kingdomAuditRefusal_(row) {
+  try { kingdomAudit_(row, false); } catch (err) { console.error('kingdom audit (refusal) not written: ' + (err && err.message)); }
+}
+
+// allowRows: allowlist rows (no header). -> {email, name} | null. The person must be on the allowlist, hold one of the quest's roles and
+// see the campus: their own campus, or a network-wide role (Owner, Coordinator) or campus ALL. A network quest (campus '') fits any campus.
+// cfg: reserved for L1's head-function rule.
+function kingdomEligible_(allowRows, def, campus, email, cfg) {
+  const e = gameLower_(email);
+  if (!e || !def) return null;
+  const r = (allowRows || []).filter(function (x) { return gameLower_(x[0]) === e; })[0];
+  if (!r) return null;
+  const roles = String(r[3] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  if (!roles.some(function (x) { return def.roles.indexOf(x) !== -1; })) return null;
+  if (def.scope === 'campus') {
+    const rc = String(r[2] || '').trim().toUpperCase();
+    if (rc !== campus && rc !== 'ALL' && roles.indexOf('Owner') === -1 && roles.indexOf('Coordinator') === -1) return null;
+  }
+  return { email: e, name: String(r[1] || '').trim() };
+}
+
+// every eligible person for the picker (Owner only), allowlist order, no repeats
+function kingdomAssignees_(allowRows, def, campus, cfg) {
+  const out = [], seen = {};
+  (allowRows || []).forEach(function (r) {
+    const p = kingdomEligible_(allowRows, def, campus, r[0], cfg);
+    if (p && !seen[p.email]) { seen[p.email] = true; out.push(p); }
+  });
+  return out;
+}
+
+// gameWithLock_ with a lock timeout turned into KINGDOM_BUSY (an error inside fn passes through)
+function kingdomLocked_(fn) {
+  let entered = false;
+  try { return gameWithLock_(function () { entered = true; return fn(); }); } catch (err) { if (!entered) return kingdomFail_('KINGDOM_BUSY'); throw err; }
+}
+
+// POST {quest, campus, assignee, note?, clear?: true} -> {success, owner: {email, name} | null}
+function kingdomAssign_(caller, body) {
+  try {
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) { console.warn('kingdomassign refused: not the Owner'); return kingdomFail_('KINGDOM_NO_RIGHT'); }
+    const cfg = cqLoadCfg_();
+    if (!kingdomCan_(caller, 'allocate', cfg)) { console.warn('kingdomassign refused: no allocate right'); return kingdomFail_('KINGDOM_NO_RIGHT'); }
+    body = body && typeof body === 'object' ? body : {};
+    const clear = body.clear === true, by = gameLower_(caller.email), at = gameNow_().toISOString();
+    const quest = typeof body.quest === 'string' ? body.quest : '', campus = typeof body.campus === 'string' ? body.campus.trim().toUpperCase() : '';
+    const assignee = clear ? '' : (typeof body.assignee === 'string' ? gameLower_(body.assignee) : ''), note = gameSafeNote_(typeof body.note === 'string' ? body.note : '');
+    const row = function (phase, result, code, who) {
+      return [at, by, clear ? 'setup_owner_clear' : 'setup_owner', 'setup', kingdomCell_(quest, 80), kingdomCell_(campus, 10), who === undefined ? kingdomCell_(assignee, 200) : who, '', note, phase, result, code];
+    };
+    const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return kingdomFail_(code); };
+
+    const def = cqDefs_(cfg, false).filter(function (d) { return d.id === quest; })[0]; // the Owner may assign any active quest (no role filter)
+    if (!def || def.scope === 'self') return refuse('KINGDOM_BAD_QUEST');
+    if (def.scope === 'campus' ? def.campuses.indexOf(campus) === -1 : campus !== '') return refuse('KINGDOM_BAD_CAMPUS');
+    const scopeKey = def.scope === 'campus' ? 'campus:' + campus : 'network';
+    let person = null;
+    if (!clear) {
+      if (body.assignee !== undefined && typeof body.assignee !== 'string') return refuse('KINGDOM_BAD_INPUT');
+      person = kingdomEligible_(kingdomAllowRows_(), def, campus, assignee, cfg);
+      if (!person) return refuse('KINGDOM_NOT_ELIGIBLE');
+    }
+    return kingdomLocked_(function () {
+      kingdomAudit_(row('requested', '', ''), true);
+      const cur = kingdomOwners_(cqRead_())[def.id + '|' + scopeKey]; // read under the lock: idempotency holds against a double tap
+      if (clear ? !cur : (cur && cur.email === person.email)) {
+        kingdomAudit_(row('done', 'ok', 'unchanged'), true);
+        return { success: true, owner: person, unchanged: true };
+      }
+      gameAppendText_(cqEnsureTab_(gameBook_()), [['_owner:' + def.id, scopeKey, '_quest', 'owner', clear ? '' : person.email, clear ? 'cleared' : 'assigned', note, at, by]]);
+      kingdomAudit_(row('done', 'ok', '', clear ? cur.email : undefined), true); // a clear records whom it took the step from
+      CQ_MEMO = null;
+      return { success: true, owner: person };
+    });
+  } catch (err) {
+    console.error('kingdomassign: ' + (err && err.message));
+    return kingdomFail_('KINGDOM_ERROR');
+  }
+}
+
+// UrlFetchApp POST, text/plain JSON (no preflight, as the browser does). -> the parsed reply if it carries a boolean `success`, else null.
+// Logs the HTTP status only: the payload holds the caller's token.
+function kingdomPost_(url, payload) {
+  try {
+    const res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'text/plain', payload: JSON.stringify(payload), muteHttpExceptions: true, followRedirects: true });
+    if (res.getResponseCode() !== 200) { console.error('kingdom post: HTTP ' + res.getResponseCode()); return null; }
+    const j = JSON.parse(res.getContentText());
+    if (!j || typeof j !== 'object' || typeof j.success !== 'boolean') { console.error('kingdom post: unexpected reply'); return null; }
+    return j;
+  } catch (err) { console.error('kingdom post: ' + (err && err.message)); return null; }
+}
+
+var KINGDOM_APPROVAL_ID = /^[\w\-:|.]{1,80}$/;
+var KINGDOM_EMAIL = /^[^@\s]{1,64}@[^@\s]{1,190}$/;
+// a real calendar date as YYYY-MM-DD
+function kingdomIsDate_(s) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s), d = m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return !!m && d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+}
+
+// POST {approvalId, assignee, due, note?, cancel?: true} -> {success, followUp, cancelled} | the Coordinator's refusal sentence
+// cancel: assignee and due may be blank (the Coordinator ignores them); if given they must still be well formed.
+function kingdomAllocate_(caller, body) {
+  try {
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) { console.warn('kingdomallocate refused: not the Owner'); return kingdomFail_('KINGDOM_NO_RIGHT'); }
+    const cfg = cqLoadCfg_();
+    if (!kingdomCan_(caller, 'allocate', cfg)) { console.warn('kingdomallocate refused: no allocate right'); return kingdomFail_('KINGDOM_NO_RIGHT'); }
+    body = body && typeof body === 'object' ? body : {};
+    const str = function (v) { return typeof v === 'string' ? v.trim() : ''; };
+    const cancel = body.cancel === true, approvalId = str(body.approvalId), assignee = str(body.assignee).toLowerCase(), due = str(body.due);
+    const note = typeof body.note === 'string' ? body.note.trim() : '', by = gameLower_(caller.email), at = gameNow_().toISOString();
+    const row = function (phase, result, code) {
+      return [at, by, cancel ? 'approval_followup_cancel' : 'approval_followup', 'approval', kingdomCell_(approvalId, 80), '', kingdomCell_(assignee, 200), kingdomCell_(due, 10), kingdomCell_(note, 300), phase, result, String(code).slice(0, 200)];
+    };
+    const ok = KINGDOM_APPROVAL_ID.test(approvalId) && (body.cancel === undefined || typeof body.cancel === 'boolean') &&
+      [body.approvalId, body.assignee, body.due, body.note].every(function (v) { return v === undefined || v === null || typeof v === 'string'; }) &&
+      (cancel && !assignee ? true : KINGDOM_EMAIL.test(assignee)) && (cancel && !due ? true : kingdomIsDate_(due)) && note.length <= 300;
+    if (!ok) { kingdomAuditRefusal_(row('done', 'refused', 'KINGDOM_BAD_INPUT')); return kingdomFail_('KINGDOM_BAD_INPUT'); }
+
+    const first = kingdomLocked_(function () { kingdomAudit_(row('requested', '', ''), true); return null; });
+    if (first) return first; // busy: nothing forwarded
+    // the game lock is never held across the fetch; the Coordinator backend takes its own lock for its write
+    const res = kingdomPost_(GAME_COORD_URL, { action: 'coordinatorallocate', idToken: caller.idToken, approvalId: approvalId, assignee: assignee, due: due, note: note, cancel: cancel });
+    let out, audit;
+    if (!res) { out = kingdomFail_('KINGDOM_UPSTREAM'); audit = row('done', 'error', 'KINGDOM_UPSTREAM'); }
+    else if (!res.success) {
+      const sentence = String(res.error || '').slice(0, 200) || 'The Coordinator system refused this.';
+      out = { success: false, code: 'KINGDOM_REFUSED', error: sentence }; audit = row('done', 'refused', sentence);
+    } else { out = { success: true, followUp: res.followUp || null, cancelled: res.cancelled === true }; audit = row('done', 'ok', ''); }
+    try { kingdomAudit_(audit, false); } catch (err) { console.error('kingdom audit (done) not written: ' + (err && err.message)); } // the upstream answer stands
+    return out;
+  } catch (err) {
+    console.error('kingdomallocate: ' + (err && err.message));
+    return kingdomFail_('KINGDOM_ERROR');
   }
 }
 
