@@ -24,8 +24,8 @@
    answer path does not depend on it.
 2. **Deploy collision** (B4, K6). The game backend is one Apps Script project; clasp pushes every file. Another chat's
    release could be live and newer than this branch. The deploy checklist makes the controller compare first.
-3. **K5 approvals tray** (29 Oct afternoon). If it slips, ship K6 without it: setup-step assignment (K3a) is the day-one
-   need; the approval follow-up card can follow on 31 Oct.
+3. **K5 approvals tray** (29 Oct afternoon). It is the only assignment Uday can use on 30 Oct. If it slips, ship K6
+   with the Darbar steps and the read-only map; the follow-up card ships 31 Oct.
 4. **Few assignable setup steps on day one.** P1–P3 and the Coordinator function quests are off the 30 Oct list (Uday,
    Owner-first), so on 30 Oct the Kingdom shows those buildings as "coming soon"; the day-one assignment path is the
    approval follow-up card, and setup owner rows are ready for when L1 lands.
