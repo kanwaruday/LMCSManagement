@@ -172,6 +172,9 @@ assert.strictEqual(D.pollDelay([{ state: 'queued' }], true), 5000);
 assert.strictEqual(D.pollDelay([{ state: 'working' }], true), 5000);
 assert.strictEqual(D.pollDelay([{ state: 'queued' }], false), 0, 'closed: no polling');
 assert.strictEqual(D.pollDelay([{ state: 'answered' }, { state: 'failed' }], true), 0);
+assert.strictEqual(D.threadLine({ state: 'queued', failReason: 'offline' }, { open: true }).text, "I couldn't finish that one. Please ask again.", 'failReason offline');
+const pf = D.proposalView({ proposal: { summary: 'S' }, proposalState: 'failed', proposalNote: 'It did not go through.' });
+assert.ok(pf && pf.state === 'failed' && pf.note === 'It did not go through.', 'failed proposal carries its note (no confirm buttons: state is not open)');
 // Ask Buddy: source checks
 const askSrc = src.slice(src.indexOf('Ask Buddy (start)'), src.indexOf('Ask Buddy (end)'));
 assert.ok(askSrc.length > 500, 'Ask Buddy markers found');

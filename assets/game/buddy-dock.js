@@ -43,6 +43,7 @@ var LMCSDock = window.LMCSDock = (function () {
   function deskState(desk) { return desk ? (desk.open ? 'open' : 'offline') : 'unknown'; }
   function threadLine(t, desk) {
     t = t || {};
+    if (t.failReason === 'offline') return { who: 'status', text: "I couldn't finish that one. Please ask again." };
     if (t.state === 'queued') return { who: 'status', text: deskState(desk) === 'offline' ? 'Saved. Buddy will answer when the Mac wakes.' : 'Buddy is reading your question…' };
     if (t.state === 'working') return { who: 'status', text: 'Buddy is thinking…' };
     if (t.state === 'answered') return { who: 'buddy', text: t.reply || '' };
@@ -50,7 +51,9 @@ var LMCSDock = window.LMCSDock = (function () {
   }
   function proposalView(t) {
     var st = t && t.proposal && t.proposalState;
-    return st && /^(open|confirmed|forwarded|declined|expired)$/.test(st) ? { summary: t.proposal.summary || '', state: st } : null;
+    var v = st && /^(open|confirmed|forwarded|declined|expired|failed)$/.test(st) ? { summary: t.proposal.summary || '', state: st } : null;
+    if (v && st === 'failed') v.note = t.proposalNote || '';
+    return v || null;
   }
   function pollDelay(threads, open) {
     return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working'; }) ? 5000 : 0;
@@ -159,7 +162,7 @@ var LMCSDock = window.LMCSDock = (function () {
               h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'confirm'); } }, 'Send to the master agent'),
               h('button', { type: 'button', class: 'lg-btn', onclick: function () { decide(t, 'decline'); } }, 'No thanks')])]);
         } else if (pv) {
-          extra = h('p', { class: 'bd-status' }, { confirmed: 'Sent to the master agent', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
+          extra = h('p', { class: 'bd-status' }, pv.state === 'failed' ? pv.note : { confirmed: 'Sent to the master agent', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
         }
         list.appendChild(h('li', { class: 'bd-th' }, [h('p', { class: 'bd-me' }, t.text), h('p', { class: 'bd-' + line.who }, line.text), extra]));
       });
