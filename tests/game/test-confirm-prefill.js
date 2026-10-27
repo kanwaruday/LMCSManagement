@@ -57,6 +57,8 @@ test('timetable.bells normalises clock times', () => {
   assert.deepStrictEqual(J(P['timetable.bells']({ campus: 'LMS1' }, {})), []);
   reset({ body: JSON.stringify(TT) });
   assert.strictEqual(P['timetable.bells']({ campus: 'LMS4' }, { cacheOnly: true }), null); assert.strictEqual(calls.length, 0);
+  assert.strictEqual(ctx.cqClock_('10:05am'), '10:05'); assert.strictEqual(ctx.cqClock_('1:35pm'), '13:35'); assert.strictEqual(ctx.cqClock_('11:50pm'), '11:50'); // LMS 6's suffixes
+  assert.notStrictEqual(ctx.cqEmailKey_('a.b@test.invalid'), ctx.cqEmailKey_('ab@test.invalid')); assert.ok(/^[A-Za-z0-9_:\-]{1,64}$/.test(ctx.cqEmailKey_('a.b@test.invalid')));
   assert.strictEqual(ctx.cqClock_('bad'), ''); assert.strictEqual(ctx.cqClock_('01:15'), '13:15'); assert.strictEqual(ctx.cqClock_('12:40'), '12:40');
 });
 test('timetable.classes is distinct and ordered', () => {
@@ -76,7 +78,7 @@ test('allowlist.people filters by campus', () => {
   ctx.SpreadsheetApp = { openById: () => ({ getSheets: () => [{ getDataRange: () => ({ getValues: () => rows }) }] }) };
   reset({ body: '' });
   const r = J(P['allowlist.people']({ campus: 'LMS4' }, {}));
-  assert.deepStrictEqual(r, [{ item: 'a-ptestinvalid', fields: { name: 'Pat', email: 'p@test.invalid', campus: 'LMS4', roles: 'Principal, Teacher' } }]);
+  assert.deepStrictEqual(r, [{ item: 'a-p:test_invalid', fields: { name: 'Pat', email: 'p@test.invalid', campus: 'LMS4', roles: 'Principal, Teacher' } }]);
   assert.strictEqual(P['allowlist.people']({}, {}).length, 2); assert.strictEqual(calls.length, 0);
 });
 test('registry is exactly the reviewed five', () => {

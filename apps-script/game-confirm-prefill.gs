@@ -7,12 +7,16 @@ var CQ_PREFILL = CQ_PREFILL || {};
 
 var CQ_ROSTER_TTL_S = 1800, CQ_TT_TTL_S = 21600, CQ_PUT_CHUNK = 20;
 
+// one item per allowlist person: the whole address, '.' -> '_', '@' -> ':', other -> '-' (so a.b@ and ab@ stay apart); item keys allow 64
+function cqEmailKey_(email) {
+  return ('a-' + String(email || '').toLowerCase().replace(/[^a-z0-9]/g, function (c) { return c === '.' ? '_' : c === '@' ? ':' : '-'; })).slice(0, 64);
+}
 function cqSlug_(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24); }
 
-// '9:20' -> '09:20'; '01:15' -> '13:15'; bad -> ''
+// '9:20' -> '09:20'; '01:15' -> '13:15'; '1:35pm' -> '13:35' (an am/pm suffix is accepted and ignored: LMS 6's data carries some, one of them wrong); bad -> ''
 // ponytail: 12-hour times without am/pm read as a 07:00–18:59 school day; a 7 pm event would read wrong. Store am/pm in the timetable extractor if that ever matters.
 function cqClock_(s) {
-  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(s == null ? '' : s));
+  const m = /^\s*(\d{1,2}):(\d{2})\s*(?:[ap]\.?m\.?)?\s*$/i.exec(String(s == null ? '' : s));
   if (!m) return '';
   let h = Number(m[1]);
   const min = Number(m[2]);
@@ -161,7 +165,7 @@ function cqPrefillAllowlist_(ctx, opts) {
     const campus = String(rows[i][2] || '').trim().toUpperCase();
     if (ctx.campus && campus !== ctx.campus) continue;
     const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean).join(', ');
-    out.push({ item: 'a-' + cqSlug_(email), fields: { name: String(rows[i][1] || '').trim(), email: email, campus: campus, roles: roles } });
+    out.push({ item: cqEmailKey_(email), fields: { name: String(rows[i][1] || '').trim(), email: email, campus: campus, roles: roles } });
   }
   return out;
 }
