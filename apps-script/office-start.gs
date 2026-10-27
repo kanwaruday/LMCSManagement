@@ -93,7 +93,8 @@ function officeStartScope_(caller) {
   const qs = officeStartQuests_();
   // The Owner approves every approval quest whatever approveRoles say.
   const approve = ids(qs.filter(function (q) { return q.approval && (has(q.approveRoles) || has(['Owner'])); }));
-  if (has(OFFICE_START_ROLES)) return { full: true, quests: ids(qs), fill: ids(qs), approve: approve, campuses: OFFICE_CAMPUSES.concat(['ALL']) };
+  // a network-wide "Fees & Accounts" holder sees what a FinanceHead does (their Accountant setup quest reads every school's banks)
+  if (has(OFFICE_START_ROLES) || (caller.campuses.indexOf('ALL') !== -1 && officeHasFunction_(caller, 'fees & accounts'))) return { full: true, quests: ids(qs), fill: ids(qs), approve: approve, campuses: OFFICE_CAMPUSES.concat(['ALL']) };
   const fill = ids(qs.filter(function (q) { return has(q.fillRoles); }));
   const quests = ids(qs.filter(function (q) { return fill.indexOf(q.id) !== -1 || approve.indexOf(q.id) !== -1; }));
   if (!quests.length) throw new Error('FORBIDDEN_ROLE');

@@ -93,8 +93,8 @@ module.exports = function run(t) {
   });
 
   t.test('the "Fees & Accounts" function (allowlist Functions column, any case) grants transfers; no column or another function does not', () => {
-    const withFn = Object.assign({}, fixture, { tokens: Object.assign({ 'pawan-token': 'pawan@example.org' }, fixture.tokens),
-      allowlist: fixture.allowlist.map((r, i) => r.concat(i === 0 ? [' functions '] : [''])).concat([['pawan@example.org', 'Pawan', 'ALL', 'Accounts', ' Transport, fees & ACCOUNTS ']]) });
+    const withFn = Object.assign({}, fixture, { tokens: Object.assign({ 'pawan-token': 'pawan@example.org', 'coordfn-token': 'cf@example.org' }, fixture.tokens),
+      allowlist: fixture.allowlist.map((r, i) => r.concat(i === 0 ? [' functions '] : [''])).concat([['pawan@example.org', 'Pawan', 'ALL', 'Accounts', ' Transport, fees & ACCOUNTS '], ['cf@example.org', 'Coord', 'ALL', 'Coordinator', 'Fees & Accounts']]) });
     withFn.allowlist[1][4] = 'Transport'; // clerk: another function only
     const h = boot(withFn);
     h.addConfig();
@@ -106,6 +106,8 @@ module.exports = function run(t) {
     assert.equal(xfer(h, { id: 't2' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
     assert.equal(xfer(h, { id: 't3' }, 'acc-token').error, 'FORBIDDEN_ROLE', 'Accounts role alone, no Settings row: not allowed');
     assert.equal(h.ctx.officeFundAllowed_({ email: 'x@example.org', roles: [] }), false, 'a cached caller with no functions key');
+    assert.equal(h.call('start.progress', {}, 'coordfn-token').success, true, 'a network-wide holder whose role fills no setup quest');
+    assert.ok(h.call('start.progress', {}, 'coordfn-token').progress.HES.bank, 'sees every school\'s banks');
     const test = () => h.call('start.progress', {}, 'pawan-token').fund_test;
     assert.equal(test(), false);
     assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token').success, true);

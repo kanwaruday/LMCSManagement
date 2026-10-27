@@ -146,10 +146,12 @@ function daybookSetupQuest_(full, campus) {
 }
 // "Fees & Accounts" (registered on the function, whatever the role) -> one sequential setup quest: list every school's bank
 // accounts, confirm their balances at the cut-off, then one test fund transfer and its reversal (Office marks it: fund_test).
+// Network-wide holders only: a transfer needs two schools, so a one-school holder could never finish it.
 function daybookAccountantQuests_(caller, cfg, now) {
+  if (caller.campusId !== 'ALL') return [];
   const full = daybookProgress_(caller), lab = full.labels || {};
-  const bank = Object.keys(full.progress).filter(function (c) { return c !== 'ALL'; }).map(function (c) { return full.progress[c].bank || { confirmed: 0, total: 0 }; });
-  if (!bank.length) return [];
+  const bank = Object.keys(full.progress).filter(function (c) { return c !== 'ALL'; }).map(function (c) { return full.progress[c].bank; });
+  if (!bank.length || !bank.every(Boolean)) return []; // the bank quest is out of this person's Starting data scope
   const defs = [
     ['banks', lab.banksStep || 'List every school\'s bank accounts', daybookGo_('ALL', 'bank'), bank.every(function (b) { return b.total > 0; })],
     ['balances', lab.balancesStep || 'Confirm the bank balances at the cut-off', daybookGo_('ALL', 'bank'), bank.every(function (b) { return b.total > 0 && b.confirmed === b.total; })],

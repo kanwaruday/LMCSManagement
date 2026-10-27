@@ -195,5 +195,8 @@ aq = acct(Object.assign(BANKS(C(3, 0, 3)), { fund_test: true }));
 assert.ok(aq[0].complete && aq[0].steps.every((x) => x.done));
 assert.strictEqual(acct(BANKS(C(3, 0, 3)))[0].steps[2].done, false, 'no fund_test: transfer step open');
 assert.deepStrictEqual(acct({ progress: { ALL: { users: C(0, 0, 0) } } }), [], 'no schools in scope: no quest');
+assert.deepStrictEqual(acct({ progress: { LMS4: { cash: C(0, 0, 1) } } }), [], 'bank quest out of scope: no quest');
+reset(ok(BANKS(C(3, 0, 3)))); assert.deepStrictEqual(J(ctx.daybookAccountantQuests_(clerk, cfg, NOW)), [], 'one school: no quest');
+assert.strictEqual(calls.length, 0, 'not even fetched');
 
 console.log('game daybook module: ok');
