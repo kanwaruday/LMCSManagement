@@ -182,4 +182,18 @@ reset(ok(P2({ cash: S('approved'), odometer: S('approved') })));
 assert.strictEqual(J(ctx.daybookQuests_(owner, cfg, NOW))[0].steps[2].done, true);
 reset(ok(PROG)); assert.ok(J(ctx.daybookQuests_(owner, cfg, NOW)).every((q) => !q.steps.some((s) => s.id === 'approved')), 'no states: no Approved step');
 
+// ---- Accountant ("Fees & Accounts" function): banks listed -> balances confirmed -> test transfer reversed
+assert.ok(hooks('GAME_MODULE_QUESTS', 'fn:fees & accounts').includes('daybookAccountantQuests_'));
+const acct = (body) => { reset(ok(body)); return J(ctx.daybookAccountantQuests_(acc, cfg, NOW)); };
+let aq = acct(PROG); // HES has no bank account yet
+assert.strictEqual(aq.length, 1); assert.strictEqual(aq[0].questId, 'daybook-accountant');
+assert.deepStrictEqual(aq[0].steps.map((x) => [x.id, x.done, x.locked]), [['banks', false, false], ['balances', false, true], ['transfer', false, true]]);
+const BANKS = (b2) => ({ progress: { LMS4: { bank: C(4, 0, 4) }, HES: { bank: b2 }, ALL: { users: C(0, 0, 0) } } });
+aq = acct(BANKS(C(1, 2, 3)));
+assert.deepStrictEqual(aq[0].steps.map((x) => [x.done, x.locked]), [[true, false], [false, false], [false, true]]);
+aq = acct(Object.assign(BANKS(C(3, 0, 3)), { fund_test: true }));
+assert.ok(aq[0].complete && aq[0].steps.every((x) => x.done));
+assert.strictEqual(acct(BANKS(C(3, 0, 3)))[0].steps[2].done, false, 'no fund_test: transfer step open');
+assert.deepStrictEqual(acct({ progress: { ALL: { users: C(0, 0, 0) } } }), [], 'no schools in scope: no quest');
+
 console.log('game daybook module: ok');

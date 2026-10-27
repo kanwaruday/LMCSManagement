@@ -127,7 +127,7 @@ function officeVerifyAllowlist_(idToken) {
   const list = function (v) { return String(v || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); };
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-    const caller = { email: email, name: String(rows[i][1] || '').trim(), campuses: list(rows[i][2]).map(function (c) { return c.toUpperCase(); }), roles: list(rows[i][3]) };
+    const caller = { email: email, name: String(rows[i][1] || '').trim(), campuses: list(rows[i][2]).map(function (c) { return c.toUpperCase(); }), roles: list(rows[i][3]), functions: officeFunctionsOf_(rows[0], rows[i]) };
     // Accounts (Tilak Sir) = FinanceHead on every campus. Applied here so the cached caller carries it.
     if (caller.roles.indexOf('Accounts') !== -1) {
       if (caller.roles.indexOf('FinanceHead') === -1) caller.roles.push('FinanceHead');
@@ -136,6 +136,12 @@ function officeVerifyAllowlist_(idToken) {
     return caller;
   }
   return null;
+}
+
+// The allowlist's "Functions" column (found by header; '' or missing = []). Copy of gameFunctionsOf_ (game.gs): keep the two in step.
+function officeFunctionsOf_(header, row) {
+  const at = (header || []).map(function (h) { return String(h || '').trim().toLowerCase(); }).indexOf('functions');
+  return at === -1 ? [] : String(row[at] || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean);
 }
 
 function officeAssertCampus_(caller, campus) {

@@ -307,9 +307,11 @@ function officeSetting_(key) {
   return officeRows_(officeConfigBook_(), 'Settings').reduce(function (v, r) { return r.key === key ? String(r.value) : v; }, '');
 }
 
-// fund.transfer and its reversal: the Owner, or an email listed in Settings fund_transfer_emails (the accountant). Not hard-coded.
+// fund.transfer and its reversal: the Owner, whoever holds the "Fees & Accounts" function (allowlist Functions column),
+// or an email in Settings fund_transfer_emails (fallback only). A caller cached before functions existed has none.
 function officeFundAllowed_(caller) {
   if (caller.roles.indexOf('Owner') !== -1) return true;
+  if ((caller.functions || []).some(function (f) { return String(f).trim().toLowerCase() === 'fees & accounts'; })) return true;
   return officeSetting_('fund_transfer_emails').split(',').map(function (e) { return e.trim().toLowerCase(); }).indexOf(String(caller.email).toLowerCase()) !== -1;
 }
 

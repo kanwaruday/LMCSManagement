@@ -237,9 +237,11 @@ function officeStartGet_(ctx) {
   }, officeStartProgress_(items, scope));
 }
 
+// fund_test: the caller may enter fund transfers and has reversed one (the Accountant setup quest's last step).
 function officeStartProgressGet_(ctx) {
   const scope = officeStartScope_(ctx.caller);
-  return officeStartProgress_(officeStartVisible_(officeStartItems_(), scope), scope);
+  return Object.assign(officeStartProgress_(officeStartVisible_(officeStartItems_(), scope), scope),
+    { fund_test: officeFundAllowed_(ctx.caller) && !!officeSetting_('fund_test:' + String(ctx.caller.email).toLowerCase()) });
 }
 
 function officeStartItemKey_(quest, item) {

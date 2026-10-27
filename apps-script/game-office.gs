@@ -33,7 +33,7 @@ function daybookProgress_(caller) {
   if (!caller.idToken) throw new Error('daybook: no caller token');
   const url = daybookUrl_();
   const json = gameFetchJson_(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=start.progress', caller.idToken, GAME_FETCH_TIMEOUT_MS, caller.email,
-    function (j) { return { progress: j.progress || {}, rings: j.rings || {}, overall: j.overall || {}, states: j.states || {}, labels: j.labels || {} }; });
+    function (j) { return { progress: j.progress || {}, rings: j.rings || {}, overall: j.overall || {}, states: j.states || {}, labels: j.labels || {}, fundTest: !!j.fund_test }; });
   if (!json) throw new Error('daybook: start.progress failed');
   return json;
 }
@@ -144,6 +144,26 @@ function daybookSetupQuest_(full, campus) {
   return { questId: 'daybook-setup:' + campus, title: daybookPlace_(campus) + ' · Start your Day Book', parallel: false,
     steps: steps, complete: steps.every(function (s) { return s.done; }) };
 }
+// "Fees & Accounts" (registered on the function, whatever the role) -> one sequential setup quest: list every school's bank
+// accounts, confirm their balances at the cut-off, then one test fund transfer and its reversal (Office marks it: fund_test).
+function daybookAccountantQuests_(caller, cfg, now) {
+  const full = daybookProgress_(caller), lab = full.labels || {};
+  const bank = Object.keys(full.progress).filter(function (c) { return c !== 'ALL'; }).map(function (c) { return full.progress[c].bank || { confirmed: 0, total: 0 }; });
+  if (!bank.length) return [];
+  const defs = [
+    ['banks', lab.banksStep || 'List every school\'s bank accounts', daybookGo_('ALL', 'bank'), bank.every(function (b) { return b.total > 0; })],
+    ['balances', lab.balancesStep || 'Confirm the bank balances at the cut-off', daybookGo_('ALL', 'bank'), bank.every(function (b) { return b.total > 0 && b.confirmed === b.total; })],
+    ['transfer', lab.transferStep || 'Make one test fund transfer, then reverse it', 'office/accounts.html', full.fundTest],
+  ];
+  let open = false;
+  const steps = defs.map(function (d) {
+    const locked = open; if (!d[3]) open = true;
+    return { id: d[0], title: d[1], go: d[2], done: d[3], locked: locked };
+  });
+  return [{ questId: 'daybook-accountant', title: 'Set up the bank side of the Day Book', parallel: false,
+    steps: steps, complete: steps.every(function (s) { return s.done; }) }];
+}
+
 // both the cash and the odometer count of a school are in one of these states
 function daybookBoth_(full, campus, states) {
   return ['cash', 'odometer'].every(function (q) { return states.indexOf(daybookState_(full, campus, q).state) !== -1; });
@@ -157,3 +177,4 @@ GAME_MODULE_MISSIONS.Owner = [].concat(GAME_MODULE_MISSIONS.Owner || [], daybook
 GAME_MODULE_QUESTS.Owner = [].concat(GAME_MODULE_QUESTS.Owner || [], daybookQuests_);
 GAME_MODULE_QUESTS.FeeClerk = [].concat(GAME_MODULE_QUESTS.FeeClerk || [], daybookClerkQuests_);
 GAME_MODULE_QUESTS.Accounts = [].concat(GAME_MODULE_QUESTS.Accounts || [], daybookQuests_);
+GAME_MODULE_QUESTS['fn:fees & accounts'] = [].concat(GAME_MODULE_QUESTS['fn:fees & accounts'] || [], daybookAccountantQuests_);

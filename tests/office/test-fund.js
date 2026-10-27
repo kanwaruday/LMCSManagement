@@ -92,6 +92,29 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh2-token').error, 'FORBIDDEN_ROLE', 'reversal follows the same rule');
   });
 
+  t.test('the "Fees & Accounts" function (allowlist Functions column, any case) grants transfers; no column or another function does not', () => {
+    const withFn = Object.assign({}, fixture, { tokens: Object.assign({ 'pawan-token': 'pawan@example.org' }, fixture.tokens),
+      allowlist: fixture.allowlist.map((r, i) => r.concat(i === 0 ? [' functions '] : [''])).concat([['pawan@example.org', 'Pawan', 'ALL', 'Accounts', ' Transport, fees & ACCOUNTS ']]) });
+    withFn.allowlist[1][4] = 'Transport'; // clerk: another function only
+    const h = boot(withFn);
+    h.addConfig();
+    ['LMS1', 'HES'].forEach((c) => h.addBook(c, '2026-27'));
+    h.setNow(new Date('2026-10-21T10:00:00Z'));
+    h.ctx.officeWriteRow_(h.ctx.officeConfigBook_(), 'Accounts', { id: 'sbi-hes', label: 'sbi-hes', kind: 'bank', campus: 'HES', active: 'true' });
+    assert.equal(h.call('config.get', {}, 'pawan-token').fund_transfer_allowed, true);
+    assert.equal(xfer(h, {}, 'pawan-token').success, true);
+    assert.equal(xfer(h, { id: 't2' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(xfer(h, { id: 't3' }, 'acc-token').error, 'FORBIDDEN_ROLE', 'Accounts role alone, no Settings row: not allowed');
+    assert.equal(h.ctx.officeFundAllowed_({ email: 'x@example.org', roles: [] }), false, 'a cached caller with no functions key');
+    const test = () => h.call('start.progress', {}, 'pawan-token').fund_test;
+    assert.equal(test(), false);
+    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token').success, true);
+    assert.equal(test(), true, 'a reversed fund transfer closes the quest step');
+    h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token');
+    assert.equal(h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'Settings').filter((r) => r.key === 'fund_test:pawan@example.org').length, 1, 'marked once');
+    assert.equal(h.call('start.progress', {}, 'owner-token').fund_test, false, 'per person');
+  });
+
   t.test('balances move bank on both sides, cash untouched', () => {
     const h = fresh();
     xfer(h);

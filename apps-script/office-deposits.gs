@@ -223,5 +223,8 @@ function officeFundReverse_(ctx, orig, narration) {
       reverses: leg.id, account: leg.account, charged_to: leg.charged_to, settles: legs[1 - i].id + '-rv', source: 'live',
     }, 'daybook.reverse');
   });
+  // The Accountant setup quest's last step (game-office.gs): this person has done a fund transfer and its reversal.
+  const mark = 'fund_test:' + String(ctx.caller.email).toLowerCase();
+  if (!officeSetting_(mark)) officeWriteRow_(officeConfigBook_(), 'Settings', { key: mark, value: today, created_at: officeNow_().toISOString(), created_by: ctx.caller.email });
   return { id: orig.id + '-rv', duplicate: !(missing[0] && missing[1]) };
 }
