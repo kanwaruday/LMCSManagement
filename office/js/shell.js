@@ -128,6 +128,7 @@ export async function bootOffice({ onReady }) {
   const refresh = async () => { state = await outbox.counts(); paint(); };
 
   $('who').textContent = session.name + ' · ' + L.campusLabel(session.campus);
+  const sub = $('gb-sub'); if (sub) sub.textContent = (String(session.role || '').split(',')[0].trim() || 'Fee Clerk') + ' · ' + L.campusLabel(session.campus);
   if (session.campusId === 'ALL') { // Fee Clerks and comma lists never get a picker
     let ready = false;
     window.LMCSCampus.mount($('campus-pick'), { session, multi: false, hes: true, key: OFFICE_PICK_KEY, label: 'Campus', onChange: () => { if (ready) location.reload(); } });
