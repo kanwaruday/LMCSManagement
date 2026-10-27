@@ -175,6 +175,11 @@ assert.strictEqual(D.pollDelay([{ state: 'answered' }, { state: 'failed' }], tru
 assert.strictEqual(D.threadLine({ state: 'queued', failReason: 'offline' }, { open: true }).text, "I couldn't finish that one. Please ask again.", 'failReason offline');
 const pf = D.proposalView({ proposal: { summary: 'S' }, proposalState: 'failed', proposalNote: 'It did not go through.' });
 assert.ok(pf && pf.state === 'failed' && pf.note === 'It did not go through.', 'failed proposal carries its note (no confirm buttons: state is not open)');
+assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'confirmed' }], true), 5000, 'confirmed: keep polling until forwarded or failed');
+assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'forwarded' }, { state: 'answered', proposalState: 'failed' }], true), 0);
+assert.ok(/confirmed: 'Sending to the master agent when the Mac is on…'/.test(src) && /forwarded: 'Sent to the master agent'/.test(src) && !/confirmed: 'Sent/.test(src), 'confirmed vs forwarded copy');
+assert.ok(/!r\.success && !r\.code[\s\S]*signedOut = true[\s\S]*Please sign in again\./.test(src) && /signedOut \? 0 :/.test(src), 'no code and no success: sign in again, stop polling');
+assert.ok(/btns\.forEach\(function \(b\) \{ b\.disabled = true; \}\)/.test(src) && /decide\(t, 'confirm', pair\)/.test(src) && /decide\(t, 'decline', pair\)/.test(src), 'both buttons disable on the first tap');
 // Ask Buddy: source checks
 const askSrc = src.slice(src.indexOf('Ask Buddy (start)'), src.indexOf('Ask Buddy (end)'));
 assert.ok(askSrc.length > 500, 'Ask Buddy markers found');
