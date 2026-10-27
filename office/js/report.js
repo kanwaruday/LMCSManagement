@@ -1,5 +1,5 @@
 // Daily Report screen. A re-submit for a date is a new row; the latest wins (backend R5).
-import { h, field, setKids } from './dom.js';
+import { h, field, setKids, showDone, place } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { todayIst, BUCKETS, rollForward, rolledNote } from './daybook.js';
@@ -107,6 +107,7 @@ export async function showReport(root, session, api, outbox) {
       msg.textContent = 'Saved — will sync';
       outbox.flush().then(check).catch(() => {});
       watch();
+      showDone(form, 'Daily Report for ' + isoToDmy(dateIn.value) + ' saved for ' + place(campus) + '.', { again: 'Change it' });
     } catch (err) { msg.textContent = 'Could not save on this device: ' + (err && err.message || err); }
     saveBtn.disabled = false;
   } },

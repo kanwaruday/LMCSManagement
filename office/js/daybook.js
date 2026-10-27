@@ -1,7 +1,7 @@
 // Day Book screen: entry form, the day's list (server rows + queued entries), balances, Reverse.
 // Append-only: there is no edit and no delete; a correction is a reversing entry (daybook.reverse).
 import { cacheGet, cacheSet } from './shell.js';
-import { h, field } from './dom.js';
+import { h, field, showDone, place } from './dom.js';
 import { entryReason } from './codes.js';
 import { parseRupeesToPaise, formatInr, isoToDmy } from './format.js';
 import { resizeImage, toBase64 } from './image.js';
@@ -376,6 +376,7 @@ export async function showDayBook(root, session, api, outbox) {
       saveMsg.textContent = 'Saved — will sync';
       await refresh();
       outbox.flush().then(refresh).catch(() => {});
+      showDone(form, formatInr(r.data.amount_paise) + ' entered in the Day Book for ' + place(campus) + '.', { again: 'Add another' });
     } catch (err) { saveMsg.textContent = err && err.message || String(err); }
     saveBtn.disabled = false;
   } },
