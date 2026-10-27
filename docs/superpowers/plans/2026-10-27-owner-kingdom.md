@@ -10,12 +10,12 @@
 |---|---|---|
 | Tue 27 Oct, evening | Ask Buddy queue backend built and reviewed | B1 |
 | Wed 28 Oct, by 13:00 | Ask Buddy chat box in the floating Buddy panel; Mac worker built | B2, B3 |
-| **Wed 28 Oct, by 18:00** | **Ask Buddy v1 security review passed, game backend deployed, worker running on the Mac: live for the morning of 29 Oct** | B4 |
-| Wed 28 Oct, evening | Kingdom read model and the day-one setup quests built | K1, K2 |
-| Thu 29 Oct, by 14:00 | Assignment writes; Kingdom page read-only | K3, K4 |
-| **Thu 29 Oct, by 19:00** | **Tap-to-assign in the Kingdom, Opus branch review, deploy: ready for the morning of 30 Oct, when "Set up the game" starts** | K5, K6 |
-| Fri 30 Oct, 08:00 | Uday runs setup from the Kingdom; Principals start P1 to P3; clerks submit Day Book counts (29 to 30 Oct), Coordinators approve by 31 Oct | — |
-| Nov 2026 onward | Phase 2 (Kingdom complete), Phase 3 (Ask Buddy v2). Not scheduled here | Later phases |
+| **Wed 28 Oct, by 18:00** | **Ask Buddy v1 (Owner only): security review passed, game backend deployed, worker running on the Mac. Live for the morning of Thu 29 Oct** | B4 |
+| Wed 28 Oct, evening | Kingdom read model (bases, Darbar with "Set up the game" steps, Treasury from the Fee Clerk's Day Book quest) | K1 |
+| Thu 29 Oct, by 14:00 | Assignment writes (setup owner rows, approval follow-ups through `coordinatorallocate`); Kingdom page read-only | K3, K4 |
+| **Thu 29 Oct, by 19:00** | **Owner's Kingdom MVP: tap-to-assign, Opus branch review, deploy. Ready for the morning of Fri 30 Oct** | K5, K6 |
+| Fri 30 Oct, 08:00 | Uday opens the Kingdom, works through "Set up the game" in the Darbar and hands out follow-ups. Clerks submit Day Book counts 29 to 30 Oct (Treasury levels follow, read-only); Coordinators approve by 31 Oct | — |
+| After 30 Oct | Phase 2b (P1–P3 and the Coordinator function quests, handed out from the Kingdom), Phase 2 (Kingdom complete), Phase 3 (Ask Buddy v2) | L1, later |
 
 **At risk (in order):**
 1. **`claude -p` tool restriction and `SendMessage` in a restricted run** (B3). If `--tools SendMessage` does not expose
@@ -26,15 +26,19 @@
    release could be live and newer than this branch. The deploy checklist makes the controller compare first.
 3. **K5 approvals tray** (29 Oct afternoon). If it slips, ship K6 without it: setup-step assignment (K3a) is the day-one
    need; the approval follow-up card can follow on 31 Oct.
-4. **CHR, CAc, CEv quests** (K2) ship as drafts (`active: false`): they need Uday's look in the sample view first. CFin,
-   CSys and O2 ship active; P1 to P3 are switched on by config after Uday's sample check (deploy checklist).
+4. **Few assignable setup steps on day one.** P1–P3 and the Coordinator function quests are off the 30 Oct list (Uday,
+   Owner-first), so on 30 Oct the Kingdom shows those buildings as "coming soon"; the day-one assignment path is the
+   approval follow-up card, and setup owner rows are ready for when L1 lands.
+5. **`verify.mjs` in a worktree** fails `datasrc/test-datasrc.js` with "stale exemption lm-monitor/dashboard.html"
+   (`lm-monitor/` is untracked and exists only in the main checkout). Pre-existing; builders report it, do not "fix" it.
 
 ---
 
 **Goal:** (1) Uday can type to Buddy in the portal and get an answer from Claude reading the vault, with change
 requests forwarded to the LMCS Master Agent only after he taps Confirm. (2) The Owner's Kingdom: a valley map with the
 HES Darbar at the centre and the six LMS bases, each base's level from real setup progress, buildings that are setup
-quests and open the existing setup pages, and Owner tap-to-assign through safe write paths only.
+quests and open the existing setup pages, the Owner's own "Set up the game" steps in the Darbar, and Owner
+tap-to-assign through safe write paths only.
 
 **Uday's decisions (binding):** HES is the Darbar at the centre. Allocation is Owner-only at go-live; the Owner can
 later grant allocate or approve rights per role or person (config, edited in the game: Phase 2). Principals see only
@@ -43,7 +47,7 @@ data and the vault, never personal-data tabs (v1: vault only). Every write goes 
 permission check plus an audit log. Multi-school: rules live in config.
 
 **Spec / sources:** vault `work/Owner Kingdom design.md` (approved, decisions under "Uday's decisions"); the mockup,
-copied with role labels in place of names: `docs/superpowers/plans/2026-10-27-owner-kingdom-mockup.html` (open it in
+copied with role labels in place of names: `docs/superpowers/plans/_mockups/2026-10-27-owner-kingdom.html` (open it in
 a browser; it is the visual reference for K4 and K5, sample data only); the game layer framework contract (registries,
 `caller.idToken`, peek writes nothing, setup is gamified); vault `work/Agent Model Routing.md`; the setup quest engine
 plan `docs/superpowers/plans/2026-10-27-setup-quest-engine.md`; the Telegram bot pattern (`~/.config/lmcs-telegram/bot.py`,
@@ -508,6 +512,9 @@ kingdom: {
 }
 ```
 
+On 30 Oct `p1`–`p3` are inactive and `o2`, `csys`, `cfin`, `chr`, `cac`, `cev` do not exist yet (L1), so those tiers
+resolve to `soon`; nothing in K1 depends on L1.
+
 **Building catalogue default** (each tier: `label`, `refs` (all must be done), optional `owners` = quest ids that can be
 assigned from this tier). `where: 'campus'` repeats on LMS1–LMS6; `where: 'darbar'` sits only in HES.
 
@@ -530,7 +537,8 @@ are not assignable in the MVP.
   scope: `campus` quests → `campus:<campusId>` (and `null` at HES unless the def's campuses include HES); `network`
   quests → `network` (the same answer on every base); `self` quests → `null` in the MVP. Status via
   `cqView_(ctx.caller, def, scope, ctx.setupRows, {})`; `prefillDown` → `null`; else `ring.done`.
-- `setup:game` — `setupSteps_(cfg).every(s => s.done)` (HES only; null elsewhere).
+- `setup:game` — `setupSteps_(cfg).every(s => s.done)` (HES only; null elsewhere). The tier also carries
+  `steps: [{ id, title, done, guide }]` from `setupSteps_` so the Darbar card lists the Owner's six steps with How links.
 - `daybook-setup:<step>` — the step's `done` from `daybookSetupQuest_(ctx.daybook, campusId)` (below); office down or
   no quest for that campus → `null`.
 - `buddy:desk` — `buddyDesk_(nowMs).seenAt !== null` (the worker has ever polled within the cache life).
@@ -567,7 +575,7 @@ Response shape (`gamekingdom`, GET):
   advice: { text, go } | null,                                       // Owner only (rule below)
   sourcesDown: string[] }
 Base = { id, name, full, x, y, darbar, level, points, buildings: Building[], unknown: number /* tiers not checkable */ }
-Building = { id, name, level, maxLevel, tiers: [{ n, label, state: 'done'|'open'|'soon'|'unknown', go, questId?, owner?: { email, name } }] }
+Building = { id, name, level, maxLevel, tiers: [{ n, label, state: 'done'|'open'|'soon'|'unknown', go, questId?, owner?: { email, name }, steps? }] }
 Card = { id /* approval id */, kind: 'approval_followup', title, campus, category, decidedAt }
 ```
 - `go` for a `cq:` tier: `cqGo_(view)` (the existing setup page link, `setup/index.html?quest=…&campus=…`); for
@@ -590,7 +598,8 @@ Rules:
 **Tests** (`tests/game/test-kingdom.js`; stub `cqView_`, `setupSteps_`, `daybookProgress_`, the Approvals sheet):
 - [ ] `level: building = leading done tiers` — `[true,true,false,true]` → 2; `[true,null,true]` → 1.
 - [ ] `level: base from points` — 0 → 1, 2 → 2, 9 → 4, 54 → 10.
-- [ ] `cq ref: campus scope, network shared, inactive is soon, prefill down is unknown`.
+- [ ] `cq ref: campus scope, network shared, inactive or missing def is soon, prefill down is unknown`.
+- [ ] `darbar: setup:game tier carries the six steps with guide ids`.
 - [ ] `treasury: tiers follow daybook-setup steps` — fixture `start.progress` with cash confirmed, odometer not → level 2; questId and step ids match `daybook-setup:<campus>`.
 - [ ] `office down: treasury unknown, sourcesDown has office, other buildings still computed`.
 - [ ] `principal: only own base, no heads, cards, advice or names` — and no Approvals sheet read (spy).
@@ -601,54 +610,6 @@ Rules:
 - [ ] `advice: first unowned open assignable tier`.
 - [ ] `office refactor: daybookClerkQuests_ output unchanged` — existing `test-daybook.js` passes untouched.
 - [ ] Commit: `Kingdom: gamekingdom read model (bases, buildings from setup quests, Treasury from the Day Book setup quest)`
-
-## Task K2: Day-one setup quests — **Sonnet build, Sonnet review** — est. 2.5 h
-
-**Files:**
-- Modify: `apps-script/game-confirm.gs` (definitions; `cqValidDef_` and `cqMine_` for `functions`),
-  `apps-script/game-confirm-prefill.gs` (two adapters)
-- Modify: `tests/game/test-confirm-t1.js` (shipped definitions validate), create `tests/game/test-confirm-coord.js`
-
-**`functions` (new optional definition field):** `functions: ['finance']`. `cqValidDef_` keeps it when it is a
-non-empty array of strings from `['finance','transport','academics','hr','events','systems','all']`, else refuses the
-def. `cqMine_(caller, defs)` keeps a def with `functions` only if the caller is Owner, or the caller's email is a
-`kingdom.heads` entry whose functions overlap the def's or include `'all'`. `cqMine_` gains a third param `cfg`
-(callers pass the cfg they already hold; update every call site in game-confirm.gs).
-
-**Definitions added to `cqDefaults_()`** (P1–P3 stay as they are, `active: false`; config switches them on):
-
-| id | title / task | roles | functions | scope | prefill | fields | active |
-|---|---|---|---|---|---|---|---|
-| `o2` | Who holds each role / Check who holds each role | Owner | — | campus, `campuses` LMS1–6 + HES | `allowlist.people` | name (text), email (text), roles (text) ; `skipLabel: 'Not here any more'` | true |
-| `csys` | Approval routing / Choose who recommends each kind of request | Owner, Coordinator | systems | network | `approvals.categories` | category (text), department (text), recommender (text, hint "Role, like Accounts head"), escalateDays (number) | true |
-| `cfin` | Collection heads / Check the collection heads | Coordinator, FeeClerk | finance | campus | `office.collections` | label (text); `skipLabel: 'We do not collect this'`; intro: "These come from the office list. Switching one off for good is done on the Accounts page." | true |
-| `chr` | Staff document rules / Set which documents each role needs | Coordinator | hr | network | — | designation (text), documents (text, hint "Comma list") ; addable | false |
-| `cac` | Course maps and terms / Check course maps and term dates | Coordinator | academics | campus | `timetable.classes` | class (text), courseMap (yesno), termStart (date), termEnd (date) | false |
-| `cev` | Calendar and event owner / Connect the calendar and name the event owner | Coordinator, Principal | events | campus | — | calendarLinked (yesno), eventOwner (text, hint "Role, like Events head") | false |
-
-Every definition gets a `sample` row with placeholder values only (no real names), e.g. `{ item: 's1', fields: {
-label: 'Field trips' } }`.
-
-**Pre-fill adapters** (`game-confirm-prefill.gs`, registered in its registration block):
-```js
-function cqPrefillCollections_(ctx, opts)   // 'office.collections': office backend config.get (daybookUrl_() + '?action=config.get') with ctx.caller.idToken
-                                            //   through gameFetchJson_; opts.cacheOnly -> only a cached copy (cqCacheJson_) else null;
-                                            //   -> active collections as { item: 'c-' + id, fields: { label } }; failure -> null
-function cqPrefillApprovalCategories_(ctx)  // 'approvals.categories': KINGDOM_APPROVAL_CATEGORIES (a copy of coordinator.gs COORD_APPROVAL_DEPT keys
-                                            //   and departments, as [{category, department}]) -> { item: 'k-' + cqSlug_(category), fields: { category, department } }
-```
-`ctx.caller.idToken` exists for real loads (game.gs sets it); when absent, `cqPrefillCollections_` returns null.
-
-**Tests:**
-- [ ] `test-confirm-t1.js`: every shipped definition passes `cqValidDef_`; `o2`, `csys`, `cfin` active; `chr`, `cac`, `cev`, `p1`–`p3` inactive.
-- [ ] `functions: a non-head Coordinator does not get cfin; a finance head does; an 'all' head does; the Owner does`.
-- [ ] `functions: a bad function name refuses the definition`.
-- [ ] `collections prefill: active only, ids prefixed, cacheOnly without cache -> null, no token -> null`.
-- [ ] `categories prefill matches coordinator.gs` — the test reads `apps-script/coordinator.gs`, extracts
-  `COORD_APPROVAL_DEPT`'s keys by regex and asserts the same set as `KINGDOM_APPROVAL_CATEGORIES` (so a drift fails CI).
-- [ ] `o2 at HES: campus scope accepts HES`.
-- [ ] `missions: a function quest shows only for its heads` (cqMissions_ through cqStatus_).
-- [ ] Commit: `Setup quests for day one: O2, CSys, CFin active; CHR, CAc, CEv drafts; function-scoped quests`
 
 ## Task K3: Assignment writes `kingdomassign` and `kingdomallocate` — **Opus build, Opus review** (security) — est. 2.5 h
 
@@ -666,7 +627,7 @@ var KINGDOM_CODES = { KINGDOM_NO_RIGHT: 'Only the Owner can assign work for now.
   KINGDOM_UPSTREAM: 'The Coordinator system could not be reached. Nothing was changed.' };
 
 function kingdomAudit_(row)                                // appends one KINGDOM_ALLOC_HEADER row (caller holds the lock or it takes it)
-function kingdomEligible_(allowRows, def, campus, email, cfg) // -> {email, name} | null: allowlist row; roles ∩ def.roles; head function rule when def.functions;
+function kingdomEligible_(allowRows, def, campus, email, cfg) // -> {email, name} | null: allowlist row; roles ∩ def.roles (L1 adds the head-function rule);
                                                            //    campus: row campus === campus, or row is Owner/Coordinator, or row campus 'ALL'
 function kingdomAssignees_(allowRows, def, campus, cfg)    // -> [{email, name}] eligible people for the picker (Owner only)
 function kingdomAssign_(caller, body)                      // POST {quest, campus, assignee, note?, clear?: true}
@@ -709,9 +670,9 @@ Owner, drop the mission (the page itself stays open to them). No owner → uncha
 - [ ] `assign: refuses a Coordinator without the right` and `ignores a non-Owner entry in rights.emails`.
 - [ ] `assign: unknown, inactive or self quest -> KINGDOM_BAD_QUEST`.
 - [ ] `assign: campus not in the quest -> KINGDOM_BAD_CAMPUS; network quest with a campus -> KINGDOM_BAD_CAMPUS`.
-- [ ] `assign: eligibility` — Teacher for p1 → not eligible; Principal of LMS4 for p1 at LMS4 → ok; Principal of LMS3 for LMS4 → not eligible; Coordinator without finance for cfin → not eligible; finance head → ok.
+- [ ] `assign: eligibility` (test definitions via a `cqDefaults_` override, as test-confirm.js does; a campus quest `tc` for Principal and a network quest `tn` for Coordinator, both active) — Teacher for `tc` → not eligible; Principal of LMS4 for `tc` at LMS4 → ok; Principal of LMS3 for LMS4 → not eligible; any Coordinator for `tn` → ok.
 - [ ] `assign: writes the owner row and two audit rows`; `same owner again: no new Setup Data row, audit code unchanged`; `clear writes 'cleared'`.
-- [ ] `assign: engine counts unaffected` — after an owner row, `cqView_` ring for p1 is the same as before.
+- [ ] `assign: engine counts unaffected` — after an owner row, `cqView_` ring for `tc` is the same as before.
 - [ ] `allocate: forwards only whitelisted fields with the caller's token` — captured payload keys exactly `action, idToken, approvalId, assignee, due, note, cancel`; `idToken === caller.idToken`; an extra `body.action:'coordinatorresolvetask'` is not forwarded.
 - [ ] `allocate: upstream refusal is audited as refused with its sentence`; `fetch failure -> KINGDOM_UPSTREAM, audit error`.
 - [ ] `allocate: bad due or email -> KINGDOM_BAD_INPUT, no fetch`.
@@ -808,11 +769,66 @@ UI:
 - [ ] `node tests/verify.mjs` passes; `node tools/stamp-assets.mjs --check` passes.
 - [ ] Controller deploy (checklist, Kingdom section).
 - [ ] Live check as the Owner: Kingdom loads in under 15 s cold; seven bases; HES centred; Treasury levels match the
-  clerks' Day Book progress on `office/starting-data.html`; a `Go` on School Hall opens `setup/index.html?quest=p1&campus=…`;
-  assign P1 at one campus to its Principal → `Setup Data` `_owner:p1` row, two `Game Allocations` rows, the Principal's
-  Today list shows "Assigned by the Owner"; assign one approved request's follow-up to a head → the Coordinator
+  clerks' Day Book progress on `office/starting-data.html` (read-only); the Darbar lists the six "Set up the game" steps
+  with How links that open the guide; School Hall, Staff Quarters, Academy and Garage show "coming soon"; assign one approved request's follow-up to a head → the Coordinator
   backend's follow-up appears on that head's All follow-ups; console clean at 375 px and desktop.
 - [ ] Commit fixes: `Kingdom MVP: review fixes`
+
+---
+
+# Phase 2b: quests handed out from the Kingdom (after 30 Oct; specified now)
+
+## Task L1: Setup quests Uday hands out from the Kingdom — **Sonnet build, Sonnet review** — est. 2.5 h
+
+**Not for 30 Oct** (Uday chose Owner-first, 27 Oct). Built when he decides to hand these out. Pairs with Phase 2's
+"assigning a draft quest switches it on for its assignee". P1–P3 are switched on the same way, not by a blanket
+config change.
+
+**Files:**
+- Modify: `apps-script/game-confirm.gs` (definitions; `cqValidDef_` and `cqMine_` for `functions`),
+  `apps-script/game-confirm-prefill.gs` (two adapters)
+- Modify: `tests/game/test-confirm-t1.js` (shipped definitions validate), create `tests/game/test-confirm-coord.js`
+
+**`functions` (new optional definition field):** `functions: ['finance']`. `cqValidDef_` keeps it when it is a
+non-empty array of strings from `['finance','transport','academics','hr','events','systems','all']`, else refuses the
+def. `cqMine_(caller, defs)` keeps a def with `functions` only if the caller is Owner, or the caller's email is a
+`kingdom.heads` entry whose functions overlap the def's or include `'all'`. `cqMine_` gains a third param `cfg`
+(callers pass the cfg they already hold; update every call site in game-confirm.gs).
+
+**Definitions added to `cqDefaults_()`** (P1–P3 stay as they are, `active: false`; config switches them on):
+
+| id | title / task | roles | functions | scope | prefill | fields | active |
+|---|---|---|---|---|---|---|---|
+| `o2` | Who holds each role / Check who holds each role | Owner | — | campus, `campuses` LMS1–6 + HES | `allowlist.people` | name (text), email (text), roles (text) ; `skipLabel: 'Not here any more'` | true |
+| `csys` | Approval routing / Choose who recommends each kind of request | Owner, Coordinator | systems | network | `approvals.categories` | category (text), department (text), recommender (text, hint "Role, like Accounts head"), escalateDays (number) | true |
+| `cfin` | Collection heads / Check the collection heads | Coordinator, FeeClerk | finance | campus | `office.collections` | label (text); `skipLabel: 'We do not collect this'`; intro: "These come from the office list. Switching one off for good is done on the Accounts page." | true |
+| `chr` | Staff document rules / Set which documents each role needs | Coordinator | hr | network | — | designation (text), documents (text, hint "Comma list") ; addable | false |
+| `cac` | Course maps and terms / Check course maps and term dates | Coordinator | academics | campus | `timetable.classes` | class (text), courseMap (yesno), termStart (date), termEnd (date) | false |
+| `cev` | Calendar and event owner / Connect the calendar and name the event owner | Coordinator, Principal | events | campus | — | calendarLinked (yesno), eventOwner (text, hint "Role, like Events head") | false |
+
+Every definition gets a `sample` row with placeholder values only (no real names), e.g. `{ item: 's1', fields: {
+label: 'Field trips' } }`.
+
+**Pre-fill adapters** (`game-confirm-prefill.gs`, registered in its registration block):
+```js
+function cqPrefillCollections_(ctx, opts)   // 'office.collections': office backend config.get (daybookUrl_() + '?action=config.get') with ctx.caller.idToken
+                                            //   through gameFetchJson_; opts.cacheOnly -> only a cached copy (cqCacheJson_) else null;
+                                            //   -> active collections as { item: 'c-' + id, fields: { label } }; failure -> null
+function cqPrefillApprovalCategories_(ctx)  // 'approvals.categories': KINGDOM_APPROVAL_CATEGORIES (a copy of coordinator.gs COORD_APPROVAL_DEPT keys
+                                            //   and departments, as [{category, department}]) -> { item: 'k-' + cqSlug_(category), fields: { category, department } }
+```
+`ctx.caller.idToken` exists for real loads (game.gs sets it); when absent, `cqPrefillCollections_` returns null.
+
+**Tests:**
+- [ ] `test-confirm-t1.js`: every shipped definition passes `cqValidDef_`; `o2`, `csys`, `cfin` active; `chr`, `cac`, `cev`, `p1`–`p3` inactive.
+- [ ] `functions: a non-head Coordinator does not get cfin; a finance head does; an 'all' head does; the Owner does`.
+- [ ] `functions: a bad function name refuses the definition`.
+- [ ] `collections prefill: active only, ids prefixed, cacheOnly without cache -> null, no token -> null`.
+- [ ] `categories prefill matches coordinator.gs` — the test reads `apps-script/coordinator.gs`, extracts
+  `COORD_APPROVAL_DEPT`'s keys by regex and asserts the same set as `KINGDOM_APPROVAL_CATEGORIES` (so a drift fails CI).
+- [ ] `o2 at HES: campus scope accepts HES`.
+- [ ] `missions: a function quest shows only for its heads` (cqMissions_ through cqStatus_).
+- [ ] Commit: `Setup quests to hand out: O2, CSys, CFin active; CHR, CAc, CEv drafts; function-scoped quests`
 
 ---
 
@@ -826,6 +842,8 @@ UI:
 - Rallies: a head proposes (decision window type with `confirmBy: 'Owner'`), the Owner confirms; framework TeamGoal.
 - More cards: PDR issues (`coordinatorpdrissue status=assigned`), Coordinator Tasks (new `coordinatorassigntask` +
   cancel in the Coordinator backend, its own check and audit), fleet setup steps; drag and drop; undo toasts.
+- Assigning a draft quest switches it on for its assignee and campus only (an owner row makes an inactive def visible
+  to that person); this is how P1–P3 and the L1 quests go live. Opus review (it widens who sees a quest).
 - Fleet resolver for the Garage; T1 and other self-scoped tiers (counts across a campus's teachers).
 - Alliance hall with private ranks (one card at a time, never sorted), help requests, daily alliance quest, level-up
   cards, the 5-beat Kingdom tour, Buddy advisor rule order in config.
@@ -863,8 +881,7 @@ UI:
 
 **Kingdom MVP (Thu 29 Oct, after K6 review passes)**
 - [ ] Game Config row `kingdom`: set `heads` (names, emails, functions, colours) from Uday's list. Sheet only.
-- [ ] Uday checks P1–P3 in the sample view (`setup/index.html?sample=1&role=Principal`); on his yes, Game Config
-  `confirmQuests` = `{"p1":{"active":true},"p2":{"active":true},"p3":{"active":true}}`.
+- [ ] Do **not** switch on P1–P3 or add function quests (Phase 2b, Uday's call later).
 - [ ] `node apps-script/deploy.mjs game --push --deploy "Kingdom MVP"`; `node tests/verify.mjs --live`.
 - [ ] Push the front end (owner/kingdom.html, kingdom.js/.css, owner/index.html, guide.js, stamps).
 - [ ] K6 live check. Post the Kingdom link to Uday through the master agent before 08:00 on 30 Oct.
@@ -884,10 +901,10 @@ UI:
 | B3 | Mac worker | Opus / Opus | 2.5 h | 28 Oct 13:00 |
 | B4 | Security review, deploy, live smoke | Opus | 1.5 h | 28 Oct 18:00 |
 | K1 | gamekingdom read model | Sonnet / Opus | 2.5 h | 28 Oct eve |
-| K2 | Day-one setup quests | Sonnet / Sonnet | 2.5 h | 28 Oct eve |
 | K3 | Assignment writes + audit | Opus / Opus | 2.5 h | 29 Oct 14:00 |
 | K4 | Kingdom page read-only | Sonnet / Sonnet | 3 h | 29 Oct 14:00 |
 | K5 | Tap-to-assign UI | Sonnet / Opus | 2 h | 29 Oct 17:00 |
 | K6 | Branch review, deploy, live check | Opus | 1.5 h | 29 Oct 19:00 |
+| L1 | Quests to hand out (P1–P3 switch-on per assignee, O2, CSys, CFin, CHR, CAc, CEv) | Sonnet / Sonnet | 2.5 h | after 30 Oct |
 
 *Plan written 2026-10-27 from the approved Owner Kingdom design, Uday's decisions and the controller's dated re-plan.*

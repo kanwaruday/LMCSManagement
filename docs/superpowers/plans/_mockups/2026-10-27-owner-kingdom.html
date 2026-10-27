@@ -266,7 +266,7 @@ dialog::backdrop{background:var(--scrim)}
       <div class="qbar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="4" aria-label="Approvals cleared today"><i style="width:66.6%"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div>
       <div class="qmeta"><span>4 of 6 cleared since 04:00, by the whole alliance</span><span>Unfinished rolls over</span></div>
     </div>
-    <button class="btn btn-ghost ask" type="button" id="askBtn"><img src="../../../assets/game/buddy/avatar-winter-formal.webp" alt="">Ask Buddy</button>
+    <button class="btn btn-ghost ask" type="button" id="askBtn"><img src="../../../../assets/game/buddy/avatar-winter-formal.webp" alt="">Ask Buddy</button>
   </header>
 
   <div class="tabs" role="tablist">
@@ -275,7 +275,7 @@ dialog::backdrop{background:var(--scrim)}
   </div>
 
   <div class="advisor" aria-live="polite">
-    <img id="advImg" src="../../../assets/game/buddy/winter-formal-nudge.webp" alt="Buddy the owl">
+    <img id="advImg" src="../../../../assets/game/buddy/winter-formal-nudge.webp" alt="Buddy the owl">
     <div class="bubble"><span class="who">Buddy, royal advisor</span><p id="advText"></p><a id="advGo" href="#tray">Open the tray</a></div>
   </div>
 
@@ -342,7 +342,7 @@ dialog::backdrop{background:var(--scrim)}
 </div>
 
 <dialog id="dlg" aria-labelledby="dlgT"><div class="dh"><h2 id="dlgT"></h2><button class="x" type="button" data-close aria-label="Close">×</button></div><div class="db" id="dlgB"></div></dialog>
-<dialog id="celebrate" aria-labelledby="celT"><div class="dh"><h2 id="celT">Level up</h2><button class="x" type="button" data-close aria-label="Close">×</button></div><div class="db"><div class="confetti" id="confetti" aria-hidden="true"></div><img src="../../../assets/game/buddy/winter-formal-celebrate.webp" alt="Buddy celebrating"><div class="big" id="celBig"></div><p id="celText"></p><button class="btn btn-red" type="button" data-close>Back to the kingdom</button></div></dialog>
+<dialog id="celebrate" aria-labelledby="celT"><div class="dh"><h2 id="celT">Level up</h2><button class="x" type="button" data-close aria-label="Close">×</button></div><div class="db"><div class="confetti" id="confetti" aria-hidden="true"></div><img src="../../../../assets/game/buddy/winter-formal-celebrate.webp" alt="Buddy celebrating"><div class="big" id="celBig"></div><p id="celText"></p><button class="btn btn-red" type="button" data-close>Back to the kingdom</button></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastT"></span><button type="button" id="toastUndo" hidden>Undo</button></div>
 
 <script>
@@ -406,7 +406,7 @@ var ADV={
   start:['Good morning, Uday ji. LMS 5 is the newest fort. Its School Hall isn’t built yet; one card in the tray starts it.','#tray','Open the tray','winter-formal-nudge'],
   pick:['Tap who should take it. I’ve marked the head whose work this is.','#tray','Back to the tray','winter-formal-neutral']
 };
-function advise(text,href,go,img){$('advText').textContent=text;$('advGo').textContent=go;$('advGo').setAttribute('href',href);$('advImg').src='../../../assets/game/buddy/'+img+'.webp';}
+function advise(text,href,go,img){$('advText').textContent=text;$('advGo').textContent=go;$('advGo').setAttribute('href',href);$('advImg').src='../../../../assets/game/buddy/'+img+'.webp';}
 
 // ---------- render ----------
 function kingdomLevel(){var t=0;BASES.forEach(function(b){t+=levelOf(b).level;});$('kLevel').textContent='Kingdom level '+t+' · 7 bases · sample data';}
