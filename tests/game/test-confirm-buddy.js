@@ -106,7 +106,7 @@ test('memo and cache-only', () => {
   reset();
   ctx.cqMissions_(TA, CFG(), NOW); ctx.cqQuests_(TA, CFG(), NOW, {});
   assert.strictEqual(adapterCalls, 1);
-  ctx.cqQuests_(TA, CFG(), new Date(NOW.getTime() + 1000), CFG());
+  ctx.cqQuests_(TA, CFG(), new Date(NOW.getTime() + 1000), {});
   assert.strictEqual(adapterCalls, 2); assert.strictEqual(adapterOpts.cacheOnly, true);
 });
 test('a failing source never breaks Today', () => {
