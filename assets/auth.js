@@ -468,7 +468,7 @@ window.LMCS = (function () {
   // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, so the path is
   // right at any depth, with ?v=DOCK_V (a hash of the dock's files, written by tools/stamp-assets.mjs) so a release reaches
   // every browser at once. The dock passes the same ?v= on to game.js, game.css and guide.js. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
-  const DOCK_V = '33621b71'; // stamp-assets
+  const DOCK_V = '3d4d8ba3'; // stamp-assets
   let docked = false;
   function loadDock_() {
     if (docked || window.LMCS_NO_DOCK || !SELF_SRC) return;
