@@ -59,7 +59,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working' || t.proposalState === 'confirmed'; }) ? 5000 : 0;
   }
 
-  var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep };
+  var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep, open: open };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
