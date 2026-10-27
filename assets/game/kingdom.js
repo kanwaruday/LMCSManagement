@@ -1,6 +1,6 @@
 // The Owner's Kingdom page (owner/kingdom.html): a read-only valley map of the gamekingdom read model (game-kingdom.gs).
 // Pure helpers first (tests run them in a vm); the page code sits below the early return. Every server string reaches the
-// DOM as a text node (LMCSGame.ui.h); links go through LMCSGame.safeHref only. K5 adds tap-to-assign through `hooks`:
+// DOM as a text node (LMCSGame.ui.h); links go through LMCSGame.safeHref only. K5 adds tap-to-assign (Owner only, confirm before every write) through `hooks`:
 //   hooks.tier(tier, base, building) -> a node (or null) shown under that tier;  hooks.base(base) -> a node at the end of the base dialog;
 //   hooks.after(data) -> runs after every render.  LMCSKingdom.refresh() re-fetches; LMCSKingdom.last() is the last response.
 var LMCSKingdom = window.LMCSKingdom = (function () {
@@ -35,8 +35,33 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return (b.full || b.name) + ', ' + baseBadge(b).replace('Lv', 'level') + (u ? ', ' + u + (u === 1 ? ' step' : ' steps') + " couldn't be checked" : '');
   }
 
+  // ── K5: write bodies and small pure helpers (the page below posts them; nothing is written before a confirm) ──
+  // approval category -> the head function that usually owns it (client hint only: Buddy suggests, the Owner picks)
+  var KINGDOM_DEPT_FUNCTION = { 'Financial / Purchase': 'finance', 'Academic Change': 'academics', 'Event / Invitation': 'events',
+    'Off-Campus Trip / Excursion': 'events', 'Holiday / Calendar': 'events', 'Leave': 'hr', 'Compensatory Leave': 'hr', 'Compensation Change': 'hr',
+    'Salary Offer Approval': 'hr', 'EPF Exemption': 'hr', 'Disciplinary / Termination': 'hr' };
+  // the Darbar (HES) holds the network-wide quests: their campus is '' on the wire
+  function assignBody(tier, campus, email, note, clear) {
+    var b = { action: 'kingdomassign', quest: tier.questId, campus: campus === 'HES' ? '' : campus, assignee: email, note: note };
+    if (clear) { b.clear = true; b.assignee = ''; }
+    return b;
+  }
+  function allocateBody(card, email, due, note) { return { action: 'kingdomallocate', approvalId: card.id, assignee: email, due: due, note: note }; }
+  // 'YYYY-MM-DD' + days as pure calendar arithmetic (UTC), so no time zone can move the day
+  function defaultDue(todayIso, days) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(todayIso)); if (!m) return '';
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (Number(days) || 0)));
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+  function suggestHead(card, heads, deptMap) {
+    var fn = (deptMap || KINGDOM_DEPT_FUNCTION)[card && card.category];
+    return (fn && (heads || []).filter(function (x) { return (x.functions || []).indexOf(fn) !== -1; })[0]) || null;
+  }
+  function cardText(c) { return 'Approved: ' + c.title + (c.campus ? ' · ' + c.campus : ''); }
+
   var api = { tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
-    openCount: openCount, countText: countText, baseLabel: baseLabel, hooks: { tier: null, base: null, after: null } };
+    openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
+    deptFunction: KINGDOM_DEPT_FUNCTION, cardText: cardText, hooks: { tier: null, base: null, after: null } };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -191,6 +216,112 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (!S.url) { el.textContent = ''; el.appendChild(message(LOAD_ERR, false)); return Promise.resolve(); }
     return load();
   }
+
+  // ═══ K5: tap-to-assign (Owner only; the server checks the Owner again) ═══
+  // One sheet at a time. Pick, then an explicit confirm button; only that button posts. While a request is in flight every control is disabled.
+  var W = { busy: false };
+  function toast(text) {
+    var old = document.getElementById('kg-toast'); if (old) old.remove();
+    var t = h('div', { id: 'kg-toast', class: 'kg-toast', role: 'status' }, [text]);
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 6000);
+  }
+  function post(body) {
+    return fetch(S.url, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: (S.session || {}).idToken }, body)) }).then(function (r) { return r.json(); });
+  }
+  // sends one confirmed body. ctl = { err: node, controls: [elements], done(d) -> toast text }
+  function send(body, ctl) {
+    if (W.busy) return;
+    W.busy = true;
+    ctl.err.textContent = '';
+    ctl.controls.forEach(function (c) { c.disabled = true; });
+    post(body).then(function (d) {
+      if (!d || !d.success) throw new Error((d && d.error) || 'That did not go through. Nothing was changed. Please try again.');
+      var msg = ctl.done(d);
+      closeLayer(); toast(msg);
+      return load().then(function () {
+        var h1 = S.el && S.el.querySelector('h1'); // the opener is gone after a re-render: focus the page heading
+        if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus(); }
+      });
+    }).catch(function (e) {
+      ctl.err.textContent = (e && e.message && e.message !== 'Failed to fetch') ? e.message : "Couldn't reach the Kingdom. Please check your connection and try again.";
+      ctl.controls.forEach(function (c) { c.disabled = false; });
+    }).then(function () { W.busy = false; });
+  }
+  function radios(name, people, suggestEmail) {
+    return h('fieldset', { class: 'kg-pick' }, people.map(function (p, i) {
+      var id = 'kg-r-' + name + i;
+      return h('label', { class: 'kg-opt', for: id }, [
+        h('input', { type: 'radio', name: name, id: id, value: p.email, checked: p.email === suggestEmail ? true : null }),
+        h('span', {}, [h('b', {}, [p.name || p.email]), p.name ? h('small', {}, [p.email]) : null,
+          p.email === suggestEmail ? h('em', { class: 'kg-sug' }, ['Buddy suggests']) : null])]);
+    }));
+  }
+  function picked(form, name) { var r = form.querySelector('input[name=' + name + ']:checked'); return r ? r.value : ''; }
+  function sheet(title, sub, intro, fields, confirmText, onConfirm, opener) {
+    var err = h('p', { class: 'kg-err', role: 'alert' }, []);
+    var go = h('button', { type: 'button', class: 'kg-btn kg-primary' }, [confirmText]);
+    var cancel = h('button', { type: 'button', class: 'kg-btn', onclick: closeLayer }, ['Cancel']);
+    var form = h('div', { class: 'kg-form' }, [intro ? h('p', {}, [intro]) : null].concat(fields, [err, h('div', { class: 'kg-acts' }, [go, cancel])]));
+    go.onclick = function () { onConfirm(form, { err: err, controls: [go, cancel].concat([].slice.call(form.querySelectorAll('input,textarea'))) }); };
+    var dlg = openLayer(title, sub, [form], opener);
+    var f = dlg.querySelector('input[type=radio]:checked') || dlg.querySelector('input,textarea') || dlg.querySelector('h2'); if (f) f.focus();
+    return dlg;
+  }
+  function noteField(id) {
+    return h('label', { class: 'kg-fld', for: id }, ['Note (optional)', h('textarea', { id: id, rows: '2', maxlength: '300' })]);
+  }
+  function openAssign(tier, base, opener) {
+    var people = tier.assignees || [];
+    if (!people.length) return sheet('Assign ' + tier.label, base.full || base.name, "Nobody on the allowlist can take this step yet, so there is no one to pick.", [], 'Assign', function () {}, opener).querySelector('.kg-primary').remove();
+    sheet('Assign ' + tier.label, base.full || base.name, 'Who should set this up? They will see it in their Today list.',
+      [radios('kg-who', people, ''), noteField('kg-note')], 'Assign', function (form, ctl) {
+        var who = picked(form, 'kg-who');
+        if (!who) { ctl.err.textContent = 'Pick a person first.'; return; }
+        ctl.done = function () { return "Assigned. They'll see it in their Today list."; };
+        send(assignBody(tier, base.id, who, form.querySelector('textarea').value.trim()), ctl);
+      }, opener);
+  }
+  function openClear(tier, base, opener) {
+    sheet('Clear ' + tier.label, base.full || base.name, 'Take this step off ' + ((tier.owner && tier.owner.name) || 'its owner') + '? It stays open for you to hand out again.', [], 'Clear', function (form, ctl) {
+      ctl.done = function () { return 'Cleared. Nobody has this step now.'; };
+      send(assignBody(tier, base.id, '', '', true), ctl);
+    }, opener);
+  }
+  function openFollow(card, opener) {
+    var d = S.data || {}, heads = d.followHeads || [];
+    var title = 'Follow up: ' + card.title;
+    if (!heads.length) {
+      var s0 = sheet(title, card.campus, "No alliance heads who are Coordinators are set up yet, so a follow-up can't be sent. Add them in the game config first.", [], 'Send', function () {}, opener);
+      s0.querySelector('.kg-primary').remove(); return;
+    }
+    var today = d.day || '', sug = suggestHead(card, heads), days = Number(d.kingdom && d.kingdom.followupDueDays) || 7;
+    var due = h('input', { type: 'date', id: 'kg-due', value: defaultDue(today, days), min: today || null, required: true });
+    sheet(title, card.campus, 'Who should follow this approved request up, and by when?',
+      [radios('kg-head', heads, sug ? sug.email : ''), h('label', { class: 'kg-fld', for: 'kg-due' }, ['Due date', due]), noteField('kg-note')], 'Assign', function (form, ctl) {
+        var who = picked(form, 'kg-head'), dv = due.value;
+        if (!who) { ctl.err.textContent = 'Pick a head first.'; return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dv) || (today && dv < today)) { ctl.err.textContent = 'Pick a due date that is today or later.'; return; }
+        var name = (heads.filter(function (x) { return x.email === who; })[0] || {}).name || 'them';
+        ctl.done = function () { return 'Follow-up sent to ' + name + ', due ' + dv + '.'; };
+        send(allocateBody(card, who, dv, form.querySelector('textarea').value.trim()), ctl);
+      }, opener);
+  }
+  function owner() { return S.data && S.data.role === 'Owner'; }
+  api.hooks.tier = function (tier, base) {
+    if (!owner() || !tier.assignable) return null;
+    var kids = [h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openAssign(tier, base, e.currentTarget); } }, [tier.owner ? 'Reassign' : 'Assign'])];
+    if (tier.owner) kids.push(h('button', { type: 'button', class: 'kg-btn kg-act kg-clear', onclick: function (e) { openClear(tier, base, e.currentTarget); } }, ['Clear']));
+    return h('div', { class: 'kg-acts-row' }, kids);
+  };
+  api.hooks.after = function (d) {
+    if (d.role !== 'Owner' || !(d.cards || []).length) return;
+    S.el.appendChild(h('section', { class: 'kg-tray', 'aria-labelledby': 'kg-trayh' }, [
+      h('h2', { id: 'kg-trayh' }, ['Approved, waiting for a follow-up']), h('p', { class: 'kg-quiet' }, ['Tap a request, then pick who follows it up.']),
+      h('ul', { class: 'kg-cards' }, d.cards.map(function (c) {
+        return h('li', {}, [h('button', { type: 'button', class: 'kg-card', onclick: function (e) { openFollow(c, e.currentTarget); } }, [cardText(c)])]);
+      }))]));
+  };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
   api.openBase = function (id) { openBase(id); }; api.close = closeLayer; api.state = S;

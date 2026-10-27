@@ -241,6 +241,12 @@ function kingdomGet_(caller, params) {
       const missions = kingdomHeadMissions_(ctx, cfgK);
       res.heads = cfgK.heads.filter(function (h) { return h && h.id; }).map(function (h) { return { id: h.id, name: h.name, functions: h.functions, colour: h.colour, missions: missions[h.id] || [] }; });
       res.cards = cards;
+      // follow-up picker: only heads who are Coordinators on the allowlist (the Coordinator backend refuses anyone else); Owner response only
+      const rows = allowRows();
+      res.followHeads = cfgK.heads.filter(function (h) {
+        const r = h && h.id && h.email ? rows.filter(function (x) { return gameLower_(x[0]) === gameLower_(h.email); })[0] : null;
+        return r && String(r[3] || '').split(',').map(function (x) { return x.trim(); }).indexOf('Coordinator') !== -1;
+      }).map(function (h) { return { id: h.id, name: h.name, email: gameLower_(h.email), functions: h.functions }; });
       res.advice = kingdomAdvice_(bases, cards);
     }
     return res;

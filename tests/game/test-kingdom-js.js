@@ -39,7 +39,6 @@ assert.ok(/level 2, 1 step couldn't/.test(K.baseLabel({ full: 'LMS 2', level: 2,
 // source: no HTML from strings; no write calls (K4 is read-only); links only through safeHref
 const src = read('assets/game/kingdom.js');
 assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src.replace(/innerHTML = ''/g, '')), 'no innerHTML-type APIs');
-assert.ok(!/method: 'POST'|XMLHttpRequest|sendBeacon/.test(src), 'read-only: no writes on this page');
 assert.ok(/action=gamekingdom/.test(src), 'reads gamekingdom');
 assert.ok(!/\.href\s*=|setAttribute\('href'/.test(src.replace(/u\.setAttribute\('href', '#k-'/, '')), 'links are never assigned directly');
 assert.ok(/prefers-reduced-motion/.test(read('assets/game/kingdom.css')), 'css respects reduced motion');
@@ -58,4 +57,29 @@ assert.ok(read('tools/stamp-assets.mjs').includes("'owner/kingdom.html'"), 'page
 assert.ok(read('tests/datasrc/test-datasrc.js').includes("'owner/kingdom.html'"), 'page is in the data-source exemptions');
 assert.ok(read('assets/game/guide.js').includes("'owner/kingdom.html'"), 'guide covers the page');
 assert.ok(/open: open \}/.test(dock), 'the dock exposes open()');
+
+// K5: write bodies, due date, suggestion
+const tierC = { questId: 'p1' };
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.assignBody(tierC, 'LMS4', 'a@x.org', 'hi'))), { action: 'kingdomassign', quest: 'p1', campus: 'LMS4', assignee: 'a@x.org', note: 'hi' });
+assert.strictEqual(K.assignBody({ questId: 'p3' }, 'HES', 'a@x.org', '').campus, '', 'network quest at the Darbar: campus is empty');
+const clr = K.assignBody(tierC, 'LMS4', 'a@x.org', '', true);
+assert.ok(clr.clear === true && clr.assignee === '', 'clear carries clear:true and no assignee');
+assert.deepStrictEqual(Object.keys(K.allocateBody({ id: 'A1', title: 'x' }, 'h@x.org', '2026-11-06', 'n')).sort(), ['action', 'approvalId', 'assignee', 'due', 'note']);
+assert.strictEqual(K.allocateBody({ id: 'A1' }, 'h@x.org', '2026-11-06', 'n').action, 'kingdomallocate');
+assert.strictEqual(K.defaultDue('2026-10-30', 7), '2026-11-06');
+assert.strictEqual(K.defaultDue('2026-12-28', 7), '2027-01-04', 'year rollover');
+assert.strictEqual(K.defaultDue('2028-02-26', 3), '2028-02-29', 'leap day');
+assert.strictEqual(K.defaultDue('nonsense', 7), '');
+const hd = [{ id: 'a', email: 'a@x.org', functions: ['hr'] }, { id: 'b', email: 'b@x.org', functions: ['finance', 'events'] }];
+assert.strictEqual(K.suggestHead({ category: 'Financial / Purchase' }, hd, K.deptFunction).id, 'b');
+assert.strictEqual(K.suggestHead({ category: 'Leave' }, hd).id, 'a');
+assert.strictEqual(K.suggestHead({ category: 'Other' }, hd), null);
+assert.strictEqual(K.suggestHead({ category: 'Academic Change' }, hd), null, 'no head has the function');
+assert.strictEqual(K.cardText({ title: 'Bus repair', campus: 'LMS4' }), 'Approved: Bus repair · LMS4');
+// K5 source: both writes are POST, behind a confirm button; no write on load; Owner-only; text nodes only
+assert.ok(/method: 'POST'/.test(src) && /'kingdomassign'/.test(src) && /'kingdomallocate'/.test(src), 'both write actions are POST');
+assert.strictEqual((src.match(/method: 'POST'/g) || []).length, 1, 'one write path');
+assert.ok(/if \(W\.busy\) return;/.test(src) && /c\.disabled = true/.test(src) && /c\.disabled = false/.test(src), 'controls disabled in flight, re-enabled on failure');
+assert.ok(/d\.role !== 'Owner'/.test(src) && /S\.data\.role === 'Owner'/.test(src), 'tray and buttons are Owner only');
+assert.ok(/ctl\.err\.textContent = /.test(src), 'server sentence shown as text');
 console.log('kingdom js: all passed');

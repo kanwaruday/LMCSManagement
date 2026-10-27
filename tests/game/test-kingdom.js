@@ -26,7 +26,7 @@ ctx.SpreadsheetApp = {
   openById: (id) => {
     opened.push(id);
     return { getSheetByName: () => ({ getDataRange: () => ({ getValues: () => approvalsRows }) }),
-      getSheets: () => [{ getDataRange: () => ({ getValues: () => [['email', 'name'], ['owner@example.org', 'Owner One'], ['head1@example.org', 'Head One']] }) }] };
+      getSheets: () => [{ getDataRange: () => ({ getValues: () => [['email', 'name'], ['owner@example.org', 'Owner One'], ['head1@example.org', 'Head One', 'ALL', 'Coordinator'], ['head2@example.org', 'Head Two', 'LMS1', 'Teacher']] }) }] };
   },
 };
 const owner = { email: 'owner@example.org', campusId: 'ALL', roles: ['Owner'], primaryRole: 'Owner', idToken: 't' };
@@ -171,6 +171,7 @@ cfgOverride = { kingdom: Object.assign(J(ctx.gameConfigDefaults_().kingdom), { h
 r = run(owner);
 assert.deepStrictEqual(r.heads.map((h) => h.id), ['h1', 'h2', 'h3'], 'config order');
 assert.ok(r.heads.every((h) => !('email' in h)), 'heads leave the server without emails');
+assert.deepStrictEqual(r.followHeads, [{ id: 'h1', name: 'Accounts head', email: 'head1@example.org', functions: ['finance'] }], 'follow-up picker: only heads who are Coordinators on the allowlist');
 assert.strictEqual(r.heads[0].missions.length, 1);
 assert.strictEqual(r.heads[1].missions.length, 0);
 
