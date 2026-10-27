@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LMCS — Setup</title>
+<meta name="theme-color" content="#CE0000">
+<link rel="stylesheet" href="../assets/style.css?v=0049023a">
+<link rel="stylesheet" href="../office/office.css?v=21086d0b">
+<link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
+<style>
+  body { background: var(--lgray); min-height: 100vh; }
+  .bar { background: var(--red); color: var(--white); padding: 14px 16px; font-weight: 700; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; }
+  .back { display: inline-block; margin-top: 16px; padding: 12px 0; min-height: 44px; box-sizing: border-box; color: var(--red-dark); font-size: 14px; }
+  .back:focus-visible, .cq-note button:focus-visible { outline: 3px solid var(--dark); outline-offset: 2px; }
+  .cq-banner { margin: 0 0 12px; padding: 10px 12px; background: #fdf1de; border: 2px solid #b45f06; border-radius: 8px; font-weight: 700; color: #8a5a00; }
+  .cq-note { margin: 0 0 8px; padding: 10px 12px; background: #fff; border: 1px solid #d5dbe1; border-radius: 8px; font-size: .95rem; }
+  .cq-attn { border-color: #b00020; }
+  .cq-note button.linklike { min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: none; color: #1f3a5f; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+  .sd-toast { min-height: 1.2em; font-weight: 700; color: #1a7f3c; }
+  #lmcs-gate { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
+  #lmcs-gate .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
+  #lmcs-gate .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
+  #lmcs-gate #lmcs-g-signin { display: flex; justify-content: center; }
+  #lmcs-gate .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
+</style>
+</head>
+<body>
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js?v=75658f95"></script>
+<script src="../assets/game/game.js?v=b8de04a1"></script>
+
+<div class="bar">Setup</div>
+<main>
+  <section id="game-root" hidden></section>
+  <div id="cq-root"></div>
+  <a class="back" href="../index.html">Back to my page</a>
+</main>
+
+<script type="module">
+import { mountConfirmQuests, parseLink, SETUP_TOUR_BEATS } from '../assets/setup/confirm-values.js';
+const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as office/js/config.js
+const link = parseLink(location.search);
+(LMCS.getSession() ? Promise.resolve(LMCS.getSession()) : LMCS.requireSession('#lmcs-gate-slot')).then(async (s) => {
+  const session = s || LMCS.getSession();
+  document.getElementById('lmcs-gate').style.display = 'none';
+  await mountConfirmQuests(document.getElementById('cq-root'), { session, backendUrl: GAME_BACKEND_URL, link });
+  if (link.sample || typeof window.LMCSGame === 'undefined') return;
+  try {
+    window.LMCSGame.mount(document.getElementById('game-root'), { session: LMCS.getSession() || session, backendUrl: GAME_BACKEND_URL, root: '../',
+      only: 'cq', title: 'Setup', tour: { id: 'setup-confirm', beats: SETUP_TOUR_BEATS } });
+  } catch (e) { console.warn('game layer', e); }
+});
+</script>
+</body>
+</html>

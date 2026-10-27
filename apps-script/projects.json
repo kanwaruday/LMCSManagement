@@ -116,6 +116,8 @@
       "game-office",
       "game-fleet",
       "game-setup",
+      "game-confirm",
+      "game-confirm-prefill",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js"
