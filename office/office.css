@@ -125,6 +125,6 @@ section.block h2 { font-size: 1.1rem; }
 
 .sd-text .gb-pill { align-self: flex-start; margin-top: 4px; }
 .sd-text span.gb-pill-ok { color: var(--gb-ok); } .sd-text span.gb-pill-warn { color: var(--gb-warn); } .sd-text span.gb-pill-low { color: var(--gb-low); }
-.gb h2, .gb h3 { color: var(--gb-ink); border: 0; padding: 0; }
+.gb h2, .gb h3, .gb section.block h2 { color: var(--gb-ink); border: 0; padding: 0; }
 .gb .gb-hub h2 { margin: 0; }
-.gb .welcome { border-radius: 12px; }
+.gb .welcome { background: none; border: 0; box-shadow: none; padding: 0; margin: 0 0 8px; }
