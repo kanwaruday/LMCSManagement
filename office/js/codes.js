@@ -59,6 +59,9 @@ export const CODES = {
   FUND_SAME_CAMPUS: 'Both accounts belong to the same school. A fund transfer is between two schools, or a school and HES.',
   FUND_LEG: 'This is a reversal of a fund transfer and cannot be reversed again.',
   FUND_INCOMPLETE: 'Part of this fund transfer is missing. Let the transfer finish syncing (or retry it), then reverse it.',
+  SAME_CAMPUS: 'That cash box is this school\'s own. Choose another school\'s (or HES\'s) cash box.',
+  HANDOVER_NOT_PENDING: 'This handover is no longer waiting: it was already accepted, reported not received, or reversed by the sender.',
+  HANDOVER_ACCEPTED: 'This cash handover was accepted by the receiving school, so it cannot be reversed. Tell Uday if it is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
   ALREADY_SIGNED: 'This deposit was already signed.',
   NOT_FOUND: 'The record was not found.',
@@ -89,7 +92,7 @@ export const CODES = {
   START_NO_APPROVAL: 'This section is not approved per school, so there is nothing to submit or approve.',
   START_SELF_APPROVE: 'You submitted this yourself, so someone else has to approve or return it.',
   START_BAD_DECISION: 'Choose approve or return.',
-  NOTE_REQUIRED: 'Say what needs fixing: a note is required to return it.',
+  NOTE_REQUIRED: 'A note is required: say what needs fixing, or what was not received.',
   HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');

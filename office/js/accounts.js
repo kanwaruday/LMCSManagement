@@ -174,7 +174,12 @@ export function summaryView(sum, cfg, campusLabel) {
 
 export async function showAccounts(root, session, api, outbox) {
   if (!canSeeAccounts(session)) {
-    root.replaceChildren(h('h2', {}, 'Accounts'), h('p', {}, 'Accounts is not available for your role. Ask the Finance Head or Owner.'));
+    // Shown only to the Owner and the people in Settings fund_transfer_emails (config.get's fund_transfer_allowed).
+  const ftForm = form('Fund transfer (bank to bank)', h('p', { class: 'meta' }, 'Money sent by bank from one school (or HES) to another. Both day books get their entry.'),
+    h('label', { for: 'ft-from' }, 'From account'), ftFrom, h('label', { for: 'ft-to' }, 'To account'), ftTo, ftAmt,
+    h('label', { for: 'ft-date' }, 'Date'), ftDate, ftRef, ftNote, ftBtn, ftMsg);
+  ftForm.hidden = true;
+  root.replaceChildren(h('h2', {}, 'Accounts'), h('p', {}, 'Accounts is not available for your role. Ask the Finance Head or Owner.'));
     return;
   }
   const guard = inflightGuard();
@@ -272,7 +277,7 @@ export async function showAccounts(root, session, api, outbox) {
   async function loadConfig() {
     const r = await api.read('config.get', {}, 'accfg');
     if (r.stale) return;
-    if (r.success) { cfg = { categories: r.categories, accounts: r.accounts, vehicles: r.vehicles, campuses: r.campuses, collections: r.collections || [] }; paintConfig(); }
+    if (r.success) { cfg = { categories: r.categories, accounts: r.accounts, vehicles: r.vehicles, campuses: r.campuses, collections: r.collections || [] }; ftForm.hidden = !r.fund_transfer_allowed; paintConfig(); }
     else say(vMsg, 'Could not load accounts and vehicles: ' + (r.error ? explainCode(r.code || r.error) : 'offline'));
   }
 
@@ -302,12 +307,15 @@ export async function showAccounts(root, session, api, outbox) {
   });
 
   const form = (title, ...kids) => h('div', { class: 'office-form' }, h('h3', {}, title), ...kids);
+  // Shown only to the Owner and the people in Settings fund_transfer_emails (config.get's fund_transfer_allowed).
+  const ftForm = form('Fund transfer (bank to bank)', h('p', { class: 'meta' }, 'Money sent by bank from one school (or HES) to another. Both day books get their entry.'),
+    h('label', { for: 'ft-from' }, 'From account'), ftFrom, h('label', { for: 'ft-to' }, 'To account'), ftTo, ftAmt,
+    h('label', { for: 'ft-date' }, 'Date'), ftDate, ftRef, ftNote, ftBtn, ftMsg);
+  ftForm.hidden = true;
   root.replaceChildren(h('h2', {}, 'Accounts'),
     form('Add a bank or supplier account for ' + campus, acKind, acName, acBtn, acMsg),
     form('Opening balance of a bank or supplier account', h('label', { for: 'op-acc' }, 'Account'), opAcc, opAmt, opBtn, opMsg),
-    form('Fund transfer (bank to bank)', h('p', { class: 'meta' }, 'Money sent by bank from one school (or HES) to another. Both day books get their entry.'),
-      h('label', { for: 'ft-from' }, 'From account'), ftFrom, h('label', { for: 'ft-to' }, 'To account'), ftTo, ftAmt,
-      h('label', { for: 'ft-date' }, 'Date'), ftDate, ftRef, ftNote, ftBtn, ftMsg),
+    ftForm,
     form('Vehicles', vList, impBtn, impMsg, h('h4', {}, 'Add a vehicle for ' + campus), vKind, vReg, vLabel, vBtn, vMsg),
     form('Student collections', h('p', { class: 'meta' }, 'Heads you can collect under. A switched-off head is not offered on the Day Book form; its past entries still show in reports.'), cList, cName, cBtn, cMsg),
     form('Summary', h('label', { for: 'sm-from' }, 'From'), fromIn, h('label', { for: 'sm-to' }, 'To'), toIn,

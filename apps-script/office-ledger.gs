@@ -74,8 +74,9 @@ function officeLedgerSummary_(ctx, data) {
       const sch = head.bySchool[officeRowChargedTo_(r)] = head.bySchool[officeRowChargedTo_(r)] || zero();
       [head, sch].forEach(function (x) { x[k] += v0; x.balance_paise = x.collected_paise - x.paid_paise; });
     }
-    // A fund transfer (bank to bank) is owed back by the receiving campus; counted once, on the OUT leg (payee = to-account).
-    if (r.category === 'fund_transfer_out') {
+    // A fund transfer (bank to bank) or cash handover is owed back by the receiving campus; counted once, on the OUT leg
+    // (payee = to-account; only a handover's cash_transfer carries settles, daybook.add refuses it).
+    if (r.category === 'fund_transfer_out' || (r.category === 'cash_transfer' && r.settles)) {
       const dest = officeAccount_(String(r.payee || ''));
       if (dest) inter[r.campus + '|' + dest.campus] = (inter[r.campus + '|' + dest.campus] || 0) - signed(r);
     }

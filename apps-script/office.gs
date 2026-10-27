@@ -25,6 +25,7 @@ function officeAllActions_() {
     typeof officeReportActions_ === 'function' ? officeReportActions_() : {},
     typeof officeFilesActions_ === 'function' ? officeFilesActions_() : {},
     typeof officeDepositsActions_ === 'function' ? officeDepositsActions_() : {},
+    typeof officeHandoverActions_ === 'function' ? officeHandoverActions_() : {},
     typeof officeTodayActions_ === 'function' ? officeTodayActions_() : {},
     typeof officeLedgerActions_ === 'function' ? officeLedgerActions_() : {},
     typeof officeStartActions_ === 'function' ? officeStartActions_() : {});

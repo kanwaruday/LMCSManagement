@@ -2,10 +2,10 @@
 // shows at once; the cached copy is used only when the network fails); everything else (including every
 // script.google.com / googleusercontent.com request and file.view response) goes straight to the network.
 // Bumping CACHE is no longer needed for updates; bump it only to drop old cached copies.
-const CACHE = 'lmcs-office-v20';
+const CACHE = 'lmcs-office-v21';
 const SHELL = [
   './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'accounts.html', 'hiring.html', 'starting-data.html', 'office.css', 'manifest.webmanifest',
-  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/accounts.js', 'js/hiring.js', 'js/starting-data.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
+  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/accounts.js', 'js/handover.js', 'js/hiring.js', 'js/starting-data.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
   '../assets/style.css', '../assets/auth.js', '../assets/img/lms-logo.png',
 ];
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));

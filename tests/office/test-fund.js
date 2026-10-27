@@ -4,7 +4,7 @@ const assert = require('assert');
 const { boot } = require('./harness');
 
 const fixture = {
-  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'acc-token': 'acc@example.org', 'fh1-token': 'fh1@example.org' },
+  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'acc-token': 'acc@example.org', 'fh1-token': 'fh1@example.org', 'coord-token': 'coord@example.org', 'fh2-token': 'fh2@example.org' },
   allowlist: [
     ['Email', 'Name', 'Campuses', 'Roles'],
     ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
@@ -12,6 +12,8 @@ const fixture = {
     ['owner@example.org', 'Owner', 'ALL', 'Owner'],
     ['acc@example.org', 'Accounts', 'LMS1', 'Accounts'],
     ['fh1@example.org', 'Finance Head LMS1', 'LMS1', 'FinanceHead'],
+    ['coord@example.org', 'Coordinator', 'ALL', 'Coordinator,Accounts'],
+    ['fh2@example.org', 'Other Finance Head', 'ALL', 'FinanceHead'],
   ],
 };
 const J = (x) => JSON.parse(JSON.stringify(x));
@@ -25,6 +27,8 @@ module.exports = function run(t) {
     const cfg = h.ctx.officeConfigBook_();
     [['sbi-hes', 'bank', 'HES', 'true'], ['hdfc-lms1', 'bank', 'LMS1', 'true'], ['old-lms2', 'bank', 'LMS2', 'false'], ['pump1', 'credit', 'LMS1', 'true']]
       .forEach(([id, kind, campus, active]) => h.ctx.officeWriteRow_(cfg, 'Accounts', { id, label: id, kind, campus, active }));
+    h.ctx.officeWriteRow_(cfg, 'Settings', { key: 'fund_transfer_emails', value: 'nobody@example.org' });
+    h.ctx.officeWriteRow_(cfg, 'Settings', { key: 'fund_transfer_emails', value: 'FH@example.org, acc@example.org,fh1@example.org' }); // latest row wins
     return h;
   };
   const xfer = (h, o, tok) => h.call('fund.transfer', Object.assign({ id: 't1', date: '2026-10-20', from_account: 'bank:LMS1', to_account: 'sbi-hes', amount_paise: 500000, reference: 'UTR123' }, o), tok || 'fh-token');
@@ -77,6 +81,17 @@ module.exports = function run(t) {
     assert.equal(xfer(h, { id: 't2', from_account: 'sbi-hes', to_account: 'bank:LMS2' }, 'owner-token').success, true);
   });
 
+  t.test('only the Owner and the emails in Settings fund_transfer_emails may transfer; config.get says so', () => {
+    const h = fresh();
+    assert.equal(xfer(h, {}, 'coord-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(xfer(h, {}, 'fh2-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(rows(h, 'LMS1').length, 0);
+    const flag = (tok) => h.call('config.get', {}, tok).fund_transfer_allowed;
+    assert.deepEqual(['fh-token', 'owner-token', 'coord-token', 'fh2-token', 'clerk-token'].map(flag), [true, true, false, false, false]);
+    xfer(h);
+    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh2-token').error, 'FORBIDDEN_ROLE', 'reversal follows the same rule');
+  });
+
   t.test('balances move bank on both sides, cash untouched', () => {
     const h = fresh();
     xfer(h);
@@ -98,7 +113,7 @@ module.exports = function run(t) {
   t.test('daybook.reverse of either leg reverses both, each in its own book; retry writes nothing', () => {
     const h = fresh();
     xfer(h);
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT');
+    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
     assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh1-token').error, 'FORBIDDEN_CAMPUS');
     const r = h.call('daybook.reverse', { id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh-token');
     assert.equal(r.success, true);

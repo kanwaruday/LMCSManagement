@@ -30,6 +30,11 @@ var OFFICE_CONFIG_SEED = {
     ['FinanceHead', '0'],
     ['Principal', '0'],
   ],
+  // Small settings, key -> value; the latest row per key wins. fund_transfer_emails: comma list of who may enter fund.transfer (besides the Owner).
+  Settings: [['key', 'value', 'created_at', 'created_by']],
+  // Cash handovers between campuses (office-handover.gs). Append-only events: the handover row (id = handover id, state pending)
+  // then <id>:accepted / <id>:disputed / <id>:closed; the latest row per handover is its state.
+  Handovers: [['id', 'handover', 'state', 'from_account', 'to_account', 'from_campus', 'to_campus', 'amount_paise', 'bucket', 'handover_date', 'note', 'by_name', 'created_at', 'created_by']],
   // Day Book starting data (office-start.gs). Append-only; the latest row per (quest, item, field) wins.
   StartData: [['id', 'quest', 'item', 'campus', 'field', 'value', 'status', 'note', 'at', 'by']],
   // Who fills and who approves each starting-data quest (office-start.gs merges these over its code defaults; the
@@ -280,7 +285,7 @@ function officeConfigActions_() {
   };
 }
 
-// The Office Config book with every seed tab present (created if missing). Only Accounts, Vehicles, Collections, StartData and SetupQuests get a
+// The Office Config book with every seed tab present (created if missing). Only Accounts, Vehicles, Collections, StartData, SetupQuests, Settings and Handovers get a
 // header check (Limits and the retired Categories tab are left as they are). Checked once per request.
 function officeConfigBook_() {
   const ss = officeConfig_();
@@ -288,7 +293,7 @@ function officeConfigBook_() {
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { if (tab === 'Accounts' || tab === 'Vehicles' || tab === 'Collections' || tab === 'StartData' || tab === 'SetupQuests') officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers'].indexOf(tab) !== -1) officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
@@ -297,11 +302,23 @@ function officeConfigBook_() {
   return ss;
 }
 
-function officeConfigGet_() {
+// Latest Settings value for `key` ('' when unset).
+function officeSetting_(key) {
+  return officeRows_(officeConfigBook_(), 'Settings').reduce(function (v, r) { return r.key === key ? String(r.value) : v; }, '');
+}
+
+// fund.transfer and its reversal: the Owner, or an email listed in Settings fund_transfer_emails (the accountant). Not hard-coded.
+function officeFundAllowed_(caller) {
+  if (caller.roles.indexOf('Owner') !== -1) return true;
+  return officeSetting_('fund_transfer_emails').split(',').map(function (e) { return e.trim().toLowerCase(); }).indexOf(String(caller.email).toLowerCase()) !== -1;
+}
+
+function officeConfigGet_(ctx) {
   const ss = officeConfigBook_();
   const limits = {};
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
-  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES };
+  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES,
+    fund_transfer_allowed: !!(ctx && officeFundAllowed_(ctx.caller)) };
 }
 
 function officeOpeningSet_(ctx, data) {

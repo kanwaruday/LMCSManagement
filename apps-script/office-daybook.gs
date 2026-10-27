@@ -181,12 +181,13 @@ function officeDaybookReverse_(ctx, data) {
     return officeFundReverse_(ctx, orig, data.narration);
   }
   if (orig.reverses || all.some(function (r) { return r.reverses === orig.id; })) throw new Error('ALREADY_REVERSED');
+  const handover = officeHandoverOnReverse_(orig); // HANDOVER_ACCEPTED, or the pending/disputed handover this reversal closes
   const account = officeRowAccount_(orig);
   const acct = officeAccount_(account) || { id: account, kind: orig.mode === 'cash' ? 'cash' : orig.mode === 'credit' ? 'credit' : 'bank', campus: orig.campus };
   officeAssertAccountAllowed_(ctx.caller, acct, officeCategory_(orig.category)); // inactive categories still reverse
   // defence in depth: day.close refuses today, but a closed today must never take a cash row
   if (orig.mode === 'cash') officeAssertOpen_(ss, officeToday_());
-  return officeDaybookWrite_(ss, ctx, {
+  const res = officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,
     narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
@@ -194,6 +195,8 @@ function officeDaybookReverse_(ctx, data) {
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
     source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
   }, 'daybook.reverse');
+  if (handover) officeHandoverEvent_(ctx, handover, 'closed');
+  return res;
 }
 
 // Attaches the driver's fill video to a saved fuel entry. The day book stays append-only: the link is a new Files row (category
