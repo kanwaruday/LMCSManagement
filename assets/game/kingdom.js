@@ -332,6 +332,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function render(d) {
     closeLayer();
     S.data = d;
+    var oldBox = S.el.querySelector('.kg-box'), keepX = oldBox ? oldBox.scrollLeft : null; // a re-render keeps where the map was panned to
     S.el.textContent = '';
     var bases = sortBases((d.kingdom && d.kingdom.campuses) || []), a = nextAction(d), nextId = a.base ? a.base.id : '';
     var map = h('div', { class: 'kg-map', id: 'kg-map' }, [valley(), h('div', { class: 'kg-bases' }, bases.map(function (b) { return baseButton(b, nextId); }))]);
@@ -348,7 +349,8 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (api.hooks.after) api.hooks.after(d);
     // phones: start the map centred on the Darbar instead of its left edge
     var dar = map.querySelector('.kg-darbar');
-    if (!S.centred && dar && box.scrollWidth > box.clientWidth) { box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2); S.centred = true; }
+    if (keepX !== null) box.scrollLeft = keepX;
+    else if (dar && box.scrollWidth > box.clientWidth) box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2);
     runTour(false);
   }
 
