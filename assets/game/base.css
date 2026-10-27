@@ -11,6 +11,7 @@
      gb-next     Buddy's one next step: art, label, line, one red button
      gb-missions / gb-mission   rows of work: a mark (open, next, done, waiting), title, small line, one Go at the right
      gb-done     the done state after a task: a green tick, what changed, the way back to the hub
+     gb-sr       visually hidden text: put the row state in words (<span class="gb-sr">Next: </span>), give each Go aria-label="Go: <title>"
    No motion anywhere. */
 .gb {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
@@ -108,7 +109,7 @@
 .gb-missions { list-style:none; margin:0; padding:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; }
 .gb-mission { display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid var(--gb-line); min-height:60px; }
 .gb-mission:first-child { border-top:0; }
-.gb-mark { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--gb-line); font-size:13px; font-weight:700; }
+.gb-mark { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--gb-muted); font-size:13px; font-weight:700; }
 .gb-mission-t { flex:1; min-width:0; overflow-wrap:anywhere; }
 .gb-mission-t small { display:block; font-size:13.5px; color:var(--gb-muted); }
 .gb-mission .gb-btn { flex:none; }
@@ -118,7 +119,8 @@
 .gb-mission.is-done .gb-mark { border-color:var(--gb-ok); background:var(--gb-ok-soft); color:var(--gb-ok); }
 .gb-mission.is-done .gb-mark::after { content:"✓"; }
 .gb-mission.is-done .gb-mission-t { color:var(--gb-muted); }
-.gb-mission.is-wait .gb-mark { border-style:dashed; }
+.gb-mission.is-wait .gb-mark { border-style:dashed; border-color:var(--gb-muted); }
+.gb-sr { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 /* done state */
 .gb-done { text-align:center; padding:28px 16px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
 .gb-done-tick { display:grid; place-items:center; width:64px; height:64px; margin:0 auto 10px; border-radius:50%; background:var(--gb-ok-soft); color:var(--gb-ok); font-size:34px; font-weight:700; }
