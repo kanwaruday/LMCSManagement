@@ -28,11 +28,11 @@
 .rm{font-size:14px}
 .rm .ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .rm .ctl select,.rm .ctl input[type=checkbox]{min-height:44px}
-.rm .ctl select{border:1px solid #ddd;border-radius:8px;padding:0 10px;font-size:14px;background:#fff}
+.rm .ctl select{border:1px solid var(--gb-line,#ddd);border-radius:8px;padding:0 10px;font-size:14px;background:#fff}
 .rm .ctl label{display:inline-flex;align-items:center;gap:6px;min-height:44px}
-.rm .seg{display:inline-flex;border:1px solid #ddd;border-radius:8px;overflow:hidden}
-.rm .seg button{min-height:44px;border:none;background:#fff;padding:0 14px;font-size:14px;font-weight:600;cursor:pointer;color:#555}
-.rm .seg button.on{background:#1a1a1a;color:#fff} /* a chosen tab, not an action: red stays for the page's one next step */
-.rm .note{color:#555;font-size:13px;margin:6px 0 12px}
-.rm .status{color:#555;padding:12px 0}
-.rm .sm{color:#555;font-size:12px}
+.rm .seg{display:inline-flex;border:1px solid var(--gb-line,#ddd);border-radius:8px;overflow:hidden}
+.rm .seg button{min-height:44px;border:none;background:#fff;padding:0 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--gb-muted,#555)}
+.rm .seg button.on{background:var(--gb-ink,#1a1a1a);color:#fff} /* a chosen tab, not an action: red stays for the page's one next step */
+.rm .note{color:var(--gb-muted,#555);font-size:13px;margin:6px 0 12px}
+.rm .status{color:var(--gb-muted,#555);padding:12px 0}
+.rm .sm{color:var(--gb-muted,#555);font-size:12px}

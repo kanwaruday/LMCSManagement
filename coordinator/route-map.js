@@ -46,28 +46,30 @@ window.LMCSRouteMap = (function () {
     }
     return d;
   }
+  let hi = false; // a driver's phone reads Hindi first: the status lines are the part they must read
   function say(el, text, retry) {
     el.textContent = '';
     const p = document.createElement('p'); p.className = 'status'; p.setAttribute('role', 'status'); p.textContent = text; el.appendChild(p);
-    if (retry) { const b = document.createElement('button'); b.type = 'button'; b.className = 'gb-btn'; b.textContent = 'Try again'; b.onclick = retry; el.appendChild(b); }
+    if (retry) { const b = document.createElement('button'); b.type = 'button'; b.className = 'gb-btn'; b.textContent = hi ? 'फिर कोशिश करें · Try again' : 'Try again'; b.onclick = retry; el.appendChild(b); }
   }
   function mount(el, opts) {
     opts = Object.assign({ mode: 'metro' }, opts || {});
+    hi = !!opts.driverToken;
     el.classList.add('rm');
     css(near('route-map.css'));
     const state = {};
     async function load() {
-      say(el, 'Loading the routes…');
+      say(el, hi ? 'रूट आ रहा है… · Loading your route…' : 'Loading the routes…');
       try {
         const views = script(near('transport-views.js'), () => !!window.TransportViews);
         const map = opts.mode === 'city' ? (css(LEAFLET + 'leaflet.min.css', SRI.css), script(LEAFLET + 'leaflet.min.js', () => !!window.L, SRI.js)) : null;
         const d = await data(opts);
         await views; await map;
-        if (!d.stops.length) { say(el, 'No bus routes recorded here yet. They appear once the buses\' trackers have run their routes for a few days.'); return; }
+        if (!d.stops.length) { say(el, hi ? 'अभी रूट नहीं बना है। कुछ दिन बस चलने के बाद दिखेगा · No route yet. It appears after the bus has run its route for a few days.' : 'No bus routes recorded here yet. They appear once the buses\' trackers have run their routes for a few days.'); return; }
         el.textContent = '';
         TransportViews.render(el, d, opts.mode, state);
       } catch (e) {
-        say(el, e.message || 'Could not load the routes.', load);
+        say(el, (hi ? 'रूट नहीं आया, नेटवर्क देखें · ' : '') + (e.message || 'Could not load the routes.'), load);
       }
     }
     load();

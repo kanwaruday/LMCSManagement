@@ -146,7 +146,7 @@ window.TransportViews = (function () {
       '<label class="sm"><input type="checkbox" class="tv-walk"' + (S.walk === false ? '' : ' checked') + '> Walking circles</label></div><div class="tv-city" role="region" aria-label="Map of routes and stops"></div>';
     el.querySelector('.tv-bus').addEventListener('change', e => { S.bus = e.target.value; draw(); });
     el.querySelector('.tv-walk').addEventListener('change', e => { S.walk = e.target.checked; draw(); });
-    const map = L.map(el.querySelector('.tv-city'));
+    const map = L.map(el.querySelector('.tv-city'), { dragging: !L.Browser.mobile }); // a phone: one finger scrolls the page, two fingers zoom the map
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const layer = L.layerGroup().addTo(map);
     function draw() {
