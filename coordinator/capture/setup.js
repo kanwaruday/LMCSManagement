@@ -39,8 +39,8 @@ async function boot() {
   $('authRoot').style.display = 'none';
   $('appBody').hidden = false;
   if (!(LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk'))) { $('appBody').innerHTML = '<div class="denied">Fleet setup is for Fee Clerks, Coordinators and the Owner.</div>'; return; }
-  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '← Live Buses'; } // Fee Clerk
-  else if (LMCS.canViewOwnerPortal && LMCS.canViewOwnerPortal(s)) { $('back').href = '../../owner/transport/index.html'; $('back').textContent = '← Transport'; } // the Owner came from the Owner portal
+  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '‹ Live Buses'; } // Fee Clerk
+  else if (LMCS.canViewOwnerPortal && LMCS.canViewOwnerPortal(s)) { $('back').href = '../../owner/transport/index.html'; $('back').textContent = '‹ Transport'; } // the Owner came from the Owner portal
   S.session = s;
   $('photo').addEventListener('change', onPhoto);
   $('retry').addEventListener('click', load);

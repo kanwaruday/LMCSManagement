@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../../assets/game/base.css?v=3835d019">
 </head>
 <body class="gb">
-<header class="gb-head site"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="live.html">&larr; Checks</a></div></header>
+<header class="gb-head site"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a id="back" href="index.html">&lsaquo; Fleet Command</a></div></header>
 <details id="buddy" class="fs-buddy" hidden><summary>Fleet missions with Buddy</summary><section id="game-root" aria-label="Fleet setup with Buddy" hidden></section></details>
 <div id="authRoot"></div>
 <main id="appBody" class="cap fs" hidden>
@@ -68,6 +68,6 @@
     if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../../', only: 'fleet', title: 'Fleet setup', tour: tour }); } catch (e) { console.warn('game layer', e); } }
   };
 </script>
-<script type="module" src="../capture/setup.js?v=e3dd5bef"></script>
+<script type="module" src="../capture/setup.js?v=1a008d95"></script>
 </body>
 </html>

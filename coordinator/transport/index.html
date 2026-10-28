@@ -8,26 +8,46 @@
 <link rel="stylesheet" href="../shared.css?v=14149e6e">
 <link rel="stylesheet" href="../../assets/campus-picker.css?v=153d68d7">
 <link rel="stylesheet" href="../../assets/game/game.css?v=ee9ca522">
+<link rel="stylesheet" href="../../assets/game/base.css?v=3835d019">
 </head>
-<body>
-<header class="hdr"><div><h1>LMCS — Coordinator Portal</h1><p>Transport</p></div><span><a href="live.html">Checks and live buses &rarr;</a> &nbsp; <a href="../index.html">&larr; Coordinator home</a></span></header>
-<details id="buddy" class="fs-buddy" hidden><summary>Fleet missions with Buddy</summary><section id="game-root" aria-label="Fleet setup with Buddy" hidden></section></details>
-<div id="authRoot"></div>
-<main id="appBody" style="display:none"></main>
+<body class="gb gb-app">
+<!-- The screen skeleton (assets/game/base.css): Fleet Command is the fleet's hub. Its stage is Buddy's fleet missions (they carry
+     their own next step), then the fleet; the task pages fold into a panel. -->
+<header class="gb-head"><div><div><h1>Fleet Command</h1><p>LMCS Transport</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Coordinator home</a></div></header>
+<div class="gb-shell">
+  <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+  <main class="gb-stage">
+    <section id="game-root" aria-label="Fleet setup with Buddy" hidden></section>
+    <div id="authRoot"></div>
+    <div id="appBody" style="display:none"></div>
+  </main>
+  <aside class="gb-panels" id="panels" aria-label="More" hidden>
+    <details class="gb-panel" id="fleet-pages"><summary>Fleet pages</summary><div class="gb-panel-b"><ul class="gb-list">
+      <li><a class="gb-go" href="setup.html"><span>Fleet setup<small>Papers, safety kit, parts, driver, fuel and capture plan for each bus</small></span></a></li>
+      <li><a class="gb-go" href="live.html"><span>Checks and live buses<small>Safety checks, counts and where each bus is now</small></span></a></li>
+      <li><a class="gb-go" href="capture.html"><span>Capture portal<small>A route timelapse, a count run or the monthly safety check</small></span></a></li>
+      <li><a class="gb-go" href="rollcall.html"><span>Today's roll call<small>Who is on each bus</small></span></a></li>
+      <li><a class="gb-go" href="drivers.html"><span>Driver phones<small>Link a driver's own phone to their bus</small></span></a></li>
+    </ul></div></details>
+  </aside>
+</div>
 <script src="../../assets/auth.js?v=df0cbfd3"></script>
 <script src="../../assets/campus-picker.js?v=cd35c768"></script>
 <script src="../transport-rank.js?v=b7edf91e"></script>
 <script src="../shared.js?v=26aa5692"></script>
 <script src="../../assets/game/game.js?v=3790d90c"></script>
+<script src="../../assets/game/rail.js?v=4b2c2dd5"></script>
 <script>
 const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // the game backend (same as the four homes); empty = no panel
 const FLEET_TOUR = { id: 'fleet-transport', beats: [
-  { target: '#buddy', text: 'Our fleet setup missions are here, with the next step for our buses.' },
+  { target: '#game-root', text: 'Our fleet setup missions are here, with the next step for our buses.' },
 ] };
 Coord.boot(function (body) {
   Coord.transportView(body);
-  const session = LMCS.getSession(), root = document.getElementById('game-root');
-  new MutationObserver(function () { document.getElementById('buddy').hidden = root.hidden; }).observe(root, { attributes: true, attributeFilter: ['hidden'] }); // the panel shows once the game has something to say
+  const session = LMCS.getSession();
+  document.getElementById('panels').hidden = false;
+  if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('fleet-pages').open = true; // phones: folded, so the fleet stays in view
+  LMCSRail.mount(document.getElementById('game-rail'), { hub: '../index.html', root: '../../' });
   if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../../', only: 'fleet', title: 'Fleet setup', tour: FLEET_TOUR }); } catch (e) { console.warn('game layer', e); } }
 });
 </script>

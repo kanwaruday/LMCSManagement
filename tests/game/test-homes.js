@@ -32,11 +32,16 @@ for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'],
   assert(/<link rel="stylesheet" href="\.\.\/\.\.\/assets\/game\/game\.css(\?v=[0-9a-f]+)?"/.test(html), page + ': game.css link');
   assert(/<script src="\.\.\/\.\.\/assets\/game\/game\.js(\?v=[0-9a-f]+)?"/.test(html), page + ': game.js script');
   assert(html.search(/assets\/game\/game\.js/) > html.search(/assets\/auth\.js/), page + ': game.js after auth.js');
+  if (page.endsWith('index.html')) { // Fleet Command is a hub on the screen skeleton: Buddy's fleet missions open the stage, the game bar is mounted
+    assert(/<main class="gb-stage">\s*<section id="game-root" aria-label="Fleet setup with Buddy" hidden><\/section>/.test(html), page + ': hidden #game-root first on the stage');
+    assert(/LMCSRail\.mount\(document\.getElementById\('game-rail'\), \{ hub: '\.\.\/index\.html', root: '\.\.\/\.\.\/' \}\)/.test(html), page + ': game bar mounted');
+  } else {
   assert(/<details id="buddy" class="fs-buddy" hidden>[\s\S]*<section id="game-root" aria-label="Fleet setup with Buddy" hidden><\/section>/.test(html), page + ': collapsed panel holding a hidden #game-root');
   assert(html.indexOf('id="buddy"') < html.indexOf('<main'), page + ': the panel sits above the page content');
   assert(/if \(typeof LMCSGame !== 'undefined'\) \{ try \{ LMCSGame\.mount\(document\.getElementById\('game-root'\), \{ session: \w+, backendUrl: GAME_BACKEND_URL, root: '\.\.\/\.\.\/', only: 'fleet', title: 'Fleet setup', tour: \w+ \}\); \} catch \(e\) \{ console\.warn\('game layer', e\); \} \}/.test(html), page + ': guarded fleet mount');
   assert(html.includes("id: '" + tour + "'"), page + ': page tour ' + tour);
   assert(/getElementById\('buddy'\)\.hidden = root\.hidden/.test(html), page + ': the panel unhides with #game-root (no :has() needed)');
+  }
   urls[page] = backendUrl(html, page);
 }
 assert(/window\.mountFleetBuddy/.test(fs.readFileSync(__dirname + '/../../coordinator/capture/setup.js', 'utf8')), 'setup.js mounts Buddy once the buses are drawn');

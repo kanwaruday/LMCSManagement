@@ -84,7 +84,7 @@ async function boot() {
   }
   if (!offline) rememberIdentity(s);
   $('offline').hidden = !offline;
-  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '\u2190 Live Buses'; } // Fee Clerk
+  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/buses.html'; $('back').textContent = '\u2039 Live Buses'; } // Fee Clerk
   S.session = s;
   wire();
   const want = new URLSearchParams(location.search); // from the Fleet setup quests: ?mode=inspection&reg=HP659511
@@ -122,7 +122,7 @@ async function driverBoot() {
   S.driver = me;
   S.session = { email: 'driver:' + normReg(me.reg), role: 'Driver', idToken: null, driver: true };
   S.buses = [{ reg: me.reg, route: '', campus: me.campus, operational: true, stops: [] }];
-  $('back').href = '../../driver/'; $('back').textContent = '\u2190 होम · Home';
+  $('back').href = '../../driver/'; $('back').textContent = '\u2039 होम · Home';
   document.querySelectorAll('[data-mode]').forEach((b) => { b.hidden = b.dataset.mode !== 'timelapse'; });
   $('offline').hidden = true;
   wire();
