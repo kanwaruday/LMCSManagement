@@ -136,7 +136,24 @@ assert "\n  | Uday's words: share the staff list" in runs[0].input and runs[0].i
 reset()
 claude["SendMessage"] = lambda p: done("", 1, "no such recipient")
 bw.handle(CFG, SECRET, dict(FWD, order=True, reply="secret vault answer"))
-assert runs[-1].argv == [CFG["telegram_send"]] and "secret vault answer" not in runs[-1].input and "Uday's words:" in runs[-1].input
+assert runs[-1].argv == [CFG["telegram_send"]] and "Uday's words:" in runs[-1].input
+assert "🦉 Buddy order: Move the LMS4 bus to 7:40 · - · secret vault answer" in runs[-1].input, runs[-1].input  # Uday wants it mirrored
+assert "  | secret vault answer" not in runs[-1].input  # the full quoted answer stays on the SendMessage route
+
+# ---- an order sent by SendMessage is mirrored once to Telegram, short; a Confirm-tap forward is not; a mirror failure is harmless
+reset()
+bw.handle(CFG, SECRET, dict(FWD, order=True, context={"page": "owner/kingdom.html"}, reply="Line one\nline two " + "x" * 400))
+tg = [r for r in runs if r.argv == [CFG["telegram_send"]]]
+assert replies()[-1]["via"] == "sendmessage" and len(tg) == 1, (replies(), runs)
+assert tg[0].input.startswith("🦉 Buddy order: Move the LMS4 bus to 7:40 · owner/kingdom.html · Line one line two x") and "\n" not in tg[0].input
+assert len(tg[0].input) < 420
+reset()
+bw.handle(CFG, SECRET, FWD)
+assert replies()[-1]["via"] == "sendmessage" and not [r for r in runs if r.argv == [CFG["telegram_send"]]]
+reset()
+claude["telegram"] = lambda p: done("", 22, "curl error")
+bw.handle(CFG, SECRET, dict(FWD, order=True, reply="ok"))
+assert replies()[-1]["kind"] == "forwarded" and replies()[-1]["via"] == "sendmessage", replies()
 reset()
 bw.handle(CFG, SECRET, dict(FWD, order="yes", context="owner/kingdom.html"))
 assert "Portal request for master agent (Uday tapped Confirm)" in runs[0].input and "Page: -" in runs[0].input

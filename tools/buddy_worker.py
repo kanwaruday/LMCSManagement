@@ -239,15 +239,26 @@ def forward(cfg, item):
     full = text
     if item.get("order") is True and isinstance(item.get("reply"), str):  # every answer line quoted, so none can pose as a label
         full += "\nBuddy's answer (unverified):\n" + "\n".join("  | " + l for l in item["reply"][:2000].splitlines())
+    # Uday, 29 Oct: every order is also mirrored to his own Telegram chat ("mirrors with telegram"), short: his words, the
+    # page, Buddy's answer cut to one line. Only orders (his own account); a Confirm-tap forward is not mirrored.
+    short = " ".join(str(item.get("reply") or "").split())[:300] if item.get("order") is True else ""
+    mirror = "🦉 Buddy order: %s · %s · %s" % (" ".join(str(item.get("text", "")).split()), ctx.get("page", "") or "-", short or "-")
     try:
         if _send(cfg, full):
+            if item.get("order") is True:  # best effort: a failed mirror never fails the forward
+                try:
+                    m = subprocess.run([cfg["telegram_send"]], input=mirror, capture_output=True, text=True, timeout=60)
+                    log(item["id"], "mirror", "telegram" if m.returncode == 0 else "telegram_failed:%d" % m.returncode)
+                except Exception as e:
+                    log(item["id"], "mirror", "telegram_error:%s" % type(e).__name__)
             return "sendmessage"
         log(item["id"], "forward", "sendmessage_failed")
     except Exception as e:
         log(item["id"], "forward", "sendmessage_error:%s" % type(e).__name__)
-    # Fallback (plan): the Telegram bot's own send.sh, text on stdin (not argv); it reads its own env file. Buddy's answer
-    # (drawn from the vault) stays on the Mac: Telegram gets only the header, Uday's words, the page and the summary.
-    r = subprocess.run([cfg["telegram_send"]], input=text, capture_output=True, text=True, timeout=60)
+    # Fallback (plan): the Telegram bot's own send.sh, text on stdin (not argv); it reads its own env file. It carries the
+    # forward text plus, for an order, the short mirror line, so Uday still sees it when SendMessage fails.
+    r = subprocess.run([cfg["telegram_send"]], input=text + ("\n" + mirror if item.get("order") is True else ""),
+                       capture_output=True, text=True, timeout=60)
     if r.returncode == 0:
         return "telegram"
     raise RuntimeError("forward failed on both routes")
