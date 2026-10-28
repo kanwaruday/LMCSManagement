@@ -143,6 +143,7 @@ function doGet(e) {
   try {
     const action = String(e.parameter.action || '').toLowerCase();
     if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken)); // its own gates (coordinator-principal.gs)
+    if (action === 'transportworld') return coordJson_(coordWorld_(coordWorldCaller_(e.parameter.idToken))); // its own gate: transport staff or a Principal (coordinator-world.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet', 'coordinatortransportrollcall'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only

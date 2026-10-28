@@ -132,6 +132,22 @@ function dlkRows_(tab) {
   return v.slice(1).map(function (r) { const o = {}; v[0].forEach(function (h, i) { o[h] = r[i]; }); return o; });
 }
 
+/** POST driverroute {deviceToken}: the linked bus's own route for the driver's World map, read only: its stops and tracks from the
+ *  GPS tabs of the transport workbook (the same rows Coordinators see in transportworld), never another bus's, never money.
+ *  Unknown or revoked token: the same UNLINKED answer as driverme. */
+function driverRoute_(body) {
+  const link = dlkLink_(body.deviceToken);
+  if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ };
+  const own = function (reg) { return tupNormReg_(reg) === link.reg; };
+  const cell = function (v) { return v instanceof Date ? Utilities.formatDate(v, TUP_TZ_, 'yyyy-MM-dd') : v; };
+  const path = function (p) { try { const x = JSON.parse(p || '[]'); return Array.isArray(x) ? x : []; } catch (e) { return []; } };
+  const stops = dlkRows_('GPS Stops').filter(function (r) { return own(r.bus); }).map(function (r) {
+    const o = {}; Object.keys(r).forEach(function (k) { o[k] = cell(r[k]); }); o.bus = link.reg; o.shared_with = ''; return o; // other buses are not named
+  });
+  const tracks = dlkRows_('GPS Tracks').filter(function (t) { return own(t.reg); }).map(function (t) { return { reg: link.reg, trip: String(t.trip), date: cell(t.date), path: path(t.path) }; });
+  return { success: true, vehicles: [{ reg: link.reg, campus: link.campus, operational: true }], days: [], stops: stops, tracks: tracks };
+}
+
 function driverMe_(body) {
   const link = dlkLink_(body.deviceToken);
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ }; // the phone forgets its token only on this code

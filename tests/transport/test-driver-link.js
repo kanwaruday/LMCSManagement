@@ -83,6 +83,21 @@ const seen = rows()[0][10];
 call('driverMe_', { deviceToken: c1.token });
 assert.strictEqual(rows()[0][10], seen, 'Last Seen at most once an hour');
 
+// driverroute: the linked bus's own stops and tracks, nothing of another bus (not even its name in shared_with), no money
+tabs['GPS Stops'] = [['bus', 'trip', 'seq', 'kind', 'place', 'arrive_usual', 'days_seen', 'run_days', 'shared_with', 'lat', 'lng'],
+  ['HP659511', 'AM-1', 1, 'stop', 'Village A', '07:10', 9, 10, 'HP665805', 31.6, 76.9], ['HP665805', 'AM-1', 1, 'stop', 'Village B', '07:00', 9, 10, '', 31.9, 77.1]];
+tabs['GPS Tracks'] = [['reg', 'trip', 'date', 'path'], ['HP659511', 'AM-1', '2026-10-22', '[[31.6,76.9],[31.61,76.91]]'], ['HP665805', 'AM-1', '2026-10-22', '[[31.9,77.1]]'],
+  ['HP659511', 'PM-1', '2026-10-22', 'not json']];
+const rt = call('driverRoute_', { deviceToken: c1.token });
+assert.strictEqual(rt.success, true);
+assert.deepStrictEqual(rt.stops.map((x) => [x.bus, x.place, x.shared_with]), [['HP659511', 'Village A', '']], 'own stops only; the other bus is not named');
+assert.deepStrictEqual(rt.tracks.map((t) => [t.trip, t.path.length]), [['AM-1', 2], ['PM-1', 0]], 'own tracks only; a bad cell is an empty path');
+assert.deepStrictEqual(rt.vehicles.map((v) => v.reg), ['HP659511']);
+assert.ok(!('pnl' in rt) && !('proposals' in rt), 'no money');
+assert.deepStrictEqual(call('driverRoute_', { deviceToken: 'f'.repeat(64) }), { success: false, code: 'UNLINKED', error: call('driverMe_', { deviceToken: 'f'.repeat(64) }).error }, 'an unknown token: the same UNLINKED answer as driverme');
+delete tabs['GPS Stops']; delete tabs['GPS Tracks'];
+assert.deepStrictEqual([call('driverRoute_', { deviceToken: c1.token }).stops.length, call('driverRoute_', { deviceToken: c1.token }).tracks.length], [0, 0], 'no GPS tabs yet: an empty route');
+
 // driverme survives a missing fuel mirror and capture tab
 const keepFills = tabs['Fuel Fills'], keepStops = tabs['Capture Stops'];
 delete tabs['Fuel Fills']; delete tabs['Capture Stops'];

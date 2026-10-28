@@ -25,7 +25,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, isFinite
   Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } };
 vm.createContext(ctx);
 const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
-load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs');
+load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs'); load('coordinator-world.gs'); load('../coordinator/capture/fleet-quests.js'); // the Coordinator project carries it
 const run = c => vm.runInContext(c, ctx);
 const realRefresh = ctx.gpsRefresh_; // later sections stub it; the capture section needs the real one
 
@@ -197,6 +197,28 @@ assert.deepStrictEqual([coord.vehicles[0].rounds, coord.vehicles[0].students, co
 assert.deepStrictEqual(coord.proposals, {}, 'proposals stay with the Owner');
 const own = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})'));
 assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v => v.reg === 'HP7').rounds], [2, 2, null], 'the Owner sees all; a bus missing from the roster extras has no rounds, not a guess');
+// ── the route World (transportworld): routes and stops of the caller's campuses, never money; driver names and counts for staff only ──
+run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, [{bus:"HP1",trip:"AM-1",seq:1,kind:"stop",place:"Village A",lat:31.6,lng:76.9},{bus:"HP7",trip:"AM-1",seq:1,kind:"stop",place:"Village B",lat:31.9,lng:77.1}])');
+ctx.todayIso = new Date().toISOString().slice(0, 10);
+ctx.coordCacheGetBig_ = () => null; ctx.coordCachePutBig_ = () => {}; // no gzip in this vm
+run('gpsWrite_(COORD_ROLLCALL_TAB, ["Date","Reg"], [{Date: todayIso, Reg: "HP1"}])');
+ctx.coordTransportBase_ = () => ({ fleet: [{ reg: 'HP1', campus: 'LMS 4', operational: true, seats: 15, driver: 'Driver One' }, { reg: 'HP7', campus: 'LMS 1', operational: true, seats: 41, driver: 'Driver Seven' }],
+  pnl: [{ reg: 'HP1', campus: 'LMS 4', month: '2026-09', fee: 100, fuel: 50, loan: 0, fixed: 10, pay: 20 }] });
+const pw = J(run('coordWorld_({email:"p4@x.org", campusId:"LMS4", principal:true})'));
+assert.deepStrictEqual([pw.vehicles.map(v => v.reg), pw.stops.map(x => x.bus), pw.tracks.map(t => t.reg)], [['HP1'], ['HP1'], ['HP1']], 'a Principal sees their own campus only');
+assert.ok(!('driver' in pw.vehicles[0]) && !('counts' in pw), 'a Principal gets no driver names and no counts');
+['pnl', 'proposals', 'tasks', 'checks', 'catalog'].forEach(k => assert.ok(!(k in pw), 'no ' + k + ' in the World'));
+const kw = J(run('coordWorld_({email:"k@x.org", campusId:"LMS4", only:["LMS4"], feeClerkOnly:true, roles:["FeeClerk"]})'));
+assert.deepStrictEqual([kw.vehicles.map(v => v.reg), kw.vehicles[0].driver, kw.counts.HP1.rollCallToday], [['HP1'], 'Driver One', true], 'a Fee Clerk: their campus, the driver, today\'s roll call');
+assert.strictEqual(typeof kw.counts.HP1.fuelFills, 'number');
+assert.ok(!('pnl' in kw), 'and still no money');
+const ow = J(run('coordWorld_({email:"o@x.org", roles:["Owner"]})'));
+assert.deepStrictEqual([ow.vehicles.length, ow.stops.length, ow.counts.HP7.rollCallToday, 'pnl' in ow], [2, 2, false, false], 'the Owner: every campus, still no money here');
+assert.strictEqual(J(run('coordWorld_(null)')).error, 'Not authorized', 'no caller, no World');
+ctx.coordVerifyCaller_ = () => null; ctx.coordVerifyPrincipal_ = () => null;
+assert.strictEqual(J(run('coordWorldCaller_("t")')), null, 'a teacher or a stranger is neither gate');
+ctx.coordVerifyPrincipal_ = () => ({ email: 'p4@x.org', campusId: 'LMS4', principal: true });
+assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Principal passes the World gate');
 
 // ── capture runs (Task 7): the Mac pulls the ended timelapse runs and pushes back the processed ones; stops carry counts only ──
 book(run('COORD_TRANSPORT_FORM_ID')).insertSheet('Capture Runs')._rows().push(
