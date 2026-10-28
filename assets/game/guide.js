@@ -8,11 +8,11 @@ window.LMCSGuide = {
   pages: {
     'index.html': { purpose: "Pick the portal for your role.", roles: [] },
     'principal/index.html': {
-      purpose: "Your home: Today with Buddy, then every module for your school.", roles: ['Principal'],
+      purpose: "Your home: Today with Buddy, then your school's daily work, HR & Hiring and the rules.", roles: ['Principal'],
       tour: [
         { target: '#welcome-strip', text: "Your name and school, so you know you're in the right place." },
         { target: '#game-root', text: "This is Today: a few pieces of real work waiting for you. Go opens the page where each one happens." },
-        { target: '#modules', text: "Every module for your school sits here, whenever you need one." },
+        { target: '#modules', text: "Your school's work sits here in three paths: daily work, HR & Hiring, and the rules." },
       ],
     },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },

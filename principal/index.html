@@ -8,45 +8,43 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=1b745c86" />
+  <style>
+    /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
+    .pp-paths h2 { margin:22px 0 2px; }
+    .pp-paths .gb-muted { margin:0 0 6px; }
+    #welcome-strip { flex-wrap:nowrap; }
+    #welcome-strip .gb-hub-who { flex:1 1 0; }
+    .pp-out { flex:none; }
+  </style>
 </head>
-<body>
+<body class="gb">
 
-  <header class="site">
-    <div class="wrap">
-      <a class="brand" href="../index.html">
-        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
-        <span>
-          LMCS Portal
-          <span class="tagline">Grooming to Excellence</span>
-        </span>
-      </a>
-      <nav class="roles" id="header-status"></nav>
-    </div>
-  </header>
+  <!-- the way back: the portal home (the role chooser), as the logo link did -->
+  <header class="gb-head"><div><div><h1>Principal portal</h1><p id="header-status">La Montessori Schools</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header>
 
-  <main class="wrap">
+  <main class="gb-page">
 
     <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
-    <section class="hero" id="auth-root" style="padding-top:40px;">
-      <span class="eyebrow">Internal · Staff use only</span>
-      <h1>One home for La Montessori School management</h1>
+    <section class="hero" id="auth-root" style="padding-top:24px;">
+      <h2>Sign in to the Principal portal</h2>
       <div id="gate-slot"></div>
     </section>
 
     <div id="app-root" style="display:none">
 
-      <div class="welcome" id="welcome-strip"></div>
+      <div class="gb-hub" id="welcome-strip">
+        <div class="gb-hub-who"><div><h2 class="gb-h1" id="hub-hello"></h2><span class="gb-hub-role" id="hub-role"></span></div></div>
+        <a href="#" class="gb-btn gb-btn-quiet pp-out" id="signout-link">Sign out</a>
+      </div>
 
       <div id="appt-box"></div>
 
       <section id="game-root" aria-label="Today with Buddy" hidden></section>
 
-      <section class="block" id="modules">
-        <h2>Modules</h2>
-        <div class="modules" id="modules-grid">
-          <!-- filled in by JS once campus is known -->
-        </div>
-      </section>
+      <nav class="pp-paths" id="modules" aria-label="Your school's work">
+        <!-- filled in by JS: one heading per path, its pages as gb-go rows -->
+      </nav>
 
     </div>
 
@@ -58,60 +56,70 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=19734029"></script>
+  <script src="../assets/auth.js?v=f846c463"></script>
   <script src="../assets/game/game.js?v=b8de04a1"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-    const MODULES = [
-      { name: 'Curriculum & Progress', status: 'live', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW tracking mapped against the Annual Curriculum Plan.' },
-      { name: "Principal's Daily Reporting", status: 'live', url: '../principals-daily-reporting/index.html', desc: 'Teacher SS, Principal DR, and more — one hub for every Support Session/Daily Report role and their dashboards. Principal/Coordinator/Owner access.' },
-      { name: 'Daily-report issues', status: 'live', url: 'issues.html', desc: 'The issues raised in your school\'s daily reports. Close each with a note on what was done; a Coordinator can reopen it.' },
-      { name: 'Hiring Dashboard', status: 'live', url: '../hiring/index.html', desc: 'Applicant tracking from screening through offer, per campus. Principal/Coordinator/Owner access.' },
-      { name: 'Salary Dashboard', status: 'live', url: '../salary/index.html', desc: 'Offer-letter salary calculator, from the Hiring Dashboard\'s Salary Offer stage, plus Monthly Payroll (Owner only). Principal/Coordinator/Owner access.' },
-      // Re-activated 2026-09-23 per Uday.
-      { name: 'Staff Portal', status: 'live', url: '../staff/add-employee.html', desc: 'Your school\'s staff list and their documents (upload missing ones). Coordinators and the Owner also add, transfer, and verify staff records.' },
-      // Teacher Portal card moved to the role chooser (../index.html) 2026-10-08, per Uday -- it's the
-      // lowest tier and open to Principals too (view-as scoped to your school), but it lives under
-      // the "Teacher" portal there, not in this list.
-      { name: 'Bye Laws', status: 'live', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'HR rulebook of record — conduct, leave rules, and job roles.' },
+    // The hub's paths, in the order a Principal works: the day, then people, then the rules. Each page is a gb-go row.
+    // HR & Hiring is its own path (Uday, 28 Oct 2026: "as a principal, they are also responsible for Hiring & HR"); its pages
+    // are the same ones as before, for the Principal's own school. Counts would need the hiring and staff data, which this hub
+    // doesn't load, so the rows say what each page holds instead.
+    const PATHS = [
+      { title: 'Daily work', lead: 'Your reports and what came out of them.', pages: [
+        { name: "Principal's Daily Reporting", url: '../principals-daily-reporting/index.html', desc: 'Your daily report, teachers\' SS and their dashboards.' },
+        { name: 'Daily-report issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
+        { name: 'Curriculum & Progress', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
+      ] },
+      { title: 'HR & Hiring', lead: 'Your school\'s applicants and staff.', pages: [
+        { name: 'Hiring Dashboard', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
+        { name: 'Staff documents and directory', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
+        { name: 'Salary Dashboard', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
+      ] },
+      { title: 'Rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
+        { name: 'Bye Laws', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'The rulebook of record.' },
+      ] },
     ];
 
-    // Only 'live' modules render as a clickable link -- 'planned' (never built)
-    // and 'paused' (built, temporarily off) both show as plain text, same as
-    // each other today; if that ever needs to look different, split this check.
-    function renderModules() {
-      const grid = document.getElementById('modules-grid');
-      grid.innerHTML = MODULES.map((m) => (
-        '<div class="card">' +
-          '<div class="card-top">' +
-            '<h3>' + (m.status === 'live' && m.url ? '<a href="' + m.url + '">' + m.name + '</a>' : m.name) + '</h3>' +
-            '<span class="status ' + m.status + '">' + m.status + '</span>' +
-          '</div>' +
-          '<p>' + m.desc + '</p>' +
-        '</div>'
-      )).join('');
+    function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+    function renderPaths() {
+      const nav = document.getElementById('modules');
+      nav.textContent = '';
+      PATHS.forEach(function (p) {
+        nav.appendChild(el('h2', '', p.title));
+        if (p.lead) nav.appendChild(el('p', 'gb-muted', p.lead));
+        const ul = el('ul', 'gb-list');
+        p.pages.forEach(function (m) {
+          const a = el('a', 'gb-go'), span = el('span', '', m.name);
+          a.href = m.url;
+          span.appendChild(el('small', '', m.desc));
+          a.appendChild(span);
+          const li = el('li'); li.appendChild(a); ul.appendChild(li);
+        });
+        nav.appendChild(ul);
+      });
+    }
+
+    function hello(name) {
+      const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
+      return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
     }
 
     function showApp(session) {
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
 
-      document.getElementById('header-status').innerHTML =
-        '<span>' + session.campusName + '</span>';
-
-      document.getElementById('welcome-strip').innerHTML =
-        '<div class="welcome-text">Signed in as <b>' + session.name + '</b>' +
-        '<span class="welcome-campus">' + session.campusName + '</span></div>' +
-        '<a href="#" class="signout" id="signout-link">Sign out</a>';
+      document.getElementById('header-status').textContent = session.campusName;
+      document.getElementById('hub-hello').textContent = hello(session.name);
+      document.getElementById('hub-role').textContent = 'Principal · ' + session.campusName;
 
       document.getElementById('signout-link').addEventListener('click', function (e) {
         e.preventDefault();
         LMCS.signOut();
       });
 
-      renderModules();
+      renderPaths();
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
