@@ -129,7 +129,11 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return where + ' reached level ' + u.level + (u.level === Number(u.building.maxLevel) ? ', fully built' : '') + '. Shabash.';
   }
 
-  var api = { tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
+  // ── 🎉 Game Day (gameeventboard, game-event.gs): the Owner's live panel (pure lines; the page below draws them) ──
+  function gdNetworkText(n) { return n ? n.schoolsAtGoal + ' of ' + n.of + ' schools at ' + n.goalPct + '%' + (n.reward ? ' → ' + n.reward : '') : ''; }
+  function gdSchoolLine(s) { return s.name + ': ' + s.in + ' of ' + s.people + ' in · ' + s.done + ' done · ' + s.pct + '%'; }
+
+  var api = { gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
     nextTier: nextTier, onlySoon: onlySoon, nextAction: nextAction, nextText: nextText, levelSnapshot: levelSnapshot, levelUps: levelUps, levelUpText: levelUpText,
@@ -363,6 +367,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       else S.el.appendChild(h('section', { class: 'kg-alliance', 'aria-labelledby': 'kg-allh' }, [h('h2', { id: 'kg-allh' }, ['Alliance']), hs]));
     }
     if (api.hooks.after) api.hooks.after(d);
+    gdDraw();
     // phones: start the map centred on LMCS HQ instead of its left edge
     var dar = map.querySelector('.kg-darbar');
     if (keepX !== null) box.scrollLeft = keepX;
@@ -391,7 +396,47 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     S.el = el; S.session = opts.session; S.url = opts.backendUrl || ''; S.root = opts.root || ''; S.data = null;
     S.panels = opts.panels || null; S.next = opts.next || null;
     if (!S.url) { el.textContent = ''; el.appendChild(message(LOAD_ERR, false)); return Promise.resolve(); }
+    gdLoad();
+    clearInterval(GD.timer);
+    GD.timer = setInterval(function () { if (document.visibilityState === 'visible') gdLoad(); }, GD_EVERY_MS);
     return load();
+  }
+
+  // ═══ 🎉 Game Day panel (Owner only: the server refuses anyone else, and then nothing is drawn) ═══
+  // Per school: in / done / %, the one nudge, and who is not in or stuck (names, in a details). Refreshes itself every 2 minutes while
+  // the page is in view, and on the Refresh button. Before the day it lists who is expected (upcoming).
+  var GD = { data: null, timer: null, busy: false }, GD_EVERY_MS = 120000;
+  function gdLoad() {
+    if (GD.busy || !S.url) return;
+    GD.busy = true;
+    var url = S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=gameeventboard&idToken=' + encodeURIComponent((S.session || {}).idToken || '');
+    fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      GD.data = d && d.success && d.event && Array.isArray(d.schools) ? d : null; gdDraw();
+    }, function () { /* keep the last board */ }).then(function () { GD.busy = false; });
+  }
+  function gdBar(pct, label) { return h('span', { class: 'gb-bar' + (pct >= 100 ? ' gb-bar-ok' : ''), role: 'img', 'aria-label': label }, [h('i', { style: 'width:' + Math.max(0, Math.min(100, Number(pct) || 0)) + '%' })]); }
+  function gdNames(label, names) {
+    return names && names.length ? h('details', { class: 'kg-gd-who' }, [h('summary', {}, [label + ' (' + names.length + ')']), h('ul', {}, names.map(function (n) { return h('li', {}, [n]); }))]) : null;
+  }
+  function gdBody(d) {
+    var ev = d.event, n = d.network || null, goal = n ? Number(n.goalPct) || 80 : 80;
+    return h('div', { class: 'kg-gd' }, [
+      h('p', { class: 'kg-gd-k' }, [ev.upcoming ? ev.name + ' starts ' + LMCSGame.dateLabel(ev.date) + '. These are the people expected at each school.' : ev.name + ' · live']),
+      n ? h('div', { class: 'kg-gd-row' }, [h('b', {}, ['All schools']), h('span', {}, [gdNetworkText(n)])]) : null,
+      n ? gdBar(n.of ? 100 * n.schoolsAtGoal / n.of : 0, 'All schools: ' + gdNetworkText(n)) : null,
+      h('ul', { class: 'kg-gd-list' }, d.schools.map(function (s) {
+        return h('li', { class: s.pct >= goal ? 'kg-gd-goal' : '' }, [h('b', {}, [gdSchoolLine(s)]), gdBar(s.pct, gdSchoolLine(s)),
+          s.nudge ? h('p', { class: 'kg-gd-nudge' }, [s.nudge]) : null, gdNames('Not in yet', s.notIn), gdNames('Started, not finished', s.stuck)]);
+      })),
+      h('button', { type: 'button', class: 'gb-btn', onclick: gdLoad }, ['Refresh'])]);
+  }
+  function gdDraw() {
+    var old = document.querySelector('[data-panel="kg-gdpanel"]');
+    if (!GD.data) { if (old) old.remove(); return; }
+    var p = panel('Game Day', 'kg-gdpanel', gdBody(GD.data), !GD.data.event.upcoming, 'events');
+    if (old) { p.open = old.open; old.replaceWith(p); }
+    else if (S.panels) S.panels.insertBefore(p, S.panels.children[1] || null); // under Your Kingdom
+    else if (S.el) S.el.appendChild(p);
   }
 
   // ═══ K5: tap-to-assign (Owner only; the server checks the Owner again) ═══

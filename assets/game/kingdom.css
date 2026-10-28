@@ -204,3 +204,14 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-me .kg-crest h2, .kg-me .kg-crest-i, .kg-traypanel .kg-trayhd h2 { display:none; }
 .gb-panel .kg-top, .gb-panel .kg-tray { margin:0; padding:0; background:none; border:0; box-shadow:none; }
 .gb-panel.kg-alliance { margin-top:0; }
+
+/* 🎉 Game Day panel (kingdom.js gdBody): base.css tokens, since the panels sit outside .kg */
+.kg-gd { display:flex; flex-direction:column; gap:8px; }
+.kg-gd-k { margin:0; color:var(--gb-muted); font-size:14px; }
+.kg-gd-row { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; font-size:14px; }
+.kg-gd-list { list-style:none; margin:4px 0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.kg-gd-list > li { display:flex; flex-direction:column; gap:4px; padding:8px 10px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); overflow-wrap:anywhere; }
+.kg-gd-list > li.kg-gd-goal { border-color:var(--gb-ok); }
+.kg-gd-nudge { margin:0; font-size:14px; }
+.kg-gd-who summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:14px; }
+.kg-gd-who ul { margin:0 0 4px; padding-left:18px; font-size:14px; }

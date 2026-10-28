@@ -34,7 +34,8 @@
 //   buddypull, buddyreply               -- BUDDY_WORKER_SECRET, the Mac's Ask Buddy worker (game-buddy.gs)
 // Ask Buddy's Owner actions (buddyask, buddythread, buddyconfirm) are also doPost only: they are not in
 // GAME_MODULE_ACTIONS, so a GET answers "Unknown action".
-// The Kingdom's writes (kingdomassign, kingdomallocate, game-kingdom.gs) are doPost only the same way.
+// The Kingdom's writes (kingdomassign, kingdomallocate, game-kingdom.gs) are doPost only the same way, and so is the 🎉 event
+// self-tick (gameeventtick, game-event.gs).
 //
 // SETUP:
 //   1. script.google.com -> New project -> "LMCS Game Backend",
@@ -128,6 +129,40 @@ function gameConfigDefaults_() {
       ],
     },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
+    // 🎉 Events (game-event.gs). Game Config key `events` (an array; a row replaces the whole list). An event shows from `date` until the
+    // person's checklist is done, or until `showTo`. steps[Role]: { id, emoji (the character assets/game/emoji.js uses for that concept), label, go, check, fn?, hint? }.
+    // check: opened | missions:N | quest:<id> | cq:<id> | daybook-setup:<step> | self (one tap, stored in Game Progress). fn: only for a
+    // caller whose allowlist Functions hold it. hint 'teachersIn': the Principal's "X of Y teachers in" line. Buddy: {n} {of} {goal} fill in.
+    events: [{
+      id: 'gameday-2026-10-30', name: 'Set up the Game Day', emoji: '🎉', date: '2026-10-30', showTo: '2026-10-31', goalPct: 80, reward: '🎁 HQ unlocks a reward',
+      buddy: { welcome: 'Big day! A few small steps and your school is in the game.', cheer25: 'Nice start. One step at a time is all it takes.',
+        cheer50: 'Halfway there. Your school can feel it.', cheer75: 'Nearly done. Just a little more.',
+        done: 'All done. Shabash! Your school is in the game.', network: '{n} of {of} schools are at {goal}%. Every tick helps HQ unlock the reward.' },
+      steps: {
+        Principal: [
+          { id: 'open', emoji: '🗓️', label: 'Open Today', go: 'principal/index.html', check: 'opened' },
+          { id: 'mission', emoji: '🎯', label: 'Do 1 mission', go: 'principal/index.html#game-root', check: 'missions:1' },
+          { id: 'rooms', emoji: '🏫', label: "Tap your school's rooms", go: 'principal/index.html#modules', check: 'self' },
+          { id: 'ss', emoji: '🤝', label: 'Start a Support Session', go: 'principal/support-sessions.html?role=teacher', check: 'self' }, // SS needs the PDR call as that person: the Owner's board can't check it
+          { id: 'teachers', emoji: '👥', label: 'Check your teachers are in', go: '', check: 'self', hint: 'teachersIn' } ],
+        Coordinator: [
+          { id: 'open', emoji: '🗓️', label: 'Open Today', go: 'coordinator/index.html', check: 'opened' },
+          { id: 'followup', emoji: '🎯', label: 'Do 1 follow-up', go: 'coordinator/index.html#game-root', check: 'missions:1' },
+          { id: 'transport', emoji: '🙋', label: 'Check roll call and fuel for every bus', go: 'coordinator/transport/rollcall.html', check: 'self', fn: 'Transport' }, // game-fleet has roll calls but no fuel-per-bus-today signal
+          { id: 'accounts', emoji: '📜', label: 'Open the Accountant quest', go: 'coordinator/index.html#game-root', check: 'self', fn: 'Fees & Accounts' } ], // opening is not recorded anywhere
+        FeeClerk: [
+          { id: 'starting', emoji: '🧾', label: 'Send your starting data', go: 'office/starting-data.html', check: 'daybook-setup:submit' },
+          { id: 'daybook', emoji: '📒', label: 'Practise one Day Book entry', go: 'office/daybook.html', check: 'self' },
+          { id: 'phones', emoji: '📱', label: 'Link driver phones', go: 'coordinator/transport/drivers.html', check: 'self' } ], // the game backend reads no phone links
+        Teacher: [
+          { id: 'open', emoji: '🗓️', label: 'Sign in and open Today', go: 'teacher/index.html', check: 'opened' },
+          { id: 'chapters', emoji: '📜', label: 'Read your chapter quests', go: 'teacher/index.html#game-root', check: 'self' },
+          { id: 'classes', emoji: '✏️', label: 'Check My classes', go: 'teacher/index.html', check: 'self' } ],
+        Staff: [
+          { id: 'open', emoji: '🗓️', label: 'Sign in', go: 'teacher/index.html', check: 'opened' },
+          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html', check: 'self' } ],
+      },
+    }],
   };
 }
 
@@ -186,6 +221,8 @@ function doPost(e) {
     // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
     if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
     if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
+    // The 🎉 event self-tick (game-event.gs): POST only, never in GAME_MODULE_ACTIONS; every check is inside it.
+    if (action === 'gameeventtick') return gameJson_(eventTick_(caller, body));
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

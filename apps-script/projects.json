@@ -131,6 +131,7 @@
       "game-confirm-prefill",
       "game-buddy",
       "game-kingdom",
+      "game-event",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js"
