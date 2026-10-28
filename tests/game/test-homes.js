@@ -60,7 +60,9 @@ assert.strictEqual(worldOn(false, false, false, false), false, 'a Principal on t
 // the room highlight: rooms whose holds is one of the teacher's classes; no holds never matches; no section matches every section
 const myRoomIds = new Function('return ' + body(tHtml, 'myRoomIds_').replace(/^\{/, '(function (rooms, classes) {') + '})')();
 const R = [{ id: 'a', holds: '5A' }, { id: 'b', holds: '5B' }, { id: 'c', holds: '6A' }, { id: 'd', holds: '' }, { id: 'e' }, { id: 'f', holds: 'M-I' }, { id: 'g', holds: 'M-II' }, { id: 'h', holds: '15A' }];
-assert.deepStrictEqual(myRoomIds(R, ['Class 5']), ['a', 'b']);
+assert.deepStrictEqual(myRoomIds(R, ['Class 5']), [], 'class only, two rooms hold Class 5: outline neither');
+assert.deepStrictEqual(myRoomIds(R, ['Class 6']), ['c'], 'class only, one room holds Class 6: that room');
+assert.deepStrictEqual(myRoomIds(R, ['5B']), ['b'], 'exact class+section');
 assert.deepStrictEqual(myRoomIds(R, ['5A']), ['a']);
 assert.deepStrictEqual(myRoomIds(R, ['M-I']), ['f'], 'M-I is not M-II');
 assert.deepStrictEqual(myRoomIds(R, ['Class 1']), [], 'Class 1 is not 15A');

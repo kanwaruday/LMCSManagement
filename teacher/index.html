@@ -528,14 +528,19 @@ let myClasses_ = []; // the teacherclasses reply's classes (own only: the game h
 // the switch shows only where there is a Today and data behind the World: never for Staff; for a view-as target only once their timetable is in
 function worldOn_(staffOnly, viewAs, isTeacher, hasTimetable) { return !staffOnly && (viewAs ? hasTimetable : (isTeacher || hasTimetable)); }
 // rooms (LMCSBuilding.rooms of a model) -> ids of the rooms whose `holds` is one of the classes ("Class 5", "M-I", "5A").
-// A class with no section ("Class 5") matches every section of it ("5A", "5B"); rooms with no holds never match.
+// An exact class+section match outlines that room. A class with no section ("Class 5") outlines a room only when exactly one
+// room on the campus holds that class ("5A" alone); with 5A and 5B both there it can't tell which, so it outlines neither.
+// Rooms with no holds never match.
 function myRoomIds_(rooms, classes) {
   function key(s) { return String(s || '').toUpperCase().replace(/\bCLASS\b/g, '').replace(/[^0-9A-Z]/g, ''); }
-  const want = (classes || []).map(key).filter(Boolean);
-  return (rooms || []).filter(function (r) {
-    const h = key(r.holds), m = /^(.*\d)[A-Z]$/.exec(h);
-    return !!h && want.some(function (c) { return c === h || (!!m && c === m[1]); });
-  }).map(function (r) { return r.id; });
+  function cls(h) { const m = /^(.*\d)[A-Z]$/.exec(h); return m ? m[1] : null; } // "5A" -> "5"; no section -> null
+  const rs = (rooms || []).filter(function (r) { return !!key(r.holds); }), out = [];
+  (classes || []).map(key).filter(Boolean).forEach(function (c) {
+    let hit = rs.filter(function (r) { return key(r.holds) === c; });
+    if (!hit.length) { hit = rs.filter(function (r) { return cls(key(r.holds)) === c; }); if (hit.length !== 1) hit = []; }
+    hit.forEach(function (r) { if (out.indexOf(r.id) === -1) out.push(r.id); });
+  });
+  return rs.filter(function (r) { return out.indexOf(r.id) !== -1; }).map(function (r) { return r.id; }); // in the model's order
 }
 function updateWorld_() {
   const on = worldOn_(teacherOnlyHidden_, !!VIEW_AS_CODE, LMCS.hasRole(SESSION, 'Teacher'), !!myTimetable_);
@@ -556,6 +561,8 @@ function renderWorld_() {
   const periods = myTimetable_ ? myTimetable_.periods : [];
   const classes = (VIEW_AS_CODE ? [] : myClasses_).concat(periods.map(function (p) { return p.class; }));
   const mine = model ? myRoomIds_(LMCSBuilding.rooms(model), classes) : [];
+  const unset = model ? LMCSBuilding.rooms(model).filter(function (r) { return r.type === 'classroom' && !r.holds; }) : [];
+  const anyHolds = model ? LMCSBuilding.rooms(model).some(function (r) { return !!r.holds; }) : false;
   let shown = null;
   if (model) { // classrooms without a confirmed class read "?"
     shown = JSON.parse(JSON.stringify(model));
@@ -565,7 +572,8 @@ function renderWorld_() {
     : (model.sample ? '<p class="gb-note">Sample building: your school’s own drawing isn’t set yet, so these rooms are an example.</p>' : '') +
       '<div class="sb-box" id="world-3d">' + LMCSBuilding.svg(shown, { hosts: [] }) + '</div>' + // every label is escaped inside svg()
       '<p class="sb-said" id="world-said" role="status">' + (mine.length ? 'Your rooms are outlined in gold. Tap a room to see its name.'
-        : 'Rooms show “?” until your Principal confirms which class sits where.') + '</p>') + periodsHtml_(periods);
+        : anyHolds ? 'None of the rooms are marked as your classes yet.' : 'Rooms show “?” until your Principal confirms which class sits where.') + '</p>') + periodsHtml_(periods);
+  unset.forEach(function (r) { const g = body.querySelector('.sb-room[data-room="' + CSS.escape(r.id) + '"]'); if (g) g.setAttribute('aria-label', r.name); }); // the "?" is drawn, not read out
   mine.forEach(function (id) { const g = body.querySelector('.sb-room[data-room="' + CSS.escape(id) + '"]'); if (g) { g.classList.add('sb-host'); g.setAttribute('aria-label', g.getAttribute('aria-label') + ', your class'); } });
   const box = document.getElementById('world-3d');
   if (box) box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); // phones: the middle of the school in view
