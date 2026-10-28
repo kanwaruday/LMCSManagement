@@ -32,6 +32,7 @@
 const CAP_TAB_ = 'Capture Runs';
 const CAP_RUN_HEADER_ = ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON', 'Captured By'];
 const CAP_KINDS_ = ['frame', 'stop', 'inspection', 'profile'];
+const CAP_RUN_STATUSES_ = ['open', 'running', 'ended', 'error', 'closed'];
 const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection', 'profile'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'], profile: ['profile'] };
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
@@ -175,8 +176,12 @@ function captureRun_(body) {
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const author = String(run.capturedBy || '').trim().toLowerCase();
-  const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
-    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(frameTimes),
+  // Only shapes the phone really sends reach the sheet: a time is epoch ms or an ISO string, a status one of the phone's words.
+  // Anything else (a "=..." formula from a forwarded driver link, say) would run as a formula when the workbook is opened.
+  const when = function (t) { return typeof t === 'number' && isFinite(t) ? t : /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(String(t || '')) ? String(t) : ''; };
+  const status = CAP_RUN_STATUSES_.indexOf(run.status) !== -1 ? run.status : 'open';
+  const row = [runId, a.v.reg, a.v.campusId, run.kind, when(run.startedAt), when(run.endedAt), a.caller.email, a.caller.role,
+    Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), status, js(frameTimes),
     a.caller.role === 'Driver' ? a.caller.name : /^[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
