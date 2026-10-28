@@ -5,21 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#CE0000">
 <title>LMCS — Driver</title>
-<link rel="stylesheet" href="../assets/game/base.css?v=1b745c86">
+<link rel="stylesheet" href="../assets/game/base.css?v=3835d019">
 <style>
   /* A phone in a driver's hand, one-handed, maybe in sunlight, maybe reading little: Hindi first and big, English small under it,
      an icon on everything, one thing per screen, and the one red button always at the bottom where the thumb is. */
-  .dr { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+  body.dr-task { padding-bottom:calc(96px + env(safe-area-inset-bottom)); } /* a fuel step: the action bar, not the game bar */
   .dr-hi { display:block; font-family:var(--gb-font); font-size:21px; font-weight:700; line-height:1.25; }
   .dr-en { display:block; font-size:14px; color:var(--gb-muted); font-weight:600; }
   .dr-ico { font-size:34px; line-height:1; flex:none; width:48px; text-align:center; }
 
-  /* home: who and which bus, then the one next step, then the two jobs as big tiles */
-  .dr-hub { display:flex; align-items:center; gap:12px; margin:0 0 14px; }
-  .dr-hub img { width:56px; height:56px; border-radius:50%; background:var(--gb-gold-soft); flex:none; }
-  .dr-hub h1 { margin:0; font-size:24px; }
-  .dr-reg { display:inline-block; margin-top:4px; padding:2px 10px; border:2px solid var(--gb-ink); border-radius:8px; background:#fff;
-    font:800 17px/1.4 var(--gb-font); letter-spacing:.04em; }
+  /* header: who, and the bus as a number plate; the next-step slot, then the two jobs as big tiles on the stage */
+  .gb-head h1 { font-size:21px; }
+  .dr-reg { flex:none; padding:2px 10px; border:2px solid var(--gb-ink); border-radius:8px; background:#fff; color:var(--gb-ink);
+    font:800 17px/1.4 var(--gb-font); letter-spacing:.04em; white-space:nowrap; }
+  .dr-next img { width:56px; height:56px; border-radius:50%; background:var(--gb-gold-soft); }
   .dr-tiles { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
   .dr-tile { display:flex; align-items:center; gap:12px; min-height:88px; padding:12px 14px; background:var(--gb-paper); border:2px solid var(--gb-line);
     border-radius:16px; color:var(--gb-ink); text-decoration:none; }
@@ -33,24 +32,28 @@
   .dr-state.done { background:var(--gb-ok-soft); color:var(--gb-ok); }
   .dr-state.wait { background:var(--gb-warn-soft); color:var(--gb-warn); }
   .dr-tile:active:not([aria-disabled="true"]) { background:var(--gb-gold-soft); }
-  .dr-next { margin:0 0 14px; }
   .dr-next .gb-btn { width:100%; margin-top:10px; min-height:60px; font-size:19px; }
   .dr-next .gb-next-t { font-size:18px; font-weight:700; margin:2px 0 0; }
 
-  /* the bar at the bottom: on home the three places; in the fuel steps the one red button (and Back) */
+  /* the action bar at the bottom in a fuel step: the one red button (and Back) */
   .dr-bar { position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--gb-paper); border-top:1.5px solid var(--gb-line);
     padding:8px 12px calc(8px + env(safe-area-inset-bottom)); }
   .dr-bar-in { max-width:720px; margin:0 auto; display:flex; gap:8px; }
-  .dr-nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60px; border-radius:12px;
-    color:var(--gb-ink); text-decoration:none; font-weight:700; font-size:15px; }
-  .dr-nav a span { font-size:26px; line-height:1.1; }
-  .dr-nav a[aria-current="page"] { background:var(--gb-gold-soft); }
+  /* the game bar in Hindi: the word big, English for the ear (aria-label) */
+  .gb-rail-i b { font-size:13px; }
+  .dr-ask { padding:12px 14px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+  .dr-ask .dr-help { margin:6px 0 0; }
+  .dr-help-l { list-style:none; margin:0; padding:0; display:grid; gap:10px; font-size:15px; }
+  .dr-help-l li { display:flex; gap:8px; }
+  .dr-bus { margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; }
+  .dr-bus dt { color:var(--gb-muted); font-weight:600; }
+  .dr-bus dd { margin:0; font-weight:700; }
   .dr-act .gb-btn { min-height:64px; font-size:20px; }
   .dr-act .dr-go { flex:1; }
   .dr-act .dr-back { flex:none; min-width:76px; }
 
   /* the fuel steps */
-  .dr-steps { display:flex; gap:6px; margin:0 0 14px; }
+  .dr-steps { display:flex; gap:6px; margin:0 0 12px; }
   .dr-steps i { flex:1; height:8px; border-radius:4px; background:var(--gb-line); }
   .dr-steps i.on { background:var(--gb-ok); }
   .dr-steps i.now { background:var(--gb-red); }
@@ -98,40 +101,53 @@
   @media (max-width:360px) { .dr-hi { font-size:19px; } .dr-q .dr-hi { font-size:23px; } .dr-num { font-size:30px; } }
 </style>
 </head>
-<body class="gb">
-<header class="gb-head"><div><div><h1>LMCS ड्राइवर</h1><p>Driver</p></div></div></header>
+<body class="gb gb-app">
+<!-- The screen skeleton (assets/game/base.css): header, then the shell with the game bar, the next-step slot, the stage and
+     folded panels. In a fuel step the game bar gives way to the action bar, so the one red button stays under the thumb. -->
+<header class="gb-head"><div><div><h1 id="hello">LMCS ड्राइवर</h1><p id="who">Driver</p></div><span id="reg" class="dr-reg" hidden></span></div></header>
 <p id="demo" class="dr-demo" hidden>डेमो · Demo: made-up bus. Nothing is sent.</p>
-<main class="gb-page dr">
-  <section id="home" aria-label="होम · Home" hidden>
-    <div class="dr-hub"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt=""><div><h1 id="hello">नमस्ते</h1><span id="reg" class="dr-reg"></span></div></div>
-    <div id="next" class="gb-next dr-next"></div>
-    <ul id="tiles" class="dr-tiles" aria-label="मेरे काम · My jobs"></ul>
-    <p id="refused" class="dr-why" role="alert"></p>
-    <p id="waiting" class="dr-warn" role="status"></p>
-  </section>
+<div class="gb-shell">
+  <nav class="gb-rail" id="rail" aria-label="गेम · Game" hidden></nav>
+  <div class="gb-next-slot" id="slot"></div>
+  <main class="gb-stage">
+    <section id="home" aria-label="मेरे काम · My jobs" hidden>
+      <ul id="tiles" class="dr-tiles"></ul>
+      <p id="refused" class="dr-why" role="alert"></p>
+      <p id="waiting" class="dr-warn" role="status"></p>
+    </section>
 
-  <section id="fuel" aria-label="डीज़ल · Fuel fill" hidden>
-    <div id="steps" class="dr-steps" aria-hidden="true"></div>
-    <div id="stage"></div>
-  </section>
+    <section id="fuel" aria-label="डीज़ल · Fuel fill" hidden>
+      <div id="stage"></div>
+    </section>
 
-  <section id="sent" aria-label="भेज दिया · Sent" hidden>
-    <div id="doneBox" class="gb-done">
-      <div class="gb-done-tick" aria-hidden="true">✓</div>
-      <p class="dr-done-hi" id="sentHi" tabindex="-1">भेज दिया</p>
-      <p id="sentText" role="status">Sent to the office. Thank you!</p>
-      <p id="sentSummary" class="gb-muted"></p>
+    <section id="sent" aria-label="भेज दिया · Sent" hidden>
+      <div id="doneBox" class="gb-done">
+        <div class="gb-done-tick" aria-hidden="true">✓</div>
+        <p class="dr-done-hi" id="sentHi" tabindex="-1">भेज दिया</p>
+        <p id="sentText" role="status">Sent to the office. Thank you!</p>
+        <p id="sentSummary" class="gb-muted"></p>
+      </div>
+    </section>
+
+    <div id="closed" class="dr-stop" hidden>
+      <span class="dr-ico" aria-hidden="true">🔒</span>
+      <p class="dr-hi" id="closedHi">यह फ़ोन जुड़ा नहीं है</p>
+      <p class="dr-en" id="closedEn">This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).</p>
     </div>
-  </section>
-
-  <div id="closed" class="dr-stop" hidden>
-    <span class="dr-ico" aria-hidden="true">🔒</span>
-    <p class="dr-hi" id="closedHi">यह फ़ोन जुड़ा नहीं है</p>
-    <p class="dr-en" id="closedEn">This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).</p>
-  </div>
-</main>
-<nav id="bar" class="dr-bar" hidden><div class="dr-bar-in" id="barIn"></div></nav>
+  </main>
+  <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
+    <details class="gb-panel"><summary><span aria-hidden="true">🚌</span> मेरी बस · Bus</summary><div class="gb-panel-b" id="pBus"></div></details>
+    <details class="gb-panel" id="pHelp"><summary><span aria-hidden="true">❓</span> मदद · Help</summary><div class="gb-panel-b">
+      <ul class="dr-help-l">
+        <li><span aria-hidden="true">⛽</span> डीज़ल के बाद: वीडियो, पर्ची, लीटर, रुपये, किलोमीटर · After a fill: pump video, bill, litres, ₹, km</li>
+        <li><span aria-hidden="true">📶</span> नेटवर्क नहीं? फ़ोन में सेव रहेगा, बाद में अपने आप जाएगा · No signal? It is kept on this phone and sends by itself</li>
+        <li><span aria-hidden="true">📱</span> नया फ़ोन या फ़ोन खो गया? फ़ी क्लर्क से नया QR लें · New or lost phone? Ask your Fee Clerk for a new QR</li>
+      </ul>
+    </div></details>
+  </aside>
+</div>
+<nav id="bar" class="dr-bar" aria-label="अगला कदम · Next step" hidden><div class="dr-bar-in" id="barIn"></div></nav>
 <script src="./driver-logic.js?v=8e49981e"></script>
-<script src="./driver.js?v=14bc6799"></script>
+<script src="./driver.js?v=41619ec0"></script>
 </body>
 </html>
