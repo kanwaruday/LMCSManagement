@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=92789f14" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=970a17cb" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     #base-name .gb-emoji { margin-right:.3em; }
@@ -36,6 +36,9 @@
         </div>
         <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
           <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span><span class="gb-base-lv" id="base-lv"></span></p>
+          <!-- the building in 3D (Uday, 28 Oct). Drawn from a building model; a sample shape until the campus's own plan is set -->
+          <div class="sb-box" id="school-3d"></div>
+          <p class="sb-said" id="school-said" role="status">Tap a room. The gold ones open your work today.</p>
           <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
         </div></section>
         <section id="world" aria-label="Your school's routes" hidden>
@@ -57,7 +60,8 @@
 
   <script src="../assets/auth.js?v=84c3e38c"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
-  <script src="../assets/game/emoji.js?v=f2812675"></script>
+  <script src="../assets/game/emoji.js?v=7345bdc8"></script>
+  <script src="../assets/game/school-building.js?v=78b2b1f3"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
@@ -68,26 +72,26 @@
     // are the same ones as before, for the Principal's own school. Counts would need the hiring and staff data, which this hub
     // doesn't load, so the rows say what each page holds instead.
     const PATHS = [
-      { title: 'Daily work', e: 'day', lead: 'Your reports and what came out of them.', pages: [
+      { title: 'Daily work', e: 'day', host: 'daily', lead: 'Your reports and what came out of them.', pages: [
         { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report, teachers\' SS and their dashboards.' },
         { name: 'Daily-report issues', e: 'issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
         { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
       ] },
-      { title: 'HR & Hiring', e: 'hiring', lead: 'Your school\'s applicants and staff.', pages: [
+      { title: 'HR & Hiring', e: 'hiring', host: 'hr', lead: 'Your school\'s applicants and staff.', pages: [
         { name: 'Hiring Dashboard', e: 'applicants', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
         { name: 'Staff documents and directory', e: 'documents', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
         { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
       ] },
-      { title: 'Rules', e: 'rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
+      { title: 'Rules', e: 'rules', host: 'rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
         { name: 'Bye Laws', e: 'byeLaws', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'The rulebook of record.' },
       ] },
     ];
 
     function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
     // a room: a tile that opens across the row to show what's inside (base.css .gb-room)
-    function room(e, title, small, body, next) {
+    function room(e, title, small, body, next, host) {
       const d = el('details', 'gb-room' + (next ? ' is-next' : '')), sum = el('summary');
-      d.dataset.room = title;
+      d.dataset.room = title; if (host) d.dataset.host = host;
       const ic = el('span', 'gb-room-e', window.LMCSEmoji ? LMCSEmoji.get(e) : ''); ic.setAttribute('aria-hidden', 'true');
       sum.appendChild(ic); sum.appendChild(el('span', 'gb-room-t', title)); sum.appendChild(el('span', 'gb-room-s', small));
       const b = el('div', 'gb-room-b'); b.appendChild(body);
@@ -131,9 +135,9 @@
       const rooms = document.getElementById('rooms');
       const open = [].map.call(rooms.querySelectorAll('.gb-room[open]'), function (d) { return d.dataset.room; }); // a re-render keeps what was open
       rooms.textContent = '';
-      PATHS.forEach(function (p) { rooms.appendChild(room(p.e, p.title, p.lead, pageList(p.pages), false)); });
+      PATHS.forEach(function (p) { rooms.appendChild(room(p.e, p.title, p.lead, pageList(p.pages), false, p.host)); });
       const st = steps(base);
-      rooms.appendChild(room('quests', 'Setup quests', base && st.total ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total));
+      rooms.appendChild(room('quests', 'Setup quests', base && st.total ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total, 'setup'));
       [].forEach.call(rooms.children, function (d) { if (open.indexOf(d.dataset.room) !== -1) d.open = true; });
       document.getElementById('base-lv').textContent = base ? (window.LMCSEmoji ? LMCSEmoji.get('level') + ' ' : '') + 'Level ' + (Number(base.level) || 0) : '';
     }
@@ -142,8 +146,34 @@
       if (!GAME_BACKEND_URL) return; // the game is off: the rooms show, the setup room says so plainly
       fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
-        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); })
+        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); if (d && d.building) drawSchool(session, d.building); })
         .catch(function (e) { console.warn('home base', e); }); // the rooms already show; setup says it couldn't load
+    }
+    // the 3D school: the campus's building model when one is set, else the sample shape with this school's name (marked sample).
+    // A tap on a gold room opens its Home Base room below; other rooms say what will live there later.
+    let BUILDING = null;
+    const LATER = { classroom: 'class teacher, CW/HW done today and attendance will show here', store: 'its inventory will show here',
+      busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
+    function drawSchool(session, model) {
+      if (typeof LMCSBuilding === 'undefined') return;
+      BUILDING = LMCSBuilding.clean(model) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: session.campus, sample: true }));
+      const box = document.getElementById('school-3d');
+      box.innerHTML = LMCSBuilding.svg(BUILDING); // every label is escaped inside svg()
+      box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); // phones: start with the middle of the school in view
+    }
+    function pickRoom(id) {
+      const r = BUILDING && LMCSBuilding.rooms(BUILDING).filter(function (x) { return x.id === id; })[0];
+      if (!r) return;
+      [].forEach.call(document.querySelectorAll('#school-3d .sb-room'), function (g) { g.classList.toggle('is-picked', g.getAttribute('data-room') === id); });
+      const said = document.getElementById('school-said');
+      const tile = r.host && document.querySelector('#rooms .gb-room[data-host="' + r.host + '"]');
+      if (tile) { tile.open = true; tile.scrollIntoView({ block: 'nearest' }); said.textContent = r.name + ': opened below.'; tile.querySelector('summary').focus(); return; }
+      said.textContent = r.name + (r.holds && r.name.indexOf(r.holds) === -1 ? ' (' + r.holds + ')' : '') + (LATER[r.type] ? ': ' + LATER[r.type] + ' later.' : '.');
+    }
+    function wireSchool() {
+      const box = document.getElementById('school-3d');
+      box.addEventListener('click', function (e) { const g = e.target.closest('.sb-room'); if (g) pickRoom(g.getAttribute('data-room')); });
+      box.addEventListener('keydown', function (e) { const g = e.target.closest('.sb-room'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickRoom(g.getAttribute('data-room')); } });
     }
     function showView(world) {
       document.getElementById('modules').hidden = world;
@@ -174,6 +204,7 @@
       if (window.LMCSEmoji) document.getElementById('base-name').insertBefore(LMCSEmoji.tag('base'), document.getElementById('base-name').firstChild);
       document.getElementById('view-home').addEventListener('click', function () { showView(false); });
       document.getElementById('view-world').addEventListener('click', function () { showView(true); });
+      wireSchool(); drawSchool(session, null);
       loadBase(session);
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }

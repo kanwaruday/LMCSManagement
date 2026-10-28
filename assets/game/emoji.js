@@ -19,7 +19,10 @@ var LMCSEmoji = (function () {
     // work
     day: '🗓️', dailyReport: '📊', issues: '🛠️', curriculum: '📚', homework: '📝', documents: '📋', salary: '💼', payroll: '🧮',
     rules: '📖', byeLaws: '⚖️', startingData: '🧾', fees: '💰', dayBook: '📒', closeDay: '🌙', deposits: '🏦', requests: '📥',
-    tools: '🧰', appointments: '📅', bus: '🚌', fuel: '⛽', routeVideo: '🎥', rollCall: '🙋', busCheck: '🔧', call: '📞', help: '❓'
+    tools: '🧰', appointments: '📅', bus: '🚌', fuel: '⛽', routeVideo: '🎥', rollCall: '🙋', busCheck: '🔧', call: '📞', help: '❓',
+    // rooms in the school building (assets/game/school-building.js)
+    classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
+    ground: '⚽', busBay: '🚏', site: '🧱'
   });
   function get(k) { return Object.prototype.hasOwnProperty.call(MAP, k) ? MAP[k] : ''; }
   function tag(k) {
