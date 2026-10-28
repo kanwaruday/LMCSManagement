@@ -48,3 +48,5 @@ t('no runs planned: route is not done and has no button; fuel is the red one', (
 });
 t('exactly one red button, always', () => [[2, 0], [2, 2], [0, 0], [1, 1]].forEach(([n, d]) =>
   assert.strictEqual(DL.missions({ runsNeeded: n, runsDone: d }).filter((x) => x.primary).length, 1)));
+t('scientific or hex notation is not a number', () => ['1e2', '0x10', '-5', '4 2'].forEach((v) => assert.strictEqual(DL.checkFill(Object.assign({}, full, { litres: v }), null).errors.litres, 'Check the number', v)));
+t('a bad date is shown as it came, never "undefined"', () => assert.strictEqual(DL.missions({ runsNeeded: 0, lastFill: '2026-13-01' })[0].status, 'Last fill: 2026-13-01'));

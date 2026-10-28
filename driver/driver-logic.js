@@ -17,8 +17,10 @@ var DriverLogic = (function () {
   var RATE_MIN = 60, RATE_MAX = 150; // ₹ per litre outside this asks "check the amount" (a warning, never a block)
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  function day(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : iso; }
-  function num(v) { var s = String(v == null ? '' : v).replace(/,/g, '').trim(); return s === '' ? NaN : Number(s); }
+  function day(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m && MONTHS[Number(m[2]) - 1] ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : iso; }
+  // plain digits with an optional decimal point; a comma is a thousands separator (58,210), so '45,5' reads 455 and is caught by
+  // the range or odometer checks rather than guessed at
+  function num(v) { var s = String(v == null ? '' : v).replace(/,/g, '').trim(); return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
 
   // one field's problem, or '' when it is fine. lastOdometer: the bus's last recorded odometer, or null.
   function fieldError(f, v, lastOdometer) {
