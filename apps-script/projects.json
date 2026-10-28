@@ -36,6 +36,7 @@
       "certificate-link-import",
       "staff-documents",
       "transport-uploads",
+      "driver-fill-confirm",
       "transport-capture",
       "driver-link",
       "driver-fuel"
@@ -102,7 +103,8 @@
       "office-setup",
       "office-ledger",
       "office-fuel-mirror",
-      "office-start"
+      "office-start",
+      "office-driver-fills"
     ]
   },
   "game": {

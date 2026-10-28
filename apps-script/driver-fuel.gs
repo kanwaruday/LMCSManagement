@@ -53,7 +53,7 @@ function dflLast_(reg) {
   } catch (e) { lastFill = null; lastOdometer = null; }
   try {
     dlkRows_(DFL_TAB_).forEach(function (f) {
-      if (String(f['Reg']) !== reg || String(f['Status']) !== 'pending') return;
+      if (String(f['Reg']) !== reg || ['pending', 'confirmed'].indexOf(String(f['Status'])) === -1) return; // confirmed: not in the mirror until the Day Book has it
       const day = dflDay_(f['Filled At']) || dflDay_(f['Received']), odo = Number(f['Odometer']);
       if (day && (!lastFill || day > lastFill)) lastFill = day;
       if (String(f['Odometer']) !== '' && isFinite(odo) && (lastOdometer == null || odo > lastOdometer)) lastOdometer = odo;
