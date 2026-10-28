@@ -74,6 +74,7 @@
   .dr-alt { display:flex; justify-content:center; margin:8px 0 0; }
   .dr-alt label { position:relative; display:inline-flex; align-items:center; min-height:48px; padding:0 12px; color:var(--gb-red-ink); font-weight:700; text-decoration:underline; cursor:pointer; }
   .dr-alt input { position:absolute; width:1px; height:1px; opacity:0; }
+  #refused { margin-top:14px; }
   .dr-why { margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-low-soft); color:var(--gb-low); font-weight:700; font-size:16px; }
   .dr-why:empty { display:none; }
   .dr-warn { margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-warn-soft); color:var(--gb-warn); font-weight:700; }
@@ -105,6 +106,7 @@
     <div class="dr-hub"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt=""><div><h1 id="hello">नमस्ते</h1><span id="reg" class="dr-reg"></span></div></div>
     <div id="next" class="gb-next dr-next"></div>
     <ul id="tiles" class="dr-tiles" aria-label="मेरे काम · My jobs"></ul>
+    <p id="refused" class="dr-why" role="alert"></p>
     <p id="waiting" class="dr-warn" role="status"></p>
   </section>
 
@@ -130,6 +132,6 @@
 </main>
 <nav id="bar" class="dr-bar" hidden><div class="dr-bar-in" id="barIn"></div></nav>
 <script src="./driver-logic.js?v=3c05ddeb"></script>
-<script src="./driver.js?v=098ebfdd"></script>
+<script src="./driver.js?v=384b5e37"></script>
 </body>
 </html>

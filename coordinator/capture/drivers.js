@@ -86,6 +86,9 @@ function showFresh(token, name, reg) {
   try { const q = qrcode(0, 'M'); q.addData(linkUrl(token)); q.make(); qr = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }).replace('<svg ', '<svg class="dp-qr" role="img" aria-label="QR code for the driver link" '); }
   catch (e) { qr = ''; } // no library: the link text below does the job
   $('fresh').innerHTML = `<h2 class="cap-h">${esc(name)} · ${esc(reg)}</h2>${qr || `<p class="dp-url">${esc(linkUrl(token))}</p>`}` +
+    '<ol class="dp-how"><li>Driver opens the camera on their own phone · ड्राइवर अपने फ़ोन का कैमरा खोलें</li>' +
+    '<li>Points it at this code and taps the link · इस कोड पर कैमरा रखें, लिंक दबाएँ</li>' +
+    '<li>Their phone says "नमस्ते, ' + esc(name) + '": done · फ़ोन पर नाम आ गया, बस</li></ol>' +
     '<p class="gb-note">Scan once on the driver\'s own phone. Anyone with this link can act as this driver: don\'t forward it elsewhere.</p>' +
     '<div class="gb-row-acts"><a class="gb-btn" target="_blank" rel="noopener" href="' + esc(whatsappUrl(token, name)) + '">Share on WhatsApp</a>' +
     '<button type="button" id="freshDone" class="gb-btn">Done</button></div>';
