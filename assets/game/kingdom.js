@@ -291,11 +291,18 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function top(d) {
     var n = ((d.kingdom && d.kingdom.campuses) || []).length;
     return h('header', { class: 'kg-top' }, [
-      h('div', { class: 'kg-crest' }, [svgUse('darbar', 'kg-crest-i'), h('div', {}, [h('h1', {}, [d.role === 'Owner' ? "Owner's Kingdom" : 'Your school']),
+      h('div', { class: 'kg-crest' }, [svgUse('darbar', 'kg-crest-i'), h('div', {}, [h(S.panels ? 'h2' : 'h1', {}, [d.role === 'Owner' ? "Owner's Kingdom" : 'Your school']),
         h('div', { class: 'kg-sub' }, ['Kingdom level ' + (Number(d.kingdom && d.kingdom.level) || 0) + ' · ' + n + (n === 1 ? ' base' : ' bases')])])]),
       h('div', { class: 'kg-topacts' }, [
         h('button', { type: 'button', class: 'kg-btn kg-tourbtn', onclick: function () { runTour(true); } }, ['Show me around']),
         h('button', { type: 'button', class: 'kg-btn kg-ask', onclick: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); } }, [buddyImg('avatar-winter-formal'), 'Ask Buddy'])])]);
+  }
+  // the screen skeleton (base.css): a page that passes `panels` gets the crest, the alliance and the tray as folded panels
+  // there, and one that passes `next` gets the next-step card in its fixed slot; without them the page reads top to bottom as before
+  function panel(title, cls, body, open) {
+    if (S.wasOpen) open = S.wasOpen.indexOf(cls) !== -1; // a re-render keeps what the person opened or closed
+    else if (open && window.matchMedia && !matchMedia('(min-width: 960px)').matches) open = false; // phones: panels start folded so the map stays in view
+    return h('details', { class: 'gb-panel ' + cls, 'data-panel': cls, open: open ? 'open' : null }, [h('summary', {}, [title]), h('div', { class: 'gb-panel-b' }, [body])]);
   }
   function message(text, retry) {
     return h('div', { class: 'kg-msg', role: 'alert' }, [buddyImg('winter-formal-neutral'), h('div', {}, [h('p', {}, [text]),
@@ -325,7 +332,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       { target: '.kg-next', text: "I'm Buddy, your royal advisor. This card always shows your one next step, and the bar shows how much of the Kingdom is built." },
       { target: '.kg-box', text: 'Each fort is a school; LMCS HQ in the middle is the society. The gold shield is its level, the bar its progress. Tap a fort to see its buildings.' },
       { target: '.kg-alliance', text: 'Your alliance heads. Tap one to see what they are working on.' },
-      { target: '.kg-tray', text: 'Approved requests wait here. Tap one, pick who follows it up, and it goes to their list.' }
+      { target: S.panels ? '.kg-traypanel' : '.kg-tray', text: 'Approved requests wait here. Tap one, pick who follows it up, and it goes to their list.' }
     ].filter(function (b) { return document.querySelector(b.target); });
     LMCSGame.tour(beats, { campus: 'HES', speaker: 'buddy' });
   }
@@ -339,13 +346,21 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var box = h('div', { class: 'kg-box', tabindex: '0', role: 'region', 'aria-label': 'Kingdom map. Scroll to look around, tap a fort to open it.' }, [map,
       h('div', { class: 'kg-legend', 'aria-hidden': 'true' }, [h('span', {}, [h('i', { class: 'kg-lg-lv' }), 'Level']), h('span', {}, [h('i', { class: 'kg-lg-hp' }), 'Steps built']), h('span', {}, ['Tap a fort to open it'])])]);
     var heads = d.heads || [];
-    S.el.appendChild(top(d));
+    if (S.panels) {
+      if (S.panels.firstChild) S.wasOpen = [].map.call(S.panels.querySelectorAll('details[open]'), function (x) { return x.getAttribute('data-panel'); });
+      S.panels.textContent = ''; S.panels.appendChild(panel('Your Kingdom', 'kg-me', top(d), true));
+    }
+    else S.el.appendChild(top(d));
     if ((d.sourcesDown || []).length) S.el.appendChild(h('p', { class: 'kg-quiet kg-down', role: 'status' }, ["Some buildings couldn't be checked just now, so their steps show as “couldn't check”. Nothing is lost; try again in a few minutes."]));
     var cele = celebrate(d); if (cele) S.el.appendChild(cele);
-    S.el.appendChild(nextCard(d, a));
+    if (S.next) { S.next.textContent = ''; S.next.appendChild(nextCard(d, a)); } else S.el.appendChild(nextCard(d, a));
     if (bases.length) { S.el.appendChild(box); S.el.appendChild(baseList(bases, nextId)); }
     else S.el.appendChild(h('p', { class: 'kg-quiet' }, ['No schools to show yet. They appear here once the game settings list them.']));
-    if (heads.length) S.el.appendChild(h('section', { class: 'kg-alliance', 'aria-labelledby': 'kg-allh' }, [h('h2', { id: 'kg-allh' }, ['Alliance']), h('div', { class: 'kg-heads' }, heads.map(headButton))]));
+    if (heads.length) {
+      var hs = h('div', { class: 'kg-heads' }, heads.map(headButton));
+      if (S.panels) S.panels.appendChild(panel('Alliance heads (' + heads.length + ')', 'kg-alliance', hs, false));
+      else S.el.appendChild(h('section', { class: 'kg-alliance', 'aria-labelledby': 'kg-allh' }, [h('h2', { id: 'kg-allh' }, ['Alliance']), hs]));
+    }
     if (api.hooks.after) api.hooks.after(d);
     // phones: start the map centred on LMCS HQ instead of its left edge
     var dar = map.querySelector('.kg-darbar');
@@ -373,6 +388,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function mount(el, opts) {
     opts = opts || {};
     S.el = el; S.session = opts.session; S.url = opts.backendUrl || ''; S.root = opts.root || ''; S.data = null;
+    S.panels = opts.panels || null; S.next = opts.next || null;
     if (!S.url) { el.textContent = ''; el.appendChild(message(LOAD_ERR, false)); return Promise.resolve(); }
     return load();
   }
@@ -481,7 +497,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   api.hooks.after = function (d) {
     if (d.role !== 'Owner') return;
     var cards = d.cards || [], heads = d.followHeads || [];
-    S.el.appendChild(h('section', { class: 'kg-tray', 'aria-labelledby': 'kg-trayh' }, [
+    var tray = h('section', { class: 'kg-tray', 'aria-labelledby': 'kg-trayh' }, [
       h('div', { class: 'kg-trayhd' }, [h('h2', { id: 'kg-trayh' }, ['Allocation tray']),
         h('p', { class: 'kg-quiet' }, [cards.length ? 'Approved requests waiting for a follow-up. Tap one, then pick who follows it up.' : '']) ]),
       cards.length ? h('ul', { class: 'kg-cards' }, cards.map(function (c) {
@@ -489,7 +505,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         return h('li', {}, [h('button', { type: 'button', class: 'kg-card', 'aria-label': cardText(c) + (sug ? '. Buddy suggests ' + sug.name : ''), onclick: function (e) { openFollow(c, e.currentTarget); } }, [
           h('span', { class: 'kg-csrc' }, ['Approved request' + (c.campus ? ' · ' + c.campus : '')]), h('span', { class: 'kg-ct' }, [c.title]),
           sug ? h('span', { class: 'kg-cm' }, ['Buddy suggests ' + sug.name]) : null])]);
-      })) : h('p', { class: 'kg-empty' }, ['Nothing waiting. When a request is approved and nobody is following it up, it lands here for you to hand out.'])]));
+      })) : h('p', { class: 'kg-empty' }, ['Nothing waiting. When a request is approved and nobody is following it up, it lands here for you to hand out.'])]);
+    if (S.panels) S.panels.appendChild(panel('Requests tray (' + cards.length + ')', 'kg-traypanel', tray, cards.length > 0));
+    else S.el.appendChild(tray);
   };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };

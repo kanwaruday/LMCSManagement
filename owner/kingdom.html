@@ -8,36 +8,43 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/kingdom.css?v=da829042" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=1b37ea9e" />
+  <link rel="stylesheet" href="../assets/game/kingdom.css?v=baa6d87c" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=87cce938" />
 </head>
-<body>
+<body class="gb-app">
 
-  <!-- the game header only (the wrapper gives it the gb scope; the Kingdom keeps kingdom.css), then the game bar.
-       The Kingdom is the Owner's hub: its exit is Owner home, the All tools shelf. The crest below holds the page's h1. -->
-  <div class="gb"><header class="gb-head"><div><div><span class="gb-head-t">LMCS Portal</span><p id="header-status">Owner · LMCS HQ and LMS 1–6</p></div><a href="index.html">All tools</a></div></header></div>
-  <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-
-  <main class="wrap">
-    <section class="hero" id="auth-root" style="padding-top:40px;">
-      <div id="gate-slot"></div>
-    </section>
-    <div id="app-root" style="display:none">
-      <div class="kg" id="kingdom-root"></div>
-    </div>
-  </main>
+  <!-- The screen skeleton (assets/game/base.css): header, then the game bar, the next-step slot, the stage (the map) and the
+       panels. The header's wrapper gives it the gb scope; the Kingdom itself keeps kingdom.css. -->
+  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header></div>
+  <div class="gb-shell">
+    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+    <div class="gb-next-slot" id="kg-next"></div>
+    <main class="gb-stage">
+      <section class="hero" id="auth-root" style="padding-top:24px;">
+        <div id="gate-slot"></div>
+      </section>
+      <div id="app-root" style="display:none">
+        <div class="kg" id="kingdom-root"></div>
+      </div>
+    </main>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden>
+      <div id="kg-panels" style="display:contents"></div>
+      <details class="gb-panel"><summary>All tools</summary><div class="gb-panel-b"><a class="gb-go" href="index.html"><span>Owner home<small>Today, Approvals, Payroll, Salary, Transport</small></span></a></div></details>
+    </aside>
+  </div>
 
   <script src="../assets/auth.js?v=451c7f3e"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
-  <script src="../assets/game/kingdom.js?v=72254ae7"></script>
-  <script src="../assets/game/rail.js?v=b8ecebb0"></script>
+  <script src="../assets/game/kingdom.js?v=ff8b46af"></script>
+  <script src="../assets/game/rail.js?v=4b2c2dd5"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
 
     function showKingdom(session) {
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
-      LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' });
+      document.getElementById('panels').hidden = false;
+      LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels') });
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); // Today (missions, quests) lives on Owner home
     }
     function gate(session) {

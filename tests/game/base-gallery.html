@@ -10,7 +10,8 @@
 </head>
 <body class="gb">
 <header class="gb-head"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a href="#">&larr; Checks</a></div></header>
-<!-- the game bar: <nav class="gb-rail" id="game-rail" aria-label="Game"></nav> straight after the header, then LMCSRail.mount (script at the end) -->
+<!-- the game bar, shown here as a plain row. On a real page it is the first child of div.gb-shell (the screen skeleton in base.css):
+     a bottom bar on phones, a left rail from 960px. See owner/kingdom.html and owner/index.html. -->
 <nav class="gb-rail" id="game-rail" aria-label="Game"></nav>
 <main class="gb-page-wide">
   <h1>Page title</h1>
@@ -97,14 +98,14 @@
     <div class="gb-alert gb-alert-warn"><p>The bus list is from yesterday. Today's will load when the GPS sheet updates.</p></div>
     <div class="gb-alert gb-alert-ok" role="status"><p>Cash count saved. The Accounts head sees it in their list.</p></div>
 
-    <h3>Table (rows turn into labelled blocks under 600 px)</h3>
-    <table class="gb-table">
+    <h3>Table (rows turn into labelled blocks under 600 px; the role attributes keep it a table for screen readers)</h3>
+    <table class="gb-table" role="table">
       <caption>Receipts, 27/10/2026</caption>
-      <thead><tr><th scope="col">Receipt</th><th scope="col">Student</th><th scope="col">Mode</th><th scope="col" class="gb-num">Amount (₹)</th></tr></thead>
-      <tbody>
-        <tr><td data-label="Receipt">R-1042</td><td data-label="Student">Class 5A, roll 12</td><td data-label="Mode">Cash</td><td data-label="Amount (₹)" class="gb-num">4,500</td></tr>
-        <tr><td data-label="Receipt">R-1043</td><td data-label="Student">Class 7B, roll 3</td><td data-label="Mode">UPI</td><td data-label="Amount (₹)" class="gb-num">12,000</td></tr>
-        <tr><td data-label="Receipt">R-1044</td><td data-label="Student">Class 2A, roll 21</td><td data-label="Mode">Cheque</td><td data-label="Amount (₹)" class="gb-num">—</td></tr>
+      <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Receipt</th><th role="columnheader" scope="col">Student</th><th role="columnheader" scope="col">Mode</th><th role="columnheader" scope="col" class="gb-num">Amount (₹)</th></tr></thead>
+      <tbody role="rowgroup">
+        <tr role="row"><td role="cell" data-label="Receipt">R-1042</td><td role="cell" data-label="Student">Class 5A, roll 12</td><td role="cell" data-label="Mode">Cash</td><td role="cell" data-label="Amount (₹)" class="gb-num">4,500</td></tr>
+        <tr role="row"><td role="cell" data-label="Receipt">R-1043</td><td role="cell" data-label="Student">Class 7B, roll 3</td><td role="cell" data-label="Mode">UPI</td><td role="cell" data-label="Amount (₹)" class="gb-num">12,000</td></tr>
+        <tr role="row"><td role="cell" data-label="Receipt">R-1044</td><td role="cell" data-label="Student">Class 2A, roll 21 (a long value wraps on a phone instead of pushing the page sideways)</td><td role="cell" data-label="Mode">Cheque</td><td role="cell" data-label="Amount (₹)" class="gb-num">—</td></tr>
       </tbody>
     </table>
 

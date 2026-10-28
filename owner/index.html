@@ -8,47 +8,31 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=1b37ea9e" />
-  <style>
-    /* page only; the rest is base.css (gb-) and style.css (the sign-in gate, appointments) */
-    #welcome-strip { flex-wrap:nowrap; }
-    #welcome-strip .gb-hub-who { flex:1 1 0; }
-    #modules h2 { margin:22px 0 4px; }
-  </style>
+  <link rel="stylesheet" href="../assets/game/base.css?v=87cce938" />
 </head>
-<body class="gb">
+<body class="gb gb-app">
 
-  <!-- Owner home is the All tools shelf; the Owner's hub is the Kingdom, so the way back goes there -->
-  <header class="gb-head"><div><div><h1>Owner home</h1><p id="header-status">All tools · LMCS HQ and LMS 1–6</p></div><a href="kingdom.html"><span aria-hidden="true">&lsaquo;</span> Kingdom</a></div></header>
-  <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-
-  <main class="gb-page">
-
-    <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
-    <section class="hero" id="auth-root" style="padding-top:24px;">
-      <h2>Sign in to Owner home</h2>
-      <div id="gate-slot"></div>
-    </section>
-
-    <div id="app-root" style="display:none">
-
-      <div class="gb-hub" id="welcome-strip">
-        <div class="gb-hub-who"><div><h2 class="gb-h1" id="hub-hello"></h2><span class="gb-hub-role">Owner · LMCS HQ and LMS 1–6</span></div></div>
-        <a href="#" class="gb-btn gb-btn-quiet" id="signout-link">Sign out</a>
+  <!-- The screen skeleton (assets/game/base.css). Owner home is the All tools shelf; the Owner's hub is the Kingdom, so the way back goes there.
+       Its stage is Today (game.js), which carries its own next step. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1>Owner home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><a href="kingdom.html"><span aria-hidden="true">&lsaquo;</span> Kingdom</a></div></header>
+  <div class="gb-shell">
+    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+    <main class="gb-stage">
+      <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
+      <section class="hero" id="auth-root" style="padding-top:24px;">
+        <h2>Sign in to Owner home</h2>
+        <div id="gate-slot"></div>
+      </section>
+      <div id="app-root" style="display:none">
+        <section id="game-root" aria-label="Today with Buddy" hidden></section>
       </div>
-
-      <div id="appt-box"></div>
-
-      <section id="game-root" aria-label="Today with Buddy" hidden></section>
-
-      <nav id="modules" aria-labelledby="modules-h">
-        <h2 id="modules-h">Owner tools</h2>
-        <ul class="gb-list" id="modules-grid"></ul>
-      </nav>
-
-    </div>
-
-  </main>
+    </main>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden>
+      <details class="gb-panel" id="modules"><summary>Owner tools</summary><div class="gb-panel-b"><ul class="gb-list" id="modules-grid"></ul></div></details>
+      <details class="gb-panel"><summary>Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
+      <details class="gb-panel"><summary>Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
+    </aside>
+  </div>
 
   <footer class="site">
     <div class="wrap">
@@ -59,7 +43,7 @@
   <script src="../assets/auth.js?v=451c7f3e"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
-  <script src="../assets/game/rail.js?v=b8ecebb0"></script>
+  <script src="../assets/game/rail.js?v=4b2c2dd5"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
@@ -93,7 +77,9 @@
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
 
-      document.getElementById('hub-hello').textContent = hello(session.name);
+      document.getElementById('hub-hello').textContent = hello(session.name) + ' · LMCS HQ and LMS 1–6';
+      document.getElementById('panels').hidden = false;
+      if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('modules').open = true; // phones: panels start folded so Today stays in view
 
       document.getElementById('signout-link').addEventListener('click', function (e) {
         e.preventDefault();

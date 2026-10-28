@@ -12,6 +12,7 @@ vm.runInContext(inline, vm.createContext({
   LMCS: { getSession: () => session, canViewOwnerPortal: () => true, signOut() {} },
   LMCSAppts: { mount() {} },
   LMCSRail: { mount() {} },
+  window: {},
 }));
 assert.ok(els['hub-hello'].textContent.includes('<img'), 'the name goes in as text');
 assert.ok(!made.some((h) => /<img|<b>All/.test(h)), 'no session value is written as markup');

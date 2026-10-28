@@ -16,13 +16,14 @@
      gb-btn-danger  an outlined deep-orange button for removing or undoing (red stays the action colour)
      gb-quest       a quest card: kicker, title, the one next step, progress bar, a done state (.is-done)
      gb-count       a count badge: red = waiting on you; gb-count-quiet = for information
-     gb-rail        the game bar under the header: Missions, Quests, Rallies, Events, Buddy (assets/game/rail.js draws it)
+     gb-app / gb-shell / gb-next-slot / gb-stage / gb-panels / gb-panel   the screen skeleton (below)
+     gb-rail        the game bar: Missions, Quests, Rallies, Events, Buddy (assets/game/rail.js draws it)
      gb-field       a form field: label, gb-input, gb-hint, gb-field-err (set aria-invalid="true" on the input)
      gb-loading, gb-alert gb-alert-err|warn|ok   loading (no shimmer), and messages that say what happened
-     gb-table       a table that turns into labelled rows under 600px (give each td data-label="Column")
+     gb-table       a table that turns into labelled rows under 600px (give each td data-label="Column"; role="table"/"row"/"cell" keep it a table for screen readers)
      gb-saved, gb-saved-local, gb-toast   "Sent ✓" inline, "Saved on this phone" (queued), one status line at the bottom
    No motion anywhere. */
-.gb, .gb-rail {
+.gb, .gb-app, .gb-rail {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
   --gb-gold:#e0a526; --gb-gold-ink:#7a5200; --gb-gold-soft:#fbefd3;
   --gb-ok:#167034; --gb-ok-soft:#e3f4e8; --gb-warn:#8a5a00; --gb-warn-soft:#fbf0da; --gb-low:#b4410f; --gb-low-soft:#fde9df;
@@ -34,10 +35,10 @@
 .gb *, .gb *::before, .gb *::after { box-sizing:border-box; }
 .gb :focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
 .gb :where(a) { color:var(--gb-red-ink); text-underline-offset:3px; } /* :where = no weight, so component links (game.css) keep their own colour */
-.gb h1, .gb h2, .gb .gb-h1, .gb .gb-h2 { font-family:var(--gb-serif); font-weight:400; line-height:1.2; margin:0 0 8px; }
-.gb h1, .gb .gb-h1 { font-size:26px; }
-.gb h2, .gb .gb-h2 { font-size:20px; }
-.gb h3 { font-size:16px; margin:0 0 6px; }
+:where(.gb) h1, :where(.gb) h2, .gb .gb-h1, .gb .gb-h2 { font-family:var(--gb-serif); font-weight:400; line-height:1.2; margin:0 0 8px; } /* :where = element headings carry no weight, so game.css panels and the appointments box keep theirs */
+:where(.gb) h1, .gb .gb-h1 { font-size:26px; }
+:where(.gb) h2, .gb .gb-h2 { font-size:20px; }
+:where(.gb) h3 { font-size:16px; margin:0 0 6px; }
 .gb [hidden] { display:none !important; }
 
 /* header: school red, title left, the way back right */
@@ -145,6 +146,7 @@
 .gb-count { display:inline-grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--gb-red); color:#fff;
   font:700 12.5px/1 var(--gb-font); font-variant-numeric:tabular-nums; }
 .gb-count-quiet { background:var(--gb-info-soft); color:var(--gb-info); }
+.gb-count[hidden] { display:none; }
 /* quest card */
 .gb-quest { display:flex; flex-direction:column; gap:8px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; padding:12px 14px; min-width:0; }
 .gb-quest-k { font-size:12.5px; font-weight:700; color:var(--gb-gold-ink); }
@@ -155,19 +157,60 @@
 .gb-quest.is-done .gb-bar > i { background:var(--gb-ok); }
 .gb-quest.is-done .gb-quest-next { color:var(--gb-ok); font-weight:700; }
 
-/* the game bar: sticky under the header, one row of five; the floating Buddy and the next-step bar keep the bottom */
-.gb-rail { position:sticky; top:0; z-index:800; margin:0; background:var(--gb-paper); border-bottom:1px solid var(--gb-line); }
-.gb-rail ul { list-style:none; display:flex; max-width:720px; margin:0 auto; padding:0 4px; }
+/* ── the screen skeleton (every role's screen; see the vault's Portal Flow Map) ──
+   <body class="gb gb-app">  header.gb-head  then  div.gb-shell holding, in this order:
+     nav.gb-rail      Missions, Quests, Rallies, Events, Buddy (rail.js): a bottom bar on phones, a left rail from 960px
+     div.gb-next-slot the one next-step card, always the first thing under the header
+     main.gb-stage    the map, the quest list or the work itself
+     aside.gb-panels  everything else, each a <details class="gb-panel"><summary>Title</summary><div class="gb-panel-b">…</div></details>:
+                      a row of buttons on phones (the open one takes the row), a column on the right from 960px
+   Nothing scrolls sideways; the stage scrolls up and down. */
+.gb-app { min-height:100vh; }
+.gb-shell { display:grid; grid-template-columns:minmax(0, 1fr); grid-template-areas:"next" "panels" "stage"; gap:12px; max-width:1360px; margin:0 auto; padding:12px 14px 24px; }
+.gb-next-slot { grid-area:next; min-width:0; }
+.gb-next-slot:empty { display:none; }
+.gb-stage { grid-area:stage; min-width:0; }
+.gb-panels { grid-area:panels; display:flex; flex-wrap:wrap; align-content:flex-start; gap:8px; min-width:0; }
+.gb-panels[hidden], .gb-rail[hidden] { display:none; }
+.gb-panel { flex:1 1 140px; min-width:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; }
+.gb-panel > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; font-weight:700; cursor:pointer; list-style:none; }
+.gb-panel > summary::-webkit-details-marker { display:none; }
+.gb-panel > summary::after { content:"▾"; margin-left:auto; color:var(--gb-muted); }
+.gb-panel[open] { flex-basis:100%; }
+.gb-panel[open] > summary::after { content:"▴"; }
+.gb-panel-b { padding:0 12px 12px; }
+.gb-panel:has(.gb-panel-b:empty) { display:none; } /* a panel whose content didn't come (no appointments today) stays out of the way */
+
+/* the game bar */
+.gb-rail, .gb-rail * { box-sizing:border-box; }
+.gb-rail { margin:0; background:var(--gb-paper); }
+.gb-rail ul { list-style:none; display:flex; margin:0; padding:0 4px; }
 .gb-rail li { flex:1 1 0; min-width:0; }
-.gb-rail-i { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:100%; min-height:58px; padding:6px 2px;
-  background:none; border:0; border-radius:10px; color:var(--gb-ink); font:600 12.5px/1.2 var(--gb-font); text-decoration:none; cursor:pointer; }
+.gb-rail-i { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:100%; min-height:60px; padding:6px 2px;
+  background:none; border:0; border-radius:10px; color:var(--gb-ink); font:600 12px/1.2 var(--gb-font); text-decoration:none; cursor:pointer; }
 .gb-rail-i:active { background:var(--gb-gold-soft); }
 .gb-rail-i svg, .gb-rail-i img { width:26px; height:26px; flex:none; }
 .gb-rail-i img { border-radius:50%; object-fit:cover; background:var(--gb-gold-soft); }
-.gb-rail-i .gb-count { position:absolute; top:3px; left:calc(50% + 6px); }
+.gb-rail-i .gb-count { position:absolute; top:4px; left:calc(50% + 6px); }
 .gb-rail-i.is-soon { color:var(--gb-muted); cursor:default; }
 .gb-rail-i.is-soon small { font-size:11px; font-weight:700; }
 .gb-rail-i:focus-visible { outline:3px solid var(--gb-focus); outline-offset:-3px; }
+/* phones: the rail is a bottom bar; the floating Buddy lifts above it and the old next-step bar gives way to the next-step slot */
+@media (max-width:959px) {
+  .gb-shell > .gb-rail { position:fixed; left:0; right:0; bottom:0; z-index:900; border-top:1px solid var(--gb-line); padding-bottom:env(safe-area-inset-bottom); }
+  .gb-app { padding-bottom:calc(64px + env(safe-area-inset-bottom)); --bd-lift:64px; }
+  .gb-app #lmcs-warm-chip { bottom:calc(76px + env(safe-area-inset-bottom)) !important; } /* auth.js's loading chip sets its place inline */
+}
+@media (min-width:960px) {
+  .gb-shell { grid-template-columns:104px minmax(0, 1fr) 320px; grid-template-rows:auto 1fr; grid-template-areas:"rail next panels" "rail stage panels"; gap:16px 24px; padding:20px 24px 32px 0; }
+  .gb-shell > .gb-rail { grid-area:rail; margin:-20px 0 -32px; border-right:1px solid var(--gb-line); } /* the rail runs from the header to the foot */
+  .gb-rail ul { position:sticky; top:0; flex-direction:column; gap:4px; padding:12px 8px; }
+  .gb-rail-i { min-height:68px; font-size:13px; }
+  .gb-panels { flex-direction:column; flex-wrap:nowrap; }
+  .gb-panel { flex:none; }
+}
+.gb-app .lg-nextbar { display:none; }
+#game-root { scroll-margin-top:16px; }
 
 /* form fields */
 .gb-field { margin:0 0 14px; }
@@ -216,9 +259,8 @@ textarea.gb-input { min-height:88px; resize:vertical; }
   .gb-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
   .gb-table tr { padding:8px 12px; border-top:1px solid var(--gb-line); }
   .gb-table tbody tr:first-child { border-top:0; }
-  .gb-table td { display:flex; justify-content:space-between; gap:12px; padding:3px 0; border:0; text-align:right; }
+  .gb-table td { display:flex; justify-content:space-between; gap:12px; padding:3px 0; border:0; text-align:right; min-width:0; overflow-wrap:anywhere; }
   .gb-table td::before { content:attr(data-label); flex:none; max-width:45%; text-align:left; color:var(--gb-muted); font-size:13px; font-weight:700; }
   .gb-table td:first-child { font-weight:700; }
   .gb-table caption { display:block; padding:10px 12px 2px; }
-  .gb-rail-i { font-size:11.5px; }
 }

@@ -19,8 +19,12 @@ var LMCSRail = (function () {
   // the item's spoken name: "Missions, 3 waiting"
   function label(name, n) { return n > 0 ? name + ', ' + n + ' waiting' : name; }
   function badge(n) { return n > 99 ? '99+' : String(n); }
+  // a stored value is used only when it has the right shape
+  function valid(c) { return !!c && typeof c === 'object' && [c.missions, c.quests].every(function (n) { return typeof n === 'number' && n >= 0 && n % 1 === 0; }); }
+  // the hub's Today panel: a hub link that already names a spot keeps it
+  function hubHref(hub) { hub = String(hub || 'index.html'); return hub.indexOf('#') === -1 ? hub + '#game-root' : hub; }
 
-  var api = { counts: counts, label: label, badge: badge };
+  var api = { counts: counts, label: label, badge: badge, valid: valid, hubHref: hubHref };
   if (typeof document === 'undefined') return api;
 
   var ICONS = {
@@ -36,7 +40,7 @@ var LMCSRail = (function () {
     try { var s = window.LMCS && LMCS.getSession(); return s && s.email ? KEY + String(s.email).toLowerCase() : null; } catch (_) { return null; }
   }
   function kept() {
-    try { var k = key(); return k ? JSON.parse(sessionStorage.getItem(k) || 'null') : null; } catch (_) { return null; }
+    try { var k = key(), c = k ? JSON.parse(sessionStorage.getItem(k) || 'null') : null; return valid(c) ? c : null; } catch (_) { return null; }
   }
   function keep(c) {
     try { var k = key(); if (k) sessionStorage.setItem(k, JSON.stringify(c)); } catch (_) { /* a private window: counts show once the Today panel draws */ }
@@ -46,16 +50,26 @@ var LMCSRail = (function () {
     if (!el) return;
     opts = opts || {};
     var root = opts.root || '';
-    var hub = (opts.hub || 'index.html') + '#game-root';
+    var hub = hubHref(opts.hub);
     var c = kept() || { missions: 0, quests: 0 };
 
-    function item(k, name, n) {
+    var links = {};
+    function item(k, name) {
       var a = document.createElement('a');
-      a.className = 'gb-rail-i'; a.href = hub; a.setAttribute('aria-label', label(name, n));
+      a.className = 'gb-rail-i'; a.href = hub;
       a.innerHTML = icon(k);
       a.appendChild(document.createTextNode(name));
-      if (n > 0) { var b = document.createElement('span'); b.className = 'gb-count'; b.setAttribute('aria-hidden', 'true'); b.textContent = badge(n); a.appendChild(b); }
+      var b = document.createElement('span'); b.className = 'gb-count'; b.setAttribute('aria-hidden', 'true'); a.appendChild(b);
+      links[k] = { a: a, b: b, name: name };
       return a;
+    }
+    // counts change in place, so a person on the bar keeps their focus
+    function show() {
+      ['missions', 'quests'].forEach(function (k) {
+        var l = links[k], n = c[k];
+        l.a.setAttribute('aria-label', label(l.name, n));
+        l.b.textContent = badge(n); l.b.hidden = !(n > 0);
+      });
     }
     function soon(k, name) {
       var s = document.createElement('span');
@@ -77,19 +91,17 @@ var LMCSRail = (function () {
       });
       return b;
     }
-    function draw() {
-      var ul = document.createElement('ul');
-      [item('missions', 'Missions', c.missions), item('quests', 'Quests', c.quests), soon('rallies', 'Rallies'), soon('events', 'Events'), buddy()]
-        .forEach(function (n) { var li = document.createElement('li'); li.appendChild(n); ul.appendChild(li); });
-      el.textContent = '';
-      el.appendChild(ul);
-    }
-    draw();
+    var ul = document.createElement('ul');
+    [item('missions', 'Missions'), item('quests', 'Quests'), soon('rallies', 'Rallies'), soon('events', 'Events'), buddy()]
+      .forEach(function (n) { var li = document.createElement('li'); li.appendChild(n); ul.appendChild(li); });
+    el.textContent = '';
+    el.appendChild(ul);
+    show();
     el.hidden = false; // pages keep the bar hidden until someone is signed in
     document.addEventListener('lmcs-game-today', function (e) {
       var n = counts(e.detail);
       if (n.missions === c.missions && n.quests === c.quests) return;
-      c = n; keep(c); draw();
+      c = n; keep(c); show();
     });
   }
 
