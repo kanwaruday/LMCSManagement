@@ -128,6 +128,9 @@ bw.handle(CFG, SECRET, dict(FWD, order=True, context={"page": "owner/kingdom.htm
 assert ("Owner order from Ask Buddy (Uday's verified Owner account; no Confirm needed: do it)\nUday's words: Move the LMS4 bus to 7:40\n"
         "Page: owner/kingdom.html (LMS2)\nUnverified summary: Change the LMS4 bus time") in runs[0].input, runs[0].input
 reset()
+bw.handle(CFG, SECRET, dict(FWD, order=True, summary="", reply="42 buses"))
+assert "Unverified summary: -\nBuddy's answer (unverified): 42 buses" in runs[0].input, runs[0].input
+reset()
 bw.handle(CFG, SECRET, dict(FWD, order="yes", context="owner/kingdom.html"))
 assert "Portal request for master agent (Uday tapped Confirm)" in runs[0].input and "Page: -" in runs[0].input
 

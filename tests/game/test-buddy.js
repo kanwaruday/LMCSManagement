@@ -287,17 +287,26 @@ test('order: an Owner ask with a proposal is confirmed at the reply and forwarde
   assert.strictEqual(store.get('buddy_pending'), '1'); // the reply marks pending, so the forward goes at the next poll
   assert.strictEqual(confirm(OWN, id).code, 'BUDDY_PROPOSAL_CLOSED'); // nothing left to tap
   assert.strictEqual(confirm(OWN, id, 'decline').code, 'BUDDY_PROPOSAL_CLOSED');
-  assert.deepStrictEqual(pull().items, [{ id, kind: 'forward', text: 'Make this map interactive', summary: 'Tap a base to open it',
+  assert.deepStrictEqual(pull().items, [{ id, kind: 'forward', text: 'Make this map interactive', summary: 'Tap a base to open it', reply: 'Here is a plan.',
     context: { page: 'owner/kingdom.html', campus: 'LMS2' }, order: true, attempt: 1 }]);
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).success, true);
   assert.strictEqual(thread().threads[0].proposalState, 'forwarded');
   assert.deepStrictEqual(pull().items, []);
   assert.strictEqual(inbox().filter((r) => r[1] === 'fclaim').length, 1);
   assert.strictEqual(inbox().filter((r) => r[1] === 'confirm').length, 0); // no confirm row is invented
-  // an answer without a proposal is never forwarded
+  // an answer without a proposal is forwarded too (V1 decides), once, with an empty summary; the dock shows no proposal
   reset();
   const q = ask(OWN, 'How many buses?').id; pull();
   reply({ id: q, kind: 'reply', text: '42', route: 'claude' });
+  assert.strictEqual(thread().threads[0].proposal, null); assert.strictEqual(thread().threads[0].proposalState, 'confirmed');
+  assert.strictEqual(confirm(OWN, q).code, 'BUDDY_PROPOSAL_CLOSED');
+  assert.deepStrictEqual(pull().items, [{ id: q, kind: 'forward', text: 'How many buses?', summary: '', reply: '42', context: {}, order: true, attempt: 1 }]);
+  assert.strictEqual(reply({ id: q, kind: 'forwarded', via: 'telegram' }).success, true);
+  assert.strictEqual(thread().threads[0].proposalState, 'forwarded');
+  assert.deepStrictEqual(pull().items, []);
+  // a failed ask (no answer) is not forwarded
+  reset();
+  const f = ask(OWN, 'x').id; pull(); reply({ id: f, kind: 'failed', reason: 'timeout' });
   assert.strictEqual(thread().threads[0].proposalState, null);
   assert.deepStrictEqual(pull().items, []);
   // only an ask row buddyAsk_ wrote counts: a seeded ask with no order, or order other than true, waits for the tap
@@ -360,7 +369,7 @@ test('forward: fails 3 times, stops being offered, asks are served', () => {
   const id = answered('Add a bus stop');
   confirm(OWN, id);
   clock += MIN;
-  const a2 = ask(OWN, 'second').id;
+  const a2 = legacy(ask(OWN, 'second').id); // a pre-orders ask: its plain answer does not forward
   assert.deepStrictEqual(pull().items.map((i) => i.kind + i.attempt), ['forward1']);
   assert.strictEqual(pull().items[0].id, a2); // the forward being sent never holds up the queue
   reply({ id: a2, kind: 'reply', text: 'ok', route: 'claude' });

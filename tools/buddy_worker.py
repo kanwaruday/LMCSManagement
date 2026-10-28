@@ -233,7 +233,9 @@ def forward(cfg, item):
     head = ("Owner order from Ask Buddy (Uday's verified Owner account; no Confirm needed: do it)" if item.get("order") is True
             else "Portal request for master agent (Uday tapped Confirm)")
     text = "%s\nUday's words: %s\nPage: %s%s\nUnverified summary: %s" % (
-        head, item.get("text", ""), ctx.get("page", "") or "-", (" (" + ctx["campus"] + ")") if ctx.get("campus") else "", item.get("summary", ""))
+        head, item.get("text", ""), ctx.get("page", "") or "-", (" (" + ctx["campus"] + ")") if ctx.get("campus") else "", item.get("summary", "") or "-")
+    if item.get("order") is True and isinstance(item.get("reply"), str):
+        text += "\nBuddy's answer (unverified): %s" % item["reply"][:2000]
     try:
         if _send(cfg, text):
             return "sendmessage"
