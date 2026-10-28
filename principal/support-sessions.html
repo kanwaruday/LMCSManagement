@@ -174,9 +174,12 @@
         return;
       }
       const first = currentMeta.employees[0];
+      // Plain gb-btn, not gb-btn-primary -- once the rubric form renders
+      // below, its own Submit is the one red primary action; Go staying
+      // red too put two competing red CTAs on screen at once (GM pass).
       slot.innerHTML = '<div class="gb-next"><div class="gb-next-b"><span class="gb-next-k">Next</span>'
         + '<p class="gb-next-t">Evaluate ' + esc(first.name) + '</p>'
-        + '<a class="gb-btn gb-btn-primary" href="#ss-rubric-rows" id="ss-next-go">Go</a></div></div>';
+        + '<a class="gb-btn" href="#ss-rubric-rows" id="ss-next-go">Go</a></div></div>';
       document.getElementById('ss-next-go').addEventListener('click', function () {
         document.getElementById('ss-employee').value = first.employeeId;
         document.getElementById('ss-employee').focus();
