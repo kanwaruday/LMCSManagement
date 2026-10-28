@@ -34,6 +34,21 @@
 // first (see ADDING A NEW ROLE) once Uday finalizes each one, rather
 // than assuming it matches Teacher's shape.
 //
+// SUPERSEDED (2026-10-28, via V1 LMCS Master Agent, Uday's own go-ahead
+// over Telegram): the note below stood for 7 weeks and was correct for
+// that whole stretch -- an early 2026-09-02 attempt to go Forms-free got
+// pulled back, confirmed-then-reverted again 2026-09-11 after the
+// shared Apps Script deployment broke mid-rollout (see the "Custom-form
+// prototype" section's own history below). This time IS the real
+// migration: all 6 Google Forms are being replaced by native in-game
+// forms inside principal/ -- see ssFormMeta_/ssSubmit_ below for the
+// unified-schema version. syncAllSSForms()/syncOneSSRole_() below stay
+// exactly as they are and keep running (nothing here retires the
+// Forms' existence or EmpMaster-dropdown sync), they just stop being
+// the thing anyone is asked to submit through, per Uday via V1: "leave
+// principals-daily-reporting/ linking to it rather than removing
+// anything yet." Original note, kept for the history:
+//
 // IMPORTANT (2026-09-02, confirmed by Uday, correcting an earlier
 // "fresh backend, no Forms" direction from a different session): the
 // 6 Teacher SS Google Forms ARE the real, ongoing submission mechanism
@@ -118,7 +133,13 @@ function getDepartmentByCode_() {
 // vary by school, and the employee-choice list should span every
 // school this role applies to, typically distinguished by including a
 // School question elsewhere in the form that this engine leaves
-// alone).
+// alone). `rubricVersion` (2026-10-28) is read by ssFormMeta_/
+// ssSubmit_/ssEnsureRubricVersionRow_ further down for the unified SS
+// Submissions schema -- bump it by hand whenever rubricTitles for that
+// role actually changes, so SS Rubrics (its own small history tab)
+// snapshots the NEW wording under a new version instead of relabeling
+// every old submission's Score1-10 to mean something they didn't when
+// they were recorded.
 const SS_ROLE_CONFIGS = {
   teacher: {
     label: 'Teacher SS',
@@ -154,6 +175,7 @@ const SS_ROLE_CONFIGS = {
       'Dedication Towards Class',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     // Per-campus form -> its name-question title is literally that
     // campus's label + ' Teacher Name' (matches the live forms exactly
     // -- this field's title was NOT part of the DR->SS rename).
@@ -205,6 +227,7 @@ const SS_ROLE_CONFIGS = {
       'Attitude Towards LMS',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Computer Teacher Name'; },
     // Department taxonomy confirmed 2026-09-09 via action=designations --
     // "AdminIT" covers the 4 active Computer Teacher records (designation
@@ -241,6 +264,7 @@ const SS_ROLE_CONFIGS = {
       'Attitude towards LMS',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Physical Training Instructor Name'; },
     // "AdminPTI" covers all 5 active PTI records despite 3 different
     // designation spellings ("Games Teacher (PTI)", "GAMES TEACHER
@@ -270,6 +294,7 @@ const SS_ROLE_CONFIGS = {
       'Soft Skills with Parents',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Fee Clerk Name'; },
     // "AdminClerk" covers all "Clerk + PRO" / "CLERK+PRO" / "CLERK"
     // records (one row's Department cell itself carried the invisible
@@ -322,6 +347,7 @@ const SS_ROLE_CONFIGS = {
       'Attitude towards LMS',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Staff Name'; },
     matchesEmployee: function (empRow, school) {
       return empRow.school === school && empRow.department.toLowerCase() === 'non-teaching';
@@ -370,6 +396,7 @@ const SS_ROLE_CONFIGS = {
       'Attitude towards LMS',
     ],
     rubricMax: 10,
+    rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Driver Name'; },
     matchesEmployee: function (empRow, school) {
       return empRow.school === school && empRow.department.toLowerCase() === 'transport';
@@ -537,52 +564,105 @@ function installDailySSSyncTrigger() {
 // Once each form exists: paste its id into the matching
 // `forms.all` PASTE_FORM_ID_* placeholder above.
 
-// ── Custom-form prototype (2026-09-11) ──────────────────────────────
-// action=ssformmeta (GET) / action=submitss (POST) -- the custom-HTML-
-// form replacement for a role's Google Form, inside the portal itself.
-// IT SS is the first role wired to this (see principals-daily-
-// reporting/index.html's panel-itss for the frontend half) -- per Uday,
-// if IT SS's load time actually improves over the embedded-iframe
-// version, the other 5 roles get the same treatment.
-//
-// SS_ROLE_CONFIGS above stays the ONE source of truth for a role's
-// shape (rubricTitles/rubricMax/nameFieldTitle/responseSheetId/
-// responseTabs) -- nothing about it is redefined here or in the
-// frontend; ssFormMeta_ just packages it up for the browser to render.
-// Submissions land in the EXACT SAME response sheet/tab the Google Form
-// already writes to -- ss-tracker.gs's Dashboard reads that sheet by
-// HEADER NAME (see its own file header), not column position, so this
-// needed zero changes there to keep working.
-//
-// NOTE (2026-09-02, see main.gs's header): an earlier session already
-// tried a Forms-free rebuild once and Uday pulled it back, specifically
-// asking to check first before trying again -- confirmed 2026-09-11 to
-// go ahead this time BECAUSE storage stays the same Google Sheet
-// (unlike whatever the earlier attempt did); this isn't re-litigating
-// that note, it's the "check with Uday first" it asked for.
+// ── Unified SS Submissions schema (2026-10-28) ──────────────────────
+// action=ssformmeta (GET) / action=submitss (POST) -- the native
+// in-game form for all 6 roles, replacing their Google Forms inside
+// principal/ (see the SUPERSEDED note up top for how this file's own
+// history got here; this is the real migration). Decided by Uday via
+// V1 LMCS Master Agent, 2026-10-28:
+//   - One unified "SS Submissions" tab, not one per role: Timestamp,
+//     EmployeeId, CampusId, EvaluatorEmail, Role, RubricVersion,
+//     Score1-10. Every field maps to exactly one column; EmployeeId is
+//     the join key, never a typed "CODE NAME" string.
+//   - A role's rubric wording can change later without relabeling old
+//     rows: SS Submissions stores RubricVersion per row; SS Rubrics is
+//     the (Role, RubricVersion) -> titles/max history, append-only,
+//     written the first time a version is actually used (see
+//     ssEnsureRubricVersionRow_).
+//   - Both tabs live in the SAME "LMCS Teacher SS 2026 (Responses)"
+//     workbook the 4 shared-form roles' OLD tabs already use -- one
+//     spreadsheet ID to track, not a new one -- and are lazily created
+//     on first write (ssEnsureTab_), same pattern as the Game backend's
+//     cqEnsureTab_ ("Setup Data" tab) -- no manual setup step for Uday.
+//   - Old per-role tabs (SS_ROLE_CONFIGS[x].responseSheetId/
+//     responseTabs) stay exactly as they are: READ-ONLY HISTORY, never
+//     written to again by this file, never backfilled into the new
+//     schema. ss-tracker.gs reads BOTH so the dashboards stay
+//     continuous across the cutover -- see its own header for how.
 
 /** 'LMS1'..'LMS6' (portal SESSION.campusId / SELECTED_CAMPUS_ID format)
  *  -> 'LMS 1'..'LMS 6' (SS_ROLE_CONFIGS key format), or null if
  *  unrecognized. The two formats coexist in this project on purpose
  *  (SS_PREFIX_TO_SCHOOL above vs main.gs's ALL_CAMPUSES) -- every place
- *  that crosses between them goes through this one helper. */
+ *  that crosses between them goes through this one helper. The NEW
+ *  schema's own CampusId column stores the portal format directly
+ *  ('LMS1', no space) -- this helper is only for crossing INTO
+ *  SS_ROLE_CONFIGS's older 'LMS 1' convention (forms/responseTabs
+ *  lookups), not a second storage format. */
 function ssPortalCampusToFormKey_(campusId) {
   const m = /^LMS([1-6])$/.exec(String(campusId || '').trim().toUpperCase());
   return m ? 'LMS ' + m[1] : null;
 }
 
+const SS_SUBMISSIONS_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)" -- same workbook as the old shared-form roles, 2 new tabs
+const SS_SUBMISSIONS_TAB = 'SS Submissions';
+const SS_SUBMISSIONS_HEADER = ['Timestamp', 'EmployeeId', 'CampusId', 'EvaluatorEmail', 'Role', 'RubricVersion',
+  'Score1', 'Score2', 'Score3', 'Score4', 'Score5', 'Score6', 'Score7', 'Score8', 'Score9', 'Score10'];
+const SS_RUBRICS_TAB = 'SS Rubrics';
+const SS_RUBRICS_HEADER = ['Role', 'RubricVersion', 'RubricMax',
+  'Title1', 'Title2', 'Title3', 'Title4', 'Title5', 'Title6', 'Title7', 'Title8', 'Title9', 'Title10'];
+
+function ssSubmissionsBook_() { return SpreadsheetApp.openById(SS_SUBMISSIONS_SHEET_ID); }
+
+/** `sheetName`'s tab inside `book`, created with `header` as its first
+ *  row (plain text, so Sheets never auto-converts an id-looking header
+ *  cell) if it doesn't exist yet. Mirrors the Game backend's
+ *  cqEnsureTab_ exactly -- same lazy-create-on-first-write pattern, so
+ *  there's no manual "run this once" step for either new tab. */
+function ssEnsureTab_(book, sheetName, header) {
+  let sh = book.getSheetByName(sheetName);
+  if (!sh) {
+    sh = book.insertSheet(sheetName);
+    sh.getRange(1, 1, 1, header.length).setNumberFormat('@').setValues([header]);
+  }
+  return sh;
+}
+
+/** Appends (roleKey, config.rubricVersion)'s titles/max to SS Rubrics,
+ *  but only the FIRST time that exact pair is used -- SS Rubrics is
+ *  append-only history, a row is never edited once a version has
+ *  shipped (that's the whole point: changing SS_ROLE_CONFIGS's
+ *  rubricTitles later and bumping rubricVersion writes a NEW row here
+ *  instead of relabeling what old Score1-10 values meant). Cheap full-
+ *  column scan: this tab gains one row per role per rubric change, not
+ *  per submission. */
+function ssEnsureRubricVersionRow_(book, roleKey, config) {
+  const sh = ssEnsureTab_(book, SS_RUBRICS_TAB, SS_RUBRICS_HEADER);
+  const values = sh.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === roleKey && Number(values[i][1]) === config.rubricVersion) return; // already recorded
+  }
+  const titles = [];
+  for (let i = 0; i < 10; i++) titles.push(config.rubricTitles[i] || '');
+  const targetRow = sh.getLastRow() + 1;
+  sh.getRange(targetRow, 1, 1, 1).setNumberFormat('@'); // Role -- plain text
+  sh.getRange(targetRow, 1, 1, 3 + titles.length).setValues([[roleKey, config.rubricVersion, config.rubricMax].concat(titles)]);
+}
+
 /** Called from main.gs's doGet for action=ssformmeta. Returns everything
  *  the frontend needs to RENDER one role's form: label, rubric
- *  titles/max, and the employee choice list -- the same list
- *  getActiveEmployeeChoices_ keeps the Google Form's own dropdown synced
- *  with, additionally narrowed to `schoolParam` (portal format) when
- *  given. That narrowing is NEW here, not in matchesEmployee() itself
- *  (which stays school-blind for itComputer/pti/feeClerkPRO -- it still
- *  drives the Form sync unchanged) -- the whole point of this prototype
- *  is that the portal already knows which campus you're in, so the
- *  dropdown can be pre-filtered instead of asking the person to also
- *  pick the right school by hand inside the form (the exact mixup this
- *  replaces). */
+ *  titles/max/version, and the employee choice list -- the same list
+ *  getActiveEmployeeChoices_ keeps the (still-running, now-unlinked)
+ *  Google Form's own dropdown synced with, additionally narrowed to
+ *  `schoolParam` (portal format) when given. That narrowing is NOT in
+ *  matchesEmployee() itself (which stays school-blind for itComputer/
+ *  pti/feeClerkPRO -- it still drives the Form sync, unchanged) -- the
+ *  portal already knows which campus you're in, so the dropdown is
+ *  pre-filtered instead of asking the person to also pick the right
+ *  school by hand (the exact mixup the old shared Forms had). Each
+ *  employee carries `employeeId` (the clean EmpMaster code, e.g.
+ *  "KUL/18/10/069") -- the join key the new schema is keyed by, not a
+ *  "CODE NAME" display string. */
 function ssFormMeta_(caller, roleKey, schoolParam) {
   const config = SS_ROLE_CONFIGS[roleKey];
   if (!config || ACTIVE_SS_ROLES.indexOf(roleKey) < 0) return { success: false, error: 'Unknown role: ' + roleKey };
@@ -614,46 +694,45 @@ function ssFormMeta_(caller, roleKey, schoolParam) {
     const empRow = { code: code, name: String(rows[i][nameCol] || '').trim(), school: empSchool, department: departmentByCode[code] || '' };
     if (!config.matchesEmployee(empRow, formKey)) continue;
     if (school && empRow.school !== school) continue; // portal-driven narrowing, see comment above
-    employees.push({ code: empRow.code, name: empRow.name, label: empRow.code + ' ' + empRow.name });
+    employees.push({ employeeId: empRow.code, name: empRow.name, label: empRow.code + ' ' + empRow.name });
   }
   employees.sort(function (a, b) { return a.label.localeCompare(b.label); });
 
   return {
     success: true,
+    role: roleKey,
     label: config.label,
     rubricTitles: config.rubricTitles,
     rubricMax: config.rubricMax,
+    rubricVersion: config.rubricVersion,
     employees: employees,
   };
 }
 
 /** Called from main.gs's doPost for action=submitss -- appends one row
- *  to the role's response sheet/tab, the custom-form replacement for a
- *  Google Form submission. Writes by HEADER NAME, not fixed column
- *  position, so it lands correctly regardless of the sheet's exact
- *  column order -- matches how ss-tracker.gs itself READS this same
- *  sheet (header.indexOf(), see its own file header). `body`: {role,
- *  school (portal format), employeeCode, employeeName, scores (array,
- *  same order as config.rubricTitles)}. Email Address is the VERIFIED
- *  caller's own email, never client-supplied -- a Google Form lets
- *  anyone type any email into that field; this closes that.
+ *  to the unified "SS Submissions" tab (see the section header above
+ *  for the schema and why it replaced the old per-role Google-Form-
+ *  shaped tabs). `body`: {role, school (portal format, e.g. "LMS1"),
+ *  employeeId, scores (array, same order as config.rubricTitles)}.
+ *  EvaluatorEmail is the VERIFIED caller's own email, never client-
+ *  supplied. `employeeId` is checked against ssFormMeta_'s OWN employee
+ *  list for this exact (role, school, caller) -- not just "is this a
+ *  non-empty string" -- so a submission can't name someone who isn't
+ *  currently a legitimate choice (reuses ssFormMeta_ rather than
+ *  reimplementing the same roster-matching logic a second time; its
+ *  two sheet reads are memoized per execution, so this costs nothing
+ *  extra). RubricVersion is stamped from config (not client-supplied)
+ *  so a stale frontend can't claim an old version's shape for a new
+ *  submission.
  *
  *  LOCKED the same way principal-dr.gs's principalDrSaveDailyReport_ is
- *  -- appendRow itself is atomic, but reading the header row and
- *  building the row array from it isn't a single indivisible step, and
- *  serializing writes here is cheap given how rarely two SS submissions
- *  for the same role land in the same instant. */
+ *  -- ensuring the SS Rubrics version row and appending the submission
+ *  row isn't a single indivisible step, and serializing writes here is
+ *  cheap given how rarely two SS submissions land in the same instant. */
 function ssSubmit_(caller, body) {
   const roleKey = String(body.role || '');
   const config = SS_ROLE_CONFIGS[roleKey];
   if (!config || ACTIVE_SS_ROLES.indexOf(roleKey) < 0) return { success: false, error: 'Unknown role: ' + roleKey };
-
-  const school = ssPortalCampusToFormKey_(body.school);
-  if (!school) return { success: false, error: 'Missing/unknown school' };
-  if (caller.campusId !== 'ALL' && ssPortalCampusToFormKey_(caller.campusId) !== school) {
-    return { success: false, error: 'Not authorized for that campus' };
-  }
-  const formKey = config.perCampus ? school : 'all';
 
   const scores = Array.isArray(body.scores) ? body.scores : [];
   if (scores.length !== config.rubricTitles.length) {
@@ -665,14 +744,15 @@ function ssSubmit_(caller, body) {
       return { success: false, error: 'Score for "' + config.rubricTitles[i] + '" must be 0-' + config.rubricMax };
     }
   }
-  const employeeCode = String(body.employeeCode || '').trim();
-  const employeeName = String(body.employeeName || '').trim();
-  if (!employeeCode || !employeeName) return { success: false, error: 'Employee required' };
 
-  const tabName = config.responseTabs[formKey];
-  const sheet = SpreadsheetApp.openById(config.responseSheetId).getSheetByName(tabName);
-  if (!sheet) return { success: false, error: 'Response sheet tab not found: ' + tabName };
+  const meta = ssFormMeta_(caller, roleKey, body.school); // also the school/campus authorization check
+  if (!meta.success) return meta;
+  const employeeId = String(body.employeeId || '').trim();
+  const employee = meta.employees.filter(function (e) { return e.employeeId === employeeId; })[0];
+  if (!employee) return { success: false, error: 'Not a current choice for this role/school' };
 
+  const campusId = String(body.school || '').trim().toUpperCase();
+  const book = ssSubmissionsBook_();
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -680,22 +760,18 @@ function ssSubmit_(caller, body) {
     return { success: false, error: 'Another submission is in progress -- please try again in a moment.' };
   }
   try {
-    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
-    const row = new Array(header.length).fill('');
-    const set = function (title, value) {
-      const col = header.indexOf(title);
-      if (col >= 0) row[col] = value;
-    };
-    set('Timestamp', new Date());
-    set('Email Address', caller.email);
-    set(config.nameFieldTitle(formKey), employeeCode + ' ' + employeeName);
-    // ponytail: a "School" column, if the sheet has one, is left blank
-    // for rows written this way (its exact header text isn't confirmed
-    // live) -- ss-tracker.gs never reads it, so nothing downstream
-    // breaks; add `set('School', school)` once that text is confirmed,
-    // if a human skimming the sheet ends up needing it filled in.
-    config.rubricTitles.forEach(function (title, i) { set(title, Number(scores[i])); });
-    sheet.appendRow(row);
+    ssEnsureRubricVersionRow_(book, roleKey, config);
+    const sh = ssEnsureTab_(book, SS_SUBMISSIONS_TAB, SS_SUBMISSIONS_HEADER);
+    const targetRow = sh.getLastRow() + 1;
+    // EmployeeId, CampusId, EvaluatorEmail, Role -- plain text, never
+    // auto-interpreted as a number/date/formula. Timestamp stays a real
+    // Date (sortable in the Sheet UI, same as the old Form-written
+    // tabs); Score1-10/RubricVersion stay real numbers (so a SUM/
+    // AVERAGE typed directly into the Sheet works).
+    sh.getRange(targetRow, 2, 1, 4).setNumberFormat('@');
+    const row = [new Date(), employeeId, campusId, caller.email, roleKey, config.rubricVersion]
+      .concat(scores.map(function (s) { return Number(s); }));
+    sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
     return { success: true };
   } finally {
     lock.releaseLock();

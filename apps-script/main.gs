@@ -33,18 +33,17 @@
 //   ss-forms-sync.gs    -- Started Run-menu only (keeps every SS Google
 //                         Form's Name dropdown + rubric validation
 //                         live); now ALSO action=ssformmeta/submitss
-//                         (added 2026-09-11) -- the custom-HTML-form
-//                         prototype that replaces a role's Google Form
-//                         in the portal itself, IT SS first (see its own
-//                         header note). Turned out to be THE generic
-//                         engine for all 6 roles (Teacher/IT/PTI/Clerk/
-//                         Non-Teaching/Driver) via SS_ROLE_CONFIGS,
-//                         rather than one file per role as originally
-//                         planned -- ss-tracker.gs below AND the new
-//                         ssformmeta/submitss actions all reuse that same
-//                         config, one source of truth for "what does
-//                         this role's data look like" (rubric titles,
-//                         name field, where responses live).
+//                         (2026-10-28) -- the native in-game forms for
+//                         all 6 roles (Teacher/IT/PTI/Clerk/Non-Teaching/
+//                         Driver SS) inside principal/, replacing their
+//                         Google Forms. SS_ROLE_CONFIGS is THE generic
+//                         engine driving all 6 (one source of truth for
+//                         "what does this role's data look like"),
+//                         reused by the unified "SS Submissions"/
+//                         "SS Rubrics" schema here AND by ss-tracker.gs
+//                         below -- see ss-forms-sync.gs's own header for
+//                         the schema and how old Google-Form history
+//                         stays readable alongside it.
 //   ss-tracker.gs       -- action=ssdashboard. The SS completion/
 //                         compliance tracker across all 6 roles: quota
 //                         compliance, Principal Compliance escalation,

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Support Sessions</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
+  <link rel="stylesheet" href="../assets/campus-picker.css" />
+  <style>
+    /* Page-only: everything else comes from base.css (gb-) and campus-picker.css. */
+    .ss-card { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; padding:14px; margin-bottom:12px; }
+    .ss-card h2 { margin:0 0 4px; font-size:15px; }
+    .ss-card .gb-muted { margin:0 0 10px; font-size:13px; }
+    .ss-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--gb-line); }
+    .ss-row:last-child { border-bottom:none; }
+    .ss-row label { flex:1; font-weight:600; font-size:14px; }
+    .ss-row input[type=number] { max-width:84px; text-align:center; font-weight:700; }
+    .ss-empty { padding:10px 0; color:var(--gb-muted); font-size:13px; }
+    .ss-flash { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px; }
+    .ss-flash.ok { color:var(--gb-ok); background:#eafaf0; }
+    .ss-flash.err { color:#b42318; background:#fdeceb; }
+    .ss-flash:empty { display:none; }
+    #ss-submit { margin-top:4px; }
+  </style>
+</head>
+<body class="gb gb-app">
+
+  <header class="gb-head"><div><div><h1 id="ss-title">Support Sessions</h1><p id="header-status">La Montessori Schools</p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> Principal portal</a></div></header>
+  <div class="gb-shell">
+    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+    <main class="gb-stage">
+      <section id="auth-root"><div id="gate-slot"></div></section>
+
+      <div id="app-root" style="display:none">
+        <div class="ss-card">
+          <h2>School &amp; role</h2>
+          <p class="gb-muted">Evaluate one Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member at a time.</p>
+          <div class="gb-field"><label for="ss-campus-mount">School</label><div id="ss-campus-mount"></div></div>
+          <div class="gb-field"><label for="ss-role">Role being evaluated</label>
+            <select id="ss-role" class="gb-input"></select>
+          </div>
+        </div>
+
+        <div class="ss-flash" id="ss-flash" role="status"></div>
+
+        <div class="ss-card" id="ss-form-card" hidden>
+          <h2 id="ss-form-title">Rubric</h2>
+          <p class="gb-muted" id="ss-form-hint"></p>
+          <div class="gb-field"><label for="ss-employee">Staff member</label>
+            <select id="ss-employee" class="gb-input"></select>
+          </div>
+          <div id="ss-rubric-rows"></div>
+          <button type="button" class="gb-btn" id="ss-submit" disabled>Submit</button>
+        </div>
+      </div>
+    </main>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden></aside>
+  </div>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js?v=df0cbfd3"></script>
+  <script src="../assets/game/emoji.js?v=f2812675"></script>
+  <script src="../assets/game/rail.js?v=e726bf9c"></script>
+  <script src="../assets/campus-picker.js"></script>
+  <script>
+    // "LMCS Principal's Daily Reporting Backend" -- same project/URL as
+    // principals-daily-reporting/index.html's PDR_BACKEND_URL and
+    // principal/index.html's own. action=ssformmeta (GET) / submitss
+    // (POST), see apps-script/ss-forms-sync.gs's own header for the
+    // unified "SS Submissions" schema this writes to.
+    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+    const SLOW = 'The server answered with an error page three times. It is probably waking up: wait a minute and try again.';
+    const OFFLINE = 'Could not reach the server. Check the connection and try again.';
+
+    // Role keys/labels only -- NOT the rubric shape (that's ssformmeta's
+    // job, the single source of truth in SS_ROLE_CONFIGS server-side).
+    // Same kind of static client-side list principal/index.html's own
+    // PATHS already is -- labels for what to show before the server
+    // round trip, nothing about a role's actual data shape.
+    const SS_ROLES = [
+      { key: 'teacher', label: 'Teacher SS' },
+      { key: 'itComputer', label: 'IT Teacher SS' },
+      { key: 'pti', label: 'PTI SS' },
+      { key: 'feeClerkPRO', label: 'Fee Clerk SS' },
+      { key: 'nonTeaching', label: 'Non-Teaching SS' },
+      { key: 'driverCumPeon', label: 'Driver Cum Peon SS' },
+    ];
+
+    let SESSION = null;
+    let campusPicker = null;
+    let currentMeta = null; // last successful ssformmeta response
+
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    // Same retry-a-cold-start-3x / "Not authorized" pattern as issues.html.
+    async function call(url, init) {
+      for (let i = 0; i < 3; i++) {
+        let text;
+        try { text = await (await fetch(url, init)).text(); } catch (_) { throw new Error(OFFLINE); }
+        try { return JSON.parse(text); }
+        catch (_) { if (i < 2) await new Promise((ok) => setTimeout(ok, 1500 * (i + 1))); }
+      }
+      throw new Error(SLOW);
+    }
+    function get(params) { return call(PDR_BACKEND_URL + '?' + new URLSearchParams(Object.assign({ idToken: SESSION.idToken }, params)).toString()); }
+    function post(body) { return call(PDR_BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: SESSION.idToken }, body)) }); }
+
+    function flash(msg, kind) {
+      const el = document.getElementById('ss-flash');
+      el.textContent = msg || '';
+      el.className = 'ss-flash' + (kind ? ' ' + kind : '');
+    }
+    function authFailIfNeeded(res) {
+      if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) LMCS.notifyAuthFailure();
+    }
+
+    function populateRoleSelect() {
+      const sel = document.getElementById('ss-role');
+      sel.innerHTML = SS_ROLES.map((r) => '<option value="' + r.key + '">' + esc(r.label) + '</option>').join('');
+    }
+
+    function selectedCampus() {
+      const sel = campusPicker.get();
+      return !sel.all && sel.campuses.length ? sel.campuses[0] : null;
+    }
+
+    async function loadForm() {
+      const role = document.getElementById('ss-role').value;
+      const campus = selectedCampus();
+      document.getElementById('ss-form-card').hidden = true;
+      document.getElementById('ss-submit').disabled = true;
+      currentMeta = null;
+      if (!campus) { flash('Pick a single school first.', ''); return; }
+
+      flash('Loading…', '');
+      let res;
+      try { res = await get({ action: 'ssformmeta', role: role, school: campus }); }
+      catch (err) { flash(err.message || String(err), 'err'); return; }
+      if (!res.success) {
+        authFailIfNeeded(res);
+        flash(res.error || 'Could not load the form.', 'err');
+        return;
+      }
+      currentMeta = res;
+      flash('', '');
+      renderForm(res);
+    }
+
+    function renderForm(meta) {
+      document.getElementById('ss-form-title').textContent = meta.label;
+      document.getElementById('ss-form-hint').textContent = meta.employees.length
+        ? 'Scores are 0-' + meta.rubricMax + ' each.'
+        : 'No one currently matches this role at this school.';
+
+      const empSel = document.getElementById('ss-employee');
+      empSel.innerHTML = meta.employees.map((e) =>
+        '<option value="' + esc(e.employeeId) + '">' + esc(e.label) + '</option>').join('');
+
+      const rows = document.getElementById('ss-rubric-rows');
+      rows.innerHTML = meta.rubricTitles.map((title, i) =>
+        '<div class="ss-row"><label for="ss-score-' + i + '">' + esc(title) + '</label>'
+        + '<input type="number" class="gb-input" id="ss-score-' + i + '" min="0" max="' + meta.rubricMax + '"></div>'
+      ).join('');
+
+      document.getElementById('ss-form-card').hidden = false;
+      document.getElementById('ss-submit').disabled = meta.employees.length === 0;
+    }
+
+    // Guarded against double-submission (disable the button for the duration), same pattern as every other write action in this portal.
+    async function submit() {
+      const btn = document.getElementById('ss-submit');
+      if (btn.disabled) return;
+      if (!currentMeta) { flash('Form not loaded yet.', 'err'); return; }
+      const empSel = document.getElementById('ss-employee');
+      const employeeId = empSel.value;
+      if (!employeeId) { flash('Pick a staff member first.', 'err'); return; }
+
+      const scores = currentMeta.rubricTitles.map((_, i) => document.getElementById('ss-score-' + i).value);
+      if (scores.some((s) => s === '' || isNaN(Number(s)) || Number(s) < 0 || Number(s) > currentMeta.rubricMax)) {
+        flash('Every score must be a number between 0 and ' + currentMeta.rubricMax + '.', 'err');
+        return;
+      }
+
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Submitting…';
+      try {
+        const res = await post({
+          action: 'submitss', role: document.getElementById('ss-role').value,
+          school: selectedCampus(), employeeId: employeeId, scores: scores,
+        });
+        if (res.success) {
+          flash('Submitted.', 'ok');
+          currentMeta.rubricTitles.forEach((_, i) => { document.getElementById('ss-score-' + i).value = ''; });
+        } else {
+          authFailIfNeeded(res);
+          flash(res.error || 'Something went wrong submitting — please try again.', 'err');
+        }
+      } catch (err) {
+        flash(err.message || String(err), 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    function showApp(session) {
+      SESSION = session;
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      document.getElementById('header-status').textContent = session.campusName || 'La Montessori Schools';
+      LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
+      if (window.LMCSEmoji && LMCSEmoji.get('supportSession')) {
+        document.getElementById('ss-title').insertBefore(LMCSEmoji.tag('supportSession'), document.getElementById('ss-title').firstChild);
+      }
+
+      populateRoleSelect();
+      campusPicker = LMCSCampus.mount(document.getElementById('ss-campus-mount'), {
+        session: session, multi: false, label: 'School', onChange: loadForm,
+      });
+      document.getElementById('ss-role').addEventListener('change', loadForm);
+      document.getElementById('ss-submit').addEventListener('click', submit);
+      loadForm();
+    }
+
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) { showApp(cachedSession); } else { LMCS.requireSession('#gate-slot').then(showApp); }
+  </script>
+
+</body>
+</html>

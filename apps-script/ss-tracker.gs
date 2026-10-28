@@ -1,13 +1,17 @@
 // ═══════════════════════════════════════════════════════════════════
 // SS Tracker — the completion/compliance dashboard sitting on top of
-// SS_ROLE_CONFIGS (ss-forms-sync.gs). Reads every ACTIVE role's
-// response sheet (config.responseSheetId/responseTabs), cross-
-// references against the live roster (the SAME matchesEmployee() each
-// role's form-sync already uses, via employee-roster.gs's EmpMaster/
-// EmpSalary), and produces: quota compliance, Principal Compliance
-// escalation, per-employee score analysis + full drill-down history,
-// and rubber-stamp (suspiciously-uniform-score) flags per evaluator.
-// doGet action lives in main.gs. Never writes.
+// SS_ROLE_CONFIGS (ss-forms-sync.gs). Reads every ACTIVE role's OLD
+// per-role response sheet (config.responseSheetId/responseTabs) AND
+// (2026-10-28) the new unified "SS Submissions" tab the in-game forms
+// write to -- ssReadAllSubmissions_ merges both so the dashboards stay
+// continuous across the Forms-to-native-forms cutover, no backfill
+// needed (old rows just stop growing). Cross-references against the
+// live roster (the SAME matchesEmployee() each role's form-sync already
+// uses, via employee-roster.gs's EmpMaster/EmpSalary), and produces:
+// quota compliance, Principal Compliance escalation, per-employee score
+// analysis + full drill-down history, and rubber-stamp (suspiciously-
+// uniform-score) flags per evaluator. doGet action lives in main.gs.
+// Never writes.
 //
 // Named "ss-tracker.gs" per main.gs's own header, which already
 // earmarked this file name for "the SS completion/pending tracker".
@@ -148,14 +152,96 @@ function ssReadSubmissions_(config, formKey) {
   return out;
 }
 
-/** Every submission for one role across every form it has (all 6
- *  campuses for perCampus roles, or the single shared tab otherwise). */
+/** Every submission for one role: the OLD per-role tabs (all 6
+ *  campuses for perCampus roles, or the single shared tab otherwise) --
+ *  read-only history, frozen once the in-game forms took over -- PLUS
+ *  (2026-10-28) the new unified "SS Submissions" tab, filtered to this
+ *  role. */
 function ssReadAllSubmissions_(roleKey) {
   const config = SS_ROLE_CONFIGS[roleKey];
   const out = [];
   Object.keys(config.responseTabs).forEach(function (formKey) {
     ssReadSubmissions_(config, formKey).forEach(function (s) { out.push(s); });
   });
+  ssReadNewSubmissions_(roleKey).forEach(function (s) { out.push(s); });
+  return out;
+}
+
+// ── New unified "SS Submissions" tab (2026-10-28) ────────────────────
+// Shaped to merge SEAMLESSLY into the same byEmployee map ssRoleDashboard_
+// below already builds from the OLD tabs' ssReadSubmissions_ output --
+// same {employeeName, evaluatorEmail, timestamp, scores, total} shape,
+// employeeName reconstructed as the same "CODE NAME" string
+// getActiveEmployeeChoices_ already produces (the new tab itself stores
+// the clean EmployeeId, per Uday via V1: "keyed by Employee ID, not
+// typed names" -- the string reconstruction here is ONLY so this file's
+// existing employee-keyed map doesn't need touching, not a reversion of
+// that decision). SS_SUBMISSIONS_SHEET_ID/_TAB are ss-forms-sync.gs
+// globals -- same project, same scope, no redeclaration.
+
+// Memoized per execution -- EmployeeId -> Name, built once off the same
+// getEmpMasterRows_() every other EmpMaster read in this project shares.
+var _ssEmployeeNameByIdCache_ = null;
+function ssEmployeeNameById_(employeeId) {
+  if (!_ssEmployeeNameByIdCache_) {
+    const rows = getEmpMasterRows_();
+    const header = rows[0];
+    const codeCol = header.indexOf('EmployeeCode');
+    const nameCol = header.indexOf('Name');
+    const map = {};
+    for (let i = 1; i < rows.length; i++) {
+      const code = String(rows[i][codeCol] || '').trim();
+      if (code) map[code] = String(rows[i][nameCol] || '').trim();
+    }
+    _ssEmployeeNameByIdCache_ = map;
+  }
+  return _ssEmployeeNameByIdCache_[employeeId] || '';
+}
+
+// Memoized per execution: the whole SS Submissions tab is read ONCE,
+// filtered by role in memory below -- not re-read once per role (6
+// roles x a full-tab read would otherwise repeat the same read 6x in
+// one ssdashboard request, the exact class of N+1 fixed elsewhere in
+// this project -- see getDepartmentByCode_'s comment in ss-forms-sync.gs).
+var _ssNewSubmissionsRowsCache_ = null;
+function ssReadNewSubmissionsAll_() {
+  if (_ssNewSubmissionsRowsCache_) return _ssNewSubmissionsRowsCache_;
+  const sheet = ssOpenSpreadsheet_(SS_SUBMISSIONS_SHEET_ID).getSheetByName(SS_SUBMISSIONS_TAB);
+  const values = sheet ? sheet.getDataRange().getValues() : [];
+  _ssNewSubmissionsRowsCache_ = values.length >= 2 ? values : [];
+  return _ssNewSubmissionsRowsCache_;
+}
+
+function ssReadNewSubmissions_(roleKey) {
+  const values = ssReadNewSubmissionsAll_();
+  if (!values.length) return [];
+  const header = values[0];
+  const tsCol = header.indexOf('Timestamp');
+  const idCol = header.indexOf('EmployeeId');
+  const emailCol = header.indexOf('EvaluatorEmail');
+  const roleCol = header.indexOf('Role');
+  const scoreCols = [];
+  for (let i = 1; i <= 10; i++) scoreCols.push(header.indexOf('Score' + i));
+
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[roleCol]) !== roleKey) continue;
+    const employeeId = String(row[idCol] || '').trim();
+    if (!employeeId) continue;
+    const name = ssEmployeeNameById_(employeeId);
+    if (!name) continue; // id no longer on EmpMaster -- fail open, same as a blank Name cell in the old tabs
+    const ts = row[tsCol];
+    const scores = scoreCols.map(function (col) { return col >= 0 ? Number(row[col]) || 0 : 0; });
+    const total = scores.reduce(function (a, b) { return a + b; }, 0);
+    out.push({
+      employeeName: employeeId + ' ' + name, // matches getActiveEmployeeChoices_'s "CODE NAME" format exactly
+      evaluatorEmail: emailCol >= 0 ? normalizeCell_(row[emailCol]).toLowerCase() : '',
+      timestamp: ts instanceof Date ? ts : (ts ? new Date(ts) : null),
+      scores: scores,
+      total: total,
+    });
+  }
   return out;
 }
 
