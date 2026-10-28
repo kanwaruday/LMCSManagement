@@ -39,21 +39,24 @@
         <a href="#" class="signout" id="signout-link">Sign out</a>
       </div>
       <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
-      <nav class="office-nav"><a class="btn-lg" href="index.html">Today</a><a class="btn-lg" href="../coordinator/transport/capture.html">Capture portal</a><a class="btn-lg" href="../coordinator/transport/setup.html">Fleet setup</a></nav>
+      <nav class="office-nav"><a class="btn-lg" href="index.html">Today</a><a class="btn-lg" href="../coordinator/transport/capture.html">Capture portal</a><a class="btn-lg" href="../coordinator/transport/setup.html">Fleet setup</a><a class="btn-lg" href="driver-fills.html" id="dfl-link" hidden>Driver fills</a></nav>
       <p class="hint">Fuel bills to check, then where your campus buses are now.</p>
       <section class="block" id="bus-checks"></section>
       <section class="block" id="today"></section><!-- id "today" is the shell's message slot too -->
     </div>
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
-  <script src="../assets/auth.js?v=71b8a192"></script>
+  <script src="../assets/auth.js?v=5deebbbc"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="../coordinator/transport-live.js?v=e9020cd5"></script>
   <script src="../coordinator/transport-checks.js?v=69ddd5cf"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
+    import { canSeeFills, pendingCount } from './js/driver-fills.js';
     bootOffice({ onReady: (session) => {
+      const dfl = document.getElementById('dfl-link'); // money: Fee Clerk, Coordinator, Owner only
+      if (canSeeFills(session)) { dfl.hidden = false; pendingCount(session.campus).then((n) => { if (n) dfl.textContent = 'Driver fills (' + n + ' waiting)'; }).catch(() => {}); }
       window.TransportChecks.mountClerk(document.getElementById('bus-checks'), session);
       window.TransportLive.mount(document.getElementById('today'), session, { campus: session.campus }); // the map follows the Office header's campus
     } });

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Driver Fills</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1f3a5f" />
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="office.css" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
+  <style>
+    /* the one action of a fill: red, as the game pages mark "your next step" (assets/game/base.css --gb-red) */
+    .office-list .row-actions button.dfl-confirm { background: #ce0000; border-color: #a10000; color: #fff; font-weight: 700; }
+    @media (hover: hover) { .office-list .row-actions button.dfl-confirm:hover { background: #a10000; } }
+  </style>
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../index.html">
+        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
+        <span>LMCS Portal <span class="tagline">Fee Clerk + PRO</span></span>
+      </a>
+      <nav class="roles" id="header-status">
+        <span id="sync-indicator" role="status" aria-live="polite"></span>
+        <div id="campus-pick" hidden></div>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="hero" id="auth-root" style="padding-top:40px;">
+      <span class="eyebrow">Internal · Staff use only</span>
+      <h1>Driver Fills</h1>
+      <div id="gate-slot"></div>
+    </section>
+    <div id="app-root" style="display:none">
+      <div class="welcome">
+        <div class="welcome-text" id="who"></div>
+        <a href="#" class="signout" id="signout-link">Sign out</a>
+      </div>
+      <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
+      <nav class="office-nav"><a class="btn-lg" href="index.html">Today</a><a class="btn-lg" href="buses.html">Live Buses</a></nav>
+      <p class="hint">Fuel fills your drivers sent from their phones. Check each one against the bill photo and the pump video, then confirm it or reject it.</p>
+      <section class="block" id="today"></section><!-- id "today" is the shell's message slot too -->
+    </div>
+  </main>
+  <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
+  <script src="../assets/auth.js?v=5deebbbc"></script>
+  <script src="../assets/campus-picker.js?v=cd35c768"></script>
+  <script type="module">
+    import { bootOffice } from './js/shell.js';
+    import { showDriverFills } from './js/driver-fills.js';
+    bootOffice({ onReady: (session, api) => showDriverFills(document.getElementById('today'), session, api) });
+  </script>
+</body>
+</html>
