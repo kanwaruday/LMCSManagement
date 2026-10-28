@@ -13,9 +13,6 @@
     :root { --rule: #e8e8e8; }
     .page { padding-top: 20px; padding-bottom: 48px; }
     .page > * { max-width: 880px; } /* the header's left edge, a narrower column */
-    .back { display: inline-block; font-size: 0.85rem; color: var(--gray); text-decoration: none; padding: 6px 0; }
-    .back:hover { color: var(--red); text-decoration: underline; }
-    .page h1 { font-size: 1.5rem; color: var(--red); margin: 6px 0 4px; letter-spacing: -0.01em; }
     .finding { margin: 0 0 20px; color: var(--gray); font-size: 0.95rem; }
     .finding b { color: var(--dark); }
     .flash { margin: 0 0 16px; padding: 10px 14px; border-radius: var(--radius); font-size: 0.9rem; color: var(--color-live); background: var(--color-live-bg); }
@@ -71,7 +68,7 @@
 <body>
 
   <!-- the game header (base.css) only: the wrapper gives it the gb scope, the page below keeps its own styles -->
-  <div class="gb"><header class="gb-head"><div><div><h1>Daily-report issues</h1><p id="header-status">La Montessori Schools</p></div><a href="index.html">&lsaquo; Principal portal</a></div></header></div>
+  <div class="gb"><header class="gb-head"><div><div><h1>Daily-report issues</h1><p id="header-status">La Montessori Schools</p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> Principal portal</a></div></header></div>
 
   <main class="wrap page">
     <div id="auth-root"><div id="gate-slot"></div></div>
