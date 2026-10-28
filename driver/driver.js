@@ -136,12 +136,12 @@
   const svg = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
   // a driver's game bar: Missions (home, with what is left), Rallies and Events (soon), Buddy (the help panel). No Quests: a driver has none.
   function rail(left) {
-    const soon = (k, hi, en) => `<li><span class="gb-rail-i is-soon" role="img" aria-label="${en}, coming soon">${svg(k)}<b>${hi}</b><small aria-hidden="true">जल्द · Soon</small></span></li>`;
+    const soon = (k, hi, en) => `<li><span class="gb-rail-i is-soon" role="img" aria-label="${hi} · ${en}, coming soon">${svg(k)}<b>${hi}</b><small aria-hidden="true">जल्द · Soon</small></span></li>`;
     $('rail').innerHTML = '<ul>' +
-      `<li><a class="gb-rail-i" href="#" aria-current="page" aria-label="${left ? 'Missions, ' + left + ' waiting' : 'Missions'}">${svg('missions')}<b>मिशन</b>` +
+      `<li><a class="gb-rail-i" href="#" aria-current="page" aria-label="मिशन · ${left ? 'Missions, ' + left + ' waiting' : 'Missions'}">${svg('missions')}<b>मिशन</b>` +
       (left ? `<span class="gb-count" aria-hidden="true">${left}</span>` : '') + '</a></li>' +
       soon('rallies', 'रैली', 'Rallies') + soon('events', 'इवेंट', 'Events') +
-      '<li><button type="button" class="gb-rail-i" id="buddy" aria-label="Buddy, help"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt=""><b>मदद</b></button></li></ul>';
+      '<li><button type="button" class="gb-rail-i" id="buddy" aria-label="मदद · Buddy, help"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt=""><b>मदद</b></button></li></ul>';
     $('buddy').onclick = () => { const h = $('pHelp'); h.open = true; h.querySelector('summary').focus(); h.scrollIntoView({ block: 'nearest' }); };
   }
   const big = (hi, en) => `<span class="dr-hi">${esc(hi)}</span><span class="dr-en">${esc(en)}</span>`;

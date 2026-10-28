@@ -177,7 +177,7 @@ function setMode(mode) {
 // Driver mode speaks Hindi first (a driver may read little; driver/index.html does the same), English small after it
 function driverLabels() {
   const t = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
-  document.querySelector('.hdr h1').textContent = 'रूट वीडियो · Route video';
+  document.querySelector('.gb-head h1').textContent = 'रूट वीडियो · Route video';
   document.querySelector('.cap-modes').hidden = true; // one kind of run only
   t('modeHelp', 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "यहाँ स्टॉप" दबाएँ। · Phone on the dashboard; tap STOP HERE at every stop.');
   document.querySelector('label[for="bus"]').hidden = $('bus').hidden = true; // one bus: no picker, just say which
@@ -463,7 +463,7 @@ function openFix() { // the last stop's count, put right: the same counters, sav
 }
 function closeSheet() { $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; $('stopHere').focus(); }
 function behindSheet(on) { // the sheet is modal: keyboard and screen reader stay inside it
-  document.querySelectorAll('.hdr, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
+  document.querySelectorAll('.gb-head, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
 }
 function drawSheet() {
   const st = S.stop, sheet = $('sheet'), count = S.run.kind === 'count';

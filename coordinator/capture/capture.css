@@ -4,10 +4,6 @@
 :root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
 [hidden]{display:none!important}
 :root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or STOP HERE */
-.hdr{padding:0 16px}
-.hdr a{position:relative;font-size:13px} /* the back link: a small pill, a thumb-sized target */
-.hdr a::after{content:"";position:absolute;inset:-12px -8px}
-.hdr a:focus-visible{outline:3px solid #fff;outline-offset:2px}
 .cap{font-size:16px;line-height:1.45;color:var(--c-ink)}
 #appBody.cap{padding:12px 16px 32px;max-width:640px} /* #appBody in shared.css is 1200 px wide */
 .cap ::selection{background:#ffd6d6}
@@ -78,7 +74,7 @@
    button under the thumb. Browsers without :has() keep the plain stacked layout. */
 @supports selector(:has(*)){
   body:has(#tabCapture:not([hidden]) #running:not([hidden])){display:flex;flex-direction:column;height:100vh;height:100dvh}
-  body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{flex:none}
+  body:has(#tabCapture:not([hidden]) #running:not([hidden])) .gb-head{flex:none}
   body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{flex:1 1 0;min-height:0;display:flex;flex-direction:column;width:100%;margin:0 auto;padding-bottom:16px}
   #tabCapture:has(#running:not([hidden])){flex:1 1 0;min-height:0;display:flex;flex-direction:column}
   #tabCapture #running:not([hidden]){flex:1 1 0;min-height:0;grid-template-rows:auto minmax(96px,1fr) auto auto auto auto}
@@ -99,8 +95,8 @@
 
 /* phone on its side in the mount: the mission across the top, camera left, STOP HERE right, all on one screen */
 @media (orientation:landscape) and (max-height:520px){
-  .hdr{height:40px}
-  .hdr p{display:none}
+  body:has(#tabCapture) .gb-head > div{padding-top:4px;padding-bottom:4px}
+  body:has(#tabCapture) .gb-head p{display:none}
   #appBody.cap{max-width:none;padding-top:8px}
   .cap-tabs{margin-bottom:8px}
   .cap-run{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"mission mission" "view status" "view msg" "view stop" "view end";align-content:start}
@@ -108,7 +104,7 @@
   .cap-stop{min-height:96px}
   .cap-cam{aspect-ratio:auto;height:calc(100vh - 120px)}
   @supports selector(:has(*)){
-    body:has(#tabCapture:not([hidden]) #running:not([hidden])) .hdr{display:none} /* the run is the whole screen; End run is the way out */
+    body:has(#tabCapture:not([hidden]) #running:not([hidden])) .gb-head{display:none} /* the run is the whole screen; End run is the way out */
     body:has(#tabCapture:not([hidden]) #running:not([hidden])) #appBody.cap{max-width:none;padding-bottom:8px}
     #tabCapture #running:not([hidden]){grid-template-rows:auto auto auto minmax(88px,1fr) auto}
     #running:not([hidden]) .cap-stop{min-height:88px;height:100%}
