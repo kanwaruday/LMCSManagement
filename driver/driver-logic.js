@@ -69,6 +69,9 @@ var DriverLogic = (function () {
     return routeNext ? [route, fuel] : [fuel, route];
   }
 
-  return { FUEL_FIELDS: FUEL_FIELDS, checkFill: checkFill, sendLabel: sendLabel, missions: missions };
+  // the device token in a link's fragment (#k=<64 hex>), or '' for anything else
+  function tokenFromHash(hash) { var m = /^#?k=([a-f0-9]{64})$/.exec(hash || ''); return m ? m[1] : ''; }
+
+  return { FUEL_FIELDS: FUEL_FIELDS, checkFill: checkFill, sendLabel: sendLabel, missions: missions, tokenFromHash: tokenFromHash };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = DriverLogic;
