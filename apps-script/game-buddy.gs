@@ -15,6 +15,11 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //     `failed` (terminal, proposalNote tells the Owner) and it is never offered again; so does one still unsent proposalMs
 //     after the confirm;
 //   - with the desk offline (no pull within deskMs), a new ask replaces the caller's unclaimed queued one (`failed` superseded).
+// Owner orders (Uday, 28 Oct: "Whenever i send you a text on the ask buddy, logged from my account, it is me giving you
+//   orders. DO them!"): an ask carries meta.order = true only when buddyAsk_ wrote it, i.e. after buddyOwnerAction_'s
+//   BUDDY_OWNER_EMAIL check. When its reply has a proposal, the proposal is confirmed at the reply (no Confirm tap) and
+//   forwarded like any confirmed one: same one-forward-per-item rows, same limits. Asks written before this (no meta.order)
+//   still need the tap. An answer without a proposal is never forwarded.
 // Gates:
 //   buddyask / buddythread / buddyconfirm: POST only, a verified caller with the Owner role (game.gs doPost calls
 //     buddyOwnerAction_ directly). Deliberately NOT in GAME_MODULE_ACTIONS, so a GET (whose text lands in logs and
@@ -86,7 +91,7 @@ function buddyThreads_(rows, nowMs) {
       if (!buddyIdOk_(id) || out[id]) continue;
       out[id] = { id: id, email: String(r[2] || '').trim().toLowerCase(), text: buddyUncell_(r[3]), context: buddyContext_(meta.context), askedAt: at,
         state: 'queued', attempts: 0, claimedAt: null, reply: null, route: null, repliedAt: null, proposal: null, proposalState: null, failReason: null,
-        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
+        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, order: meta.order === true, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
       continue;
     }
     const t = out[id];
@@ -96,6 +101,7 @@ function buddyThreads_(rows, nowMs) {
     else if (kind === 'reply' && open) {
       t.state = 'answered'; t.reply = buddyUncell_(r[3]); t.route = typeof meta.route === 'string' ? meta.route : null; t.repliedAt = at;
       t.proposal = meta.proposal && typeof meta.proposal.summary === 'string' && meta.proposal.summary ? { summary: meta.proposal.summary } : null;
+      if (t.proposal && t.order) { t._decision = 'confirmed'; t._decidedAt = at; } // an Owner order: confirmed at the reply
     } else if (kind === 'failed' && open) { t.state = 'failed'; t.failReason = typeof meta.reason === 'string' ? meta.reason : null; }
     else if ((kind === 'confirm' || kind === 'decline') && t.proposal && !t._decision) { t._decision = kind === 'confirm' ? 'confirmed' : 'declined'; t._decidedAt = at; }
     else if (kind === 'fclaim' && t._decision === 'confirmed' && !t._forwarded) { t.fwdAttempts++; t.fwdClaimedAt = at; t._fwdFailed = false; }
@@ -140,7 +146,7 @@ function buddyPullable_(threads, nowMs) {
   const all = buddyList_(threads);
   const fwd = all.filter(function (t) { return t.proposalState === 'confirmed' && (!buddyFwdBusy_(t) || buddyFwdStale_(t, nowMs)); })
     .sort(function (a, b) { return buddyMs_(a._decidedAt) - buddyMs_(b._decidedAt); })[0];
-  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal.summary, attempt: fwd.fwdAttempts + 1 };
+  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal.summary, context: fwd.context, order: fwd.order, attempt: fwd.fwdAttempts + 1 };
   const t = all.filter(function (x) { return x.state === 'queued'; })[0] ||
     all.filter(function (x) { return buddyStale_(x, nowMs) && x.attempts < BUDDY_LIMITS.maxAttempts; })[0];
   return t ? { id: t.id, kind: 'ask', text: t.text, context: t.context, attempt: t.attempts + 1 } : null;
@@ -222,7 +228,7 @@ function buddyAsk_(caller, body) {
     const code = buddyRateCheck_(threads, email, nowMs);
     if (code) throw buddyErr_(code);
     const newId = buddyNewId_(nowMs);
-    gameAppendText_(sh, [[newId, 'ask', email, buddyCell_(text), JSON.stringify({ context: context }), nowIso, email]]);
+    gameAppendText_(sh, [[newId, 'ask', email, buddyCell_(text), JSON.stringify({ context: context, order: true }), nowIso, email]]); // order: see header
     buddyMark_();
     return newId;
   });
@@ -340,6 +346,7 @@ function buddyReply_(body) {
       if (!ok) throw buddyErr_('BUDDY_BAD_STATE');
       gameAppendText_(sh, [[id, kind, '', text ? buddyCell_(text) : '', JSON.stringify(meta), nowIso, 'worker']]);
       if (kind === 'forward_failed') buddyMark_(); // retry (or settle as failed) at the next poll
+      if (kind === 'reply' && t.order && meta.proposal) buddyMark_(); // an Owner order: forward it at the next poll
       return { success: true };
     });
   } catch (err) { return buddyFail_(err); }

@@ -65,8 +65,10 @@ const seedAsk = (email, atMs, extra) => {
   return id;
 };
 // ask -> claim -> reply with a proposal; returns the id
+// an ask written before Owner orders (no meta.order): its proposal still waits for the Confirm tap
+const legacy = (id) => { const r = inbox().filter((x) => x[0] === id && x[1] === 'ask')[0]; r[4] = JSON.stringify({ context: meta(r).context }); return id; };
 const answered = (summary) => {
-  const id = ask(OWN, 'Please add a bus stop').id;
+  const id = legacy(ask(OWN, 'Please add a bus stop').id);
   pull();
   assert.strictEqual(reply({ id, kind: 'reply', text: 'I cannot change that.', route: 'claude', proposal: { summary: summary || 'Add a bus stop' } }).success, true);
   return id;
@@ -81,7 +83,7 @@ test('ask: Owner queues a question', () => {
   assert.strictEqual(r.state, 'queued'); assert.ok(ctx.buddyIdOk_(r.id), r.id);
   assert.deepStrictEqual(book.tabs['Buddy Inbox'].rows[0], ['Id', 'Kind', 'Email', 'Text', 'Meta', 'At', 'By']);
   const row = inbox()[0];
-  assert.deepStrictEqual(row, [r.id, 'ask', 'owner@test.invalid', 'How many campuses?', '{"context":{"page":"owner/kingdom.html"}}', new Date(T0).toISOString(), 'owner@test.invalid']);
+  assert.deepStrictEqual(row, [r.id, 'ask', 'owner@test.invalid', 'How many campuses?', '{"context":{"page":"owner/kingdom.html"},"order":true}', new Date(T0).toISOString(), 'owner@test.invalid']);
   assert.strictEqual(store.get('buddy_pending'), '1');
   assert.deepStrictEqual(events, ['lock', 'unlock']);
   assert.strictEqual(thread().threads[0].state, 'queued');
@@ -144,7 +146,7 @@ test('ask: formula text is stored inert', () => {
 test('ask: context keeps only page and campus', () => {
   reset();
   ask(OWN, 'q1', { page: 'owner/kingdom.html', campus: 'LMS4', evil: 'x' });
-  assert.deepStrictEqual(meta(inbox()[0]), { context: { page: 'owner/kingdom.html', campus: 'LMS4' } });
+  assert.deepStrictEqual(meta(inbox()[0]), { context: { page: 'owner/kingdom.html', campus: 'LMS4' }, order: true });
   assert.deepStrictEqual(J(ctx.buddyContext_({ page: '<script>', campus: 'LMS9' })), {});
   assert.deepStrictEqual(J(ctx.buddyContext_('owner/kingdom.html')), {});
   assert.deepStrictEqual(J(ctx.buddyContext_({ page: 'x'.repeat(81) })), {});
@@ -253,7 +255,7 @@ test('reply: answer with proposal', () => {
   assert.strictEqual(t.proposalState, 'open');
   assert.strictEqual(t.proposal.summary.length, 300); assert.ok(t.proposal.summary.endsWith('…'));
   reset();
-  const id2 = ask(OWN).id; pull();
+  const id2 = legacy(ask(OWN).id); pull();
   reply({ id: id2, kind: 'reply', text: 'R'.repeat(9000), route: 'claude', proposal: { summary: '   ' } });
   const t2 = thread().threads[0];
   assert.strictEqual(t2.reply.length, 8000); assert.strictEqual(t2.proposal, null); assert.strictEqual(t2.proposalState, null);
@@ -274,6 +276,41 @@ test('reply: refuses wrong state', () => {
   assert.strictEqual(reply({ id: a, kind: 'failed', reason: 'timeout' }).success, true);
   assert.strictEqual(thread().threads[0].state, 'failed');
   assert.strictEqual(reply({ id: a, kind: 'failed', reason: 'timeout' }).code, 'BUDDY_BAD_STATE'); // once
+});
+test('order: an Owner ask with a proposal is confirmed at the reply and forwarded once, no tap', () => {
+  reset();
+  const id = ask(OWN, 'Make this map interactive', { page: 'owner/kingdom.html', campus: 'LMS2' }).id;
+  pull();
+  store.delete('buddy_pending');
+  reply({ id, kind: 'reply', text: 'Here is a plan.', route: 'claude', proposal: { summary: 'Tap a base to open it' } });
+  assert.strictEqual(thread().threads[0].proposalState, 'confirmed');
+  assert.strictEqual(store.get('buddy_pending'), '1'); // the reply marks pending, so the forward goes at the next poll
+  assert.strictEqual(confirm(OWN, id).code, 'BUDDY_PROPOSAL_CLOSED'); // nothing left to tap
+  assert.strictEqual(confirm(OWN, id, 'decline').code, 'BUDDY_PROPOSAL_CLOSED');
+  assert.deepStrictEqual(pull().items, [{ id, kind: 'forward', text: 'Make this map interactive', summary: 'Tap a base to open it',
+    context: { page: 'owner/kingdom.html', campus: 'LMS2' }, order: true, attempt: 1 }]);
+  assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).success, true);
+  assert.strictEqual(thread().threads[0].proposalState, 'forwarded');
+  assert.deepStrictEqual(pull().items, []);
+  assert.strictEqual(inbox().filter((r) => r[1] === 'fclaim').length, 1);
+  assert.strictEqual(inbox().filter((r) => r[1] === 'confirm').length, 0); // no confirm row is invented
+  // an answer without a proposal is never forwarded
+  reset();
+  const q = ask(OWN, 'How many buses?').id; pull();
+  reply({ id: q, kind: 'reply', text: '42', route: 'claude' });
+  assert.strictEqual(thread().threads[0].proposalState, null);
+  assert.deepStrictEqual(pull().items, []);
+  // only an ask row buddyAsk_ wrote counts: a seeded ask with no order, or order other than true, waits for the tap
+  reset();
+  const s1 = legacy(ask(OWN, 'old').id), r1 = inbox()[0]; r1[4] = JSON.stringify({ context: {}, order: 'true' });
+  pull(); reply({ id: s1, kind: 'reply', text: 'x', route: 'claude', proposal: { summary: 'y' } });
+  assert.strictEqual(thread().threads[0].proposalState, 'open');
+  assert.deepStrictEqual(pull().items, []);
+  // the worker cannot turn an answer into an order: reply meta has no say
+  reset();
+  const s2 = legacy(ask(OWN, 'old2').id); pull();
+  reply({ id: s2, kind: 'reply', text: 'x', route: 'claude', proposal: { summary: 'y' }, order: true });
+  assert.strictEqual(thread().threads[0].proposalState, 'open');
 });
 test('confirm: only own thread, once, within 24 h', () => {
   reset();
@@ -300,7 +337,7 @@ test('confirm: only own thread, once, within 24 h', () => {
   assert.strictEqual(confirm(OWN, id3).code, 'BUDDY_PROPOSAL_CLOSED');
   // a reply with no proposal cannot be confirmed
   reset();
-  const id4 = ask(OWN).id; pull(); reply({ id: id4, kind: 'reply', text: 'x', route: 'claude' });
+  const id4 = legacy(ask(OWN).id); pull(); reply({ id: id4, kind: 'reply', text: 'x', route: 'claude' });
   assert.strictEqual(confirm(OWN, id4).code, 'BUDDY_PROPOSAL_CLOSED');
 });
 test('pull: confirmed proposal comes back as a forward item', () => {
@@ -310,7 +347,7 @@ test('pull: confirmed proposal comes back as a forward item', () => {
   ask(OWN, 'next question');
   confirm(OWN, id);
   const r = pull();
-  assert.deepStrictEqual(r.items, [{ id, kind: 'forward', text: 'Please add a bus stop', summary: 'Add a bus stop', attempt: 1 }]); // before the queued ask
+  assert.deepStrictEqual(r.items, [{ id, kind: 'forward', text: 'Please add a bus stop', summary: 'Add a bus stop', context: {}, order: false, attempt: 1 }]); // before the queued ask
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'carrier-pigeon' }).code, 'BUDDY_BAD_STATE');
   assert.strictEqual(reply({ id, kind: 'forwarded', via: 'sendmessage' }).success, true);
   assert.strictEqual(thread().threads[0].proposalState, 'forwarded');

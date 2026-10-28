@@ -229,8 +229,11 @@ def _send(cfg, text):
 
 
 def forward(cfg, item):
-    text = "Portal request for master agent (Uday tapped Confirm)\nUday's words: %s\nUnverified summary: %s" % (
-        item.get("text", ""), item.get("summary", ""))
+    ctx = item.get("context") if isinstance(item.get("context"), dict) else {}
+    head = ("Owner order from Ask Buddy (Uday's verified Owner account; no Confirm needed: do it)" if item.get("order") is True
+            else "Portal request for master agent (Uday tapped Confirm)")
+    text = "%s\nUday's words: %s\nPage: %s%s\nUnverified summary: %s" % (
+        head, item.get("text", ""), ctx.get("page", "") or "-", (" (" + ctx["campus"] + ")") if ctx.get("campus") else "", item.get("summary", ""))
     try:
         if _send(cfg, text):
             return "sendmessage"

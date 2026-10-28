@@ -119,8 +119,17 @@ for fake in (lambda p: done("SENT"),
     claude["SendMessage"] = fake
     bw.handle(CFG, SECRET, FWD)
     assert replies()[-1]["via"] == "telegram" and runs[-1].argv == [CFG["telegram_send"]], replies()
-assert ("Portal request for master agent (Uday tapped Confirm)\nUday's words: Move the LMS4 bus to 7:40\n"
+assert ("Portal request for master agent (Uday tapped Confirm)\nUday's words: Move the LMS4 bus to 7:40\nPage: -\n"
         "Unverified summary: Change the LMS4 bus time") in runs[0].input
+
+# ---- forward: an Owner order says so, with its page; a non-dict context or a non-true order falls back safely
+reset()
+bw.handle(CFG, SECRET, dict(FWD, order=True, context={"page": "owner/kingdom.html", "campus": "LMS2"}))
+assert ("Owner order from Ask Buddy (Uday's verified Owner account; no Confirm needed: do it)\nUday's words: Move the LMS4 bus to 7:40\n"
+        "Page: owner/kingdom.html (LMS2)\nUnverified summary: Change the LMS4 bus time") in runs[0].input, runs[0].input
+reset()
+bw.handle(CFG, SECRET, dict(FWD, order="yes", context="owner/kingdom.html"))
+assert "Portal request for master agent (Uday tapped Confirm)" in runs[0].input and "Page: -" in runs[0].input
 
 # ---- forward: SendMessage fails -> Telegram send.sh, text on stdin and not in argv
 reset()
