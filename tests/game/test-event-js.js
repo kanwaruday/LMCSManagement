@@ -44,5 +44,7 @@ const K = kctx.window.LMCSKingdom;
 assert.strictEqual(K.gdSchoolLine({ name: 'LMS 4', in: 3, people: 7, done: 2, pct: 28 }), 'LMS 4: 3 of 7 in · 2 done · 28%');
 assert.strictEqual(K.gdNetworkText({ schoolsAtGoal: 1, of: 6, goalPct: 80, reward: '' }), '1 of 6 schools at 80%');
 assert.strictEqual(K.gdNetworkText(null), '');
+assert.strictEqual(K.gdBadgeText({ pct: 85, level: 4 }), 'Game Day 85% finished, level 4 of 5', 'the map ring in words, for screen readers');
+assert.ok(/function gdRace/.test(read('assets/game/kingdom.js')) && /\.kg-gdb/.test(read('assets/game/kingdom.css')), 'the race is drawn on the map');
 assert.ok(/action=gameeventboard/.test(read('assets/game/kingdom.js')), 'the Kingdom reads the board');
 console.log('event card: ok');

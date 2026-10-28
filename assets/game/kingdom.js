@@ -132,8 +132,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // ── 🎉 Game Day (gameeventboard, game-event.gs): the Owner's live panel (pure lines; the page below draws them) ──
   function gdNetworkText(n) { return n ? n.schoolsAtGoal + ' of ' + n.of + ' schools at ' + n.goalPct + '%' + (n.reward ? ' → ' + n.reward : '') : ''; }
   function gdSchoolLine(s) { return s.name + ': ' + s.in + ' of ' + s.people + ' in · ' + s.done + ' done · ' + s.pct + '%'; }
+  function gdBadgeText(s) { return 'Game Day ' + s.pct + '% finished, level ' + s.level + ' of 5'; }
 
-  var api = { gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
+  var api = { gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
     nextTier: nextTier, onlySoon: onlySoon, nextAction: nextAction, nextText: nextText, levelSnapshot: levelSnapshot, levelUps: levelUps, levelUpText: levelUpText,
@@ -432,11 +433,34 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   function gdDraw() {
     var old = document.querySelector('[data-panel="kg-gdpanel"]');
+    gdRace();
     if (!GD.data) { if (old) old.remove(); return; }
     var p = panel('Game Day', 'kg-gdpanel', gdBody(GD.data), !GD.data.event.upcoming, 'events');
     if (old) { p.open = old.open; old.replaceWith(p); }
     else if (S.panels) S.panels.insertBefore(p, S.panels.children[1] || null); // under Your Kingdom
     else if (S.el) S.el.appendChild(p);
+  }
+  // (B) the school race on the map: each base gets a 🎉 % ring and level (apart from its Kingdom level), and the network bar sits
+  // over the map. Drawn onto the rendered map, so a Kingdom re-render or a board refresh redraws it. Not before the day (all at 0).
+  function gdRace() {
+    var box = S.el && S.el.querySelector('.kg-box'), on = GD.data && !GD.data.event.upcoming, by = {}, goal = on ? Number(GD.data.network && GD.data.network.goalPct) || 80 : 80;
+    if (on) GD.data.schools.forEach(function (s) { by[s.id] = s; });
+    var oldNet = S.el && S.el.querySelector('.kg-gdnet'); if (oldNet) oldNet.remove();
+    if (on && box && GD.data.network) {
+      var n = GD.data.network;
+      box.parentNode.insertBefore(h('div', { class: 'kg-gdnet' }, [h('span', {}, ['🎉 ' + GD.data.event.name]), h('span', {}, [gdNetworkText(n)]),
+        gdBar(n.of ? 100 * n.schoolsAtGoal / n.of : 0, 'All schools: ' + gdNetworkText(n))]), box);
+    }
+    var leg = S.el && S.el.querySelector('.kg-legend'), oldLeg = leg && leg.querySelector('.kg-lg-gd');
+    if (oldLeg) oldLeg.remove();
+    if (on && leg) leg.insertBefore(h('span', { class: 'kg-lg-gd' }, ['🎉 Game Day ring: % finished, level inside']), leg.lastChild);
+    [].forEach.call((S.el && S.el.querySelectorAll('.kg-base')) || [], function (btn) {
+      var old = btn.querySelector('.kg-gdb'), label = btn.getAttribute('data-label') || btn.getAttribute('aria-label') || '', s = by[btn.getAttribute('data-base')];
+      if (old) old.remove();
+      btn.setAttribute('data-label', label);
+      btn.setAttribute('aria-label', s ? label + ', ' + gdBadgeText(s) : label);
+      if (s) btn.appendChild(h('span', { class: 'kg-gdb' + (s.pct >= goal ? ' kg-gdb-goal' : ''), style: '--p:' + Math.max(0, Math.min(100, Number(s.pct) || 0)), 'aria-hidden': 'true' }, [h('span', {}, ['🎉' + s.level])]));
+    });
   }
 
   // ═══ K5: tap-to-assign (Owner only; the server checks the Owner again) ═══

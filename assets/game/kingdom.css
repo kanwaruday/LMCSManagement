@@ -215,3 +215,11 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-gd-nudge { margin:0; font-size:14px; }
 .kg-gd-who summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:14px; }
 .kg-gd-who ul { margin:0 0 4px; padding-left:18px; font-size:14px; }
+/* (B) the race on the map: a ring that fills with the school's Game Day %, its 🎉 level inside; gold edge at the goal */
+.kg-gdb { position:absolute; top:14px; right:-16px; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; pointer-events:none;
+  background:conic-gradient(var(--ok) calc(var(--p) * 1%), var(--line) 0); }
+.kg-gdb > span { width:28px; height:28px; border-radius:50%; background:var(--paper); display:grid; place-items:center; font-size:11px; font-weight:700; color:var(--ink); }
+.kg-gdb-goal { box-shadow:0 0 0 2.5px var(--gold); }
+.kg-gdnet { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 12px; margin:10px 0 6px; padding:8px 12px; background:var(--paper);
+  border:1.5px solid var(--line); border-radius:12px; font-size:14px; }
+.kg-gdnet .gb-bar { flex-basis:100%; }
