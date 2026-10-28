@@ -50,8 +50,8 @@ var LMCSDock = window.LMCSDock = (function () {
     return { who: 'status', text: "I couldn't finish that one. Please ask again." };
   }
   function proposalView(t) {
-    var st = t && t.proposal && t.proposalState;
-    var v = st && /^(open|confirmed|forwarded|declined|expired|failed)$/.test(st) ? { summary: t.proposal.summary || '', state: st } : null;
+    var st = t && (t.proposal ? t.proposalState : t.proposalState === 'failed' && 'failed'); // an order with no proposal shows only its failure
+    var v = st && /^(open|confirmed|forwarded|declined|expired|failed)$/.test(st) ? { summary: (t.proposal && t.proposal.summary) || '', state: st } : null;
     if (v && st === 'failed') v.note = t.proposalNote || '';
     return v || null;
   }

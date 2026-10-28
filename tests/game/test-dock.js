@@ -174,6 +174,9 @@ assert.strictEqual(D.pollDelay([{ state: 'queued' }], false), 0, 'closed: no pol
 assert.strictEqual(D.pollDelay([{ state: 'answered' }, { state: 'failed' }], true), 0);
 assert.strictEqual(D.threadLine({ state: 'queued', failReason: 'offline' }, { open: true }).text, "I couldn't finish that one. Please ask again.", 'failReason offline');
 const pf = D.proposalView({ proposal: { summary: 'S' }, proposalState: 'failed', proposalNote: 'It did not go through.' });
+const pn = D.proposalView({ proposal: null, proposalState: 'failed', proposalNote: 'N' });
+assert.ok(pn && pn.state === 'failed' && pn.note === 'N' && pn.summary === '', 'an order without a proposal still shows its failed forward');
+assert.strictEqual(D.proposalView({ proposal: null, proposalState: 'confirmed' }), null, 'no proposal UI while an order is being sent');
 assert.ok(pf && pf.state === 'failed' && pf.note === 'It did not go through.', 'failed proposal carries its note (no confirm buttons: state is not open)');
 assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'confirmed' }], true), 5000, 'confirmed: keep polling until forwarded or failed');
 assert.strictEqual(D.pollDelay([{ state: 'answered', proposalState: 'forwarded' }, { state: 'answered', proposalState: 'failed' }], true), 0);
