@@ -11,20 +11,13 @@
   <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
   <link rel="stylesheet" href="../assets/campus-picker.css" />
   <style>
-    /* Page-only: everything else comes from base.css (gb-) and campus-picker.css. */
-    .ss-card { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; padding:14px; margin-bottom:12px; }
-    .ss-card h2 { margin:0 0 4px; font-size:15px; }
-    .ss-card .gb-muted { margin:0 0 10px; font-size:13px; }
+    /* Page-only, and only what base.css doesn't already give (.gb-card/.gb-field/.gb-input/
+       .gb-btn/.gb-next/.gb-done/.gb-panel/.gb-err/.gb-muted cover the rest). GM pass
+       2026-10-28: dropped the hand-rolled card/flash colors for those shared tokens. */
     .ss-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--gb-line); }
     .ss-row:last-child { border-bottom:none; }
-    .ss-row label { flex:1; font-weight:600; font-size:14px; }
-    .ss-row input[type=number] { max-width:84px; text-align:center; font-weight:700; }
-    .ss-empty { padding:10px 0; color:var(--gb-muted); font-size:13px; }
-    .ss-flash { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px; }
-    .ss-flash.ok { color:var(--gb-ok); background:#eafaf0; }
-    .ss-flash.err { color:#b42318; background:#fdeceb; }
-    .ss-flash:empty { display:none; }
-    #ss-submit { margin-top:4px; }
+    .ss-row label { flex:1 1 auto; min-width:0; font-weight:600; font-size:14px; overflow-wrap:anywhere; }
+    .ss-row input[type=number] { flex:0 0 auto; width:84px; text-align:center; font-weight:700; }
   </style>
 </head>
 <body class="gb gb-app">
@@ -32,33 +25,48 @@
   <header class="gb-head"><div><div><h1 id="ss-title">Support Sessions</h1><p id="header-status">La Montessori Schools</p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> Principal portal</a></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+    <div class="gb-next-slot" id="ss-next"></div>
     <main class="gb-stage">
       <section id="auth-root"><div id="gate-slot"></div></section>
 
       <div id="app-root" style="display:none">
-        <div class="ss-card">
-          <h2>School &amp; role</h2>
-          <p class="gb-muted">Evaluate one Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member at a time.</p>
+        <div class="gb-card">
+          <h2 style="margin:0 0 4px;font-size:15px">School &amp; role</h2>
+          <p class="gb-muted" style="margin:0 0 10px">Evaluate one Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member at a time.</p>
           <div class="gb-field"><label for="ss-campus-mount">School</label><div id="ss-campus-mount"></div></div>
           <div class="gb-field"><label for="ss-role">Role being evaluated</label>
             <select id="ss-role" class="gb-input"></select>
           </div>
         </div>
 
-        <div class="ss-flash" id="ss-flash" role="status"></div>
+        <p id="ss-status" class="gb-muted" role="status"></p>
 
-        <div class="ss-card" id="ss-form-card" hidden>
-          <h2 id="ss-form-title">Rubric</h2>
-          <p class="gb-muted" id="ss-form-hint"></p>
+        <div class="gb-card" id="ss-form-card" hidden>
+          <h2 id="ss-form-title" style="margin:0 0 4px;font-size:15px">Rubric</h2>
+          <p class="gb-muted" id="ss-form-hint" style="margin:0 0 10px"></p>
           <div class="gb-field"><label for="ss-employee">Staff member</label>
             <select id="ss-employee" class="gb-input"></select>
           </div>
           <div id="ss-rubric-rows"></div>
-          <button type="button" class="gb-btn" id="ss-submit" disabled>Submit</button>
+          <button type="button" class="gb-btn gb-btn-primary" id="ss-submit" disabled style="margin-top:12px">Submit</button>
+        </div>
+
+        <div class="gb-done" id="ss-done" hidden>
+          <div class="gb-done-tick" aria-hidden="true">✓</div>
+          <h2 id="ss-done-h" tabindex="-1">Evaluation saved</h2>
+          <p id="ss-done-p"></p>
+          <div class="gb-row-acts">
+            <a class="gb-btn gb-btn-primary" href="index.html">Back to Principal portal</a>
+            <button type="button" class="gb-btn" id="ss-done-again">Evaluate another</button>
+          </div>
         </div>
       </div>
     </main>
-    <aside class="gb-panels" id="panels" aria-label="More" hidden></aside>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden>
+      <details class="gb-panel"><summary data-emoji="help">What the scores mean</summary>
+        <div class="gb-panel-b"><p class="gb-muted">Score each item 0 (not met) to the rubric's maximum (fully met). There's no fixed pass mark — scores feed the SS Dashboard's averages and compliance tracking over time.</p></div>
+      </details>
+    </aside>
   </div>
 
   <footer class="site">
@@ -114,10 +122,13 @@
     function get(params) { return call(PDR_BACKEND_URL + '?' + new URLSearchParams(Object.assign({ idToken: SESSION.idToken }, params)).toString()); }
     function post(body) { return call(PDR_BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: SESSION.idToken }, body)) }); }
 
-    function flash(msg, kind) {
-      const el = document.getElementById('ss-flash');
+    // One status line, neutral (loading) or error -- base.css's own
+    // tokens (gb-muted/gb-err), no page-local colors. Success doesn't use
+    // this at all: it replaces the form with the #ss-done screen instead.
+    function status(msg, isError) {
+      const el = document.getElementById('ss-status');
       el.textContent = msg || '';
-      el.className = 'ss-flash' + (kind ? ' ' + kind : '');
+      el.className = isError ? 'gb-err' : 'gb-muted';
     }
     function authFailIfNeeded(res) {
       if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) LMCS.notifyAuthFailure();
@@ -127,32 +138,57 @@
       const sel = document.getElementById('ss-role');
       sel.innerHTML = SS_ROLES.map((r) => '<option value="' + r.key + '">' + esc(r.label) + '</option>').join('');
     }
+    function roleLabel(key) { const r = SS_ROLES.find((x) => x.key === key); return r ? r.label : key; }
 
     function selectedCampus() {
       const sel = campusPicker.get();
       return !sel.all && sel.campuses.length ? sel.campuses[0] : null;
     }
 
+    // The one next-step card, always the first thing under the header
+    // (base.css's own 5-place skeleton) -- "pick a school and role"
+    // before a form is loaded, "evaluate <first on the list>" once it
+    // is, Go pre-selects that person and jumps to the rubric.
+    function renderNext() {
+      const slot = document.getElementById('ss-next');
+      if (!currentMeta || !currentMeta.employees.length) {
+        slot.innerHTML = '<div class="gb-next"><div class="gb-next-b"><span class="gb-next-k">Next</span>'
+          + '<p class="gb-next-t">Pick a school and role to begin.</p></div></div>';
+        return;
+      }
+      const first = currentMeta.employees[0];
+      slot.innerHTML = '<div class="gb-next"><div class="gb-next-b"><span class="gb-next-k">Next</span>'
+        + '<p class="gb-next-t">Evaluate ' + esc(first.name) + '</p>'
+        + '<a class="gb-btn gb-btn-primary" href="#ss-rubric-rows" id="ss-next-go">Go</a></div></div>';
+      document.getElementById('ss-next-go').addEventListener('click', function () {
+        document.getElementById('ss-employee').value = first.employeeId;
+        document.getElementById('ss-employee').focus();
+      });
+    }
+
     async function loadForm() {
       const role = document.getElementById('ss-role').value;
       const campus = selectedCampus();
       document.getElementById('ss-form-card').hidden = true;
+      document.getElementById('ss-done').hidden = true;
       document.getElementById('ss-submit').disabled = true;
       currentMeta = null;
-      if (!campus) { flash('Pick a single school first.', ''); return; }
+      renderNext();
+      if (!campus) { status('Pick a single school first.', false); return; }
 
-      flash('Loading…', '');
+      status('Loading…', false);
       let res;
       try { res = await get({ action: 'ssformmeta', role: role, school: campus }); }
-      catch (err) { flash(err.message || String(err), 'err'); return; }
+      catch (err) { status(err.message || String(err), true); return; }
       if (!res.success) {
         authFailIfNeeded(res);
-        flash(res.error || 'Could not load the form.', 'err');
+        status(res.error || 'Could not load the form.', true);
         return;
       }
       currentMeta = res;
-      flash('', '');
+      status('', false);
       renderForm(res);
+      renderNext();
     }
 
     function renderForm(meta) {
@@ -168,25 +204,37 @@
       const rows = document.getElementById('ss-rubric-rows');
       rows.innerHTML = meta.rubricTitles.map((title, i) =>
         '<div class="ss-row"><label for="ss-score-' + i + '">' + esc(title) + '</label>'
-        + '<input type="number" class="gb-input" id="ss-score-' + i + '" min="0" max="' + meta.rubricMax + '"></div>'
+        + '<input type="number" inputmode="numeric" class="gb-input" id="ss-score-' + i + '" min="0" max="' + meta.rubricMax + '"></div>'
       ).join('');
 
       document.getElementById('ss-form-card').hidden = false;
       document.getElementById('ss-submit').disabled = meta.employees.length === 0;
     }
 
+    // "Evaluate another": same role/school, form stays loaded -- no
+    // re-fetch needed, just clear the scores and show the form again.
+    function evaluateAnother() {
+      document.getElementById('ss-done').hidden = true;
+      if (currentMeta) {
+        currentMeta.rubricTitles.forEach((_, i) => { const el = document.getElementById('ss-score-' + i); if (el) el.value = ''; });
+        document.getElementById('ss-form-card').hidden = false;
+      }
+      renderNext();
+    }
+
     // Guarded against double-submission (disable the button for the duration), same pattern as every other write action in this portal.
     async function submit() {
       const btn = document.getElementById('ss-submit');
       if (btn.disabled) return;
-      if (!currentMeta) { flash('Form not loaded yet.', 'err'); return; }
+      if (!currentMeta) { status('Form not loaded yet — nothing was saved.', true); return; }
       const empSel = document.getElementById('ss-employee');
       const employeeId = empSel.value;
-      if (!employeeId) { flash('Pick a staff member first.', 'err'); return; }
+      const employeeName = empSel.options[empSel.selectedIndex] ? empSel.options[empSel.selectedIndex].text : '';
+      if (!employeeId) { status('Pick a staff member first — nothing was saved.', true); return; }
 
       const scores = currentMeta.rubricTitles.map((_, i) => document.getElementById('ss-score-' + i).value);
       if (scores.some((s) => s === '' || isNaN(Number(s)) || Number(s) < 0 || Number(s) > currentMeta.rubricMax)) {
-        flash('Every score must be a number between 0 and ' + currentMeta.rubricMax + '.', 'err');
+        status('Every score must be a number between 0 and ' + currentMeta.rubricMax + ' — nothing was saved.', true);
         return;
       }
 
@@ -194,19 +242,20 @@
       const original = btn.textContent;
       btn.textContent = 'Submitting…';
       try {
-        const res = await post({
-          action: 'submitss', role: document.getElementById('ss-role').value,
-          school: selectedCampus(), employeeId: employeeId, scores: scores,
-        });
+        const role = document.getElementById('ss-role').value;
+        const res = await post({ action: 'submitss', role: role, school: selectedCampus(), employeeId: employeeId, scores: scores });
         if (res.success) {
-          flash('Submitted.', 'ok');
-          currentMeta.rubricTitles.forEach((_, i) => { document.getElementById('ss-score-' + i).value = ''; });
+          status('', false);
+          document.getElementById('ss-done-p').textContent = 'You evaluated ' + employeeName + ' for ' + roleLabel(role) + '.';
+          document.getElementById('ss-form-card').hidden = true;
+          document.getElementById('ss-done').hidden = false;
+          document.getElementById('ss-done-h').focus();
         } else {
           authFailIfNeeded(res);
-          flash(res.error || 'Something went wrong submitting — please try again.', 'err');
+          status((res.error || 'Something went wrong submitting') + ' — nothing was saved, please try again.', true);
         }
       } catch (err) {
-        flash(err.message || String(err), 'err');
+        status((err.message || String(err)) + ' — nothing was saved, please try again.', true);
       } finally {
         btn.disabled = false;
         btn.textContent = original;
@@ -218,6 +267,7 @@
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
       document.getElementById('header-status').textContent = session.campusName || 'La Montessori Schools';
+      document.getElementById('panels').hidden = false;
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
       if (window.LMCSEmoji && LMCSEmoji.get('supportSession')) {
         document.getElementById('ss-title').insertBefore(LMCSEmoji.tag('supportSession'), document.getElementById('ss-title').firstChild);
@@ -229,6 +279,8 @@
       });
       document.getElementById('ss-role').addEventListener('change', loadForm);
       document.getElementById('ss-submit').addEventListener('click', submit);
+      document.getElementById('ss-done-again').addEventListener('click', evaluateAnother);
+      renderNext();
       loadForm();
     }
 

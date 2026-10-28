@@ -16,6 +16,7 @@ window.LMCSGuide = {
       ],
     },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },
+    'principal/support-sessions.html': { purpose: "Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member with their rubric.", roles: ['Principal'] },
     'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report: support sessions, activities and staff requests.", roles: ['Principal'] },
     'coordinator/index.html': {
       purpose: "Your home: Today with Buddy, then the department modules.", roles: ['Coordinator'],
