@@ -8,7 +8,7 @@ export function mountWorld(root, session, backendUrl) {
   const e = (k) => (window.LMCSEmoji ? window.LMCSEmoji.get(k) + ' ' : '');
   const sw = document.createElement('div');
   sw.className = 'gb-switch'; sw.setAttribute('role', 'group'); sw.setAttribute('aria-label', 'View');
-  sw.innerHTML = '<button type="button" aria-pressed="true" aria-controls="home">' + e('homeBase') + 'Office</button>' +
+  sw.innerHTML = '<button type="button" aria-pressed="true">' + e('homeBase') + 'Office</button>' +
     '<button type="button" aria-pressed="false" aria-controls="world">' + e('world') + 'Routes</button>';
   const [home, world] = sw.querySelectorAll('button'), worldEl = document.getElementById('world');
   let map = null;
@@ -20,8 +20,11 @@ export function mountWorld(root, session, backendUrl) {
   home.onclick = () => view(false); world.onclick = () => view(true);
   const dock = () => {
     const slot = [...root.querySelectorAll('.view-slot')].find((s) => !s.closest('[hidden]'));
-    if (slot && sw.parentNode !== slot) slot.append(sw);
+    if (!slot) { if (root.classList.contains('is-world')) view(false); return; } // no switch showing (a load error): never strand Routes
+    if (sw.parentNode !== slot) slot.append(sw);
   };
-  new MutationObserver(dock).observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  const watch = new MutationObserver(dock); // the two screens that paint a slot, not the map
+  ['quests', 'today'].forEach((id) => watch.observe(document.getElementById(id), { childList: true, attributes: true, attributeFilter: ['hidden'] }));
+  watch.observe(document.getElementById('home'), { attributes: true, attributeFilter: ['hidden'] });
   dock();
 }
