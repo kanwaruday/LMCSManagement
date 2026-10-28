@@ -182,7 +182,7 @@ function captureRun_(body) {
   const status = CAP_RUN_STATUSES_.indexOf(run.status) !== -1 ? run.status : 'open';
   const row = [runId, a.v.reg, a.v.campusId, run.kind, when(run.startedAt), when(run.endedAt), a.caller.email, a.caller.role,
     Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), status, js(frameTimes),
-    a.caller.role === 'Driver' ? a.caller.name : /^[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
+    a.caller.role === 'Driver' ? a.caller.name : /^(?![=+\-@])[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
