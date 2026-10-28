@@ -25,5 +25,14 @@ assert.ok(!/<img|<b>|<i>/.test(es) && es.includes('&lt;img') && es.includes('a&q
 assert.strictEqual(B.rooms(B.clean(evil)).length, 1, 'an unknown type and a floor the block does not have are dropped');
 assert.strictEqual(B.svg(null), '', 'no model, no drawing');
 assert.strictEqual(B.svg({ blocks: [] }), '', 'no blocks, no drawing');
-assert.strictEqual(B.clean({ blocks: [{ w: 99, d: -4, floors: 40, rooms: [] }] }).blocks[0].floors, 6, 'sizes are clamped');
+assert.strictEqual(B.clean({ blocks: [{ w: 99, d: -4, floors: 40, rooms: [] }] }).blocks[0].floors, 8, 'sizes are clamped');
+// a null block, fractional floors and the arc model: none throw, floors are whole, the LMS 2 model draws with its hosts gold
+assert.strictEqual(B.clean({ blocks: [null, 5, { floors: 2, w: 2, d: 1, rooms: [null, { id: 'f', name: 'x', type: 'classroom', face: 'front', floor: 1.6, at: 0, span: 1 }] }] }).blocks[0].rooms.length, 0, 'a floor that rounds past the top is dropped');
+const M = require(path.join(root, 'assets/game/school-models.js'));
+const lm = B.clean(M.LMS2);
+assert.ok(lm && !lm.sample && lm.blocks[0].kind === 'arc', 'LMS 2 is a real (not sample) curved building');
+assert.deepStrictEqual(B.rooms(lm).filter((r) => r.host).map((r) => r.host).sort(), ['daily', 'hr', 'rules', 'setup'], 'LMS 2 hosts the four Home Base rooms');
+const ls = B.svg(M.LMS2, { hosts: ['daily', 'hr'] });
+assert.ok(!ls.includes('Sample building') && (ls.match(/sb-host/g) || []).length === 2, 'only rooms the page can open are gold');
+assert.ok(!/\d{2}\.\d{4,}°|lat|lng|longitude/i.test(JSON.stringify(M)), 'no map location in the models');
 console.log('test-school-building: ok');

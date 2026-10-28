@@ -262,6 +262,7 @@
 .sb-floorline { fill:none; stroke:#8a5a00; stroke-width:1; }
 .sb-win { fill:#ffffff; stroke:var(--gb-muted); stroke-width:1; }
 .sb-ground { fill:#cfe3c0; stroke:#6b8f5a; stroke-width:1; }
+.sb-hill { fill:#a9bf9a; opacity:.55; }
 .sb-room { cursor:pointer; }
 .sb-host .sb-win, .sb-host .sb-ground { stroke:var(--gb-gold); stroke-width:3; }
 .sb-room:focus { outline:none; }

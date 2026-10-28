@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=970a17cb" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=71e6f09b" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     #base-name .gb-emoji { margin-right:.3em; }
@@ -60,8 +60,9 @@
 
   <script src="../assets/auth.js?v=84c3e38c"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
-  <script src="../assets/game/emoji.js?v=7345bdc8"></script>
-  <script src="../assets/game/school-building.js?v=78b2b1f3"></script>
+  <script src="../assets/game/emoji.js?v=3daa2316"></script>
+  <script src="../assets/game/school-building.js?v=deca8219"></script>
+  <script src="../assets/game/school-models.js?v=4c8049df"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
@@ -149,24 +150,34 @@
         .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); if (d && d.building) drawSchool(session, d.building); })
         .catch(function (e) { console.warn('home base', e); }); // the rooms already show; setup says it couldn't load
     }
-    // the 3D school: the campus's building model when one is set, else the sample shape with this school's name (marked sample).
-    // A tap on a gold room opens its Home Base room below; other rooms say what will live there later.
-    let BUILDING = null;
+    // the 3D school: the campus's own building model (assets/game/school-models.js; later Game Config, via d.building) when
+    // there is one, else the sample shape with this school's name, marked sample. A tap on a gold room opens its Home Base
+    // room below; other rooms say what will live there later.
+    let BUILDING = null, CENTRED = false;
+    const HOSTS = ['daily', 'hr', 'rules', 'setup'];
     const LATER = { classroom: 'class teacher, CW/HW done today and attendance will show here', store: 'its inventory will show here',
       busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
     function drawSchool(session, model) {
       if (typeof LMCSBuilding === 'undefined') return;
-      BUILDING = LMCSBuilding.clean(model) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: session.campus, sample: true }));
+      const own = model || (typeof LMCSBuildingModels !== 'undefined' && LMCSBuildingModels[session.campus]) || null;
+      BUILDING = LMCSBuilding.clean(own) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: session.campus, sample: true }));
       const box = document.getElementById('school-3d');
-      box.innerHTML = LMCSBuilding.svg(BUILDING); // every label is escaped inside svg()
-      box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); // phones: start with the middle of the school in view
+      const keep = box.scrollLeft;
+      box.innerHTML = LMCSBuilding.svg(BUILDING, { hosts: HOSTS }); // every label is escaped inside svg()
+      if (CENTRED) box.scrollLeft = keep; else centre();
+    }
+    // phones: start with the middle of the school in view, once, and only when the box can be measured (not while hidden)
+    function centre() {
+      const box = document.getElementById('school-3d');
+      if (CENTRED || !box.clientWidth) return;
+      box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); CENTRED = true;
     }
     function pickRoom(id) {
       const r = BUILDING && LMCSBuilding.rooms(BUILDING).filter(function (x) { return x.id === id; })[0];
       if (!r) return;
       [].forEach.call(document.querySelectorAll('#school-3d .sb-room'), function (g) { g.classList.toggle('is-picked', g.getAttribute('data-room') === id); });
       const said = document.getElementById('school-said');
-      const tile = r.host && document.querySelector('#rooms .gb-room[data-host="' + r.host + '"]');
+      const tile = r.host ? [].filter.call(document.querySelectorAll('#rooms .gb-room'), function (d) { return d.dataset.host === r.host; })[0] : null;
       if (tile) { tile.open = true; tile.scrollIntoView({ block: 'nearest' }); said.textContent = r.name + ': opened below.'; tile.querySelector('summary').focus(); return; }
       said.textContent = r.name + (r.holds && r.name.indexOf(r.holds) === -1 ? ' (' + r.holds + ')' : '') + (LATER[r.type] ? ': ' + LATER[r.type] + ' later.' : '.');
     }
@@ -180,6 +191,7 @@
       document.getElementById('world').hidden = !world;
       document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
       document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+      if (!world) centre();
     }
 
     function hello(name) {

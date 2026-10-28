@@ -22,7 +22,7 @@ var LMCSEmoji = (function () {
     tools: '🧰', appointments: '📅', bus: '🚌', fuel: '⛽', routeVideo: '🎥', rollCall: '🙋', busCheck: '🔧', call: '📞', help: '❓',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
-    ground: '⚽', busBay: '🚏', site: '🧱'
+    hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'
   });
   function get(k) { return Object.prototype.hasOwnProperty.call(MAP, k) ? MAP[k] : ''; }
   function tag(k) {
