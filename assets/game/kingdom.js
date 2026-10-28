@@ -403,7 +403,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var dar = map.querySelector('.kg-darbar');
     if (keepX !== null) box.scrollLeft = keepX;
     else if (dar && box.scrollWidth > box.clientWidth) box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2);
-    if (!S.questsLinked && location.hash === '#quests' && d.role === 'Owner') { S.questsLinked = true; openQuests(null); } // HQ Home's link
+    // a link from HQ Home opens its target once: #quests (📜 All quests, Owner) or #base-HES (a base's dialog)
+    var linkBase = baseOfGo(location.hash);
+    if (!S.linked && location.hash === '#quests' && d.role === 'Owner') { S.linked = true; openQuests(null); }
+    else if (!S.linked && linkBase && bases.some(function (b) { return b.id === linkBase; })) { S.linked = true; openBase(linkBase); }
     else runTour(false);
   }
 

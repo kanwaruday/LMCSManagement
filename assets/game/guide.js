@@ -50,14 +50,16 @@ window.LMCSGuide = {
       ],
     },
     'owner/index.html': {
-      purpose: "Your home: Today with Buddy, the Set up the game quest, then every module.", roles: ['Owner'],
+      purpose: "HQ Home: Approvals, Money today, People and Game settings, then Today with Buddy and every module.", roles: ['Owner'],
       tour: [
-        { target: '#welcome-strip', text: "Your name and the whole school, at a glance." },
+        { target: '#welcome-strip', text: "Your name and the whole school, at a glance. Home and Kingdom switch at the top." },
+        { target: '#hq-tiles', text: "Four doors: Approvals, Money today, People, and Game settings (how much of Set up the game is done)." },
         { target: '#game-root', text: "This is Today. It also holds Set up the game: six short steps that switch the game on for everyone." },
         { target: '#modules', text: "Every module across all campuses sits here." },
       ],
     },
-    'owner/kingdom.html': { purpose: "See every school's setup at a glance and hand out the next steps.", roles: ['Owner'] },
+    'owner/kingdom.html': { purpose: "See every school's setup at a glance, list every quest, and hand out the next steps.", roles: ['Owner'] },
+    'owner/people.html': { purpose: "The Coordinators: add one, or change their school and what they look after.", roles: ['Owner'] },
     'owner/transport/index.html': { purpose: "Fleet readiness for every campus: papers, safety kit, parts, drivers and fuel.", roles: ['Owner'] },
     'teacher/index.html': {
       purpose: "Your home: Today with Buddy, your score, events and timetable, then requests, evaluations and CW/HW.", roles: ['Teacher', 'Staff'],

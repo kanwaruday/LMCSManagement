@@ -131,6 +131,7 @@
       "game-confirm-prefill",
       "game-buddy",
       "game-kingdom",
+      "game-people",
       "game-event",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",

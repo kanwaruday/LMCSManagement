@@ -53,6 +53,9 @@
 .gb .gb-head a, .gb .gb-back { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,.6);
   color:#fff; font-weight:700; text-decoration:none; white-space:nowrap; }
 .gb .gb-head a:active { background:rgba(255,255,255,.18); }
+/* the Owner's 🏠 Home ⇄ 🗺️ Kingdom switch in the header (owner/index.html, owner/kingdom.html, owner/people.html) */
+.gb-hsw { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+.gb .gb-hsw a[aria-current="page"] { background:rgba(255,255,255,.22); border-color:#fff; }
 
 /* page width: centred; forms read in one column, boards use the width */
 .gb-page, .gb-page-wide { width:100%; margin:0 auto; padding:16px 16px 40px; }

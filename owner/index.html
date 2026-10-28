@@ -8,13 +8,13 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=71e6f09b" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
 </head>
 <body class="gb gb-app">
 
-  <!-- The screen skeleton (assets/game/base.css). Owner home is the All tools shelf; the Owner's hub is the Kingdom, so the way back goes there.
-       Its stage is Today (game.js), which carries its own next step. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>Owner home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><a href="kingdom.html"><span aria-hidden="true">&lsaquo;</span> Kingdom</a></div></header>
+  <!-- The screen skeleton (assets/game/base.css). HQ Home: four tiles (Approvals, Money today, People, Game settings), then Today
+       (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Kingdom. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page"><span aria-hidden="true">🏠</span> Home</a><a href="kingdom.html"><span aria-hidden="true">🗺️</span> Kingdom</a></nav></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <main class="gb-stage">
@@ -24,6 +24,7 @@
         <div id="gate-slot"></div>
       </section>
       <div id="app-root" style="display:none">
+        <ul class="gb-grid hq-tiles" id="hq-tiles" aria-label="HQ Home"></ul>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
       </div>
     </main>
@@ -40,7 +41,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=ccfc7bfd"></script>
+  <script src="../assets/auth.js?v=76dc60a6"></script>
   <script src="../assets/game/game.js?v=faeddddc"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script src="../assets/game/emoji.js?v=73c82a00"></script>
@@ -50,6 +51,7 @@
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
     const MODULES = [
       { name: 'Kingdom', e: 'base', url: 'kingdom.html', desc: 'Your schools as a kingdom. Buddy shows your next step, and you hand out who sets up what.' },
+      { name: 'People', e: 'heads', url: 'people.html', desc: 'Coordinators: add one, or change their school and functions.' },
       // Approvals points at the Coordinator systems page for now; Owner portal part A replaces it.
       { name: 'Approvals', e: 'requests', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },
       { name: 'Payroll', e: 'payroll', url: '../payroll/index.html', desc: 'Monthly payroll.' },
@@ -68,6 +70,43 @@
         span.appendChild(el('small', '', m.desc));
         a.appendChild(span); li.appendChild(a); ul.appendChild(li);
       });
+    }
+
+    // HQ Home's four tiles. Counts come only from what an existing read already returns: gamekingdom's `cards` (approved requests
+    // waiting for a follow-up) and the HQ "Set up the game" steps (setupSteps_); Money today is a link only. k = null while loading.
+    function hqTiles(k) {
+      const hq = k && k.kingdom && (k.kingdom.campuses || []).filter(function (c) { return c.darbar; })[0];
+      let steps = null;
+      ((hq && hq.buildings) || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (t.steps && t.steps.length) steps = t.steps; }); });
+      const cards = k && Array.isArray(k.cards) ? k.cards.length : null, done = steps ? steps.filter(function (s) { return s.done; }).length : 0;
+      return [
+        { e: '📥', name: 'Approvals', url: '../coordinator/systems/index.html#approvals', count: cards || null,
+          small: cards ? cards + (cards === 1 ? ' approved request waits' : ' approved requests wait') + ' for a follow-up' : k ? 'Requests waiting for your decision. Nothing approved is waiting for a follow-up.' : 'Requests waiting for your decision' },
+        { e: '💰', name: 'Money today', url: '../office/daybook.html', small: "The Day Book: today's cash and entries" },
+        { e: '👥', name: 'People', url: 'people.html', small: 'Coordinators: their school and what they look after' },
+        { e: '⚙️', name: 'Game settings', url: 'kingdom.html#base-HES', count: steps && done < steps.length ? steps.length - done : null,
+          small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
+      ];
+    }
+    function renderTiles(k) {
+      const ul = document.getElementById('hq-tiles');
+      ul.textContent = '';
+      hqTiles(k).forEach(function (t) {
+        const a = el('a', 'gb-go'), span = el('span'), li = el('li'), ic = el('span', 'gb-emoji', t.e);
+        ic.setAttribute('aria-hidden', 'true');
+        span.appendChild(ic); span.appendChild(document.createTextNode(t.name));
+        if (t.count) { const c = el('span', 'gb-count', String(t.count)); c.setAttribute('aria-hidden', 'true'); span.appendChild(document.createTextNode(' ')); span.appendChild(c); }
+        span.appendChild(el('small', '', t.small));
+        a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
+      });
+    }
+    function loadTiles(session) {
+      renderTiles(null);
+      if (!GAME_BACKEND_URL) return;
+      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d && d.success) renderTiles(d); })
+        .catch(function (e) { console.warn('hq tiles', e); }); // the tiles already show as links
     }
 
     function hello(name) {
@@ -89,6 +128,7 @@
       });
 
       renderModules();
+      loadTiles(session);
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
