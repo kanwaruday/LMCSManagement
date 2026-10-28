@@ -82,7 +82,7 @@ window.TransportViews = (function () {
   function metroBody(el, d, S, redraw) {
     const m = model(d);
     S.half = S.half || 'AM';
-    el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; <b>dashed</b> lines have a tracker problem, so their stops are incomplete; <b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits.' + (m.months.length ? ' The badge is the line\'s result ' + esc(m.period) + '.' : '') + '</p>' +
+    el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; ' + (m.buses.some(b => (m.veh[b] || {}).tracker != null) ? '<b>dashed</b> lines have a tracker problem, so their stops are incomplete; ' : '') + '<b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits.' + (m.months.length ? ' The badge is the line\'s result ' + esc(m.period) + '.' : '') + '</p>' +
       '<div class="ctl"><span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
       '<div class="tv-split"><svg class="tv-metro" viewBox="0 0 1000 640" role="img" aria-label="Route map: one line per bus"></svg><div class="tv-info"><b>Tap a line or a station.</b><p class="note">A line shows its children, seats, km a day' + (m.months.length ? ' and money' : '') + ', and stops within 2 minutes of each other. A station shows every bus that stops there and when.</p></div></div>';
     el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; redraw(); }));
@@ -107,7 +107,7 @@ window.TransportViews = (function () {
     routes.forEach(r => {
       const v = m.veh[r.b] || {}, c = m.colour[r.b], w = Math.max(4, Math.min(13, (v.students || 24) / 5));
       const seq = r.stops.map(P).concat(r.wait ? [P(r.wait)] : []);
-      lines += '<path d="M' + seq[0].join(' ') + seq.slice(1).map((p, i) => elbow(seq[i], p)).join(' ') + '" fill="none" stroke="' + c + '" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round"' + (v.tracker === 'ok' ? '' : ' stroke-dasharray="12 8"') + ' data-line="' + esc(r.b) + '" tabindex="0" role="button" aria-label="' + esc(r.b) + ' line"/>';
+      lines += '<path d="M' + seq[0].join(' ') + seq.slice(1).map((p, i) => elbow(seq[i], p)).join(' ') + '" fill="none" stroke="' + c + '" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round"' + (v.tracker === 'ok' || v.tracker == null ? '' : ' stroke-dasharray="12 8"') + ' data-line="' + esc(r.b) + '" tabindex="0" role="button" aria-label="' + esc(r.b) + ' line"/>';
       r.all.forEach(s => { const [x, y] = P(s), k = x + ',' + y; (station[k] = station[k] || { x, y, list: [] }).list.push(s); });
       if (r.wait) { const [x, y] = P(r.wait); marks += '<rect x="' + (x - 9) + '" y="' + (y - 9) + '" width="18" height="18" rx="3" fill="#fff" stroke="' + INK + '" stroke-width="3"/>'; }
       const [x0, y0] = seq[0], loss = v.net != null && v.net < 0;
