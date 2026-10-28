@@ -74,10 +74,23 @@
     // doesn't load, so the rows say what each page holds instead.
     const PATHS = [
       { title: 'Daily work', e: 'day', host: 'daily', lead: 'Your reports and what came out of them.', pages: [
-        { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report and their dashboards.' },
-        { name: 'Support Sessions', e: 'supportSession', url: 'support-sessions.html', desc: 'Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member.' },
+        { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report and its dashboard.' },
         { name: 'Daily-report issues', e: 'issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
         { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
+      ] },
+      // Its own room (not nested under Daily work) per the game director,
+      // 2026-10-28: host:'ss' is read by the Home Base 3D building to mark
+      // this room gold once 'ss' joins its HOSTS list below. One row per
+      // form, all pointing at the SAME page/role picker
+      // (support-sessions.html?role=), not 6 separate pages -- the rubric
+      // shape still comes from exactly one place (ssformmeta) either way.
+      { title: 'Support Sessions', e: 'supportSession', host: 'ss', lead: 'Evaluate a staff member against their rubric.', pages: [
+        { name: 'Teacher SS', e: 'supportSession', url: 'support-sessions.html?role=teacher', desc: 'Evaluate a Teacher.' },
+        { name: 'IT Teacher SS', e: 'supportSession', url: 'support-sessions.html?role=itComputer', desc: 'Evaluate an IT Teacher.' },
+        { name: 'PTI SS', e: 'supportSession', url: 'support-sessions.html?role=pti', desc: 'Evaluate a PTI.' },
+        { name: 'Fee Clerk SS', e: 'supportSession', url: 'support-sessions.html?role=feeClerkPRO', desc: 'Evaluate a Fee Clerk.' },
+        { name: 'Non-Teaching SS', e: 'supportSession', url: 'support-sessions.html?role=nonTeaching', desc: 'Evaluate a Non-Teaching staff member.' },
+        { name: 'Driver Cum Peon SS', e: 'supportSession', url: 'support-sessions.html?role=driverCumPeon', desc: 'Evaluate a Driver cum Peon.' },
       ] },
       { title: 'HR & Hiring', e: 'hiring', host: 'hr', lead: 'Your school\'s applicants and staff.', pages: [
         { name: 'Hiring Dashboard', e: 'applicants', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
