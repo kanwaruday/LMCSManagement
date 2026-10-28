@@ -35,8 +35,8 @@ export function renderQuests(el, quests, who) {
         '<span class="gb-bar gb-bar-ok" role="progressbar" aria-label="' + esc(q.title) + ' steps done" aria-valuemin="0" aria-valuemax="' + q.steps.length + '" aria-valuenow="' + n + '"><i style="width:' + Math.round(100 * n / q.steps.length) + '%"></i></span>' +
         '<ul class="gb-missions">' + q.steps.map((s) => {
           const isNext = s === ns, cls = s.done ? ' is-done' : isNext ? ' is-next' : ' is-wait';
-          const go = isNext ? '<a class="gb-btn' + (i === 0 ? ' gb-btn-primary' : '') + '" href="' + esc(href(s.go)) + '">Go</a>' : '';
-          return '<li class="gb-mission' + cls + '"><span class="gb-mark" aria-hidden="true"></span><span class="gb-mission-t">' + esc(s.title) +
+          const go = isNext ? '<a class="gb-btn' + (i === 0 ? ' gb-btn-primary' : '') + '" href="' + esc(href(s.go)) + '" aria-label="Go: ' + esc(s.title) + '">Go</a>' : '';
+          return '<li class="gb-mission' + cls + '"><span class="gb-mark" aria-hidden="true"></span><span class="gb-mission-t"><span class="gb-sr">' + (s.done ? 'Done: ' : isNext ? 'Next: ' : 'Waiting: ') + '</span>' + esc(s.title) +
             '<small>' + (s.done ? 'Done' : isNext ? 'Next' : s.locked ? 'Opens after the step before' : 'Waiting') + '</small></span>' + go + '</li>';
         }).join('') + '</ul></section>';
     }).join('') +

@@ -25,8 +25,9 @@ export function renderTasks(el, data, note = '', who = null) {
     (tasks.length ? '<ul class="gb-missions">' + tasks.map((t) => {
       const href = LINKS[t.action], isNext = t === next;
       const cls = t.status === 'done' ? ' is-done' : isNext ? ' is-next' : t.status === 'waiting' ? ' is-wait' : '';
-      const go = t.status !== 'done' && href ? '<a class="gb-btn' + (isNext ? ' gb-btn-primary' : '') + '" href="' + href + '">Go</a>' : '';
-      return '<li class="gb-mission' + cls + '"><span class="gb-mark" aria-hidden="true"></span><span class="gb-mission-t">' + esc(t.title) +
+      const go = t.status !== 'done' && href ? '<a class="gb-btn' + (isNext ? ' gb-btn-primary' : '') + '" href="' + href + '" aria-label="Go: ' + esc(t.title) + '">Go</a>' : '';
+      const sr = t.status === 'done' ? 'Done: ' : isNext ? 'Next: ' : t.status === 'waiting' ? 'Waiting: ' : 'Open: ';
+      return '<li class="gb-mission' + cls + '"><span class="gb-mark" aria-hidden="true"></span><span class="gb-mission-t"><span class="gb-sr">' + sr + '</span>' + esc(t.title) +
         '<small>' + LABELS[t.status] + ' · due ' + esc(dueLabel(t.due)) + '</small></span>' + go + '</li>';
     }).join('') + '</ul>' : '<p class="gb-empty">Nothing to do today.</p>');
 }
