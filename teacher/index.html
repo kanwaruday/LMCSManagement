@@ -153,6 +153,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 <script src="../assets/auth.js?v=64d16bda"></script>
 <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
 <script src="../assets/game/game.js?v=e4fad387"></script>
+<script src="../assets/game/emoji.js?v=637364da"></script>
 <script src="../assets/game/rail.js?v=e726bf9c"></script>
 <script>
 (function () {
@@ -179,7 +180,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
         <ul class="gb-list" aria-labelledby="toolsHead">
           <li><a class="gb-go" href="#requests" aria-label="Go: My Requests" aria-describedby="homeReqSub"><span>My Requests<small id="homeReqSub">Leave &amp; other approvals</small></span></a></li>
           <li><a class="gb-go" href="#evals" aria-label="Go: My Evaluations" aria-describedby="homeEvalSub"><span>My Evaluations<small id="homeEvalSub">Your Support Session scores</small></span></a></li>
-          <li data-teacher-only><a class="gb-go" href="#tags" aria-label="Go: My CW/HW Patterns" aria-describedby="homeTagSub"><span>My CW/HW Patterns<small id="homeTagSub">Review what you've sent</small></span></a></li>
+          <li data-teacher-only><a class="gb-go" href="#tags" aria-label="Go: My CW/HW Patterns" aria-describedby="homeTagSub"><span data-emoji="homework">My CW/HW Patterns<small id="homeTagSub">Review what you've sent</small></span></a></li>
           <li data-teacher-only><a class="gb-go" href="#timetableCard" data-panel="timetableCard" aria-label="Go: Your Timetable" aria-describedby="homeTtSub"><span>Your Timetable<small id="homeTtSub">Your periods, day by day</small></span></a></li>
           <li><a class="gb-go" href="#eventsCard" data-panel="eventsCard" aria-label="Go: Upcoming Events" aria-describedby="homeEvSub"><span>Upcoming Events<small id="homeEvSub">Your campus calendar, next 14 days</small></span></a></li>
         </ul>
@@ -259,7 +260,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
       <!-- ══════════════════ MY CW/HW TAGS ══════════════════ -->
       <div class="tab-panel" id="panel-tags">
         <a class="gb-btn gb-btn-quiet sec-back" href="#game-root"><span aria-hidden="true">&lsaquo;</span> My day</a>
-        <h2 class="section-lead">My CW/HW Patterns</h2>
+        <h2 class="section-lead" data-emoji="homework">My CW/HW Patterns</h2>
         <div class="section-sub">Review the CW/HW you've actually logged in the last 7 days — real entries, not yet checked against any target (that needs the tag rubric Uday hasn't defined yet).</div>
         <div id="tagsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
       </div>
@@ -267,7 +268,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="More" hidden>
-    <details class="gb-panel" id="rankCard" data-teacher-only><summary>My score</summary><div class="gb-panel-b">
+    <details class="gb-panel" id="rankCard" data-teacher-only><summary data-emoji="points">My score</summary><div class="gb-panel-b">
       <p class="gb-muted">Draft — not yet your official incentive</p>
       <div id="streakPillWrap"></div>
       <div id="rankBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
