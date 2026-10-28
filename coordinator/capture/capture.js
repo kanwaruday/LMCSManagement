@@ -121,14 +121,14 @@ async function driverBoot() {
   S.driver = me;
   S.session = { email: 'driver:' + normReg(me.reg), role: 'Driver', idToken: null, driver: true };
   S.buses = [{ reg: me.reg, route: '', campus: me.campus, operational: true, stops: [] }];
-  $('back').href = '../../driver/'; $('back').textContent = '\u2190 My missions';
+  $('back').href = '../../driver/'; $('back').textContent = '\u2190 होम · Home';
   document.querySelectorAll('[data-mode]').forEach((b) => { b.hidden = b.dataset.mode !== 'timelapse'; });
   $('offline').hidden = true;
   wire();
   setMode('timelapse');
   $('bus').innerHTML = `<option value="${esc(me.reg)}">${esc(me.reg)}</option>`;
   $('bus').value = me.reg;
-  $('busNote').textContent = 'Your bus, linked to this phone.';
+  driverLabels();
   battery();
   drawResume();
   drawUpload();
@@ -171,6 +171,24 @@ function setMode(mode) {
   $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
   loadoutLine();
+  if (S.driver) driverLabels();
+}
+// Driver mode speaks Hindi first (a driver may read little; driver/index.html does the same), English small after it
+function driverLabels() {
+  const t = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
+  document.querySelector('.hdr h1').textContent = 'रूट वीडियो · Route video';
+  document.querySelector('.cap-modes').hidden = true; // one kind of run only
+  t('modeHelp', 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "यहाँ स्टॉप" दबाएँ। · Phone on the dashboard; tap STOP HERE at every stop.');
+  document.querySelector('label[for="bus"]').hidden = $('bus').hidden = true; // one bus: no picker, just say which
+  t('busNote', 'बस ' + S.driver.reg + ' · आपकी बस · Your bus');
+  $('busNote').className = 'cap-hint';
+  document.querySelector('#privacyRow span').textContent = 'स्कूल टाइम के बाद, बस में कोई बच्चा नहीं · Outside school hours, no children on board';
+  t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
+  t('start', (S.resumeId ? 'जारी रखें · Carry on' : '🎥 रिकॉर्ड शुरू करें · Start'));
+  t('stopHere', 'यहाँ स्टॉप · STOP HERE');
+  t('end', 'रूट खत्म · End run');
+  document.querySelector('[data-tab="capture"]').firstChild.textContent = 'रिकॉर्ड · Record';
+  document.querySelector('[data-tab="upload"]').firstChild.textContent = 'भेजें · Send ';
 }
 // Inspection: what the check holds before it starts ("10 items, 4 need a photo"), from the list saved on the phone.
 function loadoutLine() {
