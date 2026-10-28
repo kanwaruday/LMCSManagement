@@ -51,8 +51,9 @@ export async function showDriverFills(root, session, api) {
 
   // The Day Book half of a confirm. Off until after the count: the fill stays confirmed and the screen says when it goes in.
   async function toDayBook(f) {
-    if (!paySel.value) { const off = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: '', bucket: '' }).catch(() => ({}));
-      if (off.code === 'DRIVER_FILLS_OFF' || /^Unknown action/.test(off.error || '')) return AFTER_COUNT + '.';
+    // blank "Paid from": the server answers DRIVER_FILLS_OFF while off, and BAD_ACCOUNT (writing nothing) once on
+    if (!paySel.value) { const r0 = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: '', bucket: '' }).catch(() => ({}));
+      if (r0.code === 'DRIVER_FILLS_OFF' || /^Unknown action/.test(r0.error || '')) return AFTER_COUNT + '.';
       return 'Choose "Paid from" above, then tap Add to Day Book.'; } // money never goes to a default account
     const [account, bucket] = paySel.value.split('|');
     const r = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: account || '', bucket: bucket || '' });
