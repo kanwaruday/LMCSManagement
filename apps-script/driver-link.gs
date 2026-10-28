@@ -21,9 +21,7 @@
 // capture: capAuth_ (transport-capture.gs) takes body.deviceToken in place of idToken: route timelapses of the linked bus only.
 // ═══════════════════════════════════════════════════════════════════
 
-const DLK_TAB_ = 'Driver Devices';
 const DLK_HEADER_ = ['Link ID', 'Token Hash', 'Reg', 'Campus', 'Driver Code', 'Driver Name', 'Created', 'Created By', 'Revoked', 'Revoked By', 'Last Seen'];
-const DLK_UNLINKED_ = 'This phone is not linked. Ask the office for a new link.'; // unknown and revoked tokens alike
 const DLK_KEEP_DAYS_ = 30; // revoked links stay on the list this long
 const DLK_RUNS_NEEDED_ = 1;
 
@@ -39,26 +37,7 @@ function dlkSheet_() {
   return sh;
 }
 
-// 'sha256:<hex>': the prefix keeps Sheets from reading an all-digit hash as a number.
-function dlkHash_(token) {
-  const d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8);
-  return 'sha256:' + d.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
-}
-
-function dlkIso_(v) { return v instanceof Date ? v.toISOString() : String(v || ''); }
-
-/** The active link of a device token: {at (sheet row), linkId, reg, campus, name}, or null (unknown, revoked or malformed). */
-function dlkLink_(token) {
-  if (!/^[a-f0-9]{64}$/.test(String(token || ''))) return null;
-  const hash = dlkHash_(token), sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(DLK_TAB_);
-  const rows = sh ? sh.getDataRange().getValues() : [];
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][1]) !== hash) continue;
-    if (rows[i][8]) return null;
-    return { at: i + 1, linkId: String(rows[i][0]), reg: String(rows[i][2]), campus: String(rows[i][3]), name: String(rows[i][5]) };
-  }
-  return null;
-}
+// dlkHash_ and dlkLink_ live in driver-token.gs, shared with the Coordinator project (its driverbus reads the same links).
 
 function driverLinkCreate_(body) {
   const fail = function (m) { return { success: false, error: m }; };

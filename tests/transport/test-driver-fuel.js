@@ -40,7 +40,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, 
   CENTRAL_REPO_FOLDER_ID_: 'x', SDOC_MIME_EXT_: { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/webp': 'webp' },
   getSubfolder_: (parent, name) => { const it = parent.getFoldersByName(name); return it.hasNext() ? it.next() : null; } };
 vm.createContext(ctx);
-['transport-uploads.gs', 'transport-capture.gs', 'driver-link.gs', 'driver-fuel.gs'].forEach((f) => vm.runInContext(gs(f), ctx));
+['transport-uploads.gs', 'transport-capture.gs', 'driver-token.gs', 'driver-link.gs', 'driver-fuel.gs'].forEach((f) => vm.runInContext(gs(f), ctx));
 // the transport folder path the capture code walks: create every level but the last (capFolder_ creates 'Capture' itself)
 vm.runInContext('capPath_()', ctx).slice(0, -1).reduce((f, n) => f.createFolder(n), root);
 const call = (fn, body) => JSON.parse(JSON.stringify(vm.runInContext(fn + '(' + JSON.stringify(body) + ')', ctx)));

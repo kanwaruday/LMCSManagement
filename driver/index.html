@@ -45,9 +45,31 @@
   .dr-ask .dr-help { margin:6px 0 0; }
   .dr-help-l { list-style:none; margin:0; padding:0; display:grid; gap:10px; font-size:15px; }
   .dr-help-l li { display:flex; gap:8px; }
-  .dr-bus { margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; }
-  .dr-bus dt { color:var(--gb-muted); font-weight:600; }
-  .dr-bus dd { margin:0; font-weight:700; }
+  /* the Home Base: the driver's own bus, drawn from data (assets/game/bus-model.js), every part a tap */
+  .dr-base { margin:0 0 12px; padding:12px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+  .dr-model { margin:0 0 8px; font-weight:800; font-size:18px; }
+  .dr-model small { display:block; font-size:14px; font-weight:600; color:var(--gb-muted); }
+  .dr-papers { list-style:none; margin:0 0 10px; padding:0; display:flex; flex-wrap:wrap; gap:6px; font-size:14px; }
+  .dr-papers li { padding:4px 10px; border-radius:999px; background:var(--gb-panel); font-weight:600; }
+  .dr-papers li.is-old { background:var(--gb-low-soft); color:var(--gb-low); }
+  .dr-views { display:flex; gap:6px; margin:0 0 8px; }
+  .dr-views button { flex:1; min-height:44px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); font:700 15px/1.2 var(--gb-font); color:var(--gb-ink); }
+  .dr-views button[aria-pressed="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
+  .bp-svg { display:block; width:100%; height:auto; }
+  .bp-part { cursor:pointer; outline:none; }
+  .bp-part:focus-visible circle:last-child { stroke:var(--gb-focus); stroke-width:4; }
+  .dr-tap { margin:6px 0 0; color:var(--gb-muted); font-size:15px; text-align:center; }
+  .dr-part { margin:10px 0 0; padding:12px; border:2px solid var(--gb-ink); border-radius:14px; }
+  .dr-part h3 { margin:0 0 6px; font-size:19px; }
+  .dr-part dl { margin:0 0 10px; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:15px; }
+  .dr-part dt { color:var(--gb-muted); font-weight:600; }
+  .dr-part dd { margin:0; font-weight:700; }
+  .dr-part .gb-btn { width:100%; min-height:48px; }
+  .dr-all { margin:10px 0 0; }
+  .dr-all summary { min-height:44px; display:flex; align-items:center; font-weight:700; cursor:pointer; }
+  .dr-part-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .dr-part-list button { width:100%; min-height:44px; padding:4px 8px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); font:600 14px/1.2 var(--gb-font); color:var(--gb-ink); text-align:left; }
+  .dr-part-list button[aria-pressed="true"] { border-color:var(--gb-ink); box-shadow:inset 4px 0 0 var(--gb-ink); }
   .dr-act .gb-btn { min-height:64px; font-size:20px; }
   .dr-act .dr-go { flex:1; }
   .dr-act .dr-back { flex:none; min-width:76px; }
@@ -114,6 +136,23 @@
       <ul id="tiles" class="dr-tiles"></ul>
       <p id="refused" class="dr-why" role="alert"></p>
       <p id="waiting" class="dr-warn" role="status"></p>
+      <!-- 🏠 Home Base (the driver's own bus, its parts) or 🗺️ World (their route): Uday, 28 Oct -->
+      <div class="gb-switch" role="group" aria-label="देखें · View">
+        <button type="button" id="viewBus" aria-pressed="true" aria-controls="busBase" data-emoji="homeBase">मेरी बस · My bus</button>
+        <button type="button" id="viewRoute" aria-pressed="false" aria-controls="world" data-emoji="world">मेरा रूट · My route</button>
+      </div>
+      <section id="busBase" class="dr-base" aria-label="मेरी बस · My bus">
+        <p class="dr-model" id="busModel"></p>
+        <ul class="dr-papers" id="busPapers" aria-label="कागज़ · Papers"></ul>
+        <div class="dr-views" role="group" aria-label="किधर से · Which side">
+          <button type="button" data-view="side" aria-pressed="true">बगल · Side</button><button type="button" data-view="front" aria-pressed="false">आगे · Front</button><button type="button" data-view="back" aria-pressed="false">पीछे · Back</button>
+        </div>
+        <div class="dr-bus-draw" id="busDraw"></div>
+        <p class="dr-tap" id="busTap">किसी पुर्ज़े पर दबाएँ · Tap a part</p>
+        <div class="dr-part" id="partCard" hidden></div>
+        <details class="dr-all"><summary>सारे पुर्ज़े · All parts</summary><ul class="dr-part-list" id="partList"></ul></details>
+      </section>
+      <section id="world" aria-label="मेरा रूट · My route" hidden><div id="routeMap"></div></section>
     </section>
 
     <section id="fuel" aria-label="डीज़ल · Fuel fill" hidden>
@@ -136,8 +175,6 @@
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
-    <details class="gb-panel"><summary data-emoji="bus">मेरी बस · Bus</summary><div class="gb-panel-b" id="pBus"></div></details>
-    <details class="gb-panel" id="pRoute"><summary data-emoji="world">मेरा रूट · My route</summary><div class="gb-panel-b"><div id="routeMap"></div></div></details>
     <details class="gb-panel" id="pHelp"><summary data-emoji="help">मदद · Help</summary><div class="gb-panel-b">
       <ul class="dr-help-l">
         <li data-emoji="fuel">डीज़ल के बाद: वीडियो, पर्ची, लीटर, रुपये, किलोमीटर · After a fill: pump video, bill, litres, ₹, km</li>
@@ -150,7 +187,8 @@
 <nav id="bar" class="dr-bar" aria-label="अगला कदम · Next step" hidden><div class="dr-bar-in" id="barIn"></div></nav>
 <script src="../assets/game/emoji.js?v=73c82a00"></script>
 <script src="./driver-logic.js?v=efd89bd5"></script>
+<script src="../assets/game/bus-model.js?v=776e1b01"></script>
 <script src="../coordinator/route-map.js?v=f5e47aee"></script>
-<script src="./driver.js?v=36e5d838"></script>
+<script src="./driver.js?v=7cb6f1bc"></script>
 </body>
 </html>

@@ -35,6 +35,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, 
 vm.createContext(ctx);
 vm.runInContext(gs('transport-uploads.gs'), ctx);
 vm.runInContext(gs('transport-capture.gs'), ctx);
+vm.runInContext(gs('driver-token.gs'), ctx);
 vm.runInContext(gs('driver-link.gs'), ctx);
 vm.runInContext(gs('driver-fuel.gs'), ctx);
 const call = (fn, body) => JSON.parse(JSON.stringify(vm.runInContext(fn + '(' + JSON.stringify(body) + ')', ctx)));

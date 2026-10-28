@@ -21,6 +21,7 @@
     }),
     waiting: () => Promise.resolve(0),
   } : null;
+  const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // driverbus: the Home Base bus
   const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
   const TOKEN_KEY = 'lmcs.driverToken'; // also read by coordinator/capture/driver-mode.js
   const REFUSED_KEY = 'lmcs.driverRefused'; // fills the office refused after they waited on the phone, shown once on home
@@ -164,12 +165,81 @@
     $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: '#fuel-1', next: next.id === 'fuel' }) +
       tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: need && !routeDone ? routeHref() : '', next: next.id === 'route', done: routeDone,
         bar: need ? `<span class="gb-bar${routeDone ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * done / need)}%"></i></span>` : '' });
-    $('pBus').innerHTML = '<dl class="dr-bus">' + `<dt>बस · Bus</dt><dd>${esc(b.reg)}</dd>` + (b.campus ? `<dt>स्कूल · School</dt><dd>${esc(b.campus)}</dd>` : '') +
-      `<dt>पिछला डीज़ल · Last fill</dt><dd>${esc(fuelLine.replace(/^.*?: /, ''))}</dd>` + (b.lastOdometer ? `<dt>किलोमीटर · km</dt><dd>${esc(b.lastOdometer)}</dd>` : '') + '</dl>';
+    homeBase();
     rail(need - done);
     bar('');
     showWaiting();
   }
+  // ── 🏠 Home Base: the driver's own bus (Coordinator backend driverbus, apps-script/coordinator-driverbus.gs), every part a tap.
+  // Today a tap shows the part's last service; later "🔧 Report a problem" turns the same part id into a repair request.
+  const H = { bus: null, view: 'side', sel: '', world: false, loading: false };
+  const HOME_KEY = 'lmcs.driverBusHome'; // the last driverbus answer, so the bus draws with no signal
+  const DEMO_BUS = { reg: 'HP 34 X 0000', make: 'Tata', model: 'Starbus 32 (demo)', seats: '32+1', year: '2018', fromScan: [],
+    papers: { insurance: { date: '2027-03-31' }, fitness: { date: '2026-12-15' }, pollution: { date: '2026-09-30' }, speed_governor: { date: '' } },
+    parts: { engine_oil: '2026-08-12', battery: '2025-11-02', tyre_fl: '2026-02-20', brake_front: '2026-06-01' } };
+  const PAPER = [['insurance', 'बीमा · Insurance'], ['fitness', 'फ़िटनेस · Fitness'], ['pollution', 'PUC · Pollution']];
+  const day = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : '—'; };
+  function loadBus() {
+    if (H.bus || H.loading) return;
+    if (api !== live) { H.bus = DEMO_BUS; drawBus(); return; }
+    try { H.bus = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch (e) { H.bus = null; }
+    H.loading = true;
+    fetch(COORD_URL, { method: 'POST', body: JSON.stringify({ action: 'driverbus', deviceToken: live.token }) }).then((r) => r.json()).then((r) => {
+      if (!r.success) return; // UNLINKED here is answered by driverme on the next load; keep what is drawn
+      H.bus = r; try { localStorage.setItem(HOME_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
+      drawBus();
+    }, () => { /* no signal: the saved bus, or the plain one */ }).then(() => { H.loading = false; });
+    drawBus();
+  }
+  function drawBus() {
+    const b = H.bus || { reg: S.bus.reg }, kind = LMCSBus.body(b), name = [b.make, b.model].filter(Boolean).join(' ');
+    $('busModel').innerHTML = (name ? esc(name) : 'मॉडल दर्ज नहीं · Model not on file') +
+      `<small>${esc(b.reg || S.bus.reg)}${b.seats ? ' · ' + esc(LMCSBus.seatsOf(b.seats)) + ' सीट · seats' : ''}${b.year ? ' · ' + esc(b.year) : ''}${name ? '' : ' · ऑफिस Fleet setup में भरेगा · the office adds it in Fleet setup'}</small>`;
+    const today = new Date().toISOString().slice(0, 10);
+    $('busPapers').innerHTML = !H.bus ? '' : PAPER.map(([k, label]) => {
+      const p = (b.papers || {})[k] || {}, old = p.date && p.date < today;
+      return `<li${old ? ' class="is-old"' : ''}>${esc(label)}: ${p.na ? 'n/a' : old ? 'ख़त्म · expired ' + esc(day(p.date)) : esc(day(p.date))}</li>`;
+    }).join('');
+    $('busDraw').innerHTML = LMCSBus.svg(kind, H.view, { sel: H.sel, reg: b.reg || S.bus.reg, title: 'मेरी बस · My bus' + (name ? ', ' + name : '') });
+    document.querySelectorAll('.dr-views button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === H.view)));
+    $('partList').innerHTML = LMCSBus.PARTS.map((p) => `<li><button type="button" data-part="${p.id}" aria-pressed="${p.id === H.sel}">${esc(p.hi)}<br><small>${esc(p.en)}</small></button></li>`).join('');
+    drawPart();
+  }
+  function drawPart() {
+    const p = LMCSBus.PARTS.find((x) => x.id === H.sel);
+    $('partCard').hidden = !p; $('busTap').hidden = !!p;
+    if (!p) return;
+    const em = p.emoji ? `<span aria-hidden="true">${E(p.emoji)}</span> ` : '';
+    $('partCard').innerHTML = `<h3 tabindex="-1">${em}${esc(p.hi)} · ${esc(p.en)}</h3><dl>` +
+      LMCSBus.info(p, H.bus).map((l) => `<dt>${esc(l.k)}</dt><dd>${esc(l.v === '—' ? '—' : day(l.v))}</dd>`).join('') + '</dl>' +
+      `<button type="button" class="gb-btn" disabled aria-disabled="true"><span aria-hidden="true">${E('busCheck')}</span> दिक्कत बताएँ · Report a problem <span aria-hidden="true">${E('soon')}</span> जल्द · Soon</button>`;
+  }
+  function pick(id) {
+    H.sel = H.sel === id ? '' : id;
+    const p = LMCSBus.PARTS.find((x) => x.id === H.sel);
+    if (p && !p.at[H.view]) H.view = Object.keys(p.at)[0]; // a part not seen from here: turn the bus so it is
+    drawBus();
+    if (H.sel) $('partCard').querySelector('h3').focus({ preventScroll: false });
+  }
+  function homeBase() {
+    $('busBase').hidden = H.world; $('world').hidden = !H.world;
+    $('viewBus').setAttribute('aria-pressed', String(!H.world)); $('viewRoute').setAttribute('aria-pressed', String(H.world));
+    if (!H.world) loadBus();
+  }
+  $('busBase').addEventListener('click', (e) => {
+    const v = e.target.closest('[data-view]'), p = e.target.closest('[data-part]');
+    if (v) { H.view = v.dataset.view; drawBus(); } else if (p) pick(p.dataset.part);
+  });
+  $('busBase').addEventListener('keydown', (e) => { const p = e.target.closest('g[data-part]'); if (p && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(p.dataset.part); } });
+  $('viewBus').addEventListener('click', () => { H.world = false; homeBase(); });
+  $('viewRoute').addEventListener('click', () => {
+    H.world = true; homeBase();
+    if ($('routeMap').dataset.on) return; // the World: their own bus's route, loaded once (it costs data and a map)
+    $('routeMap').dataset.on = '1';
+    if (api !== live) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
+    LMCSRouteMap.mount($('routeMap'), { backendUrl: ROSTER_URL, driverToken: live.token, mode: 'city' });
+  });
+
   function showWaiting() {
     let refused = [];
     try { refused = JSON.parse(localStorage.getItem(REFUSED_KEY) || '[]'); localStorage.removeItem(REFUSED_KEY); } catch (e) { /* none */ }
@@ -311,13 +381,6 @@
   if (!api) { stop('यह फ़ोन जुड़ा नहीं है', 'फ़ी क्लर्क से ड्राइवर का QR कोड माँगें · This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).'); return; }
   if (api === live) { live.flush(); window.addEventListener('online', live.flush); } // fills saved on this phone go now
   $('demo').hidden = !DEMO;
-  // the driver's World: their own bus's route on a map, loaded the first time the panel opens (it costs data and a map)
-  $('pRoute').addEventListener('toggle', () => {
-    if (!$('pRoute').open || $('routeMap').dataset.on) return;
-    $('routeMap').dataset.on = '1';
-    if (api !== live) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
-    LMCSRouteMap.mount($('routeMap'), { backendUrl: ROSTER_URL, driverToken: live.token, mode: 'city' });
-  });
   const cached = () => { try { return JSON.parse(localStorage.getItem(BUS_KEY) || 'null'); } catch (e) { return null; } };
   api.load().then((bus) => { S.bus = bus; route(); }, (e) => e.offline && cached()
     ? (S.bus = cached(), route()) // no signal: work from the last answer; the server still checks the link when the fill is sent

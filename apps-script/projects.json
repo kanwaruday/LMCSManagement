@@ -1,7 +1,8 @@
 {
   "_note": "One entry per Apps Script project. scriptId = Apps Script editor > Project Settings > Script ID (fill in once). deploymentId = the AKfycb... id inside the live /exec URL, so redeploys keep the URL the HTML pages hardcode. See README.md and deploy.mjs.",
   "shared": [
-    "acad-episodes"
+    "acad-episodes",
+    "driver-token"
   ],
   "pdr": {
     "name": "LMCS Principal's Daily Reporting Backend",
@@ -38,6 +39,7 @@
       "transport-uploads",
       "driver-fill-confirm",
       "transport-capture",
+      "driver-token",
       "driver-link",
       "driver-fuel"
     ]
@@ -65,6 +67,8 @@
       "coordinator-recommend",
       "coordinator-principal",
       "coordinator-world",
+      "coordinator-driverbus",
+      "driver-token",
       "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js"
     ]
   },
