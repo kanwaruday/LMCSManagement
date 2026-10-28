@@ -8,11 +8,10 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=71e6f09b" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
-    .pp-paths h2 { margin:22px 0 2px; }
-    .pp-paths .gb-muted { margin:0 0 6px; }
+    #base-name .gb-emoji { margin-right:.3em; }
   </style>
 </head>
 <body class="gb gb-app">
@@ -30,9 +29,21 @@
       </section>
       <div id="app-root" style="display:none">
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
-        <nav class="pp-paths" id="modules" aria-label="Your school's work">
-          <!-- filled in by JS: one heading per path, its pages as gb-go rows -->
-        </nav>
+        <!-- 🏠 Home Base (the school building and its rooms) or 🗺️ World (the school's routes): Uday, 28 Oct -->
+        <div class="gb-switch" role="group" aria-label="View">
+          <button type="button" id="view-home" aria-pressed="true" aria-controls="modules"><span data-emoji="school"></span>School</button>
+          <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="bus"></span>Routes</button>
+        </div>
+        <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
+          <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span><span class="gb-base-lv" id="base-lv"></span></p>
+          <!-- the building in 3D (Uday, 28 Oct). Drawn from a building model; a sample shape until the campus's own plan is set -->
+          <div class="sb-box" id="school-3d"></div>
+          <p class="sb-said" id="school-said" role="status">Tap a room. The gold ones open your work today.</p>
+          <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
+        </div></section>
+        <section id="world" aria-label="Your school's routes" hidden>
+          <p class="gb-empty"><span data-emoji="soon"></span>Your school's route map comes next, from Fleet Command: every bus, out to where it goes.</p>
+        </section>
       </div>
     </main>
     <aside class="gb-panels" id="panels" aria-label="More" hidden>
@@ -47,54 +58,140 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=df0cbfd3"></script>
+  <script src="../assets/auth.js?v=84c3e38c"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
-  <script src="../assets/game/emoji.js?v=f2812675"></script>
+  <script src="../assets/game/emoji.js?v=73c82a00"></script>
+  <script src="../assets/game/school-building.js?v=deca8219"></script>
+  <script src="../assets/game/school-models.js?v=4c8049df"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-    // The hub's paths, in the order a Principal works: the day, then people, then the rules. Each page is a gb-go row.
+    // The school building's rooms, in the order a Principal works: the day, then people, then the rules; each room holds its pages.
     // HR & Hiring is its own path (Uday, 28 Oct 2026: "as a principal, they are also responsible for Hiring & HR"); its pages
     // are the same ones as before, for the Principal's own school. Counts would need the hiring and staff data, which this hub
     // doesn't load, so the rows say what each page holds instead.
     const PATHS = [
-      { title: 'Daily work', e: 'day', lead: 'Your reports and what came out of them.', pages: [
+      { title: 'Daily work', e: 'day', host: 'daily', lead: 'Your reports and what came out of them.', pages: [
         { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report, teachers\' SS and their dashboards.' },
         { name: 'Daily-report issues', e: 'issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
         { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
       ] },
-      { title: 'HR & Hiring', e: 'hiring', lead: 'Your school\'s applicants and staff.', pages: [
+      { title: 'HR & Hiring', e: 'hiring', host: 'hr', lead: 'Your school\'s applicants and staff.', pages: [
         { name: 'Hiring Dashboard', e: 'applicants', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
         { name: 'Staff documents and directory', e: 'documents', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
         { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
       ] },
-      { title: 'Rules', e: 'rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
+      { title: 'Rules', e: 'rules', host: 'rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
         { name: 'Bye Laws', e: 'byeLaws', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'The rulebook of record.' },
       ] },
     ];
 
     function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
-    function renderPaths() {
-      const nav = document.getElementById('modules');
-      nav.textContent = '';
-      PATHS.forEach(function (p) {
-        const h2 = el('h2', '', p.title);
-        if (window.LMCSEmoji && LMCSEmoji.get(p.e)) h2.insertBefore(LMCSEmoji.tag(p.e), h2.firstChild);
-        nav.appendChild(h2);
-        if (p.lead) nav.appendChild(el('p', 'gb-muted', p.lead));
-        const ul = el('ul', 'gb-list');
-        p.pages.forEach(function (m) {
-          const a = el('a', 'gb-go'), span = el('span', '', m.name);
-          if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
-          a.href = m.url;
-          span.appendChild(el('small', '', m.desc));
-          a.appendChild(span);
-          const li = el('li'); li.appendChild(a); ul.appendChild(li);
-        });
-        nav.appendChild(ul);
+    // a room: a tile that opens across the row to show what's inside (base.css .gb-room)
+    function room(e, title, small, body, next, host) {
+      const d = el('details', 'gb-room' + (next ? ' is-next' : '')), sum = el('summary');
+      d.dataset.room = title; if (host) d.dataset.host = host;
+      const ic = el('span', 'gb-room-e', window.LMCSEmoji ? LMCSEmoji.get(e) : ''); ic.setAttribute('aria-hidden', 'true');
+      sum.appendChild(ic); sum.appendChild(el('span', 'gb-room-t', title)); sum.appendChild(el('span', 'gb-room-s', small));
+      const b = el('div', 'gb-room-b'); b.appendChild(body);
+      d.appendChild(sum); d.appendChild(b);
+      return d;
+    }
+    function pageList(pages) {
+      const ul = el('ul', 'gb-list');
+      pages.forEach(function (m) {
+        const a = el('a', 'gb-go'), span = el('span', '', m.name);
+        if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
+        a.href = m.url;
+        span.appendChild(el('small', '', m.desc));
+        a.appendChild(span);
+        const li = el('li'); li.appendChild(a); ul.appendChild(li);
       });
+      return ul;
+    }
+    // the school's buildings from the Kingdom (gamekingdom: a Principal gets their own base only). Read-only here.
+    // Each building: its level of maxLevel and the next step that isn't "soon"; a step the game can link to gets its link.
+    function setupBody(base) {
+      if (!base) return el('p', 'gb-muted', GAME_BACKEND_URL ? 'Loading your buildings… If this stays, the setup progress couldn\'t be loaded; nothing is lost.' : 'The game isn\'t switched on yet, so building levels don\'t show.');
+      const ul = el('ul', 'gb-list');
+      (base.buildings || []).forEach(function (b) {
+        const next = (b.tiers || []).filter(function (t) { return t.state === 'open'; })[0];
+        const href = next && next.go && window.LMCSGame ? LMCSGame.safeHref(next.go, '../') : null;
+        const row = el(href ? 'a' : 'div', href ? 'gb-go' : 'gb-go is-static'), span = el('span', '', b.name);
+        if (href) row.href = href;
+        span.appendChild(el('small', '', 'Level ' + (Number(b.level) || 0) + ' of ' + (Number(b.maxLevel) || 0) + (next ? ' · next: ' + next.label : ' · nothing open')));
+        row.appendChild(span);
+        const li = el('li'); li.appendChild(row); ul.appendChild(li);
+      });
+      return ul;
+    }
+    function steps(base) {
+      let done = 0, total = 0;
+      (base && base.buildings || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (t.state === 'done' || t.state === 'open') { total++; if (t.state === 'done') done++; } }); });
+      return { done: done, total: total };
+    }
+    function renderHome(base) {
+      const rooms = document.getElementById('rooms');
+      const open = [].map.call(rooms.querySelectorAll('.gb-room[open]'), function (d) { return d.dataset.room; }); // a re-render keeps what was open
+      rooms.textContent = '';
+      PATHS.forEach(function (p) { rooms.appendChild(room(p.e, p.title, p.lead, pageList(p.pages), false, p.host)); });
+      const st = steps(base);
+      rooms.appendChild(room('quests', 'Setup quests', base && st.total ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total, 'setup'));
+      [].forEach.call(rooms.children, function (d) { if (open.indexOf(d.dataset.room) !== -1) d.open = true; });
+      document.getElementById('base-lv').textContent = base ? (window.LMCSEmoji ? LMCSEmoji.get('level') + ' ' : '') + 'Level ' + (Number(base.level) || 0) : '';
+    }
+    function loadBase(session) {
+      renderHome(null);
+      if (!GAME_BACKEND_URL) return; // the game is off: the rooms show, the setup room says so plainly
+      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); if (d && d.building) drawSchool(session, d.building); })
+        .catch(function (e) { console.warn('home base', e); }); // the rooms already show; setup says it couldn't load
+    }
+    // the 3D school: the campus's own building model (assets/game/school-models.js; later Game Config, via d.building) when
+    // there is one, else the sample shape with this school's name, marked sample. A tap on a gold room opens its Home Base
+    // room below; other rooms say what will live there later.
+    let BUILDING = null, CENTRED = false;
+    const HOSTS = ['daily', 'hr', 'rules', 'setup'];
+    const LATER = { classroom: 'class teacher, CW/HW done today and attendance will show here', store: 'its inventory will show here',
+      busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
+    function drawSchool(session, model) {
+      if (typeof LMCSBuilding === 'undefined') return;
+      const own = model || (typeof LMCSBuildingModels !== 'undefined' && LMCSBuildingModels[session.campus]) || null;
+      BUILDING = LMCSBuilding.clean(own) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: session.campus, sample: true }));
+      const box = document.getElementById('school-3d');
+      const keep = box.scrollLeft;
+      box.innerHTML = LMCSBuilding.svg(BUILDING, { hosts: HOSTS }); // every label is escaped inside svg()
+      if (CENTRED) box.scrollLeft = keep; else centre();
+    }
+    // phones: start with the middle of the school in view, once, and only when the box can be measured (not while hidden)
+    function centre() {
+      const box = document.getElementById('school-3d');
+      if (CENTRED || !box.clientWidth || !box.firstElementChild) return; // nothing drawn yet, or hidden: try again later
+      box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); CENTRED = true;
+    }
+    function pickRoom(id) {
+      const r = BUILDING && LMCSBuilding.rooms(BUILDING).filter(function (x) { return x.id === id; })[0];
+      if (!r) return;
+      [].forEach.call(document.querySelectorAll('#school-3d .sb-room'), function (g) { g.classList.toggle('is-picked', g.getAttribute('data-room') === id); });
+      const said = document.getElementById('school-said');
+      const tile = r.host ? [].filter.call(document.querySelectorAll('#rooms .gb-room'), function (d) { return d.dataset.host === r.host; })[0] : null;
+      if (tile) { tile.open = true; tile.scrollIntoView({ block: 'nearest' }); said.textContent = r.name + ': opened below.'; tile.querySelector('summary').focus(); return; }
+      said.textContent = r.name + (r.holds && r.name.indexOf(r.holds) === -1 ? ' (' + r.holds + ')' : '') + (LATER[r.type] ? ': ' + LATER[r.type] + ' later.' : '.');
+    }
+    function wireSchool() {
+      const box = document.getElementById('school-3d');
+      box.addEventListener('click', function (e) { const g = e.target.closest('.sb-room'); if (g) pickRoom(g.getAttribute('data-room')); });
+      box.addEventListener('keydown', function (e) { const g = e.target.closest('.sb-room'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickRoom(g.getAttribute('data-room')); } });
+    }
+    function showView(world) {
+      document.getElementById('modules').hidden = world;
+      document.getElementById('world').hidden = !world;
+      document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+      document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+      if (!world) centre();
     }
 
     function hello(name) {
@@ -115,7 +212,12 @@
         LMCS.signOut();
       });
 
-      renderPaths();
+      document.getElementById('base-name').textContent = session.campusName;
+      if (window.LMCSEmoji) document.getElementById('base-name').insertBefore(LMCSEmoji.tag('base'), document.getElementById('base-name').firstChild);
+      document.getElementById('view-home').addEventListener('click', function () { showView(false); });
+      document.getElementById('view-world').addEventListener('click', function () { showView(true); });
+      wireSchool(); drawSchool(session, null);
+      loadBase(session);
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
