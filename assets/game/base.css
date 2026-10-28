@@ -6,6 +6,12 @@
      text:    gb-h1, gb-h2, gb-lead, gb-muted, gb-note, gb-empty, gb-err
      actions: gb-btn, gb-btn-primary, gb-btn-quiet, gb-go (a whole-row link with a chevron: <a class="gb-go"><span>Title<small>detail</small></span></a>), gb-row-acts
      things:  gb-card, gb-list (cards in a column), gb-grid (cards in columns), gb-pill gb-pill-ok|warn|low|info|next, gb-bar (+ <i style="width:N%">), gb-bar-ok
+   Portal patterns (one hub, one next step, one way back — see the vault's Portal Flow Map):
+     gb-hub      the hub's top: who, role and school, level shield, progress bar
+     gb-next     Buddy's one next step: art, label, line, one red button
+     gb-missions / gb-mission   rows of work: a mark (open, next, done, waiting), title, small line, one Go at the right
+     gb-done     the done state after a task: a green tick, what changed, the way back to the hub
+     gb-sr       visually hidden text: put the row state in words (<span class="gb-sr">Next: </span>), give each Go aria-label="Go: <title>"
    No motion anywhere. */
 .gb {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
@@ -83,8 +89,49 @@
 .gb-bar > i { display:block; height:100%; background:var(--gb-gold); }
 .gb-bar-ok > i { background:var(--gb-ok); }
 
+/* ── portal patterns ── */
+/* hub header */
+.gb-hub { display:flex; flex-wrap:wrap; align-items:center; gap:12px 16px; margin:0 0 14px; }
+.gb-hub-who { display:flex; align-items:center; gap:12px; flex:1 1 260px; min-width:0; }
+.gb-shield { display:grid; place-items:center; flex:none; width:40px; height:44px; padding-bottom:6px; font:700 17px/1 var(--gb-font); color:#2a1c00; background:var(--gb-gold);
+  clip-path:polygon(0 0,100% 0,100% 72%,50% 100%,0 72%); }
+.gb-hub h1 { margin:0; }
+.gb-hub-role { display:block; font-size:14px; color:var(--gb-muted); }
+.gb-hub-prog { flex:1 1 220px; min-width:0; }
+.gb-hub-prog .gb-meta { display:flex; justify-content:space-between; gap:8px; margin-top:4px; font-size:13px; color:var(--gb-muted); }
+/* next step */
+.gb-next { display:flex; align-items:flex-start; gap:12px; margin:0 0 14px; padding:12px 14px; background:var(--gb-paper); border:2px solid var(--gb-gold); border-radius:16px; }
+.gb-next > img { width:52px; height:auto; flex:none; }
+.gb-next-b { flex:1; min-width:0; }
+.gb-next-k { display:block; font-size:12.5px; font-weight:700; color:var(--gb-gold-ink); }
+.gb-next-t { margin:2px 0 10px; font-size:16px; overflow-wrap:anywhere; }
+/* mission rows */
+.gb-missions { list-style:none; margin:0; padding:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; }
+.gb-mission { display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid var(--gb-line); min-height:60px; }
+.gb-mission:first-child { border-top:0; }
+.gb-mark { display:grid; place-items:center; flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--gb-muted); font-size:13px; font-weight:700; }
+.gb-mission-t { flex:1; min-width:0; overflow-wrap:anywhere; }
+.gb-mission-t small { display:block; font-size:13.5px; color:var(--gb-muted); }
+.gb-mission .gb-btn { flex:none; }
+.gb-mission.is-next { background:var(--gb-gold-soft); }
+.gb-mission.is-next .gb-mark { border-color:var(--gb-red); }
+.gb-mission.is-next .gb-mark::after { content:""; width:10px; height:10px; border-radius:50%; background:var(--gb-red); }
+.gb-mission.is-done .gb-mark { border-color:var(--gb-ok); background:var(--gb-ok-soft); color:var(--gb-ok); }
+.gb-mission.is-done .gb-mark::after { content:"✓"; }
+.gb-mission.is-done .gb-mission-t { color:var(--gb-muted); }
+.gb-mission.is-wait .gb-mark { border-style:dashed; border-color:var(--gb-muted); }
+.gb-sr { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+/* done state */
+.gb-done { text-align:center; padding:28px 16px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+.gb-done-tick { display:grid; place-items:center; width:64px; height:64px; margin:0 auto 10px; border-radius:50%; background:var(--gb-ok-soft); color:var(--gb-ok); font-size:34px; font-weight:700; }
+.gb-done h2 { margin:0 0 6px; }
+.gb-done p { margin:0 auto 14px; max-width:42ch; color:var(--gb-muted); }
+.gb-done .gb-row-acts { justify-content:center; }
+
 @media (max-width:600px) {
   .gb h1, .gb .gb-h1 { font-size:23px; }
   .gb-head h1, .gb-head .gb-head-t { font-size:17px; }
   .gb .gb-head a, .gb .gb-back { padding:0 10px; }
+  .gb-next > img { width:40px; }
+  .gb-mission { padding:10px 12px; }
 }
