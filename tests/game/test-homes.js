@@ -44,6 +44,31 @@ assert.strictEqual(hub(['Teacher'], '/LMCSManagement/owner/index.html'), 'index.
 assert.deepStrictEqual(railHubFor(['Teacher'], ''), { hub: 'index.html', root: '../' });
 assert(/var gameOwnHome = \['Principal', 'Coordinator', 'Owner'\]\.some\(function \(r\) \{ return LMCS\.hasRole\(SESSION, r\); \}\);/.test(tInit), 'teacher: gameOwnHome from LMCS.hasRole');
 assert(/if \(!gameOwnHome && typeof LMCSGame !== 'undefined'\)/.test(tInit), 'teacher: mount skipped for P/C/O');
+// 🏠 Home / 🗺️ World on the teacher hub: the switch sits right under Today, styled and wired as the Principal's, with the shared emoji keys
+assert(/<section id="game-root" aria-label="Today with Buddy" hidden><\/section>\s*(<!--[\s\S]*?-->\s*)?<div class="gb-switch" id="viewSwitch" role="group" aria-label="View" hidden>/.test(tHtml), 'teacher: hidden switch directly under Today');
+assert(/<button type="button" id="view-home" aria-pressed="true" aria-controls="home"><span data-emoji="homeBase"><\/span>Home<\/button>/.test(tHtml), 'teacher: Home button, pressed by default');
+assert(/<button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"><\/span>World<\/button>/.test(tHtml), 'teacher: World button');
+assert(/<section id="world" aria-labelledby="worldHead" hidden>/.test(tHtml), 'teacher: World starts hidden (Home is the default)');
+assert(tHtml.search(/school-building\.js/) > tHtml.search(/emoji\.js/) && tHtml.search(/school-models\.js/) > 0, 'teacher: building + models after emoji.js');
+const emo = require('../../assets/game/emoji.js'); assert(emo.get('homeBase') && emo.get('world'), 'switch keys exist in emoji.js');
+const worldOn = new Function('return ' + body(tHtml, 'worldOn_').replace(/^\{/, '(function (staffOnly, viewAs, isTeacher, hasTimetable) {') + '})')();
+assert.strictEqual(worldOn(true, false, false, true), false, 'Staff: no switch');
+assert.strictEqual(worldOn(false, false, true, false), true, 'a Teacher: switch');
+assert.strictEqual(worldOn(false, true, false, false), false, 'view-as without the timetable: hidden');
+assert.strictEqual(worldOn(false, true, false, true), true, 'view-as with the timetable: follows the viewed teacher');
+assert.strictEqual(worldOn(false, false, false, false), false, 'a Principal on their own, no timetable: hidden');
+// the room highlight: rooms whose holds is one of the teacher's classes; no holds never matches; no section matches every section
+const myRoomIds = new Function('return ' + body(tHtml, 'myRoomIds_').replace(/^\{/, '(function (rooms, classes) {') + '})')();
+const R = [{ id: 'a', holds: '5A' }, { id: 'b', holds: '5B' }, { id: 'c', holds: '6A' }, { id: 'd', holds: '' }, { id: 'e' }, { id: 'f', holds: 'M-I' }, { id: 'g', holds: 'M-II' }, { id: 'h', holds: '15A' }];
+assert.deepStrictEqual(myRoomIds(R, ['Class 5']), ['a', 'b']);
+assert.deepStrictEqual(myRoomIds(R, ['5A']), ['a']);
+assert.deepStrictEqual(myRoomIds(R, ['M-I']), ['f'], 'M-I is not M-II');
+assert.deepStrictEqual(myRoomIds(R, ['Class 1']), [], 'Class 1 is not 15A');
+assert.deepStrictEqual(myRoomIds(R, ['', null]), [], 'blank classes match nothing');
+assert.deepStrictEqual(myRoomIds(R, []), []);
+const B = require('../../assets/game/school-building.js'), M = require('../../assets/game/school-models.js');
+assert.deepStrictEqual(myRoomIds(B.rooms(B.clean(M.LMS2)), ['Class 5', 'Class 6']), [], 'LMS 2: no holds yet, nothing highlighted');
+assert.deepStrictEqual(myRoomIds(B.rooms(B.clean(B.SAMPLE)), ['Class 5']), ['c5a'], 'sample: Class 5 -> 5A');
 urls['teacher/plan-activity.html'] = backendUrl(fs.readFileSync(__dirname + '/../../teacher/plan-activity.html', 'utf8'), 'teacher/plan-activity.html');
 // Fleet setup: Buddy on the two transport pages, its own missions and quests only, game.css/game.js tags, a collapsed panel under the header
 for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'], ['coordinator/transport/index.html', 'fleet-transport']]) {

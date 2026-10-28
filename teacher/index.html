@@ -141,6 +141,11 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .cwhw-label{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.03em;border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:middle}
 .cwhw-label.cw{background:var(--purple-lt);color:var(--purple)}
 .cwhw-label.hw{background:var(--amber-lt);color:var(--amber)}
+/* 🗺️ World: the school building (base.css .sb-*) and today's periods */
+#world .gb-note,#world .gb-empty,#world .sb-said{margin:0 0 10px}
+.tt-today{list-style:none;border-top:1px solid var(--gb-line)}
+.tt-today li{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--gb-line);font-size:15px}
+.tt-today b{flex-shrink:0;width:96px}
 </style>
 <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
 </head>
@@ -161,6 +166,8 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
 <script src="../assets/game/game.js?v=e4fad387"></script>
 <script src="../assets/game/emoji.js?v=637364da"></script>
+<script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
+<script src="../assets/game/school-models.js?v=2d711258"></script>
 <script src="../assets/game/rail.js?v=e726bf9c"></script>
 <script>
 (function () {
@@ -183,6 +190,13 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
       <div class="tab-panel active" id="panel-home">
         <div class="gb-next-slot"></div>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
+        <!-- 🏠 Home (my classroom(s): My classes and my tools) or 🗺️ World (the school building, my rooms and today's periods): Uday, 28 Oct.
+             Hidden for Staff (no Today) and for a view-as target whose timetable isn't there. -->
+        <div class="gb-switch" id="viewSwitch" role="group" aria-label="View" hidden>
+          <button type="button" id="view-home" aria-pressed="true" aria-controls="home"><span data-emoji="homeBase"></span>Home</button>
+          <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span>World</button>
+        </div>
+        <div id="home">
         <section class="classes" id="classes" aria-labelledby="classesHead" data-teacher-only hidden>
           <h2 class="gb-h2" id="classesHead" data-emoji="school">My classes</h2>
           <p class="gb-muted">Classwork and homework stay in the ERP app for now. Tracking here is coming soon.</p>
@@ -197,6 +211,11 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
           <li><a class="gb-go" href="#eventsCard" data-panel="eventsCard" aria-label="Go: Upcoming Events" aria-describedby="homeEvSub"><span>Upcoming Events<small id="homeEvSub">Your campus calendar, next 14 days</small></span></a></li>
         </ul>
         <p class="gb-note">More on the way: period adjustments (still needs the actual covering process designed — nothing formal exists today), a forms hub, and target-based coaching on your CW/HW patterns (needs Uday to define expected ranges per tag first — patterns below are real data, not yet compared against a target).</p>
+        </div>
+        <section id="world" aria-labelledby="worldHead" hidden>
+          <h2 class="gb-h2" id="worldHead" data-emoji="school">Your school</h2>
+          <div id="worldBody"></div>
+        </section>
       </div>
 
       <!-- ══════════════════ MY REQUESTS ══════════════════ -->
@@ -478,6 +497,7 @@ function renderClasses_(res) {
   if (!res || res.success !== true) { body.innerHTML = '<div class="gb-alert gb-alert-err" role="alert"><p>Couldn’t load your classes just now. Please try again later.</p></div>'; return; }
   const list = (res.classes || []).map(function (c, i) { return { c: c, i: i }; })
     .sort(function (a, b) { return (b.c.scheduledToday - a.c.scheduledToday) || a.i - b.i; }).map(function (x) { return x.c; }); // today's classes first
+  myClasses_ = list.map(function (c) { return c.cls; }); updateWorld_();
   if (!list.length) { body.innerHTML = '<p class="gb-empty">' + (res.loading ? 'Your classes are still being gathered. Check back in a few minutes.' : 'No classes on file for you yet.') + '</p>'; return; }
   body.innerHTML = '<ul class="gb-grid">' + list.map(function (c) {
     const p = c.yesterdayPlan, steps = [];
@@ -499,6 +519,70 @@ function loadClasses_() {
   classesOn_ = true; showClasses_();
   fetch(GAME_BACKEND_URL + '?action=teacherclasses&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })
     .then(function (r) { return r.json(); }).then(renderClasses_).catch(function () { renderClasses_(null); });
+}
+
+// ── 🏠 Home / 🗺️ World (Uday, 28 Oct; work/Portal Flow Map). World = the campus building from assets/game/school-models.js with
+// this teacher's rooms marked, and today's periods. Read-only: it only reads what the page already loaded. A room shows "?" for
+// its class until the Principal confirms which class sits where (its `holds`); nothing here guesses that mapping.
+let myClasses_ = []; // the teacherclasses reply's classes (own only: the game has no view-as)
+// the switch shows only where there is a Today and data behind the World: never for Staff; for a view-as target only once their timetable is in
+function worldOn_(staffOnly, viewAs, isTeacher, hasTimetable) { return !staffOnly && (viewAs ? hasTimetable : (isTeacher || hasTimetable)); }
+// rooms (LMCSBuilding.rooms of a model) -> ids of the rooms whose `holds` is one of the classes ("Class 5", "M-I", "5A").
+// A class with no section ("Class 5") matches every section of it ("5A", "5B"); rooms with no holds never match.
+function myRoomIds_(rooms, classes) {
+  function key(s) { return String(s || '').toUpperCase().replace(/\bCLASS\b/g, '').replace(/[^0-9A-Z]/g, ''); }
+  const want = (classes || []).map(key).filter(Boolean);
+  return (rooms || []).filter(function (r) {
+    const h = key(r.holds), m = /^(.*\d)[A-Z]$/.exec(h);
+    return !!h && want.some(function (c) { return c === h || (!!m && c === m[1]); });
+  }).map(function (r) { return r.id; });
+}
+function updateWorld_() {
+  const on = worldOn_(teacherOnlyHidden_, !!VIEW_AS_CODE, LMCS.hasRole(SESSION, 'Teacher'), !!myTimetable_);
+  document.getElementById('viewSwitch').hidden = !on;
+  if (!on) showView_(false); else if (!document.getElementById('world').hidden) renderWorld_();
+}
+function showView_(world) {
+  document.getElementById('home').hidden = world;
+  document.getElementById('world').hidden = !world;
+  document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+  document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+  if (world) renderWorld_();
+}
+function istDay_() { const d = new Date(Date.now() + 330 * 60000).getUTCDay(); return d ? TT_DAYS[d - 1] : null; } // null on Sunday
+function renderWorld_() {
+  const body = document.getElementById('worldBody'), campus = EFFECTIVE_CAMPUS_ID || SESSION.campusId;
+  const model = typeof LMCSBuilding !== 'undefined' && typeof LMCSBuildingModels !== 'undefined' ? LMCSBuilding.clean(LMCSBuildingModels[campus]) : null;
+  const periods = myTimetable_ ? myTimetable_.periods : [];
+  const classes = (VIEW_AS_CODE ? [] : myClasses_).concat(periods.map(function (p) { return p.class; }));
+  const mine = model ? myRoomIds_(LMCSBuilding.rooms(model), classes) : [];
+  let shown = null;
+  if (model) { // classrooms without a confirmed class read "?"
+    shown = JSON.parse(JSON.stringify(model));
+    LMCSBuilding.rooms(shown).forEach(function (r) { if (r.type === 'classroom' && !r.holds) r.holds = '?'; });
+  }
+  body.innerHTML = (!model ? '<p class="gb-empty">Your school’s building isn’t drawn yet</p>'
+    : (model.sample ? '<p class="gb-note">Sample building: your school’s own drawing isn’t set yet, so these rooms are an example.</p>' : '') +
+      '<div class="sb-box" id="world-3d">' + LMCSBuilding.svg(shown, { hosts: [] }) + '</div>' + // every label is escaped inside svg()
+      '<p class="sb-said" id="world-said" role="status">' + (mine.length ? 'Your rooms are outlined in gold. Tap a room to see its name.'
+        : 'Rooms show “?” until your Principal confirms which class sits where.') + '</p>') + periodsHtml_(periods);
+  mine.forEach(function (id) { const g = body.querySelector('.sb-room[data-room="' + CSS.escape(id) + '"]'); if (g) { g.classList.add('sb-host'); g.setAttribute('aria-label', g.getAttribute('aria-label') + ', your class'); } });
+  const box = document.getElementById('world-3d');
+  if (box) box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); // phones: the middle of the school in view
+  if (typeof LMCSEmoji !== 'undefined') LMCSEmoji.decorate(body);
+}
+function periodsHtml_(periods) {
+  const day = istDay_(), rows = periods.filter(function (p) { return p.day === day; }).sort(function (a, b) { return a.period - b.period; });
+  return '<h3 class="gb-h2" data-emoji="day">Today’s periods</h3>' + (!myTimetable_ ? '<p class="gb-empty">Today’s periods show once your timetable is found.</p>'
+    : !rows.length ? '<p class="gb-empty">No periods today.</p>'
+    : '<ul class="tt-today">' + rows.map(function (p) {
+      return '<li><b>Period ' + esc_(p.period) + '</b><span>' + esc_(p.start + '–' + p.end) + ' · ' + (p.free ? 'Free' : esc_((p.class || '—') + ' · ' + (p.subject || '—'))) + '</span></li>';
+    }).join('') + '</ul>');
+}
+function pickWorldRoom_(g) {
+  const said = document.getElementById('world-said');
+  [].forEach.call(document.querySelectorAll('#world-3d .sb-room'), function (x) { x.classList.toggle('is-picked', x === g); });
+  if (said) said.textContent = g.getAttribute('aria-label') + '.';
 }
 
 // ── the game bar: it opens the home where the person's own Today lives. Staff have none, so no bar.
@@ -934,6 +1018,7 @@ let myTimetable_ = null; // {periods:[...]} once loaded
 let ttSelectedDay = TT_DAYS[Math.max(0, Math.min(5, new Date().getDay() - 1))]; // Sun(0) clamps to Mon
 
 async function loadTimetable_() {
+  myTimetable_ = null; // a view-as switch must not keep the last person's periods
   const body = document.getElementById('timetableBody');
   const codeRes = await ensureMyEmployeeCode_();
   if (!codeRes.success) { body.innerHTML = '<div class="notice">Couldn’t resolve your Employee Code: ' + esc_(codeRes.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(codeRes); return; }
@@ -1109,7 +1194,7 @@ function reloadForViewAs_() {
   loadEvals();
   tagsLoaded = false; loadTags();
   loadEvents_();
-  loadTimetable_();
+  loadTimetable_().then(updateWorld_); updateWorld_();
 }
 
 function showDenied_(message) {
@@ -1157,8 +1242,14 @@ function init() {
     return;
   }
   route_();
+  document.getElementById('view-home').addEventListener('click', function () { showView_(false); });
+  document.getElementById('view-world').addEventListener('click', function () { showView_(true); });
+  const w3d = document.getElementById('worldBody');
+  w3d.addEventListener('click', function (e) { const g = e.target.closest('.sb-room'); if (g) pickWorldRoom_(g); });
+  w3d.addEventListener('keydown', function (e) { const g = e.target.closest('.sb-room'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickWorldRoom_(g); } });
+  updateWorld_();
   loadTags();
-  loadTimetable_();
+  loadTimetable_().then(updateWorld_);
   loadRank_();
   if (LMCS.hasRole(SESSION, 'Teacher')) loadClasses_(); // the game answers a Teacher only; a Principal / Coordinator / Owner without it sees no section
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
