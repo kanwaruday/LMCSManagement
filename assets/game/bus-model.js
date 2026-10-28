@@ -115,6 +115,16 @@ var LMCSBus = (function () {
   }
 
   /** The bus in one view, every part a focusable button-like group; `sel` is the chosen part's id. */
+
+  // The bus picture (Art Bible v3, stylized 3D; assets/game/art/): above the drawn bus, which stays the control. Only for the sizes with a reviewed render.
+  var ART_BASE = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '').replace(/[^\/]*$/, '') + 'art/';
+  var ART = { mini: 'bus-minibus-side', large: 'bus-large-side' };
+  function artFigure(kind) {
+    var a = ART[kind]; if (!a) return '';
+    return '<figure class="bp-art" style="margin:0 0 8px"><img src="' + ART_BASE + a + '-1x.webp" srcset="' + ART_BASE + a + '-1x.webp 320w, ' + ART_BASE + a +
+      '-2x.webp 640w" sizes="(max-width:360px) 100vw, 320px" width="320" height="160" alt="Illustration of a school bus" decoding="async" style="display:block;width:min(100%,320px);height:auto;margin:0 auto;border-radius:12px"></figure>';
+  }
+
   function svg(kind, view, opts) {
     var o = opts || {}, k = SIDE[kind] ? kind : 'mini', v = VIEWS.indexOf(view) === -1 ? 'side' : view;
     var vb = v === 'side' ? '0 0 400 190' : '0 0 240 190';
@@ -130,7 +140,7 @@ var LMCSBus = (function () {
         '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (v === 'side' ? 22 : 18) + '" fill="transparent"/>' + // the target, bigger than the dot (the side view is drawn smaller)
         '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (on ? 8 : 6) + '" fill="' + (on ? '#CE0000' : '#1b2430') + '" stroke="#fff" stroke-width="2"/></g>';
     });
-    return out + '</svg>';
+    return (v === 'side' && o.art !== false ? artFigure(k) : '') + out + '</svg>';
   }
 
   /** Lines for a part's card: the latest saved date of each service the part covers, from Fleet setup's parts history. */

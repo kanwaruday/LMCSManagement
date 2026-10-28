@@ -150,6 +150,18 @@ var LMCSBuilding = (function () {
   }
 
   // the drawing: optional hills, grounds, then prisms back to front (painter's order by plan depth), then the rooms
+
+  // The campus picture (Art Bible v3, stylized 3D; assets/game/art/): shown above the drawn building, which stays the control. Only where a
+  // reviewed render exists; a campus without one shows the drawn building alone. A picture is decoration: it carries a short alt, no logic.
+  var ART_BASE = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '').replace(/[^\/]*$/, '') + 'art/';
+  var ART = { LMS1: ['lms1-dhalpur', 'Dhalpur'], LMS2: ['lms2-kelheli', 'Kelheli'], LMS3: ['lms3-dunkhra', 'Dunkhra'], LMS4: ['lms4-nerchowk', 'Ner Chowk'] };
+  function artFigure(campus) {
+    var a = ART[String(campus || '').toUpperCase().replace(/\s+/g, '')]; if (!a) return '';
+    return '<figure class="sb-art" style="margin:0 0 8px;position:sticky;left:0;width:min(100%,480px)"><img src="' + ART_BASE + a[0] + '-1x.webp" srcset="' + ART_BASE + a[0] +
+      '-1x.webp 480w, ' + ART_BASE + a[0] + '-2x.webp 960w" sizes="(max-width:520px) 100vw, 480px" width="480" height="480" alt="Illustration of the ' + a[1] +
+      ' school building" loading="lazy" decoding="async" style="display:block;width:100%;height:auto;border-radius:12px"></figure>';
+  }
+
   function svg(model, opts) {
     var m = clean(model); if (!m) return '';
     opts = opts || {};
@@ -211,7 +223,7 @@ var LMCSBuilding = (function () {
       p.rooms.forEach(function (r) { out.push(roomG(r, roomCorners(p.b, r), false)); });
     });
     var title = opts.title || ((m.name || 'School') + (m.sample ? ' (sample building)' : ''));
-    return '<svg class="sb" viewBox="' + [minX, minY, maxX - minX, maxY - minY].map(function (v) { return v.toFixed(0); }).join(' ') + '" role="group" aria-label="' + esc(title) + '">' +
+    return (opts.art === false ? '' : artFigure(opts.campus || m.campus)) + '<svg class="sb" viewBox="' + [minX, minY, maxX - minX, maxY - minY].map(function (v) { return v.toFixed(0); }).join(' ') + '" role="group" aria-label="' + esc(title) + '">' +
       out.join('') + (m.sample ? '<text x="' + (minX + 10).toFixed(0) + '" y="' + (minY + 20).toFixed(0) + '" class="sb-sample">Sample building</text>' : '') + '</svg>';
   }
 
