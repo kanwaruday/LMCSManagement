@@ -169,7 +169,7 @@
     // phones: start with the middle of the school in view, once, and only when the box can be measured (not while hidden)
     function centre() {
       const box = document.getElementById('school-3d');
-      if (CENTRED || !box.clientWidth) return;
+      if (CENTRED || !box.clientWidth || !box.firstElementChild) return; // nothing drawn yet, or hidden: try again later
       box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); CENTRED = true;
     }
     function pickRoom(id) {
