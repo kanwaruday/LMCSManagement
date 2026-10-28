@@ -16,8 +16,8 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //     after the confirm;
 //   - with the desk offline (no pull within deskMs), a new ask replaces the caller's unclaimed queued one (`failed` superseded).
 // Owner orders (Uday, 28 Oct: "Whenever i send you a text on the ask buddy, logged from my account, it is me giving you
-//   orders. DO them!"): an ask carries meta.order = true only when buddyAsk_ wrote it, i.e. after buddyOwnerAction_'s
-//   BUDDY_OWNER_EMAIL check. Every answered order is confirmed at the reply (no Confirm tap) and forwarded with its answer
+//   orders. DO them!"): an ask carries meta.order = true only when buddyOwnerAction_ passes isOrder after its
+//   BUDDY_OWNER_EMAIL check, and buddyThreads_ honours it only while the ask's email is still BUDDY_OWNER_EMAIL. Every answered order is confirmed at the reply (no Confirm tap) and forwarded with its answer
 //   and any proposal (Uday via V1: V1 decides what is an order and what is just a question), through the same
 //   one-forward-per-item rows and limits. Asks written before this (no meta.order) still need the tap for a proposal.
 // Gates:
@@ -84,14 +84,14 @@ function buddyMeta_(s) { try { const m = JSON.parse(String(s || '')); return m &
 
 // rows incl. header -> { id: Thread }. Rows for an unknown id, or that do not fit the thread's state, are ignored.
 function buddyThreads_(rows, nowMs) {
-  const out = {};
+  const out = {}, owner = buddyOwnerEmail_();
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i], id = String(r[0] || ''), kind = String(r[1] || ''), at = String(r[5] || ''), meta = buddyMeta_(r[4]);
     if (kind === 'ask') {
       if (!buddyIdOk_(id) || out[id]) continue;
       out[id] = { id: id, email: String(r[2] || '').trim().toLowerCase(), text: buddyUncell_(r[3]), context: buddyContext_(meta.context), askedAt: at,
         state: 'queued', attempts: 0, claimedAt: null, reply: null, route: null, repliedAt: null, proposal: null, proposalState: null, failReason: null,
-        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, order: meta.order === true, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
+        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, order: meta.order === true && !!owner && String(r[2] || '').trim().toLowerCase() === owner, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
       continue;
     }
     const t = out[id];
@@ -195,17 +195,19 @@ function buddyMark_() { CacheService.getScriptCache().put('buddy_pending', '1', 
 function buddyOwnerAction_(caller, action, body) {
   try {
     if (!caller || !Array.isArray(caller.roles) || caller.roles.indexOf('Owner') === -1) throw buddyErr_('BUDDY_OWNER_ONLY');
-    const owner = String(PropertiesService.getScriptProperties().getProperty('BUDDY_OWNER_EMAIL') || '').trim().toLowerCase();
+    const owner = buddyOwnerEmail_();
     if (!owner || String(caller.email || '').trim().toLowerCase() !== owner) throw buddyErr_('BUDDY_OWNER_ONLY');
     body = body || {};
-    if (action === 'buddyask') return buddyAsk_(caller, body);
+    if (action === 'buddyask') return buddyAsk_(caller, body, true); // the Owner's asks are orders (header)
     if (action === 'buddythread') return buddyThread_(caller);
     if (action === 'buddyconfirm') return buddyConfirm_(caller, body);
     throw buddyErr_('BUDDY_ERROR');
   } catch (err) { return buddyFail_(err); }
 }
 
-function buddyAsk_(caller, body) {
+function buddyOwnerEmail_() { return String(PropertiesService.getScriptProperties().getProperty('BUDDY_OWNER_EMAIL') || '').trim().toLowerCase(); }
+
+function buddyAsk_(caller, body, isOrder) {
   const text = buddyClean_(body.text, BUDDY_LIMITS.maxText, false), context = buddyContext_(body.context);
   const email = String(caller.email).toLowerCase(), nowMs = gameNow_().getTime(), nowIso = new Date(nowMs).toISOString();
   const id = buddyLocked_(function () {
@@ -228,7 +230,7 @@ function buddyAsk_(caller, body) {
     const code = buddyRateCheck_(threads, email, nowMs);
     if (code) throw buddyErr_(code);
     const newId = buddyNewId_(nowMs);
-    gameAppendText_(sh, [[newId, 'ask', email, buddyCell_(text), JSON.stringify({ context: context, order: true }), nowIso, email]]); // order: see header
+    gameAppendText_(sh, [[newId, 'ask', email, buddyCell_(text), JSON.stringify({ context: context, order: isOrder === true }), nowIso, email]]); // order: see header
     buddyMark_();
     return newId;
   });

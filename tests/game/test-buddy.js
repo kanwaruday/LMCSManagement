@@ -315,6 +315,20 @@ test('order: an Owner ask with a proposal is confirmed at the reply and forwarde
   pull(); reply({ id: s1, kind: 'reply', text: 'x', route: 'claude', proposal: { summary: 'y' } });
   assert.strictEqual(thread().threads[0].proposalState, 'open');
   assert.deepStrictEqual(pull().items, []);
+  // an order counts only while its ask's email is still BUDDY_OWNER_EMAIL (a changed owner, a hand-written row)
+  reset();
+  const s3 = ask(OWN, 'mine').id;
+  props.BUDDY_OWNER_EMAIL = OWN2.email;
+  assert.strictEqual(ctx.buddyThreads_(book.tabs['Buddy Inbox'].rows, clock)[s3].order, false);
+  props.BUDDY_OWNER_EMAIL = OWN.email;
+  assert.strictEqual(ctx.buddyThreads_(book.tabs['Buddy Inbox'].rows, clock)[s3].order, true);
+  delete props.BUDDY_OWNER_EMAIL;
+  assert.strictEqual(ctx.buddyThreads_(book.tabs['Buddy Inbox'].rows, clock)[s3].order, false); // fail closed
+  props.BUDDY_OWNER_EMAIL = OWN.email;
+  // buddyAsk_ writes an order only when told to (a future staff path must not inherit it)
+  reset(); store.set('buddy_hb', String(clock));
+  assert.strictEqual(R(ctx.buddyAsk_(STAFF, { text: 'q' })).success, true);
+  assert.strictEqual(meta(inbox()[0]).order, false);
   // the worker cannot turn an answer into an order: reply meta has no say
   reset();
   const s2 = legacy(ask(OWN, 'old2').id); pull();
