@@ -1,56 +1,135 @@
 <!doctype html>
-<html lang="en">
+<html lang="hi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#CE0000">
 <title>LMCS — Driver</title>
 <link rel="stylesheet" href="../assets/game/base.css?v=1b745c86">
 <style>
-  /* a phone in a driver's hand: big targets, few words, a short Hindi word beside each label */
-  .dr-hi { font-family:var(--gb-font); font-size:15px; color:var(--gb-muted); margin-left:6px; }
-  .dr-big { width:100%; min-height:60px; font-size:18px; }
-  .dr-card h2 { margin:8px 0 4px; }
-  .dr-card .gb-bar { margin:8px 0; }
-  .dr-fld { display:block; font-weight:700; font-size:17px; margin:16px 0 6px; }
-  .dr-in { width:100%; min-height:56px; border:1.5px solid var(--gb-muted); border-radius:10px; padding:0 12px; font:inherit; font-size:22px; background:var(--gb-paper); color:var(--gb-ink); }
-  .dr-in[aria-invalid="true"] { border-color:var(--gb-low); }
-  .dr-why { margin:4px 0 0; color:var(--gb-low); font-weight:700; font-size:15px; }
+  /* A phone in a driver's hand, one-handed, maybe in sunlight, maybe reading little: Hindi first and big, English small under it,
+     an icon on everything, one thing per screen, and the one red button always at the bottom where the thumb is. */
+  .dr { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+  .dr-hi { display:block; font-family:var(--gb-font); font-size:21px; font-weight:700; line-height:1.25; }
+  .dr-en { display:block; font-size:14px; color:var(--gb-muted); font-weight:600; }
+  .dr-ico { font-size:34px; line-height:1; flex:none; width:48px; text-align:center; }
+
+  /* home: who and which bus, then the one next step, then the two jobs as big tiles */
+  .dr-hub { display:flex; align-items:center; gap:12px; margin:0 0 14px; }
+  .dr-hub img { width:56px; height:56px; border-radius:50%; background:var(--gb-gold-soft); flex:none; }
+  .dr-hub h1 { margin:0; font-size:24px; }
+  .dr-reg { display:inline-block; margin-top:4px; padding:2px 10px; border:2px solid var(--gb-ink); border-radius:8px; background:#fff;
+    font:800 17px/1.4 var(--gb-font); letter-spacing:.04em; }
+  .dr-tiles { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+  .dr-tile { display:flex; align-items:center; gap:12px; min-height:88px; padding:12px 14px; background:var(--gb-paper); border:2px solid var(--gb-line);
+    border-radius:16px; color:var(--gb-ink); text-decoration:none; }
+  .dr-tile[aria-disabled="true"] { cursor:default; }
+  .dr-tile .gb-bar { margin-top:6px; }
+  .dr-tile-b { flex:1; min-width:0; }
+  .dr-tile.is-next { border-color:var(--gb-red); box-shadow:inset 6px 0 0 var(--gb-red); }
+  .dr-tile.is-done { border-color:var(--gb-ok); }
+  .dr-state { flex:none; font-weight:800; font-size:14px; padding:3px 10px; border-radius:999px; }
+  .dr-state.next { background:var(--gb-red); color:#fff; }
+  .dr-state.done { background:var(--gb-ok-soft); color:var(--gb-ok); }
+  .dr-state.wait { background:var(--gb-warn-soft); color:var(--gb-warn); }
+  .dr-tile:active:not([aria-disabled="true"]) { background:var(--gb-gold-soft); }
+  .dr-next { margin:0 0 14px; }
+  .dr-next .gb-btn { width:100%; margin-top:10px; min-height:60px; font-size:19px; }
+  .dr-next .gb-next-t { font-size:18px; font-weight:700; margin:2px 0 0; }
+
+  /* the bar at the bottom: on home the three places; in the fuel steps the one red button (and Back) */
+  .dr-bar { position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--gb-paper); border-top:1.5px solid var(--gb-line);
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom)); }
+  .dr-bar-in { max-width:720px; margin:0 auto; display:flex; gap:8px; }
+  .dr-nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60px; border-radius:12px;
+    color:var(--gb-ink); text-decoration:none; font-weight:700; font-size:15px; }
+  .dr-nav a span { font-size:26px; line-height:1.1; }
+  .dr-nav a[aria-current="page"] { background:var(--gb-gold-soft); }
+  .dr-act .gb-btn { min-height:64px; font-size:20px; }
+  .dr-act .dr-go { flex:1; }
+  .dr-act .dr-back { flex:none; min-width:76px; }
+
+  /* the fuel steps */
+  .dr-steps { display:flex; gap:6px; margin:0 0 14px; }
+  .dr-steps i { flex:1; height:8px; border-radius:4px; background:var(--gb-line); }
+  .dr-steps i.on { background:var(--gb-ok); }
+  .dr-steps i.now { background:var(--gb-red); }
+  .dr-q { display:flex; align-items:center; gap:12px; margin:0 0 6px; }
+  .dr-q h2 { margin:0; font-family:var(--gb-font); }
+  .dr-q .dr-ico { font-size:44px; width:56px; }
+  .dr-q .dr-hi { font-size:26px; }
+  .dr-help { margin:0 0 14px; color:var(--gb-muted); font-size:15px; }
+  .dr-num { width:100%; min-height:76px; border:2px solid var(--gb-muted); border-radius:14px; padding:0 16px; font:800 36px/1 var(--gb-font);
+    letter-spacing:.02em; background:#fff; color:var(--gb-ink); text-align:center; }
+  .dr-num[aria-invalid="true"] { border-color:var(--gb-low); }
+  .dr-shot { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:100%; min-height:180px;
+    border:2.5px dashed var(--gb-muted); border-radius:18px; background:#fff; color:var(--gb-ink); font-weight:800; font-size:20px; cursor:pointer; overflow:hidden; }
+  .dr-shot > span:first-of-type { font-size:56px; line-height:1; }
+  .dr-shot input, .dr-retake input { position:absolute; width:1px; height:1px; opacity:0; }
+  .dr-shot:focus-within { outline:3px solid var(--gb-focus); outline-offset:2px; }
+  .dr-shot.has { border-style:solid; border-color:var(--gb-ok); min-height:0; padding:0; }
+  .dr-shot.has img, .dr-shot.has video { display:block; width:100%; max-height:260px; object-fit:contain; background:#000; }
+  .dr-shot.has .dr-retake { position:relative; cursor:pointer; text-align:center; font-weight:800; min-height:48px;
+    display:block; width:100%; padding:12px; background:var(--gb-ok-soft); color:var(--gb-ok); font-size:17px; }
+  .dr-alt { display:flex; justify-content:center; margin:8px 0 0; }
+  .dr-alt label { position:relative; display:inline-flex; align-items:center; min-height:48px; padding:0 12px; color:var(--gb-red-ink); font-weight:700; text-decoration:underline; cursor:pointer; }
+  .dr-alt input { position:absolute; width:1px; height:1px; opacity:0; }
+  .dr-why { margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-low-soft); color:var(--gb-low); font-weight:700; font-size:16px; }
   .dr-why:empty { display:none; }
-  .dr-file { position:relative; }
-  .dr-file input { position:absolute; inset:0; width:1px; height:1px; opacity:0; }
-  .dr-file:focus-within { outline:3px solid var(--gb-focus); outline-offset:2px; }
-  .dr-file:has(input[aria-invalid="true"]) { border-color:var(--gb-low); }
-  .dr-file[data-has] { border-color:var(--gb-ok); color:var(--gb-ok); }
-  .dr-warn { margin:12px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-warn-soft); color:var(--gb-warn); font-weight:700; }
+  .dr-warn { margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-warn-soft); color:var(--gb-warn); font-weight:700; }
   .dr-warn:empty { display:none; }
-  .dr-done { display:flex; gap:10px; align-items:center; padding:14px; border-radius:12px; background:var(--gb-ok-soft); color:var(--gb-ok); font-weight:700; font-size:18px; }
-  .dr-done .dr-hi { margin-left:auto; white-space:nowrap; }
+
+  /* check and send: what goes, as big lines; each line goes back to its step */
+  .dr-sum { list-style:none; margin:0; padding:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+  .dr-sum li + li { border-top:1px solid var(--gb-line); }
+  .dr-sum a { display:flex; align-items:center; gap:12px; min-height:64px; padding:8px 14px; color:var(--gb-ink); text-decoration:none; }
+  .dr-sum b { margin-left:auto; font-size:22px; font-variant-numeric:tabular-nums; }
+  .dr-sum .ok { color:var(--gb-ok); }
+  .dr-prog { margin:14px 0 0; }
+  .dr-prog .gb-bar { height:22px; border-radius:11px; }
+  .dr-prog .dr-en { margin-top:8px; font-size:17px; color:var(--gb-ink); }
+
+  .dr-done-hi { font-size:26px; font-weight:800; }
+  .gb-done.dr-wait .gb-done-tick { background:var(--gb-warn-soft); color:var(--gb-warn); }
   .dr-demo { margin:0; padding:8px 16px; background:var(--gb-gold-soft); color:var(--gb-gold-ink); font-weight:700; text-align:center; }
+  .dr-stop { text-align:center; padding:28px 16px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+  .dr-stop .dr-ico { display:block; width:auto; font-size:56px; margin:0 auto 8px; }
+  @media (max-width:360px) { .dr-hi { font-size:19px; } .dr-q .dr-hi { font-size:23px; } .dr-num { font-size:30px; } }
 </style>
 </head>
 <body class="gb">
-<header class="gb-head"><div><div><h1 id="hello">Driver</h1><p id="busline">LMCS Transport</p></div><a id="back" href="#" hidden>&larr; Back</a></div></header>
-<p id="demo" class="dr-demo" hidden>Demo: made-up bus. Nothing is sent.</p>
-<main class="gb-page">
-  <section id="home" aria-label="My missions">
-    <ul id="cards" class="gb-list"></ul>
-    <p class="gb-muted">Only your bus is shown here.</p>
+<header class="gb-head"><div><div><h1>LMCS ड्राइवर</h1><p>Driver</p></div></div></header>
+<p id="demo" class="dr-demo" hidden>डेमो · Demo: made-up bus. Nothing is sent.</p>
+<main class="gb-page dr">
+  <section id="home" aria-label="होम · Home" hidden>
+    <div class="dr-hub"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt=""><div><h1 id="hello">नमस्ते</h1><span id="reg" class="dr-reg"></span></div></div>
+    <div id="next" class="gb-next dr-next"></div>
+    <ul id="tiles" class="dr-tiles" aria-label="मेरे काम · My jobs"></ul>
+    <p id="waiting" class="dr-warn" role="status"></p>
   </section>
 
-  <section id="fuel" aria-label="Fuel fill" hidden>
-    <form id="fuelForm" novalidate></form>
+  <section id="fuel" aria-label="डीज़ल · Fuel fill" hidden>
+    <div id="steps" class="dr-steps" aria-hidden="true"></div>
+    <div id="stage"></div>
   </section>
 
-  <section id="sent" aria-label="Sent" hidden>
-    <p class="dr-done">✓ <span id="sentText" role="status">Sent to the office. Thank you!</span><span class="dr-hi">भेज दिया</span></p>
-    <p id="sentSummary" class="gb-note"></p>
-    <a class="gb-btn dr-big" href="#">Back to my missions</a>
+  <section id="sent" aria-label="भेज दिया · Sent" hidden>
+    <div id="doneBox" class="gb-done">
+      <div class="gb-done-tick" aria-hidden="true">✓</div>
+      <p class="dr-done-hi" id="sentHi" tabindex="-1">भेज दिया</p>
+      <p id="sentText" role="status">Sent to the office. Thank you!</p>
+      <p id="sentSummary" class="gb-muted"></p>
+    </div>
   </section>
 
-  <p id="closed" class="gb-empty" hidden>Driver sign-in is being set up. The office will give you a link for your phone.<br>ड्राइवर लॉगिन जल्द आ रहा है।</p>
+  <div id="closed" class="dr-stop" hidden>
+    <span class="dr-ico" aria-hidden="true">🔒</span>
+    <p class="dr-hi" id="closedHi">यह फ़ोन जुड़ा नहीं है</p>
+    <p class="dr-en" id="closedEn">This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).</p>
+  </div>
 </main>
-<script src="./driver-logic.js?v=a518bf8d"></script>
-<script src="./driver.js?v=e78c71e9"></script>
+<nav id="bar" class="dr-bar" hidden><div class="dr-bar-in" id="barIn"></div></nav>
+<script src="./driver-logic.js?v=3c05ddeb"></script>
+<script src="./driver.js?v=098ebfdd"></script>
 </body>
 </html>

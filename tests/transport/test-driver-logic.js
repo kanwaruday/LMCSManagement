@@ -50,3 +50,11 @@ t('exactly one red button, always', () => [[2, 0], [2, 2], [0, 0], [1, 1]].forEa
   assert.strictEqual(DL.missions({ runsNeeded: n, runsDone: d }).filter((x) => x.primary).length, 1)));
 t('scientific or hex notation is not a number', () => ['1e2', '0x10', '-5', '4 2'].forEach((v) => assert.strictEqual(DL.checkFill(Object.assign({}, full, { litres: v }), null).errors.litres, 'Check the number', v)));
 t('a bad date is shown as it came, never "undefined"', () => assert.strictEqual(DL.missions({ runsNeeded: 0, lastFill: '2026-13-01' })[0].status, 'Last fill: 2026-13-01'));
+t('fuel steps: the pump order, every field once', () => assert.deepStrictEqual(DL.FUEL_STEPS.map((x) => x.id).sort(), DL.FUEL_FIELDS.map((f) => f.id).sort()) || assert.deepStrictEqual(DL.FUEL_STEPS.map((x) => x.id), ['video', 'bill', 'litres', 'amount', 'odometer']));
+t('a step says what is wrong only for itself', () => {
+  assert.strictEqual(DL.stepError('litres', { litres: '42.5' }, null), '');
+  assert.match(DL.stepError('amount', { litres: '42.5' }, null), /Type the number/);
+  assert.match(DL.stepError('odometer', { odometer: '100' }, 58000), /Less than last time/);
+  assert.match(DL.stepError('video', {}, null), /Take the video/);
+  assert.strictEqual(DL.stepError('bill', { bill: {} }, null), '');
+});

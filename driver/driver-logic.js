@@ -84,7 +84,24 @@ var DriverLogic = (function () {
   // the device token in a link's fragment (#k=<64 hex>), or '' for anything else
   function tokenFromHash(hash) { var m = /^#?k=([a-f0-9]{64})$/.exec(hash || ''); return m ? m[1] : ''; }
 
-  return { FUEL_FIELDS: FUEL_FIELDS, checkFill: checkFill, sendLabel: sendLabel, missions: missions, tokenFromHash: tokenFromHash,
+  // the fuel fill, one thing per screen, in the order it happens at the pump: film the meter while it runs, photograph the bill,
+  // then copy three numbers (two from the bill, one from the dashboard). hi = the big Hindi prompt, en = the small English line.
+  var FUEL_STEPS = [
+    { id: 'video', icon: '🎥', hi: 'पंप मीटर का वीडियो', en: 'Film the pump meter', help: 'मीटर 0 से शुरू · Start at 0, stop when the pump stops (10–20 s)' },
+    { id: 'bill', icon: '🧾', hi: 'पर्ची की फ़ोटो', en: 'Photo of the bill', help: 'पूरी पर्ची साफ़ दिखे · The whole bill, sharp' },
+    { id: 'litres', icon: '⛽', hi: 'कितने लीटर?', en: 'Litres', help: 'पर्ची पर लिखा · As on the bill' },
+    { id: 'amount', icon: '₹', hi: 'कितने रुपये?', en: 'Amount ₹', help: 'पर्ची पर लिखा · As on the bill' },
+    { id: 'odometer', icon: '🚌', hi: 'बस के किलोमीटर', en: 'Odometer km', help: 'बस के डैशबोर्ड से · From the bus dashboard' },
+  ];
+  // one step's problem for the screen, or '' when that step may move on
+  function stepError(id, form, lastOdometer) {
+    var c = checkFill(form, lastOdometer);
+    if (c.errors[id]) return c.errors[id];
+    if (c.missing.indexOf(id) !== -1) return id === 'video' ? 'वीडियो लें · Take the video' : id === 'bill' ? 'फ़ोटो लें · Take the photo' : 'नंबर लिखें · Type the number';
+    return '';
+  }
+
+  return { FUEL_FIELDS: FUEL_FIELDS, FUEL_STEPS: FUEL_STEPS, stepError: stepError, checkFill: checkFill, sendLabel: sendLabel, missions: missions, tokenFromHash: tokenFromHash,
     fileError: fileError, sendOutcome: sendOutcome };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = DriverLogic;
