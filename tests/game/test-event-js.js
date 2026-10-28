@@ -26,6 +26,9 @@ const src = read('assets/game/event.js');
 assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(src), 'no parsed HTML');
 assert.ok(/action: 'gameeventtick'/.test(src) && /method: 'POST'/.test(src), 'the tick posts');
 assert.ok(/aria-live/.test(src) && /min-height:44px/.test(src), 'live region and 44px targets');
+assert.ok(/insertBefore\(S\.live, S\.slot\.nextSibling\)/.test(src) && !/S\.slot\.appendChild\(S\.live\)/.test(src), 'the live region sits outside the slot, inserted once');
+assert.ok(/ev\.finished === true/.test(src), "the server's finished decides the card's done state");
+assert.ok(!/20000/.test(src) && /LOOK_AGAIN_MS = (\d+)/.test(src) && +src.match(/LOOK_AGAIN_MS = (\d+)/)[1] >= 60000 && /visibilityState/.test(src), 'one look again, a minute on, only in view');
 
 // pages: one script line each (with the roles of that home), and a next-step slot
 [['principal/index.html', 'Principal'], ['coordinator/index.html', 'Coordinator'], ['office/index.html', 'FeeClerk'], ['teacher/index.html', 'Teacher,Staff']].forEach(([p, roles]) => {
@@ -47,4 +50,5 @@ assert.strictEqual(K.gdNetworkText(null), '');
 assert.strictEqual(K.gdBadgeText({ pct: 85, level: 4 }), 'Game Day 85% finished, level 4 of 5', 'the map ring in words, for screen readers');
 assert.ok(/function gdRace/.test(read('assets/game/kingdom.js')) && /\.kg-gdb/.test(read('assets/game/kingdom.css')), 'the race is drawn on the map');
 assert.ok(/action=gameeventboard/.test(read('assets/game/kingdom.js')), 'the Kingdom reads the board');
+assert.ok(/d\.rosterIncomplete \?/.test(read('assets/game/kingdom.js')) && /!GD\.data\.rosterIncomplete/.test(read('assets/game/kingdom.js')), 'roster incomplete: said on the panel, no rings');
 console.log('event card: ok');

@@ -101,6 +101,7 @@ var LMCSEvent = (function () {
       if (!d || !d.success) throw new Error('refused');
       step.done = true;
       S.ev.done = S.ev.steps.filter(function (s) { return s.done; }).length;
+      if (S.ev.done >= S.ev.total) S.ev.finished = true;
       say('Done: ' + step.label + '. ' + progressText(S.ev) + '.');
       draw(step.id);
       load(true); // the server's Buddy line and school % for the new count
@@ -127,7 +128,7 @@ var LMCSEvent = (function () {
     return row;
   }
   function draw(focusStep) {
-    var ev = S.ev, allDone = ev.total > 0 && ev.done >= ev.total, id = 'ev-h-' + ev.id;
+    var ev = S.ev, allDone = ev.finished === true || (ev.total > 0 && ev.done >= ev.total), id = 'ev-h-' + ev.id;
     var kids = [
       h('h2', { id: id }, [ev.emoji ? h('span', { class: 'ev-e', 'aria-hidden': 'true' }, ev.emoji) : null, ev.name]),
       ev.buddy ? h('p', { class: 'ev-say' }, [h('b', {}, 'Buddy'), ev.buddy]) : null,
@@ -146,7 +147,6 @@ var LMCSEvent = (function () {
     var card = h('section', { class: 'ev-card', 'aria-labelledby': id }, kids);
     S.slot.textContent = '';
     S.slot.appendChild(card);
-    S.slot.appendChild(S.live);
     document.body.classList.toggle('ev-on', !allDone);
     var f = focusStep && [].filter.call(card.querySelectorAll('[data-step]'), function (x) { return x.getAttribute('data-step') === focusStep; })[0];
     if (f) f.focus();
@@ -159,9 +159,15 @@ var LMCSEvent = (function () {
         if (!ev || !Array.isArray(ev.steps) || (ROLES.length && ROLES.indexOf(ev.role) === -1)) { if (!quiet) clear(); return; }
         var focused = document.activeElement && S.slot.contains(document.activeElement) ? document.activeElement.closest('[data-step]') : null;
         S.ev = ev; draw(focused ? focused.getAttribute('data-step') : null);
-        // Today writes the day's Game Daily row on this same page load: look once more so "Open Today" ticks without a reload
-        if (!again && !quiet && ev.steps.some(function (s) { return !s.done && !s.self; })) setTimeout(function () { load(true, true); }, 20000);
+        // Today writes the day's Game Daily row on this same page load: look once more, a minute on and only in view, so "Open Today" ticks
+        if (!again && !quiet && ev.steps.some(function (s) { return !s.done && !s.self; })) setTimeout(function () { whenVisible(function () { load(true, true); }); }, LOOK_AGAIN_MS);
       }).catch(function () { /* the card is extra: the page works without it */ });
+  }
+  var LOOK_AGAIN_MS = 65000;
+  function whenVisible(fn) {
+    if (document.visibilityState !== 'hidden') { fn(); return; }
+    var on = function () { if (document.visibilityState === 'hidden') return; document.removeEventListener('visibilitychange', on); fn(); };
+    document.addEventListener('visibilitychange', on);
   }
   function clear() { if (S.slot && S.slot.querySelector('.ev-card')) S.slot.textContent = ''; document.body.classList.remove('ev-on'); }
   function start() {
@@ -169,6 +175,7 @@ var LMCSEvent = (function () {
     if (!S.slot) return;
     styles();
     S.live = h('p', { class: 'ev-live', 'aria-live': 'polite', role: 'status' });
+    S.slot.parentNode.insertBefore(S.live, S.slot.nextSibling); // once, outside the slot: a redraw never drops an announcement
     var tries = 0;
     (function wait() { // the page signs people in on the spot: wait for its session (about 10 minutes), never ask for one
       var s = window.LMCS && LMCS.getSession ? LMCS.getSession() : null;

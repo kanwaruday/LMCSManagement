@@ -20,13 +20,13 @@ const ALLOW = [['Email', 'Name', 'Campus', 'Roles', 'CanDecide', 'Functions'],
   ['multi@example.org', 'Clerk Multi', 'LMS1,LMS2', 'FeeClerk', '', '']];
 const EMP = {
   personal: [['EmployeeCode', 'AuthEmail'], ['NCM/1', 't4b@example.org'], ['NCM/2', 's4@example.org'], ['NCM/3', 'gone@example.org'], ['NCM/4', 'tm@example.org'],
-    ['HES/1', 'hes@example.org'], ['NCM/3', 'dup@example.org'], ['NCM/6', 'dup@example.org'], ['NCM/2', 't4a@example.org'], ['NCM/7', 'no-at-sign'], ['DUN/1', 't3@example.org']],
+    ['HES/1', 'hes@example.org'], ['NCM/3', 'dup@example.org'], ['NCM/6', 'dup@example.org'], ['NCM/2', 't4a@example.org'], ['NCM/7', 'no-at-sign'], ['DUN/1', 't3@example.org'], ['NCM/8', 'drv@example.org']],
   master: [['EmployeeCode', 'Name', 'Status'], ['NCM/1​', 'Neha Test', 'Active'], ['NCM/2', 'Ravi Test', 'active'], ['NCM/3', 'Gone Test', 'Left'], ['NCM/4', 'Tm Test', 'Active'],
-    ['HES/1', 'Hes Test', 'Active'], ['NCM/6', 'Mohan Test', 'Active'], ['NCM/1', 'Second Row', 'Left'], ['DUN/1', 'Tara Test', 'Active']],
-  salary: [['EmployeeCode', 'Department'], ['NCM/1', 'Teaching'], ['NCM/2', 'Non-Teaching'], ['NCM/3', 'Teaching'], ['NCM/4', 'AdminTM'], ['HES/1', 'Teaching'], ['NCM/6', 'Teaching'], ['DUN/1', 'Teaching']],
+    ['HES/1', 'Hes Test', 'Active'], ['NCM/6', 'Mohan Test', 'Active'], ['NCM/1', 'Second Row', 'Left'], ['DUN/1', 'Tara Test', 'Active'], ['NCM/8', 'Driver Test', 'Active']],
+  salary: [['EmployeeCode', 'Department'], ['NCM/1', 'Teaching'], ['NCM/2', 'Non-Teaching'], ['NCM/3', 'Teaching'], ['NCM/4', 'AdminTM'], ['HES/1', 'Teaching'], ['NCM/6', 'Teaching'], ['DUN/1', 'Teaching'], ['NCM/8', 'Transport']],
 };
 const ID = 'gameday-2026-10-30';
-let NOW, daily, progress, quests, cfgRows, cache, empThrows, opened, daybook, daybookCalls, views, bookCalls;
+let NOW, daily, progress, quests, cfgRows, cache, maxPut, warned, empThrows, opened, daybook, daybookCalls, views, bookCalls;
 const reset = () => {
   NOW = new Date('2026-10-30T06:00:00Z');
   daily = [['Day', 'Email', 'Role', 'Campus', 'MissionIds', 'DoneIds'],
@@ -40,7 +40,7 @@ const reset = () => {
     ['s4@example.org', 'event', 'event:other-event:requests', 'done', ''], // another event's tick never counts
     ['s4@example.org', 'tour', 'event:' + ID + ':requests', 'seen', '']]; // nor does another Kind
   quests = [['QuestId', 'Role', 'Title', 'UnlockAfter', 'StepsJson', 'Reward'], ['q1', 'Teacher', 'Q', '', JSON.stringify([{ id: 'a', title: 'A', check: { kind: 'decision', count: 1 } }]), '']];
-  cfgRows = [['Key', 'Value']]; cache = {}; empThrows = false; opened = []; daybookCalls = 0; views = {}; bookCalls = 0;
+  cfgRows = [['Key', 'Value']]; cache = {}; maxPut = Infinity; warned = []; empThrows = false; opened = []; daybookCalls = 0; views = {}; bookCalls = 0;
   daybook = { progress: { LMS4: { cash: { confirmed: 1, known: 0, total: 1 }, odometer: { confirmed: 1, known: 0, total: 1 } } }, states: { LMS4: { cash: { state: 'submitted' }, odometer: { state: 'submitted' } } }, labels: {} };
 };
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows }), _rows: rows });
@@ -48,7 +48,11 @@ ctx.gameNow_ = () => NOW;
 ctx.gameBook_ = () => { bookCalls++; return { getSheetByName: (n) => sheet({ 'Game Config': cfgRows, 'Game Daily': daily, 'Game Progress': progress, 'Game Quests': quests }[n]) }; };
 ctx.gameWithLock_ = (fn) => fn();
 ctx.gameAppendText_ = (sh, rows) => rows.forEach((r) => sh._rows.push(r));
-ctx.CacheService = { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) };
+ctx.CacheService = { getScriptCache: () => ({ get: (k) => cache[k] || null, getAll: (ks) => { const o = {}; ks.forEach((k) => { if (cache[k]) o[k] = cache[k]; }); return o; },
+  put: (k, v) => { if (v.length > maxPut) throw new Error('Argument too large'); cache[k] = v; } }) };
+ctx.console.warn = (m) => warned.push(String(m));
+// the shared numbers expire (60 s in production; the stub never expires on its own)
+const expire = () => Object.keys(cache).forEach((k) => { if (/^event_(sum|names)_/.test(k)) delete cache[k]; });
 ctx.SpreadsheetApp = { openById: (id) => {
   opened.push(id);
   if (id !== ctx.TCH_EMP_SHEET_ID) return { getSheets: () => [sheet(ALLOW)] }; // the allowlist (its id is a const, not on the context)
@@ -101,6 +105,9 @@ assert.deepStrictEqual([by['s4@example.org'].role, by['s4@example.org'].campusId
 assert.strictEqual(by['dup@example.org'].name, 'Mohan Test', 'the last EmpPersonal row of an email wins');
 assert.strictEqual(by['t3@example.org'].campusId, 'LMS3');
 ['gone@example.org', 'tm@example.org', 'hes@example.org', 'no-at-sign'].forEach((e) => assert.ok(!by[e], e + ' is not expected'));
+assert.ok(!by['drv@example.org'], 'Transport staff sign in as Staff, but are never expected on the day');
+assert.ok(ctx.tchEmployeeFromBook_('drv@example.org', { getSheetByName: (n) => sheet({ EmpPersonal: EMP.personal, EmpMaster: EMP.master, EmpSalary: EMP.salary }[n]) }), '(they can still sign in)');
+assert.ok(!('functions' in by['t4b@example.org']) && !('functions' in by['p4@example.org']), 'empty functions are left out');
 // same answers as tchEmployeeFromBook_, person by person
 const bookOf = { getSheetByName: (n) => sheet({ EmpPersonal: EMP.personal, EmpMaster: EMP.master, EmpSalary: EMP.salary }[n]) };
 ['t4b@example.org', 's4@example.org', 'gone@example.org', 'tm@example.org', 'hes@example.org', 'dup@example.org', 't3@example.org'].forEach((e) => {
@@ -109,11 +116,24 @@ const bookOf = { getSheetByName: (n) => sheet({ EmpPersonal: EMP.personal, EmpMa
 });
 // cached 10 min; an unreadable Employee Master is not cached
 reset();
-ctx.eventRoster_(); ctx.eventRoster_();
+assert.strictEqual(ctx.eventRoster_().complete, true); ctx.eventRoster_();
 assert.strictEqual(opened.length, 2, 'second call read the cache');
+// the Employee Master down: the last good roster (6 h key) stands in
+delete cache[ctx.EVENT_ROSTER_KEY]; empThrows = true;
+let ro = J(ctx.eventRoster_());
+assert.strictEqual(ro.complete, true);
+assert.ok(ro.people.some((p) => p.email === 't4b@example.org'), 'last good roster');
+// with no good roster: the allowlist only, marked incomplete, not cached
 reset(); empThrows = true;
-assert.ok(J(ctx.eventRoster_()).every((p) => ALLOW.some((r) => r[0].toLowerCase() === p.email)), 'allowlist only');
-assert.ok(!cache[ctx.EVENT_ROSTER_KEY], 'not cached');
+ro = J(ctx.eventRoster_());
+assert.strictEqual(ro.complete, false);
+assert.ok(ro.people.every((p) => ALLOW.some((r) => r[0].toLowerCase() === p.email)), 'allowlist only');
+assert.ok(!cache[ctx.EVENT_ROSTER_KEY] && !cache[ctx.EVENT_ROSTER_GOOD_KEY], 'not cached');
+// a roster too big for one cache key: warned about, and the good copy is not written from a failed put
+reset(); maxPut = 100;
+assert.strictEqual(ctx.eventRoster_().complete, true);
+assert.ok(warned.some((w) => /event_roster_v2 not stored/.test(w)), 'a size failure is warned about');
+assert.ok(!cache[ctx.EVENT_ROSTER_KEY]);
 
 // ---- detectors
 reset();
@@ -151,6 +171,7 @@ assert.strictEqual(r.success, true);
 assert.deepStrictEqual(r.event.steps.map((s) => [s.id, s.done, s.self]), [['open', true, false], ['mission', true, false], ['rooms', true, true], ['ss', true, true], ['teachers', true, true]]);
 assert.deepStrictEqual([r.event.done, r.event.total], [5, 5]);
 assert.strictEqual(r.event.buddy, evDefault.buddy.done);
+assert.strictEqual(r.event.finished, true);
 // LMS4 expected: p4, c4, fc4, t4a (allowlist) + t4b, s4, dup (Employee Master) = 7; finished: p4, t4a; fc4's starting data can't be told for a Principal
 assert.deepStrictEqual(r.event.school, { pct: 28, level: 1 });
 assert.deepStrictEqual(r.event.teachersIn, { n: 1, of: 3, notIn: ['Neha Test', 'Mohan Test'] });
@@ -171,14 +192,24 @@ assert.ok(!('teachersIn' in r.event));
 ['Neha', 'Mohan', 'Asha', 'Ravi'].forEach((s) => assert.ok(JSON.stringify(r).indexOf(s) === -1));
 // Buddy's line follows progress
 r = get(S4);
-assert.deepStrictEqual([r.event.done, r.event.total, r.event.buddy], [1, 2, evDefault.buddy.cheer50]);
+assert.deepStrictEqual([r.event.done, r.event.total, r.event.finished, r.event.buddy], [1, 2, false, evDefault.buddy.cheer50]);
 // the Owner, an Accounts person: no checklist
 assert.strictEqual(get(OWNER).event, null);
 assert.strictEqual(get(caller('acc@example.org', 'Accounts', 'LMS4')).event, null);
 // a Fee Clerk: the Office is asked as them
 r = get(caller('fc4@example.org', 'FeeClerk', 'LMS4'));
 assert.deepStrictEqual(r.event.steps.map((s) => [s.id, s.done]), [['starting', true], ['daybook', false], ['phones', false]]);
-assert.strictEqual(daybookCalls, 1);
+assert.strictEqual(daybookCalls, 1, 'once, for their own steps: the shared numbers never ask the Office');
+// finished: a step that can't be told (the Office down) never pins the card up after the day
+progress.push(['fc4@example.org', 'event', 'event:' + ID + ':daybook', 'done', ''], ['fc4@example.org', 'event', 'event:' + ID + ':phones', 'done', '']);
+const realDaybook = ctx.daybookProgress_;
+ctx.daybookProgress_ = () => { throw new Error('office down'); };
+r = get(caller('fc4@example.org', 'FeeClerk', 'LMS4'));
+assert.deepStrictEqual([r.event.done, r.event.total, r.event.finished, r.event.buddy], [2, 3, true, evDefault.buddy.done]);
+NOW = new Date('2026-10-31T06:00:00Z');
+assert.strictEqual(get(caller('fc4@example.org', 'FeeClerk', 'LMS4')).event, null, 'finished with a step that cannot be told: steps aside');
+NOW = new Date('2026-10-30T06:00:00Z');
+ctx.daybookProgress_ = realDaybook;
 // a Coordinator with ALL campuses: a checklist, no school
 r = get(caller('call@example.org', 'Coordinator', 'ALL', ['Transport']));
 assert.deepStrictEqual(r.event.steps.map((s) => s.id), ['open', 'followup', 'transport']);
@@ -221,6 +252,9 @@ assert.ok(JSON.stringify(b).indexOf('Coord All') === -1 && JSON.stringify(b).ind
 progress.push(['t4b@example.org', 'event', 'event:' + ID + ':chapters', 'done', ''], ['t4b@example.org', 'event', 'event:' + ID + ':classes', 'done', ''],
   ['dup@example.org', 'event', 'event:' + ID + ':chapters', 'done', ''], ['dup@example.org', 'event', 'event:' + ID + ':classes', 'done', ''],
   ['c4@example.org', 'event', 'event:' + ID + ':accounts', 'done', ''], ['s4@example.org', 'event', 'event:' + ID + ':requests', 'done', '']);
+assert.strictEqual(board(OWNER).schools.filter((s) => s.id === 'LMS4')[0].done, 2, 'the school numbers lag until the shared copy expires');
+assert.strictEqual(get(S4).event.steps[1].done, true, "but the caller's own steps are live");
+expire();
 b = board(OWNER);
 const s4b = b.schools.filter((s) => s.id === 'LMS4')[0];
 assert.deepStrictEqual([s4b.done, s4b.pct, s4b.level, s4b.stuck], [6, 85, 4, []], 'fc4 still not in');
@@ -228,8 +262,26 @@ assert.strictEqual(s4b.nudge, 'Call Asha ji: 1 person not in yet.');
 assert.strictEqual(b.network.schoolsAtGoal, 1);
 assert.strictEqual(get(P4).event.network.schoolsAtGoal, 1);
 // the Principal not in: no "call them" sentence
-daily.splice(1, 1);
+daily.splice(1, 1); expire();
 assert.strictEqual(board(OWNER).schools.filter((s) => s.id === 'LMS4')[0].nudge, '2 people not in yet, the Principal too.');
+// the shared numbers: one sum key and one names key per school, everything recomputed when any is missing
+assert.ok(cache['event_sum_' + ID] && ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].every((c) => cache['event_names_' + ID + '_' + c]));
+delete cache['event_names_' + ID + '_LMS6']; delete cache[ctx.EVENT_ROSTER_KEY]; opened = [];
+board(OWNER);
+assert.ok(cache['event_names_' + ID + '_LMS6'] && opened.length >= 1, 'a missing key recomputes (and reads the roster)');
+delete cache[ctx.EVENT_ROSTER_KEY]; delete cache[ctx.EVENT_ROSTER_GOOD_KEY]; opened = [];
+board(OWNER); get(P4);
+assert.strictEqual(opened.length, 0, 'a fresh shared copy needs no roster read');
+// no roster at all: no school numbers, network or names for anyone; the board says the roster is incomplete
+reset(); empThrows = true;
+r = get(P4);
+assert.deepStrictEqual([r.event.school, r.event.network, 'teachersIn' in r.event], [null, null, false]);
+assert.strictEqual(r.event.done, 5, 'the own steps still work');
+b = board(OWNER);
+assert.strictEqual(b.rosterIncomplete, true);
+assert.strictEqual(b.network, null);
+reset();
+assert.strictEqual(board(OWNER).rosterIncomplete, false);
 // before the day the board shows the coming event
 reset(); NOW = new Date('2026-10-28T06:00:00Z');
 b = board(OWNER);

@@ -422,6 +422,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function gdBody(d) {
     var ev = d.event, n = d.network || null, goal = n ? Number(n.goalPct) || 80 : 80;
     return h('div', { class: 'kg-gd' }, [
+      d.rosterIncomplete ? h('p', { class: 'kg-gd-warn', role: 'status' }, ["The staff list couldn't be read, so these counts cover the allowlist only. Roster incomplete: try again later."]) : null,
       h('p', { class: 'kg-gd-k' }, [ev.upcoming ? ev.name + ' starts ' + LMCSGame.dateLabel(ev.date) + '. These are the people expected at each school.' : ev.name + ' · live']),
       n ? h('div', { class: 'kg-gd-row' }, [h('b', {}, ['All schools']), h('span', {}, [gdNetworkText(n)])]) : null,
       n ? gdBar(n.of ? 100 * n.schoolsAtGoal / n.of : 0, 'All schools: ' + gdNetworkText(n)) : null,
@@ -441,9 +442,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     else if (S.el) S.el.appendChild(p);
   }
   // (B) the school race on the map: each base gets a 🎉 % ring and level (apart from its Kingdom level), and the network bar sits
-  // over the map. Drawn onto the rendered map, so a Kingdom re-render or a board refresh redraws it. Not before the day (all at 0).
+  // over the map. Drawn onto the rendered map, so a Kingdom re-render or a board refresh redraws it. Not before the day (all at 0), nor
+  // while the roster is incomplete (an allowlist-only % would mislead).
   function gdRace() {
-    var box = S.el && S.el.querySelector('.kg-box'), on = GD.data && !GD.data.event.upcoming, by = {}, goal = on ? Number(GD.data.network && GD.data.network.goalPct) || 80 : 80;
+    var box = S.el && S.el.querySelector('.kg-box'), on = GD.data && !GD.data.event.upcoming && !GD.data.rosterIncomplete, by = {}, goal = on ? Number(GD.data.network && GD.data.network.goalPct) || 80 : 80;
     if (on) GD.data.schools.forEach(function (s) { by[s.id] = s; });
     var oldNet = S.el && S.el.querySelector('.kg-gdnet'); if (oldNet) oldNet.remove();
     if (on && box && GD.data.network) {

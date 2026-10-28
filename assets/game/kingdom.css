@@ -223,3 +223,4 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-gdnet { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 12px; margin:10px 0 6px; padding:8px 12px; background:var(--paper);
   border:1.5px solid var(--line); border-radius:12px; font-size:14px; }
 .kg-gdnet .gb-bar { flex-basis:100%; }
+.kg-gd-warn { margin:0; padding:8px 10px; border-radius:10px; background:var(--gb-warn-soft); color:var(--gb-warn); font-size:14px; font-weight:700; }
