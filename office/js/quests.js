@@ -2,7 +2,8 @@
 // The quests come from the Game backend (gametoday, peek: no writes); this file only orders and paints them.
 import { cacheGet, cacheSet, esc } from './shell.js';
 
-const KEY = 'setup-quests';
+const KEY = 'setup-quests:'; // + the email: a shared phone never shows one person's quests to another
+let skipped = false; // "See all tools" holds for this visit, even when the refresh lands after it
 const SETUP = (q) => /^daybook-(setup:|accountant$)/.test(String(q.questId || ''));
 const rank = (q) => (/^daybook-setup:/.test(q.questId) ? 0 : q.questId === 'daybook-accountant' ? 1 : 2);
 // a gametoday step's go ('office/starting-data.html?campus=LMS1&quest=cash') -> a link from office/, or null for anything else
@@ -41,7 +42,7 @@ export function renderQuests(el, quests, who) {
     }).join('') +
     '<div class="gb-section"><a class="gb-go" href="daybook.html"><span>Go to Day Book<small>Entries can start before setup is finished</small></span></a>' +
     '<button type="button" class="gb-btn" id="quests-skip">See all tools</button></div>';
-  el.querySelector('#quests-skip').onclick = () => show(el, null);
+  el.querySelector('#quests-skip').onclick = () => { skipped = true; show(el, null); };
 }
 
 // home shown (quests hidden) when list is null/empty, else the quest screen over the home
@@ -53,7 +54,7 @@ function show(el, list, who) {
 // Paints the last known quests at once (a clerk with none known yet sees a loading line, not the home), then the fresh ones.
 // Offline or refused: the last known screen stays, or the home shows.
 export async function showSetupQuests(el, session, fetchFn, url, token) {
-  const who = { name: session.name }, cached = cacheGet(KEY);
+  const who = { name: session.name }, key = KEY + String(session.email || '').toLowerCase(), cached = cacheGet(key);
   if (cached && cached.length) show(el, cached, who);
   else if (/(^|,)\s*FeeClerk\s*(,|$)/.test(String(session.role || ''))) {
     el.innerHTML = '<p class="gb-muted">Loading your setup quests…</p><a class="gb-go" href="daybook.html"><span>Go to Day Book<small>Entries can start before setup is finished</small></span></a>';
@@ -63,6 +64,6 @@ export async function showSetupQuests(el, session, fetchFn, url, token) {
     const d = await (await fetchFn(url + '?action=gametoday&peek=1&idToken=' + encodeURIComponent(token), { cache: 'no-store' })).json();
     if (!d || !d.success) throw new Error((d && d.error) || 'no quests');
     const list = setupQuests(d.quests);
-    cacheSet(KEY, list); show(el, list, who);
-  } catch (e) { if (!(cached && cached.length)) show(el, null); }
+    cacheSet(key, list); if (!skipped) show(el, list, who);
+  } catch (e) { if (!(cached && cached.length) && !skipped) show(el, null); }
 }
