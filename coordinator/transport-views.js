@@ -6,7 +6,8 @@
    Data: the Coordinator backend's coordinatortransportinsight (stops, tracks, vehicles, pnl, days), already scoped to the caller's
    campuses. Stop locations never live in this public repo. When the staff stop workbook is wired in, a stop's `name` (checked name)
    and `students` (children at the stop) are used where present; until then the GPS place name and route totals stand in.
-   Needs Leaflet (window.L) for the city view. */
+   Needs Leaflet (window.L) for the city view. Without pnl in the data (the route World: transportworld, driverroute) nothing shows
+   money: no badges, no money lines, no money colours. Mounted outside the transport pages by coordinator/route-map.js. */
 window.TransportViews = (function () {
   const LINES = ['#d1495b', '#00798c', '#d68c1a', '#30638e', '#5b9a6f', '#8d6a9f', '#2e4057', '#b5604f', '#3c9d9b', '#9a7b24'];
   const PROFIT = '#15803d', LOSS = '#CE0000', WARN = '#b45309', OFF = '#8a939c', INK = '#1a1a1a';
@@ -81,9 +82,9 @@ window.TransportViews = (function () {
   function metroBody(el, d, S, redraw) {
     const m = model(d);
     S.half = S.half || 'AM';
-    el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; <b>dashed</b> lines have a tracker problem, so their stops are incomplete; <b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits. The badge is the line\'s result ' + esc(m.period) + '.</p>' +
+    el.innerHTML = '<p class="note">Each bus is a line. Stations keep their real order but are spaced evenly, as on a metro map. <b>Thick</b> lines carry more children; <b>dashed</b> lines have a tracker problem, so their stops are incomplete; <b>rings</b> are stations two buses share, the first places to look at merging; <b>squares</b> are where a bus waits.' + (m.months.length ? ' The badge is the line\'s result ' + esc(m.period) + '.' : '') + '</p>' +
       '<div class="ctl"><span class="seg">' + [['AM', 'Morning runs'], ['PM', 'Afternoon runs']].map(x => '<button data-half="' + x[0] + '" class="' + (S.half === x[0] ? 'on' : '') + '" aria-pressed="' + (S.half === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +
-      '<div class="tv-split"><svg class="tv-metro" viewBox="0 0 1000 640" role="img" aria-label="Route map: one line per bus"></svg><div class="tv-info"><b>Tap a line or a station.</b><p class="note">A line shows its children, seats, km a day and money, and stops within 2 minutes of each other. A station shows every bus that stops there and when.</p></div></div>';
+      '<div class="tv-split"><svg class="tv-metro" viewBox="0 0 1000 640" role="img" aria-label="Route map: one line per bus"></svg><div class="tv-info"><b>Tap a line or a station.</b><p class="note">A line shows its children, seats, km a day' + (m.months.length ? ' and money' : '') + ', and stops within 2 minutes of each other. A station shows every bus that stops there and when.</p></div></div>';
     el.querySelectorAll('[data-half]').forEach(b => b.addEventListener('click', () => { S.half = b.dataset.half; redraw(); }));
     const svg = el.querySelector('.tv-metro'), info = el.querySelector('.tv-info');
     const routes = (S.sel ? LMCSCampus.filter(m.buses.map(reg => ({ reg, campusId: (m.veh[reg] || {}).campusId })), S.sel, 'campusId').map(x => x.reg) : m.buses).map(b => {
@@ -140,7 +141,7 @@ window.TransportViews = (function () {
   function city(el, d, S) {
     const m = model(d);
     if (!S.bus || m.buses.indexOf(S.bus) === -1) S.bus = m.buses.slice().sort((a, b) => ((m.veh[a] || {}).net || 0) - ((m.veh[b] || {}).net || 0))[0] || ''; // open on the biggest loss
-    el.innerHTML = '<p class="note">The line is the road the bus really drives (a typical day from the GPS), green if the bus earns more than it costs ' + esc(m.period) + ', red if it loses. Each stop has a ' + WALK_M + ' m walking circle in the bus\'s colour: circles of two colours overlapping mean two buses serve the same houses. Square: where the bus waits.</p>' +
+    el.innerHTML = '<p class="note">The line is the road the bus really drives (a typical day from the GPS)' + (m.months.length ? ', green if the bus earns more than it costs ' + esc(m.period) + ', red if it loses' : '') + '. Each stop has a ' + WALK_M + ' m walking circle in the bus\'s colour: circles of two colours overlapping mean two buses serve the same houses. Square: where the bus waits.</p>' +
       '<div class="ctl"><select class="tv-bus" aria-label="Bus"><option value="">All buses</option>' + m.buses.map(b => '<option' + (b === S.bus ? ' selected' : '') + '>' + esc(b) + '</option>').join('') + '</select>' +
       '<label class="sm"><input type="checkbox" class="tv-walk"' + (S.walk === false ? '' : ' checked') + '> Walking circles</label></div><div class="tv-city" role="region" aria-label="Map of routes and stops"></div>';
     el.querySelector('.tv-bus').addEventListener('change', e => { S.bus = e.target.value; draw(); });

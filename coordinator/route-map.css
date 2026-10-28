@@ -1,0 +1,38 @@
+/* The route views (coordinator/transport-views.js: metro, city, depot), wherever they are drawn: the Coordinator and Owner transport
+   pages and every World that mounts coordinator/route-map.js. Colours fall back when the page has no coordinator/shared.css. */
+.tv-split{display:grid;grid-template-columns:1fr 290px;gap:12px;align-items:start}
+.tv-metro{width:100%;height:auto;display:block;border:1px solid var(--border,#ddd);border-radius:6px;background:#fbfbfa}
+.tv-metro path[data-line],.tv-metro [data-line]{cursor:pointer}
+.tv-metro :focus-visible{outline:3px solid var(--amber,#b45309);outline-offset:2px}
+.tv-tag{font:700 10.5px 'Segoe UI',Arial,sans-serif;fill:#fff}
+.tv-lbl{font:600 10.5px 'Segoe UI',Arial,sans-serif;fill:var(--dark,#1a1a1a);paint-order:stroke;stroke:#fbfbfa;stroke-width:3px}
+.tv-info{border:1px solid var(--border,#ddd);border-radius:6px;padding:10px 12px}
+.tv-info p{margin:6px 0 0}
+.tv-city{height:62vh;min-height:360px;border:1px solid var(--border,#ddd);border-radius:6px}
+.tv-city .leaflet-tile-pane{filter:grayscale(1) contrast(.9) brightness(1.05)}
+.tv-wait{width:16px;height:16px;border:3px solid var(--dark,#1a1a1a);background:#fff;border-radius:3px;transform:translate(-8px,-8px)}
+.tv-depot{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.tv-veh{border:1px solid var(--border,#ddd);border-radius:6px;padding:10px 12px}
+.tv-vh{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+.tv-lamp{width:11px;height:11px;border-radius:50%;display:inline-block}
+.tv-row{display:grid;grid-template-columns:78px 1fr 64px;gap:8px;align-items:center;font-size:12px;margin:6px 0;font-variant-numeric:tabular-nums}
+.tv-row>span:first-child{color:var(--gray,#555)}.tv-row>:last-child{text-align:right}
+.tv-bar{height:9px;border-radius:4px;background:var(--lgray,#f5f5f5);position:relative;overflow:hidden}
+.tv-bar>i{position:absolute;top:0;bottom:0;border-radius:4px}
+.tv-mid{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--dark,#1a1a1a);z-index:1}
+.tv-dec{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.tv-dec span{font-size:11px;font-weight:700;border-radius:4px;padding:2px 7px;color:#fff}
+@media (max-width:760px){.tv-split{grid-template-columns:1fr}.tv-city{height:55vh}}
+
+/* a World without coordinator/shared.css: the views' own controls, at a thumb's size */
+.rm{font-size:14px}
+.rm .ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.rm .ctl select,.rm .ctl input[type=checkbox]{min-height:44px}
+.rm .ctl select{border:1px solid #ddd;border-radius:8px;padding:0 10px;font-size:14px;background:#fff}
+.rm .ctl label{display:inline-flex;align-items:center;gap:6px;min-height:44px}
+.rm .seg{display:inline-flex;border:1px solid #ddd;border-radius:8px;overflow:hidden}
+.rm .seg button{min-height:44px;border:none;background:#fff;padding:0 14px;font-size:14px;font-weight:600;cursor:pointer;color:#555}
+.rm .seg button.on{background:#1a1a1a;color:#fff} /* a chosen tab, not an action: red stays for the page's one next step */
+.rm .note{color:#555;font-size:13px;margin:6px 0 12px}
+.rm .status{color:#555;padding:12px 0}
+.rm .sm{color:#555;font-size:12px}
