@@ -18,7 +18,7 @@ var LMCSEmoji = (function () {
     hq: '🏛️', base: '🏰', school: '🏫', heads: '👑', account: '👤', applicants: '🧑‍💼', hiring: '👥',
     // work
     day: '🗓️', dailyReport: '📊', issues: '🛠️', curriculum: '📚', homework: '📝', documents: '📋', salary: '💼', payroll: '🧮',
-    rules: '📖', byeLaws: '⚖️', startingData: '🧾', fees: '💰', dayBook: '📒', closeDay: '🌙', deposits: '🏦', requests: '📥',
+    rules: '📖', byeLaws: '⚖️', supportSession: '🤝', evaluate: '✍️', startingData: '🧾', fees: '💰', dayBook: '📒', closeDay: '🌙', deposits: '🏦', requests: '📥',
     tools: '🧰', appointments: '📅', bus: '🚌', fuel: '⛽', routeVideo: '🎥', rollCall: '🙋', busCheck: '🔧', call: '📞', help: '❓',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
