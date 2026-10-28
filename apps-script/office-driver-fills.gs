@@ -28,6 +28,9 @@ function officeDriverFillDaybook_(ctx, data) {
     off.code = 'DRIVER_FILLS_OFF';
     throw off;
   }
+  // the clerk names the account the fuel was paid from: daybook.add would turn a blank one into the campus bank, and money never
+  // goes to a default
+  if (!String(data.account || '').trim()) throw new Error('BAD_ACCOUNT');
   const fillId = String(data.fill_id || '');
   if (!/^[A-Za-z][A-Za-z0-9_-]{7,63}$/.test(fillId)) throw new Error('MISSING_ID'); // driver-fuel.gs's fillId rule
   const sh = SpreadsheetApp.openById(OFFICE_FUEL_MIRROR_SS).getSheetByName(OFFICE_DFL_TAB);

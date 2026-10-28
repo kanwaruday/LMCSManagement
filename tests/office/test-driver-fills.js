@@ -76,6 +76,7 @@ module.exports = function run(t) {
     assert.equal(go(h, { campus: 'LMS2' }, 'other-token').error, 'NOT_FOUND', 'another campus\'s fill');
     assert.equal(go(h, { campus: 'LMS2' }).error, 'FORBIDDEN_CAMPUS');
     assert.equal(go(h, { account: 'nope' }).error, 'BAD_ACCOUNT');
+    assert.equal(go(h, { account: '' }).error, 'BAD_ACCOUNT', 'a blank account is never the campus bank');
     assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook').length, 0);
     assert.equal(h.dfl[1][15], '');
   });
