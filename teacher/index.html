@@ -10,30 +10,23 @@
 <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
 <style>
 :root{--red:#CE0000;--red-h:#a50000;--red-lt:rgba(206,0,0,.08);--dark:#1a1a1a;--gray:#5b6472;--lgray:#f4f5f7;--border:#e6e8ec;--white:#fff;--green:#15803d;--green-lt:#dcfce7;--amber:#b45309;--amber-lt:#fef3c7;--blue:#1d4ed8;--blue-lt:#dbeafe;--purple:#6d28d9;--purple-lt:#ede9fe;--shadow:0 2px 10px rgba(20,20,30,.06);--shadow-lg:0 8px 28px rgba(20,20,30,.10)}
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);color:var(--dark);min-height:100vh;font-size:13.5px;line-height:1.55}
-
-/* ── App-shell header: compact, game-HUD flavored ── */
-.hdr{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,var(--red),#e01313);color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-top,0px));padding-top:calc(14px + env(safe-area-inset-top,0px));box-shadow:0 2px 14px rgba(206,0,0,.25)}
-.hdr-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.hdr-hi{font-size:15px;font-weight:800}
-.hdr-sub{font-size:11px;opacity:.85;margin-top:2px}
-.hdr-signout{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 11px;font-size:11px;font-weight:700;cursor:pointer}
-.hdr-signout:hover{background:rgba(255,255,255,.28)}
-.streak-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:700;margin-top:10px}
+/* The page wears assets/game/base.css (body.gb.gb-app, linked after this block); what is left here styles the sections' own content. */
+:where(#appArea, #panels) *{margin:0;padding:0}
+.gb-app{-webkit-tap-highlight-color:transparent}
 
 /* "View as" picker (Owner/Coordinator: any employee; Principal: their school) + a loud,
    unmissable banner once a target is actually selected, so there's
-   never ambiguity about whose data is on screen. */
-#viewAsBar{margin-top:10px}
+   never ambiguity about whose data is on screen. Sits at the top of the stage. */
+#viewAsBar{margin:0 0 12px}
 .viewas-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.viewas-picker select{flex:1;min-width:160px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 9px;font-size:12px;font-family:inherit}
-.viewas-picker select option{color:#000}
-.viewas-picker label{font-size:10.5px;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.03em;flex-shrink:0}
-.viewas-active{background:#1a1a1a;color:#ffd54a;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.viewas-active button{border:1px solid rgba(255,213,74,.5);background:none;color:#ffd54a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0}
-
-#appBody{max-width:520px;margin:0 auto;width:100%;padding:14px 14px calc(84px + env(safe-area-inset-bottom,0px))}
+.viewas-picker input{flex:1;min-width:160px}
+.viewas-picker label{font-size:12px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.03em;flex-shrink:0}
+.viewas-active{background:#1a1a1a;color:#ffd54a;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.viewas-active button{border:1px solid rgba(255,213,74,.5);background:none;color:#ffd54a;border-radius:6px;padding:4px 10px;min-height:36px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.viewas-active button:focus-visible{outline-color:#ffd54a}
+.streak-pill{margin:0 0 10px;font-size:14px;font-weight:700}
+.tools-h{margin-top:16px}
+.sec-back{margin:0 0 8px -14px}
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
 .denied .icon{font-size:38px;margin-bottom:10px}
 .denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
@@ -43,7 +36,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);c
 .card{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
 .card-title{font-size:11.5px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
 .card-hint{font-size:11.5px;color:#8A96A6;margin:-4px 0 12px}
-.section-lead{font-size:19px;font-weight:800;margin-bottom:2px}
+.section-lead{margin-bottom:2px}
 .section-sub{font-size:12px;color:var(--gray);margin-bottom:14px}
 
 .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
@@ -54,13 +47,6 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);c
 .stat-tile.amber .num{color:var(--amber)}
 .stat-tile.blue .num{color:var(--blue)}
 
-.quick-link{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:var(--shadow);cursor:pointer;transition:transform .1s}
-.quick-link:active{transform:scale(.98)}
-.quick-link .ico{font-size:22px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;background:var(--red-lt);border-radius:10px;flex-shrink:0}
-.quick-link .txt{flex:1;min-width:0}
-.quick-link .txt b{font-size:13px;display:block}
-.quick-link .txt span{font-size:11px;color:var(--gray)}
-.quick-link .chev{color:#C6CDD6;font-size:16px}
 
 /* ── Compact scrollable list (Upcoming Events) — lighter than
    .quick-link, which is sized for big tappable nav rows, not a dense
@@ -73,13 +59,6 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);c
 .event-row .txt b{font-size:12px;display:block;line-height:1.3}
 .event-row .txt span{font-size:10.5px;color:var(--gray)}
 
-/* ── Bottom app nav ── */
-.bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--white);border-top:1px solid var(--border);display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px rgba(20,20,30,.06)}
-.nav-btn{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px;border-radius:12px;cursor:pointer;color:var(--gray)}
-.nav-btn .ico{font-size:19px}
-.nav-btn .lbl{font-size:9.5px;font-weight:700}
-.nav-btn.active{color:var(--red)}
-.nav-btn.active .ico{transform:translateY(-1px)}
 
 .tab-panel{display:none}
 .tab-panel.active{display:block}
@@ -90,8 +69,6 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--lgray);c
 select,input[type=text],textarea{border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;font-size:13px;font-family:inherit;color:var(--dark);background:var(--white);width:100%}
 select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .submit-bar{display:flex;justify-content:flex-end;margin-top:4px}
-.submit-btn{border:none;background:linear-gradient(135deg,var(--red),var(--red-h));color:#fff;font-size:13.5px;font-weight:800;padding:12px 24px;border-radius:12px;cursor:pointer;box-shadow:0 4px 14px rgba(206,0,0,.28)}
-.submit-btn:disabled{opacity:.6;cursor:default;box-shadow:none}
 
 .dash-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .role-picker{display:flex;gap:6px;flex-wrap:wrap}
@@ -115,11 +92,11 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .apr-comment-del:hover{color:var(--red)}
 .apr-reply-hint{font-size:11.5px;color:var(--amber);font-weight:700;margin:8px 0 4px}
 .apr-reply-row input{border-color:var(--amber)}
-.apr-reply-row button{background:var(--amber)}
+.apr-reply-row button{background:var(--amber);border-color:var(--amber);color:#fff}
 .add-row{display:flex;gap:8px}
 .add-row input{flex:1}
-.add-row button{border:none;background:var(--red);color:#fff;border-radius:10px;padding:0 16px;height:38px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
-.add-row button:hover{background:var(--red-h)}
+.add-row button{border:1.5px solid var(--border);background:var(--white);color:var(--dark);border-radius:10px;padding:0 16px;height:38px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.add-row button:hover{border-color:var(--gray)}
 
 .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;flex-shrink:0}
 .pill.none{background:#fee2e2;color:var(--red)}
@@ -130,8 +107,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .dash-empty{padding:26px 12px;text-align:center;color:var(--gray)}
 .detail-empty{font-size:11.5px;color:var(--gray);padding:6px 0}
 .loading-state{text-align:center;padding:40px 20px;color:var(--gray)}
-.loading-state .spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
-@keyframes spin{to{transform:rotate(360deg)}}
+.loading-state .spinner{display:none} /* no motion: the word Loading… is the state */
 
 /* ── Rubric bars (My Evaluations) ── */
 .rubric-row{margin-bottom:10px}
@@ -159,8 +135,9 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .cwhw-label.cw{background:var(--purple-lt);color:var(--purple)}
 .cwhw-label.hw{background:var(--amber-lt);color:var(--amber)}
 </style>
+<link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
 </head>
-<body>
+<body class="gb gb-app">
 
 <!-- LMCS Portal auth gate — shared assets/auth.js (single session/allowlist
      implementation for the whole portal; this page moved into LMCSManagement/teacher/
@@ -176,6 +153,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 <script src="../assets/auth.js?v=64d16bda"></script>
 <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
 <script src="../assets/game/game.js?v=e4fad387"></script>
+<script src="../assets/game/rail.js?v=e726bf9c"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -183,144 +161,126 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 })();
 </script>
 
-<!-- HEADER -->
-<div class="hdr">
-  <div class="hdr-row">
-    <div>
-      <div class="hdr-hi" id="hdrGreeting">LMCS — Teacher Portal</div>
-      <div class="hdr-sub" id="hdrSub">Your requests, evaluations & CW/HW patterns</div>
-    </div>
-    <button type="button" class="hdr-signout" onclick="LMCS.signOut()">Sign out</button>
-  </div>
-  <div id="streakPillWrap"></div>
-  <div id="viewAsBar" style="display:none"></div>
-</div>
+<!-- The screen skeleton (assets/game/base.css): header, then the game bar, the stage (Today and your tools) and the
+     panels (score, timetable, events, account). Requests, Evaluations and CW/HW open in the stage from their rows (#requests, #evals, #tags). -->
+<header class="gb-head"><div><div><h1>My day</h1><p id="hdrSub">Teacher</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header>
+<div class="gb-shell">
+  <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+  <main class="gb-stage">
+    <div id="viewAsBar" style="display:none"></div>
+    <div id="deniedBox" style="display:none"></div>
+    <div id="appArea" style="display:none">
 
-<div id="appBody">
-  <div id="deniedBox" style="display:none"></div>
-  <div id="appArea" style="display:none">
-
-    <!-- ══════════════════ HOME ══════════════════ -->
-    <div class="tab-panel active" id="panel-home">
-      <div class="gb-next-slot"></div>
-      <section id="game-root" aria-label="Today with Buddy" hidden></section>
-      <div class="card" id="rankCard" style="background:linear-gradient(135deg,var(--red),#ff5b5b);color:#fff;border:none">
-        <p class="card-title" style="color:#fff">📊 My Score<span style="font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;font-size:10.5px">Draft — not yet your official incentive</span></p>
-        <div id="rankBody"><div class="loading-state"><div class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></div>Loading…</div></div>
+      <!-- ══════════════════ HOME ══════════════════ -->
+      <div class="tab-panel active" id="panel-home">
+        <div class="gb-next-slot"></div>
+        <section id="game-root" aria-label="Today with Buddy" hidden></section>
+        <h2 class="gb-h2 tools-h" id="toolsHead">Your tools</h2>
+        <ul class="gb-list" aria-labelledby="toolsHead">
+          <li><a class="gb-go" href="#requests" aria-label="Go: My Requests" aria-describedby="homeReqSub"><span>My Requests<small id="homeReqSub">Leave &amp; other approvals</small></span></a></li>
+          <li><a class="gb-go" href="#evals" aria-label="Go: My Evaluations" aria-describedby="homeEvalSub"><span>My Evaluations<small id="homeEvalSub">Your Support Session scores</small></span></a></li>
+          <li data-teacher-only><a class="gb-go" href="#tags" aria-label="Go: My CW/HW Patterns" aria-describedby="homeTagSub"><span>My CW/HW Patterns<small id="homeTagSub">Review what you've sent</small></span></a></li>
+          <li data-teacher-only><a class="gb-go" href="#timetableCard" data-panel="timetableCard" aria-label="Go: Your Timetable" aria-describedby="homeTtSub"><span>Your Timetable<small id="homeTtSub">Your periods, day by day</small></span></a></li>
+          <li><a class="gb-go" href="#eventsCard" data-panel="eventsCard" aria-label="Go: Upcoming Events" aria-describedby="homeEvSub"><span>Upcoming Events<small id="homeEvSub">Your campus calendar, next 14 days</small></span></a></li>
+        </ul>
+        <p class="gb-note">More on the way: period adjustments (still needs the actual covering process designed — nothing formal exists today), a forms hub, and target-based coaching on your CW/HW patterns (needs Uday to define expected ranges per tag first — patterns below are real data, not yet compared against a target).</p>
       </div>
 
-      <div class="card" id="eventsCard">
-        <p class="card-title">📅 Upcoming Events<span id="eventsCampusLabel" style="font-weight:600;color:var(--gray);text-transform:none;letter-spacing:0"></span></p>
-        <div id="eventsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
-      </div>
+      <!-- ══════════════════ MY REQUESTS ══════════════════ -->
+      <div class="tab-panel" id="panel-requests">
+        <a class="gb-btn gb-btn-quiet sec-back" href="#game-root"><span aria-hidden="true">&lsaquo;</span> My day</a>
+        <h2 class="section-lead">My Requests</h2>
+        <div class="section-sub">Leave and other requests go to your Principal/Owner — same workflow they already use.</div>
 
-      <div class="card" id="timetableCard">
-        <p class="card-title">🗓️ Your Timetable</p>
-        <div id="ttDayPicker" class="role-picker" style="margin-bottom:10px"></div>
-        <div id="timetableBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
-      </div>
-
-      <div class="quick-link" onclick="goTab('requests')">
-        <div class="ico">📝</div>
-        <div class="txt"><b>My Requests</b><span id="homeReqSub">Leave & other approvals</span></div>
-        <div class="chev">›</div>
-      </div>
-      <div class="quick-link" onclick="goTab('evals')">
-        <div class="ico">⭐</div>
-        <div class="txt"><b>My Evaluations</b><span id="homeEvalSub">Your Support Session scores</span></div>
-        <div class="chev">›</div>
-      </div>
-      <div class="quick-link" onclick="goTab('tags')">
-        <div class="ico">📚</div>
-        <div class="txt"><b>My CW/HW Patterns</b><span id="homeTagSub">Review what you've sent</span></div>
-        <div class="chev">›</div>
-      </div>
-      <div class="notice" style="margin-top:4px">More on the way: period adjustments (still needs the actual covering process designed — nothing formal exists today), a forms hub, and target-based coaching on your CW/HW patterns (needs Uday to define expected ranges per tag first — patterns below are real data, not yet compared against a target).</div>
-    </div>
-
-    <!-- ══════════════════ MY REQUESTS ══════════════════ -->
-    <div class="tab-panel" id="panel-requests">
-      <div class="section-lead">My Requests</div>
-      <div class="section-sub">Leave and other requests go to your Principal/Owner — same workflow they already use.</div>
-
-      <div class="card" id="aprNewRequestCard">
-        <p class="card-title">New Request</p>
-        <div class="row-2col">
-          <div>
-            <label class="field-label">Category</label>
-            <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
-          </div>
-          <div id="aprUrgencyWrap">
-            <label class="field-label">Urgency</label>
-            <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
-          </div>
-        </div>
-        <div id="aprLeaveFields" style="display:none;margin-top:10px">
-          <div>
-            <label class="field-label">Leave type</label>
-            <select id="aprLeaveType" onchange="aprLeaveChanged()"></select>
-          </div>
-          <div class="row-2col" style="margin-top:10px">
+        <div class="card" id="aprNewRequestCard">
+          <p class="card-title">New Request</p>
+          <div class="row-2col">
             <div>
-              <label class="field-label" id="aprLeaveFromLabel">From</label>
-              <input type="date" id="aprLeaveFrom" onchange="aprLeaveChanged()">
+              <label class="field-label">Category</label>
+              <select id="aprCategory" onchange="aprOnCategoryChange()"></select>
             </div>
-            <div id="aprLeaveToWrap">
-              <label class="field-label">To</label>
-              <input type="date" id="aprLeaveTo" onchange="aprLeaveChanged()">
+            <div id="aprUrgencyWrap">
+              <label class="field-label">Urgency</label>
+              <select id="aprUrgency"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
             </div>
           </div>
-          <div id="aprLeaveHint" style="margin-top:8px;font-size:12px;color:var(--gray)"></div>
+          <div id="aprLeaveFields" style="display:none;margin-top:10px">
+            <div>
+              <label class="field-label">Leave type</label>
+              <select id="aprLeaveType" onchange="aprLeaveChanged()"></select>
+            </div>
+            <div class="row-2col" style="margin-top:10px">
+              <div>
+                <label class="field-label" id="aprLeaveFromLabel">From</label>
+                <input type="date" id="aprLeaveFrom" onchange="aprLeaveChanged()">
+              </div>
+              <div id="aprLeaveToWrap">
+                <label class="field-label">To</label>
+                <input type="date" id="aprLeaveTo" onchange="aprLeaveChanged()">
+              </div>
+            </div>
+            <div id="aprLeaveHint" style="margin-top:8px;font-size:12px;color:var(--gray)"></div>
+          </div>
+          <div style="margin-top:10px" id="aprTitleWrap">
+            <label class="field-label">Title</label>
+            <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;2 days CL — family event&quot;">
+          </div>
+          <div style="margin-top:10px">
+            <label class="field-label" id="aprDescLabel">Description</label>
+            <textarea id="aprDescription" rows="4" placeholder="Explain why, with dates and any relevant details"></textarea>
+          </div>
+          <div style="margin-top:10px" id="aprEvidenceWrap">
+            <label class="field-label">Evidence link (optional)</label>
+            <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link if relevant">
+          </div>
+          <div class="submit-bar">
+            <button type="button" class="gb-btn gb-btn-primary" id="aprSubmitBtn" onclick="submitApprovalRequest()">Submit Request</button>
+          </div>
         </div>
-        <div style="margin-top:10px" id="aprTitleWrap">
-          <label class="field-label">Title</label>
-          <input type="text" id="aprTitle" placeholder="Short summary, e.g. &quot;2 days CL — family event&quot;">
+
+        <div class="dash-toolbar">
+          <p class="card-title" style="margin:0">History</p>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div id="aprStatusFilter" class="role-picker"></div>
+            <button type="button" class="icon-btn" title="Refresh" onclick="refreshApprovals()">↻</button>
+          </div>
         </div>
-        <div style="margin-top:10px">
-          <label class="field-label" id="aprDescLabel">Description</label>
-          <textarea id="aprDescription" rows="4" placeholder="Explain why, with dates and any relevant details"></textarea>
-        </div>
-        <div style="margin-top:10px" id="aprEvidenceWrap">
-          <label class="field-label">Evidence link (optional)</label>
-          <input type="text" id="aprEvidenceLink" placeholder="Paste a Drive/Photos link if relevant">
-        </div>
-        <div class="submit-bar">
-          <button type="button" class="submit-btn" id="aprSubmitBtn" onclick="submitApprovalRequest()">Submit Request</button>
-        </div>
+        <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
       </div>
 
-      <div class="dash-toolbar">
-        <p class="card-title" style="margin:0">History</p>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div id="aprStatusFilter" class="role-picker"></div>
-          <button type="button" class="icon-btn" title="Refresh" onclick="refreshApprovals()">↻</button>
-        </div>
+      <!-- ══════════════════ MY EVALUATIONS (SS) ══════════════════ -->
+      <div class="tab-panel" id="panel-evals">
+        <a class="gb-btn gb-btn-quiet sec-back" href="#game-root"><span aria-hidden="true">&lsaquo;</span> My day</a>
+        <h2 class="section-lead">My Evaluations</h2>
+        <div class="section-sub">Your own Teacher SS (Support Session) scores — visible only to you and your Principal, not compared to any colleague.</div>
+        <div id="evalsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
       </div>
-      <div id="aprListBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+
+      <!-- ══════════════════ MY CW/HW TAGS ══════════════════ -->
+      <div class="tab-panel" id="panel-tags">
+        <a class="gb-btn gb-btn-quiet sec-back" href="#game-root"><span aria-hidden="true">&lsaquo;</span> My day</a>
+        <h2 class="section-lead">My CW/HW Patterns</h2>
+        <div class="section-sub">Review the CW/HW you've actually logged in the last 7 days — real entries, not yet checked against any target (that needs the tag rubric Uday hasn't defined yet).</div>
+        <div id="tagsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+      </div>
+
     </div>
-
-    <!-- ══════════════════ MY EVALUATIONS (SS) ══════════════════ -->
-    <div class="tab-panel" id="panel-evals">
-      <div class="section-lead">My Evaluations</div>
-      <div class="section-sub">Your own Teacher SS (Support Session) scores — visible only to you and your Principal, not compared to any colleague.</div>
-      <div id="evalsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
-    </div>
-
-    <!-- ══════════════════ MY CW/HW TAGS ══════════════════ -->
-    <div class="tab-panel" id="panel-tags">
-      <div class="section-lead">My CW/HW Patterns</div>
-      <div class="section-sub">Review the CW/HW you've actually logged in the last 7 days — real entries, not yet checked against any target (that needs the tag rubric Uday hasn't defined yet).</div>
-      <div id="tagsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
-    </div>
-
-  </div>
-</div>
-
-<div class="bottom-nav" id="bottomNav" style="display:none">
-  <button type="button" class="nav-btn active" data-tab="home" onclick="goTab('home')"><span class="ico">🏠</span><span class="lbl">Home</span></button>
-  <button type="button" class="nav-btn" data-tab="requests" onclick="goTab('requests')"><span class="ico">📝</span><span class="lbl">Requests</span></button>
-  <button type="button" class="nav-btn" data-tab="evals" onclick="goTab('evals')"><span class="ico">⭐</span><span class="lbl">Evaluations</span></button>
-  <button type="button" class="nav-btn" data-tab="tags" onclick="goTab('tags')"><span class="ico">📚</span><span class="lbl">CW·HW</span></button>
+  </main>
+  <aside class="gb-panels" id="panels" aria-label="More" hidden>
+    <details class="gb-panel" id="rankCard" data-teacher-only><summary>My score</summary><div class="gb-panel-b">
+      <p class="gb-muted">Draft — not yet your official incentive</p>
+      <div id="streakPillWrap"></div>
+      <div id="rankBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div></details>
+    <details class="gb-panel" id="timetableCard" data-teacher-only><summary>Your timetable</summary><div class="gb-panel-b">
+      <div id="ttDayPicker" class="role-picker" style="margin-bottom:10px"></div>
+      <div id="timetableBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div></details>
+    <details class="gb-panel" id="eventsCard"><summary>Upcoming events <small class="gb-muted" id="eventsCampusLabel"></small></summary><div class="gb-panel-b">
+      <div id="eventsBody"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>
+    </div></details>
+    <details class="gb-panel"><summary>Account</summary><div class="gb-panel-b"><button type="button" class="gb-btn" onclick="LMCS.signOut()">Sign out</button></div></details>
+  </aside>
 </div>
 
 <script>
@@ -463,10 +423,37 @@ function goTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
   document.getElementById('panel-' + tab).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  if (tab !== 'home') { // phones: the panels row sits above the stage, so go to the section itself, and take keyboard focus with it
+    const sec = document.getElementById('panel-' + tab), h = sec.querySelector('h2');
+    sec.scrollIntoView(); h.tabIndex = -1; h.focus({ preventScroll: true });
+  }
   if (tab === 'requests' && !aprRes) loadApprovals();
   if (tab === 'evals' && !evalsLoaded) loadEvals();
   if (tab === 'tags' && !tagsLoaded) loadTags();
+}
+
+// The hub's rows are links: #requests, #evals and #tags open that section in the stage (missions link to
+// index.html#tags); any other hash (#game-root from the game bar or "My day", a panel id) is My day, and a
+// panel's row unfolds that panel.
+let teacherOnlyHidden_ = false;
+function route_() {
+  const h = location.hash.slice(1);
+  if ((h === 'requests' || h === 'evals' || h === 'tags') && !(h === 'tags' && teacherOnlyHidden_)) { goTab(h); return; }
+  if (currentTab !== 'home') goTab('home');
+  const panel = h && document.getElementById(h);
+  if (panel && panel.classList.contains('gb-panel')) panel.open = true;
+}
+
+// ── the game bar: it opens the home where the person's own Today lives. Staff have none, so no bar.
+// roles = the roles this person has; fromPath = the page they came from (document.referrer's path), '' when unknown.
+// The page they came from wins when they hold that role; otherwise the highest of Owner, Coordinator, Principal, Teacher. -> mount opts or null
+function railHubFor_(roles, fromPath) {
+  const HUB = { Owner: '../owner/index.html', Coordinator: '../coordinator/index.html', Principal: '../principal/index.html', Teacher: 'index.html' };
+  const DIR = { Owner: '/owner/', Coordinator: '/coordinator/', Principal: '/principal/', Teacher: '/teacher/' };
+  const mine = ['Owner', 'Coordinator', 'Principal', 'Teacher'].filter(function (r) { return roles.indexOf(r) !== -1; });
+  const came = mine.filter(function (r) { return String(fromPath || '').indexOf(DIR[r]) !== -1; })[0];
+  const role = came || mine[0];
+  return role ? { hub: HUB[role], root: '../' } : null;
 }
 
 // ── MY REQUESTS (unchanged logic from Phase 1a, reskinned) ──────────
@@ -510,7 +497,7 @@ function renderMyRequests_() {
 }
 function aprCardHtml_(r) {
   const isExpanded = aprExpandedId === r.id;
-  let html = '<div class="req-card" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
+  let html = '<div class="req-card" tabindex="0" role="button" aria-expanded="' + isExpanded + '" onkeydown="cardKey_(event, this)" onclick="toggleApprovalRow(\'' + r.id + '\')">' +
     '<div class="req-top"><span class="req-title">' + esc_(r.title) + '</span><span class="pill ' + aprStatusPillClass_(r.status) + '">' + r.status + '</span></div>' +
     '<div class="req-meta">' + esc_(r.category) + (r.leave ? ' · ' + lvFmt_(r.leave.from) + (r.leave.to !== r.leave.from ? ' to ' + lvFmt_(r.leave.to) : '') : '') + (r.urgency === 'Urgent' ? ' · <span class="pill urgent">Urgent</span>' : '') + ' · ' + formatDDMMYYYY_(r.requestedAt) + '</div>';
   if (isExpanded) html += '<div class="req-detail" id="aprDetailWrap"><div class="loading-state"><div class="spinner"></div>Loading…</div></div>';
@@ -827,7 +814,7 @@ function renderCwHwGroups_() {
   if (!cwhwGroupKeys_.length) { wrap.innerHTML = '<div class="dash-empty">No CW/HW log entries yet.</div>'; return; }
   wrap.innerHTML = cwhwGroupKeys_.map(function (key) {
     const isOpen = cwhwExpandedKey_ === key;
-    let html = '<div class="req-card" onclick="toggleCwHwGroup_(\'' + key.replace(/'/g, "\\'") + '\')">' +
+    let html = '<div class="req-card" tabindex="0" role="button" aria-expanded="' + isOpen + '" onkeydown="cardKey_(event, this)" onclick="toggleCwHwGroup_(\'' + key.replace(/'/g, "\\'") + '\')">' +
       '<div class="req-top"><span class="req-title">' + esc_(key) + '</span><span class="req-meta">' + (isOpen ? '▲' : '▼') + '</span></div>';
     if (isOpen) {
       const top7 = cwhwGroups_[key].slice(0, 7).slice().reverse();
@@ -837,6 +824,8 @@ function renderCwHwGroups_() {
   }).join('');
 }
 
+// Enter or Space on the card itself (not on a field or button inside an open card) works like a tap
+function cardKey_(ev, card) { if (ev.target === card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); card.click(); } }
 function toggleCwHwGroup_(key) {
   cwhwExpandedKey_ = (cwhwExpandedKey_ === key) ? null : key;
   renderCwHwGroups_();
@@ -951,17 +940,17 @@ function renderTimetableDay_() {
 async function loadRank_() {
   const body = document.getElementById('rankBody');
   const res = await pdrGet_('myrankscore', {});
-  if (!res.success) { body.innerHTML = '<div class="notice" style="background:rgba(255,255,255,.92)">Couldn’t load your score: ' + esc_(res.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(res); return; }
+  if (!res.success) { body.innerHTML = '<div class="notice">Couldn’t load your score: ' + esc_(res.error || 'unknown error') + '</div>'; pdrReportAuthFailureIfNeeded_(res); return; }
   if (!res.found) {
-    body.innerHTML = '<div style="font-size:12.5px;line-height:1.6;opacity:.95">Not enough data yet to compute your score — this needs your name to resolve to an Employee Code, plus at least some SS or CW/HW activity. If you know you have both and this looks wrong, it may be a name-matching gap worth flagging.</div>';
+    body.innerHTML = '<div style="font-size:14px;line-height:1.6">Not enough data yet to compute your score — this needs your name to resolve to an Employee Code, plus at least some SS or CW/HW activity. If you know you have both and this looks wrong, it may be a name-matching gap worth flagging.</div>';
     return;
   }
   body.innerHTML =
-    '<div style="font-size:38px;font-weight:800;line-height:1">' + res.total + '<span style="font-size:16px;font-weight:600;opacity:.85">/100</span></div>' +
-    '<div style="font-size:12px;opacity:.9;margin:2px 0 14px">at ' + esc_(LMCS.campusLabel(res.campusId)) + ' — no ranking yet, just your own numbers</div>' +
+    '<div style="font-size:38px;font-weight:800;line-height:1">' + res.total + '<span class="gb-muted" style="font-size:16px;font-weight:600">/100</span></div>' +
+    '<div class="gb-muted" style="margin:2px 0 14px">at ' + esc_(LMCS.campusLabel(res.campusId)) + ' — no ranking yet, just your own numbers</div>' +
     '<div style="display:flex;gap:10px">' +
-      '<div style="flex:1;background:rgba(255,255,255,.18);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.ssScore + '</div><div style="font-size:10px;opacity:.9">SS Score (50%)</div></div>' +
-      '<div style="flex:1;background:rgba(255,255,255,.18);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.regularityPct + '%</div><div style="font-size:10px;opacity:.9">Regularity, ' + res.windowDays + 'd (50%)</div></div>' +
+      '<div style="flex:1;background:var(--gb-panel);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.ssScore + '</div><div class="gb-muted" style="font-size:12.5px">SS Score (50%)</div></div>' +
+      '<div style="flex:1;background:var(--gb-panel);border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800">' + res.regularityPct + '%</div><div class="gb-muted" style="font-size:12.5px">Regularity, ' + res.windowDays + 'd (50%)</div></div>' +
     '</div>';
 }
 
@@ -1080,23 +1069,36 @@ function init() {
     showDenied_('The Teacher Portal is open to Teachers, staff, Principals, Coordinators and the Owner.');
     return;
   }
-  document.getElementById('hdrGreeting').textContent = 'Hey, ' + (SESSION.name ? SESSION.name.split(' ')[0] : 'there') + ' 👋';
   document.getElementById('aprCategory').innerHTML = APR_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
   document.getElementById('aprLeaveType').innerHTML = LEAVE_TYPES.map(function (t) { return '<option value="' + t[0] + '">' + t[1] + '</option>'; }).join('');
   aprOnCategoryChange();
   document.getElementById('appArea').style.display = '';
-  document.getElementById('bottomNav').style.display = 'flex';
+  const staffOnly = LMCS.hasRole(SESSION, 'Staff') && !LMCS.hasRole(SESSION, 'Teacher');
+  const topRole = staffOnly ? 'Staff' : ['Owner', 'Coordinator', 'Principal', 'Teacher'].filter(function (r) { return LMCS.hasRole(SESSION, r); })[0] || 'Teacher';
+  const campusName = SESSION.campusId ? LMCS.campusLabel(SESSION.campusId) : '';
+  document.getElementById('hdrSub').textContent = topRole + (campusName ? ' · ' + campusName : ''); // the page knows no class of its own, so the line stops at the campus
+  document.getElementById('panels').hidden = false;
+  if (window.matchMedia && matchMedia('(min-width: 960px)').matches) ['rankCard', 'eventsCard'].forEach(function (id) { document.getElementById(id).open = true; }); // phones: panels start folded so Today stays in view
+  let fromPath = '';
+  try { const ref = document.referrer ? new URL(document.referrer) : null; if (ref && ref.origin === location.origin) fromPath = ref.pathname; } catch (_) { /* unknown */ }
+  const rail = railHubFor_(['Owner', 'Coordinator', 'Principal', 'Teacher'].filter(function (r) { return LMCS.hasRole(SESSION, r); }), fromPath);
+  if (rail) LMCSRail.mount(document.getElementById('game-rail'), rail); // Staff: no Today hub, so the bar stays hidden
+  window.addEventListener('hashchange', route_);
+  // a panel row unfolds its panel on every tap, also when the hash is already that panel (no hashchange then)
+  document.querySelectorAll('[data-panel]').forEach(function (a) { a.addEventListener('click', function () { document.getElementById(a.dataset.panel).open = true; }); });
   renderViewAsBar_();
   loadApprovals();
   loadEvals();
   loadEvents_();
   // Non-teaching Staff (Employee Master sign-in, role 'Staff'): Requests, Evaluations and Events only -- no score, CW/HW patterns or timetable.
-  if (LMCS.hasRole(SESSION, 'Staff') && !LMCS.hasRole(SESSION, 'Teacher')) {
+  if (staffOnly) {
     ['rankCard', 'timetableCard'].forEach(function (id) { document.getElementById(id).style.display = 'none'; });
-    document.querySelectorAll('[data-tab="tags"], .quick-link[onclick*="\'tags\'"]').forEach(function (el) { el.style.display = 'none'; });
-    document.getElementById('hdrSub').textContent = 'Your requests and evaluations';
+    document.querySelectorAll('[data-teacher-only]').forEach(function (el) { el.style.display = 'none'; });
+    teacherOnlyHidden_ = true;
+    route_();
     return;
   }
+  route_();
   loadTags();
   loadTimetable_();
   loadRank_();

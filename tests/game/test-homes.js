@@ -21,8 +21,27 @@ for (const [page, fn] of Object.entries(HOMES)) {
   urls[page] = backendUrl(html, page);
   assert(/if \((!gameOwnHome && )?typeof LMCSGame !== 'undefined'\) \{ try \{ LMCSGame\.mount\(document\.getElementById\('game-root'\), \{ session: \w+, backendUrl: GAME_BACKEND_URL, root: '\.\.\/' \}\); \} catch \(e\) \{ console\.warn\('game layer', e\); \} \}/.test(body(html, fn)), page + ': guarded LMCSGame.mount in ' + fn);
 }
-// I2: on the teacher page a Principal / Coordinator / Owner gets no panel (theirs is on their own home; it would cover .bottom-nav)
-const tInit = body(fs.readFileSync(__dirname + '/../../teacher/index.html', 'utf8'), 'init');
+// I2: on the teacher page a Principal / Coordinator / Owner gets no panel (theirs is on their own home)
+const tHtml = fs.readFileSync(__dirname + '/../../teacher/index.html', 'utf8'), tInit = body(tHtml, 'init');
+// the teacher hub wears the screen skeleton: header, then rail, stage, panels, in that order; the rail mounts after sign-in
+assert(/<body class="gb gb-app">/.test(tHtml), 'teacher: body.gb.gb-app');
+const tOrder = ['<header class="gb-head">', '<div class="gb-shell">', '<nav class="gb-rail" id="game-rail" aria-label="Game" hidden>', '<main class="gb-stage">', 'id="game-root"', '<aside class="gb-panels"'].map((m) => tHtml.indexOf(m));
+assert(tOrder.every((i, k) => i >= 0 && (k === 0 || i > tOrder[k - 1])), 'teacher: skeleton in order ' + tOrder);
+assert(/LMCSRail\.mount\(document\.getElementById\('game-rail'\), rail\)/.test(tInit) && /if \(rail\)/.test(tInit), 'teacher: rail mounted in init, only with a hub');
+// the rail opens the person's own Today hub: the page they came from when they hold that role, else the highest role; Staff get none
+const railHubFor = new Function('return ' + body(tHtml, 'railHubFor_').replace(/^\{/, '(function (roles, fromPath) {') + '})')();
+const hub = (roles, from) => (railHubFor(roles, from || '') || {}).hub || null;
+assert.strictEqual(hub(['Teacher']), 'index.html');
+assert.strictEqual(hub(['Principal']), '../principal/index.html');
+assert.strictEqual(hub(['Coordinator']), '../coordinator/index.html');
+assert.strictEqual(hub(['Owner']), '../owner/index.html');
+assert.strictEqual(hub([]), null, 'Staff: no rail');
+assert.strictEqual(hub(['Coordinator', 'Teacher']), '../coordinator/index.html', 'the highest role');
+assert.strictEqual(hub(['Owner', 'Principal', 'Teacher']), '../owner/index.html');
+assert.strictEqual(hub(['Coordinator', 'Teacher'], '/LMCSManagement/teacher/index.html'), 'index.html', 'came from the teacher page');
+assert.strictEqual(hub(['Owner', 'Principal'], '/LMCSManagement/principal/'), '../principal/index.html', 'came from the principal home');
+assert.strictEqual(hub(['Teacher'], '/LMCSManagement/owner/index.html'), 'index.html', 'a page whose role they lack does not count');
+assert.deepStrictEqual(railHubFor(['Teacher'], ''), { hub: 'index.html', root: '../' });
 assert(/var gameOwnHome = \['Principal', 'Coordinator', 'Owner'\]\.some\(function \(r\) \{ return LMCS\.hasRole\(SESSION, r\); \}\);/.test(tInit), 'teacher: gameOwnHome from LMCS.hasRole');
 assert(/if \(!gameOwnHome && typeof LMCSGame !== 'undefined'\)/.test(tInit), 'teacher: mount skipped for P/C/O');
 urls['teacher/plan-activity.html'] = backendUrl(fs.readFileSync(__dirname + '/../../teacher/plan-activity.html', 'utf8'), 'teacher/plan-activity.html');
