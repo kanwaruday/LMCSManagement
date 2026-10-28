@@ -11,7 +11,7 @@
     load: () => Promise.resolve({ name: 'Ramesh', reg: 'HP 34 X 0000', campus: 'LMS 1', runsNeeded: 2, runsDone: 1, lastFill: '2026-10-21', lastOdometer: 58000 }),
     send: () => new Promise((ok) => setTimeout(() => ok({ queued: !navigator.onLine }), 400)),
   } : null;
-  const S = { bus: null, form: {}, files: {} };
+  const S = { bus: null, form: {}, files: {}, touched: {}, failed: '' };
 
   function home() {
     const cards = DriverLogic.missions(S.bus);
@@ -25,11 +25,14 @@
     }).join('');
   }
 
+  const fileText = (id, has) => has ? '✓ ' + (id === 'video' ? 'Video' : 'Photo') + ' taken · retake'
+    : '<span aria-hidden="true">' + (id === 'video' ? '🎥' : '📷') + '</span> ' + (id === 'video' ? 'Record pump meter' : 'Take bill photo');
+
   function fuelForm() {
-    S.form = {}; S.files = {};
+    S.form = {}; S.files = {}; S.touched = {}; S.failed = '';
     $('fuelForm').innerHTML = DriverLogic.FUEL_FIELDS.map((f) => f.type === 'file'
       ? `<p class="dr-fld" id="l-${f.id}">${esc(f.label)}<span class="dr-hi">${esc(f.hi)}</span></p>` +
-        `<label class="gb-btn dr-big dr-file" id="b-${f.id}"><input type="file" data-id="${f.id}" accept="${f.id === 'video' ? 'video/*' : 'image/*'}" capture="environment" aria-labelledby="l-${f.id}"><span>${f.id === 'video' ? '🎥 Record pump meter' : '📷 Take bill photo'}</span></label>`
+        `<label class="gb-btn dr-big dr-file" id="b-${f.id}"><input type="file" data-id="${f.id}" accept="${f.id === 'video' ? 'video/*' : 'image/*'}" capture="environment" aria-describedby="w-${f.id}"><span>${fileText(f.id, false)}</span></label><p class="dr-why" id="w-${f.id}"></p>`
       : `<label class="dr-fld" for="f-${f.id}">${esc(f.label)}<span class="dr-hi">${esc(f.hi)}</span></label>` +
         `<input class="dr-in" id="f-${f.id}" data-id="${f.id}" inputmode="${f.type === 'decimal' ? 'decimal' : 'numeric'}" autocomplete="off" aria-describedby="w-${f.id}"><p class="dr-why" id="w-${f.id}"></p>`).join('') +
       '<p id="warn" class="dr-warn" role="status"></p>' +
@@ -41,51 +44,59 @@
   function refresh(shown) {
     const c = DriverLogic.checkFill(Object.assign({}, S.form, S.files), S.bus.lastOdometer);
     DriverLogic.FUEL_FIELDS.forEach((f) => {
-      if (f.type === 'file') return;
-      const msg = c.errors[f.id] || (shown && c.missing.includes(f.id) ? 'Fill this in' : '');
-      const show = shown || S.touched?.[f.id] ? msg : '';
-      $('w-' + f.id).textContent = show; $('f-' + f.id).setAttribute('aria-invalid', show ? 'true' : 'false');
+      const file = f.type === 'file';
+      const msg = c.errors[f.id] || (c.missing.includes(f.id) ? (file ? 'Take this before sending' : 'Fill this in') : '');
+      const show = shown || S.touched[f.id] ? msg : '';
+      $('w-' + f.id).textContent = show;
+      (file ? $('fuelForm').querySelector(`input[data-id="${f.id}"]`) : $('f-' + f.id)).setAttribute('aria-invalid', show ? 'true' : 'false');
     });
-    $('warn').textContent = c.warn;
+    $('warn').textContent = S.failed || c.warn;
     $('send').textContent = DriverLogic.sendLabel(c);
     $('send').setAttribute('aria-disabled', c.ready ? 'false' : 'true');
     return c;
   }
 
   function route() {
-    const h = location.hash.slice(1);
+    if (!S.bus) return;
+    let h = location.hash.slice(1);
+    if (h !== 'fuel' && h !== 'sent') h = '';
     $('home').hidden = h !== ''; $('fuel').hidden = h !== 'fuel'; $('sent').hidden = h !== 'sent';
     $('back').hidden = h === ''; $('back').href = '#';
-    if (h === 'fuel') { S.touched = {}; fuelForm(); }
+    if (h === 'fuel') fuelForm();
     if (h === '') { home(); $('sentSummary').textContent = ''; }
-    if (h === 'sent' && !$('sentSummary').textContent) location.hash = '';
+    if (h === 'sent' && !$('sentSummary').textContent) { location.hash = ''; return; }
     window.scrollTo(0, 0);
+    const target = h === 'sent' ? $('sentText') : h === 'fuel' ? $('f-litres') : null; // where the eye (and a screen reader) goes next
+    if (target) { if (h === 'sent') target.tabIndex = -1; target.focus(); }
   }
 
   $('fuelForm').addEventListener('input', (e) => { const id = e.target.dataset.id; if (id && e.target.type !== 'file') { S.form[id] = e.target.value; refresh(false); } });
   $('fuelForm').addEventListener('focusout', (e) => { const id = e.target.dataset.id; if (id && e.target.type !== 'file') { S.touched[id] = true; refresh(false); } });
   $('fuelForm').addEventListener('change', (e) => {
     const id = e.target.dataset.id; if (!id || e.target.type !== 'file') return;
-    const file = e.target.files && e.target.files[0]; S.files[id] = file || null;
+    const file = e.target.files && e.target.files[0]; S.files[id] = file || null; S.touched[id] = true;
     const b = $('b-' + id); b.toggleAttribute('data-has', !!file);
-    b.querySelector('span').textContent = file ? (id === 'video' ? '✓ Video taken · retake' : '✓ Photo taken · retake') : (id === 'video' ? '🎥 Record pump meter' : '📷 Take bill photo');
+    b.querySelector('span').innerHTML = fileText(id, !!file);
     refresh(false);
   });
   $('fuelForm').addEventListener('submit', (e) => {
     e.preventDefault();
+    S.failed = '';
+    DriverLogic.FUEL_FIELDS.forEach((f) => { S.touched[f.id] = true; }); // a send attempt shows every problem, and they stay shown
     const c = refresh(true), btn = $('send');
-    if (!c.ready) { const first = $('fuelForm').querySelector('[aria-invalid="true"]') || $('fuelForm').querySelector('.dr-file:not([data-has])'); if (first) first.focus(); return; }
+    if (!c.ready) { const first = $('fuelForm').querySelector('[aria-invalid="true"]'); if (first) first.focus(); return; }
     if (btn.dataset.busy) return;
     btn.dataset.busy = '1'; btn.textContent = 'Sending…'; btn.setAttribute('aria-disabled', 'true');
     const fill = Object.assign({}, S.form);
-    api.send(fill, S.files).then((r) => {
+    api.send(fill, S.files).then((r) => r, () => null).then((r) => {
+      delete btn.dataset.busy;
+      if (!r) { S.failed = 'Not sent. Nothing was lost: try again.'; refresh(true); return; }
       $('sentText').textContent = r.queued ? 'Saved on this phone. It sends by itself when there is signal.' : 'Sent to the office. Thank you!';
       $('sent').querySelector('.dr-done').style.cssText = r.queued ? 'background:var(--gb-warn-soft);color:var(--gb-warn)' : '';
       $('sentSummary').innerHTML = `${esc(fill.litres)} L · ₹${esc(fill.amount)} · odometer ${esc(fill.odometer)} · bill ✓ · video ✓<br><span class="gb-muted">The office checks it against the bill.</span>`;
-      S.bus.lastFill = new Date().toISOString().slice(0, 10); S.bus.lastOdometer = Number(String(fill.odometer).replace(/,/g, ''));
+      const d = new Date(); S.bus.lastFill = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); S.bus.lastOdometer = Number(String(fill.odometer).replace(/,/g, ''));
       location.hash = 'sent';
-    }).catch(() => { $('warn').textContent = 'Not sent. Nothing was lost: try again.'; })
-      .finally(() => { delete btn.dataset.busy; refresh(true); });
+    });
   });
   window.addEventListener('hashchange', route);
 

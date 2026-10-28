@@ -17,8 +17,10 @@
   .dr-in[aria-invalid="true"] { border-color:var(--gb-low); }
   .dr-why { margin:4px 0 0; color:var(--gb-low); font-weight:700; font-size:15px; }
   .dr-why:empty { display:none; }
-  .dr-file input { position:absolute; width:1px; height:1px; opacity:0; }
+  .dr-file { position:relative; }
+  .dr-file input { position:absolute; inset:0; width:1px; height:1px; opacity:0; }
   .dr-file:focus-within { outline:3px solid var(--gb-focus); outline-offset:2px; }
+  .dr-file:has(input[aria-invalid="true"]) { border-color:var(--gb-low); }
   .dr-file[data-has] { border-color:var(--gb-ok); color:var(--gb-ok); }
   .dr-warn { margin:12px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-warn-soft); color:var(--gb-warn); font-weight:700; }
   .dr-warn:empty { display:none; }
@@ -41,14 +43,14 @@
   </section>
 
   <section id="sent" aria-label="Sent" hidden>
-    <p class="dr-done" role="status">✓ <span id="sentText">Sent to the office. Thank you!</span><span class="dr-hi">भेज दिया</span></p>
+    <p class="dr-done">✓ <span id="sentText" role="status">Sent to the office. Thank you!</span><span class="dr-hi">भेज दिया</span></p>
     <p id="sentSummary" class="gb-note"></p>
     <a class="gb-btn dr-big" href="#">Back to my missions</a>
   </section>
 
   <p id="closed" class="gb-empty" hidden>Driver sign-in is being set up. The office will give you a link for your phone.<br>ड्राइवर लॉगिन जल्द आ रहा है।</p>
 </main>
-<script src="./driver-logic.js?v=5334e7c8"></script>
-<script src="./driver.js?v=e1ffac2b"></script>
+<script src="./driver-logic.js?v=09518d12"></script>
+<script src="./driver.js?v=5eeb66cc"></script>
 </body>
 </html>
