@@ -87,6 +87,7 @@
     // a room: a tile that opens across the row to show what's inside (base.css .gb-room)
     function room(e, title, small, body, next) {
       const d = el('details', 'gb-room' + (next ? ' is-next' : '')), sum = el('summary');
+      d.dataset.room = title;
       const ic = el('span', 'gb-room-e', window.LMCSEmoji ? LMCSEmoji.get(e) : ''); ic.setAttribute('aria-hidden', 'true');
       sum.appendChild(ic); sum.appendChild(el('span', 'gb-room-t', title)); sum.appendChild(el('span', 'gb-room-s', small));
       const b = el('div', 'gb-room-b'); b.appendChild(body);
@@ -108,7 +109,7 @@
     // the school's buildings from the Kingdom (gamekingdom: a Principal gets their own base only). Read-only here.
     // Each building: its level of maxLevel and the next step that isn't "soon"; a step the game can link to gets its link.
     function setupBody(base) {
-      if (!base) return el('p', 'gb-muted', 'The setup progress couldn\'t be loaded just now. Nothing is lost; it shows again next time.');
+      if (!base) return el('p', 'gb-muted', GAME_BACKEND_URL ? 'Loading your buildings… If this stays, the setup progress couldn\'t be loaded; nothing is lost.' : 'The game isn\'t switched on yet, so building levels don\'t show.');
       const ul = el('ul', 'gb-list');
       (base.buildings || []).forEach(function (b) {
         const next = (b.tiers || []).filter(function (t) { return t.state === 'open'; })[0];
@@ -128,17 +129,21 @@
     }
     function renderHome(base) {
       const rooms = document.getElementById('rooms');
+      const open = [].map.call(rooms.querySelectorAll('.gb-room[open]'), function (d) { return d.dataset.room; }); // a re-render keeps what was open
       rooms.textContent = '';
       PATHS.forEach(function (p) { rooms.appendChild(room(p.e, p.title, p.lead, pageList(p.pages), false)); });
       const st = steps(base);
-      rooms.appendChild(room('quests', 'Setup quests', base ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total));
+      rooms.appendChild(room('quests', 'Setup quests', base && st.total ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total));
+      [].forEach.call(rooms.children, function (d) { if (open.indexOf(d.dataset.room) !== -1) d.open = true; });
       document.getElementById('base-lv').textContent = base ? (window.LMCSEmoji ? LMCSEmoji.get('level') + ' ' : '') + 'Level ' + (Number(base.level) || 0) : '';
     }
     function loadBase(session) {
       renderHome(null);
+      if (!GAME_BACKEND_URL) return; // the game is off: the rooms show, the setup room says so plainly
       fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
-        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); }, function () { /* the rooms already show; setup says it couldn't load */ });
+        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); })
+        .catch(function (e) { console.warn('home base', e); }); // the rooms already show; setup says it couldn't load
     }
     function showView(world) {
       document.getElementById('modules').hidden = world;
