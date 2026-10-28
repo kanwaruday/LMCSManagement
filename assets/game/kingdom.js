@@ -301,7 +301,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // there, and one that passes `next` gets the next-step card in its fixed slot; without them the page reads top to bottom as before
   function panel(title, cls, body, open) {
     if (S.wasOpen) open = S.wasOpen.indexOf(cls) !== -1; // a re-render keeps what the person opened or closed
-    else if (open && window.matchMedia && !matchMedia('(min-width: 960px)').matches) open = false; // phones: panels start folded so the map stays in view
+    else if (open && cls !== 'kg-me' && window.matchMedia && !matchMedia('(min-width: 960px)').matches) open = false; // phones: panels start folded so the map stays in view (the small Your Kingdom panel, with its tour and Ask Buddy buttons, stays open)
     return h('details', { class: 'gb-panel ' + cls, 'data-panel': cls, open: open ? 'open' : null }, [h('summary', {}, [title]), h('div', { class: 'gb-panel-b' }, [body])]);
   }
   function message(text, retry) {

@@ -172,6 +172,8 @@
 .gb-stage { grid-area:stage; min-width:0; }
 .gb-panels { grid-area:panels; display:flex; flex-wrap:wrap; align-content:flex-start; gap:8px; min-width:0; }
 .gb-panels[hidden], .gb-rail[hidden] { display:none; }
+.gb-panels, .gb-panels * { box-sizing:border-box; }
+.gb-app :focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; } /* also where only the header carries .gb (the Kingdom) */
 .gb-panel { flex:1 1 140px; min-width:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; }
 .gb-panel > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; font-weight:700; cursor:pointer; list-style:none; }
 .gb-panel > summary::-webkit-details-marker { display:none; }
@@ -199,6 +201,7 @@
 @media (max-width:959px) {
   .gb-shell > .gb-rail { position:fixed; left:0; right:0; bottom:0; z-index:900; border-top:1px solid var(--gb-line); padding-bottom:env(safe-area-inset-bottom); }
   .gb-app { padding-bottom:calc(64px + env(safe-area-inset-bottom)); --bd-lift:64px; }
+  .gb-app .gb-toast { bottom:calc(76px + env(safe-area-inset-bottom)); }
   .gb-app #lmcs-warm-chip { bottom:calc(76px + env(safe-area-inset-bottom)) !important; } /* auth.js's loading chip sets its place inline */
 }
 @media (min-width:960px) {
@@ -245,7 +248,7 @@ textarea.gb-input { min-height:88px; resize:vertical; }
 .gb-saved::before { content:"✓"; }
 .gb-saved-local { align-items:flex-start; color:var(--gb-warn); }
 .gb-saved-local::before { content:""; flex:none; margin-top:.35em; width:9px; height:9px; border-radius:50%; border:2px solid currentColor; }
-.gb-toast { position:fixed; left:16px; right:16px; bottom:calc(76px + env(safe-area-inset-bottom)); z-index:970; max-width:480px; margin:0 auto; padding:12px 16px;
+.gb-toast { position:fixed; left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom)); z-index:970; max-width:480px; margin:0 auto; padding:12px 16px;
   border-radius:12px; background:var(--gb-ink); color:#fff; font:600 15px/1.4 var(--gb-font); }
 .gb-toast:empty { display:none; }
 

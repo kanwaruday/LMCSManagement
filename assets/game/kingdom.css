@@ -202,4 +202,5 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 
 /* in the screen skeleton's panels (owner/kingdom.html) the panel's own title names the piece, so the inner headings step aside */
 .kg-me .kg-crest h2, .kg-me .kg-crest-i, .kg-traypanel .kg-trayhd h2 { display:none; }
-.gb-panel .kg-top { margin:0; padding:0; background:none; border:0; }
+.gb-panel .kg-top, .gb-panel .kg-tray { margin:0; padding:0; background:none; border:0; box-shadow:none; }
+.gb-panel.kg-alliance { margin-top:0; }
