@@ -12,8 +12,17 @@
      gb-missions / gb-mission   rows of work: a mark (open, next, done, waiting), title, small line, one Go at the right
      gb-done     the done state after a task: a green tick, what changed, the way back to the hub
      gb-sr       visually hidden text: put the row state in words (<span class="gb-sr">Next: </span>), give each Go aria-label="Go: <title>"
+   The kit (every portal; see tests/game/base-gallery.html):
+     gb-btn-danger  an outlined deep-orange button for removing or undoing (red stays the action colour)
+     gb-quest       a quest card: kicker, title, the one next step, progress bar, a done state (.is-done)
+     gb-count       a count badge: red = waiting on you; gb-count-quiet = for information
+     gb-rail        the game bar under the header: Missions, Quests, Rallies, Events, Buddy (assets/game/rail.js draws it)
+     gb-field       a form field: label, gb-input, gb-hint, gb-field-err (set aria-invalid="true" on the input)
+     gb-loading, gb-alert gb-alert-err|warn|ok   loading (no shimmer), and messages that say what happened
+     gb-table       a table that turns into labelled rows under 600px (give each td data-label="Column")
+     gb-saved, gb-saved-local, gb-toast   "Sent ✓" inline, "Saved on this phone" (queued), one status line at the bottom
    No motion anywhere. */
-.gb {
+.gb, .gb-rail {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
   --gb-gold:#e0a526; --gb-gold-ink:#7a5200; --gb-gold-soft:#fbefd3;
   --gb-ok:#167034; --gb-ok-soft:#e3f4e8; --gb-warn:#8a5a00; --gb-warn-soft:#fbf0da; --gb-low:#b4410f; --gb-low-soft:#fde9df;
@@ -98,7 +107,7 @@
 .gb-hub h1 { margin:0; }
 .gb-hub-role { display:block; font-size:14px; color:var(--gb-muted); }
 .gb-hub-prog { flex:1 1 220px; min-width:0; }
-.gb-hub-prog .gb-meta { display:flex; justify-content:space-between; gap:8px; margin-top:4px; font-size:13px; color:var(--gb-muted); }
+.gb-meta, .gb-hub-prog .gb-meta { display:flex; justify-content:space-between; gap:8px; margin-top:4px; font-size:13px; color:var(--gb-muted); }
 /* next step */
 .gb-next { display:flex; align-items:flex-start; gap:12px; margin:0 0 14px; padding:12px 14px; background:var(--gb-paper); border:2px solid var(--gb-gold); border-radius:16px; }
 .gb-next > img { width:52px; height:auto; flex:none; }
@@ -128,10 +137,88 @@
 .gb-done p { margin:0 auto 14px; max-width:42ch; color:var(--gb-muted); }
 .gb-done .gb-row-acts { justify-content:center; }
 
+/* ── the kit ── */
+/* buttons: secondary is plain gb-btn; danger is outlined deep orange */
+.gb .gb-btn-danger, .gb-btn-danger { background:var(--gb-paper); border-color:var(--gb-low); color:var(--gb-low); }
+.gb-btn-danger:hover { background:var(--gb-low-soft); }
+/* count badge */
+.gb-count { display:inline-grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--gb-red); color:#fff;
+  font:700 12.5px/1 var(--gb-font); font-variant-numeric:tabular-nums; }
+.gb-count-quiet { background:var(--gb-info-soft); color:var(--gb-info); }
+/* quest card */
+.gb-quest { display:flex; flex-direction:column; gap:8px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; padding:12px 14px; min-width:0; }
+.gb-quest-k { font-size:12.5px; font-weight:700; color:var(--gb-gold-ink); }
+.gb-quest h3 { margin:0; overflow-wrap:anywhere; }
+.gb-quest-next { margin:0; font-size:15px; overflow-wrap:anywhere; }
+.gb-quest .gb-row-acts { margin-top:2px; }
+.gb-quest.is-done { border-color:var(--gb-ok); }
+.gb-quest.is-done .gb-bar > i { background:var(--gb-ok); }
+.gb-quest.is-done .gb-quest-next { color:var(--gb-ok); font-weight:700; }
+
+/* the game bar: sticky under the header, one row of five; the floating Buddy and the next-step bar keep the bottom */
+.gb-rail { position:sticky; top:0; z-index:800; margin:0; background:var(--gb-paper); border-bottom:1px solid var(--gb-line); }
+.gb-rail ul { list-style:none; display:flex; max-width:720px; margin:0 auto; padding:0 4px; }
+.gb-rail li { flex:1 1 0; min-width:0; }
+.gb-rail-i { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:100%; min-height:58px; padding:6px 2px;
+  background:none; border:0; border-radius:10px; color:var(--gb-ink); font:600 12.5px/1.2 var(--gb-font); text-decoration:none; cursor:pointer; }
+.gb-rail-i:active { background:var(--gb-gold-soft); }
+.gb-rail-i svg, .gb-rail-i img { width:26px; height:26px; flex:none; }
+.gb-rail-i img { border-radius:50%; object-fit:cover; background:var(--gb-gold-soft); }
+.gb-rail-i .gb-count { position:absolute; top:3px; left:calc(50% + 6px); }
+.gb-rail-i.is-soon { color:var(--gb-muted); cursor:default; }
+.gb-rail-i.is-soon small { font-size:11px; font-weight:700; }
+.gb-rail-i:focus-visible { outline:3px solid var(--gb-focus); outline-offset:-3px; }
+
+/* form fields */
+.gb-field { margin:0 0 14px; }
+.gb-field > label { display:block; font-weight:700; margin:0 0 4px; }
+.gb-input { display:block; width:100%; min-height:44px; padding:8px 12px; border:1.5px solid #7d848e; border-radius:10px; background:var(--gb-paper); color:var(--gb-ink); font:16px/1.4 var(--gb-font); }
+textarea.gb-input { min-height:88px; resize:vertical; }
+.gb-input[aria-invalid="true"] { border-color:var(--gb-low); box-shadow:0 0 0 1px var(--gb-low); }
+.gb-hint { margin:4px 0 0; font-size:13.5px; color:var(--gb-muted); }
+.gb-field-err { margin:4px 0 0; font-size:14px; font-weight:700; color:var(--gb-low); }
+.gb-field-err:empty { display:none; }
+
+/* states: loading (still, no shimmer), and messages that say what happened and what to do */
+.gb-loading { display:grid; gap:8px; padding:4px 0; }
+.gb-loading > i { display:block; height:14px; border-radius:6px; background:var(--gb-line); }
+.gb-loading > i:nth-child(2) { width:82%; }
+.gb-loading > i:nth-child(3) { width:58%; }
+.gb-alert { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0 0 12px; padding:12px 14px; border:1.5px solid var(--gb-line); border-radius:12px; background:var(--gb-paper); }
+.gb-alert > p { flex:1 1 220px; margin:0; }
+.gb-alert-err { border-color:var(--gb-low); background:var(--gb-low-soft); }
+.gb-alert-warn { border-color:var(--gb-gold); background:var(--gb-warn-soft); }
+.gb-alert-ok { border-color:var(--gb-ok); background:var(--gb-ok-soft); }
+
+/* tables: rules, no zebra, numbers right; under 600px each row becomes a labelled block */
+.gb-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; overflow:hidden; font-size:15px; }
+.gb-table th, .gb-table td { padding:10px 12px; text-align:left; vertical-align:top; border-top:1px solid var(--gb-line); }
+.gb-table th { border-top:0; background:var(--gb-panel); color:var(--gb-muted); font-size:13px; font-weight:700; }
+.gb-table .gb-num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.gb-table caption { text-align:left; padding:0 0 6px; font-weight:700; }
+
+/* saved states and the one status line */
+.gb-saved { display:inline-flex; align-items:center; gap:6px; font-size:14px; font-weight:700; color:var(--gb-ok); }
+.gb-saved::before { content:"✓"; }
+.gb-saved-local { align-items:flex-start; color:var(--gb-warn); }
+.gb-saved-local::before { content:""; flex:none; margin-top:.35em; width:9px; height:9px; border-radius:50%; border:2px solid currentColor; }
+.gb-toast { position:fixed; left:16px; right:16px; bottom:calc(76px + env(safe-area-inset-bottom)); z-index:970; max-width:480px; margin:0 auto; padding:12px 16px;
+  border-radius:12px; background:var(--gb-ink); color:#fff; font:600 15px/1.4 var(--gb-font); }
+.gb-toast:empty { display:none; }
+
 @media (max-width:600px) {
   .gb h1, .gb .gb-h1 { font-size:23px; }
   .gb-head h1, .gb-head .gb-head-t { font-size:17px; }
   .gb .gb-head a, .gb .gb-back { padding:0 10px; }
   .gb-next > img { width:40px; }
   .gb-mission { padding:10px 12px; }
+  .gb-table, .gb-table tbody, .gb-table tr, .gb-table td { display:block; }
+  .gb-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  .gb-table tr { padding:8px 12px; border-top:1px solid var(--gb-line); }
+  .gb-table tbody tr:first-child { border-top:0; }
+  .gb-table td { display:flex; justify-content:space-between; gap:12px; padding:3px 0; border:0; text-align:right; }
+  .gb-table td::before { content:attr(data-label); flex:none; max-width:45%; text-align:left; color:var(--gb-muted); font-size:13px; font-weight:700; }
+  .gb-table td:first-child { font-weight:700; }
+  .gb-table caption { display:block; padding:10px 12px 2px; }
+  .gb-rail-i { font-size:11.5px; }
 }

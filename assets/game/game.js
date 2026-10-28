@@ -615,6 +615,8 @@ var LMCSGame = window.LMCSGame = (function () {
       last = d; // LMCSGame.last(): the floating Buddy reads it instead of asking the backend again
       if (d.notYet) { el.textContent = ''; el.hidden = true; return; }
       t = opts.only ? onlyModule(d, String(opts.only)) : d;
+      // the game bar (rail.js) counts from the whole day, so a module page's filtered view doesn't announce
+      if (!opts.only) try { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: d })); } catch (_) { /* old browser: the bar keeps its counts */ }
       var firstVisit = (t.toursSeen || []).indexOf('home-' + (t.role || '')) === -1;
       var a = art(t, now, firstVisit);
       renderPanels();

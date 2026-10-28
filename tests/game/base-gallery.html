@@ -10,6 +10,8 @@
 </head>
 <body class="gb">
 <header class="gb-head"><div><div><h1>Fleet setup</h1><p>LMCS Transport</p></div><a href="#">&larr; Checks</a></div></header>
+<!-- the game bar: <nav class="gb-rail" id="game-rail" aria-label="Game"></nav> straight after the header, then LMCSRail.mount (script at the end) -->
+<nav class="gb-rail" id="game-rail" aria-label="Game"></nav>
 <main class="gb-page-wide">
   <h1>Page title</h1>
   <p class="gb-lead">One plain sentence that says what this page is for.</p>
@@ -52,6 +54,70 @@
     <p class="gb-empty">Nothing missing. New buses show up here once the Fee Clerk adds them.</p>
     <p class="gb-err">That didn't save. Nothing was changed; try again.</p>
   </section>
+  <section class="gb-section">
+    <h2>The kit</h2>
+
+    <h3>Buttons</h3>
+    <div class="gb-row-acts">
+      <button class="gb-btn gb-btn-primary" type="button">Save the count</button>
+      <button class="gb-btn" type="button">Details</button>
+      <button class="gb-btn gb-btn-quiet" type="button">Skip for now</button>
+      <button class="gb-btn gb-btn-danger" type="button">Remove this bus</button>
+      <button class="gb-btn gb-btn-primary" type="button" disabled>Sending…</button>
+    </div>
+    <p class="gb-muted">One red primary per screen. Secondary is plain. Danger is outlined deep orange, for removing or undoing. Every button is at least 44 px.</p>
+
+    <h3>Counts and pills</h3>
+    <p>Waiting on you <span class="gb-count">3</span> &nbsp; For information <span class="gb-count gb-count-quiet">12</span> &nbsp;
+      <span class="gb-pill gb-pill-ok">Done</span> <span class="gb-pill gb-pill-warn">Needs a look</span> <span class="gb-pill gb-pill-low">Problem</span> <span class="gb-pill gb-pill-next">Next</span> <span class="gb-pill">Neutral</span></p>
+
+    <h3>Quest cards</h3>
+    <ul class="gb-grid">
+      <li class="gb-quest"><span class="gb-quest-k">Quest 2 of 4</span><h3>Open the Day Book</h3>
+        <p class="gb-quest-next">Next: enter yesterday's receipts.</p>
+        <span class="gb-bar"><i style="width:40%"></i></span><div class="gb-meta"><span>Progress</span><span>2 of 5 steps</span></div>
+        <div class="gb-row-acts"><a class="gb-btn gb-btn-primary" href="#">Enter the receipts</a></div></li>
+      <li class="gb-quest is-done"><span class="gb-quest-k">Quest 1 of 4</span><h3>Starting cash</h3>
+        <p class="gb-quest-next">Done. The Accounts head approved it.</p>
+        <span class="gb-bar"><i style="width:100%"></i></span><div class="gb-meta"><span>Progress</span><span>3 of 3 steps</span></div></li>
+    </ul>
+
+    <h3>Form fields</h3>
+    <div class="gb-card" style="max-width:480px">
+      <div class="gb-field"><label for="k-cash">Cash in the drawer (₹)</label><input class="gb-input" id="k-cash" inputmode="numeric" value="12,450" aria-describedby="k-cash-h"><p class="gb-hint" id="k-cash-h">Count the notes and coins before you close.</p></div>
+      <div class="gb-field"><label for="k-date">Valid until</label><input class="gb-input" id="k-date" value="31/02/2027" aria-invalid="true" aria-describedby="k-date-e"><p class="gb-field-err" id="k-date-e" role="alert">That date doesn't exist. Use DD/MM/YYYY, like 28/02/2027.</p></div>
+      <div class="gb-field"><label for="k-note">What was done</label><textarea class="gb-input" id="k-note"></textarea></div>
+      <div class="gb-row-acts"><button class="gb-btn gb-btn-primary" type="button">Save</button><span class="gb-saved">Sent</span><span class="gb-saved gb-saved-local">Saved on this phone. It sends when you're back online.</span></div>
+    </div>
+
+    <h3>Loading, empty and error</h3>
+    <div class="gb-card" aria-busy="true"><span class="gb-sr">Loading</span><div class="gb-loading" aria-hidden="true"><i></i><i></i><i></i></div></div>
+    <p class="gb-empty">No open issues. New ones from the daily reports show up here.</p>
+    <div class="gb-alert gb-alert-err" role="alert"><p>Couldn't reach the server. Nothing was lost. Check the connection and try again.</p><button class="gb-btn" type="button">Try again</button></div>
+    <div class="gb-alert gb-alert-warn"><p>The bus list is from yesterday. Today's will load when the GPS sheet updates.</p></div>
+    <div class="gb-alert gb-alert-ok" role="status"><p>Cash count saved. The Accounts head sees it in their list.</p></div>
+
+    <h3>Table (rows turn into labelled blocks under 600 px)</h3>
+    <table class="gb-table">
+      <caption>Receipts, 27/10/2026</caption>
+      <thead><tr><th scope="col">Receipt</th><th scope="col">Student</th><th scope="col">Mode</th><th scope="col" class="gb-num">Amount (₹)</th></tr></thead>
+      <tbody>
+        <tr><td data-label="Receipt">R-1042</td><td data-label="Student">Class 5A, roll 12</td><td data-label="Mode">Cash</td><td data-label="Amount (₹)" class="gb-num">4,500</td></tr>
+        <tr><td data-label="Receipt">R-1043</td><td data-label="Student">Class 7B, roll 3</td><td data-label="Mode">UPI</td><td data-label="Amount (₹)" class="gb-num">12,000</td></tr>
+        <tr><td data-label="Receipt">R-1044</td><td data-label="Student">Class 2A, roll 21</td><td data-label="Mode">Cheque</td><td data-label="Amount (₹)" class="gb-num">—</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Status line</h3>
+    <p class="gb-muted">One line fixed at the bottom of the screen (role="status"), shown in place here. The page sets its text and clears it; empty = hidden.</p>
+    <div class="gb-toast" role="status" style="position:static">Sent ✓ Coordinator A sees it in their Today list.</div>
+  </section>
 </main>
+<script src="../../assets/game/rail.js"></script>
+<script>
+  // made-up counts: the Today panel fires this event on a real page
+  LMCSRail.mount(document.getElementById('game-rail'), { hub: '#', root: '../../' });
+  document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [{}, {}, {}], windows: [], quests: [{}] } }));
+</script>
 </body>
 </html>
