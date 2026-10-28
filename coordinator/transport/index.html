@@ -50,8 +50,9 @@ const FLEET_TOUR = { id: 'fleet-transport', beats: [
 async function fleetNext() {
   const slot = document.getElementById('fleet-next');
   try {
-    const d = await Coord.api({ action: 'coordinatortransportfleet' }), today = new Date().toISOString().slice(0, 10);
+    const d = await Coord.api({ action: 'coordinatortransportfleet' }), n = new Date(), today = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); // local date, as setup.js
     const profiles = FleetQuests.profilesFromRows(d.rows), missions = FleetQuests.transportMissions(d.rows);
+    if (!profiles.length) { slot.replaceChildren(); return; } // no buses: nothing to do, and not "ready" either
     const open = profiles.map((p) => ({ p, f: FleetQuests.busProgress(p, today).confirmed })).filter((x) => x.f < 1).sort((a, b) => b.f - a.f);
     const busOf = (x) => x.id.slice(x.id.lastIndexOf(':') + 1);
     let m = null; open.some((o) => (m = missions.find((x) => !x.done && busOf(x) === o.p.reg)));

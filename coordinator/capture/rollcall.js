@@ -72,7 +72,8 @@ function draw() {
   const buses = S.data.buses.slice().sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
   const done = buses.filter((b) => b.roll || waiting(b.reg)).length;
   $('summary').textContent = buses.length ? `${done} of ${buses.length} buses recorded.` : '';
-  $('rcDone').innerHTML = buses.length && done === buses.length ? doneBox('Roll call done for today', `All ${buses.length} buses recorded.`) : '';
+  const card = buses.length && done === buses.length ? doneBox('Roll call done for today', `All ${buses.length} buses recorded.`) : '';
+  if (draw.card !== card) { draw.card = card; $('rcDone').innerHTML = card; } // only when it changes, so it is announced once
   $('buses').innerHTML = !buses.length ? '<li class="cap-note">No running buses on your account.</li>' : buses.map((b) => {
     const w = waiting(b.reg), r = w ? w.roll : b.roll, u = b.usual || {};
     const usual = u.driver ? `Usual: ${esc(u.driver)} · ${esc(u.attendant || 'no attendant')}` : 'No usual driver on record. Use Substitute.';
