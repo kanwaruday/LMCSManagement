@@ -26,7 +26,7 @@
         let r;
         try { r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: token }) })).text()); }
         catch (e) { throw new Error('Could not reach the office. Try again when there is signal.'); }
-        if (!r.success) throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.');
+        if (!r.success) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* nothing kept */ } throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.'); }
         return r;
       },
       send: () => Promise.reject(new Error('not stored yet')), // the fuel card has no form in live mode

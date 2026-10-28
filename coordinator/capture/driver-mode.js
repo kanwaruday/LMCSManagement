@@ -10,7 +10,8 @@ export function wantsDriverMode(search, token, session) {
 
 // ── Fee Clerk side (coordinator/transport/drivers.html) ──
 export const DRIVER_PAGE = 'https://kanwaruday.github.io/LMCSManagement/driver/';
-// the link a driver scans; the token is in the fragment, so it never reaches a server log
+// the link a driver scans; the token is in the fragment, so opening it never sends it to a server. Shared on WhatsApp it does pass
+// through WhatsApp (accepted by the design: the QR is the first choice)
 export const linkUrl = (token) => DRIVER_PAGE + '#k=' + token;
 export const whatsappUrl = (token, name) => 'https://wa.me/?text=' + encodeURIComponent('LMCS driver link for ' + name + '. Open it once on your own phone: ' + linkUrl(token));
 // same rule as the server (driver-link.gs): starts with a letter, then letters, spaces and dots; 60 characters at most

@@ -82,7 +82,7 @@ function driverLinkCreate_(body) {
     for (let i = 1; i < rows.length; i++) { // one phone per driver
       const r = rows[i], same = code ? String(r[4]).toUpperCase() === code
         : !r[4] && String(r[2]) === reg && String(r[5]).toLowerCase() === name.toLowerCase();
-      if (same && !r[8]) sh.getRange(i + 1, 9, 1, 2).setValues([[now, caller.email]]);
+      if (same && !r[8] && tupCovers_(caller, String(r[3]))) sh.getRange(i + 1, 9, 1, 2).setValues([[now, caller.email]]);
     }
     sh.appendRow([linkId, dlkHash_(token), reg, v.campusId, code, name, now, caller.email, '', '', '']);
   } finally {
@@ -137,7 +137,8 @@ function driverMe_(body) {
   if (!link) return { success: false, error: DLK_UNLINKED_ };
   const cache = CacheService.getScriptCache(), seen = 'dlk_seen_' + link.linkId;
   if (!cache.get(seen)) {
-    SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(DLK_TAB_).getRange(link.at, 11).setValue(new Date());
+    const sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(DLK_TAB_);
+    if (String(sh.getRange(link.at, 1).getValue()) === link.linkId) sh.getRange(link.at, 11).setValue(new Date()); // rows moved by hand: skip
     cache.put(seen, '1', 3600);
   }
   let runsDone = 0, lastFill = null, lastOdometer = null;

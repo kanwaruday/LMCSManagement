@@ -19,7 +19,7 @@ const mkSheet = (n) => ({ appendRow: (r) => tabs[n].push(r.slice()), setFrozenRo
   getDataRange: () => ({ getValues: () => tabs[n].map((r) => r.slice()) }),
   getRange: (r, c, nr, nc) => ({ setFontWeight() {},
     setValues: (v) => { v.forEach((row, i) => row.forEach((x, j) => { tabs[n][r - 1 + i][c - 1 + j] = x; })); },
-    setValue: (x) => { tabs[n][r - 1][c - 1] = x; } }) });
+    setValue: (x) => { tabs[n][r - 1][c - 1] = x; }, getValue: () => tabs[n][r - 1][c - 1] }) });
 const ss = { getSheetByName: (n) => (tabs[n] ? mkSheet(n) : null), insertSheet(n) { tabs[n] = []; return mkSheet(n); } };
 let caller = null, uuid = 0;
 const cache = {};
@@ -152,5 +152,12 @@ assert.strictEqual(frame({ idToken: 't', deviceToken: undefined, reg: 'HP665805'
 caller = null;
 assert.strictEqual(frame({ idToken: 't', runId: 'S3' }).error, 'Not authorized');
 assert.strictEqual(frame({ deviceToken: undefined, runId: 'S4' }).error, 'Not authorized', 'no token at all');
+
+// one phone per driver stays inside the caller's campuses: an LMS 1 clerk reusing an LMS 4 driver's code unlinks nobody there
+const lms4Active = () => rows().filter((r) => r[2] === 'HP659511' && r[4] === 'TST/01/02/003' && !r[8]).length;
+const before = lms4Active();
+caller = clerk1;
+assert.strictEqual(call('driverLinkCreate_', { idToken: 't', reg: 'HP665805', driverName: 'Test Driver', driverCode: 'TST/01/02/003' }).success, true);
+assert.ok(before > 0 && lms4Active() === before, 'the LMS 4 link is untouched');
 
 console.log('driver link: all checks passed');
