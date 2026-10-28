@@ -8,11 +8,10 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=92789f14" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
-    .pp-paths h2 { margin:22px 0 2px; }
-    .pp-paths .gb-muted { margin:0 0 6px; }
+    #base-name .gb-emoji { margin-right:.3em; }
   </style>
 </head>
 <body class="gb gb-app">
@@ -30,9 +29,18 @@
       </section>
       <div id="app-root" style="display:none">
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
-        <nav class="pp-paths" id="modules" aria-label="Your school's work">
-          <!-- filled in by JS: one heading per path, its pages as gb-go rows -->
-        </nav>
+        <!-- 🏠 Home Base (the school building and its rooms) or 🗺️ World (the school's routes): Uday, 28 Oct -->
+        <div class="gb-switch" role="group" aria-label="View">
+          <button type="button" id="view-home" aria-pressed="true" aria-controls="modules"><span data-emoji="school"></span>School</button>
+          <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="bus"></span>Routes</button>
+        </div>
+        <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
+          <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span><span class="gb-base-lv" id="base-lv"></span></p>
+          <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
+        </div></section>
+        <section id="world" aria-label="Your school's routes" hidden>
+          <p class="gb-empty"><span data-emoji="soon"></span>Your school's route map comes next, from Fleet Command: every bus, out to where it goes.</p>
+        </section>
       </div>
     </main>
     <aside class="gb-panels" id="panels" aria-label="More" hidden>
@@ -47,7 +55,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=df0cbfd3"></script>
+  <script src="../assets/auth.js?v=84c3e38c"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
   <script src="../assets/game/emoji.js?v=f2812675"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
@@ -55,7 +63,7 @@
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-    // The hub's paths, in the order a Principal works: the day, then people, then the rules. Each page is a gb-go row.
+    // The school building's rooms, in the order a Principal works: the day, then people, then the rules; each room holds its pages.
     // HR & Hiring is its own path (Uday, 28 Oct 2026: "as a principal, they are also responsible for Hiring & HR"); its pages
     // are the same ones as before, for the Principal's own school. Counts would need the hiring and staff data, which this hub
     // doesn't load, so the rows say what each page holds instead.
@@ -76,25 +84,67 @@
     ];
 
     function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
-    function renderPaths() {
-      const nav = document.getElementById('modules');
-      nav.textContent = '';
-      PATHS.forEach(function (p) {
-        const h2 = el('h2', '', p.title);
-        if (window.LMCSEmoji && LMCSEmoji.get(p.e)) h2.insertBefore(LMCSEmoji.tag(p.e), h2.firstChild);
-        nav.appendChild(h2);
-        if (p.lead) nav.appendChild(el('p', 'gb-muted', p.lead));
-        const ul = el('ul', 'gb-list');
-        p.pages.forEach(function (m) {
-          const a = el('a', 'gb-go'), span = el('span', '', m.name);
-          if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
-          a.href = m.url;
-          span.appendChild(el('small', '', m.desc));
-          a.appendChild(span);
-          const li = el('li'); li.appendChild(a); ul.appendChild(li);
-        });
-        nav.appendChild(ul);
+    // a room: a tile that opens across the row to show what's inside (base.css .gb-room)
+    function room(e, title, small, body, next) {
+      const d = el('details', 'gb-room' + (next ? ' is-next' : '')), sum = el('summary');
+      const ic = el('span', 'gb-room-e', window.LMCSEmoji ? LMCSEmoji.get(e) : ''); ic.setAttribute('aria-hidden', 'true');
+      sum.appendChild(ic); sum.appendChild(el('span', 'gb-room-t', title)); sum.appendChild(el('span', 'gb-room-s', small));
+      const b = el('div', 'gb-room-b'); b.appendChild(body);
+      d.appendChild(sum); d.appendChild(b);
+      return d;
+    }
+    function pageList(pages) {
+      const ul = el('ul', 'gb-list');
+      pages.forEach(function (m) {
+        const a = el('a', 'gb-go'), span = el('span', '', m.name);
+        if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
+        a.href = m.url;
+        span.appendChild(el('small', '', m.desc));
+        a.appendChild(span);
+        const li = el('li'); li.appendChild(a); ul.appendChild(li);
       });
+      return ul;
+    }
+    // the school's buildings from the Kingdom (gamekingdom: a Principal gets their own base only). Read-only here.
+    // Each building: its level of maxLevel and the next step that isn't "soon"; a step the game can link to gets its link.
+    function setupBody(base) {
+      if (!base) return el('p', 'gb-muted', 'The setup progress couldn\'t be loaded just now. Nothing is lost; it shows again next time.');
+      const ul = el('ul', 'gb-list');
+      (base.buildings || []).forEach(function (b) {
+        const next = (b.tiers || []).filter(function (t) { return t.state === 'open'; })[0];
+        const href = next && next.go && window.LMCSGame ? LMCSGame.safeHref(next.go, '../') : null;
+        const row = el(href ? 'a' : 'div', href ? 'gb-go' : 'gb-go is-static'), span = el('span', '', b.name);
+        if (href) row.href = href;
+        span.appendChild(el('small', '', 'Level ' + (Number(b.level) || 0) + ' of ' + (Number(b.maxLevel) || 0) + (next ? ' · next: ' + next.label : ' · nothing open')));
+        row.appendChild(span);
+        const li = el('li'); li.appendChild(row); ul.appendChild(li);
+      });
+      return ul;
+    }
+    function steps(base) {
+      let done = 0, total = 0;
+      (base && base.buildings || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (t.state === 'done' || t.state === 'open') { total++; if (t.state === 'done') done++; } }); });
+      return { done: done, total: total };
+    }
+    function renderHome(base) {
+      const rooms = document.getElementById('rooms');
+      rooms.textContent = '';
+      PATHS.forEach(function (p) { rooms.appendChild(room(p.e, p.title, p.lead, pageList(p.pages), false)); });
+      const st = steps(base);
+      rooms.appendChild(room('quests', 'Setup quests', base ? st.done + ' of ' + st.total + ' steps built' : 'Your school\'s buildings', setupBody(base), !!base && st.done < st.total));
+      document.getElementById('base-lv').textContent = base ? (window.LMCSEmoji ? LMCSEmoji.get('level') + ' ' : '') + 'Level ' + (Number(base.level) || 0) : '';
+    }
+    function loadBase(session) {
+      renderHome(null);
+      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); }, function () { /* the rooms already show; setup says it couldn't load */ });
+    }
+    function showView(world) {
+      document.getElementById('modules').hidden = world;
+      document.getElementById('world').hidden = !world;
+      document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+      document.getElementById('view-world').setAttribute('aria-pressed', String(world));
     }
 
     function hello(name) {
@@ -115,7 +165,11 @@
         LMCS.signOut();
       });
 
-      renderPaths();
+      document.getElementById('base-name').textContent = session.campusName;
+      if (window.LMCSEmoji) document.getElementById('base-name').insertBefore(LMCSEmoji.tag('base'), document.getElementById('base-name').firstChild);
+      document.getElementById('view-home').addEventListener('click', function () { showView(false); });
+      document.getElementById('view-world').addEventListener('click', function () { showView(true); });
+      loadBase(session);
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }

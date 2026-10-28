@@ -22,6 +22,7 @@
      gb-loading, gb-alert gb-alert-err|warn|ok   loading (no shimmer), and messages that say what happened
      gb-table       a table that turns into labelled rows under 600px (give each td data-label="Column"; role="table"/"row"/"cell" keep it a table for screen readers)
      gb-saved, gb-saved-local, gb-toast   "Sent ✓" inline, "Saved on this phone" (queued), one status line at the bottom
+     gb-switch / gb-base / gb-rooms / gb-room   the Home Base (a building of rooms that level up) and the 🏠 / 🗺️ switch to the World
      gb-emoji       the one emoji before a label (assets/game/emoji.js: LMCSEmoji.tag(key)); aria-hidden, never in numbers
    No motion anywhere. */
 .gb, .gb-app, .gb-rail {
@@ -82,6 +83,8 @@
 .gb .gb-go::after { content:"›"; margin-left:auto; font-size:24px; line-height:1; color:var(--gb-muted); }
 .gb .gb-go small { display:block; font-weight:400; color:var(--gb-muted); font-size:13.5px; }
 .gb .gb-go:active { background:var(--gb-gold-soft); border-color:var(--gb-gold); }
+.gb .gb-go.is-static::after { content:none; } /* the same row with nothing to open (a div, not a link) */
+.gb div.gb-go.is-static:active { background:var(--gb-paper); border-color:var(--gb-line); }
 
 /* things */
 .gb-card { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:14px; padding:12px 14px; min-width:0; }
@@ -223,6 +226,31 @@
 }
 .gb-app .lg-nextbar { display:none; }
 #game-root { scroll-margin-top:16px; }
+
+/* ── Home Base + World (every portal: the building where you work, the map where your work reaches) ──
+   <div class="gb-switch" role="group" aria-label="View"><button aria-pressed="true">🏠 School</button><button aria-pressed="false">🗺️ Routes</button></div>
+   <section class="gb-base"><div class="gb-base-in"><p class="gb-base-h">🏰 Name <span class="gb-base-lv">🛡️ Level 3</span></p>
+     <div class="gb-rooms"><details class="gb-room"><summary><span class="gb-room-e">🗓️</span><span class="gb-room-t">Daily work</span><span class="gb-room-s">line</span></summary><div class="gb-room-b">…</div></details>…</div></div></section>
+   A room opens across the row; the next room to do gets .is-next. */
+.gb-switch { display:flex; gap:8px; margin:12px 0; }
+.gb-switch button { flex:1; min-height:44px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); color:var(--gb-ink); font:700 15px/1.2 var(--gb-font); cursor:pointer; }
+.gb-switch button[aria-pressed="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
+.gb-base { margin:0 0 12px; }
+.gb-base::before { content:""; display:block; height:28px; margin:0 8px; background:var(--gb-low); clip-path:polygon(50% 0, 100% 100%, 0 100%); } /* the roof */
+.gb-base-in { padding:10px; background:#f6e7d6; border:2px solid var(--gb-low); border-top:0; border-radius:0 0 14px 14px; }
+.gb-base-h { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 8px; margin:0 0 8px; font-weight:700; }
+.gb-base-lv { font-size:13px; color:var(--gb-gold-ink); }
+.gb-rooms { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.gb-room { min-width:0; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; }
+.gb-room.is-next { border-color:var(--gb-gold); box-shadow:inset 0 0 0 1px var(--gb-gold); }
+.gb-room[open] { grid-column:1 / -1; }
+.gb-room > summary { display:flex; flex-direction:column; gap:2px; min-height:88px; padding:10px; list-style:none; cursor:pointer; }
+.gb-room > summary::-webkit-details-marker { display:none; }
+.gb-room-e { font-size:28px; line-height:1; }
+.gb-room-t { font-weight:700; overflow-wrap:anywhere; }
+.gb-room-s { font-size:13px; color:var(--gb-muted); overflow-wrap:anywhere; }
+.gb-room-b { padding:0 10px 10px; }
+@media (min-width:960px) { .gb-rooms { grid-template-columns:repeat(4, minmax(0, 1fr)); } }
 
 /* form fields */
 .gb-field { margin:0 0 14px; }
