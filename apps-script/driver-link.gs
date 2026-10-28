@@ -134,7 +134,7 @@ function dlkRows_(tab) {
 
 function driverMe_(body) {
   const link = dlkLink_(body.deviceToken);
-  if (!link) return { success: false, error: DLK_UNLINKED_ };
+  if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ }; // the phone forgets its token only on this code
   const cache = CacheService.getScriptCache(), seen = 'dlk_seen_' + link.linkId;
   if (!cache.get(seen)) {
     const sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(DLK_TAB_);

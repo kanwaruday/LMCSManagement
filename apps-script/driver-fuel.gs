@@ -18,6 +18,7 @@ const DFL_HEADER_ = ['Fill ID', 'Reg', 'Campus', 'Driver Link ID', 'Driver Name'
 const DFL_BILL_MAX_ = 3 * 1024 * 1024;
 const DFL_VIDEO_MAX_ = 25 * 1024 * 1024;
 const DFL_MAX_KM_ = 5000; // = MAX_KM_SINCE_LAST in driver/driver-logic.js
+const DFL_MAX_PENDING_ = 3; // fills one link may have waiting for the office at once
 // = FUEL_FIELDS in driver/driver-logic.js
 const DFL_NUMS_ = { litres: { min: 1, max: 400, int: false }, amount: { min: 1, max: 100000, int: true }, odometer: { min: 1, max: 9999999, int: true } };
 
@@ -85,9 +86,11 @@ function dflFile_(f, kind) {
 }
 
 function driverFuel_(body) {
-  const fail = function (m) { return { success: false, error: m }; };
+  // refused: the office says no to this fill for good, so the phone drops it and tells the driver. Anything else that goes wrong
+  // (a lock timeout, a Drive or Sheets error, caught in doPost) comes back without it, and the phone keeps the fill and retries.
+  const fail = function (m) { return { success: false, refused: true, error: m }; };
   const link = dlkLink_(body.deviceToken);
-  if (!link) return fail(DLK_UNLINKED_);
+  if (!link) return { success: false, refused: true, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const fillId = String(body.fillId || '');
   // a leading letter: never a number, a date or a formula in the cell
   if (!/^[A-Za-z][A-Za-z0-9_-]{7,63}$/.test(fillId)) return fail('Bad fillId');
@@ -99,26 +102,45 @@ function driverFuel_(body) {
   }
   const t = body.filledAt, at = typeof t === 'number' && isFinite(t) ? new Date(t)
     : /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(String(t || '')) ? new Date(String(t)) : null;
-  const filledAt = at && isFinite(at.getTime()) ? at : '';
+  // the phone's clock decides the Day Book date later, so only a sane one is kept: within the last 7 days and not ahead of now
+  // (10 minutes' slack); anything else is '' and the Received time stands in
+  const now = Date.now(), filledAt = at && isFinite(at.getTime()) && at.getTime() > now - 7 * 864e5 && at.getTime() < now + 6e5 ? at : '';
   const bill = dflFile_(body.bill, 'bill');
   if (bill.error) return fail(bill.error);
   const video = dflFile_(body.video, 'video');
   if (video.error) return fail(video.error);
 
+  // The checks that decide yes or no, against the rows as they are now. Run once before the slow Drive writes (no lock: a no
+  // never stores a file) and again under the lock just before the row goes in.
+  const sh = dflSheet_();
+  const verdict = function () {
+    const rows = sh.getDataRange().getValues().slice(1), old = rows.filter(function (r) { return String(r[0]) === fillId; })[0];
+    if (old) return String(old[3]) === link.linkId ? { done: { success: true, fillId: fillId, status: String(old[12]) } } : { no: fail('Bad fillId') };
+    // a link holds at most DFL_MAX_PENDING_ fills waiting for the office: a forwarded link can't flood Drive with 25 MB videos
+    if (rows.filter(function (r) { return String(r[3]) === link.linkId && String(r[12]) === 'pending'; }).length >= DFL_MAX_PENDING_) {
+      return { no: fail(DFL_MAX_PENDING_ + ' fills are already waiting for the office to check. Ask your Fee Clerk to check them, then send this one.') };
+    }
+    const last = dflLast_(link.reg).lastOdometer;
+    if (last != null && n.odometer < last) return { no: fail('The odometer is less than last time (' + last + ')') };
+    if (last != null && n.odometer - last > DFL_MAX_KM_) return { no: fail('The odometer is too far since last time (' + last + ')') };
+    return {};
+  };
+  const first = verdict();
+  if (first.done) return first.done;
+  if (first.no) return first.no;
+  // the files, outside the lock: about 28 MB to Drive must not hold up capture uploads, which share the script lock
+  const bus = capFolder_('Fuel', link.reg), dir = getSubfolder_(bus, fillId) || bus.createFolder(fillId); // Capture/Fuel/<REG>/<fillId>
+  const save = function (f, name) { // an earlier try that died before its row was written left the file: reuse it
+    const it = dir.getFilesByName(name);
+    return (it.hasNext() ? it.next() : dir.createFile(Utilities.newBlob(f.bytes, f.mime, name))).getId();
+  };
+  const billId = save(bill, 'bill.' + bill.ext), videoId = save(video, 'video.' + video.ext);
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sh = dflSheet_(), old = sh.getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === fillId; })[0];
-    if (old) return String(old[1]) === link.reg ? { success: true, fillId: fillId, status: String(old[12]) } : fail('Bad fillId');
-    const last = dflLast_(link.reg).lastOdometer;
-    if (last != null && n.odometer < last) return fail('The odometer is less than last time (' + last + ')');
-    if (last != null && n.odometer - last > DFL_MAX_KM_) return fail('The odometer is too far since last time (' + last + ')');
-    const bus = capFolder_('Fuel', link.reg), dir = getSubfolder_(bus, fillId) || bus.createFolder(fillId); // Capture/Fuel/<REG>/<fillId>
-    const save = function (f, name) { // an earlier try that died before its row was written left the file: reuse it
-      const it = dir.getFilesByName(name);
-      return (it.hasNext() ? it.next() : dir.createFile(Utilities.newBlob(f.bytes, f.mime, name))).getId();
-    };
-    const billId = save(bill, 'bill.' + bill.ext), videoId = save(video, 'video.' + video.ext);
+    const again = verdict();
+    if (again.done) return again.done;
+    if (again.no) return again.no;
     sh.appendRow([fillId, link.reg, link.campus, link.linkId, link.name, filledAt, n.litres, n.amount, n.odometer,
       billId, videoId, new Date(), 'pending', '', '', '']);
   } finally {

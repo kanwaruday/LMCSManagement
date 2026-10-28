@@ -53,8 +53,9 @@ assert.ok(link.success && other.success);
 const b64 = (hex, pad) => Buffer.concat([Buffer.from(hex, 'hex'), Buffer.alloc(pad || 16)]).toString('base64');
 const JPG = b64('FFD8FFE0'), MP4 = b64('00000018' + Buffer.from('ftypisom').toString('hex')), MOV = b64('00000014' + Buffer.from('ftypqt  ').toString('hex'));
 const HEIC = b64('00000018' + Buffer.from('ftypheic').toString('hex'));
+const AT = new Date(Date.now() - 3600e3).toISOString(); // an hour ago: inside the server's window for a fill's own time
 const fill = (o) => Object.assign({ deviceToken: link.token, fillId: 'Fa1b2c3d4e5f6', litres: '42.5', amount: '4,000', odometer: '52100',
-  filledAt: '2026-10-28T08:15:00.000Z', bill: { mime: 'image/jpeg', base64: JPG }, video: { mime: 'video/mp4', base64: MP4 } }, o);
+  filledAt: AT, bill: { mime: 'image/jpeg', base64: JPG }, video: { mime: 'video/mp4', base64: MP4 } }, o);
 const rows = () => (tabs['Driver Fills'] || []).slice(1);
 const t = (name, fn) => { fn(); console.log('ok  ' + name); };
 
@@ -65,7 +66,7 @@ t('happy path: one pending row, two files under Capture/Fuel/<REG>/<fillId>', ()
   const r = rows()[0];
   assert.deepStrictEqual([r[0], r[1], r[2], r[3], r[4], r[6], r[7], r[8], r[12], r[13], r[14], r[15]],
     ['Fa1b2c3d4e5f6', 'HP659511', 'LMS4', link.linkId, 'Test Driver', 42.5, 4000, 52100, 'pending', '', '', '']);
-  assert.ok(r[5] instanceof Date && r[5].toISOString() === '2026-10-28T08:15:00.000Z', 'Filled At is a Date');
+  assert.ok(r[5] instanceof Date && r[5].toISOString() === AT, 'Filled At is a Date');
   assert.ok(r[11] instanceof Date, 'Received');
   assert.deepStrictEqual(driveFiles.map((f) => f.name), ['bill.jpg', 'video.mp4']);
   assert.ok(r[9].includes('bill.jpg') && r[10].includes('video.mp4'));
@@ -126,7 +127,9 @@ t('files: sniffed bytes and size caps, the declared mime is not trusted', () => 
   assert.strictEqual(driveFiles[driveFiles.length - 1].name, 'video.mov'); assert.strictEqual(driveFiles[driveFiles.length - 1].mime, 'video/quicktime');
 });
 
+const decideAll = () => (tabs['Driver Fills'] || []).forEach((r, i) => { if (i && r[12] === 'pending') r[12] = 'confirmed'; }); // the clerk checked them
 t('formula strings never reach a cell', () => {
+  decideAll();
   call('driverFuel_', fill({ fillId: 'Fformula01', odometer: '57400', litres: '=IMPORTXML("x")' }));
   call('driverFuel_', fill({ fillId: 'Fformula02', odometer: '57400', filledAt: '=NOW()' }));
   call('driverFuel_', fill({ fillId: 'Fformula03', odometer: '57400', filledAt: '+2026-10-28T08:00:00Z' }));
@@ -134,10 +137,31 @@ t('formula strings never reach a cell', () => {
   assert.strictEqual(rows().find((r) => r[0] === 'Fformula02')[5], '');
 });
 
+t('review fixes: refused is marked, pending is capped per link, a fill time must be sane, replays bind to the link', () => {
+  decideAll();
+  const bad = call('driverFuel_', fill({ fillId: 'Frefused01', litres: '0' }));
+  assert.strictEqual(bad.refused, true, 'a final no says so');
+  assert.strictEqual(DL.sendOutcome(bad), 'refused');
+  ['Fcap000001', 'Fcap000002', 'Fcap000003'].forEach((id, i) => assert.strictEqual(call('driverFuel_', fill({ fillId: id, odometer: String(57500 + i) })).success, true));
+  const filesBefore = driveFiles.length;
+  const fourth = call('driverFuel_', fill({ fillId: 'Fcap000004', odometer: '57600' }));
+  assert.ok(fourth.refused && /already waiting/.test(fourth.error), 'a fourth waiting fill is refused');
+  assert.strictEqual(driveFiles.length, filesBefore, 'and stores no file');
+  decideAll();
+  const ahead = new Date(Date.now() + 3 * 3600e3).toISOString(), old = new Date(Date.now() - 9 * 864e5).toISOString();
+  assert.strictEqual(call('driverFuel_', fill({ fillId: 'Fclock0001', odometer: '57700', filledAt: ahead })).success, true);
+  assert.strictEqual(call('driverFuel_', fill({ fillId: 'Fclock0002', odometer: '57700', filledAt: old })).success, true);
+  assert.strictEqual(rows().find((r) => r[0] === 'Fclock0001')[5], '', 'a phone clock ahead of now is not kept');
+  assert.strictEqual(rows().find((r) => r[0] === 'Fclock0002')[5], '', 'nor one more than 7 days back');
+  const theirs = call('driverFuel_', fill({ deviceToken: other.token, fillId: 'Fclock0001' }));
+  assert.strictEqual(theirs.success, false, "another link can't read this fill by its id");
+});
+
 // client side (driver/driver-logic.js)
 t('queue rule: a fill leaves the phone only on a server success', () => {
   assert.strictEqual(DL.sendOutcome({ success: true }), 'sent');
-  assert.strictEqual(DL.sendOutcome({ success: false, error: 'Check the litres' }), 'refused');
+  assert.strictEqual(DL.sendOutcome({ success: false, refused: true, error: 'Check the litres' }), 'refused');
+  assert.strictEqual(DL.sendOutcome({ success: false, error: 'Lock timeout' }), 'retry', 'a passing server error keeps the fill');
   assert.strictEqual(DL.sendOutcome(null), 'retry', 'no answer (offline, timeout, an HTML error page)');
   assert.strictEqual(DL.sendOutcome(undefined), 'retry');
   assert.strictEqual(DL.sendOutcome('<html>'), 'retry');

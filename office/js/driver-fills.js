@@ -44,13 +44,16 @@ export async function showDriverFills(root, session, api) {
 
   const conf = await api.read('config.get', {}).catch(() => null);
   const accts = ((conf && conf.success && conf.accounts) || []).filter((a) => a.active && a.campus === campus);
-  setKids(paySel, ...accts.filter((a) => a.kind === 'credit').map((a) => h('option', { value: a.id + '|' }, a.label)),
+  setKids(paySel, h('option', { value: '' }, 'Choose…'), ...accts.filter((a) => a.kind === 'credit').map((a) => h('option', { value: a.id + '|' }, a.label)),
     ...accts.filter((a) => a.kind === 'cash').flatMap((a) => Object.entries(BUCKETS).map(([k, v]) => h('option', { value: a.id + '|' + k }, v))));
   try { const saved = localStorage.getItem(PAY_KEY + campus); if ([...paySel.options].some((o) => o.value === saved)) paySel.value = saved; } catch (_) {}
   paySel.onchange = () => { try { localStorage.setItem(PAY_KEY + campus, paySel.value); } catch (_) {} };
 
   // The Day Book half of a confirm. Off until after the count: the fill stays confirmed and the screen says when it goes in.
   async function toDayBook(f) {
+    if (!paySel.value) { const off = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: '', bucket: '' }).catch(() => ({}));
+      if (off.code === 'DRIVER_FILLS_OFF' || /^Unknown action/.test(off.error || '')) return AFTER_COUNT + '.';
+      return 'Choose "Paid from" above, then tap Add to Day Book.'; } // money never goes to a default account
     const [account, bucket] = paySel.value.split('|');
     const r = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: account || '', bucket: bucket || '' });
     if (r.success) { f.dayBookEntryId = r.id; return 'Added to the Day Book.'; }
