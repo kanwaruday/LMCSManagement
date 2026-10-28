@@ -210,6 +210,10 @@ function doPost(e) {
     if (body.action === 'capturefile') return staffJsonOut_(captureFile_(body)); // transport-capture.gs
     if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
     if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret
+    if (body.action === 'driverlinkcreate') return staffJsonOut_(driverLinkCreate_(body)); // driver-link.gs
+    if (body.action === 'driverlinkrevoke') return staffJsonOut_(driverLinkRevoke_(body));
+    if (body.action === 'driverlinklist') return staffJsonOut_(driverLinkList_(body));
+    if (body.action === 'driverme') return staffJsonOut_(driverMe_(body)); // a linked driver phone, deviceToken
     return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
   } catch (err) {
     return staffJsonOut_({ success: false, error: err.message });

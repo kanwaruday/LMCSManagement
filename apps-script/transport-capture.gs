@@ -21,6 +21,8 @@
 //   startedAt), null where the seq is a stop. The Mac (transport/capture/capture.py) uses them to place each stop's chapter in the
 //   route video. Too big or invalid, they are dropped and the run is stored without them (the Mac falls back to capture order).
 // Who: Owner / ALL any bus; Coordinator the buses of their district; FeeClerk their campus (tupCovers_, unchanged).
+//   A linked driver phone (driver-link.gs) sends deviceToken instead of idToken: only route timelapses (frame/stop) of its own bus;
+//   By is 'driver:<linkId>', Role 'Driver', and Captured By the driver's name.
 // POST {action:'captureprocessed', secret, runs:[{reg, runId, stops:[seq]}]} -> {success, found:{runId:{videoFileId, photos:{seq:id}}},
 //   notYet:[runId]}. The Coordinator backend (no Drive access) asks here for the ids of the Mac's BLURRED output:
 //   Capture/<REG>/<runId>/processed/route.mp4 and processed/stop-NNNNN.jpg, never the phone's originals. A run whose processed
@@ -51,7 +53,17 @@ function capFolder_(reg, runId) {
   return getSubfolder_(bus, runId) || bus.createFolder(runId);
 }
 
+// A linked driver phone (driver-link.gs) sends body.deviceToken instead of an idToken: route timelapses of its own bus only.
 function capAuth_(body) {
+  if (!body.idToken && body.deviceToken) {
+    const link = dlkLink_(body.deviceToken);
+    if (!link) return { error: DLK_UNLINKED_ };
+    if (tupNormReg_(body.reg) !== link.reg) return { error: 'This phone can only send for bus ' + link.reg };
+    if (body.runKind !== 'timelapse') return { error: 'A driver phone sends only route videos' };
+    const v = tupVehicle_(link.reg);
+    if (!v) return { error: 'Vehicle ' + link.reg + ' is not in the fleet' };
+    return { caller: { roles: ['Driver'], role: 'Driver', campusId: link.campus, email: 'driver:' + link.linkId, name: link.name }, v: v };
+  }
   const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']); // Coordinator and Owner pass as managers
   if (!caller) return { error: 'Not authorized' };
   const reg = tupNormReg_(body.reg), v = reg && tupVehicle_(reg);
@@ -150,7 +162,7 @@ function capFrameTimesOk_(ft) {
 function captureRun_(body) {
   const fail = function (m) { return { success: false, error: m }; };
   const run = body.run || {};
-  const a = capAuth_({ idToken: body.idToken, reg: run.reg });
+  const a = capAuth_({ idToken: body.idToken, deviceToken: body.deviceToken, reg: run.reg, runKind: run.kind });
   if (a.error) return fail(a.error);
   const runId = String(run.runId || '');
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return fail('Bad runId');
@@ -165,7 +177,7 @@ function captureRun_(body) {
   const author = String(run.capturedBy || '').trim().toLowerCase();
   const row = [runId, a.v.reg, a.v.campusId, run.kind, run.startedAt || '', run.endedAt || '', a.caller.email, a.caller.role,
     Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), String(run.status || 'open'), js(frameTimes),
-    /^[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
+    a.caller.role === 'Driver' ? a.caller.name : /^[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
