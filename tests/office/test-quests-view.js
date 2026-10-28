@@ -17,4 +17,12 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(Q.nextStep(clerk).id, 'cash'); ok('next step skips done and locked');
   assert.strictEqual(Q.nextStep({ steps: [st('x', false, false, 'https://evil.example/x'), st('y', false, false, 'javascript:alert(1)')] }), null); ok('only relative links');
   assert.strictEqual(Q.nextStep({ steps: [st('w', false, true)] }), null); ok('all locked: no step');
+  const T = await import('../../office/js/today.js');
+  assert.strictEqual(T.emo('dayBook'), ''); ok('no emoji map loaded: no emoji');
+  globalThis.window = { LMCSEmoji: { get: (k) => (k === 'dayBook' ? '📒' : '') } };
+  assert.strictEqual(T.emo('dayBook'), '<span class="gb-emoji" aria-hidden="true">📒</span> '); assert.strictEqual(T.emo('nope'), ''); ok('emoji is aria-hidden, unknown keys add nothing');
+  const el = { innerHTML: '', querySelector: () => ({}) };
+  Q.renderQuests(el, [{ questId: 'daybook-setup:LMS1', title: 'LMS 1', steps: [st('cash', false, false)] }], { name: 'A' });
+  assert.ok(/gb-next[\s\S]*view-slot[\s\S]*Start here/.test(el.innerHTML)); ok('the switch slot sits under the next step');
+  delete globalThis.window;
 })().catch((e) => { console.error(e); process.exit(1); });

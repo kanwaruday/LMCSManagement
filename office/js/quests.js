@@ -1,6 +1,7 @@
 // Setup quests first: a clerk (or the Fees & Accounts holder) opening office/ sees their open setup quests before the home.
 // The quests come from the Game backend (gametoday, peek: no writes); this file only orders and paints them.
 import { cacheGet, cacheSet, esc } from './shell.js';
+import { emo } from './today.js';
 
 const KEY = 'setup-quests:'; // + the email: a shared phone never shows one person's quests to another
 let skipped = false; // "See all tools" holds for this visit, even when the refresh lands after it
@@ -28,10 +29,10 @@ export function renderQuests(el, quests, who) {
     '<div class="gb-meta"><span>' + done + ' of ' + total + ' setup steps done</span></div></div></div>' +
     '<div class="gb-next"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt="" width="52" height="52"><div class="gb-next-b"><span class="gb-next-k">Start here</span>' +
     (step ? '<p class="gb-next-t">' + esc(step.title) + '</p><a class="gb-btn gb-btn-primary" href="' + esc(href(step.go)) + '">Go</a>'
-      : '<p class="gb-next-t">Waiting on someone else. Nothing for you right now.</p>') + '</div></div>' +
+      : '<p class="gb-next-t">Waiting on someone else. Nothing for you right now.</p>') + '</div></div>' + '<div class="view-slot"></div>' +
     quests.map((q, i) => {
       const n = q.steps.filter((s) => s.done).length, ns = nextStep(q);
-      return '<section class="gb-section"><h2>' + (i === 0 ? '<span class="gb-pill gb-pill-next">Start here</span> ' : '') + esc(q.title) + '</h2>' +
+      return '<section class="gb-section"><h2>' + (i === 0 ? '<span class="gb-pill gb-pill-next">Start here</span> ' : '') + emo(/^daybook-setup:/.test(q.questId) ? 'startingData' : 'quests') + esc(q.title) + '</h2>' +
         '<span class="gb-bar gb-bar-ok" role="progressbar" aria-label="' + esc(q.title) + ' steps done" aria-valuemin="0" aria-valuemax="' + q.steps.length + '" aria-valuenow="' + n + '"><i style="width:' + Math.round(100 * n / q.steps.length) + '%"></i></span>' +
         '<ul class="gb-missions">' + q.steps.map((s) => {
           const isNext = s === ns, cls = s.done ? ' is-done' : isNext ? ' is-next' : ' is-wait';
@@ -40,7 +41,7 @@ export function renderQuests(el, quests, who) {
             '<small>' + (s.done ? 'Done' : isNext ? 'Next' : s.locked ? 'Opens after the step before' : 'Waiting') + '</small></span>' + go + '</li>';
         }).join('') + '</ul></section>';
     }).join('') +
-    '<div class="gb-section"><a class="gb-go" href="daybook.html"><span>Go to Day Book<small>Entries can start before setup is finished</small></span></a>' +
+    '<div class="gb-section"><a class="gb-go" href="daybook.html"><span>' + emo('dayBook') + 'Go to Day Book<small>Entries can start before setup is finished</small></span></a>' +
     '<button type="button" class="gb-btn" id="quests-skip">See all tools</button></div>';
   el.querySelector('#quests-skip').onclick = () => { skipped = true; show(el, null); };
 }

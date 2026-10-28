@@ -4,6 +4,8 @@ import { isoToDmy } from './format.js';
 import { place } from './dom.js';
 
 const LINKS = { report: 'report.html', deposits: 'deposits.html', close: 'close.html', daybook: 'daybook.html' };
+// the game's emoji in front of a heading (assets/game/emoji.js; aria-hidden), nothing where it isn't loaded
+export const emo = (k) => (typeof window !== 'undefined' && window.LMCSEmoji && window.LMCSEmoji.get(k) ? '<span class="gb-emoji" aria-hidden="true">' + window.LMCSEmoji.get(k) + '</span> ' : '');
 const LABELS = { overdue: 'Overdue', due: 'Due', waiting: 'Waiting', done: 'Done' };
 
 // '2026-10-21 18:00' -> '21/10/2026 18:00'; '2026-10-21' -> '21/10/2026'.
@@ -21,7 +23,7 @@ export function renderTasks(el, data, note = '', who = null) {
   const nextCard = '<div class="gb-next"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt="" width="52" height="52"><div class="gb-next-b"><span class="gb-next-k">Your next step</span>' +
     (next ? '<p class="gb-next-t">' + esc(next.title) + '</p><a class="gb-btn gb-btn-primary" href="' + LINKS[next.action] + '">Go</a>'
       : '<p class="gb-next-t">' + (open.length ? 'The rest is waiting on someone else. Nothing for you right now.' : 'Everything for today is done. Thank you!') + '</p>') + '</div></div>';
-  el.innerHTML = hub + (who ? nextCard : '') + '<h2>Today · ' + esc(isoToDmy(data.date)) + '</h2>' + (note ? '<p class="gb-note">' + esc(note) + '</p>' : '') +
+  el.innerHTML = hub + (who ? nextCard + '<div class="view-slot"></div>' : '') + '<h2>' + emo('missions') + 'Today · ' + esc(isoToDmy(data.date)) + '</h2>' + (note ? '<p class="gb-note">' + esc(note) + '</p>' : '') +
     (tasks.length ? '<ul class="gb-missions">' + tasks.map((t) => {
       const href = LINKS[t.action], isNext = t === next;
       const cls = t.status === 'done' ? ' is-done' : isNext ? ' is-next' : t.status === 'waiting' ? ' is-wait' : '';

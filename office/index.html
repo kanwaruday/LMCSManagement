@@ -33,26 +33,39 @@
       <section class="block" id="handovers"></section>
       <div id="appt-box"></div><!-- assets/appointments.js: my proposals -->
       <div id="hiring-banner" class="hiring-banner" hidden></div><div id="bus-banner" class="hiring-banner" hidden></div>
-      <section class="gb-section" aria-labelledby="tools-h">
-        <h2 id="tools-h">All tools</h2>
-        <div id="tools-list">
-          <a class="gb-go" href="daybook.html"><span>Day Book<small>Money in and out, entry by entry</small></span></a>
-          <a class="gb-go" href="report.html"><span>Daily Report<small>Footfall, feedback and cash for the day</small></span></a>
-          <a class="gb-go" href="deposits.html"><span>Deposits<small>Bank slips and the ERP total</small></span></a>
-          <a class="gb-go" href="close.html"><span>Close Day<small>Sign off the day once the deposits are in</small></span></a>
-          <a class="gb-go" href="../staff/add-employee.html?view=documents"><span>Staff Documents<small>Papers on file for your staff</small></span></a>
-          <a class="gb-go" href="transport.html"><span>Transport Papers<small>Vehicle documents and renewals</small></span></a>
-          <a class="gb-go" href="buses.html"><span><b id="buses-link">Live Buses</b><small>Fuel bills to check and where the buses are</small></span></a>
-          <a class="gb-go" href="hiring.html"><span><b id="hiring-link">Hiring</b><small>Interview slots and documents to chase</small></span></a>
+      <!-- 🏠 Home Base: the school office, its work in rooms (Uday, 28 Oct). Rooms hold the same links "All tools" did. -->
+      <section class="gb-base" aria-labelledby="base-h"><div class="gb-base-in">
+        <p class="gb-base-h" id="base-h"><span data-emoji="fees">School office</span></p>
+        <div class="gb-rooms" id="tools-list">
+          <details class="gb-room"><summary><span class="gb-room-e" aria-hidden="true" data-e="dayBook"></span><span class="gb-room-t">Daily money</span><span class="gb-room-s">Day Book, report, deposits, close</span></summary><div class="gb-room-b">
+            <a class="gb-go" href="daybook.html"><span>Day Book<small>Money in and out, entry by entry</small></span></a>
+            <a class="gb-go" href="report.html"><span>Daily Report<small>Footfall, feedback and cash for the day</small></span></a>
+            <a class="gb-go" href="deposits.html"><span>Deposits<small>Bank slips and the ERP total</small></span></a>
+            <a class="gb-go" href="close.html"><span>Close Day<small>Sign off the day once the deposits are in</small></span></a>
+          </div></details>
+          <details class="gb-room" id="room-setup"><summary><span class="gb-room-e" aria-hidden="true" data-e="startingData"></span><span class="gb-room-t">Setup</span><span class="gb-room-s">Starting data and accounts</span></summary><div class="gb-room-b">
+
+          </div></details>
+          <details class="gb-room"><summary><span class="gb-room-e" aria-hidden="true" data-e="bus"></span><span class="gb-room-t">Transport</span><span class="gb-room-s">Buses and their papers</span></summary><div class="gb-room-b">
+            <a class="gb-go" href="buses.html"><span><b id="buses-link">Live Buses</b><small>Fuel bills to check and where the buses are</small></span></a>
+            <a class="gb-go" href="transport.html"><span>Transport Papers<small>Vehicle documents and renewals</small></span></a>
+          </div></details>
+          <details class="gb-room"><summary><span class="gb-room-e" aria-hidden="true" data-e="hiring"></span><span class="gb-room-t">People</span><span class="gb-room-s">Hiring and staff papers</span></summary><div class="gb-room-b">
+            <a class="gb-go" href="hiring.html"><span><b id="hiring-link">Hiring</b><small>Interview slots and documents to chase</small></span></a>
+            <a class="gb-go" href="../staff/add-employee.html?view=documents"><span>Staff Documents<small>Papers on file for your staff</small></span></a>
+          </div></details>
         </div>
-      </section>
+      </div></section>
       </div>
+      <section id="world" aria-label="Your school's routes" hidden><div id="world-map"></div></section>
     </div>
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
   <script src="../assets/auth.js?v=9af9d1c7"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script src="../hiring/hiring-view.js?v=7389ceb1"></script>
+  <script src="../assets/game/emoji.js?v=73c82a00"></script>
+  <script src="../coordinator/route-map.js?v=f5e47aee"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script type="module">
     import { bootOffice } from './js/shell.js';
@@ -62,8 +75,10 @@
     import { canSeeAccounts, liveToken } from './js/accounts.js';
     import { startScope } from './js/starting-data.js';
     import { showSetupQuests } from './js/quests.js';
+    import { mountWorld } from './js/world.js';
     import { PDR_BACKEND_URL, COORD_BACKEND_URL, GAME_BACKEND_URL } from './js/config.js';
-    const tool = (href, title, line) => { const a = document.createElement('a'); a.className = 'gb-go'; a.href = href; a.innerHTML = '<span><b></b><small></small></span>'; a.querySelector('b').textContent = title; a.querySelector('small').textContent = line; document.getElementById('tools-list').append(a); };
+    const tool = (href, title, line) => { const a = document.createElement('a'); a.className = 'gb-go'; a.href = href; a.innerHTML = '<span><b></b><small></small></span>'; a.querySelector('b').textContent = title; a.querySelector('small').textContent = line; document.querySelector('#room-setup .gb-room-b').append(a); };
+    document.querySelectorAll('.gb-room-e[data-e]').forEach((x) => { x.textContent = window.LMCSEmoji ? LMCSEmoji.get(x.dataset.e) : ''; });
     bootOffice({ onReady: (session, api, outbox) => {
       if (canSeeAccounts(session)) { tool('accounts.html', 'Accounts', 'Accounts, vendors and transfers'); }
       if (startScope(session)) { tool('starting-data.html', 'Starting data', 'Confirm the figures we start from');
@@ -71,6 +86,8 @@
       try { showOfficeHiring(document.getElementById('hiring-link'), document.getElementById('hiring-banner'), (...a) => fetch(...a), PDR_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { showBusChecks(document.getElementById('buses-link'), document.getElementById('bus-banner'), (...a) => fetch(...a), COORD_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { window.LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: window.LMCS.getSession() || session }); } catch (e) { /* box is optional */ }
+      document.getElementById('room-setup').hidden = !document.querySelector('#room-setup .gb-go');
+      mountWorld(document.getElementById('app-root'), session, COORD_BACKEND_URL);
       showHandovers(document.getElementById('handovers'), api, outbox).catch(() => {});
       return showToday(document.getElementById('today'), session, api);
     } });
