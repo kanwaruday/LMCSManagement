@@ -252,17 +252,18 @@
 .gb-room-b { padding:0 10px 10px; }
 @media (min-width:960px) { .gb-rooms { grid-template-columns:repeat(4, minmax(0, 1fr)); } }
 
-/* the school building drawing (assets/game/school-building.js): an isometric SVG in a box that pans sideways on a phone */
-.sb-box { overflow-x:auto; margin:0 0 8px; padding:4px; background:#e7ecdf; border:1.5px solid var(--gb-line); border-radius:14px; overscroll-behavior-x:contain; }
+/* the school building drawing (assets/game/school-building.js): an isometric SVG in a box that pans sideways on a phone.
+   Look 1, isometric and Kingshot-like (Uday picked it for every school, 28 Oct): white walls, red roofs, a soft sky, the hillside. */
+.sb-box { overflow-x:auto; margin:0 0 8px; padding:4px; background:#dfeaf3; border:1.5px solid var(--gb-line); border-radius:14px; overscroll-behavior-x:contain; }
 .sb-box > .sb { min-width:600px; }
 .sb { display:block; width:100%; height:auto; }
-.sb-front { fill:#efe1cc; stroke:#8a5a00; stroke-width:1.2; }
-.sb-side { fill:#e2cfb3; stroke:#8a5a00; stroke-width:1.2; }
-.sb-roof { fill:var(--gb-low); stroke:#7a2b08; stroke-width:1.2; }
-.sb-floorline { fill:none; stroke:#8a5a00; stroke-width:1; }
-.sb-win { fill:#ffffff; stroke:var(--gb-muted); stroke-width:1; }
-.sb-ground { fill:#cfe3c0; stroke:#6b8f5a; stroke-width:1; }
-.sb-hill { fill:#a9bf9a; opacity:.55; }
+.sb-front { fill:#fbfaf7; stroke:#9aa1aa; stroke-width:1; }
+.sb-side { fill:#e3dfd6; stroke:#9aa1aa; stroke-width:1; }
+.sb-roof { fill:#c8323a; stroke:#8f1f26; stroke-width:1; }
+.sb-floorline { fill:none; stroke:#b9bec5; stroke-width:1; }
+.sb-win { fill:#eaf2fb; stroke:#7d8b9c; stroke-width:1; }
+.sb-ground { fill:#cfe3c0; stroke:#7e9f6c; stroke-width:1; }
+.sb-hill { fill:#9fbf95; opacity:.6; }
 .sb-room { cursor:pointer; }
 .sb-host .sb-win, .sb-host .sb-ground { stroke:var(--gb-gold); stroke-width:3; }
 .sb-room:focus { outline:none; }
