@@ -103,8 +103,9 @@ assert.strictEqual(tabs['Capture Runs'].length, 2, 'no new row');
 assert.strictEqual(tabs['Capture Runs'][1][8], 42); assert.strictEqual(tabs['Capture Runs'][1][5], '2026-10-28T07:15:00.000Z'); assert.strictEqual(tabs['Capture Runs'][1][12], 'closed');
 assert.strictEqual(cr({ runId: 'R2', reg: 'HP659511', kind: 'timelapse' }).success, true);
 // a sheet formula never reaches the sheet: times must be epoch ms or ISO, the status one of the phone's words
-assert.strictEqual(cr({ runId: 'R3', reg: 'HP659511', kind: 'timelapse', startedAt: '=IMAGE("https://x/")', endedAt: '+1', status: '=HYPERLINK("x")' }).success, true);
+assert.strictEqual(cr({ runId: 'R3', reg: 'HP659511', kind: 'timelapse', startedAt: '=IMAGE("https://x/")', endedAt: '+1', status: '=HYPERLINK("x")', capturedBy: '=a1&b1@x.com' }).success, true);
 assert.deepStrictEqual([tabs['Capture Runs'][3][4], tabs['Capture Runs'][3][5], tabs['Capture Runs'][3][12]], ['', '', 'open']);
+assert.ok(!/^[=+\-@]/.test(String(tabs['Capture Runs'][3][14])), 'Captured By never starts with a formula character');
 tabs['Capture Runs'].pop(); assert.strictEqual(tabs['Capture Runs'].length, 3, 'another runId is a new row');
 caller = { email: 'c1@lms.org.in', campusId: 'LMS1', roles: ['Coordinator'], role: 'Coordinator' };
 assert.match(cr({ runId: 'R5', reg: 'HP659511', kind: 'timelapse' }).error, /own campuses/, 'manifest is scoped like uploads');
