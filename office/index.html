@@ -27,6 +27,8 @@
         <a href="#" class="signout" id="signout-link">Sign out</a>
       </div>
       <p id="auth-notice" role="alert" hidden>Your sign-in has expired. Sign in again to send waiting entries.</p>
+      <section id="quests" hidden></section>
+      <div id="home">
       <section class="block" id="today"></section>
       <section class="block" id="handovers"></section>
       <div id="appt-box"></div><!-- assets/appointments.js: my proposals -->
@@ -44,6 +46,7 @@
           <a class="gb-go" href="hiring.html"><span><b id="hiring-link">Hiring</b><small>Interview slots and documents to chase</small></span></a>
         </div>
       </section>
+      </div>
     </div>
   </main>
   <footer class="site"><div class="wrap">LMCS Portal — internal management system for La Montessori Schools.</div></footer>
@@ -58,11 +61,13 @@
     import { showOfficeHiring } from './js/hiring.js';
     import { canSeeAccounts, liveToken } from './js/accounts.js';
     import { startScope } from './js/starting-data.js';
-    import { PDR_BACKEND_URL, COORD_BACKEND_URL } from './js/config.js';
+    import { showSetupQuests } from './js/quests.js';
+    import { PDR_BACKEND_URL, COORD_BACKEND_URL, GAME_BACKEND_URL } from './js/config.js';
     const tool = (href, title, line) => { const a = document.createElement('a'); a.className = 'gb-go'; a.href = href; a.innerHTML = '<span><b></b><small></small></span>'; a.querySelector('b').textContent = title; a.querySelector('small').textContent = line; document.getElementById('tools-list').append(a); };
     bootOffice({ onReady: (session, api, outbox) => {
       if (canSeeAccounts(session)) { tool('accounts.html', 'Accounts', 'Accounts, vendors and transfers'); }
-      if (startScope(session)) { tool('starting-data.html', 'Starting data', 'Confirm the figures we start from'); }
+      if (startScope(session)) { tool('starting-data.html', 'Starting data', 'Confirm the figures we start from');
+        try { showSetupQuests(document.getElementById('quests'), session, (...a) => fetch(...a), GAME_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: the home */ } }
       try { showOfficeHiring(document.getElementById('hiring-link'), document.getElementById('hiring-banner'), (...a) => fetch(...a), PDR_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { showBusChecks(document.getElementById('buses-link'), document.getElementById('bus-banner'), (...a) => fetch(...a), COORD_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { window.LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: window.LMCS.getSession() || session }); } catch (e) { /* box is optional */ }
