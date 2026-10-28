@@ -17,7 +17,7 @@
 //   for an unknown and a revoked token alike. runsDone = the bus's processed route timelapses (rows of 'Capture Stops' with a video:
 //   the Capture Runs Status column only ever says running/ended, the Mac's processed output is what lands in Capture Stops);
 //   runsNeeded is 1 (no capture plan carries a number yet). lastFill/lastOdometer come from the 'Fuel Fills' mirror
-//   (office-fuel-mirror.gs) and are null when it cannot be read. Last Seen is written at most once an hour.
+//   (office-fuel-mirror.gs) raised by the bus's pending 'Driver Fills' (driver-fuel.gs dflLast_), null when neither can be read. Last Seen is written at most once an hour.
 // capture: capAuth_ (transport-capture.gs) takes body.deviceToken in place of idToken: route timelapses of the linked bus only.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -141,19 +141,11 @@ function driverMe_(body) {
     if (String(sh.getRange(link.at, 1).getValue()) === link.linkId) sh.getRange(link.at, 11).setValue(new Date()); // rows moved by hand: skip
     cache.put(seen, '1', 3600);
   }
-  let runsDone = 0, lastFill = null, lastOdometer = null;
+  let runsDone = 0;
   try {
     runsDone = dlkRows_('Capture Stops').filter(function (r) { return tupNormReg_(r.reg) === link.reg && String(r.videoFileId || ''); }).length;
   } catch (e) { runsDone = 0; }
-  try { // never fail driverme on the fuel mirror
-    dlkRows_('Fuel Fills').forEach(function (f) {
-      if (tupNormReg_(f.reg) !== link.reg) return;
-      const day = f.date instanceof Date ? Utilities.formatDate(f.date, TUP_TZ_, 'yyyy-MM-dd') : String(f.date || '');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (lastFill && day < lastFill)) return;
-      lastFill = day;
-      if (String(f.odometer) !== '' && isFinite(Number(f.odometer))) lastOdometer = Number(f.odometer);
-    });
-  } catch (e) { lastFill = null; lastOdometer = null; }
+  const fuel = dflLast_(link.reg); // driver-fuel.gs: the Fuel Fills mirror and pending Driver Fills; never throws
   return { success: true, name: link.name, reg: link.reg, campus: link.campus, runsNeeded: DLK_RUNS_NEEDED_, runsDone: runsDone,
-    lastFill: lastFill, lastOdometer: lastOdometer };
+    lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer };
 }

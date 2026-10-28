@@ -37,7 +37,8 @@
       "staff-documents",
       "transport-uploads",
       "transport-capture",
-      "driver-link"
+      "driver-link",
+      "driver-fuel"
     ]
   },
   "payroll": {
