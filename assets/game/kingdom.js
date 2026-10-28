@@ -134,7 +134,36 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function gdSchoolLine(s) { return s.name + ': ' + s.in + ' of ' + s.people + ' in · ' + s.done + ' done · ' + s.pct + '%'; }
   function gdBadgeText(s) { return 'Game Day ' + s.pct + '% finished, level ' + s.level + ' of 5'; }
 
-  var api = { gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
+  // ── 📜 All quests (kingdomquests, game-kingdom.gs): pure helpers; the page below draws the list ──
+  var ROLE_LABEL = { FeeClerk: 'Fee Clerk' };
+  var QUEST_ORDER = ['', 'HES', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
+  // '' = a network quest (HQ); 'LMS3' -> 'LMS 3'
+  function questPlace(c) { return !c ? 'HQ' : c === 'HES' ? 'LMCS HQ' : String(c).replace(/^LMS(\d)$/, 'LMS $1'); }
+  // HQ (network) first, then LMCS HQ, then LMS 1-6, then anything else; rows keep the server's order inside a school
+  function questGroups(rows) {
+    var by = {}, keys = [], rank = function (c) { var i = QUEST_ORDER.indexOf(c); return i === -1 ? QUEST_ORDER.length : i; };
+    (rows || []).forEach(function (r) { var c = r.campus || ''; if (!by[c]) { by[c] = []; keys.push(c); } by[c].push(r); });
+    keys.sort(function (a, b) { return rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0); });
+    return keys.map(function (c) { return { campus: c, name: c ? questPlace(c) : 'HQ · every school', rows: by[c] }; });
+  }
+  function questFilter(rows, f) { return (rows || []).filter(function (r) { return f === 'open' ? r.state === 'open' : f === 'stuck' ? !!r.stuck : true; }); }
+  function questHolder(r) { return r.owner ? (r.owner.name || r.owner.email) : 'role: ' + (r.roles || []).map(function (x) { return ROLE_LABEL[x] || x; }).join(' or '); }
+  function questAge(r) {
+    var n = r.ageDays;
+    if (n === null || n === undefined || !isFinite(n)) return r.state === 'done' ? '' : 'No changes yet';
+    return n === 0 ? 'Changed today' : 'Last change ' + n + (n === 1 ? ' day' : ' days') + ' ago';
+  }
+  // the kind, no-guilt line the Owner pastes into WhatsApp (the portal sends nothing)
+  function nudgeText(r) {
+    var first = r.owner ? String(r.owner.name || '').trim().split(/\s+/)[0] : '';
+    return 'Hi' + (first ? ' ' + first + ' ji' : '') + ', when you get a moment, could you look at \'' + r.title + '\' for ' + (r.campus ? questPlace(r.campus) : 'all our schools') + '? Thank you!';
+  }
+  function reassignText(r, person) {
+    return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Until now, whoever holds the role had it.');
+  }
+
+  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText,
+    gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
     nextTier: nextTier, onlySoon: onlySoon, nextAction: nextAction, nextText: nextText, levelSnapshot: levelSnapshot, levelUps: levelUps, levelUpText: levelUpText,
@@ -299,6 +328,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       h('div', { class: 'kg-crest' }, [svgUse('darbar', 'kg-crest-i'), h('div', {}, [h(S.panels ? 'h2' : 'h1', {}, [d.role === 'Owner' ? "Owner's Kingdom" : 'Your school']),
         h('div', { class: 'kg-sub' }, ['Kingdom level ' + (Number(d.kingdom && d.kingdom.level) || 0) + ' · ' + n + (n === 1 ? ' base' : ' bases')])])]),
       h('div', { class: 'kg-topacts' }, [
+        d.role === 'Owner' ? h('button', { type: 'button', class: 'kg-btn kg-questsbtn', onclick: function (e) { openQuests(e.currentTarget); } }, ['📜 All quests']) : null,
         h('button', { type: 'button', class: 'kg-btn kg-tourbtn', onclick: function () { runTour(true); } }, ['Show me around']),
         h('button', { type: 'button', class: 'kg-btn kg-ask', onclick: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); } }, [buddyImg('avatar-winter-formal'), 'Ask Buddy'])])]);
   }
@@ -373,7 +403,8 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var dar = map.querySelector('.kg-darbar');
     if (keepX !== null) box.scrollLeft = keepX;
     else if (dar && box.scrollWidth > box.clientWidth) box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2);
-    runTour(false);
+    if (!S.questsLinked && location.hash === '#quests' && d.role === 'Owner') { S.questsLinked = true; openQuests(null); } // HQ Home's link
+    else runTour(false);
   }
 
   function load() {
@@ -491,6 +522,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       var msg = ctl.done(d);
       closeLayer(); toast(msg);
       return load().then(function () {
+        if (ctl.after) return ctl.after(); // e.g. back to the All quests list
         var h1 = S.el && S.el.querySelector('h1'); // the opener is gone after a re-render: focus the page heading
         if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus(); }
       });
@@ -581,6 +613,71 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (S.panels) S.panels.appendChild(panel('Requests tray (' + cards.length + ')', 'kg-traypanel', tray, cards.length > 0, 'requests'));
     else S.el.appendChild(tray);
   };
+
+  // ═══ 📜 All quests (Owner only; the server refuses anyone else before reading anything) ═══
+  // Grouped by school, filter chips All / Open / Stuck. Reassign = pick, then a confirm sheet, then kingdomassign (the same write as the
+  // map's). Nudge copies a line for WhatsApp; nothing is sent. Every result is read out through the list's live region.
+  var Q = { filter: 'all' };
+  function openQuests(opener) {
+    var live = h('p', { class: 'kg-qlive', role: 'status' }, []) // role=status is a polite live region;
+    var list = h('div', { class: 'kg-ql', 'aria-busy': 'true' }, [h('p', { class: 'kg-quiet' }, ['Getting every quest…'])]);
+    var F = [['all', 'All'], ['open', 'Open'], ['stuck', 'Stuck']], data = null;
+    var chips = h('div', { class: 'kg-chips', role: 'group', 'aria-label': 'Show' }, F.map(function (f) {
+      return h('button', { type: 'button', class: 'kg-chip', 'data-f': f[0], 'aria-pressed': String(Q.filter === f[0]), onclick: function () { Q.filter = f[0]; draw(); } }, [f[1]]);
+    }));
+    function draw() {
+      [].forEach.call(chips.children, function (c, i) {
+        c.setAttribute('aria-pressed', String(Q.filter === F[i][0]));
+        c.textContent = F[i][1] + (data ? ' (' + questFilter(data.rows, F[i][0]).length + ')' : '');
+      });
+      if (!data) return;
+      var rows = questFilter(data.rows, Q.filter);
+      list.textContent = '';
+      if ((data.sourcesDown || []).length) list.appendChild(h('p', { class: 'kg-quiet' }, ["Some quests couldn't be checked just now, so they show as “couldn't check”. Try again in a few minutes."]));
+      if (!rows.length) list.appendChild(h('p', { class: 'kg-empty' }, [Q.filter === 'stuck' ? 'Nothing is stuck. Every open quest has moved in the last ' + data.stuckDays + ' days.' : Q.filter === 'open' ? 'No open quests. Shabash.' : 'No setup quests are running yet.']));
+      questGroups(rows).forEach(function (g) {
+        list.appendChild(h('section', { class: 'kg-qg' }, [h('h3', {}, [g.name]), h('ul', { class: 'kg-qrows' }, g.rows.map(questRow))]));
+      });
+    }
+    function questRow(r) {
+      var state = r.state === 'done' ? 'Done' : r.state === 'unknown' ? "Couldn't check" : r.progress ? r.progress.done + ' of ' + r.progress.total + ' done' : 'Open';
+      var people = (r.assignees || []).filter(function (p) { return !r.owner || p.email !== r.owner.email; });
+      return h('li', { class: 'kg-qr' + (r.stuck ? ' kg-qstuck' : '') }, [
+        h('div', { class: 'kg-qt' }, [r.stuck ? h('b', { class: 'kg-tag' }, ['Stuck']) : null, h('b', {}, [(r.state === 'done' ? '✓ ' : '') + r.title])]),
+        h('small', { class: 'kg-qm' }, [[state, questHolder(r), questAge(r)].filter(Boolean).join(' · ')]),
+        h('div', { class: 'kg-acts-row' }, [
+          goLink(r.go, 'Go', 'kg-btn kg-act'),
+          r.assignable && people.length ? h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openQuestPick(r, people, e.currentTarget); } }, ['Reassign']) : null,
+          r.state !== 'done' ? h('button', { type: 'button', class: 'kg-btn kg-act', 'aria-label': 'Nudge: copy a message about ' + r.title + ' at ' + questPlace(r.campus), onclick: function () { nudge(r, live); } }, ['Nudge']) : null])]);
+    }
+    var dlg = openLayer('📜 All quests', 'Every setup quest, school by school', [chips, live, list], opener);
+    var t = dlg.querySelector('h2'); if (t) t.focus();
+    var url = S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=kingdomquests&idToken=' + encodeURIComponent((S.session || {}).idToken || '');
+    return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.success || !Array.isArray(d.rows)) throw new Error((d && d.error) || '');
+      data = d; list.removeAttribute('aria-busy'); draw();
+      live.textContent = questFilter(d.rows, 'open').length + ' open, ' + questFilter(d.rows, 'stuck').length + ' stuck.';
+    }).catch(function (e) {
+      list.removeAttribute('aria-busy'); list.textContent = '';
+      list.appendChild(h('p', { class: 'kg-err', role: 'alert' }, [(e && e.message) || "Couldn't load the quests. Check the connection, then try again."]));
+    });
+  }
+  function nudge(r, live) {
+    var text = nudgeText(r), clip = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'));
+    clip.then(function () { live.textContent = 'Copied. Paste it in WhatsApp: ' + text; }, function () { live.textContent = 'Copy this into WhatsApp: ' + text; });
+  }
+  function openQuestPick(r, people, opener) {
+    sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Whoever holds the role has it.'),
+      [radios('kg-qwho', people, '', 'Who should have it now?')], 'Next', function (form, ctl) {
+        var who = picked(form, 'kg-qwho'), person = people.filter(function (p) { return p.email === who; })[0];
+        if (!person) { ctl.err.textContent = 'Pick a person first.'; return; }
+        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), [], 'Confirm', function (f2, ctl2) {
+          ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
+          ctl2.after = function () { return openQuests(null); };
+          send(assignBody(r, r.campus, person.email, ''), ctl2);
+        }, null);
+      }, opener);
+  }
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
   api.openBase = function (id) { openBase(id); }; api.close = closeLayer; api.state = S;

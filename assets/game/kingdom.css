@@ -224,3 +224,14 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
   border:1.5px solid var(--line); border-radius:12px; font-size:14px; }
 .kg-gdnet .gb-bar { flex-basis:100%; }
 .kg-gd-warn { margin:0; padding:8px 10px; border-radius:10px; background:var(--gb-warn-soft); color:var(--gb-warn); font-size:14px; font-weight:700; }
+/* 📜 All quests (Owner): chips, school groups, one row per quest */
+.kg-chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 8px; }
+.kg-chip { min-height:44px; min-width:44px; padding:6px 14px; border-radius:999px; border:1.5px solid var(--line); background:var(--panel); color:var(--ink); font:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+.kg-chip[aria-pressed="true"] { background:var(--slate); border-color:var(--slate); color:#fff; }
+.kg-qlive { margin:0 0 6px; font-size:14px; overflow-wrap:anywhere; }
+.kg-qlive:empty { display:none; }
+.kg-qg h3 { margin:14px 0 4px; font-size:15px; }
+.kg-qrows { list-style:none; margin:0; padding:0; }
+.kg-qr { padding:8px 0; border-top:1px solid var(--line); font-size:14px; overflow-wrap:anywhere; }
+.kg-qstuck { border-left:4px solid var(--red); padding-left:8px; }
+.kg-qm { display:block; color:var(--muted, #555); margin:2px 0; }

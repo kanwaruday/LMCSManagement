@@ -116,6 +116,7 @@ function gameConfigDefaults_() {
       heads: [],
       levelAt: [0, 2, 5, 9, 14, 20, 27, 35, 44, 54],
       rights: { allocate: { roles: ['Owner'], emails: [] } },
+      stuckDays: 7, // 📜 All quests (kingdomquests): an open setup quest with no progress or assignment change for this many days is "stuck" (Owner only)
       followupDueDays: 7, cardWindowDays: 60, cardsMax: 30, // approved requests waiting for a follow-up: only those decided in the last cardWindowDays, at most cardsMax
       buildings: [
         { id: 'darbar', name: 'HQ', where: 'darbar', tiers: [t('Set up the game', 'setup:game'), t('Who holds each role', 'cq:o2'), t('Approval limits', 'soon'), t('Season goals', 'soon'), t('Ask Buddy on', 'buddy:desk')] },

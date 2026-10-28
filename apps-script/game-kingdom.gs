@@ -361,7 +361,8 @@ function kingdomAssign_(caller, body) {
         return { success: true, owner: person, unchanged: true };
       }
       gameAppendText_(cqEnsureTab_(gameBook_()), [['_owner:' + def.id, scopeKey, '_quest', 'owner', clear ? '' : person.email, clear ? 'cleared' : 'assigned', note, at, by]]);
-      kingdomAudit_(row('done', 'ok', '', clear ? cur.email : undefined), true); // a clear records whom it took the step from
+      // a clear records whom it took the step from (Assignee); a reassign records the previous holder in Code: from -> to
+      kingdomAudit_(row('done', 'ok', !clear && cur ? 'reassigned_from:' + cur.email : '', clear ? cur.email : undefined), true);
       CQ_MEMO = null;
       return { success: true, owner: person };
     });
@@ -428,5 +429,67 @@ function kingdomAllocate_(caller, body) {
   }
 }
 
+// ═══ 📜 All quests: action `kingdomquests` (GET, Owner only, pure read). Every active setup (cq) quest × the scope it runs in (each
+// campus it covers, or the network), plus each school's Day Book setup quest, as flat rows for the Owner's list. Reassigning goes through
+// kingdomassign (POST); the Owner never completes a quest here. A source that can't load leaves its rows `unknown` and is named in
+// sourcesDown; it never fails the whole list. Names and emails appear only in this Owner-only response. Self quests are per person: not listed.
+// ═══
+
+// '<questId>|<scopeKey>' -> the latest Setup Data `at` (ms) for that quest and scope, an owner row (`_owner:<quest>`) included
+function kingdomLastTouch_(setupRows) {
+  const out = {};
+  (setupRows || []).forEach(function (r) {
+    const q = String(r.quest), key = (q.indexOf('_owner:') === 0 ? q.slice(7) : q) + '|' + r.scope, at = Date.parse(r.at);
+    if (isFinite(at) && !(out[key] >= at)) out[key] = at;
+  });
+  return out;
+}
+
+function kingdomQuests_(caller, params) {
+  if (!caller || (caller.roles || []).indexOf('Owner') === -1) return KINGDOM_NOT_YOURS; // before anything is read
+  try {
+    const cfg = cqLoadCfg_(), cfgK = kingdomCfg_(cfg), now = gameNow_(), nowMs = now.getTime(), sourcesDown = [];
+    const setupRows = cqRead_(), owners = kingdomOwners_(setupRows), touched = kingdomLastTouch_(setupRows), allow = kingdomAllowRows_();
+    const names = kingdomNames_(Object.keys(owners).map(function (k) { return owners[k].email; }), allow);
+    const canAssign = kingdomCan_(caller, 'allocate', cfg), ctx = { caller: caller, cfg: cfg, now: now, setupRows: setupRows, views: {}, defs: null };
+    const ageOf = function (ms) { return ms ? Math.max(0, Math.floor((nowMs - ms) / 86400000)) : null; };
+    const rows = [];
+    let cqDown = false;
+    cqDefs_(cfg, false).forEach(function (def) {
+      if (def.scope === 'self') return;
+      const scopes = def.scope === 'network' ? [{ scopeKey: 'network', campus: null }] : def.campuses.map(function (c) { return { scopeKey: 'campus:' + c, campus: c }; });
+      scopes.forEach(function (sc) {
+        const view = kingdomCqView_(ctx, def, sc), key = def.id + '|' + sc.scopeKey, o = owners[key];
+        const state = !view || view.prefillDown ? 'unknown' : view.ring.done ? 'done' : 'open';
+        if (state === 'unknown') cqDown = true;
+        const row = { questId: def.id, title: def.title, roles: def.roles.slice(), campus: sc.campus || '', state: state,
+          progress: view && view.itemsTotal ? { done: view.itemsDone, total: view.itemsTotal } : null,
+          owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: ageOf(touched[key]),
+          go: cqGo_(view || { id: def.id, campus: sc.campus }), stuck: false, assignable: false };
+        // ponytail: a quest nobody has touched yet has no age, so it is never "stuck"; a start date per quest would give it one
+        row.stuck = state === 'open' && row.ageDays !== null && row.ageDays >= cfgK.stuckDays;
+        if (canAssign && state !== 'done') { row.assignable = true; row.assignees = kingdomAssignees_(allow, def, sc.campus || '', cfg); }
+        rows.push(row);
+      });
+    });
+    if (cqDown) sourcesDown.push('setup');
+    let daybook = null;
+    try { daybook = daybookProgress_(caller); } catch (err) { console.error('kingdomquests office: ' + (err && err.message)); sourcesDown.push('office'); }
+    GAME_FALLBACK_CAMPUSES.forEach(function (c) {
+      const q = daybook ? daybookSetupQuest_(daybook, c) : null;
+      if (daybook && !q) return; // nothing to count at that school
+      const next = q && (q.steps.filter(function (s) { return !s.done; })[0] || q.steps[0]);
+      rows.push({ questId: 'daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'], campus: c, state: !q ? 'unknown' : q.complete ? 'done' : 'open',
+        progress: q ? { done: q.steps.filter(function (s) { return s.done; }).length, total: q.steps.length } : null,
+        owner: null, ownerSince: null, ageDays: null, go: next ? next.go : daybookGo_(c, 'cash'), stuck: false, assignable: false });
+    });
+    return { success: true, day: gameDayKey_(now), stuckDays: cfgK.stuckDays, rows: rows, sourcesDown: sourcesDown };
+  } catch (err) {
+    console.error('kingdomquests: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
+    return { success: false, code: 'KINGDOM_ERROR', error: 'The quest list could not load. Try again.' };
+  }
+}
+
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_ACTIONS.gamekingdom = kingdomGet_;
+GAME_MODULE_ACTIONS.kingdomquests = kingdomQuests_;

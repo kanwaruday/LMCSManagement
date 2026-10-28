@@ -145,4 +145,29 @@ assert.ok(/!L\.opener\.isConnected/.test(src), 'M8: focus returns to the base bu
 assert.ok(/h\('legend'/.test(src), 'M10: radio groups have a legend');
 assert.ok(!/aria-live/.test(src) && !/aria-live/.test(read('owner/kingdom.html')), 'M10: no live region on the root or advisor');
 assert.ok(/\.kg-go \{[^}]*min-width:44px/.test(read('assets/game/kingdom.css')), 'M10: .kg-go is 44px both ways');
+// 📜 All quests: pure helpers
+const QR = (o) => Object.assign({ questId: 'p1', title: 'Bell timings', roles: ['Principal'], campus: 'LMS3', state: 'open', ageDays: 2, stuck: false, owner: null }, o);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questGroups([QR({ campus: 'LMS4' }), QR({ campus: '' }), QR({ campus: 'LMS1' }), QR({ campus: 'LMS4', title: 'b' }), QR({ campus: 'HES' })]).map((g) => [g.campus, g.name, g.rows.length]))),
+  [['', 'HQ · every school', 1], ['HES', 'LMCS HQ', 1], ['LMS1', 'LMS 1', 1], ['LMS4', 'LMS 4', 2]], 'HQ first, then LMS 1-6');
+const rowsQ = [QR({ state: 'done' }), QR({}), QR({ stuck: true }), QR({ state: 'unknown' })];
+assert.deepStrictEqual([K.questFilter(rowsQ, 'all').length, K.questFilter(rowsQ, 'open').length, K.questFilter(rowsQ, 'stuck').length], [4, 2, 1]);
+assert.strictEqual(K.questHolder(QR({})), 'role: Principal');
+assert.strictEqual(K.questHolder(QR({ roles: ['FeeClerk'] })), 'role: Fee Clerk');
+assert.strictEqual(K.questHolder(QR({ roles: ['Principal', 'Owner'] })), 'role: Principal or Owner');
+assert.strictEqual(K.questHolder(QR({ owner: { email: 'r@x.org', name: 'Ritika Sharma' } })), 'Ritika Sharma');
+assert.strictEqual(K.questAge(QR({ ageDays: 0 })), 'Changed today');
+assert.strictEqual(K.questAge(QR({ ageDays: 1 })), 'Last change 1 day ago');
+assert.strictEqual(K.questAge(QR({ ageDays: 9 })), 'Last change 9 days ago');
+assert.strictEqual(K.questAge(QR({ ageDays: null })), 'No changes yet');
+assert.strictEqual(K.questAge(QR({ ageDays: null, state: 'done' })), '');
+assert.strictEqual(K.nudgeText(QR({ title: 'Starting balances', owner: { email: 'r@x.org', name: 'Ritika Sharma' } })),
+  "Hi Ritika ji, when you get a moment, could you look at 'Starting balances' for LMS 3? Thank you!", 'the brief\'s line');
+assert.strictEqual(K.nudgeText(QR({ campus: '' })), "Hi, when you get a moment, could you look at 'Bell timings' for all our schools? Thank you!");
+assert.strictEqual(K.reassignText(QR({ owner: { email: 'z@x.org', name: 'Zed' } }), { email: 'y@x.org', name: 'Yas' }), "Give 'Bell timings' at LMS 3 to Yas? Zed had it.");
+assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Until now, whoever holds the role had it.");
+assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
+// 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies
+assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');
+assert.ok(/'Confirm', function \(f2, ctl2\)/.test(src) && /send\(assignBody\(r, r\.campus, person\.email, ''\), ctl2\)/.test(src), 'reassign: confirm sheet, then kingdomassign');
+assert.ok(/navigator\.clipboard\.writeText\(text\)/.test(src), 'nudge copies to the clipboard');
 console.log('kingdom js: all passed');
