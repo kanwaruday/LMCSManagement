@@ -26,6 +26,13 @@
 .viewas-active button:focus-visible{outline-color:#ffd54a}
 .streak-pill{margin:0 0 10px;font-size:14px;font-weight:700}
 .tools-h{margin-top:16px}
+.classes{margin:16px 0 0}
+.classes .gb-grid{margin:0}
+.cls-step{border-top:1px solid var(--gb-line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.cls-step h4{margin:0;font-size:15px}
+.cls-step p{margin:0}
+.cls-step .gb-pill{align-self:flex-start}
+.cls-plan{background:var(--gb-panel);border-radius:10px;padding:8px 10px;overflow-wrap:anywhere}
 .sec-back{margin:0 0 8px -14px}
 .denied{text-align:center;padding:60px 20px;color:var(--gray)}
 .denied .icon{font-size:38px;margin-bottom:10px}
@@ -176,6 +183,11 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
       <div class="tab-panel active" id="panel-home">
         <div class="gb-next-slot"></div>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
+        <section class="classes" id="classes" aria-labelledby="classesHead" data-teacher-only hidden>
+          <h2 class="gb-h2" id="classesHead" data-emoji="school">My classes</h2>
+          <p class="gb-muted">Classwork and homework stay in the ERP app for now. Tracking here is coming soon.</p>
+          <div id="classesBody"><div class="gb-loading" role="status" aria-label="Loading your classes"><i></i><i></i><i></i></div></div>
+        </section>
         <h2 class="gb-h2 tools-h" id="toolsHead">Your tools</h2>
         <ul class="gb-list" aria-labelledby="toolsHead">
           <li><a class="gb-go" href="#requests" aria-label="Go: My Requests" aria-describedby="homeReqSub"><span>My Requests<small id="homeReqSub">Leave &amp; other approvals</small></span></a></li>
@@ -443,6 +455,50 @@ function route_() {
   if (currentTab !== 'home') goTab('home');
   const panel = h && document.getElementById(h);
   if (panel && panel.classList.contains('gb-panel')) panel.open = true;
+}
+
+// ── MY CLASSES — the game backend's teacherclasses (the signed-in teacher's own; the game has no view-as) ──
+// Placeholders (Uday, 28 Oct): classwork and homework stay in the ERP app (CyberSchoolManager), so nothing here is entered, ticked or counted
+// as done. One card per class × subject with two steps; the state is always a neutral "Tracking coming soon". Counts are by upload day.
+const CLS_WAY_IN = 'Open the ERP app → Classwork/Homework'; // no known deep link: words only
+// D = the school days the window really holds (shorter across a long break), never assumed to be 21
+function classesLine_(c) {
+  const n = c.last21.logged, of = c.last21.of, D = c.last21.days;
+  if (!D) return 'No school days to count yet';
+  if (!of) return 'Not timetabled in the last ' + D + ' school day' + (D === 1 ? '' : 's');
+  if (of === D) return 'Uploaded on ' + n + ' of the last ' + D + ' school day' + (D === 1 ? '' : 's') + ' (by upload day)';
+  return 'Uploaded on ' + n + ' of the ' + of + ' school day' + (of === 1 ? '' : 's') + ' it was due in the last ' + D + ' (by upload day)';
+}
+function classesStep_(title, emoji, lines) {
+  return '<div class="cls-step"><h4' + (emoji ? ' data-emoji="' + emoji + '"' : '') + '>' + esc_(title) + '</h4>' + lines.join('') +
+    '<p class="gb-hint">' + esc_(CLS_WAY_IN) + '</p><span class="gb-pill" data-emoji="waiting">Tracking coming soon</span></div>';
+}
+function renderClasses_(res) {
+  const body = document.getElementById('classesBody');
+  if (!res || res.success !== true) { body.innerHTML = '<div class="gb-alert gb-alert-err" role="alert"><p>Couldn’t load your classes just now. Please try again later.</p></div>'; return; }
+  const list = (res.classes || []).map(function (c, i) { return { c: c, i: i }; })
+    .sort(function (a, b) { return (b.c.scheduledToday - a.c.scheduledToday) || a.i - b.i; }).map(function (x) { return x.c; }); // today's classes first
+  if (!list.length) { body.innerHTML = '<p class="gb-empty">' + (res.loading ? 'Your classes are still being gathered. Check back in a few minutes.' : 'No classes on file for you yet.') + '</p>'; return; }
+  body.innerHTML = '<ul class="gb-grid">' + list.map(function (c) {
+    const p = c.yesterdayPlan, steps = [];
+    if (c.periodsTomorrow) steps.push(classesStep_('Plan tomorrow', 'homework', ['<p>Enter tomorrow’s classwork as the Daily Plan.</p>']));
+    steps.push(classesStep_('Today’s homework', '', [
+      p ? '<p data-emoji="curriculum">Yesterday’s plan</p><p class="cls-plan">' + esc_([p.book, p.chapter].filter(Boolean).join(' · ')) + (p.desc ? '<br>' + esc_(p.desc) : '') + '</p>'
+        : '<p class="gb-muted">No classwork was uploaded on the last school day.</p>',
+      '<p>Check today’s plan, then add today’s homework in the ERP.</p>']));
+    return '<li class="gb-quest"><span class="gb-quest-k">' + (c.scheduledToday ? 'On your timetable today' : 'Not on your timetable today') + '</span>' +
+      '<h3>' + esc_(c.cls + ' ' + c.subj) + '</h3>' + steps.join('') + '<p class="gb-muted">' + esc_(classesLine_(c)) + '</p></li>';
+  }).join('') + '</ul>';
+  if (typeof LMCSEmoji !== 'undefined') LMCSEmoji.decorate(body);
+}
+// My classes are the signed-in teacher's own: hidden while a view-as target is on screen
+let classesOn_ = false;
+function showClasses_() { document.getElementById('classes').hidden = !classesOn_ || !!VIEW_AS_CODE; }
+function loadClasses_() {
+  if (!GAME_BACKEND_URL) return;
+  classesOn_ = true; showClasses_();
+  fetch(GAME_BACKEND_URL + '?action=teacherclasses&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })
+    .then(function (r) { return r.json(); }).then(renderClasses_).catch(function () { renderClasses_(null); });
 }
 
 // ── the game bar: it opens the home where the person's own Today lives. Staff have none, so no bar.
@@ -1007,6 +1063,7 @@ async function renderViewAsBar_() {
   if (!scope) return;
   const bar = document.getElementById('viewAsBar');
   bar.style.display = 'block';
+  showClasses_();
   const roster = await getViewAsRoster_();
   const active = VIEW_AS_CODE ? roster.filter(function (e) { return e.employeeCode === VIEW_AS_CODE; })[0] : null;
   const datalistHtml = roster.map(function (e) { return '<option value="' + esc_(viewAsOptionLabel_(e)) + '">'; }).join('');
@@ -1103,6 +1160,7 @@ function init() {
   loadTags();
   loadTimetable_();
   loadRank_();
+  if (LMCS.hasRole(SESSION, 'Teacher')) loadClasses_(); // the game answers a Teacher only; a Principal / Coordinator / Owner without it sees no section
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
   // A Principal, Coordinator or Owner has their panel on their own home: here it would cover the bottom nav.
   var gameOwnHome = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(SESSION, r); });
