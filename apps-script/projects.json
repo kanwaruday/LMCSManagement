@@ -64,6 +64,7 @@
       "coordinator-transport-gps",
       "coordinator-recommend",
       "coordinator-principal",
+      "coordinator-world",
       "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js"
     ]
   },
