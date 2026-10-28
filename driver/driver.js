@@ -33,6 +33,7 @@
   const live = !DEMO && (() => {
     const token = takeToken();
     return !token ? null : {
+      token, // for the route World (driverroute); never shown or logged
       load: async () => {
         let r;
         try { r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: token }) })).text()); }
@@ -310,6 +311,13 @@
   if (!api) { stop('यह फ़ोन जुड़ा नहीं है', 'फ़ी क्लर्क से ड्राइवर का QR कोड माँगें · This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).'); return; }
   if (api === live) { live.flush(); window.addEventListener('online', live.flush); } // fills saved on this phone go now
   $('demo').hidden = !DEMO;
+  // the driver's World: their own bus's route on a map, loaded the first time the panel opens (it costs data and a map)
+  $('pRoute').addEventListener('toggle', () => {
+    if (!$('pRoute').open || $('routeMap').dataset.on) return;
+    $('routeMap').dataset.on = '1';
+    if (api !== live) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
+    LMCSRouteMap.mount($('routeMap'), { backendUrl: ROSTER_URL, driverToken: live.token, mode: 'city' });
+  });
   const cached = () => { try { return JSON.parse(localStorage.getItem(BUS_KEY) || 'null'); } catch (e) { return null; } };
   api.load().then((bus) => { S.bus = bus; route(); }, (e) => e.offline && cached()
     ? (S.bus = cached(), route()) // no signal: work from the last answer; the server still checks the link when the fill is sent
