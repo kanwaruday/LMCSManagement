@@ -69,9 +69,22 @@ var DriverLogic = (function () {
     return routeNext ? [route, fuel] : [fuel, route];
   }
 
+  // a chosen file's problem ({type, size}), or ''. The server checks the bytes again with the same limits (apps-script/driver-fuel.gs).
+  var BILL_MAX = 3 * 1024 * 1024, VIDEO_MAX = 25 * 1024 * 1024, VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/3gpp'];
+  function fileError(id, f) {
+    if (id === 'video') return VIDEO_TYPES.indexOf(f.type) === -1 ? 'Choose a video file (MP4, MOV or 3GP)'
+      : f.size > VIDEO_MAX ? 'This video is larger than 25 MB. Record a shorter one (10–20 seconds).' : '';
+    return !/^image\//.test(f.type || '') ? 'Take a photo of the bill' : f.size > BILL_MAX ? 'This photo is larger than 3 MB. Take it again.' : '';
+  }
+
+  // what to do with a queued fill after a send: 'sent' (the server answered success: drop it from the phone), 'refused' (the server
+  // answered no: tell the driver), 'retry' (no answer, a timeout or an HTML error page: keep it and send again later)
+  function sendOutcome(r) { return r && typeof r === 'object' ? (r.success ? 'sent' : 'refused') : 'retry'; }
+
   // the device token in a link's fragment (#k=<64 hex>), or '' for anything else
   function tokenFromHash(hash) { var m = /^#?k=([a-f0-9]{64})$/.exec(hash || ''); return m ? m[1] : ''; }
 
-  return { FUEL_FIELDS: FUEL_FIELDS, checkFill: checkFill, sendLabel: sendLabel, missions: missions, tokenFromHash: tokenFromHash };
+  return { FUEL_FIELDS: FUEL_FIELDS, checkFill: checkFill, sendLabel: sendLabel, missions: missions, tokenFromHash: tokenFromHash,
+    fileError: fileError, sendOutcome: sendOutcome };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = DriverLogic;

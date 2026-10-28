@@ -214,6 +214,7 @@ function doPost(e) {
     if (body.action === 'driverlinkrevoke') return staffJsonOut_(driverLinkRevoke_(body));
     if (body.action === 'driverlinklist') return staffJsonOut_(driverLinkList_(body));
     if (body.action === 'driverme') return staffJsonOut_(driverMe_(body)); // a linked driver phone, deviceToken
+    if (body.action === 'driverfuel') return staffJsonOut_(driverFuel_(body)); // driver-fuel.gs, deviceToken
     return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
   } catch (err) {
     return staffJsonOut_({ success: false, error: err.message });
