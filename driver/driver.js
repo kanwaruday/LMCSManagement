@@ -130,9 +130,9 @@
   const routeHref = () => '../coordinator/transport/capture.html?' + (api === live ? 'driver=1&' : '') + 'mode=timelapse&reg=' + encodeURIComponent(S.bus.reg.replace(/\s/g, ''));
   // the bottom of the screen: the game bar, or in a task the action bar with the one red button (never both)
   const bar = (html) => { $('barIn').innerHTML = html; $('bar').hidden = !html; $('rail').hidden = !!html; document.body.classList.toggle('dr-task', !!html); };
-  // the game's emoji, one per concept on every page (assets/game/emoji.js); the few concepts it has no key for yet stay typed here
+  // the game's emoji, one per concept on every page (assets/game/emoji.js)
   const E = (k) => LMCSEmoji.get(k);
-  const STEP_E = { litres: 'fuel', odometer: 'bus' }; // the pump video and the bill wait for their own keys
+  const STEP_E = { video: 'pumpVideo', bill: 'bill', litres: 'fuel', odometer: 'bus' };
   const svg = (k) => `<span class="gb-rail-e" aria-hidden="true">${E(k)}</span>`; // the bar's emoji, as rail.js draws them
   // a driver's game bar: Missions (home, with what is left), Rallies and Events (soon), Buddy (the help panel). No Quests: a driver has none.
   function rail(left) {
@@ -173,7 +173,7 @@
   function showWaiting() {
     let refused = [];
     try { refused = JSON.parse(localStorage.getItem(REFUSED_KEY) || '[]'); localStorage.removeItem(REFUSED_KEY); } catch (e) { /* none */ }
-    $('refused').innerHTML = refused.map((x) => `<span aria-hidden="true">⚠️</span> ${esc(x.litres)} L वाला डीज़ल ऑफिस ने नहीं लिया, दोबारा भरें · The office did not take the ${esc(x.litres)} L fill: ${esc(hiMsg(x.why))} Log it again.`).join('<br>');
+    $('refused').innerHTML = refused.map((x) => `<span aria-hidden="true">${E('refused')}</span> ${esc(x.litres)} L वाला डीज़ल ऑफिस ने नहीं लिया, दोबारा भरें · The office did not take the ${esc(x.litres)} L fill: ${esc(hiMsg(x.why))} Log it again.`).join('<br>');
     if (!api.waiting) return;
     api.waiting().then((n) => {
       $('waiting').innerHTML = n ? `<span aria-hidden="true">${E('waiting')}</span> ${n} डीज़ल फ़ोन में रखा है, नेटवर्क आने पर अपने आप जाएगा · ${n} fill${n > 1 ? 's' : ''} waiting for signal ` +
@@ -199,7 +199,7 @@
       const cam = `<input type="file" id="cam" data-id="${st.id}" accept="${acc}" capture="environment" aria-describedby="why">`;
       body += has // taken: the preview (it can play without reopening the camera), and Retake on its own strip
         ? `<div class="dr-shot has">${preview}<label class="dr-retake">✓ ठीक है · दोबारा लें? Retake${cam}</label></div>`
-        : `<label class="dr-shot" id="shot"><span aria-hidden="true">${st.id === 'video' ? '📹' : '📷'}</span><span>${st.id === 'video' ? 'वीडियो लें · Take video' : 'फ़ोटो लें · Take photo'}</span>${cam}</label>` +
+        : `<label class="dr-shot" id="shot"><span aria-hidden="true">${E(st.id === 'video' ? 'pumpVideo' : 'photo')}</span><span>${st.id === 'video' ? 'वीडियो लें · Take video' : 'फ़ोटो लें · Take photo'}</span>${cam}</label>` +
           `<p class="dr-alt"><label>कैमरा नहीं खुला? गैलरी से चुनें · Choose from gallery<input type="file" data-id="${st.id}" accept="${acc}"></label></p>`;
     } else {
       body += `<label class="gb-sr" for="num">${esc(st.en)}</label><input class="dr-num" id="num" data-id="${st.id}" inputmode="${st.id === 'litres' ? 'decimal' : 'numeric'}" autocomplete="off" value="${esc(S.form[st.id] || '')}" aria-describedby="why"${err ? ' aria-invalid="true"' : ''}>`;
@@ -210,7 +210,7 @@
     // the red button is always the next thing to do: on a photo or video step with nothing taken yet, that is the camera
     const shoot = file && !S.files[st.id];
     bar(`<div class="dr-act" style="display:flex;flex:1;gap:8px"><a class="gb-btn dr-back" href="${n === 1 ? '#' : '#fuel-' + (n - 1)}" aria-label="पीछे · Back">‹</a>` +
-      (shoot ? `<label class="gb-btn gb-btn-primary dr-go" for="cam"><span aria-hidden="true">${st.id === 'video' ? '📹' : '📷'}</span>&nbsp;${st.id === 'video' ? 'वीडियो लें · Video' : 'फ़ोटो लें · Photo'}</label>`
+      (shoot ? `<label class="gb-btn gb-btn-primary dr-go" for="cam"><span aria-hidden="true">${E(st.id === 'video' ? 'pumpVideo' : 'photo')}</span>&nbsp;${st.id === 'video' ? 'वीडियो लें · Video' : 'फ़ोटो लें · Photo'}</label>`
         : '<button type="button" class="gb-btn gb-btn-primary dr-go" id="go">आगे · Next ›</button>') + '</div>');
     if (shoot) return;
     $('go').onclick = () => { S.shown[st.id] = true; const e = stepErr(st.id); if (e) { $('why').textContent = e; const f = $('num'); if (f) { f.setAttribute('aria-invalid', 'true'); f.focus(); } return; } location.hash = 'fuel-' + (n + 1); };
@@ -231,12 +231,12 @@
     const row = (k, ico, hi, val) => `<li><a href="#fuel-${k}"><span class="dr-ico" aria-hidden="true">${ico}</span>${big(hi, '')}<b>${val}</b></a></li>`;
     ask(CHECK, E('done'), 'सब ठीक है?', 'Check, then send', 'कुछ बदलना हो तो उस पर दबाएँ · Tap a line to change it');
     $('stage').innerHTML = '<ul class="dr-sum">' +
-      row(1, '📹', 'वीडियो', '<span class="ok">✓</span>') + row(2, '📃', 'पर्ची', '<span class="ok">✓</span>') +
+      row(1, E('pumpVideo'), 'वीडियो', '<span class="ok">✓</span>') + row(2, E('bill'), 'पर्ची', '<span class="ok">✓</span>') +
       row(3, E('fuel'), 'लीटर', esc(S.form.litres)) + row(4, '₹', 'रुपये', '₹' + esc(S.form.amount)) + row(5, E('bus'), 'किलोमीटर', esc(S.form.odometer)) + '</ul>' +
       `<p class="dr-warn">${esc(hiMsg(c.warn))}</p><p class="dr-why" id="why" role="alert">${esc(S.failed)}</p>` +
       '<div class="dr-prog" id="prog" hidden><span class="gb-bar"><i style="width:0%"></i></span><p class="dr-en" id="progText" role="status"></p></div>';
     bar(`<div class="dr-act" style="display:flex;flex:1;gap:8px"><a class="gb-btn dr-back" href="#fuel-${STEPS.length}" aria-label="पीछे · Back">‹</a>` +
-      '<button type="button" class="gb-btn gb-btn-primary dr-go" id="go"><span aria-hidden="true">📤</span>&nbsp;भेजें · Send</button></div>');
+      `<button type="button" class="gb-btn gb-btn-primary dr-go" id="go"><span aria-hidden="true">${E('send')}</span>&nbsp;भेजें · Send</button></div>`);
     $('go').onclick = send;
   }
 
@@ -247,7 +247,7 @@
     go.disabled = true; go.textContent = 'भेज रहे हैं… · Sending…'; if (back) back.hidden = true; // no way out half-way
     $('prog').hidden = false; $('why').textContent = '';
     $('stage').querySelector('.dr-sum').hidden = true; $('slot').querySelector('.dr-help').hidden = true; // while it goes, only the progress
-    $('slot').querySelector('.dr-q').innerHTML = `<span class="dr-ico" aria-hidden="true">📤</span><h2>${big('भेज रहे हैं…', 'Sending to the office')}</h2>`;
+    $('slot').querySelector('.dr-q').innerHTML = `<span class="dr-ico" aria-hidden="true">${E('send')}</span><h2>${big('भेज रहे हैं…', 'Sending to the office')}</h2>`;
     const fill = Object.assign({}, S.form);
     const onProgress = (p) => { // the bar moves as the video goes; at 100% the office is still saving it
       const pct = Math.round(100 * p); $('prog').querySelector('i').style.width = pct + '%';
@@ -274,7 +274,7 @@
     $('sentHi').textContent = q ? 'फ़ोन में सेव है' : 'भेज दिया';
     $('sentText').textContent = q ? 'Saved on this phone. It sends by itself when there is signal.' : 'Sent to the office. Thank you!';
     $('sentSummary').textContent = `${f.litres} L · ₹${f.amount} · ${f.odometer} km · ऑफिस पर्ची से मिलाएगा · The office checks it against the bill`;
-    bar('<div class="dr-act" style="display:flex;flex:1"><a class="gb-btn gb-btn-primary dr-go" href="#"><span aria-hidden="true">🏠</span>&nbsp;होम · Home</a></div>');
+    bar(`<div class="dr-act" style="display:flex;flex:1"><a class="gb-btn gb-btn-primary dr-go" href="#"><span aria-hidden="true">${E('homeBase')}</span>&nbsp;होम · Home</a></div>`);
     $('sentHi').focus();
   }
 
@@ -321,6 +321,6 @@
   const cached = () => { try { return JSON.parse(localStorage.getItem(BUS_KEY) || 'null'); } catch (e) { return null; } };
   api.load().then((bus) => { S.bus = bus; route(); }, (e) => e.offline && cached()
     ? (S.bus = cached(), route()) // no signal: work from the last answer; the server still checks the link when the fill is sent
-    : e.offline ? stop('नेटवर्क नहीं है', 'No signal. Open this page again when there is signal. Fills already saved on this phone are safe.', '📶')
+    : e.offline ? stop('नेटवर्क नहीं है', 'No signal. Open this page again when there is signal. Fills already saved on this phone are safe.', E('signal'))
     : stop('यह फ़ोन अब जुड़ा नहीं है', e.message + ' Ask your Fee Clerk for a new driver link (a QR code). · फ़ी क्लर्क से नया लिंक माँगें।'));
 })();
