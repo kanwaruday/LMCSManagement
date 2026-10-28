@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const { makeSheet, makeBook } = require('../payroll/harness');
 
 const ROOT = path.join(__dirname, '..', '..', 'apps-script');
-const FILES = ['main', 'ss-forms-sync', 'ss-tracker'];
+const FILES = ['main', 'ss-forms-sync', 'ss-tracker', 'teacher-ss'];
 
 const ALLOWLIST_ID = '1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58';
 const CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';

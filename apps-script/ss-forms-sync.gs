@@ -174,6 +174,27 @@ const SS_ROLE_CONFIGS = {
       'Attitude Towards School',
       'Dedication Towards Class',
     ],
+    // Frozen 2026-10-28, NOT the same binding as rubricTitles above --
+    // see ss-tracker.gs's ssReadSubmissions_ for why: the OLD per-role
+    // Google-Form tabs (now read-only history) have these EXACT header
+    // strings baked into their actual header row, forever, since the
+    // Forms themselves are frozen too. If rubricTitles above ever
+    // changes (and rubricVersion bumps to match), this array must NOT
+    // change with it -- old-tab column lookups would otherwise silently
+    // find nothing for a renamed title (header.indexOf returns -1) and
+    // undercounts every old row's total, confirmed by a live probe.
+    legacyRubricTitles: [
+      'Pedagogy',
+      'Teacher Content',
+      'Student Response',
+      'Activity Based Approach',
+      'Notebook Checking of Students',
+      'BUTCHER Scheme',
+      'Discipline- English, Aerobics, Morning Assembly & Dispersal',
+      'Extra Curricular (Non Academic Competitions)',
+      'Attitude Towards School',
+      'Dedication Towards Class',
+    ],
     rubricMax: 10,
     rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     // Per-campus form -> its name-question title is literally that
@@ -226,6 +247,18 @@ const SS_ROLE_CONFIGS = {
       'Social Media',
       'Attitude Towards LMS',
     ],
+    legacyRubricTitles: [ // frozen -- see teacher's own legacyRubricTitles comment above for why
+      'Pedagogy',
+      'Teacher Content & Student Response',
+      'Aerobics, Morning Assembly & Dispersal Duty',
+      'Period Adjustment & Quality of Time Table',
+      'Administrative Duties & Data Collection',
+      'IT Support to Principal & Staff',
+      'Computer Lab Operational',
+      'CCTV Functionality',
+      'Social Media',
+      'Attitude Towards LMS',
+    ],
     rubricMax: 10,
     rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Computer Teacher Name'; },
@@ -263,6 +296,18 @@ const SS_ROLE_CONFIGS = {
       'Inventory & other records',
       'Attitude towards LMS',
     ],
+    legacyRubricTitles: [ // frozen -- see teacher's own legacyRubricTitles comment above for why
+      'Pedagogy',
+      'Aerobics, Morning Assembly, Lunch & Dispersal Duty',
+      'Participation in Sports Competitions & Games period as per next Sports Event',
+      'Period Adjustment & Implementation',
+      'Management of Support Staff (during School)',
+      'Cleanliness & Maintenance of School',
+      'Discipline of Students',
+      'Administrative Duties & Examination Duties',
+      'Inventory & other records',
+      'Attitude towards LMS',
+    ],
     rubricMax: 10,
     rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Physical Training Instructor Name'; },
@@ -282,6 +327,18 @@ const SS_ROLE_CONFIGS = {
     // inspectNewSSForms() 2026-09-09) -- wording drifted slightly from
     // the originally-dictated rubric while Uday built the form by hand.
     rubricTitles: [
+      'Fee Collection & Follow up',
+      'Quality of Financial Record Keeping',
+      'Maintenance of Student Records',
+      'Maintenance of Staff & School Records',
+      'Management of Support Staff (Transport)',
+      'Management of Transport Repairs & Finances',
+      'Attendance & Leave Duties - Honesty & Regularity',
+      'Correspondence & Parcel Handling',
+      'Attitude towards School',
+      'Soft Skills with Parents',
+    ],
+    legacyRubricTitles: [ // frozen -- see teacher's own legacyRubricTitles comment above for why
       'Fee Collection & Follow up',
       'Quality of Financial Record Keeping',
       'Maintenance of Student Records',
@@ -346,6 +403,18 @@ const SS_ROLE_CONFIGS = {
       'Soft Skills & Use of Word Command',
       'Attitude towards LMS',
     ],
+    legacyRubricTitles: [ // frozen -- see teacher's own legacyRubricTitles comment above for why
+      'Cleanliness',
+      'Student Reception & Parent Dealing',
+      'Support to Teacher - Classroom, Assembly, Dispersal ',
+      'Montessori Wing Duties & Student Safety',
+      'Student Discipline, Child Psychology & Student Management',
+      'Booksets & Equipment Knowledge',
+      'Student Names & background awareness',
+      'Physical Appearance',
+      'Soft Skills & Use of Word Command',
+      'Attitude towards LMS',
+    ],
     rubricMax: 10,
     rubricVersion: 1, // bump when rubricTitles changes -- see ssEnsureRubricVersionRow_'s header comment
     nameFieldTitle: function () { return 'Staff Name'; },
@@ -384,6 +453,18 @@ const SS_ROLE_CONFIGS = {
       'LMS 4': 'LMS 4 Drivers', 'LMS 5': 'LMS 5 Drivers', 'LMS 6': 'LMS 6 Drivers',
     },
     rubricTitles: [
+      'Bus Safety, Cleaning & Pre-Trip Inspection',
+      'Log Book & Fuel Management',
+      'Driving Discipline, Punctuality & Accident-Free Record',
+      'Bus Maintenance & Documentation during Vacations',
+      'Knowledge of Student Names & Awareness',
+      'Assembly & Classroom Support to Teachers',
+      'Corridor Duty & Discipline of Students',
+      'General Duties & School Equipment Knowledge',
+      'Physical Appearance & Uniform',
+      'Attitude towards LMS',
+    ],
+    legacyRubricTitles: [ // frozen -- see teacher's own legacyRubricTitles comment above for why
       'Bus Safety, Cleaning & Pre-Trip Inspection',
       'Log Book & Fuel Management',
       'Driving Discipline, Punctuality & Accident-Free Record',
@@ -604,7 +685,7 @@ function ssPortalCampusToFormKey_(campusId) {
   return m ? 'LMS ' + m[1] : null;
 }
 
-const SS_SUBMISSIONS_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)" -- same workbook as the old shared-form roles, 2 new tabs
+const SS_SUBMISSIONS_SHEET_ID = SS_ROLE_CONFIGS.teacher.responseSheetId; // "LMCS Teacher SS 2026 (Responses)" -- same workbook as the old shared-form roles, 2 new tabs; referenced, not re-copied, so the two can't drift
 const SS_SUBMISSIONS_TAB = 'SS Submissions';
 const SS_SUBMISSIONS_HEADER = ['Timestamp', 'EmployeeId', 'CampusId', 'EvaluatorEmail', 'Role', 'RubricVersion',
   'Score1', 'Score2', 'Score3', 'Score4', 'Score5', 'Score6', 'Score7', 'Score8', 'Score9', 'Score10'];
@@ -709,6 +790,22 @@ function ssFormMeta_(caller, roleKey, schoolParam) {
   };
 }
 
+/** A value is a legitimate SS score only if it's a real, finite number OR
+ *  a plain decimal string (no scientific notation, no blank/whitespace,
+ *  no boolean/null coerced through Number()) -- `Number('')`,
+ *  `Number(' ')`, `Number(null)` are all 0, and `Number(true)` is 1,
+ *  every one of them a silent wrong answer rather than a rejected one if
+ *  the raw body value were trusted. Found 2026-10-28 via code review +
+ *  a live probe against this exact function. Returns the parsed number,
+ *  or null if the raw value isn't acceptable at all (the caller still
+ *  checks range separately). */
+function ssParseScore_(raw) {
+  if (typeof raw === 'number') return isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string') return null; // rejects boolean, null, undefined, objects/arrays
+  const s = raw.trim();
+  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : null; // non-negative plain decimal only -- scores are never negative
+}
+
 /** Called from main.gs's doPost for action=submitss -- appends one row
  *  to the unified "SS Submissions" tab (see the section header above
  *  for the schema and why it replaced the old per-role Google-Form-
@@ -725,6 +822,17 @@ function ssFormMeta_(caller, roleKey, schoolParam) {
  *  so a stale frontend can't claim an old version's shape for a new
  *  submission.
  *
+ *  `school` is required and checked against `caller.campusId` HERE,
+ *  unconditionally, before anything else -- NOT left to ssFormMeta_'s
+ *  own campus check further down, which only runs `&& school` (skipped
+ *  entirely when school is missing, for the 3 roles that share one form
+ *  across every campus). Found 2026-10-28 via code review + a live
+ *  probe: an LMS2 Principal posting {role:'itComputer', employeeId}
+ *  with NO school got success:true and a row with CampusId '' -- a real
+ *  campus-authorization bypass for those 3 roles, not a theoretical one.
+ *  ssFormMeta_ is still reused just below, for the roster-membership
+ *  check only (an already-authorized call, not a second security gate).
+ *
  *  LOCKED the same way principal-dr.gs's principalDrSaveDailyReport_ is
  *  -- ensuring the SS Rubrics version row and appending the submission
  *  row isn't a single indivisible step, and serializing writes here is
@@ -734,18 +842,24 @@ function ssSubmit_(caller, body) {
   const config = SS_ROLE_CONFIGS[roleKey];
   if (!config || ACTIVE_SS_ROLES.indexOf(roleKey) < 0) return { success: false, error: 'Unknown role: ' + roleKey };
 
+  const school = ssPortalCampusToFormKey_(body.school);
+  if (!school) return { success: false, error: 'Missing/unknown school' };
+  if (caller.campusId !== 'ALL' && ssPortalCampusToFormKey_(caller.campusId) !== school) {
+    return { success: false, error: 'Not authorized for that campus' };
+  }
+
   const scores = Array.isArray(body.scores) ? body.scores : [];
   if (scores.length !== config.rubricTitles.length) {
     return { success: false, error: 'Expected ' + config.rubricTitles.length + ' scores, got ' + scores.length };
   }
   for (let i = 0; i < scores.length; i++) {
-    const n = Number(scores[i]);
-    if (!isFinite(n) || n < 0 || n > config.rubricMax) {
-      return { success: false, error: 'Score for "' + config.rubricTitles[i] + '" must be 0-' + config.rubricMax };
+    const n = ssParseScore_(scores[i]);
+    if (n === null || n < 0 || n > config.rubricMax) {
+      return { success: false, error: 'Score for "' + config.rubricTitles[i] + '" must be a number 0-' + config.rubricMax };
     }
   }
 
-  const meta = ssFormMeta_(caller, roleKey, body.school); // also the school/campus authorization check
+  const meta = ssFormMeta_(caller, roleKey, body.school); // roster-membership check only -- campus auth already checked above
   if (!meta.success) return meta;
   const employeeId = String(body.employeeId || '').trim();
   const employee = meta.employees.filter(function (e) { return e.employeeId === employeeId; })[0];
@@ -770,7 +884,7 @@ function ssSubmit_(caller, body) {
     // AVERAGE typed directly into the Sheet works).
     sh.getRange(targetRow, 2, 1, 4).setNumberFormat('@');
     const row = [new Date(), employeeId, campusId, caller.email, roleKey, config.rubricVersion]
-      .concat(scores.map(function (s) { return Number(s); }));
+      .concat(scores.map(function (s) { return ssParseScore_(s); })); // already validated above -- same parse, not a raw Number()
     sh.getRange(targetRow, 1, 1, row.length).setValues([row]);
     return { success: true };
   } finally {

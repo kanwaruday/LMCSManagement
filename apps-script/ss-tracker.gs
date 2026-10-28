@@ -5,7 +5,11 @@
 // (2026-10-28) the new unified "SS Submissions" tab the in-game forms
 // write to -- ssReadAllSubmissions_ merges both so the dashboards stay
 // continuous across the Forms-to-native-forms cutover, no backfill
-// needed (old rows just stop growing). Cross-references against the
+// needed -- NOTE the old Google Forms are still live during the
+// switchover (principals-daily-reporting/index.html links to them,
+// unremoved), so the old tabs can keep growing too; this merge reads
+// whatever's actually in both, it doesn't assume the old side is frozen.
+// Cross-references against the
 // live roster (the SAME matchesEmployee() each role's form-sync already
 // uses, via employee-roster.gs's EmpMaster/EmpSalary), and produces:
 // quota compliance, Principal Compliance escalation, per-employee score
@@ -131,7 +135,14 @@ function ssReadSubmissions_(config, formKey) {
   const tsCol = header.indexOf('Timestamp');
   const emailCol = header.indexOf('Email Address');
   const nameCol = header.indexOf(config.nameFieldTitle(formKey));
-  const rubricCols = config.rubricTitles.map(function (t) { return header.indexOf(t); });
+  // legacyRubricTitles (frozen, 2026-10-28), NOT the live rubricTitles --
+  // this sheet is Google-Form-written, read-only history, and will
+  // NEVER get a header rewrite if rubricTitles changes for the NEW
+  // in-game form later. Using the live array here would silently find
+  // nothing (header.indexOf returns -1) for a renamed title and
+  // undercount every old row -- confirmed by a live probe, see
+  // legacyRubricTitles' own comment in ss-forms-sync.gs for the fix.
+  const rubricCols = (config.legacyRubricTitles || config.rubricTitles).map(function (t) { return header.indexOf(t); });
 
   const out = [];
   for (let i = 1; i < values.length; i++) {
@@ -154,9 +165,10 @@ function ssReadSubmissions_(config, formKey) {
 
 /** Every submission for one role: the OLD per-role tabs (all 6
  *  campuses for perCampus roles, or the single shared tab otherwise) --
- *  read-only history, frozen once the in-game forms took over -- PLUS
- *  (2026-10-28) the new unified "SS Submissions" tab, filtered to this
- *  role. */
+ *  this codebase never writes to them again, but their Google Forms
+ *  can still be live during the switchover (see the file header) and
+ *  may keep adding rows on their own -- PLUS (2026-10-28) the new
+ *  unified "SS Submissions" tab, filtered to this role. */
 function ssReadAllSubmissions_(roleKey) {
   const config = SS_ROLE_CONFIGS[roleKey];
   const out = [];
@@ -218,6 +230,7 @@ function ssReadNewSubmissions_(roleKey) {
   const header = values[0];
   const tsCol = header.indexOf('Timestamp');
   const idCol = header.indexOf('EmployeeId');
+  const campusCol = header.indexOf('CampusId');
   const emailCol = header.indexOf('EvaluatorEmail');
   const roleCol = header.indexOf('Role');
   const scoreCols = [];
@@ -235,7 +248,9 @@ function ssReadNewSubmissions_(roleKey) {
     const scores = scoreCols.map(function (col) { return col >= 0 ? Number(row[col]) || 0 : 0; });
     const total = scores.reduce(function (a, b) { return a + b; }, 0);
     out.push({
+      employeeId: employeeId,
       employeeName: employeeId + ' ' + name, // matches getActiveEmployeeChoices_'s "CODE NAME" format exactly
+      campusId: campusCol >= 0 ? String(row[campusCol] || '').trim().toUpperCase() : '', // 'LMS1' portal format -- teacher-ss.gs's readCampusStatsUncached_ filters on this
       evaluatorEmail: emailCol >= 0 ? normalizeCell_(row[emailCol]).toLowerCase() : '',
       timestamp: ts instanceof Date ? ts : (ts ? new Date(ts) : null),
       scores: scores,

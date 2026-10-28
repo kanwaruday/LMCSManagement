@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
-  <link rel="stylesheet" href="../assets/campus-picker.css" />
+  <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
   <style>
     /* Page-only, and only what base.css doesn't already give (.gb-card/.gb-field/.gb-input/
        .gb-btn/.gb-next/.gb-done/.gb-panel/.gb-err/.gb-muted cover the rest). GM pass
@@ -33,7 +33,7 @@
         <div class="gb-card">
           <h2 style="margin:0 0 4px;font-size:15px">School &amp; role</h2>
           <p class="gb-muted" style="margin:0 0 10px">Evaluate one Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member at a time.</p>
-          <div class="gb-field"><label for="ss-campus-mount">School</label><div id="ss-campus-mount"></div></div>
+          <div class="gb-field"><label>School</label><div id="ss-campus-mount"></div></div>
           <div class="gb-field"><label for="ss-role">Role being evaluated</label>
             <select id="ss-role" class="gb-input"></select>
           </div>
@@ -75,10 +75,10 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=df0cbfd3"></script>
+  <script src="../assets/auth.js?v=a641c54d"></script>
   <script src="../assets/game/emoji.js?v=f2812675"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
-  <script src="../assets/campus-picker.js"></script>
+  <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script>
     // "LMCS Principal's Daily Reporting Backend" -- same project/URL as
     // principals-daily-reporting/index.html's PDR_BACKEND_URL and
@@ -134,13 +134,30 @@
       if (res && res.error === 'Not authorized' && window.LMCS && LMCS.notifyAuthFailure) LMCS.notifyAuthFailure();
     }
 
+    // ?role=<key> preselects a role -- the Support Sessions room on
+    // principal/index.html links in one row per form (per the game
+    // director: "pages: one row per form"), all pointing at this SAME
+    // page/role picker rather than 6 separate pages, so the rubric
+    // shape still comes from exactly one place (ssformmeta) either way.
+    // An unrecognized or absent role just falls back to the first one.
     function populateRoleSelect() {
       const sel = document.getElementById('ss-role');
       sel.innerHTML = SS_ROLES.map((r) => '<option value="' + r.key + '">' + esc(r.label) + '</option>').join('');
+      const fromUrl = new URLSearchParams(location.search).get('role');
+      if (fromUrl && SS_ROLES.some((r) => r.key === fromUrl)) sel.value = fromUrl;
     }
     function roleLabel(key) { const r = SS_ROLES.find((x) => x.key === key); return r ? r.label : key; }
 
+    // LMCSCampus.mount() calls onChange SYNCHRONOUSLY before returning
+    // (campus-picker.js), so loadForm() -> selectedCampus() can run while
+    // `campusPicker = LMCSCampus.mount(...)`'s own assignment hasn't
+    // completed yet -- campusPicker is still undefined at that first
+    // call. Found via code review (an unhandled rejection on every page
+    // load, console not actually clean despite the page working). showApp()
+    // already calls loadForm() again once mount() returns, so this no-op
+    // just skips the premature first call instead of throwing out of it.
     function selectedCampus() {
+      if (!campusPicker) return null;
       const sel = campusPicker.get();
       return !sel.all && sel.campuses.length ? sel.campuses[0] : null;
     }
@@ -166,7 +183,19 @@
       });
     }
 
+    // Bumped on every call; a response only applies if it's still the
+    // most recent request in flight. Fixes a real race: role/school
+    // changed twice in quick succession (e.g. the select fired before a
+    // slower earlier fetch returned) could otherwise render an EARLIER
+    // role's form after a later one, so Submit would send a role/school
+    // that doesn't match what's on screen, and only the server's own
+    // checks would catch the mismatch -- confusingly, from the person's
+    // point of view, since nothing on screen looked wrong. Found via
+    // code review.
+    let loadSeq = 0;
+
     async function loadForm() {
+      const seq = ++loadSeq;
       const role = document.getElementById('ss-role').value;
       const campus = selectedCampus();
       document.getElementById('ss-form-card').hidden = true;
@@ -179,15 +208,20 @@
       status('Loading…', false);
       let res;
       try { res = await get({ action: 'ssformmeta', role: role, school: campus }); }
-      catch (err) { status(err.message || String(err), true); return; }
+      catch (err) { if (seq === loadSeq) status(err.message || String(err), true); return; }
+      if (seq !== loadSeq) return; // a newer loadForm() call has already taken over
       if (!res.success) {
         authFailIfNeeded(res);
         status(res.error || 'Could not load the form.', true);
         return;
       }
-      currentMeta = res;
+      // role/school this form was ACTUALLY loaded for -- submit() reads
+      // these, never the live controls, so a submission always matches
+      // what ssformmeta actually returned, not whatever the controls
+      // happen to show by the time someone clicks Submit.
+      currentMeta = Object.assign({ role: role, school: campus }, res);
       status('', false);
-      renderForm(res);
+      renderForm(currentMeta);
       renderNext();
     }
 
@@ -242,8 +276,13 @@
       const original = btn.textContent;
       btn.textContent = 'Submitting…';
       try {
-        const role = document.getElementById('ss-role').value;
-        const res = await post({ action: 'submitss', role: role, school: selectedCampus(), employeeId: employeeId, scores: scores });
+        // currentMeta.role/.school -- what the FORM ON SCREEN was actually
+        // loaded for, not a fresh read of the live controls, which could
+        // have moved on to a different role/school already (see loadSeq
+        // above). The server still checks these are consistent either way;
+        // this just keeps what the person sees in sync with what's sent.
+        const role = currentMeta.role;
+        const res = await post({ action: 'submitss', role: role, school: currentMeta.school, employeeId: employeeId, scores: scores });
         if (res.success) {
           status('', false);
           document.getElementById('ss-done-p').textContent = 'You evaluated ' + employeeName + ' for ' + roleLabel(role) + '.';

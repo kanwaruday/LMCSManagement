@@ -6,12 +6,13 @@
 // full project layout and naming convention. doGet lives in main.gs,
 // which calls teacherSsStats_() below for action=teacherstats.
 //
-// Reads "LMCS Teacher SS 2026 (Responses)", the response sheet for the
-// 6 campus "LMS N Teacher SS (Qualitative) 2026 for Heads" Google
-// Forms -- those Forms stay the real submission mechanism (confirmed
-// by Uday 2026-09-02, correcting an earlier "build fresh, no Forms"
-// direction); this file only aggregates their responses for the
-// portal's Dashboard tab. Never writes to the sheet.
+// Reads "LMCS Teacher SS 2026 (Responses)" -- the 6 campus Google Forms'
+// old response tabs (now read-only history, replaced as of 2026-10-28 by
+// a native in-game form; see ss-forms-sync.gs's own header for the full
+// migration) AND (also 2026-10-28) the unified "SS Submissions" tab's
+// 'teacher' rows via ssReadNewSubmissions_, so a Teacher SS entered
+// through the new form still reaches this file's two readers: the
+// Teacher Portal's own Evaluations view and Rank score. Never writes.
 //
 // TERMINOLOGY (2026-09-02): "DR" (Daily Report) for teachers was
 // renamed to "SS" (Support Session) -- this file, the 6 Forms, and the
@@ -37,7 +38,11 @@ const TSS_CAMPUS_TO_TAB = {
 };
 
 // Same 10 rubric columns every tab has, in sheet order — must match
-// ss-forms-sync.gs's rubricTitles / the sheet's real headers exactly.
+// THE OLD TAB'S real headers exactly (independently hardcoded here, not
+// read from SS_ROLE_CONFIGS.teacher -- this happens to be identical to
+// its legacyRubricTitles, since both exist to describe this same frozen
+// sheet; it's deliberately NOT ss-forms-sync.gs's live rubricTitles,
+// which can change later without this needing to).
 const TSS_RUBRIC_COLUMNS = [
   'Pedagogy', 'Teacher Content', 'Student Response', 'Activity Based Approach',
   'Notebook Checking of Students', 'BUTCHER Scheme',
@@ -110,41 +115,50 @@ function readCampusStats_(campusId) {
   return result;
 }
 
+// 2026-10-28: folds in the unified "SS Submissions" tab's 'teacher' rows
+// (apps-script/ss-forms-sync.gs) alongside the old per-campus Form tab,
+// so a Teacher SS entered through the new native form still reaches the
+// Teacher Portal's own Evaluations view (myssstats) and Rank score
+// (myrankscore via teacher-portal.gs), not just the Principal-facing SS
+// Dashboard (ss-tracker.gs already merged there). Found missing by code
+// review, 2026-10-28 -- this function reads a DIFFERENT sheet/shape than
+// ss-tracker.gs's own merge, so that merge alone didn't cover it.
 function readCampusStatsUncached_(campusId) {
   const tabName = TSS_CAMPUS_TO_TAB[campusId];
   const sheet = SpreadsheetApp.openById(TSS_RESPONSES_SHEET_ID).getSheetByName(tabName);
-  if (!sheet) return { teachers: [], responseCount: 0 };
-
-  const values = sheet.getDataRange().getValues();
-  const header = values[0];
+  const values = sheet ? sheet.getDataRange().getValues() : [[]];
+  const header = values[0] || [];
   const teacherNameCol = header.indexOf(campusId.replace('LMS', 'LMS ') + ' Teacher Name');
   const timestampCol = header.indexOf('Timestamp');
   const rubricCols = TSS_RUBRIC_COLUMNS.map(function (title) { return header.indexOf(title); });
 
   const byTeacher = {}; // teacherName -> {count, sumTotal, sumPerParam[10], lastDate}
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    const teacher = String(row[teacherNameCol] || '').trim();
-    if (!teacher) continue;
-
+  const addRow = function (teacher, scores, ts) {
+    if (!teacher) return;
     if (!byTeacher[teacher]) {
       byTeacher[teacher] = { count: 0, sumTotal: 0, sumPerParam: TSS_RUBRIC_COLUMNS.map(function () { return 0; }), lastDate: null };
     }
     const entry = byTeacher[teacher];
     entry.count++;
-
     let rowTotal = 0;
-    rubricCols.forEach(function (col, idx) {
-      const v = col >= 0 ? Number(row[col]) || 0 : 0;
-      rowTotal += v;
-      entry.sumPerParam[idx] += v;
-    });
+    scores.forEach(function (v, idx) { rowTotal += v; entry.sumPerParam[idx] += v; });
     entry.sumTotal += rowTotal;
-
-    const ts = row[timestampCol];
     if (ts && (!entry.lastDate || new Date(ts) > new Date(entry.lastDate))) {
       entry.lastDate = ts instanceof Date ? ts.toISOString() : String(ts);
     }
+  };
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const teacher = String(row[teacherNameCol] || '').trim();
+    if (!teacher) continue;
+    addRow(teacher, rubricCols.map(function (col) { return col >= 0 ? Number(row[col]) || 0 : 0; }), row[timestampCol]);
+  }
+  if (typeof ssReadNewSubmissions_ === 'function') { // same project/scope as ss-forms-sync.gs/ss-tracker.gs; guarded only so this file alone still loads in a narrower test harness
+    ssReadNewSubmissions_('teacher').forEach(function (s) {
+      if (s.campusId !== campusId) return;
+      addRow(s.employeeName, s.scores, s.timestamp);
+    });
   }
 
   const teachers = Object.keys(byTeacher).map(function (name) {
@@ -159,5 +173,9 @@ function readCampusStatsUncached_(campusId) {
   });
   teachers.sort(function (a, b) { return a.teacher.localeCompare(b.teacher); });
 
-  return { teachers: teachers, responseCount: values.length - 1 };
+  // Sum of counted rows (old tab + new unified tab), not values.length-1
+  // -- that only ever counted the old tab, and even then included any
+  // row with a blank Name cell that addRow() above actually skips.
+  const responseCount = teachers.reduce(function (sum, t) { return sum + t.submissionCount; }, 0);
+  return { teachers: teachers, responseCount: responseCount };
 }
