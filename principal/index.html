@@ -42,7 +42,7 @@
           <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
         </div></section>
         <section id="world" aria-label="Your school's routes" hidden>
-          <p class="gb-empty"><span data-emoji="soon"></span>Your school's route map comes next, from Fleet Command: every bus, out to where it goes.</p>
+          <div id="world-map"></div>
         </section>
       </div>
     </main>
@@ -64,9 +64,11 @@
   <script src="../assets/game/school-building.js?v=deca8219"></script>
   <script src="../assets/game/school-models.js?v=4c8049df"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
+  <script src="../coordinator/route-map.js?v=f5e47aee"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
+    const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
     // The school building's rooms, in the order a Principal works: the day, then people, then the rules; each room holds its pages.
     // HR & Hiring is its own path (Uday, 28 Oct 2026: "as a principal, they are also responsible for Hiring & HR"); its pages
@@ -206,7 +208,10 @@
       document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
       document.getElementById('view-world').setAttribute('aria-pressed', String(world));
       if (!world) centre();
+      // the World: the school's bus routes and stops (Fleet Command's route map, read only, this campus only, no money), loaded once
+      else if (!worldMap) worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro' });
     }
+    let worldMap = null;
 
     function hello(name) {
       const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
