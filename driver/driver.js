@@ -40,7 +40,7 @@
         try { r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: token }) })).text()); }
         catch (e) { throw Object.assign(new Error('Could not reach the office. Try again when there is signal.'), { offline: true }); }
         if (!r.success && r.code !== 'UNLINKED') throw Object.assign(new Error(r.error || 'The office could not answer.'), { offline: true }); // passing: keep the link
-        if (!r.success) { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(BUS_KEY); } catch (e) { /* nothing kept */ } throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.'); }
+        if (!r.success) { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(BUS_KEY); localStorage.removeItem(HOME_KEY); } catch (e) { /* nothing kept */ } throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.'); }
         try { localStorage.setItem(BUS_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
         return r;
       },
@@ -183,12 +183,14 @@
     if (H.bus || H.loading) return;
     if (api !== live) { H.bus = DEMO_BUS; drawBus(); return; }
     try { H.bus = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch (e) { H.bus = null; }
+    const norm = (r) => String(r || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (H.bus && norm(H.bus.reg) !== norm(S.bus.reg)) H.bus = null; // a phone moved to another bus never shows the old one
     H.loading = true;
     fetch(COORD_URL, { method: 'POST', body: JSON.stringify({ action: 'driverbus', deviceToken: live.token }) }).then((r) => r.json()).then((r) => {
-      if (!r.success) return; // UNLINKED here is answered by driverme on the next load; keep what is drawn
+      if (!r.success) { if (r.code === 'UNLINKED') { H.bus = null; try { localStorage.removeItem(HOME_KEY); } catch (e) { /* none */ } drawBus(); } return; } // driverme locks the page on its next load
       H.bus = r; try { localStorage.setItem(HOME_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
       drawBus();
-    }, () => { /* no signal: the saved bus, or the plain one */ }).then(() => { H.loading = false; });
+    }).catch(() => { /* no signal: the saved bus, or the plain one */ }).finally(() => { H.loading = false; });
     drawBus();
   }
   function drawBus() {
@@ -220,6 +222,7 @@
     if (p && !p.at[H.view]) H.view = Object.keys(p.at)[0]; // a part not seen from here: turn the bus so it is
     drawBus();
     if (H.sel) $('partCard').querySelector('h3').focus({ preventScroll: false });
+    else { const g = $('busDraw').querySelector('[data-part="' + id + '"]') || $('partList').querySelector('[data-part="' + id + '"]'); if (g) g.focus(); } // a second tap closes the card; focus stays on the part
   }
   function homeBase() {
     $('busBase').hidden = H.world; $('world').hidden = !H.world;

@@ -37,17 +37,17 @@ var LMCSBus = (function () {
     { id: 'tyre_rl', hi: 'टायर, पीछे बायाँ', en: 'Tyre, rear left', svc: ['tyre_rl', 'wheel_bearing'], at: { side: ['w1', 1.12], back: [0.18, 1.1] } },
     { id: 'tyre_rr', hi: 'टायर, पीछे दायाँ', en: 'Tyre, rear right', svc: ['tyre_rr', 'wheel_bearing'], at: { back: [0.82, 1.1] } },
     { id: 'tyre_spare', hi: 'स्टेपनी', en: 'Spare tyre', svc: ['tyre_spare'], at: { back: [0.5, 0.62] } },
-    { id: 'brakes', hi: 'ब्रेक', en: 'Brakes', svc: ['brake_front', 'brake_rear'], at: { side: ['w0', 0.86] } },
-    { id: 'steering', hi: 'स्टीयरिंग', en: 'Steering', svc: ['steering', 'suspension'], at: { side: [0.06, 0.42], front: [0.3, 0.44] } },
-    { id: 'lights_front', hi: 'आगे की लाइट', en: 'Headlights', svc: ['lights_wiring'], at: { side: [0.015, 0.7], front: [0.18, 0.72] } },
+    { id: 'brakes', hi: 'ब्रेक', en: 'Brakes', svc: ['brake_front', 'brake_rear'], at: { side: ['w1', 0.62] } },
+    { id: 'steering', hi: 'स्टीयरिंग', en: 'Steering', svc: ['steering', 'suspension'], at: { front: [0.3, 0.44] } },
+    { id: 'lights_front', hi: 'आगे की लाइट', en: 'Headlights', svc: ['lights_wiring'], at: { front: [0.18, 0.72] } },
     { id: 'lights_back', hi: 'पीछे की लाइट', en: 'Tail lights', svc: ['lights_wiring'], at: { side: [0.985, 0.72], back: [0.15, 0.74] } },
     { id: 'indicators', hi: 'इंडिकेटर', en: 'Indicators', svc: ['lights_wiring'], at: { front: [0.08, 0.62], back: [0.85, 0.74] } },
     { id: 'horn', hi: 'हॉर्न', en: 'Horn', svc: ['lights_wiring'], at: { front: [0.5, 0.72] } },
     { id: 'wipers', hi: 'वाइपर', en: 'Wipers', svc: [], at: { front: [0.38, 0.5] } },
-    { id: 'windscreen', hi: 'शीशे, खिड़कियाँ', en: 'Windscreen and windows', svc: [], at: { side: [0.55, 0.3], front: [0.62, 0.3], back: [0.5, 0.3] } },
+    { id: 'windscreen', hi: 'शीशे, खिड़कियाँ', en: 'Windscreen and windows', svc: [], at: { side: [0.58, 0.3], front: [0.62, 0.3], back: [0.5, 0.3] } },
     { id: 'doors', hi: 'दरवाज़े', en: 'Doors', svc: [], at: { side: [0.24, 0.55], back: [0.5, 0.5] } },
     { id: 'seats', hi: 'सीटें', en: 'Seats', svc: [], at: { side: [0.72, 0.3] } },
-    { id: 'seat_belts', hi: 'सीट बेल्ट', en: 'Seat belts', svc: [], at: { side: [0.4, 0.3] } },
+    { id: 'seat_belts', hi: 'सीट बेल्ट', en: 'Seat belts', svc: [], at: { side: [0.45, 0.3] } },
     { id: 'ac_fan', hi: 'AC / पंखा', en: 'AC or fan', svc: [], at: { side: [0.62, -0.08] } },
     { id: 'body', hi: 'बॉडी, डेंट', en: 'Body and dents', emoji: 'bus', svc: ['body_paint'], at: { side: [0.62, 0.72], back: [0.5, 0.86] } },
     { id: 'mirrors', hi: 'साइड मिरर', en: 'Mirrors', svc: [], at: { side: [0.0, 0.22], front: [0.96, 0.25] } },
@@ -127,7 +127,7 @@ var LMCSBus = (function () {
       if (!xy) return;
       var on = o.sel === p.id;
       out += '<g class="bp-part' + (on ? ' is-sel' : '') + '" data-part="' + p.id + '" role="button" tabindex="0" aria-pressed="' + on + '" aria-label="' + esc(p.hi + ' · ' + p.en) + '">' +
-        '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="18" fill="transparent"/>' + // the target, bigger than the dot
+        '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (v === 'side' ? 22 : 18) + '" fill="transparent"/>' + // the target, bigger than the dot (the side view is drawn smaller)
         '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="' + (on ? 8 : 6) + '" fill="' + (on ? '#CE0000' : '#1b2430') + '" stroke="#fff" stroke-width="2"/></g>';
     });
     return out + '</svg>';
