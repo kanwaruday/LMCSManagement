@@ -54,7 +54,7 @@ export async function showDriverFills(root, session, api) {
     const [account, bucket] = paySel.value.split('|');
     const r = await api.write('driverfill.daybook', { campus, fill_id: f.fillId, account: account || '', bucket: bucket || '' });
     if (r.success) { f.dayBookEntryId = r.id; return 'Added to the Day Book.'; }
-    if (r.code === 'DRIVER_FILLS_OFF') return AFTER_COUNT + '.';
+    if (r.code === 'DRIVER_FILLS_OFF' || /^Unknown action/.test(r.error || '')) return AFTER_COUNT + '.'; // an Office backend not yet redeployed is off too
     if (r.error === 'FORBIDDEN_ROLE') return 'The Fee Clerk adds it to the Day Book.';
     return 'Not in the Day Book yet: ' + (r.error || 'no connection') + '. Try "Add to Day Book" again.';
   }
