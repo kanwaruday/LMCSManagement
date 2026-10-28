@@ -22,9 +22,10 @@ for (const c of ['gb-shell', 'gb-stage', 'gb-panels', 'gb-panel', 'gb-next-slot'
 }
 assert.ok(!/@keyframes|transition\s*:|animation\s*:/.test(css), 'base.css has no motion');
 // the skeleton: Owner home and the Kingdom put the bar, stage and panels in the shell; element headings don't outrank component ones
-for (const p of ['owner/index.html', 'owner/kingdom.html']) {
+for (const p of ['owner/index.html', 'owner/kingdom.html', 'principal/index.html']) {
   const h = fs.readFileSync(path.join(root, p), 'utf8');
   assert.ok(/class="gb-shell"/.test(h) && /class="gb-rail"/.test(h) && /class="gb-stage"/.test(h) && /class="gb-panels"/.test(h), p + ' uses the skeleton');
 }
+assert.ok(/\.gb-panel, \.gb-panel\[open\] \{ flex:none; \}/.test(css), 'an open panel keeps its height in the desktop column');
 assert.ok(css.includes(':where(.gb) h2') && !/^\.gb h2/m.test(css), 'base.css element headings are weightless');
 console.log('test-rail: ok');

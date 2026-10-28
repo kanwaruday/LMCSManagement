@@ -210,7 +210,10 @@
   .gb-rail ul { position:sticky; top:0; flex-direction:column; gap:4px; padding:12px 8px; }
   .gb-rail-i { min-height:68px; font-size:13px; }
   .gb-panels { flex-direction:column; flex-wrap:nowrap; }
-  .gb-panel { flex:none; }
+  .gb-panel, .gb-panel[open] { flex:none; } /* in the column an open panel keeps its own height */
+  /* before sign-in the bar and panels are hidden: their columns go too, so the sign-in box sits in the middle */
+  .gb-shell:has(> .gb-rail[hidden]) { grid-template-columns:minmax(0, 1fr) 320px; grid-template-areas:"next panels" "stage panels"; padding-left:24px; }
+  .gb-shell:has(> .gb-rail[hidden]):has(> .gb-panels[hidden]) { grid-template-columns:minmax(0, 1fr); grid-template-areas:"next" "stage"; }
 }
 .gb-app .lg-nextbar { display:none; }
 #game-root { scroll-margin-top:16px; }
