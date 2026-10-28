@@ -6,6 +6,7 @@
 //                       (not the Principal). The Fee Clerk, Coordinator and Owner also get counts per bus: today's roll call recorded
 //                       or not, and the number of fuel fills on record. Stop locations live only in the private transport workbook
 //                       and leave it only through here, for the caller's own campuses.
+// Never where a bus parks at night (GPS Meta bases: often a driver's home).
 // The page side is coordinator/route-map.js (LMCSRouteMap.mount), which draws it with coordinator/transport-views.js.
 
 /** The World's caller: the transport staff gate first (Coordinator, Owner, Fee Clerk), else a Principal of one campus; null otherwise. */
@@ -31,14 +32,14 @@ function coordWorld_(caller) {
   vehicles.forEach(function (v) { regs[v.reg] = true; });
   const out = { success: true, today: today, syncedAt: meta.syncedAt, vehicles: vehicles,
     days: gpsRows_(GPS_TAB_DAILY).filter(function (d) { return regs[d.reg] && d.date > gpsAddDays_(today, -30); }).map(function (d) { return { reg: d.reg, date: d.date, km: d.km }; }),
-    bases: meta.bases.filter(function (b) { return regs[b.reg]; }),
-    stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }),
+    stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }).map(function (s) { // a stop shared with a bus outside the caller's campuses does not name it
+      s.shared_with = String(s.shared_with || '').split(' ').filter(function (r) { return regs[r]; }).join(' '); return s; }),
     tracks: gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; }).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: coordWorldPath_(t.path) }; }) };
   if (!caller.principal) { // the people who run the buses: today's roll call and the fills on record, as counts
     const rolled = {}, fills = coordFleetFills_(regs);
     gpsRows_(COORD_ROLLCALL_TAB).forEach(function (r) { if (String(r.Date) === today) rolled[FleetQuests.normReg(r.Reg)] = true; });
     out.counts = {};
-    vehicles.forEach(function (v) { out.counts[v.reg] = { rollCallToday: !!rolled[FleetQuests.normReg(v.reg)], fuelFills: (fills[v.reg] || {}).count || 0 }; });
+    vehicles.forEach(function (v) { out.counts[v.reg] = { rollCallToday: !!rolled[FleetQuests.normReg(v.reg)], fuelFills: (fills[v.reg] || fills[FleetQuests.normReg(v.reg)] || {}).count || 0 }; });
   }
   return out;
 }

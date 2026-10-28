@@ -198,7 +198,7 @@ assert.deepStrictEqual(coord.proposals, {}, 'proposals stay with the Owner');
 const own = J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})'));
 assert.deepStrictEqual([own.tracks.length, own.pnl.length, own.vehicles.find(v => v.reg === 'HP7').rounds], [2, 2, null], 'the Owner sees all; a bus missing from the roster extras has no rounds, not a guess');
 // ── the route World (transportworld): routes and stops of the caller's campuses, never money; driver names and counts for staff only ──
-run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, [{bus:"HP1",trip:"AM-1",seq:1,kind:"stop",place:"Village A",lat:31.6,lng:76.9},{bus:"HP7",trip:"AM-1",seq:1,kind:"stop",place:"Village B",lat:31.9,lng:77.1}])');
+run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, [{bus:"HP1",trip:"AM-1",seq:1,kind:"stop",place:"Village A",shared_with:"HP7",lat:31.6,lng:76.9},{bus:"HP7",trip:"AM-1",seq:1,kind:"stop",place:"Village B",lat:31.9,lng:77.1}])');
 ctx.todayIso = new Date().toISOString().slice(0, 10);
 ctx.coordCacheGetBig_ = () => null; ctx.coordCachePutBig_ = () => {}; // no gzip in this vm
 run('gpsWrite_(COORD_ROLLCALL_TAB, ["Date","Reg"], [{Date: todayIso, Reg: "HP1"}])');
@@ -207,7 +207,9 @@ ctx.coordTransportBase_ = () => ({ fleet: [{ reg: 'HP1', campus: 'LMS 4', operat
 const pw = J(run('coordWorld_({email:"p4@x.org", campusId:"LMS4", principal:true})'));
 assert.deepStrictEqual([pw.vehicles.map(v => v.reg), pw.stops.map(x => x.bus), pw.tracks.map(t => t.reg)], [['HP1'], ['HP1'], ['HP1']], 'a Principal sees their own campus only');
 assert.ok(!('driver' in pw.vehicles[0]) && !('counts' in pw), 'a Principal gets no driver names and no counts');
-['pnl', 'proposals', 'tasks', 'checks', 'catalog'].forEach(k => assert.ok(!(k in pw), 'no ' + k + ' in the World'));
+['pnl', 'proposals', 'tasks', 'checks', 'catalog', 'bases'].forEach(k => assert.ok(!(k in pw), 'no ' + k + ' in the World (bases: where buses park at night)'));
+assert.strictEqual(pw.stops[0].shared_with, '', 'a stop shared with another campus\'s bus does not name it');
+assert.strictEqual(J(run('coordWorld_({email:"o@x.org", roles:["Owner"]})')).stops[0].shared_with, 'HP7', 'the Owner sees both buses, so the share stays');
 const kw = J(run('coordWorld_({email:"k@x.org", campusId:"LMS4", only:["LMS4"], feeClerkOnly:true, roles:["FeeClerk"]})'));
 assert.deepStrictEqual([kw.vehicles.map(v => v.reg), kw.vehicles[0].driver, kw.counts.HP1.rollCallToday], [['HP1'], 'Driver One', true], 'a Fee Clerk: their campus, the driver, today\'s roll call');
 assert.strictEqual(typeof kw.counts.HP1.fuelFills, 'number');

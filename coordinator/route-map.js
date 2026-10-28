@@ -8,7 +8,7 @@
    for a signed-in person or a linked phone, and stay in memory. */
 window.LMCSRouteMap = (function () {
   const HERE = (document.currentScript && document.currentScript.src) || '';
-  const near = (f) => new URL(f, HERE || location.href).href;
+  const near = (f) => new URL(f, HERE || location.href).href.split('?')[0] + (HERE.split('?')[1] ? '?' + HERE.split('?')[1] : ''); // this file's stamp, so a deploy reaches phones
   const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
   const SRI = { js: 'sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==',
     css: 'sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==' };
