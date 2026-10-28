@@ -23,6 +23,7 @@
   } : null;
   const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
   const TOKEN_KEY = 'lmcs.driverToken'; // also read by coordinator/capture/driver-mode.js
+  const REFUSED_KEY = 'lmcs.driverRefused'; // fills the office refused after they waited on the phone, shown once on home
   const BUS_KEY = 'lmcs.driverBus'; // the last driverme answer (name, bus, last fill), so a fill can be logged at a pump with no signal
   function takeToken() {
     const t = DriverLogic.tokenFromHash(location.hash);
@@ -95,8 +96,12 @@
     if (flushing) return; flushing = true;
     try {
       for (const rec of await queue.getAll()) {
-        const o = DriverLogic.sendOutcome(await post(token, rec));
+        const r = await post(token, rec), o = DriverLogic.sendOutcome(r);
         if (o === 'sent') await queue.delete(rec.fillId);
+        if (o === 'refused') { // the office said no (the form is long gone): stop resending 25 MB, and tell the driver once, on home
+          await queue.delete(rec.fillId);
+          try { const n = JSON.parse(localStorage.getItem(REFUSED_KEY) || '[]'); n.push({ litres: rec.litres, at: rec.filledAt, why: String(r.error || '') }); localStorage.setItem(REFUSED_KEY, JSON.stringify(n.slice(-5))); } catch (e) { /* no storage */ }
+        }
         if (o === 'retry') break; // no signal: the rest waits too
       }
     } catch (e) { /* no IndexedDB: nothing waits */ } finally { flushing = false; if (S.bus && !location.hash.slice(1)) showWaiting(); }
@@ -148,6 +153,9 @@
     showWaiting();
   }
   function showWaiting() {
+    let refused = [];
+    try { refused = JSON.parse(localStorage.getItem(REFUSED_KEY) || '[]'); localStorage.removeItem(REFUSED_KEY); } catch (e) { /* none */ }
+    $('refused').innerHTML = refused.map((x) => `<span aria-hidden="true">⚠️</span> ${esc(x.litres)} L वाला डीज़ल ऑफिस ने नहीं लिया, दोबारा भरें · The office did not take the ${esc(x.litres)} L fill: ${esc(hiMsg(x.why))} Log it again.`).join('<br>');
     if (!api.waiting) return;
     api.waiting().then((n) => {
       $('waiting').innerHTML = n ? `<span aria-hidden="true">📶</span> ${n} डीज़ल फ़ोन में रखा है, नेटवर्क आने पर अपने आप जाएगा · ${n} fill${n > 1 ? 's' : ''} waiting for signal ` +
