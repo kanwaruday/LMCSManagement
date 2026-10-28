@@ -98,6 +98,7 @@ window.LMCSGuide = {
     'office/close.html': { purpose: "Close the day for your campus.", roles: ['Fee Clerk', 'Staff'] },
     'office/report.html': { purpose: "Your campus's daily report for today.", roles: ['Fee Clerk', 'Staff'] },
     'office/buses.html': { purpose: "Fuel bills to check, then where your campus buses are now.", roles: ['Fee Clerk', 'Staff'] },
+    'office/driver-fills.html': { purpose: "Fuel fills your drivers sent: check the bill and the pump video, then confirm or reject each one.", roles: ['Fee Clerk', 'Coordinator', 'Owner'] },
     'office/transport.html': { purpose: "Vehicle papers by document: upload a renewed paper where one is due.", roles: ['Fee Clerk'] },
     'office/hiring.html': { purpose: "The hiring legwork for your campus: interviews, documents and reports.", roles: ['Fee Clerk', 'Staff'] },
     'hiring/index.html': { purpose: "Hiring dashboard: applicants by role, appointments and decisions.", roles: ['Owner', 'Principal', 'Coordinator'] },

@@ -28,7 +28,8 @@ function officeAllActions_() {
     typeof officeHandoverActions_ === 'function' ? officeHandoverActions_() : {},
     typeof officeTodayActions_ === 'function' ? officeTodayActions_() : {},
     typeof officeLedgerActions_ === 'function' ? officeLedgerActions_() : {},
-    typeof officeStartActions_ === 'function' ? officeStartActions_() : {});
+    typeof officeStartActions_ === 'function' ? officeStartActions_() : {},
+    typeof officeDriverFillsActions_ === 'function' ? officeDriverFillsActions_() : {});
 }
 
 // Verify the token on every call (cached 5 min), then check role and campus, then run.
