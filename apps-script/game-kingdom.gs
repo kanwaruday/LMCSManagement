@@ -4,7 +4,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- the Owner's Kingdom read model: action `gamekingdom` (GET, pure read, writes nothing, so a peek is safe).
-// The valley: the HES Darbar at the centre and the six school bases. A base's buildings are setup quests (cq: engine quests, the Fee
+// The valley: LMCS HQ (formerly the HES Darbar) at the centre and the six school bases. A base's buildings are setup quests (cq: engine quests, the Fee
 // Clerk's Day Book quest, the Owner's "Set up the game" steps); a building's level = its leading done tiers; a base's level comes from
 // the sum of its building levels (Game Config `kingdom.levelAt`). A tier that cannot be checked is `unknown` or `soon` and never counted.
 // Scope: the Owner sees everything; a Principal sees only their own base (no heads, cards, advice or owner names); anyone else is refused

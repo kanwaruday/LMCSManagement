@@ -20,7 +20,7 @@ assert.strictEqual(K.buildingState({ level: 2, maxLevel: 5 }), 'construction');
 assert.strictEqual(K.buildingState({ level: 5, maxLevel: 5 }), 'built');
 assert.strictEqual(K.baseBadge({ level: 4 }), 'Lv 4');
 
-// sortBases: the Darbar first, the rest in config order (never by level)
+// sortBases: LMCS HQ first, the rest in config order (never by level)
 const order = (a) => a.map((b) => b.id).join();
 assert.strictEqual(order(K.sortBases([{ id: 'LMS1', level: 9 }, { id: 'LMS2', level: 1 }, { id: 'HES', darbar: true, level: 1 }, { id: 'LMS3', level: 5 }])), 'HES,LMS1,LMS2,LMS3');
 assert.strictEqual(order(K.sortBases(null)), '');
@@ -41,7 +41,7 @@ assert.strictEqual(K.onlySoon(bld('a', [])), false);
 // nextAction order: Owner setup step > step to hand out > approved card > a step the schools are on > done
 const steps = [{ id: 's1', title: 'One', done: true }, { id: 's2', title: 'Two', done: false }];
 const assignT = T('open', { label: 'Roles', assignable: true, assignees: [{ email: 'p@x' }] });
-const hes = { id: 'HES', name: 'HES Darbar', darbar: true, buildings: [bld('darbar', [T('open', { label: 'Set up the game', steps }), assignT])] };
+const hes = { id: 'HES', name: 'LMCS HQ', darbar: true, buildings: [bld('darbar', [T('open', { label: 'Set up the game', steps }), assignT])] };
 const l1 = { id: 'LMS1', name: 'LMS 1', buildings: [bld('treasury', [T('done'), T('open', { label: 'Count the cash' })])] };
 const card = { id: 'a1', title: 'Projector' };
 const D = (o) => Object.assign({ role: 'Owner', kingdom: { campuses: [l1, hes] }, cards: [card], followHeads: [{ email: 'h@x' }] }, o);
@@ -54,7 +54,7 @@ assignT.assignees = []; assert.strictEqual(K.nextAction(D()).kind, 'follow', 'no
 assignT.owner = { email: 'x', name: 'X' };
 a = K.nextAction(D()); assert.strictEqual(a.kind, 'follow'); assert.strictEqual(a.card.id, 'a1');
 assert.strictEqual(K.nextAction(D({ followHeads: [] })).kind, 'wait', 'no head to send it to: not offered');
-a = K.nextAction(D({ cards: [] })); assert.strictEqual(a.kind, 'wait'); // the Darbar's own open tier comes first (sortBases)
+a = K.nextAction(D({ cards: [] })); assert.strictEqual(a.kind, 'wait'); // LMCS HQ's own open tier comes first (sortBases)
 assert.strictEqual(a.base.id, 'HES');
 // a Principal never gets setup, assign or follow actions, even if the data carried them
 a = K.nextAction(D({ role: 'Principal' })); assert.strictEqual(a.kind, 'wait');
@@ -64,13 +64,13 @@ assert.strictEqual(K.nextAction({ role: 'Owner', kingdom: { campuses: [] } }).ki
 assert.strictEqual(K.nextAction(null).kind, 'done');
 assert.ok(/Shabash/.test(K.nextText({ kind: 'done' })));
 // level-ups: nothing on a first visit; only rises are celebrated
-const bases2 = [{ id: 'LMS1', name: 'LMS 1', buildings: [Object.assign(bld('treasury', [T('done'), T('done'), T('open')], 2), { name: 'Treasury' })] }, { id: 'HES', name: 'HES Darbar', darbar: true, buildings: [Object.assign(bld('darbar', [T('done')], 1), { name: 'Darbar' })] }];
+const bases2 = [{ id: 'LMS1', name: 'LMS 1', buildings: [Object.assign(bld('treasury', [T('done'), T('done'), T('open')], 2), { name: 'Treasury' })] }, { id: 'HES', name: 'LMCS HQ', darbar: true, buildings: [Object.assign(bld('darbar', [T('done')], 1), { name: 'HQ' })] }];
 assert.strictEqual(K.levelUps(null, bases2).length, 0);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(K.levelSnapshot(bases2))), { 'LMS1|treasury': 2, 'HES|darbar': 1 });
 let ups = K.levelUps({ 'LMS1|treasury': 1, 'HES|darbar': 1 }, bases2);
 assert.strictEqual(ups.length, 1); assert.strictEqual(K.levelUpText(ups[0]), 'Treasury at LMS 1 reached level 2. Shabash.');
-ups = K.levelUps({ 'HES|darbar': 0 }, bases2); // the Darbar built from 0 to its last level
-assert.strictEqual(ups.length, 1); assert.strictEqual(K.levelUpText(ups[0]), 'The Darbar reached level 1, fully built. Shabash.');
+ups = K.levelUps({ 'HES|darbar': 0 }, bases2); // the HQ built from 0 to its last level
+assert.strictEqual(ups.length, 1); assert.strictEqual(K.levelUpText(ups[0]), 'The HQ reached level 1, fully built. Shabash.');
 assert.strictEqual(K.levelUps({ 'LMS1|treasury': 3 }, bases2).length, 0); // a drop is not celebrated
 assert.strictEqual(K.levelUps({}, bases2).length, 0); // a building not seen before is not a level-up
 
@@ -110,7 +110,7 @@ assert.ok(/open: open \}/.test(dock), 'the dock exposes open()');
 // K5: write bodies, due date, suggestion
 const tierC = { questId: 'p1' };
 assert.deepStrictEqual(JSON.parse(JSON.stringify(K.assignBody(tierC, 'LMS4', 'a@x.org', 'hi'))), { action: 'kingdomassign', quest: 'p1', campus: 'LMS4', assignee: 'a@x.org', note: 'hi' });
-assert.strictEqual(K.assignBody({ questId: 'p3' }, 'HES', 'a@x.org', '').campus, '', 'network quest at the Darbar: campus is empty');
+assert.strictEqual(K.assignBody({ questId: 'p3' }, 'HES', 'a@x.org', '').campus, '', 'network quest at LMCS HQ: campus is empty');
 const clr = K.assignBody(tierC, 'LMS4', 'a@x.org', '', true);
 assert.ok(clr.clear === true && clr.assignee === '', 'clear carries clear:true and no assignee');
 assert.deepStrictEqual(Object.keys(K.allocateBody({ id: 'A1', title: 'x' }, 'h@x.org', '2026-11-06', 'n')).sort(), ['action', 'approvalId', 'assignee', 'due', 'note']);

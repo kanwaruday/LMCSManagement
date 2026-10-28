@@ -69,7 +69,7 @@ daybook = base({ progress: { LMS3: { cash: C(0, 0, 3), odometer: C(0, 0, 2) } } 
 r = run(owner);
 assert.strictEqual(hall('LMS3')[0], 'unknown');
 assert.strictEqual(baseOf(r, 'LMS3').unknown, 1);
-// a campus quest is not run at HES, and the Darbar has no hall
+// a campus quest is not run at HES, and LMCS HQ has no hall
 assert.strictEqual(ctx.kingdomRef_({ caller: owner, cfg: ctx.cqLoadCfg_(), views: {}, setupRows: [], defs: null }, 'HES', 'cq:p1'), null);
 
 // ---- darbar: setup:game tier carries the six steps with guide ids

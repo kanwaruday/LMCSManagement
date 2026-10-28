@@ -108,7 +108,7 @@ function gameConfigDefaults_() {
     // levelAt[L-1]: building points a base needs for level L. buildings: tiers in order (each ref must be done; null = cannot be checked, never counted).
     kingdom: {
       campuses: [
-        { id: 'HES', name: 'HES Darbar', full: 'HES (the society)', x: 500, y: 345, darbar: true },
+        { id: 'HES', name: 'LMCS HQ', full: 'LMCS HQ (the society)', x: 500, y: 345, darbar: true },
         { id: 'LMS1', name: 'LMS 1', full: 'LMS 1 Dhalpur', x: 690, y: 160 }, { id: 'LMS2', name: 'LMS 2', full: 'LMS 2 Kelheli', x: 845, y: 250 },
         { id: 'LMS3', name: 'LMS 3', full: 'LMS 3 Dunkhra', x: 610, y: 250 }, { id: 'LMS4', name: 'LMS 4', full: 'LMS 4 Ner Chowk', x: 575, y: 500 },
         { id: 'LMS5', name: 'LMS 5', full: 'LMS 5 Sayoli', x: 350, y: 470 }, { id: 'LMS6', name: 'LMS 6', full: 'LMS 6 Jogindernagar', x: 190, y: 330 } ],
@@ -117,7 +117,7 @@ function gameConfigDefaults_() {
       rights: { allocate: { roles: ['Owner'], emails: [] } },
       followupDueDays: 7, cardWindowDays: 60, cardsMax: 30, // approved requests waiting for a follow-up: only those decided in the last cardWindowDays, at most cardsMax
       buildings: [
-        { id: 'darbar', name: 'Darbar', where: 'darbar', tiers: [t('Set up the game', 'setup:game'), t('Who holds each role', 'cq:o2'), t('Approval limits', 'soon'), t('Season goals', 'soon'), t('Ask Buddy on', 'buddy:desk')] },
+        { id: 'darbar', name: 'HQ', where: 'darbar', tiers: [t('Set up the game', 'setup:game'), t('Who holds each role', 'cq:o2'), t('Approval limits', 'soon'), t('Season goals', 'soon'), t('Ask Buddy on', 'buddy:desk')] },
         { id: 'post', name: 'Messenger Post', where: 'darbar', tiers: [t('A recommender per category', 'cq:csys'), t('Escalation days', 'soon'), t('Routing from config', 'soon')] },
         { id: 'treasury', name: 'Treasury', where: 'campus', tiers: [t('Check what we know', 'daybook-setup:check'), t('Count the cash', 'daybook-setup:cash'), t('Record the odometers', 'daybook-setup:odometer'), t('Send for approval', 'daybook-setup:submit'), t('Approved', 'daybook-setup:approved')] },
         { id: 'hall', name: 'School Hall', where: 'campus', tiers: [t('Sections and class teachers', 'cq:p1'), t('Bell timings', 'cq:p2'), t('Houses (one shared set)', 'cq:p3'), t('Calendar and event owner', 'cq:cev')] },

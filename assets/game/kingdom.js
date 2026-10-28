@@ -18,7 +18,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return l > 0 && l === Number(b.maxLevel) ? 'built' : l > 0 ? 'construction' : 'empty';
   }
   function baseBadge(base) { return 'Lv ' + (Number(base && base.level) || 0); }
-  // the Darbar first, then the others in the order the config gave (never by level)
+  // LMCS HQ first, then the others in the order the config gave (never by level)
   function sortBases(bases) {
     var all = bases || [];
     return all.filter(function (b) { return b.darbar; }).concat(all.filter(function (b) { return !b.darbar; }));
@@ -40,7 +40,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   var KINGDOM_DEPT_FUNCTION = { 'Financial / Purchase': 'finance', 'Academic Change': 'academics', 'Event / Invitation': 'events',
     'Off-Campus Trip / Excursion': 'events', 'Holiday / Calendar': 'events', 'Leave': 'hr', 'Compensatory Leave': 'hr', 'Compensation Change': 'hr',
     'Salary Offer Approval': 'hr', 'EPF Exemption': 'hr', 'Disciplinary / Termination': 'hr' };
-  // the Darbar (HES) holds the network-wide quests: their campus is '' on the wire
+  // LMCS HQ (HES, the society) holds the network-wide quests: their campus is '' on the wire
   function assignBody(tier, campus, email, note, clear) {
     var b = { action: 'kingdomassign', quest: tier.questId, campus: typeof tier.campus === 'string' ? tier.campus : campus === 'HES' ? '' : campus, assignee: email, note: note };
     if (clear) { b.clear = true; b.assignee = ''; }
@@ -189,7 +189,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
 
   // ── base dialog ──
-  // a Darbar setup step list: ✓ done, the next one marked and given its How as a button
+  // an HQ setup step list: ✓ done, the next one marked and given its How as a button
   function stepList(steps) {
     var next = steps.filter(function (s) { return !s.done; })[0];
     return h('ol', { class: 'kg-steps' }, steps.map(function (s) {
@@ -323,7 +323,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     S.toured = true; store(false, TOUR_KEY, 1);
     var beats = [
       { target: '.kg-next', text: "I'm Buddy, your royal advisor. This card always shows your one next step, and the bar shows how much of the Kingdom is built." },
-      { target: '.kg-box', text: 'Each fort is a school; the Darbar in the middle is HES. The gold shield is its level, the bar its progress. Tap a fort to see its buildings.' },
+      { target: '.kg-box', text: 'Each fort is a school; LMCS HQ in the middle is the society. The gold shield is its level, the bar its progress. Tap a fort to see its buildings.' },
       { target: '.kg-alliance', text: 'Your alliance heads. Tap one to see what they are working on.' },
       { target: '.kg-tray', text: 'Approved requests wait here. Tap one, pick who follows it up, and it goes to their list.' }
     ].filter(function (b) { return document.querySelector(b.target); });
@@ -347,7 +347,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     else S.el.appendChild(h('p', { class: 'kg-quiet' }, ['No schools to show yet. They appear here once the game settings list them.']));
     if (heads.length) S.el.appendChild(h('section', { class: 'kg-alliance', 'aria-labelledby': 'kg-allh' }, [h('h2', { id: 'kg-allh' }, ['Alliance']), h('div', { class: 'kg-heads' }, heads.map(headButton))]));
     if (api.hooks.after) api.hooks.after(d);
-    // phones: start the map centred on the Darbar instead of its left edge
+    // phones: start the map centred on LMCS HQ instead of its left edge
     var dar = map.querySelector('.kg-darbar');
     if (keepX !== null) box.scrollLeft = keepX;
     else if (dar && box.scrollWidth > box.clientWidth) box.scrollLeft = Math.max(0, dar.offsetLeft - box.clientWidth / 2);
