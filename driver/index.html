@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#CE0000">
+<title>LMCS — Driver</title>
+<link rel="stylesheet" href="../assets/game/base.css?v=2eedbc63">
+<style>
+  /* a phone in a driver's hand: big targets, few words, a short Hindi word beside each label */
+  .dr-hi { font-family:var(--gb-font); font-size:15px; color:var(--gb-muted); margin-left:6px; }
+  .dr-big { width:100%; min-height:60px; font-size:18px; }
+  .dr-card h2 { margin:8px 0 4px; }
+  .dr-card .gb-bar { margin:8px 0; }
+  .dr-fld { display:block; font-weight:700; font-size:17px; margin:16px 0 6px; }
+  .dr-in { width:100%; min-height:56px; border:1.5px solid var(--gb-muted); border-radius:10px; padding:0 12px; font:inherit; font-size:22px; background:var(--gb-paper); color:var(--gb-ink); }
+  .dr-in[aria-invalid="true"] { border-color:var(--gb-low); }
+  .dr-why { margin:4px 0 0; color:var(--gb-low); font-weight:700; font-size:15px; }
+  .dr-why:empty { display:none; }
+  .dr-file input { position:absolute; width:1px; height:1px; opacity:0; }
+  .dr-file:focus-within { outline:3px solid var(--gb-focus); outline-offset:2px; }
+  .dr-file[data-has] { border-color:var(--gb-ok); color:var(--gb-ok); }
+  .dr-warn { margin:12px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-warn-soft); color:var(--gb-warn); font-weight:700; }
+  .dr-warn:empty { display:none; }
+  .dr-done { display:flex; gap:10px; align-items:center; padding:14px; border-radius:12px; background:var(--gb-ok-soft); color:var(--gb-ok); font-weight:700; font-size:18px; }
+  .dr-done .dr-hi { margin-left:auto; white-space:nowrap; }
+  .dr-demo { margin:0; padding:8px 16px; background:var(--gb-gold-soft); color:var(--gb-gold-ink); font-weight:700; text-align:center; }
+</style>
+</head>
+<body class="gb">
+<header class="gb-head"><div><div><h1 id="hello">Driver</h1><p id="busline">LMCS Transport</p></div><a id="back" href="#" hidden>&larr; Back</a></div></header>
+<p id="demo" class="dr-demo" hidden>Demo: made-up bus. Nothing is sent.</p>
+<main class="gb-page">
+  <section id="home" aria-label="My missions">
+    <ul id="cards" class="gb-list"></ul>
+    <p class="gb-muted">Only your bus is shown here.</p>
+  </section>
+
+  <section id="fuel" aria-label="Fuel fill" hidden>
+    <form id="fuelForm" novalidate></form>
+  </section>
+
+  <section id="sent" aria-label="Sent" hidden>
+    <p class="dr-done" role="status">✓ <span id="sentText">Sent to the office. Thank you!</span><span class="dr-hi">भेज दिया</span></p>
+    <p id="sentSummary" class="gb-note"></p>
+    <a class="gb-btn dr-big" href="#">Back to my missions</a>
+  </section>
+
+  <p id="closed" class="gb-empty" hidden>Driver sign-in is being set up. The office will give you a link for your phone.<br>ड्राइवर लॉगिन जल्द आ रहा है।</p>
+</main>
+<script src="./driver-logic.js?v=5334e7c8"></script>
+<script src="./driver.js?v=e1ffac2b"></script>
+</body>
+</html>
