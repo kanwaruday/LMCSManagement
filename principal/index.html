@@ -12,6 +12,10 @@
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     #base-name .gb-emoji { margin-right:.3em; }
+    /* the Owner viewing this school (owner/kingdom.html's hidden switcher): one thin bar, read only */
+    .gb-viewbar { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin:0 0 10px; padding:6px 12px; border-radius:10px; background:var(--gb-ink); color:#fff; font-size:14px; }
+    .gb-viewbar button { min-height:44px; min-width:44px; padding:0 14px; border:1.5px solid #fff; border-radius:10px; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+    .gb-viewbar button:focus-visible { outline:3px solid #fff; outline-offset:2px; }
   </style>
 </head>
 <body class="gb gb-app">
@@ -28,6 +32,7 @@
         <div id="gate-slot"></div>
       </section>
       <div id="app-root" style="display:none">
+        <p class="gb-viewbar" id="view-bar" role="status" hidden><span id="view-bar-t"></span><button type="button" id="view-leave">Leave</button></p>
         <div class="gb-next-slot"></div>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
         <!-- 🏠 Home Base (the school building and its rooms) or 🗺️ World (the school's routes): Uday, 28 Oct -->
@@ -59,8 +64,9 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=f3f5813b"></script>
-  <script src="../assets/game/game.js?v=3790d90c"></script>
+  <script src="../assets/auth.js?v=ccfc7bfd"></script>
+  <script src="../assets/game/event.js?v=14110333" data-roles="Principal"></script>
+  <script src="../assets/game/game.js?v=faeddddc"></script>
   <script src="../assets/game/emoji.js?v=73c82a00"></script>
   <script src="../assets/game/school-building.js?v=9412edb2"></script>
   <script src="../assets/game/school-models.js?v=4c8049df"></script>
@@ -162,7 +168,7 @@
     function loadBase(session) {
       renderHome(null);
       if (!GAME_BACKEND_URL) return; // the game is off: the rooms show, the setup room says so plainly
-      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
+      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || '') + LMCSGame.viewParam(), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (d) { renderHome(d && d.success && d.kingdom && (d.kingdom.campuses || [])[0] || null); if (d && d.building) drawSchool(session, d.building); })
         .catch(function (e) { console.warn('home base', e); }); // the rooms already show; setup says it couldn't load
@@ -210,7 +216,7 @@
       document.getElementById('view-world').setAttribute('aria-pressed', String(world));
       if (!world) centre();
       // the World: the school's bus routes and stops (Fleet Command's route map, read only, this campus only, no money), loaded once
-      else if (!worldMap) worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro' });
+      else if (!worldMap) worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro', campus: VIEW ? VIEW.campus : undefined });
     }
     let worldMap = null;
 
@@ -219,11 +225,26 @@
       return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
     }
 
+    // The Owner viewing this school as its Principal sees (set by owner/kingdom.html; LMCSGame.viewAs, sessionStorage). Only a session
+    // that can open the Owner portal keeps it; the game backend checks the Owner again and answers read only. Other backends (PDR,
+    // Coordinator) don't know about it, so the bar says "Game view only".
+    let VIEW = null;
+    function viewSession(session) {
+      VIEW = LMCSGame.viewAs();
+      if (VIEW && !LMCS.canViewOwnerPortal(session)) { LMCSGame.setViewAs(null); VIEW = null; }
+      if (!VIEW) return session;
+      document.getElementById('view-bar-t').textContent = 'Viewing ' + VIEW.name + ' as the Owner · Game view only';
+      document.getElementById('view-bar').hidden = false;
+      document.getElementById('view-leave').addEventListener('click', function () { LMCSGame.setViewAs(null); location.href = '../owner/kingdom.html'; });
+      return Object.assign({}, session, { campus: VIEW.campus, campusName: VIEW.name });
+    }
+
     function showApp(session) {
+      session = viewSession(session);
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
 
-      document.getElementById('hub-hello').textContent = hello(session.name) + ' · Principal · ' + session.campusName;
+      document.getElementById('hub-hello').textContent = VIEW ? 'Principal · ' + session.campusName : hello(session.name) + ' · Principal · ' + session.campusName;
       document.getElementById('panels').hidden = false;
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
 
@@ -238,7 +259,7 @@
       document.getElementById('view-world').addEventListener('click', function () { showView(true); });
       wireSchool(); drawSchool(session, null);
       loadBase(session);
-      LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
+      if (!VIEW) LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session }); // the Owner's own appointments: not this school's
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
 

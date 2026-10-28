@@ -264,7 +264,8 @@ function gameToday_(caller, params) {
   return (peek ? function (fn) { return fn(); } : gameWithLock_)(function () {
     let daily;
     if (peek) {
-      const rows = ss.getSheetByName('Game Daily').getDataRange().getValues(), plan = gameDailyPlan_(rows, caller, dayKey, missionsNow, cfg0, loaded.down.length === 0);
+      // the Owner viewing a school as its Principal (viewAs) gets a fresh pick: never the Owner's own day snapshot under a Principal's missions
+      const rows = caller.viewAs ? [] : ss.getSheetByName('Game Daily').getDataRange().getValues(), plan = gameDailyPlan_(rows, caller, dayKey, missionsNow, cfg0, loaded.down.length === 0);
       daily = { rows: rows, carried: plan.carried, snapshotIds: plan.newIds || plan.snapshotIds, created: false };
     } else daily = gamePersistDaily_(ss.getSheetByName('Game Daily'), caller, dayKey, missionsNow, cfg0, loaded.down.length === 0, now);
     const win = gameSyncWindows_(ss, now, peek), cfg = win.cfg;
