@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=1b745c86" />
   <style>
     /* Page-only styles. Tokens come from assets/style.css. */
     :root { --rule: #e8e8e8; }
@@ -69,23 +70,10 @@
 </head>
 <body>
 
-  <header class="site">
-    <div class="wrap">
-      <a class="brand" href="../index.html">
-        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
-        <span>
-          LMCS Portal
-          <span class="tagline">Grooming to Excellence</span>
-        </span>
-      </a>
-      <nav class="roles" id="header-status"></nav>
-    </div>
-  </header>
+  <!-- the game header (base.css) only: the wrapper gives it the gb scope, the page below keeps its own styles -->
+  <div class="gb"><header class="gb-head"><div><div><h1>Daily-report issues</h1><p id="header-status">La Montessori Schools</p></div><a href="index.html">&lsaquo; Principal portal</a></div></header></div>
 
   <main class="wrap page">
-    <a class="back" href="index.html">&larr; Principal home</a>
-    <h1>Daily-report issues</h1>
-
     <div id="auth-root"><div id="gate-slot"></div></div>
 
     <div id="app-root" style="display:none">
@@ -103,7 +91,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=19734029"></script>
+  <script src="../assets/auth.js?v=f846c463"></script>
   <script>
     // "LMCS Coordinator Backend" (apps-script/coordinator-principal.gs). Same URL as BACKEND_URL in coordinator/shared.js.
     const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
@@ -282,7 +270,7 @@
       SESSION = session;
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
-      document.getElementById('header-status').innerHTML = '<span>' + esc(session.campusName) + '</span>';
+      document.getElementById('header-status').textContent = session.campusName;
       load();
     }
 
