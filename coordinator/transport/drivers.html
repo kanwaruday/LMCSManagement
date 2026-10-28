@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#CE0000">
+<title>LMCS — Driver phones</title>
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
+<link rel="stylesheet" href="../shared.css?v=14149e6e">
+<link rel="stylesheet" href="../capture/capture.css?v=51d53340">
+<link rel="stylesheet" href="../../assets/game/base.css?v=2eedbc63">
+<style>
+  .dp-list{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
+  .dp-list>li{border:1.5px solid var(--c-line);border-radius:14px;padding:12px 14px;background:var(--gb-paper,#fff)}
+  .dp-list b{font-size:17px}
+  .dp-list p{margin:2px 0;font-size:15px}
+  .dp-off{color:var(--c-mute)}
+  .dp-acts{display:flex;gap:8px;margin-top:8px}
+  .dp-acts .gb-btn{flex:1 1 0}
+  .dp-form label{display:block;font-weight:700;margin:12px 0 4px}
+  .dp-form .gb-row-acts{margin-top:16px}
+  .dp-qr{display:block;width:240px;max-width:100%;margin:12px auto;border:1.5px solid var(--c-line);border-radius:12px}
+  .dp-url{word-break:break-all;font-size:13px;color:var(--c-mute)}
+  .gb .gb-btn{text-decoration:none}
+</style>
+</head>
+<body class="gb">
+<header class="gb-head site"><div><div><h1>Driver phones</h1><p>LMCS Transport</p></div><a id="back" href="setup.html">&larr; Fleet setup</a></div></header>
+<div id="authRoot"></div>
+<main id="appBody" class="cap" hidden>
+  <p id="loadMsg" class="cap-note"><span>Loading…</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
+  <section id="fresh" class="gb-card" hidden aria-label="New driver link"></section>
+  <div id="addRow"><button type="button" id="add" class="gb-btn gb-btn-primary" style="width:100%;min-height:52px">Add driver phone</button></div>
+  <form id="form" class="dp-form gb-card" hidden novalidate>
+    <label for="bus">Bus</label><select id="bus" class="cap-select"></select>
+    <label for="name">Driver name</label><input id="name" class="cap-input" maxlength="60" autocomplete="off">
+    <label for="code">Employee code (optional)</label><input id="code" class="cap-input" maxlength="12" autocomplete="off">
+    <p id="formMsg" class="cap-msg" role="alert"></p>
+    <div class="gb-row-acts"><button type="submit" id="create" class="gb-btn gb-btn-primary">Create link</button><button type="button" id="cancel" class="gb-btn">Cancel</button></div>
+  </form>
+  <h2 class="cap-h" style="margin-top:20px">Linked phones</h2>
+  <ul id="links" class="dp-list"></ul>
+  <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<script src="../../assets/auth.js?v=71b8a192"></script>
+<script type="module" src="../capture/drivers.js?v=7f127558"></script>
+</body>
+</html>

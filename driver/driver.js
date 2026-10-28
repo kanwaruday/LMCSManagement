@@ -1,26 +1,49 @@
 // Driver portal page (driver/index.html). Home = the driver's mission cards; #fuel = the fuel fill; #sent = the thank-you.
-// Sign-in and where a fill is stored are still open with Uday (vault work/Driver Portal design.md), so for now the page runs
-// only as a demo (?demo=1, a made-up bus, nothing sent); without it, it says sign-in is coming. The backend adapter lands with
-// those answers: load() returns the driver's bus, send() stores the fill.
+// Demo (?demo=1): a made-up bus, nothing sent. Live: the office links this phone to one driver and bus (a QR from
+// coordinator/transport/drivers.html opens this page with #k=<token>); the token moves to localStorage, the fragment is stripped,
+// and driverme (Roster web app, apps-script/driver-link.gs) says whose bus this is. Where a fuel fill is stored is still open with
+// Uday (vault work/Driver Portal design.md), so in live mode the fuel card says "Coming soon". The token is never logged or shown.
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const DEMO = new URLSearchParams(location.search).get('demo') === '1';
-  const api = DEMO ? {
+  const demoApi = DEMO ? {
     load: () => Promise.resolve({ name: 'Ramesh', reg: 'HP 34 X 0000', campus: 'LMS 1', runsNeeded: 2, runsDone: 1, lastFill: '2026-10-21', lastOdometer: 58000 }),
     send: () => new Promise((ok) => setTimeout(() => ok({ queued: !navigator.onLine }), 400)),
   } : null;
+  const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
+  const TOKEN_KEY = 'lmcs.driverToken'; // also read by coordinator/capture/driver-mode.js
+  function takeToken() {
+    const t = DriverLogic.tokenFromHash(location.hash);
+    if (t) { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* kept for this visit only */ } history.replaceState(null, '', location.pathname + location.search); return t; }
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+  const live = !DEMO && (() => {
+    const token = takeToken();
+    return !token ? null : {
+      load: async () => {
+        let r;
+        try { r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: token }) })).text()); }
+        catch (e) { throw new Error('Could not reach the office. Try again when there is signal.'); }
+        if (!r.success) throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.');
+        return r;
+      },
+      send: () => Promise.reject(new Error('not stored yet')), // the fuel card has no form in live mode
+    };
+  })();
+  const api = DEMO ? demoApi : live;
   const S = { bus: null, form: {}, files: {}, touched: {}, failed: '' };
 
   function home() {
     const cards = DriverLogic.missions(S.bus);
     $('cards').innerHTML = cards.map((m) => {
-      const pill = m.done ? '<span class="gb-pill gb-pill-ok">Done</span>' : m.primary ? '<span class="gb-pill gb-pill-next">Next</span>'
+      const pill = (api === live && m.id === 'fuel') ? '<span class="gb-pill gb-pill-warn">Coming soon</span>' : m.done ? '<span class="gb-pill gb-pill-ok">Done</span>' : m.primary ? '<span class="gb-pill gb-pill-next">Next</span>'
         : m.progress != null && m.progress > 0 ? '<span class="gb-pill gb-pill-warn">In progress</span>' : '';
       const bar = m.progress == null ? '' : `<span class="gb-bar${m.done ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * m.progress)}%"></i></span>`;
-      const href = m.id === 'fuel' ? '#fuel' : `../coordinator/transport/capture.html?mode=timelapse&reg=${encodeURIComponent(S.bus.reg.replace(/\s/g, ''))}`;
-      const btn = m.action ? `<a class="gb-btn dr-big${m.primary ? ' gb-btn-primary' : ''}" href="${href}">${esc(m.action)}</a>` : '';
+      const href = m.id === 'fuel' ? '#fuel' : `../coordinator/transport/capture.html?${api === live ? 'driver=1&' : ''}mode=timelapse&reg=${encodeURIComponent(S.bus.reg.replace(/\s/g, ''))}`;
+      const btn = api === live && m.id === 'fuel' ? '' : m.action ? // live: no fuel store yet, so no button
+        `<a class="gb-btn dr-big${m.primary ? ' gb-btn-primary' : ''}" href="${href}">${esc(m.action)}</a>` : '';
       return `<li class="gb-card dr-card">${pill ? `<p>${pill}</p>` : ''}<h2>${esc(m.title)}<span class="dr-hi">${esc(m.hi)}</span></h2>${bar}<p class="gb-muted">${esc(m.status)}</p>${btn}</li>`;
     }).join('');
   }
@@ -59,7 +82,7 @@
   function route() {
     if (!S.bus) return;
     let h = location.hash.slice(1);
-    if (h !== 'fuel' && h !== 'sent') h = '';
+    if ((h !== 'fuel' && h !== 'sent') || api === live) h = ''; // live: no fuel form yet
     $('home').hidden = h !== ''; $('fuel').hidden = h !== 'fuel'; $('sent').hidden = h !== 'sent';
     $('back').hidden = h === ''; $('back').href = '#';
     if (h === 'fuel') fuelForm();
@@ -106,5 +129,8 @@
     S.bus = bus;
     $('hello').textContent = 'Namaste, ' + bus.name; $('busline').textContent = 'Bus ' + bus.reg + ' · ' + bus.campus;
     route();
+  }, (e) => { // the server's own words: an unlinked phone is told to ask the office
+    $('home').hidden = true; $('closed').hidden = false;
+    $('closed').innerHTML = esc(e.message) + '<br>ऑफिस से नया लिंक माँगें।';
   });
 })();

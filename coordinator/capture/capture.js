@@ -11,6 +11,7 @@
 // Never shows speed or trip time, and no sound.
 import { shouldCapture, distanceM } from './geo.js';
 import { createCaptureIdb, createRunStore } from './run-store.js';
+import { wantsDriverMode, TOKEN_KEY } from './driver-mode.js';
 import { createUploader } from './uploader.js';
 
 const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
@@ -71,6 +72,7 @@ function rememberIdentity(s) {
 async function boot() {
   try { await store.recover(); } catch (e) { /* no IndexedDB: the Start button reports it */ }
   let s = LMCS.getSession();
+  if (wantsDriverMode(location.search, storedToken(), s)) return driverBoot();
   const offline = !s && cachedIdentity();
   if (!s) s = offline || await LMCS.requireSession('#authRoot');
   $('authRoot').style.display = 'none';
@@ -99,6 +101,40 @@ async function boot() {
   // leaving mid-run (the header's back link, a reload) stops the camera and GPS: ask first. The run itself stays on the phone.
   addEventListener('beforeunload', (e) => { if (S.active) { e.preventDefault(); e.returnValue = ''; } });
 }
+
+// Driver mode (driver-mode.js): the linked bus only, timelapse only, no sign-in. driverme says which bus; the answer is kept on the
+// phone so a bus with no signal still opens. A phone the office has unlinked is told so and records nothing.
+const BUS_KEY = 'lmcs-capture-driverbus';
+function storedToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+async function driverBoot() {
+  $('authRoot').style.display = 'none';
+  const main = $('appBody');
+  main.hidden = false;
+  let me = null;
+  try {
+    const r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: storedToken() }) })).text());
+    if (!r.success) { main.innerHTML = '<div class="denied">' + esc(r.error || 'This phone is not linked. Ask the office for a new link.') + '</div>'; return; }
+    me = { name: r.name, reg: r.reg, campus: r.campus };
+    try { localStorage.setItem(BUS_KEY, JSON.stringify(me)); } catch (e) { /* full */ }
+  } catch (e) { try { me = JSON.parse(localStorage.getItem(BUS_KEY) || 'null'); } catch (e2) { me = null; } }
+  if (!me) { main.innerHTML = '<div class="denied">Could not check this phone. Open this page once with signal.</div>'; return; }
+  S.driver = me;
+  S.session = { email: 'driver:' + normReg(me.reg), role: 'Driver', idToken: null, driver: true };
+  S.buses = [{ reg: me.reg, route: '', campus: me.campus, operational: true, stops: [] }];
+  $('back').href = '../../driver/'; $('back').textContent = '\u2190 My missions';
+  document.querySelectorAll('[data-mode]').forEach((b) => { b.hidden = b.dataset.mode !== 'timelapse'; });
+  $('offline').hidden = true;
+  wire();
+  setMode('timelapse');
+  $('bus').innerHTML = `<option value="${esc(me.reg)}">${esc(me.reg)}</option>`;
+  $('bus').value = me.reg;
+  $('busNote').textContent = 'Your bus, linked to this phone.';
+  battery();
+  drawResume();
+  drawUpload();
+  addEventListener('beforeunload', (e) => { if (S.active) { e.preventDefault(); e.returnValue = ''; } });
+}
+const signedIn = () => !!(S.driver || LMCS.getSession()); // a linked driver phone counts: it posts deviceToken
 
 function wire() {
   document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -502,7 +538,7 @@ async function endRun() {
   await store.endRun(S.run.id);
   S.run = await store.getRun(S.run.id);
   $('running').hidden = true;
-  $('offline').hidden = !!LMCS.getSession();
+  $('offline').hidden = signedIn();
   drawSummary();
   drawUpload();
 }
@@ -541,9 +577,10 @@ function drawSummary() {
 
 // ── Upload tab ──
 async function post(body) { // the uploader's transport: the signed-in idToken, the Roster web app (apps-script/transport-capture.gs)
-  const s = LMCS.getSession();
+  const s = S.driver ? { deviceToken: storedToken() } : LMCS.getSession();
   if (!s) return { success: false, error: 'Signed out. Sign in again, then tap Send now on Wi-Fi' };
-  const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: s.idToken }, body)) })).text();
+  const auth = S.driver ? { deviceToken: s.deviceToken } : { idToken: s.idToken };
+  const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign(auth, body)) })).text();
   return JSON.parse(text); // a Google error page instead of JSON throws, and the uploader retries
 }
 function runLine(run, p) {
@@ -594,7 +631,7 @@ async function signIn() {
 }
 async function sendAll() {
   if (S.sending) return;
-  if (!LMCS.getSession() && !(await signIn())) return; // a sign-in lasts about an hour, and offline mode has none: sign in, then send
+  if (!signedIn() && !(await signIn())) return; // a sign-in lasts about an hour, and offline mode has none: sign in, then send
   S.sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
   S.progress = {};
   const runs = {};
@@ -788,7 +825,7 @@ async function saveInspection() {
   } catch (e) { $('inspMsg').textContent = e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message; return; }
   finally { $('inspSave').disabled = false; }
   $('inspect').hidden = true;
-  $('offline').hidden = !!LMCS.getSession();
+  $('offline').hidden = signedIn();
   drawSummary(); drawUpload();
   $('summary').querySelector('[data-a="send"]').focus();
 }
