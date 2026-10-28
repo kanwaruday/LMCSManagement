@@ -33,7 +33,10 @@ var LMCSRail = (function () {
     rallies: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>',
     events: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   };
+  // the bar's emoji come from assets/game/emoji.js (one per concept, everywhere); a page without it keeps the line icons
   function icon(k) {
+    var e = window.LMCSEmoji && LMCSEmoji.get(k);
+    if (e) return '<span class="gb-rail-e" aria-hidden="true">' + e + '</span>';
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[k] + '</svg>';
   }
   function key() {
@@ -76,14 +79,15 @@ var LMCSRail = (function () {
       s.className = 'gb-rail-i is-soon'; s.setAttribute('aria-label', name + ', coming soon'); s.setAttribute('role', 'img');
       s.innerHTML = icon(k);
       s.appendChild(document.createTextNode(name));
-      var sm = document.createElement('small'); sm.setAttribute('aria-hidden', 'true'); sm.textContent = 'Soon'; s.appendChild(sm);
+      var sm = document.createElement('small'); sm.setAttribute('aria-hidden', 'true'); sm.textContent = (window.LMCSEmoji ? LMCSEmoji.get('soon') + ' ' : '') + 'Soon'; s.appendChild(sm);
       return s;
     }
     function buddy() {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'gb-rail-i';
-      var img = document.createElement('img'); img.src = root + 'assets/game/buddy/winter-formal-neutral.webp'; img.alt = '';
-      b.appendChild(img); b.appendChild(document.createTextNode('Buddy'));
+      if (window.LMCSEmoji) b.innerHTML = icon('buddy');
+      else { var img = document.createElement('img'); img.src = root + 'assets/game/buddy/winter-formal-neutral.webp'; img.alt = ''; b.appendChild(img); }
+      b.appendChild(document.createTextNode('Buddy'));
       // the floating Buddy owns the panel: press its button; before it loads (or where a page opted out), the guide is the help
       b.addEventListener('click', function () {
         var fab = document.querySelector('.bd-btn');

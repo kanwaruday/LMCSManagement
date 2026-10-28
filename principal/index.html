@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=128c71f9" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     .pp-paths h2 { margin:22px 0 2px; }
@@ -36,8 +36,8 @@
       </div>
     </main>
     <aside class="gb-panels" id="panels" aria-label="More" hidden>
-      <details class="gb-panel"><summary>Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
-      <details class="gb-panel"><summary>Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
+      <details class="gb-panel"><summary data-emoji="appointments">Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
+      <details class="gb-panel"><summary data-emoji="account">Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
     </aside>
   </div>
 
@@ -49,7 +49,8 @@
 
   <script src="../assets/auth.js?v=df0cbfd3"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
-  <script src="../assets/game/rail.js?v=4b2c2dd5"></script>
+  <script src="../assets/game/emoji.js?v=f2812675"></script>
+  <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
@@ -59,18 +60,18 @@
     // are the same ones as before, for the Principal's own school. Counts would need the hiring and staff data, which this hub
     // doesn't load, so the rows say what each page holds instead.
     const PATHS = [
-      { title: 'Daily work', lead: 'Your reports and what came out of them.', pages: [
-        { name: "Principal's Daily Reporting", url: '../principals-daily-reporting/index.html', desc: 'Your daily report, teachers\' SS and their dashboards.' },
-        { name: 'Daily-report issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
-        { name: 'Curriculum & Progress', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
+      { title: 'Daily work', e: 'day', lead: 'Your reports and what came out of them.', pages: [
+        { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report, teachers\' SS and their dashboards.' },
+        { name: 'Daily-report issues', e: 'issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
+        { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
       ] },
-      { title: 'HR & Hiring', lead: 'Your school\'s applicants and staff.', pages: [
-        { name: 'Hiring Dashboard', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
-        { name: 'Staff documents and directory', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
-        { name: 'Salary Dashboard', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
+      { title: 'HR & Hiring', e: 'hiring', lead: 'Your school\'s applicants and staff.', pages: [
+        { name: 'Hiring Dashboard', e: 'applicants', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
+        { name: 'Staff documents and directory', e: 'documents', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
+        { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
       ] },
-      { title: 'Rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
-        { name: 'Bye Laws', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'The rulebook of record.' },
+      { title: 'Rules', e: 'rules', lead: 'Conduct, leave and job roles, as the school has set them.', pages: [
+        { name: 'Bye Laws', e: 'byeLaws', url: 'https://kanwaruday.github.io/LMCSByeLaws/', desc: 'The rulebook of record.' },
       ] },
     ];
 
@@ -79,11 +80,14 @@
       const nav = document.getElementById('modules');
       nav.textContent = '';
       PATHS.forEach(function (p) {
-        nav.appendChild(el('h2', '', p.title));
+        const h2 = el('h2', '', p.title);
+        if (window.LMCSEmoji && p.e) h2.insertBefore(LMCSEmoji.tag(p.e), h2.firstChild);
+        nav.appendChild(h2);
         if (p.lead) nav.appendChild(el('p', 'gb-muted', p.lead));
         const ul = el('ul', 'gb-list');
         p.pages.forEach(function (m) {
           const a = el('a', 'gb-go'), span = el('span', '', m.name);
+          if (window.LMCSEmoji && m.e) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
           a.href = m.url;
           span.appendChild(el('small', '', m.desc));
           a.appendChild(span);

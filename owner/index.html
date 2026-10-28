@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=128c71f9" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=079704f5" />
 </head>
 <body class="gb gb-app">
 
@@ -28,9 +28,9 @@
       </div>
     </main>
     <aside class="gb-panels" id="panels" aria-label="More" hidden>
-      <details class="gb-panel" id="modules"><summary>Owner tools</summary><div class="gb-panel-b"><ul class="gb-list" id="modules-grid"></ul></div></details>
-      <details class="gb-panel"><summary>Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
-      <details class="gb-panel"><summary>Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
+      <details class="gb-panel" id="modules"><summary data-emoji="tools">Owner tools</summary><div class="gb-panel-b"><ul class="gb-list" id="modules-grid"></ul></div></details>
+      <details class="gb-panel"><summary data-emoji="appointments">Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
+      <details class="gb-panel"><summary data-emoji="account">Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
     </aside>
   </div>
 
@@ -43,17 +43,18 @@
   <script src="../assets/auth.js?v=df0cbfd3"></script>
   <script src="../assets/game/game.js?v=3790d90c"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
-  <script src="../assets/game/rail.js?v=4b2c2dd5"></script>
+  <script src="../assets/game/emoji.js?v=f2812675"></script>
+  <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
     const MODULES = [
-      { name: 'Kingdom', url: 'kingdom.html', desc: 'Your schools as a kingdom. Buddy shows your next step, and you hand out who sets up what.' },
+      { name: 'Kingdom', e: 'base', url: 'kingdom.html', desc: 'Your schools as a kingdom. Buddy shows your next step, and you hand out who sets up what.' },
       // Approvals points at the Coordinator systems page for now; Owner portal part A replaces it.
-      { name: 'Approvals', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },
-      { name: 'Payroll', url: '../payroll/index.html', desc: 'Monthly payroll.' },
-      { name: 'Salary Dashboard', url: '../salary/index.html', desc: 'Offer-letter salary calculator and salary data.' },
-      { name: 'Transport', url: 'transport/index.html', desc: 'GPS leakage, trackers, who is late on follow-ups, and proposals for your decision.' },
+      { name: 'Approvals', e: 'requests', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },
+      { name: 'Payroll', e: 'payroll', url: '../payroll/index.html', desc: 'Monthly payroll.' },
+      { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'Offer-letter salary calculator and salary data.' },
+      { name: 'Transport', e: 'bus', url: 'transport/index.html', desc: 'GPS leakage, trackers, who is late on follow-ups, and proposals for your decision.' },
     ];
 
     function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
@@ -62,6 +63,7 @@
       ul.textContent = '';
       MODULES.forEach(function (m) {
         const a = el('a', 'gb-go'), span = el('span', '', m.name), li = el('li');
+        if (window.LMCSEmoji && m.e) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
         a.href = m.url;
         span.appendChild(el('small', '', m.desc));
         a.appendChild(span); li.appendChild(a); ul.appendChild(li);

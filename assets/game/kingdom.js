@@ -299,10 +299,11 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   // the screen skeleton (base.css): a page that passes `panels` gets the crest, the alliance and the tray as folded panels
   // there, and one that passes `next` gets the next-step card in its fixed slot; without them the page reads top to bottom as before
-  function panel(title, cls, body, open) {
+  function panel(title, cls, body, open, emoji) {
     if (S.wasOpen) open = S.wasOpen.indexOf(cls) !== -1; // a re-render keeps what the person opened or closed
     else if (open && cls !== 'kg-me' && window.matchMedia && !matchMedia('(min-width: 960px)').matches) open = false; // phones: panels start folded so the map stays in view (the small Your Kingdom panel, with its tour and Ask Buddy buttons, stays open)
-    return h('details', { class: 'gb-panel ' + cls, 'data-panel': cls, open: open ? 'open' : null }, [h('summary', {}, [title]), h('div', { class: 'gb-panel-b' }, [body])]);
+    var e = window.LMCSEmoji && emoji ? LMCSEmoji.tag(emoji) : null; // the shared emoji (assets/game/emoji.js) before the title
+    return h('details', { class: 'gb-panel ' + cls, 'data-panel': cls, open: open ? 'open' : null }, [h('summary', {}, [e, title]), h('div', { class: 'gb-panel-b' }, [body])]);
   }
   function message(text, retry) {
     return h('div', { class: 'kg-msg', role: 'alert' }, [buddyImg('winter-formal-neutral'), h('div', {}, [h('p', {}, [text]),
@@ -348,7 +349,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var heads = d.heads || [];
     if (S.panels) {
       if (S.panels.firstChild) S.wasOpen = [].map.call(S.panels.querySelectorAll('details[open]'), function (x) { return x.getAttribute('data-panel'); });
-      S.panels.textContent = ''; S.panels.appendChild(panel('Your Kingdom', 'kg-me', top(d), true));
+      S.panels.textContent = ''; S.panels.appendChild(panel('Your Kingdom', 'kg-me', top(d), true, 'base'));
     }
     else S.el.appendChild(top(d));
     if ((d.sourcesDown || []).length) S.el.appendChild(h('p', { class: 'kg-quiet kg-down', role: 'status' }, ["Some buildings couldn't be checked just now, so their steps show as “couldn't check”. Nothing is lost; try again in a few minutes."]));
@@ -358,7 +359,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     else S.el.appendChild(h('p', { class: 'kg-quiet' }, ['No schools to show yet. They appear here once the game settings list them.']));
     if (heads.length) {
       var hs = h('div', { class: 'kg-heads' }, heads.map(headButton));
-      if (S.panels) S.panels.appendChild(panel('Alliance heads (' + heads.length + ')', 'kg-alliance', hs, false));
+      if (S.panels) S.panels.appendChild(panel('Alliance heads (' + heads.length + ')', 'kg-alliance', hs, false, 'heads'));
       else S.el.appendChild(h('section', { class: 'kg-alliance', 'aria-labelledby': 'kg-allh' }, [h('h2', { id: 'kg-allh' }, ['Alliance']), hs]));
     }
     if (api.hooks.after) api.hooks.after(d);
@@ -506,7 +507,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
           h('span', { class: 'kg-csrc' }, ['Approved request' + (c.campus ? ' · ' + c.campus : '')]), h('span', { class: 'kg-ct' }, [c.title]),
           sug ? h('span', { class: 'kg-cm' }, ['Buddy suggests ' + sug.name]) : null])]);
       })) : h('p', { class: 'kg-empty' }, ['Nothing waiting. When a request is approved and nobody is following it up, it lands here for you to hand out.'])]);
-    if (S.panels) S.panels.appendChild(panel('Requests tray (' + cards.length + ')', 'kg-traypanel', tray, cards.length > 0));
+    if (S.panels) S.panels.appendChild(panel('Requests tray (' + cards.length + ')', 'kg-traypanel', tray, cards.length > 0, 'requests'));
     else S.el.appendChild(tray);
   };
 

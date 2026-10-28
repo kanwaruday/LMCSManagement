@@ -22,6 +22,7 @@
      gb-loading, gb-alert gb-alert-err|warn|ok   loading (no shimmer), and messages that say what happened
      gb-table       a table that turns into labelled rows under 600px (give each td data-label="Column"; role="table"/"row"/"cell" keep it a table for screen readers)
      gb-saved, gb-saved-local, gb-toast   "Sent ✓" inline, "Saved on this phone" (queued), one status line at the bottom
+     gb-emoji       the one emoji before a label (assets/game/emoji.js: LMCSEmoji.tag(key)); aria-hidden, never in numbers
    No motion anywhere. */
 .gb, .gb-app, .gb-rail {
   --gb-red:#ce0000; --gb-red-ink:#a10000; --gb-red-soft:#fde8e8;
@@ -139,6 +140,11 @@
 .gb-done .gb-row-acts { justify-content:center; }
 
 /* ── the kit ── */
+/* emoji: one per item, before its label, the same for a concept everywhere (assets/game/emoji.js) */
+.gb-emoji { display:inline-block; margin-right:.4em; font-style:normal; font-weight:400; line-height:1; }
+.gb-rail-e { font-size:24px; line-height:1; }
+.gb-pill-ok:has(> .gb-emoji)::before { content:none; } /* the emoji already says done */
+
 /* buttons: secondary is plain gb-btn; danger is outlined deep orange */
 .gb .gb-btn-danger, .gb-btn-danger { background:var(--gb-paper); border-color:var(--gb-low); color:var(--gb-low); }
 .gb-btn-danger:hover { background:var(--gb-low-soft); }

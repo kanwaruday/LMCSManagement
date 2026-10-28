@@ -28,4 +28,16 @@ for (const p of ['owner/index.html', 'owner/kingdom.html', 'principal/index.html
 }
 assert.ok(/\.gb-panel, \.gb-panel\[open\] \{ flex:none; \}/.test(css), 'an open panel keeps its height in the desktop column');
 assert.ok(css.includes(':where(.gb) h2') && !/^\.gb h2/m.test(css), 'base.css element headings are weightless');
+// the emoji map: one emoji per concept (no emoji reused), the bar's five keys present, and the pages load it before the bar
+const E = require(path.join(root, 'assets/game/emoji.js'));
+const vals = Object.values(E.map);
+assert.strictEqual(new Set(vals).size, vals.length, 'no emoji stands for two concepts');
+for (const k of ['missions', 'quests', 'rallies', 'events', 'buddy', 'done', 'due', 'overdue', 'locked', 'soon', 'points', 'levelUp', 'level', 'reward']) assert.ok(E.get(k), 'emoji for ' + k);
+assert.strictEqual(E.get('nope'), '', 'an unknown key has no emoji');
+assert.strictEqual(E.tag('quests'), null, 'tag() needs a document');
+assert.ok(Object.isFrozen(E.map), 'the map is read-only');
+for (const p of ['owner/index.html', 'owner/kingdom.html', 'principal/index.html']) {
+  const h = fs.readFileSync(path.join(root, p), 'utf8');
+  assert.ok(h.indexOf('game/emoji.js') !== -1 && h.indexOf('game/emoji.js') < h.indexOf('game/rail.js'), p + ' loads emoji.js before rail.js');
+}
 console.log('test-rail: ok');

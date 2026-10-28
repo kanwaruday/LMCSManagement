@@ -56,6 +56,14 @@
     <p class="gb-err">That didn't save. Nothing was changed; try again.</p>
   </section>
   <section class="gb-section">
+    <h2>Emoji (assets/game/emoji.js)</h2>
+    <p class="gb-muted">One emoji per concept, the same on every page, always before a text label and hidden from screen readers. Never in data cells or numbers; money screens stay plain. Mark a label with <code>data-emoji="key"</code>, or use <code>LMCSEmoji.tag(key)</code> in script.</p>
+    <p><span class="gb-pill gb-pill-ok" data-emoji="done">Done</span> <span class="gb-pill gb-pill-warn" data-emoji="due">Due today</span> <span class="gb-pill gb-pill-low" data-emoji="overdue">Overdue</span> <span class="gb-pill" data-emoji="locked">Opens next</span> <span class="gb-pill" data-emoji="waiting">Waiting on the Accounts head</span> <span class="gb-pill" data-emoji="soon">Coming soon</span></p>
+    <ul class="gb-list"><li><a class="gb-go" href="#"><span data-emoji="startingData">Starting data<small>Quest 1 · 2 of 5 steps · reward ⭐ 20</small></span></a></li></ul>
+    <ul class="gb-grid" id="emoji-key"></ul>
+  </section>
+
+  <section class="gb-section">
     <h2>The kit</h2>
 
     <h3>Buttons</h3>
@@ -114,10 +122,17 @@
     <div class="gb-toast" role="status" style="position:static">Sent ✓ Coordinator A sees it in their Today list.</div>
   </section>
 </main>
+<script src="../../assets/game/emoji.js"></script>
 <script src="../../assets/game/rail.js"></script>
 <script>
   // made-up counts: the Today panel fires this event on a real page
   LMCSRail.mount(document.getElementById('game-rail'), { hub: '#', root: '../../' });
+  // the whole emoji key, drawn from the map so the gallery never drifts from it
+  Object.keys(LMCSEmoji.map).forEach(function (k) {
+    var li = document.createElement('li'); li.className = 'gb-card';
+    li.appendChild(LMCSEmoji.tag(k)); li.appendChild(document.createTextNode(k));
+    document.getElementById('emoji-key').appendChild(li);
+  });
   document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [{}, {}, {}], windows: [], quests: [{}] } }));
 </script>
 </body>
