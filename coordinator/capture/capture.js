@@ -113,6 +113,7 @@ async function driverBoot() {
   let me = null;
   try {
     const r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: storedToken() }) })).text());
+    if (!r.success && r.code !== 'UNLINKED') throw new Error(r.error || 'no answer'); // passing: use the saved bus, keep the link
     if (!r.success) { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(BUS_KEY); } catch (e) { /* nothing kept */ } main.innerHTML = '<div class="denied">' + esc(r.error || 'This phone is not linked. Ask the office for a new link.') + '</div>'; return; }
     me = { name: r.name, reg: r.reg, campus: r.campus };
     try { localStorage.setItem(BUS_KEY, JSON.stringify(me)); } catch (e) { /* full */ }

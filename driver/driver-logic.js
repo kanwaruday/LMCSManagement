@@ -79,7 +79,8 @@ var DriverLogic = (function () {
 
   // what to do with a queued fill after a send: 'sent' (the server answered success: drop it from the phone), 'refused' (the server
   // answered no: tell the driver), 'retry' (no answer, a timeout or an HTML error page: keep it and send again later)
-  function sendOutcome(r) { return r && typeof r === 'object' ? (r.success ? 'sent' : 'refused') : 'retry'; }
+  // Only an answer the server marks refused is final; any other failure (a lock timeout, a Drive error) is retried later.
+  function sendOutcome(r) { return r && typeof r === 'object' ? (r.success ? 'sent' : r.refused ? 'refused' : 'retry') : 'retry'; }
 
   // the device token in a link's fragment (#k=<64 hex>), or '' for anything else
   function tokenFromHash(hash) { var m = /^#?k=([a-f0-9]{64})$/.exec(hash || ''); return m ? m[1] : ''; }

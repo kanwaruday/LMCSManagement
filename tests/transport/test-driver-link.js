@@ -97,7 +97,7 @@ assert.strictEqual(c2.success, true);
 assert.ok(rows()[0][8] instanceof Date && rows()[0][9] === 'f4@lms.org.in', 'the earlier link is revoked');
 assert.ok(!rows()[1][8], 'the new one is active');
 const unknown = call('driverMe_', { deviceToken: 'f'.repeat(64) }), revoked = call('driverMe_', { deviceToken: c1.token });
-assert.deepStrictEqual(revoked, { success: false, error: UNLINKED });
+assert.deepStrictEqual(revoked, { success: false, code: 'UNLINKED', error: UNLINKED });
 assert.deepStrictEqual(unknown, revoked, 'unknown and revoked look the same');
 assert.deepStrictEqual(call('driverMe_', { deviceToken: 'garbage' }), revoked);
 assert.deepStrictEqual(call('driverMe_', {}), revoked);

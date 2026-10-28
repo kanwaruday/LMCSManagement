@@ -37,6 +37,7 @@
         let r;
         try { r = JSON.parse(await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverme', deviceToken: token }) })).text()); }
         catch (e) { throw Object.assign(new Error('Could not reach the office. Try again when there is signal.'), { offline: true }); }
+        if (!r.success && r.code !== 'UNLINKED') throw Object.assign(new Error(r.error || 'The office could not answer.'), { offline: true }); // passing: keep the link
         if (!r.success) { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(BUS_KEY); } catch (e) { /* nothing kept */ } throw new Error(r.error || 'This phone is not linked. Ask the office for a new link.'); }
         try { localStorage.setItem(BUS_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
         return r;
