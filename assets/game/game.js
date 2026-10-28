@@ -191,6 +191,9 @@ var LMCSGame = window.LMCSGame = (function () {
     try { if (v && /^LMS[1-6]$/.test(v.campus)) sessionStorage.setItem(VIEW_KEY, JSON.stringify({ campus: v.campus, name: String(v.name || v.campus) })); else sessionStorage.removeItem(VIEW_KEY); } catch (e) { /* private mode: nothing to keep */ }
   }
   function viewParam() { var v = viewAs(); return v ? '&asCampus=' + v.campus : ''; }
+  // the view belongs to the Principal pages only: any other page that loads game.js (the Owner's Home, Kingdom, People, setup, ...)
+  // ends it at once, so Back or a Go link never carries it into the Owner's own pages
+  if (typeof location !== 'undefined' && !/\/principal\//.test(String(location.pathname || ''))) setViewAs(null);
   var VIEW_READ_ONLY = { success: false, code: 'GAME_VIEW_READ_ONLY', error: 'You are viewing this school as the Owner, so nothing can be changed here.' };
   function postTo(url, session, action, body) {
     if (viewAs()) return Promise.resolve(VIEW_READ_ONLY); // the server refuses it too

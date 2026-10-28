@@ -73,7 +73,7 @@ const setup = () => rows('Setup Data');
 const audit = () => rows('Game Allocations');
 const H = J(vm.runInContext('KINGDOM_ALLOC_HEADER', ctx));
 // the allowlist as the People room sees it: a Functions column after canDecide, found by header
-let A = [];
+let A = [], onReadRow = null;
 const resetAllow = () => {
   A = [['Email', 'Name', 'Campus', 'Roles', 'CanDecide', 'Functions'],
     ['owner@example.org', 'Owner One', 'ALL', 'Owner', 'TRUE', ''],
@@ -88,7 +88,8 @@ const allowSheet = {
   getRange: (row, col, nr, nc) => {
     const rg = { setNumberFormat: () => rg,
       setValues: (vals) => { vals.forEach((v, i) => { const r = A[row - 1 + i] = A[row - 1 + i] || []; v.forEach((x, j) => { r[col - 1 + j] = x; }); }); return rg; },
-      setValue: (x) => { A[row - 1][col - 1] = x; return rg; } };
+      setValue: (x) => { A[row - 1][col - 1] = x; return rg; },
+      getValues: () => { if (onReadRow) onReadRow(); return [A[row - 1].slice(col - 1, col - 1 + (nc || 1))]; } };
     return rg;
   },
   deleteRow: (n) => { A.splice(n - 1, 1); },
@@ -99,7 +100,7 @@ const test = (n, fn) => tests.push([n, fn]);
 const col = (r, name) => r[H.indexOf(name)];
 const people = (c, b) => J(ctx.peopleCoordinator_(c, b));
 const rowOf = (e) => A.find((r) => r[0] === e);
-const go = () => { reset(); resetAllow(); };
+const go = () => { reset(); resetAllow(); onReadRow = null; };
 
 test('peoplelist: Owner only, refused before reading; Coordinators with functions by header', () => {
   go();
@@ -133,10 +134,11 @@ test('change: campus and functions only; functions outside the room are kept; un
   const again = people(OWN, { email: 'c1@example.org', campus: 'ALL', functions: ['HR'] });
   assert.strictEqual(again.unchanged, true);
   assert.strictEqual(col(audit()[audit().length - 1], 'Code'), 'unchanged');
-  // a row with no roles yet gets the Coordinator role
+  // a row with no roles is not this room's: never turned into a Coordinator, never removed
   A.push(['blank@example.org', 'Blank', 'LMS2', '', '', '']);
-  assert.strictEqual(people(OWN, { email: 'blank@example.org', campus: 'LMS2', functions: [] }).success, true);
-  assert.strictEqual(rowOf('blank@example.org')[3], 'Coordinator');
+  assert.strictEqual(people(OWN, { email: 'blank@example.org', campus: 'LMS2', functions: [] }).code, 'PEOPLE_OTHER_ROLES');
+  assert.strictEqual(people(OWN, { email: 'blank@example.org', remove: true }).code, 'PEOPLE_OTHER_ROLES');
+  assert.deepStrictEqual(rowOf('blank@example.org'), ['blank@example.org', 'Blank', 'LMS2', '', '', '']);
 });
 test('never: an Owner row, a row with other roles, granting Owner, a duplicate email', () => {
   go();
@@ -161,6 +163,29 @@ test('remove: deletes a Coordinator-only row; not found refused', () => {
   assert.strictEqual(rowOf('owner@example.org')[3], 'Owner', 'the other rows stay');
   assert.strictEqual(people(OWN, { email: 'c1@example.org', remove: true }).code, 'PEOPLE_NOT_FOUND');
   assert.strictEqual(col(audit()[1], 'Action'), 'people_coordinator_remove');
+  // the row changed under us between the read and the delete (the roster backend has no share in our lock): nothing deleted
+  go();
+  onReadRow = () => { A[2][3] = 'Coordinator, Principal'; };
+  assert.strictEqual(people(OWN, { email: 'c1@example.org', remove: true }).code, 'PEOPLE_CHANGED');
+  assert.ok(rowOf('c1@example.org'), 'still there');
+  go();
+  onReadRow = () => { A.splice(1, 0, ['someone@example.org', 'S', 'LMS1', 'Coordinator', '', '']); }; // a row inserted above: index now points elsewhere
+  assert.strictEqual(people(OWN, { email: 'c1@example.org', remove: true }).code, 'PEOPLE_CHANGED');
+  assert.ok(rowOf('someone@example.org') && rowOf('c1@example.org'), 'neither row deleted');
+});
+test('rights refusals are audited, without the target email', () => {
+  go();
+  assert.strictEqual(people(COORD, { email: 'secret.target@example.org', name: 'N', campus: 'LMS1' }).code, 'KINGDOM_NO_RIGHT');
+  reset({ kingdom: Object.assign({ rights: { allocate: { roles: [], emails: [] } } }, KINGDOM) });
+  assert.strictEqual(people(OWN, { email: 'secret.target@example.org', remove: true }).code, 'KINGDOM_NO_RIGHT');
+  const a = audit();
+  assert.strictEqual(a.length, 1, 'reset cleared the first; the second is here');
+  assert.deepStrictEqual([col(a[0], 'By'), col(a[0], 'Action'), col(a[0], 'SourceId'), col(a[0], 'Assignee'), col(a[0], 'Result'), col(a[0], 'Code')],
+    ['owner@example.org', 'people_coordinator_remove', '', '', 'refused', 'KINGDOM_NO_RIGHT']);
+  go();
+  people(COORD, { email: 'secret.target@example.org', name: 'N', campus: 'LMS1' });
+  assert.strictEqual(audit().length, 1);
+  assert.ok(!JSON.stringify(audit()).includes('secret.target'), 'no target email in the audit');
 });
 test('input checks and rights: refused before any write', () => {
   go();
@@ -208,6 +233,7 @@ test('pages: HQ Home tiles and switch; People room confirms before every write',
   assert.ok(/url: 'kingdom\.html#base-HES'/.test(home) && /'Set up the game: ' \+ done \+ ' of ' \+ steps\.length \+ ' done'/.test(home), 'Game settings: x of 6 done, opens the HQ base');
   assert.ok(home.includes('id="modules"'), 'the tools shelf stays');
   for (const [page, cur] of [[home, 'index.html'], [kg, 'kingdom.html']]) assert.ok(page.includes('<nav class="gb-hsw" aria-label="Owner views">') && page.includes('href="' + cur + '" aria-current="page"'), 'header switch, ' + cur + ' current');
+  assert.ok(/value: '', selected: true \}, \['Choose a school'\]/.test(pp) && /DATA\.campuses\.indexOf\(campus\.value\) === -1\) \{ err\.textContent = 'Choose a school\.'/.test(pp), 'an unknown campus starts on Choose a school; Next refuses until one is picked');
   assert.ok(/LMCS\.canViewOwnerPortal\(session\)/.test(pp) && /action=peoplelist/.test(pp) && /action: 'peoplecoordinator'/.test(pp), 'People: Owner gate, read, write');
   assert.strictEqual((pp.match(/method: 'POST'/g) || []).length, 1, 'one write path');
   assert.ok(/go\.onclick = function \(\) \{\s*if \(BUSY\) return;/.test(pp) && /\['Confirm'\]/.test(pp), 'the write runs only from Confirm');

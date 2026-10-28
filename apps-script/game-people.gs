@@ -23,7 +23,7 @@ var PEOPLE_NOT_YOURS = { success: false, code: 'PEOPLE_NOT_YOURS', error: 'The P
 var PEOPLE_CODES = { PEOPLE_BAD_EMAIL: 'That email does not look right.', PEOPLE_BAD_NAME: 'Add their name (letters, up to 80).',
   PEOPLE_OWNER_ROW: "The Owner's own row can't be changed here.", PEOPLE_OTHER_ROLES: 'This person has other roles too. Change them in the allowlist sheet.',
   PEOPLE_NOT_FOUND: 'That person is not a Coordinator.', PEOPLE_NO_FUNCTIONS_COLUMN: 'The allowlist has no Functions column yet, so functions cannot be saved.',
-  PEOPLE_DUPLICATE: 'That email is on the allowlist more than once. Fix the sheet first.', PEOPLE_ERROR: 'Something went wrong. Nothing was changed.' };
+  PEOPLE_DUPLICATE: 'That email is on the allowlist more than once. Fix the sheet first.', PEOPLE_CHANGED: 'The allowlist changed just now. Nothing was removed; please try again.', PEOPLE_ERROR: 'Something went wrong. Nothing was changed.' };
 
 function peopleFail_(code) { return { success: false, code: code, error: PEOPLE_CODES[code] || KINGDOM_CODES[code] || PEOPLE_CODES.PEOPLE_ERROR }; }
 function peopleRoles_(cell) { return String(cell || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean); }
@@ -51,9 +51,15 @@ function peopleList_(caller, params) {
 // POST {email, name?, campus: 'ALL'|'LMS1'..'LMS6', functions: [...PEOPLE_FUNCTIONS], remove?: true} -> {success, coordinator | removed}
 function peopleCoordinator_(caller, body) {
   try {
-    if (!caller || (caller.roles || []).indexOf('Owner') === -1) { console.warn('peoplecoordinator refused: not the Owner'); return peopleFail_('KINGDOM_NO_RIGHT'); }
+    // the rights refusals are audited too, without the target's email (only who asked and what kind of change)
+    const noRight = function (why) {
+      console.warn('peoplecoordinator refused: ' + why);
+      kingdomAuditRefusal_([gameNow_().toISOString(), gameLower_(caller && caller.email), body && body.remove === true ? 'people_coordinator_remove' : 'people_coordinator', 'allowlist', '', '', '', '', '', 'done', 'refused', 'KINGDOM_NO_RIGHT']);
+      return peopleFail_('KINGDOM_NO_RIGHT');
+    };
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) return noRight('not the Owner');
     const cfg = cqLoadCfg_();
-    if (!kingdomCan_(caller, 'allocate', cfg)) { console.warn('peoplecoordinator refused: no allocate right'); return peopleFail_('KINGDOM_NO_RIGHT'); }
+    if (!kingdomCan_(caller, 'allocate', cfg)) return noRight('no allocate right');
     body = body && typeof body === 'object' ? body : {};
     const remove = body.remove === true, by = gameLower_(caller.email), at = gameNow_().toISOString();
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -94,22 +100,25 @@ function peopleCoordinator_(caller, body) {
       }
       const i = at_[0], cur = v[i], roles = peopleRoles_(cur[3]);
       if (roles.indexOf('Owner') !== -1) return refuseHeld('PEOPLE_OWNER_ROW');
-      if (roles.some(function (r) { return r !== 'Coordinator'; })) return refuseHeld('PEOPLE_OTHER_ROLES');
+      // only a row holding exactly Coordinator is this room's: other roles, or no role at all (other portals read campus alone), stay with the sheet
+      if (roles.length !== 1 || roles[0] !== 'Coordinator') return refuseHeld('PEOPLE_OTHER_ROLES');
       if (remove) {
-        if (roles.indexOf('Coordinator') === -1) return refuseHeld('PEOPLE_NOT_FOUND');
-        sh.deleteRow(i + 1); // a Coordinator-only row: removing the role leaves nothing, and a role-less row must not linger (other portals read campus alone)
+        const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0]; // the row as it is this instant: the roster backend writes the sheet without our lock
+        const nowRoles = peopleRoles_(now[3]);
+        if (gameLower_(now[0]) !== email || nowRoles.length !== 1 || nowRoles[0] !== 'Coordinator') return refuseHeld('PEOPLE_CHANGED');
+        sh.deleteRow(i + 1); // a Coordinator-only row: removing the role leaves nothing, and a role-less row must not linger
         kingdomAudit_(row('done', 'ok', 'removed'), true);
         return { success: true, removed: true };
       }
       const keep = gameFunctionsOf_(header, cur).filter(function (f) { return PEOPLE_FUNCTIONS.indexOf(f) === -1; }); // functions this room doesn't manage stay
       const fnCell = keep.concat(chosen).join(', ');
       if (fAt === -1 && chosen.length) return refuseHeld('PEOPLE_NO_FUNCTIONS_COLUMN');
-      const same = roles.length === 1 && String(cur[2] || '').trim().toUpperCase() === campus && (fAt === -1 || String(cur[fAt] || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean).join(', ') === fnCell);
+      const same = String(cur[2] || '').trim().toUpperCase() === campus && (fAt === -1 || String(cur[fAt] || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean).join(', ') === fnCell);
       if (same) { kingdomAudit_(row('done', 'ok', 'unchanged'), true); return { success: true, unchanged: true, coordinator: peopleOut_(header, cur) }; }
       sh.getRange(i + 1, 3, 1, 2).setNumberFormat('@').setValues([[campus, 'Coordinator']]);
       if (fAt !== -1) sh.getRange(i + 1, fAt + 1).setNumberFormat('@').setValue(fnCell);
       const next = cur.slice(); next[2] = campus; next[3] = 'Coordinator'; if (fAt !== -1) next[fAt] = fnCell;
-      kingdomAudit_(row('done', 'ok', roles.length ? 'changed' : 'role_added'), true);
+      kingdomAudit_(row('done', 'ok', 'changed'), true);
       return { success: true, coordinator: peopleOut_(header, next) };
     });
   } catch (err) {

@@ -43,8 +43,8 @@
     </main>
   </div>
 
-  <script src="../assets/auth.js?v=76dc60a6"></script>
-  <script src="../assets/game/game.js?v=faeddddc"></script>
+  <script src="../assets/auth.js?v=f290ea90"></script>
+  <script src="../assets/game/game.js?v=7edab4a3"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
     const h = function (tag, attrs, kids) { return LMCSGame.ui.h(tag, attrs, kids); };
@@ -112,7 +112,10 @@
       const field = function (id, label, input) { return h('div', { class: 'gb-field' }, [h('label', { for: id }, [label]), input]); };
       const name = h('input', { id: 'pp-name', class: 'gb-input', type: 'text', maxlength: '80', autocomplete: 'off' });
       const email = h('input', { id: 'pp-email', class: 'gb-input', type: 'email', maxlength: '254', autocomplete: 'off' });
-      const campus = h('select', { id: 'pp-campus', class: 'gb-input' }, DATA.campuses.map(function (c) { return h('option', { value: c, selected: p && p.campus === c ? true : null }, [place(c)]); }));
+      // a campus the room doesn't offer (blank, or a list like "LMS1, LMS2" typed in the sheet): start on "Choose a school"
+      const known = !!p && DATA.campuses.indexOf(p.campus) !== -1;
+      const campus = h('select', { id: 'pp-campus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
+        DATA.campuses.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
       const fns = h('fieldset', { class: 'pp-fns' }, [h('legend', {}, ['Looks after'])].concat(DATA.functions.map(function (f, i) {
         return h('label', { for: 'pp-f' + i }, [h('input', { type: 'checkbox', id: 'pp-f' + i, value: f, checked: p && p.functions.indexOf(f) !== -1 ? true : null }), f]);
       })));
@@ -127,6 +130,7 @@
         const who = p ? p.email : email.value.trim().toLowerCase(), nm = p ? p.name : name.value.trim();
         if (!p && !nm) { err.textContent = 'Add their name.'; name.focus(); return; }
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(who)) { err.textContent = 'That email does not look right.'; email.focus(); return; }
+        if (DATA.campuses.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
         const text = (p ? 'Change ' + (nm || who) + ' to ' : 'Add ' + nm + ' (' + who + ') as a Coordinator for ') + place(campus.value) + ', looking after ' + (picked.length ? picked.join(', ') : 'no functions') + '?';
         confirmStep(s, text, { email: who, name: p ? undefined : nm, campus: campus.value, functions: picked });
       };

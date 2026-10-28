@@ -167,6 +167,15 @@ test('page side: sessionStorage only, GETs carry asCampus, no write is sent whil
   assert.ok(/LMCSGame\.setViewAs\(\{ campus: b\.id, name: b\.name \}\); location\.assign\(S\.root \+ 'principal\/index\.html'\)/.test(kingdom), 'kingdom: stores the choice, opens the principal page');
   assert.ok(/HOLD_MS = 600/.test(kingdom) && /'contextmenu'/.test(kingdom) && /'Enter as Principal'/.test(kingdom) && /api\.hooks\.base = function/.test(kingdom), 'hold, long-press and the keyboard way in');
   assert.strictEqual(posted, 0);
+  // the view ends on any page outside /principal/ that loads game.js (Back or a Go link to the Owner's own pages)
+  const load = (pathname) => {
+    const st = { 'lmcs-view-as': '{"campus":"LMS3","name":"LMS 3"}' };
+    const c = { console, location: { pathname }, sessionStorage: { getItem: (k) => (k in st ? st[k] : null), setItem: (k, v) => { st[k] = String(v); }, removeItem: (k) => { delete st[k]; } } };
+    c.window = c; vm.createContext(c); vm.runInContext(fs.readFileSync(__dirname + '/../../assets/game/game.js', 'utf8'), c);
+    return st['lmcs-view-as'] || null;
+  };
+  for (const p of ['/LMCSManagement/owner/kingdom.html', '/LMCSManagement/owner/index.html', '/LMCSManagement/owner/people.html', '/LMCSManagement/setup/index.html', '/teacher/index.html']) assert.strictEqual(load(p), null, p);
+  for (const p of ['/LMCSManagement/principal/index.html', '/principal/']) assert.ok(load(p), p + ' keeps it');
 });
 
 let fail = 0;

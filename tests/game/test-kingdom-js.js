@@ -154,14 +154,14 @@ assert.deepStrictEqual([K.questFilter(rowsQ, 'all').length, K.questFilter(rowsQ,
 assert.strictEqual(K.questHolder(QR({})), 'role: Principal');
 assert.strictEqual(K.questHolder(QR({ roles: ['FeeClerk'] })), 'role: Fee Clerk');
 assert.strictEqual(K.questHolder(QR({ roles: ['Principal', 'Owner'] })), 'role: Principal or Owner');
-assert.strictEqual(K.questHolder(QR({ owner: { email: 'r@x.org', name: 'Ritika Sharma' } })), 'Ritika Sharma');
+assert.strictEqual(K.questHolder(QR({ owner: { email: 'r@x.org', name: 'Asha Test' } })), 'Asha Test');
 assert.strictEqual(K.questAge(QR({ ageDays: 0 })), 'Changed today');
 assert.strictEqual(K.questAge(QR({ ageDays: 1 })), 'Last change 1 day ago');
 assert.strictEqual(K.questAge(QR({ ageDays: 9 })), 'Last change 9 days ago');
 assert.strictEqual(K.questAge(QR({ ageDays: null })), 'No changes yet');
 assert.strictEqual(K.questAge(QR({ ageDays: null, state: 'done' })), '');
-assert.strictEqual(K.nudgeText(QR({ title: 'Starting balances', owner: { email: 'r@x.org', name: 'Ritika Sharma' } })),
-  "Hi Ritika ji, when you get a moment, could you look at 'Starting balances' for LMS 3? Thank you!", 'the brief\'s line');
+assert.strictEqual(K.nudgeText(QR({ title: 'Starting balances', owner: { email: 'r@x.org', name: 'Asha Test' } })),
+  "Hi Asha ji, when you get a moment, could you look at 'Starting balances' for LMS 3? Thank you!", 'the brief\'s line');
 assert.strictEqual(K.nudgeText(QR({ campus: '' })), "Hi, when you get a moment, could you look at 'Bell timings' for all our schools? Thank you!");
 assert.strictEqual(K.reassignText(QR({ owner: { email: 'z@x.org', name: 'Zed' } }), { email: 'y@x.org', name: 'Yas' }), "Give 'Bell timings' at LMS 3 to Yas? Zed had it.");
 assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Until now, whoever holds the role had it.");
