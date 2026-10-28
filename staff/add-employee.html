@@ -318,8 +318,10 @@ const DOC_TYPES = [
 let SESSION = null;
 // The shared campus picker drives the Directory and Documents tabs (HES too; scope comes from the session).
 let SEL = { all: true, campuses: [] };
-function mountPicker() {
-  LMCSCampus.mount('#campusPick', { session: SESSION, hes: true, label: 'School', onChange: function (sel) {
+// session: SESSION, or (HR & Hiring, below) a copy whose campusId is ALL -- display only, the server
+// already decided which schools' rows it sends.
+function mountPicker(session) {
+  LMCSCampus.mount('#campusPick', { session: session || SESSION, hes: true, label: 'School', onChange: function (sel) {
     SEL = sel;
     if (directoryRows.length) renderDirectory();
     if (documentStatusRows.length) renderDocumentStatus();
@@ -353,13 +355,25 @@ async function init() {
   // A Principal (2026-10-22, per Uday) gets Directory + Documents for their own school: no employee detail
   // panel (ID and bank numbers), no Needs Verification. The server enforces the same (STAFF_LIMITED_ACTIONS_).
   const principalView = !LMCS.canManageStaff(SESSION) && LMCS.hasRole(SESSION, 'Principal') && !fromOffice;
-  const docsOnly = (!LMCS.canManageStaff(SESSION) && !principalView && LMCS.hasRole(SESSION, 'FeeClerk')) || (fromOffice && LMCS.canManageStaff(SESSION));
+  let docsOnly = (!LMCS.canManageStaff(SESSION) && !principalView && LMCS.hasRole(SESSION, 'FeeClerk')) || (fromOffice && LMCS.canManageStaff(SESSION));
+  let docsPrefetch = null;
   if (!LMCS.canManageStaff(SESSION) && !docsOnly && !principalView) {
-    document.getElementById('deniedBox').style.display = 'block';
-    document.getElementById('deniedBox').innerHTML =
-      '<div class="denied"><div class="icon">🔒</div><h3>You don\'t have staff-management access</h3>' +
-      '<p>This page is for Principals, Coordinators, fee clerks and the Owner. Contact the owner if this is wrong.</p></div>';
-    return;
+    // No role for this page on this device, but the server may still give the Documents tab -- e.g. to an
+    // "HR & Hiring" holder in the allowlist's Functions column (all schools), or a Principal opened from the
+    // Fee Clerk + PRO Portal. Ask it; it decides.
+    document.getElementById('hdrCtx').textContent = 'Checking your access…';
+    docsPrefetch = await callStaffApi('documentstatus', {}).catch(function () { return null; });
+    if (!docsPrefetch || !docsPrefetch.success) {
+      document.getElementById('hdrCtx').textContent = '';
+      document.getElementById('deniedBox').style.display = 'block';
+      document.getElementById('deniedBox').innerHTML =
+        '<div class="denied"><div class="icon">🔒</div><h3>You don\'t have access to staff records</h3>' +
+        '<p>This page is for Principals, Coordinators, fee clerks, HR and the Owner.<br>' +
+        'To view and upload staff documents for every school, ask the <b>Owner</b> to add <b>HR &amp; Hiring</b> ' +
+        'to your <b>Functions</b> in the portal access list.</p></div>';
+      return;
+    }
+    docsOnly = true;
   }
 
   // Owner/Coordinator "data source" links (2026-09-20; Coordinators added 2026-10-21) -- IDs duplicated from
@@ -387,7 +401,7 @@ async function init() {
     document.querySelectorAll('.tab-btn').forEach(function (b) { if (b.dataset.tab !== 'documents') b.style.display = 'none'; });
     switchTab('documents');
     document.getElementById('hdrCtx').textContent = 'Staff documents — click Missing to upload';
-    await loadDocumentStatus();
+    await loadDocumentStatus(docsPrefetch);
     return;
   }
 
@@ -501,12 +515,15 @@ function docNeed(row, type) {
   return rule.R.indexOf(type) !== -1 ? 'R' : (rule.N.indexOf(type) !== -1 ? 'N' : 'O');
 }
 
-async function loadDocumentStatus() {
+// prefetched: a documentstatus answer init() already has (the access check above).
+async function loadDocumentStatus(prefetched) {
   try {
-    const json = await callStaffApi('documentstatus', {});
+    const json = prefetched || await callStaffApi('documentstatus', {});
     if (!json.success) throw new Error(json.error || 'documentstatus failed');
     documentStatusRows = json.rows;
     documentRules = json.rules || {};
+    // An HR & Hiring holder sees every school's documents: widen the picker to match (display only).
+    if (json.allCampuses && SESSION.campusId !== 'ALL') mountPicker(Object.assign({}, SESSION, { campusId: 'ALL' }));
     renderDocumentStatus();
   } catch (e) {
     document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(e.message) + '</div>';

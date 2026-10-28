@@ -117,8 +117,27 @@ const STAFF_READ_ACTIONS_ = ['nextcode', 'list', 'detail', 'documentstatus', 'up
 const STAFF_LIMITED_ACTIONS_ = { FeeClerk: ['documentstatus'], Principal: ['documentstatus', 'list', 'starthire'] };
 const STAFF_LIMITED_ROLES_ = Object.keys(STAFF_LIMITED_ACTIONS_);
 
+// "HR & Hiring" in the allowlist's Functions column (2026-10-28, per Uday): the Documents matrix --
+// view (documentstatus) and upload (uploaddocument, staff-documents.gs) -- for EVERY campus, whatever
+// the person's own role or campus. Nothing else: no detail panel, Needs Verification or other writes.
+const STAFF_HR_FUNCTION_ = 'hr & hiring';
+const STAFF_HR_ACTIONS_ = ['documentstatus'];
+
 function staffLimitedAllows_(caller, action) {
+  if (caller.hrHiring && STAFF_HR_ACTIONS_.indexOf(action) !== -1) return true;
   return (caller.roles || []).some(function (r) { return (STAFF_LIMITED_ACTIONS_[r] || []).indexOf(action) !== -1; });
+}
+
+// The caller as seen by the Documents matrix and its uploads: every campus for an HR & Hiring holder.
+function staffDocCaller_(caller) {
+  return caller.hrHiring ? Object.assign({}, caller, { campusId: 'ALL' }) : caller;
+}
+
+// The allowlist's "Functions" column, found by header ('' or missing = []). Same reading as
+// officeFunctionsOf_ (office.gs, another project): keep the two in step.
+function staffFunctionsOf_(header, row) {
+  const at = (header || []).map(function (h) { return String(h || '').trim().toLowerCase(); }).indexOf('functions');
+  return at === -1 ? [] : String(row[at] || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean);
 }
 
 // Renamed from doGet() 2026-09-23 when this file merged into the same
@@ -131,8 +150,8 @@ function staffDoGet_(e) {
   try {
     const action = (e.parameter.action || '').toLowerCase();
     const caller = STAFF_READ_ACTIONS_.indexOf(action) !== -1
-      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_); })
-      : verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_);
+      ? cachedStaff_(tokenCacheKey_(e.parameter.idToken), function () { return verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_, true); })
+      : verifyStaffManagerToken_(e.parameter.idToken, STAFF_LIMITED_ROLES_, true);
     if (!caller) return staffJsonOut_({ success: false, error: 'Not authorized' });
     // Someone in only via a limited role (not also Coordinator/Owner/ALL) gets just that role's actions,
     // for their own campus(es). `=== false` so a caller cached before this field existed (always a manager then) still passes.
@@ -146,7 +165,7 @@ function staffDoGet_(e) {
     else if (action === 'detail') result = { detail: employeeDetail_(data, caller) };
     else if (action === 'salaryfullrecord') result = salaryFullRecord_(data, caller);
     else if (action === 'installjobrolesync') result = installJobRolePayScaleSyncTriggerAction_(data, caller);
-    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(caller), rules: staffDocRules_() };
+    else if (action === 'documentstatus') result = { rows: listDocumentStatus_(staffDocCaller_(caller)), rules: staffDocRules_(), allCampuses: !!caller.hrHiring };
     else if (action === 'docrules') result = sdocRulesForEditor_();
     else if (action === 'savedocrules') result = sdocSaveRules_(data, caller);
     else if (action === 'uploadstatus') result = { schools: checkNewUploads_(e.parameter.force === '1') };
@@ -172,8 +191,9 @@ function staffDoGet_(e) {
 //    role/campusId). Returns null if the token doesn't verify, or the
 //    email isn't on the list, or their role isn't Coordinator/Owner. ──
 // extraRoles: further allowlist roles accepted for this one call (e.g. ['FeeClerk'] for the document
-// upload form in staff-documents.gs) -- every existing caller passes none, so nothing else changes.
-function verifyStaffManagerToken_(idToken, extraRoles) {
+// upload form in staff-documents.gs). allowHrFunction: also admit an "HR & Hiring" Functions holder --
+// only the Staff Portal routes and the document upload pass it, so e.g. the transport uploads never do.
+function verifyStaffManagerToken_(idToken, extraRoles, allowHrFunction) {
   // TEMPORARY diagnostic logging (2026-09-24) -- every return path below
   // logs WHY, so the Execution log shows the real cause instead of just
   // "Not authorized" everywhere. Safe to leave (Stackdriver logs cost
@@ -211,12 +231,13 @@ function verifyStaffManagerToken_(idToken, extraRoles) {
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
       const manager = roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1 || campusId === 'ALL';
       const extra = (extraRoles || []).some(function (r) { return roles.indexOf(r) !== -1; });
-      if (!manager && !extra) {
+      const hrHiring = staffFunctionsOf_(rows[0], rows[i]).some(function (f) { return f.toLowerCase() === STAFF_HR_FUNCTION_; });
+      if (!manager && !extra && !(allowHrFunction && hrHiring)) {
         console.log('verifyStaffManagerToken_: ' + email + ' is on the allowlist but role="' + role + '" campusId="' + campusId + '" -- not Coordinator/Owner/ALL');
         return null;
       }
       console.log('verifyStaffManagerToken_: OK -- ' + email + ' campusId=' + campusId + ' role=' + role);
-      return { email: email, campusId: campusId, role: role, roles: roles, manager: manager };
+      return { email: email, campusId: campusId, role: role, roles: roles, manager: manager, hrHiring: hrHiring };
     }
     console.log('verifyStaffManagerToken_: ' + email + ' verified by Google but NOT found on the allowlist sheet');
     return null; // not on the allowlist at all

@@ -152,9 +152,9 @@ function sdocOnFormSubmit() {
 // documentType is one of STAFF_DOCUMENT_TYPES (the matrix columns); CERT_CATEGORY_KEYWORDS_
 // (certificate-link-import.gs) says which Drive folder it belongs in.
 function sdocUpload_(body) {
-  const caller = verifyStaffManagerToken_(body.idToken, STAFF_LIMITED_ROLES_); // FeeClerk and Principal may upload too
+  const caller = verifyStaffManagerToken_(body.idToken, STAFF_LIMITED_ROLES_, true); // FeeClerk, Principal and HR & Hiring may upload too
   if (!caller) return { success: false, error: 'Not authorized' };
-  const emp = sdocEmployee_(caller, body.employeeCode);
+  const emp = sdocEmployee_(staffDocCaller_(caller), body.employeeCode);
   const keywords = CERT_CATEGORY_KEYWORDS_[body.documentType];
   if (!keywords) throw new Error('Unknown document type: ' + body.documentType);
   const ext = SDOC_MIME_EXT_[body.mimeType];
