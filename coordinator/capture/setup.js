@@ -17,6 +17,10 @@ const FQ = window.FleetQuests, CFG = FQ.questConfig();
 const store = createRunStore(createCaptureIdb('lmcs-setup'));
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// after a save: the done state and the one way back, the header's own link (it already points where this role came from)
+const wayBack = (cls) => { const b = $('back'); return `<a class="${cls}" href="${esc(b.getAttribute('href'))}">Back to ${esc(b.textContent.replace(/^[\u2039\u2190]\s*/, ''))}</a>`; };
+const doneBox = (title, line) => `<div class="gb-done" role="status"><div class="gb-done-tick" aria-hidden="true">✓</div><h2>${esc(title)}</h2><p>${esc(line)}</p>` +
+  `<div class="gb-row-acts">${wayBack('gb-btn gb-btn-primary')}</div></div>`;
 const pad = (n) => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const stepOf = (id) => CFG.steps.find((s) => s.id === id);
@@ -197,7 +201,9 @@ function drawBus(p) { keepFocus($('bus'), () => drawBusNow(p)); }
 function drawBusNow(p) {
   const qs = FQ.questsFor(p), n = qs.filter((q) => q.done).length, meta = [routeName(p), p.campus].filter(Boolean).join(', ');
   const j = S.just && S.just.reg === p.reg ? S.just : null, fresh = j && !j.was && qs.some((q) => q.id === j.quest && q.done) ? j.quest : null;
-  $('bus').innerHTML = `<button type="button" class="fs-back" data-a="back">← All buses</button>` +
+  const saved = j && qs.find((q) => q.id === j.quest);
+  $('bus').innerHTML = (saved ? doneBox(saved.label + ' saved', `${p.reg}: ${n} of 6 quests done.`) : '') +
+    `<button type="button" class="fs-back" data-a="back">← All buses</button>` +
     `<div class="fs-bushead">${ring(p, true, fresh)}<div><h2 class="cap-h">${esc(p.reg)}</h2><p class="cap-note">${esc(meta)}</p>${p.driverName ? `<p class="cap-note">Driver: ${esc(p.driverName)}</p>` : ''}` +
     `<p class="fs-count${fresh && n === 6 ? ' fs-fresh' : ''}">${n === 6 ? badge : n + ' of 6 quests done'}</p>` +
     (toConfirm(p) ? `<p class="cap-note">${esc(toConfirm(p))}</p>` : '') + '</div></div>' + // papers on file: on the papers card

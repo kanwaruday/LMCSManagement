@@ -10,6 +10,10 @@ const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBT
 const store = createRunStore(createCaptureIdb('lmcs-rollcall'));
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// after a save: the done state and the one way back, the header's own link (it already points where this role came from)
+const wayBack = (cls) => { const b = $('back'); return `<a class="${cls}" href="${esc(b.getAttribute('href'))}">Back to ${esc(b.textContent.replace(/^[\u2039\u2190]\s*/, ''))}</a>`; };
+const doneBox = (title, line) => `<div class="gb-done" role="status"><div class="gb-done-tick" aria-hidden="true">✓</div><h2>${esc(title)}</h2><p>${esc(line)}</p>` +
+  `<div class="gb-row-acts">${wayBack('gb-btn gb-btn-primary')}</div></div>`;
 const TRANSIENT = /timed? ?out|try again|too many|temporar|lock|failed to fetch|network|service/i;
 const S = { session: null, data: null, day: 0, open: null, queued: [], others: 0, sending: false };
 const mine = (r) => String(r.by || '').toLowerCase() === String(S.session.email || '').toLowerCase();
@@ -68,6 +72,7 @@ function draw() {
   const buses = S.data.buses.slice().sort((a, b) => a.campus.localeCompare(b.campus) || a.reg.localeCompare(b.reg));
   const done = buses.filter((b) => b.roll || waiting(b.reg)).length;
   $('summary').textContent = buses.length ? `${done} of ${buses.length} buses recorded.` : '';
+  $('rcDone').innerHTML = buses.length && done === buses.length ? doneBox('Roll call done for today', `All ${buses.length} buses recorded.`) : '';
   $('buses').innerHTML = !buses.length ? '<li class="cap-note">No running buses on your account.</li>' : buses.map((b) => {
     const w = waiting(b.reg), r = w ? w.roll : b.roll, u = b.usual || {};
     const usual = u.driver ? `Usual: ${esc(u.driver)} · ${esc(u.attendant || 'no attendant')}` : 'No usual driver on record. Use Substitute.';

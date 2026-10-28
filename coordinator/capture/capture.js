@@ -587,8 +587,9 @@ function drawSummary() {
       `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
   const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
-  el.innerHTML = `<h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
-    '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>';
+  el.innerHTML = `<div class="gb-done-tick" aria-hidden="true">✓</div><h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
+    '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>' +
+    `<a class="cap-end" href="${esc($('back').getAttribute('href'))}">Back to ${esc($('back').textContent.replace(/^[\u2039\u2190]\s*/, ''))}</a>`; // the header's way back, for this role
   el.querySelector('[data-a="send"]').addEventListener('click', () => { showTab('upload'); sendAll(); });
   el.querySelector('[data-a="new"]').addEventListener('click', () => { el.hidden = true; $('setup').hidden = false; S.run = null; S.insp = null; setMode(S.mode); drawResume(); });
   el.hidden = false;

@@ -130,16 +130,16 @@
     </section>
 
     <div id="closed" class="dr-stop" hidden>
-      <span class="dr-ico" aria-hidden="true">🔒</span>
+      <span class="dr-ico" aria-hidden="true" data-emoji="locked"></span>
       <p class="dr-hi" id="closedHi">यह फ़ोन जुड़ा नहीं है</p>
       <p class="dr-en" id="closedEn">This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).</p>
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
-    <details class="gb-panel"><summary><span aria-hidden="true">🚌</span> मेरी बस · Bus</summary><div class="gb-panel-b" id="pBus"></div></details>
-    <details class="gb-panel" id="pHelp"><summary><span aria-hidden="true">❓</span> मदद · Help</summary><div class="gb-panel-b">
+    <details class="gb-panel"><summary data-emoji="bus">मेरी बस · Bus</summary><div class="gb-panel-b" id="pBus"></div></details>
+    <details class="gb-panel" id="pHelp"><summary data-emoji="help">मदद · Help</summary><div class="gb-panel-b">
       <ul class="dr-help-l">
-        <li><span aria-hidden="true">⛽</span> डीज़ल के बाद: वीडियो, पर्ची, लीटर, रुपये, किलोमीटर · After a fill: pump video, bill, litres, ₹, km</li>
+        <li data-emoji="fuel">डीज़ल के बाद: वीडियो, पर्ची, लीटर, रुपये, किलोमीटर · After a fill: pump video, bill, litres, ₹, km</li>
         <li><span aria-hidden="true">📶</span> नेटवर्क नहीं? फ़ोन में सेव रहेगा, बाद में अपने आप जाएगा · No signal? It is kept on this phone and sends by itself</li>
         <li><span aria-hidden="true">📱</span> नया फ़ोन या फ़ोन खो गया? फ़ी क्लर्क से नया QR लें · New or lost phone? Ask your Fee Clerk for a new QR</li>
       </ul>
@@ -147,7 +147,8 @@
   </aside>
 </div>
 <nav id="bar" class="dr-bar" aria-label="अगला कदम · Next step" hidden><div class="dr-bar-in" id="barIn"></div></nav>
+<script src="../assets/game/emoji.js?v=f2812675"></script>
 <script src="./driver-logic.js?v=8e49981e"></script>
-<script src="./driver.js?v=739aa873"></script>
+<script src="./driver.js?v=3a0e4cec"></script>
 </body>
 </html>

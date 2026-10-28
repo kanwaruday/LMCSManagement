@@ -129,11 +129,10 @@
   const routeHref = () => '../coordinator/transport/capture.html?' + (api === live ? 'driver=1&' : '') + 'mode=timelapse&reg=' + encodeURIComponent(S.bus.reg.replace(/\s/g, ''));
   // the bottom of the screen: the game bar, or in a task the action bar with the one red button (never both)
   const bar = (html) => { $('barIn').innerHTML = html; $('bar').hidden = !html; $('rail').hidden = !!html; document.body.classList.toggle('dr-task', !!html); };
-  const ICON = { // the game bar's own icons (assets/game/rail.js)
-    missions: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11"/><circle cx="5" cy="18" r="1.6"/>',
-    rallies: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>',
-    events: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>' };
-  const svg = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
+  // the game's emoji, one per concept on every page (assets/game/emoji.js); the few concepts it has no key for yet stay typed here
+  const E = (k) => LMCSEmoji.get(k);
+  const STEP_E = { litres: 'fuel', odometer: 'bus' }; // the pump video and the bill wait for their own keys
+  const svg = (k) => `<span class="gb-rail-e" aria-hidden="true">${E(k)}</span>`; // the bar's emoji, as rail.js draws them
   // a driver's game bar: Missions (home, with what is left), Rallies and Events (soon), Buddy (the help panel). No Quests: a driver has none.
   function rail(left) {
     const soon = (k, hi, en) => `<li><span class="gb-rail-i is-soon" role="img" aria-label="${hi} · ${en}, coming soon">${svg(k)}<b>${hi}</b><small aria-hidden="true">जल्द · Soon</small></span></li>`;
@@ -141,7 +140,7 @@
       `<li><a class="gb-rail-i" href="#" aria-current="page" aria-label="मिशन · ${left ? 'Missions, ' + left + ' waiting' : 'Missions'}">${svg('missions')}<b>मिशन</b>` +
       (left ? `<span class="gb-count" aria-hidden="true">${left}</span>` : '') + '</a></li>' +
       soon('rallies', 'रैली', 'Rallies') + soon('events', 'इवेंट', 'Events') +
-      '<li><button type="button" class="gb-rail-i" id="buddy" aria-label="मदद · Buddy, help"><img src="../assets/game/buddy/winter-formal-neutral.webp" alt=""><b>मदद</b></button></li></ul>';
+      `<li><button type="button" class="gb-rail-i" id="buddy" aria-label="मदद · Buddy, help">${svg('buddy')}<b>मदद</b></button></li></ul>`;
     $('buddy').onclick = () => { const h = $('pHelp'); h.open = true; h.querySelector('summary').focus(); h.scrollIntoView({ block: 'nearest' }); };
   }
   const big = (hi, en) => `<span class="dr-hi">${esc(hi)}</span><span class="dr-en">${esc(en)}</span>`;
@@ -153,16 +152,16 @@
     // the one next step, always in this spot
     $('slot').innerHTML = '<div class="gb-next dr-next"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt="">' + (next.id === 'route'
       ? `<div class="gb-next-b"><span class="gb-next-k">अगला काम · Next</span><p class="gb-next-t">${big('रूट का वीडियो बनाएँ', 'Record your bus route')}</p>` +
-        `<a class="gb-btn gb-btn-primary dr-big" href="${routeHref()}"><span aria-hidden="true">🎥</span>&nbsp;शुरू करें · Start</a></div>`
+        `<a class="gb-btn gb-btn-primary dr-big" href="${routeHref()}"><span aria-hidden="true">${E('routeVideo')}</span>&nbsp;शुरू करें · Start</a></div>`
       : `<div class="gb-next-b"><span class="gb-next-k">अगला काम · Next</span><p class="gb-next-t">${big('डीज़ल भरवाया? यहाँ भेजें', 'Filled fuel? Send it here')}</p>` +
-        `<a class="gb-btn gb-btn-primary dr-big" href="#fuel-1"><span aria-hidden="true">⛽</span>&nbsp;डीज़ल भेजें · Log fuel</a></div>`) + '</div>';
+        `<a class="gb-btn gb-btn-primary dr-big" href="#fuel-1"><span aria-hidden="true">${E('fuel')}</span>&nbsp;डीज़ल भेजें · Log fuel</a></div>`) + '</div>';
     const fuelLine = b.lastFill ? 'पिछली बार · Last: ' + m.find((x) => x.id === 'fuel').status.replace('Last fill: ', '') : 'अभी तक कोई नहीं · None yet';
     const routeLine = need === 0 ? 'अभी कोई रूट नहीं · No route planned' : routeDone ? 'हो गया · Done' : done + ' / ' + need + ' वीडियो · videos';
     const tile = (o) => `<li><a class="dr-tile${o.next ? ' is-next' : ''}${o.done ? ' is-done' : ''}" href="${o.href || '#'}"${o.href ? '' : ' aria-disabled="true"'}>` +
       `<span class="dr-ico" aria-hidden="true">${o.icon}</span><span class="dr-tile-b">${big(o.hi, o.en)}<span class="dr-en">${esc(o.line)}</span>${o.bar || ''}</span>` +
-      (o.next ? '<span class="dr-state next">अगला</span>' : o.done ? '<span class="dr-state done">✓</span>' : '') + '</a></li>';
-    $('tiles').innerHTML = tile({ icon: '⛽', hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: '#fuel-1', next: next.id === 'fuel' }) +
-      tile({ icon: '🎥', hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: need && !routeDone ? routeHref() : '', next: next.id === 'route', done: routeDone,
+      (o.next ? '<span class="dr-state next">अगला</span>' : o.done ? `<span class="dr-state done" aria-hidden="true">${E('done')}</span>` : '') + '</a></li>';
+    $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: '#fuel-1', next: next.id === 'fuel' }) +
+      tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: need && !routeDone ? routeHref() : '', next: next.id === 'route', done: routeDone,
         bar: need ? `<span class="gb-bar${routeDone ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * done / need)}%"></i></span>` : '' });
     $('pBus').innerHTML = '<dl class="dr-bus">' + `<dt>बस · Bus</dt><dd>${esc(b.reg)}</dd>` + (b.campus ? `<dt>स्कूल · School</dt><dd>${esc(b.campus)}</dd>` : '') +
       `<dt>पिछला डीज़ल · Last fill</dt><dd>${esc(fuelLine.replace(/^.*?: /, ''))}</dd>` + (b.lastOdometer ? `<dt>किलोमीटर · km</dt><dd>${esc(b.lastOdometer)}</dd>` : '') + '</dl>';
@@ -176,7 +175,7 @@
     $('refused').innerHTML = refused.map((x) => `<span aria-hidden="true">⚠️</span> ${esc(x.litres)} L वाला डीज़ल ऑफिस ने नहीं लिया, दोबारा भरें · The office did not take the ${esc(x.litres)} L fill: ${esc(hiMsg(x.why))} Log it again.`).join('<br>');
     if (!api.waiting) return;
     api.waiting().then((n) => {
-      $('waiting').innerHTML = n ? `<span aria-hidden="true">📶</span> ${n} डीज़ल फ़ोन में रखा है, नेटवर्क आने पर अपने आप जाएगा · ${n} fill${n > 1 ? 's' : ''} waiting for signal ` +
+      $('waiting').innerHTML = n ? `<span aria-hidden="true">${E('waiting')}</span> ${n} डीज़ल फ़ोन में रखा है, नेटवर्क आने पर अपने आप जाएगा · ${n} fill${n > 1 ? 's' : ''} waiting for signal ` +
         '<button type="button" class="gb-btn" id="sendNow" style="margin-top:8px;width:100%">अभी भेजें · Send now</button>' : '';
       const b = $('sendNow'); if (b) b.onclick = () => { b.disabled = true; b.textContent = 'भेज रहे हैं… · Sending…'; live.flush(); };
     });
@@ -191,7 +190,7 @@
   function fuelStep(n) {
     if (n === CHECK) return checkScreen();
     const st = STEPS[n - 1], file = st.id === 'video' || st.id === 'bill', err = S.shown[st.id] ? stepErr(st.id) : '';
-    ask(n, st.icon, st.hi, st.en, st.help);
+    ask(n, STEP_E[st.id] ? E(STEP_E[st.id]) : st.icon, st.hi, st.en, st.help);
     let body = '';
     if (file) {
       const has = S.files[st.id], acc = st.id === 'video' ? 'video/*' : 'image/*';
@@ -229,10 +228,10 @@
     const c = DriverLogic.checkFill(formNow(), S.bus.lastOdometer);
     if (!c.ready) { const first = STEPS.findIndex((s) => stepErr(s.id)); S.shown[STEPS[first].id] = true; location.hash = 'fuel-' + (first + 1); return; }
     const row = (k, ico, hi, val) => `<li><a href="#fuel-${k}"><span class="dr-ico" aria-hidden="true">${ico}</span>${big(hi, '')}<b>${val}</b></a></li>`;
-    ask(CHECK, '✅', 'सब ठीक है?', 'Check, then send', 'कुछ बदलना हो तो उस पर दबाएँ · Tap a line to change it');
+    ask(CHECK, E('done'), 'सब ठीक है?', 'Check, then send', 'कुछ बदलना हो तो उस पर दबाएँ · Tap a line to change it');
     $('stage').innerHTML = '<ul class="dr-sum">' +
       row(1, '🎥', 'वीडियो', '<span class="ok">✓</span>') + row(2, '🧾', 'पर्ची', '<span class="ok">✓</span>') +
-      row(3, '⛽', 'लीटर', esc(S.form.litres)) + row(4, '₹', 'रुपये', '₹' + esc(S.form.amount)) + row(5, '🚌', 'किलोमीटर', esc(S.form.odometer)) + '</ul>' +
+      row(3, E('fuel'), 'लीटर', esc(S.form.litres)) + row(4, '₹', 'रुपये', '₹' + esc(S.form.amount)) + row(5, E('bus'), 'किलोमीटर', esc(S.form.odometer)) + '</ul>' +
       `<p class="dr-warn">${esc(hiMsg(c.warn))}</p><p class="dr-why" id="why" role="alert">${esc(S.failed)}</p>` +
       '<div class="dr-prog" id="prog" hidden><span class="gb-bar"><i style="width:0%"></i></span><p class="dr-en" id="progText" role="status"></p></div>';
     bar(`<div class="dr-act" style="display:flex;flex:1;gap:8px"><a class="gb-btn dr-back" href="#fuel-${STEPS.length}" aria-label="पीछे · Back">‹</a>` +
@@ -270,7 +269,7 @@
     const q = S.sent.queued, f = S.sent.fill;
     $('slot').innerHTML = '';
     $('doneBox').className = 'gb-done' + (q ? ' dr-wait' : '');
-    $('doneBox').querySelector('.gb-done-tick').textContent = q ? '📶' : '✓';
+    $('doneBox').querySelector('.gb-done-tick').textContent = q ? E('waiting') : '✓';
     $('sentHi').textContent = q ? 'फ़ोन में सेव है' : 'भेज दिया';
     $('sentText').textContent = q ? 'Saved on this phone. It sends by itself when there is signal.' : 'Sent to the office. Thank you!';
     $('sentSummary').textContent = `${f.litres} L · ₹${f.amount} · ${f.odometer} km · ऑफिस पर्ची से मिलाएगा · The office checks it against the bill`;

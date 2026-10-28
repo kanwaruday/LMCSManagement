@@ -12,23 +12,24 @@
 <link rel="stylesheet" href="../../assets/game/base.css?v=079704f5">
 </head>
 <body class="gb gb-app">
-<!-- The screen skeleton (assets/game/base.css): Fleet Command is the fleet's hub. Its stage is Buddy's fleet missions (they carry
-     their own next step), then the fleet; the task pages fold into a panel. -->
+<!-- The screen skeleton (assets/game/base.css): Fleet Command is the fleet's hub. The next-step slot is the open fleet quest of the
+     bus nearest to ready; the stage is Buddy's fleet missions, then the fleet; the task pages fold into a panel. -->
 <header class="gb-head"><div><div><h1>Fleet Command</h1><p>LMCS Transport</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Coordinator home</a></div></header>
 <div class="gb-shell">
   <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+  <div class="gb-next-slot" id="fleet-next"></div>
   <main class="gb-stage">
     <section id="game-root" aria-label="Fleet setup with Buddy" hidden></section>
     <div id="authRoot"></div>
     <div id="appBody" style="display:none"></div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="More" hidden>
-    <details class="gb-panel" id="fleet-pages"><summary>Fleet pages</summary><div class="gb-panel-b"><ul class="gb-list">
-      <li><a class="gb-go" href="setup.html"><span>Fleet setup<small>Papers, safety kit, parts, driver, fuel and capture plan for each bus</small></span></a></li>
-      <li><a class="gb-go" href="live.html"><span>Checks and live buses<small>Safety checks, counts and where each bus is now</small></span></a></li>
-      <li><a class="gb-go" href="capture.html"><span>Capture portal<small>A route timelapse, a count run or the monthly safety check</small></span></a></li>
-      <li><a class="gb-go" href="rollcall.html"><span>Today's roll call<small>Who is on each bus</small></span></a></li>
-      <li><a class="gb-go" href="drivers.html"><span>Driver phones<small>Link a driver's own phone to their bus</small></span></a></li>
+    <details class="gb-panel" id="fleet-pages"><summary data-emoji="tools">Fleet pages</summary><div class="gb-panel-b"><ul class="gb-list">
+      <li><a class="gb-go" href="setup.html" data-emoji="bus"><span>Fleet setup<small>Papers, safety kit, parts, driver, fuel and capture plan for each bus</small></span></a></li>
+      <li><a class="gb-go" href="live.html" data-emoji="busCheck"><span>Checks and live buses<small>Safety checks, counts and where each bus is now</small></span></a></li>
+      <li><a class="gb-go" href="capture.html" data-emoji="routeVideo"><span>Capture portal<small>A route timelapse, a count run or the monthly safety check</small></span></a></li>
+      <li><a class="gb-go" href="rollcall.html" data-emoji="rollCall"><span>Today's roll call<small>Who is on each bus</small></span></a></li>
+      <li><a class="gb-go" href="drivers.html" data-emoji="phone"><span>Driver phones<small>Link a driver's own phone to their bus</small></span></a></li>
     </ul></div></details>
   </aside>
 </div>
@@ -37,14 +38,37 @@
 <script src="../transport-rank.js?v=b7edf91e"></script>
 <script src="../shared.js?v=26aa5692"></script>
 <script src="../../assets/game/game.js?v=3790d90c"></script>
+<script src="../../assets/game/emoji.js?v=f2812675"></script>
+<script src="../capture/fleet-quests.js?v=5b7607c0"></script>
 <script src="../../assets/game/rail.js?v=e726bf9c"></script>
 <script>
 const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // the game backend (same as the four homes); empty = no panel
 const FLEET_TOUR = { id: 'fleet-transport', beats: [
   { target: '#game-root', text: 'Our fleet setup missions are here, with the next step for our buses.' },
 ] };
+// The one next step: the bus nearest to ready (most of its six quests confirmed, not yet all), and its first open quest. Read only.
+async function fleetNext() {
+  const slot = document.getElementById('fleet-next');
+  try {
+    const d = await Coord.api({ action: 'coordinatortransportfleet' }), today = new Date().toISOString().slice(0, 10);
+    const profiles = FleetQuests.profilesFromRows(d.rows), missions = FleetQuests.transportMissions(d.rows);
+    const open = profiles.map((p) => ({ p, f: FleetQuests.busProgress(p, today).confirmed })).filter((x) => x.f < 1).sort((a, b) => b.f - a.f);
+    const busOf = (x) => x.id.slice(x.id.lastIndexOf(':') + 1);
+    let m = null; open.some((o) => (m = missions.find((x) => !x.done && busOf(x) === o.p.reg)));
+    if (!m && open.length) { slot.replaceChildren(); return; } // left to confirm, but nothing to do here: no card rather than a wrong one
+    const card = document.createElement('div'), body = document.createElement('div'), k = document.createElement('span'), t = document.createElement('p');
+    card.className = 'gb-next'; body.className = 'gb-next-b'; k.className = 'gb-next-k'; t.className = 'gb-next-t';
+    card.innerHTML = '<img src="../../assets/game/buddy/winter-formal-neutral.webp" alt="">';
+    k.dataset.emoji = m ? 'missions' : 'done'; k.textContent = m ? 'Your next step' : 'Fleet ready';
+    t.textContent = m ? m.title + '. ' + m.why : 'Every bus has all six fleet quests done.';
+    body.append(k, t);
+    if (m) { const a = document.createElement('a'); a.className = 'gb-btn gb-btn-primary'; a.href = '../../' + m.go; a.textContent = 'Go'; a.setAttribute('aria-label', 'Go: ' + m.title); body.append(a); }
+    card.append(body); slot.replaceChildren(card); LMCSEmoji.decorate(slot);
+  } catch (e) { slot.replaceChildren(); } // no next step is better than a wrong one; the fleet below still loads
+}
 Coord.boot(function (body) {
   Coord.transportView(body);
+  fleetNext();
   const session = LMCS.getSession();
   document.getElementById('panels').hidden = false;
   if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('fleet-pages').open = true; // phones: folded, so the fleet stays in view
