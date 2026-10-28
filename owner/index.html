@@ -63,7 +63,7 @@
       ul.textContent = '';
       MODULES.forEach(function (m) {
         const a = el('a', 'gb-go'), span = el('span', '', m.name), li = el('li');
-        if (window.LMCSEmoji && m.e) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
+        if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
         a.href = m.url;
         span.appendChild(el('small', '', m.desc));
         a.appendChild(span); li.appendChild(a); ul.appendChild(li);

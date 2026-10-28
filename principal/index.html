@@ -81,13 +81,13 @@
       nav.textContent = '';
       PATHS.forEach(function (p) {
         const h2 = el('h2', '', p.title);
-        if (window.LMCSEmoji && p.e) h2.insertBefore(LMCSEmoji.tag(p.e), h2.firstChild);
+        if (window.LMCSEmoji && LMCSEmoji.get(p.e)) h2.insertBefore(LMCSEmoji.tag(p.e), h2.firstChild);
         nav.appendChild(h2);
         if (p.lead) nav.appendChild(el('p', 'gb-muted', p.lead));
         const ul = el('ul', 'gb-list');
         p.pages.forEach(function (m) {
           const a = el('a', 'gb-go'), span = el('span', '', m.name);
-          if (window.LMCSEmoji && m.e) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
+          if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
           a.href = m.url;
           span.appendChild(el('small', '', m.desc));
           a.appendChild(span);
