@@ -198,7 +198,7 @@
       const cam = `<input type="file" id="cam" data-id="${st.id}" accept="${acc}" capture="environment" aria-describedby="why">`;
       body += has // taken: the preview (it can play without reopening the camera), and Retake on its own strip
         ? `<div class="dr-shot has">${preview}<label class="dr-retake">✓ ठीक है · दोबारा लें? Retake${cam}</label></div>`
-        : `<label class="dr-shot" id="shot"><span aria-hidden="true">${st.id === 'video' ? '🎥' : '📷'}</span><span>${st.id === 'video' ? 'वीडियो लें · Take video' : 'फ़ोटो लें · Take photo'}</span>${cam}</label>` +
+        : `<label class="dr-shot" id="shot"><span aria-hidden="true">${st.id === 'video' ? '📹' : '📷'}</span><span>${st.id === 'video' ? 'वीडियो लें · Take video' : 'फ़ोटो लें · Take photo'}</span>${cam}</label>` +
           `<p class="dr-alt"><label>कैमरा नहीं खुला? गैलरी से चुनें · Choose from gallery<input type="file" data-id="${st.id}" accept="${acc}"></label></p>`;
     } else {
       body += `<label class="gb-sr" for="num">${esc(st.en)}</label><input class="dr-num" id="num" data-id="${st.id}" inputmode="${st.id === 'litres' ? 'decimal' : 'numeric'}" autocomplete="off" value="${esc(S.form[st.id] || '')}" aria-describedby="why"${err ? ' aria-invalid="true"' : ''}>`;
@@ -209,7 +209,7 @@
     // the red button is always the next thing to do: on a photo or video step with nothing taken yet, that is the camera
     const shoot = file && !S.files[st.id];
     bar(`<div class="dr-act" style="display:flex;flex:1;gap:8px"><a class="gb-btn dr-back" href="${n === 1 ? '#' : '#fuel-' + (n - 1)}" aria-label="पीछे · Back">‹</a>` +
-      (shoot ? `<label class="gb-btn gb-btn-primary dr-go" for="cam"><span aria-hidden="true">${st.id === 'video' ? '🎥' : '📷'}</span>&nbsp;${st.id === 'video' ? 'वीडियो लें · Video' : 'फ़ोटो लें · Photo'}</label>`
+      (shoot ? `<label class="gb-btn gb-btn-primary dr-go" for="cam"><span aria-hidden="true">${st.id === 'video' ? '📹' : '📷'}</span>&nbsp;${st.id === 'video' ? 'वीडियो लें · Video' : 'फ़ोटो लें · Photo'}</label>`
         : '<button type="button" class="gb-btn gb-btn-primary dr-go" id="go">आगे · Next ›</button>') + '</div>');
     if (shoot) return;
     $('go').onclick = () => { S.shown[st.id] = true; const e = stepErr(st.id); if (e) { $('why').textContent = e; const f = $('num'); if (f) { f.setAttribute('aria-invalid', 'true'); f.focus(); } return; } location.hash = 'fuel-' + (n + 1); };
@@ -230,7 +230,7 @@
     const row = (k, ico, hi, val) => `<li><a href="#fuel-${k}"><span class="dr-ico" aria-hidden="true">${ico}</span>${big(hi, '')}<b>${val}</b></a></li>`;
     ask(CHECK, E('done'), 'सब ठीक है?', 'Check, then send', 'कुछ बदलना हो तो उस पर दबाएँ · Tap a line to change it');
     $('stage').innerHTML = '<ul class="dr-sum">' +
-      row(1, '🎥', 'वीडियो', '<span class="ok">✓</span>') + row(2, '🧾', 'पर्ची', '<span class="ok">✓</span>') +
+      row(1, '📹', 'वीडियो', '<span class="ok">✓</span>') + row(2, '📃', 'पर्ची', '<span class="ok">✓</span>') +
       row(3, E('fuel'), 'लीटर', esc(S.form.litres)) + row(4, '₹', 'रुपये', '₹' + esc(S.form.amount)) + row(5, E('bus'), 'किलोमीटर', esc(S.form.odometer)) + '</ul>' +
       `<p class="dr-warn">${esc(hiMsg(c.warn))}</p><p class="dr-why" id="why" role="alert">${esc(S.failed)}</p>` +
       '<div class="dr-prog" id="prog" hidden><span class="gb-bar"><i style="width:0%"></i></span><p class="dr-en" id="progText" role="status"></p></div>';

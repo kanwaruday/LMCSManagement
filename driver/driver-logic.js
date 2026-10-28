@@ -88,8 +88,8 @@ var DriverLogic = (function () {
   // the fuel fill, one thing per screen, in the order it happens at the pump: film the meter while it runs, photograph the bill,
   // then copy three numbers (two from the bill, one from the dashboard). hi = the big Hindi prompt, en = the small English line.
   var FUEL_STEPS = [
-    { id: 'video', icon: '🎥', hi: 'पंप मीटर का वीडियो', en: 'Film the pump meter', help: 'मीटर 0 से शुरू · Start at 0, stop when the pump stops (10–20 s)' },
-    { id: 'bill', icon: '🧾', hi: 'पर्ची की फ़ोटो', en: 'Photo of the bill', help: 'पूरी पर्ची साफ़ दिखे · The whole bill, sharp' },
+    { id: 'video', icon: '📹', hi: 'पंप मीटर का वीडियो', en: 'Film the pump meter', help: 'मीटर 0 से शुरू · Start at 0, stop when the pump stops (10–20 s)' },
+    { id: 'bill', icon: '📃', hi: 'पर्ची की फ़ोटो', en: 'Photo of the bill', help: 'पूरी पर्ची साफ़ दिखे · The whole bill, sharp' },
     { id: 'litres', icon: '⛽', hi: 'कितने लीटर?', en: 'Litres', help: 'पर्ची पर लिखा · As on the bill' },
     { id: 'amount', icon: '₹', hi: 'कितने रुपये?', en: 'Amount ₹', help: 'पर्ची पर लिखा · As on the bill' },
     { id: 'odometer', icon: '🚌', hi: 'बस के किलोमीटर', en: 'Odometer km', help: 'बस के डैशबोर्ड से · From the bus dashboard' },
