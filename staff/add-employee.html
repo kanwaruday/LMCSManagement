@@ -339,6 +339,7 @@ function pickedRows(rows) {
   return LMCSCampus.filter(rows, SEL, 'school').sort(function (a, b) { return (order.indexOf(a.school) - order.indexOf(b.school)) || a.name.localeCompare(b.name); });
 }
 let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}
+let DOCS_ONLY = false; // set by init(): this session sees only the Documents tab
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -362,7 +363,17 @@ async function init() {
     // "HR & Hiring" holder in the allowlist's Functions column (all schools), or a Principal opened from the
     // Fee Clerk + PRO Portal. Ask it; it decides.
     document.getElementById('hdrCtx').textContent = 'Checking your access…';
-    docsPrefetch = await callStaffApi('documentstatus', {}).catch(function () { return null; });
+    let probeError = '';
+    docsPrefetch = await callStaffApi('documentstatus', {}).catch(function (e) { probeError = e.message || 'network error'; return null; });
+    if (docsPrefetch && !docsPrefetch.success && docsPrefetch.error !== 'Not authorized') probeError = docsPrefetch.error || 'server error';
+    if (probeError) {
+      // Couldn't reach the server (or it was waking up): not a "no", so don't tell them to ask the Owner.
+      document.getElementById('hdrCtx').textContent = '';
+      document.getElementById('deniedBox').style.display = 'block';
+      document.getElementById('deniedBox').innerHTML = '<div class="denied"><h3>Couldn\'t check your access</h3><p>' +
+        esc(probeError) + ' — reload the page to try again.</p></div>';
+      return;
+    }
     if (!docsPrefetch || !docsPrefetch.success) {
       document.getElementById('hdrCtx').textContent = '';
       document.getElementById('deniedBox').style.display = 'block';
@@ -375,6 +386,7 @@ async function init() {
     }
     docsOnly = true;
   }
+  DOCS_ONLY = docsOnly;
 
   // Owner/Coordinator "data source" links (2026-09-20; Coordinators added 2026-10-21) -- IDs duplicated from
   // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID.
@@ -523,7 +535,9 @@ async function loadDocumentStatus(prefetched) {
     documentStatusRows = json.rows;
     documentRules = json.rules || {};
     // An HR & Hiring holder sees every school's documents: widen the picker to match (display only).
-    if (json.allCampuses && SESSION.campusId !== 'ALL') mountPicker(Object.assign({}, SESSION, { campusId: 'ALL' }));
+    // Only in the Documents-only view: a Principal + HR & Hiring keeps their own school's Directory, and the
+    // picker is shared with that tab.
+    if (json.allCampuses && DOCS_ONLY && SESSION.campusId !== 'ALL') mountPicker(Object.assign({}, SESSION, { campusId: 'ALL' }));
     renderDocumentStatus();
   } catch (e) {
     document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(e.message) + '</div>';

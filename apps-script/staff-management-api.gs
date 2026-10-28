@@ -66,7 +66,8 @@ function cachedStaff_(key, compute) {
   const hit = cache.get(key);
   if (hit) return JSON.parse(hit);
   const result = compute();
-  cache.put(key, JSON.stringify(result), STAFF_CACHE_TTL_SECONDS);
+  // A refusal (null, e.g. a token not yet allowed) isn't kept: access granted a minute later works on the next reload.
+  if (result !== null) cache.put(key, JSON.stringify(result), STAFF_CACHE_TTL_SECONDS);
   return result;
 }
 
@@ -231,7 +232,7 @@ function verifyStaffManagerToken_(idToken, extraRoles, allowHrFunction) {
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
       const manager = roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1 || campusId === 'ALL';
       const extra = (extraRoles || []).some(function (r) { return roles.indexOf(r) !== -1; });
-      const hrHiring = staffFunctionsOf_(rows[0], rows[i]).some(function (f) { return f.toLowerCase() === STAFF_HR_FUNCTION_; });
+      const hrHiring = staffFunctionsOf_(rows[0], rows[i]).some(function (f) { return f.toLowerCase().replace(/\s+/g, ' ') === STAFF_HR_FUNCTION_; });
       if (!manager && !extra && !(allowHrFunction && hrHiring)) {
         console.log('verifyStaffManagerToken_: ' + email + ' is on the allowlist but role="' + role + '" campusId="' + campusId + '" -- not Coordinator/Owner/ALL');
         return null;
