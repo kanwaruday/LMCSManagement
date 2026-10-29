@@ -3,7 +3,7 @@
 // (driverbus: the driver's Home Base, coordinator-driverbus.gs), so both read a token the same way. Only a token's SHA-256 is stored.
 const DLK_TAB_ = 'Driver Devices';
 const DLK_UNLINKED_ = 'This phone is not linked. Ask the office for a new link.'; // unknown and revoked tokens alike
-const DLK_NOVIEW_ = 'Only the Owner and Coordinators can view a driver\'s page.';
+const DLK_NOVIEW_ = 'Only the Owner, Coordinators and Principals can view a driver\'s page.';
 const DLK_BOOK_ID_ = '1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc'; // the transport workbook: TUP_SHEET_ID_ (Roster), COORD_TRANSPORT_FORM_ID (Coordinator)
 
 // 'sha256:<hex>': the prefix keeps Sheets from reading an all-digit hash as a number.
@@ -31,6 +31,8 @@ function dlkLink_(token) {
 // Coordinator opens the driver page as a running bus's driver, read only, as the Owner views a school as its Principal. Its link is
 // built from the fleet register, never from a Driver Devices row: no token is made, no Last Seen is written, no phone is unlinked.
 // Only driverme, driverroute and driverbus take it; driverfuel and capture read dlkLink_ alone, so a staff view can send nothing.
+// Uday, 29 Oct: "a schoolwise lock for the schools and the principals, we know which vehicle belongs to who": a Principal views
+// their own school's buses only (the fleet register's campus), a Coordinator their district, the Owner every school.
 
 /** Running buses of the fleet register ('LM Studio Fleet'): [{reg, bus, campus, driver}], reg as Driver Devices keeps it. */
 function dlkFleet_() {
@@ -46,8 +48,16 @@ function dlkFleet_() {
 /** Owner or Coordinator, by the roles the calling project's own staff check found (null: not on its allowlist). */
 function dlkStaff_(roles) { return !!roles && (roles.indexOf('Owner') !== -1 || roles.indexOf('Coordinator') !== -1); }
 
+/** A Principal of exactly one school (roles and campusId from the project's own check) -> that school's campus test, else null.
+ *  campusId ALL or a list is not one school: no view. */
+function dlkOwnSchool_(roles, campusId) {
+  const own = String(campusId || '').trim().toUpperCase();
+  return roles && roles.indexOf('Principal') !== -1 && /^LMS[1-6]$/.test(own) ? function (campus) { return campus === own; } : null;
+}
+
 /** A driver phone's link (body.deviceToken), or, with no device token, a staff view of body.viewReg: coversOf(body.idToken) is the
- *  calling project's own check, a campus test for the Owner (every campus) or a Coordinator (their district), else null.
+ *  calling project's own check, a campus test for the Owner (every campus), a Coordinator (their district) or a Principal
+ *  (their own school), else null.
  *  -> {at: 0, linkId: '', reg, campus, name, view: true}, or null for anything else. */
 function dlkLinkOrView_(body, coversOf) {
   if (body.deviceToken || !body.viewReg || !body.idToken) return dlkLink_(body.deviceToken);

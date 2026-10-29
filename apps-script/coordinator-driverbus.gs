@@ -10,9 +10,11 @@
 const DBUS_PAPERS_ = ['insurance', 'fitness', 'pollution', 'speed_governor'];
 
 function coordDriverBus_(body) {
-  const link = dlkLinkOrView_(body, function (t) { // or a staff view (driver-token.gs): the Owner, or a Coordinator in their district
-    const c = coordVerifyCaller_(t), seen = c && dlkStaff_(c.roles) ? coordVisibleCampuses_(c) : undefined;
-    return seen === undefined ? null : function (campus) { return !seen || seen.indexOf(campus) !== -1; };
+  const link = dlkLinkOrView_(body, function (t) { // or a staff view (driver-token.gs): the Owner, a Coordinator in their district,
+    const c = coordVerifyCaller_(t);                // or a Principal of this bus's school (coordVerifyPrincipal_: one school only)
+    if (c && dlkStaff_(c.roles)) { const seen = coordVisibleCampuses_(c); return function (campus) { return !seen || seen.indexOf(campus) !== -1; }; }
+    const p = coordVerifyPrincipal_(t);
+    return p ? dlkOwnSchool_(['Principal'], p.campusId) : null;
   });
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const reg = FleetQuests.normReg(link.reg), T = COORD_FLEET_TABS, same = function (r) { return FleetQuests.normReg(r) === reg; };

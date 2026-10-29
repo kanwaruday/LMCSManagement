@@ -18,7 +18,7 @@ const tabs = {
 };
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite,
   SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n === 'Driver Devices' ? devices : n === 'LM Studio Fleet' ? fleet : null) && { getDataRange: () => ({ getValues: () => (n === 'Driver Devices' ? devices : fleet).map((r) => r.slice()) }) } }) },
-  coordVerifyCaller_: (t) => staff[t] || null, COORD_DISTRICTS: { LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS4: ['LMS4', 'LMS5', 'LMS6'] },
+  coordVerifyCaller_: (t) => staff[t] || null, coordVerifyPrincipal_: (t) => ({ p1: { campusId: 'LMS1', principal: true }, p4: { campusId: 'LMS4', principal: true } }[t] || null), COORD_DISTRICTS: { LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS4: ['LMS4', 'LMS5', 'LMS6'] },
   coordVisibleCampuses_: (c) => (c.campusId === 'ALL' ? null : ctx.COORD_DISTRICTS[c.campusId] || [c.campusId]),
   Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) },
@@ -47,6 +47,8 @@ const asOwner = call({ viewReg: 'HP659511', idToken: 'owner' });
 assert.deepStrictEqual([asOwner.reg, asOwner.make, asOwner.parts], [me.reg, me.make, me.parts], 'the Owner sees what the driver sees');
 assert.strictEqual(call({ viewReg: 'HP665805', idToken: 'coord' }).reg, 'HP665805', 'a Coordinator too, in their district');
 assert.deepStrictEqual(call({ viewReg: 'HP665805', idToken: 'coord4' }), unknown, 'not another district\'s bus');
+assert.strictEqual(call({ viewReg: 'HP665805', idToken: 'p1' }).reg, 'HP665805', 'a Principal: their own school\'s bus');
+assert.deepStrictEqual(call({ viewReg: 'HP659511', idToken: 'p1' }), unknown, 'a Principal: not another school\'s, even in their district');
 assert.deepStrictEqual([call({ viewReg: 'HP659511', idToken: 'clerk' }), call({ viewReg: 'HP659511', idToken: 'nobody' }), call({ viewReg: 'HP659511' })], [unknown, unknown, unknown]);
 ctx.coordTransportFleet_ = () => { throw new Error('papers tab missing'); };
 assert.deepStrictEqual(call({ deviceToken: T1 }).papers.insurance, { date: '' }, 'unreadable papers: blank dates, the bus still loads');

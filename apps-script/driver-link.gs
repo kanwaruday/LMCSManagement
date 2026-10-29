@@ -145,14 +145,16 @@ function driverMe_(body) {
     lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer, view: !!link.view };
 }
 
-/** The Roster's staff check for a view: the Owner or a Coordinator (verifyStaffManagerToken_, staff-management-api.gs) -> which
- *  campuses they may view (tupCovers_: the Owner every one, a Coordinator their district), or null. */
+/** The Roster's staff check for a view (verifyStaffManagerToken_, staff-management-api.gs, with Principals let in) -> which
+ *  campuses they may view: the Owner every one and a Coordinator their district (tupCovers_), a Principal their own school
+ *  (dlkOwnSchool_); null for anyone else. */
 function dlkRosterCovers_(idToken) {
-  const c = verifyStaffManagerToken_(idToken);
-  return c && dlkStaff_(c.roles) ? function (campus) { return tupCovers_(c, campus); } : null;
+  const c = verifyStaffManagerToken_(idToken, ['Principal']);
+  if (!c) return null;
+  return dlkStaff_(c.roles) ? function (campus) { return tupCovers_(c, campus); } : dlkOwnSchool_(c.roles, c.campusId);
 }
 
-/** POST driverviewbuses {idToken}: the running buses the Owner or a Coordinator can view as their driver. */
+/** POST driverviewbuses {idToken}: the running buses the caller can view as their driver (dlkRosterCovers_'s scope). */
 function driverViewBuses_(body) {
   const covers = body.idToken ? dlkRosterCovers_(body.idToken) : null;
   if (!covers) return { success: false, error: DLK_NOVIEW_ };

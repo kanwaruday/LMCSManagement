@@ -9,7 +9,7 @@
 // (apps-script/driver-fuel.gs: a pending row the Fee Clerk later confirms against the bill). Each fill is kept in IndexedDB under
 // its fillId before it is sent and leaves the phone only when the server answers success; with no signal (or a timeout) it waits
 // there and is sent again on the 'online' event and on the next page load. The token is never logged or shown.
-// Staff view (?staff=1; Uday, 29 Oct): the Owner or a Coordinator signs in with their normal Google account, picks a running bus and
+// Staff view (?staff=1; Uday, 29 Oct): the Owner, a Coordinator or a Principal (their own school's buses) signs in with their normal Google account, picks a running bus and
 // sees that driver's page, read only (no fuel fill, no route video). It never touches the phone's driver link (TOKEN_KEY and the
 // saved bus stay as they are); the backend checks the role on every call (apps-script/driver-token.gs's dlkLinkOrView_).
 (function () {
@@ -440,13 +440,13 @@
     } catch (e) { return ''; }
   }
   function staffWay() {
-    stop('स्टाफ़ व्यू', 'Owner or Coordinator: see a driver\'s page, read only.');
+    stop('स्टाफ़ व्यू', 'Owner, Coordinator or Principal: see a driver\'s page, read only.');
     $('staff').hidden = false; $('staffLink').hidden = true;
     const why = (m) => { $('staffWhy').textContent = m; };
     const withToken = (idToken) => {
       why('खोल रहे हैं… · Loading the buses…');
       fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverviewbuses', idToken }) }).then((x) => x.json()).then((x) => {
-        if (!x.success) { why(x.error || 'Only the Owner and Coordinators can view a driver\'s page.'); googleIn(); return; }
+        if (!x.success) { why(x.error || 'Only the Owner, Coordinators and Principals can view a driver\'s page.'); googleIn(); return; }
         why(''); $('staffBtn').hidden = true; // signed in: the list, not the Google button
         const open = (reg) => {
           view = { viewReg: reg, idToken };

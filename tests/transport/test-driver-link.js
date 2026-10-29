@@ -197,9 +197,17 @@ assert.deepStrictEqual(call('driverRoute_', { viewReg: 'HP665805', idToken: 't' 
 assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'their district\'s buses only');
 caller = owner;
 assert.strictEqual(call('driverViewBuses_', { idToken: 't' }).buses.length, 2, 'the Owner: every campus');
-[{ email: 'p@x', campusId: 'ALL', roles: ['Principal'] }, clerk4, null].forEach((c) => {
+// a Principal (29 Oct, the school lock): their own school's buses only, by the fleet register's campus
+caller = { email: 'p4@x', campusId: 'LMS4', roles: ['Principal'] };
+assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'a Principal: own school only');
+assert.strictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).view, true);
+assert.deepStrictEqual([call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), call('driverRoute_', { viewReg: 'HP665805', idToken: 't' })], [revoked, revoked], 'not another school\'s bus');
+caller = { email: 'p5@x', campusId: 'LMS5', roles: ['Principal'] };
+assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses, [], 'a Principal gets no district: LMS 5 sees none of LMS 4\'s buses');
+assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }), revoked);
+[{ email: 'p@x', campusId: 'ALL', roles: ['Principal'] }, { email: 'p@x', campusId: 'LMS4,LMS5', roles: ['Principal'] }, clerk4, null].forEach((c) => {
   caller = c;
-  assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }), revoked, 'not the Owner or a Coordinator: ' + JSON.stringify(c && c.roles));
+  assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }), revoked, 'no view: ' + JSON.stringify(c && [c.roles, c.campusId]));
   assert.deepStrictEqual(call('driverRoute_', { viewReg: 'HP659511', idToken: 't' }), revoked);
   assert.strictEqual(call('driverViewBuses_', { idToken: 't' }).success, false);
 });
