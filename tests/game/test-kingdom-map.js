@@ -25,7 +25,7 @@ walk(path.join(root, 'assets')).filter((f) => /\.(js|css|html|json)$/.test(f) &&
 
 // the module draws only valid, non-null pins
 const ids = (o) => M.drawable(o).map((p) => p.id).join();
-assert.strictEqual(ids(P), '', 'all null: nothing drawn (CENTER is not a place)');
+assert.strictEqual(ids(P), 'HES,LMS1,LMS2,LMS3,LMS4,LMS5,LMS6', 'all seven pinned, HQ first (CENTER is not a place)');
 assert.strictEqual(ids({ A: { name: 'a', lat: 31.9, lng: 77 }, B: { name: 'b', lat: null, lng: null }, C: { name: 'c', lat: 31.9, lng: null }, D: { name: 'd', lat: 10, lng: 77 } }), 'A');
 assert.strictEqual(ids(null), '');
 assert.strictEqual(M.missingText(1), '1 place still needs a map pin');
