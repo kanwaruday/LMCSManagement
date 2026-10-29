@@ -37,8 +37,8 @@ assert.ok(/el\.rank = h\('span', \{ class: 'hh-chip hh-rank', hidden: 'hidden' \
 assert.ok(!/fetch\(|XMLHttpRequest|innerHTML|insertAdjacentHTML/.test(js), 'presentation only: no backend call, no parsed HTML');
 
 // the day clock (IST, 15:30)
-assert.strictEqual(H.dayClock(new Date('2026-10-29T06:50:00Z')), 'Day closes in 3h 10m', '12:20 IST');
-assert.strictEqual(H.dayClock(new Date('2026-10-29T09:55:00Z')), 'Day closes in 5m', '15:25 IST');
+assert.strictEqual(H.dayClock(new Date('2026-10-29T06:50:00Z')), 'Closes 3:30 pm', '12:20 IST');
+assert.strictEqual(H.dayClock(new Date('2026-10-29T09:55:00Z')), 'Closes 3:30 pm', '15:25 IST');
 assert.strictEqual(H.dayClock(new Date('2026-10-29T10:00:00Z')), 'Day closed', '15:30 IST');
 assert.strictEqual(H.setupLeft({ buildings: [{ tiers: [{ state: 'done' }, { state: 'open' }, { state: 'soon' }] }, { tiers: [{ state: 'open' }] }] }), 2);
 assert.strictEqual(H.setupLeft(null), 0);
@@ -54,7 +54,7 @@ assert.ok(/id="view-home"[^>]*><span data-emoji="school"><\/span>Town<\/button>/
 // rules: tap size, reduced motion, no raw emoji in markup, the sheet is a labelled modal dialog
 assert.ok(/\.hh-b \{[^}]*width:44px; height:44px/.test(css), 'bubbles are 44px');
 assert.ok(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*hh-bob/.test(css) && (css.match(/animation:|transition:/g) || []).length === (css.slice(css.indexOf('prefers-reduced-motion')).match(/animation:|transition:/g) || []).length, 'all motion sits inside the no-preference query');
-assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /LMCSGame\.ui\.trap/.test(js) && /'aria-label': 'Close'/.test(js) && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
+assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /s\.onKey/.test(js) && /'aria-label': 'Close'/.test(js) && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
 assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(page.slice(page.indexOf('<body'), page.indexOf('<script src')).replace(/<!--[\s\S]*?-->/g, '')), 'no raw emoji in the markup');
 // the tours point at visible HUD controls, not the stash; other pages keep their targets
 const guide = read('assets/game/guide.js'), gp = guide.slice(guide.indexOf("'principal/index.html'"), guide.indexOf("'coordinator/index.html'"));
@@ -64,4 +64,13 @@ const game = read('assets/game/game.js');
 assert.ok(/function tt\(k, d\) \{ return k in tourTargets \? tourTargets\[k\] : d; \}/.test(game) && /target: tt\('today', todayEl\)/.test(game) && /var tourTargets = \{\};/.test(game), 'game.js: defaults unchanged when no targets are set');
 // drawSchool finds the campus from campusId when session.campus is absent
 assert.ok(/LMCSBuildingModels\[session\.campus \|\| String\(session\.campusId/.test(page), 'drawSchool: session.campus || session.campusId');
+// review fixes: the edge follows the drawer in the DOM (so `.is-open ~ .hh-edge` matches), the drawer has an X and closes on an outside tap
+assert.ok(/\[tl, top, el\.events, el\.drawer, el\.edge, bottom\]/.test(js) && /\.hh-drawer\.is-open ~ \.hh-edge/.test(css), 'edge is built after the drawer');
+assert.ok(/'aria-label': 'Close tasks' \}, '\\u00d7'/.test(js) && /pointerdown', function \(e\) \{ if \(el\.drawer\.classList\.contains\('is-open'\)/.test(js) && /if \(S\.drawer\) S\.drawer\(false\)/.test(js), 'drawer: X, outside tap, closes when a sheet opens');
+assert.ok(/body\.hh \.lg-nextbar \{ display:none !important; \}/.test(css), "game.js's next-step bar is hidden here");
+assert.ok(/if \(document\.querySelector\('\.lg-layer'\)\) return;/.test(js) && !/LMCSGame\.ui\.trap/.test(js), 'the sheet leaves Esc and Tab to a game.js card');
+assert.ok(/data-hh/.test(js) && /S\.bm\[key\]/.test(js) && /function backTo/.test(js) && !/layer\.textContent = ''/.test(js), 'bubbles update in place; focus returns by key');
+assert.ok(/LINK_ONLY = \['daily', 'hr', 'routes'\]/.test(js), 'link-only bubbles');
+assert.strictEqual(H.rankText({ rank: 'x'.repeat(50) }).length, 20, 'rank text is capped');
+assert.ok(LMCSEmoji.get('setupUp') && !/u2b06|\u2b06/.test(js) && /function chip\(/.test(js) && !/textContent = LMCSEmoji/.test(js), 'setup bubble and chips use the emoji map, not typed or glued emoji');
 console.log('test-home-hud: ok');

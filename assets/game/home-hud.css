@@ -39,6 +39,9 @@ body.hh .gb-panels { display:none; }
 .hh-drawer { position:absolute; left:0; top:100px; bottom:140px; width:min(86vw, 340px); padding:8px 12px; overflow:auto; background:var(--gb-paper); border-right:2px solid var(--gb-line); border-radius:0 14px 14px 0; box-shadow:4px 0 14px rgba(0,0,0,.2);
   transform:translateX(-102%); visibility:hidden; }
 .hh-drawer.is-open { transform:none; visibility:visible; }
+.hh-drawer-x { position:absolute; top:4px; right:4px; }
+.hh-drawer { padding-top:52px; }
+body.hh .lg-nextbar { display:none !important; } /* the quest strip is the next step here; game.js's bar would measure the stashed Today */
 .hh-drawer.is-open ~ .hh-edge { left:min(86vw, 340px); }
 .hh-tabs { display:flex; gap:4px; margin:0 0 8px; }
 .hh-tabs button { flex:1; min-height:44px; min-width:44px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); color:var(--gb-ink); font-weight:700; }
