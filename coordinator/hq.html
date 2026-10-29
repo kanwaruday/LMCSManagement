@@ -7,16 +7,13 @@
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
   <link rel="stylesheet" href="../assets/campus-picker.css?v=153d68d7" />
   <style>
     /* Page-only styles. Tokens come from assets/style.css. */
     :root { --rule: #e8e8e8; --ctl: #c8c8c8; --warm: #b45f06; --warm-bg: #fdf1de; --cool: #8f8f8f; }
-    main.hq { max-width: 1200px; padding-top: 20px; padding-bottom: 48px; }
-    .back { display: inline-block; font-size: 0.85rem; color: var(--gray); text-decoration: none; padding: 6px 0; }
-    .back:hover { color: var(--red); text-decoration: underline; }
-    .title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .title-row h1 { font-size: 1.5rem; color: var(--red); margin: 6px 0 4px; letter-spacing: -0.01em; }
-    .title-row a { font-size: 0.88rem; font-weight: 600; color: var(--dark); }
+    main.hq { max-width: 1200px; }
+    .title-row { margin: 0 0 10px; }
     .finding { margin: 0 0 18px; color: var(--gray); font-size: 0.95rem; max-width: 75ch; }
     .finding b { color: var(--dark); }
 
@@ -49,13 +46,11 @@
     .contract { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
     .contract.sel { background: var(--lgray); margin: 0 -10px; padding-left: 10px; padding-right: 10px; border-radius: var(--radius); }
     .contract .what { margin: 0; font-size: 0.98rem; font-weight: 700; overflow-wrap: anywhere; }
-    .flag { display: inline-block; margin-right: 6px; vertical-align: 1px; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid; }
-    .flag.stuck { color: var(--dark); border-color: var(--dark); }
-    .flag.waiting { color: var(--gray); border-color: var(--ctl); }
-    .flag.missing { color: var(--warm); background: var(--warm-bg); border-color: #f1d3a8; }
-    .flag.new { color: var(--dark); background: var(--lgray); border-color: var(--border); }
+    /* status pills in the kit's colours: needs a look = warn, waiting on someone else / new = neutral */
+    .flag { display: inline-block; margin-right: 6px; vertical-align: 1px; font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 999px; white-space: nowrap; background: var(--gb-info-soft); color: var(--gb-info); }
+    .flag.stuck, .flag.missing { background: var(--gb-warn-soft); color: var(--gb-warn); }
     .contract .meta { margin: 0; font-size: 0.85rem; color: var(--gray); font-variant-numeric: tabular-nums; }
-    .contract .meta .late { color: var(--red-dark); font-weight: 600; }
+    .contract .meta .late { color: var(--gb-low); font-weight: 700; }
     .contract .detail { margin: 0; font-size: 0.85rem; color: var(--gray); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .contract .rec { margin: 2px 0 0; font-size: 0.88rem; overflow-wrap: anywhere; }
     .contract .rec.need { font-weight: 600; }
@@ -63,11 +58,12 @@
     .go { font-size: 0.88rem; font-weight: 600; color: var(--dark); white-space: nowrap; padding: 4px 0; }
     .more { margin-top: 12px; }
 
-    .btn { min-height: 38px; padding: 7px 14px; font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: var(--radius); cursor: pointer; color: var(--white); background: var(--dark); border: 1px solid var(--dark); white-space: nowrap; }
-    .btn:hover { background: #000; }
-    .btn:disabled { cursor: not-allowed; color: var(--gray); background: var(--lgray); border-color: var(--border); }
-    .btn.quiet { color: var(--dark); background: var(--white); border-color: var(--ctl); }
-    .btn.quiet:hover { border-color: var(--dark); }
+    /* the one red button is the recommendation's submit (.btn); every other button is quiet (.btn.quiet), the kit's gb-btn look */
+    .btn { min-height: 44px; min-width: 44px; padding: 8px 16px; font: 700 15px/1.2 var(--gb-font); border-radius: 10px; cursor: pointer; color: #fff; background: var(--gb-red); border: 1.5px solid var(--gb-red-ink); white-space: nowrap; }
+    .btn:hover { background: var(--gb-red-ink); }
+    .btn:disabled { cursor: not-allowed; opacity: .55; }
+    .btn.quiet { color: var(--gb-ink); background: var(--gb-paper); border-color: var(--gb-line); }
+    .btn.quiet:hover { border-color: var(--gb-muted); background: var(--gb-paper); }
     a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 
     .panel h2 { font-size: 1rem; margin: 0; }
@@ -83,27 +79,25 @@
     .facts .wait { color: var(--gray); }
     .note-box { margin: 12px 0 0; padding: 9px 12px; background: var(--lgray); border-radius: var(--radius); font-size: 0.9rem; overflow-wrap: anywhere; }
     .note-box span { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray); }
-    .outcome { background: var(--color-live-bg); color: #14532d; }
-    .outcome span { color: #14532d; }
+    .outcome { background: var(--gb-ok-soft); color: var(--gb-ok); }
+    .outcome span { color: var(--gb-ok); }
     .rec-form { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
     .rec-form fieldset { border: 0; margin: 0; padding: 0; }
     .rec-form legend { font-weight: 700; font-size: 0.95rem; padding: 0; margin-bottom: 8px; }
     .choices { display: flex; flex-wrap: wrap; gap: 8px; }
-    .choices label { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--ctl); border-radius: var(--radius); font-size: 0.9rem; cursor: pointer; }
+    .choices label { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 6px 12px; border: 1.5px solid var(--gb-line); border-radius: 10px; font-size: 15px; cursor: pointer; }
     .choices label:hover { border-color: var(--dark); }
     .choices input { margin: 0; accent-color: var(--dark); width: 16px; height: 16px; }
     .choices label:has(input:checked) { border-color: var(--dark); box-shadow: inset 0 0 0 1px var(--dark); font-weight: 600; }
-    .field { margin-top: 12px; }
-    .field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; }
-    .field label .opt { font-weight: 400; color: var(--gray); }
-    .field textarea { display: block; width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; font: inherit; font-size: 0.92rem; color: var(--dark); background: var(--white); border: 1px solid var(--ctl); border-radius: var(--radius); }
-    .field textarea:hover { border-color: #9a9a9a; }
+    .field { margin-top: 12px; } /* the fields are kit gb-field / gb-input (base.css) */
+    .field label .opt { font-weight: 400; color: var(--gb-muted); }
     .form-acts { display: flex; justify-content: flex-end; margin-top: 10px; }
-    .err { margin: 8px 0 0; font-size: 0.85rem; color: var(--red-dark); }
+    .err { margin: 10px 0 0; padding: 10px 14px; font-size: 15px; color: var(--gb-ink); background: var(--gb-low-soft); border: 1.5px solid var(--gb-low); border-radius: 12px; } /* gb-alert-err look */
     .err:empty, .flash:empty { display: none; }
-    .flash { margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius); font-size: 0.9rem; color: var(--color-live); background: var(--color-live-bg); }
+    .flash { margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 15px; color: var(--gb-ink); background: var(--gb-ok-soft); border: 1.5px solid var(--gb-ok); } /* gb-alert-ok look */
     .flash:focus { outline: none; }
 
+    .tr #track-body { overflow-x: auto; }
     .tr table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
     .tr th { font-size: 0.78rem; font-weight: 600; color: var(--gray); text-align: right; padding: 6px 0 6px 10px; border-bottom: 1px solid var(--border); }
     .tr td { text-align: right; padding: 7px 0 7px 10px; border-bottom: 1px solid var(--rule); }
@@ -114,22 +108,22 @@
     .recent .t { font-weight: 600; }
     .recent .m { display: block; color: var(--gray); font-size: 0.82rem; }
 
-    .status-box { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.92rem; }
-    .status-box p { margin: 0 0 10px; } .status-box p:last-child { margin-bottom: 0; }
-    .empty { margin: 14px 0 0; padding: 12px 14px; border: 1px dashed var(--ctl); border-radius: var(--radius); color: var(--gray); font-size: 0.92rem; list-style: none; }
+    .status-box { margin-top: 14px; } /* a gb-alert gb-alert-err */
+    .empty { margin: 14px 0 0; padding: 12px 14px; border: 1.5px dashed var(--gb-line); border-radius: 12px; color: var(--gb-muted); font-size: 0.92rem; list-style: none; }
     .sk { height: 76px; margin-top: 12px; border-radius: var(--radius); background: var(--lgray); list-style: none; }
     .sk.s { height: 22px; width: 60%; }
     .denied { padding: 40px 0; color: var(--gray); }
     a:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--red-dark); outline-offset: 2px; }
     ::selection { background: var(--red-pale); color: var(--dark); }
     .back-board { display: none; }
+    .gb-done { margin-top: 16px; padding: 20px 12px; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
     @media (max-width: 1000px) {
       .cols { grid-template-columns: minmax(0, 1fr); }
       .side { position: static; max-height: none; overflow: visible; }
       /* one region at a time: the open request replaces the board, Back returns to it */
-      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open #campus-pick, .hq.detail-open .title-row, .hq.detail-open > .back { display: none; }
+      .hq.detail-open .bases, .hq.detail-open .main-col, .hq.detail-open .finding, .hq.detail-open #campus-pick, .hq.detail-open .title-row { display: none; }
       .back-board { display: inline-flex; }
       .dv-top .close-dv { display: none; }
     }
@@ -152,32 +146,17 @@
       .form-acts .btn { width: 100%; }
       .choices label { flex: 1 1 auto; min-height: 44px; }
     }
-    @media (prefers-reduced-motion: no-preference) { .contract, .choices label, .btn { transition: background-color .15s ease, border-color .15s ease; } }
   </style>
 </head>
-<body>
+<body class="gb">
 
-  <header class="site">
-    <div class="wrap">
-      <a class="brand" href="../index.html">
-        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
-        <span>
-          LMCS Portal
-          <span class="tagline">Grooming to Excellence</span>
-        </span>
-      </a>
-      <nav class="roles" id="header-status"></nav>
-    </div>
-  </header>
+  <header class="gb-head"><div><div><h1>Coordinator HQ</h1><p>Coordinator · Contracts and recommendations</p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> Coordinator portal</a></div></header>
+  <span id="header-status" hidden></span><!-- boot() writes the campus name here; the hub shows it, so it stays hidden -->
 
-  <main class="wrap hq" id="hq">
-    <a class="back" href="index.html">&larr; Coordinator home</a>
+  <main class="gb-page-wide coord-gb hq" id="hq">
     <div id="authRoot"></div>
     <div id="appBody" style="display:none">
-      <div class="title-row">
-        <h1>Coordinator HQ</h1>
-        <a href="systems/index.html#closed">Closed this week</a>
-      </div>
+      <div class="title-row"><a class="gb-btn" href="systems/index.html#closed">Closed this week</a></div>
       <div id="campus-pick"></div>
       <p class="finding" id="finding">Loading the network&hellip;</p>
       <section class="bases" id="bases" aria-label="Campuses"><div class="district"><ul><li class="base sk-b"></li><li class="base sk-b"></li><li class="base sk-b"></li></ul></div></section>
@@ -207,7 +186,7 @@
 
   <script src="../assets/auth.js?v=6c2f4a9b"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
-  <script src="./shared.js?v=26aa5692"></script>
+  <script src="./shared.js?v=9c654466"></script>
   <script src="./hq-logic.js?v=f0528b25"></script>
   <script>
     // Coordinator HQ (Phase C1): the network's follow-ups as a ranked board of contracts, campus heat, and a decision view
@@ -248,7 +227,7 @@
     // A failed block: plain words, and Retry unless the problem is the sign-in.
     function failHtml(what, msg, retryId) {
       const auth = isAuthError(msg);
-      return '<div class="status-box" role="alert"><p>' + esc(auth ? authText(false) : what + ' ' + plain(msg)) + '</p>' +
+      return '<div class="status-box gb-alert gb-alert-err" role="alert"><p>' + esc(auth ? authText(false) : what + ' ' + plain(msg)) + '</p>' +
         (auth ? '' : '<button type="button" class="btn quiet" id="' + retryId + '">Retry</button>') + '</div>';
     }
 
@@ -338,8 +317,8 @@
       const pick = mine ? mine.recommendation : '', reason = mine ? mine.reason : '', checked = mine ? mine.checked || '' : '';
       return '<form class="rec-form" id="rec-form" novalidate><fieldset><legend>Your recommendation</legend><div class="choices">' +
         CHOICES.map(([v, label]) => '<label><input type="radio" name="rec" value="' + v + '"' + (pick === v ? ' checked' : '') + '>' + label + '</label>').join('') + '</div></fieldset>' +
-        '<div class="field"><label for="rec-reason">Reason</label><textarea id="rec-reason" name="reason" maxlength="500" rows="3" aria-describedby="rec-err">' + esc(reason) + '</textarea></div>' +
-        '<div class="field"><label for="rec-checked">What I checked <span class="opt">(optional)</span></label><textarea id="rec-checked" name="checked" maxlength="500" rows="2" placeholder="For example: the quotation matches the day-book rate">' + esc(checked) + '</textarea></div>' +
+        '<div class="field gb-field"><label for="rec-reason">Reason</label><textarea class="gb-input" id="rec-reason" name="reason" maxlength="500" rows="3" aria-describedby="rec-err">' + esc(reason) + '</textarea></div>' +
+        '<div class="field gb-field"><label for="rec-checked">What I checked <span class="opt">(optional)</span></label><textarea class="gb-input" id="rec-checked" name="checked" maxlength="500" rows="2" placeholder="For example: the quotation matches the day-book rate">' + esc(checked) + '</textarea></div>' +
         '<div class="form-acts"><button type="submit" class="btn"' + (H.recReady(pick, reason) ? '' : ' disabled') + '>' + (mine ? 'Update my recommendation' : 'Send my recommendation') + '</button></div>' +
         '<p class="err" id="rec-err" role="alert"></p></form>';
     }
@@ -457,9 +436,13 @@
       FRESH.forEach((f) => { if (f.approvalId === dec.id) f.recommendation = res.recommendation; });
       renderAll();
       paintDecision();
+      // the saved form gives way to the done state (the way back to the hub, or on with the board)
+      const formEl = $('rec-form');
+      if (formEl) formEl.outerHTML = '<div class="gb-done"><div class="gb-done-tick" aria-hidden="true">&#10003;</div><h2 tabindex="-1">Recommendation saved</h2><p>Recommendation saved. The Owner sees it with the request.</p>' +
+        '<div class="gb-row-acts"><a class="gb-btn gb-btn-primary" href="index.html">Back to Coordinator portal</a><button type="button" class="gb-btn gb-btn-quiet" data-close>Keep going</button></div></div>';
       const flash = $('dv-flash');
       flash.textContent = 'Your note is with the Owner. ' + H.shortCampus(dec.campus) + '\'s ' + dec.category + ' request is ready for a decision.';
-      flash.focus();
+      const doneH = document.querySelector('.gb-done h2'); (doneH || flash).focus();
       loadTrack();
     }
 

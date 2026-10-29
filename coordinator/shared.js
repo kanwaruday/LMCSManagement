@@ -73,9 +73,10 @@ window.Coord = (function () {
   // body: element; opts: {dept (a department name, or null for everything), title, sub}
   function tasksView(body, opts) {
     let view = 'urgency', all = [];
-    body.innerHTML = '<h2 class="pagetitle">' + esc(opts.title) + '</h2><p class="pagesub">' + esc(opts.sub || '') + '</p>' +
-      '<div class="ctl"><span class="seg"><button data-v="urgency" class="on">By urgency</button><button data-v="school">By school</button></span></div><div class="task-list"></div>';
-    const list = body.querySelector('.task-list');
+    // The header already names the page, so the body opens with the one-line sub. Open follow-ups are game-kit mission rows (assets/game/base.css).
+    body.innerHTML = '<p class="gb-lead">' + esc(opts.sub || '') + '</p>' +
+      '<div class="ctl"><span class="seg"><button data-v="urgency" class="on">By urgency</button><button data-v="school">By school</button></span></div><div class="task-list"></div><div class="task-done" hidden></div>';
+    const list = body.querySelector('.task-list'), ctl = body.querySelector('.ctl'), doneBox = body.querySelector('.task-done');
     body.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
       view = b.dataset.v;
       body.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b));
@@ -84,36 +85,58 @@ window.Coord = (function () {
     const me = () => (SESSION.email || '').toLowerCase();
     const isoToday = () => { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
     const dueTxt = iso => { const d = new Date(iso + 'T00:00:00'); return d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; };
-    const card = t =>
-      '<div class="task ' + esc(t.severity) + '"><div>' +
-        '<div class="t"><span class="chip">' + esc(t.severity) + '</span>' + (t.assignee ? '<span class="chip">' + (t.assignee === me() ? 'assigned to you' : 'assigned to ' + esc(t.assignee.split('@')[0])) + '</span>' : '') + (t.due ? '<span class="chip"' + (t.due < isoToday() ? ' style="color:#CE0000;font-weight:700"' : '') + '>' + (t.due < isoToday() ? 'overdue, due ' : 'due ') + dueTxt(t.due) + '</span>' : '') + esc(t.title) + '</div>' +
-        '<div class="d">' + esc(t.detail) + ' &middot; <a href="' + (WORK_LINKS[t.domain] || '#') + '">Open</a></div>' +
-      '</div><button class="btn" data-id="' + esc(t.taskId) + '">Mark resolved</button></div>';
+    const isWait = t => !!t.assignee && t.assignee !== me(); // assigned to another Coordinator: it is waiting on them
+    // one row: mark, title with its small lines, Go (the red one only on the next open row), Mark resolved (quiet)
+    const card = (t, nextId) => {
+      const wait = isWait(t), next = t.taskId === nextId, late = t.due && t.due < isoToday(), go = WORK_LINKS[t.domain];
+      const pills = (t.severity === 'high' ? '<span class="gb-pill gb-pill-warn">High priority</span> ' : '') +
+        (t.assignee && !wait ? '<span class="gb-pill">Assigned to you</span> ' : '') +
+        (late ? '<span class="gb-pill gb-pill-low">Overdue, due ' + dueTxt(t.due) + '</span>' : t.due ? 'Due ' + dueTxt(t.due) : '');
+      return '<li class="gb-mission' + (next ? ' is-next' : '') + (wait ? ' is-wait' : '') + '"><span class="gb-mark" aria-hidden="true"></span>' +
+        '<span class="gb-mission-t"><span class="gb-sr">' + (wait ? 'Waiting: ' : next ? 'Next: ' : 'Open: ') + '</span>' + esc(t.title) +
+          '<small>' + esc(t.detail) + '</small>' + (wait ? '<small>Waiting on ' + esc(t.assignee.split('@')[0]) + '</small>' : '') + (pills ? '<small>' + pills + '</small>' : '') + '</span>' +
+        '<span class="coord-acts">' + (go ? '<a class="gb-btn' + (next ? ' gb-btn-primary' : '') + '" href="' + esc(go) + '" aria-label="Go: ' + esc(t.title) + '">Go</a>' : '') +
+        '<button type="button" class="gb-btn" data-id="' + esc(t.taskId) + '" aria-label="Mark resolved: ' + esc(t.title) + '">Mark resolved</button></span></li>';
+    };
 
     function render() {
-      if (!all.length) { list.innerHTML = '<div class="status">Nothing to follow up on here right now.</div>'; return; }
+      if (!all.length) { list.innerHTML = '<p class="gb-empty">Nothing to follow up on here right now.</p>'; return; }
       if (view === 'school') {
         // the same follow-ups, grouped under the school they belong to (LMS1..LMS6 first, anything without a school last)
         const groups = {};
         all.forEach(t => { (groups[t.campus || ''] = groups[t.campus || ''] || []).push(t); });
         const order = Object.keys(groups).sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, undefined, { numeric: true }));
+        const first = order.reduce((a, c) => a.concat(groups[c]), []).filter(t => !isWait(t))[0];
         list.innerHTML = order.map(c => {
           const g = groups[c], hot = g.filter(t => t.severity === 'high').length;
-          return '<h3 style="font-size:14px;margin:22px 0 8px">' + esc(c || 'No school') + ' <span class="sm" style="font-weight:400">' + g.length + ' follow-up' + (g.length > 1 ? 's' : '') + (hot ? ', ' + hot + ' high' : '') + '</span></h3>' + g.map(card).join('');
+          return '<h3 class="coord-h3">' + esc(c || 'No school') + ' <span class="gb-muted">' + g.length + ' follow-up' + (g.length > 1 ? 's' : '') + (hot ? ', ' + hot + ' high' : '') + '</span></h3><ul class="gb-missions" role="list">' + g.map(t => card(t, first && first.taskId)).join('') + '</ul>';
         }).join('');
-      } else list.innerHTML = all.map(card).join('');
+      } else {
+        const first = all.filter(t => !isWait(t))[0];
+        list.innerHTML = '<ul class="gb-missions" role="list" aria-label="Follow-ups">' + all.map(t => card(t, first && first.taskId)).join('') + '</ul>';
+      }
       list.querySelectorAll('button').forEach(b => b.addEventListener('click', () => resolve(b.dataset.id, b)));
     }
 
     async function load() {
-      list.innerHTML = '<div class="status">Loading follow-ups...</div>';
+      list.innerHTML = '<div class="gb-loading" role="status"><i></i><i></i><i></i><span class="gb-sr">Loading follow-ups...</span></div>';
       try {
         all = (await api({ action: 'coordinatortasks' })).tasks.filter(t => !opts.dept || t.department === opts.dept).sort((a, b) => (b.assignee === me()) - (a.assignee === me())); // what is assigned to you first
         render();
       } catch (err) {
-        list.innerHTML = '<div class="status">Could not load follow-ups: ' + esc(err.message) + ' <button class="btn retry">Retry</button></div>';
+        list.innerHTML = '<div class="gb-alert gb-alert-err" role="alert"><p>Could not load follow-ups: ' + esc(err.message) + '</p><button type="button" class="gb-btn retry">Retry</button></div>';
         list.querySelector('.retry').addEventListener('click', load);
       }
+    }
+
+    // after a successful resolve: the done state takes the list's place until "Keep going"
+    function showDone(title) {
+      doneBox.innerHTML = '<div class="gb-done"><div class="gb-done-tick" aria-hidden="true">&#10003;</div><h2 tabindex="-1">Follow-up resolved</h2>' +
+        '<p>' + esc(title) + ' is marked resolved. It leaves the list for every Coordinator.</p>' +
+        '<div class="gb-row-acts"><a class="gb-btn gb-btn-primary" href="../index.html">Back to Coordinator portal</a><button type="button" class="gb-btn gb-btn-quiet" data-keep>Keep going</button></div></div>';
+      ctl.hidden = list.hidden = true; doneBox.hidden = false;
+      doneBox.querySelector('[data-keep]').addEventListener('click', () => { doneBox.hidden = true; ctl.hidden = list.hidden = false; const b = list.querySelector('a.gb-btn,button'); if (b) b.focus(); });
+      doneBox.querySelector('h2').focus();
     }
 
     async function resolve(taskId, btn) {
@@ -125,19 +148,23 @@ window.Coord = (function () {
         const res = await fetch(BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorresolvetask', idToken: SESSION.idToken, taskId: taskId, note: note }) });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Could not resolve');
+        const hit = all.filter(t => t.taskId === taskId)[0];
+        showDone(hit ? hit.title : 'The follow-up');
         load();
       } catch (err) { btn.disabled = false; alert('Could not resolve: ' + err.message); }
     }
     load();
   }
 
-  // Landing page: {all: {n, hot}, byDept: {'HR & Staff': {n, hot}, ...}} -- hot = at least one high-severity follow-up
+  // Landing page: {all: {n, hot}, byDept: {'HR & Staff': {n, hot}, ...}, byCampus: {LMS1: {n, hot}, ...}} -- hot = at least one high-severity follow-up
   async function counts() {
     const tasks = (await api({ action: 'coordinatortasks' })).tasks;
     const sum = list => ({ n: list.length, hot: list.some(t => t.severity === 'high') });
     const byDept = {};
     DEPARTMENTS.forEach(d => { byDept[d.name] = sum(tasks.filter(t => t.department === d.name)); });
-    return { all: sum(tasks), byDept: byDept };
+    const byCampus = {}; // the hub's District view: the same follow-ups per school
+    tasks.forEach(t => { const c = cidOf(t); if (c) byCampus[c] = sum(tasks.filter(x => cidOf(x) === c)); });
+    return { all: sum(tasks), byDept: byDept, byCampus: byCampus };
   }
 
   // The shared campus picker (assets/campus-picker.js) owns each view's campus choice. It sits in a slot render() never
@@ -165,7 +192,7 @@ window.Coord = (function () {
         AC.data[AC.window] = AC.data[AC.window] || await api({ action: 'coordinatoracademics', window: AC.window });
         render();
       } catch (err) {
-        box.innerHTML = '<div class="status">Could not load the analysis: ' + esc(err.message) + ' <button class="btn ac-retry">Retry</button></div>';
+        box.innerHTML = '<div class="status gb-alert gb-alert-err" role="alert">Could not load the analysis: ' + esc(err.message) + ' <button class="btn ac-retry">Retry</button></div>';
         box.querySelector('.ac-retry').addEventListener('click', load);
       }
     }
@@ -591,7 +618,7 @@ window.Coord = (function () {
       box.innerHTML = '<div class="status">Loading the principals\' reports...</div>';
       try { P.data = await api({ action: 'coordinatorpdr' }); render(); }
       catch (err) {
-        box.innerHTML = '<div class="status">Could not load the reports: ' + esc(err.message) + ' <button class="btn pd-retry">Retry</button></div>';
+        box.innerHTML = '<div class="status gb-alert gb-alert-err" role="alert">Could not load the reports: ' + esc(err.message) + ' <button class="btn pd-retry">Retry</button></div>';
         box.querySelector('.pd-retry').addEventListener('click', load);
       }
     }

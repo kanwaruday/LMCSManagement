@@ -115,3 +115,49 @@ details.legend summary{cursor:pointer;color:var(--dark);font-weight:600}details.
 .fs-buddy>summary:focus-visible{outline:3px solid #1d4fa3;outline-offset:-3px}
 .fs-buddy .lg-root{margin:0 auto;padding:0 16px 16px}
 @media (prefers-reduced-motion:reduce){.fs-buddy>summary::after{transition:none}}
+/* Coordinator pages on the game kit (assets/game/base.css). shared.css is also loaded by Fleet's transport pages, so everything here is
+   scoped to .coord-gb, the class only the Coordinator task pages carry on <main id="appBody">. It maps the old look onto the kit's tokens:
+   quiet buttons, kit pills (ok / warn / low), kit fields, tiles as cards. No motion. */
+.coord-gb{font-size:15px}
+.coord-gb .pagetitle{font:400 20px/1.2 var(--gb-serif);margin:0 0 6px}
+.coord-gb .pagesub{display:block;color:var(--gb-muted);font-size:14px;margin:0 0 14px}
+.coord-gb .note,.coord-gb .sm{color:var(--gb-muted);font-size:13.5px}
+.coord-gb .status:not(.gb-alert){color:var(--gb-muted);padding:12px 0}
+.coord-gb .status.gb-alert{color:var(--gb-ink)}
+.coord-gb .denied{padding:24px 0;color:var(--gb-muted)}
+.coord-gb .spin{animation:none;border-top-color:var(--gb-muted)}
+/* buttons: every button is quiet; the one red action on a page is a kit gb-btn-primary link */
+.coord-gb button.btn,.coord-gb .tr-body button.btn{min-height:44px;min-width:44px;padding:8px 16px;border:1.5px solid var(--gb-line);border-radius:10px;background:var(--gb-paper);color:var(--gb-ink);font:700 15px/1.2 var(--gb-font)}
+.coord-gb button.btn:hover{border-color:var(--gb-muted);color:var(--gb-ink)}
+.coord-gb button.btn:disabled{opacity:.55;cursor:not-allowed}
+.coord-gb .seg{border:1.5px solid var(--gb-line);border-radius:10px;background:var(--gb-paper)}
+.coord-gb .seg button{min-height:44px;padding:8px 14px;font-weight:700;color:var(--gb-muted)}
+.coord-gb .seg button.on{background:var(--gb-gold-soft);color:var(--gb-ink);box-shadow:inset 0 -3px 0 var(--gb-gold)}
+/* fields */
+.coord-gb .ctl select,.coord-gb .ctl input{min-height:44px;padding:8px 12px;border:1.5px solid #7d848e;border-radius:10px;background:var(--gb-paper);font-size:16px}
+.coord-gb details.legend summary{min-height:44px;display:flex;align-items:center}
+/* pills: kit colours. done = ok, needs a look = warn, a problem = low, anything else = neutral */
+.coord-gb .pl,.coord-gb .chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:13px;font-weight:700;line-height:1.5;text-transform:none;background:var(--gb-info-soft);color:var(--gb-info)}
+.coord-gb .pl.ok{background:var(--gb-ok-soft);color:var(--gb-ok)}
+.coord-gb .pl.soon,.coord-gb .pl.later{background:var(--gb-warn-soft);color:var(--gb-warn)}
+.coord-gb .pl.expired,.coord-gb .task.high .chip{background:var(--gb-low-soft);color:var(--gb-low)}
+.coord-gb .miss,.coord-gb td.dt.expired,.coord-gb td.dt .uperr{color:var(--gb-low)}
+.coord-gb td.dt.expired{background:var(--gb-low-soft)}
+.coord-gb td.dt.soon,.coord-gb td.dt.later,.coord-gb td.dt.pending.late{background:var(--gb-warn-soft);color:var(--gb-warn)}
+.coord-gb td.dt.onfile,.coord-gb td.dt.noexp{background:var(--gb-ok-soft);color:var(--gb-ok)}
+.coord-gb td.dt.check,.coord-gb td.dt.pending,.coord-gb td.dt.missing,.coord-gb td.dt.na{background:var(--gb-info-soft);color:var(--gb-info)}
+.coord-gb .stale,.coord-gb .unm{color:var(--gb-warn)}
+/* tiles are cards; tables stay in their scroll wrapper (.tw) so only the wrapper scrolls sideways */
+.coord-gb .tile{border:1.5px solid var(--gb-line);border-radius:14px;background:var(--gb-paper);color:var(--gb-muted)}
+.coord-gb .tile.warn b{color:var(--gb-warn)}.coord-gb .tile.bad b{color:var(--gb-low)}
+.coord-gb .tw{border:1.5px solid var(--gb-line);border-radius:14px;background:var(--gb-paper);max-width:100%}
+.coord-gb th{background:var(--gb-panel);color:var(--gb-muted);font-size:13px}
+.coord-gb th:hover{color:var(--gb-ink)}
+.coord-gb tr.row:hover td{background:var(--gb-gold-soft)}
+.coord-gb tr.sub td,.coord-gb .grp td{background:var(--gb-panel)}
+/* follow-up rows (tasksView): the Go and Mark resolved buttons sit together, under the text on a phone */
+.coord-gb .coord-h3{margin:22px 0 8px;font-size:16px}
+.coord-gb .gb-mission{flex-wrap:wrap}
+.coord-gb .gb-mission-t small .gb-pill{margin-right:4px}
+.coord-gb .coord-acts{display:flex;flex-wrap:wrap;gap:8px;flex:none}
+@media (max-width:600px){.coord-gb .coord-acts{flex:1 0 100%;padding-left:36px}}

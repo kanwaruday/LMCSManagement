@@ -8,46 +8,58 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <style>
+    /* hub only: rooms and schools are whole links (base.css's gb-room is a <details>); everything else comes from base.css */
+    .gb .gb-room-a { display:flex; flex-direction:column; gap:2px; min-height:88px; padding:10px; color:var(--gb-ink); text-decoration:none; }
+    .gb .gb-room-a:active { background:var(--gb-gold-soft); }
+    .gb-room-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .gb-room.is-later { background:transparent; border-style:dashed; }
+    #world .gb-base-in { background:#e7ecdf; border-color:var(--gb-line); border-top:2px solid var(--gb-line); border-radius:14px; }
+    #world::before { display:none; }
+    #routes { margin-top:12px; }
+    .gb-switch .gb-emoji, .gb-base-h .gb-emoji { margin-right:.3em; }
+  </style>
 </head>
-<body>
+<body class="gb gb-app">
 
-  <header class="site">
-    <div class="wrap">
-      <a class="brand" href="../index.html">
-        <span class="logo-badge"><img src="../assets/img/lms-logo.png" alt="LMS logo" /></span>
-        <span>
-          LMCS Portal
-          <span class="tagline">Grooming to Excellence</span>
-        </span>
-      </a>
-      <nav class="roles" id="header-status"></nav>
-    </div>
-  </header>
-
-  <main class="wrap">
-
-    <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
-    <section class="hero" id="auth-root" style="padding-top:40px;">
-      <span class="eyebrow">Coordinator · Staff use only</span>
-      <h1>Coordinator Portal</h1>
-      <div id="gate-slot"></div>
-    </section>
-
-    <div id="app-root" style="display:none">
-
-      <div class="welcome" id="welcome-strip"></div>
-
-      <div class="gb-next-slot"></div>
-      <section id="game-root" aria-label="Today with Buddy" hidden></section>
-
-      <section class="block" id="modules">
-        <h2>Departments</h2>
-        <div class="modules" id="modules-grid"></div>
+  <!-- The screen skeleton (assets/game/base.css). Coordinator portal is the hub: Today (game.js) carries the next step,
+       the department paths sit under it, everything else folds into the panels. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1>Coordinator portal</h1><p id="hub-hello">Coordinator</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header>
+  <div class="gb-shell">
+    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
+    <div class="gb-next-slot"></div>
+    <main class="gb-stage">
+      <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
+      <section class="hero" id="auth-root" style="padding-top:24px;">
+        <h2>Sign in to the Coordinator portal</h2>
+        <div id="gate-slot"></div>
       </section>
-
-    </div>
-
-  </main>
+      <div id="app-root" style="display:none">
+        <section id="game-root" aria-label="Today with Buddy" hidden></section>
+        <!-- 🏠 Home Base (the Coordinator's office at HQ, one room per department) or 🗺️ World (the district's schools, and
+             the bus routes on request): Uday, 28 Oct -->
+        <div class="gb-switch" role="group" aria-label="View">
+          <button type="button" id="view-home" aria-pressed="true" aria-controls="modules"><span data-emoji="homeBase"></span>Office</button>
+          <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span>District</button>
+        </div>
+        <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
+          <p class="gb-base-h" id="base-h"><span data-emoji="hq">Coordinator office, LMCS HQ</span></p>
+          <div class="gb-rooms" id="modules-grid"><!-- one room per department, filled in by JS --></div>
+        </div></section>
+        <section class="gb-base" id="world" aria-labelledby="world-h" hidden><div class="gb-base-in">
+          <p class="gb-base-h" id="world-h"><span data-emoji="world">Your schools</span></p>
+          <div class="gb-rooms" id="schools"><!-- one school per campus in your scope, filled in by JS --></div>
+          <details class="gb-panel" id="routes"><summary data-emoji="bus">Bus routes</summary><div class="gb-panel-b"><div id="world-map"></div></div></details>
+        </div></section>
+      </div>
+    </main>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden>
+      <details class="gb-panel"><summary data-emoji="appointments">Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
+      <details class="gb-panel" id="tools-panel"><summary data-emoji="tools">All tools</summary><div class="gb-panel-b"><ul class="gb-list" id="tools"></ul></div></details>
+      <details class="gb-panel"><summary data-emoji="account">Account</summary><div class="gb-panel-b"><p class="gb-muted" id="acct-who"></p><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
+    </aside>
+  </div>
 
   <footer class="site">
     <div class="wrap">
@@ -58,47 +70,122 @@
   <script src="../assets/auth.js?v=6c2f4a9b"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Coordinator"></script>
   <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="shared.js"></script>
+  <script src="../assets/game/emoji.js?v=e979d2e0"></script>
+  <script src="../assets/campus-picker.js?v=cd35c768"></script>
+  <script src="./route-map.js?v=f5e47aee"></script>
+  <script src="../assets/appointments.js?v=5dfa5b13"></script>
+  <script src="../assets/game/rail.js?v=e726bf9c"></script>
+  <script src="./shared.js?v=9c654466"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
-    // The inbox first, then one card per department (Coord.DEPARTMENTS). A department with no page yet is a
-    // non-clickable "To be built" card.
+    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
+    const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
+    // the office's rooms: All follow-ups, one per department (Coord.DEPARTMENTS, by name), then the HQ. A department with no
+    // page yet is a dashed "later" room. A red count means work waiting on you; nothing shows while counts load or if they fail.
+    // one short line per room while the counts load (the departments' long descriptions live on their own pages)
+    const ROOM_S = { 'HR & Staff': 'Staff, hiring, documents', 'Academics & Examination': 'CW/HW tags, academic changes', 'School Financials': 'Money and purchase requests',
+      'School Operations': 'Everything else', 'Events & House System': 'Events, trips, calendar', 'Transport': 'Bus papers and safety', 'Student Life': 'Welfare and incidents', 'Systems': 'Daily-report issues' };
+    const ROOM_E = { 'HR & Staff': 'staffRoom', 'Academics & Examination': 'curriculum', 'School Financials': 'fees', 'School Operations': 'office',
+      'Events & House System': 'events', 'Transport': 'bus', 'Student Life': 'soon', 'Systems': 'dailyReport' };
+    // All tools: the Coordinator's pages outside the office (see the vault's Portal Flow Map)
+    const TOOLS = [
+      { e: 'hq', name: 'Coordinator HQ', url: 'hq.html', desc: 'Requests to recommend on, campus heat, and your own track record.' },
+      { e: 'hiring', name: 'Hiring', url: '../hiring/index.html', desc: 'Applicants and interviews across your schools.' },
+      { e: 'documents', name: 'Staff', url: '../staff/add-employee.html', desc: 'Add staff and their documents.' },
+      { e: 'dailyReport', name: 'Principals\' daily reports', url: '../principals-daily-reporting/index.html', desc: 'What each school reported today.' },
+      { e: 'curriculum', name: 'Curriculum progress', url: '../curriculum-progress/daily-progress.html', desc: 'Chapters done against the plan.' },
+    ];
+    function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+    function emo(k) { return window.LMCSEmoji ? LMCSEmoji.get(k) : ''; }
+    // one room: emoji and count on top, the name, one small line; a link when it has a page
+    const ALL_CLEAR = {}; // a room's line: ✅ (hidden from screen readers) then "All clear"
+    function room(e, name, line, href, c) {
+      const r = el(href ? 'a' : 'div', 'gb-room gb-room-a' + (href === '' ? ' is-later' : '')); // '' = a room not built yet; null = a tile, not a link
+      if (href) r.href = href;
+      const top = el('span', 'gb-room-top');
+      top.appendChild(el('span', 'gb-room-e', emo(e))).setAttribute('aria-hidden', 'true');
+      if (c && c.n) { const n = el('span', 'gb-count', String(c.n)); n.setAttribute('aria-label', c.n + ' open'); top.appendChild(n); }
+      r.appendChild(top); r.appendChild(el('span', 'gb-room-t', name)); const s = el('span', 'gb-room-s', line === ALL_CLEAR ? '' : line);
+      if (line === ALL_CLEAR) { const t = window.LMCSEmoji && LMCSEmoji.tag('done'); if (t) s.appendChild(t); s.appendChild(document.createTextNode(' All clear')); }
+      r.appendChild(s);
+      return r;
+    }
     function renderCards(counts) {
-      const pill = function (c) {
-        if (!counts) return '<span class="status planned">&hellip;</span>';
-        if (counts === 'error') return '<span class="status planned">n/a</span>';
-        return c.n ? '<span class="status building">' + c.n + ' open</span>' : '<span class="status live">All clear</span>';
-      };
-      let html = '<div class="card"><div class="card-top"><h3><a href="followups/index.html">All follow-ups</a></h3>' +
-        pill(counts && counts !== 'error' ? counts.all : null) + '</div><p>Everything that needs a Coordinator, across every department, most urgent first.</p></div>';
+      const ok = counts && counts !== 'error';
+      const box = document.getElementById('modules-grid');
+      box.textContent = '';
+      const line = (c, desc) => ok && c ? (c.n ? c.n + ' open' : ALL_CLEAR) : desc;
+      box.appendChild(room('missions', 'All follow-ups', line(ok && counts.all, 'Everything waiting, most urgent first.'), 'followups/index.html', ok && counts.all));
       Coord.DEPARTMENTS.forEach(function (d) {
-        if (!d.page) {
-          html += '<div class="card"><div class="card-top"><h3>' + d.name + '</h3><span class="status planned">To be built</span></div><p>' + d.desc + '</p></div>';
-          return;
-        }
-        html += '<div class="card"><div class="card-top"><h3><a href="' + d.page + '/index.html">' + d.name + '</a></h3>' +
-          (d.live ? '<span class="status live">Live</span>' : pill(counts && counts !== 'error' ? counts.byDept[d.name] : null)) + '</div><p>' + d.desc + '</p></div>';
+        const c = ok && !d.live ? counts.byDept[d.name] : null;
+        box.appendChild(room(ROOM_E[d.name] || 'office', d.name, d.page ? line(c, ROOM_S[d.name] || d.desc) : 'Later: ' + (ROOM_S[d.name] || d.desc), d.page ? d.page + '/index.html' : '', c));
       });
-      document.getElementById('modules-grid').innerHTML = html;
+      if (counts === 'error') { const m = el('p', 'gb-muted', 'Open counts didn\'t load; the rooms still open.'); m.style.gridColumn = '1 / -1'; box.appendChild(m); }
+      renderSchools(counts);
+    }
+    // the World: one school per campus in this Coordinator's scope, with its open follow-ups
+    let SESSION = null;
+    function renderSchools(counts) {
+      const ok = counts && counts !== 'error';
+      const box = document.getElementById('schools');
+      box.textContent = '';
+      const codes = LMCSCampus.scope(SESSION);
+      if (!codes.length) { const m = el('p', 'gb-muted', 'No schools are set for you yet.'); m.style.gridColumn = '1 / -1'; box.appendChild(m); }
+      codes.forEach(function (code) {
+        const c = ok ? (counts.byCampus[code] || { n: 0 }) : null;
+        box.appendChild(room('school', LMCS.campusLabel(code), c ? (c.n ? c.n + ' open' : ALL_CLEAR) : '', null, c));
+      });
+    }
+    function renderTools() {
+      const ul = document.getElementById('tools');
+      ul.textContent = '';
+      TOOLS.forEach(function (t) {
+        const a = el('a', 'gb-go'), span = el('span', '', t.name), li = el('li');
+        if (emo(t.e)) span.insertBefore(LMCSEmoji.tag(t.e), span.firstChild);
+        a.href = t.url; span.appendChild(el('small', '', t.desc)); a.appendChild(span); li.appendChild(a); ul.appendChild(li);
+      });
+    }
+    // bus routes load only when opened: Fleet Command's route map, read only, scoped by the backend to the caller's campuses.
+    // ponytail: every Coordinator can open it until Coordinator functions reach the session; then only Transport.
+    let worldMap = null;
+    function showView(world) {
+      document.getElementById('modules').hidden = world;
+      document.getElementById('world').hidden = !world;
+      document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+      document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+    }
+
+    function hello(name) {
+      const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
+      return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
     }
 
     function showApp(session) {
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
-      document.getElementById('header-status').innerHTML = '<span>' + Coord.esc(session.campusName) + '</span>';
-      document.getElementById('welcome-strip').innerHTML =
-        '<div class="welcome-text">Signed in as <b>' + Coord.esc(session.name) + '</b>' +
-        '<span class="welcome-campus">' + Coord.esc(session.campusName) + '</span></div>' +
-        '<a href="#" class="signout" id="signout-link">Sign out</a>';
+      // ponytail: campuses until Coordinator functions reach the session, then "Coordinator · <functions>"
+      document.getElementById('hub-hello').textContent = hello(session.name) + ' · Coordinator · ' + (session.campusName || '');
+      document.getElementById('acct-who').textContent = 'Signed in as ' + (session.name || session.email || '');
       document.getElementById('signout-link').addEventListener('click', function (e) { e.preventDefault(); LMCS.signOut(); });
 
       if (!Coord.canUse(session)) {
-        document.getElementById('modules').innerHTML = '<p>The Coordinator Portal is only available to Coordinators and the Owner.</p>';
+        document.getElementById('modules').innerHTML = '<p class="gb-note">The Coordinator Portal is only available to Coordinators and the Owner.</p>';
         return;
       }
-      Coord.setSession(session);
+      document.getElementById('panels').hidden = false;
+      if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('tools-panel').open = true; // phones: panels start folded so Today stays in view
+      Coord.setSession(session); SESSION = session;
+      renderTools();
+      document.getElementById('view-home').addEventListener('click', function () { showView(false); });
+      document.getElementById('view-world').addEventListener('click', function () { showView(true); });
+      document.getElementById('routes').addEventListener('toggle', function () {
+        if (!this.open || worldMap) return;
+        try { worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: session, backendUrl: COORD_BACKEND_URL, mode: 'metro' }); } catch (e) { console.warn('route map', e); }
+      });
       renderCards(null);
       Coord.counts().then(renderCards, function () { renderCards('error'); });
+      try { LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); } catch (e) { console.warn('rail', e); }
+      try { LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session }); } catch (e) { console.warn('appointments', e); }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
 

@@ -60,31 +60,30 @@ window.CoordApprovals = (function () {
 .apro{--g:#15803d;font-size:13px}
 .apro .apro-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .apro .picker{display:flex;gap:6px;flex-wrap:wrap}
-.apro .rb{background:#fff;border:1.5px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11.5px;font-weight:600;color:var(--gray);cursor:pointer}
-.apro .rb.on{background:var(--red-lt,rgba(206,0,0,.07));border-color:var(--red);color:var(--red)}
-.apro .rfr{border:1.5px solid var(--border);background:#fff;border-radius:6px;padding:6px;display:flex;align-items:center;cursor:pointer;color:var(--gray)}
-.apro .rfr:hover{color:var(--red);border-color:var(--red)}
-.apro .stbar{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:7px 12px;border-radius:5px;margin:0 0 12px;background:var(--lgray);color:var(--gray);border:1px solid var(--border)}
-.apro .stbar.ok{background:rgba(21,128,61,.08);color:#15803d;border-color:rgba(21,128,61,.3)}
-.apro .stbar.err{background:#fdecec;color:var(--red);border-color:rgba(206,0,0,.3)}
-.apro .stbar button{margin-left:auto;background:#fff;border:1px solid currentColor;color:inherit;border-radius:4px;padding:2px 9px;font-size:11px;cursor:pointer}
-.apro .sp{width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:aprospin .8s linear infinite}
-@keyframes aprospin{to{transform:rotate(360deg)}}
-.apro .wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
+.apro .rb{min-height:44px;background:#fff;border:1.5px solid var(--gb-line,#d9d4ca);border-radius:10px;padding:8px 14px;font-size:14px;font-weight:700;color:var(--gb-muted,#556170);cursor:pointer}
+.apro .rb.on{background:var(--gb-gold-soft,#fbefd3);border-color:var(--gb-gold,#e0a526);color:var(--gb-ink,#1b2430)}
+.apro .rfr{min-width:44px;min-height:44px;justify-content:center;border:1.5px solid var(--gb-line,#d9d4ca);background:#fff;border-radius:10px;padding:6px;display:flex;align-items:center;cursor:pointer;color:var(--gb-muted,#556170)}
+.apro .rfr:hover{color:var(--gb-ink,#1b2430);border-color:var(--gb-muted,#556170)}
+.apro .stbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:14px;padding:10px 14px;border-radius:12px;margin:0 0 12px;background:#fff;color:var(--gb-muted,#556170);border:1.5px solid var(--gb-line,#d9d4ca)}
+.apro .stbar.ok{background:var(--gb-ok-soft,#e3f4e8);color:var(--gb-ok,#167034);border-color:var(--gb-ok,#167034)}
+.apro .stbar.err{background:var(--gb-low-soft,#fde9df);color:var(--gb-ink,#1b2430);border-color:var(--gb-low,#b4410f)}
+.apro .stbar button{margin-left:auto;min-height:44px;background:#fff;border:1.5px solid var(--gb-line,#d9d4ca);color:var(--gb-ink,#1b2430);border-radius:10px;padding:8px 16px;font-size:15px;font-weight:700;cursor:pointer}
+.apro .sp{width:11px;height:11px;border:2px solid var(--gb-line,#d9d4ca);border-top-color:var(--gb-muted,#556170);border-radius:50%}
+.apro .wrap{overflow-x:auto;max-width:100%;border:1.5px solid var(--gb-line,#d9d4ca);border-radius:14px}
 .apro table{width:100%;border-collapse:collapse;font-size:12px}
-.apro thead th{background:var(--red);color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;vertical-align:top;cursor:pointer}
+.apro thead th{background:var(--gb-panel,#f6f4ef);color:var(--gb-muted,#556170);padding:8px 12px;text-align:left;font-size:13px;font-weight:700;white-space:nowrap;vertical-align:top;cursor:pointer}
 .apro tbody tr{border-bottom:1px solid var(--border)}
 .apro td{padding:6px 12px;vertical-align:middle;text-align:left}
 .apro th{text-align:left}
 .apro tbody tr.row:nth-child(even) td{background:#fafafa}
 .apro tr.row{cursor:pointer}
-.apro tr.row:hover td{background:var(--red-lt,rgba(206,0,0,.07))!important}
+.apro tr.row:hover td{background:var(--gb-gold-soft,#fbefd3)!important}
 .apro tr.row.open td{background:var(--lgray)!important}
-.apro tr.stale td{background:#fff8ed}
-.apro .stalet{color:var(--amber);font-weight:700}
-.apro .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
-.apro .pill.ok{background:#dcfce7;color:#15803d}.apro .pill.none{background:#fee2e2;color:var(--red)}.apro .pill.amber{background:#fef3c7;color:var(--amber)}
-.apro .pill.revoked{background:#e5e7eb;color:#4b5563}.apro .pill.urgent{background:#fee2e2;color:var(--red)}
+.apro tr.stale td{background:var(--gb-warn-soft,#fbf0da)}
+.apro .stalet{color:var(--gb-warn,#8a5a00);font-weight:700}
+.apro .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:13px;font-weight:700;line-height:1.5}
+.apro .pill.ok{background:var(--gb-ok-soft,#e3f4e8);color:var(--gb-ok,#167034)}.apro .pill.none{background:var(--gb-low-soft,#fde9df);color:var(--gb-low,#b4410f)}.apro .pill.amber{background:var(--gb-warn-soft,#fbf0da);color:var(--gb-warn,#8a5a00)}
+.apro .pill.revoked{background:var(--gb-info-soft,#eef1f5);color:var(--gb-info,#3b4658)}.apro .pill.urgent{background:var(--gb-low-soft,#fde9df);color:var(--gb-low,#b4410f)}
 .apro .detail td{padding:0}
 .apro .dwrap{padding:12px 14px;background:var(--lgray)}
 .apro .desc{font-size:12.5px;line-height:1.6;margin-bottom:8px;white-space:pre-wrap}
@@ -94,20 +93,22 @@ window.CoordApprovals = (function () {
 .apro .cm a{color:#B7C0CC;text-decoration:none;font-weight:600}.apro .cm a:hover{color:var(--red)}
 .apro .empty{font-size:11.5px;color:var(--gray);padding:6px 0}
 .apro .dash-empty{padding:16px 12px;text-align:center;color:var(--gray)}
-.apro input[type=text],.apro select{border:1.5px solid var(--border);border-radius:6px;padding:7px 9px;font-size:12.5px;font-family:inherit;background:#fff}
-.apro .hsel{display:block;margin-top:4px;font-size:11px;padding:2px 4px;border-radius:4px;border:0;max-width:100%;color:#333}
+.apro input[type=text],.apro input[type=date],.apro select{min-height:44px;border:1.5px solid #7d848e;border-radius:10px;padding:8px 12px;font-size:16px;font-family:inherit;background:#fff}
+.apro .hsel{display:block;margin-top:4px;min-height:44px;font-size:14px;padding:4px 8px;border-radius:10px;border:1.5px solid #7d848e;max-width:100%;color:var(--gb-ink,#1b2430)}
 .apro .addrow{display:flex;gap:8px}.apro .addrow input{flex:1}
-.apro .addrow button,.apro .bar button{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:var(--red)}
+/* every button here is quiet; the one red button is Approve (and the Back link in the done state) */
+.apro .addrow button,.apro .bar button{min-height:44px;min-width:44px;border:1.5px solid var(--gb-line,#d9d4ca);border-radius:10px;padding:8px 16px;font-size:15px;font-weight:700;cursor:pointer;color:var(--gb-ink,#1b2430);background:#fff}
+.apro .addrow button:disabled,.apro .bar button:disabled{opacity:.55;cursor:not-allowed}
 .apro .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
-.apro .bar button.approve{background:var(--g)}.apro .bar button.reject{background:var(--red)}.apro .bar button.info{background:var(--amber)}.apro .bar button.revoke{background:#4b5563}
+.apro .bar button.approve{background:var(--gb-red,#ce0000);border-color:var(--gb-red-ink,#a10000);color:#fff}.apro .bar button.reject,.apro .bar button.revoke{border-color:var(--gb-low,#b4410f);color:var(--gb-low,#b4410f)}
 .apro .note{width:100%;margin-bottom:8px}
-.apro .hint{font-size:11.5px;color:var(--amber);font-weight:600;margin:8px 0 4px}
+.apro .hint{font-size:14px;color:var(--gb-warn,#8a5a00);font-weight:700;margin:8px 0 4px}
 .apro .chip{display:inline-block;background:#eee;border-radius:12px;padding:2px 10px;margin:0 6px 6px 0}
 .apro .fu{margin:10px 0;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:6px;font-size:12px}
 .apro .fu .addrow{margin-top:6px;flex-wrap:wrap}.apro .fu .addrow input[type=date]{flex:0 0 auto}.apro .fu a{color:var(--red);margin-left:8px}
-.apro .late{color:var(--red);font-weight:700}
+.apro .late{color:var(--gb-low,#b4410f);font-weight:700}
 .apro .menu{display:none;position:absolute;left:0;right:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:220px;overflow:auto}
-.apro .menu div{padding:7px 12px;cursor:pointer;font-size:13px}.apro .menu div:hover{background:var(--lgray)}
+.apro .menu div{padding:10px 12px;cursor:pointer;font-size:13px}.apro .menu div:hover{background:var(--lgray)}
 `;
 
   function mount(root, ctx) {
@@ -116,7 +117,7 @@ window.CoordApprovals = (function () {
     root.className = 'apro';
     root.innerHTML = '<div class="apro-bar"><div class="picker" data-slot="view"></div><div class="picker" data-slot="status"></div><div data-slot="pick"></div>' +
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
-      '<div class="stbar" data-slot="bar"></div><div data-slot="list"></div>';
+      '<div class="stbar" data-slot="bar"></div><div data-slot="done" hidden></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
     const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', sel: null, search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
       seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
@@ -162,7 +163,16 @@ window.CoordApprovals = (function () {
     }
     // reload the list, then reopen the request the person was working on so they see the result
     async function refreshKeepOpen(id) { await load(); S.openId = null; S.detail = null; await toggleRow(id); }
-    function refresh() { S.selected = {}; S.openId = null; S.detail = null; $('list').innerHTML = ''; load(); }
+    function refresh() { S.selected = {}; S.openId = null; S.detail = null; $('done').hidden = true; $('list').hidden = false; $('list').innerHTML = ''; load(); }
+    // After a decision is saved, the done state takes the list's place until "Keep going" (the list reloads underneath).
+    const DONE_LINE = { Approved: 'Approved. Your decision and note are saved on the request.', Rejected: 'Rejected. Your decision and note are saved on the request.', 'Info Requested': 'Information requested. Your note is saved on the request for a reply.', Revoked: 'Revoked. Your note is saved on the request.' };
+    function showDone(decision) {
+      const d = $('done');
+      d.innerHTML = '<div class="gb-done"><div class="gb-done-tick" aria-hidden="true">&#10003;</div><h2 tabindex="-1">Decision saved</h2><p>' + esc(DONE_LINE[decision] || 'Decision saved.') + '</p>' +
+        '<div class="gb-row-acts"><a class="gb-btn gb-btn-primary" href="' + esc(ctx.hubHref || '../index.html') + '">Back to Coordinator portal</a><button type="button" class="gb-btn gb-btn-quiet" data-act="keepgoing">Keep going</button></div></div>';
+      d.hidden = false; $('list').hidden = true;
+      d.querySelector('h2').focus();
+    }
 
     function renderPickers() {
       const archived = S.res ? inView().filter(r => r.archived).length : 0;
@@ -370,7 +380,7 @@ window.CoordApprovals = (function () {
       btns.forEach(b => { b.disabled = false; });
       if (!res.success && /JSON|DOCTYPE/.test(String(res.error || ''))) { // the backend sometimes answers a slow POST with a Google HTML page although the write went through
         setBar('loading', 'Reply unreadable (backend slow) — checking whether it saved…');
-        try { const chk = await get('action=approvaldetail&id=' + encodeURIComponent(id)); if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); refresh(); return; } } catch (e) { /* fall through */ }
+        try { const chk = await get('action=approvaldetail&id=' + encodeURIComponent(id)); if (chk.success && chk.request.status === decision) { alert('Saved: the request is now ' + decision + '. (The confirmation reply was lost; referral emails, if any, may not have been sent.)'); refresh(); showDone(decision); return; } } catch (e) { /* fall through */ }
       }
       if (!res.success) { authFail(res); setBar('err', 'Couldn’t record that decision' + (res.error ? ': ' + esc(res.error) : '')); alert('Couldn’t record that decision' + (res.error ? ': ' + res.error : '') + '.'); renderList(); return; }
       if (allocNow) { const a = await allocate(allocNow); if (!a.success) alert('Approved, but the follow-up could not be allocated: ' + a.error + '. You can allocate it from the request.'); }
@@ -378,6 +388,7 @@ window.CoordApprovals = (function () {
       if (res.mailError) alert('Saved, but the email to the referred people failed: ' + res.mailError);
       else if (res.referred) alert(decision + ' — emails sent: ' + REFER_KINDS.map(kv => res.referred[kv[0]].length ? kv[1] + ' (' + res.referred[kv[0]].join(', ') + ')' : '').filter(Boolean).join('; ') + '.');
       refresh();
+      showDone(decision);
     }
     async function archive(ids, on) {
       setBar('loading', on ? 'Archiving…' : 'Restoring…');
@@ -392,6 +403,7 @@ window.CoordApprovals = (function () {
       if (e.target.closest('[data-stop]') && t.getAttribute('data-act') === 'row') return;
       const a = t.getAttribute('data-act'), id = t.getAttribute('data-id'), v = t.getAttribute('data-v');
       if (a === 'refresh') refresh();
+      else if (a === 'keepgoing') { $('done').hidden = true; $('list').hidden = false; const f = $('list').querySelector('button,a,select,input'); if (f) f.focus(); }
       else if (a === 'view') { S.view = v; S.selected = {}; S.openId = null; S.detail = null; renderList(); }
       else if (a === 'status') { S.status = v; S.openId = null; S.detail = null; renderList(); }
       else if (a === 'sort') { if (e.target.closest('select,input,button')) return; if (S.sortKey !== v) { S.sortKey = v; S.sortDir = 1; } else if (S.sortDir === 1) S.sortDir = -1; else S.sortKey = null; S.openId = null; S.detail = null; renderList(); }
