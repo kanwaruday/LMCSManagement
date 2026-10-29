@@ -135,6 +135,7 @@ window.LMCSKingdomMap = (function () {
     v.note.hidden = false; v.note.textContent = 'Loading the map…';
     loadLeaflet().then(function () { if (!v.root.hidden) draw(opts); }, function (e) { v.note.textContent = e.message; });
   }
-  return { drawable: drawable, missingText: missingText, group: group, cluster: cluster, short: short, tag: tag, open: open, close: close, TILES: TILES, ATTRIBUTION: ATTR };
+  return { drawable: drawable, missingText: missingText, group: group, cluster: cluster, short: short, tag: tag, open: open, close: close, TILES: TILES, ATTRIBUTION: ATTR,
+    load: loadLeaflet }; // load: the Owner's map home (assets/game/map-home.js) draws its own pins on the same Leaflet
 })();
 if (typeof module !== 'undefined') module.exports = window.LMCSKingdomMap;

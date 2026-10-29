@@ -50,12 +50,11 @@ window.LMCSGuide = {
       ],
     },
     'owner/index.html': {
-      purpose: "HQ Home: Approvals, Money today, People and Game settings, then Today with Buddy and every module.", roles: ['Owner'],
+      purpose: "HQ Home: the map of LMCS HQ and LMS 1–6, with a bubble wherever a decision waits for you.", roles: ['Owner'],
       tour: [
-        { target: '#welcome-strip', text: "Your name and the whole school, at a glance. Home and Kingdom switch at the top." },
-        { target: '#hq-tiles', text: "Four doors: Approvals, Money today, People, and Game settings (how much of Set up the game is done)." },
-        { target: '#game-root', text: "This is Today. It also holds Set up the game: six short steps that switch the game on for everyone." },
-        { target: '#modules', text: "Every module across all campuses sits here." },
+        { target: '#welcome-strip', text: "Your name and the whole school, at a glance." },
+        { target: '#mh-scene', text: "Your map. Tap LMCS HQ for All quests, the Requests tray, People and Game settings; tap a school for its buildings and setup steps." },
+        { target: '#mh-switch', text: "Town is this map. World shows the bus routes of every school." },
       ],
     },
     'owner/kingdom.html': { purpose: "See every school's setup at a glance, list every quest, and hand out the next steps.", roles: ['Owner'] },

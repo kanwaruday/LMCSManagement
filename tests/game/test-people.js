@@ -235,7 +235,7 @@ test('POST dispatch; a GET is refused as unknown', () => {
 });
 test('pages: HQ Home tiles and switch; People room confirms before every write', () => {
   const read = (p) => fs.readFileSync(__dirname + '/../../' + p, 'utf8');
-  const home = read('owner/index.html'), pp = read('owner/people.html'), kg = read('owner/kingdom.html');
+  const home = read('owner/index.html'), pp = read('owner/people.html') + read('assets/game/people-room.js'), kg = read('owner/kingdom.html'); // the room lives in people-room.js (also the map's People window)
   for (const t of ["e: 'requests', name: 'Approvals'", "e: 'dayBook', name: 'Money today'", "e: 'heads', name: 'People'", "e: 'settings', name: 'Game settings'"]) assert.ok(home.includes(t), t);
   assert.ok(/LMCSEmoji\.tag\(t\.e\)/.test(home) && !/[\u{1F4E5}\u{1F4B0}\u{1F465}\u2699]/u.test(home), 'tile emoji come from emoji.js keys, none typed by hand');
   assert.ok(/url: 'kingdom\.html#base-HES'/.test(home) && /'Set up the game: ' \+ done \+ ' of ' \+ steps\.length \+ ' done'/.test(home), 'Game settings: x of 6 done, opens the HQ base');

@@ -11,3 +11,7 @@ tools/private/
 
 # Agent work notes (plan reports); local only
 .superpowers/
+
+# Python bytecode (tests and tools run the transport scripts)
+__pycache__/
+*.pyc

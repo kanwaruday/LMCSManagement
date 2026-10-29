@@ -13,6 +13,8 @@ vm.runInContext(inline, vm.createContext({
   LMCS: { getSession: () => session, canViewOwnerPortal: () => true, signOut() {} },
   LMCSAppts: { mount() {} },
   LMCSRail: { mount() {} },
+  LMCSKingdom: { hooks: {}, mount: () => new Promise(() => {}), last: () => null }, // the off-screen Kingdom: its read left pending
+  LMCSMapHome: { setKingdom() {}, setIcon() {} },
   window: {},
 }));
 assert.ok(els['hub-hello'].textContent.includes('<img'), 'the name goes in as text');

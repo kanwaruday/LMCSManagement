@@ -457,7 +457,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var linkBase = baseOfGo(location.hash);
     if (!S.linked && location.hash === '#quests' && d.role === 'Owner') { S.linked = true; openQuests(null); }
     else if (!S.linked && linkBase && bases.some(function (b) { return b.id === linkBase; })) { S.linked = true; openBase(linkBase); }
-    else runTour(false);
+    else if (!S.quiet) runTour(false); // a quiet mount (the Owner's map home) borrows the dialogs only: no tour over a hidden page
   }
 
   function load() {
@@ -480,6 +480,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     opts = opts || {};
     S.el = el; S.session = opts.session; S.url = opts.backendUrl || ''; S.root = opts.root || ''; S.data = null;
     S.panels = opts.panels || null; S.next = opts.next || null;
+    S.quiet = !!opts.quiet; S.onWrite = opts.onWrite || null; // quiet: drawn off screen for owner/index.html's map, which opens these dialogs from its own windows
     if (!S.url) { el.textContent = ''; el.appendChild(message(LOAD_ERR, false)); return Promise.resolve(); }
     gdLoad();
     clearInterval(GD.timer);
@@ -576,6 +577,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       closeLayer(); toast(msg);
       return load().then(function () {
         if (ctl.after) return ctl.after(); // e.g. back to the All quests list
+        if (S.onWrite) return S.onWrite(d); // the map home: its own refresh and focus
         var h1 = S.el && S.el.querySelector('h1'); // the opener is gone after a re-render: focus the page heading
         if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus(); }
       });
@@ -811,6 +813,8 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
   api.openBase = function (id, op) { openBase(id, op); }; api.close = closeLayer; api.state = S;
+  // the map home (assets/game/map-home.js) opens these from its windows; each is the same dialog the Kingdom page opens
+  api.openQuests = function (op) { return openQuests(op || null); }; api.openFollow = function (card, op) { openFollow(card, op); }; api.openHead = function (hd, op) { openHead(hd, op); };
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site
   return api;
 })();

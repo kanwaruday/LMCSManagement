@@ -26,6 +26,8 @@ var LMCSEmoji = (function () {
     settings: '⚙️', realMap: '📍',
     // the Principal home's setup bubble (assets/game/home-hud.js)
     setupUp: '⬆️', tasks: '🗒️',
+    // the map homes (29 Oct): the Ranking window, Owner and Coordinators only
+    ranking: '🥇',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
     hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'
