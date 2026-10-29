@@ -310,6 +310,7 @@ var LMCSGame = window.LMCSGame = (function () {
   // { today, go, bar, quest }: a CSS selector, or null to skip that beat. A key left out keeps the default target.
   var tourTargets = {};
   function tt(k, d) { return k in tourTargets ? tourTargets[k] : d; }
+  function seen(x) { var e = typeof x === 'string' ? document.querySelector(x) : x; return !!(e && (typeof x !== 'string' || e.getClientRects().length)); } // a stand-in that isn't on screen yet skips its beat
 
   function mount(el, opts) {
     opts = opts || {};
@@ -555,9 +556,9 @@ var LMCSGame = window.LMCSGame = (function () {
         beats.push({ who: 'Buddy', avatar: art({ campus: t.campus, config: t.config }, now).avatar, fig: a.figure,
           text: "Here's the Teacher Owl, who knows your classroom best. I'll hand over now." });
       }
-      beats.push({ target: tt('today', todayEl), text: 'This is Today: the work waiting for you, taken from the portal itself. A row shows Done once the work is done.' });
+      if (seen(tt('today', todayEl))) beats.push({ target: tt('today', todayEl), text: 'This is Today: the work waiting for you, taken from the portal itself. A row shows Done once the work is done.' });
       if (go) beats.push({ target: go, text: 'Go opens the page where that work happens.' });
-      if (tt('bar', me.bar)) beats.push({ target: tt('bar', me.bar), text: 'The next step always sits in this bar at the bottom.' });
+      if (seen(tt('bar', me.bar))) beats.push({ target: tt('bar', me.bar), text: 'bar' in tourTargets ? 'Your tasks slide out from this tab: town, wilderness and daily.' : 'The next step always sits in this bar at the bottom.' });
       if (tt('quest', questEl || parEls[0])) beats.push({ target: tt('quest', questEl || parEls[0]), text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
       return beats;
     }

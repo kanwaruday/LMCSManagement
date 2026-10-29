@@ -19,15 +19,15 @@ var LMCSHomeHud = (function () {
   var COPY = { none: 'No quests yet. Your quests will appear here.', done: 'All done for now.', daily: 'No daily missions today.', growth: 'No setup quests open.',
     appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes' };
 
-  // "Day closes in 3h 10m" (IST), or "Day closed" once 15:30 has passed
+  // a fixed "Closes 3:30 pm" (no countdown), or "Day closed" once 15:30 IST has passed
   function dayClock(now, closeMin) {
-    var d = new Date(now.getTime() + IST_MS), left = (closeMin == null ? CLOSE_MIN : closeMin) - (d.getUTCHours() * 60 + d.getUTCMinutes());
-    return left <= 0 ? 'Day closed' : 'Day closes in ' + (left >= 60 ? Math.floor(left / 60) + 'h ' : '') + (left % 60) + 'm';
+    var d = new Date(now.getTime() + IST_MS), c = closeMin == null ? CLOSE_MIN : closeMin;
+    return d.getUTCHours() * 60 + d.getUTCMinutes() >= c ? 'Day closed' : 'Closes ' + (Math.floor(c / 60) % 12 || 12) + ':' + ('0' + c % 60).slice(-2) + (c >= 720 ? ' pm' : ' am');
   }
   // A rank shows only when the game state response carries a `rank` field. Today the backend never sends one: others' scores and
   // ranks are the Owner's only (29 Oct). Later the backend decides who gets `rank` (config ranking.visibleTo): no frontend rebuild.
   function rankText() {
-    for (var i = 0; i < arguments.length; i++) { var s = arguments[i]; if (s && s.rank != null && s.rank !== '') return 'Rank ' + s.rank; }
+    for (var i = 0; i < arguments.length; i++) { var s = arguments[i]; if (s && s.rank != null && s.rank !== '') return String('Rank ' + s.rank).slice(0, 20); }
     return '';
   }
   // setup steps still open in a Kingdom base
@@ -48,7 +48,7 @@ var LMCSHomeHud = (function () {
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ page ═══
-  var h = LMCSGame.ui.h, S = { today: null, base: null, o: null, sheet: null, bubbles: [], cfg: null };
+  var h = LMCSGame.ui.h, S = { today: null, base: null, o: null, sheet: null, bubbles: [], bm: {}, cfg: null };
   function emoji(k) { return window.LMCSEmoji ? LMCSEmoji.tag(k) : null; }
   function first(a) { return [].filter.call(a, Boolean)[0]; }
   // arrow keys move between tabs (role=tablist); returns { el, select(i) }
@@ -74,21 +74,40 @@ var LMCSHomeHud = (function () {
     var box = h('div', { class: 'hh-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h' }, [h('div', { class: 'hh-sheet-head' }, [title, x]), tabHost, body, live]);
     var layer = h('div', { class: 'hh-layer', hidden: 'hidden' }, [h('div', { class: 'hh-backdrop' }), box]);
     document.body.appendChild(layer);
-    var s = S.sheet = { layer: layer, box: box, title: title, body: body, tabHost: tabHost, live: live, held: [], release: null, open: false };
+    var s = S.sheet = { layer: layer, box: box, title: title, body: body, tabHost: tabHost, live: live, held: [], onKey: null, key: null, open: false };
     x.onclick = function () { close(); };
     layer.firstChild.onclick = function () { close(); };
     return s;
   }
   // nodes the page rendered (Today, the event card, appointments, sign out) are moved in and sent back to the stash on close
+  // Focus goes back to an opener found again by its data-hh key when the sheet closes: bubbles, the event button and the
+  // quest board's rows are rebuilt or discarded while a sheet is open. A row inside the sheet inherits the key of what opened the sheet.
+  var KEYED = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled])';
+  function backTo(key) {
+    var el = key && document.querySelector('[data-hh="' + key + '"]');
+    if (!el || !el.getClientRects().length) el = document.getElementById('hh-strip') && !document.getElementById('hh-strip').hidden ? document.getElementById('hh-strip') : document.getElementById('hh-edge');
+    if (el) el.focus();
+  }
   function open(o) { // { title, nodes: [Node], held: [Node] (return to the stash), tabs, opener, say }
-    var s = sheet(); if (s.open) close(true);
+    var s = sheet(), op = o.opener || document.activeElement, key = s.open && op && s.box.contains(op) ? s.key : op && op.getAttribute && op.getAttribute('data-hh');
+    if (s.open) close(true);
+    if (S.drawer) S.drawer(false);
     s.title.textContent = o.title; s.body.textContent = ''; s.tabHost.textContent = ''; s.live.textContent = '';
     (o.nodes || []).forEach(function (n) { s.body.appendChild(n); });
     s.held = o.held || [];
     if (o.tabs) s.tabHost.appendChild(o.tabs.el);
     s.layer.hidden = false; s.open = true; document.body.classList.add('hh-sheet-open');
-    s.release = LMCSGame.ui.trap(s.box, function () { close(); });
-    s.opener = o.opener || document.activeElement;
+    s.key = key;
+    // our own trap (not game.js's shared one): while a game.js card (.lg-layer) is open over the sheet it owns Esc and Tab
+    s.onKey = function (e) {
+      if (document.querySelector('.lg-layer')) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key !== 'Tab') return;
+      var f = [].filter.call(s.box.querySelectorAll(KEYED), function (x) { return !x.closest('[hidden]'); }), a = document.activeElement;
+      if (!f.length) { e.preventDefault(); return; }
+      if (!s.box.contains(a) || (e.shiftKey && a === f[0]) || (!e.shiftKey && a === f[f.length - 1])) { e.preventDefault(); (e.shiftKey && s.box.contains(a) ? f[f.length - 1] : f[0]).focus(); }
+    };
+    document.addEventListener('keydown', s.onKey, true);
     s.title.focus();
     setTimeout(function () { s.live.textContent = o.say || o.title + ' opened'; }, 50);
   }
@@ -96,7 +115,8 @@ var LMCSHomeHud = (function () {
     var s = S.sheet; if (!s || !s.open) return;
     s.held.forEach(function (n) { S.o.stash.appendChild(n); }); s.held = [];
     s.layer.hidden = true; s.open = false; document.body.classList.remove('hh-sheet-open');
-    s.release(quiet ? false : s.opener);
+    document.removeEventListener('keydown', s.onKey, true);
+    if (!quiet) backTo(s.key);
   }
   function note(text) { return h('p', { class: 'hh-empty' }, text); }
   function gameNode() { var g = S.o.gameRoot; g.classList.remove('hh-only-growth', 'hh-only-daily'); return g; }
@@ -151,7 +171,7 @@ var LMCSHomeHud = (function () {
   function buildHud() {
     var o = S.o, el = {};
     var initial = String((o.session.name || '?').trim().charAt(0) || '?').toUpperCase();
-    el.avatar = btn('hh-avatar', 'Your profile', h('span', { 'aria-hidden': 'true' }, initial), openProfile);
+    el.avatar = btn('hh-avatar', 'Your profile', h('span', { 'aria-hidden': 'true' }, initial), openProfile); el.avatar.setAttribute('data-hh', 'avatar');
     el.level = h('span', { class: 'hh-chip hh-level', hidden: 'hidden' });
     el.rank = h('span', { class: 'hh-chip hh-rank', hidden: 'hidden' }); // shown only when a state response carries `rank` (see rankText)
     el.clock = h('span', { class: 'hh-chip hh-clock' });
@@ -162,30 +182,34 @@ var LMCSHomeHud = (function () {
     // the task drawer: Town, Wilderness, Daily
     var panes = [h('div', { role: 'tabpanel' }), h('div', { role: 'tabpanel', hidden: 'hidden' }), h('div', { role: 'tabpanel', hidden: 'hidden' })];
     var tt = tabs(['Town', 'Wilderness', 'Daily'], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
-    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [tt.el].concat(panes));
-    el.edge = h('button', { type: 'button', id: 'hh-edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
+    el.drawerX = h('button', { type: 'button', class: 'hh-x hh-drawer-x', 'aria-label': 'Close tasks' }, '\u00d7');
+    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [el.drawerX, tt.el].concat(panes));
+    el.edge = h('button', { type: 'button', id: 'hh-edge', 'data-hh': 'edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
     function drawer(on, focus) {
       el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.setAttribute('aria-label', on ? 'Close tasks' : 'Open tasks');
       el.edge.firstChild.textContent = on ? '◂' : '▸'; el.drawer.inert = !on;
       if (focus) (on ? tt.el.querySelector('[aria-selected="true"]') : el.edge).focus();
     }
+    el.drawerX.onclick = function () { drawer(false, true); };
+    document.addEventListener('pointerdown', function (e) { if (el.drawer.classList.contains('is-open') && !el.drawer.contains(e.target) && !el.edge.contains(e.target)) drawer(false); }, true);
     el.edge.onclick = function () { drawer(!el.drawer.classList.contains('is-open'), true); };
+    panes[0].appendChild(note(COPY.none)); panes[1].appendChild(list([wildRow()], '')); panes[2].appendChild(note(COPY.daily)); // before data (or on notYet): plain empty states, never blank
     el.drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); drawer(false, true); } });
     drawer(false);
     el.panes = panes;
 
     // the bottom: one quest line, then the Town / World switch
     el.strip = h('button', { type: 'button', id: 'hh-strip', class: 'hh-strip', hidden: 'hidden' }, [emoji('quests'), h('span', { class: 'hh-strip-t' }), badge(0)]);
-    el.strip.onclick = function () { openQuests(el.strip); };
+    el.strip.setAttribute('data-hh', 'strip'); el.strip.onclick = function () { openQuests(el.strip); };
     var bottom = h('div', { class: 'hh-bottom' }, [el.strip, o.switchEl]);
 
     // a rail item that opens the hub's Today panel opens the quest sheet here instead (Today lives in a sheet now)
     document.getElementById('game-rail') && document.getElementById('game-rail').addEventListener('click', function (e) {
       var a = e.target.closest('a.gb-rail-i'); if (!a) return;
-      e.preventDefault(); openQuests(a, /Missions/.test(a.textContent) ? 'daily' : 'growth');
+      e.preventDefault(); a.setAttribute('data-hh', 'rail-' + a.textContent.replace(/\W/g, '').slice(0, 20)); openQuests(a, /Missions/.test(a.textContent) ? 'daily' : 'growth');
     });
 
-    o.scene.appendChild(h('div', { class: 'hh-hud' }, [tl, top, el.events, el.edge, el.drawer, bottom]));
+    o.scene.appendChild(h('div', { class: 'hh-hud' }, [tl, top, el.events, el.drawer, el.edge, bottom]));
     S.el = el; S.drawer = drawer;
   }
 
@@ -195,6 +219,7 @@ var LMCSHomeHud = (function () {
     var b = h('button', { type: 'button', class: 'hh-row', 'aria-label': 'Go: ' + title }, kids); b.onclick = function () { S.drawer(false); openSource(source || 'today', S.el.edge); };
     return b;
   }
+  function wildRow() { var w = row(COPY.routes, null); w.onclick = function () { S.drawer(false); S.o.world(true); }; return w; } // the World shows this school's routes
   function list(rows, empty) { return rows.length ? h('ul', { class: 'hh-list' }, rows.map(function (r) { return h('li', {}, r); })) : note(empty); }
 
   // the drawer, the strip and the clock follow what game.js loaded
@@ -209,8 +234,7 @@ var LMCSHomeHud = (function () {
     // nothing open: "All done for now" when the person holds quests (all complete), "No quests yet" when none is assigned to them
     var questLine = (t.quests || []).length ? COPY.done : COPY.none;
     el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, questLine));
-    var wild = row(COPY.routes, null); wild.onclick = function () { S.drawer(false); S.o.world(true); }; // the World shows this school's routes
-    el.panes[1].textContent = ''; el.panes[1].appendChild(list([wild], ''));
+    el.panes[1].textContent = ''; el.panes[1].appendChild(list([wildRow()], ''));
     var day = (t.missions || []).filter(function (m) { return !m.gone; }).map(function (m) {
       var done = !!m.done;
       return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? 'Done' : 'To do')]);
@@ -221,40 +245,49 @@ var LMCSHomeHud = (function () {
     setBadge(el.strip.lastChild, total); setLabel(el.strip, 'Quests: ' + line, total);
     bubbles();
   }
+  function chip(el, key, text) { el.textContent = ''; var t = emoji(key); if (t) { t.style.marginRight = '.3em'; el.appendChild(t); } el.appendChild(document.createTextNode(text)); } // the emoji is an aria-hidden tag beside the number
   function renderBase() {
     var b = S.base, el = S.el; if (!el) return;
-    el.level.hidden = !b; if (b) el.level.textContent = (LMCSEmoji.get('level') + ' Level ' + (Number(b.level) || 0)).trim();
-    el.points.hidden = !(b && b.points != null); if (b && b.points != null) el.points.textContent = LMCSEmoji.get('points') + ' ' + (Number(b.points) || 0);
+    el.level.hidden = !b; if (b) chip(el.level, 'level', 'Level ' + (Number(b.level) || 0));
+    el.points.hidden = !(b && b.points != null); if (b && b.points != null) chip(el.points, 'points', String(Number(b.points) || 0));
     var r = rankText(S.today, b); el.rank.hidden = !r; el.rank.textContent = r;
     bubbles();
   }
   function tickClock() { if (S.el) S.el.clock.textContent = dayClock(new Date()); }
 
   // the right column: one icon per running event (today: Game Day), taken from event.js's card, hidden with no event
-  function renderEvents() {
-    var card = S.o.evSlot.querySelector('.ev-card'), box = S.el.events; box.textContent = '';
-    if (!card) return;
+  function renderEvents() { // updated in place, so focus on the button survives a redraw of the card
+    var card = S.o.evSlot.querySelector('.ev-card'), box = S.el.events, b = box.firstChild;
+    if (!card) { box.textContent = ''; return; }
     var hd = card.querySelector('h2'), name = hd && hd.lastChild ? hd.lastChild.textContent.trim() : 'Event', left = card.querySelectorAll('.ev-step:not(.ev-done)').length;
-    var b = btn('hh-evt', name, [emoji('events'), h('span', { class: 'hh-evt-t' }, name), badge(left)], function (x) { openEvent(x, name); });
-    setLabel(b, name, left); box.appendChild(b);
+    if (!b) { b = btn('hh-evt', name, [emoji('events'), h('span', { class: 'hh-evt-t' }), badge(0)], function (x) { openEvent(x, S.evName); }); b.setAttribute('data-hh', 'evt'); box.appendChild(b); }
+    S.evName = name; b.querySelector('.hh-evt-t').textContent = name; setBadge(b.lastChild, left); setLabel(b, name, left);
   }
 
   // ── bubbles pinned to rooms ──
   function roomEls() { return [].slice.call(S.o.building.querySelectorAll('.sb-room')); }
-  function bubbles() {
-    var o = S.o, layer = S.layer; if (!layer) return;
+  var LINK_ONLY = ['daily', 'hr', 'routes']; // no count to show: a plain door on its room
+  function bubbles() { // each bubble is kept and updated in place (keyed by source), never rebuilt, so focus on it survives
+    var layer = S.layer; if (!layer) return;
     var ids = roomEls().map(function (g) { return g.getAttribute('data-room'); }), counts = { today: S.today ? LMCSRail.counts(S.today).missions : 0, setup: setupLeft(S.base) };
-    var p = plan(S.cfg, ids), shown = p.placed.filter(function (s) { return counts[s.source] > 0; });
+    var shown = plan(S.cfg, ids).placed.filter(function (s) { return counts[s.source] > 0 || LINK_ONLY.indexOf(s.source) !== -1; }), keep = {}, list = [];
     S.board = Object.keys(SOURCES).filter(function (k) { return !shown.some(function (s) { return s.source === k; }); }); // everything not on a bubble: reachable once, here
-    layer.textContent = ''; S.bubbles = [];
+    function get(key, mk) { var b = S.bm[key] || (S.bm[key] = mk()); keep[key] = true; if (!b.parentNode) layer.appendChild(b); return b; }
     shown.forEach(function (s) {
       var src = SOURCES[s.source], n = counts[s.source] || 0;
-      var b = btn('hh-b hh-b-' + s.kind, src.label, [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, s.kind === 'setup' ? '⬆' : LMCSEmoji.get(src.e)), badge(n)], function (x) { openSource(s.source, x); });
-      setLabel(b, src.label, n); layer.appendChild(b); S.bubbles.push({ b: b, room: s.room });
+      var b = get(s.source, function () {
+        var x = btn('hh-b hh-b-' + s.kind, src.label, [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, LMCSEmoji.get(s.kind === 'setup' ? 'setupUp' : src.e)), badge(0)], function (y) { openSource(s.source, y); });
+        x.setAttribute('data-hh', 'b-' + s.source); return x;
+      });
+      setBadge(b.lastChild, n); setLabel(b, src.label, n); list.push({ b: b, room: s.room });
     });
-    var board = btn('hh-b hh-b-board', 'Quest board', [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, LMCSEmoji.get('quests'))], function (x) { openBoard(x); });
-    layer.appendChild(board); S.bubbles.push({ b: board, room: (S.cfg && S.cfg.entrance) || '' });
-    place();
+    var board = get('board', function () {
+      var x = btn('hh-b hh-b-board', 'Quest board', [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, LMCSEmoji.get('quests'))], function (y) { openBoard(y); });
+      x.setAttribute('data-hh', 'b-board'); return x;
+    });
+    list.push({ b: board, room: (S.cfg && S.cfg.entrance) || '' });
+    Object.keys(S.bm).forEach(function (k) { if (!keep[k]) { S.bm[k].remove(); delete S.bm[k]; } });
+    S.bubbles = list; place();
   }
   function place() {
     var wrap = S.o.bubbles.parentNode, r0 = wrap.getBoundingClientRect(), rooms = roomEls(), svg = S.o.building.querySelector('svg.sb');
