@@ -198,7 +198,11 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       .filter(function (p) { return String(p.email).toLowerCase() !== cur; });
   }
 
-  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, removeSchools: removeSchools, questPeople: questPeople,
+  // what each campus window will show (Uday, 29 Oct: "placeholders for those areas with coming soon tags"): labels only, no numbers
+  // until the real data lands. The Kingdom is Owner-only, so Fees shows here.
+  var SOON = [{ e: 'staffPresent', t: 'Staff present' }, { e: 'dailyReport', t: 'Daily report' }, { e: 'issues', t: 'Open issues' },
+    { e: 'fees', t: 'Fees' }, { e: 'bus', t: 'Buses ready' }, { e: 'supportSession', t: 'SS this month' }];
+  var api = { SOON: SOON, questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, removeSchools: removeSchools, questPeople: questPeople,
     gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
@@ -289,6 +293,15 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       pips, h('div', { class: 'kg-st' }, [word]),
       h('ul', { class: 'kg-tiers' }, (b.tiers || []).map(function (t) { return tierRow(t, base, b, t === nt); }))]);
   }
+  // the coming-soon placeholders on a campus window: a school view and an analytics strip, plain markup the real data replaces
+  function soonPanel() {
+    var tag = function () { return h('span', { class: 'kg-soontag' }, ['जल्द · Coming soon']); };
+    return h('section', { class: 'kg-soon', 'aria-label': 'Coming soon' }, [
+      h('div', { class: 'kg-soonview', 'aria-hidden': 'true' }, [window.LMCSEmoji ? LMCSEmoji.tag('school') : null, h('span', {}, ['School view · Coming soon'])]),
+      h('ul', { class: 'kg-soonchips' }, SOON.map(function (c) {
+        return h('li', { class: 'kg-soonchip' }, [window.LMCSEmoji ? LMCSEmoji.tag(c.e) : null, h('span', { class: 'kg-soonname' }, [c.t]), tag()]);
+      }))]);
+  }
   function openBase(id, opener) {
     var base = ((S.data && S.data.kingdom && S.data.kingdom.campuses) || []).filter(function (b) { return b.id === id; })[0];
     if (!base) return;
@@ -299,6 +312,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var body = [h('div', { class: 'kg-bgrid' }, active.map(function (b) { return buildingCard(b, base); }))];
     if (soon.length) body.push(h('p', { class: 'kg-quiet kg-soonline' }, ['Coming soon: ' + soon.map(function (b) { return b.name; }).join(', ') + '.']));
     if (!all.length) body = [h('p', { class: 'kg-quiet' }, ['Nothing to build here yet.'])];
+    if (!base.darbar) body.unshift(soonPanel()); // a school, not HQ
     if (api.hooks.base) body.push(api.hooks.base(base));
     var dlg = openLayer(base.full || base.name, 'Level ' + (Number(base.level) || 0) + ' · ' + progressText(progressOf([base])), body, opener);
     var t = dlg.querySelector('.kg-tnext .kg-primary') || dlg.querySelector('.kg-tnext .kg-btn, .kg-tnext a') || dlg.querySelector('h2'); if (t) t.focus();

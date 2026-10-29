@@ -256,3 +256,10 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kgm .leaflet-bar { margin-top:calc(10px + env(safe-area-inset-top)); margin-left:calc(10px + env(safe-area-inset-left)); }
 .kgm[hidden] { display:none; }
 .kgm-grp { border-style:dashed; } /* several places this close together: tap to zoom in */
+/* coming-soon placeholders on a campus window (real data replaces them) */
+.kg-soon { margin:0 0 12px; }
+.kg-soonview { display:flex; align-items:center; justify-content:center; gap:8px; min-height:88px; margin-bottom:8px; border:1.5px dashed var(--line, #d9d4ca); border-radius:12px; background:linear-gradient(180deg, #eef2ea, #e2e8dc); color:var(--muted); font-weight:600; }
+.kg-soonchips { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; margin:0; padding:0; list-style:none; }
+.kg-soonchip { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-height:44px; padding:6px 10px; border:1.5px dashed var(--line, #d9d4ca); border-radius:10px; color:var(--muted); background:rgba(0,0,0,.02); }
+.kg-soonname { font-weight:600; }
+.kg-soontag { flex-basis:100%; font-size:12px; }

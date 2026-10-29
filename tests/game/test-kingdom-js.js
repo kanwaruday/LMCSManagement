@@ -198,4 +198,11 @@ assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '
 assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');
 assert.ok(/'Confirm', function \(f2, ctl2\)/.test(src) && /send\(assignBody\(r, r\.campus, person\.email, ''\), ctl2\)/.test(src), 'reassign: confirm sheet, then kingdomassign');
 assert.ok(/navigator\.clipboard\.writeText\(text\)/.test(src), 'nudge copies to the clipboard');
+// coming-soon placeholders on a campus window: six labelled chips, LMCSEmoji keys that exist, no numbers, nothing tappable, schools only
+const EM = (() => { const c = { window: {} }; vm.createContext(c); vm.runInContext(read('assets/game/emoji.js'), c); return c.window.LMCSEmoji || c.LMCSEmoji; })();
+assert.strictEqual(K.SOON.map((c) => c.t).join('|'), 'Staff present|Daily report|Open issues|Fees|Buses ready|SS this month');
+K.SOON.forEach((c) => assert.ok(EM.get(c.e), 'emoji key ' + c.e));
+const ksrc = read('assets/game/kingdom.js'), soonFn = ksrc.slice(ksrc.indexOf('function soonPanel'), ksrc.indexOf('function openBase'));
+assert.ok(soonFn.includes('जल्द · Coming soon') && soonFn.includes('School view · Coming soon') && !/button|onclick|href|\d/.test(soonFn.replace(/aria-\w+/g, '')), 'tags present; no buttons, links or numbers');
+assert.ok(ksrc.includes('if (!base.darbar) body.unshift(soonPanel())'), 'schools only, not HQ');
 console.log('kingdom js: all passed');

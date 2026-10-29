@@ -15,7 +15,7 @@ var LMCSEmoji = (function () {
     // rewards and progress
     points: '⭐', levelUp: '🏆', level: '🛡️', reward: '🎁', coins: '🪙',
     // places and people
-    hq: '🏛️', base: '🏰', school: '🏫', heads: '👑', account: '👤', applicants: '🧑‍💼', hiring: '👥',
+    hq: '🏛️', base: '🏰', school: '🏫', heads: '👑', account: '👤', applicants: '🧑‍💼', hiring: '👥', staffPresent: '🧑‍🤝‍🧑',
     // work
     day: '🗓️', dailyReport: '📊', issues: '🛠️', curriculum: '📚', homework: '📝', documents: '📋', salary: '💼', payroll: '🧮',
     rules: '📖', byeLaws: '⚖️', supportSession: '🤝', evaluate: '✍️', startingData: '🧾', fees: '💰', dayBook: '📒', closeDay: '🌙', deposits: '🏦', requests: '📥',
