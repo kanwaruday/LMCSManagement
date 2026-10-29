@@ -60,7 +60,7 @@ function driverLinkCreate_(body) {
     const sh = dlkSheet_(), rows = sh.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) { // one phone per driver
       const r = rows[i], same = code ? String(r[4]).toUpperCase() === code
-        : !r[4] && String(r[2]) === reg && String(r[5]).toLowerCase() === name.toLowerCase();
+        : String(r[2]) === reg && String(r[5]).toLowerCase() === name.toLowerCase(); // no code typed: the same name on the same bus, coded or not (a Google sign-in row has a code)
       if (same && !r[8] && tupCovers_(caller, String(r[3]))) sh.getRange(i + 1, 9, 1, 2).setValues([[now, caller.email]]);
     }
     sh.appendRow([linkId, dlkHash_(token), reg, v.campusId, code, name, now, caller.email, '', '', '']);

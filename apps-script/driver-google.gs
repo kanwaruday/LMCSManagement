@@ -30,6 +30,8 @@ function dglTokenEmail_(idToken) {
 
 /** {code: {name}} of every active Transport driver who has an AuthEmail, keyed also by email: {byEmail: {email: code}, byCode: {code: name}}. */
 function dglDrivers_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('dgl_drivers_v1');
+  if (hit) return JSON.parse(hit); // 5 minutes: one roster read serves every sign-in and Driver phones load meanwhile
   const book = SpreadsheetApp.openById(EMP_ROSTER_SHEET_ID);
   const cell = function (v) { return String(v == null ? '' : v).replace(/[​-‏﻿⁠]/g, '').trim(); };
   const table = function (tab) { const v = book.getSheetByName(tab).getDataRange().getValues(); return { h: v[0].map(cell), rows: v.slice(1) }; };
@@ -38,7 +40,7 @@ function dglDrivers_() {
   const drivers = {};
   sal.rows.forEach(function (r) {
     const code = cell(r[col(sal, 'EmployeeCode')]).toUpperCase();
-    if (code && cell(r[col(sal, 'Department')]).toLowerCase() === 'transport' && /driver/i.test(cell(r[col(sal, 'Designation')]))) drivers[code] = '';
+    if (code && cell(r[col(sal, 'Department')]).toLowerCase() === 'transport' && /^driver/i.test(cell(r[col(sal, 'Designation')]))) drivers[code] = '';
   });
   mas.rows.forEach(function (r) {
     const code = cell(r[col(mas, 'EmployeeCode')]).toUpperCase();
@@ -47,12 +49,16 @@ function dglDrivers_() {
     else drivers[code] = cell(r[col(mas, 'Name')]) || '-'; // seen and active, even with no name
   });
   Object.keys(drivers).forEach(function (code) { if (drivers[code] === '') delete drivers[code]; }); // not in EmpMaster: not active
-  const byEmail = {};
+  const codesOf = {}; // every row's AuthEmail, drivers or not: an email against two people opens nothing
   per.rows.forEach(function (r) {
     const email = cell(r[col(per, 'AuthEmail')]).toLowerCase(), code = cell(r[col(per, 'EmployeeCode')]).toUpperCase();
-    if (email.indexOf('@') > 0 && code in drivers) byEmail[email] = code;
+    if (email.indexOf('@') > 0 && code) (codesOf[email] = codesOf[email] || {})[code] = true;
   });
-  return { byEmail: byEmail, byCode: drivers };
+  const byEmail = {};
+  Object.keys(codesOf).forEach(function (email) { const codes = Object.keys(codesOf[email]); if (codes.length === 1 && codes[0] in drivers) byEmail[email] = codes[0]; });
+  const out = { byEmail: byEmail, byCode: drivers };
+  try { cache.put('dgl_drivers_v1', JSON.stringify(out), 300); } catch (e) { /* too big for the cache: read each time */ }
+  return out;
 }
 
 /** The running buses of the fleet register by driver code: {code: [{reg, campusId, name}]}. */
@@ -60,7 +66,7 @@ function dglBusesByDriver_() {
   const sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(TUP_FLEET_TAB_);
   const out = {};
   (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) {
-    const code = String(r[9] || '').trim().toUpperCase(), reg = tupNormReg_(r[0]);
+    const code = String(r[9] || '').replace(/[\u200B-\u200F\uFEFF\u2060]/g, '').trim().toUpperCase(), reg = tupNormReg_(r[0]);
     if (!code || !reg || String(r[3]) !== 'yes') return;
     (out[code] = out[code] || []).push({ reg: reg, campusId: 'LMS' + String(r[2]).replace(/\D/g, ''), name: String(r[6] || '') });
   });
@@ -83,7 +89,8 @@ function driverLinkSelf_(body) {
   try {
     const sh = dlkSheet_(), rows = sh.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) { // one phone per driver: this sign-in replaces the driver's earlier phone, as a new QR does
-      if (String(rows[i][4]).toUpperCase() === code && !rows[i][8]) sh.getRange(i + 1, 9, 1, 2).setValues([[now, DGL_BY_]]);
+      const mine = String(rows[i][4]).toUpperCase() === code || (!rows[i][4] && String(rows[i][2]) === bus.reg); // a QR made without a code, for this bus
+      if (mine && !rows[i][8]) sh.getRange(i + 1, 9, 1, 2).setValues([[now, DGL_BY_]]);
     }
     sh.appendRow([linkId, dlkHash_(token), bus.reg, bus.campusId, code, name, now, DGL_BY_, '', '', '']);
   } finally {

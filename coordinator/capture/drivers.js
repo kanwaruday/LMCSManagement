@@ -56,7 +56,7 @@ function draw() {
   const row = (l) => `<li data-id="${esc(l.linkId)}"><b>${esc(l.driverName)}</b> <span class="cap-note">${esc(l.reg)} · ${esc(l.campus)}</span>` +
     `<p>${l.createdBy === 'google:self' ? 'Signed in with Google' : 'Linked'} ${esc(day(l.created))}${l.lastSeen ? ' · last seen ' + esc(day(l.lastSeen)) : ' · not opened yet'}</p>` +
     (l.revoked ? `<p class="dp-off">Revoked ${esc(day(l.revoked))}</p>` : '<div class="dp-acts"><button type="button" class="gb-btn" data-revoke>Revoke</button></div>') + '</li>';
-  $('google').textContent = S.googleReady == null ? '' : S.googleReady + ' of your drivers can sign in with Google on their own phone (the school has their Gmail). The rest need a QR.';
+  $('google').textContent = S.googleReady == null ? '' : S.googleReady + ' of your drivers can sign in with Google on their own phone (the school has their Gmail). The rest need a QR. Revoke unlinks a phone, but such a driver can sign in again: to stop that, change their email or bus in the roster.';
   $('links').innerHTML = S.links.length ? active.map(row).join('') + old.map(row).join('') : '<li class="cap-note">No driver phones linked yet.</li>';
   $('links').querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => revoke(b)));
 }

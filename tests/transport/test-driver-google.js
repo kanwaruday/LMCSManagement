@@ -35,7 +35,7 @@ const ctx = { Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite,
   console: { log: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) },
   SpreadsheetApp: { openById: (id) => ({ getSheetByName: (n) => (books[id] && books[id][n] ? sheet(books[id][n]) : null), insertSheet: () => { throw new Error('no'); } }) },
   UrlFetchApp: { fetch: (u) => { const t = decodeURIComponent(u.split('id_token=')[1]); const p = tokens[t]; return { getResponseCode: () => (p ? 200 : 400), getContentText: () => JSON.stringify(p || {}) }; } },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, CacheService: { getScriptCache: () => ({ get: () => '1', put() {} }) },
+  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, CacheService: { getScriptCache: () => ({ get: (k) => (k === 'dgl_drivers_v1' ? null : '1'), put() {} }) },
   Utilities: { getUuid: () => crypto.randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) },
   STAFF_GOOGLE_CLIENT_ID: 'CID', EMP_ROSTER_SHEET_ID: ROSTER, verifyStaffManagerToken_: () => ({ email: 'clerk@x', campusId: 'LMS1', roles: ['FeeClerk'] }) };
@@ -60,6 +60,12 @@ assert.deepStrictEqual(Object.keys(refuse).sort(), ['error', 'success']);
   assert.deepStrictEqual(call('driverLinkSelf_', { idToken: t }), refuse, 'one answer for ' + (t || 'no token')));
 assert.strictEqual(call('driverLinkSelf_', { idToken: 'noname' }).success, true, 'an active driver with no name on file still gets in');
 assert.strictEqual(devices[devices.length - 1][5], 'Driver', 'and is listed as Driver');
+// one email on two people's rows opens nothing; a code-less QR link for the same bus is unlinked too
+books[ROSTER].EmpPersonal.push(['KUL/19/07/003', 'kel@gmail.com']);
+assert.deepStrictEqual(call('driverLinkSelf_', { idToken: 'kel' }), refuse, 'an email against two codes: refused');
+devices.push(['DL-qr', 'sha256:qr', 'HP659511', 'LMS1', '', 'Test Driver', '', 'clerk@x', '', '', '']);
+assert.strictEqual(call('driverLinkSelf_', { idToken: 'good' }).success, true);
+assert.ok(devices.find((r) => r[0] === 'DL-qr')[8], 'a QR link made without a code, for this bus, is unlinked');
 assert.deepStrictEqual(logs, [], 'nothing logged');
 
 const list = call('driverLinkList_', { idToken: 'clerk' });
