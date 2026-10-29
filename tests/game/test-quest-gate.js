@@ -219,6 +219,15 @@ test('C1: role groups add up: Principals and Teachers both hold the same event a
   assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher', clear: true }).success, true);
   assert.deepStrictEqual([can(P4, EV), can(T4, EV)], [true, false], 'only the named group is cleared');
 });
+test('a person clear names its person: naming someone else changes nothing', () => {
+  reset();
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'p4@example.org' }).success, true);
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'p3@example.org', clear: true }).unchanged, true, 'p3 does not hold it');
+  assert.strictEqual(can(P4, EV), true, 'p4 keeps it');
+  assert.strictEqual(bulk(OWN, { items: [{ quest: EV, campus: 'LMS4', assignee: 'p3@example.org', clear: true }] }).unchanged, 1, 'bulk too');
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'p4@example.org', clear: true }).success, true);
+  assert.strictEqual(can(P4, EV), false, 'naming the holder clears it');
+});
 test('I1: a group matches the primary role only', () => {
   reset();
   assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher' });

@@ -157,7 +157,7 @@ test("assign: clear writes 'cleared'", () => {
   assert.strictEqual(assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true }).unchanged, true, 'nothing to clear: no row');
   assert.strictEqual(setup().length, 0);
   assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'p4@example.org' });
-  const r = assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true, assignee: 'ignored@example.org' });
+  const r = assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true, assignee: '' }); // the page sends an empty assignee; naming another person is unchanged (test-quest-gate)
   assert.deepStrictEqual(r, { success: true, owner: null });
   const last = setup()[setup().length - 1];
   assert.deepStrictEqual(last.slice(0, 6), ['_owner:tc', 'campus:LMS4', '_quest', 'owner', '', 'cleared']);

@@ -478,7 +478,8 @@ function kingdomAssignApply_(c, owners, groups, at, by, note) {
       audit: kingdomAssignAudit_(at, by, c, note, 'done', 'ok', ''), owner: c.clear ? null : c.person };
   }
   const cur = owners[key];
-  if (c.clear ? !cur : (cur && cur.email === c.person.email)) return { unchanged: true, setup: null, audit: kingdomAssignAudit_(at, by, c, note, 'done', 'ok', 'unchanged'), owner: c.person };
+  // a clear that names a person clears only that person: naming anyone else is unchanged (an empty assignee still clears whoever holds it)
+  if (c.clear ? (!cur || (c.assignee && cur.email !== c.assignee)) : (cur && cur.email === c.person.email)) return { unchanged: true, setup: null, audit: kingdomAssignAudit_(at, by, c, note, 'done', 'ok', 'unchanged'), owner: c.person };
   if (c.clear) delete owners[key]; else owners[key] = { email: c.person.email, at: at, by: by };
   // a clear records whom it took the step from (Assignee); a reassign records the previous holder in Code: from -> to
   return { unchanged: false, setup: ['_owner:' + c.def.id, c.scopeKey, '_quest', 'owner', c.clear ? '' : c.person.email, c.clear ? 'cleared' : 'assigned', note, at, by],
