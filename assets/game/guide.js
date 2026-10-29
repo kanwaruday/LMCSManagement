@@ -11,8 +11,8 @@ window.LMCSGuide = {
       purpose: "Your home: Today with Buddy, then your school's daily work, HR & Hiring and the rules.", roles: ['Principal'],
       tour: [
         { target: '#welcome-strip', text: "Your name and school, so you know you're in the right place." },
-        { target: '#game-root', text: "This is Today: a few pieces of real work waiting for you. Go opens the page where each one happens." },
-        { target: '#modules', text: "This is your school building. Each room holds its pages, and the setup room shows how far your buildings are built." },
+        { target: '#hh-strip', text: "This is Today: a few pieces of real work waiting for you. Go opens the page where each one happens." },
+        { target: '#school-3d', text: "This is your school building. Each room holds its pages, and the setup room shows how far your buildings are built." },
       ],
     },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },

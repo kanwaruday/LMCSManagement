@@ -163,7 +163,7 @@ var LMCSHomeHud = (function () {
     var panes = [h('div', { role: 'tabpanel' }), h('div', { role: 'tabpanel', hidden: 'hidden' }), h('div', { role: 'tabpanel', hidden: 'hidden' })];
     var tt = tabs(['Town', 'Wilderness', 'Daily'], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
     el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [tt.el].concat(panes));
-    el.edge = h('button', { type: 'button', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
+    el.edge = h('button', { type: 'button', id: 'hh-edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
     function drawer(on, focus) {
       el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.setAttribute('aria-label', on ? 'Close tasks' : 'Open tasks');
       el.edge.firstChild.textContent = on ? '◂' : '▸'; el.drawer.inert = !on;
@@ -175,7 +175,7 @@ var LMCSHomeHud = (function () {
     el.panes = panes;
 
     // the bottom: one quest line, then the Town / World switch
-    el.strip = h('button', { type: 'button', class: 'hh-strip', hidden: 'hidden' }, [emoji('quests'), h('span', { class: 'hh-strip-t' }), badge(0)]);
+    el.strip = h('button', { type: 'button', id: 'hh-strip', class: 'hh-strip', hidden: 'hidden' }, [emoji('quests'), h('span', { class: 'hh-strip-t' }), badge(0)]);
     el.strip.onclick = function () { openQuests(el.strip); };
     var bottom = h('div', { class: 'hh-bottom' }, [el.strip, o.switchEl]);
 
@@ -268,6 +268,7 @@ var LMCSHomeHud = (function () {
     S.o = o; S.cfg = (typeof LMCSHomeHotspots !== 'undefined' && LMCSHomeHotspots[o.campus]) || { hotspots: [] };
     S.layer = o.bubbles; S.board = Object.keys(SOURCES);
     document.body.classList.add('hh');
+    LMCSGame.setTourTargets({ today: '#hh-strip', go: null, bar: '#hh-edge', quest: null }); // Today is in a sheet: the tours point at the quest strip, the task tab and the building
     buildHud(); tickClock(); setInterval(tickClock, 30000);
     document.addEventListener('lmcs-game-today', function (e) { S.today = e.detail; renderToday(); renderBase(); });
     new MutationObserver(renderEvents).observe(o.evSlot, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });

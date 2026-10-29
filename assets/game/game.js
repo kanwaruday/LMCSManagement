@@ -306,6 +306,11 @@ var LMCSGame = window.LMCSGame = (function () {
     return first ? first.m : nx;
   }
 
+  // A page whose Today lives out of sight (the Principal home's sheet) points the greeting and first-visit tours at visible controls:
+  // { today, go, bar, quest }: a CSS selector, or null to skip that beat. A key left out keeps the default target.
+  var tourTargets = {};
+  function tt(k, d) { return k in tourTargets ? tourTargets[k] : d; }
+
   function mount(el, opts) {
     opts = opts || {};
     if (live) live.teardown();
@@ -525,6 +530,8 @@ var LMCSGame = window.LMCSGame = (function () {
       ]);
       var forget = piece(function () { layer.remove(); cover(false); release(); });
       function showMe() {
+        var vis = 'today' in tourTargets && tourTargets.today && document.querySelector(tourTargets.today); // the visible stand-in for Today
+        if (vis) { vis.focus({ preventScroll: true }); return; }
         var target = todayEl.querySelector('.lg-go') || todayEl.querySelector('h2');
         todayEl.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
         target.focus({ preventScroll: true });
@@ -543,15 +550,15 @@ var LMCSGame = window.LMCSGame = (function () {
 
     // ── the first-visit home tour: a spotlight on each target in turn; Skip is always there ──
     function tourBeats(a) {
-      var beats = [], go = todayEl.querySelector('.lg-go');
+      var beats = [], go = tt('go', todayEl.querySelector('.lg-go'));
       if (t.speaker === 'teacher-owl') {
         beats.push({ who: 'Buddy', avatar: art({ campus: t.campus, config: t.config }, now).avatar, fig: a.figure,
           text: "Here's the Teacher Owl, who knows your classroom best. I'll hand over now." });
       }
-      beats.push({ target: todayEl, text: 'This is Today: the work waiting for you, taken from the portal itself. A row shows Done once the work is done.' });
+      beats.push({ target: tt('today', todayEl), text: 'This is Today: the work waiting for you, taken from the portal itself. A row shows Done once the work is done.' });
       if (go) beats.push({ target: go, text: 'Go opens the page where that work happens.' });
-      if (me.bar) beats.push({ target: me.bar, text: 'The next step always sits in this bar at the bottom.' });
-      if (questEl || parEls[0]) beats.push({ target: questEl || parEls[0], text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
+      if (tt('bar', me.bar)) beats.push({ target: tt('bar', me.bar), text: 'The next step always sits in this bar at the bottom.' });
+      if (tt('quest', questEl || parEls[0])) beats.push({ target: tt('quest', questEl || parEls[0]), text: 'Your first quest: a few real tasks that show you around the portal. New steps open as you finish them.' });
       return beats;
     }
     function tour(beats, after, tourId) {
@@ -666,7 +673,7 @@ var LMCSGame = window.LMCSGame = (function () {
   }
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
-    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount, tour: tour, last: function () { return last; },
+    safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount, tour: tour, setTourTargets: function (t) { tourTargets = t || {}; }, last: function () { return last; },
     viewAs: viewAs, setViewAs: setViewAs, viewParam: viewParam,
     ui: { h: h, img: img, trap: trap, reduced: reduced } }; // ui: the DOM helpers, shared with assets/game/buddy-dock.js
 })();

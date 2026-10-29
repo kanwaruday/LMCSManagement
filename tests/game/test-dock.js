@@ -126,7 +126,7 @@ assert.ok(/<script src="\.\.\/assets\/auth\.js(\?v=[0-9a-f]+)?"/.test(guideHtml)
 // the guide's content: every page entry exists, every tour target is an #id that is in its page (static HTML, or the office
 // pages' own scripts), every portal page is covered, every setup step has an article, no honorifics
 const G = ctx.LMCSGuide;
-const html = (p) => read(p) + (p.startsWith('office/') ? fs.readdirSync(path.join(root, 'office/js')).map((f) => read('office/js/' + f)).join('') : '');
+const html = (p) => read(p) + (p === 'principal/index.html' ? read('assets/game/home-hud.js').replace(/id: '([\w-]+)'/g, 'id="$1"') : '') + (p.startsWith('office/') ? fs.readdirSync(path.join(root, 'office/js')).map((f) => read('office/js/' + f)).join('') : '');
 for (const [p, g] of Object.entries(G.pages)) {
   assert.ok(fs.existsSync(path.join(root, p)), 'guide page entry exists: ' + p);
   assert.ok(g.purpose && g.purpose.length < 140 && Array.isArray(g.roles), p + ': a one-sentence purpose and roles');

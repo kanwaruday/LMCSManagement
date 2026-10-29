@@ -56,4 +56,12 @@ assert.ok(/\.hh-b \{[^}]*width:44px; height:44px/.test(css), 'bubbles are 44px')
 assert.ok(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*hh-bob/.test(css) && (css.match(/animation:|transition:/g) || []).length === (css.slice(css.indexOf('prefers-reduced-motion')).match(/animation:|transition:/g) || []).length, 'all motion sits inside the no-preference query');
 assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /LMCSGame\.ui\.trap/.test(js) && /'aria-label': 'Close'/.test(js) && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
 assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(page.slice(page.indexOf('<body'), page.indexOf('<script src')).replace(/<!--[\s\S]*?-->/g, '')), 'no raw emoji in the markup');
+// the tours point at visible HUD controls, not the stash; other pages keep their targets
+const guide = read('assets/game/guide.js'), gp = guide.slice(guide.indexOf("'principal/index.html'"), guide.indexOf("'coordinator/index.html'"));
+assert.ok(gp.includes("target: '#hh-strip'") && gp.includes("target: '#school-3d'") && !gp.includes('#game-root') && !gp.includes("'#modules'"), 'guide tour: quest strip and building');
+assert.ok(/LMCSGame\.setTourTargets\(\{ today: '#hh-strip', go: null, bar: '#hh-edge', quest: null \}\)/.test(js), 'the HUD sets the greeting/first-visit tour targets');
+const game = read('assets/game/game.js');
+assert.ok(/function tt\(k, d\) \{ return k in tourTargets \? tourTargets\[k\] : d; \}/.test(game) && /target: tt\('today', todayEl\)/.test(game) && /var tourTargets = \{\};/.test(game), 'game.js: defaults unchanged when no targets are set');
+// drawSchool finds the campus from campusId when session.campus is absent
+assert.ok(/LMCSBuildingModels\[session\.campus \|\| String\(session\.campusId/.test(page), 'drawSchool: session.campus || session.campusId');
 console.log('test-home-hud: ok');
