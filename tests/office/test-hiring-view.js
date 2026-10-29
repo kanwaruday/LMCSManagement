@@ -36,11 +36,9 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.deepStrictEqual(rows(b.demos), [5, 12, 15]); ok('demos to book');
   assert.deepStrictEqual(rows(b.docs), [7]); ok('documents to chase');
   assert.strictEqual(H.declined(list[2], 'interview').declineNote, 'busy'); ok('decline note');
-  const du = H.docFormUrl({ name: 'A B', campusId: 'LMS4', branches: 'LMS-4, LMS-5', employeeCode: 'E1', role: { roleLevel: 'PRT' } });
-  assert.ok(du.includes('entry.773686043=A+B') && du.includes('entry.1017094729=PRT%2C+TGT'));
   assert.deepStrictEqual(H.capSubjects({ role: { subjects: 'English, Hindi' }, subjects: 'X' }), ['English', 'Hindi']);
   assert.deepStrictEqual(H.capSubjects({ role: null, subjects: 'Maths & Science' }), ['Maths', 'Science']);
-  assert.strictEqual(H.docFormUrl({ name: 'A', campusId: 'LMS2' }), 'https://forms.gle/LV1fy13jXzrrcXra9'); ok('doc form link');
+  assert.strictEqual(H.docFormUrl, undefined); ok('the retired Staff Document Submission form has no link builder (X5)');
 
   // propose
   const p = (o) => H.proposePayload({ row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: '', place: ' Office ', note: '', ...o }, now);

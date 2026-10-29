@@ -509,7 +509,6 @@ function aprDecide_(caller, body) {
       referral = { referred: groups, mailError: aprNotifyReferees_(values[rowIdx], groups, note, caller, decision) };
     }
   }
-  if (category === 'New/ Backup Position') { try { hirQueuePositionSync_(); } catch (e) { /* best-effort */ } } // the Interview Report form's position dropdown follows open requisitions
   return Object.assign({ success: true }, referral);
 }
 
@@ -709,7 +708,6 @@ function aprCloseHiring_(caller, body) {
   h.sheet.getRange(row, 17).setValue('Closed by ' + who + ': ' + note);
   aprCommentsSheet_().appendRow(['cmt-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000), String(h.row[0]), caller.email, caller.role, 'Position closed: ' + note, new Date()]);
   if (wasApproved) { try { aprRaiseClosedHiringTask_(h.row, who, note); } catch (err) { /* best-effort: the position is closed either way */ } }
-  if (wasApproved) { try { hirQueuePositionSync_(); } catch (e) { /* best-effort */ } }
   return { success: true };
 }
 

@@ -29,7 +29,7 @@ const NO_SOURCES = {
   'owner/people.html': 'the People room: the Coordinator rows of the allowlist through the game backend (peoplelist / peoplecoordinator), no sheet links',
   'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',
-  'curriculum-progress/course-mapping-admin.html': 'Admin Panel: an "↗ Open" link sits beside every sheet ID it configures (each school, Daily, Allocation)',
+  'curriculum-progress/course-mapping-admin.html': 'retired admin panel (29 Oct 2026): a note pointing to the Academy setup quest cq:cac, no data',
   'office/accounts.html': OFFICE_REASON,
   'office/close.html': OFFICE_REASON,
   'office/daybook.html': OFFICE_REASON,

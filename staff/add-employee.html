@@ -25,16 +25,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .denied .icon{font-size:36px;margin-bottom:10px}
 .denied h3{font-size:15px;color:var(--dark);margin-bottom:6px}
 
-.tabs{display:flex;gap:6px;margin-bottom:20px;border-bottom:2px solid var(--border)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;border-bottom:2px solid var(--border)}
 
 /* Owner-only "data source" link (2026-09-20) -- same pattern as
    principals-daily-reporting/index.html's, kept file-local. */
 .datasrc-links{font-size:10.5px;color:#8A96A6;margin-bottom:14px}
 .datasrc-links a{color:#8A96A6;text-decoration:underline}
 .datasrc-links a:hover{color:var(--red)}
-.tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab-btn{min-height:44px;background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
-.tab-btn:disabled{color:#c7cbd1;cursor:not-allowed}
 .tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:20px;background:var(--red);color:#fff;font-size:10px;font-weight:700;vertical-align:2px}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
@@ -50,6 +49,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .submit-btn{background:var(--red);color:#fff;border:none;border-radius:6px;padding:11px 22px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
 .submit-btn:hover{background:var(--red-h)}
 .submit-btn:disabled{background:#e5b8b8;cursor:not-allowed}
+
+/* Mark Inactive (enabled 29 Oct 2026): Hindi first, 44px taps, the two dates stack on a phone */
+.inact-hi{font-size:15px;font-weight:700;color:var(--dark);margin:0 0 4px;line-height:1.5}
+.inact-en{font-size:12.5px;color:var(--gray);margin:0 0 16px;line-height:1.6}
+#panel-inactive .field input{min-height:44px}
+#panel-inactive .submit-btn{min-height:44px}
+@media (max-width:480px){#panel-inactive .field-row{grid-template-columns:1fr;gap:0}}
 
 .result-box{margin-top:16px;padding:14px 16px;border-radius:6px;font-size:12.5px;line-height:1.7}
 .result-box.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:var(--green)}
@@ -195,7 +201,7 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
       <button class="tab-btn active" data-tab="directory" onclick="switchTab('directory')">📋 Directory</button>
       <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
       <button class="tab-btn" data-tab="verify" onclick="switchTab('verify')">🔍 Needs Verification<span class="tab-badge" id="verifyBadge" style="display:none"></span></button>
-      <button class="tab-btn" data-tab="inactive" disabled title="Temporarily disabled">⛔ Mark Inactive</button>
+      <button class="tab-btn" data-tab="inactive" onclick="switchTab('inactive')">⛔ Mark Inactive</button>
       <button class="tab-btn" data-tab="rules" id="rulesTabBtn" onclick="switchTab('rules')" style="display:none">⚙️ Document rules</button>
     </div>
 
@@ -242,24 +248,29 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
     </div>
 
     <!-- ══════════════════ MARK INACTIVE ══════════════════ -->
+    <!-- Coordinators and the Owner only (the Principal and Fee Clerk views hide this tab; markinactive checks the same on the
+         server). Sets EmpMaster Status = Inactive with the two dates and never deletes the row. Payroll then lists the person
+         under "Marked left in the Staff Portal", where the Owner presses Mark left with the last working day. -->
     <div class="tab-panel" id="panel-inactive">
+      <p class="inact-hi" lang="hi">जो कर्मचारी स्कूल छोड़ चुके हैं, उन्हें यहाँ निष्क्रिय (Inactive) करें। उनकी पंक्ति नहीं हटती, वेतन का इतिहास बना रहता है।</p>
+      <p class="inact-en">Mark someone who has left as Inactive. Their row is never deleted, so salary history stays. Payroll then lists them under "Marked left in the Staff Portal", where the Owner presses <b>Mark left</b> with the last working day.</p>
       <div class="field">
-        <label>Employee</label>
-        <input type="text" id="inactEmployee" list="inactEmployeeList" placeholder="Search by name…">
+        <label for="inactEmployee"><span lang="hi">कर्मचारी</span> · Employee</label>
+        <input type="text" id="inactEmployee" list="inactEmployeeList" placeholder="नाम से खोजें · Search by name…" autocomplete="off">
         <datalist id="inactEmployeeList"></datalist>
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Date of Resignation</label>
+          <label for="inactDoRes"><span lang="hi">इस्तीफ़े की तारीख</span> · Date of Resignation</label>
           <input type="date" id="inactDoRes">
         </div>
         <div class="field">
-          <label>Date of Relieving</label>
+          <label for="inactDoRel"><span lang="hi">कार्यमुक्ति की तारीख</span> · Date of Relieving</label>
           <input type="date" id="inactDoRel">
         </div>
       </div>
       <div>
-        <button class="submit-btn" onclick="submitInactive(event)">Mark Inactive</button>
+        <button type="button" class="submit-btn" onclick="submitInactive(event)">निष्क्रिय करें · Mark Inactive</button>
       </div>
       <div id="inactResult"></div>
     </div>
@@ -1003,15 +1014,24 @@ async function submitInactive(event) {
   const btn = event.target; btn.disabled = true;
   try {
     const picked = resolveEmployeeLabel(document.getElementById('inactEmployee'));
-    if (!picked) throw new Error('Pick an existing employee from the list first');
+    if (!picked) throw new Error('सूची से कर्मचारी चुनें · Pick an existing employee from the list first');
     const data = {
       employeeCode: picked.employeeCode,
       dateOfResignation: document.getElementById('inactDoRes').value,
       dateOfRelieving: document.getElementById('inactDoRel').value,
     };
+    if (data.dateOfResignation && data.dateOfRelieving && data.dateOfRelieving < data.dateOfResignation) {
+      throw new Error('कार्यमुक्ति की तारीख इस्तीफ़े से पहले नहीं हो सकती · The relieving date cannot be before the resignation date');
+    }
+    if (!confirm(picked.name + ' (' + picked.employeeCode + ') को निष्क्रिय करें?\nMark ' + picked.name + ' as Inactive?')) return;
     const json = await callStaffApi('markinactive', data);
     showResult('inactResult', json);
-    if (json.success) { await loadAllEmployees(); }
+    if (json.success) {
+      document.getElementById('inactEmployee').value = '';
+      document.getElementById('inactResult').insertAdjacentHTML('beforeend', '<p class="inact-en" style="margin-top:8px"><span lang="hi">अगला कदम: पेरोल में "Mark left" दबाएँ।</span> Next: ' +
+        (LMCS.hasRole(SESSION, 'Owner') ? 'press <b>Mark left</b> for ' + esc(picked.name) + ' in <a href="../payroll/index.html">Payroll</a>.' : 'the Owner presses <b>Mark left</b> in Payroll.') + '</p>');
+      await loadAllEmployees();
+    }
   } catch (e) {
     showResult('inactResult', { success: false, error: e.message });
   } finally { btn.disabled = false; }

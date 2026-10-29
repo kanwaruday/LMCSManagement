@@ -17,7 +17,7 @@ window.LMCSGuide = {
     },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },
     'principal/support-sessions.html': { purpose: "Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member with their rubric.", roles: ['Principal'] },
-    'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report: support sessions, activities and staff requests.", roles: ['Principal'] },
+    'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report and answer staff requests. Support sessions are filed on their own page.", roles: ['Principal'] },
     'coordinator/index.html': {
       purpose: "Your home: Today with Buddy, then the department modules.", roles: ['Coordinator'],
       tour: [
@@ -112,7 +112,7 @@ window.LMCSGuide = {
     'curriculum-progress/course-mapping-progress.html': { purpose: "Course mapping progress for 2026-27, school by school.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'curriculum-progress/cwa-gap-report.html': { purpose: "The CWA gap report: where classwork activity is overdue or critical.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'curriculum-progress/unmapped-chapters.html': { purpose: "Chapters not yet mapped to the curriculum plan.", roles: ['Owner', 'Coordinator'] },
-    'curriculum-progress/course-mapping-admin.html': { purpose: "Set up schools, classes and progress thresholds for course mapping.", roles: ['Owner', 'Coordinator', 'Principal'] },
+    'curriculum-progress/course-mapping-admin.html': { purpose: "Retired: course maps and terms are set up in the Academy setup quest.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'guide/index.html': { purpose: "The user guide: short answers for every role.", roles: [] },
   },
   articles: [

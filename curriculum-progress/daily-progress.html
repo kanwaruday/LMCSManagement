@@ -2073,18 +2073,6 @@ function applyPrincipalLock() {
   // useful sliced to one school, and not part of what a principal needs day
   // to day. Hidden here rather than removed, so coordinators/owner keep it.
   document.getElementById('tab-weekly')?.remove();
-
-  applyPrincipalNavLock();
-}
-
-// Hides the config-only admin tool from locked (campus-scoped) sessions --
-// the shared portal session (not a URL param) now carries the lock across pages.
-function applyPrincipalNavLock() {
-  if (!PRINCIPAL_SESSION) return;
-  document.querySelectorAll('.hdr-right a.hdr-btn').forEach(a => {
-    const href = a.getAttribute('href') || '';
-    if (/course-mapping-admin\.html/.test(href)) a.remove();
-  });
 }
 
 let _cmPrefetchPromise = null;

@@ -511,9 +511,10 @@ var TCH_CALENDAR_IDS = {
 var TCH_CAL_TTL_S = 21600;                    // 6 h: a campus's events for one day
 var TCH_CAL_UNKNOWN_TTL_S = 1800;             // 30 min: an unreadable calendar is not retried on every load
 var TCH_CODE_MISS_TTL_S = 600;                // 10 min: an email with no employee code
-var TCH_DEFAULT_FORM_GO = 'teacher/index.html#tags';
+var TCH_DEFAULT_FORM_GO = 'teacher/index.html#panel-tags'; // the page opens the tab whose panel id the hash names
 var TCH_PLAN_GO = 'teacher/plan-activity.html';
 var TCH_STAFF_GO = 'teacher/index.html';      // Staff land on the teacher page, which has the game mount
+var TCH_REQUESTS_GO = 'teacher/index.html#panel-requests'; // the Requests tab: the reply to "info requested"
 
 // Mon-Sat, not the 2nd Saturday, no event titled GH..., no event whose title has an exam keyword (cfg.teacher.examKeywords, case-insensitive).
 // calendarEvents = [{title}] for that day only; campus is unused here (the caller already picked the campus's events).
@@ -1104,7 +1105,7 @@ GAME_MODULE_DONE_AT.Teacher = function (caller, missionId) {
 function tchStaffMissionsHook_(caller, cfg, now) {
   let rows;
   try { rows = SpreadsheetApp.openById(GAME_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues(); } catch (err) { return []; }
-  return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_STAFF_GO);
+  return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_REQUESTS_GO);
 }
 
 // Registered by concatenation, never assigned: another file (game-confirm.gs) adds its own hooks to the same roles, in either load order.

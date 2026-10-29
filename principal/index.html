@@ -95,8 +95,8 @@
         { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
       ] },
       // Its own room (not nested under Daily work) per the game director,
-      // 2026-10-28: host:'ss' is read by the Home Base 3D building to mark
-      // this room gold once 'ss' joins its HOSTS list below. One row per
+      // 2026-10-28: host:'ss' is read by the Home Base 3D building, which
+      // marks this room gold ('ss' is in HOSTS below). One row per
       // form, all pointing at the SAME page/role picker
       // (support-sessions.html?role=), not 6 separate pages -- the rubric
       // shape still comes from exactly one place (ssformmeta) either way.
@@ -184,7 +184,7 @@
     // the 3D school: the campus's own building model (assets/game/school-models.js; later Game Config, via d.building) when
     // there is one, else the sample shape with this school's name, marked sample. A tap on a gold room opens its sheet; other rooms say what will live there later.
     let BUILDING = null, CENTRED = false;
-    const HOSTS = ['daily', 'hr', 'rules', 'setup'];
+    const HOSTS = ['daily', 'ss', 'hr', 'rules', 'setup'];
     const LATER = { classroom: 'class teacher, CW/HW done today and attendance will show here', store: 'its inventory will show here',
       busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
     function drawSchool(session, model) {
