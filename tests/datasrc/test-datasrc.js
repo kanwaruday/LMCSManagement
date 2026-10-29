@@ -77,7 +77,9 @@ for (const rel of pages(root)) {
   if (own && registered) uncovered.push(rel + ' (has its own strip AND an entry in datasrc.js -- remove one)');
 }
 assert.deepStrictEqual(uncovered, [], 'pages with no data-source links:\n  ' + uncovered.join('\n  '));
-for (const rel of Object.keys(NO_SOURCES)) assert.ok(fs.existsSync(path.join(root, rel)), 'stale exemption ' + rel);
+// Untracked files that exist only in the owner's local checkout: exempt there, absent in any clean checkout.
+const LOCAL_ONLY = new Set(['lm-monitor/dashboard.html', 'lmcs-last-2-months.html']);
+for (const rel of Object.keys(NO_SOURCES)) if (!LOCAL_ONLY.has(rel)) assert.ok(fs.existsSync(path.join(root, rel)), 'stale exemption ' + rel);
 
 // ── 2. every configured source is a well-formed link ────────────────────────────────────────
 for (const [key, [label, url]] of Object.entries(SRC)) {
