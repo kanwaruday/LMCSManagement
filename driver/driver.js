@@ -390,7 +390,7 @@
     const signedIn = (r) => {
       $('gsiWhy').textContent = 'जोड़ रहे हैं… · Linking this phone…';
       fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverlinkself', idToken: r.credential }) }).then((x) => x.json()).then((x) => {
-        if (!x.success || !/^[a-f0-9]{64}$/.test(x.token || '')) { $('gsiWhy').textContent = x.error || 'This Google account is not set up for a driver. Ask your Fee Clerk for the QR.'; return; }
+        if (!x.success || !/^[a-f0-9]{64}$/.test(x.token || '')) { $('gsiWhy').textContent = x.error || 'यह Google खाता किसी ड्राइवर का नहीं है · This Google account is not set up for a driver. Ask your Fee Clerk for the QR.'; return; }
         try { localStorage.setItem(TOKEN_KEY, x.token); localStorage.removeItem(BUS_KEY); localStorage.removeItem(HOME_KEY); }
         catch (e) { $('gsiWhy').textContent = 'यह फ़ोन लिंक नहीं रख सकता (प्राइवेट विंडो?) · This browser cannot keep the link (a private window?). Open the page in a normal window and sign in again.'; return; }
         location.reload(); // the saved token now opens the page as a QR link would; the token never goes into the address bar
