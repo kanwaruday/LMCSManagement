@@ -17,6 +17,8 @@ var GAME_FOLLOWUP_SKIP = GAME_FOLLOWUP_SKIP || {}; // { module: [follow-up domai
 const GAME_DAY_MS = 86400000;
 const GAME_DONE_LOOKBACK_DAYS = 2;    // a finished (or gone) record stays visible for today and yesterday: yesterday's day is finalized this morning
 const GAME_PORTAL_PDR = 'principals-daily-reporting/index.html';
+const GAME_PORTAL_PDR_REPORT = GAME_PORTAL_PDR + '#principal';   // the report tab
+const GAME_PORTAL_PDR_APPROVALS = GAME_PORTAL_PDR + '#approvals'; // the Approvals tab
 const GAME_PORTAL_SS = 'principal/support-sessions.html';
 const GAME_PORTAL_FOLLOWUPS = 'coordinator/followups/index.html';
 
@@ -151,7 +153,7 @@ function gameApprovals_(rows, now) {
 // ── Principal ────────────────────────────────────────────────────────
 function gamePrincipalMissions_(caller, src, cfg, now) {
   const out = [], role = 'Principal', dayKey = gameDayKey_(now), since = gameLookbackStart_(now);
-  const go = GAME_PORTAL_PDR, mine = gameLower_(caller.email);
+  const mine = gameLower_(caller.email);
   // An all-campus Principal (visible set null) has no campus of their own: the campus-bound missions (ss_pace, pdr_report,
   // pdr_issue) could never complete, so only the caller's own Info Requested request is emitted.
   const visible = gameVisibleCampuses_(caller), campus = visible === null ? '' : gameCampusKey_(visible[0]);
@@ -183,7 +185,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     let stamp = null;
     src.reports.slice(1).forEach(function (r) { if (gameDateKey_(r[1]) === dayKey && gameCampusKey_(r[2]) === campus) stamp = stamp || gameIso_(r[0]) || dayKey; });
     out.push(gameMission_('pdr_report', campus + ':' + dayKey, {
-      title: gameTitle_('pdr_report', { campus: campus, date: dayKey, today: dayKey }), owner: mine, campus: campus, go: go,
+      title: gameTitle_('pdr_report', { campus: campus, date: dayKey, today: dayKey }), owner: mine, campus: campus, go: GAME_PORTAL_PDR_REPORT,
       core: gameIsCore_(cfg, role, 'pdr_report'), done: !!stamp, doneAt: stamp, doneBy: stamp ? mine : null,
     }));
   }
@@ -201,7 +203,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     });
   }
 
-  return out.concat(gameInfoRequested_(src.approvals, mine, role, cfg, now, go));
+  return out.concat(gameInfoRequested_(src.approvals, mine, role, cfg, now, GAME_PORTAL_PDR_APPROVALS));
 }
 
 // ponytail: done for info_requested (the requester answered, status left Info Requested) is not visible in one row;
@@ -220,6 +222,7 @@ function gameInfoRequested_(approvalsRows, mine, role, cfg, now, go) {
 
 // ── Coordinator ──────────────────────────────────────────────────────
 function gameApprovalsGo_(cfg) { return cfg.approvalsGo; }
+function gameRecommendGo_(cfg, id) { return cfg.recommendGo + (id ? '#d=' + encodeURIComponent(id) : ''); }
 
 function gameCoordinatorMissions_(caller, src, cfg, now) {
   const out = [], role = 'Coordinator', me = gameLower_(caller.email), since = gameLookbackStart_(now);
@@ -242,7 +245,7 @@ function gameCoordinatorMissions_(caller, src, cfg, now) {
       } else if (a.status !== 'Pending') return;
       out.push(gameMission_('approval_recommend', a.id, Object.assign({
         title: gameTitle_('approval_recommend', { campus: a.campus, days: a.days, title: a.title }),
-        why: state.gone ? 'Decided before a recommendation was needed' : state.done ? '' : gameWaiting_(a.days), owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameApprovalsGo_(cfg),
+        why: state.gone ? 'Decided before a recommendation was needed' : state.done ? '' : gameWaiting_(a.days), owner: assignee['approval|' + a.id + '|Pending'] || '', campus: a.campus, go: gameRecommendGo_(cfg, a.id),
         core: gameIsCore_(cfg, role, 'approval_recommend'), shared: assignee['approval|' + a.id + '|Pending'] !== me,
       }, state)));
     });

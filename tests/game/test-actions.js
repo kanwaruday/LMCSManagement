@@ -124,7 +124,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.strictEqual(a.quests[0].questId, 'principal1');
   assert.deepStrictEqual(a.toursSeen, []);
   // PDR ssdashboard with the caller's token, cached per (url, email)
-  assert.strictEqual(t.fetches.length, 1);
+  assert.strictEqual(t.fetches.length, 2); // ssdashboard + principalissues (principalIssuesReady is on by default)
   assert.ok(t.fetches[0].url.indexOf('AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec?action=ssdashboard&idToken=tok') !== -1);
   assert.strictEqual(t.fetches[0].o.muteHttpExceptions, true);
 
@@ -132,7 +132,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.strictEqual(b.firstLoadToday, false);
   assert.deepStrictEqual(b.missions.map((m) => m.id), ids);
   assert.strictEqual(t.game['Game Daily'].rows.length, 2); // no second snapshot
-  assert.strictEqual(t.fetches.length, 1);                 // served from the cache
+  assert.strictEqual(t.fetches.length, 2);                 // served from the cache
 
   // a mission finished later in the day stays in the set, done; next moves on
   t.books['1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y']['Daily Reports'].rows.push(['2026-11-05T06:00:00Z', '2026-11-05', 'LMS4']);
@@ -144,7 +144,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
 
 // ── a failed source: other missions still present, earlier days stay unfinalized (R15) ─
 {
-  const t = setup({ down: ['ssdashboard'], daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-05'])] });
+  const t = setup({ config: [['principalIssuesReady', 'false']], down: ['ssdashboard'], daily: [dailyRow('2026-11-04', 'p4@lms.org.in', ['ss_pace:LMS4:2026-11-05'])] });
   const a = t.call(P4, 'gametoday');
   assert.deepStrictEqual(a.sourcesDown, ['ssdashboard']);
   assert.deepStrictEqual(a.missions.map((m) => m.id), ['pdr_report:LMS4:2026-11-05', 'info_requested:A1']);
@@ -170,7 +170,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
 
 // ── R23: ssdashboard is cached as a trimmed projection, so a big response still fits the 100 KB cap ──
 {
-  const t = setup();
+  const t = setup({ config: [['principalIssuesReady', 'false']] });
   const hist = (who, at) => ({ timestamp: at, evaluatorEmail: who, employeeName: 'Somebody Long Name', remarks: 'x'.repeat(200), scores: [1, 2, 3, 4, 5] });
   const roster = [];
   for (let i = 0; i < 400; i++) {
@@ -351,7 +351,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
 }
 {
   // Coordinator: always in, missions only for pilot campuses; issue actions feed the quest; the step is recorded once
-  const t = setup();
+  const t = setup({ config: [['recommendationsReady', 'false']] });
   const a = t.call(COORD, 'gametoday');
   assert.deepStrictEqual(a.missions.map((m) => m.id), ['followup:t1']); // t2 is at LMS2, outside the Coordinator pilot
   assert.deepStrictEqual(a.board.map((b) => b.scopeId + ':' + b.state), ['LMS4:waiting', 'LMS5:waiting', 'LMS6:waiting']);

@@ -134,8 +134,8 @@ assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recom
 let ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar.length, 1); assert.strictEqual(ar[0].core, true); assert.strictEqual(ar[0].done, false);
 assert.strictEqual(ar[0].shared, true);                                   // no matching Tasks row assigned to the caller
-assert.strictEqual(ar[0].go, 'coordinator/systems/index.html#approvals');   // cfg.approvalsGo (I1)
-assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, approvalsGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html');
+assert.strictEqual(ar[0].go, 'coordinator/hq.html#d=r1');   // cfg.recommendGo + the request (opens the form on it)
+assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, recommendGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html#d=r1');
 ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task('approval|r1|Pending', 'approval', 'LMS4', 'x', { assignee: 'c@lms.org.in' })]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar[0].shared, false);                                  // the caller is assigned: personal credit
 assert.strictEqual(kinds(cm(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })]), coord, { recommendationsReady: true }), 'approval_recommend').length, 0); // 2 days: too young

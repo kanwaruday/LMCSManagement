@@ -112,7 +112,7 @@ window.LMCSGuide = {
     'curriculum-progress/course-mapping-progress.html': { purpose: "Course mapping progress for 2026-27, school by school.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'curriculum-progress/cwa-gap-report.html': { purpose: "The CWA gap report: where classwork activity is overdue or critical.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'curriculum-progress/unmapped-chapters.html': { purpose: "Chapters not yet mapped to the curriculum plan.", roles: ['Owner', 'Coordinator'] },
-    'curriculum-progress/course-mapping-admin.html': { purpose: "Set up schools, classes and progress thresholds for course mapping.", roles: ['Owner', 'Coordinator', 'Principal'] },
+    'curriculum-progress/course-mapping-admin.html': { purpose: "This browser's own copy of the course-mapping settings; the real setup is the Academy quest Course maps and terms.", roles: ['Owner', 'Coordinator', 'Principal'] },
     'guide/index.html': { purpose: "The user guide: short answers for every role.", roles: [] },
   },
   articles: [

@@ -93,10 +93,11 @@ function gameConfigDefaults_() {
     approvalWaitDays: 3,
     uniform: { summerFrom: '2027-05-03', winterFrom: '2026-10-26', festivals: [] },
     trackSuitDays: {},
-    principalIssuesReady: false,
+    principalIssuesReady: true, // principal/issues.html and the principalissues / principalissueresolve actions are live
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
     approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
-    recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
+    recommendGo: 'coordinator/hq.html', // the recommend form; a mission opens it on its request (#d=<approvalId>)
+    recommendationsReady: true, // the Recommendations tab is created by the first coordinatorrecommend; off = no approval_recommend missions, Owner's `why` blank
     // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
     // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).
     // policeVerificationYears: null = no police-verification renewal (Ruling O1); rollCallFrom: no roll-call mission for a day before it (a PLACEHOLDER for the deploy date: set it when the Game backend ships)

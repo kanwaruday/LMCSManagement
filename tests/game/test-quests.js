@@ -96,8 +96,8 @@ assert.deepStrictEqual(nd(principalQ(), 'Principal', ev(), prog('principal1:repo
 // a completed quest's steps are recorded too; the locked next quest's are not
 // I1: where each step goes; every step carries its kind; a decision step has no link (the panel opens the decision card)
 const goOf = (q, role, cfg) => Object.fromEntries(state(q, role, ev(), null, cfg)[0].steps.map((x) => [x.id, x.kind + ' ' + x.go]));
-assert.deepStrictEqual(goOf(principalQ(), 'Principal'), { report: 'pdr_report principals-daily-reporting/index.html', ss: 'ss_submit principal/support-sessions.html', issue: 'pdr_issue principal/issues.html', suit: 'decision ' });
-assert.deepStrictEqual(goOf(coordQ, 'Coordinator'), { recommend: 'approval_recommend coordinator/systems/index.html#approvals', issueact: 'issue_action coordinator/systems/index.html', followup: 'followup coordinator/followups/index.html' });
+assert.deepStrictEqual(goOf(principalQ(), 'Principal'), { report: 'pdr_report principals-daily-reporting/index.html#principal', ss: 'ss_submit principal/support-sessions.html', issue: 'pdr_issue principal/issues.html', suit: 'decision ' });
+assert.deepStrictEqual(goOf(coordQ, 'Coordinator'), { recommend: 'approval_recommend coordinator/hq.html', issueact: 'issue_action coordinator/systems/index.html', followup: 'followup coordinator/followups/index.html' });
 assert.strictEqual(goOf(principalQ(), 'Principal', cfgWith({ principalIssuesReady: true, principalIssuesGo: 'p/i.html' })).issue, 'pdr_issue p/i.html');
 
 const all = ev({ missionsDoneByMe: [mis('pdr_report'), mis('pdr_issue')], ssByMe: 1, decisionsByMe: [{ kind: 'decided', decidedBy: 'me@lms.org.in' }] });

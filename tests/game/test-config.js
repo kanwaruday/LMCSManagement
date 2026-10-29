@@ -23,7 +23,7 @@ assert.strictEqual(cfg.cap.Principal, 3);
 assert.strictEqual(cfg.cap.Coordinator, 5);
 assert.strictEqual(cfg.cap.Owner, 5);
 assert.strictEqual(cfg.approvalWaitDays, 3);                       // untouched keys keep their default
-assert.strictEqual(cfg.recommendationsReady, false);
+assert.strictEqual(cfg.recommendationsReady, true);
 assert.strictEqual(cfg.speaker.Teacher, 'teacher-owl');
 assert.strictEqual(cfg.uniform.winterFrom, '2026-10-26');
 assert.strictEqual(cfg.approvalsGo, 'coordinator/systems/index.html#approvals'); // I1

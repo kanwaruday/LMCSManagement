@@ -67,7 +67,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=ed17b104"></script>
+  <script src="../assets/auth.js?v=f790ed65"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Coordinator"></script>
   <script src="../assets/game/game.js?v=e4fad387"></script>
   <script src="../assets/game/emoji.js?v=b51b72fe"></script>
@@ -116,6 +116,7 @@
       box.textContent = '';
       const line = (c, desc) => ok && c ? (c.n ? c.n + ' open' : ALL_CLEAR) : desc;
       box.appendChild(room('missions', 'All follow-ups', line(ok && counts.all, 'Everything waiting, most urgent first.'), 'followups/index.html', ok && counts.all));
+      box.appendChild(room('requests', 'Coordinator HQ', 'Recommend on approvals and see your track record.', 'hq.html', null));
       Coord.DEPARTMENTS.forEach(function (d) {
         const c = ok && !d.live ? counts.byDept[d.name] : null;
         box.appendChild(room(ROOM_E[d.name] || 'office', d.name, d.page ? line(c, ROOM_S[d.name] || d.desc) : 'Later: ' + (ROOM_S[d.name] || d.desc), d.page ? d.page + '/index.html' : '', c));
