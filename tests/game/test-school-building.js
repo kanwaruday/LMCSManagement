@@ -9,10 +9,10 @@ const m = B.clean(B.SAMPLE);
 assert.ok(m && m.sample === true && m.blocks.length === 2, 'the sample cleans to two blocks, marked sample');
 assert.strictEqual(B.rooms(m).length, 17, 'every sample room and ground is listed');
 for (const t of Object.keys(B.TYPE_KEY)) assert.ok(LMCSEmoji.get(B.TYPE_KEY[t]), 'room type ' + t + ' has an emoji in the shared map');
-assert.deepStrictEqual(B.rooms(m).filter((r) => r.host).map((r) => r.host).sort(), ['daily', 'hr', 'rules', 'setup'], 'the four Home Base rooms are hosted on the drawing');
+assert.deepStrictEqual(B.rooms(m).filter((r) => r.host).map((r) => r.host).sort(), ['daily', 'hr', 'rules', 'setup', 'ss'], 'the five Home Base rooms are hosted on the drawing');
 
 const svg = B.svg(B.SAMPLE);
-assert.ok(svg.startsWith('<svg') && svg.includes('Sample building') && svg.includes('data-room="c3a"') && svg.includes('📦'), 'the drawing has rooms, emoji and the sample mark');
+assert.ok(svg.startsWith('<svg') && svg.includes('Sample building') && svg.includes('data-room="c3a"') && svg.includes('data-room="meet"') && /\p{Extended_Pictographic}/u.test(svg), 'the drawing has rooms, emoji and the sample mark');
 assert.ok(!B.svg(Object.assign({}, B.SAMPLE, { sample: false })).includes('Sample building'), 'a real building is not marked sample');
 
 // bad input: a hostile name is escaped, an unknown type or out-of-range floor is dropped, junk draws nothing
@@ -31,7 +31,7 @@ assert.strictEqual(B.clean({ blocks: [null, 5, { floors: 2, w: 2, d: 1, rooms: [
 const M = require(path.join(root, 'assets/game/school-models.js'));
 const lm = B.clean(M.LMS2);
 assert.ok(lm && !lm.sample && lm.blocks[0].kind === 'arc', 'LMS 2 is a real (not sample) curved building');
-assert.deepStrictEqual(B.rooms(lm).filter((r) => r.host).map((r) => r.host).sort(), ['daily', 'hr', 'rules', 'setup'], 'LMS 2 hosts the four Home Base rooms');
+assert.deepStrictEqual(B.rooms(lm).filter((r) => r.host).map((r) => r.host).sort(), ['daily', 'hr', 'rules', 'setup', 'ss'], 'LMS 2 hosts the five Home Base rooms');
 const ls = B.svg(M.LMS2, { hosts: ['daily', 'hr'] });
 assert.ok(!ls.includes('Sample building') && (ls.match(/sb-host/g) || []).length === 2, 'only rooms the page can open are gold');
 assert.ok(!/\d{2}\.\d{4,}°|lat|lng|longitude/i.test(JSON.stringify(M)), 'no map location in the models');

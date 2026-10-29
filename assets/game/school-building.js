@@ -15,7 +15,7 @@
 //   A room on an arc: { id, name, short?, type, holds?, host?, floor, from, to }  (from/to: 0..1 along the arc, a0 to a1)
 //   A ground: { id, name, short?, type, host?, x, y, w, d } or { …, pts: [[x, y], …] } for any flat outline.
 //   type: classroom | lab | computer | library | office | staff | store | washroom | hall | lobby | ground | busbay | site
-//   holds: the class/section a classroom holds ("5A"). host: the Home Base room it opens today (daily, hr, rules, setup).
+//   holds: the class/section a classroom holds ("5A"). host: the Home Base room it opens today (daily, hr, rules, setup, ss).
 //   Later layers attach to a room's id: per-classroom (class teacher, CW/HW, attendance), 📦 inventory per room, 🚚 logistics.
 //
 //   LMCSBuilding.svg(model, { title, hosts }) -> an SVG string (every label escaped); rooms are <g class="sb-room" data-room="id">.
@@ -37,7 +37,7 @@ var LMCSBuilding = (function () {
         { id: 'c1a', name: 'Class 1A', type: 'classroom', holds: '1A', face: 'front', floor: 0, at: 0, span: 1 },
         { id: 'c2a', name: 'Class 2A', type: 'classroom', holds: '2A', face: 'front', floor: 0, at: 1, span: 1 },
         { id: 'c3a', name: 'Class 3A', type: 'classroom', holds: '3A', face: 'front', floor: 0, at: 2, span: 1 },
-        { id: 'store', name: 'Store', type: 'store', face: 'front', floor: 0, at: 3, span: 1 },
+        { id: 'meet', name: 'Meeting room', short: 'Sessions', type: 'office', host: 'ss', face: 'front', floor: 0, at: 3, span: 1 },
         { id: 'wash', name: 'Washrooms', type: 'washroom', face: 'front', floor: 0, at: 4, span: 1 },
         { id: 'library', name: 'Library', type: 'library', host: 'rules', face: 'front', floor: 0, at: 5, span: 1 },
         { id: 'c4a', name: 'Class 4A', type: 'classroom', holds: '4A', face: 'front', floor: 1, at: 0, span: 1 },
