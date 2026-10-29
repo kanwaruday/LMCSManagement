@@ -484,7 +484,7 @@ function fleetOpsMissions_(caller, cfg, now, rows, setupOpen) {
     }
     put('fleet_ops_' + t.domain, t.id, {
       title: b ? fleetOpsTitle_(t, late, b, today) : t.title, why: gone ? 'No longer needed' : FLEET_WHY[t.domain] || '', owner: t.assignee, campus: campus,
-      go: clerk ? 'office/daybook.html' : GAME_PORTAL_FOLLOWUPS, due: t.due || null,
+      go: clerk ? 'office/daybook.html' : 'coordinator/transport/live.html', due: t.due || null, // the Coordinator closes it there with the required note (C8)
       shared: clerk ? resolved && !gone && by !== me : late || !t.assignee,
       done: resolved && !gone, doneAt: resolved && !gone ? t.resolvedAt : null, doneBy: resolved && !gone ? by : null, gone: gone,
     });

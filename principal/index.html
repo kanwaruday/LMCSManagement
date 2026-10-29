@@ -76,7 +76,7 @@
   <script src="../assets/game/emoji.js?v=88532066"></script>
   <script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
   <script src="../assets/game/school-models.js?v=2d711258"></script>
-  <script src="../assets/game/home-hud.js?v=48ea30d4"></script>
+  <script src="../assets/game/home-hud.js?v=7a575d56"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../coordinator/route-map.js?v=3f998a20"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
@@ -92,6 +92,8 @@
       { title: 'Daily work', e: 'day', host: 'daily', lead: 'Your reports and what came out of them.', pages: [
         { name: "Principal's Daily Reporting", e: 'dailyReport', url: '../principals-daily-reporting/index.html', desc: 'Your daily report and its dashboard.' },
         { name: 'Daily-report issues', e: 'issues', url: 'issues.html', desc: 'Close each issue with a line on what was done. A Coordinator can reopen it.' },
+        // the Principal's office "Raise a request" (P5, forms inventory): it then waits as a Town row until Management decides it (game-forms.gs request_wait)
+        { name: 'Raise a request', e: 'requests', url: '../principals-daily-reporting/index.html#approvals', desc: 'Ask Management to approve something: a purchase, an event, a trip. It waits in your Town tasks until it is decided.' },
         { name: 'Curriculum & Progress', e: 'curriculum', url: '../curriculum-progress/daily-progress.html', desc: 'Daily CW/HW against the Annual Curriculum Plan.' },
       ] },
       // Its own room (not nested under Daily work) per the game director,
@@ -110,6 +112,7 @@
       ] },
       { title: 'HR & Hiring', e: 'hiring', host: 'hr', lead: 'Your school\'s applicants and staff.', pages: [
         { name: 'Hiring Dashboard', e: 'applicants', url: '../hiring/index.html', desc: 'Applicants from screening to offer: see who needs your next step.' },
+        { name: 'Request a new hire or a replacement', e: 'requests', url: '../principals-daily-reporting/index.html#approvals', desc: 'Raise the hiring request (New/ Backup Position). It waits in your Town tasks until it is decided.' },
         { name: 'Staff documents and directory', e: 'documents', url: '../staff/add-employee.html', desc: 'Your staff list. Upload any missing documents.' },
         { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'The offer-letter salary for an applicant at the Salary Offer stage.' },
       ] },

@@ -133,6 +133,7 @@
       "game-kingdom",
       "game-people",
       "game-event",
+      "game-forms",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js"
