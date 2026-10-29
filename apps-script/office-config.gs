@@ -319,11 +319,21 @@ function officeFundAllowed_(caller) {
   return officeSetting_('fund_transfer_emails').split(',').map(function (e) { return e.trim().toLowerCase(); }).indexOf(String(caller.email).toLowerCase()) !== -1;
 }
 
+// The school lock (Uday, 29 Oct: "a schoolwise lock for the schools and the principals, we know which vehicle belongs to who"): a
+// Principal with no office role sees their own school's vehicles and accounts only. The office roles keep every campus: the day
+// book can charge another campus's bus, and a fund transfer names another campus's bank.
+function officeSchoolLock_(caller) {
+  const office = ['FeeClerk', 'AdminManager', 'FinanceHead', 'Coordinator', 'Owner'];
+  if (!caller || caller.campuses.indexOf('ALL') !== -1 || caller.roles.some(function (r) { return office.indexOf(r) !== -1; })) return null;
+  return function (campus) { return caller.campuses.indexOf(String(campus || '').toUpperCase()) !== -1; };
+}
+
 function officeConfigGet_(ctx) {
   const ss = officeConfigBook_();
   const limits = {};
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
-  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_(), vehicles: officeVehicles_(), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES,
+  const lock = officeSchoolLock_(ctx && ctx.caller), mine = function (x) { return !lock || lock(x.campus); };
+  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_().filter(mine), vehicles: officeVehicles_().filter(mine), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES,
     fund_transfer_allowed: !!(ctx && officeFundAllowed_(ctx.caller)) };
 }
 

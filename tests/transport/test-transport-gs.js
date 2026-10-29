@@ -63,6 +63,7 @@ const sheetNames = sheets.map(s => s.name);
 // a district-limited caller only sees their campuses
 const lim = JSON.parse(JSON.stringify(run('coordTransport_({only:["LMS1"]})')));
 assert.ok(lim.fleet.every(b => b.campusId === 'LMS1') && lim.pnl.length === 1 && lim.people.length === 1, 'campus visibility');
+assert.deepStrictEqual([lim.unknown, lim.warnings], [[], []], 'fleet-wide unknown regs and warnings: the Owner only (school lock)');
 // uploads from the portals: the newest one per bus and paper is "pending" until the AI Coordinator's push says it has seen the file
 const up = (d, reg, paper, id, status) => [new Date(d), reg, paper, id, 'https://drive.google.com/file/d/' + id + '/view', 'clerk@lms.org.in', 'FeeClerk', 'LMS1', 'Fee Clerk Portal', status || ''];
 const uploads = sheet('Portal Uploads', 900); sheets.push(uploads);
