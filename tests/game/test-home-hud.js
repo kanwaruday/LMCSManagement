@@ -84,3 +84,4 @@ assert.ok(/\.hh-bottom \{ position:fixed; left:8px; right:68px; bottom:calc\(8px
 console.log('test-home-hud: ok');
 assert.ok(/e\.key === 'Escape' && el\.drawer\.classList\.contains\('is-open'\) && !e\.defaultPrevented/.test(js), 'one Esc closes one window: a sheet or card that handled Esc first leaves the drawer open');
 assert.ok(/body\.hh #lmcs-warm-chip \{ bottom:calc\(190px/.test(fs.readFileSync(path.join(root, 'assets/game/home-hud.css'), 'utf8')), 'the loading chip clears the Town/World row');
+assert.ok(/body\.hh \.sb-art \{ display:none; \}/.test(fs.readFileSync(path.join(root, 'assets/game/home-hud.css'), 'utf8')), 'one building on the home: the separate campus picture is hidden');

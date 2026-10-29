@@ -110,3 +110,4 @@ body.hh-sheet-open { overflow:hidden; }
   @keyframes hh-bob { 0%, 100% { margin-top:0; } 50% { margin-top:-6px; } }
 }
 body.hh #lmcs-warm-chip { bottom:calc(190px + env(safe-area-inset-bottom)) !important; } /* the loading chip sits above the quest strip and the Town/World row, never on them */
+body.hh .sb-art { display:none; } /* one building on the home (Uday, 29 Oct: "why are there 2 images"): the campus picture stays for other pages until the drawn building takes the Art Bible look */
