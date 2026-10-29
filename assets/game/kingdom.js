@@ -147,7 +147,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return keys.map(function (c) { return { campus: c, name: c ? questPlace(c) : 'HQ · every school', rows: by[c] }; });
   }
   function questFilter(rows, f) { return (rows || []).filter(function (r) { return f === 'open' ? r.state === 'open' : f === 'stuck' ? !!r.stuck : true; }); }
-  function questHolder(r) { return r.owner ? (r.owner.name || r.owner.email) : 'role: ' + (r.roles || []).map(function (x) { return ROLE_LABEL[x] || x; }).join(' or '); }
+  function questHolder(r) {
+    var who = (r.owner ? [r.owner.name || r.owner.email] : []).concat(r.heldBy || []); // a person and/or the role groups holding it
+    return who.length ? who.join(', ') : 'role: ' + (r.roles || []).map(function (x) { return ROLE_LABEL[x] || x; }).join(' or ');
+  }
   function questAge(r) {
     var n = r.ageDays;
     if (n === null || n === undefined || !isFinite(n)) return r.state === 'done' ? '' : 'No changes yet';
@@ -159,22 +162,43 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return 'Hi' + (first ? ' ' + first + ' ji' : '') + ', when you get a moment, could you look at \'' + r.title + '\' for ' + (r.campus ? questPlace(r.campus) : 'all our schools') + '? Thank you!';
   }
   function reassignText(r, person) {
+    if (person.group) return 'Give \'' + r.title + '\' to ' + person.name + '? Everyone with that role there will see it. Nobody else loses it.';
     return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Nobody has it yet.');
   }
-  // the All schools result: [{ campus, ok }] -> one line for the toast (or the error line when nothing went through)
-  function bulkText(results) {
-    var ok = results.filter(function (x) { return x.ok; }).length, bad = results.filter(function (x) { return !x.ok; }).map(function (x) { return questPlace(x.campus); });
-    if (!ok) return "That didn't go through at any school. Nothing was changed. Please try again.";
-    return 'Given to ' + ok + (ok === 1 ? ' school.' : ' schools.') + (bad.length ? " Didn't go through at " + bad.join(', ') + '. Try those again.' : '');
+  // Bulk (kingdomassignbulk): each open assignable row given to every role group it lists, at its own school (or HQ). Only schools
+  // that have a row for that quest get it. eventOnly: the event rows (Game Day) only. -> [{ quest, campus, assignee }]
+  function bulkItems(rows, eventOnly) {
+    var out = [], seen = {};
+    (rows || []).forEach(function (r) {
+      if (!r.assignable || r.state === 'done' || (eventOnly && String(r.questId).indexOf('event:') !== 0)) return;
+      (r.groups || []).forEach(function (g) {
+        var k = r.questId + '|' + (r.campus || '') + '|' + g.value;
+        if (!seen[k]) { seen[k] = true; out.push({ quest: r.questId, campus: r.campus || '', assignee: g.value }); }
+      });
+    });
+    return out;
+  }
+  // "Give 23 quests to their roles at 6 schools + HQ?"
+  function bulkSummary(items) {
+    var q = {}, c = {}, hq = false;
+    items.forEach(function (x) { q[x.quest] = true; if (x.campus) c[x.campus] = true; else hq = true; });
+    var nq = Object.keys(q).length, nc = Object.keys(c).length;
+    return 'Give ' + nq + (nq === 1 ? ' quest' : ' quests') + ' to their roles at ' + (nc ? nc + (nc === 1 ? ' school' : ' schools') : '') + (hq ? (nc ? ' + HQ' : 'HQ') : '') + '?';
+  }
+  // the bulk reply as one line
+  function bulkResult(d) {
+    var bad = (d && d.refused) || [];
+    return 'Given: ' + ((d && d.done) || 0) + '. Already had it: ' + ((d && d.unchanged) || 0) + '.' + (bad.length ? ' Not given: ' + bad.length + ' (' +
+      bad.slice(0, 3).map(function (x) { return x.quest + ' at ' + questPlace(x.campus); }).join(', ') + (bad.length > 3 ? ', …' : '') + ').' : '');
   }
   // the pick list of a quest row: its role groups first ('role:<Role>', "All teachers at LMS 3"), then the people; the current holder left out
   function questPeople(r) {
-    var cur = r.owner ? String(r.owner.email).toLowerCase() : '';
-    return (r.groups || []).map(function (g) { return { email: g.value, name: g.label, group: true }; }).concat(r.assignees || [])
+    var cur = r.owner ? String(r.owner.email).toLowerCase() : '', held = r.heldBy || [];
+    return (r.groups || []).filter(function (g) { return held.indexOf(g.label) === -1; }).map(function (g) { return { email: g.value, name: g.label, group: true }; }).concat(r.assignees || [])
       .filter(function (p) { return String(p.email).toLowerCase() !== cur; });
   }
 
-  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkText: bulkText, questPeople: questPeople,
+  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, questPeople: questPeople,
     gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
@@ -547,25 +571,6 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       if (ctl.go) ctl.go.textContent = label;
     }).then(function () { W.busy = false; });
   }
-  // sends confirmed bodies one after another (All schools); a failure at one school never stops the rest. Nothing went through: the sheet stays.
-  function sendAll(bodies, ctl) {
-    if (W.busy) return;
-    W.busy = true;
-    ctl.err.textContent = '';
-    ctl.controls.forEach(function (c) { c.disabled = true; });
-    var label = ctl.go ? ctl.go.textContent : '', results = [];
-    if (ctl.go) ctl.go.textContent = 'Sending…';
-    bodies.reduce(function (p, b) {
-      return p.then(function () { return post(b); }).then(function (d) { results.push({ campus: b.campus, ok: !!(d && d.success) }); }, function () { results.push({ campus: b.campus, ok: false }); });
-    }, Promise.resolve()).then(function () {
-      var text = bulkText(results);
-      if (!results.some(function (x) { return x.ok; })) {
-        ctl.err.textContent = text; ctl.controls.forEach(function (c) { c.disabled = false; }); if (ctl.go) ctl.go.textContent = label; return;
-      }
-      closeLayer(); toast(text);
-      return load().then(function () { if (ctl.after) return ctl.after(); });
-    }).catch(function () {}).then(function () { W.busy = false; });
-  }
   function radios(name, people, suggestEmail, legend) {
     return h('fieldset', { class: 'kg-pick' }, [h('legend', { class: 'kg-sr' }, [legend])].concat(people.map(function (p, i) {
       var id = 'kg-r-' + name + i;
@@ -659,7 +664,13 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var chips = h('div', { class: 'kg-chips', role: 'group', 'aria-label': 'Show' }, F.map(function (f) {
       return h('button', { type: 'button', class: 'kg-chip', 'data-f': f[0], 'aria-pressed': String(Q.filter === f[0]), onclick: function () { Q.filter = f[0]; draw(); } }, [f[1]]);
     }));
+    var tools = h('div', { class: 'kg-acts-row' }, []);
     function draw() {
+      tools.textContent = '';
+      if (data && data.rows.some(function (x) { return x.assignable; })) {
+        tools.appendChild(h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openBulk(bulkItems(data.rows, false), 'Give every quest to its roles', e.currentTarget); } }, ['Give every quest to its roles']));
+        tools.appendChild(h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openBulk(bulkItems(data.rows, true), 'Give Game Day to everyone', e.currentTarget); } }, ['Give Game Day to everyone']));
+      }
       [].forEach.call(chips.children, function (c, i) {
         c.setAttribute('aria-pressed', String(Q.filter === F[i][0]));
         c.textContent = F[i][1] + (data ? ' (' + questFilter(data.rows, F[i][0]).length + ')' : '');
@@ -681,10 +692,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         h('small', { class: 'kg-qm' }, [[state, questHolder(r), questAge(r)].filter(Boolean).join(' · ')]),
         h('div', { class: 'kg-acts-row' }, [
           goLink(r.go, 'Go', 'kg-btn kg-act'),
-          r.assignable && people.length ? h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openQuestPick(r, people, e.currentTarget); } }, ['Reassign']) : null,
+          r.assignable && people.length ? h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openQuestPick(r, people, e.currentTarget, data.rows); } }, ['Reassign']) : null,
           r.state !== 'done' ? h('button', { type: 'button', class: 'kg-btn kg-act', 'aria-label': 'Nudge: copy a message about ' + r.title + ' at ' + questPlace(r.campus), onclick: function () { nudge(r, live); } }, ['Nudge']) : null])]);
     }
-    var dlg = openLayer('📜 All quests', 'Every setup quest, school by school', [chips, live, list], opener);
+    var dlg = openLayer('📜 All quests', 'Every setup quest, school by school', [tools, chips, live, list], opener);
     var t = dlg.querySelector('h2'); if (t) t.focus();
     var url = S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=kingdomquests&idToken=' + encodeURIComponent((S.session || {}).idToken || '');
     return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
@@ -700,16 +711,33 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var text = nudgeText(r), clip = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'));
     clip.then(function () { live.textContent = 'Copied. Paste it in WhatsApp: ' + text; }, function () { live.textContent = 'Copy this into WhatsApp: ' + text; });
   }
-  function openQuestPick(r, people, opener) {
+  // one confirmed kingdomassignbulk POST; the reply's line is the toast (role=status)
+  function openBulk(items, title, opener) {
+    if (!items.length || items.length > 400) {
+      var s0 = sheet(title, 'All schools', items.length ? 'That is more than 400 at once. Give them a few quests at a time.' : 'Nothing to give: every open quest already has its roles, or none lists a role.', [], 'Confirm', function () {}, opener);
+      s0.querySelector('.kg-primary').remove(); return;
+    }
+    sheet(title, 'All schools', bulkSummary(items), [], 'Confirm', function (form, ctl) {
+      ctl.done = function (d) { return bulkResult(d); };
+      ctl.after = function () { return openQuests(null); };
+      send({ action: 'kingdomassignbulk', items: items }, ctl);
+    }, opener);
+  }
+  function openQuestPick(r, people, opener, allRows) {
     sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Nobody has it yet.'),
       [radios('kg-qwho', people, '', 'Who should have it now?')], 'Next', function (form, ctl) {
         var who = picked(form, 'kg-qwho'), person = people.filter(function (p) { return p.email === who; })[0];
         if (!person) { ctl.err.textContent = 'Pick a person first.'; return; }
-        // a role group at a school can go to every school at once (one kingdomassign per school, one after another)
-        var all = person.group && /^LMS[1-6]$/.test(r.campus) ? h('input', { type: 'checkbox', id: 'kg-all' }) : null;
-        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), all ? [h('label', { class: 'kg-fld', for: 'kg-all' }, [all, ' All schools (the same group at LMS 1 to LMS 6)'])] : [], 'Confirm', function (f2, ctl2) {
+        // a role group at a school can go to every school with a row for this quest at once (one kingdomassignbulk). A group adds to the
+        // holders, so nothing is replaced; a person is single-holder per school, so a person never gets this option.
+        var schools = (allRows || []).filter(function (x) { return x.questId === r.questId && /^LMS[1-6]$/.test(x.campus) && x.assignable; }).map(function (x) { return x.campus; });
+        var all = person.group && /^LMS[1-6]$/.test(r.campus) && schools.length > 1 ? h('input', { type: 'checkbox', id: 'kg-all' }) : null;
+        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), all ? [h('label', { class: 'kg-fld', for: 'kg-all' }, [all, ' All schools (the same group at ' + schools.map(questPlace).join(', ') + ')'])] : [], 'Confirm', function (f2, ctl2) {
           ctl2.after = function () { return openQuests(null); };
-          if (all && all.checked) return sendAll(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map(function (c) { return Object.assign(assignBody(r, c, person.email, ''), { campus: c }); }), ctl2);
+          if (all && all.checked) {
+            ctl2.done = function (d) { return bulkResult(d); };
+            return send({ action: 'kingdomassignbulk', items: schools.map(function (c) { return { quest: r.questId, campus: c, assignee: person.email }; }) }, ctl2);
+          }
           ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
           send(assignBody(r, r.campus, person.email, ''), ctl2);
         }, null);

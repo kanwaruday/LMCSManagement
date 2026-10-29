@@ -120,23 +120,23 @@ test('hook quests: a cq quest by its id and campus, other hooks by family', () =
   assert.strictEqual(ctx.questGateHookKeep_(k, hook('cqQuests_'), { questId: 'cq:tc:LMS4' }), true);
   assert.strictEqual(ctx.questGateHookKeep_(k, hook('cqQuests_'), { questId: 'cq:tc:LMS3' }), false);
   assert.strictEqual(ctx.questGateHookKeep_(k, hook('somethingNew_'), { questId: 'x' }), false, 'an unknown hook stays hidden');
-  assert.strictEqual(assign(OWN, { quest: 'daybook-setup', campus: 'LMS4', assignee: 'role:FeeClerk' }).success, true);
+  assert.strictEqual(assign(OWN, { quest: 'hook:daybook-setup', campus: 'LMS4', assignee: 'role:FeeClerk' }).success, true);
   assert.strictEqual(ctx.questGateHookKeep_(keepOf(F4), hook('daybookClerkQuests_'), { questId: 'daybook-setup:LMS4' }), true);
   assert.strictEqual(ctx.questGateHookKeep_(keepOf(P4), hook('daybookClerkQuests_'), { questId: 'daybook-setup:LMS4' }), false);
 });
 test('role groups: everyone with the role at that campus; the network for Coordinators; bulk to all schools', () => {
   reset();
-  const g = assign(OWN, { quest: 'teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' });
+  const g = assign(OWN, { quest: 'hook:teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' });
   assert.deepStrictEqual(g.owner, { email: 'role:teacher', name: 'All teachers at LMS 4' });
-  assert.deepStrictEqual([can(T4, 'teacher-quests'), can(T3, 'teacher-quests'), can(P4, 'teacher-quests')], [true, false, false]);
+  assert.deepStrictEqual([can(T4, 'hook:teacher-quests'), can(T3, 'hook:teacher-quests'), can(P4, 'hook:teacher-quests')], [true, false, false]);
   assert.strictEqual(ctx.questGateHookKeep_(keepOf(T4), hook('tchQuestsHook_'), { questId: 'chapter:x' }), true);
-  for (const c of ['LMS1', 'LMS2', 'LMS3', 'LMS5', 'LMS6']) assert.strictEqual(assign(OWN, { quest: 'teacher-quests', campus: c, assignee: 'role:Teacher' }).success, true, c);
-  assert.strictEqual(setup().filter((r) => r[0] === '_owner:teacher-quests').length, 6, 'one owner row per school');
-  assert.strictEqual(can(T3, 'teacher-quests'), true);
-  assert.strictEqual(assign(OWN, { quest: 'teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' }).unchanged, true, 'idempotent');
-  assert.strictEqual(assign(OWN, { quest: 'fleet', campus: '', assignee: 'role:Coordinator' }).success, true);
-  assert.strictEqual(can(COORD, 'fleet'), true);
-  assert.strictEqual(assign(OWN, { quest: 'fleet', campus: 'LMS1', assignee: 'role:Coordinator' }).code, 'KINGDOM_BAD_CAMPUS', 'a network family');
+  for (const c of ['LMS1', 'LMS2', 'LMS3', 'LMS5', 'LMS6']) assert.strictEqual(assign(OWN, { quest: 'hook:teacher-quests', campus: c, assignee: 'role:Teacher' }).success, true, c);
+  assert.strictEqual(setup().filter((r) => r[0] === '_owner:hook:teacher-quests').length, 6, 'one owner row per school');
+  assert.strictEqual(can(T3, 'hook:teacher-quests'), true);
+  assert.strictEqual(assign(OWN, { quest: 'hook:teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' }).unchanged, true, 'idempotent');
+  assert.strictEqual(assign(OWN, { quest: 'hook:fleet', campus: '', assignee: 'role:Coordinator' }).success, true);
+  assert.strictEqual(can(COORD, 'hook:fleet'), true);
+  assert.strictEqual(assign(OWN, { quest: 'hook:fleet', campus: 'LMS1', assignee: 'role:Coordinator' }).code, 'KINGDOM_BAD_CAMPUS', 'a network family');
   assert.strictEqual(assign(OWN, { quest: 'tc', campus: 'LMS3', assignee: 'role:Principal' }).success, true, 'a cq quest takes its own roles');
   assert.strictEqual(can(P3, 'tc', 'LMS3'), true);
 });
@@ -160,9 +160,9 @@ test("viewAs previews the school's assignments (people and the Principals' group
   reset();
   assert.strictEqual(can(V4, 'tc', 'LMS4'), false);
   assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'p4@example.org' });
-  assign(OWN, { quest: 'teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' });
+  assign(OWN, { quest: 'hook:teacher-quests', campus: 'LMS4', assignee: 'role:Teacher' });
   assign(OWN, { quest: EV, campus: 'LMS3', assignee: 'p3@example.org' });
-  assert.deepStrictEqual([can(V4, 'tc', 'LMS4'), can(V4, 'teacher-quests'), can(V4, EV)], [true, false, false]);
+  assert.deepStrictEqual([can(V4, 'tc', 'LMS4'), can(V4, 'hook:teacher-quests'), can(V4, EV)], [true, false, false]);
   assert.strictEqual(tcMission(V4).length, 1);
   assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Principal' });
   assert.strictEqual(can(V4, EV), true);
@@ -191,18 +191,79 @@ test('kingdomquests lists the families with role groups (Owner only)', () => {
   const r = J(ctx.kingdomQuests_(OWN, {}));
   assert.strictEqual(r.success, true);
   const ids = r.rows.map((x) => x.questId + '@' + x.campus);
-  for (const id of [EV + '@LMS1', EV + '@LMS6', EV + '@', 'gq:principal1@LMS4', 'teacher-quests@LMS3', 'fleet@', 'daybook-accountant@']) assert.ok(ids.includes(id), id);
-  assert.ok(!ids.includes('gq:principal1@') && !ids.includes('fleet@LMS1'));
+  for (const id of [EV + '@LMS1', EV + '@LMS6', EV + '@', 'gq:principal1@LMS4', 'hook:teacher-quests@LMS3', 'hook:fleet@', 'hook:daybook-accountant@']) assert.ok(ids.includes(id), id);
+  assert.ok(!ids.includes('gq:principal1@') && !ids.includes('hook:fleet@LMS1'));
   const ev4 = r.rows.find((x) => x.questId === EV && x.campus === 'LMS4');
   assert.deepStrictEqual([ev4.title, ev4.state, ev4.progress, ev4.owner, ev4.go, ev4.stuck, ev4.assignable], ['🎉 Set up the Game Day (Chapter 1: The Keys)', 'open', null, null, 'principal/index.html', false, true]);
   assert.ok(ev4.groups.some((g) => g.value === 'role:Principal' && g.label === 'All principals at LMS 4'));
   assert.ok(ev4.assignees.some((p) => p.email === 'p4@example.org') && !ev4.assignees.some((p) => p.email === 'p3@example.org'));
   assert.deepStrictEqual(r.rows.find((x) => x.questId === 'tc' && x.campus === 'LMS3').groups, [{ value: 'role:Principal', label: 'All principals at LMS 3' }]);
-  assign(OWN, { quest: 'teacher-quests', campus: 'LMS3', assignee: 'role:Teacher' });
-  assert.deepStrictEqual(J(ctx.kingdomQuests_(OWN, {})).rows.find((x) => x.questId === 'teacher-quests' && x.campus === 'LMS3').owner, { email: 'role:teacher', name: 'All teachers' });
+  assign(OWN, { quest: 'hook:teacher-quests', campus: 'LMS3', assignee: 'role:Teacher' });
+  const tq = J(ctx.kingdomQuests_(OWN, {})).rows.find((x) => x.questId === 'hook:teacher-quests' && x.campus === 'LMS3');
+  assert.deepStrictEqual([tq.owner, tq.heldBy], [null, ['All teachers at LMS 3']], 'a group is a holder, not the owner');
   for (const c of [P4, COORD, T4]) assert.strictEqual(J(ctx.kingdomQuests_(c, {})).code, 'KINGDOM_NOT_YOURS');
   ctx.gameNow_ = () => new Date('2026-11-05T05:00:00Z');
   try { assert.ok(!J(ctx.kingdomQuests_(OWN, {})).rows.some((x) => x.questId === EV), 'a past event is not listed'); } finally { ctx.gameNow_ = () => NOW; }
+});
+
+const P4T = mk({ email: 'p4@example.org', roles: ['Principal', 'Teacher'], primaryRole: 'Principal', campusId: 'LMS4' }); // a Principal who also teaches
+const bulk = (c, b) => J(ctx.kingdomAssignBulk_(c, b));
+test('C1: role groups add up: Principals and Teachers both hold the same event at one school; a clear names its group', () => {
+  reset();
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Principal' }).success, true);
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher' }).success, true);
+  assert.deepStrictEqual([can(P4, EV), can(T4, EV), can(F4, EV)], [true, true, false]);
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher' }).unchanged, true, 'idempotent per group');
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'p4@example.org' }).success, true, 'a person too');
+  assert.strictEqual(can(T4, EV), true, 'the person does not replace the groups');
+  assert.strictEqual(assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher', clear: true }).success, true);
+  assert.deepStrictEqual([can(P4, EV), can(T4, EV)], [true, false], 'only the named group is cleared');
+});
+test('I1: a group matches the primary role only', () => {
+  reset();
+  assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'role:Teacher' });
+  assert.strictEqual(can(P4T, EV), false, 'a Principal who also teaches is not in the Teachers group');
+  assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'role:Principal' });
+  assert.strictEqual(tcMission(P4T).length, 1);
+});
+test("I2: viewAs previews a person only when they could be this school's Principal", () => {
+  reset();
+  assign(OWN, { quest: EV, campus: 'LMS4', assignee: 't4@example.org' });
+  assert.strictEqual(can(V4, EV), false, 'a Teacher holding it is not what the Principal sees');
+  assign(OWN, { quest: EV, campus: 'LMS4', assignee: 'p4@example.org' });
+  assert.strictEqual(can(V4, EV), true);
+});
+test('kingdomassignbulk: Owner only, each item checked, one lock, idempotent, audited per item', () => {
+  reset();
+  for (const c of [P4, COORD]) assert.strictEqual(bulk(c, { items: [{ quest: EV, campus: 'LMS4', assignee: 'role:Principal' }] }).code, 'KINGDOM_NO_RIGHT');
+  assert.strictEqual(bulk(OWN, { items: [] }).code, 'KINGDOM_BAD_INPUT');
+  assert.strictEqual(bulk(OWN, { items: 'x' }).code, 'KINGDOM_BAD_INPUT');
+  assert.strictEqual(bulk(OWN, { items: new Array(401).fill({ quest: EV, campus: 'LMS4', assignee: 'role:Principal' }) }).code, 'KINGDOM_BAD_INPUT', 'capped at 400');
+  assert.strictEqual(setup().length + audit().length, 0, 'nothing written for a refused batch');
+  events.length = 0;
+  const items = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map((c) => ({ quest: EV, campus: c, assignee: 'role:Teacher' }))
+    .concat([{ quest: EV, campus: 'LMS4', assignee: 'role:Principal' }, { quest: EV, campus: 'LMS4', assignee: 'role:Principal' },
+      { quest: 'nope', campus: 'LMS4', assignee: 'role:Teacher' }, { quest: EV, campus: 'LMS9', assignee: 'role:Teacher' },
+      { quest: EV, campus: 'LMS4', assignee: 'p3@example.org' }, { quest: EV, campus: 'LMS4', assignee: 'role:Owner' }, { quest: EV, campus: 'LMS4', clear: true, assignee: 'role:Teacher' }]);
+  const r = bulk(OWN, { items });
+  assert.deepStrictEqual([r.success, r.done, r.unchanged], [true, 7, 2], 'the repeat and the clear-as-assign in the batch are unchanged');
+  assert.deepStrictEqual(r.refused.map((x) => x.code), ['KINGDOM_BAD_QUEST', 'KINGDOM_BAD_CAMPUS', 'KINGDOM_NOT_ELIGIBLE', 'KINGDOM_NOT_ELIGIBLE']);
+  assert.strictEqual(events.filter((e) => e === 'lock').length, 1, 'one lock for the batch');
+  assert.strictEqual(setup().length, 7, 'one row per new grant');
+  assert.strictEqual(audit().length, items.length, 'an audit row per item');
+  assert.deepStrictEqual([can(T3, EV), can(T4, EV), can(P4, EV), can(P3, EV)], [true, true, true, false]);
+  const again = bulk(OWN, { items: items.slice(0, 6) });
+  assert.deepStrictEqual([again.done, again.unchanged, setup().length], [0, 6, 7], 'idempotent');
+  const viaPost = (() => { const saved = ctx.gameVerifyCaller_; ctx.gameVerifyCaller_ = () => J(OWN); try { return JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'kingdomassignbulk', idToken: 't', items: items.slice(0, 1) }) } }).body); } finally { ctx.gameVerifyCaller_ = saved; } })();
+  assert.deepStrictEqual([viaPost.success, viaPost.unchanged], [true, 1], 'dispatched by doPost');
+  assert.strictEqual(J(ctx.gameDispatch_(OWN, 'kingdomassignbulk', {})).error, 'Unknown action', 'never over GET');
+});
+test('setupget lists only assigned quests while the gate is on', () => {
+  reset();
+  const list = (c) => { ctx.CQ_MEMO = null; return J(ctx.cqGetAction_(c, {})).quests.map((q) => q.id); };
+  assert.ok(!list(P4).includes('tc'));
+  assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'role:Principal' });
+  assert.ok(list(P4).includes('tc'));
 });
 
 let fail = 0;

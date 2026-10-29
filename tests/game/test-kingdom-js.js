@@ -168,10 +168,28 @@ assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give
 // the setup period: role groups first in the pick list, the current holder left out; the All schools result line
 assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [{ email: 'a@x.org', name: 'A' }] })))),
   [{ email: 'role:Teacher', name: 'All teachers at LMS 3', group: true }, { email: 'a@x.org', name: 'A' }]);
-assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ owner: { email: 'role:teacher', name: 'All teachers' }, groups: [{ value: 'role:Teacher', label: 'x' }], assignees: [] })))), [], 'the holding group is left out');
-assert.strictEqual(K.bulkText(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map((c) => ({ campus: c, ok: true }))), 'Given to 6 schools.');
-assert.strictEqual(K.bulkText([{ campus: 'LMS1', ok: true }, { campus: 'LMS2', ok: false }, { campus: 'LMS5', ok: false }]), "Given to 1 school. Didn't go through at LMS 2, LMS 5. Try those again.");
-assert.strictEqual(K.bulkText([{ campus: 'LMS1', ok: false }]), "That didn't go through at any school. Nothing was changed. Please try again.");
+// bulk: each open assignable row's groups at its own school / HQ (schools without a row get nothing); Game Day = event rows only
+const BR = [
+  QR({ questId: 'event:gd', campus: 'LMS3', assignable: true, groups: [{ value: 'role:Principal' }, { value: 'role:Teacher' }] }),
+  QR({ questId: 'event:gd', campus: '', assignable: true, groups: [{ value: 'role:Coordinator' }] }),
+  QR({ questId: 'p1', campus: 'LMS3', assignable: true, groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p1', campus: 'LMS4', assignable: true, state: 'done', groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p2', campus: 'LMS4', assignable: false, groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p3', campus: 'LMS4', assignable: true, groups: [] })];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.bulkItems(BR, false))), [
+  { quest: 'event:gd', campus: 'LMS3', assignee: 'role:Principal' }, { quest: 'event:gd', campus: 'LMS3', assignee: 'role:Teacher' },
+  { quest: 'event:gd', campus: '', assignee: 'role:Coordinator' }, { quest: 'p1', campus: 'LMS3', assignee: 'role:Principal' }]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.bulkItems(BR, true))).map((x) => x.quest + '@' + x.campus + '>' + x.assignee),
+  ['event:gd@LMS3>role:Principal', 'event:gd@LMS3>role:Teacher', 'event:gd@>role:Coordinator']);
+assert.strictEqual(K.bulkSummary(K.bulkItems(BR, false)), 'Give 2 quests to their roles at 1 school + HQ?');
+assert.strictEqual(K.bulkSummary([{ quest: 'a', campus: '' }]), 'Give 1 quest to their roles at HQ?');
+assert.strictEqual(K.bulkResult({ done: 6, unchanged: 0, refused: [] }), 'Given: 6. Already had it: 0.');
+assert.strictEqual(K.bulkResult({ done: 1, unchanged: 2, refused: [{ quest: 'p1', campus: 'LMS2' }] }), 'Given: 1. Already had it: 2. Not given: 1 (p1 at LMS 2).');
+// holders: a person and the groups; a held group drops out of the pick list; a group's confirm says nobody loses it
+assert.strictEqual(K.questHolder(QR({ heldBy: ['All teachers at LMS 3'] })), 'All teachers at LMS 3');
+assert.strictEqual(K.questHolder(QR({ owner: { email: 'z@x.org', name: 'Zed' }, heldBy: ['All teachers at LMS 3'] })), 'Zed, All teachers at LMS 3');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ heldBy: ['All teachers at LMS 3'], groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [] })))), []);
+assert.ok(/Nobody else loses it/.test(K.reassignText(QR({}), { email: 'role:Teacher', name: 'All teachers at LMS 3', group: true })));
 assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
 // 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies
 assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');

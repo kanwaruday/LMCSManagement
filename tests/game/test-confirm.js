@@ -26,6 +26,7 @@ const ctx = {
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 load('game-confirm.gs'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs');
+ctx.questGateKeep_ = () => null; // the setup-period gate (game-kingdom.gs) is off here: tests/game/test-quest-gate.js covers it
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-11-10T05:00:00Z');
 ctx.gameNow_ = () => NOW;

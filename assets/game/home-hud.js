@@ -16,7 +16,7 @@ var LMCSHomeHud = (function () {
     appointments: { label: 'Appointments', e: 'appointments' }, routes: { label: 'Routes', e: 'bus' }
   };
   var KINDS = ['quest', 'count', 'setup'];
-  var COPY = { clear: 'No quests yet. Your quests will appear here.', town: 'No quests yet. Your quests will appear here.', daily: 'No daily missions today.', growth: 'No setup quests open.',
+  var COPY = { none: 'No quests yet. Your quests will appear here.', done: 'All done for now', daily: 'No daily missions today.', growth: 'No setup quests open.',
     appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes' };
 
   // "Day closes in 3h 10m" (IST), or "Day closed" once 15:30 has passed
@@ -206,7 +206,9 @@ var LMCSHomeHud = (function () {
       var s = first((q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; }));
       town.push(row(String(q.title || 'Quest'), s ? LMCSGame.safeHref(s.go, root) : null, 'today'));
     });
-    el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, COPY.town));
+    // nothing open: "All done for now" when the person holds quests (all complete), "No quests yet" when none is assigned to them
+    var questLine = (t.quests || []).length ? COPY.done : COPY.none;
+    el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, questLine));
     var wild = row(COPY.routes, null); wild.onclick = function () { S.drawer(false); S.o.world(true); }; // the World shows this school's routes
     el.panes[1].textContent = ''; el.panes[1].appendChild(list([wild], ''));
     var day = (t.missions || []).filter(function (m) { return !m.gone; }).map(function (m) {
@@ -214,7 +216,7 @@ var LMCSHomeHud = (function () {
       return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? 'Done' : 'To do')]);
     });
     el.panes[2].textContent = ''; el.panes[2].appendChild(list(day, COPY.daily));
-    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : COPY.clear, total = n.missions + n.quests;
+    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : questLine, total = n.missions + n.quests;
     el.strip.hidden = false; el.strip.querySelector('.hh-strip-t').textContent = line;
     setBadge(el.strip.lastChild, total); setLabel(el.strip, 'Quests: ' + line, total);
     bubbles();
