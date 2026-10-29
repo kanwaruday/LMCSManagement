@@ -52,6 +52,7 @@ var LMCSEvent = (function () {
     if (document.getElementById('ev-css')) return;
     var css = '.ev-card{background:var(--gb-paper,#fff);color:var(--gb-ink,#1b2430);border:2px solid var(--gb-gold,#e0a526);border-radius:16px;padding:12px 14px;margin:0 0 14px;text-align:left}' +
       '.ev-card h2{font-size:19px;line-height:1.25;margin:0 0 8px}' +
+      '.ev-story{margin:0 0 10px;font-size:15.5px;line-height:1.45}.ev-story b{display:block;font-size:13px;color:var(--gb-gold-ink,#7a5200)}' +
       '.ev-say{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:var(--gb-gold-soft,#fbefd3);border-top:4px solid var(--gb-red,#ce0000);font-size:15.5px;line-height:1.4}' +
       '.ev-say b{display:block;font-size:12.5px;color:var(--gb-gold-ink,#7a5200)}' +
       '.ev-bar{display:block;height:10px;border-radius:6px;background:var(--gb-line,#d9d4ca);overflow:hidden}.ev-bar>i{display:block;height:100%;background:var(--gb-gold,#e0a526)}.ev-bar.ev-ok>i{background:var(--gb-ok,#167034)}' +
@@ -134,6 +135,7 @@ var LMCSEvent = (function () {
     var ev = S.ev, allDone = ev.finished === true || (ev.total > 0 && ev.done >= ev.total), id = 'ev-h-' + ev.id;
     var kids = [
       h('h2', { id: id }, [ev.emoji ? h('span', { class: 'ev-e', 'aria-hidden': 'true' }, ev.emoji) : null, ev.name]),
+      ev.story ? h('p', { class: 'ev-story' }, [h('b', {}, 'Chapter ' + ev.story.chapter + ' of ' + ev.story.of + ': ' + ev.story.title), ' ' + ev.story.intro]) : null,
       ev.buddy ? h('p', { class: 'ev-say' }, [h('b', {}, 'Buddy'), ev.buddy]) : null,
       h('div', { class: 'ev-meta' }, [h('span', {}, 'Your steps'), h('span', {}, progressText(ev))]),
       bar(ev.total ? 100 * ev.done / ev.total : 0, allDone, 'Your steps: ' + progressText(ev)),

@@ -295,6 +295,8 @@ function eventGet_(caller, params) {
       }),
       done: mine.done, total: mine.total, finished: mine.finished, buddy: eventBuddy_(ev, mine.done, mine.total, mine.finished),
       school: own ? { pct: own.pct, level: own.level } : null, network: complete ? sh.sum.network : null };
+    const st = ev.story;
+    if (st && st.intro && typeof st.intro[me.role] === 'string') out.story = { chapter: +st.chapter || 1, of: +st.of || 1, title: String(st.title || ''), intro: mine.finished && st.done ? String(st.done) : st.intro[me.role] };
     if (me.role === 'Principal' && own) { // the Principal's own teachers only
       const t = sh.names[me.campusId].teachers;
       out.teachersIn = { n: t.n, of: t.of, notIn: t.notIn };

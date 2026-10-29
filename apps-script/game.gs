@@ -139,6 +139,14 @@ function gameConfigDefaults_() {
       buddy: { welcome: 'Big day! A few small steps and your school is in the game.', cheer25: 'Nice start. One step at a time is all it takes.',
         cheer50: 'Halfway there. Your school can feel it.', cheer75: 'Nearly done. Just a little more.',
         done: 'All done. Shabash! Your school is in the game.', network: '{n} of {of} schools are at {goal}%. Every tick helps HQ unlock the reward.' },
+      // the "Open the School" campaign (Uday, 29 Oct): this event is its chapter 1; intro by role, done replaces Buddy's done line
+      story: { chapter: 1, of: 8, title: 'The Keys', intro: {
+        Principal: "The school is in a muddle and the keys are scattered. Open Today and walk your rooms: your school's doors start to answer to you.",
+        Coordinator: 'Papers are piled across six schools. Your first follow-up finds the first lost key, and the buses and the books start to answer you.',
+        FeeClerk: 'The till has no starting count yet. Send your starting data and practise one entry: the cash box gets its first true key.',
+        Teacher: 'Every class needs its key. Sign in and look at your classes and chapter quests: your room is ready to open.',
+        Staff: "Your key is waiting at the gate. Sign in and check your requests: that's your part of opening the school today." },
+        done: 'Chapter 1 done: you hold your keys. Next, Chapter 2: The Doors.' },
       steps: {
         Principal: [
           { id: 'open', emoji: '🗓️', label: 'Open Today', go: 'principal/index.html', check: 'opened' },

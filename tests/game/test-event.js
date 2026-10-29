@@ -172,6 +172,7 @@ assert.deepStrictEqual(r.event.steps.map((s) => [s.id, s.done, s.self]), [['open
 assert.deepStrictEqual([r.event.done, r.event.total], [5, 5]);
 assert.strictEqual(r.event.buddy, evDefault.buddy.done);
 assert.strictEqual(r.event.finished, true);
+assert.deepStrictEqual(r.event.story, { chapter: 1, of: 8, title: 'The Keys', intro: evDefault.story.done }, 'a finished chapter shows the done line');
 // LMS4 expected: p4, c4, fc4, t4a (allowlist) + t4b, s4, dup (Employee Master) = 7; finished: p4, t4a; fc4's starting data can't be told for a Principal
 assert.deepStrictEqual(r.event.school, { pct: 28, level: 1 });
 assert.deepStrictEqual(r.event.teachersIn, { n: 1, of: 3, notIn: ['Neha Test', 'Mohan Test'] });
@@ -183,6 +184,7 @@ const raw = JSON.stringify(r);
 // another campus's Principal: their own numbers and teachers only
 r = get(P3);
 assert.deepStrictEqual(r.event.school, { pct: 0, level: 0 });
+assert.ok(r.event.finished || r.event.story.intro === evDefault.story.intro.Principal, 'an unfinished Principal reads the Principal intro');
 assert.deepStrictEqual(r.event.teachersIn, { n: 0, of: 1, notIn: ['Tara Test'] });
 ['Neha', 'Mohan', 'Asha', 'LMS4'].forEach((s) => assert.ok(JSON.stringify(r).indexOf(s) === -1, 'P3 never sees ' + s));
 // a Teacher: no teachersIn, no names at all
