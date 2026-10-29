@@ -9,7 +9,8 @@
 // Other homes (staff-home/: IT Teacher, PTI, Non-Teaching) pass optional hooks; the Principal passes none and keeps the defaults:
 //   sources: { key: { label, e } } in place of SOURCES (built-in keys today/routes/appointments keep their behaviour; any other key opens content(key))
 //   hotspots: { entrance, hotspots } in place of LMCSHomeHotspots[campus];  labels: words in place of LABELS (and labels.copy over COPY)
-//   role: the profile's Role line (default 'Principal');  noQuests: text shown instead of quests (quests are owner-assigned; the gate isn't live)
+//   role: the profile's Role line (default 'Principal');  noQuests: text shown instead of quests (quests are owner-assigned; the gate isn't live),
+//   noQuestsLine: its short form for the one-line quest strip (default noQuests)
 //   appt may be left out (no appointments on that home).
 // Every piece of text reaches the DOM through text nodes (LMCSGame.ui.h), never as parsed HTML.
 var LMCSHomeHud = (function () {
@@ -224,7 +225,7 @@ var LMCSHomeHud = (function () {
       return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? S.L.done : S.L.todo)]);
     });
     el.panes[2].textContent = ''; el.panes[2].appendChild(list(day, S.C.daily));
-    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : S.o.noQuests || S.C.clear, total = n.missions + (S.o.noQuests ? 0 : n.quests);
+    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : S.o.noQuestsLine || S.o.noQuests || S.C.clear, total = n.missions + (S.o.noQuests ? 0 : n.quests);
     el.strip.hidden = false; el.strip.querySelector('.hh-strip-t').textContent = line;
     setBadge(el.strip.lastChild, total); setLabel(el.strip, S.L.questsLine + ': ' + line, total);
     bubbles();

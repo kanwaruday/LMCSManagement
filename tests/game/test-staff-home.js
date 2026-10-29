@@ -71,12 +71,18 @@ for (const k of Object.keys(S.ROLES)) {
 }
 assert.ok(!/@|\b[A-Z]{3}\/\d/.test(read('staff-home/roles.js').replace(/@\w+/g, '')), 'no emails or employee codes in the config');
 assert.ok(hindiFirst(S.NO_QUESTS) && /No quests yet\. Your quests will appear here\./.test(S.NO_QUESTS), 'the calm empty state for quests');
+assert.strictEqual(S.NO_QUESTS_LINE, 'अभी कोई क्वेस्ट नहीं · No quests yet', 'the strip carries the short line (the sentence stays in the Quests sheet)');
+assert.strictEqual(E.get('cctv'), '📸', 'CCTV reads as a camera, not an eye (📹 is the driver pump video: one emoji per concept)');
+assert.strictEqual(E.get('mail'), '✉️', 'letters are mail (post read as a job post)'); assert.strictEqual(E.get('post'), '');
+// every spot is at least 44px to tap at 375px: a box face is span x 40 x cos30 px at 600px; staff pages draw at >= 480px (x 0.8)
+for (const k of Object.keys(S.ROLES)) for (const b of S.ROLES[k].building.blocks) for (const r of b.rooms) assert.ok(r.span * 40 * Math.cos(Math.PI / 6) * 0.8 >= 44, k + ': ' + r.id + ' is wide enough to tap');
 for (const [k, v] of Object.entries(S.LABELS)) if (typeof v === 'string' && k !== 'go') assert.ok(hindiFirst(v), 'HUD label Hindi first: ' + k);
 
 // ── the page ──
 const page = read('staff-home/index.html');
 assert.ok(/<div id="hh-stash" hidden>[\s\S]*id="game-root"[\s\S]*id="signout-link"[\s\S]*<\/div>\s*<div class="hh-scene"/.test(page), 'Today and sign out wait in the stash: nothing inline on the scene');
 assert.ok(!/class="gb-rooms"|gb-panels/.test(page), 'no room lists or panels on the scene');
+assert.ok(/noQuestsLine: SH\.NO_QUESTS_LINE/.test(page) && /#school-said \{ margin:4px 64px 0; \}/.test(page), 'short strip line; the hint keeps clear of the floating Buddy');
 assert.ok(/noQuests: SH\.NO_QUESTS/.test(page) && /sources: SH\.sources\(ROLE\)/.test(page) && /hotspots: r\.hotspots/.test(page) && /labels: SH\.LABELS/.test(page), 'the HUD gets the role config');
 assert.ok(/LMCS\.requireSession\('#gate-slot'\)\.then\(enter\)/.test(page), 'the staff Google sign-in gate');
 assert.ok(/SH\.gate\(/.test(page) && /refuse\(pick\.refuse\)/.test(page), 'the role gate decides, and refuses politely');

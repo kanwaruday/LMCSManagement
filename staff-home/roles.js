@@ -9,7 +9,8 @@
 //
 // Spot sheets say what each spot is for and what will arrive there; nothing here is personal data. Labels are Hindi first, then English.
 var LMCSStaffHome = (function () {
-  var NO_QUESTS = 'अभी कोई क्वेस्ट नहीं। आपकी क्वेस्ट यहाँ दिखेंगी · No quests yet. Your quests will appear here.';
+  var NO_QUESTS = 'अभी कोई क्वेस्ट नहीं। आपकी क्वेस्ट यहाँ दिखेंगी · No quests yet. Your quests will appear here.'; // inside the Quests sheet
+  var NO_QUESTS_LINE = 'अभी कोई क्वेस्ट नहीं · No quests yet'; // the one-line quest strip (the full sentence doesn't fit at 375px)
   var SOON = 'जल्द: आपकी चेकलिस्ट यहाँ आएगी · Coming soon: your checklist for this spot will appear here.';
   // the HUD's words (assets/game/home-hud.js LABELS), Hindi first
   var LABELS = { town: 'स्कूल · Town', wild: 'बाहर · Wilderness', daily: 'रोज़ · Daily', tasks: 'काम · Tasks', openTasks: 'काम खोलें · Open tasks',
@@ -64,14 +65,14 @@ var LMCSStaffHome = (function () {
         sportsday: spot('खेल दिवस · Sports day', 'sportsDay', 'खेल दिवस और प्रतियोगिताएँ · Sports day and competitions.', ['अगली प्रतियोगिता · The next competition'])
       },
       building: { name: 'Sports ground and PT room', blocks: [
-        { id: 'ptblock', name: 'PT room', x: 0, y: 0, w: 3, d: 2, floors: 1, rooms: [
-          { id: 'kit', name: 'PT रूम · PT room', short: 'PT रूम', type: 'store', e: 'sportsKit', host: 'kit', face: 'front', floor: 0, at: 0, span: 2 },
-          { id: 'staff', name: 'स्टाफ़ रूम · Staff room', short: 'स्टाफ़', type: 'staff', host: 'requests', face: 'front', floor: 0, at: 2, span: 1 }
+        { id: 'ptblock', name: 'PT room', x: 0, y: 0, w: 4.4, d: 2.2, floors: 1, rooms: [
+          { id: 'kit', name: 'PT रूम · PT room', short: 'PT रूम', type: 'store', e: 'sportsKit', host: 'kit', face: 'front', floor: 0, at: 0, span: 2.6 },
+          { id: 'staff', name: 'स्टाफ़ रूम · Staff room', short: 'स्टाफ़', type: 'staff', host: 'requests', face: 'front', floor: 0, at: 2.6, span: 1.8 }
         ] }
       ], grounds: [
-        { id: 'field', name: 'खेल का मैदान · Sports ground', short: 'मैदान · Ground', type: 'ground', host: 'ground', x: 0, y: 2.6, w: 5, d: 3 },
-        { id: 'assembly', name: 'प्रार्थना सभा · Assembly', short: 'सभा', type: 'ground', e: 'assembly', host: 'assembly', x: 3.4, y: -0.4, w: 2.2, d: 2.4 },
-        { id: 'track', name: 'खेल दिवस · Sports day', short: 'खेल दिवस', type: 'ground', e: 'sportsDay', host: 'sportsday', x: 5.4, y: 2.6, w: 2, d: 3 }
+        { id: 'field', name: 'खेल का मैदान · Sports ground', short: 'मैदान · Ground', type: 'ground', host: 'ground', x: 0, y: 2.8, w: 4.6, d: 2.6 },
+        { id: 'assembly', name: 'प्रार्थना सभा · Assembly', short: 'सभा', type: 'ground', e: 'assembly', host: 'assembly', x: 4.8, y: -0.2, w: 1.8, d: 2.2 },
+        { id: 'track', name: 'खेल दिवस · Sports day', short: 'खेल दिवस', type: 'ground', e: 'sportsDay', host: 'sportsday', x: 4.8, y: 2.8, w: 1.8, d: 2.6 }
       ] },
       hotspots: { entrance: 'track', hotspots: [{ room: 'kit', kind: 'quest', source: 'today' }] }
     },
@@ -143,6 +144,6 @@ var LMCSStaffHome = (function () {
     return { refuse: 'unknown' };
   }
 
-  return { ROLES: ROLES, COMMON: COMMON, LABELS: LABELS, NO_QUESTS: NO_QUESTS, SOON: SOON, REFUSE: REFUSE, DEPT_ROLE: DEPT_ROLE, sources: sources, sheet: sheet, gate: gate };
+  return { ROLES: ROLES, COMMON: COMMON, LABELS: LABELS, NO_QUESTS: NO_QUESTS, NO_QUESTS_LINE: NO_QUESTS_LINE, SOON: SOON, REFUSE: REFUSE, DEPT_ROLE: DEPT_ROLE, sources: sources, sheet: sheet, gate: gate };
 })();
 if (typeof module !== 'undefined') module.exports = LMCSStaffHome;

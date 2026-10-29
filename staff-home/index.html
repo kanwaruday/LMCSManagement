@@ -29,6 +29,11 @@
     @media (max-width:959px) { body.hh .hh-bottom { padding-right:52px; } }
     /* a staff building is smaller than a school: draw it a little smaller on phones (base.css gives a school 600px), still pannable */
     body.hh #school-3d > .sb { min-width:480px; max-width:720px; margin:0 auto; }
+    /* each spot's emoji and its two-line-tall Hindi label (matras sit high): a smaller emoji and the label a little lower, so they never touch */
+    #school-3d .sb-e { font-size:14px; }
+    #school-3d .sb-t { transform:translateY(4px); }
+    /* the hint wraps clear of the floating Buddy (bottom right) on phones */
+    @media (max-width:959px) { body.hh #school-said { margin:4px 64px 0; } }
   </style>
 </head>
 <body class="gb gb-app">
@@ -78,12 +83,12 @@
   <script src="../assets/auth.js?v=4ad1f1b6"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
   <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/emoji.js?v=63bc0a65"></script>
+  <script src="../assets/game/emoji.js?v=833e17cb"></script>
   <script src="../assets/game/school-building.js?v=ec79c3ff"></script>
-  <script src="../assets/game/home-hud.js?v=29519cee"></script>
+  <script src="../assets/game/home-hud.js?v=467b11a4"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../coordinator/route-map.js?v=5cdc9703"></script>
-  <script src="./roles.js?v=e5205cb9"></script>
+  <script src="./roles.js?v=69b1b10f"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as every home
     const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
@@ -201,7 +206,7 @@
       LMCSHomeHud.mount({ session: view, campus: pick.campus, root: '../', scene: document.getElementById('hh-scene'), bubbles: document.getElementById('hh-bubbles'),
         building: document.getElementById('school-3d'), stash: document.getElementById('hh-stash'), gameRoot: document.getElementById('game-root'),
         evSlot: document.querySelector('.gb-next-slot'), signout: document.getElementById('signout-link'), switchEl: document.getElementById('hh-switch'),
-        world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title, noQuests: SH.NO_QUESTS });
+        world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title, noQuests: SH.NO_QUESTS, noQuestsLine: SH.NO_QUESTS_LINE });
       wireSchool(); drawSchool();
       if (pick.preview) { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [], quests: [], windows: [] } })); return; }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
