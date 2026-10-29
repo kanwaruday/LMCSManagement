@@ -172,7 +172,7 @@ function gameConfigDefaults_() {
           { id: 'classes', emoji: '✏️', label: 'Check My classes', go: 'teacher/index.html', check: 'self' } ],
         Staff: [
           { id: 'open', emoji: '🗓️', label: 'Sign in', go: 'teacher/index.html', check: 'opened' },
-          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html', check: 'self' } ],
+          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html#panel-requests', check: 'self' } ],
       },
     }],
   };

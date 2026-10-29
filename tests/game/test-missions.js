@@ -52,7 +52,7 @@ assert.strictEqual(ssm[0].core, true);                                   // from
 assert.strictEqual(ssm[0].done, false);
 assert.deepStrictEqual(J(ssm[0].progress), { done: 0, total: 1 });       // needed 4 over 5 days
 assert.strictEqual(ssm[0].id, 'ss_pace:LMS4:2026-10-27');                // day-scoped: tomorrow's target is a new mission (C1)
-assert.strictEqual(ssm[0].go, 'principals-daily-reporting/index.html');
+assert.strictEqual(ssm[0].go, 'principal/support-sessions.html');
 assert.strictEqual(ssm[0].title, 'Submit 1 SS evaluation today');      // verb first, no speed language (R30)
 assert.strictEqual(ssm[0].why, '4 still needed for October');
 assert.strictEqual(ctx.gameSsSubmittedBy_(src.ss, 'p@lms.org.in', '2026-10-27'), 0);

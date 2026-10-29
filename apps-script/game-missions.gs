@@ -17,6 +17,7 @@ var GAME_FOLLOWUP_SKIP = GAME_FOLLOWUP_SKIP || {}; // { module: [follow-up domai
 const GAME_DAY_MS = 86400000;
 const GAME_DONE_LOOKBACK_DAYS = 2;    // a finished (or gone) record stays visible for today and yesterday: yesterday's day is finalized this morning
 const GAME_PORTAL_PDR = 'principals-daily-reporting/index.html';
+const GAME_PORTAL_SS = 'principal/support-sessions.html';
 const GAME_PORTAL_FOLLOWUPS = 'coordinator/followups/index.html';
 
 // ── Copy: one plain line per kind, Buddy's voice (work/LMS Mascot Voice Guide.md) ──
@@ -171,7 +172,7 @@ function gamePrincipalMissions_(caller, src, cfg, now) {
     if (target > 0) {
       const done = times.length >= target;
       out.push(gameMission_('ss_pace', campus + ':' + dayKey, { // day-scoped, like pdr_report: tomorrow's target is a new mission
-        title: gameTitle_('ss_pace', { needed: needed, target: target }), why: needed + ' still needed for ' + GAME_MONTHS[+dayKey.slice(5, 7) - 1], owner: mine, campus: campus, go: go,
+        title: gameTitle_('ss_pace', { needed: needed, target: target }), why: needed + ' still needed for ' + GAME_MONTHS[+dayKey.slice(5, 7) - 1], owner: mine, campus: campus, go: GAME_PORTAL_SS,
         core: gameIsCore_(cfg, role, 'ss_pace'), done: done, doneAt: done ? times[target - 1] : null, doneBy: done ? mine : null,
         progress: { done: times.length, total: target },
       }));
