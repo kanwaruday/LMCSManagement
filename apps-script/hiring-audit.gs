@@ -12,7 +12,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 // The Interview Report form (edit id from Uday). Its public form can't
-// be read without sign-in, but FormApp can, running as Uday.
+// be read without sign-in, but FormApp can, running as Uday. The form is
+// retired (29 Oct 2026, hiring-form.gs); this audit only reads it, for the
+// reports already filed through it.
 const HIRA_IR_FORM_ID = '1SV_21tBKgPwjX0yyUN-5_dxPQRuF7wJuN9HBW-lnVZc';
 // Role codes the Approvals "Role Level" dropdown offers (principals-daily-reporting/index.html, #aprHiringRoleLevel).
 const HIRA_ROLE_CODES = ['NTT', 'PRT', 'TGT', 'PGT', 'COMPUTER', 'PTI', 'PTISR', 'ACTIVITY', 'DRAWING', 'LIBRARIAN', 'DRIVER', 'HELPER', 'SWEEPER', 'TECHNICIAN', 'GARDENER', 'CLERK'];

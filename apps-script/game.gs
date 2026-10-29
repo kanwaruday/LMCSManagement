@@ -93,10 +93,11 @@ function gameConfigDefaults_() {
     approvalWaitDays: 3,
     uniform: { summerFrom: '2027-05-03', winterFrom: '2026-10-26', festivals: [] },
     trackSuitDays: {},
-    principalIssuesReady: false,
+    principalIssuesReady: true, // principal/issues.html closes an issue through principalissueresolve (coordinator-principal.gs)
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
-    approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
-    recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
+    approvalsGo: 'coordinator/systems/index.html#approvals', // approval_wait (the Owner)
+    recommendGo: 'coordinator/hq.html', // approval_recommend (+ '#d=<approval id>', which opens that request's recommend form) and the Coordinator quest's recommend step
+    recommendationsReady: true, // coordinator/hq.html writes coordinatorrecommend, which creates the Recommendations tab on the first one
     // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
     // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).
     // policeVerificationYears: null = no police-verification renewal (Ruling O1); rollCallFrom: no roll-call mission for a day before it (a PLACEHOLDER for the deploy date: set it when the Game backend ships)
@@ -169,7 +170,7 @@ function gameConfigDefaults_() {
           { id: 'classes', emoji: '✏️', label: 'Check My classes', go: 'teacher/index.html', check: 'self' } ],
         Staff: [
           { id: 'open', emoji: '🗓️', label: 'Sign in', go: 'teacher/index.html', check: 'opened' },
-          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html', check: 'self' } ],
+          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html#panel-requests', check: 'self' } ],
       },
     }],
   };

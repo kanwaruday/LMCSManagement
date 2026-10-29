@@ -50,9 +50,10 @@ function gameQuestGo_(step, cfg) {
     case 'decision': return '';
     case 'pdr_issue': return cfg.principalIssuesGo;
     case 'issue_action': return 'coordinator/systems/index.html';
-    case 'approval_recommend': return gameApprovalsGo_(cfg);
+    case 'approval_recommend': return gameRecommendGo_(cfg);
     case 'followup': return GAME_PORTAL_FOLLOWUPS;
-    default: return GAME_PORTAL_PDR;
+    case 'ss_submit': return GAME_PORTAL_SS;
+    default: return GAME_PORTAL_PDR_REPORT;
   }
 }
 

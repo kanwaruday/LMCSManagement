@@ -122,8 +122,8 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.strictEqual(a.board, undefined);
   assert.strictEqual(a.quests[0].questId, 'principal1');
   assert.deepStrictEqual(a.toursSeen, []);
-  // PDR ssdashboard with the caller's token, cached per (url, email)
-  assert.strictEqual(t.fetches.length, 1);
+  // PDR ssdashboard with the caller's token, cached per (url, email); then the Coordinator backend's daily-report issues (principalIssuesReady)
+  assert.deepStrictEqual(t.fetches.map((f) => /action=(\w+)/.exec(f.url)[1]), ['ssdashboard', 'principalissues']);
   assert.ok(t.fetches[0].url.indexOf('AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec?action=ssdashboard&idToken=tok') !== -1);
   assert.strictEqual(t.fetches[0].o.muteHttpExceptions, true);
 
@@ -131,7 +131,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   assert.strictEqual(b.firstLoadToday, false);
   assert.deepStrictEqual(b.missions.map((m) => m.id), ids);
   assert.strictEqual(t.game['Game Daily'].rows.length, 2); // no second snapshot
-  assert.strictEqual(t.fetches.length, 1);                 // served from the cache
+  assert.strictEqual(t.fetches.length, 2);                 // served from the cache
 
   // a mission finished later in the day stays in the set, done; next moves on
   t.books['1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y']['Daily Reports'].rows.push(['2026-11-05T06:00:00Z', '2026-11-05', 'LMS4']);
@@ -150,7 +150,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   const y = t.game['Game Daily'].rows[1];
   assert.strictEqual(y[6], '');  // Finalized left blank: retried next load
   assert.strictEqual(y[7], '');
-  assert.deepStrictEqual(Object.keys(t.cache), []); // a failure is never cached
+  assert.ok(Object.keys(t.cache).every((k) => Buffer.from(k.slice('gamefetch_'.length), 'base64').toString().indexOf('ssdashboard') === -1)); // a failure is never cached (the issues fetch that worked is)
   // R24: no snapshot while a source is down; the live list is shown, without the greeting
   assert.strictEqual(a.firstLoadToday, false);
   assert.strictEqual(t.game['Game Daily'].rows.length, 2);
@@ -169,7 +169,7 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
 
 // ── R23: ssdashboard is cached as a trimmed projection, so a big response still fits the 100 KB cap ──
 {
-  const t = setup();
+  const t = setup({ config: [['principalIssuesReady', 'false']] }); // ssdashboard is the only fetch, so the one cache entry is its
   const hist = (who, at) => ({ timestamp: at, evaluatorEmail: who, employeeName: 'Somebody Long Name', remarks: 'x'.repeat(200), scores: [1, 2, 3, 4, 5] });
   const roster = [];
   for (let i = 0; i < 400; i++) {
@@ -352,7 +352,8 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   // Coordinator: always in, missions only for pilot campuses; issue actions feed the quest; the step is recorded once
   const t = setup();
   const a = t.call(COORD, 'gametoday');
-  assert.deepStrictEqual(a.missions.map((m) => m.id), ['followup:t1']); // t2 is at LMS2, outside the Coordinator pilot
+  assert.deepStrictEqual(a.missions.map((m) => m.id), ['approval_recommend:A2', 'followup:t1']); // t2 is at LMS2, outside the Coordinator pilot; A2 has waited 3+ days
+  assert.strictEqual(a.missions[0].go, 'coordinator/hq.html#d=A2'); // opens that request's recommend form on the Coordinator HQ
   assert.deepStrictEqual(a.board.map((b) => b.scopeId + ':' + b.state), ['LMS4:waiting', 'LMS5:waiting', 'LMS6:waiting']);
   const q = a.quests[0];
   assert.strictEqual(q.questId, 'coordinator1');

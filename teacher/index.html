@@ -173,7 +173,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=6c2f4a9b"></script>
+<script src="../assets/auth.js?v=60fcf78a"></script>
 <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
 <script src="../assets/game/game.js?v=283ee731"></script>
 <script>
@@ -459,6 +459,12 @@ async function pdrGet_(action, params) {
 }
 
 // ── Tab navigation ──────────────────────────────────────────────────
+// #panel-<tab> in the address (a game mission's link, e.g. teacher/index.html#panel-requests) opens that tab, if this person has it
+function openTabFromHash_() {
+  var m = /^#panel-([a-z]+)$/.exec(location.hash || ''), btn = m && document.querySelector('.nav-btn[data-tab="' + m[1] + '"]');
+  if (btn && btn.style.display !== 'none') goTab(m[1]);
+}
+
 function goTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
@@ -1095,11 +1101,15 @@ function init() {
     ['rankCard', 'timetableCard'].forEach(function (id) { document.getElementById(id).style.display = 'none'; });
     document.querySelectorAll('[data-tab="tags"], .quick-link[onclick*="\'tags\'"]').forEach(function (el) { el.style.display = 'none'; });
     document.getElementById('hdrSub').textContent = 'Your requests and evaluations';
+    openTabFromHash_();
+    window.addEventListener('hashchange', openTabFromHash_);
     return;
   }
   loadTags();
   loadTimetable_();
   loadRank_();
+  openTabFromHash_();
+  window.addEventListener('hashchange', openTabFromHash_);
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
   // A Principal, Coordinator or Owner has their panel on their own home: here it would cover the bottom nav.
   var gameOwnHome = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(SESSION, r); });

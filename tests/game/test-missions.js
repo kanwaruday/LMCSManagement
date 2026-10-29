@@ -52,7 +52,7 @@ assert.strictEqual(ssm[0].core, true);                                   // from
 assert.strictEqual(ssm[0].done, false);
 assert.deepStrictEqual(J(ssm[0].progress), { done: 0, total: 1 });       // needed 4 over 5 days
 assert.strictEqual(ssm[0].id, 'ss_pace:LMS4:2026-10-27');                // day-scoped: tomorrow's target is a new mission (C1)
-assert.strictEqual(ssm[0].go, 'principals-daily-reporting/index.html');
+assert.strictEqual(ssm[0].go, 'principal/support-sessions.html');       // the native SS form; the PDR page's Google Form embeds are retired (X1)
 assert.strictEqual(ssm[0].title, 'Submit 1 SS evaluation today');      // verb first, no speed language (R30)
 assert.strictEqual(ssm[0].why, '4 still needed for October');
 assert.strictEqual(ctx.gameSsSubmittedBy_(src.ss, 'p@lms.org.in', '2026-10-27'), 0);
@@ -74,6 +74,7 @@ assert.deepStrictEqual(J(ctx.gamePrincipalMissions_(principal, { ss: null, repor
 src = { ss: null, reports: [['Timestamp'], ['2026-10-27T03:00:00Z', '2026-10-26', 'LMS4', 'p@lms.org.in'], ['2026-10-27T03:00:00Z', '2026-10-27', 'LMS5', 'z@lms.org.in']], approvals: null, issues: null };
 let pdr = kinds(ctx.gamePrincipalMissions_(principal, src, cfg(), now), 'pdr_report');
 assert.strictEqual(pdr.length, 1); assert.strictEqual(pdr[0].done, false); assert.strictEqual(pdr[0].id, 'pdr_report:LMS4:2026-10-27');
+assert.strictEqual(pdr[0].go, 'principals-daily-reporting/index.html#principal'); // opens the Principal DR tab, where the report is filed
 src.reports.push(['2026-10-27T04:30:00Z', '2026-10-27', 'LMS4', 'p@lms.org.in']);
 pdr = kinds(ctx.gamePrincipalMissions_(principal, src, cfg(), now), 'pdr_report');
 assert.strictEqual(pdr.filter((m) => !m.done).length, 0);                // nothing pending any more
@@ -94,6 +95,7 @@ assert.strictEqual(kinds(mon, 'ss_pace').length + kinds(mon, 'pdr_report').lengt
 src = { ss: null, reports: null, approvals: [APR_H, apr('i1', 'LMS4', 'Info Requested', { by: 'p@lms.org.in' }), apr('i2', 'LMS4', 'Info Requested', { by: 'other@lms.org.in' }), apr('i3', 'LMS4', 'Pending', { by: 'p@lms.org.in' })], issues: null };
 const info = kinds(ctx.gamePrincipalMissions_(principal, src, cfg(), now), 'info_requested');
 assert.deepStrictEqual(J(info.map((m) => m.id)), ['info_requested:i1']);
+assert.strictEqual(info[0].go, 'principals-daily-reporting/index.html#approvals'); // opens the Approvals tab, where the reply is written
 
 // daily-report issues: off until principalIssuesReady; reopened counts as open; resolved is not pending
 const issues = { issues: [
@@ -134,8 +136,9 @@ assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recom
 let ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar.length, 1); assert.strictEqual(ar[0].core, true); assert.strictEqual(ar[0].done, false);
 assert.strictEqual(ar[0].shared, true);                                   // no matching Tasks row assigned to the caller
-assert.strictEqual(ar[0].go, 'coordinator/systems/index.html#approvals');   // cfg.approvalsGo (I1)
-assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, approvalsGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html');
+assert.strictEqual(ar[0].go, 'coordinator/hq.html#d=r1');                  // cfg.recommendGo + the request: HQ opens its recommend form
+assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, recommendGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html#d=r1');
+assert.strictEqual(kinds(cm(csrc([apr('r 1&x', 'LMS4', 'Pending')]), coord, { recommendationsReady: true }), 'approval_recommend')[0].go, 'coordinator/hq.html#d=r%201%26x'); // the id is encoded
 ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task('approval|r1|Pending', 'approval', 'LMS4', 'x', { assignee: 'c@lms.org.in' })]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar[0].shared, false);                                  // the caller is assigned: personal credit
 assert.strictEqual(kinds(cm(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })]), coord, { recommendationsReady: true }), 'approval_recommend').length, 0); // 2 days: too young

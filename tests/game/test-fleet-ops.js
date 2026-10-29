@@ -209,7 +209,7 @@ assert.deepStrictEqual(kinds, ['fleet_ops_driver_doc', 'fleet_ops_fuel_answer', 
 assert.ok(Object.values(km).every((m) => m.campus === 'LMS4'));
 m = km['fleet_ops_fuel_proof:fuel_proof|fill9'];
 assert.strictEqual(m.title, "Fuel bill and video missing for TEST02's fill on 24 Oct"); assert.strictEqual(m.shared, false); assert.strictEqual(m.due, '2026-10-25');
-assert.strictEqual(km['fleet_ops_fuel_answer:chkA'].title, "Check the pump slip for TEST05's fill on Sat 24 Oct"); assert.strictEqual(km['fleet_ops_fuel_answer:chkA'].go, 'office/index.html');
+assert.strictEqual(km['fleet_ops_fuel_answer:chkA'].title, "Check the pump slip for TEST05's fill on Sat 24 Oct"); assert.strictEqual(km['fleet_ops_fuel_answer:chkA'].go, 'office/buses.html'); // the slip/bill buttons live there (TR8)
 m = km['fleet_ops_fuel_answer:chkB'];
 assert.ok(m.done && m.doneBy === 'clerk@test.invalid' && !m.shared, 'answered today: done with credit');
 
@@ -218,7 +218,7 @@ const pap = (id) => km['fleet_ops_paper:' + id];
 assert.ok(!pap('TEST01:fitness'), '31 days: not yet');
 m = pap('TEST01:insurance');
 assert.ok(m, '30 days'); assert.strictEqual(m.title, 'Renew insurance for TEST01: expires Wed 25 Nov'); assert.strictEqual(m.due, '2026-11-25');
-assert.strictEqual(m.kind, 'fleet_ops_paper'); assert.strictEqual(m.owner, ''); assert.strictEqual(m.shared, false); assert.strictEqual(m.go, 'coordinator/transport/index.html');
+assert.strictEqual(m.kind, 'fleet_ops_paper'); assert.strictEqual(m.owner, ''); assert.strictEqual(m.shared, false); assert.strictEqual(m.go, 'office/transport.html'); // the Fee Clerk's Transport Papers (TR7)
 assert.strictEqual(pap('TEST01:mv_tax').title, 'Renew MV tax for TEST01: expires Mon 26 Oct'); assert.strictEqual(pap('TEST01:mv_tax').due, '2026-10-26');
 assert.strictEqual(pap('TEST01:pollution').title, 'Renew PUC for TEST01: expired Wed 21 Oct'); assert.strictEqual(pap('TEST01:pollution').due, '2026-10-21', 'expired: the same mission, overdue');
 assert.ok(!pap('TEST01:route_permit') && !pap('TEST01:speed_governor'), 'later, and a one-time paper never expires');

@@ -59,16 +59,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .datasrc-links a:hover{color:var(--red)}
 
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:2px solid var(--border)}
-.tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab-btn{min-height:44px;background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
-/* Support Sessions sub-tabs (Teacher/IT/PTI/Clerk/Non-Teaching/Driver SS), nested one level below the "Support Sessions" top tab -- same active/inactive look as .tab-btn, just smaller since it's a second level. */
-.subtabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
-.subtab-btn{background:none;border:none;padding:7px 12px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
-.subtab-btn.active{color:var(--red);border-bottom-color:var(--red)}
-.subtab-panel{display:none}
-.subtab-panel.active{display:block}
 
 .campus-picker{display:flex;gap:6px;flex-wrap:wrap}
 .campus-btn{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--gray);cursor:pointer}
@@ -83,8 +77,16 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .school-picker-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray);flex-shrink:0}
 .campus-btn.school-btn{padding:8px 16px;font-size:13px}
 
-.form-embed-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden}
-.form-embed-wrap iframe{width:100%;height:1400px;border:none;display:block}
+/* Support Sessions tab (29 Oct 2026): a pointer to the native form, Hindi first. Each role is a 44px+ tap; two columns at 375px. */
+.ss-moved{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:16px}
+.ss-moved-hi{font-size:16px;font-weight:700;margin:0 0 4px;line-height:1.5}
+.ss-moved-hi .gb-emoji{margin-right:6px}
+.ss-moved-en{font-size:13px;color:var(--gray);margin:0 0 14px;line-height:1.5}
+.ss-roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.ss-role{display:flex;flex-direction:column;justify-content:center;min-height:56px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;text-decoration:none;color:inherit;background:var(--white)}
+.ss-role:hover,.ss-role:focus-visible{border-color:var(--red)}
+.ss-role [lang="hi"]{font-size:15px;font-weight:700}
+.ss-role .en{font-size:12px;color:var(--gray)}
 
 .dash-section{margin-bottom:28px}
 .dash-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin-bottom:10px}
@@ -278,8 +280,9 @@ td{padding:6px 12px;vertical-align:middle}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=6c2f4a9b"></script>
+<script src="../assets/auth.js?v=60fcf78a"></script>
 <script src="../assets/campus-picker.js?v=cd35c768"></script>
+<script src="../assets/game/emoji.js?v=e979d2e0"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -291,7 +294,7 @@ td{padding:6px 12px;vertical-align:middle}
 <div class="hdr">
   <div class="hdr-brand">
     <h1>LMCS — Principal's Daily Reporting</h1>
-    <p id="hdrCtx">Support Sessions (Teacher/IT/PTI/Clerk/Non-Teaching/Driver), Principal DR, SS Dashboard.</p>
+    <p id="hdrCtx">Principal DR, SS Dashboard and Approvals.</p>
   </div>
   <div class="hdr-right">
     <a href="../principal/index.html" class="hdr-btn">← Portal</a>
@@ -359,87 +362,21 @@ td{padding:6px 12px;vertical-align:middle}
       </div>
     </div>
 
-    <!-- ══════════════════ SUPPORT SESSIONS (all 6 SS forms, one level below this top tab) ══════════════════ -->
+    <!-- ══════════════════ SUPPORT SESSIONS ══════════════════
+         29 Oct 2026, owner-approved (docs/forms-inventory.md X1): the six legacy SS Google Form embeds are retired from
+         this page. Every role is evaluated on principal/support-sessions.html (native, one schema, ss-forms-sync.gs).
+         The Google Forms and their response sheets are untouched; past responses still feed the SS Dashboard tab. -->
     <div class="tab-panel" id="panel-support">
-      <div class="subtabs">
-        <button class="subtab-btn active" data-subtab="submit" onclick="switchSubTab('submit')">📝 Teacher SS</button>
-        <button class="subtab-btn" data-subtab="itss" onclick="switchSubTab('itss')">💻 IT SS</button>
-        <button class="subtab-btn" data-subtab="ptiss" onclick="switchSubTab('ptiss')">🏃 PTI SS</button>
-        <button class="subtab-btn" data-subtab="clerkss" onclick="switchSubTab('clerkss')">🧾 Clerk SS</button>
-        <button class="subtab-btn" data-subtab="nonteachingss" onclick="switchSubTab('nonteachingss')">🧹 Non-Teaching SS</button>
-        <button class="subtab-btn" data-subtab="driverss" onclick="switchSubTab('driverss')">🚌 Driver SS</button>
-      </div>
-
-      <!-- 2026-10-28, per Uday via V1 LMCS Master Agent: Support Sessions
-           moved to principal/support-sessions.html (native in-game forms,
-           all 6 roles, unified schema -- see apps-script/ss-forms-sync.gs).
-           The 6 Google Forms below are UNCHANGED and still work -- "leave
-           this page linking to it rather than removing anything yet" -- this
-           banner is the whole change here. -->
-      <div class="notice" style="margin-bottom:10px">New: Support Sessions moved to the Principal portal's own form — <a href="../principal/support-sessions.html">open it here</a>. The forms below still work during the switchover.</div>
-
-      <!-- Teacher SS (embedded Google Form) -->
-      <div class="subtab-panel active" id="panel-submit">
-        <div class="notice">This embeds the same "LMS N Teacher SS (Qualitative) 2026 for Heads" Google Form your campus already uses — nothing new to learn, just reachable from the portal now.</div>
-        <div class="datasrc-links" id="datasrc-submit"></div>
-        <div class="form-embed-wrap">
-          <iframe id="formFrame" src="" title="Teacher SS Form"></iframe>
-        </div>
-      </div>
-
-      <!-- IT SS / PTI SS / Clerk SS (embedded Google Forms) -- unlike
-           Teacher SS above, each of these is ONE form spanning all 6
-           campuses (a "School" question inside the form, filled in by
-           whoever's submitting) -- so the src is static, not re-pointed
-           by selectSchool() the way pickSubmitCampus() re-points formFrame.
-           (IT SS briefly had a custom-form prototype here, 2026-09-11 --
-           reverted per Uday after the shared Apps Script backend broke
-           mid-rollout; ss-forms-sync.gs's ssFormMeta_/ssSubmit_ are left
-           in place, unused, in case this gets picked back up later.) -->
-      <div class="subtab-panel" id="panel-itss">
-        <div class="notice">"LMCS Computer Teacher SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-        <div class="datasrc-links" id="datasrc-itss"></div>
-        <!-- data-src, not src: loaded lazily by loadSubTabFrame_() the first
-             time this sub-tab is opened -- see the perf audit; loading all
-             6 SS forms' JS/CSS unconditionally on every page visit, most of
-             which only ever touch Teacher SS, was pure waste. -->
-        <div class="form-embed-wrap">
-          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform?embedded=true" title="IT Teacher SS Form"></iframe>
-        </div>
-      </div>
-      <div class="subtab-panel" id="panel-ptiss">
-        <div class="notice">"LMCS PTI SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-        <div class="datasrc-links" id="datasrc-ptiss"></div>
-        <div class="form-embed-wrap">
-          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform?embedded=true" title="PTI SS Form"></iframe>
-        </div>
-      </div>
-      <div class="subtab-panel" id="panel-clerkss">
-        <div class="notice">"LMCS Fee Clerk SS (Qualitative) 2026 for Heads" — covers all 6 campuses; pick your School inside the form.</div>
-        <div class="datasrc-links" id="datasrc-clerkss"></div>
-        <div class="form-embed-wrap">
-          <iframe data-src="https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform?embedded=true" title="Fee Clerk SS Form"></iframe>
-        </div>
-      </div>
-
-      <!-- Non-Teaching SS (embedded Google Form, per campus) -- per-campus
-           like Teacher SS, not a single multi-campus form like IT/PTI/Clerk
-           SS above -- src is re-pointed by pickNonTeachingCampus() from
-           selectSchool(), same as pickSubmitCampus() does for formFrame. -->
-      <div class="subtab-panel" id="panel-nonteachingss">
-        <div class="notice">Your campus's Non-Teaching SS Google Form.</div>
-        <div class="datasrc-links" id="datasrc-nonteachingss"></div>
-        <div class="form-embed-wrap">
-          <iframe id="nonTeachingFormFrame" src="" title="Non-Teaching SS Form"></iframe>
-        </div>
-      </div>
-
-      <!-- Driver SS (embedded Google Form, per campus) -->
-      <div class="subtab-panel" id="panel-driverss">
-        <div class="notice">Your campus's Driver Cum Peon SS Google Form.</div>
-        <div class="datasrc-links" id="datasrc-driverss"></div>
-        <div class="form-embed-wrap">
-          <iframe id="driverFormFrame" src="" title="Driver SS Form"></iframe>
+      <div class="ss-moved">
+        <p class="ss-moved-hi" lang="hi" data-emoji="supportSession">सपोर्ट सेशन अब प्रिंसिपल पोर्टल के अपने फ़ॉर्म पर भरें।</p>
+        <p class="ss-moved-en">Support Sessions are now filed on the Principal portal's own form. Pick the role of the person you are evaluating. Past Google Form responses still show on the SS Dashboard.</p>
+        <div class="ss-roles">
+        <a class="ss-role" href="../principal/support-sessions.html?role=teacher"><span lang="hi">शिक्षक</span><span class="en">Teacher</span></a>
+        <a class="ss-role" href="../principal/support-sessions.html?role=itComputer"><span lang="hi">आईटी शिक्षक</span><span class="en">IT Teacher</span></a>
+        <a class="ss-role" href="../principal/support-sessions.html?role=pti"><span lang="hi">पीटीआई</span><span class="en">PTI</span></a>
+        <a class="ss-role" href="../principal/support-sessions.html?role=feeClerkPRO"><span lang="hi">फ़ीस क्लर्क</span><span class="en">Fee Clerk</span></a>
+        <a class="ss-role" href="../principal/support-sessions.html?role=nonTeaching"><span lang="hi">नॉन-टीचिंग स्टाफ़</span><span class="en">Non-Teaching staff</span></a>
+        <a class="ss-role" href="../principal/support-sessions.html?role=driverCumPeon"><span lang="hi">ड्राइवर-सह-चपरासी</span><span class="en">Driver cum Peon</span></a>
         </div>
       </div>
     </div>
@@ -754,66 +691,12 @@ td{padding:6px 12px;vertical-align:middle}
    need it show a setup notice / empty state instead of erroring. */
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
 
-// The 3 new-role SS forms (2026-09-09) live directly as iframe `src`
-// below (panel-itss/panel-ptiss/panel-clerkss) -- unlike CAMPUS_FORM_IDS
-// above, each is ONE form covering all 6 campuses (a "School" question
-// inside the form itself, not a separate form per campus), so there's no
-// campusId-keyed map or JS re-pointing needed, just a static src. Their
-// Name dropdowns are kept in sync with EmpSalary's Department column
-// (AdminIT/AdminPTI/AdminClerk) by ss-forms-sync.gs's daily trigger --
-// see that file for the matching logic. The Name list spans every
-// campus by design (same as the old pre-rebuild forms) -- the in-form
-// "School" question is how a Head narrows to their own person, not a
-// separate dropdown per school here.
-
-// campusId -> published Google Form viewform id (resolved from the
-// forms.gle short links Uday shared 2026-09-01).
-const CAMPUS_FORM_IDS = {
-  LMS1: '1FAIpQLSfcp0vz4BlYw_X6FH35OpIsKdMToeJg9LHMB2p59QLnrgCjcg',
-  LMS2: '1FAIpQLSd3QMyaHclANFH3vkBcR3lBu3iQpDUigczbg4HyZ9k8r0sn8Q',
-  LMS3: '1FAIpQLSfR769XJF18zU7ex4S3mwd-hafNwfRAf1h2RRRAjJJEcD3w7w',
-  LMS4: '1FAIpQLSeW1pRvQVxvAjixWT7UfFY_QRj1GqvSD6zS1zcR05XiWIx-ZA',
-  LMS5: '1FAIpQLSc_FcTKU1eM16xK_le6jMYQWj2GH4C8jKVTxqXCWqCRqi4nYg',
-  LMS6: '1FAIpQLSfdBB5YX2BCdUxGCGc2cfcOtwgo5LkEKBfyiHAbs_-gdfyDzQ',
-};
-
-// campusId -> Non-Teaching SS form id (2026-09-09, one per campus like
-// Teacher SS, unlike IT/PTI/Clerk SS's single multi-campus form). These
-// are the RAW ids from each form's /edit URL, not a published /d/e/...
-// shortlink like CAMPUS_FORM_IDS above -- Uday shared the /edit links
-// directly, so the embed src below omits the "/e/" segment (Forms
-// serves /viewform at both the raw id and the published shortlink).
-// Rubric + "Staff Name" field confirmed live via FormApp 2026-09-09 --
-// see ss-forms-sync.gs's nonTeaching config.
-const NON_TEACHING_FORM_IDS = {
-  LMS1: '1P-VOQ5eGOlFE8uAf7xG0PcMxU0rmUwHq81tEW698Atg',
-  LMS2: '1AhqORuik-jFi2OKsBA-wyCsfF5JgpLOY4_h-Nh9pnRU',
-  LMS3: '1rcpbmkbDQlmb4ZTxBAm86-Pe8wJIV66NvD0tfoPEVNc',
-  LMS4: '1ZdQ9oOrnmgPM2CoyKHk1AZ0ZgBNGJaYwBeLKkAV36ss',
-  LMS5: '1spASwcoTgEcnUZaMihFmesQfEjP0mmrQL-TvsXcJPe8',
-  LMS6: '1KKEi07IQEjYlmEKrZMkwz100WiOxKd82fHKbA5gXkV4',
-};
-
-// campusId -> Driver Cum Peon SS form id (2026-09-09), same per-campus
-// pattern as NON_TEACHING_FORM_IDS above. Rubric/Name-field title NOT
-// yet confirmed via FormApp -- see ss-forms-sync.gs's driverCumPeon
-// config, best guess pending inspection.
-const DRIVER_FORM_IDS = {
-  LMS1: '1HwK72yQPXjYQZMH6XGit2dpkGeR2biREflfWnqi2rRs',
-  LMS2: '1n3txv2xoKB-RPiQHv8qbpfeflENA6Frxifi09-eszHg',
-  LMS3: '1bJLdy7rwzpKQbEpUwibRQvHpX8vJt9VtFuO-AKUjBdM',
-  LMS4: '1oBaF1nmVTyRopGSGy2Kmv_NkLCB4h8leSDuEjmk91Jc',
-  LMS5: '1K4sC3FyHEMOm8n6ujet8JlhUzqBZMVR7vMccKiHHcqA',
-  LMS6: '16oTsz4SBj8PvPasi87ajQLw07_PElUYKrifTL0PH75o',
-};
-
 // ── Owner/Coordinator "data source" links (2026-09-20, per Uday) ───────────
 // So an Owner can jump straight to the Form/Sheet/Calendar behind
 // whatever they're looking at, to see why the output is the way it
 // is -- e.g. a suspicious Dashboard number traces back to the actual
 // response rows in 2 clicks, not a "trust me" black box. IDs below are
-// duplicated from the Apps Script backend, same as CAMPUS_FORM_IDS
-// etc. above -- these are just link targets (no data read), so no
+// duplicated from the Apps Script backend -- these are just link targets (no data read), so no
 // backend round-trip needed. Kept in sync manually; if a sheet/form is
 // ever recreated, update both here and in the matching backend file.
 const DATASRC_TEACHER_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)" -- also backs IT/PTI/Clerk SS (own tab each)
@@ -859,36 +742,6 @@ function renderAllDataSourceLinks_() {
   const c = SELECTED_CAMPUS_ID;
   const set = function (id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; };
 
-  set('datasrc-submit', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/e/' + CAMPUS_FORM_IDS[c] + '/viewform' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-itss', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScENFOrb_8A7v9hUKnHzICE9ueYYmKc6M1V0WPKsMIVYAW5ow/viewform' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-ptiss', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScZWQ499AzM1e7T05vDjEI4DodRWS5L_vrrCNQI-dunyCvrHg/viewform' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-clerkss', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/e/1FAIpQLScWLamWdX_gpAR4nmrQRTN20QnIlF159vIKL0aBhbGgVnxePA/viewform' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-nonteachingss', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/' + NON_TEACHING_FORM_IDS[c] + '/edit' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_NONTEACHING_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-driverss', datasrcHtml_([
-    { label: 'Form', url: 'https://docs.google.com/forms/d/' + DRIVER_FORM_IDS[c] + '/edit' },
-    { label: 'Response sheet', url: datasrcSheetUrl_(DATASRC_DRIVER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
   set('datasrc-principal', datasrcHtml_([
     { label: 'Daily Reports sheet', url: datasrcSheetUrl_(DATASRC_DAILY_REPORTS_SHEET_ID) },
     { label: "School's Calendar", url: datasrcCalendarUrl_(DATASRC_SCHOOL_CALENDAR_IDS[c]) },
@@ -926,7 +779,6 @@ function hardRefreshPage() {
   try {
     sessionStorage.setItem('pdrHardRefreshRestore', JSON.stringify({
       tab: (document.querySelector('.tab-btn.active') || {}).dataset ? document.querySelector('.tab-btn.active').dataset.tab : 'principal',
-      subTab: (document.querySelector('.subtab-btn.active') || {}).dataset ? document.querySelector('.subtab-btn.active').dataset.subtab : 'submit',
       campusId: SELECTED_CAMPUS_ID,
       reportDate: document.getElementById('reportDate') ? document.getElementById('reportDate').value : ''
     }));
@@ -985,7 +837,6 @@ async function init() {
     if (restore) {
       if (restore.campusId && LMCSCampus.scope(SESSION).indexOf(restore.campusId) > -1) SCHOOL_PICK.set([restore.campusId]);
       if (restore.tab) switchTab(restore.tab);
-      if (restore.subTab) switchSubTab(restore.subTab);
       if (restore.reportDate) {
         // bootPrincipalReport()'s own load is already in flight (fired
         // from selectSchool -> pickPrincipalCampus above) -- give it a
@@ -996,8 +847,10 @@ async function init() {
         }, 0);
       }
     }
-    // A link ending in #approvals (the Hiring dashboard's Approvals button, for one) opens the Approvals tab straight away.
-    if (!restore && location.hash === '#approvals') switchTab('approvals');
+    // A link ending in a tab's name opens that tab straight away: #approvals (the Hiring dashboard's Approvals button, the game's
+    // "info requested" mission), #principal (the game's daily-report mission). A tap on such a link while already here works too.
+    if (!restore) openTabFromHash_();
+    window.addEventListener('hashchange', openTabFromHash_);
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
@@ -1032,62 +885,11 @@ function setupSchoolPicker() {
 // than re-fetching, since that one call already covers every campus.
 function selectSchool(campusId) {
   SELECTED_CAMPUS_ID = campusId;
-  // 'submit' (Teacher SS) is the default-active sub-tab, so it loads like
-  // before; the other 5 SS forms only get (re-)pointed at the new School
-  // if the Principal has actually opened them already -- see
-  // loadSubTabFrame_() below.
-  loadSubTabFrame_('submit', campusId, true);
-  ['nonteachingss', 'driverss'].forEach(function (t) {
-    if (loadedSubTabFrames_[t]) loadSubTabFrame_(t, campusId, true);
-  });
   pickPrincipalCampus(campusId);
   renderDashboardForSelectedCampus();
   renderApprovalsForSelectedCampus();
   renderAllDataSourceLinks_();
   homeLoad_(campusId); // Home tab -- cached per school
-}
-
-// ── Support Sessions sub-tab iframes: loaded lazily ─────────────────
-// Each of the 6 SS forms is a separate Google Form embed that pulls its
-// own JS/CSS -- loading all 6 unconditionally on every page visit (the
-// old behavior) was pure waste for the 5 sub-tabs most visits never
-// touch. loadSubTabFrame_() loads one only the first time its sub-tab is
-// actually opened (called from switchSubTab() below), or every time when
-// `force` is passed (selectSchool() re-pointing an already-open one to a
-// newly selected School).
-var loadedSubTabFrames_ = {};
-var STATIC_SUBTAB_FRAMES_ = ['itss', 'ptiss', 'clerkss']; // one form spans all 6 campuses, static src
-var CAMPUS_SUBTAB_LOADERS_ = { submit: pickSubmitCampus, nonteachingss: pickNonTeachingCampus, driverss: pickDriverCampus };
-function loadSubTabFrame_(tab, campusId, force) {
-  if (loadedSubTabFrames_[tab] && !force) return;
-  if (STATIC_SUBTAB_FRAMES_.indexOf(tab) > -1) {
-    var panel = document.getElementById('panel-' + tab);
-    var iframe = panel && panel.querySelector('iframe');
-    if (iframe && iframe.dataset.src && !iframe.src) iframe.src = iframe.dataset.src;
-  } else if (CAMPUS_SUBTAB_LOADERS_[tab]) {
-    CAMPUS_SUBTAB_LOADERS_[tab](campusId);
-  } else {
-    return; // not a Support Sessions sub-tab (e.g. switchTab() calling in with a top-level tab name)
-  }
-  loadedSubTabFrames_[tab] = true;
-}
-
-// ── Submit tab ──────────────────────────────────────────────────────
-function pickSubmitCampus(campusId) {
-  const formId = CAMPUS_FORM_IDS[campusId];
-  document.getElementById('formFrame').src = 'https://docs.google.com/forms/d/e/' + formId + '/viewform?embedded=true';
-}
-
-// ── Non-Teaching SS tab ──────────────────────────────────────────────
-function pickNonTeachingCampus(campusId) {
-  const formId = NON_TEACHING_FORM_IDS[campusId];
-  document.getElementById('nonTeachingFormFrame').src = 'https://docs.google.com/forms/d/' + formId + '/viewform?embedded=true';
-}
-
-// ── Driver SS tab ──────────────────────────────────────────────────
-function pickDriverCampus(campusId) {
-  const formId = DRIVER_FORM_IDS[campusId];
-  document.getElementById('driverFormFrame').src = 'https://docs.google.com/forms/d/' + formId + '/viewform?embedded=true';
 }
 
 // ── Dashboard tab ───────────────────────────────────────────────────
@@ -2842,6 +2644,12 @@ async function aprPopulateLinkedActivityOptions_(campusId) {
   }).join('');
 }
 
+// #<tab> in the address -> that tab (only the page's own tab names; anything else is left alone)
+function openTabFromHash_() {
+  var tab = String(location.hash || '').slice(1);
+  if (/^[a-z]+$/.test(tab) && document.querySelector('.tab-btn[data-tab="' + tab + '"]')) switchTab(tab);
+}
+
 function switchTab(tab) {
   if (tab === 'approvals' && SELECTED_CAMPUS_ID) aprPopulateLinkedActivityOptions_(SELECTED_CAMPUS_ID);
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
@@ -3124,16 +2932,6 @@ async function homeAddTask_() {
   } finally {
     btn.disabled = false;
   }
-}
-
-// Second-level tab switch, within the "Support Sessions" top tab only
-// (Teacher/IT/PTI/Clerk/Non-Teaching/Driver SS) -- mirrors switchTab()
-// exactly, just scoped to .subtab-btn/.subtab-panel instead.
-function switchSubTab(tab) {
-  document.querySelectorAll('.subtab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.subtab === tab); });
-  document.querySelectorAll('.subtab-panel').forEach(function (p) { p.classList.remove('active'); });
-  document.getElementById('panel-' + tab).classList.add('active');
-  loadSubTabFrame_(tab, SELECTED_CAMPUS_ID); // first open of this sub-tab loads its form; later opens are a no-op
 }
 
 // Sets the Category form's initial field visibility to match its

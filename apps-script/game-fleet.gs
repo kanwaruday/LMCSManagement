@@ -504,7 +504,7 @@ function fleetOpsMissions_(caller, cfg, now, rows, setupOpen) {
   const seen = {};
   rows.fleet.forEach(function (b) {
     fleetPaperStates_(rows, b.reg, today).forEach(function (p) {
-      renew('fleet_ops_paper', b.reg + ':' + p.key, b, { what: p.label + ' for ' + b.reg, who: p.label.replace(/^./, function (c) { return c.toUpperCase(); }) + ' for ' + b.reg, why: 'The bus cannot run on an expired paper', paper: p.label }, p.date, p.n, 'coordinator/transport/index.html', p.bad);
+      renew('fleet_ops_paper', b.reg + ':' + p.key, b, { what: p.label + ' for ' + b.reg, who: p.label.replace(/^./, function (c) { return c.toUpperCase(); }) + ' for ' + b.reg, why: 'The bus cannot run on an expired paper', paper: p.label }, p.date, p.n, clerk ? 'office/transport.html' : 'coordinator/transport/index.html', p.bad); // the Fee Clerk uploads on the Office portal's Transport Papers
     });
     const key = FleetQuests.driverKey(b), docs = (rows.driverDocs || {})[key];
     if (!docs || seen[key]) return;
@@ -539,7 +539,7 @@ function fleetOpsMissions_(caller, cfg, now, rows, setupOpen) {
   if (clerk) (rows.checks || []).forEach(function (c) {
     const b = bus[c.reg];
     if (!b || (c.answered ? !(c.at && Date.parse(c.at) >= since) : c.date < fleetAddDays_(today, -F.fuelClerkDays))) return; // unanswered past the clerk's days: it is the Coordinator's fuel_check now
-    put('fleet_ops_fuel_answer', c.id, { title: 'Check the pump slip for ' + c.reg + "'s fill on " + gameDateLabel_(c.date), why: 'The slip should agree with the bill', campus: c.campus || b.campusId, go: 'office/index.html',
+    put('fleet_ops_fuel_answer', c.id, { title: 'Check the pump slip for ' + c.reg + "'s fill on " + gameDateLabel_(c.date), why: 'The slip should agree with the bill', campus: c.campus || b.campusId, go: 'office/buses.html',
       shared: c.answered && c.by !== me, done: c.answered, doneAt: c.answered ? c.at : null, doneBy: c.answered ? c.by : null });
   });
 

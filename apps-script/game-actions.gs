@@ -80,7 +80,7 @@ function gameLoadSources_(caller, idToken, cfg, now) {
   if (role === 'Principal') {
     src.reports = tab(GAME_PDR_SHEET_ID, 'Daily Reports', 'dailyreports');
     src.ss = fetch(GAME_PDR_URL, 'ssdashboard', function (ss) { return gameSsTrim_(ss, caller.email, dayKey); });
-    if (cfg.principalIssuesReady) src.issues = fetch(GAME_COORD_URL, 'principalissues');
+    if (cfg.principalIssuesReady && gameVisibleCampuses_(caller)) src.issues = fetch(GAME_COORD_URL, 'principalissues'); // one campus only: the Coordinator backend's Principal gate refuses ALL, and the missions need a campus
   }
   if (role === 'Coordinator') {
     src.tasks = tab(GAME_APPROVALS_SHEET_ID, 'Tasks', 'tasks');
