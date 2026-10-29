@@ -226,9 +226,12 @@ function kingdomGateFamilies_(cfg) {
 function kingdomGroupLabel_(role, campus) { return 'All ' + (QUEST_GATE_PLURAL[role] || role) + (campus ? ' at ' + gameCampusLabel_(campus) : ''); }
 // the role groups a row can be given to: [{ value: 'role:<Role>', label }]
 // A school row offers the roles that work at one school, the HQ row the network-wide ones (all roles when the family has none of that kind).
-// the groups holding a row, named: ['role:teacher'] -> ['All teachers at LMS 3']
-function kingdomHeldBy_(held, campus) {
-  return (held || []).map(function (g) { const role = Object.keys(QUEST_GATE_PLURAL).filter(function (r) { return 'role:' + r.toLowerCase() === g; })[0]; return kingdomGroupLabel_(role || g.slice(5), campus); });
+// the groups holding a row: ['role:teacher'] -> [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }] (value is what a clear sends)
+function kingdomHeld_(held, campus) {
+  return (held || []).map(function (g) {
+    const role = Object.keys(QUEST_GATE_PLURAL).filter(function (r) { return 'role:' + r.toLowerCase() === g; })[0] || g.slice(5);
+    return { value: 'role:' + role, label: kingdomGroupLabel_(role, campus) };
+  });
 }
 function kingdomGroups_(roles, campus) {
   const all = (roles || []).filter(function (r) { return r !== 'Owner'; }), kind = all.filter(function (r) { return (QUEST_GATE_NETWORK_ROLES.indexOf(r) === -1) === !!campus; });
@@ -514,18 +517,25 @@ function kingdomAssign_(caller, body) {
 }
 
 var KINGDOM_BULK_MAX = 400;
-// POST kingdomassignbulk {items: [{quest, campus, assignee}], note?} (doPost only) -> {success, done, unchanged, refused: [{quest, campus, code}]}.
-// Every item passes kingdomassign's checks; no clears here. One lock for the batch, one Setup Data append, an audit row per item.
+// POST kingdomassignbulk {items: [{quest, campus, assignee, clear?}], note?} (doPost only) -> {success, done, unchanged, refused: [{quest, campus, code}]}.
+// Every item passes kingdomassign's checks (clear: true removes that group, or the person). One lock for the batch, a batch "requested"
+// audit row, one Setup Data append, an audit row per item.
 function kingdomAssignBulk_(caller, body) {
   try {
     const ok = kingdomAssignRights_(caller, 'kingdomassignbulk'), cfg = ok.cfg;
     if (ok.fail) return ok.fail;
     body = body && typeof body === 'object' ? body : {};
     const items = body.items;
-    if (!Array.isArray(items) || !items.length || items.length > KINGDOM_BULK_MAX) return kingdomFail_('KINGDOM_BAD_INPUT');
-    const by = gameLower_(caller.email), at = gameNow_().toISOString(), note = gameSafeNote_(typeof body.note === 'string' ? body.note : ''), env = kingdomAssignEnv_(cfg);
-    const checked = items.map(function (x) { const it = kingdomAssignInput_(x); it.clear = false; return { it: it, c: kingdomAssignCheck_(env, it) }; });
+    const by = gameLower_(caller.email), at = gameNow_().toISOString(), note = gameSafeNote_(typeof body.note === 'string' ? body.note : '');
+    const batch = { quest: 'bulk', campus: '', assignee: (Array.isArray(items) ? items.length : 0) + ' items', clear: false };
+    if (!Array.isArray(items) || !items.length || items.length > KINGDOM_BULK_MAX) {
+      kingdomAuditRefusal_(kingdomAssignAudit_(at, by, batch, note, 'done', 'refused', 'KINGDOM_BAD_INPUT'));
+      return kingdomFail_('KINGDOM_BAD_INPUT');
+    }
+    const env = kingdomAssignEnv_(cfg);
+    const checked = items.map(function (x) { const it = kingdomAssignInput_(x); return { it: it, c: kingdomAssignCheck_(env, it) }; });
     return kingdomLocked_(function () {
+      kingdomAudit_(kingdomAssignAudit_(at, by, batch, note, 'requested', '', ''), true);
       const rows = cqRead_(), owners = kingdomOwners_(rows), groups = kingdomGroupHolders_(rows), setup = [], audit = [], refused = [];
       let done = 0, unchanged = 0;
       checked.forEach(function (x) {
@@ -643,7 +653,7 @@ function kingdomQuests_(caller, params) {
         const row = { questId: def.id, title: def.title, roles: def.roles.slice(), campus: sc.campus || '', state: state,
           progress: view && view.itemsTotal ? { done: view.itemsDone, total: view.itemsTotal } : null,
           owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: ageOf(touched[key]),
-          go: cqGo_(view || { id: def.id, campus: sc.campus }), stuck: false, assignable: false, heldBy: kingdomHeldBy_(groupsHeld[key], sc.campus || '') };
+          go: cqGo_(view || { id: def.id, campus: sc.campus }), stuck: false, assignable: false, held: kingdomHeld_(groupsHeld[key], sc.campus || '') };
         // ponytail: a quest nobody has touched yet has no age, so it is never "stuck"; a start date per quest would give it one
         row.stuck = state === 'open' && row.ageDays !== null && row.ageDays >= cfgK.stuckDays;
         if (canAssign && state !== 'done') { row.assignable = true; row.assignees = kingdomAssignees_(allow, def, sc.campus || '', cfg); row.groups = kingdomGroups_(def.roles, sc.campus || ''); }
@@ -655,7 +665,7 @@ function kingdomQuests_(caller, params) {
       (f.campus ? GAME_FALLBACK_CAMPUSES : []).concat(f.network ? [''] : []).forEach(function (c) {
         const key = f.id + '|' + (c ? 'campus:' + c : 'network'), o = owners[key];
         const row = { questId: f.id, title: f.title, roles: f.roles.slice(), campus: c, state: 'open', progress: null,
-          owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: f.go, stuck: false, assignable: canAssign, heldBy: kingdomHeldBy_(groupsHeld[key], c) };
+          owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: f.go, stuck: false, assignable: canAssign, held: kingdomHeld_(groupsHeld[key], c) };
         if (canAssign) { row.assignees = kingdomAssignees_(allow, { roles: f.roles, scope: c ? 'campus' : 'network' }, c, cfg); row.groups = kingdomGroups_(f.roles, c); }
         rows.push(row);
       });
@@ -669,7 +679,7 @@ function kingdomQuests_(caller, params) {
       const next = q && (q.steps.filter(function (s) { return !s.done; })[0] || q.steps[0]), o = owners['hook:daybook-setup|campus:' + c];
       const row = { questId: 'hook:daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'], campus: c, state: !q ? 'unknown' : q.complete ? 'done' : 'open',
         progress: q ? { done: q.steps.filter(function (s) { return s.done; }).length, total: q.steps.length } : null,
-        owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: next ? next.go : daybookGo_(c, 'cash'), stuck: false, heldBy: kingdomHeldBy_(groupsHeld['hook:daybook-setup|campus:' + c], c),
+        owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: next ? next.go : daybookGo_(c, 'cash'), stuck: false, held: kingdomHeld_(groupsHeld['hook:daybook-setup|campus:' + c], c),
         assignable: canAssign && !(q && q.complete) };
       if (row.assignable) { row.assignees = kingdomAssignees_(allow, { roles: ['FeeClerk'], scope: 'campus' }, c, cfg); row.groups = kingdomGroups_(['FeeClerk'], c); }
       rows.push(row);

@@ -185,10 +185,13 @@ assert.strictEqual(K.bulkSummary(K.bulkItems(BR, false)), 'Give 2 quests to thei
 assert.strictEqual(K.bulkSummary([{ quest: 'a', campus: '' }]), 'Give 1 quest to their roles at HQ?');
 assert.strictEqual(K.bulkResult({ done: 6, unchanged: 0, refused: [] }), 'Given: 6. Already had it: 0.');
 assert.strictEqual(K.bulkResult({ done: 1, unchanged: 2, refused: [{ quest: 'p1', campus: 'LMS2' }] }), 'Given: 1. Already had it: 2. Not given: 1 (p1 at LMS 2).');
+assert.strictEqual(K.bulkResult({ done: 0, unchanged: 0, refused: [{ quest: 'p1', campus: '' }] }, [QR({ questId: 'p1', title: 'Bell timings' })]), 'Given: 0. Already had it: 0. Not given: 1 (Bell timings at HQ).', 'row titles, not ids');
+// removal's All schools: the schools whose row of the quest that group holds (case-insensitive value)
+assert.deepStrictEqual(K.removeSchools([QR({ questId: 'e', campus: 'LMS1', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'e', campus: 'LMS2', held: [] }), QR({ questId: 'e', campus: '', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'f', campus: 'LMS3', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'e', campus: 'LMS4', held: [{ value: 'role:teacher' }] })], 'e', 'role:Teacher'), ['LMS1', 'LMS4']);
 // holders: a person and the groups; a held group drops out of the pick list; a group's confirm says nobody loses it
-assert.strictEqual(K.questHolder(QR({ heldBy: ['All teachers at LMS 3'] })), 'All teachers at LMS 3');
-assert.strictEqual(K.questHolder(QR({ owner: { email: 'z@x.org', name: 'Zed' }, heldBy: ['All teachers at LMS 3'] })), 'Zed, All teachers at LMS 3');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ heldBy: ['All teachers at LMS 3'], groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [] })))), []);
+assert.strictEqual(K.questHolder(QR({ held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }] })), 'All teachers at LMS 3');
+assert.strictEqual(K.questHolder(QR({ owner: { email: 'z@x.org', name: 'Zed' }, held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }] })), 'Zed, All teachers at LMS 3');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [] })))), []);
 assert.ok(/Nobody else loses it/.test(K.reassignText(QR({}), { email: 'role:Teacher', name: 'All teachers at LMS 3', group: true })));
 assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
 // 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies

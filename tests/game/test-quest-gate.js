@@ -200,7 +200,7 @@ test('kingdomquests lists the families with role groups (Owner only)', () => {
   assert.deepStrictEqual(r.rows.find((x) => x.questId === 'tc' && x.campus === 'LMS3').groups, [{ value: 'role:Principal', label: 'All principals at LMS 3' }]);
   assign(OWN, { quest: 'hook:teacher-quests', campus: 'LMS3', assignee: 'role:Teacher' });
   const tq = J(ctx.kingdomQuests_(OWN, {})).rows.find((x) => x.questId === 'hook:teacher-quests' && x.campus === 'LMS3');
-  assert.deepStrictEqual([tq.owner, tq.heldBy], [null, ['All teachers at LMS 3']], 'a group is a holder, not the owner');
+  assert.deepStrictEqual([tq.owner, tq.held], [null, [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }]], 'a group is a holder, not the owner');
   for (const c of [P4, COORD, T4]) assert.strictEqual(J(ctx.kingdomQuests_(c, {})).code, 'KINGDOM_NOT_YOURS');
   ctx.gameNow_ = () => new Date('2026-11-05T05:00:00Z');
   try { assert.ok(!J(ctx.kingdomQuests_(OWN, {})).rows.some((x) => x.questId === EV), 'a past event is not listed'); } finally { ctx.gameNow_ = () => NOW; }
@@ -239,21 +239,24 @@ test('kingdomassignbulk: Owner only, each item checked, one lock, idempotent, au
   assert.strictEqual(bulk(OWN, { items: [] }).code, 'KINGDOM_BAD_INPUT');
   assert.strictEqual(bulk(OWN, { items: 'x' }).code, 'KINGDOM_BAD_INPUT');
   assert.strictEqual(bulk(OWN, { items: new Array(401).fill({ quest: EV, campus: 'LMS4', assignee: 'role:Principal' }) }).code, 'KINGDOM_BAD_INPUT', 'capped at 400');
-  assert.strictEqual(setup().length + audit().length, 0, 'nothing written for a refused batch');
+  assert.strictEqual(setup().length, 0, 'nothing written for a refused batch');
+  assert.deepStrictEqual(audit().map((r) => [col(r, 'Result'), col(r, 'Code')]), [['refused', 'KINGDOM_BAD_INPUT'], ['refused', 'KINGDOM_BAD_INPUT'], ['refused', 'KINGDOM_BAD_INPUT']], 'each bad batch audited once (the Owner); a non-Owner is refused before anything');
+  audit().length && book.tabs['Game Allocations'].rows.splice(1);
   events.length = 0;
   const items = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map((c) => ({ quest: EV, campus: c, assignee: 'role:Teacher' }))
     .concat([{ quest: EV, campus: 'LMS4', assignee: 'role:Principal' }, { quest: EV, campus: 'LMS4', assignee: 'role:Principal' },
       { quest: 'nope', campus: 'LMS4', assignee: 'role:Teacher' }, { quest: EV, campus: 'LMS9', assignee: 'role:Teacher' },
       { quest: EV, campus: 'LMS4', assignee: 'p3@example.org' }, { quest: EV, campus: 'LMS4', assignee: 'role:Owner' }, { quest: EV, campus: 'LMS4', clear: true, assignee: 'role:Teacher' }]);
   const r = bulk(OWN, { items });
-  assert.deepStrictEqual([r.success, r.done, r.unchanged], [true, 7, 2], 'the repeat and the clear-as-assign in the batch are unchanged');
+  assert.deepStrictEqual([r.success, r.done, r.unchanged], [true, 8, 1], 'the repeat is unchanged; the last item clears Teachers at LMS 4');
   assert.deepStrictEqual(r.refused.map((x) => x.code), ['KINGDOM_BAD_QUEST', 'KINGDOM_BAD_CAMPUS', 'KINGDOM_NOT_ELIGIBLE', 'KINGDOM_NOT_ELIGIBLE']);
   assert.strictEqual(events.filter((e) => e === 'lock').length, 1, 'one lock for the batch');
-  assert.strictEqual(setup().length, 7, 'one row per new grant');
-  assert.strictEqual(audit().length, items.length, 'an audit row per item');
-  assert.deepStrictEqual([can(T3, EV), can(T4, EV), can(P4, EV), can(P3, EV)], [true, true, true, false]);
-  const again = bulk(OWN, { items: items.slice(0, 6) });
-  assert.deepStrictEqual([again.done, again.unchanged, setup().length], [0, 6, 7], 'idempotent');
+  assert.strictEqual(setup().length, 8, 'one row per grant or clear');
+  assert.strictEqual(audit().length, items.length + 1, 'a batch requested row, then an audit row per item');
+  assert.deepStrictEqual([col(audit()[0], 'Phase'), col(audit()[0], 'SourceId')], ['requested', 'bulk']);
+  assert.deepStrictEqual([can(T3, EV), can(T4, EV), can(P4, EV), can(P3, EV)], [true, false, true, false]);
+  const again = bulk(OWN, { items: items.slice(0, 3) });
+  assert.deepStrictEqual([again.done, again.unchanged, setup().length], [0, 3, 8], 'idempotent');
   const viaPost = (() => { const saved = ctx.gameVerifyCaller_; ctx.gameVerifyCaller_ = () => J(OWN); try { return JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'kingdomassignbulk', idToken: 't', items: items.slice(0, 1) }) } }).body); } finally { ctx.gameVerifyCaller_ = saved; } })();
   assert.deepStrictEqual([viaPost.success, viaPost.unchanged], [true, 1], 'dispatched by doPost');
   assert.strictEqual(J(ctx.gameDispatch_(OWN, 'kingdomassignbulk', {})).error, 'Unknown action', 'never over GET');
@@ -264,6 +267,17 @@ test('setupget lists only assigned quests while the gate is on', () => {
   assert.ok(!list(P4).includes('tc'));
   assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'role:Principal' });
   assert.ok(list(P4).includes('tc'));
+});
+
+test('removal: a group cleared at one school, or at every school in one bulk (clear items)', () => {
+  reset();
+  bulk(OWN, { items: ['LMS3', 'LMS4'].map((c) => ({ quest: EV, campus: c, assignee: 'role:Teacher' })).concat([{ quest: EV, campus: 'LMS4', assignee: 'p4@example.org' }]) });
+  assert.deepStrictEqual([can(T3, EV), can(T4, EV)], [true, true]);
+  const r = bulk(OWN, { items: ['LMS3', 'LMS4', 'LMS5'].map((c) => ({ quest: EV, campus: c, assignee: 'role:Teacher', clear: true })) });
+  assert.deepStrictEqual([r.done, r.unchanged, r.refused.length], [2, 1, 0], 'LMS5 never had it: unchanged');
+  assert.deepStrictEqual([can(T3, EV), can(T4, EV), can(P4, EV)], [false, false, true], 'the person keeps it');
+  assert.strictEqual(bulk(OWN, { items: [{ quest: EV, campus: 'LMS4', clear: true }] }).done, 1, 'a clear with no group clears the person');
+  assert.strictEqual(can(P4, EV), false);
 });
 
 let fail = 0;
