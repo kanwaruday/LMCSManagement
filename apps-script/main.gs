@@ -154,7 +154,8 @@ function doGet(e) {
     // assets/auth.js asks this after an allowlist miss, to open a Teacher/Staff session. Only a caller that came from the
     // Employee Master fallback gets an answer; an allowlisted caller never needs it.
     if (action === 'staffsignin') {
-      return jsonOut_(caller.autoSignIn ? { success: true, role: caller.roles[0], campusId: caller.campusId, employeeCode: caller.employeeCode } : { success: false, error: 'Not authorized' });
+      // department (2026-10-29): the Employee Master department key (adminit, adminpti, non-teaching, ...) so staff-home/ can open the right portal
+      return jsonOut_(caller.autoSignIn ? { success: true, role: caller.roles[0], campusId: caller.campusId, employeeCode: caller.employeeCode, department: caller.department || '' } : { success: false, error: 'Not authorized' });
     }
     if (!pdrIsElevated_(caller) && !pdrLimitedAllows_(caller, action, false)) {
       return jsonOut_({ success: false, error: 'Not authorized' });
@@ -339,7 +340,7 @@ function verifyCallerToken_(idToken) {
     // with an unrecognised role (returned null above), always wins -- this runs only when there is no row at all.
     const staff = pdrStaffFromEmployeeMaster_(email);
     if (!staff) return null;
-    const caller = { email: staff.email, campusId: staff.campusId, role: staff.roles[0], roles: staff.roles, name: '', canApprove: false, employeeCode: staff.employeeCode, autoSignIn: true };
+    const caller = { email: staff.email, campusId: staff.campusId, role: staff.roles[0], roles: staff.roles, name: '', canApprove: false, employeeCode: staff.employeeCode, department: staff.department, autoSignIn: true };
     cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
     return caller;
   } catch (err) {
@@ -348,7 +349,7 @@ function verifyCallerToken_(idToken) {
 }
 
 // Employee Master fallback for the allowlist: AuthEmail (EmpPersonal) -> code, Active in EmpMaster, role from EmpSalary.Department.
-// Returns {email, campusId, roles:[role], employeeCode} or null. Never logs emails or codes.
+// Returns {email, campusId, roles:[role], employeeCode, department} or null. Never logs emails or codes.
 // ponytail: three sheet reads per uncached sign-in; the caller result is cached per token for PDR_AUTH_CACHE_SECONDS like an allowlist caller.
 function pdrStaffFromEmployeeMaster_(email) {
   if (PropertiesService.getScriptProperties().getProperty('STAFF_AUTO_SIGNIN') !== 'on') return null;
@@ -367,9 +368,9 @@ function pdrStaffFromEmployeeMaster_(email) {
     return null;
   };
   if ((find('EmpMaster', 'Status') || '').toLowerCase() !== 'active') return null;
-  const role = PDR_AUTO_ROLE_BY_DEPARTMENT[(find('EmpSalary', 'Department') || '').toLowerCase()];
+  const department = (find('EmpSalary', 'Department') || '').toLowerCase(), role = PDR_AUTO_ROLE_BY_DEPARTMENT[department];
   if (!role) return null;
-  return { email: email, campusId: campusId, roles: [role], employeeCode: code };
+  return { email: email, campusId: campusId, roles: [role], employeeCode: code, department: department };
 }
 
 // Shared role-membership check -- every permission check in this

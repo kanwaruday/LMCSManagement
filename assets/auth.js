@@ -5,7 +5,8 @@
    Google Sign-In + session logic — that per-page duplication is
    what made the old repo hard to maintain.
 
-   Session shape: { email, campusId, campusName, name, role, ts, expiresAt, idToken }
+   Session shape: { email, campusId, campusName, name, role, ts, expiresAt, idToken }, plus { autoSignIn, employeeCode, department }
+   for an Employee Master sign-in (department: the EmpSalary key, e.g. adminit; staff-home/ reads it).
    campusId is either one of LMS1..LMS6 (locked to that campus) or
    'ALL' (network-wide — owner/MD/Head tier). Every module filters
    its data by this one field; there is no separate "owner mode".
@@ -48,7 +49,7 @@ window.LMCS = (function () {
       const res = await fetch(STAFF_SIGNIN_URL + '?action=staffsignin&idToken=' + encodeURIComponent(idToken), { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
       const d = await res.json();
       if (d && d.success === true && (d.role === 'Teacher' || d.role === 'Staff') && /^LMS[1-6]$/.test(d.campusId) && d.employeeCode) {
-        return { campusId: d.campusId, name: '', role: d.role, employeeCode: String(d.employeeCode), autoSignIn: true };
+        return { campusId: d.campusId, name: '', role: d.role, employeeCode: String(d.employeeCode), department: String(d.department || '').toLowerCase(), autoSignIn: true }; // department: staff-home/ picks IT Teacher / PTI / Non-Teaching from it
       }
     } catch (err) { /* unreachable, timed out or malformed -- treated as not on the list */ }
     finally { if (timer) clearTimeout(timer); }
@@ -366,7 +367,7 @@ window.LMCS = (function () {
             expiresAt: nextSixPM(now),
             idToken: response.credential,
           };
-          if (match.autoSignIn) { session.autoSignIn = true; session.employeeCode = match.employeeCode; }
+          if (match.autoSignIn) { session.autoSignIn = true; session.employeeCode = match.employeeCode; if (match.department) session.department = match.department; }
           setSession(session);
           if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // fresh login starts from clean data
           startExpiryWatch_();
@@ -468,7 +469,7 @@ window.LMCS = (function () {
   // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, so the path is
   // right at any depth, with ?v=DOCK_V (a hash of the dock's files, written by tools/stamp-assets.mjs) so a release reaches
   // every browser at once. The dock passes the same ?v= on to game.js, game.css and guide.js. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
-  const DOCK_V = '366d1f21'; // stamp-assets
+  const DOCK_V = '7f19034e'; // stamp-assets
   let docked = false;
   function loadDock_() {
     if (docked || window.LMCS_NO_DOCK || !SELF_SRC) return;

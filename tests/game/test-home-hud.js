@@ -54,7 +54,7 @@ assert.ok(/id="view-home"[^>]*><span data-emoji="school"><\/span>Town<\/button>/
 // rules: tap size, reduced motion, no raw emoji in markup, the sheet is a labelled modal dialog
 assert.ok(/\.hh-b \{[^}]*width:44px; height:44px/.test(css), 'bubbles are 44px');
 assert.ok(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*hh-bob/.test(css) && (css.match(/animation:|transition:/g) || []).length === (css.slice(css.indexOf('prefers-reduced-motion')).match(/animation:|transition:/g) || []).length, 'all motion sits inside the no-preference query');
-assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /LMCSGame\.ui\.trap/.test(js) && /'aria-label': 'Close'/.test(js) && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
+assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /LMCSGame\.ui\.trap/.test(js) && /'aria-label': S\.L\.close/.test(js) && H.LABELS.close === 'Close' && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
 assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(page.slice(page.indexOf('<body'), page.indexOf('<script src')).replace(/<!--[\s\S]*?-->/g, '')), 'no raw emoji in the markup');
 // the tours point at visible HUD controls, not the stash; other pages keep their targets
 const guide = read('assets/game/guide.js'), gp = guide.slice(guide.indexOf("'principal/index.html'"), guide.indexOf("'coordinator/index.html'"));

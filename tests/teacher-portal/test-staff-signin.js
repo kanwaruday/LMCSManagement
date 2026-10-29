@@ -46,7 +46,7 @@ const verify = (gas, email) => { gas.__email = email; return json(gas.verifyCall
 // ── mapping ────────────────────────────────────────────────────────
 let g = makeGas('on', 'Teaching');
 assert.deepStrictEqual(staffOf(g, 't.one@lms.org.in'),
-  { email: 't.one@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], employeeCode: 'NCM/99/01/901' }, 'Active Teaching code -> Teacher');
+  { email: 't.one@lms.org.in', campusId: 'LMS4', roles: ['Teacher'], employeeCode: 'NCM/99/01/901', department: 'teaching' }, 'Active Teaching code -> Teacher');
 assert.strictEqual(staffOf(g, 'T.ONE@LMS.ORG.IN').employeeCode, 'NCM/99/01/901', 'mixed-case email matches');
 assert.strictEqual(staffOf(g, 't.two@lms.org.in'), null, 'Inactive code');
 assert.strictEqual(staffOf(g, 't.three@lms.org.in').roles[0], 'Teacher', 'Status is trimmed and case-insensitive');
@@ -58,6 +58,7 @@ assert.strictEqual(staffOf(g, 'k.one@lms.org.in').campusId, 'LMS2', 'KEL -> LMS2
 for (const [dept, role] of [['AdminPTI', 'Teacher'], ['AdminIT', 'Teacher'], ['AdminClerk', 'Staff'], ['Non-Teaching', 'Staff'], ['Transport', 'Staff'], ['AdminTM', null], ['AdminHead', null], ['', null]]) {
   const r = staffOf(makeGas('on', dept), 't.one@lms.org.in');
   assert.strictEqual(r && r.roles[0], role, 'department ' + JSON.stringify(dept));
+  if (r) assert.strictEqual(r.department, dept.toLowerCase(), 'the department key travels with the caller: ' + dept);
 }
 assert.strictEqual(staffOf(makeGas('on', ZW + 'AdminClerk' + ZW + ' '), 't.one@lms.org.in').roles[0], 'Staff', 'zero-width space in Department still maps');
 
@@ -91,7 +92,8 @@ assert.strictEqual(json(g.aprSubmit_(staff, { category: 'Not A Teacher Category'
 
 // ── staffsignin action ──────────────────────────────────────────────
 const get = (gas, email, action) => { gas.__email = email; return gas.doGet({ parameter: { idToken: 'tok-' + email, action } }); };
-assert.deepStrictEqual(json(get(g, 't.one@lms.org.in', 'staffsignin')), { success: true, role: 'Teacher', campusId: 'LMS4', employeeCode: 'NCM/99/01/901' });
+assert.deepStrictEqual(json(get(g, 't.one@lms.org.in', 'staffsignin')), { success: true, role: 'Teacher', campusId: 'LMS4', employeeCode: 'NCM/99/01/901', department: 'teaching' });
+assert.strictEqual(json(get(makeGas('on', 'AdminIT'), 't.one@lms.org.in', 'staffsignin')).department, 'adminit', 'staffsignin names the department (staff-home/ picks the portal from it)');
 assert.strictEqual(get(g, 'p.one@lms.org.in', 'staffsignin').success, false, 'an allowlisted caller gets nothing from staffsignin');
 assert.strictEqual(get(makeGas(null, 'Teaching'), 't.one@lms.org.in', 'staffsignin').success, false, 'flag off');
 
