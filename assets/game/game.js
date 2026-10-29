@@ -181,7 +181,22 @@ var LMCSGame = window.LMCSGame = (function () {
     try { var el = document.querySelector(x); return el && el.getClientRects().length ? el : null; } catch (e) { return null; }
   }
   // a string body goes as text/plain: no CORS preflight to Apps Script
+  // The Owner's hidden school switcher: owner/kingdom.html stores { campus, name } in sessionStorage (never the URL); while it is set every
+  // game GET carries asCampus (the server honours it only for a verified Owner, read only) and no game write is sent. Leave clears it.
+  var VIEW_KEY = 'lmcs-view-as';
+  function viewAs() {
+    try { var v = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null'); return v && /^LMS[1-6]$/.test(v.campus) ? { campus: v.campus, name: String(v.name || v.campus) } : null; } catch (e) { return null; }
+  }
+  function setViewAs(v) {
+    try { if (v && /^LMS[1-6]$/.test(v.campus)) sessionStorage.setItem(VIEW_KEY, JSON.stringify({ campus: v.campus, name: String(v.name || v.campus) })); else sessionStorage.removeItem(VIEW_KEY); } catch (e) { /* private mode: nothing to keep */ }
+  }
+  function viewParam() { var v = viewAs(); return v ? '&asCampus=' + v.campus : ''; }
+  // the view belongs to the Principal pages only: any other page that loads game.js (the Owner's Home, Kingdom, People, setup, ...)
+  // ends it at once, so Back or a Go link never carries it into the Owner's own pages
+  if (typeof location !== 'undefined' && !/\/principal\//.test(String(location.pathname || ''))) setViewAs(null);
+  var VIEW_READ_ONLY = { success: false, code: 'GAME_VIEW_READ_ONLY', error: 'You are viewing this school as the Owner, so nothing can be changed here.' };
   function postTo(url, session, action, body) {
+    if (viewAs()) return Promise.resolve(VIEW_READ_ONLY); // the server refuses it too
     return fetch(url, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, idToken: (session || {}).idToken }, body)) })
       .then(function (r) { return r.json(); });
   }
@@ -314,7 +329,7 @@ var LMCSGame = window.LMCSGame = (function () {
     }
 
     function get_() {
-      return fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=gametoday&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
+      return fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=gametoday&idToken=' + encodeURIComponent(session.idToken || '') + viewParam(), { cache: 'no-store' })
         .then(function (r) { return r.json(); });
     }
     function post_(action, body) { return postTo(url, session, action, body); }
@@ -379,7 +394,7 @@ var LMCSGame = window.LMCSGame = (function () {
           meta(tags([!w.decided && w.closes && ['dec', 'closes ' + w.closes]]), windowSmall(w)),
         ]),
         w.decided ? h('span', { class: 'lg-tick' }, 'Done')
-          : h('button', { type: 'button', class: 'lg-go', 'aria-label': 'Go: ' + title, onclick: function () { decide(w, this); } }, 'Go'),
+          : h('button', { type: 'button', class: 'lg-go', 'aria-label': 'Go: ' + title, disabled: !!viewAs(), onclick: function () { decide(w, this); } }, 'Go'),
       ]);
     }
 
@@ -443,8 +458,8 @@ var LMCSGame = window.LMCSGame = (function () {
         return h('li', { class: 'lg-step' + (s.done ? ' ok' : wait ? ' wait' : s.locked ? ' lock' : '') }, [
           h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
           href ? h('a', { class: 'lg-step-link', href: href }, s.title)
-            : win ? h('button', { type: 'button', class: 'lg-step-link', onclick: function () { decide(win, this); } }, s.title)
-            : s.tick && !s.done ? h('button', { type: 'button', class: 'lg-step-link', onclick: function () { tick(q, s, this); } }, s.title)
+            : win ? h('button', { type: 'button', class: 'lg-step-link', disabled: !!viewAs(), onclick: function () { decide(win, this); } }, s.title)
+            : s.tick && !s.done ? h('button', { type: 'button', class: 'lg-step-link', disabled: !!viewAs(), onclick: function () { tick(q, s, this); } }, s.title)
             : h('span', {}, s.locked && !s.done && !wait ? 'Opens next: ' + s.title : s.title),
           s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
         ]);
@@ -652,5 +667,6 @@ var LMCSGame = window.LMCSGame = (function () {
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
     safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount, tour: tour, last: function () { return last; },
+    viewAs: viewAs, setViewAs: setViewAs, viewParam: viewParam,
     ui: { h: h, img: img, trap: trap, reduced: reduced } }; // ui: the DOM helpers, shared with assets/game/buddy-dock.js
 })();

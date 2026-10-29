@@ -192,12 +192,32 @@ function gameDispatch_(caller, action, params) {
   return { success: false, error: 'Unknown action' };
 }
 
+// The Owner's hidden school switcher (owner/kingdom.html -> principal/index.html): GET only. An Owner whose GET carries asCampus=LMS1..LMS6
+// is served as that school's Principal, read only: only these actions answer, and gametoday always as a peek (no Game Daily, Game
+// Progress or window writes). Anyone else's asCampus is ignored (logged by code, not an error). doPost refuses any body carrying it.
+const GAME_VIEW_AS_ACTIONS = Object.freeze(['gametoday', 'gamekingdom', 'gameevent', 'setupget']);
+const GAME_VIEW_READ_ONLY = { success: false, code: 'GAME_VIEW_READ_ONLY', error: 'Viewing a school as its Principal is read-only. Nothing was changed.' };
+// -> caller unchanged, or a copy as that school's Principal (email unchanged, viewAs: true, no decide right, no functions)
+function gameViewAs_(caller, asCampus) {
+  if (asCampus === undefined || asCampus === null || asCampus === '') return caller;
+  const c = typeof asCampus === 'string' ? asCampus.trim().toUpperCase() : '';
+  if ((caller.roles || []).indexOf('Owner') === -1 || GAME_FALLBACK_CAMPUSES.indexOf(c) === -1) { console.warn('asCampus ignored: GAME_VIEW_AS_IGNORED'); return caller; }
+  return Object.assign({}, caller, { primaryRole: 'Principal', roles: ['Principal'], campusId: c, viewAs: true, canDecide: false, functions: [] });
+}
+
 function doGet(e) {
   try {
-    const caller = gameVerifyCaller_(e.parameter.idToken);
+    let caller = gameVerifyCaller_(e.parameter.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
     caller.idToken = String(e.parameter.idToken); // modules call their own backends with it, so those apply their own scope
-    return gameJson_(gameDispatch_(caller, String(e.parameter.action || '').toLowerCase(), e.parameter));
+    const action = String(e.parameter.action || '').toLowerCase();
+    let params = e.parameter;
+    caller = gameViewAs_(caller, e.parameter.asCampus);
+    if (caller.viewAs) {
+      if (GAME_VIEW_AS_ACTIONS.indexOf(action) === -1) { console.warn('view-as refused: GAME_VIEW_READ_ONLY'); return gameJson_(GAME_VIEW_READ_ONLY); }
+      params = Object.assign({}, e.parameter, { peek: '1' });
+    }
+    return gameJson_(gameDispatch_(caller, action, params));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });
   }
@@ -207,6 +227,8 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents), action = String(body.action || '').toLowerCase();
+    // viewing a school as its Principal is GET only: a write never runs as anyone but the verified caller
+    if (body && body.asCampus !== undefined && body.asCampus !== null && body.asCampus !== '') { console.warn('POST refused: GAME_VIEW_READ_ONLY'); return gameJson_(GAME_VIEW_READ_ONLY); }
     // The Mac's nightly activity check (tools/teacher_activity_match.py) has no Google token: exactly these two actions are gated by the shared secret
     // GAME_PUSH_SECRET instead (checked inside each), as the Coordinator backend does for transportpush. Every other action needs a verified caller.
     if (action === 'teachermatchpull') return gameJson_(tchMatchPull_(body));
@@ -222,6 +244,8 @@ function doPost(e) {
     // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
     if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
     if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
+    // The People room's write (game-people.gs): POST only, never in GAME_MODULE_ACTIONS; Owner and rights checks are inside it.
+    if (action === 'peoplecoordinator') return gameJson_(peopleCoordinator_(caller, body));
     // The 🎉 event self-tick (game-event.gs): POST only, never in GAME_MODULE_ACTIONS; every check is inside it.
     if (action === 'gameeventtick') return gameJson_(eventTick_(caller, body));
     // An Owner tick-off quest step (game-setup.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.
