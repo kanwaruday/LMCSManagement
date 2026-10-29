@@ -23,7 +23,7 @@ var LMCSEmoji = (function () {
     // the driver portal and the Home Base / World switch (28 Oct): a bill is 📃 (🧾 is starting data); the pump video is 📹, apart from the route video 🎥
     phone: '📱', signal: '📶', bill: '📃', photo: '📷', send: '📤', refused: '⚠️', pumpVideo: '📹', homeBase: '🏠', world: '🗺️',
     // the Owner's HQ Home (29 Oct): Game settings is the "Set up the game" quest
-    settings: '⚙️',
+    settings: '⚙️', realMap: '📍',
     // the Principal home's setup bubble (assets/game/home-hud.js)
     setupUp: '⬆️', tasks: '🗒️',
     // rooms in the school building (assets/game/school-building.js)
