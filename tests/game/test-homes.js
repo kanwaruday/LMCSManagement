@@ -1,6 +1,6 @@
-// node tests/game/test-homes.js -- the four role homes mount the game layer (css link, #game-root, script after auth.js, mount call in the sign-in callback)
+// node tests/game/test-homes.js -- the role homes mount the game layer (css link, #game-root, script after auth.js, mount call in the sign-in callback)
 const fs = require('fs'), assert = require('assert');
-const HOMES = { 'principal/index.html': 'showApp', 'coordinator/index.html': 'showApp', 'owner/index.html': 'showApp', 'teacher/index.html': 'init' };
+const HOMES = { 'principal/index.html': 'showApp', 'coordinator/index.html': 'showApp', 'owner/index.html': 'showApp', 'teacher/index.html': 'init', 'staff-home/index.html': 'showApp' };
 const body = (html, fn) => { // text of `function fn(...) { ... }` by brace matching
   const i = html.indexOf('function ' + fn + '('); assert(i >= 0, 'no function ' + fn);
   let d = 0, j = html.indexOf('{', i);

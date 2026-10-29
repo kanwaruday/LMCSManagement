@@ -1,5 +1,7 @@
 /* The route World (Uday, 28 Oct): a school's bus routes and stops on a map, for whoever may see them, with no money.
-     LMCSRouteMap.mount(el, { session, backendUrl, mode: 'metro' | 'city', campus?, driverToken? }) -> { reload }
+     LMCSRouteMap.mount(el, { session, backendUrl, mode: 'metro' | 'city', campus?, driverToken?, refused? }) -> { reload }
+   - refused: a calm line shown (no Try again) when the backend says this person may not see routes yet (staff-home/: the Coordinator
+     backend reads Principals, Fee Clerks, Coordinators and the Owner only).
    - staff and Principals: GET <backendUrl>?action=transportworld&idToken=… (the Coordinator backend, apps-script/coordinator-world.gs),
      which scopes to the caller's own campuses; `campus` ('LMS4') narrows it further on the page.
    - a driver's phone: POST {action:'driverroute', deviceToken} to the Roster backend (apps-script/driver-link.gs): their own bus only.
@@ -36,7 +38,7 @@ window.LMCSRouteMap = (function () {
       if (!s || !s.idToken) throw new Error('Sign in to see the routes.');
       r = await (await fetch(opts.backendUrl + '?action=transportworld&idToken=' + encodeURIComponent(s.idToken), { cache: 'no-store' })).json();
     }
-    if (!r.success) throw new Error(r.error || 'Could not load the routes.');
+    if (!r.success) { const e = new Error(r.error || 'Could not load the routes.'); e.refused = /not authori[sz]ed/i.test(r.error || ''); throw e; }
     const d = { vehicles: r.vehicles || [], stops: r.stops || [], tracks: r.tracks || [], days: r.days || [] }; // no pnl: the views draw no money
     if (opts.campus) { // the server already scoped to the caller; this only narrows a Coordinator's district to one school
       const regs = {};
@@ -69,6 +71,7 @@ window.LMCSRouteMap = (function () {
         el.textContent = '';
         TransportViews.render(el, d, opts.mode, state);
       } catch (e) {
+        if (e.refused && opts.refused) { say(el, opts.refused); return; }
         say(el, (hi ? 'रूट नहीं आया, नेटवर्क देखें · ' : '') + (e.message || 'Could not load the routes.'), load);
       }
     }

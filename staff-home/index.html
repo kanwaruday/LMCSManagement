@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — स्टाफ़ होम · Staff home</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <link rel="stylesheet" href="../assets/game/home-hud.css?v=24b0153b" />
+  <style>
+    /* page only: the refusal card and the Owner's preview bar. Everything else comes from base.css (gb-) and home-hud.css (hh-). */
+    .sh-refused { max-width:520px; margin:12px auto 0; padding:16px; border:1.5px solid var(--gb-line); border-radius:14px; background:var(--gb-paper); color:var(--gb-ink); text-align:left; }
+    .sh-refused p { margin:0 0 12px; }
+    .sh-refused .gb-btn { display:inline-flex; align-items:center; min-height:44px; margin:0 8px 8px 0; }
+    .gb-viewbar { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin:0; padding:6px 12px; background:var(--gb-ink); color:#fff; font-size:14px; }
+    .gb-viewbar a { display:inline-flex; align-items:center; min-height:44px; padding:0 12px; border:1.5px solid #fff; border-radius:10px; color:#fff; font-weight:700; text-decoration:none; }
+    .gb-viewbar a[aria-current="page"] { background:#fff; color:var(--gb-ink); }
+    .gb-viewbar a:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+    .sh-lead { margin:0 0 10px; }
+    .sh-later { margin:6px 0 10px; padding-left:20px; }
+    .sh-later li { margin:4px 0; }
+    .gb-switch .gb-emoji, #base-name .gb-emoji { margin-right:.3em; }
+    /* the route map's status line is a <p class="status">, which style.css draws as the chooser's small uppercase pill: read it as a sentence */
+    #world-map .status { font-size:15px; font-weight:400; text-transform:none; letter-spacing:normal; white-space:normal; border-radius:0; padding:12px 8px; }
+    /* phones: the floating Buddy (44px, bottom right) keeps clear of the quest strip and the Town / World switch */
+    @media (max-width:959px) { body.hh .hh-bottom { padding-right:52px; } }
+    /* a staff building is smaller than a school: draw it a little smaller on phones (base.css gives a school 600px), still pannable */
+    body.hh #school-3d > .sb { min-width:480px; max-width:720px; margin:0 auto; }
+  </style>
+</head>
+<body class="gb gb-app">
+
+  <!-- One page for the three staff homes (staff-home/roles.js): IT Teacher, PTI and Non-Teaching. The picture is the role's building;
+       the HUD (assets/game/home-hud.js) hugs its edges, every spot opens a sheet, and the switch moves between Town and World. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1 id="hub-title">स्टाफ़ होम · Staff home</h1><p id="hub-hello">La Montessori Schools</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header>
+  <div class="gb-shell">
+    <main class="gb-stage">
+      <section class="hero" id="auth-root" style="padding-top:24px;">
+        <h2>स्टाफ़ होम में साइन इन करें · Sign in to your staff home</h2>
+        <div id="gate-slot"></div>
+        <div id="refused" class="sh-refused" role="alert" hidden></div>
+      </section>
+      <div id="app-root" style="display:none">
+        <nav class="gb-viewbar" id="view-bar" aria-label="Preview" hidden></nav>
+        <!-- what the HUD moves into its one sheet when opened: Today (game.js), the event card (event.js) and sign out -->
+        <div id="hh-stash" hidden>
+          <div class="gb-next-slot"></div>
+          <section id="game-root" aria-label="Today with Buddy" hidden></section>
+          <a href="#" class="gb-btn" id="signout-link">साइन आउट · Sign out</a>
+        </div>
+        <div class="hh-scene" id="hh-scene">
+          <div class="gb-switch" id="hh-switch" role="group" aria-label="देखें · View">
+            <button type="button" id="view-home" aria-pressed="true" aria-controls="modules"><span data-emoji="school"></span>स्कूल · Town</button>
+            <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span>दुनिया · World</button>
+          </div>
+          <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
+            <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span></p>
+            <div class="hh-bld"><div class="sb-box" id="school-3d"></div><div class="hh-bubbles" id="hh-bubbles"></div></div>
+            <p class="sb-said" id="school-said" role="status">किसी जगह पर टैप करें · Tap a spot to open it.</p>
+          </div></section>
+          <section id="world" aria-label="आपके स्कूल के रूट · Your school's routes" hidden>
+            <div id="world-map"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site">
+    <div class="wrap">
+      LMCS Portal — internal management system for La Montessori Schools.
+    </div>
+  </footer>
+
+  <script src="../assets/auth.js?v=4ad1f1b6"></script>
+  <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
+  <script src="../assets/game/game.js?v=283ee731"></script>
+  <script src="../assets/game/emoji.js?v=63bc0a65"></script>
+  <script src="../assets/game/school-building.js?v=ec79c3ff"></script>
+  <script src="../assets/game/home-hud.js?v=29519cee"></script>
+  <script src="../assets/game/rail.js?v=e726bf9c"></script>
+  <script src="../coordinator/route-map.js?v=5cdc9703"></script>
+  <script src="./roles.js?v=e5205cb9"></script>
+  <script>
+    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as every home
+    const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
+    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec'; // staffsignin: the department
+    const WORLD_SOON = 'आपके स्कूल के बस रूट जल्द यहाँ दिखेंगे · Your school\'s bus routes will show here soon.';
+    const SH = LMCSStaffHome, h = LMCSGame.ui.h;
+    let ROLE = null, PICK = null, BUILDING = null, CENTRED = false, worldMap = null;
+
+    // ── who is this: the gate (roles.js), with one staffsignin call for a session signed in before the department was kept ──
+    function deptKey(session) { return 'lmcs-staff-dept|' + String(session.email || '').toLowerCase(); }
+    function knownDept(session) {
+      if (session.department) return session;
+      try { const d = sessionStorage.getItem(deptKey(session)); if (d) return Object.assign({}, session, { department: d }); } catch (e) { /* private mode */ }
+      return session;
+    }
+    async function askDept(session) {
+      try {
+        const r = await (await fetch(PDR_BACKEND_URL + '?action=staffsignin&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })).json();
+        const d = r && r.success && String(r.department || '').toLowerCase();
+        if (d) { try { sessionStorage.setItem(deptKey(session), d); } catch (e) { /* private mode: asked again next time */ } return Object.assign({}, session, { department: d }); }
+      } catch (e) { console.warn('staffsignin', e); }
+      return null;
+    }
+    function refuse(reason) {
+      const r = SH.REFUSE[reason] || SH.REFUSE.unknown, box = document.getElementById('refused');
+      box.textContent = '';
+      box.appendChild(h('p', {}, r.text));
+      if (r.url) box.appendChild(h('a', { class: 'gb-btn', href: r.url }, r.go));
+      if (r.again) { const b = h('button', { type: 'button', class: 'gb-btn' }, 'दोबारा साइन इन करें · Sign in again'); b.onclick = function () { LMCS.signOut(); }; box.appendChild(b); }
+      box.hidden = false;
+      document.getElementById('gate-slot').hidden = true;
+    }
+    async function enter(session) {
+      let s = knownDept(session), pick = SH.gate(s, query());
+      if (pick.need) { const asked = await askDept(s); pick = asked ? SH.gate(asked, query()) : { refuse: 'unknown' }; }
+      if (pick.refuse) return refuse(pick.refuse);
+      showApp(s, pick);
+    }
+    function query() { const q = new URLSearchParams(location.search); return { role: q.get('role') || '', campus: (q.get('campus') || '').toUpperCase() }; }
+
+    // ── the building: spots are rooms; a tap opens that spot's sheet (or, for the bus bay, the World) ──
+    function drawSchool() {
+      const box = document.getElementById('school-3d'), keep = box.scrollLeft, r = SH.ROLES[ROLE];
+      BUILDING = LMCSBuilding.clean(Object.assign({}, r.building, { campus: PICK.campus }));
+      box.innerHTML = LMCSBuilding.svg(BUILDING, { hosts: Object.keys(SH.sources(ROLE)), art: false, title: r.place }); // every label is escaped inside svg()
+      if (CENTRED) box.scrollLeft = keep; else centre();
+    }
+    function centre() {
+      const box = document.getElementById('school-3d');
+      if (CENTRED || !box.clientWidth || !box.firstElementChild) return;
+      box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2); CENTRED = true;
+    }
+    function pickRoom(id, g) {
+      const r = BUILDING && LMCSBuilding.rooms(BUILDING).filter(function (x) { return x.id === id; })[0];
+      if (!r || !r.host) return;
+      [].forEach.call(document.querySelectorAll('#school-3d .sb-room'), function (x) { x.classList.toggle('is-picked', x.getAttribute('data-room') === id); });
+      document.getElementById('school-said').textContent = r.name;
+      LMCSHomeHud.openSource(r.host, g);
+    }
+    function wireSchool() {
+      const box = document.getElementById('school-3d');
+      box.addEventListener('click', function (e) { const g = e.target.closest('.sb-room'); if (g) pickRoom(g.getAttribute('data-room'), g); });
+      box.addEventListener('keydown', function (e) { const g = e.target.closest('.sb-room'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickRoom(g.getAttribute('data-room'), g); } });
+    }
+    // what a spot's sheet holds (roles.js sheet()): what it is for, what will arrive there, and any real page it links to
+    function sourceBody(key) {
+      const s = SH.sheet(ROLE, key), box = h('div');
+      if (!s) return box;
+      box.appendChild(h('p', { class: 'sh-lead' }, s.lead));
+      if (s.later.length) { box.appendChild(h('h3', {}, 'यहाँ आएगा · Coming here')); box.appendChild(h('ul', { class: 'sh-later' }, s.later.map(function (t) { return h('li', {}, t); }))); }
+      if (s.soon) box.appendChild(h('p', { class: 'hh-empty' }, s.soon));
+      if (s.links.length) box.appendChild(h('ul', { class: 'hh-list' }, s.links.map(function (l) {
+        return h('li', {}, h('a', { class: 'hh-row', href: l.url }, [LMCSEmoji.tag(l.e), h('span', { class: 'hh-row-t' }, [l.label, h('small', { class: 'gb-muted', style: 'display:block;font-weight:400' }, l.note)]), h('span', { class: 'hh-go', 'aria-hidden': 'true' }, '›')]));
+      })));
+      return box;
+    }
+
+    // ── Town / World: the World is the school's bus routes (Fleet Command's route map), read only, this school only ──
+    function showView(world) {
+      document.getElementById('modules').hidden = world;
+      document.getElementById('world').hidden = !world;
+      document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+      document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+      if (!world) centre();
+      else if (!worldMap) worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro', campus: PICK.campus, refused: WORLD_SOON });
+    }
+
+    function hello() {
+      const hr = Number(new Date(Date.now() + 330 * 60000).toISOString().slice(11, 13));
+      return hr < 12 ? 'सुप्रभात · Good morning' : hr < 17 ? 'नमस्ते · Good afternoon' : 'शुभ संध्या · Good evening';
+    }
+    // the Owner's preview: one link per home, read only (no game call: the Owner's own Today is not theirs)
+    function previewBar() {
+      const bar = document.getElementById('view-bar');
+      bar.appendChild(h('span', {}, 'Owner preview · ' + LMCS.campusLabel(PICK.campus) + ' · केवल देखें · read only'));
+      Object.keys(SH.ROLES).forEach(function (k) {
+        bar.appendChild(h('a', { href: '?role=' + k + '&campus=' + PICK.campus, 'aria-current': k === ROLE ? 'page' : null }, SH.ROLES[k].title));
+      });
+      bar.hidden = false;
+    }
+
+    function showApp(session, pick) {
+      PICK = pick; ROLE = pick.role;
+      const r = SH.ROLES[ROLE], view = Object.assign({}, session, { campusId: pick.campus, campusName: LMCS.campusLabel(pick.campus) });
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      document.getElementById('hub-title').textContent = r.title;
+      document.getElementById('hub-hello').textContent = hello() + ' · ' + view.campusName;
+      document.getElementById('base-name').textContent = r.place;
+      document.getElementById('base-name').insertBefore(LMCSEmoji.tag('base'), document.getElementById('base-name').firstChild);
+      document.getElementById('signout-link').addEventListener('click', function (e) { e.preventDefault(); LMCS.signOut(); });
+      document.getElementById('view-home').addEventListener('click', function () { showView(false); });
+      document.getElementById('view-world').addEventListener('click', function () { showView(true); });
+      if (pick.preview) previewBar();
+      LMCSHomeHud.mount({ session: view, campus: pick.campus, root: '../', scene: document.getElementById('hh-scene'), bubbles: document.getElementById('hh-bubbles'),
+        building: document.getElementById('school-3d'), stash: document.getElementById('hh-stash'), gameRoot: document.getElementById('game-root'),
+        evSlot: document.querySelector('.gb-next-slot'), signout: document.getElementById('signout-link'), switchEl: document.getElementById('hh-switch'),
+        world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title, noQuests: SH.NO_QUESTS });
+      wireSchool(); drawSchool();
+      if (pick.preview) { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [], quests: [], windows: [] } })); return; }
+      if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
+    }
+
+    // a kept session shows the home at once; otherwise the staff Google sign-in gate (assets/auth.js) first
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) enter(cachedSession);
+    else LMCS.requireSession('#gate-slot').then(enter);
+  </script>
+
+</body>
+</html>

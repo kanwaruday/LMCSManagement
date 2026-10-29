@@ -10,7 +10,7 @@
 //     box: { id, name, x, y, w, d, floors, rooms }            (x runs right-down, y runs left-down on the screen)
 //     arc: { id, name, kind: 'arc', cx, cy, r, depth, a0, a1, floors, rooms }   (a curved range: inner radius r, angles in degrees,
 //          0 = along x, 90 = along y; rooms sit on the inner, concave face)
-//   A room on a box: { id, name, short?, type, holds?, host?, face: 'front' | 'side', floor, at, span }
+//   A room on a box: { id, name, short?, type, holds?, host?, e?, face: 'front' | 'side', floor, at, span }   (e: an LMCSEmoji key over the type's)
 //     front = the face along x (at = x offset from the block's x), side = the face along y (at = y offset).
 //   A room on an arc: { id, name, short?, type, holds?, host?, floor, from, to }  (from/to: 0..1 along the arc, a0 to a1)
 //   A ground: { id, name, short?, type, host?, x, y, w, d } or { …, pts: [[x, y], …] } for any flat outline.
@@ -26,7 +26,8 @@ var LMCSBuilding = (function () {
   var TYPE_KEY = { classroom: 'classroom', lab: 'lab', computer: 'computerLab', library: 'library', office: 'office', staff: 'staffRoom', store: 'store',
     washroom: 'washroom', hall: 'hall', lobby: 'lobby', ground: 'ground', busbay: 'busBay', site: 'site' };
   var TYPES = Object.keys(TYPE_KEY);
-  function emoji(type) { var E = typeof LMCSEmoji !== 'undefined' ? LMCSEmoji : null; return E ? E.get(TYPE_KEY[type]) : ''; }
+  // a room's own emoji key (r.e, an LMCSEmoji key) wins over its type's: e.g. the IT Teacher's CCTV spot is an office with a camera
+  function emoji(type, key) { var E = typeof LMCSEmoji !== 'undefined' ? LMCSEmoji : null; return E ? (key && E.get(key)) || E.get(TYPE_KEY[type]) : ''; }
 
   // A placeholder school: a two-floor classroom block and a one-floor office wing, with a playground, a bus bay and a
   // building site. Shown, marked "sample", for any campus whose own building isn't set yet.
@@ -65,7 +66,7 @@ var LMCSBuilding = (function () {
   function clamp(v, lo, hi, d) { return Math.max(lo, Math.min(hi, num(v, d))); }
   function str(v, n) { return v == null ? '' : String(v).slice(0, n); }
   function obj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
-  function roomBase(r) { return { id: str(r.id, 40), name: str(r.name, 60), short: str(r.short, 16), type: r.type, holds: str(r.holds, 12), host: str(r.host, 20) }; }
+  function roomBase(r) { return { id: str(r.id, 40), name: str(r.name, 60), short: str(r.short, 16), type: r.type, holds: str(r.holds, 12), host: str(r.host, 20), e: str(r.e, 24) }; }
 
   // keep only what the drawing understands: numbers in range, known types, short names; a bad room is dropped, never drawn wrong
   function clean(m) {
@@ -183,7 +184,7 @@ var LMCSBuilding = (function () {
       var c = centre(corners), host = isHost(r);
       return '<g class="sb-room' + (host ? ' sb-host' : '') + '" data-room="' + esc(r.id) + '" tabindex="0" role="button" aria-label="' + esc(label(r) + (host ? ', opens below' : '')) + '">' +
         '<polygon points="' + poly(corners) + '" class="sb-' + (flat ? 'ground' : 'win') + '"/>' +
-        '<text x="' + c[0].toFixed(1) + '" y="' + (c[1] + 1).toFixed(1) + '" class="sb-e" aria-hidden="true">' + emoji(r.type) + '</text>' +
+        '<text x="' + c[0].toFixed(1) + '" y="' + (c[1] + 1).toFixed(1) + '" class="sb-e" aria-hidden="true">' + emoji(r.type, r.e) + '</text>' +
         (r.holds || host || flat ? '<text x="' + c[0].toFixed(1) + '" y="' + (c[1] + 15).toFixed(1) + '" class="sb-t" aria-hidden="true">' + esc(r.holds || r.short || r.name) + '</text>' : '') + '</g>';
     }
     var out = [];

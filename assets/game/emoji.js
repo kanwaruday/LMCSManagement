@@ -26,7 +26,9 @@ var LMCSEmoji = (function () {
     settings: '⚙️',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
-    hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'
+    hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱',
+    // staff homes (staff-home/, 29 Oct): the IT Teacher's lab spots, the PTI's ground, the Non-Teaching office
+    cctv: '👁️', epabx: '☎️', digitalClass: '🖥️', examPrint: '🖨️', sportsKit: '🏏', assembly: '📣', sportsDay: '🏅', upkeep: '🧹', gate: '🚪', post: '✉️'
   });
   function get(k) { return Object.prototype.hasOwnProperty.call(MAP, k) ? MAP[k] : ''; }
   function tag(k) {

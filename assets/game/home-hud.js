@@ -6,6 +6,11 @@
 // never calls a backend. No lists sit on the page itself: the old #game-root, #rooms and #panels are reachable only through these controls.
 //   LMCSHomeHud.mount({ session, campus, root, scene, bubbles, building, stash, gameRoot, evSlot, appt, signout, switchEl, world, content })
 //   LMCSHomeHud.setBase(base)   the Kingdom base (own level and points), after each load
+// Other homes (staff-home/: IT Teacher, PTI, Non-Teaching) pass optional hooks; the Principal passes none and keeps the defaults:
+//   sources: { key: { label, e } } in place of SOURCES (built-in keys today/routes/appointments keep their behaviour; any other key opens content(key))
+//   hotspots: { entrance, hotspots } in place of LMCSHomeHotspots[campus];  labels: words in place of LABELS (and labels.copy over COPY)
+//   role: the profile's Role line (default 'Principal');  noQuests: text shown instead of quests (quests are owner-assigned; the gate isn't live)
+//   appt may be left out (no appointments on that home).
 // Every piece of text reaches the DOM through text nodes (LMCSGame.ui.h), never as parsed HTML.
 var LMCSHomeHud = (function () {
   var IST_MS = 330 * 60000, CLOSE_MIN = 15 * 60 + 30; // the day closes at 15:30 IST (no Game Config value for it yet)
@@ -16,13 +21,17 @@ var LMCSHomeHud = (function () {
     appointments: { label: 'Appointments', e: 'appointments' }, routes: { label: 'Routes', e: 'bus' }
   };
   var KINDS = ['quest', 'count', 'setup'];
+  var LABELS = { town: 'Town', wild: 'Wilderness', daily: 'Daily', tasks: 'Tasks', openTasks: 'Open tasks', closeTasks: 'Close tasks', close: 'Close',
+    board: 'Quest board', quests: 'Quests', growth: 'Growth', profile: 'Your profile', name: 'Name', role: 'Role', campus: 'Campus', level: 'Level',
+    points: 'Points', account: 'Account', appointments: 'Appointments', go: 'Go →', goAria: 'Go: ', waiting: 'waiting', opened: 'opened', done: 'Done',
+    todo: 'To do', dayClosed: 'Day closed', closesIn: 'Day closes in', rank: 'Rank', questsLine: 'Quests' };
   var COPY = { clear: 'All clear today. Nothing is waiting.', town: 'Nothing open in town. Nice.', daily: 'No daily missions today.', growth: 'No setup quests open.',
     appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes' };
 
   // "Day closes in 3h 10m" (IST), or "Day closed" once 15:30 has passed
-  function dayClock(now, closeMin) {
-    var d = new Date(now.getTime() + IST_MS), left = (closeMin == null ? CLOSE_MIN : closeMin) - (d.getUTCHours() * 60 + d.getUTCMinutes());
-    return left <= 0 ? 'Day closed' : 'Day closes in ' + (left >= 60 ? Math.floor(left / 60) + 'h ' : '') + (left % 60) + 'm';
+  function dayClock(now, closeMin, words) {
+    var w = words || LABELS, d = new Date(now.getTime() + IST_MS), left = (closeMin == null ? CLOSE_MIN : closeMin) - (d.getUTCHours() * 60 + d.getUTCMinutes());
+    return left <= 0 ? w.dayClosed : w.closesIn + ' ' + (left >= 60 ? Math.floor(left / 60) + 'h ' : '') + (left % 60) + 'm';
   }
   // A rank shows only when the game state response carries a `rank` field. Today the backend never sends one: others' scores and
   // ranks are the Owner's only (29 Oct). Later the backend decides who gets `rank` (config ranking.visibleTo): no frontend rebuild.
@@ -37,18 +46,18 @@ var LMCSHomeHud = (function () {
     return n;
   }
   // which hotspots have a room in the drawn building, and which sources go to the Quest board instead (every source exactly once)
-  function plan(cfg, roomIds) {
-    var placed = [], have = {};
+  function plan(cfg, roomIds, sources) {
+    var src = sources || SOURCES, placed = [], have = {};
     ((cfg && cfg.hotspots) || []).forEach(function (s) {
-      if (SOURCES[s.source] && KINDS.indexOf(s.kind) !== -1 && roomIds.indexOf(s.room) !== -1 && !have[s.source]) { placed.push(s); have[s.source] = true; }
+      if (src[s.source] && KINDS.indexOf(s.kind) !== -1 && roomIds.indexOf(s.room) !== -1 && !have[s.source]) { placed.push(s); have[s.source] = true; }
     });
-    return { placed: placed, board: Object.keys(SOURCES).filter(function (k) { return !have[k]; }) };
+    return { placed: placed, board: Object.keys(src).filter(function (k) { return !have[k]; }) };
   }
-  var api = { SOURCES: SOURCES, KINDS: KINDS, COPY: COPY, dayClock: dayClock, rankText: rankText, setupLeft: setupLeft, plan: plan };
+  var api = { SOURCES: SOURCES, KINDS: KINDS, COPY: COPY, LABELS: LABELS, dayClock: dayClock, rankText: rankText, setupLeft: setupLeft, plan: plan };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ page ═══
-  var h = LMCSGame.ui.h, S = { today: null, base: null, o: null, sheet: null, bubbles: [], cfg: null };
+  var h = LMCSGame.ui.h, S = { today: null, base: null, o: null, sheet: null, bubbles: [], cfg: null, src: SOURCES, L: LABELS, C: COPY };
   function emoji(k) { return window.LMCSEmoji ? LMCSEmoji.tag(k) : null; }
   function first(a) { return [].filter.call(a, Boolean)[0]; }
   // arrow keys move between tabs (role=tablist); returns { el, select(i) }
@@ -70,7 +79,7 @@ var LMCSHomeHud = (function () {
   function sheet() {
     if (S.sheet) return S.sheet;
     var title = h('h2', { id: 'hh-sheet-h', tabindex: '-1' }), body = h('div', { class: 'hh-sheet-body' }), tabHost = h('div'), live = h('p', { class: 'hh-live', role: 'status', 'aria-live': 'polite' });
-    var x = h('button', { type: 'button', class: 'hh-x', 'aria-label': 'Close' }, '×');
+    var x = h('button', { type: 'button', class: 'hh-x', 'aria-label': S.L.close }, '×');
     var box = h('div', { class: 'hh-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h' }, [h('div', { class: 'hh-sheet-head' }, [title, x]), tabHost, body, live]);
     var layer = h('div', { class: 'hh-layer', hidden: 'hidden' }, [h('div', { class: 'hh-backdrop' }), box]);
     document.body.appendChild(layer);
@@ -90,7 +99,7 @@ var LMCSHomeHud = (function () {
     s.release = LMCSGame.ui.trap(s.box, function () { close(); });
     s.opener = o.opener || document.activeElement;
     s.title.focus();
-    setTimeout(function () { s.live.textContent = o.say || o.title + ' opened'; }, 50);
+    setTimeout(function () { s.live.textContent = o.say || o.title + ' ' + S.L.opened; }, 50);
   }
   function close(quiet) {
     var s = S.sheet; if (!s || !s.open) return;
@@ -104,29 +113,29 @@ var LMCSHomeHud = (function () {
 
   // ── what each source opens ──
   function openSource(key, opener) {
-    var src = SOURCES[key]; if (!src) return;
+    var src = S.src[key]; if (!src) return;
     if (key === 'routes') { close(true); S.o.world(true); S.o.switchEl.querySelector('button[aria-pressed="true"]').focus(); return; }
-    if (key === 'today') { var g = gameNode(); return open({ title: src.label, nodes: [S.o.gameRoot.hidden ? note(COPY.today) : null, g].filter(Boolean), held: [g], opener: opener }); }
-    if (key === 'appointments') {
-      var a = S.o.appt; return open({ title: src.label, nodes: [a.textContent.trim() ? null : note(COPY.appts), a].filter(Boolean), held: [a], opener: opener });
+    if (key === 'today') { var g = gameNode(); return open({ title: src.label, nodes: [S.o.gameRoot.hidden ? note(S.C.today) : null, g].filter(Boolean), held: [g], opener: opener }); }
+    if (key === 'appointments' && S.o.appt) {
+      var a = S.o.appt; return open({ title: src.label, nodes: [a.textContent.trim() ? null : note(S.C.appts), a].filter(Boolean), held: [a], opener: opener });
     }
     open({ title: src.label, nodes: [S.o.content(key)], opener: opener });
   }
   function openBoard(opener) {
     var ul = h('ul', { class: 'hh-list' });
     S.board.forEach(function (k) {
-      var b = h('button', { type: 'button', class: 'hh-row' }, [emoji(SOURCES[k].e), h('span', { class: 'hh-row-t' }, SOURCES[k].label), h('span', { class: 'hh-go', 'aria-hidden': 'true' }, '›')]);
+      var b = h('button', { type: 'button', class: 'hh-row' }, [emoji(S.src[k].e), h('span', { class: 'hh-row-t' }, S.src[k].label), h('span', { class: 'hh-go', 'aria-hidden': 'true' }, '›')]);
       b.onclick = function () { openSource(k, b); };
       ul.appendChild(h('li', {}, b));
     });
-    open({ title: 'Quest board', nodes: [ul], opener: opener });
+    open({ title: S.L.board, nodes: [ul], opener: opener });
   }
   function openQuests(opener, tab) {
-    var g = gameNode(), setup = h('div', { class: 'hh-growth-more' }, S.o.content('setup'));
-    var t = tabs(['Growth', 'Daily'], function (i) {
+    var g = gameNode(), nq = S.o.noQuests, setup = h('div', { class: 'hh-growth-more' }, nq ? note(nq) : S.o.content('setup'));
+    var t = tabs([S.L.growth, S.L.daily], function (i) {
       g.classList.toggle('hh-only-growth', i === 0); g.classList.toggle('hh-only-daily', i === 1); setup.hidden = i === 1;
     });
-    open({ title: 'Quests', nodes: [S.o.gameRoot.hidden ? note(COPY.today) : null, g, setup].filter(Boolean), held: [g], tabs: t, opener: opener });
+    open({ title: S.L.quests, nodes: [S.o.gameRoot.hidden ? note(S.C.today) : null, g, setup].filter(Boolean), held: [g], tabs: t, opener: opener });
     t.select(tab === 'daily' ? 1 : 0);
   }
   function openEvent(opener, label) {
@@ -134,24 +143,24 @@ var LMCSHomeHud = (function () {
   }
   function openProfile(opener) {
     var s = S.o.session, base = S.base, held = [S.o.signout], nodes = [];
-    var facts = h('dl', { class: 'hh-facts' }, [['Name', s.name], ['Role', 'Principal'], ['Campus', s.campusName]].concat(base ? [['Level', String(Number(base.level) || 0)], ['Points', String(Number(base.points) || 0)]] : [])
+    var L = S.L, facts = h('dl', { class: 'hh-facts' }, [[L.name, s.name], [L.role, S.o.role || 'Principal'], [L.campus, s.campusName]].concat(base ? [[L.level, String(Number(base.level) || 0)], [L.points, String(Number(base.points) || 0)]] : [])
       .reduce(function (a, f) { return f[1] ? a.concat([h('dt', {}, f[0]), h('dd', {}, f[1])]) : a; }, []));
     nodes.push(facts);
-    if (S.o.appt.textContent.trim()) { held.push(S.o.appt); nodes.push(h('h3', {}, 'Appointments'), S.o.appt); }
-    nodes.push(h('h3', {}, 'Account'), S.o.signout);
-    open({ title: s.name ? s.name : 'Profile', nodes: nodes, held: held, opener: opener });
+    if (S.o.appt && S.o.appt.textContent.trim()) { held.push(S.o.appt); nodes.push(h('h3', {}, L.appointments), S.o.appt); }
+    nodes.push(h('h3', {}, L.account), S.o.signout);
+    open({ title: s.name ? s.name : L.profile, nodes: nodes, held: held, opener: opener });
   }
 
   // ── the HUD ──
   function btn(cls, label, kids, fn) { var b = h('button', { type: 'button', class: cls, 'aria-label': label }, kids); b.onclick = function () { fn(b); }; return b; }
   function badge(n) { return h('span', { class: 'hh-badge', 'aria-hidden': 'true', hidden: n > 0 ? null : 'hidden' }, n > 99 ? '99+' : String(n)); }
   function setBadge(b, n) { b.textContent = n > 99 ? '99+' : String(n); b.hidden = !(n > 0); }
-  function setLabel(b, name, n) { b.setAttribute('aria-label', n > 0 ? name + ', ' + n + ' waiting' : name); }
+  function setLabel(b, name, n) { b.setAttribute('aria-label', n > 0 ? name + ', ' + n + ' ' + S.L.waiting : name); }
 
   function buildHud() {
-    var o = S.o, el = {};
+    var o = S.o, el = {}, L = S.L;
     var initial = String((o.session.name || '?').trim().charAt(0) || '?').toUpperCase();
-    el.avatar = btn('hh-avatar', 'Your profile', h('span', { 'aria-hidden': 'true' }, initial), openProfile);
+    el.avatar = btn('hh-avatar', L.profile, h('span', { 'aria-hidden': 'true' }, initial), openProfile);
     el.level = h('span', { class: 'hh-chip hh-level', hidden: 'hidden' });
     el.rank = h('span', { class: 'hh-chip hh-rank', hidden: 'hidden' }); // shown only when a state response carries `rank` (see rankText)
     el.clock = h('span', { class: 'hh-chip hh-clock' });
@@ -161,11 +170,12 @@ var LMCSHomeHud = (function () {
 
     // the task drawer: Town, Wilderness, Daily
     var panes = [h('div', { role: 'tabpanel' }), h('div', { role: 'tabpanel', hidden: 'hidden' }), h('div', { role: 'tabpanel', hidden: 'hidden' })];
-    var tt = tabs(['Town', 'Wilderness', 'Daily'], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
-    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [tt.el].concat(panes));
-    el.edge = h('button', { type: 'button', id: 'hh-edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
+    var tt = tabs([L.town, L.wild, L.daily], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
+    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': L.tasks }, [tt.el].concat(panes));
+    tt.select(0); // Town starts selected: opening the drawer focuses it (with none selected the focus call had no target)
+    el.edge = h('button', { type: 'button', id: 'hh-edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': L.openTasks }, h('span', { 'aria-hidden': 'true' }, '▸'));
     function drawer(on, focus) {
-      el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.setAttribute('aria-label', on ? 'Close tasks' : 'Open tasks');
+      el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.setAttribute('aria-label', on ? L.closeTasks : L.openTasks);
       el.edge.firstChild.textContent = on ? '◂' : '▸'; el.drawer.inert = !on;
       if (focus) (on ? tt.el.querySelector('[aria-selected="true"]') : el.edge).focus();
     }
@@ -190,9 +200,9 @@ var LMCSHomeHud = (function () {
   }
 
   function row(title, href, source) {
-    var kids = [h('span', { class: 'hh-row-t' }, title), h('span', { class: 'hh-go' }, 'Go →')];
-    if (href) return h('a', { class: 'hh-row', href: href, 'aria-label': 'Go: ' + title }, kids);
-    var b = h('button', { type: 'button', class: 'hh-row', 'aria-label': 'Go: ' + title }, kids); b.onclick = function () { S.drawer(false); openSource(source || 'today', S.el.edge); };
+    var kids = [h('span', { class: 'hh-row-t' }, title), h('span', { class: 'hh-go' }, S.L.go)];
+    if (href) return h('a', { class: 'hh-row', href: href, 'aria-label': S.L.goAria + title }, kids);
+    var b = h('button', { type: 'button', class: 'hh-row', 'aria-label': S.L.goAria + title }, kids); b.onclick = function () { S.drawer(false); openSource(source || 'today', S.el.edge); };
     return b;
   }
   function list(rows, empty) { return rows.length ? h('ul', { class: 'hh-list' }, rows.map(function (r) { return h('li', {}, r); })) : note(empty); }
@@ -201,32 +211,32 @@ var LMCSHomeHud = (function () {
   function renderToday() {
     var t = S.today, el = S.el, root = S.o.root; if (!t) return;
     var items = LMCSGame.openItems(t), town = items.map(function (x) { return row(x.title, x.m ? LMCSGame.safeHref(x.m.go, root) : null, 'today'); });
-    var quests = (t.quests || []).filter(function (q) { return !q.complete; });
+    var quests = S.o.noQuests ? [] : (t.quests || []).filter(function (q) { return !q.complete; }); // noQuests: owner-assigned only, none shown until the gate is live
     quests.forEach(function (q) {
       var s = first((q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; }));
       town.push(row(String(q.title || 'Quest'), s ? LMCSGame.safeHref(s.go, root) : null, 'today'));
     });
-    el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, COPY.town));
-    var wild = row(COPY.routes, null); wild.onclick = function () { S.drawer(false); S.o.world(true); }; // the World shows this school's routes
+    el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, S.C.town));
+    var wild = row(S.C.routes, null); wild.onclick = function () { S.drawer(false); S.o.world(true); }; // the World shows this school's routes
     el.panes[1].textContent = ''; el.panes[1].appendChild(list([wild], ''));
     var day = (t.missions || []).filter(function (m) { return !m.gone; }).map(function (m) {
       var done = !!m.done;
-      return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? 'Done' : 'To do')]);
+      return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? S.L.done : S.L.todo)]);
     });
-    el.panes[2].textContent = ''; el.panes[2].appendChild(list(day, COPY.daily));
-    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : COPY.clear, total = n.missions + n.quests;
+    el.panes[2].textContent = ''; el.panes[2].appendChild(list(day, S.C.daily));
+    var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : S.o.noQuests || S.C.clear, total = n.missions + (S.o.noQuests ? 0 : n.quests);
     el.strip.hidden = false; el.strip.querySelector('.hh-strip-t').textContent = line;
-    setBadge(el.strip.lastChild, total); setLabel(el.strip, 'Quests: ' + line, total);
+    setBadge(el.strip.lastChild, total); setLabel(el.strip, S.L.questsLine + ': ' + line, total);
     bubbles();
   }
   function renderBase() {
     var b = S.base, el = S.el; if (!el) return;
     el.level.hidden = !b; if (b) el.level.textContent = (LMCSEmoji.get('level') + ' Level ' + (Number(b.level) || 0)).trim();
     el.points.hidden = !(b && b.points != null); if (b && b.points != null) el.points.textContent = LMCSEmoji.get('points') + ' ' + (Number(b.points) || 0);
-    var r = rankText(S.today, b); el.rank.hidden = !r; el.rank.textContent = r;
+    var r = rankText(S.today, b).replace(/^Rank/, S.L.rank); el.rank.hidden = !r; el.rank.textContent = r;
     bubbles();
   }
-  function tickClock() { if (S.el) S.el.clock.textContent = dayClock(new Date()); }
+  function tickClock() { if (S.el) S.el.clock.textContent = dayClock(new Date(), null, S.L); }
 
   // the right column: one icon per running event (today: Game Day), taken from event.js's card, hidden with no event
   function renderEvents() {
@@ -242,15 +252,15 @@ var LMCSHomeHud = (function () {
   function bubbles() {
     var o = S.o, layer = S.layer; if (!layer) return;
     var ids = roomEls().map(function (g) { return g.getAttribute('data-room'); }), counts = { today: S.today ? LMCSRail.counts(S.today).missions : 0, setup: setupLeft(S.base) };
-    var p = plan(S.cfg, ids), shown = p.placed.filter(function (s) { return counts[s.source] > 0; });
-    S.board = Object.keys(SOURCES).filter(function (k) { return !shown.some(function (s) { return s.source === k; }); }); // everything not on a bubble: reachable once, here
+    var p = plan(S.cfg, ids, S.src), shown = p.placed.filter(function (s) { return counts[s.source] > 0; });
+    S.board = Object.keys(S.src).filter(function (k) { return !shown.some(function (s) { return s.source === k; }); }); // everything not on a bubble: reachable once, here
     layer.textContent = ''; S.bubbles = [];
     shown.forEach(function (s) {
-      var src = SOURCES[s.source], n = counts[s.source] || 0;
+      var src = S.src[s.source], n = counts[s.source] || 0;
       var b = btn('hh-b hh-b-' + s.kind, src.label, [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, s.kind === 'setup' ? '⬆' : LMCSEmoji.get(src.e)), badge(n)], function (x) { openSource(s.source, x); });
       setLabel(b, src.label, n); layer.appendChild(b); S.bubbles.push({ b: b, room: s.room });
     });
-    var board = btn('hh-b hh-b-board', 'Quest board', [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, LMCSEmoji.get('quests'))], function (x) { openBoard(x); });
+    var board = btn('hh-b hh-b-board', S.L.board, [h('span', { class: 'hh-b-e', 'aria-hidden': 'true' }, LMCSEmoji.get('quests'))], function (x) { openBoard(x); });
     layer.appendChild(board); S.bubbles.push({ b: board, room: (S.cfg && S.cfg.entrance) || '' });
     place();
   }
@@ -265,8 +275,10 @@ var LMCSHomeHud = (function () {
   }
 
   function mount(o) {
-    S.o = o; S.cfg = (typeof LMCSHomeHotspots !== 'undefined' && LMCSHomeHotspots[o.campus]) || { hotspots: [] };
-    S.layer = o.bubbles; S.board = Object.keys(SOURCES);
+    S.o = o; S.cfg = o.hotspots || (typeof LMCSHomeHotspots !== 'undefined' && LMCSHomeHotspots[o.campus]) || { hotspots: [] };
+    S.src = o.sources || SOURCES; S.L = Object.assign({}, LABELS, o.labels || {}); S.C = Object.assign({}, COPY, (o.labels && o.labels.copy) || {});
+    S.layer = o.bubbles; S.board = Object.keys(S.src);
+    if (o.noQuests) document.body.classList.add('hh-noquests'); // the Today panel's own quest cards stay hidden too
     document.body.classList.add('hh');
     LMCSGame.setTourTargets({ today: '#hh-strip', go: null, bar: '#hh-edge', quest: null }); // Today is in a sheet: the tours point at the quest strip, the task tab and the building
     buildHud(); tickClock(); setInterval(tickClock, 30000);

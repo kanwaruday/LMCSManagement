@@ -39,7 +39,7 @@ body.hh .gb-panels { display:none; }
 .hh-drawer { position:absolute; left:0; top:100px; bottom:140px; width:min(86vw, 340px); padding:8px 12px; overflow:auto; background:var(--gb-paper); border-right:2px solid var(--gb-line); border-radius:0 14px 14px 0; box-shadow:4px 0 14px rgba(0,0,0,.2);
   transform:translateX(-102%); visibility:hidden; }
 .hh-drawer.is-open { transform:none; visibility:visible; }
-.hh-drawer.is-open ~ .hh-edge { left:min(86vw, 340px); }
+.hh-edge[aria-expanded="true"] { left:min(86vw, 340px); } /* the tab sits before the drawer in the DOM, so it follows the open state, not a sibling rule */
 .hh-tabs { display:flex; gap:4px; margin:0 0 8px; }
 .hh-tabs button { flex:1; min-height:44px; min-width:44px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); color:var(--gb-ink); font-weight:700; }
 .hh-tabs button[aria-selected="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
@@ -87,7 +87,7 @@ body.hh .gb-switch button { box-shadow:0 2px 6px rgba(0,0,0,.2); }
 .hh-live { margin:0; min-height:0; font-size:13px; color:var(--gb-muted); }
 .hh-facts { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
 .hh-facts dt { color:var(--gb-muted); } .hh-facts dd { margin:0; font-weight:700; }
-.hh-only-growth .lg-today, .hh-only-daily .lg-quest { display:none; }
+.hh-only-growth .lg-today, .hh-only-daily .lg-quest, body.hh-noquests .lg-quest { display:none; } /* hh-noquests: staff-home/, quests are owner-assigned only */
 body.hh-sheet-open { overflow:hidden; }
 @media (min-width:1024px) {
   .hh-sheet { left:auto; top:0; width:420px; max-height:none; border-radius:18px 0 0 18px; box-shadow:-4px 0 20px rgba(0,0,0,.3); }

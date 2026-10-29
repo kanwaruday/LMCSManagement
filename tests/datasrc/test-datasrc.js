@@ -48,6 +48,7 @@ const NO_SOURCES = {
   'teacher/plan-activity.html': 'one-line write to the Game backend; shows no sheet data',
   'guide/index.html': 'the user guide: feature help from assets/game/guide.js, no data',
   'setup/index.html': 'setup quests: confirm-values screens backed by the game backend (setupget/setupsave), no source sheet links',
+  'staff-home/index.html': 'staff home (IT Teacher, PTI, Non-Teaching): game backend Today, the route map and fixed spot text from staff-home/roles.js; no sheet links',
   'driver/index.html': 'driver portal: a demo, or the driver\'s own bus through the Roster web app (driverme) once the office links the phone; the fuel record is not decided yet',
   'coordinator/transport/drivers.html': 'driver phone links: lists and creates links through the Roster web app (apps-script/driver-link.gs); it shows no sheet data and never stores the link token',
   'coordinator/transport/capture.html': 'phone capture page: writes photos and run rows through the Roster web app (apps-script/transport-capture.gs); it shows no sheet data',
