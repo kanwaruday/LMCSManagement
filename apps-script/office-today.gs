@@ -6,8 +6,12 @@
 function officeTodayActions_() {
   return {
     'today.get': { roles: OFFICE_ALL_ROLES, write: false, run: officeTodayGet_ },
+    'today.summary': { roles: OFFICE_DESK_ROLES, write: false, run: officeTodaySummary_ },
   };
 }
+
+// The money desk: the roles whose daily routine is the Day Book (a Principal or Coordinator alone gets no summary).
+var OFFICE_DESK_ROLES = ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'];
 
 function officeTodayProviders_() {
   return [
@@ -112,4 +116,35 @@ function officeTodaySignTasks_(ctx) {
     if (n) out.push({ id: 'sign:' + date, title: 'Sign ' + n + ' deposit' + (n > 1 ? 's' : '') + ' for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
   });
   return out;
+}
+
+// today.summary: the Game backend's desk rows (game-forms.gs), every campus the caller holds in one call, as flags and dates only
+// (no amounts): {date, yesterday, campuses: {LMS1: {can, tasks, day, handovers}}}.
+//   can        {report, close}: this person files the campus's report and deposits / closes its days and signs its deposits (the providers' roles)
+//   tasks      today.get's list for the campus (the same providers, so the game's rows agree with the office Today list)
+//   day        yesterday's recon as flags: booked (Day Book rows), cash (fee cash taken), banked (all of it deposited), erp (ERP total entered),
+//              closed, unsigned (deposits waiting for a signature); null when yesterday has no book
+//   handovers  cash sent to this campus by someone else, waiting (pending) or accepted since the start of yesterday: {id, from, date, state}
+function officeTodaySummary_(ctx) {
+  const today = officeToday_(), yday = officeAddDays_(today, -1), fy = officeFy_(today), holds = function (c) {
+    return ctx.caller.campuses.indexOf('ALL') !== -1 || ctx.caller.campuses.indexOf(c) !== -1;
+  };
+  const me = String(ctx.caller.email).toLowerCase(), since = officeAddDays_(today, -1), accepted = {}, all = officeHandovers_();
+  officeRows_(officeConfigBook_(), 'Handovers').forEach(function (r) { if (r.state === 'accepted') accepted[r.handover] = String(r.created_at || '').slice(0, 10); });
+  const out = {};
+  OFFICE_CAMPUSES.filter(function (c) { return holds(c) && officeHasBook_(c, fy); }).forEach(function (c) {
+    const can = { report: officeTodayHas_(ctx, ['FeeClerk', 'AdminManager', 'Owner']), close: officeTodayHas_(ctx, ['FinanceHead', 'Owner']) };
+    let day = null;
+    if (officeTodayHasBook_(c, yday)) {
+      const r = officeReconGet_({ caller: ctx.caller }, { campus: c, date: yday });
+      const booked = officeRows_(officeOpen_(c, officeFy_(yday)), 'DayBook').some(function (x) { return x.campus === c && x.entry_date === yday; });
+      day = { booked: booked, cash: r.daybook_fee_cash > 0, banked: r.deposited >= r.daybook_fee_cash, erp: r.erp !== null, closed: r.closed, unsigned: r.unsigned.length };
+    }
+    const handovers = Object.keys(all).map(function (k) { return all[k]; }).filter(function (ho) {
+      if (ho.to_campus !== c || String(ho.created_by).toLowerCase() === me) return false; // the sender never accepts their own
+      return ho.state === 'pending' || (ho.state === 'accepted' && (accepted[ho.id] || '') >= since);
+    }).map(function (ho) { return { id: ho.id, from: ho.from_campus, date: ho.handover_date, state: ho.state }; });
+    out[c] = { can: can, tasks: officeTodayGet_(ctx, { campus: c }).tasks, day: day, handovers: handovers };
+  });
+  return { date: today, yesterday: yday, campuses: out };
 }

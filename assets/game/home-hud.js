@@ -44,7 +44,13 @@ var LMCSHomeHud = (function () {
     });
     return { placed: placed, board: Object.keys(SOURCES).filter(function (k) { return !have[k]; }) };
   }
-  var api = { SOURCES: SOURCES, KINDS: KINDS, COPY: COPY, dayClock: dayClock, rankText: rankText, setupLeft: setupLeft, plan: plan };
+  // the drawer tab a mission belongs on: its own `panel` (game-forms.gs: 'town' | 'wild' | 'daily'), else a bus mission (fleet_*) in the
+  // Wilderness (vehicles out on duty), else Town. Decision windows and quests are always Town.
+  function panelOf(m) {
+    var p = m && m.panel;
+    return p === 'town' || p === 'wild' || p === 'daily' ? p : /^fleet_/.test(String((m && m.kind) || '')) ? 'wild' : 'town';
+  }
+  var api = { SOURCES: SOURCES, KINDS: KINDS, COPY: COPY, dayClock: dayClock, rankText: rankText, setupLeft: setupLeft, plan: plan, panelOf: panelOf };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ page ═══
@@ -230,7 +236,8 @@ var LMCSHomeHud = (function () {
   // the drawer, the strip and the clock follow what game.js loaded
   function renderToday() {
     var t = S.today, el = S.el, root = S.o.root; if (!t) return;
-    var items = LMCSGame.openItems(t), town = items.map(function (x) { return row(x.title, x.m ? LMCSGame.safeHref(x.m.go, root) : null, 'today'); });
+    var items = LMCSGame.openItems(t), town = items.filter(function (x) { return !x.m || panelOf(x.m) === 'town'; }).map(function (x) { return row(x.title, x.m ? LMCSGame.safeHref(x.m.go, root) : null, 'today'); });
+    var wildOpen = items.filter(function (x) { return x.m && panelOf(x.m) === 'wild'; }).map(function (x) { return row(x.title, LMCSGame.safeHref(x.m.go, root), 'today'); });
     var quests = (t.quests || []).filter(function (q) { return !q.complete; });
     quests.forEach(function (q) {
       var s = first((q.steps || []).filter(function (s) { return !s.done && !s.locked && !s.waiting; }));
@@ -238,12 +245,16 @@ var LMCSHomeHud = (function () {
     });
     // nothing open: "All done for now" when the person holds quests (all complete), "No quests yet" when none is assigned to them
     var questLine = (t.quests || []).length ? COPY.done : COPY.none;
-    el.edgeN = town.length; setBadge(el.edge.querySelector('.hh-badge'), town.length); el.edgeLabel();
+    var dailyOpen = items.filter(function (x) { return x.m && panelOf(x.m) === 'daily'; }).length, open = town.length + wildOpen.length + dailyOpen;
+    el.edgeN = open; setBadge(el.edge.querySelector('.hh-badge'), open); el.edgeLabel();
     el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, questLine));
-    el.panes[1].textContent = ''; el.panes[1].appendChild(list([wildRow()], ''));
+    el.panes[1].textContent = ''; el.panes[1].appendChild(list(wildOpen.concat([wildRow()]), ''));
+    // the day's checklist: every mission with its ✓; an open Daily-tab row (the routine) is its own link, the others are worked from Town or the Wilderness
     var day = (t.missions || []).filter(function (m) { return !m.gone; }).map(function (m) {
-      var done = !!m.done;
-      return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? 'Done' : 'To do')]);
+      var done = !!m.done, href = !done && panelOf(m) === 'daily' ? LMCSGame.safeHref(m.go, root) : null;
+      var kids = [h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'hh-row-t' }, String(m.title || '')), h('span', { class: 'hh-sr' }, done ? 'Done' : 'To do')];
+      if (href) return h('a', { class: 'hh-row', href: href, 'aria-label': 'Go: ' + String(m.title || '') }, kids.concat([h('span', { class: 'hh-go', 'aria-hidden': 'true' }, 'Go →')]));
+      return h('div', { class: 'hh-row hh-static' + (done ? ' is-done' : '') }, kids);
     });
     el.panes[2].textContent = ''; el.panes[2].appendChild(list(day, COPY.daily));
     var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : questLine, total = n.missions + n.quests;

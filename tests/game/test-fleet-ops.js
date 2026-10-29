@@ -162,7 +162,7 @@ let cm = by(ops(run(coord)));
 let m = cm['fleet_ops_gps_dead:gps_dead|TEST01'];
 assert.ok(m, Object.keys(cm).join('\n'));
 assert.strictEqual(m.kind, 'fleet_ops_gps_dead'); assert.strictEqual(m.title, 'TEST01 tracker is silent: ask Blackbox to check it');
-assert.strictEqual(m.campus, 'LMS4'); assert.strictEqual(m.due, '2026-10-29'); assert.strictEqual(m.go, 'coordinator/followups/index.html');
+assert.strictEqual(m.campus, 'LMS4'); assert.strictEqual(m.due, '2026-10-29'); assert.strictEqual(m.go, 'coordinator/transport/live.html'); // C8: closed there with its note
 assert.strictEqual(m.shared, true, 'no assignee: shared, no personal credit'); assert.strictEqual(m.owner, ''); assert.strictEqual(m.done, false); assert.strictEqual(m.core, false);
 m = cm['fleet_ops_bus_equipment:bus_equipment|TEST01|first_aid'];
 assert.strictEqual(m.title, 'First-aid box on TEST01 failed the safety check: fix it and check again'); assert.strictEqual(m.owner, 'coord@test.invalid'); assert.strictEqual(m.shared, false);
