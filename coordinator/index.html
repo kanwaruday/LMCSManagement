@@ -9,26 +9,24 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <link rel="stylesheet" href="../assets/game/map-home.css?v=16666e87" />
   <style>
-    /* hub only: rooms and schools are whole links (base.css's gb-room is a <details>); everything else comes from base.css */
+    /* the office's rooms (in the HQ window): whole links (base.css's gb-room is a <details>); everything else comes from base.css and map-home.css */
     .gb .gb-room-a { display:flex; flex-direction:column; gap:2px; min-height:88px; padding:10px; color:var(--gb-ink); text-decoration:none; }
     .gb .gb-room-a:active { background:var(--gb-gold-soft); }
     .gb-room-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
     .gb-room.is-later { background:transparent; border-style:dashed; }
-    #world .gb-base-in { background:#e7ecdf; border-color:var(--gb-line); border-top:2px solid var(--gb-line); border-radius:14px; }
-    #world::before { display:none; }
-    #routes { margin-top:12px; }
-    .gb-switch .gb-emoji, .gb-base-h .gb-emoji { margin-right:.3em; }
+    #office .gb-rooms, #tools { margin:0; }
   </style>
 </head>
 <body class="gb gb-app">
 
-  <!-- The screen skeleton (assets/game/base.css). Coordinator portal is the hub: Today (game.js) carries the next step,
-       the department paths sit under it, everything else folds into the panels. -->
+  <!-- The screen skeleton (assets/game/base.css). The Coordinator's home is the map (assets/game/map-home.js, Uday 29 Oct): the same
+       valley as the Owner's, the schools of their district lit and the rest dimmed, a bubble where something waits for them to act on,
+       and every list in a window. The office (one room per department), Today, the tools and the account wait in the stash. -->
   <header class="gb-head"><div><div id="welcome-strip"><h1>Coordinator portal</h1><p id="hub-hello">Coordinator</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Portal home</a></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-    <div class="gb-next-slot"></div>
     <main class="gb-stage">
       <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
       <section class="hero" id="auth-root" style="padding-top:24px;">
@@ -36,29 +34,26 @@
         <div id="gate-slot"></div>
       </section>
       <div id="app-root" style="display:none">
-        <section id="game-root" aria-label="Today with Buddy" hidden></section>
-        <!-- 🏠 Home Base (the Coordinator's office at HQ, one room per department) or 🗺️ World (the district's schools, and
-             the bus routes on request): Uday, 28 Oct -->
-        <div class="gb-switch" role="group" aria-label="View">
-          <button type="button" id="view-home" aria-pressed="true" aria-controls="modules"><span data-emoji="homeBase"></span>Office</button>
-          <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span>District</button>
+        <div id="mh-stash" hidden>
+          <div class="gb-next-slot"></div>
+          <section id="game-root" aria-label="Today with Buddy" hidden></section>
+          <section id="office" aria-label="Coordinator office"><h3>Your office · one room per department</h3><div class="gb-rooms" id="modules-grid"><!-- one room per department, filled in by JS --></div></section>
+          <section id="tools-wrap"><h3>All tools</h3><ul class="gb-list" id="tools"></ul></section>
+          <section id="appt-wrap"><h3>Appointments</h3><div id="appt-box"></div></section>
+          <section id="acct-wrap"><h3>Account</h3><p class="gb-muted" id="acct-who"></p><a href="#" class="gb-btn" id="signout-link">Sign out</a></section>
         </div>
-        <section class="gb-base" id="modules" aria-labelledby="base-h"><div class="gb-base-in">
-          <p class="gb-base-h" id="base-h"><span data-emoji="hq">Coordinator office, LMCS HQ</span></p>
-          <div class="gb-rooms" id="modules-grid"><!-- one room per department, filled in by JS --></div>
-        </div></section>
-        <section class="gb-base" id="world" aria-labelledby="world-h" hidden><div class="gb-base-in">
-          <p class="gb-base-h" id="world-h"><span data-emoji="world">Your schools</span></p>
-          <div class="gb-rooms" id="schools"><!-- one school per campus in your scope, filled in by JS --></div>
-          <details class="gb-panel" id="routes"><summary data-emoji="bus">Bus routes</summary><div class="gb-panel-b"><div id="world-map"></div></div></details>
-        </div></section>
+        <p class="gb-note" id="denied" hidden>The Coordinator Portal is only available to Coordinators and the Owner.</p>
+        <div class="mh-scene" id="mh-scene">
+          <!-- 🏛️ Town (the map: your district's schools and the office at LMCS HQ) or 🗺️ World (your district's bus routes): one switch, as on the Principal home -->
+          <div class="gb-switch" id="mh-switch" role="group" aria-label="View · देखें">
+            <button type="button" id="view-town" aria-pressed="true" aria-controls="mh-town"><span data-emoji="hq"></span><span lang="hi">नगर</span> · Town</button>
+            <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span><span lang="hi">दुनिया</span> · World</button>
+          </div>
+          <section class="mh-world" id="world" aria-label="Your district's bus routes" hidden><div id="world-map"></div></section>
+        </div>
       </div>
     </main>
-    <aside class="gb-panels" id="panels" aria-label="More" hidden>
-      <details class="gb-panel"><summary data-emoji="appointments">Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
-      <details class="gb-panel" id="tools-panel"><summary data-emoji="tools">All tools</summary><div class="gb-panel-b"><ul class="gb-list" id="tools"></ul></div></details>
-      <details class="gb-panel"><summary data-emoji="account">Account</summary><div class="gb-panel-b"><p class="gb-muted" id="acct-who"></p><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
-    </aside>
+    <aside class="gb-panels" id="panels" aria-label="More" hidden></aside><!-- kept empty: everything opens in a window -->
   </div>
 
   <footer class="site">
@@ -67,15 +62,16 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=6c2f4a9b"></script>
+  <script src="../assets/auth.js?v=96af418d"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Coordinator"></script>
   <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/emoji.js?v=e979d2e0"></script>
-  <script src="../assets/campus-picker.js?v=cd35c768"></script>
+  <script src="../assets/game/emoji.js?v=75b7b678"></script>
   <script src="./route-map.js?v=f5e47aee"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
-  <script src="./shared.js?v=9c654466"></script>
+  <script src="./shared.js?v=aef1bbc0"></script>
+  <script src="../assets/game/kingdom.js?v=2311192e"></script>
+  <script src="../assets/game/map-home.js?v=b2baf905"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
@@ -121,20 +117,6 @@
         box.appendChild(room(ROOM_E[d.name] || 'office', d.name, d.page ? line(c, ROOM_S[d.name] || d.desc) : 'Later: ' + (ROOM_S[d.name] || d.desc), d.page ? d.page + '/index.html' : '', c));
       });
       if (counts === 'error') { const m = el('p', 'gb-muted', 'Open counts didn\'t load; the rooms still open.'); m.style.gridColumn = '1 / -1'; box.appendChild(m); }
-      renderSchools(counts);
-    }
-    // the World: one school per campus in this Coordinator's scope, with its open follow-ups
-    let SESSION = null;
-    function renderSchools(counts) {
-      const ok = counts && counts !== 'error';
-      const box = document.getElementById('schools');
-      box.textContent = '';
-      const codes = LMCSCampus.scope(SESSION);
-      if (!codes.length) { const m = el('p', 'gb-muted', 'No schools are set for you yet.'); m.style.gridColumn = '1 / -1'; box.appendChild(m); }
-      codes.forEach(function (code) {
-        const c = ok ? (counts.byCampus[code] || { n: 0 }) : null;
-        box.appendChild(room('school', LMCS.campusLabel(code), c ? (c.n ? c.n + ' open' : ALL_CLEAR) : '', null, c));
-      });
     }
     function renderTools() {
       const ul = document.getElementById('tools');
@@ -145,20 +127,46 @@
         a.href = t.url; span.appendChild(el('small', '', t.desc)); a.appendChild(span); li.appendChild(a); ul.appendChild(li);
       });
     }
-    // bus routes load only when opened: Fleet Command's route map, read only, scoped by the backend to the caller's campuses.
-    // ponytail: every Coordinator can open it until Coordinator functions reach the session; then only Transport.
-    let worldMap = null;
+    // 🏛️ Town (the map) or 🗺️ World: Fleet Command's route map, read only, scoped by the backend to the caller's campuses, loaded once
+    let worldMap = null, SESSION = null;
     function showView(world) {
-      document.getElementById('modules').hidden = world;
+      const town = document.getElementById('mh-town');
+      if (town) town.hidden = world;
       document.getElementById('world').hidden = !world;
-      document.getElementById('view-home').setAttribute('aria-pressed', String(!world));
+      document.getElementById('view-town').setAttribute('aria-pressed', String(!world));
       document.getElementById('view-world').setAttribute('aria-pressed', String(world));
+      if (world && !worldMap && window.LMCSRouteMap) { try { worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: SESSION, backendUrl: COORD_BACKEND_URL, mode: 'metro' }); } catch (e) { console.warn('route map', e); } }
+    }
+    // a follow-up's page, from the portal root: Coord.WORK_LINKS are written from coordinator/<department>/, two levels below the root
+    function linkFor(x) {
+      const dept = Coord.DEPARTMENTS.filter(function (d) { return d.name === x.department && d.page; })[0];
+      const rel = (Coord.WORK_LINKS[x.domain] || (dept ? '../' + dept.page + '/index.html' : '../followups/index.html')).replace(/^\.\.\//, ''); // from this hub
+      return rel.indexOf('../') === 0 ? rel.slice(3) : 'coordinator/' + rel;
+    }
+    // Mark resolved, from a follow-up's window: the same write the follow-up pages send (coordinatorresolvetask; the server checks the scope again)
+    function resolve(taskId, note) {
+      return fetch(COORD_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'coordinatorresolvetask', idToken: SESSION.idToken, taskId: taskId, note: note }) }).then(function (r) { return r.json(); });
+    }
+
+    // a school window's numbers (assets/game/map-home.js campusStats): existing reads of this backend, every one cut to your district on the
+    // server; loaded once, the first time a school is opened. Approvals waiting = the coordinatortasks answer the map already has.
+    let ANALYTICS = null;
+    function analytics(tasksRead) {
+      const d = new Date(Date.now() + 330 * 60000), today = d.toISOString().slice(0, 10); // IST
+      const get = function (q) { return Coord.api(q).catch(function () { return null; }); };
+      return Promise.all([get({ action: 'principalissues' }), get({ action: 'coordinatorpdrday', date: today }), get({ action: 'coordinatortransport' }), tasksRead.catch(function () { return null; })])
+        .then(function (r) {
+          const t = r[3], approvals = t ? (t.tasks || []).filter(function (x) { return x.domain === 'approval'; }).map(function (x) { return { campus: x.campus, title: x.title, waiting: true }; })
+            .concat((t.fresh || []).map(function (x) { return { campus: x.campus, title: x.title, waiting: true }; })) : null;
+          return { today: today, issues: r[0] && r[0].issues, pdrDay: r[1], transport: r[2], approvals: approvals };
+        });
     }
 
     function hello(name) {
       const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
       return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
     }
+    const byId = function (id) { return document.getElementById(id); };
 
     function showApp(session) {
       document.getElementById('auth-root').style.display = 'none';
@@ -169,21 +177,25 @@
       document.getElementById('signout-link').addEventListener('click', function (e) { e.preventDefault(); LMCS.signOut(); });
 
       if (!Coord.canUse(session)) {
-        document.getElementById('modules').innerHTML = '<p class="gb-note">The Coordinator Portal is only available to Coordinators and the Owner.</p>';
+        document.getElementById('mh-scene').hidden = true;
+        document.getElementById('denied').hidden = false;
         return;
       }
-      document.getElementById('panels').hidden = false;
-      if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('tools-panel').open = true; // phones: panels start folded so Today stays in view
       Coord.setSession(session); SESSION = session;
       renderTools();
-      document.getElementById('view-home').addEventListener('click', function () { showView(false); });
+      document.getElementById('view-town').addEventListener('click', function () { showView(false); });
       document.getElementById('view-world').addEventListener('click', function () { showView(true); });
-      document.getElementById('routes').addEventListener('toggle', function () {
-        if (!this.open || worldMap) return;
-        try { worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: session, backendUrl: COORD_BACKEND_URL, mode: 'metro' }); } catch (e) { console.warn('route map', e); }
-      });
       renderCards(null);
-      Coord.counts().then(renderCards, function () { renderCards('error'); });
+      LMCSMapHome.mount({ role: 'Coordinator', session: session, root: '../', scene: byId('mh-scene'), switchEl: byId('mh-switch'), stash: byId('mh-stash'),
+        gameRoot: byId('game-root'), evSlot: document.querySelector('.gb-next-slot'), world: showView, linkFor: linkFor, resolve: resolve,
+        analytics: function () { return ANALYTICS ? ANALYTICS() : {}; },
+        icons: [{ key: 'buddy', e: 'buddy', label: ['बडी', 'Ask Buddy'], open: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); else location.href = '../guide/index.html'; } }],
+        hq: function () { return { nodes: [byId('office')], held: [byId('office')] }; },
+        profile: function () { const n = [byId('tools-wrap'), byId('appt-wrap'), byId('acct-wrap')]; return { nodes: n, held: n }; } });
+      // one read (the backend scopes it to your district; an assignee also sees what was assigned to them) feeds the map and the office
+      const tasksRead = Coord.api({ action: 'coordinatortasks' });
+      tasksRead.then(function (d) { LMCSMapHome.setTasks(d.tasks); renderCards(Coord.countsOf(d.tasks)); }, function () { LMCSMapHome.setTasks('error'); renderCards('error'); });
+      ANALYTICS = function () { return analytics(tasksRead); };
       try { LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); } catch (e) { console.warn('rail', e); }
       try { LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session }); } catch (e) { console.warn('appointments', e); }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }

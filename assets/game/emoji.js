@@ -24,6 +24,8 @@ var LMCSEmoji = (function () {
     phone: '📱', signal: '📶', bill: '📃', photo: '📷', send: '📤', refused: '⚠️', pumpVideo: '📹', homeBase: '🏠', world: '🗺️',
     // the Owner's HQ Home (29 Oct): Game settings is the "Set up the game" quest
     settings: '⚙️',
+    // the map homes (29 Oct): the Ranking window, Owner and Coordinators only
+    ranking: '🥇',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
     hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'

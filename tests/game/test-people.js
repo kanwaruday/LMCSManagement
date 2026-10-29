@@ -240,7 +240,8 @@ test('pages: HQ Home tiles and switch; People room confirms before every write',
   assert.ok(/LMCSEmoji\.tag\(t\.e\)/.test(home) && !/[\u{1F4E5}\u{1F4B0}\u{1F465}\u2699]/u.test(home), 'tile emoji come from emoji.js keys, none typed by hand');
   assert.ok(/url: 'kingdom\.html#base-HES'/.test(home) && /'Set up the game: ' \+ done \+ ' of ' \+ steps\.length \+ ' done'/.test(home), 'Game settings: x of 6 done, opens the HQ base');
   assert.ok(home.includes('id="modules"'), 'the tools shelf stays');
-  for (const [page, cur] of [[home, 'index.html'], [kg, 'kingdom.html']]) assert.ok(page.includes('<nav class="gb-hsw" aria-label="Owner views">') && page.includes('href="' + cur + '" aria-current="page"'), 'header switch, ' + cur + ' current');
+  assert.ok(kg.includes('<nav class="gb-hsw" aria-label="Owner views">') && kg.includes('href="kingdom.html" aria-current="page"'), 'Kingdom: header switch, kingdom.html current');
+  assert.ok(!home.includes('gb-hsw') && /id="mh-switch"/.test(home), 'HQ Home (the map): one Town / World switch, no second header switch');
   assert.ok(/value: '', selected: true \}, \['Choose a school'\]/.test(pp) && /DATA\.campuses\.indexOf\(campus\.value\) === -1\) \{ err\.textContent = 'Choose a school\.'/.test(pp), 'an unknown campus starts on Choose a school; Next refuses until one is picked');
   assert.ok(/LMCS\.canViewOwnerPortal\(session\)/.test(pp) && /action=peoplelist/.test(pp) && /action: 'peoplecoordinator'/.test(pp), 'People: Owner gate, read, write');
   assert.strictEqual((pp.match(/method: 'POST'/g) || []).length, 1, 'one write path');

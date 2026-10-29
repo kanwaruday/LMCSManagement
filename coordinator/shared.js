@@ -157,8 +157,9 @@ window.Coord = (function () {
   }
 
   // Landing page: {all: {n, hot}, byDept: {'HR & Staff': {n, hot}, ...}, byCampus: {LMS1: {n, hot}, ...}} -- hot = at least one high-severity follow-up
-  async function counts() {
-    const tasks = (await api({ action: 'coordinatortasks' })).tasks;
+  async function counts() { return countsOf((await api({ action: 'coordinatortasks' })).tasks); }
+  // the same counts from rows already read (the hub reads coordinatortasks once, for its map and its office)
+  function countsOf(tasks) {
     const sum = list => ({ n: list.length, hot: list.some(t => t.severity === 'high') });
     const byDept = {};
     DEPARTMENTS.forEach(d => { byDept[d.name] = sum(tasks.filter(t => t.department === d.name)); });
@@ -951,5 +952,5 @@ window.Coord = (function () {
     load();
   }
 
-  return { boot, tasksView, academicsView, documentsView, transportView, pdrView, counts, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse, api, postJson, WORK_LINKS };
+  return { boot, tasksView, academicsView, documentsView, transportView, pdrView, counts, countsOf, esc, DEPARTMENTS, setSession: function (s) { SESSION = s; }, canUse, api, postJson, WORK_LINKS };
 })();
