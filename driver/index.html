@@ -119,6 +119,9 @@
   .gb-done.dr-wait .gb-done-tick { background:var(--gb-warn-soft); color:var(--gb-warn); }
   .dr-demo { margin:0; padding:8px 16px; background:var(--gb-gold-soft); color:var(--gb-gold-ink); font-weight:700; text-align:center; }
   .dr-stop { text-align:center; padding:28px 16px; background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:16px; }
+  .dr-gsi { margin-top:18px; padding-top:14px; border-top:1.5px solid var(--gb-line); }
+  .dr-or { margin:0 0 6px; color:var(--gb-muted); font-weight:700; }
+  #gsiBtn { display:flex; justify-content:center; min-height:44px; margin-top:10px; }
   .dr-stop .dr-ico { display:block; width:auto; font-size:56px; margin:0 auto 8px; }
   @media (max-width:360px) { .dr-hi { font-size:19px; } .dr-q .dr-hi { font-size:23px; } .dr-num { font-size:30px; } }
 </style>
@@ -172,6 +175,13 @@
       <span class="dr-ico" aria-hidden="true" data-emoji="locked"></span>
       <p class="dr-hi" id="closedHi">यह फ़ोन जुड़ा नहीं है</p>
       <p class="dr-en" id="closedEn">This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).</p>
+      <div class="dr-gsi" id="gsi" hidden>
+        <p class="dr-or">या · or</p>
+        <p class="dr-hi">अपने Gmail से खोलें</p>
+        <p class="dr-en">Sign in with the Google account the school has for you</p>
+        <div id="gsiBtn"></div>
+        <p class="dr-why" id="gsiWhy" role="alert"></p>
+      </div>
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
@@ -187,8 +197,8 @@
 <nav id="bar" class="dr-bar" aria-label="अगला कदम · Next step" hidden><div class="dr-bar-in" id="barIn"></div></nav>
 <script src="../assets/game/emoji.js?v=73c82a00"></script>
 <script src="./driver-logic.js?v=efd89bd5"></script>
-<script src="../assets/game/bus-model.js?v=e9025284"></script>
+<script src="../assets/game/bus-model.js?v=b08cfce2"></script>
 <script src="../coordinator/route-map.js?v=f5e47aee"></script>
-<script src="./driver.js?v=976b5c5c"></script>
+<script src="./driver.js?v=bf318a93"></script>
 </body>
 </html>

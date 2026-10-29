@@ -380,13 +380,37 @@
   });
   window.addEventListener('hashchange', route);
 
+  // A second way in (Uday, 29 Oct): a driver with a school-registered Google account signs in, and the Roster links this phone
+  // exactly as the Fee Clerk's QR would (apps-script/driver-google.gs). The Google token goes to the Roster once and is not kept;
+  // the link token that comes back is kept like a QR's. An account that is not a driver's gets one answer, whatever the reason.
+  const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com'; // = assets/auth.js
+  function googleWay() {
+    if (DEMO) return;
+    $('gsi').hidden = false;
+    const signedIn = (r) => {
+      $('gsiWhy').textContent = 'जोड़ रहे हैं… · Linking this phone…';
+      fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverlinkself', idToken: r.credential }) }).then((x) => x.json()).then((x) => {
+        if (!x.success || !/^[a-f0-9]{64}$/.test(x.token || '')) { $('gsiWhy').textContent = x.error || 'This Google account is not set up for a driver. Ask your Fee Clerk for the QR.'; return; }
+        try { localStorage.setItem(TOKEN_KEY, x.token); localStorage.removeItem(BUS_KEY); localStorage.removeItem(HOME_KEY); } catch (e) { /* private window: this visit only */ }
+        location.reload(); // the saved token now opens the page as a QR link would; the token never goes into the address bar
+      }, () => { $('gsiWhy').textContent = 'नेटवर्क नहीं · No signal. Try again when there is signal.'; });
+    };
+    const start = () => {
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: signedIn, itp_support: true });
+      google.accounts.id.renderButton($('gsiBtn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
+    };
+    if (window.google && google.accounts) return start();
+    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = start;
+    s.onerror = () => { $('gsiWhy').textContent = 'Google नहीं खुला, नेटवर्क देखें · Google sign-in did not load. Check the signal.'; };
+    document.head.appendChild(s);
+  }
   function stop(hi, en, ico) { $('home').hidden = true; $('panels').hidden = true; $('slot').innerHTML = ''; bar(''); $('rail').hidden = true; $('closed').hidden = false; $('closedHi').textContent = hi; $('closedEn').textContent = en; if (ico) $('closed').querySelector('.dr-ico').textContent = ico; }
-  if (!api) { stop('यह फ़ोन जुड़ा नहीं है', 'फ़ी क्लर्क से ड्राइवर का QR कोड माँगें · This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).'); return; }
+  if (!api) { stop('यह फ़ोन जुड़ा नहीं है', 'फ़ी क्लर्क से ड्राइवर का QR कोड माँगें · This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).'); googleWay(); return; }
   if (api === live) { live.flush(); window.addEventListener('online', live.flush); } // fills saved on this phone go now
   $('demo').hidden = !DEMO;
   const cached = () => { try { return JSON.parse(localStorage.getItem(BUS_KEY) || 'null'); } catch (e) { return null; } };
   api.load().then((bus) => { S.bus = bus; route(); }, (e) => e.offline && cached()
     ? (S.bus = cached(), route()) // no signal: work from the last answer; the server still checks the link when the fill is sent
     : e.offline ? stop('नेटवर्क नहीं है', 'No signal. Open this page again when there is signal. Fills already saved on this phone are safe.', E('signal'))
-    : stop('यह फ़ोन अब जुड़ा नहीं है', e.message + ' Ask your Fee Clerk for a new driver link (a QR code). · फ़ी क्लर्क से नया लिंक माँगें।'));
+    : (stop('यह फ़ोन अब जुड़ा नहीं है', e.message + ' Ask your Fee Clerk for a new driver link (a QR code). · फ़ी क्लर्क से नया लिंक माँगें।'), googleWay()));
 })();

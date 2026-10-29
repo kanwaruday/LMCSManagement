@@ -8,7 +8,7 @@ const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBT
 const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = capture.js
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const S = { buses: [], links: [], fresh: null };
+const S = { buses: [], links: [], fresh: null, googleReady: null };
 const day = (iso) => (iso ? String(iso).slice(0, 10) : '');
 
 async function roster(body) {
@@ -40,7 +40,8 @@ async function load() {
     const b = await (await fetch(COORD_URL + '?action=coordinatortransportrollcall&idToken=' + encodeURIComponent(s.idToken), { cache: 'no-store' })).json();
     if (!b.success) throw new Error(b.error || 'Request failed');
     S.buses = b.buses.slice().sort((x, y) => x.campus.localeCompare(y.campus) || x.reg.localeCompare(y.reg));
-    S.links = (await roster({ action: 'driverlinklist' })).links;
+    const l = await roster({ action: 'driverlinklist' });
+    S.links = l.links; S.googleReady = typeof l.googleReady === 'number' ? l.googleReady : null; // a count only (apps-script/driver-google.gs)
     $('loadMsg').hidden = true;
   } catch (e) {
     $('loadMsg').firstElementChild.textContent = 'Could not load (' + e.message + '). Check the connection, then try again.';
@@ -53,8 +54,9 @@ async function load() {
 function draw() {
   const active = S.links.filter((l) => !l.revoked), old = S.links.filter((l) => l.revoked);
   const row = (l) => `<li data-id="${esc(l.linkId)}"><b>${esc(l.driverName)}</b> <span class="cap-note">${esc(l.reg)} · ${esc(l.campus)}</span>` +
-    `<p>Linked ${esc(day(l.created))}${l.lastSeen ? ' · last seen ' + esc(day(l.lastSeen)) : ' · not opened yet'}</p>` +
+    `<p>${l.createdBy === 'google:self' ? 'Signed in with Google' : 'Linked'} ${esc(day(l.created))}${l.lastSeen ? ' · last seen ' + esc(day(l.lastSeen)) : ' · not opened yet'}</p>` +
     (l.revoked ? `<p class="dp-off">Revoked ${esc(day(l.revoked))}</p>` : '<div class="dp-acts"><button type="button" class="gb-btn" data-revoke>Revoke</button></div>') + '</li>';
+  $('google').textContent = S.googleReady == null ? '' : S.googleReady + ' of your drivers can sign in with Google on their own phone (the school has their Gmail). The rest need a QR.';
   $('links').innerHTML = S.links.length ? active.map(row).join('') + old.map(row).join('') : '<li class="cap-note">No driver phones linked yet.</li>';
   $('links').querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => revoke(b)));
 }

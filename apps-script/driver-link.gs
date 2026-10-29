@@ -101,7 +101,7 @@ function driverLinkList_(body) {
     return { linkId: String(r[0]), reg: String(r[2]), campus: String(r[3]), driverName: String(r[5]), created: dlkIso_(r[6]),
       createdBy: String(r[7]), revoked: dlkIso_(r[8]), lastSeen: dlkIso_(r[10]) };
   });
-  return { success: true, links: links };
+  return { success: true, links: links, googleReady: dglGoogleReady_(function (c) { return tupCovers_(caller, c); }) }; // driver-google.gs: a count only
 }
 
 /** Rows of a tab of the transport workbook as objects keyed by its header, or [] when the tab is missing. */
