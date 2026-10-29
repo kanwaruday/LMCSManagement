@@ -64,7 +64,8 @@ function officeLedgerSummary_(ctx, data) {
 
   // Period figures, from the scope's own books only.
   const inPeriod = function (r) { return r.entry_date >= data.from && scope.indexOf(r.campus) !== -1; };
-  const byChargedTo = {}, inter = {}, vehicles = {}, collections = {};
+  const byChargedTo = {}, inter = {}, collections = {};
+  let vehicles = {};
   rows.filter(inPeriod).forEach(function (r) {
     // Student collections: per head (blank for old or imported rows) and per school; a reversal nets out by sign.
     if (r.category === 'student_collection' || r.category === 'student_collection_paid') {
@@ -116,5 +117,12 @@ function officeLedgerSummary_(ctx, data) {
         km_per_litre: p && km >= 0 && p.litres_ml > 0 && !r.odometer_note ? Math.round(km * 100000 / p.litres_ml) / 100 : null });
     });
   });
+  // Per-bus money is for the Owner, Coordinators and Finance (Uday, 29 Oct, "yes": the school lock's money rule). A Principal with
+  // none of those roles gets no vehicle costs and, per bus, the fills only: how many, when, km per litre, never a rupee or a litre.
+  const r = (ctx && ctx.caller && ctx.caller.roles) || [];
+  if (r.indexOf('Principal') !== -1 && !['Owner', 'Coordinator', 'FinanceHead'].some(function (x) { return r.indexOf(x) !== -1; })) {
+    vehicles = {};
+    Object.keys(fuel).forEach(function (reg) { fuel[reg] = fuel[reg].map(function (f) { return { id: f.id, date: f.date, km_per_litre: f.km_per_litre }; }); });
+  }
   return { byChargedTo: byChargedTo, accounts: accounts, interSchool: interSchool, vehicles: vehicles, fuel: fuel, collections: collections };
 }
