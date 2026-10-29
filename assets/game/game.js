@@ -459,6 +459,7 @@ var LMCSGame = window.LMCSGame = (function () {
           h('span', { class: 'lg-c', 'aria-hidden': 'true' }),
           href ? h('a', { class: 'lg-step-link', href: href }, s.title)
             : win ? h('button', { type: 'button', class: 'lg-step-link', disabled: !!viewAs(), onclick: function () { decide(win, this); } }, s.title)
+            : s.tick && !s.done ? h('button', { type: 'button', class: 'lg-step-link', disabled: !!viewAs(), onclick: function () { tick(q, s, this); } }, s.title)
             : h('span', {}, s.locked && !s.done && !wait ? 'Opens next: ' + s.title : s.title),
           s.done ? h('span', { class: 'lg-sr' }, ' (done)') : null,
         ]);
@@ -559,6 +560,25 @@ var LMCSGame = window.LMCSGame = (function () {
     }
 
     // ── the decision card: the question, what stands now, the options, an optional note, Save ──
+    // An Owner tick-off step (s.tick): the tap asks to confirm, then POST ownertick; the row turns done in place, and the
+    // reward shows when it was the last step (no re-render: a finished parallel quest would vanish before it was seen).
+    function tick(q, s, btn) {
+      if (!window.confirm('Mark done: ' + s.title + '?')) return;
+      var li = btn.closest('li'), say = function (msg) { var p = h('p', { class: 'lg-saved', role: 'status' }, msg); li.appendChild(p); return p; };
+      btn.disabled = true;
+      post_('ownertick', { questId: q.questId, stepId: s.id }).then(function (r) {
+        if (live !== me) return;
+        if (!r || !r.success) { btn.disabled = false; say((r && r.error) || "That didn't save. Try again."); return; }
+        s.done = true; q.complete = q.steps.every(function (x) { return x.done; });
+        li.className = 'lg-step ok';
+        btn.replaceWith(h('span', {}, s.title), h('span', { class: 'lg-sr' }, ' (done)'));
+        if (q.complete && q.reward) li.parentNode.after(h('p', { class: 'lg-reward', role: 'status' }, q.reward));
+        else say('Done.');
+      }).catch(function () {
+        if (live !== me) return;
+        btn.disabled = false; say("Couldn't reach the school's server. Nothing was saved. Try again.");
+      });
+    }
     function decide(w, fromBtn) {
       var c = w.choice || {}, cur = Array.isArray(w.current) ? w.current : [], id = 'lg-d' + n, release;
       var suit = w.windowId === 'trackSuit';
