@@ -57,6 +57,16 @@ module.exports = function run(t) {
     }
   });
 
+  t.test('school lock: daybook.list gives a Principal the school\'s money but not which bus; money roles see the bus', () => {
+    const h = fresh();
+    fuel(h, { amount_paise: 5000, entry_date: '2026-10-05' });
+    const list = (tok) => h.call('daybook.list', { campus: 'LMS1', from: '2026-10-01', to: '2026-10-21' }, tok);
+    const p = list('pr1-token').entries.find((e) => e.category === 'fuel');
+    assert.deepEqual([p.amount_paise, p.vehicle, p.litres_ml, p.odometer_km], [5000, '', '', '']);
+    const o = list('owner-token').entries.find((e) => e.category === 'fuel');
+    assert.deepEqual([o.vehicle, o.litres_ml], ['HP665805', 40000]);
+  });
+
   t.test('Review Focus 3: credit fuel 5000 then bank settlement 5000 -> fuel -5000 once, owed 0, bank -5000', () => {
     const h = fresh();
     fuel(h, { amount_paise: 5000, entry_date: '2026-10-05' });

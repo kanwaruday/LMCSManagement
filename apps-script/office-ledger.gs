@@ -12,6 +12,13 @@ var OFFICE_LEDGER_GROUPS = ['fee', 'income', 'school', 'transport'];
 
 // data {campus: 'LMS1'..|'ALL', from, to} within one financial year. officeHandle_ has already checked the
 // campus ('ALL' only for callers holding ALL). Period figures use from..to; balances and owed are as at `to`.
+// Per-bus money is for the Owner, Coordinators and Finance (Uday, 29 Oct, "yes": the school lock's money rule). True for a Principal
+// with none of those roles: ledger.summary and daybook.list then leave the bus out of the money.
+function officeNoBusMoney_(caller) {
+  const r = (caller && caller.roles) || [];
+  return r.indexOf('Principal') !== -1 && !['Owner', 'Coordinator', 'FinanceHead'].some(function (x) { return r.indexOf(x) !== -1; });
+}
+
 function officeLedgerSummary_(ctx, data) {
   if (!officeIsoDate_(data.from) || !officeIsoDate_(data.to)) throw new Error('BAD_DATE');
   if (data.from > data.to) throw new Error('BAD_RANGE');
@@ -117,10 +124,9 @@ function officeLedgerSummary_(ctx, data) {
         km_per_litre: p && km >= 0 && p.litres_ml > 0 && !r.odometer_note ? Math.round(km * 100000 / p.litres_ml) / 100 : null });
     });
   });
-  // Per-bus money is for the Owner, Coordinators and Finance (Uday, 29 Oct, "yes": the school lock's money rule). A Principal with
-  // none of those roles gets no vehicle costs and, per bus, the fills only: how many, when, km per litre, never a rupee or a litre.
-  const r = (ctx && ctx.caller && ctx.caller.roles) || [];
-  if (r.indexOf('Principal') !== -1 && !['Owner', 'Coordinator', 'FinanceHead'].some(function (x) { return r.indexOf(x) !== -1; })) {
+  // A Principal with no money role (officeNoBusMoney_) gets no vehicle costs and, per bus, the fills only: how many, when, km per
+  // litre, never a rupee or a litre.
+  if (officeNoBusMoney_(ctx && ctx.caller)) {
     vehicles = {};
     Object.keys(fuel).forEach(function (reg) { fuel[reg] = fuel[reg].map(function (f) { return { id: f.id, date: f.date, km_per_litre: f.km_per_litre }; }); });
   }

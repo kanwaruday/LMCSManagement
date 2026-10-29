@@ -230,8 +230,10 @@ function officeDaybookList_(ctx, data) {
   if (officeFy_(to) !== fy) throw new Error('RANGE_SPANS_YEARS');
   const ss = officeOpen_(data.campus, fy);
   const links = officeVideoLinks_(officeRows_(ss, 'Files')); // a fill video attached after the save shows as the entry's video_file_id
+  const noBus = officeNoBusMoney_(ctx && ctx.caller); // office-ledger.gs: a Principal sees the school's money, not which bus it went on
   return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; })
-    .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; }) };
+    .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; })
+    .map(function (r) { return noBus && r.vehicle ? Object.assign({}, r, { vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '' }) : r; }) };
 }
 
 function officeDaybookBalances_(ctx, data) {
