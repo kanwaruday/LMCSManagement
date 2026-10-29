@@ -182,7 +182,7 @@ assert.ok(before > 0 && lms4Active() === before, 'the LMS 4 link is untouched');
 tabs['LM Studio Fleet'] = [['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver'], ['HP 65 9511', 'Bus 4', 'LMS 4', 'yes', '', '', 'Test Driver'],
   ['HP665805', 'Bus 1', 'LMS 1', 'no', '', '', '']];
 const devBefore = JSON.stringify(tabs['Driver Devices']);
-const owner = { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, coord = { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator', 'Teacher'] };
+const owner = { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, coord = { email: 'c@x', campusId: 'LMS5', roles: ['Coordinator', 'Teacher'] };
 caller = owner;
 const v = call('driverMe_', { viewReg: 'hp 659511', idToken: 't' });
 assert.deepStrictEqual([v.success, v.reg, v.campus, v.name, v.view, v.lastFill], [true, 'HP659511', 'LMS4', 'Test Driver', true, '2026-10-20'], 'the Owner sees what the driver sees');
@@ -191,6 +191,12 @@ assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) 
 caller = coord;
 assert.strictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).success, true, 'a Coordinator too');
 assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), revoked, 'a parked bus: no view');
+tabs['LM Studio Fleet'][2][3] = 'yes'; // Bus 1 (LMS 1) running: another district
+assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), revoked, 'a Coordinator: their own district only');
+assert.deepStrictEqual(call('driverRoute_', { viewReg: 'HP665805', idToken: 't' }), revoked);
+assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'their district\'s buses only');
+caller = owner;
+assert.strictEqual(call('driverViewBuses_', { idToken: 't' }).buses.length, 2, 'the Owner: every campus');
 [{ email: 'p@x', campusId: 'ALL', roles: ['Principal'] }, clerk4, null].forEach((c) => {
   caller = c;
   assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }), revoked, 'not the Owner or a Coordinator: ' + JSON.stringify(c && c.roles));

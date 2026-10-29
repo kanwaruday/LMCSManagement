@@ -46,11 +46,13 @@ function dlkFleet_() {
 /** Owner or Coordinator, by the roles the calling project's own staff check found (null: not on its allowlist). */
 function dlkStaff_(roles) { return !!roles && (roles.indexOf('Owner') !== -1 || roles.indexOf('Coordinator') !== -1); }
 
-/** A driver phone's link (body.deviceToken), or, with no device token, a staff view of body.viewReg when rolesOf(body.idToken) is
- *  the Owner's or a Coordinator's: {at: 0, linkId: '', reg, campus, name, view: true}. null for anything else. */
-function dlkLinkOrView_(body, rolesOf) {
+/** A driver phone's link (body.deviceToken), or, with no device token, a staff view of body.viewReg: coversOf(body.idToken) is the
+ *  calling project's own check, a campus test for the Owner (every campus) or a Coordinator (their district), else null.
+ *  -> {at: 0, linkId: '', reg, campus, name, view: true}, or null for anything else. */
+function dlkLinkOrView_(body, coversOf) {
   if (body.deviceToken || !body.viewReg || !body.idToken) return dlkLink_(body.deviceToken);
-  if (!dlkStaff_(rolesOf(body.idToken))) return null;
-  const want = String(body.viewReg).toUpperCase().replace(/[^A-Z0-9]/g, ''), b = dlkFleet_().filter(function (x) { return x.reg === want; })[0];
+  const covers = coversOf(body.idToken);
+  if (!covers) return null;
+  const want = String(body.viewReg).toUpperCase().replace(/[^A-Z0-9]/g, ''), b = dlkFleet_().filter(function (x) { return x.reg === want && covers(x.campus); })[0];
   return b ? { at: 0, linkId: '', reg: b.reg, campus: b.campus, name: b.driver || 'Driver', view: true } : null;
 }

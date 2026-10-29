@@ -9,7 +9,8 @@ const devices = [['Link ID', 'Token Hash', 'Reg', 'Campus', 'Driver Code', 'Driv
   ['L1', hash(T1), 'HP659511', 'LMS4', '', 'Test Driver', '', '', '', '', ''],
   ['L2', hash(T2), 'HP665805', 'LMS1', '', 'Other Driver', '', '', 'yes', 'x', '']];
 const fleet = [['Reg', 'Bus', 'Campus', 'Operational'], ['HP 65 9511', 'Bus 4', 'LMS 4', 'yes'], ['HP665805', 'Bus 1', 'LMS 1', 'yes']];
-const staff = { owner: { roles: ['Owner'] }, coord: { roles: ['Coordinator'] }, clerk: { roles: ['FeeClerk'], feeClerkOnly: true } };
+const staff = { owner: { campusId: 'ALL', roles: ['Owner'] }, coord: { campusId: 'LMS2', roles: ['Coordinator'] }, coord4: { campusId: 'LMS4', roles: ['Coordinator'] },
+  clerk: { campusId: 'LMS4', roles: ['FeeClerk'], feeClerkOnly: true } };
 const tabs = {
   'Fleet Profile': [{ reg: 'HP659511', papers: JSON.stringify({ make: 'Tata', modelAndVariant: '', seatingCapacityAsPerRc: '32+1' }) }, { reg: 'HP665805', papers: '{"make":"Force"}' }],
   'Parts History': [{ reg: 'HP659511', component: 'battery', fields: '{"lastReplacedOn":"2026-03-04"}' }, { reg: 'HP659511', component: 'tyre_fl', fields: '{"lastReplacedOn":"unknown"}' },
@@ -17,7 +18,8 @@ const tabs = {
 };
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite,
   SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n === 'Driver Devices' ? devices : n === 'LM Studio Fleet' ? fleet : null) && { getDataRange: () => ({ getValues: () => (n === 'Driver Devices' ? devices : fleet).map((r) => r.slice()) }) } }) },
-  coordVerifyCaller_: (t) => staff[t] || null,
+  coordVerifyCaller_: (t) => staff[t] || null, COORD_DISTRICTS: { LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS4: ['LMS4', 'LMS5', 'LMS6'] },
+  coordVisibleCampuses_: (c) => (c.campusId === 'ALL' ? null : ctx.COORD_DISTRICTS[c.campusId] || [c.campusId]),
   Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) },
   COORD_FLEET_TABS: { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History' },
@@ -43,7 +45,8 @@ assert.deepStrictEqual([revoked, bad], [unknown, unknown], 'unknown, revoked and
 // the staff view: the Owner or a Coordinator sees the same bus, read only; a Fee Clerk or no token gets the one answer
 const asOwner = call({ viewReg: 'HP659511', idToken: 'owner' });
 assert.deepStrictEqual([asOwner.reg, asOwner.make, asOwner.parts], [me.reg, me.make, me.parts], 'the Owner sees what the driver sees');
-assert.strictEqual(call({ viewReg: 'HP665805', idToken: 'coord' }).reg, 'HP665805', 'a Coordinator too');
+assert.strictEqual(call({ viewReg: 'HP665805', idToken: 'coord' }).reg, 'HP665805', 'a Coordinator too, in their district');
+assert.deepStrictEqual(call({ viewReg: 'HP665805', idToken: 'coord4' }), unknown, 'not another district\'s bus');
 assert.deepStrictEqual([call({ viewReg: 'HP659511', idToken: 'clerk' }), call({ viewReg: 'HP659511', idToken: 'nobody' }), call({ viewReg: 'HP659511' })], [unknown, unknown, unknown]);
 ctx.coordTransportFleet_ = () => { throw new Error('papers tab missing'); };
 assert.deepStrictEqual(call({ deviceToken: T1 }).papers.insurance, { date: '' }, 'unreadable papers: blank dates, the bus still loads');

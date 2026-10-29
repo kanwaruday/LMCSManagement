@@ -115,7 +115,7 @@ function dlkRows_(tab) {
  *  GPS tabs of the transport workbook (the same rows Coordinators see in transportworld), never another bus's, never money.
  *  Unknown or revoked token: the same UNLINKED answer as driverme. */
 function driverRoute_(body) {
-  const link = dlkLinkOrView_(body, dlkRosterRoles_); // or the Owner's or a Coordinator's read-only view (driver-token.gs)
+  const link = dlkLinkOrView_(body, dlkRosterCovers_); // or the Owner's or a Coordinator's read-only view (driver-token.gs)
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const own = function (reg) { return tupNormReg_(reg) === link.reg; };
   const cell = function (v) { return v instanceof Date ? Utilities.formatDate(v, TUP_TZ_, 'yyyy-MM-dd') : v; };
@@ -128,7 +128,7 @@ function driverRoute_(body) {
 }
 
 function driverMe_(body) {
-  const link = dlkLinkOrView_(body, dlkRosterRoles_);
+  const link = dlkLinkOrView_(body, dlkRosterCovers_);
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ }; // the phone forgets its token only on this code
   const cache = CacheService.getScriptCache(), seen = 'dlk_seen_' + link.linkId;
   if (!link.view && !cache.get(seen)) { // a staff view is not the driver's phone: Last Seen stays the driver's
@@ -145,11 +145,16 @@ function driverMe_(body) {
     lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer, view: !!link.view };
 }
 
-/** The Roster's staff check for a view: verifyStaffManagerToken_'s roles (staff-management-api.gs), or null. */
-function dlkRosterRoles_(idToken) { const c = verifyStaffManagerToken_(idToken); return c && c.roles; }
+/** The Roster's staff check for a view: the Owner or a Coordinator (verifyStaffManagerToken_, staff-management-api.gs) -> which
+ *  campuses they may view (tupCovers_: the Owner every one, a Coordinator their district), or null. */
+function dlkRosterCovers_(idToken) {
+  const c = verifyStaffManagerToken_(idToken);
+  return c && dlkStaff_(c.roles) ? function (campus) { return tupCovers_(c, campus); } : null;
+}
 
 /** POST driverviewbuses {idToken}: the running buses the Owner or a Coordinator can view as their driver. */
 function driverViewBuses_(body) {
-  if (!body.idToken || !dlkStaff_(dlkRosterRoles_(body.idToken))) return { success: false, error: DLK_NOVIEW_ };
-  return { success: true, buses: dlkFleet_() };
+  const covers = body.idToken ? dlkRosterCovers_(body.idToken) : null;
+  if (!covers) return { success: false, error: DLK_NOVIEW_ };
+  return { success: true, buses: dlkFleet_().filter(function (b) { return covers(b.campus); }) };
 }
