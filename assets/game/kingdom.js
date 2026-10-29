@@ -159,10 +159,22 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return 'Hi' + (first ? ' ' + first + ' ji' : '') + ', when you get a moment, could you look at \'' + r.title + '\' for ' + (r.campus ? questPlace(r.campus) : 'all our schools') + '? Thank you!';
   }
   function reassignText(r, person) {
-    return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Until now, whoever holds the role had it.');
+    return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Nobody has it yet.');
+  }
+  // the All schools result: [{ campus, ok }] -> one line for the toast (or the error line when nothing went through)
+  function bulkText(results) {
+    var ok = results.filter(function (x) { return x.ok; }).length, bad = results.filter(function (x) { return !x.ok; }).map(function (x) { return questPlace(x.campus); });
+    if (!ok) return "That didn't go through at any school. Nothing was changed. Please try again.";
+    return 'Given to ' + ok + (ok === 1 ? ' school.' : ' schools.') + (bad.length ? " Didn't go through at " + bad.join(', ') + '. Try those again.' : '');
+  }
+  // the pick list of a quest row: its role groups first ('role:<Role>', "All teachers at LMS 3"), then the people; the current holder left out
+  function questPeople(r) {
+    var cur = r.owner ? String(r.owner.email).toLowerCase() : '';
+    return (r.groups || []).map(function (g) { return { email: g.value, name: g.label, group: true }; }).concat(r.assignees || [])
+      .filter(function (p) { return String(p.email).toLowerCase() !== cur; });
   }
 
-  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText,
+  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkText: bulkText, questPeople: questPeople,
     gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
@@ -535,12 +547,31 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       if (ctl.go) ctl.go.textContent = label;
     }).then(function () { W.busy = false; });
   }
+  // sends confirmed bodies one after another (All schools); a failure at one school never stops the rest. Nothing went through: the sheet stays.
+  function sendAll(bodies, ctl) {
+    if (W.busy) return;
+    W.busy = true;
+    ctl.err.textContent = '';
+    ctl.controls.forEach(function (c) { c.disabled = true; });
+    var label = ctl.go ? ctl.go.textContent : '', results = [];
+    if (ctl.go) ctl.go.textContent = 'Sending…';
+    bodies.reduce(function (p, b) {
+      return p.then(function () { return post(b); }).then(function (d) { results.push({ campus: b.campus, ok: !!(d && d.success) }); }, function () { results.push({ campus: b.campus, ok: false }); });
+    }, Promise.resolve()).then(function () {
+      var text = bulkText(results);
+      if (!results.some(function (x) { return x.ok; })) {
+        ctl.err.textContent = text; ctl.controls.forEach(function (c) { c.disabled = false; }); if (ctl.go) ctl.go.textContent = label; return;
+      }
+      closeLayer(); toast(text);
+      return load().then(function () { if (ctl.after) return ctl.after(); });
+    }).catch(function () {}).then(function () { W.busy = false; });
+  }
   function radios(name, people, suggestEmail, legend) {
     return h('fieldset', { class: 'kg-pick' }, [h('legend', { class: 'kg-sr' }, [legend])].concat(people.map(function (p, i) {
       var id = 'kg-r-' + name + i;
       return h('label', { class: 'kg-opt', for: id }, [
         h('input', { type: 'radio', name: name, id: id, value: p.email, checked: p.email === suggestEmail ? true : null }),
-        h('span', {}, [h('b', {}, [p.name || p.email]), p.name ? h('small', {}, [p.email]) : null,
+        h('span', {}, [h('b', {}, [p.name || p.email]), p.name && !p.group ? h('small', {}, [p.email]) : null,
           p.email === suggestEmail ? h('em', { class: 'kg-sug' }, ['Buddy suggests']) : null])]);
     })));
   }
@@ -644,7 +675,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     }
     function questRow(r) {
       var state = r.state === 'done' ? 'Done' : r.state === 'unknown' ? "Couldn't check" : r.progress ? r.progress.done + ' of ' + r.progress.total + ' done' : 'Open';
-      var people = (r.assignees || []).filter(function (p) { return !r.owner || p.email !== r.owner.email; });
+      var people = questPeople(r);
       return h('li', { class: 'kg-qr' + (r.stuck ? ' kg-qstuck' : '') }, [
         h('div', { class: 'kg-qt' }, [r.stuck ? h('b', { class: 'kg-tag' }, ['Stuck']) : null, h('b', {}, [(r.state === 'done' ? '✓ ' : '') + r.title])]),
         h('small', { class: 'kg-qm' }, [[state, questHolder(r), questAge(r)].filter(Boolean).join(' · ')]),
@@ -670,13 +701,16 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     clip.then(function () { live.textContent = 'Copied. Paste it in WhatsApp: ' + text; }, function () { live.textContent = 'Copy this into WhatsApp: ' + text; });
   }
   function openQuestPick(r, people, opener) {
-    sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Whoever holds the role has it.'),
+    sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Nobody has it yet.'),
       [radios('kg-qwho', people, '', 'Who should have it now?')], 'Next', function (form, ctl) {
         var who = picked(form, 'kg-qwho'), person = people.filter(function (p) { return p.email === who; })[0];
         if (!person) { ctl.err.textContent = 'Pick a person first.'; return; }
-        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), [], 'Confirm', function (f2, ctl2) {
-          ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
+        // a role group at a school can go to every school at once (one kingdomassign per school, one after another)
+        var all = person.group && /^LMS[1-6]$/.test(r.campus) ? h('input', { type: 'checkbox', id: 'kg-all' }) : null;
+        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), all ? [h('label', { class: 'kg-fld', for: 'kg-all' }, [all, ' All schools (the same group at LMS 1 to LMS 6)'])] : [], 'Confirm', function (f2, ctl2) {
           ctl2.after = function () { return openQuests(null); };
+          if (all && all.checked) return sendAll(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map(function (c) { return Object.assign(assignBody(r, c, person.email, ''), { campus: c }); }), ctl2);
+          ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
           send(assignBody(r, r.campus, person.email, ''), ctl2);
         }, null);
       }, opener);

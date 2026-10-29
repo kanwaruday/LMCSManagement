@@ -148,6 +148,84 @@ function kingdomOwners_(setupRows) {
   return out;
 }
 
+// ═══ The setup-period quest gate (Game Config `setupPeriod.ownerAssignedQuestsOnly`, on by default). While it is on, every role but the Owner
+// sees a quest only when the Owner has assigned its FAMILY at a scope to them, or to their role group ('role:<Role>'), through kingdomassign.
+// A family is: a cq quest id; 'event:<eventId>'; 'gq:<Game Quests id>'; or one family per GAME_MODULE_QUESTS hook, told by the hook's
+// function name (QUEST_GATE_HOOKS: no hook is edited). The scope is 'campus:<LMSn>' or 'network'. The page never decides: this does. ═══
+var QUEST_GATE_NETWORK_ROLES = ['Coordinator', 'Accounts']; // network-wide roles: their families are assigned at campus '' (scope network)
+// hook function name -> its family. A hook not listed here is family 'hook:<name>': nobody can be assigned it, so it stays hidden.
+var QUEST_GATE_HOOKS = {
+  tchQuestsHook_: { id: 'teacher-quests', title: 'Teacher quests: Your portal and chapters', roles: ['Teacher'] },
+  fleetQuests_: { id: 'fleet', title: 'Fleet setup quests', roles: ['Coordinator'] },
+  daybookClerkQuests_: { id: 'daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'] },
+  daybookQuests_: { id: 'daybook', title: 'Day Book starting data', roles: ['Accounts'] },
+  daybookAccountantQuests_: { id: 'daybook-accountant', title: 'Set up the bank side of the Day Book', roles: ['Coordinator', 'Accounts'] },
+};
+var QUEST_GATE_PLURAL = { Principal: 'principals', Coordinator: 'coordinators', Teacher: 'teachers', Staff: 'staff', FeeClerk: 'fee clerks', Accounts: 'accounts staff' };
+var QUEST_GATE_HOME = { Principal: 'principal/index.html', Coordinator: 'coordinator/index.html', Teacher: 'teacher/index.html', Staff: 'teacher/index.html', FeeClerk: 'office/index.html', Accounts: 'office/index.html' };
+
+// -> null when nothing is gated for this caller (the Owner, or the switch off); else keep(family, campus) -> true only when the Owner assigned
+// that family to the caller or to one of the caller's roles. campus given ('' = network): that exact scope (a quest that names its campus);
+// campus undefined: the network row, the caller's own school, or any school for a network-wide caller. viewAs (the Owner previewing a
+// school as its Principal): any person, or the Principals' group, holding it, so the Owner sees what the Principal will see.
+// setupRows: Setup Data rows already read (cqRead_), else read once on first use.
+function questGateKeep_(caller, cfg, setupRows) {
+  const sp = (cfg && cfg.setupPeriod) || gameConfigDefaults_().setupPeriod;
+  if (!caller || caller.primaryRole === 'Owner' || !sp || sp.ownerAssignedQuestsOnly === false) return null;
+  const me = gameLower_(caller.email), groups = (caller.roles || []).map(function (r) { return 'role:' + String(r).toLowerCase(); });
+  const wide = !caller.viewAs && gameVisibleCampuses_(caller) === null;
+  const holds = function (o) {
+    if (!o) return false;
+    return caller.viewAs ? (o.email.indexOf('role:') !== 0 || o.email === 'role:principal') : (o.email === me || groups.indexOf(o.email) !== -1);
+  };
+  let owners = null;
+  return function (family, campus) {
+    owners = owners || kingdomOwners_(setupRows || cqRead_());
+    if (campus !== undefined) return holds(owners[family + '|' + (campus ? 'campus:' + campus : 'network')]);
+    return Object.keys(owners).some(function (k) {
+      const i = k.lastIndexOf('|'), sc = k.slice(i + 1);
+      return k.slice(0, i) === family && (wide || sc === 'network' || sc === 'campus:' + caller.campusId) && holds(owners[k]);
+    });
+  };
+}
+// one hook's quest through the gate: a cq quest ('cq:<id>[:<campus>]') by its own id and campus, anything else by its hook's family
+function questGateHookKeep_(keep, fn, quest) {
+  const id = String((quest && quest.questId) || '');
+  if (fn && fn.name === 'cqQuests_') { const m = /^cq:([^:]+)(?::(LMS\d))?$/.exec(id); return !!m && keep(m[1], m[2]); }
+  const fam = fn && QUEST_GATE_HOOKS[fn.name];
+  return keep(fam ? fam.id : 'hook:' + (fn && fn.name));
+}
+
+// the assignable families that are not cq quests -> [{ id, title, roles, campus: bool, network: bool, go, end }]. campus: rows per school
+// (a role that works at one school holds it); network: one HQ row (a network-wide role holds it). end: an event's last day, else ''.
+function kingdomGateFamilies_(cfg) {
+  const out = [];
+  const add = function (id, title, roles, go, end) {
+    roles = roles.filter(function (r) { return r !== 'Owner'; });
+    if (!roles.length) return;
+    const net = roles.filter(function (r) { return QUEST_GATE_NETWORK_ROLES.indexOf(r) !== -1; }).length;
+    out.push({ id: id, title: title, roles: roles, campus: net < roles.length, network: net > 0, go: go || QUEST_GATE_HOME[roles[0]] || '', end: end || '' });
+  };
+  eventList_(cfg).forEach(function (ev) {
+    const roles = Object.keys(ev.steps).filter(function (r) { return Array.isArray(ev.steps[r]) && ev.steps[r].length; }), st = ev.story;
+    add('event:' + ev.id, '🎉 ' + String(ev.name || '') + (st ? ' (Chapter ' + (+st.chapter || 1) + ': ' + String(st.title || '') + ')' : ''), roles,
+      roles.indexOf('Principal') !== -1 ? 'principal/index.html' : '', eventEnd_(ev));
+  });
+  const sh = gameBook_().getSheetByName('Game Quests');
+  (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) {
+    const id = String(r[0]).trim(), role = String(r[1]).trim();
+    if (id && role) add('gq:' + id, String(r[2] || id), [role], '', '');
+  });
+  Object.keys(QUEST_GATE_HOOKS).forEach(function (k) { const f = QUEST_GATE_HOOKS[k]; add(f.id, f.title, f.roles.slice(), '', ''); });
+  return out;
+}
+// 'All teachers at LMS 3' / 'All coordinators'
+function kingdomGroupLabel_(role, campus) { return 'All ' + (QUEST_GATE_PLURAL[role] || role) + (campus ? ' at ' + gameCampusLabel_(campus) : ''); }
+// the role groups a row can be given to: [{ value: 'role:<Role>', label }]
+function kingdomGroups_(roles, campus) {
+  return (roles || []).filter(function (r) { return r !== 'Owner'; }).map(function (r) { return { value: 'role:' + r, label: kingdomGroupLabel_(r, campus) }; });
+}
+
 // Approved, not archived, not a hiring request, nobody following it up, decided in the last cardWindowDays; oldest first; at most cardsMax
 function kingdomCards_(approvalsRows, nowMs, cfgK) {
   const out = [], from = nowMs - cfgK.cardWindowDays * 86400000;
@@ -183,6 +261,11 @@ function kingdomNames_(emails, allowRows) {
   (allowRows || []).forEach(function (r) {
     const e = gameLower_(r[0]);
     if (emails.indexOf(e) !== -1) out[e] = String(r[1] || '').trim();
+  });
+  // a role group holder ('role:teacher', as kingdomOwners_ lowercases it) is named by its group
+  emails.forEach(function (e) {
+    const role = e.indexOf('role:') === 0 ? Object.keys(QUEST_GATE_PLURAL).filter(function (r) { return 'role:' + r.toLowerCase() === e; })[0] : null;
+    if (role) out[e] = kingdomGroupLabel_(role, '');
   });
   return out;
 }
@@ -343,14 +426,19 @@ function kingdomAssign_(caller, body) {
     };
     const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return kingdomFail_(code); };
 
-    const def = cqDefs_(cfg, false).filter(function (d) { return d.id === quest; })[0]; // the Owner may assign any active quest (no role filter)
-    if (!def || def.scope === 'self') return refuse('KINGDOM_BAD_QUEST');
-    if (def.scope === 'campus' ? def.campuses.indexOf(campus) === -1 : campus !== '') return refuse('KINGDOM_BAD_CAMPUS');
-    const scopeKey = def.scope === 'campus' ? 'campus:' + campus : 'network';
+    // the family: an active cq quest (any role: the Owner may assign it), or a gated family (kingdomGateFamilies_). -> { id, roles, campuses, network }
+    const cq = cqDefs_(cfg, false).filter(function (d) { return d.id === quest; })[0], gf = cq ? null : kingdomGateFamilies_(cfg).filter(function (f) { return f.id === quest; })[0];
+    const def = cq ? { id: cq.id, roles: cq.roles, campuses: cq.scope === 'network' ? [] : cq.scope === 'self' ? GAME_FALLBACK_CAMPUSES.slice() : cq.campuses, network: cq.scope !== 'campus' }
+      : gf ? { id: gf.id, roles: gf.roles, campuses: gf.campus ? GAME_FALLBACK_CAMPUSES.slice() : [], network: gf.network } : null;
+    if (!def) return refuse('KINGDOM_BAD_QUEST');
+    if (campus ? def.campuses.indexOf(campus) === -1 : !def.network) return refuse('KINGDOM_BAD_CAMPUS');
+    const scopeKey = campus ? 'campus:' + campus : 'network';
     let person = null;
     if (!clear) {
       if (body.assignee !== undefined && typeof body.assignee !== 'string') return refuse('KINGDOM_BAD_INPUT');
-      person = kingdomEligible_(kingdomAllowRows_(), def, campus, assignee, cfg);
+      const group = /^role:(\w{1,30})$/.exec(assignee), role = group && def.roles.filter(function (r) { return r !== 'Owner' && r.toLowerCase() === group[1]; })[0];
+      if (group) person = role ? { email: 'role:' + role.toLowerCase(), name: kingdomGroupLabel_(role, campus) } : null; // everyone holding the role there
+      else person = kingdomEligible_(kingdomAllowRows_(), { roles: def.roles, scope: campus ? 'campus' : 'network' }, campus, assignee, cfg);
       if (!person) return refuse('KINGDOM_NOT_ELIGIBLE');
     }
     return kingdomLocked_(function () {
@@ -455,8 +543,9 @@ function kingdomQuests_(caller, params) {
     const ageOf = function (ms) { return ms ? Math.max(0, Math.floor((nowMs - ms) / 86400000)) : null; };
     const rows = [];
     let cqDown = false;
+    const fams = kingdomGateFamilies_(cfg).filter(function (f) { return f.id !== 'daybook-setup' && (!f.end || f.end >= gameDayKey_(new Date(nowMs - 86400000))); }); // events: running or upcoming only
     cqDefs_(cfg, false).forEach(function (def) {
-      if (def.scope === 'self') return;
+      if (def.scope === 'self') { fams.push({ id: def.id, title: def.title, roles: def.roles.slice(), campus: true, network: false, go: cqGo_({ id: def.id, campus: null }) }); return; } // per person: assigned per school
       const scopes = def.scope === 'network' ? [{ scopeKey: 'network', campus: null }] : def.campuses.map(function (c) { return { scopeKey: 'campus:' + c, campus: c }; });
       scopes.forEach(function (sc) {
         const view = kingdomCqView_(ctx, def, sc), key = def.id + '|' + sc.scopeKey, o = owners[key];
@@ -468,7 +557,17 @@ function kingdomQuests_(caller, params) {
           go: cqGo_(view || { id: def.id, campus: sc.campus }), stuck: false, assignable: false };
         // ponytail: a quest nobody has touched yet has no age, so it is never "stuck"; a start date per quest would give it one
         row.stuck = state === 'open' && row.ageDays !== null && row.ageDays >= cfgK.stuckDays;
-        if (canAssign && state !== 'done') { row.assignable = true; row.assignees = kingdomAssignees_(allow, def, sc.campus || '', cfg); }
+        if (canAssign && state !== 'done') { row.assignable = true; row.assignees = kingdomAssignees_(allow, def, sc.campus || '', cfg); row.groups = kingdomGroups_(def.roles, sc.campus || ''); }
+        rows.push(row);
+      });
+    });
+    // the gated families (events, Game Quests, module hooks, self cq): a row per school and/or one HQ row; no progress is read for them
+    fams.forEach(function (f) {
+      (f.campus ? GAME_FALLBACK_CAMPUSES : []).concat(f.network ? [''] : []).forEach(function (c) {
+        const key = f.id + '|' + (c ? 'campus:' + c : 'network'), o = owners[key];
+        const row = { questId: f.id, title: f.title, roles: f.roles.slice(), campus: c, state: 'open', progress: null,
+          owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: f.go, stuck: false, assignable: canAssign };
+        if (canAssign) { row.assignees = kingdomAssignees_(allow, { roles: f.roles, scope: c ? 'campus' : 'network' }, c, cfg); row.groups = kingdomGroups_(f.roles, c); }
         rows.push(row);
       });
     });
@@ -478,10 +577,13 @@ function kingdomQuests_(caller, params) {
     GAME_FALLBACK_CAMPUSES.forEach(function (c) {
       const q = daybook ? daybookSetupQuest_(daybook, c) : null;
       if (daybook && !q) return; // nothing to count at that school
-      const next = q && (q.steps.filter(function (s) { return !s.done; })[0] || q.steps[0]);
-      rows.push({ questId: 'daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'], campus: c, state: !q ? 'unknown' : q.complete ? 'done' : 'open',
+      const next = q && (q.steps.filter(function (s) { return !s.done; })[0] || q.steps[0]), o = owners['daybook-setup|campus:' + c];
+      const row = { questId: 'daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'], campus: c, state: !q ? 'unknown' : q.complete ? 'done' : 'open',
         progress: q ? { done: q.steps.filter(function (s) { return s.done; }).length, total: q.steps.length } : null,
-        owner: null, ownerSince: null, ageDays: null, go: next ? next.go : daybookGo_(c, 'cash'), stuck: false, assignable: false });
+        owner: o ? { email: o.email, name: names[o.email] || '' } : null, ownerSince: o ? o.at : null, ageDays: null, go: next ? next.go : daybookGo_(c, 'cash'), stuck: false,
+        assignable: canAssign && !(q && q.complete) };
+      if (row.assignable) { row.assignees = kingdomAssignees_(allow, { roles: ['FeeClerk'], scope: 'campus' }, c, cfg); row.groups = kingdomGroups_(['FeeClerk'], c); }
+      rows.push(row);
     });
     return { success: true, day: gameDayKey_(now), stuckDays: cfgK.stuckDays, rows: rows, sourcesDown: sourcesDown };
   } catch (err) {

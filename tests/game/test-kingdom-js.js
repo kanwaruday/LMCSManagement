@@ -164,7 +164,14 @@ assert.strictEqual(K.nudgeText(QR({ title: 'Starting balances', owner: { email: 
   "Hi Asha ji, when you get a moment, could you look at 'Starting balances' for LMS 3? Thank you!", 'the brief\'s line');
 assert.strictEqual(K.nudgeText(QR({ campus: '' })), "Hi, when you get a moment, could you look at 'Bell timings' for all our schools? Thank you!");
 assert.strictEqual(K.reassignText(QR({ owner: { email: 'z@x.org', name: 'Zed' } }), { email: 'y@x.org', name: 'Yas' }), "Give 'Bell timings' at LMS 3 to Yas? Zed had it.");
-assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Until now, whoever holds the role had it.");
+assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Nobody has it yet.");
+// the setup period: role groups first in the pick list, the current holder left out; the All schools result line
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [{ email: 'a@x.org', name: 'A' }] })))),
+  [{ email: 'role:Teacher', name: 'All teachers at LMS 3', group: true }, { email: 'a@x.org', name: 'A' }]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ owner: { email: 'role:teacher', name: 'All teachers' }, groups: [{ value: 'role:Teacher', label: 'x' }], assignees: [] })))), [], 'the holding group is left out');
+assert.strictEqual(K.bulkText(['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].map((c) => ({ campus: c, ok: true }))), 'Given to 6 schools.');
+assert.strictEqual(K.bulkText([{ campus: 'LMS1', ok: true }, { campus: 'LMS2', ok: false }, { campus: 'LMS5', ok: false }]), "Given to 1 school. Didn't go through at LMS 2, LMS 5. Try those again.");
+assert.strictEqual(K.bulkText([{ campus: 'LMS1', ok: false }]), "That didn't go through at any school. Nothing was changed. Please try again.");
 assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
 // 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies
 assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');

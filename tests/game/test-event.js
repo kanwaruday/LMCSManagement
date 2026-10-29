@@ -5,6 +5,7 @@ const ctx = { console: Object.assign(Object.create(console), { error() {}, warn(
 vm.createContext(ctx);
 ['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-quests.gs', 'game-confirm.gs', 'game-office.gs', 'game-kingdom.gs', 'game-teacher.gs', 'game-event.gs']
   .forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+ctx.questGateKeep_ = () => null; // the setup-period gate is off here: tests/game/test-quest-gate.js covers it
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 // ---- made-up data

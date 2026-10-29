@@ -16,7 +16,7 @@ var LMCSHomeHud = (function () {
     appointments: { label: 'Appointments', e: 'appointments' }, routes: { label: 'Routes', e: 'bus' }
   };
   var KINDS = ['quest', 'count', 'setup'];
-  var COPY = { clear: 'All clear today. Nothing is waiting.', town: 'Nothing open in town. Nice.', daily: 'No daily missions today.', growth: 'No setup quests open.',
+  var COPY = { clear: 'No quests yet. Your quests will appear here.', town: 'No quests yet. Your quests will appear here.', daily: 'No daily missions today.', growth: 'No setup quests open.',
     appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes' };
 
   // "Day closes in 3h 10m" (IST), or "Day closed" once 15:30 has passed

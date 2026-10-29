@@ -414,15 +414,18 @@ function cqMissions_(caller, cfg, now) {
   // mission only for its assignee ("Assigned by the Owner") and the Owner; for anyone else it drops (the setup page stays open to them)
   const rows = (CQ_MEMO && CQ_MEMO.rows) || [];
   const owners = rows.some(function (r) { return r.quest.indexOf('_owner:') === 0; }) ? kingdomOwners_(rows) : {};
-  const me = cqLower_(caller.email), isOwner = caller.roles.indexOf('Owner') !== -1;
+  // the setup period (questGateKeep_): a step shows only once the Owner assigned it to this person or their role group
+  const me = cqLower_(caller.email), isOwner = caller.roles.indexOf('Owner') !== -1, keep = questGateKeep_(caller, cfg, rows);
+  const groups = caller.roles.map(function (r) { return 'role:' + String(r).toLowerCase(); });
   const out = [];
   views.forEach(function (v) {
     if (v.ring.total === 0 && !v.emptyLabel) return;
     const o = v.scope === 'self' ? null : owners[v.id + '|' + (v.scope === 'network' ? 'network' : 'campus:' + v.campus)];
-    if (o && o.email !== me && !isOwner) return;
+    const mineO = !!o && (o.email === me || groups.indexOf(o.email) !== -1);
+    if (keep ? !keep(v.id, v.scope === 'self' ? undefined : v.campus || '') : o && !mineO && !isOwner) return;
     // done missions stay listed: one finished today still shows as done today
     out.push(gameMission_('cq_' + v.id, v.scope === 'self' ? 'me' : v.campus || 'network', {
-      title: v.task, why: o && o.email === me ? 'Assigned by the Owner' : v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
+      title: v.task, why: mineO || (keep && v.scope === 'self') ? 'Assigned by the Owner' : v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
       go: cqGo_(v), progress: v.itemsTotal ? { done: v.itemsDone, total: v.itemsTotal } : undefined, done: v.ring.done, core: false, shared: v.scope !== 'self',
     }));
   });

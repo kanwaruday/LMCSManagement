@@ -104,6 +104,9 @@ function gameConfigDefaults_() {
       heat: { warm: 1, hot: 3 },
       weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, expiredDriverDoc: 1, rollCallMissing: 1, speed: 1 } },
     confirmQuests: {}, // setup quests (game-confirm.gs): {questId: definition override}
+    // the setup period (Uday, 29 Oct): every role but the Owner sees a quest (Today's quests, setup missions, the event card) only once the
+    // Owner has assigned it to them or to their role group (kingdomassign; the gate is questGateKeep_ in game-kingdom.gs). false = everyone sees their quests again
+    setupPeriod: { ownerAssignedQuestsOnly: true },
     // The Owner's Kingdom (game-kingdom.gs). Game Config key `kingdom`; a changed key replaces that whole sub-key (a new `buildings` replaces the catalogue).
     // campuses: map positions on a 1000 x 620 valley. heads: [{ id, name, email, functions: ['finance'|'transport'|'academics'|'hr'|'events'|'systems'|'all'], colour }], Game Config only, never code.
     // levelAt[L-1]: building points a base needs for level L. buildings: tiers in order (each ref must be done; null = cannot be checked, never counted).

@@ -34,6 +34,7 @@ function setup(opts) {
   const ctx = { console, JSON };
   vm.createContext(ctx);
   for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs']) vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+  ctx.questGateKeep_ = () => null; // the setup-period gate (game-kingdom.gs) is off here: tests/game/test-quest-gate.js covers it
   // these tests pin a three-campus pilot (LMS4-6) so the outside-the-pilot paths stay covered; the shipped default is all six
   vm.runInContext("var gameConfigDefaults0_ = gameConfigDefaults_; gameConfigDefaults_ = function () { var d = gameConfigDefaults0_(); d.pilotCampuses.Principal = ['LMS4', 'LMS5', 'LMS6']; d.pilotCampuses.Coordinator = ['LMS4', 'LMS5', 'LMS6']; return d; };", ctx);
   const T = vm.runInContext('GAME_TABS', ctx);
@@ -491,5 +492,22 @@ const dailyRow = (day, email, ids, coreIds, role) => [day, email, role || 'Princ
   t.ctx.GAME_MODULE_QUESTS.Principal = function (caller, cfg, now, opts) { seen.push(opts); return []; };
   t.call(P4, 'gametoday', { peek: '1' }); t.call(P4, 'gametoday');
   assert.deepStrictEqual(J(seen), [{ peek: true }, { peek: false }]);
+}
+// the setup-period gate's wiring in gametoday (the gate itself: tests/game/test-quest-gate.js): Game Quests by 'gq:<id>', each hook's quests
+// through questGateHookKeep_ (a cq quest by its id and campus, anything else by its hook's family); missions untouched
+{
+  const t = setup(), asked = [];
+  function cqQuests_() { return [{ questId: 'cq:p1:LMS4', steps: [] }, { questId: 'cq:p2:LMS4', steps: [] }]; }
+  function someHook_() { return [{ questId: 'x:1', steps: [] }]; }
+  t.ctx.GAME_MODULE_QUESTS.Principal = [cqQuests_, someHook_];
+  t.ctx.questGateHookKeep_ = vm.runInContext('(' + fs.readFileSync(__dirname + '/../../apps-script/game-kingdom.gs', 'utf8').match(/function questGateHookKeep_[\s\S]*?\n}\n/)[0] + ')', t.ctx);
+  t.ctx.QUEST_GATE_HOOKS = {};
+  t.ctx.questGateKeep_ = (caller, cfg) => (fam, campus) => { asked.push(fam + '@' + campus); return fam === 'p1' && campus === 'LMS4'; };
+  const a = t.call(P4, 'gametoday');
+  assert.deepStrictEqual(a.quests.map((q) => q.questId), ['cq:p1:LMS4'], 'only the assigned quest');
+  assert.deepStrictEqual(asked, ['gq:principal1@undefined', 'p1@LMS4', 'p2@LMS4', 'hook:someHook_@undefined']);
+  assert.ok(a.missions.length > 0, 'missions are not quests: unchanged');
+  t.ctx.questGateKeep_ = () => null;
+  assert.deepStrictEqual(t.call(P4, 'gametoday').quests.map((q) => q.questId), ['principal1', 'cq:p1:LMS4', 'cq:p2:LMS4', 'x:1'], 'gate off: everything');
 }
 console.log('test-actions OK');

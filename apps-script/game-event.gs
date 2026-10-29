@@ -284,6 +284,8 @@ function eventGet_(caller, params) {
   try {
     const L = eventLoad_(), ev = eventActive_(L.cfg, L.dayKey);
     if (!ev || !eventStepsFor_(ev, caller.primaryRole, caller.functions).length) return { success: true, event: null };
+    const keep = questGateKeep_(caller, L.cfg); // the setup period: the card shows only once the Owner assigned the event
+    if (keep && !keep('event:' + ev.id)) return { success: true, event: null };
     const ctx = { caller: caller, cfg: L.cfg, now: L.now, data: eventData_(L.book, ev, L.dayKey) };
     const me = { email: gameLower_(caller.email), role: caller.primaryRole, campusId: eventCampus_(caller.campusId), functions: caller.functions || [] };
     const mine = eventPerson_(ev, me, ctx);
@@ -316,6 +318,8 @@ function eventTick_(caller, body) {
     const eventId = typeof body.eventId === 'string' ? body.eventId : '', stepId = typeof body.stepId === 'string' ? body.stepId : '';
     const L = eventLoad_(), ev = eventActive_(L.cfg, L.dayKey);
     if (!ev || ev.id !== eventId) return eventFail_('EVENT_NOT_ACTIVE');
+    const keep = questGateKeep_(caller, L.cfg); // a hidden event can't be ticked
+    if (keep && !keep('event:' + ev.id)) return eventFail_('EVENT_NOT_ACTIVE');
     const step = eventStepsFor_(ev, caller.primaryRole, caller.functions).filter(function (s) { return s.id === stepId; })[0];
     if (!step || step.check !== 'self') return eventFail_('EVENT_NOT_SELF');
     const me = gameLower_(caller.email), key = 'event:' + ev.id + ':' + step.id;
