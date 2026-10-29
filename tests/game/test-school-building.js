@@ -35,4 +35,8 @@ assert.deepStrictEqual(B.rooms(lm).filter((r) => r.host).map((r) => r.host).sort
 const ls = B.svg(M.LMS2, { hosts: ['daily', 'hr'] });
 assert.ok(!ls.includes('Sample building') && (ls.match(/sb-host/g) || []).length === 2, 'only rooms the page can open are gold');
 assert.ok(!/\d{2}\.\d{4,}°|lat|lng|longitude/i.test(JSON.stringify(M)), 'no map location in the models');
+// a room's own emoji key beats its type's: the Support Sessions rooms show 🤝, not the office/hall emoji
+assert.ok(/data-room="meet"[^]*?class="sb-e"[^>]*>🤝</.test(svg), 'the sample Meeting room shows 🤝');
+assert.ok(/data-room="f4-hall"[^]*?class="sb-e"[^>]*>🤝</.test(B.svg(M.LMS2)), 'LMS 2 Sessions hall shows 🤝');
+assert.strictEqual(B.rooms(B.clean({ name: 'T', blocks: [{ id: 'b', x: 0, y: 0, w: 1, d: 1, floors: 1, rooms: [{ id: 'r', name: 'R', type: 'office', e: '"><x', face: 'front', floor: 0, at: 0, span: 1 }] }] }))[0].e, '', 'a bad emoji key is dropped');
 console.log('test-school-building: ok');
