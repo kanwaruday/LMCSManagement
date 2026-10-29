@@ -35,7 +35,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 .tab-btn{background:none;border:none;padding:10px 16px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab-btn.active{color:var(--red);border-bottom-color:var(--red)}
 .tab-btn:disabled{color:#c7cbd1;cursor:not-allowed}
-a.tab-btn{text-decoration:none}
 .tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:20px;background:var(--red);color:#fff;font-size:10px;font-weight:700;vertical-align:2px}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
@@ -162,7 +161,7 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=f790ed65"></script>
+<script src="../assets/auth.js?v=ed17b104"></script>
 <script src="../assets/campus-picker.js?v=cd35c768"></script>
 <script>
 (function () {
@@ -196,7 +195,7 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
       <button class="tab-btn active" data-tab="directory" onclick="switchTab('directory')">📋 Directory</button>
       <button class="tab-btn" data-tab="documents" onclick="switchTab('documents')">📁 Documents</button>
       <button class="tab-btn" data-tab="verify" onclick="switchTab('verify')">🔍 Needs Verification<span class="tab-badge" id="verifyBadge" style="display:none"></span></button>
-      <a class="tab-btn" href="../payroll/index.html" title="Marking an employee as left is done in Payroll (Mark left)">🚪 Mark left (Payroll)</a>
+      <button class="tab-btn" data-tab="inactive" disabled title="Temporarily disabled">⛔ Mark Inactive</button>
       <button class="tab-btn" data-tab="rules" id="rulesTabBtn" onclick="switchTab('rules')" style="display:none">⚙️ Document rules</button>
     </div>
 
@@ -243,6 +242,27 @@ label.dm:hover,button.dm:hover,label.dm:focus-within{border-color:var(--red);bac
     </div>
 
     <!-- ══════════════════ MARK INACTIVE ══════════════════ -->
+    <div class="tab-panel" id="panel-inactive">
+      <div class="field">
+        <label>Employee</label>
+        <input type="text" id="inactEmployee" list="inactEmployeeList" placeholder="Search by name…">
+        <datalist id="inactEmployeeList"></datalist>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Date of Resignation</label>
+          <input type="date" id="inactDoRes">
+        </div>
+        <div class="field">
+          <label>Date of Relieving</label>
+          <input type="date" id="inactDoRel">
+        </div>
+      </div>
+      <div>
+        <button class="submit-btn" onclick="submitInactive(event)">Mark Inactive</button>
+      </div>
+      <div id="inactResult"></div>
+    </div>
 
   </div>
 </div>
@@ -423,13 +443,14 @@ async function loadAllEmployees() {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || 'proxy error');
     employeesByLabel = {};
+    const dl4 = document.getElementById('inactEmployeeList');
     const dl5 = document.getElementById('verifyEmployeeList');
-    [dl5].forEach(function (dl) { dl.innerHTML = ''; });
+    [dl4, dl5].forEach(function (dl) { dl.innerHTML = ''; });
     json.employees.forEach(function (e) {
       if (!e.employeeCode || !e.name) return;
       const label = e.name + ' (' + e.employeeCode + ') — ' + (e.school || '?');
       employeesByLabel[label] = e;
-      [dl5].forEach(function (dl) {
+      [dl4, dl5].forEach(function (dl) {
         const opt = document.createElement('option');
         opt.value = label;
         dl.appendChild(opt);
@@ -978,6 +999,24 @@ function showResult(elId, json) {
 /* ═══════════════════════════════════════════════════════════
    SUBMIT HANDLERS
 ═══════════════════════════════════════════════════════════ */
+async function submitInactive(event) {
+  const btn = event.target; btn.disabled = true;
+  try {
+    const picked = resolveEmployeeLabel(document.getElementById('inactEmployee'));
+    if (!picked) throw new Error('Pick an existing employee from the list first');
+    const data = {
+      employeeCode: picked.employeeCode,
+      dateOfResignation: document.getElementById('inactDoRes').value,
+      dateOfRelieving: document.getElementById('inactDoRel').value,
+    };
+    const json = await callStaffApi('markinactive', data);
+    showResult('inactResult', json);
+    if (json.success) { await loadAllEmployees(); }
+  } catch (e) {
+    showResult('inactResult', { success: false, error: e.message });
+  } finally { btn.disabled = false; }
+}
+
 init();
 </script>
 </body>

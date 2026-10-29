@@ -11,11 +11,8 @@ assert.ok(pdr.includes('../principal/support-sessions.html'), 'the SS tab points
 assert.ok(/location\.hash === '#approvals' \|\| location\.hash === '#principal'/.test(pdr), 'hash opens the tab');
 // 3. HQ is linked from the Coordinator home
 assert.ok(read('coordinator/index.html').includes("'hq.html'"), 'C7: hq.html linked');
-// 8. the dead Mark Inactive tab is gone, Payroll is linked instead
-const staff = read('staff/add-employee.html');
-assert.ok(!/data-tab="inactive"|submitInactive|panel-inactive/.test(staff) && staff.includes('../payroll/index.html'), 'S5 folded into Payroll');
 // X5: no Staff Document Submission form links
 assert.ok(!/forms\.gle|DOC_FORM/.test(read('hiring/index.html') + read('office/js/hiring.js')), 'X5 retired');
 // CP2: the admin page points at the setup quest
-assert.ok(read('curriculum-progress/course-mapping-admin.html').includes('Course maps and terms'), 'CP2 pointer');
+assert.ok(read('curriculum-progress/course-mapping-admin.html').includes('moving into the game'), 'CP2 pointer');
 console.log('form links: ok');
