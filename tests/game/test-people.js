@@ -172,6 +172,13 @@ test('remove: deletes a Coordinator-only row; not found refused', () => {
   onReadRow = () => { A.splice(1, 0, ['someone@example.org', 'S', 'LMS1', 'Coordinator', '', '']); }; // a row inserted above: index now points elsewhere
   assert.strictEqual(people(OWN, { email: 'c1@example.org', remove: true }).code, 'PEOPLE_CHANGED');
   assert.ok(rowOf('someone@example.org') && rowOf('c1@example.org'), 'neither row deleted');
+  // the same re-check guards a change: a row inserted above must not get the campus/role written onto it
+  go();
+  onReadRow = () => { A.splice(1, 0, ['owner2@example.org', 'O', 'ALL', 'Owner', '', '']); };
+  assert.strictEqual(people(OWN, { email: 'c1@example.org', campus: 'LMS2', functions: [] }).code, 'PEOPLE_CHANGED');
+  assert.strictEqual(rowOf('owner2@example.org')[3], 'Owner', 'the inserted Owner row is untouched');
+  go();
+  assert.strictEqual(people(OWN, { email: '-x@example.org', name: 'X', campus: 'LMS1', functions: [] }).code, 'PEOPLE_BAD_EMAIL');
 });
 test('rights refusals are audited, without the target email', () => {
   go();

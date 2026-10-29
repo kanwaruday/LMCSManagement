@@ -18,7 +18,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 var PEOPLE_FUNCTIONS = ['Fees & Accounts', 'Transport', 'Academics', 'HR', 'Events', 'Systems'];
 var PEOPLE_CAMPUSES = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-var PEOPLE_EMAIL = /^[a-z0-9._%+\-]{1,64}@[a-z0-9\-]{1,63}(\.[a-z0-9\-]{1,63})*\.[a-z]{2,24}$/;
+var PEOPLE_EMAIL = /^[a-z0-9][a-z0-9._%+\-]{0,63}@[a-z0-9\-]{1,63}(\.[a-z0-9\-]{1,63})*\.[a-z]{2,24}$/;
 var PEOPLE_NOT_YOURS = { success: false, code: 'PEOPLE_NOT_YOURS', error: 'The People room is for the Owner.' };
 var PEOPLE_CODES = { PEOPLE_BAD_EMAIL: 'That email does not look right.', PEOPLE_BAD_NAME: 'Add their name (letters, up to 80).',
   PEOPLE_OWNER_ROW: "The Owner's own row can't be changed here.", PEOPLE_OTHER_ROLES: 'This person has other roles too. Change them in the allowlist sheet.',
@@ -102,10 +102,10 @@ function peopleCoordinator_(caller, body) {
       if (roles.indexOf('Owner') !== -1) return refuseHeld('PEOPLE_OWNER_ROW');
       // only a row holding exactly Coordinator is this room's: other roles, or no role at all (other portals read campus alone), stay with the sheet
       if (roles.length !== 1 || roles[0] !== 'Coordinator') return refuseHeld('PEOPLE_OTHER_ROLES');
+      // the row as it is this instant, before any write (remove or change): the roster backend and hand edits touch the sheet without our lock
+      const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0], nowRoles = peopleRoles_(now[3]);
+      if (gameLower_(now[0]) !== email || nowRoles.length !== 1 || nowRoles[0] !== 'Coordinator') return refuseHeld('PEOPLE_CHANGED');
       if (remove) {
-        const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0]; // the row as it is this instant: the roster backend writes the sheet without our lock
-        const nowRoles = peopleRoles_(now[3]);
-        if (gameLower_(now[0]) !== email || nowRoles.length !== 1 || nowRoles[0] !== 'Coordinator') return refuseHeld('PEOPLE_CHANGED');
         sh.deleteRow(i + 1); // a Coordinator-only row: removing the role leaves nothing, and a role-less row must not linger
         kingdomAudit_(row('done', 'ok', 'removed'), true);
         return { success: true, removed: true };

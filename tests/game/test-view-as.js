@@ -174,7 +174,7 @@ test('page side: sessionStorage only, GETs carry asCampus, no write is sent whil
     c.window = c; vm.createContext(c); vm.runInContext(fs.readFileSync(__dirname + '/../../assets/game/game.js', 'utf8'), c);
     return st['lmcs-view-as'] || null;
   };
-  for (const p of ['/LMCSManagement/owner/kingdom.html', '/LMCSManagement/owner/index.html', '/LMCSManagement/owner/people.html', '/LMCSManagement/setup/index.html', '/teacher/index.html']) assert.strictEqual(load(p), null, p);
+  for (const p of ['/LMCSManagement/owner/kingdom.html', '/LMCSManagement/owner/index.html', '/LMCSManagement/owner/people.html', '/LMCSManagement/setup/index.html', '/teacher/index.html', '/LMCSManagement/principal/issues.html', '/LMCSManagement/principal/support-sessions.html']) assert.strictEqual(load(p), null, p);
   for (const p of ['/LMCSManagement/principal/index.html', '/principal/']) assert.ok(load(p), p + ' keeps it');
 });
 
