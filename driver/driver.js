@@ -408,7 +408,7 @@
   const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com'; // = assets/auth.js
   function googleWay() {
     if (DEMO) return;
-    $('gsi').hidden = false;
+    $('gsi').hidden = false; $('staffLink').hidden = false; // the not-linked screens only, never 'no signal'
     const signedIn = (r) => {
       $('gsiWhy').textContent = 'जोड़ रहे हैं… · Linking this phone…';
       fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverlinkself', idToken: r.credential }) }).then((x) => x.json()).then((x) => {
@@ -447,7 +447,7 @@
       why('खोल रहे हैं… · Loading the buses…');
       fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverviewbuses', idToken }) }).then((x) => x.json()).then((x) => {
         if (!x.success) { why(x.error || 'Only the Owner and Coordinators can view a driver\'s page.'); googleIn(); return; }
-        why('');
+        why(''); $('staffBtn').hidden = true; // signed in: the list, not the Google button
         const open = (reg) => {
           view = { viewReg: reg, idToken };
           try { sessionStorage.setItem(VIEW_KEY, reg); } catch (e) { /* this visit only */ }
@@ -457,7 +457,7 @@
         };
         let kept = ''; try { kept = sessionStorage.getItem(VIEW_KEY) || ''; } catch (e) { /* none */ }
         if (kept && x.buses.some((b) => b.reg === kept)) return open(kept);
-        $('staffBuses').innerHTML = x.buses.map((b) => `<li><button type="button" class="gb-btn" data-reg="${esc(b.reg)}">${esc(b.bus || b.reg)} · ${esc(b.reg)}<small>${esc(b.campus)}${b.driver ? ' · ' + esc(b.driver) : ''}</small></button></li>`).join('') ||
+        $('staffBuses').innerHTML = x.buses.map((b) => `<li><button type="button" class="gb-btn" data-reg="${esc(b.reg)}">${b.bus ? esc(b.bus) + ' · ' : ''}${esc(b.reg)}<small>${esc(b.campus)}${b.driver ? ' · ' + esc(b.driver) : ''}</small></button></li>`).join('') ||
           '<li>कोई चलती बस नहीं · No running buses.</li>';
         $('staffBuses').onclick = (e) => { const t = e.target.closest('[data-reg]'); if (t) open(t.dataset.reg); };
         const first = $('staffBuses').querySelector('button'); if (first) first.focus();

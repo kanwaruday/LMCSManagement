@@ -98,6 +98,7 @@
     display:block; width:100%; padding:12px; background:var(--gb-ok-soft); color:var(--gb-ok); font-size:17px; }
   .dr-alt { display:flex; justify-content:center; margin:8px 0 0; }
   .dr-alt label { position:relative; display:inline-flex; align-items:center; min-height:48px; padding:0 12px; color:var(--gb-red-ink); font-weight:700; text-decoration:underline; cursor:pointer; }
+  .dr-alt a { display:inline-flex; align-items:center; min-height:48px; padding:0 12px; color:var(--gb-red-ink); font-weight:700; }
   .dr-alt input { position:absolute; width:1px; height:1px; opacity:0; }
   #refused { margin-top:14px; }
   .dr-why { margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--gb-low-soft); color:var(--gb-low); font-weight:700; font-size:16px; }
@@ -190,7 +191,7 @@
         <p class="dr-en" id="staffWhy" role="status"></p>
         <ul class="dr-buses" id="staffBuses" aria-label="बसें · Buses"></ul>
       </div>
-      <p class="dr-alt" id="staffLink"><a href="?staff=1">ऑफिस स्टाफ़? · Owner or Coordinator? Staff view</a></p>
+      <p class="dr-alt" id="staffLink" hidden><a href="?staff=1">ऑफिस स्टाफ़? · Owner or Coordinator? Staff view</a></p>
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
@@ -209,6 +210,6 @@
 <script src="./driver-logic.js?v=efd89bd5"></script>
 <script src="../assets/game/bus-model.js?v=b08cfce2"></script>
 <script src="../coordinator/route-map.js?v=3f998a20"></script>
-<script src="./driver.js?v=f62d3854"></script>
+<script src="./driver.js?v=ba3f0863"></script>
 </body>
 </html>
