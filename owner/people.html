@@ -43,8 +43,8 @@
     </main>
   </div>
 
-  <script src="../assets/auth.js?v=aebb03ed"></script>
-  <script src="../assets/game/game.js?v=8ddf9958"></script>
+  <script src="../assets/auth.js?v=782fe6ca"></script>
+  <script src="../assets/game/game.js?v=4b67b411"></script>
   <script src="../assets/game/emoji.js?v=e979d2e0"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
@@ -58,6 +58,7 @@
       const ul = document.getElementById('pp-list');
       ul.textContent = '';
       document.getElementById('pp-add').hidden = !DATA.canEdit;
+      if (!DATA.canEdit) status('Read only for now. To add or change a Coordinator, edit the allowlist sheet.');
       if (!DATA.coordinators.length) ul.appendChild(h('li', { class: 'gb-card' }, ['No Coordinators on the allowlist yet.']));
       DATA.coordinators.forEach(function (p) {
         const acts = DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [

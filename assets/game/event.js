@@ -86,10 +86,7 @@ var LMCSEvent = (function () {
 
   // ── the card ──
   var S = { session: null, ev: null, slot: null, live: null, busy: false };
-  // the Owner viewing a school (LMCSGame.viewAs, assets/game/game.js): GETs carry asCampus; no tick is sent
-  function viewing() { return !!(window.LMCSGame && LMCSGame.viewAs && LMCSGame.viewAs()); }
   function post(body) {
-    if (viewing()) return Promise.reject(new Error('read-only'));
     return fetch(backendUrl(), { method: 'POST', body: JSON.stringify(Object.assign({ action: 'gameeventtick', idToken: S.session.idToken }, body)) })
       .then(function (r) { return r.json(); });
   }
@@ -114,7 +111,7 @@ var LMCSEvent = (function () {
   }
   function stepRow(s, ev) {
     var href = s.done ? null : safeHref(s.go, ROOT), acts = [];
-    if (!s.done && s.self) acts.push(h('button', { type: 'button', class: 'ev-btn', disabled: viewing() ? 'disabled' : null }, 'Mark done'));
+    if (!s.done && s.self) acts.push(h('button', { type: 'button', class: 'ev-btn' }, 'Mark done'));
     if (href) acts.push(h('a', { class: 'ev-go', href: href, 'aria-label': 'Go: ' + s.label }, 'Go'));
     var row = h('li', { class: 'ev-step' + (s.done ? ' ev-done' : ''), 'data-step': s.id, tabindex: '-1' }, [
       h('span', { class: 'ev-mark', 'aria-hidden': 'true' }, s.done ? '✅' : '⬜'),
@@ -156,7 +153,7 @@ var LMCSEvent = (function () {
   }
   function load(quiet, again) {
     var url = backendUrl();
-    return fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=gameevent&idToken=' + encodeURIComponent(S.session.idToken || '') + (window.LMCSGame && LMCSGame.viewParam ? LMCSGame.viewParam() : ''), { cache: 'no-store' })
+    return fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=gameevent&idToken=' + encodeURIComponent(S.session.idToken || ''), { cache: 'no-store' })
       .then(function (r) { return r.json(); }).then(function (d) {
         var ev = d && d.success && d.event;
         if (!ev || !Array.isArray(ev.steps) || (ROLES.length && ROLES.indexOf(ev.role) === -1)) { if (!quiet) clear(); return; }

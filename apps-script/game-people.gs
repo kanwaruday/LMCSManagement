@@ -41,7 +41,7 @@ function peopleList_(caller, params) {
     const v = peopleSheet_().getDataRange().getValues(), header = v[0] || [];
     const list = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleRoles_(r[3]).indexOf('Coordinator') !== -1; }).map(function (r) { return peopleOut_(header, r); });
     return { success: true, coordinators: list, functions: PEOPLE_FUNCTIONS.slice(), campuses: PEOPLE_CAMPUSES.slice(), hasFunctions: peopleFnAt_(header) !== -1,
-      canEdit: kingdomCan_(caller, 'allocate', cqLoadCfg_()) };
+      canEdit: false }; // ponytail: read-only until Uday OKs the allowlist write (branch owner-rights: peoplecoordinator dispatch + canEdit)
   } catch (err) {
     console.error('peoplelist: ' + (err && err.message));
     return peopleFail_('PEOPLE_ERROR');

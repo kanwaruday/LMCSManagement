@@ -113,7 +113,7 @@ test('peoplelist: Owner only, refused before reading; Coordinators with function
   assert.strictEqual(r.success, true);
   assert.deepStrictEqual(r.coordinators.map((p) => [p.email, p.campus, p.functions, p.editable]),
     [['c1@example.org', 'LMS1', ['Transport', 'Payroll'], true], ['c2@example.org', 'ALL', ['Fees & Accounts'], false], ['oc@example.org', 'ALL', [], false]]);
-  assert.deepStrictEqual([r.canEdit, r.hasFunctions, r.campuses[0]], [true, true, 'ALL']);
+  assert.deepStrictEqual([r.canEdit, r.hasFunctions, r.campuses[0]], [false, true, 'ALL']); // read only until owner-rights ships
   assert.ok(!('peoplecoordinator' in ctx.GAME_MODULE_ACTIONS) && ctx.GAME_MODULE_ACTIONS.peoplelist === ctx.peopleList_, 'the write is POST only');
 });
 test('add: a new Coordinator row, plain text, two audit rows', () => {
@@ -216,14 +216,14 @@ test('no Functions column: functions refused, campus still settable', () => {
   assert.strictEqual(rowOf('c1@example.org')[2], 'LMS2');
   assert.strictEqual(J(ctx.peopleList_(OWN, {})).hasFunctions, false);
 });
-test('POST dispatch; a GET is refused as unknown', () => {
+test('no write dispatched yet (read-only release); a GET is refused as unknown', () => {
   go();
   const saved = ctx.gameVerifyCaller_;
   ctx.gameVerifyCaller_ = () => J(OWN);
   try {
     assert.deepStrictEqual(JSON.parse(ctx.doGet({ parameter: { idToken: 't', action: 'peoplecoordinator', email: 'n@example.org', name: 'N', campus: 'LMS1' } }).body), { success: false, error: 'Unknown action' });
     const r = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'peoplecoordinator', idToken: 't', email: 'n@example.org', name: 'N', campus: 'LMS1', functions: [] }) } }).body);
-    assert.strictEqual(r.success, true, JSON.stringify(r));
+    assert.strictEqual(r.success, false, 'not dispatched until owner-rights ships: ' + JSON.stringify(r));
   } finally { ctx.gameVerifyCaller_ = saved; }
 });
 test('pages: HQ Home tiles and switch; People room confirms before every write', () => {

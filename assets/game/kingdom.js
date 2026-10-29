@@ -280,22 +280,22 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function baseButton(b, nextId) {
     var u = Number(b.unknown) || 0, p = progressOf([b]);
     var bar = h('span', { class: 'kg-hp', 'aria-hidden': 'true' }, [h('i', { style: 'width:' + (p.total ? Math.round(100 * p.done / p.total) : 0) + '%' })]);
-    return holdToEnter(b, h('button', { type: 'button', class: 'kg-base' + (b.darbar ? ' kg-darbar' : '') + (b.id === nextId ? ' kg-isnext' : ''), style: pos(b), 'data-base': b.id,
+    return h('button', { type: 'button', class: 'kg-base' + (b.darbar ? ' kg-darbar' : '') + (b.id === nextId ? ' kg-isnext' : ''), style: pos(b), 'data-base': b.id,
       'aria-label': baseLabel(b) + ', ' + progressText(p) + (b.id === nextId ? ', your next step is here' : ''),
       onclick: function (e) { openBase(b.id, e.currentTarget); } }, [
       h('span', { class: 'kg-lvb', 'aria-hidden': 'true' }, [String(Number(b.level) || 0)]),
       svgUse(b.darbar ? 'darbar' : 'fort', 'kg-fort'),
       u ? h('span', { class: 'kg-pin', 'aria-hidden': 'true' }, ['?']) : null,
-      h('span', { class: 'kg-plate' }, [h('span', { class: 'kg-bn' }, [b.id === nextId ? h('b', { class: 'kg-tag' }, ['Next']) : null, b.name]), bar])]));
+      h('span', { class: 'kg-plate' }, [h('span', { class: 'kg-bn' }, [b.id === nextId ? h('b', { class: 'kg-tag' }, ['Next']) : null, b.name]), bar])]);
   }
   // the same bases as a list (phones: the map is a picture to pan; this is the reliable way in)
   function baseList(bases, nextId) {
     return h('ul', { class: 'kg-blist', 'aria-label': 'Bases' }, bases.map(function (b) {
       var p = progressOf([b]), nb = (b.buildings || []).map(nextTier).filter(Boolean)[0];
-      return h('li', {}, [holdToEnter(b, h('button', { type: 'button', class: 'kg-brow' + (b.id === nextId ? ' kg-isnext' : ''), onclick: function (e) { openBase(b.id, e.currentTarget); } }, [
+      return h('li', {}, [h('button', { type: 'button', class: 'kg-brow' + (b.id === nextId ? ' kg-isnext' : ''), onclick: function (e) { openBase(b.id, e.currentTarget); } }, [
         h('span', { class: 'kg-lvb', 'aria-hidden': 'true' }, [String(Number(b.level) || 0)]),
         h('span', { class: 'kg-brt' }, [h('b', {}, [b.full || b.name]), h('small', {}, ['Level ' + (Number(b.level) || 0) + ' · ' + progressText(p) + (nb ? ' · next: ' + nb.label : '')])]),
-        h('span', { class: 'kg-chev', 'aria-hidden': 'true' }, ['›'])]))]);
+        h('span', { class: 'kg-chev', 'aria-hidden': 'true' }, ['›'])])]);
     }));
   }
   function headButton(hd) {
@@ -681,36 +681,6 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         }, null);
       }, opener);
   }
-
-  // ═══ The hidden school switcher (Owner only): hold a school's fort (≈600 ms, or a long-press / right-click), or use "Enter as
-  // Principal" in its dialog (keyboard), to open that school's Principal Home Base and World read only. The choice goes in sessionStorage
-  // (LMCSGame.setViewAs), never the URL; the game backend honours it for the Owner only. ═══
-  var HOLD_MS = 600;
-  function canEnter(b) { return owner() && /^LMS[1-6]$/.test(String(b && b.id)) && !!(window.LMCSGame && LMCSGame.setViewAs); }
-  function holdToEnter(b, btn) {
-    var timer = null, held = false;
-    var stop = function () { clearTimeout(timer); timer = null; };
-    btn.addEventListener('pointerdown', function (e) {
-      held = false; stop();
-      if (!canEnter(b) || e.button > 0) return;
-      timer = setTimeout(function () { timer = null; held = true; openEnter(b, btn); }, HOLD_MS);
-    });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { btn.addEventListener(ev, stop); });
-    btn.addEventListener('contextmenu', function (e) { if (!canEnter(b)) return; e.preventDefault(); stop(); if (!S.layer) { held = true; openEnter(b, btn); } });
-    btn.addEventListener('click', function (e) { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true); // the hold already opened the sheet
-    return btn;
-  }
-  function openEnter(b, opener) {
-    var go = h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function () { LMCSGame.setViewAs({ campus: b.id, name: b.name }); location.assign(S.root + 'principal/index.html'); } }, ['Enter as Principal']);
-    openLayer('Enter ' + b.name + ' as its Principal sees it', b.full || b.name, [h('div', { class: 'kg-form' }, [
-      h('p', {}, ['Its Home Base and World, as the Principal sees them. Nothing can be changed while you look; Leave in the top bar brings you back here.']),
-      h('div', { class: 'kg-acts' }, [go, h('button', { type: 'button', class: 'kg-btn', onclick: dismiss }, ['Cancel'])])])], opener);
-    go.focus();
-  }
-  api.hooks.base = function (base) {
-    if (!canEnter(base)) return null;
-    return h('div', { class: 'kg-acts kg-enter' }, [h('button', { type: 'button', class: 'kg-btn', onclick: function (e) { openEnter(base, e.currentTarget); } }, ['Enter as Principal'])]);
-  };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
   api.openBase = function (id) { openBase(id); }; api.close = closeLayer; api.state = S;
