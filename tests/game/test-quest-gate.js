@@ -278,6 +278,23 @@ test('setupget lists only assigned quests while the gate is on', () => {
   assert.ok(list(P4).includes('tc'));
 });
 
+test('setupget quest= and setupsave refuse a quest the Owner has not assigned (no API way round the gate)', () => {
+  reset();
+  const get1 = (c, p) => { ctx.CQ_MEMO = null; return J(ctx.cqGetAction_(c, p)); };
+  const save1 = (c, p) => { ctx.CQ_MEMO = null; return J(ctx.cqSaveAction_(c, p)); };
+  const err = (r) => r.code || r.error;
+  const before = (book.tabs['Setup Data'] ? book.tabs['Setup Data'].rows.length : 0);
+  assert.strictEqual(err(get1(P4, { quest: 'tc' })), 'SETUP_NOT_YOURS', 'read refused before assignment');
+  assert.strictEqual(err(save1(P4, { quest: 'tc', item: 'x', fields: { name: 'A' } })), 'SETUP_NOT_YOURS', 'write refused before assignment');
+  assert.strictEqual((book.tabs['Setup Data'] ? book.tabs['Setup Data'].rows.length : 0), before, 'nothing written');
+  assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'role:Principal' });
+  const g = get1(P4, { quest: 'tc' });
+  assert.strictEqual(g.success, true, JSON.stringify(g));
+  assert.deepStrictEqual(g.quests.map((q) => q.campus), ['LMS4']);
+  assert.strictEqual(err(get1(P3, { quest: 'tc' })), 'SETUP_NOT_YOURS', 'assigned at LMS4 only: LMS3 still refused');
+  assert.notStrictEqual(err(save1(P4, { quest: 'tc', item: 'x', fields: { name: 'A' } })), 'SETUP_NOT_YOURS', 'assigned: the gate lets the write through');
+});
+
 test('removal: a group cleared at one school, or at every school in one bulk (clear items)', () => {
   reset();
   bulk(OWN, { items: ['LMS3', 'LMS4'].map((c) => ({ quest: EV, campus: c, assignee: 'role:Teacher' })).concat([{ quest: EV, campus: 'LMS4', assignee: 'p4@example.org' }]) });

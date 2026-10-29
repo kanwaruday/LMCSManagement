@@ -550,7 +550,7 @@ function kingdomAssignBulk_(caller, body) {
         if (a.setup) { setup.push(a.setup); done++; } else unchanged++;
       });
       if (setup.length) gameAppendText_(cqEnsureTab_(gameBook_()), setup);
-      kingdomAudit_(audit, true);
+      try { kingdomAudit_(audit, true); } catch (e) { console.error('kingdomassignbulk audit (the rows are written; the requested row above stands): ' + (e && e.message)); } // never report a write that happened as failed
       CQ_MEMO = null;
       return { success: true, done: done, unchanged: unchanged, refused: refused };
     });

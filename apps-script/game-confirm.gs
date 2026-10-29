@@ -328,10 +328,19 @@ function cqGetAction_(caller, p) {
     const def = cqMine_(caller, cqDefs_(cfg)).filter(function (d) { return d.id === p.quest; })[0];
     if (!def) throw cqErr_('SETUP_NOT_YOURS');
     cqRefuse_(def, p);
-    const scopes = cqScopes_(caller, def, p.campus);
-    const rows = cqRead_();
+    const rows = cqRead_(), scopes = cqGateScopes_(caller, cfg, def, cqScopes_(caller, def, p.campus), rows);
     return { success: true, sample: false, quests: scopes.map(function (sc) { return cqView_(caller, def, sc, rows, {}); }) };
   } catch (err) { return cqFail_(err); }
+}
+
+// the setup period (questGateKeep_) for one quest asked for by id: keep only the scopes the Owner assigned to this person or their
+// role group, the same test as the quest list; none left -> SETUP_NOT_YOURS, so the API can't reach an unassigned quest directly
+function cqGateScopes_(caller, cfg, def, scopes, rows) {
+  const keep = questGateKeep_(caller, cfg, rows);
+  if (!keep) return scopes;
+  const left = scopes.filter(function (sc) { return keep(def.id, def.scope === 'self' ? undefined : sc.campus || ''); });
+  if (!left.length) throw cqErr_('SETUP_NOT_YOURS');
+  return left;
 }
 
 function cqSaveAction_(caller, p) {
@@ -345,6 +354,7 @@ function cqSaveAction_(caller, p) {
     cqRefuse_(def, p);
     const scopes = cqScopes_(caller, def, p.campus);
     if (scopes.length !== 1) throw cqErr_('SETUP_BAD_CAMPUS');
+    cqGateScopes_(caller, cfg, def, scopes); // the setup period: only a quest the Owner assigned can be written
     const scope = scopes[0], item = cqItemKey_(p.item);
     const view = cqView_(caller, def, scope, cqRead_(), {}); // adapter runs here, outside the lock
     const cur = view.items.filter(function (it) { return it.item === item; })[0] || null;
