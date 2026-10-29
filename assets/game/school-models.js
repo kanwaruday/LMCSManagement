@@ -59,4 +59,20 @@ var LMCSBuildingModels = {
     ]
   }
 };
-if (typeof module !== 'undefined') module.exports = LMCSBuildingModels;
+
+// Bubbles on the Principal home (assets/game/home-hud.js): per campus, which room carries which door. { room: a room/ground id in that
+// campus's building, kind: 'quest' (gold, bobs) | 'count' | 'setup', source: what it opens }. A source with no room here (or whose room
+// the drawn building lacks) is reached from the 📜 Quest board bubble at `entrance` (a room id), so nothing is unreachable. A bubble
+// shows only while its source needs attention. LMS 1 has no plan yet, so it uses the sample building's rooms; when its own model lands,
+// map these ids again (the gate and notice board get their own rooms then, and appointments and setup move there).
+var LMCSHomeHotspots = {
+  LMS1: { entrance: 'play', hotspots: [
+    { room: 'office', kind: 'quest', source: 'today' },      // the Principal's room: Today with Buddy
+    { room: 'reception', kind: 'count', source: 'daily' },   // the office: reports and issues
+    { room: 'staff', kind: 'count', source: 'hr' },          // the staff room: teachers and hiring
+    { room: 'busbay', kind: 'count', source: 'routes' },     // the bus bay: the World
+    { room: 'site', kind: 'setup', source: 'setup' }         // the building site stands in for the notice board
+  ] },
+  LMS2: { hotspots: [] }, LMS3: { hotspots: [] }, LMS4: { hotspots: [] }, LMS5: { hotspots: [] }, LMS6: { hotspots: [] }
+};
+if (typeof module !== 'undefined') { module.exports = LMCSBuildingModels; Object.defineProperty(module.exports, 'hotspots', { value: LMCSHomeHotspots }); } // not enumerable: the models stay campus keys only

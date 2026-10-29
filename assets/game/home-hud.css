@@ -1,0 +1,102 @@
+/* The Principal home HUD (assets/game/home-hud.js): the school building fills the screen, controls hug the edges. Scoped to body.hh.
+   Colour tokens come from base.css (--gb-*). Motion only for people who haven't asked for less (bottom of the file). */
+body.hh .gb-shell { padding:0; max-width:none; gap:0; }
+body.hh .hh-scene { position:relative; height:calc(100svh - 160px); min-height:480px; overflow:hidden; background:#e7ecdf; }
+body.hh #modules, body.hh #world { height:100%; margin:0; overflow:auto; }
+body.hh #modules { padding:64px 0 150px; }
+body.hh .gb-base::before, body.hh .gb-base-in { all:unset; }
+body.hh .gb-base-in { display:block; }
+body.hh .sb-box { border:0; border-radius:0; background:transparent; }
+body.hh #base-h, body.hh #rooms { display:none; }
+body.hh .sb-said { margin:4px 12px 0; text-align:center; }
+body.hh #world { padding:64px 8px 150px; }
+@media (min-width:960px) { body.hh .hh-scene { height:calc(100svh - 92px); } body.hh .gb-shell { grid-template-columns:104px minmax(0, 1fr); grid-template-areas:"rail stage"; padding:0; } body.hh .gb-shell > .gb-rail { margin:0; } }
+body.hh .gb-rail-i.is-soon { display:none; } /* no buttons for sections that don't exist yet */
+body.hh .gb-rail li:has(.is-soon) { display:none; }
+body.hh .gb-panels { display:none; }
+
+.hh-bld { position:relative; }
+.hh-bubbles { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+
+/* the HUD sits over the scene; only its controls take taps */
+.hh-hud { position:absolute; inset:0; pointer-events:none; z-index:5; }
+.hh-hud > * { pointer-events:auto; }
+.hh-hud button, .hh-b, .hh-sheet button { font:inherit; cursor:pointer; }
+.hh-tl { position:absolute; top:8px; left:8px; display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+.hh-avatar { width:48px; height:48px; border-radius:50%; border:3px solid var(--gb-gold); background:var(--gb-red); color:#fff; font-weight:700; font-size:20px; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+.hh-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:12px; background:rgba(27,36,48,.86); color:#fff; font-size:13px; font-weight:700; white-space:nowrap; }
+.hh-chip[hidden] { display:none; }
+.hh-top { position:absolute; top:8px; left:68px; right:68px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px 6px; pointer-events:none !important; }
+.hh-events { position:absolute; top:8px; right:8px; display:flex; flex-direction:column; gap:8px; }
+.hh-evt { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; width:64px; min-height:64px; padding:4px; border:2px solid var(--gb-gold); border-radius:14px; background:var(--gb-paper); color:var(--gb-ink); box-shadow:0 2px 6px rgba(0,0,0,.25); }
+.hh-evt .gb-emoji { font-size:26px; line-height:1; }
+.hh-evt-t { font-size:11px; font-weight:700; line-height:1.15; text-align:center; }
+.hh-badge { position:absolute; top:-6px; right:-6px; display:inline-grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--gb-red); color:#fff; font-size:12px; font-weight:700; }
+.hh-badge[hidden] { display:none; }
+
+/* the task drawer slides out of the left edge */
+.hh-edge { position:absolute; left:0; top:45%; width:44px; min-height:64px; border:0; border-radius:0 12px 12px 0; background:var(--gb-ink); color:#fff; font-size:20px; }
+.hh-drawer { position:absolute; left:0; top:100px; bottom:140px; width:min(86vw, 340px); padding:8px 12px; overflow:auto; background:var(--gb-paper); border-right:2px solid var(--gb-line); border-radius:0 14px 14px 0; box-shadow:4px 0 14px rgba(0,0,0,.2);
+  transform:translateX(-102%); visibility:hidden; }
+.hh-drawer.is-open { transform:none; visibility:visible; }
+.hh-drawer.is-open ~ .hh-edge { left:min(86vw, 340px); }
+.hh-tabs { display:flex; gap:4px; margin:0 0 8px; }
+.hh-tabs button { flex:1; min-height:44px; min-width:44px; border:1.5px solid var(--gb-line); border-radius:10px; background:var(--gb-paper); color:var(--gb-ink); font-weight:700; }
+.hh-tabs button[aria-selected="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
+.hh-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.hh-row { display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 12px; border:1.5px solid var(--gb-line); border-radius:12px; background:var(--gb-paper); color:var(--gb-ink); font-weight:600; text-align:left; text-decoration:none; }
+.hh-row-t { flex:1; min-width:0; overflow-wrap:anywhere; }
+.hh-go { color:var(--gb-red-ink); font-weight:700; white-space:nowrap; }
+.hh-static.is-done .hh-row-t { color:var(--gb-muted); text-decoration:line-through; }
+.hh-mark { width:22px; text-align:center; }
+.hh-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.hh-empty { margin:8px 0; padding:12px; border:1.5px dashed var(--gb-line); border-radius:12px; color:var(--gb-muted); }
+
+/* the bottom: one quest line over the Town / World switch (the rail sits below it on phones) */
+.hh-bottom { position:absolute; left:8px; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.hh-strip { position:relative; display:flex; align-items:center; gap:8px; width:min(100%, 480px); min-height:48px; padding:6px 14px; border:2px solid var(--gb-gold); border-radius:24px; background:var(--gb-paper); color:var(--gb-ink); font-weight:700; text-align:left; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+.hh-strip[hidden] { display:none; }
+.hh-strip-t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hh-strip .hh-badge { position:static; }
+body.hh .gb-switch { margin:0; width:min(100%, 320px); }
+body.hh .gb-switch button { box-shadow:0 2px 6px rgba(0,0,0,.2); }
+
+/* bubbles: a 44px round button on a room */
+.hh-b { position:absolute; transform:translate(-50%, -50%); width:44px; height:44px; padding:0; border:2px solid var(--gb-ink); border-radius:50%; background:var(--gb-paper); color:var(--gb-ink); font-size:21px; line-height:1; pointer-events:auto; box-shadow:0 2px 6px rgba(0,0,0,.3); }
+.hh-b-e { pointer-events:none; }
+.hh-b-quest { background:var(--gb-gold); border-color:var(--gb-gold-ink); }
+.hh-b-setup { background:var(--gb-ok-soft); border-color:var(--gb-ok); }
+.hh-b-board { background:var(--gb-gold-soft); border-color:var(--gb-gold-ink); }
+.hh-b .hh-badge { top:-8px; right:-8px; }
+.hh :focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
+.hh-hud .hh-edge:focus-visible, .hh-sheet :focus-visible { outline-offset:-3px; }
+
+/* the one sheet */
+.hh-layer { position:fixed; inset:0; z-index:1000; }
+.hh-layer[hidden] { display:none; }
+.hh-backdrop { position:absolute; inset:0; background:rgba(27,36,48,.5); }
+.hh-sheet { position:absolute; left:0; right:0; bottom:0; display:flex; flex-direction:column; max-height:88svh; background:var(--gb-paper); color:var(--gb-ink); border-radius:18px 18px 0 0; padding:0 14px calc(14px + env(safe-area-inset-bottom)); box-shadow:0 -4px 20px rgba(0,0,0,.3); }
+.hh-sheet-head { display:flex; align-items:center; gap:8px; padding:10px 0 6px; }
+.hh-sheet-head h2 { flex:1; margin:0; font:700 19px/1.25 var(--gb-font); }
+.hh-sheet-head h2:focus { outline:none; }
+.hh-x { width:44px; height:44px; border:1.5px solid var(--gb-line); border-radius:50%; background:var(--gb-paper); color:var(--gb-ink); font-size:24px; line-height:1; }
+.hh-sheet-body { overflow:auto; padding:2px 0 4px; }
+.hh-sheet-body h3 { margin:14px 0 6px; font-size:15px; }
+.hh-sheet-body .lg-root { margin:0; max-width:none; }
+.hh-sheet-body .gb-rooms-like, .hh-sheet-body .gb-list { margin:0; }
+.hh-live { margin:0; min-height:0; font-size:13px; color:var(--gb-muted); }
+.hh-facts { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
+.hh-facts dt { color:var(--gb-muted); } .hh-facts dd { margin:0; font-weight:700; }
+.hh-only-growth .lg-today, .hh-only-daily .lg-quest { display:none; }
+body.hh-sheet-open { overflow:hidden; }
+@media (min-width:1024px) {
+  .hh-sheet { left:auto; top:0; width:420px; max-height:none; border-radius:18px 0 0 18px; box-shadow:-4px 0 20px rgba(0,0,0,.3); }
+  .hh-sheet-body { flex:1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hh-drawer { transition:transform .22s ease, visibility 0s linear .22s; }
+  .hh-drawer.is-open { transition:transform .22s ease; }
+  .hh-b-quest { animation:hh-bob 2.4s ease-in-out infinite; }
+  @keyframes hh-bob { 0%, 100% { margin-top:0; } 50% { margin-top:-6px; } }
+}
