@@ -39,7 +39,7 @@ const ctx = {
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => ({ body: s }) }) },
 };
 vm.createContext(ctx);
-['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-event.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
 ctx.SpreadsheetApp = { openById: (id) => (id === vm.runInContext('GAME_ALLOWLIST_SHEET_ID', ctx) ? allowBook : book) };
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-10-29T05:00:00Z');
@@ -56,7 +56,7 @@ const DEFS = {
 const KINGDOM = { buildings: [{ id: 'hall', name: 'Hall', where: 'campus', tiers: [{ label: 'Campus step', refs: ['cq:tc'], owners: ['tc'] }] },
   { id: 'post', name: 'Post', where: 'darbar', tiers: [{ label: 'Network step', refs: ['cq:tn'], owners: ['tn'] }] }] };
 const reset = (cfgExtra) => {
-  const cfg = Object.assign({ confirmQuests: DEFS, kingdom: KINGDOM }, cfgExtra || {});
+  const cfg = Object.assign({ confirmQuests: DEFS, kingdom: KINGDOM, setupPeriod: { ownerAssignedQuestsOnly: false } }, cfgExtra || {});
   book.tabs = { 'Game Config': fakeSheet([['Key', 'Value']].concat(Object.keys(cfg).map((k) => [k, JSON.stringify(cfg[k])]))) };
   events.length = 0; warns.length = 0; logs.length = 0; fetches = []; fetchReply = null; lockFails = false; ctx.CQ_MEMO = null;
   ctx.CQ_PREFILL['test.one'] = () => [{ item: 'a', fields: { name: 'Sample' } }];
@@ -94,13 +94,13 @@ test('assign: ignores a non-Owner entry in rights.emails', () => {
   reset({ kingdom: Object.assign({ rights: { allocate: { roles: ['Coordinator'], emails: [] } } }, KINGDOM) });
   assert.strictEqual(assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'p4@example.org' }).code, 'KINGDOM_NO_RIGHT');
 });
-test('assign: unknown, inactive or self quest -> KINGDOM_BAD_QUEST', () => {
+test('assign: unknown or inactive quest -> KINGDOM_BAD_QUEST', () => {
   reset();
-  for (const quest of ['nope', 'toff', 'tself', '', undefined, { x: 1 }]) {
+  for (const quest of ['nope', 'toff', 'event:nope', 'gq:nope', '', undefined, { x: 1 }]) {
     assert.strictEqual(assign(OWN, { quest, campus: 'LMS4', assignee: 'p4@example.org' }).code, 'KINGDOM_BAD_QUEST', String(quest));
   }
   assert.strictEqual(setup().length, 0);
-  assert.strictEqual(audit().length, 6, 'each refusal after the rights check is audited');
+  assert.strictEqual(audit().length, 7, 'each refusal after the rights check is audited');
   assert.ok(audit().every((r) => col(r, 'Result') === 'refused' && col(r, 'Code') === 'KINGDOM_BAD_QUEST' && col(r, 'Phase') === 'done'));
 });
 test('assign: campus not in the quest -> KINGDOM_BAD_CAMPUS; network quest with a campus -> KINGDOM_BAD_CAMPUS', () => {
@@ -157,7 +157,7 @@ test("assign: clear writes 'cleared'", () => {
   assert.strictEqual(assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true }).unchanged, true, 'nothing to clear: no row');
   assert.strictEqual(setup().length, 0);
   assign(OWN, { quest: 'tc', campus: 'LMS4', assignee: 'p4@example.org' });
-  const r = assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true, assignee: 'ignored@example.org' });
+  const r = assign(OWN, { quest: 'tc', campus: 'LMS4', clear: true, assignee: '' }); // the page sends an empty assignee; naming another person is unchanged (test-quest-gate)
   assert.deepStrictEqual(r, { success: true, owner: null });
   const last = setup()[setup().length - 1];
   assert.deepStrictEqual(last.slice(0, 6), ['_owner:tc', 'campus:LMS4', '_quest', 'owner', '', 'cleared']);

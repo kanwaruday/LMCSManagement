@@ -9,19 +9,28 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/map-home.css?v=16666e87" />
+  <link rel="stylesheet" href="../assets/game/kingdom.css?v=807b18f2" />
+  <link rel="stylesheet" href="../assets/game/map-home.css?v=03ceb21d" />
   <style>
     /* the HQ window's tiles and lists (they live in the stash until a window opens them) */
     #hq-box .gb-grid, #modules .gb-list { margin:0; }
+    #hq-box h3, #modules h3 { margin:14px 0 6px; }
+    /* the People room inside its window (assets/game/people-room.js) */
+    .pp-fns { border:0; margin:0 0 14px; padding:0; } .pp-fns legend { font-weight:700; margin:0 0 4px; padding:0; }
+    .pp-fns label { display:flex; align-items:center; gap:10px; min-height:44px; } .pp-fns input { width:22px; height:22px; }
+    .pp-row small { display:block; } .pp-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; } .pp-inline h2 { margin:0 0 8px; }
+    #people-box .gb-section { margin:0; }
     #gd-box ul { list-style:none; margin:8px 0; padding:0; display:flex; flex-direction:column; gap:6px; } #gd-box li { padding:8px 12px; border:1.5px solid var(--gb-line); border-radius:12px; }
   </style>
 </head>
 <body class="gb gb-app">
 
-  <!-- The screen skeleton (assets/game/base.css). The Owner's home is the map (assets/game/map-home.js, Uday 29 Oct): LMCS HQ and
-       LMS 1-6 on the valley, a bubble where a decision waits, every control on the edges and every list in a window. What used to be
-       lists (the HQ tiles, Today, the tools, appointments, sign out) waits in the stash and is moved into a window when opened. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div></div></header>
+  <!-- The screen skeleton (assets/game/base.css). The Owner's home is the map (assets/game/map-home.js; Uday 29 Oct, "can we completely
+       move to Map for the entire setup"): the Kingdom's real map with LMCS HQ and LMS 1-6, a bubble where a decision waits, every control on
+       the edges and every list in a window. The Kingdom itself (assets/game/kingdom.js) is mounted off screen in #kg-root, so its own
+       dialogs (buildings and setup steps, 📜 All quests with assign and bulk, the Requests tray, alliance heads) open from the map's windows.
+       What used to be lists (the HQ tiles, Today, tools, appointments, sign out) waits in the stash and is moved into a window when opened. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <main class="gb-stage">
@@ -34,12 +43,14 @@
         <div id="mh-stash" hidden>
           <section id="hq-box" aria-label="LMCS HQ">
             <ul class="gb-grid hq-tiles" id="hq-tiles" aria-label="HQ Home"></ul>
-            <h3>The Kingdom</h3>
+            <h3>Set up the game · सेटअप</h3>
             <ul class="gb-list" id="hq-more"></ul>
           </section>
           <section id="game-root" aria-label="Today with Buddy" hidden></section>
           <section id="modules" aria-label="Owner tools"><h3>Owner tools</h3><ul class="gb-list" id="modules-grid"></ul><h3>More pages</h3><ul class="gb-list" id="tools-more"></ul></section>
           <section id="gd-box" aria-label="Game Day"></section>
+          <section id="people-box" aria-label="People"></section>
+          <div class="kg" id="kg-root"></div><div id="kg-next"></div><div id="kg-panels"></div>
           <section id="appt-wrap"><h3>Appointments</h3><div id="appt-box"></div></section>
           <section id="acct-wrap"><h3>Account</h3><a href="#" class="gb-btn" id="signout-link">Sign out</a></section>
         </div>
@@ -62,14 +73,17 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=96af418d"></script>
-  <script src="../assets/game/game.js?v=283ee731"></script>
+  <script src="../assets/auth.js?v=6d50a352"></script>
+  <script src="../assets/game/game.js?v=e4fad387"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
-  <script src="../assets/game/emoji.js?v=75b7b678"></script>
+  <script src="../assets/game/emoji.js?v=cfda9180"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
-  <script src="../assets/game/kingdom.js?v=2311192e"></script>
-  <script src="../assets/game/map-home.js?v=b2baf905"></script>
-  <script src="../coordinator/route-map.js?v=f5e47aee"></script>
+  <script src="../assets/game/kingdom.js?v=08da6a15"></script>
+  <script src="../assets/game/places.js?v=e29efb40"></script>
+  <script src="../assets/game/kingdom-map.js?v=897c8cef"></script>
+  <script src="../assets/game/people-room.js?v=d7775a66"></script>
+  <script src="../assets/game/map-home.js?v=f7aaad86"></script>
+  <script src="../coordinator/route-map.js?v=3f998a20"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
@@ -125,6 +139,8 @@
           small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
       ];
     }
+    // a tile or a row that opens one of the map's windows instead of a page (the setup lives on the map; the page link stays as the fallback)
+    const ON_MAP = { 'kingdom.html#base-HES': function (b) { setup('HES', b); }, 'people.html': function (b) { openPeople(b); }, 'kingdom.html#quests': function (b) { quests(b); } };
     function renderTiles(k) {
       const ul = document.getElementById('hq-tiles');
       ul.textContent = '';
@@ -135,27 +151,65 @@
         if (t.count) { const c = el('span', 'gb-count', String(t.count)); c.setAttribute('aria-hidden', 'true'); span.appendChild(document.createTextNode(' ')); span.appendChild(c); }
         span.appendChild(el('small', '', t.small));
         a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
+        if (ON_MAP[t.url]) a.addEventListener('click', function (e) { e.preventDefault(); ON_MAP[t.url](a); });
       });
     }
-    // the HQ window's Kingdom links: the buildings and every quest live on the Kingdom page
-    function renderMore() {
-      const ul = document.getElementById('hq-more');
+    // the HQ window's setup rows: each opens the Kingdom's own dialog (or the People room) over the map
+    function renderMore(k) {
+      const ul = document.getElementById('hq-more'), cards = (k && k.cards) || [], heads = (k && k.heads) || [];
       ul.textContent = '';
-      [{ e: 'base', name: 'Kingdom: every building', url: 'kingdom.html', desc: 'Buildings school by school, the Requests tray and the alliance heads.' },
-        { e: 'quests', name: 'All quests', url: 'kingdom.html#quests', desc: 'Every setup quest: reassign or nudge.' }].forEach(function (t) {
-        const a = el('a', 'gb-go'), span = el('span', '', t.name), li = el('li');
-        if (window.LMCSEmoji && LMCSEmoji.get(t.e)) span.insertBefore(LMCSEmoji.tag(t.e), span.firstChild);
-        span.appendChild(el('small', '', t.desc)); a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
+      [{ e: 'quests', name: '📜 All quests', desc: 'Every setup quest, school by school: assign, reassign, nudge, or give them out in bulk (Game Day to everyone, every quest to its roles).', go: quests },
+        { e: 'requests', name: 'Requests tray' + (k ? ' (' + cards.length + ')' : ''), desc: cards.length ? 'Approved requests waiting for someone to follow them up.' : 'Approved requests land here when nobody is following them up.', go: openTray },
+        { e: 'heads', name: 'People', desc: 'Coordinators: add one, or change their school and what they look after.', go: openPeople },
+        { e: 'heads', name: 'Alliance heads' + (k ? ' (' + heads.length + ')' : ''), desc: 'What each head is working on.', go: openHeads }].forEach(function (t) {
+        const b = el('button', 'gb-go'), span = el('span', '', t.name), li = el('li');
+        b.type = 'button';
+        span.appendChild(el('small', '', t.desc)); b.appendChild(span); li.appendChild(b); ul.appendChild(li);
+        b.addEventListener('click', function () { t.go(b); });
       });
     }
-    // one gamekingdom read feeds the HQ tiles and the map (its bases, owner-placed pins, cards and steps to hand out)
-    function loadTiles(session) {
-      renderTiles(null);
-      if (!GAME_BACKEND_URL) { if (window.LMCSMapHome) LMCSMapHome.setKingdom(null); return; }
-      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { if (d && d.success) renderTiles(d); if (window.LMCSMapHome) LMCSMapHome.setKingdom(d); })
-        .catch(function (e) { console.warn('hq tiles', e); if (window.LMCSMapHome) LMCSMapHome.setKingdom(null); }); // the tiles already show as links; the map keeps its default pins
+
+    // ── the Kingdom, off screen: its dialogs open over the map. Its one gamekingdom read feeds the tiles, the setup rows and the map ──
+    const pinOf = function (id) { return document.querySelector('.mh-pin[data-id="' + id + '"]') || document.getElementById('mh-edge'); };
+    // focus comes back to a control on the map: the opener if it is on screen, else the place's pin (a row inside a window is gone once it closes)
+    const back = function (opener, id) { return opener && opener.isConnected && !opener.closest('#mh-stash, .mh-layer') ? opener : pinOf(id); };
+    function setup(id, opener) { const to = back(opener, id); LMCSMapHome.close(); LMCSKingdom.openBase(id, to); }
+    function quests(opener) { const to = back(opener, 'HES'); LMCSMapHome.close(); LMCSKingdom.openQuests(to); }
+    // the Requests tray: one row per approved request; a row opens the Kingdom's follow-up sheet (pick a head, a due date, Assign)
+    function openTray(opener) {
+      const k = LMCSKingdom.last() || {}, cards = k.cards || [], ul = el('ul', 'gb-list');
+      if (!cards.length) ul.appendChild(el('li', 'gb-empty', 'Nothing waiting. When a request is approved and nobody is following it up, it lands here for you to hand out.'));
+      cards.forEach(function (c) {
+        const b = el('button', 'gb-go'), span = el('span', '', c.title), li = el('li'); b.type = 'button';
+        span.appendChild(el('small', '', 'Approved request' + (c.campus ? ' · ' + c.campus : ''))); b.appendChild(span); li.appendChild(b); ul.appendChild(li);
+        b.addEventListener('click', function () { LMCSMapHome.close(); LMCSKingdom.openFollow(c, pinOf('HES')); });
+      });
+      LMCSMapHome.open({ title: 'Requests tray · अनुरोध', sub: 'Tap one, then pick who follows it up', nodes: [ul], opener: opener });
+    }
+    function openHeads(opener) {
+      const heads = (LMCSKingdom.last() || {}).heads || [], ul = el('ul', 'gb-list');
+      if (!heads.length) ul.appendChild(el('li', 'gb-empty', 'No alliance heads are set up yet. They come from the game config.'));
+      heads.forEach(function (hd) {
+        const n = (hd.missions || []).filter(function (m) { return !m.done; }).length, b = el('button', 'gb-go'), span = el('span', '', hd.name), li = el('li'); b.type = 'button';
+        span.appendChild(el('small', '', LMCSKingdom.fnLabels(hd.functions) + ' · ' + LMCSKingdom.countText(n))); b.appendChild(span); li.appendChild(b); ul.appendChild(li);
+        b.addEventListener('click', function () { LMCSMapHome.close(); LMCSKingdom.openHead(hd, pinOf('HES')); });
+      });
+      LMCSMapHome.open({ title: 'Alliance heads', nodes: [ul], opener: opener });
+    }
+    // 👑 People, in a window: the same room as owner/people.html (assets/game/people-room.js); its steps replace the list inside the window
+    function openPeople(opener) {
+      const box = document.getElementById('people-box');
+      LMCSPeople.mount(box, { session: LMCS.getSession(), backendUrl: GAME_BACKEND_URL, inline: true });
+      LMCSMapHome.open({ title: 'People · लोग', sub: 'Coordinators across LMCS HQ and LMS 1–6', nodes: [box], held: [box], opener: opener });
+    }
+    function mountKingdom(session) {
+      renderTiles(null); renderMore(null);
+      if (!GAME_BACKEND_URL) { LMCSMapHome.setKingdom(null); return; }
+      const tray = LMCSKingdom.hooks.after; // the Kingdom's own Requests tray (drawn off screen): kept, then the map follows
+      LMCSKingdom.hooks.after = function (d) { if (tray) tray(d); renderTiles(d); renderMore(d); LMCSMapHome.setKingdom(d); };
+      LMCSKingdom.mount(document.getElementById('kg-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels'),
+        quiet: true, onWrite: function () { const p = document.getElementById('mh-edge'); if (p) p.focus(); } })
+        .then(function () { if (!LMCSKingdom.last()) LMCSMapHome.setKingdom(null); }); // a failed read: the map keeps its places, the rows say so
     }
 
     // the Kingdom's own writes (kingdomassign, kingdomallocate), sent from a decision window after the Owner picks and taps Assign
@@ -179,19 +233,6 @@
         }, function () { /* no board: no icon */ });
     }
 
-    // a school window's numbers (assets/game/map-home.js campusStats): existing reads only, loaded once, the first time a school is opened.
-    // Issues, today's reports and the buses come from the Coordinator backend; approvals waiting from the PDR backend's approvalslist.
-    function analytics() {
-      const s = LMCS.getSession() || {}, tok = encodeURIComponent(s.idToken || ''), d = new Date(Date.now() + 330 * 60000), today = d.toISOString().slice(0, 10); // IST
-      const get = function (url, q) { return fetch(url + '?' + q + '&idToken=' + tok, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { return j && j.success ? j : null; }, function () { return null; }); };
-      return Promise.all([get(COORD_BACKEND_URL, 'action=principalissues'), get(COORD_BACKEND_URL, 'action=coordinatorpdrday&date=' + today), get(COORD_BACKEND_URL, 'action=coordinatortransport'), get(PDR_BACKEND_URL, 'action=approvalslist')])
-        .then(function (r) {
-          const approvals = r[3] && Array.isArray(r[3].requests) ? r[3].requests.filter(function (a) { return /^(Pending|Info Requested)$/.test(a.status) && !a.archived; })
-            .map(function (a) { return { campus: a.campusId, title: a.title, waiting: true }; }) : null;
-          return { today: today, issues: r[0] && r[0].issues, pdrDay: r[1], transport: r[2], approvals: approvals };
-        });
-    }
-
     function hello(name) {
       const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
       return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
@@ -211,7 +252,7 @@
     function mountHud(session) {
       if (!window.LMCSMapHome) return;
       LMCSMapHome.mount({ role: 'Owner', session: session, root: '../', scene: byId('mh-scene'), switchEl: byId('mh-switch'), stash: byId('mh-stash'),
-        gameRoot: byId('game-root'), world: showView, post: post, analytics: analytics, refresh: function () { loadTiles(LMCS.getSession()); },
+        gameRoot: byId('game-root'), world: showView, post: post, refresh: function () { LMCSKingdom.refresh(); }, realMap: true, setup: setup,
         icons: [
           { key: 'tools', e: 'tools', label: ['औज़ार', 'Tools'], open: function (b) { const n = [byId('modules')]; LMCSMapHome.open({ title: 'Tools · औज़ार', sub: 'Every Owner page', nodes: n, held: n, opener: b }); } },
           { key: 'buddy', e: 'buddy', label: ['बडी', 'Ask Buddy'], open: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); else location.href = '../guide/index.html'; } }
@@ -233,9 +274,9 @@
       document.getElementById('view-town').addEventListener('click', function () { showView(false); });
       document.getElementById('view-world').addEventListener('click', function () { showView(true); });
 
-      renderModules(); renderMore();
+      renderModules();
       mountHud(session);
-      loadTiles(session); loadGameDay(session);
+      mountKingdom(session); loadGameDay(session);
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }

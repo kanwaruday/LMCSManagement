@@ -34,7 +34,7 @@ var LMCSMapHome = (function () {
     town: ['नगर', 'Town'], world: ['दुनिया', 'World'], wild: ['जंगल', 'Wilderness'], daily: ['रोज़ाना', 'Daily'], tasks: ['काम', 'Tasks'],
     decide: ['फ़ैसले बाक़ी', 'Decisions waiting'], act: ['करना है', 'To act on'], rank: ['रैंकिंग', 'Ranking'], profile: ['प्रोफ़ाइल', 'Profile'],
     close: ['बंद करें', 'Close'], go: ['जाएँ', 'Go'], resolve: ['हो गया', 'Mark resolved'], routes: ['रूट', 'Routes'], enter: ['स्कूल में जाएँ', 'Enter School'],
-    buildings: ['इमारतें', 'Open its buildings'], here: ['यहाँ', 'Waiting here'], outside: ['आपके ज़िले में नहीं', 'Not in your district'], office: ['दफ़्तर', 'Your office']
+    buildings: ['इमारतें', 'Buildings and setup'], hqsetup: ['सेटअप', 'Set up the game at HQ'], here: ['यहाँ', 'Waiting here'], outside: ['आपके ज़िले में नहीं', 'Not in your district'], office: ['दफ़्तर', 'Your office']
   };
   function bi(k) { var p = L[k]; return p ? p[0] + ' · ' + p[1] : ''; }
   var COPY = {
@@ -227,6 +227,7 @@ var LMCSMapHome = (function () {
     var w = win(); if (w.open) close(true);
     var box = S.o.scene.querySelector('.mh-box');
     w.scroll = box ? { x: box.scrollLeft, y: box.scrollTop } : null;
+    w.view = S.real && S.real.map ? { c: S.real.map.getCenter(), z: S.real.map.getZoom() } : null;
     w.title.textContent = o.title; w.sub.textContent = o.sub || ''; w.sub.hidden = !o.sub; w.body.textContent = ''; w.live.textContent = '';
     (o.nodes || []).forEach(function (n) { if (n) w.body.appendChild(n); });
     w.held = o.held || []; w.pin = o.pin || null;
@@ -244,6 +245,7 @@ var LMCSMapHome = (function () {
     S.o.scene.inert = false;
     var box = S.o.scene.querySelector('.mh-box');
     if (box && w.scroll) { box.scrollLeft = w.scroll.x; box.scrollTop = w.scroll.y; }
+    if (w.view && S.real && S.real.map) S.real.map.setView(w.view.c, w.view.z, { animate: false });
     var to = w.opener && document.contains(w.opener) ? w.opener : w.pin ? S.o.scene.querySelector('.mh-pin[data-id="' + w.pin + '"]') : null;
     w.release(quiet ? false : to || S.el.edge);
   }
@@ -337,8 +339,12 @@ var LMCSMapHome = (function () {
     nodes.push(h('h3', {}, owner() ? txt('decide') : txt('act')), list(items, COPY.here));
     if (id === 'HES' && S.o.hq) { var hq = S.o.hq(); nodes = nodes.concat(hq.nodes || []); held = hq.held || []; }
     var acts = [];
-    if (owner() && id !== 'HES') acts.push(goLink('owner/kingdom.html#base-' + id, txt('buildings')));
-    if (owner() && /^LMS[1-6]$/.test(id) && LMCSGame.setViewAs) {
+    if (owner() && S.o.setup) { // the Kingdom's own buildings dialog: every setup step here, assign and clear, Enter as Principal
+      var bs = h('button', { type: 'button', class: 'gb-btn mh-btn' + (S.o.enterSchool ? '' : ' gb-btn-primary') }, txt(id === 'HES' ? 'hqsetup' : 'buildings'));
+      bs.onclick = function () { var pin = S.o.scene.querySelector('.mh-pin[data-id="' + id + '"]') || S.el.edge; close(true); S.o.setup(id, pin); };
+      acts.push(bs);
+    } else if (owner() && id !== 'HES') acts.push(goLink('owner/kingdom.html#base-' + id, txt('buildings')));
+    if (owner() && S.o.enterSchool && /^LMS[1-6]$/.test(id) && LMCSGame.setViewAs) {
       var enter = h('button', { type: 'button', class: 'gb-btn gb-btn-primary mh-btn' }, txt('enter'));
       enter.onclick = function () { keepSpot(id); LMCSGame.setViewAs({ campus: id, name: p.name }); location.assign(S.o.root + 'principal/index.html'); };
       nodes.push(h('p', { class: 'gb-muted' }, 'Its Home and World, as its Principal sees them. Nothing can be changed while you look; Leave in the top bar brings you back here.'));
@@ -351,14 +357,19 @@ var LMCSMapHome = (function () {
   // Enter School -> the Principal home -> Leave: back to this map, the same place in view and focused (sessionStorage, this tab only)
   var SPOT_KEY = 'lmcs-map-return';
   function keepSpot(id) {
-    var box = S.o.scene.querySelector('.mh-box'), page = String(location.pathname || '').split('/').slice(-2).join('/');
-    try { sessionStorage.setItem(SPOT_KEY, JSON.stringify({ page: page, pin: id, x: box ? box.scrollLeft : 0, y: box ? box.scrollTop : 0 })); } catch (e) { /* private mode: Leave lands on the map's start */ }
+    var box = S.o.scene.querySelector('.mh-box'), page = String(location.pathname || '').split('/').slice(-2).join('/'), m = S.real && S.real.map;
+    var v = { page: page, pin: id, x: box ? box.scrollLeft : 0, y: box ? box.scrollTop : 0 };
+    if (m) { var c = m.getCenter(); v.lat = c.lat; v.lng = c.lng; v.z = m.getZoom(); }
+    try { sessionStorage.setItem(SPOT_KEY, JSON.stringify(v)); } catch (e) { /* private mode: Leave lands on the map's start */ }
   }
+  // box: the drawn valley's scroller, or null on the real map
   function backToSpot(box) {
     var v = null; try { v = JSON.parse(sessionStorage.getItem(SPOT_KEY) || 'null'); sessionStorage.removeItem(SPOT_KEY); } catch (e) { return false; }
     if (!v || !/^LMS[1-6]$/.test(String(v.pin))) return false;
-    box.scrollLeft = Number(v.x) || 0; box.scrollTop = Number(v.y) || 0;
-    var pin = box.querySelector('.mh-pin[data-id="' + v.pin + '"]'); if (pin) pin.focus({ preventScroll: true });
+    if (!box && S.real && S.real.map && isFinite(v.lat) && isFinite(v.lng) && isFinite(v.z)) S.real.map.setView([v.lat, v.lng], v.z, { animate: false });
+    else if (box) { box.scrollLeft = Number(v.x) || 0; box.scrollTop = Number(v.y) || 0; }
+    else return false;
+    setTimeout(function () { var pin = S.o.scene.querySelector('.mh-pin[data-id="' + v.pin + '"]'); if (pin) pin.focus({ preventScroll: true }); }, 0);
     return true;
   }
   // the school's picture with its chips over it (a scrim keeps them readable); the reads load once, the first time a school is opened
@@ -457,27 +468,80 @@ var LMCSMapHome = (function () {
     if (window.LMCSKingdom && typeof LMCSKingdom.valley === 'function') { try { return LMCSKingdom.valley(); } catch (e) { /* the plain field below */ } }
     return h('div', { class: 'mh-field', 'aria-hidden': 'true' });
   }
+  // one place's marker: the fort, its name plate, and a bubble when something waits there. dim = another district (not a button)
+  function makePin(p, c, extraStyle, label) {
+    var dim = !owner() && !inScope(S.scope, p.id) && !c; // an item assigned to you there keeps it live
+    var top = here(p.id)[0], kids = [h('span', { class: 'mh-fort', 'aria-hidden': 'true' }, LMCSEmoji.get(p.darbar || p.id === 'HES' ? 'hq' : 'school')), h('span', { class: 'mh-plate', 'aria-hidden': 'true' }, label || p.name),
+      c ? h('span', { class: 'mh-bub', 'aria-hidden': 'true' }, [LMCSEmoji.get(top.e), h('b', {}, c > 99 ? '99+' : String(c))]) : null];
+    var cls = 'mh-pin' + (p.darbar || p.id === 'HES' ? ' is-hq' : '') + (dim ? ' is-dim' : '') + (!dim && !owner() && !inScope(S.scope, p.id) ? ' is-out' : '');
+    var pin = dim ? h('span', { class: cls, style: extraStyle, 'data-id': p.id, role: 'img', 'aria-label': pinLabel(p, 0, S.o.role, true) }, kids)
+      : h('button', { type: 'button', class: cls, style: extraStyle, 'data-id': p.id, 'aria-label': pinLabel(p, c, S.o.role, false) }, kids);
+    if (!dim) pin.onclick = function (e) { if (window.L && window.L.DomEvent) window.L.DomEvent.stopPropagation(e); var box = S.o.scene.querySelector('.mh-box'); if (!(box && box.dragged)) openPin(p.id, pin); };
+    return pin;
+  }
   function drawMap() {
+    if (S.o.realMap && window.LMCSKingdomMap && window.LMCSPlaces && S.real !== false) return drawReal();
     var box = S.o.scene.querySelector('.mh-box'), first = !box;
     if (first) {
       box = h('div', { class: 'mh-box', id: 'mh-mapbox', tabindex: '0', role: 'region', 'aria-label': 'Map. Scroll or drag to look around; tap a place to open it.' }, [h('div', { class: 'mh-map' }, [art(), h('div', { class: 'mh-pins' })])]);
       S.o.scene.querySelector('.mh-town').appendChild(box);
       drag(box);
     }
-    var layer = box.querySelector('.mh-pins'), n = countByPlace(S.items), out = [];
+    var layer = box.querySelector('.mh-pins'), n = countByPlace(S.items);
     layer.textContent = '';
-    S.pins.forEach(function (p) {
-      var c = n[p.id] || 0, dim = !owner() && !inScope(S.scope, p.id) && !c; // another district: dimmed, not a button (an item assigned to you there keeps it live)
-      var top = here(p.id)[0], kids = [h('span', { class: 'mh-fort', 'aria-hidden': 'true' }, LMCSEmoji.get(p.darbar ? 'hq' : 'school')), h('span', { class: 'mh-plate', 'aria-hidden': 'true' }, p.name),
-        c ? h('span', { class: 'mh-bub', 'aria-hidden': 'true' }, [LMCSEmoji.get(top.e), h('b', {}, c > 99 ? '99+' : String(c))]) : null];
-      var cls = 'mh-pin' + (p.darbar ? ' is-hq' : '') + (dim ? ' is-dim' : '') + (!dim && !owner() && !inScope(S.scope, p.id) ? ' is-out' : '');
-      var pin = dim ? h('span', { class: cls, style: pos(p), 'data-id': p.id, role: 'img', 'aria-label': pinLabel(p, 0, S.o.role, true) }, kids)
-        : h('button', { type: 'button', class: cls, style: pos(p), 'data-id': p.id, 'aria-label': pinLabel(p, c, S.o.role, false) }, kids);
-      if (!dim) pin.onclick = function () { if (!box.dragged) openPin(p.id, pin); };
-      out.push(pin);
-    });
-    out.forEach(function (x) { layer.appendChild(x); });
+    S.pins.forEach(function (p) { layer.appendChild(makePin(p, n[p.id] || 0, pos(p))); });
     if (first && !(owner() && backToSpot(box))) centre(box);
+  }
+  // ── the real map (Uday, 29 Oct: "I love the Map"): the Kingdom's OpenStreetMap, positions from assets/game/places.js only. Leaflet loads on
+  // the first paint here (this is the page); if it can't load (offline, blocked), the drawn valley takes its place. Close places group into
+  // one pin until zoomed in, as on the Kingdom's map (LMCSKingdomMap.cluster). ──
+  function drawReal() {
+    var R = S.real;
+    if (!R) {
+      R = S.real = { loading: true };
+      var el = h('div', { class: 'mh-leaf', 'aria-label': 'Map of LMCS HQ and the schools' }), box = h('div', { class: 'mh-box is-real', id: 'mh-mapbox' }, [el, h('p', { class: 'mh-maptxt', role: 'status' }, 'Loading the map…')]);
+      S.o.scene.querySelector('.mh-town').appendChild(box);
+      LMCSKingdomMap.load().then(function () {
+        var Lf = window.L; // Leaflet (this file's own L is its labels)
+        var c = LMCSPlaces.CENTER || { lat: 31.8, lng: 77.0, zoom: 9 };
+        R.map = Lf.map(el, { zoomControl: false, attributionControl: true }).setView([c.lat, c.lng], c.zoom);
+        Lf.control.zoom({ position: 'bottomright' }).addTo(R.map);
+        Lf.tileLayer(LMCSKingdomMap.TILES, { maxZoom: 19, attribution: LMCSKingdomMap.ATTRIBUTION }).addTo(R.map);
+        R.layer = Lf.layerGroup().addTo(R.map); R.loading = false;
+        box.removeChild(box.lastChild);
+        R.map.on('zoomend', pinsReal);
+        var pts = LMCSKingdomMap.drawable(LMCSPlaces), back = owner() && backToSpot(null);
+        if (!back && pts.length) R.map.fitBounds(home(pts).map(function (p) { return [p.lat, p.lng]; }), { padding: [60, 60], maxZoom: 13 });
+        pinsReal();
+      }, function () { S.real = false; box.remove(); drawMap(); }); // no map: the drawn valley
+      return;
+    }
+    if (!R.loading) pinsReal();
+  }
+  // where the map starts: every place for the Owner; the district and HQ for a Coordinator
+  function home(pts) { var mine = pts.filter(function (p) { return inScope(S.scope, p.id); }); return mine.length ? mine : pts; }
+  var COMPACT_BELOW = 11; // zoomed out: a pin shows its short name only ("1", "HQ"), as on the Kingdom's map
+  function pinsReal() {
+    var R = S.real, Lf = window.L; if (!R || !R.map) return;
+    var n = countByPlace(S.items), compact = R.map.getZoom() < COMPACT_BELOW, byId = {};
+    (S.pins || []).forEach(function (p) { byId[p.id] = p; });
+    var pts = LMCSKingdomMap.drawable(LMCSPlaces).map(function (p) { var c = R.map.latLngToContainerPoint([p.lat, p.lng]); return { id: p.id, name: p.name, lat: p.lat, lng: p.lng, x: c.x, y: c.y }; });
+    R.layer.clearLayers();
+    LMCSKingdomMap.cluster(pts, compact ? 72 : 130, 56).forEach(function (g) {
+      var lat = 0, lng = 0; g.forEach(function (p) { lat += p.lat / g.length; lng += p.lng / g.length; });
+      var node;
+      if (g.length === 1) {
+        var p = byId[g[0].id] || { id: g[0].id, name: g[0].name, full: g[0].name };
+        node = makePin(p, n[p.id] || 0, '', LMCSKingdomMap.tag(g[0], compact));
+      } else {
+        var c = g.reduce(function (t, p) { return t + (n[p.id] || 0); }, 0);
+        node = h('button', { type: 'button', class: 'mh-pin is-grp', 'aria-label': g.map(function (p) { return p.name; }).join(' and ') + (c ? ', ' + c + ' waiting' : '') + ': zoom in' },
+          [h('span', { class: 'mh-fort', 'aria-hidden': 'true' }, LMCSEmoji.get('school')), h('span', { class: 'mh-plate', 'aria-hidden': 'true' }, g.map(function (p) { return LMCSKingdomMap.tag(p, compact); }).join(' · ')),
+            c ? h('span', { class: 'mh-bub', 'aria-hidden': 'true' }, [h('b', {}, String(c))]) : null]);
+        node.onclick = function (e) { Lf.DomEvent.stopPropagation(e); R.map.fitBounds(g.map(function (p) { return [p.lat, p.lng]; }), { padding: [90, 90], maxZoom: 15 }); };
+      }
+      Lf.marker([lat, lng], { icon: Lf.divIcon({ html: node, className: 'mh-ico', iconSize: null }), keyboard: false }).addTo(R.layer);
+    });
   }
   // phones: start with LMCS HQ in the middle of the view, once
   function centre(box) {

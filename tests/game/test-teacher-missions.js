@@ -48,7 +48,7 @@ assert.strictEqual(ms[0].core, true);                                           
 assert.strictEqual(ms[0].id, 'teacher:cwhw_log:' + CODE + ':' + TUE);
 assert.strictEqual(ms[0].title, "Log today's classwork and homework (2 of 4 classes)");
 assert.strictEqual(ms[0].due, TUE); assert.strictEqual(ms[0].owner, CODE); assert.strictEqual(ms[0].campus, 'LMS4');
-assert.strictEqual(ms[0].go, 'teacher/index.html#tags');                           // Ruling 13 default
+assert.strictEqual(ms[0].go, 'teacher/index.html#panel-tags');                           // Ruling 13 default
 assert.ok(/Class 8 Science/.test(ms[0].why) && /M-I Hindi/.test(ms[0].why) && !/Class 3 English/.test(ms[0].why));
 // all four logged: done, doneAt = the entry that completed it
 const all = [ent('Class 7', 'Math', TUE + 'T03:00:00Z'), ent('Class 8', 'Science', TUE + 'T05:30:00Z'), ent('Class 3', 'English', TUE + 'T04:00:00Z'), ent('M-I', 'Hindi', TUE + 'T04:30:00Z'), ent('Class 8', 'Science', TUE + 'T06:00:00Z')];
@@ -79,7 +79,7 @@ assert.strictEqual(ms[0].due, '2026-11-15'); assert.strictEqual(ms[0].done, fals
 assert.strictEqual(ms[0].id, 'teacher:remediation_due:' + CODE + ':Class 7|Math|fractions');
 assert.strictEqual(ms[0].title, 'Log the remediation for Fractions (Class 7 Math)');
 assert.ok(/Fractions/.test(ms[0].why));                                            // no pre-fill map: the chapter is named in why
-assert.strictEqual(ms[0].go, 'teacher/index.html#tags');
+assert.strictEqual(ms[0].go, 'teacher/index.html#panel-tags');
 ms = kinds(run(state({ episodes: [cwa1] }), '2026-11-15', true), 'remediation_due');
 assert.strictEqual(ms[0].gone, false);                                             // the last day of the window
 ms = kinds(run(state({ episodes: [cwa1] }), '2026-11-16', true), 'remediation_due');
@@ -125,11 +125,11 @@ const T = (u) => J(ctx.tchConfig_({ teacher: { cwhwFormUrl: u } })).cwhwFormUrl;
 assert.strictEqual(T(form), form); assert.strictEqual(T(' https://forms.gle/abc '), 'https://forms.gle/abc');
 for (const bad of ['https://evil.example/?docs.google.com/forms/', 'javascript:alert(1)', 'http://docs.google.com/forms/x', 'https://docs.google.com/document/d/1', 'https://forms.gle.evil.example/x', '//docs.google.com/forms/x', 'teacher/index.html']) assert.strictEqual(T(bad), '', bad);
 ms = run(state({ episodes: [cwa1] }), TUE, true, {}, { teacher: { cwhwFormUrl: 'https://evil.example/?docs.google.com/forms/', cwhwPrefill: pre } });
-assert.strictEqual(kinds(ms, 'remediation_due')[0].go, 'teacher/index.html#tags'); assert.strictEqual(kinds(ms, 'cwhw_log')[0].go, 'teacher/index.html#tags');
+assert.strictEqual(kinds(ms, 'remediation_due')[0].go, 'teacher/index.html#panel-tags'); assert.strictEqual(kinds(ms, 'cwhw_log')[0].go, 'teacher/index.html#panel-tags');
 ms = run(state({ episodes: [cwa1] }), TUE, true, {}, { teacher: { cwhwFormUrl: 'javascript:alert(1)' } });
-assert.strictEqual(kinds(ms, 'cwhw_log')[0].go, 'teacher/index.html#tags');
+assert.strictEqual(kinds(ms, 'cwhw_log')[0].go, 'teacher/index.html#panel-tags');
 ms = run(state({ episodes: [cwa1] }), TUE, true, {}, { teacher: { cwhwFormUrl: 42, cwhwPrefill: 'x' } });   // wrong types: defaults
-assert.strictEqual(kinds(ms, 'remediation_due')[0].go, 'teacher/index.html#tags');
+assert.strictEqual(kinds(ms, 'remediation_due')[0].go, 'teacher/index.html#panel-tags');
 
 // ---- activity_plan_due
 const nxt = (startDate, o) => Object.assign({ cls: 'Class 7', subj: 'Math', ch: 'decimals', name: 'Decimals', startDate }, o || {});
@@ -354,7 +354,7 @@ ctx.SpreadsheetApp = { openById: (id) => { assert.strictEqual(id, '1Tr4Rfc6DN698
 ms = J(ctx.tchStaffMissionsHook_(staff, fw, now));
 assert.deepStrictEqual(ms.map((m) => m.id), ['info_requested:A1', 'info_requested:A5']);
 assert.strictEqual(ms[0].title, 'Reply to Management about “New projector”'); assert.strictEqual(ms[0].kind, 'info_requested');
-assert.strictEqual(ms[0].go, 'teacher/index.html'); assert.strictEqual(ms[0].owner, 't@lms.org.in'); assert.strictEqual(ms[0].campus, 'LMS4');
+assert.strictEqual(ms[0].go, 'teacher/index.html#panel-requests'); assert.strictEqual(ms[0].owner, 't@lms.org.in'); assert.strictEqual(ms[0].campus, 'LMS4');
 // the Principal's own path still builds the same shape (one shared builder)
 const principal = { email: 't@lms.org.in', campusId: 'LMS4', roles: ['Principal'], primaryRole: 'Principal', canDecide: false };
 const pm = J(ctx.gamePrincipalMissions_(principal, { approvals: rows }, fw, now)).filter((m) => m.kind === 'info_requested');

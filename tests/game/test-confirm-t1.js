@@ -40,7 +40,7 @@ const TT = { campusPeriodSchedule: { LMS4: [{ period: 1, start: '9:20', end: '10
 ctx.UrlFetchApp = { fetch: (url) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(/action=roster/.test(url) ? ROSTER : TT) }) };
 const reset = (cfg) => {
   store.clear(); ctx.CQ_MEMO = null;
-  book.tabs = { 'Game Config': fakeSheet([['Key', 'Value']].concat(cfg ? [['confirmQuests', JSON.stringify(cfg)]] : [])) };
+  book.tabs = { 'Game Config': fakeSheet([['Key', 'Value'], ['setupPeriod', JSON.stringify({ ownerAssignedQuestsOnly: false })]].concat(cfg ? [['confirmQuests', JSON.stringify(cfg)]] : [])) };
 };
 const mk = (o) => Object.assign({ email: 'teacher-a@test.invalid', campusId: 'LMS4', roles: ['Teacher'], employeeCode: 'TST/99/01/001' }, o || {});
 const TA = mk(), NONE = mk({ email: 'none@test.invalid', employeeCode: 'TST/99/01/777' });

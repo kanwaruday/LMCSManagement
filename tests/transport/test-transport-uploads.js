@@ -52,6 +52,9 @@ assert.strictEqual(covers({ campusId: 'LMS1', roles: ['Coordinator'] }, 'LMS2'),
 assert.strictEqual(covers({ campusId: 'LMS1', roles: ['Coordinator'] }, 'LMS4'), false, 'Coordinator: not the other district');
 assert.strictEqual(covers({ campusId: 'LMS1,LMS2', roles: ['FeeClerk'] }, 'LMS2'), true, 'Fee Clerk: their comma list');
 assert.strictEqual(covers({ campusId: 'LMS1,LMS2', roles: ['FeeClerk'] }, 'LMS3'), false, 'Fee Clerk: not a district');
+assert.strictEqual(covers({ campusId: 'ALL', roles: ['FeeClerk', 'Principal'], manager: false }, 'LMS3'), false, 'school lock: a Principal set to ALL covers no school');
+assert.strictEqual(covers({ campusId: 'ALL', roles: ['Principal', 'Coordinator'], manager: true }, 'LMS3'), true, 'with Coordinator, ALL still covers');
+assert.strictEqual(covers({ campusId: 'ALL', roles: ['FeeClerk'], manager: true }, 'LMS3'), true, 'a Fee Clerk set to ALL: unchanged');
 
 assert.strictEqual(run('tupNormReg_("HP 66 5805")'), 'HP665805');
 assert.strictEqual(run('tupFileName_("pollution","HP665805",new Date())'), 'Pollution HP665805 uploaded 21-10-2026');

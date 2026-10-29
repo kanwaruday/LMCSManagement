@@ -93,10 +93,11 @@ function gameConfigDefaults_() {
     approvalWaitDays: 3,
     uniform: { summerFrom: '2027-05-03', winterFrom: '2026-10-26', festivals: [] },
     trackSuitDays: {},
-    principalIssuesReady: false,
+    principalIssuesReady: true, // principal/issues.html and the principalissues / principalissueresolve actions are live
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
     approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
-    recommendationsReady: false, // until the Recommendations tab exists: no approval_recommend missions, Owner's `why` blank
+    recommendGo: 'coordinator/hq.html', // the recommend form; a mission opens it on its request (#d=<approvalId>)
+    recommendationsReady: true, // the Recommendations tab is created by the first coordinatorrecommend; off = no approval_recommend missions, Owner's `why` blank
     // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
     // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).
     // policeVerificationYears: null = no police-verification renewal (Ruling O1); rollCallFrom: no roll-call mission for a day before it (a PLACEHOLDER for the deploy date: set it when the Game backend ships)
@@ -104,6 +105,9 @@ function gameConfigDefaults_() {
       heat: { warm: 1, hot: 3 },
       weights: { expiredPaper: 3, trackerDead: 3, trackerNone: 2, trackerBlind: 1, safetyCheck: 2, equipment: 2, fuelProof: 1, overAge: 2, driver60: 2, noAttendant: 1, expiredDriverDoc: 1, rollCallMissing: 1, speed: 1 } },
     confirmQuests: {}, // setup quests (game-confirm.gs): {questId: definition override}
+    // the setup period (Uday, 29 Oct): every role but the Owner sees a quest (Today's quests, setup missions, the event card) only once the
+    // Owner has assigned it to them or to their role group (kingdomassign; the gate is questGateKeep_ in game-kingdom.gs). false = everyone sees their quests again
+    setupPeriod: { ownerAssignedQuestsOnly: true },
     // The Owner's Kingdom (game-kingdom.gs). Game Config key `kingdom`; a changed key replaces that whole sub-key (a new `buildings` replaces the catalogue).
     // campuses: map positions on a 1000 x 620 valley. heads: [{ id, name, email, functions: ['finance'|'transport'|'academics'|'hr'|'events'|'systems'|'all'], colour }], Game Config only, never code.
     // levelAt[L-1]: building points a base needs for level L. buildings: tiers in order (each ref must be done; null = cannot be checked, never counted).
@@ -169,7 +173,7 @@ function gameConfigDefaults_() {
           { id: 'classes', emoji: '✏️', label: 'Check My classes', go: 'teacher/index.html', check: 'self' } ],
         Staff: [
           { id: 'open', emoji: '🗓️', label: 'Sign in', go: 'teacher/index.html', check: 'opened' },
-          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html', check: 'self' } ],
+          { id: 'requests', emoji: '📥', label: 'Check your requests', go: 'teacher/index.html#panel-requests', check: 'self' } ],
       },
     }],
   };
@@ -251,6 +255,7 @@ function doPost(e) {
     if (action === 'buddyask' || action === 'buddythread' || action === 'buddyconfirm') return gameJson_(buddyOwnerAction_(caller, action, body));
     // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
     if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
+    if (action === 'kingdomassignbulk') return gameJson_(kingdomAssignBulk_(caller, body));
     if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
     // The People room's write (game-people.gs): POST only, never in GAME_MODULE_ACTIONS; Owner and rights checks are inside it.
     if (action === 'peoplecoordinator') return gameJson_(peopleCoordinator_(caller, body));

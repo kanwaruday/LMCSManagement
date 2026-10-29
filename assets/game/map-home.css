@@ -7,6 +7,7 @@ body.mh .gb-rail-i.is-soon, body.mh .gb-rail li:has(.is-soon) { display:none; }
 .mh-scene { position:relative; height:calc(100svh - 160px); min-height:420px; overflow:hidden; background:#cfdcc1; }
 @media (min-width:960px) { body.mh .gb-shell { grid-template-columns:104px minmax(0, 1fr); grid-template-areas:"rail stage"; padding:0; } body.mh .gb-shell > .gb-rail { margin:0; } }
 .mh-town, .mh-world { position:absolute; inset:0; }
+.mh-town { z-index:0; isolation:isolate; } /* the real map's panes (z-index 400+) stay under the HUD */
 .mh-town[hidden], .mh-world[hidden] { display:none; }
 .mh-world { overflow:auto; padding:64px 8px 150px; background:#e7ecdf; }
 
@@ -147,3 +148,14 @@ body.mh-win-open { overflow:hidden; }
 .mh-stat.is-ok { border-color:var(--gb-ok); } .mh-stat.is-warn { border-color:var(--gb-gold-ink); } .mh-stat.is-bad { border-color:var(--gb-red-ink); background:var(--gb-red-soft); }
 .mh-lines { margin:0; padding:0 0 0 18px; display:flex; flex-direction:column; gap:4px; overflow-wrap:anywhere; }
 @media (min-width:640px) { .mh-hero { margin:0 -14px 8px; min-height:220px; } .mh-scrim { min-height:220px; } }
+
+/* the real map (Leaflet, the Kingdom's OpenStreetMap): it fills the scene and pans and zooms itself; pins sit on their place */
+.mh-box.is-real { overflow:hidden; cursor:auto; }
+.mh-leaf { position:absolute; inset:0; background:#dfe7d3; }
+.mh-maptxt { position:absolute; left:50%; top:40%; transform:translateX(-50%); margin:0; padding:8px 14px; border-radius:12px; background:var(--gb-paper); font-weight:700; }
+.mh-ico { background:none; border:0; }
+.mh-ico .mh-pin { transform:translate(-50%, -60%); }
+.mh-pin.is-grp .mh-fort { background:var(--gb-info); }
+.mh-box.is-real .leaflet-bottom.leaflet-right { margin-bottom:148px; } /* the zoom buttons clear the quest strip and the switch */
+.mh-box.is-real .leaflet-control-zoom a { width:44px; height:44px; line-height:44px; font-size:22px; }
+.mh-box.is-real .leaflet-control-attribution { font-size:11px; }

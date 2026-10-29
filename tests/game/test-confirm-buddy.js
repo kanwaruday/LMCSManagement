@@ -39,11 +39,11 @@ const DEFS = {
   cq2: { title: 'C', scope: 'campus', roles: ['Principal'], fields: [f('period', 'number'), f('start', 'time')], prefill: 'test.rows' },
 };
 let CUR = DEFS;
-const CFG = () => ({ confirmQuests: CUR });
+const CFG = () => ({ confirmQuests: CUR, setupPeriod: { ownerAssignedQuestsOnly: false } });
 let adapterCalls = 0, adapterOpts = null, nItems = 2;
 const reset = (defs) => {
   CUR = defs || DEFS;
-  book.tabs = { 'Game Config': fakeSheet([['Key', 'Value'], ['confirmQuests', JSON.stringify(defs || DEFS)]]) };
+  book.tabs = { 'Game Config': fakeSheet([['Key', 'Value'], ['confirmQuests', JSON.stringify(defs || DEFS)], ['setupPeriod', JSON.stringify({ ownerAssignedQuestsOnly: false })]]) };
   events.length = 0; ctx.CQ_MEMO = null; adapterCalls = 0; adapterOpts = null; nItems = 2; store.clear();
   ctx.CQ_PREFILL['test.rows'] = (c, opts) => {
     adapterCalls++; adapterOpts = opts;

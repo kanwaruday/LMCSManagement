@@ -124,24 +124,32 @@ assert.ok(!/avatar-|buddy\/|teacher-owl|portrait/.test(js) && /mh-avatar/.test(j
 assert.ok(!/LMCSMapHome|map-home\.js"|canRank|mh-rank/.test(read('principal/index.html') + read('assets/game/home-hud.js')), 'the Principal home has no map and no ranking window');
 
 // the pages: map-home after game.js, kingdom.js (the art) and emoji.js; one Town / World switch; the backend reads stay where they were
-for (const [p, role] of [['owner/index.html', 'Owner'], ['coordinator/index.html', 'Coordinator']]) {
-  const h = read(p), at = (f) => h.indexOf('src="../assets/game/' + f);
-  assert.ok(at('map-home.js') > at('game.js') && at('map-home.js') > at('kingdom.js') && at('map-home.js') > at('emoji.js') && at('kingdom.js') > 0, p + ': script order');
-  assert.ok(/map-home\.css\?v=[0-9a-f]{8}/.test(h) && /map-home\.js\?v=[0-9a-f]{8}/.test(h), p + ': stamped');
-  assert.ok(new RegExp("LMCSMapHome\\.mount\\(\\{ role: '" + role + "'").test(h), p + ': mounted as ' + role);
-  assert.strictEqual((h.match(/class="gb-switch"/g) || []).length, 1, p + ': one Town / World switch');
-  assert.ok(/<span lang="hi">नगर<\/span> · Town/.test(h) && /<span lang="hi">दुनिया<\/span> · World/.test(h), p + ': Hindi-first switch');
-  assert.ok(!/gb-hsw/.test(h), p + ': no second view switch in the header');
-  assert.ok(!/innerHTML\s*=\s*[^'\s]/.test(h.slice(h.lastIndexOf('<script>'))), p + ': no data reaches innerHTML in the page script');
-}
-const co = read('coordinator/index.html');
-assert.strictEqual((co.match(/action: 'coordinatortasks'/g) || []).length, 1, 'the Coordinator hub reads coordinatortasks once');
-assert.ok(/Coord\.countsOf\(d\.tasks\)/.test(co) && /action: 'coordinatorresolvetask'/.test(co), 'one read feeds the office; Mark resolved is the existing write');
-assert.ok(!/gamekingdom/.test(co), 'no gamekingdom read for a Coordinator (the server refuses them)');
-const ow = read('owner/index.html');
-assert.ok(/action=gamekingdom/.test(ow) && /action=gameeventboard/.test(ow), 'Owner: the existing Kingdom and Game Day reads');
-assert.ok(/K = LMCSKingdom/.test(js) && /K\.assignBody\(x\.tier, x\.base\.id, who, ta\.value\.trim\(\)\)/.test(js) && /K\.allocateBody\(x\.card, who, due\.value, ta\.value\.trim\(\)\)/.test(js), 'decisions post the Kingdom\'s own bodies');
-assert.ok(/'स्कूल में जाएँ', 'Enter School'/.test(js) && /keepSpot\(id\); LMCSGame\.setViewAs\(\{ campus: id, name: p\.name \}\); location\.assign/.test(js), 'Enter School: one tap, read-only view, the spot kept');
-assert.ok(/location\.href = '\.\.\/' \+ leaveTo\(\)/.test(read('principal/index.html')), 'Leave goes back to the map it came from');
-assert.ok(/S\.o\.analytics && inScope\(S\.scope, id\)\) nodes\.unshift\(hero\(p\)\)/.test(read('assets/game/map-home.js')), 'no analytics for a school outside the district');
+// the Owner's page (PR A, 29 Oct "can we completely move to Map for the entire setup"): the map, the Kingdom's own dialogs, People in a window
+const ow = read('owner/index.html'), at = (f) => ow.indexOf('src="../assets/game/' + f);
+assert.ok(at('map-home.js') > at('game.js') && at('map-home.js') > at('kingdom.js') && at('map-home.js') > at('emoji.js') && at('map-home.js') > at('kingdom-map.js') && at('kingdom-map.js') > at('places.js') && at('people-room.js') > 0, 'owner: script order');
+assert.ok(/map-home\.css\?v=[0-9a-f]{8}/.test(ow) && /map-home\.js\?v=[0-9a-f]{8}/.test(ow) && /kingdom\.css\?v=[0-9a-f]{8}/.test(ow), 'owner: stamped, the Kingdom dialogs styled');
+assert.ok(/LMCSMapHome\.mount\(\{ role: 'Owner'/.test(ow) && /realMap: true, setup: setup/.test(ow), 'owner: the map home on the real map, setup through the Kingdom');
+assert.strictEqual((ow.match(/class="gb-switch"/g) || []).length, 1, 'owner: one Town / World switch');
+assert.ok(/<span lang="hi">नगर<\/span> · Town/.test(ow) && /<span lang="hi">दुनिया<\/span> · World/.test(ow), 'owner: Hindi-first switch');
+assert.ok(/<nav class="gb-hsw" aria-label="Owner views">/.test(ow), 'owner: the Home / Kingdom header buttons stay as the fallback for now');
+assert.ok(/LMCSKingdom\.mount\(document\.getElementById\('kg-root'\), \{[^}]*quiet: true/.test(ow) && /<div class="kg" id="kg-root"><\/div>/.test(ow) && /id="mh-stash" hidden/.test(ow), 'owner: the Kingdom mounted off screen, quiet');
+for (const f of ['LMCSKingdom.openBase(id, to)', 'LMCSKingdom.openQuests(to)', 'LMCSKingdom.openFollow(c, ', 'LMCSKingdom.openHead(hd, ', "LMCSPeople.mount(box, { session: LMCS.getSession(), backendUrl: GAME_BACKEND_URL, inline: true })"]) assert.ok(ow.includes(f), 'owner opens ' + f);
+assert.ok(/'kingdom\.html#base-HES': function \(b\) \{ setup\('HES', b\); \}, 'people\.html': function \(b\) \{ openPeople\(b\); \}, 'kingdom\.html#quests'/.test(ow), 'the HQ tiles that pointed at setup pages open their windows; the links stay for the fallback');
+assert.ok(/const tray = LMCSKingdom\.hooks\.after;[\s\S]{0,260}if \(tray\) tray\(d\)/.test(ow), 'the Kingdom\'s own after-hook (its tray) is kept when the map follows');
+assert.ok(!/action=gamekingdom/.test(ow) && /action=gameeventboard/.test(ow), 'one gamekingdom read: the Kingdom\'s own');
+assert.ok(!/innerHTML\s*=\s*[^'\s]/.test(ow.slice(ow.lastIndexOf('<script>'))), 'owner: no data reaches innerHTML in the page script');
+assert.ok(!/analytics:|enterSchool:/.test(ow), 'school analytics and one-tap Enter School come in the next PR');
+// kingdom.js hooks: a quiet mount (no tour over a hidden page), the dialogs the map opens, the write callback; kingdom-map.js lends its Leaflet loader
+const kj = read('assets/game/kingdom.js');
+assert.ok(/else if \(!S\.quiet\) runTour\(false\)/.test(kj) && /S\.quiet = !!opts\.quiet; S\.onWrite = opts\.onWrite \|\| null;/.test(kj) && /if \(S\.onWrite\) return S\.onWrite\(d\);/.test(kj), 'kingdom.js: quiet mount');
+assert.ok(/api\.openQuests = function \(op\) \{ return openQuests\(op \|\| null\); \}; api\.openFollow = function \(card, op\) \{ openFollow\(card, op\); \}; api\.openHead = function \(hd, op\) \{ openHead\(hd, op\); \};/.test(kj), 'kingdom.js: the dialogs the map opens');
+assert.ok(/load: loadLeaflet \}/.test(read('assets/game/kingdom-map.js')), 'kingdom-map.js: the Leaflet loader, with its SRI');
+assert.ok(/Lf = window\.L/.test(js) && !/[^.\w]L\.(map|marker|divIcon|tileLayer)\(/.test(js), 'Leaflet is window.L (this file\'s L is its labels)');
+assert.ok(/LMCSKingdomMap\.drawable\(LMCSPlaces\)/.test(js) && /LMCSKingdomMap\.cluster\(/.test(js) && /S\.real = false; box\.remove\(\); drawMap\(\);/.test(js), 'positions from places.js only; close places group; no Leaflet: the drawn valley');
+assert.ok(/\.mh-town \{ z-index:0; isolation:isolate; \}/.test(css), 'the map\'s panes stay under the HUD');
+// the People room: one module for the page and the window; the window's steps stay inside it (Esc closes the step first)
+const pr = read('assets/game/people-room.js'), pp = read('owner/people.html');
+assert.ok(/LMCSPeople\.mount\(root, \{ session: session, backendUrl: GAME_BACKEND_URL \}\)/.test(pp) && /people-room\.js\?v=[0-9a-f]{8}/.test(pp), 'people.html mounts the shared room');
+assert.ok(/if \(opts\.inline\)/.test(pr) && /window\.addEventListener\('keydown', esc, true\)/.test(pr) && /e\.stopImmediatePropagation\(\)/.test(pr), 'inline steps; Esc closes the step, not the window');
+assert.ok(!/innerHTML/.test(pr), 'People: text nodes only');
 console.log('test-map-home ok');

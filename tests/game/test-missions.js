@@ -52,7 +52,7 @@ assert.strictEqual(ssm[0].core, true);                                   // from
 assert.strictEqual(ssm[0].done, false);
 assert.deepStrictEqual(J(ssm[0].progress), { done: 0, total: 1 });       // needed 4 over 5 days
 assert.strictEqual(ssm[0].id, 'ss_pace:LMS4:2026-10-27');                // day-scoped: tomorrow's target is a new mission (C1)
-assert.strictEqual(ssm[0].go, 'principals-daily-reporting/index.html');
+assert.strictEqual(ssm[0].go, 'principal/support-sessions.html');
 assert.strictEqual(ssm[0].title, 'Submit 1 SS evaluation today');      // verb first, no speed language (R30)
 assert.strictEqual(ssm[0].why, '4 still needed for October');
 assert.strictEqual(ctx.gameSsSubmittedBy_(src.ss, 'p@lms.org.in', '2026-10-27'), 0);
@@ -134,8 +134,8 @@ assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recom
 let ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar.length, 1); assert.strictEqual(ar[0].core, true); assert.strictEqual(ar[0].done, false);
 assert.strictEqual(ar[0].shared, true);                                   // no matching Tasks row assigned to the caller
-assert.strictEqual(ar[0].go, 'coordinator/systems/index.html#approvals');   // cfg.approvalsGo (I1)
-assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, approvalsGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html');
+assert.strictEqual(ar[0].go, 'coordinator/hq.html#d=r1');   // cfg.recommendGo + the request (opens the form on it)
+assert.strictEqual(kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')]), coord, { recommendationsReady: true, recommendGo: 'x/y.html' }), 'approval_recommend')[0].go, 'x/y.html#d=r1');
 ar = kinds(cm(csrc([apr('r1', 'LMS4', 'Pending')], [], [task('approval|r1|Pending', 'approval', 'LMS4', 'x', { assignee: 'c@lms.org.in' })]), coord, { recommendationsReady: true }), 'approval_recommend');
 assert.strictEqual(ar[0].shared, false);                                  // the caller is assigned: personal credit
 assert.strictEqual(kinds(cm(csrc([apr('r2', 'LMS4', 'Pending', { at: ago(2) })]), coord, { recommendationsReady: true }), 'approval_recommend').length, 0); // 2 days: too young

@@ -164,10 +164,45 @@ assert.strictEqual(K.nudgeText(QR({ title: 'Starting balances', owner: { email: 
   "Hi Asha ji, when you get a moment, could you look at 'Starting balances' for LMS 3? Thank you!", 'the brief\'s line');
 assert.strictEqual(K.nudgeText(QR({ campus: '' })), "Hi, when you get a moment, could you look at 'Bell timings' for all our schools? Thank you!");
 assert.strictEqual(K.reassignText(QR({ owner: { email: 'z@x.org', name: 'Zed' } }), { email: 'y@x.org', name: 'Yas' }), "Give 'Bell timings' at LMS 3 to Yas? Zed had it.");
-assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Until now, whoever holds the role had it.");
+assert.strictEqual(K.reassignText(QR({}), { email: 'y@x.org', name: '' }), "Give 'Bell timings' at LMS 3 to y@x.org? Nobody has it yet.");
+// the setup period: role groups first in the pick list, the current holder left out; the All schools result line
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [{ email: 'a@x.org', name: 'A' }] })))),
+  [{ email: 'role:Teacher', name: 'All teachers at LMS 3', group: true }, { email: 'a@x.org', name: 'A' }]);
+// bulk: each open assignable row's groups at its own school / HQ (schools without a row get nothing); Game Day = event rows only
+const BR = [
+  QR({ questId: 'event:gd', campus: 'LMS3', assignable: true, groups: [{ value: 'role:Principal' }, { value: 'role:Teacher' }] }),
+  QR({ questId: 'event:gd', campus: '', assignable: true, groups: [{ value: 'role:Coordinator' }] }),
+  QR({ questId: 'p1', campus: 'LMS3', assignable: true, groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p1', campus: 'LMS4', assignable: true, state: 'done', groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p2', campus: 'LMS4', assignable: false, groups: [{ value: 'role:Principal' }] }),
+  QR({ questId: 'p3', campus: 'LMS4', assignable: true, groups: [] })];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.bulkItems(BR, false))), [
+  { quest: 'event:gd', campus: 'LMS3', assignee: 'role:Principal' }, { quest: 'event:gd', campus: 'LMS3', assignee: 'role:Teacher' },
+  { quest: 'event:gd', campus: '', assignee: 'role:Coordinator' }, { quest: 'p1', campus: 'LMS3', assignee: 'role:Principal' }]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.bulkItems(BR, true))).map((x) => x.quest + '@' + x.campus + '>' + x.assignee),
+  ['event:gd@LMS3>role:Principal', 'event:gd@LMS3>role:Teacher', 'event:gd@>role:Coordinator']);
+assert.strictEqual(K.bulkSummary(K.bulkItems(BR, false)), 'Give 2 quests to their roles at 1 school + HQ?');
+assert.strictEqual(K.bulkSummary([{ quest: 'a', campus: '' }]), 'Give 1 quest to their roles at HQ?');
+assert.strictEqual(K.bulkResult({ done: 6, unchanged: 0, refused: [] }), 'Given: 6. Already had it: 0.');
+assert.strictEqual(K.bulkResult({ done: 1, unchanged: 2, refused: [{ quest: 'p1', campus: 'LMS2' }] }), 'Given: 1. Already had it: 2. Not given: 1 (p1 at LMS 2).');
+assert.strictEqual(K.bulkResult({ done: 0, unchanged: 0, refused: [{ quest: 'p1', campus: '' }] }, [QR({ questId: 'p1', title: 'Bell timings' })]), 'Given: 0. Already had it: 0. Not given: 1 (Bell timings at HQ).', 'row titles, not ids');
+// removal's All schools: the schools whose row of the quest that group holds (case-insensitive value)
+assert.deepStrictEqual(K.removeSchools([QR({ questId: 'e', campus: 'LMS1', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'e', campus: 'LMS2', held: [] }), QR({ questId: 'e', campus: '', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'f', campus: 'LMS3', held: [{ value: 'role:Teacher' }] }), QR({ questId: 'e', campus: 'LMS4', held: [{ value: 'role:teacher' }] })], 'e', 'role:Teacher'), ['LMS1', 'LMS4']);
+// holders: a person and the groups; a held group drops out of the pick list; a group's confirm says nobody loses it
+assert.strictEqual(K.questHolder(QR({ held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }] })), 'All teachers at LMS 3');
+assert.strictEqual(K.questHolder(QR({ owner: { email: 'z@x.org', name: 'Zed' }, held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }] })), 'Zed, All teachers at LMS 3');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ held: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], groups: [{ value: 'role:Teacher', label: 'All teachers at LMS 3' }], assignees: [] })))), []);
+assert.ok(/Nobody else loses it/.test(K.reassignText(QR({}), { email: 'role:Teacher', name: 'All teachers at LMS 3', group: true })));
 assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
 // 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies
 assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');
 assert.ok(/'Confirm', function \(f2, ctl2\)/.test(src) && /send\(assignBody\(r, r\.campus, person\.email, ''\), ctl2\)/.test(src), 'reassign: confirm sheet, then kingdomassign');
 assert.ok(/navigator\.clipboard\.writeText\(text\)/.test(src), 'nudge copies to the clipboard');
+// coming-soon placeholders on a campus window: six labelled chips, LMCSEmoji keys that exist, no numbers, nothing tappable, schools only
+const EM = (() => { const c = { window: {} }; vm.createContext(c); vm.runInContext(read('assets/game/emoji.js'), c); return c.window.LMCSEmoji || c.LMCSEmoji; })();
+assert.strictEqual(K.SOON.map((c) => c.t).join('|'), 'Staff present|Daily report|Open issues|Fees|Buses ready|SS this month');
+K.SOON.forEach((c) => assert.ok(EM.get(c.e), 'emoji key ' + c.e));
+const ksrc = read('assets/game/kingdom.js'), soonFn = ksrc.slice(ksrc.indexOf('function soonPanel'), ksrc.indexOf('function openBase'));
+assert.ok(soonFn.includes('जल्द · Coming soon') && soonFn.includes('School view · Coming soon') && !/button|onclick|href|\d/.test(soonFn.replace(/aria-\w+/g, '')), 'tags present; no buttons, links or numbers');
+assert.ok(ksrc.includes('if (!base.darbar) body.unshift(soonPanel())'), 'schools only, not HQ');
 console.log('kingdom js: all passed');

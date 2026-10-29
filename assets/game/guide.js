@@ -11,7 +11,7 @@ window.LMCSGuide = {
       purpose: "Your home: Today with Buddy, then your school's daily work, HR & Hiring and the rules.", roles: ['Principal'],
       tour: [
         { target: '#welcome-strip', text: "Your name and school, so you know you're in the right place." },
-        { target: '#hh-strip', text: "This is Today: a few pieces of real work waiting for you. Go opens the page where each one happens." },
+        { target: '#hh-strip', text: "This line is your next quest. Tap it for Today: a few pieces of real work, each with a Go to the page where it happens." },
         { target: '#school-3d', text: "This is your school building. Each room holds its pages, and the setup room shows how far your buildings are built." },
       ],
     },
@@ -19,11 +19,11 @@ window.LMCSGuide = {
     'principal/support-sessions.html': { purpose: "Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member with their rubric.", roles: ['Principal'] },
     'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report: support sessions, activities and staff requests.", roles: ['Principal'] },
     'coordinator/index.html': {
-      purpose: "Your home: the map, your district's schools lit, with a bubble wherever work waits for you.", roles: ['Coordinator'],
+      purpose: "Your home: Today with Buddy, then the department modules.", roles: ['Coordinator'],
       tour: [
         { target: '#welcome-strip', text: "Your name and campuses, so you know you're in the right place." },
-        { target: '#mh-scene', text: "This is your map. The schools in your district are lit; tap one to see what waits there. Your office, with a room per department, is at LMCS HQ." },
-        { target: '#mh-switch', text: "Town is this map. World shows your district's bus routes." },
+        { target: '#game-root', text: "This is Today: a few pieces of real work waiting for you, with the next step in a bar at the bottom." },
+        { target: '#modules', text: "The department modules sit here: academics, events, finance, HR, operations, systems and transport." },
       ],
     },
     'coordinator/hq.html': { purpose: "Your contract recommendations and the Owner's decisions, with your own track record.", roles: ['Coordinator'] },
@@ -53,7 +53,7 @@ window.LMCSGuide = {
       purpose: "HQ Home: the map of LMCS HQ and LMS 1–6, with a bubble wherever a decision waits for you.", roles: ['Owner'],
       tour: [
         { target: '#welcome-strip', text: "Your name and the whole school, at a glance." },
-        { target: '#mh-scene', text: "Your map. Tap LMCS HQ for Approvals, Money today, People and Game settings; tap a school for its summary, or to enter it as its Principal." },
+        { target: '#mh-scene', text: "Your map. Tap LMCS HQ for All quests, the Requests tray, People and Game settings; tap a school for its buildings and setup steps." },
         { target: '#mh-switch', text: "Town is this map. World shows the bus routes of every school." },
       ],
     },

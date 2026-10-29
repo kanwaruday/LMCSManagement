@@ -10,14 +10,6 @@ export const DEMO_SCORES = [['pedagogy', 'Pedagogy'], ['content', 'Content'], ['
   ['management', 'Classroom Management'], ['clarity', 'Clarity & Audibility'], ['relatable', 'Makes Subject Relatable'], ['aids', 'Use of Teaching Aids']];
 export const MAX_FILE = 7 * 1024 * 1024;
 const MIMES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
-const DOC_FORM_URLS = {
-  LMS1: 'https://forms.gle/mEtGFD6vGhgK3kJG7', LMS2: 'https://forms.gle/LV1fy13jXzrrcXra9', LMS3: 'https://forms.gle/hHgMU9XqBxpk3gWd8',
-  LMS4: 'https://forms.gle/1uFg6AuYpYmP7ukA9', LMS5: 'https://forms.gle/ZiTP8jQuJ4SstRSM6', LMS6: 'https://forms.gle/pKP62AwcJuat1byH7',
-};
-// Same prefill as hiring/index.html DOC_FORM_PREFILL (LMS4 only so far).
-const DOC_FORM_PREFILL = { LMS4: { url: 'https://docs.google.com/forms/d/e/1FAIpQLSdNTYssKiHvr3v0F-tbOZP5_DNJgHjvauts8ttt1h1mar9XLg/viewform', name: 'entry.773686043', empId: 'entry.1648508931', role: 'entry.1017094729' } };
-const DOC_FORM_ROLE_LABEL = { PRT: 'PRT, TGT', TGT: 'PRT, TGT', PGT: 'PGT', NTT: 'NTT' };
-
 // ---- pure ----
 const appts = (a) => a.appointments || [];
 // hiring/hiring-view.js is a plain script that sets the HiringView global; the pages load it before this module.
@@ -49,18 +41,6 @@ export function bucketApplicants(applicants, apptlist, now = new Date()) {
 // Subject names for the capability grid rows: the role's subjects, else the applicant's; at most 5.
 export const capSubjects = (a) => String((a.role && a.role.subjects) || a.subjects || '').split(/,|&/).map((x) => x.trim()).filter(Boolean).slice(0, 5);
 export const declined = (a, kind) => appts(a).filter((x) => x.kind === kind && x.status === 'declined').pop();
-
-export function docFormUrl(a, fallbackCampus) {
-  const school = a.campusId || fallbackCampus, cfg = DOC_FORM_PREFILL[school];
-  if (!cfg) return DOC_FORM_URLS[school] || '';
-  const p = new URLSearchParams({ usp: 'pp_url' });
-  p.set(cfg.name, a.name);
-  const code = a.employeeCode || a.expectedEmployeeCode;
-  if (code) p.set(cfg.empId, code);
-  const label = a.role && DOC_FORM_ROLE_LABEL[String(a.role.roleLevel || '').toUpperCase()];
-  if (label) p.set(cfg.role, label);
-  return cfg.url + '?' + p.toString();
-}
 
 const bad = (error) => ({ ok: false, error });
 const good = (body) => ({ ok: true, body });

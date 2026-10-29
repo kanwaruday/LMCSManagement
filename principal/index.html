@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/home-hud.css?v=9e616325" />
+  <link rel="stylesheet" href="../assets/game/home-hud.css?v=7b6d14ca" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     #base-name .gb-emoji { margin-right:.3em; }
@@ -52,7 +52,7 @@
           <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span><span class="gb-base-lv" id="base-lv"></span></p>
           <!-- the building in 3D (Uday, 28 Oct). Drawn from a building model; a sample shape until the campus's own plan is set -->
           <div class="hh-bld"><div class="sb-box" id="school-3d"></div><div class="hh-bubbles" id="hh-bubbles"></div></div>
-          <p class="sb-said" id="school-said" role="status">Tap a room. The gold ones open your work today.</p>
+          <p class="hh-sr" id="school-said" role="status"></p><!-- spoken feedback only: no text sits on the scene -->
           <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
         </div></section>
         <section id="world" aria-label="Your school's routes" hidden>
@@ -70,15 +70,15 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=96af418d"></script>
+  <script src="../assets/auth.js?v=6d50a352"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Principal"></script>
-  <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/emoji.js?v=75b7b678"></script>
-  <script src="../assets/game/school-building.js?v=9412edb2"></script>
-  <script src="../assets/game/school-models.js?v=bd561b9e"></script>
-  <script src="../assets/game/home-hud.js?v=7c9c6488"></script>
+  <script src="../assets/game/game.js?v=e4fad387"></script>
+  <script src="../assets/game/emoji.js?v=cfda9180"></script>
+  <script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
+  <script src="../assets/game/school-models.js?v=2d711258"></script>
+  <script src="../assets/game/home-hud.js?v=48ea30d4"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
-  <script src="../coordinator/route-map.js?v=f5e47aee"></script>
+  <script src="../coordinator/route-map.js?v=3f998a20"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
@@ -184,7 +184,7 @@
     // the 3D school: the campus's own building model (assets/game/school-models.js; later Game Config, via d.building) when
     // there is one, else the sample shape with this school's name, marked sample. A tap on a gold room opens its sheet; other rooms say what will live there later.
     let BUILDING = null, CENTRED = false;
-    const HOSTS = ['daily', 'hr', 'rules', 'setup'];
+    const HOSTS = ['daily', 'hr', 'rules', 'setup', 'ss'];
     const LATER = { classroom: 'class teacher, CW/HW done today and attendance will show here', store: 'its inventory will show here',
       busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
     function drawSchool(session, model) {
@@ -235,18 +235,13 @@
     // that can open the Owner portal keeps it; the game backend checks the Owner again and answers read only. Other backends (PDR,
     // Coordinator) don't know about it, so the bar says "Game view only".
     let VIEW = null;
-    // Leave goes back to the map the Owner entered from (assets/game/map-home.js keeps the spot), else the Owner's map home
-    function leaveTo() {
-      try { const v = JSON.parse(sessionStorage.getItem('lmcs-map-return') || 'null'); if (v && /^owner\/(index|kingdom)\.html$/.test(v.page)) return v.page; } catch (e) { /* no spot kept */ }
-      return 'owner/index.html';
-    }
     function viewSession(session) {
       VIEW = LMCSGame.viewAs();
       if (VIEW && !LMCS.canViewOwnerPortal(session)) { LMCSGame.setViewAs(null); VIEW = null; }
       if (!VIEW) return session;
       document.getElementById('view-bar-t').textContent = 'Viewing ' + VIEW.name + ' as the Owner · Game view only';
       document.getElementById('view-bar').hidden = false;
-      document.getElementById('view-leave').addEventListener('click', function () { LMCSGame.setViewAs(null); location.href = '../' + leaveTo(); });
+      document.getElementById('view-leave').addEventListener('click', function () { LMCSGame.setViewAs(null); location.href = '../owner/kingdom.html'; });
       return Object.assign({}, session, { campus: VIEW.campus, campusName: VIEW.name });
     }
 
