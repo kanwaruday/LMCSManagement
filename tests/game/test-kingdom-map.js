@@ -42,4 +42,12 @@ assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the m
 const page = read('owner/kingdom.html');
 assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.open/.test(page));
 assert.ok(!/leaflet/i.test(page), 'Leaflet loads only when the map is opened');
+// close pins join one group so labels never stack; far ones stay apart
+const gs = (a) => M.cluster(a, 120, 52).map((g) => g.map((p) => p.id).join('+')).join();
+assert.strictEqual(gs([{ id: 'HES', x: 100, y: 100 }, { id: 'LMS1', x: 110, y: 90 }, { id: 'LMS3', x: 300, y: 40 }, { id: 'LMS4', x: 100, y: 300 }]), 'HES+LMS1,LMS3,LMS4');
+assert.strictEqual(gs([{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 130, y: 0 }, { id: 'C', x: 0, y: 60 }]), 'A,B,C', 'apart by width or by height');
+assert.strictEqual(gs([{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 100, y: 0 }, { id: 'C', x: 160, y: 0 }]), 'A+B+C', 'a group whose centre lands near a neighbour takes it in');
+assert.strictEqual(M.tag({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }, true) + '|' + M.tag({ id: 'HES', name: 'LMCS HQ' }, true), '4|HQ');
+assert.strictEqual(M.short({ id: 'HES', name: 'LMCS HQ' }) + '|' + M.short({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }), 'HQ|LMS 4');
+assert.ok(/aria-label="Real map" hidden>Map</.test(read('owner/kingdom.html')), 'a short header button that keeps its full name');
 console.log('kingdom map: ok');

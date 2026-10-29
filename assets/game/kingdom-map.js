@@ -48,6 +48,69 @@ window.LMCSKingdomMap = (function () {
     document.body.appendChild(root);
     return (V = { root: root, mapEl: mapEl, note: note, x: x, release: function () {} });
   }
+  function short(p) { return p.id === 'HES' ? 'HQ' : p.name.split(' ').slice(0, 2).join(' '); } // "LMS 1": the full name is in the label
+  // pins closer than gx by gy px on screen (a pin is wide and short) join one group, so labels never stack; tapping a group zooms in to split it
+  function group(pts, gx, gy) {
+    var out = [];
+    pts.forEach(function (p) {
+      var g = out.filter(function (g) { return g.some(function (q) { return Math.abs(q.x - p.x) < gx && Math.abs(q.y - p.y) < gy; }); })[0];
+      if (g) g.push(p); else out.push([p]);
+    });
+    return out;
+  }
+  // regroup by each group's centre until nothing more joins, so a group's label never lands on a neighbour
+  function cluster(pts, gx, gy) {
+    var gs = pts.map(function (p) { return [p]; });
+    for (;;) {
+      var cs = gs.map(function (g) { var x = 0, y = 0; g.forEach(function (p) { x += p.x / g.length; y += p.y / g.length; }); return { x: x, y: y, m: g }; });
+      var next = group(cs, gx, gy).map(function (gg) { return [].concat.apply([], gg.map(function (c) { return c.m; })); });
+      if (next.length === gs.length) return next;
+      gs = next;
+    }
+  }
+  var COMPACT_BELOW = 11; // zoomed out, a pin shows its number only ("1", "HQ"): full names need room the map hasn't got
+  function tag(p, compact) { return compact ? (p.id === 'HES' ? 'HQ' : p.id.replace(/^LMS/, '')) : short(p); }
+  function pinFor(p, compact) {
+    var level = V.level, opts = V.opts, b = el('button', 'kgm-pin' + (p.id === 'HES' ? ' kgm-hq' : '')); b.type = 'button';
+    b.setAttribute('aria-label', p.name + (level[p.id] !== undefined ? ', level ' + level[p.id] : ''));
+    b.appendChild(emoji(p.id === 'HES' ? 'hq' : 'school'));
+    b.appendChild(el('span', 'kgm-nm', tag(p, compact)));
+    if (!compact && level[p.id] !== undefined) b.appendChild(el('span', 'kgm-lv', 'Lv ' + level[p.id]));
+    b.addEventListener('click', function (e) {
+      L.DomEvent.stopPropagation(e);
+      if (!opts.onPick) return;
+      V.release(false); // the sheet that opens traps focus itself; take the trap back when it closes
+      opts.onPick(p.id, b);
+      var dlg = document.querySelector('dialog[open]');
+      if (dlg) dlg.addEventListener('close', function () { if (!V.root.hidden) { V.release = LMCSGame.ui.trap(V.root, close); b.focus(); } }, { once: true });
+      else V.release = LMCSGame.ui.trap(V.root, close);
+    });
+    return b;
+  }
+  function groupPin(g, compact) {
+    var b = el('button', 'kgm-pin kgm-grp'); b.type = 'button';
+    b.setAttribute('aria-label', g.map(function (p) { return p.name; }).join(' and ') + ': zoom in');
+    b.appendChild(emoji('school')); b.appendChild(el('span', 'kgm-nm', g.map(function (p) { return tag(p, compact); }).join(compact ? ' · ' : ' + ')));
+    b.addEventListener('click', function (e) {
+      L.DomEvent.stopPropagation(e);
+      V.map.fitBounds(g.map(function (p) { return [p.lat, p.lng]; }), { padding: [90, 90], maxZoom: 15 });
+    });
+    return b;
+  }
+  function render() {
+    if (!V.pins) return;
+    var fx = document.activeElement && V.root.contains(document.activeElement) && document.activeElement.classList.contains('kgm-grp');
+    V.layer.clearLayers();
+    var pts = V.pins.map(function (p) { var c = V.map.latLngToContainerPoint([p.lat, p.lng]); return { id: p.id, name: p.name, lat: p.lat, lng: p.lng, x: c.x, y: c.y }; });
+    var first, compact = V.map.getZoom() < COMPACT_BELOW;
+    cluster(pts, compact ? 72 : 130, 50).forEach(function (g) {
+      var b = g.length === 1 ? pinFor(g[0], compact) : groupPin(g, compact), lat = 0, lng = 0;
+      g.forEach(function (p) { lat += p.lat / g.length; lng += p.lng / g.length; });
+      L.marker([lat, lng], { icon: L.divIcon({ html: b, className: 'kgm-ico', iconSize: null }), keyboard: false }).addTo(V.layer);
+      first = first || b;
+    });
+    if (fx && first) first.focus(); // a tapped group is gone after the zoom: keep focus on the map, not lost to the page
+  }
   function draw(opts) {
     var places = window.LMCSPlaces || {}, level = {}, pins = drawable(places), total = Object.keys(places).filter(function (k) { return k !== 'CENTER'; }).length;
     (opts.bases || []).forEach(function (b) { level[b.id] = Number(b.level) || 0; });
@@ -57,26 +120,10 @@ window.LMCSKingdomMap = (function () {
       L.tileLayer(TILES, { maxZoom: 19, attribution: ATTR }).addTo(V.map);
       V.layer = L.layerGroup().addTo(V.map);
     }
-    V.map.invalidateSize(); V.layer.clearLayers();
-    var pts = pins.map(function (p) {
-      var b = el('button', 'kgm-pin' + (p.id === 'HES' ? ' kgm-hq' : '')); b.type = 'button';
-      b.setAttribute('aria-label', p.name + (level[p.id] !== undefined ? ', level ' + level[p.id] : ''));
-      b.appendChild(emoji(p.id === 'HES' ? 'hq' : 'school'));
-      b.appendChild(el('span', 'kgm-nm', p.name));
-      if (level[p.id] !== undefined) b.appendChild(el('span', 'kgm-lv', 'Lv ' + level[p.id]));
-      b.addEventListener('click', function (e) {
-        L.DomEvent.stopPropagation(e);
-        if (!opts.onPick) return;
-        V.release(false); // the sheet that opens traps focus itself; take the trap back when it closes
-        opts.onPick(p.id, b);
-        var dlg = document.querySelector('dialog[open]');
-        if (dlg) dlg.addEventListener('close', function () { if (!V.root.hidden) { V.release = LMCSGame.ui.trap(V.root, close); b.focus(); } }, { once: true });
-        else V.release = LMCSGame.ui.trap(V.root, close);
-      });
-      L.marker([p.lat, p.lng], { icon: L.divIcon({ html: b, className: 'kgm-ico', iconSize: null }), keyboard: false }).addTo(V.layer);
-      return [p.lat, p.lng];
-    });
-    if (pts.length) V.map.fitBounds(pts, { padding: [60, 60], maxZoom: 14 });
+    V.map.invalidateSize(); V.pins = pins; V.level = level; V.opts = opts;
+    if (!V.zoomed) { V.zoomed = true; V.map.on('zoomend', render); }
+    if (pins.length) V.map.fitBounds(pins.map(function (p) { return [p.lat, p.lng]; }), { padding: [70, 70], maxZoom: 14 });
+    render(); // fitBounds without animation fires zoomend only when the zoom changes
     V.note.textContent = total - pins.length ? missingText(total - pins.length) : '';
     V.note.hidden = !V.note.textContent;
   }
@@ -88,6 +135,6 @@ window.LMCSKingdomMap = (function () {
     v.note.hidden = false; v.note.textContent = 'Loading the map…';
     loadLeaflet().then(function () { if (!v.root.hidden) draw(opts); }, function (e) { v.note.textContent = e.message; });
   }
-  return { drawable: drawable, missingText: missingText, open: open, close: close, TILES: TILES, ATTRIBUTION: ATTR };
+  return { drawable: drawable, missingText: missingText, group: group, cluster: cluster, short: short, tag: tag, open: open, close: close, TILES: TILES, ATTRIBUTION: ATTR };
 })();
 if (typeof module !== 'undefined') module.exports = window.LMCSKingdomMap;

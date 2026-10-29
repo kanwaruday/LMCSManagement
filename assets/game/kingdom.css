@@ -255,3 +255,4 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kgm .leaflet-bar a.leaflet-control-zoom-in, .kgm .leaflet-bar a.leaflet-control-zoom-out { width:44px; height:44px; line-height:44px; font-size:22px; }
 .kgm .leaflet-bar { margin-top:calc(10px + env(safe-area-inset-top)); margin-left:calc(10px + env(safe-area-inset-left)); }
 .kgm[hidden] { display:none; }
+.kgm-grp { border-style:dashed; } /* several places this close together: tap to zoom in */
