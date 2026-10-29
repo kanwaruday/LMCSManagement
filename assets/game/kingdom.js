@@ -796,7 +796,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
-  api.openBase = function (id) { openBase(id); }; api.close = closeLayer; api.state = S;
+  api.openBase = function (id, op) { openBase(id, op); }; api.close = closeLayer; api.state = S;
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site
   return api;
 })();

@@ -4,6 +4,7 @@
 // Keep every position here so they can move to a backend sheet later without a rebuild. lat/lng stay null until Uday sends pins:
 // never guess or geocode a location. A place with null coordinates is simply not drawn.
 window.LMCSPlaces = {
+  CENTER: { lat: 31.8, lng: 77.0, zoom: 9 }, // the Kullu–Mandi area: where the map sits when no pin is set (not a place)
   HES: { name: 'LMCS HQ', lat: null, lng: null },
   LMS1: { name: 'LMS 1 Dhalpur', lat: null, lng: null },
   LMS2: { name: 'LMS 2 Kelheli', lat: null, lng: null },
