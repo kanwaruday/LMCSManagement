@@ -10,7 +10,8 @@ const allow = [['Email', 'Name', 'CampusId', 'Role', 'Notes', 'Functions'],
   ['owner@x', 'O', 'ALL', 'Owner', '', ''], ['coord@x', 'C', 'LMS4', 'Coordinator', '', ''], ['prin@x', 'P', 'LMS1', 'Principal', '', ''],
   ['clerk@x', 'F', 'LMS1', 'FeeClerk', '', ''], ['teach@x', 'T', 'LMS1', 'Teacher', '', ''], ['both@x', 'B', 'LMS1', 'FeeClerk,Principal', '', ''],
   ['hr@x', 'H', 'LMS2', 'Teacher', '', 'HR & Hiring'], ['hrprin@x', 'HP', 'LMS2', 'Principal', '', 'Fees & Accounts, hr & hiring'],
-  ['fees@x', 'A', 'LMS1', 'Teacher', '', 'Fees & Accounts'], ['hrsp@x', 'S', 'LMS3', 'Teacher', '', ' HR  &  Hiring ']];
+  ['fees@x', 'A', 'LMS1', 'Teacher', '', 'Fees & Accounts'], ['hrsp@x', 'S', 'LMS3', 'Teacher', '', ' HR  &  Hiring '],
+  ['pall@x', 'PA', 'ALL', 'Principal', '', ''], ['pcall@x', 'PC', 'ALL', 'Principal,Coordinator', '', ''], ['poall@x', 'PO', 'ALL', 'Owner,Principal', '', '']];
 let tokenEmail = '';
 const ctx = vm.createContext({
   console,
@@ -34,6 +35,15 @@ assert.ok(can('clerk@x', 'documentstatus') && !can('clerk@x', 'list') && !can('c
 assert.ok(!who('teach@x'), 'a teacher gets nothing');
 assert.ok(!who('nobody@x'), 'not on the allowlist gets nothing');
 assert.ok(can('both@x', 'list') && !can('both@x', 'detail'), 'FeeClerk,Principal gets the principal slice');
+
+// The school lock (29 Oct): a Principal set to ALL is not a manager (so no transport upload, fuel-fill decision or driver link,
+// which pass managers only); with Owner or Coordinator as well, they still are.
+tokenEmail = 'pall@x';
+assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']), null, 'Principal + ALL: not a manager, no transport gate');
+assert.strictEqual(who('pall@x').manager, false, 'Principal + ALL in the Staff Portal: the principal slice');
+tokenEmail = 'pcall@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true, 'Principal,Coordinator + ALL: still a manager');
+tokenEmail = 'poall@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true, 'Owner,Principal + ALL: still a manager');
+tokenEmail = 'owner@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true);
 
 // A principal's campus scope: their own school only.
 const p = who('prin@x');
