@@ -15,7 +15,7 @@
 
   <!-- The screen skeleton (assets/game/base.css): header, then the game bar, the next-step slot, the stage (the map) and the
        panels. The header's wrapper gives it the gb scope; the Kingdom itself keeps kingdom.css. -->
-  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html"><span aria-hidden="true">🏠</span> Home</a><a href="kingdom.html" aria-current="page"><span aria-hidden="true">🗺️</span> Kingdom</a></nav></div></header></div>
+  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="world">Kingdom</a></nav></div></header></div>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <div class="gb-next-slot" id="kg-next"></div>
@@ -36,7 +36,7 @@
   <script src="../assets/auth.js?v=aebb03ed"></script>
   <script src="../assets/game/game.js?v=8ddf9958"></script>
   <script src="../assets/game/kingdom.js?v=dcf73434"></script>
-  <script src="../assets/game/emoji.js?v=73c82a00"></script>
+  <script src="../assets/game/emoji.js?v=e979d2e0"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html

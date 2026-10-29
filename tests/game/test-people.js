@@ -229,7 +229,8 @@ test('POST dispatch; a GET is refused as unknown', () => {
 test('pages: HQ Home tiles and switch; People room confirms before every write', () => {
   const read = (p) => fs.readFileSync(__dirname + '/../../' + p, 'utf8');
   const home = read('owner/index.html'), pp = read('owner/people.html'), kg = read('owner/kingdom.html');
-  for (const t of ["e: '📥', name: 'Approvals'", "e: '💰', name: 'Money today'", "e: '👥', name: 'People'", "e: '⚙️', name: 'Game settings'"]) assert.ok(home.includes(t), t);
+  for (const t of ["e: 'requests', name: 'Approvals'", "e: 'dayBook', name: 'Money today'", "e: 'heads', name: 'People'", "e: 'settings', name: 'Game settings'"]) assert.ok(home.includes(t), t);
+  assert.ok(/LMCSEmoji\.tag\(t\.e\)/.test(home) && !/[\u{1F4E5}\u{1F4B0}\u{1F465}\u2699]/u.test(home), 'tile emoji come from emoji.js keys, none typed by hand');
   assert.ok(/url: 'kingdom\.html#base-HES'/.test(home) && /'Set up the game: ' \+ done \+ ' of ' \+ steps\.length \+ ' done'/.test(home), 'Game settings: x of 6 done, opens the HQ base');
   assert.ok(home.includes('id="modules"'), 'the tools shelf stays');
   for (const [page, cur] of [[home, 'index.html'], [kg, 'kingdom.html']]) assert.ok(page.includes('<nav class="gb-hsw" aria-label="Owner views">') && page.includes('href="' + cur + '" aria-current="page"'), 'header switch, ' + cur + ' current');

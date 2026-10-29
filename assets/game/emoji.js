@@ -22,6 +22,8 @@ var LMCSEmoji = (function () {
     tools: '🧰', appointments: '📅', bus: '🚌', fuel: '⛽', routeVideo: '🎥', rollCall: '🙋', busCheck: '🔧', call: '📞', help: '❓',
     // the driver portal and the Home Base / World switch (28 Oct): a bill is 📃 (🧾 is starting data); the pump video is 📹, apart from the route video 🎥
     phone: '📱', signal: '📶', bill: '📃', photo: '📷', send: '📤', refused: '⚠️', pumpVideo: '📹', homeBase: '🏠', world: '🗺️',
+    // the Owner's HQ Home (29 Oct): Game settings is the "Set up the game" quest
+    settings: '⚙️',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
     hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'

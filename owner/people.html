@@ -25,9 +25,9 @@
 </head>
 <body class="gb gb-app">
 
-  <!-- 👥 The People room (Owner only): the Coordinators on the allowlist, from the game backend (peoplelist). Add one, or change one's
+  <!-- 👑 The People room (Owner only): the Coordinators on the allowlist, from the game backend (peoplelist). Add one, or change one's
        school and functions (peoplecoordinator, POST, behind a confirm). The server checks the Owner again on every call. -->
-  <header class="gb-head"><div><div><h1>People</h1><p>Coordinators across LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html"><span aria-hidden="true">🏠</span> Home</a><a href="kingdom.html"><span aria-hidden="true">🗺️</span> Kingdom</a></nav></div></header>
+  <header class="gb-head"><div><div><h1>People</h1><p>Coordinators across LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
   <div class="gb-shell">
     <main class="gb-stage">
       <section class="hero" id="auth-root" style="padding-top:24px;"><div id="gate-slot"></div></section>
@@ -45,6 +45,7 @@
 
   <script src="../assets/auth.js?v=aebb03ed"></script>
   <script src="../assets/game/game.js?v=8ddf9958"></script>
+  <script src="../assets/game/emoji.js?v=e979d2e0"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
     const h = function (tag, attrs, kids) { return LMCSGame.ui.h(tag, attrs, kids); };

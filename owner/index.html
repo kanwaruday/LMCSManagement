@@ -14,7 +14,7 @@
 
   <!-- The screen skeleton (assets/game/base.css). HQ Home: four tiles (Approvals, Money today, People, Game settings), then Today
        (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Kingdom. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page"><span aria-hidden="true">🏠</span> Home</a><a href="kingdom.html"><span aria-hidden="true">🗺️</span> Kingdom</a></nav></div></header>
+  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <main class="gb-stage">
@@ -44,7 +44,7 @@
   <script src="../assets/auth.js?v=aebb03ed"></script>
   <script src="../assets/game/game.js?v=8ddf9958"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
-  <script src="../assets/game/emoji.js?v=73c82a00"></script>
+  <script src="../assets/game/emoji.js?v=e979d2e0"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
@@ -80,11 +80,11 @@
       ((hq && hq.buildings) || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (t.steps && t.steps.length) steps = t.steps; }); });
       const cards = k && Array.isArray(k.cards) ? k.cards.length : null, done = steps ? steps.filter(function (s) { return s.done; }).length : 0;
       return [
-        { e: '📥', name: 'Approvals', url: '../coordinator/systems/index.html#approvals', count: cards || null,
+        { e: 'requests', name: 'Approvals', url: '../coordinator/systems/index.html#approvals', count: cards || null,
           small: cards ? cards + (cards === 1 ? ' approved request waits' : ' approved requests wait') + ' for a follow-up' : k ? 'Requests waiting for your decision. Nothing approved is waiting for a follow-up.' : 'Requests waiting for your decision' },
-        { e: '💰', name: 'Money today', url: '../office/daybook.html', small: "The Day Book: today's cash and entries" },
-        { e: '👥', name: 'People', url: 'people.html', small: 'Coordinators: their school and what they look after' },
-        { e: '⚙️', name: 'Game settings', url: 'kingdom.html#base-HES', count: steps && done < steps.length ? steps.length - done : null,
+        { e: 'dayBook', name: 'Money today', url: '../office/daybook.html', small: "The Day Book: today's cash and entries" },
+        { e: 'heads', name: 'People', url: 'people.html', small: 'Coordinators: their school and what they look after' },
+        { e: 'settings', name: 'Game settings', url: 'kingdom.html#base-HES', count: steps && done < steps.length ? steps.length - done : null,
           small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
       ];
     }
@@ -92,9 +92,9 @@
       const ul = document.getElementById('hq-tiles');
       ul.textContent = '';
       hqTiles(k).forEach(function (t) {
-        const a = el('a', 'gb-go'), span = el('span'), li = el('li'), ic = el('span', 'gb-emoji', t.e);
-        ic.setAttribute('aria-hidden', 'true');
-        span.appendChild(ic); span.appendChild(document.createTextNode(t.name));
+        const a = el('a', 'gb-go'), span = el('span'), li = el('li'), ic = window.LMCSEmoji && LMCSEmoji.tag(t.e);
+        if (ic) span.appendChild(ic);
+        span.appendChild(document.createTextNode(t.name));
         if (t.count) { const c = el('span', 'gb-count', String(t.count)); c.setAttribute('aria-hidden', 'true'); span.appendChild(document.createTextNode(' ')); span.appendChild(c); }
         span.appendChild(el('small', '', t.small));
         a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
