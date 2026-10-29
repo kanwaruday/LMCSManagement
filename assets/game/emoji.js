@@ -25,7 +25,7 @@ var LMCSEmoji = (function () {
     // the Owner's HQ Home (29 Oct): Game settings is the "Set up the game" quest
     settings: '⚙️',
     // the Principal home's setup bubble (assets/game/home-hud.js)
-    setupUp: '⬆️',
+    setupUp: '⬆️', tasks: '🗒️',
     // rooms in the school building (assets/game/school-building.js)
     classroom: '✏️', lab: '🔬', computerLab: '💻', library: '📕', office: '🗄️', staffRoom: '☕', store: '📦', washroom: '🚻',
     hall: '🎭', lobby: '🛗', ground: '⚽', busBay: '🚏', site: '🧱'

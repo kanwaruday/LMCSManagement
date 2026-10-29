@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/home-hud.css?v=75878214" />
+  <link rel="stylesheet" href="../assets/game/home-hud.css?v=ad9e61ff" />
   <style>
     /* hub only: the paths. Everything else comes from base.css (gb-) and style.css (the sign-in gate, appointments). */
     #base-name .gb-emoji { margin-right:.3em; }
@@ -52,7 +52,7 @@
           <p class="gb-base-h" id="base-h"><span id="base-name">Your school</span><span class="gb-base-lv" id="base-lv"></span></p>
           <!-- the building in 3D (Uday, 28 Oct). Drawn from a building model; a sample shape until the campus's own plan is set -->
           <div class="hh-bld"><div class="sb-box" id="school-3d"></div><div class="hh-bubbles" id="hh-bubbles"></div></div>
-          <p class="sb-said" id="school-said" role="status">Tap a room. The gold ones open your work today.</p>
+          <p class="hh-sr" id="school-said" role="status"></p><!-- spoken feedback only: no text sits on the scene -->
           <div class="gb-rooms" id="rooms"><!-- filled in by JS: one room per path, then the setup room --></div>
         </div></section>
         <section id="world" aria-label="Your school's routes" hidden>
@@ -73,10 +73,10 @@
   <script src="../assets/auth.js?v=ed17b104"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Principal"></script>
   <script src="../assets/game/game.js?v=e4fad387"></script>
-  <script src="../assets/game/emoji.js?v=b51b72fe"></script>
+  <script src="../assets/game/emoji.js?v=cd6266ff"></script>
   <script src="../assets/game/school-building.js?v=9412edb2"></script>
   <script src="../assets/game/school-models.js?v=bd561b9e"></script>
-  <script src="../assets/game/home-hud.js?v=3cccf59e"></script>
+  <script src="../assets/game/home-hud.js?v=584db915"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../coordinator/route-map.js?v=f5e47aee"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>

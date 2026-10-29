@@ -158,6 +158,8 @@ var LMCSHomeHud = (function () {
       .reduce(function (a, f) { return f[1] ? a.concat([h('dt', {}, f[0]), h('dd', {}, f[1])]) : a; }, []));
     nodes.push(facts);
     if (S.o.appt.textContent.trim()) { held.push(S.o.appt); nodes.push(h('h3', {}, 'Appointments'), S.o.appt); }
+    var ds = document.getElementById('lmcs-datasrc'); // the Owner's data-source links (assets/datasrc.js) live here, not above the scene
+    if (ds) { ds = ds.cloneNode(true); ds.removeAttribute('id'); ds.className = 'hh-datasrc'; nodes.push(h('h3', {}, 'Data sources'), ds); }
     nodes.push(h('h3', {}, 'Account'), S.o.signout);
     open({ title: s.name ? s.name : 'Profile', nodes: nodes, held: held, opener: opener });
   }
@@ -183,18 +185,21 @@ var LMCSHomeHud = (function () {
     var panes = [h('div', { role: 'tabpanel' }), h('div', { role: 'tabpanel', hidden: 'hidden' }), h('div', { role: 'tabpanel', hidden: 'hidden' })];
     var tt = tabs(['Town', 'Wilderness', 'Daily'], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
     el.drawerX = h('button', { type: 'button', class: 'hh-x hh-drawer-x', 'aria-label': 'Close tasks' }, '\u00d7');
-    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [el.drawerX, tt.el].concat(panes));
-    el.edge = h('button', { type: 'button', id: 'hh-edge', 'data-hh': 'edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Open tasks' }, h('span', { 'aria-hidden': 'true' }, '▸'));
+    el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [h('div', { class: 'hh-drawer-head' }, [h('h2', {}, 'Tasks'), el.drawerX]), tt.el].concat(panes)); // a sticky header: the X never scrolls away
+    el.edge = h('button', { type: 'button', id: 'hh-edge', 'data-hh': 'edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Tasks' }, [emoji('tasks'), h('span', { class: 'hh-edge-t' }, 'Tasks'), badge(0)]);
+    function edgeLabel() { var open = el.drawer.classList.contains('is-open'), n = el.edgeN || 0; el.edge.setAttribute('aria-label', open ? 'Close tasks' : n > 0 ? 'Tasks, ' + n + ' open' : 'Tasks'); }
+    el.edgeLabel = edgeLabel;
     function drawer(on, focus) {
-      el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.setAttribute('aria-label', on ? 'Close tasks' : 'Open tasks');
-      el.edge.firstChild.textContent = on ? '◂' : '▸'; el.drawer.inert = !on;
-      if (focus) (on ? tt.el.querySelector('[aria-selected="true"]') : el.edge).focus();
+      el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.classList.toggle('is-open', on);
+      el.edge.querySelector('.hh-edge-t').textContent = on ? '\u25c2 Close' : 'Tasks'; edgeLabel(); el.drawer.inert = !on;
+      if (focus) (on ? el.drawerX : el.edge).focus();
     }
     el.drawerX.onclick = function () { drawer(false, true); };
     document.addEventListener('pointerdown', function (e) { if (el.drawer.classList.contains('is-open') && !el.drawer.contains(e.target) && !el.edge.contains(e.target)) drawer(false); }, true);
     el.edge.onclick = function () { drawer(!el.drawer.classList.contains('is-open'), true); };
     panes[0].appendChild(note(COPY.none)); panes[1].appendChild(list([wildRow()], '')); panes[2].appendChild(note(COPY.daily)); // before data (or on notYet): plain empty states, never blank
-    el.drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); drawer(false, true); } });
+    document.addEventListener('keydown', function (e) { // Esc closes the open drawer from anywhere (a sheet or a game.js card over it keeps its own Esc)
+      if (e.key === 'Escape' && el.drawer.classList.contains('is-open') && !(S.sheet && S.sheet.open) && !document.querySelector('.lg-layer')) { e.preventDefault(); drawer(false, true); } });
     drawer(false);
     el.panes = panes;
 
@@ -233,6 +238,7 @@ var LMCSHomeHud = (function () {
     });
     // nothing open: "All done for now" when the person holds quests (all complete), "No quests yet" when none is assigned to them
     var questLine = (t.quests || []).length ? COPY.done : COPY.none;
+    el.edgeN = town.length; setBadge(el.edge.querySelector('.hh-badge'), town.length); el.edgeLabel();
     el.panes[0].textContent = ''; el.panes[0].appendChild(list(town, questLine));
     el.panes[1].textContent = ''; el.panes[1].appendChild(list([wildRow()], ''));
     var day = (t.missions || []).filter(function (m) { return !m.gone; }).map(function (m) {

@@ -73,4 +73,12 @@ assert.ok(/data-hh/.test(js) && /S\.bm\[key\]/.test(js) && /function backTo/.tes
 assert.ok(/LINK_ONLY = \['daily', 'hr', 'routes'\]/.test(js), 'link-only bubbles');
 assert.strictEqual(H.rankText({ rank: 'x'.repeat(50) }).length, 20, 'rank text is capped');
 assert.ok(LMCSEmoji.get('setupUp') && !/u2b06|\u2b06/.test(js) && /function chip\(/.test(js) && !/textContent = LMCSEmoji/.test(js), 'setup bubble and chips use the emoji map, not typed or glued emoji');
+// Uday's first look: Esc closes the drawer from the edge tab too, a header with a 44px X that stays put, a labelled edge tab, no hint line
+assert.ok(/document\.addEventListener\('keydown', function \(e\) \{[^\n]*\n\s*if \(e\.key === 'Escape' && el\.drawer\.classList\.contains\('is-open'\)[^\n]*drawer\(false, true\)/.test(js) && !/el\.drawer\.addEventListener\('keydown'/.test(js), 'Esc closes the open drawer from anywhere, focus back on the tab');
+assert.ok(/h\('div', \{ class: 'hh-drawer-head' \}, \[h\('h2', \{\}, 'Tasks'\), el\.drawerX\]\)/.test(js) && /\.hh-drawer-head \{ position:sticky; top:0/.test(css) && /\.hh-x \{ width:44px; height:44px/.test(css), 'drawer header: Tasks title and a 44px X, sticky');
+assert.ok(/focus\)? \(on \? el\.drawerX : el\.edge\)\.focus\(\)|\(on \? el\.drawerX : el\.edge\)\.focus\(\)/.test(js), 'opening moves focus to the X');
+assert.ok(LMCSEmoji.get('tasks') && /emoji\('tasks'\), h\('span', \{ class: 'hh-edge-t' \}, 'Tasks'\)/.test(js) && /u25c2 Close/.test(js) && /\.hh-edge \{[^}]*min-width:56px; min-height:72px/.test(css), 'the edge tab: Tasks + emoji, reads Close when open, 56x72');
+assert.ok(!/Tap a room/.test(page) && /id="school-said"/.test(page), 'the hint line is gone (only an empty spoken status remains)');
+assert.ok(/getElementById\('lmcs-datasrc'\)/.test(js) && /body\.hh #lmcs-datasrc \{ display:none; \}/.test(css), 'the data-source row moves into the profile sheet');
+assert.ok(/\.hh-bottom \{ position:fixed; left:8px; right:68px; bottom:calc\(8px \+ var\(--bd-lift/.test(css), 'bottom controls clear the rail and the Buddy button');
 console.log('test-home-hud: ok');

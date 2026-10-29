@@ -8,7 +8,9 @@ body.hh .gb-base::before, body.hh .gb-base-in { all:unset; }
 body.hh .gb-base-in { display:block; }
 body.hh .sb-box { border:0; border-radius:0; background:transparent; }
 body.hh #base-h, body.hh #rooms { display:none; }
-body.hh .sb-said { margin:4px 12px 0; text-align:center; }
+body.hh #lmcs-datasrc { display:none; } /* the Owner's data-source row moves into the profile sheet */
+.hh-datasrc { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:14px; color:var(--gb-muted); }
+.hh-datasrc a { color:var(--gb-muted); }
 body.hh #world { padding:64px 8px 150px; }
 @media (min-width:960px) { body.hh .hh-scene { height:calc(100svh - 92px); } body.hh .gb-shell { grid-template-columns:104px minmax(0, 1fr); grid-template-areas:"rail stage"; padding:0; } body.hh .gb-shell > .gb-rail { margin:0; } }
 body.hh .gb-rail-i.is-soon { display:none; } /* no buttons for sections that don't exist yet */
@@ -35,12 +37,16 @@ body.hh .gb-panels { display:none; }
 .hh-badge[hidden] { display:none; }
 
 /* the task drawer slides out of the left edge */
-.hh-edge { position:absolute; left:0; top:45%; width:44px; min-height:64px; border:0; border-radius:0 12px 12px 0; background:var(--gb-ink); color:#fff; font-size:20px; }
+.hh-edge { position:absolute; left:0; top:45%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:56px; min-height:72px; padding:6px 6px; border:2px solid var(--gb-gold); border-left:0; border-radius:0 14px 14px 0; background:var(--gb-ink); color:#fff; font-size:13px; font-weight:700; line-height:1.15; box-shadow:2px 2px 8px rgba(0,0,0,.3); }
+.hh-edge .gb-emoji { font-size:22px; }
+.hh-edge .hh-badge { top:-8px; right:-6px; }
 .hh-drawer { position:absolute; left:0; top:100px; bottom:140px; width:min(86vw, 340px); padding:8px 12px; overflow:auto; background:var(--gb-paper); border-right:2px solid var(--gb-line); border-radius:0 14px 14px 0; box-shadow:4px 0 14px rgba(0,0,0,.2);
   transform:translateX(-102%); visibility:hidden; }
 .hh-drawer.is-open { transform:none; visibility:visible; }
-.hh-drawer-x { position:absolute; top:4px; right:4px; }
-.hh-drawer { padding-top:52px; }
+.hh-drawer { padding:0 12px 8px; }
+.hh-drawer-head { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 -12px 8px; padding:8px 12px; background:var(--gb-paper); border-bottom:1px solid var(--gb-line); }
+.hh-drawer-head h2 { margin:0; font:700 19px/1.25 var(--gb-font); }
+.hh-drawer-x { border-color:var(--gb-ink); }
 body.hh .lg-nextbar { display:none !important; } /* the quest strip is the next step here; game.js's bar would measure the stashed Today */
 .hh-drawer.is-open ~ .hh-edge { left:min(86vw, 340px); }
 .hh-tabs { display:flex; gap:4px; margin:0 0 8px; }
@@ -56,7 +62,7 @@ body.hh .lg-nextbar { display:none !important; } /* the quest strip is the next 
 .hh-empty { margin:8px 0; padding:12px; border:1.5px dashed var(--gb-line); border-radius:12px; color:var(--gb-muted); }
 
 /* the bottom: one quest line over the Town / World switch (the rail sits below it on phones) */
-.hh-bottom { position:absolute; left:8px; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.hh-bottom { position:fixed; left:8px; right:68px; bottom:calc(8px + var(--bd-lift, 0px) + env(safe-area-inset-bottom)); /* clear of the bottom rail, and of the Buddy button at the right */ display:flex; flex-direction:column; gap:8px; align-items:center; }
 .hh-strip { position:relative; display:flex; align-items:center; gap:8px; width:min(100%, 480px); min-height:48px; padding:6px 14px; border:2px solid var(--gb-gold); border-radius:24px; background:var(--gb-paper); color:var(--gb-ink); font-weight:700; text-align:left; box-shadow:0 2px 8px rgba(0,0,0,.25); }
 .hh-strip[hidden] { display:none; }
 .hh-strip-t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
