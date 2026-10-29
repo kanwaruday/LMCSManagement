@@ -10,7 +10,7 @@
 const DBUS_PAPERS_ = ['insurance', 'fitness', 'pollution', 'speed_governor'];
 
 function coordDriverBus_(body) {
-  const link = dlkLink_(body.deviceToken);
+  const link = dlkLinkOrView_(body, function (t) { const c = coordVerifyCaller_(t); return c && c.roles; }); // or a staff view (driver-token.gs)
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const reg = FleetQuests.normReg(link.reg), T = COORD_FLEET_TABS, same = function (r) { return FleetQuests.normReg(r) === reg; };
   const fleetBus = coordTransportBase_().fleet.filter(function (b) { return same(b.reg); })[0] || {};

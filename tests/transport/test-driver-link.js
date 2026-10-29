@@ -79,7 +79,7 @@ assert.strictEqual(call('driverLinkList_', { idToken: 't' }).error, 'Not authori
 
 // driverme happy path
 const me = call('driverMe_', { deviceToken: c1.token });
-assert.deepStrictEqual(me, { success: true, name: 'Test Driver', reg: 'HP659511', campus: 'LMS4', runsNeeded: 1, runsDone: 1, lastFill: '2026-10-20', lastOdometer: 51600 });
+assert.deepStrictEqual(me, { success: true, name: 'Test Driver', reg: 'HP659511', campus: 'LMS4', runsNeeded: 1, runsDone: 1, lastFill: '2026-10-20', lastOdometer: 51600, view: false });
 assert.ok(rows()[0][10] instanceof Date, 'Last Seen written');
 const seen = rows()[0][10];
 call('driverMe_', { deviceToken: c1.token });
@@ -177,5 +177,30 @@ const before = lms4Active();
 caller = clerk1;
 assert.strictEqual(call('driverLinkCreate_', { idToken: 't', reg: 'HP665805', driverName: 'Test Driver', driverCode: 'TST/01/02/003' }).success, true);
 assert.ok(before > 0 && lms4Active() === before, 'the LMS 4 link is untouched');
+
+// the staff view (29 Oct): the Owner or a Coordinator sees a running bus as its driver, read only; Driver Devices never changes
+tabs['LM Studio Fleet'] = [['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver'], ['HP 65 9511', 'Bus 4', 'LMS 4', 'yes', '', '', 'Test Driver'],
+  ['HP665805', 'Bus 1', 'LMS 1', 'no', '', '', '']];
+const devBefore = JSON.stringify(tabs['Driver Devices']);
+const owner = { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, coord = { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator', 'Teacher'] };
+caller = owner;
+const v = call('driverMe_', { viewReg: 'hp 659511', idToken: 't' });
+assert.deepStrictEqual([v.success, v.reg, v.campus, v.name, v.view, v.lastFill], [true, 'HP659511', 'LMS4', 'Test Driver', true, '2026-10-20'], 'the Owner sees what the driver sees');
+assert.strictEqual(call('driverRoute_', { viewReg: 'HP659511', idToken: 't' }).vehicles[0].reg, 'HP659511');
+assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'running buses only');
+caller = coord;
+assert.strictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).success, true, 'a Coordinator too');
+assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), revoked, 'a parked bus: no view');
+[{ email: 'p@x', campusId: 'ALL', roles: ['Principal'] }, clerk4, null].forEach((c) => {
+  caller = c;
+  assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }), revoked, 'not the Owner or a Coordinator: ' + JSON.stringify(c && c.roles));
+  assert.deepStrictEqual(call('driverRoute_', { viewReg: 'HP659511', idToken: 't' }), revoked);
+  assert.strictEqual(call('driverViewBuses_', { idToken: 't' }).success, false);
+});
+caller = owner;
+assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511' }), revoked, 'no Google token: no view');
+assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't', deviceToken: 'f'.repeat(64) }), revoked, 'a device token is judged alone');
+assert.strictEqual(call('driverFuel_', { viewReg: 'HP659511', idToken: 't', fillId: 'Fview0000001', litres: '40', amount: '3800', odometer: '52000' }).code, 'UNLINKED', 'a staff view cannot send a fill');
+assert.strictEqual(JSON.stringify(tabs['Driver Devices']), devBefore, 'Driver Devices untouched: no link made, no Last Seen written');
 
 console.log('driver link: all checks passed');

@@ -9,11 +9,15 @@
 // (apps-script/driver-fuel.gs: a pending row the Fee Clerk later confirms against the bill). Each fill is kept in IndexedDB under
 // its fillId before it is sent and leaves the phone only when the server answers success; with no signal (or a timeout) it waits
 // there and is sent again on the 'online' event and on the next page load. The token is never logged or shown.
+// Staff view (?staff=1; Uday, 29 Oct): the Owner or a Coordinator signs in with their normal Google account, picks a running bus and
+// sees that driver's page, read only (no fuel fill, no route video). It never touches the phone's driver link (TOKEN_KEY and the
+// saved bus stay as they are); the backend checks the role on every call (apps-script/driver-token.gs's dlkLinkOrView_).
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+  const STAFF = !DEMO && new URLSearchParams(location.search).get('staff') === '1';
   const demoApi = DEMO ? {
     load: () => Promise.resolve({ name: 'Ramesh', reg: 'HP 34 X 0000', campus: 'LMS 1', runsNeeded: 1, runsDone: 0, lastFill: '2026-10-21', lastOdometer: 58000 }),
     send: (form, files, onProgress) => new Promise((ok) => { // a pretend upload, so the progress bar can be seen
@@ -31,7 +35,7 @@
     if (t) { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* kept for this visit only */ } history.replaceState(null, '', location.pathname + location.search); return t; }
     try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
   }
-  const live = !DEMO && (() => {
+  const live = !DEMO && !STAFF && (() => {
     const token = takeToken();
     return !token ? null : {
       token, // for the route World (driverroute); never shown or logged
@@ -59,7 +63,19 @@
       waiting: () => queue.getAll().then((a) => a.length, () => 0),
     };
   })();
-  const api = DEMO ? demoApi : live;
+  // the staff view: {viewReg, idToken} once a bus is picked; the Google token stays in memory (or the portals' own session)
+  let view = null;
+  const viewApi = STAFF ? {
+    load: async () => {
+      let r;
+      try { r = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'driverme' }, view)) })).json(); }
+      catch (e) { throw new Error('Could not reach the office. Try again.'); }
+      if (!r.success) throw new Error(r.error || 'This bus cannot be viewed.');
+      return r;
+    },
+  } : null;
+  const api = DEMO ? demoApi : live || viewApi;
+  const VIEW = !!viewApi;
 
   // ---- live fuel: the phone's queue (IndexedDB 'lmcs-driver', store 'fills', keyed by fillId) and the post
   const queue = live && (() => { // demo: none
@@ -152,7 +168,10 @@
     const m = DriverLogic.missions(b), next = m.find((x) => x.primary);
     $('hello').textContent = 'नमस्ते, ' + b.name; $('who').textContent = 'ड्राइवर · Driver' + (b.campus ? ' · ' + b.campus : ''); $('reg').textContent = b.reg; $('reg').hidden = false;
     // the one next step, always in this spot
-    $('slot').innerHTML = '<div class="gb-next dr-next"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt="">' + (next.id === 'route'
+    $('slot').innerHTML = VIEW ? '<div class="gb-next dr-next"><div class="gb-next-b"><span class="gb-next-k">स्टाफ़ व्यू · Staff view</span>' +
+        `<p class="gb-next-t">${big('सिर्फ़ देखने के लिए', 'Read only: what ' + b.name + ' sees on ' + (b.bus || b.reg) + '. Nothing can be sent.')}</p>` +
+        '<button type="button" class="gb-btn dr-big" id="otherBus">दूसरी बस · Another bus</button></div></div>'
+      : '<div class="gb-next dr-next"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt="">' + (next.id === 'route'
       ? `<div class="gb-next-b"><span class="gb-next-k">अगला काम · Next</span><p class="gb-next-t">${big('रूट का वीडियो बनाएँ', 'Record your bus route')}</p>` +
         `<a class="gb-btn gb-btn-primary dr-big" href="${routeHref()}"><span aria-hidden="true">${E('routeVideo')}</span>&nbsp;शुरू करें · Start</a></div>`
       : `<div class="gb-next-b"><span class="gb-next-k">अगला काम · Next</span><p class="gb-next-t">${big('डीज़ल भरवाया? यहाँ भेजें', 'Filled fuel? Send it here')}</p>` +
@@ -162,9 +181,10 @@
     const tile = (o) => `<li><a class="dr-tile${o.next ? ' is-next' : ''}${o.done ? ' is-done' : ''}" href="${o.href || '#'}"${o.href ? '' : ' aria-disabled="true"'}>` +
       `<span class="dr-ico" aria-hidden="true">${o.icon}</span><span class="dr-tile-b">${big(o.hi, o.en)}<span class="dr-en">${esc(o.line)}</span>${o.bar || ''}</span>` +
       (o.next ? '<span class="dr-state next">अगला</span>' : o.done ? `<span class="dr-state done" aria-hidden="true">${E('done')}</span>` : '') + '</a></li>';
-    $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: '#fuel-1', next: next.id === 'fuel' }) +
-      tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: need && !routeDone ? routeHref() : '', next: next.id === 'route', done: routeDone,
+    $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: VIEW ? '' : '#fuel-1', next: !VIEW && next.id === 'fuel' }) +
+      tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: !VIEW && need && !routeDone ? routeHref() : '', next: !VIEW && next.id === 'route', done: routeDone,
         bar: need ? `<span class="gb-bar${routeDone ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * done / need)}%"></i></span>` : '' });
+    if (VIEW) $('otherBus').onclick = () => { try { sessionStorage.removeItem(VIEW_KEY); } catch (e) { /* none */ } location.reload(); };
     homeBase();
     rail(need - done);
     bar('');
@@ -181,14 +201,14 @@
   const day = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : '—'; };
   function loadBus() {
     if (H.bus || H.loading) return;
-    if (api !== live) { H.bus = DEMO_BUS; drawBus(); return; }
-    try { H.bus = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch (e) { H.bus = null; }
+    if (DEMO) { H.bus = DEMO_BUS; drawBus(); return; }
+    if (!VIEW) try { H.bus = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch (e) { H.bus = null; } // a staff view keeps nothing
     const norm = (r) => String(r || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (H.bus && norm(H.bus.reg) !== norm(S.bus.reg)) H.bus = null; // a phone moved to another bus never shows the old one
     H.loading = true;
-    fetch(COORD_URL, { method: 'POST', body: JSON.stringify({ action: 'driverbus', deviceToken: live.token }) }).then((r) => r.json()).then((r) => {
-      if (!r.success) { if (r.code === 'UNLINKED') { H.bus = null; try { localStorage.removeItem(HOME_KEY); } catch (e) { /* none */ } drawBus(); } return; } // driverme locks the page on its next load
-      H.bus = r; try { localStorage.setItem(HOME_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
+    fetch(COORD_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'driverbus' }, VIEW ? view : { deviceToken: live.token })) }).then((r) => r.json()).then((r) => {
+      if (!r.success) { if (r.code === 'UNLINKED' && !VIEW) { H.bus = null; try { localStorage.removeItem(HOME_KEY); } catch (e) { /* none */ } drawBus(); } return; } // driverme locks the page on its next load
+      H.bus = r; if (!VIEW) try { localStorage.setItem(HOME_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
       drawBus();
     }).catch(() => { /* no signal: the saved bus, or the plain one */ }).finally(() => { H.loading = false; });
     drawBus();
@@ -239,11 +259,12 @@
     H.world = true; homeBase();
     if ($('routeMap').dataset.on) return; // the World: their own bus's route, loaded once (it costs data and a map)
     $('routeMap').dataset.on = '1';
-    if (api !== live) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
-    LMCSRouteMap.mount($('routeMap'), { backendUrl: ROSTER_URL, driverToken: live.token, mode: 'city' });
+    if (DEMO) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
+    LMCSRouteMap.mount($('routeMap'), Object.assign({ backendUrl: ROSTER_URL, mode: 'city' }, VIEW ? { driverView: view } : { driverToken: live.token }));
   });
 
   function showWaiting() {
+    if (VIEW) return; // this phone's own fills are not the viewed driver's
     let refused = [];
     try { refused = JSON.parse(localStorage.getItem(REFUSED_KEY) || '[]'); localStorage.removeItem(REFUSED_KEY); } catch (e) { /* none */ }
     $('refused').innerHTML = refused.map((x) => `<span aria-hidden="true">${E('refused')}</span> ${esc(x.litres)} L वाला डीज़ल ऑफिस ने नहीं लिया, दोबारा भरें · The office did not take the ${esc(x.litres)} L fill: ${esc(hiMsg(x.why))} Log it again.`).join('<br>');
@@ -355,6 +376,7 @@
     if (!S.bus) return;
     const h = location.hash.slice(1), m = /^fuel-(\d)$/.exec(h), n = m ? Math.min(CHECK, Math.max(1, Number(m[1]))) : 0;
     if (S.sending && h !== 'fuel-' + CHECK) { location.hash = 'fuel-' + CHECK; return; } // never leave a send half-way
+    if (VIEW && h) { location.hash = ''; return; } // a staff view is home only: no fuel step, nothing sent
     $('home').hidden = !!(n || h === 'sent'); $('fuel').hidden = !n; $('sent').hidden = h !== 'sent';
     $('panels').hidden = !!(n || h === 'sent'); // the panels belong to home; a fuel step shows only the step
     window.scrollTo(0, 0);
@@ -396,16 +418,59 @@
         location.reload(); // the saved token now opens the page as a QR link would; the token never goes into the address bar
       }, () => { $('gsiWhy').textContent = 'नेटवर्क नहीं · No signal. Try again when there is signal.'; });
     };
+    gsiLoad(signedIn, $('gsiBtn'), (m) => { $('gsiWhy').textContent = m; });
+  }
+  function gsiLoad(callback, el, fail) { // Google's sign-in button in el; callback gets its answer
     const start = () => {
-      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: signedIn, itp_support: true });
-      google.accounts.id.renderButton($('gsiBtn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback, itp_support: true });
+      google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
     };
     if (window.google && google.accounts) return start();
     const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = start;
-    s.onerror = () => { $('gsiWhy').textContent = 'Google नहीं खुला, नेटवर्क देखें · Google sign-in did not load. Check the signal.'; };
+    s.onerror = () => fail('Google नहीं खुला, नेटवर्क देखें · Google sign-in did not load. Check the signal.');
     document.head.appendChild(s);
   }
+  // ---- the staff view's way in: the portals' own sign-in if it is still fresh, else Google here; then a bus
+  const VIEW_KEY = 'lmcs.driverViewReg'; // sessionStorage: the bus picked this visit, so a reload stays on it
+  function freshPortalToken() { // assets/auth.js's session (localStorage 'lmcs_session'), only while its Google token has 5 minutes left
+    try {
+      const t = String((JSON.parse(localStorage.getItem('lmcs_session') || 'null') || {}).idToken || '');
+      const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return p.exp * 1000 > Date.now() + 300000 ? t : '';
+    } catch (e) { return ''; }
+  }
+  function staffWay() {
+    stop('स्टाफ़ व्यू', 'Owner or Coordinator: see a driver\'s page, read only.');
+    $('staff').hidden = false; $('staffLink').hidden = true;
+    const why = (m) => { $('staffWhy').textContent = m; };
+    const withToken = (idToken) => {
+      why('खोल रहे हैं… · Loading the buses…');
+      fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverviewbuses', idToken }) }).then((x) => x.json()).then((x) => {
+        if (!x.success) { why(x.error || 'Only the Owner and Coordinators can view a driver\'s page.'); googleIn(); return; }
+        why('');
+        const open = (reg) => {
+          view = { viewReg: reg, idToken };
+          try { sessionStorage.setItem(VIEW_KEY, reg); } catch (e) { /* this visit only */ }
+          $('closed').hidden = true; $('home').hidden = false;
+          $('demo').textContent = 'स्टाफ़ व्यू · Staff view: read only. Nothing is sent.'; $('demo').hidden = false;
+          api.load().then((bus) => { S.bus = bus; route(); }, (e) => { stop('यह बस नहीं खुली', e.message, E('refused')); try { sessionStorage.removeItem(VIEW_KEY); } catch (er) { /* none */ } });
+        };
+        let kept = ''; try { kept = sessionStorage.getItem(VIEW_KEY) || ''; } catch (e) { /* none */ }
+        if (kept && x.buses.some((b) => b.reg === kept)) return open(kept);
+        $('staffBuses').innerHTML = x.buses.map((b) => `<li><button type="button" class="gb-btn" data-reg="${esc(b.reg)}">${esc(b.bus || b.reg)} · ${esc(b.reg)}<small>${esc(b.campus)}${b.driver ? ' · ' + esc(b.driver) : ''}</small></button></li>`).join('') ||
+          '<li>कोई चलती बस नहीं · No running buses.</li>';
+        $('staffBuses').onclick = (e) => { const t = e.target.closest('[data-reg]'); if (t) open(t.dataset.reg); };
+        const first = $('staffBuses').querySelector('button'); if (first) first.focus();
+      }, () => why('नेटवर्क नहीं · No signal. Try again.'));
+    };
+    function googleIn() { // the same Google button the portals use; the token is used for this visit only, never kept
+      gsiLoad((r) => withToken(r.credential), $('staffBtn'), (m) => why(m));
+    }
+    const t = freshPortalToken();
+    if (t) withToken(t); else googleIn();
+  }
   function stop(hi, en, ico) { $('home').hidden = true; $('panels').hidden = true; $('slot').innerHTML = ''; bar(''); $('rail').hidden = true; $('closed').hidden = false; $('closedHi').textContent = hi; $('closedEn').textContent = en; if (ico) $('closed').querySelector('.dr-ico').textContent = ico; }
+  if (STAFF) { staffWay(); return; }
   if (!api) { stop('यह फ़ोन जुड़ा नहीं है', 'फ़ी क्लर्क से ड्राइवर का QR कोड माँगें · This phone is not linked yet. Ask your Fee Clerk for the driver link (a QR code).'); googleWay(); return; }
   if (api === live) { live.flush(); window.addEventListener('online', live.flush); } // fills saved on this phone go now
   $('demo').hidden = !DEMO;

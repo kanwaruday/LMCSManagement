@@ -8,13 +8,16 @@ const T1 = 'a'.repeat(64), T2 = 'b'.repeat(64), T3 = 'c'.repeat(64);
 const devices = [['Link ID', 'Token Hash', 'Reg', 'Campus', 'Driver Code', 'Driver Name', 'Created', 'Created By', 'Revoked', 'Revoked By', 'Last Seen'],
   ['L1', hash(T1), 'HP659511', 'LMS4', '', 'Test Driver', '', '', '', '', ''],
   ['L2', hash(T2), 'HP665805', 'LMS1', '', 'Other Driver', '', '', 'yes', 'x', '']];
+const fleet = [['Reg', 'Bus', 'Campus', 'Operational'], ['HP 65 9511', 'Bus 4', 'LMS 4', 'yes'], ['HP665805', 'Bus 1', 'LMS 1', 'yes']];
+const staff = { owner: { roles: ['Owner'] }, coord: { roles: ['Coordinator'] }, clerk: { roles: ['FeeClerk'], feeClerkOnly: true } };
 const tabs = {
   'Fleet Profile': [{ reg: 'HP659511', papers: JSON.stringify({ make: 'Tata', modelAndVariant: '', seatingCapacityAsPerRc: '32+1' }) }, { reg: 'HP665805', papers: '{"make":"Force"}' }],
   'Parts History': [{ reg: 'HP659511', component: 'battery', fields: '{"lastReplacedOn":"2026-03-04"}' }, { reg: 'HP659511', component: 'tyre_fl', fields: '{"lastReplacedOn":"unknown"}' },
     { reg: 'HP665805', component: 'battery', fields: '{"lastReplacedOn":"2026-01-01"}' }, { reg: 'HP659511', component: 'clutch', fields: 'not json' }]
 };
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite,
-  SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n === 'Driver Devices' ? { getDataRange: () => ({ getValues: () => devices.map((r) => r.slice()) }) } : null) }) },
+  SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n === 'Driver Devices' ? devices : n === 'LM Studio Fleet' ? fleet : null) && { getDataRange: () => ({ getValues: () => (n === 'Driver Devices' ? devices : fleet).map((r) => r.slice()) }) } }) },
+  coordVerifyCaller_: (t) => staff[t] || null,
   Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) },
   COORD_FLEET_TABS: { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History' },
@@ -37,6 +40,11 @@ assert.ok(!/secret-link|Other Driver|HP665805/.test(JSON.stringify(me)), 'no pap
 const unknown = call({ deviceToken: T3 }), revoked = call({ deviceToken: T2 }), bad = call({ deviceToken: 'x' });
 assert.deepStrictEqual(unknown, { success: false, code: 'UNLINKED', error: 'This phone is not linked. Ask the office for a new link.' });
 assert.deepStrictEqual([revoked, bad], [unknown, unknown], 'unknown, revoked and malformed tokens get one answer');
+// the staff view: the Owner or a Coordinator sees the same bus, read only; a Fee Clerk or no token gets the one answer
+const asOwner = call({ viewReg: 'HP659511', idToken: 'owner' });
+assert.deepStrictEqual([asOwner.reg, asOwner.make, asOwner.parts], [me.reg, me.make, me.parts], 'the Owner sees what the driver sees');
+assert.strictEqual(call({ viewReg: 'HP665805', idToken: 'coord' }).reg, 'HP665805', 'a Coordinator too');
+assert.deepStrictEqual([call({ viewReg: 'HP659511', idToken: 'clerk' }), call({ viewReg: 'HP659511', idToken: 'nobody' }), call({ viewReg: 'HP659511' })], [unknown, unknown, unknown]);
 ctx.coordTransportFleet_ = () => { throw new Error('papers tab missing'); };
 assert.deepStrictEqual(call({ deviceToken: T1 }).papers.insurance, { date: '' }, 'unreadable papers: blank dates, the bus still loads');
 console.log('driver bus: all checks passed');

@@ -218,6 +218,7 @@ function doPost(e) {
     if (body.action === 'driverme') return staffJsonOut_(driverMe_(body)); // a linked driver phone, deviceToken
     if (body.action === 'driverlinkself') return staffJsonOut_(driverLinkSelf_(body)); // a driver's own Google sign-in links the phone (driver-google.gs)
     if (body.action === 'driverroute') return staffJsonOut_(driverRoute_(body)); // the linked bus's own stops and tracks (driver-link.gs)
+    if (body.action === 'driverviewbuses') return staffJsonOut_(driverViewBuses_(body)); // the Owner's or a Coordinator's bus list for the read-only view
     if (body.action === 'driverfuel') return staffJsonOut_(driverFuel_(body)); // driver-fuel.gs, deviceToken
     return staffJsonOut_({ success: false, error: 'Unknown action: ' + body.action });
   } catch (err) {

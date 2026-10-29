@@ -122,6 +122,9 @@
   .dr-gsi { margin-top:18px; padding-top:14px; border-top:1.5px solid var(--gb-line); }
   .dr-or { margin:0 0 6px; color:var(--gb-muted); font-weight:700; }
   #gsiBtn { display:flex; justify-content:center; min-height:44px; margin-top:10px; }
+  .dr-buses { list-style:none; margin:12px 0 0; padding:0; display:grid; gap:8px; text-align:left; }
+  .dr-buses .gb-btn { width:100%; min-height:56px; justify-content:flex-start; text-align:left; flex-direction:column; align-items:flex-start; }
+  .dr-buses small { display:block; font-weight:600; color:var(--gb-muted); }
   .dr-stop .dr-ico { display:block; width:auto; font-size:56px; margin:0 auto 8px; }
   @media (max-width:360px) { .dr-hi { font-size:19px; } .dr-q .dr-hi { font-size:23px; } .dr-num { font-size:30px; } }
 </style>
@@ -182,6 +185,12 @@
         <div id="gsiBtn"></div>
         <p class="dr-why" id="gsiWhy" role="alert"></p>
       </div>
+      <div class="dr-gsi" id="staff" hidden>
+        <div id="staffBtn"></div>
+        <p class="dr-en" id="staffWhy" role="status"></p>
+        <ul class="dr-buses" id="staffBuses" aria-label="बसें · Buses"></ul>
+      </div>
+      <p class="dr-alt" id="staffLink"><a href="?staff=1">ऑफिस स्टाफ़? · Owner or Coordinator? Staff view</a></p>
     </div>
   </main>
   <aside class="gb-panels" id="panels" aria-label="और · More" hidden>
@@ -199,7 +208,7 @@
 <script src="../assets/game/event.js?v=0ddc76b7" data-mode="driver"></script>
 <script src="./driver-logic.js?v=efd89bd5"></script>
 <script src="../assets/game/bus-model.js?v=b08cfce2"></script>
-<script src="../coordinator/route-map.js?v=f5e47aee"></script>
-<script src="./driver.js?v=21cc8970"></script>
+<script src="../coordinator/route-map.js?v=3f998a20"></script>
+<script src="./driver.js?v=f62d3854"></script>
 </body>
 </html>
