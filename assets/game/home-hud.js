@@ -187,7 +187,7 @@ var LMCSHomeHud = (function () {
     el.drawerX = h('button', { type: 'button', class: 'hh-x hh-drawer-x', 'aria-label': 'Close tasks' }, '\u00d7');
     el.drawer = h('aside', { class: 'hh-drawer', id: 'hh-drawer', 'aria-label': 'Tasks' }, [h('div', { class: 'hh-drawer-head' }, [h('h2', {}, 'Tasks'), el.drawerX]), tt.el].concat(panes)); // a sticky header: the X never scrolls away
     el.edge = h('button', { type: 'button', id: 'hh-edge', 'data-hh': 'edge', class: 'hh-edge', 'aria-expanded': 'false', 'aria-controls': 'hh-drawer', 'aria-label': 'Tasks' }, [emoji('tasks'), h('span', { class: 'hh-edge-t' }, 'Tasks'), badge(0)]);
-    function edgeLabel() { var open = el.drawer.classList.contains('is-open'), n = el.edgeN || 0; el.edge.setAttribute('aria-label', open ? 'Close tasks' : n > 0 ? 'Tasks, ' + n + ' open' : 'Tasks'); }
+    function edgeLabel() { var n = el.edgeN || 0; el.edge.setAttribute('aria-label', n > 0 ? 'Tasks, ' + n + ' open' : 'Tasks'); } // the name stays put; aria-expanded carries open or closed
     el.edgeLabel = edgeLabel;
     function drawer(on, focus) {
       el.drawer.classList.toggle('is-open', on); el.edge.setAttribute('aria-expanded', String(on)); el.edge.classList.toggle('is-open', on);
@@ -198,8 +198,8 @@ var LMCSHomeHud = (function () {
     document.addEventListener('pointerdown', function (e) { if (el.drawer.classList.contains('is-open') && !el.drawer.contains(e.target) && !el.edge.contains(e.target)) drawer(false); }, true);
     el.edge.onclick = function () { drawer(!el.drawer.classList.contains('is-open'), true); };
     panes[0].appendChild(note(COPY.none)); panes[1].appendChild(list([wildRow()], '')); panes[2].appendChild(note(COPY.daily)); // before data (or on notYet): plain empty states, never blank
-    document.addEventListener('keydown', function (e) { // Esc closes the open drawer from anywhere (a sheet or a game.js card over it keeps its own Esc)
-      if (e.key === 'Escape' && el.drawer.classList.contains('is-open') && !(S.sheet && S.sheet.open) && !document.querySelector('.lg-layer')) { e.preventDefault(); drawer(false, true); } });
+    document.addEventListener('keydown', function (e) { // Esc closes the open drawer from anywhere (a sheet or game.js card handles Esc first and prevents default, so one Esc closes one window)
+      if (e.key === 'Escape' && el.drawer.classList.contains('is-open') && !e.defaultPrevented) { e.preventDefault(); drawer(false, true); } });
     drawer(false);
     el.panes = panes;
 

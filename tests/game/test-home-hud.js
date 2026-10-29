@@ -82,3 +82,5 @@ assert.ok(!/Tap a room/.test(page) && /id="school-said"/.test(page), 'the hint l
 assert.ok(/getElementById\('lmcs-datasrc'\)/.test(js) && /body\.hh #lmcs-datasrc \{ display:none; \}/.test(css), 'the data-source row moves into the profile sheet');
 assert.ok(/\.hh-bottom \{ position:fixed; left:8px; right:68px; bottom:calc\(8px \+ var\(--bd-lift/.test(css), 'bottom controls clear the rail and the Buddy button');
 console.log('test-home-hud: ok');
+assert.ok(/e\.key === 'Escape' && el\.drawer\.classList\.contains\('is-open'\) && !e\.defaultPrevented/.test(js), 'one Esc closes one window: a sheet or card that handled Esc first leaves the drawer open');
+assert.ok(/body\.hh #lmcs-warm-chip \{ bottom:calc\(190px/.test(fs.readFileSync(path.join(root, 'assets/game/home-hud.css'), 'utf8')), 'the loading chip clears the Town/World row');

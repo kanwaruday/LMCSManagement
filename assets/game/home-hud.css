@@ -109,3 +109,4 @@ body.hh-sheet-open { overflow:hidden; }
   .hh-b-quest { animation:hh-bob 2.4s ease-in-out infinite; }
   @keyframes hh-bob { 0%, 100% { margin-top:0; } 50% { margin-top:-6px; } }
 }
+body.hh #lmcs-warm-chip { bottom:calc(190px + env(safe-area-inset-bottom)) !important; } /* the loading chip sits above the quest strip and the Town/World row, never on them */
