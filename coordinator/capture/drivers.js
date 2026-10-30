@@ -2,9 +2,10 @@
 // one bus. Create shows a QR once (the driver scans it on their phone: driver/index.html#k=<token>); revoke unlinks a phone.
 // Backend: Roster web app driverlinkcreate / driverlinklist / driverlinkrevoke (apps-script/driver-link.gs). The bus list is the
 // roll call's. The token lives only in memory on this screen: never stored, never logged, gone when the screen is left.
-// The driver is picked, not typed (Uday, 30 Oct): a type-ahead over the signed-in staff list (Roster action=list, school-scoped),
-// that bus's school's drivers first, the bus's usual driver filled in, and the employee code follows the pick. The staff list is
-// for the Owner and Coordinators; a Fee Clerk (refused that list) keeps the typed name and optional code.
+// The driver is picked, not typed (Uday, 30 Oct): a type-ahead over the caller's schools' staff (Roster driverstaff, driver-google.gs:
+// Owner, Coordinator district, Fee Clerk own campus), that bus's school's drivers first, the bus's usual driver filled in, and the
+// employee code follows the pick. The pick shows the phone on file and whether they can sign in with Google or need the QR: shown
+// on this screen only, never stored, logged or put in a URL. If the read fails, the typed name and optional code stay.
 import { linkUrl, whatsappUrl, cleanName, nameOk } from './driver-mode.js';
 import { rankStaff, lineOf, labelOf, findPick } from '../../assets/employee-pick.js';
 
@@ -49,8 +50,8 @@ async function load() {
     const l = await roster({ action: 'driverlinklist' });
     S.links = l.links; S.googleReady = typeof l.googleReady === 'number' ? l.googleReady : null; // a count only (apps-script/driver-google.gs)
     if (!S.staff) { // refused or failed: the typed name stays
-      const st = await (await fetch(ROSTER_URL + '?action=list&idToken=' + encodeURIComponent(s.idToken), { cache: 'no-store' })).json().catch(() => null);
-      S.staff = st && st.success && Array.isArray(st.employees) && st.employees.length ? st.employees : null;
+      const st = await roster({ action: 'driverstaff' }).catch(() => null);
+      S.staff = st && Array.isArray(st.staff) && st.staff.length ? st.staff : null;
     }
     $('loadMsg').hidden = true;
   } catch (e) {
@@ -73,7 +74,7 @@ function draw() {
 
 function showForm(on) {
   $('form').hidden = !on; $('addRow').hidden = on; $('formMsg').textContent = '';
-  if (on) { $('name').value = ''; $('code').value = ''; S.pick = null; S.auto = false; pickMode(); $('bus').focus(); }
+  if (on) { $('name').value = ''; $('code').value = ''; S.pick = null; S.auto = false; showPick(null); pickMode(); $('bus').focus(); }
 }
 
 // With the staff list: name is a search box over it and the code is read-only, filled from the pick. Without it: as before.
@@ -90,8 +91,13 @@ function fillList() { // that bus's school's drivers first, then other drivers (
   $('staffList').innerHTML = S.ranked.map((e) => `<option value="${esc(lineOf(e))}" label="${esc(labelOf(e))}"></option>`).join('');
   return bus;
 }
+function showPick(e) { // what the roster already holds: the phone, and Google sign-in or the QR
+  $('pickInfo').hidden = !e;
+  $('pickInfo').textContent = !e ? '' : [e.role, e.school, e.phone ? 'Phone ' + e.phone : 'No phone on file',
+    e.google ? 'Can sign in with Google ✓ (no QR needed)' : 'No Gmail on file: needs the QR'].filter(Boolean).join(' · ');
+}
 function setPick(e) {
-  S.pick = e;
+  S.pick = e; showPick(e);
   $('code').value = e ? e.employeeCode : '';
   $('name').value = e ? lineOf(e) : ''; // only ever the filled-in default: a hand pick goes through nameChanged
 }
@@ -103,7 +109,7 @@ function busChanged() { // the bus's usual driver (fleet register), when the lis
 function nameChanged() {
   if (!S.staff) return;
   const e = findPick(S.ranked || [], $('name').value);
-  S.pick = e; S.auto = false; $('code').value = e ? e.employeeCode : '';
+  S.pick = e; S.auto = false; showPick(e); $('code').value = e ? e.employeeCode : '';
 }
 
 async function create(e) {

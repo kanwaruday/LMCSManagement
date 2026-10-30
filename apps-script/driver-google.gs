@@ -11,6 +11,13 @@
 //   4. a new link for that bus, created by DGL_BY_; the driver's earlier active links are revoked (one phone per driver, as a QR).
 //   Every refusal is the same one answer, whatever failed. Nothing is logged: no email, no code, no token.
 // driverLinkList_ (driver-link.gs) adds googleReady: how many of the caller's running buses have a driver who could sign in this way.
+//
+// POST {action:'driverstaff', idToken} -> {success, staff: [{employeeCode, name, school, role, phone, google}]} (30 Oct, Uday: "the
+//   Driver phone page must show a list of employees so that the existing data can be fetched, we have most employee's phone numbers").
+//   The Driver phones page's picker: active staff of the caller's schools (Owner all, Coordinator their district, Fee Clerk their own
+//   campus: tupCovers_ on EmpMaster.SchoolCode), the same people as the staff list. Only what linking needs: phone = 10 digits from
+//   the roster's phone column ('' if none), google = whether an AuthEmail is on file. The address itself never leaves the server.
+//   POST body only, nothing logged.
 // ═══════════════════════════════════════════════════════════════════
 
 const DGL_BY_ = 'google:self';
@@ -109,4 +116,34 @@ function dglGoogleReady_(campusOk) {
     Object.keys(buses).forEach(function (code) { if (ready[code] && buses[code].length === 1 && campusOk(buses[code][0].campusId)) n++; });
     return n;
   } catch (e) { return null; } // the roster could not be read: the page shows no count rather than a wrong one
+}
+
+// The roster's phone column, by header: Mobile / Phone / Contact, with or without No / Number. EmpPersonal first, then EmpMaster.
+const DGL_PHONE_HEAD_ = /^(mobile|phone|contact)\s*(no|number|num)?\.?$/i;
+
+function driverStaff_(body) {
+  const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']);
+  if (!caller) return { success: false, error: 'Not authorized' };
+  const book = SpreadsheetApp.openById(EMP_ROSTER_SHEET_ID);
+  const cell = function (v) { return String(v == null ? '' : v).replace(/[​-‏﻿⁠]/g, '').trim(); };
+  const table = function (tab) { const sh = book.getSheetByName(tab), v = sh ? sh.getDataRange().getValues() : [[]]; return { h: v[0].map(cell), rows: v.slice(1) }; };
+  const byCode = function (t, pick) { // {code: pick(row, col)}
+    const out = {}, cc = t.h.indexOf('EmployeeCode'), col = function (n) { return t.h.indexOf(n); };
+    if (cc !== -1) t.rows.forEach(function (r) { const c = cell(r[cc]).toUpperCase(); if (c) out[c] = pick(r, col); });
+    return out;
+  };
+  const phoneCol = function (t) { return t.h.findIndex(function (h) { return DGL_PHONE_HEAD_.test(h.replace(/[_\s]+/g, ' ')); }); };
+  const phoneOf = function (v) { const d = cell(v).replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
+  const hidden = typeof STAFF_HIDDEN_DEPARTMENTS !== 'undefined' ? STAFF_HIDDEN_DEPARTMENTS : []; // staff-management-api.gs
+  const per = table('EmpPersonal'), mas = table('EmpMaster'), pp = phoneCol(per), mp = phoneCol(mas);
+  const sal = byCode(table('EmpSalary'), function (r, col) { return { role: cell(r[col('Designation')]), dept: cell(r[col('Department')]) }; });
+  const personal = byCode(per, function (r, col) { return { google: cell(r[col('AuthEmail')]).indexOf('@') > 0, phone: pp === -1 ? '' : phoneOf(r[pp]) }; });
+  const staff = [];
+  mas.rows.forEach(function (r) {
+    const col = function (n) { return mas.h.indexOf(n); }, code = cell(r[col('EmployeeCode')]).toUpperCase();
+    const school = cell(r[col('SchoolCode')]).toUpperCase(), s = sal[code] || { role: '', dept: '' }, p = personal[code] || { google: false, phone: '' };
+    if (!code || cell(r[col('Status')] || 'Active').toLowerCase() !== 'active' || hidden.indexOf(s.dept) !== -1 || !tupCovers_(caller, school)) return;
+    staff.push({ employeeCode: code, name: cell(r[col('Name')]), school: school, role: s.role, phone: p.phone || (mp === -1 ? '' : phoneOf(r[mp])), google: p.google });
+  });
+  return { success: true, staff: staff };
 }

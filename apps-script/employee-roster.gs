@@ -215,6 +215,7 @@ function doPost(e) {
     if (body.action === 'driverlinkcreate') return staffJsonOut_(driverLinkCreate_(body)); // driver-link.gs
     if (body.action === 'driverlinkrevoke') return staffJsonOut_(driverLinkRevoke_(body));
     if (body.action === 'driverlinklist') return staffJsonOut_(driverLinkList_(body));
+    if (body.action === 'driverstaff') return staffJsonOut_(driverStaff_(body)); // the Driver phones picker (driver-google.gs)
     if (body.action === 'driverme') return staffJsonOut_(driverMe_(body)); // a linked driver phone, deviceToken
     if (body.action === 'driverlinkself') return staffJsonOut_(driverLinkSelf_(body)); // a driver's own Google sign-in links the phone (driver-google.gs)
     if (body.action === 'driverroute') return staffJsonOut_(driverRoute_(body)); // the linked bus's own stops and tracks (driver-link.gs)
