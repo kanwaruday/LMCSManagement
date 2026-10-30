@@ -1,7 +1,7 @@
 // Capture page (coordinator/transport/capture.html). A Coordinator rides a bus with a school phone in a dashboard mount.
 // Spec: docs/superpowers/specs/2026-10-25-transport-game-design.md, Loop 6. Guide: docs/transport-game/capture-guide.md.
-// - Timelapse (default): rear camera, a frame every ~10 m of GPS travel (geo.js); STOP HERE is one tap that saves the GPS point
-//   and the time, no name or photo (named later from the map).
+// - Timelapse (default): rear camera, a frame every ~10 m of GPS travel (geo.js); STOP HERE is one tap that saves the GPS point,
+//   the time and a photo from the running camera, with nothing to answer (named later from the map).
 // - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
 //   the seats and the load cap (loadCapFactor() x seats).
 // - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
@@ -446,7 +446,9 @@ async function onVisibility() {
 }
 
 // ── STOP HERE ──
-// Timelapse: one tap saves where and when, nothing to answer (Uday, 30 Oct). A second tap within 5 s is a bump, not a stop.
+// Timelapse: one tap saves where and when, nothing to answer (Uday, 30 Oct), and a photo from the camera already running for the
+// timelapse (Uday, 30 Oct 21:45: "Stops should also take a picture along with the gps"): a 'stop' file the Mac blurs for the
+// stop's chapter. Camera not ready: the stop is still saved, GPS only (photo false). A second tap within 5 s is a bump, not a stop.
 async function tapStop() {
   const f = S.fix, now = Date.now(), last = S.run.stops[S.run.stops.length - 1];
   if (S.stopBusy) return;
@@ -454,9 +456,10 @@ async function tapStop() {
   if (last && now - last.takenAt < 5000) return toast(`Stop ${S.run.stops.length} is already saved.`);
   S.stopBusy = true;
   try {
-    await store.addStop(S.run.id, { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now });
+    const base64 = grab() || undefined;
+    await store.addStop(S.run.id, { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now, base64 });
     S.run = await store.getRun(S.run.id); hud();
-    toast(`Stop ${S.run.stops.length} saved` + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
+    toast(`Stop ${S.run.stops.length} saved` + (base64 ? ' with a photo' : '') + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
   } catch (e) { toast(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message); }
   finally { S.stopBusy = false; }
 }

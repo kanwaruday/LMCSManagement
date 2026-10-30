@@ -22,7 +22,7 @@ school phone. The page saves everything on the phone and you send it later on sc
 
 | Run | When | Camera | What you do |
 | --- | --- | --- | --- |
-| **Timelapse** (default) | **Any time**, with the camera facing the road and no children's faces in the frame | Yes: a frame every 10 m | Tap **STOP HERE** at each stop: one tap, nothing to answer |
+| **Timelapse** (default) | **Any time**, with the camera facing the road and no children's faces in the frame | Yes: a frame every 10 m, and a photo at each stop | Tap **STOP HERE** at each stop: one tap, nothing to answer |
 | **Count run** | A normal school run | **Never** | Tap **STOP HERE** at each stop, count how many children got on and off |
 
 Privacy:
@@ -37,7 +37,7 @@ Privacy:
 - With the phone on its side in the mount, the run fills the screen: the camera on the left, **STOP HERE** on the
   right. STOP HERE stays at the bottom all run: a message takes room from the camera, never pushes the button away.
 - The line under the camera shows the GPS. Amber means waiting or weak ("frames paused"): frames resume by themselves.
-- **STOP HERE**: tap it once when the bus stops. It saves the GPS point and the time, nothing else ("Stop 3 saved (±8 m)").
+- **STOP HERE**: tap it once when the bus stops. It saves the GPS point, the time and a photo from the running camera, with nothing to answer ("Stop 3 saved with a photo (±8 m)").
   Stops are named later from the map. On a count run it still asks which stop and how many got on and off.
 - **Keep the page open and the screen on.** If the phone locks or you switch apps, capture pauses. When you come back it
   carries on, and the time away is marked as a gap.
