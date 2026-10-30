@@ -29,12 +29,18 @@ function daybookUrl_() {
 
 // The caller's start.progress {progress, rings, overall}, cached per caller. Throws on any failure (HTTP error, HTML page,
 // success:false), which gameFetchJson_ reports as null and never caches.
+// Read fresh, never from the 10-minute fetch cache: a clerk who just saved a Starting data item must see the step move
+// (P23, 30 Oct). Kept for the rest of this execution only, so missions and quests in one gametoday share one fetch.
+var DAYBOOK_PROGRESS_MEMO = {};
 function daybookProgress_(caller) {
   if (!caller.idToken) throw new Error('daybook: no caller token');
+  const memo = String(caller.email || '').toLowerCase();
+  if (memo && DAYBOOK_PROGRESS_MEMO[memo]) return DAYBOOK_PROGRESS_MEMO[memo];
   const url = daybookUrl_();
-  const json = gameFetchJson_(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=start.progress', caller.idToken, GAME_FETCH_TIMEOUT_MS, caller.email,
+  const json = gameFetchJson_(url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=start.progress', caller.idToken, GAME_FETCH_TIMEOUT_MS, null,
     function (j) { return { progress: j.progress || {}, rings: j.rings || {}, overall: j.overall || {}, states: j.states || {}, labels: j.labels || {}, fundTest: !!j.fund_test }; });
   if (!json) throw new Error('daybook: start.progress failed');
+  if (memo) DAYBOOK_PROGRESS_MEMO[memo] = json;
   return json;
 }
 
