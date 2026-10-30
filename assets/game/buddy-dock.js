@@ -41,11 +41,11 @@ var LMCSDock = window.LMCSDock = (function () {
 
   // ── Ask Buddy (Owner only): pure helpers; the UI is between the "Ask Buddy" markers in build()
   function deskState(desk) { return desk ? (desk.open ? 'open' : 'offline') : 'unknown'; }
-  function threadLine(t, desk) {
-    t = t || {};
+  function threadLine(t, desk, name) { // name: the agent answering (Jarvis for the Owner)
+    t = t || {}; name = name || 'Buddy';
     if (t.failReason === 'offline') return { who: 'status', text: "I couldn't finish that one. Please ask again." };
-    if (t.state === 'queued') return { who: 'status', text: deskState(desk) === 'offline' ? 'Saved. Buddy will answer when the Mac wakes.' : 'Buddy is reading your question…' };
-    if (t.state === 'working') return { who: 'status', text: 'Buddy is thinking…' };
+    if (t.state === 'queued') return { who: 'status', text: deskState(desk) === 'offline' ? 'Saved. ' + name + ' will answer when the Mac wakes.' : name + ' is reading your question…' };
+    if (t.state === 'working') return { who: 'status', text: name + ' is thinking…' };
     if (t.state === 'answered') return { who: 'buddy', text: t.reply || '' };
     return { who: 'status', text: "I couldn't finish that one. Please ask again." };
   }
@@ -132,8 +132,10 @@ var LMCSDock = window.LMCSDock = (function () {
   }
 
   // ═══ Ask Buddy (start) ═══
+  // the Owner's agent (Uday, 30 Oct: "Uday's School Agent - Jarvis"): gametoday's agent, else the defaults
+  function ownerAgent() { var a = (data || kept() || {}).agent; return a && a.mode === 'orders' ? a : { name: 'Jarvis', title: "Uday's School Agent" }; }
   function askSection(h) {
-    var threads = [], desk = null, fails = 0, me = panel, signedOut = false;
+    var threads = [], desk = null, fails = 0, me = panel, signedOut = false, AG = ownerAgent();
     var banner = h('div', { class: 'bd-off', role: 'status' }), list = h('ul', { class: 'bd-threads' });
     var err = h('p', { class: 'bd-err', role: 'alert' });
     var box = h('textarea', { id: 'bd-ask', class: 'bd-ask', rows: 3, maxlength: 2000 });
@@ -153,14 +155,14 @@ var LMCSDock = window.LMCSDock = (function () {
         if (!alive()) return;
         if (gate(r)) return;
         if (r && r.success) refresh(); else { again(); err.textContent = (r && r.error) || 'Something went wrong. Try again.'; }
-      }, function () { if (alive()) { again(); err.textContent = "Couldn't reach Buddy. Please try again."; } });
+      }, function () { if (alive()) { again(); err.textContent = "Couldn't reach " + AG.name + '. Please try again.'; } });
     }
     function draw() {
       banner.textContent = '';
-      if (deskState(desk) === 'offline') banner.appendChild(h('p', {}, [h('strong', {}, 'Buddy is offline — the Mac is off.'), h('br', {}), 'Your message is saved and will be answered when it wakes.']));
+      if (deskState(desk) === 'offline') banner.appendChild(h('p', {}, [h('strong', {}, AG.name + ' is offline — the Mac is off.'), h('br', {}), 'Your message is saved and will be answered when it wakes.']));
       list.textContent = '';
       threads.slice(-5).forEach(function (t) {
-        var line = threadLine(t, desk), pv = proposalView(t), extra = null, pair = [];
+        var line = threadLine(t, desk, AG.name), pv = proposalView(t), extra = null, pair = [];
         if (pv && pv.state === 'open') {
           extra = h('div', { class: 'bd-prop' }, [h('p', {}, 'Send this to the master agent?'), h('p', { class: 'bd-sum' }, pv.summary),
             h('div', { class: 'bd-btns' }, [
@@ -193,12 +195,12 @@ var LMCSDock = window.LMCSDock = (function () {
         if (!alive()) return;
         if (gate(r)) return;
         if (r && r.success) { box.value = ''; refresh(); } else err.textContent = (r && r.error) || 'Something went wrong. Try again.';
-      }, function () { send.disabled = false; if (alive()) err.textContent = "Couldn't reach Buddy. Your words are still in the box."; });
+      }, function () { send.disabled = false; if (alive()) err.textContent = "Couldn't reach " + AG.name + '. Your words are still in the box.'; });
     }
     setTimeout(refresh, 0); // after the panel is in the page
     return h('section', { class: 'bd-part', 'aria-labelledby': 'bd-ask-h' }, [
-      h('h3', { id: 'bd-ask-h' }, 'Ask Buddy'), banner,
-      h('label', { class: 'bd-ask-l', for: 'bd-ask' }, 'Ask Buddy anything about the school or the portal'), box, err, send, list]);
+      h('h3', { id: 'bd-ask-h' }, [window.LMCSEmoji ? LMCSEmoji.tag('jarvis') : null, ' ' + AG.name + (AG.title ? ' · ' + AG.title : '')]), banner,
+      h('label', { class: 'bd-ask-l', for: 'bd-ask' }, 'Ask ' + AG.name + ' anything about the school or the portal'), box, err, send, list]);
   }
   // ═══ Ask Buddy (end) ═══
 
@@ -208,7 +210,7 @@ var LMCSDock = window.LMCSDock = (function () {
     var s = session() || {}, v = window.LMCSGame && LMCSGame.viewAs ? LMCSGame.viewAs() : null;
     return ((window.LMCS && LMCS.roleLabel ? LMCS.roleLabel(s) : String(s.role || '')) + (v && v.name ? ' viewing ' + v.name : '')).slice(0, 80);
   }
-  function reviewSection(h) {
+  function reviewSection(h, agent) {
     var err = h('p', { class: 'bd-err', role: 'alert' }), said = h('p', { class: 'bd-status', role: 'status' });
     var box = h('textarea', { id: 'bd-review', class: 'bd-ask', rows: 3, maxlength: 2000 });
     var send = h('button', { type: 'button', class: 'lg-btn bd-send', onclick: function () {
@@ -223,6 +225,7 @@ var LMCSDock = window.LMCSDock = (function () {
     } }, 'Send review');
     return h('section', { class: 'bd-part', 'aria-labelledby': 'bd-review-h' }, [
       h('h3', { id: 'bd-review-h' }, 'Review this screen'),
+      agent && agent.title ? h('p', { class: 'bd-status' }, agent.title + ' · ' + agent.name) : null,
       h('label', { class: 'bd-ask-l', for: 'bd-review' }, 'What works, what is confusing, what is missing? Uday reads every note.'), box, err, send, said]);
   }
 
@@ -265,7 +268,7 @@ var LMCSDock = window.LMCSDock = (function () {
       data = d;
       avatar(d);
       if (panel !== me || !d || d.notYet) return;
-      if (d.buddyReviewer === true && !owner()) slot.appendChild(reviewSection(h));
+      if (d.agent && d.agent.mode === 'review' && !owner()) slot.appendChild(reviewSection(h, d.agent));
       var m = LMCSGame.nextMission(d), href = m && LMCSGame.safeHref(m.go, UP), s = setupStep(d), sHref = s && LMCSGame.safeHref(s.go, UP);
       var rows = [
         href && h('div', { class: 'bd-row' }, [h('span', { class: 'bd-t' }, m.title), h('a', { class: 'lg-go', href: href, 'aria-label': 'Go: ' + m.title }, 'Go')]),

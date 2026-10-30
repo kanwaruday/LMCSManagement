@@ -97,7 +97,10 @@ function gameConfigDefaults_() {
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
     approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
     recommendGo: 'coordinator/hq.html', // the recommend form; a mission opens it on its request (#d=<approvalId>)
-    buddyReviewers: [], // Ask Buddy reviewer mode (Uday, 30 Oct): verified emails that may send "Review this screen" notes; Uday sets them in Game Config, none in the repo
+    // School agents (Uday, 30 Oct: "Uday's School Agent - Jarvis. Vikas's School Agent - Buddy"): rights per agent and person, set in Game Config.
+    // owner: the Owner's agent (orders; who counts as the Owner is still Script Property BUDDY_OWNER_EMAIL). people: [{ email, name, title, mode: 'review' }]
+    // -- verified emails only Uday adds in the sheet, none in the repo. Only mode 'review' exists today.
+    agents: { owner: { name: 'Jarvis', title: "Uday's School Agent" }, people: [] },
     recommendationsReady: true, // the Recommendations tab is created by the first coordinatorrecommend; off = no approval_recommend missions, Owner's `why` blank
     // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
     // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).

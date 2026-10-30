@@ -559,9 +559,9 @@ test('responses never contain the secret', () => {
 });
 
 let fail = 0;
-// ── Reviewer mode (30 Oct): Game Config buddyReviewers; stored for the Owner to vet; approve -> one confirmed forward labelled review
+// ── Reviewer mode (30 Oct): Game Config agents.people (mode review); stored for the Owner to vet; approve -> one confirmed forward labelled review
 const VIK = mk({ email: 'vik@test.invalid', roles: ['Coordinator'], campusId: 'ALL' });
-const reviewers = (list) => { book.tabs['Game Config'] = fakeSheet([['Key', 'Value'], ['buddyReviewers', JSON.stringify(list)]]); };
+const reviewers = (list) => { book.tabs['Game Config'] = fakeSheet([['Key', 'Value'], ['agents', JSON.stringify({ people: list.map((e) => ({ email: e, name: 'Buddy', title: "Vikas's School Agent", mode: 'review' })) })]]); };
 const rv = (c, o) => R(ctx.buddyReviewAction_(c, 'buddyreview', Object.assign({ text: 'The SS button is hard to find', view: 'Coordinator', context: { page: 'principal/index.html', campus: 'LMS4' } }, o || {})));
 const rvList = (c) => R(ctx.buddyReviewAction_(c || OWN, 'buddyreviews', {}));
 const rvDecide = (c, o) => R(ctx.buddyReviewAction_(c || OWN, 'buddyreviewdecide', o));
@@ -596,16 +596,29 @@ test('review: decline logs; approve (edited) forwards once, labelled review, nev
   assert.strictEqual(inbox()[0][2], 'vik@test.invalid', 'the thread carries the reviewer, not the Owner');
   const p = pull();
   assert.strictEqual(p.items.length, 1); const it = p.items[0];
-  assert.deepStrictEqual([it.kind, it.text, it.review, !!it.order], ['forward', 'SS button: make it bigger', true, false]);
+  assert.deepStrictEqual([it.kind, it.text, it.review, !!it.order], ['forward', '[Reviewer note, not Uday] SS button: make it bigger', true, false]);
   assert.ok(/^Reviewer feedback \(vetted by Uday\)/.test(it.summary));
   assert.strictEqual(thread(OWN).threads.length, 0, "not in the Owner's own Ask Buddy threads");
   assert.strictEqual(rvList().reviews.filter((x) => x.id === a)[0].sent, 'SS button: make it bigger');
   assert.strictEqual(rvRows()[0][3], "The SS button is hard to find"); assert.strictEqual(rvRows()[1][3], "'=HYPERLINK(\"x\")", 'a formula is stored as text');
 });
+test('agents: Jarvis for the Owner person only, Buddy (review) for listed people, nothing for others', () => {
+  reset(); reviewers(['vik@test.invalid']);
+  const cfg = () => ctx.cqLoadCfg_();
+  assert.deepStrictEqual(J(ctx.buddyAgentFor_(OWN, cfg())), { name: 'Jarvis', title: "Uday's School Agent", mode: 'orders' });
+  assert.strictEqual(ctx.buddyAgentFor_(OWN2, cfg()), null, 'a second Owner row is not Uday');
+  assert.deepStrictEqual(J(ctx.buddyAgentFor_(VIK, cfg())), { name: 'Buddy', title: "Vikas's School Agent", mode: 'review' });
+  assert.strictEqual(ctx.buddyAgentFor_(PR, cfg()), null);
+  book.tabs['Game Config'] = fakeSheet([['Key', 'Value'], ['agents', JSON.stringify({ people: [{ email: 'vik@test.invalid', mode: 'orders' }, { email: 'p@test.invalid' }] })]]);
+  assert.strictEqual(ctx.buddyAgentFor_(VIK, cfg()), null, 'orders can never be given in config'); assert.strictEqual(ctx.buddyAgentFor_(PR, cfg()), null, 'no mode: nothing');
+});
 test('review: 30 a day per reviewer', () => {
   reset(); reviewers(['vik@test.invalid']);
   for (let i = 0; i < 30; i++) assert.strictEqual(rv(VIK).success, true);
   assert.strictEqual(rv(VIK).code, 'BUDDY_REVIEW_DAILY');
+  const ids = rvList().reviews.map((x) => x.id); assert.strictEqual(ids.length, 30, 'every pending review listed');
+  ids.forEach((id) => rvDecide(OWN, { id, decision: 'approve' }));
+  assert.strictEqual(ask(OWN).success, true, "30 approved reviews don't use up Uday's own asks");
 });
 
 for (const [n, fn] of tests) { try { fn(); console.log('ok  ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n  ' + (e.stack || e).split('\n').slice(0, 4).join('\n  ')); } }

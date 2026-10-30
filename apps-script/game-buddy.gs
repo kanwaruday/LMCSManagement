@@ -131,7 +131,7 @@ function buddyRateCheck_(threads, email, nowMs) {
   const mine = all.filter(function (t) { return t.email === me; });
   if (mine.filter(function (t) { return t.state === 'queued' || t.state === 'working'; }).length >= BUDDY_LIMITS.inFlight) return 'BUDDY_IN_FLIGHT';
   if (mine.filter(function (t) { return nowMs - buddyMs_(t.askedAt) < BUDDY_HOUR_MS; }).length >= BUDDY_LIMITS.perHour) return 'BUDDY_HOURLY';
-  if (all.filter(function (t) { return gameDayKey_(new Date(buddyMs_(t.askedAt))) === today; }).length >= BUDDY_LIMITS.perDayAll) return 'BUDDY_DAILY';
+  if (all.filter(function (t) { return !t.review && gameDayKey_(new Date(buddyMs_(t.askedAt))) === today; }).length >= BUDDY_LIMITS.perDayAll) return 'BUDDY_DAILY'; // approved reviews don't use up Uday's asks
   return null;
 }
 
@@ -356,18 +356,26 @@ function buddyReply_(body) {
 }
 
 // ── Reviewer mode (Uday, 30 Oct: Vikas sir's reviews, "part of today's game setup") ─────────────
-// A reviewer (a verified caller whose email is in Game Config buddyReviewers) sends a "Review this screen" note from the dock: text,
+// A reviewer (a verified caller listed in Game Config agents.people with mode 'review'; their agent is "Buddy") sends a "Review this screen" note from the dock: text,
 // the page, the role view and campus. It is stored in its own tab for Uday to vet; Claude never answers it and nothing is forwarded
 // until Uday approves. Approve writes one already-confirmed thread into the Buddy Inbox (ask + reply-with-proposal + confirm, in one
 // append under the lock), so the worker's existing forward path carries it to the master agent, labelled reviewer feedback
 // (meta.review; tools/buddy_worker.py), never as Uday's words. A reviewer reads nothing back: no threads, orders or answers.
 var BUDDY_REVIEW_TAB = 'Buddy Reviews';
 var BUDDY_REVIEW_LIMITS = { perDay: 30, list: 50, maxView: 80 };
+var BUDDY_REVIEW_LABEL = '[Reviewer note, not Uday] ';
 
-function buddyReviewerOk_(caller, cfg) {
-  const me = String((caller && caller.email) || '').trim().toLowerCase(), list = cfg && Array.isArray(cfg.buddyReviewers) ? cfg.buddyReviewers : [];
-  return !!me && list.some(function (e) { return typeof e === 'string' && e.trim().toLowerCase() === me; });
+// The caller's school agent from Game Config `agents`: { name, title, mode: 'orders' | 'review' } or null. Orders only for the Owner role AND the
+// BUDDY_OWNER_EMAIL person (the Ask Buddy gate); review for a verified email listed in agents.people with mode 'review'.
+function buddyAgentFor_(caller, cfg) {
+  const me = String((caller && caller.email) || '').trim().toLowerCase(), a = (cfg && cfg.agents) || {}, str = function (v, d) { return typeof v === 'string' && v.trim() ? v.trim().slice(0, 40) : d; };
+  if (!me) return null;
+  const owner = buddyOwnerEmail_();
+  if (owner && me === owner && Array.isArray(caller.roles) && caller.roles.indexOf('Owner') !== -1) { const o = a.owner || {}; return { name: str(o.name, 'Jarvis'), title: str(o.title, "Uday's School Agent"), mode: 'orders' }; }
+  const p = (Array.isArray(a.people) ? a.people : []).filter(function (x) { return x && typeof x.email === 'string' && x.email.trim().toLowerCase() === me && x.mode === 'review'; })[0];
+  return p ? { name: str(p.name, 'Buddy'), title: str(p.title, ''), mode: 'review' } : null;
 }
+function buddyReviewerOk_(caller, cfg) { const ag = buddyAgentFor_(caller, cfg); return !!ag && ag.mode === 'review'; }
 function buddyReviewSheet_(create) {
   const ss = gameBook_();
   let sh = ss.getSheetByName(BUDDY_REVIEW_TAB);
@@ -401,7 +409,10 @@ function buddyReviewAction_(caller, action, body) {
     // the Owner's vetting: the same one-person gate as Ask Buddy
     const owner = buddyOwnerEmail_();
     if (!caller || !Array.isArray(caller.roles) || caller.roles.indexOf('Owner') === -1 || !owner || String(caller.email || '').trim().toLowerCase() !== owner) throw buddyErr_('BUDDY_OWNER_ONLY');
-    if (action === 'buddyreviews') return { success: true, reviews: buddyReviews_(buddyRows_(buddyReviewSheet_(false))).slice(-BUDDY_REVIEW_LIMITS.list).reverse() };
+    if (action === 'buddyreviews') { // every pending one (oldest kept, so none drops off), then the latest decided
+      const all = buddyReviews_(buddyRows_(buddyReviewSheet_(false))), pend = all.filter(function (r) { return r.state === 'pending'; });
+      return { success: true, reviews: pend.slice(0, BUDDY_REVIEW_LIMITS.list).concat(all.filter(function (r) { return r.state !== 'pending'; }).slice(-10).reverse()) };
+    }
     if (action === 'buddyreviewdecide') return buddyReviewDecide_(caller, body);
     throw buddyErr_('BUDDY_ERROR');
   } catch (err) { return buddyFail_(err); }
@@ -415,7 +426,7 @@ function buddyReviewSubmit_(caller, body) {
     const mineToday = buddyReviews_(buddyRows_(sh)).filter(function (r) { return r.email === email && gameDayKey_(new Date(buddyMs_(r.at))) === today; }).length;
     if (mineToday >= BUDDY_REVIEW_LIMITS.perDay) throw buddyErr_('BUDDY_REVIEW_DAILY');
     const newId = buddyNewId_(nowMs);
-    gameAppendText_(sh, [[newId, 'review', email, buddyCell_(text), JSON.stringify({ context: context, view: buddyCell_(view) }), nowIso, email]]);
+    gameAppendText_(sh, [[newId, 'review', email, buddyCell_(text), JSON.stringify({ context: context, view: view }), nowIso, email]]);
     return newId;
   });
   return { success: true, id: id }; // nothing else comes back to a reviewer
@@ -433,11 +444,13 @@ function buddyReviewDecide_(caller, body) {
     if (decision === 'decline') { gameAppendText_(sh, [[id, 'decline', '', '', '{}', nowIso, me]]); return { success: true, state: 'declined' }; }
     const sent = edited || rv.text, fwdId = buddyNewId_(nowMs), inbox = buddySheet_(true);
     const summary = 'Reviewer feedback (vetted by Uday)' + (rv.view ? ' · ' + rv.view : '');
-    gameAppendText_(inbox, [ // one already-confirmed thread: the worker forwards it (kind 'forward', review: true); Claude never answers it
-      [fwdId, 'ask', rv.email, buddyCell_(sent), JSON.stringify({ context: rv.context, review: true }), nowIso, me],
+    // the decision first: if the forward write then fails, the review is already decided, so a second tap can't send it twice
+    gameAppendText_(sh, [[id, 'approve', '', buddyCell_(sent), JSON.stringify({ forward: fwdId, edited: !!edited }), nowIso, me]]);
+    gameAppendText_(inbox, [ // one already-confirmed thread: the worker forwards it (kind 'forward', review: true); Claude never answers it.
+      // The text carries its own label too, so even a worker from before reviewer mode never passes it on as Uday's words.
+      [fwdId, 'ask', rv.email, buddyCell_(BUDDY_REVIEW_LABEL + sent), JSON.stringify({ context: rv.context, review: true }), nowIso, me],
       [fwdId, 'reply', '', '', JSON.stringify({ proposal: { summary: summary } }), nowIso, 'system'],
       [fwdId, 'confirm', '', '', '{}', nowIso, me]]);
-    gameAppendText_(sh, [[id, 'approve', '', buddyCell_(sent), JSON.stringify({ forward: fwdId, edited: !!edited }), nowIso, me]]);
     buddyMark_();
     return { success: true, state: 'approved', forward: fwdId };
   });

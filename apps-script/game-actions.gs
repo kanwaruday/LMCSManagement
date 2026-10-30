@@ -304,7 +304,8 @@ function gameToday_(caller, params) {
       sourcesDown: loaded.down, toursSeen: gameToursSeen_(progRows, me),
     };
     if (role === 'Owner' || role === 'Coordinator') out.board = gameWindowBoard_(caller, win.winRows, win.decRows, now, cfg);
-    if (typeof buddyReviewerOk_ === 'function' && buddyReviewerOk_(caller, cfg)) out.buddyReviewer = true; // the dock shows "Review this screen" (game-buddy.gs)
+    const agent = typeof buddyAgentFor_ === 'function' ? buddyAgentFor_(caller, cfg) : null; // the dock's agent: Jarvis (orders) or Buddy (review), game-buddy.gs
+    if (agent) out.agent = agent;
     return out;
   });
 }

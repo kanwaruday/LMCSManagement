@@ -162,6 +162,7 @@ assert.strictEqual(D.deskState(null), 'unknown');
 assert.deepStrictEqual(J(D.threadLine({ state: 'queued' }, { open: true })), { who: 'status', text: 'Buddy is reading your question…' });
 assert.strictEqual(D.threadLine({ state: 'queued' }, { open: false }).text, 'Saved. Buddy will answer when the Mac wakes.');
 assert.strictEqual(D.threadLine({ state: 'working' }).text, 'Buddy is thinking…');
+assert.strictEqual(D.threadLine({ state: 'working' }, null, 'Jarvis').text, 'Jarvis is thinking…', "the Owner's agent answers as Jarvis");
 assert.deepStrictEqual(J(D.threadLine({ state: 'answered', reply: 'Hi' })), { who: 'buddy', text: 'Hi' });
 assert.strictEqual(D.threadLine({ state: 'failed' }).text, "I couldn't finish that one. Please ask again.");
 assert.deepStrictEqual(J(D.proposalView({ proposal: { summary: 'S' }, proposalState: 'open' })), { summary: 'S', state: 'open' });
