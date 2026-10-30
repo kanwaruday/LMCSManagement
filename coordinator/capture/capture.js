@@ -456,8 +456,10 @@ async function tapStop() {
   if (last && now - last.takenAt < 5000) return toast(`Stop ${S.run.stops.length} is already saved.`);
   S.stopBusy = true;
   try {
-    const base64 = grab() || undefined;
-    await store.addStop(S.run.id, { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now, base64 });
+    const at = { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now };
+    let base64 = grab() || undefined;
+    // the photo can't be kept (phone full): keep the stop, GPS only, rather than lose it
+    try { await store.addStop(S.run.id, { ...at, base64 }); } catch (e) { if (!base64) throw e; base64 = undefined; await store.addStop(S.run.id, at); }
     S.run = await store.getRun(S.run.id); hud();
     toast(`Stop ${S.run.stops.length} saved` + (base64 ? ' with a photo' : '') + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
   } catch (e) { toast(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message); }

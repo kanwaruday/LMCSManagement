@@ -164,6 +164,15 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.strictEqual(idb.data.reads, 5);
     assert.strictEqual(idb.data.m.size, 0);
   });
+  await test('phone full: a stop whose photo cannot be kept is still kept GPS only (the capture page retries without the photo)', async () => {
+    const idb = memIdb(), store = mkStore(idb); const run = await mkTimelapse(store, 2);
+    idb.data.put = async () => { throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' }); };
+    await assert.rejects(() => store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW, base64: 'SSSS' }), (e) => e.code === 'STORAGE_FULL');
+    const stop = await store.addStop(run.id, { lat: 31, lng: 76, accuracy: 5, takenAt: NOW });
+    const r = (await store.runs())[0];
+    assert.deepStrictEqual([r.stops.length, r.stops[0].photo, r.stops[0].seq], [1, false, stop.seq]);
+    assert.deepStrictEqual((await store.pending(run.id)).map((f) => f.kind), ['frame', 'frame'], 'no half-saved stop photo');
+  });
   await test('a quota failure maps to STORAGE_FULL', async () => {
     const idb = memIdb(); const store = mkStore(idb); const run = await mkTimelapse(store, 1);
     idb.data.put = async () => { throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' }); };
