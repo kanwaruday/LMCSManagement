@@ -73,10 +73,47 @@ function officeEnsureHeader_(sheet, columns) {
   const n = sheet.getLastColumn();
   const head = n ? sheet.getRange(1, 1, 1, n).getValues()[0].map(String) : [];
   while (head.length && head[head.length - 1] === '') head.pop();
-  for (let i = 0; i < head.length; i++) if (head[i] !== columns[i]) throw new Error('HEADER_MISMATCH');
+  const at = officeHeaderMismatch_(head, columns);
+  if (at !== -1) { // names the tab and column so the fix is a header repair, not a hunt (code stays HEADER_MISMATCH)
+    const err = new Error('HEADER_MISMATCH: ' + sheet.getName() + '!' + (at + 1));
+    err.code = 'HEADER_MISMATCH';
+    throw err;
+  }
   if (head.length >= columns.length) return;
   officeWidenGrid_(sheet, columns.length);
   sheet.getRange(1, head.length + 1, 1, columns.length - head.length).setNumberFormat('@').setValues([columns.slice(head.length)]);
+}
+
+// The first column (0-based) where `head` stops being a prefix of `columns`, or -1 when it is one.
+function officeHeaderMismatch_(head, columns) {
+  for (let i = 0; i < head.length; i++) if (head[i] !== columns[i]) return i;
+  return -1;
+}
+
+// Run from the editor: logs every tab whose header would raise HEADER_MISMATCH, in the Config book and every campus
+// book named in Script Properties, with the column, what the sheet has and what the code expects. Reads only.
+function officeCheckHeaders() {
+  const props = PropertiesService.getScriptProperties().getProperties(), out = [];
+  const check = function (label, ss, tabs) {
+    Object.keys(tabs).forEach(function (tab) {
+      const sh = ss.getSheetByName(tab);
+      if (!sh || !sh.getLastColumn()) return;
+      const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+      while (head.length && head[head.length - 1] === '') head.pop();
+      const at = officeHeaderMismatch_(head, tabs[tab]);
+      if (at !== -1) out.push(label + ' / ' + tab + ' column ' + (at + 1) + ': sheet has "' + head[at] + '", code expects "' + (tabs[tab][at] || '(nothing: extra column)') + '". Sheet row 1: ' + head.join(' | '));
+    });
+  };
+  if (props.OFFICE_CONFIG_SS) {
+    const tabs = {};
+    ['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers'].forEach(function (t) { tabs[t] = OFFICE_CONFIG_SEED[t][0]; });
+    check('Config', SpreadsheetApp.openById(props.OFFICE_CONFIG_SS), tabs);
+  }
+  Object.keys(props).filter(function (k) { return /^OFFICE_SS_/.test(k); }).sort().forEach(function (k) {
+    check(k.replace('OFFICE_SS_', ''), SpreadsheetApp.openById(props[k]), OFFICE_TABLES);
+  });
+  Logger.log(out.length ? out.join('\n') : 'Every Office header matches.');
+  return out;
 }
 
 function officeConfig_() {
