@@ -40,4 +40,5 @@ assert.ok(!home.includes("' · Principal · '") && home.includes("hello(session.
 assert.ok(home.includes("roleShown: LMCS.roleLabel(session) + ' · viewing ' + VIEW.name + ' as Principal'"), 'view-as: Owner · viewing <school> as Principal');
 ['canViewCoordinatorPortal', 'canManageStaff', 'canViewTeacherSS'].forEach((f) => assert.strictEqual(L[f](S('FeeClerk', 'ALL')), false, 'an ALL-campus Fee Clerk: no ' + f));
 assert.strictEqual(L.canViewCoordinatorPortal(S('Coordinator')), true);
+['FeeClerk,Accounts', 'Teacher,Accounts'].forEach((r) => assert.strictEqual(L.canViewCoordinatorPortal(S(r, 'ALL')), true, r + ' + ALL keeps the Coordinator portal, as before'));
 console.log('test-principal-gate: ok');

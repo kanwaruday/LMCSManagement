@@ -245,6 +245,12 @@ window.LMCS = (function () {
   // caller, including other module pages) should use this instead of
   // comparing session.role directly. A single-role session like
   // "Teacher" parses to a 1-element list, so nothing existing changes.
+  // a session whose only role is FeeClerk (FeeClerk,Accounts keeps what Accounts has); same rule as verifyStaffManagerToken_
+  function onlyFeeClerk(session) {
+    const roles = session && session.role ? String(session.role).split(',').map(function (r) { return r.trim(); }).filter(Boolean) : [];
+    return roles.length > 0 && roles.every(function (r) { return r === 'FeeClerk'; });
+  }
+
   function hasRole(session, role) {
     if (!session || !session.role) return false;
     return String(session.role).split(',').map(function (r) { return r.trim(); }).indexOf(role) !== -1;
@@ -256,7 +262,7 @@ window.LMCS = (function () {
   // session.campusId when acting, this only answers the yes/no).
   function canManageStaff(session) {
     if (!session) return false;
-    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+    return (session.campusId === 'ALL' && !onlyFeeClerk(session)) || // ALL widens a plain Fee Clerk's campus, not their portals (30 Oct)
       hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
@@ -268,7 +274,7 @@ window.LMCS = (function () {
   // Principal-and-above bar the Apps Script proxy re-checks server-side.
   function canViewTeacherSS(session) {
     if (!session) return false;
-    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+    return (session.campusId === 'ALL' && !onlyFeeClerk(session)) || // ALL widens a plain Fee Clerk's campus, not their portals (30 Oct)
       hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
@@ -288,7 +294,7 @@ window.LMCS = (function () {
   // matches today, so either can change without touching the other.
   function canViewCoordinatorPortal(session) {
     if (!session) return false;
-    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+    return (session.campusId === 'ALL' && !onlyFeeClerk(session)) || // ALL widens a plain Fee Clerk's campus, not their portals (30 Oct)
       hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
