@@ -163,4 +163,15 @@ const pr = read('assets/game/people-room.js'), pp = read('owner/people.html');
 assert.ok(/LMCSPeople\.mount\(root, \{ session: session, backendUrl: GAME_BACKEND_URL \}\)/.test(pp) && /people-room\.js\?v=[0-9a-f]{8}/.test(pp), 'people.html mounts the shared room');
 assert.ok(/if \(opts\.inline\)/.test(pr) && /window\.addEventListener\('keydown', esc, true\)/.test(pr) && /e\.stopImmediatePropagation\(\)/.test(pr), 'inline steps; Esc closes the step, not the window');
 assert.ok(!/innerHTML/.test(pr), 'People: text nodes only');
+// the Coordinator's page: the same real map, district lit, what to act on; one coordinatortasks read feeds the map and the office
+const co = read('coordinator/index.html'), cat = (f) => co.indexOf('src="../assets/game/' + f);
+assert.ok(cat('map-home.js') > cat('kingdom-map.js') && cat('kingdom-map.js') > cat('places.js') && cat('map-home.js') > cat('game.js') && cat('map-home.js') > cat('kingdom.js'), 'coordinator: script order');
+assert.ok(/LMCSMapHome\.mount\(\{ role: 'Coordinator'/.test(co) && /realMap: true/.test(co), 'coordinator: the map home, on the real map');
+assert.strictEqual((co.match(/class="gb-switch"/g) || []).length, 1, 'coordinator: one Town / World switch');
+assert.ok(/<span lang="hi">नगर<\/span> · Town/.test(co) && /<span lang="hi">दुनिया<\/span> · World/.test(co), 'coordinator: Hindi-first switch');
+assert.strictEqual((co.match(/action: 'coordinatortasks'/g) || []).length, 1, 'the Coordinator hub reads coordinatortasks once');
+assert.ok(/Coord\.countsOf\(d\.tasks\)/.test(co) && /action: 'coordinatorresolvetask'/.test(co), 'one read feeds the office; Mark resolved is the existing write');
+assert.ok(!/gamekingdom|approvalslist|ledger\.summary|ssdashboard/.test(co), 'a Coordinator reads only district-scoped Coordinator-backend actions (gamekingdom refuses them)');
+assert.ok(/room\('requests', 'Coordinator HQ'/.test(co), 'the office keeps the Coordinator HQ room');
+assert.ok(/S\.o\.analytics && inScope\(S\.scope, id\)\) nodes\.unshift\(hero\(p\)\)/.test(js), 'no analytics for a school outside the district');
 console.log('test-map-home ok');

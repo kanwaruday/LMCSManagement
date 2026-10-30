@@ -563,7 +563,7 @@ var LMCSMapHome = (function () {
         box.removeChild(box.lastChild);
         R.map.on('zoomend', pinsReal);
         var pts = LMCSKingdomMap.drawable(LMCSPlaces), back = owner() && backToSpot(null);
-        if (!back && pts.length) R.map.fitBounds(home(pts).map(function (p) { return [p.lat, p.lng]; }), { padding: [60, 60], maxZoom: 13 });
+        if (!back && pts.length) R.map.fitBounds(home(pts).map(function (p) { return [p.lat, p.lng]; }), { paddingTopLeft: [76, 150], paddingBottomRight: [84, 150], maxZoom: 13 }); // clear of the edge controls
         pinsReal();
       }, function () { S.real = false; box.remove(); drawMap(); }); // no map: the drawn valley
       return;
