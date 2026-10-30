@@ -107,6 +107,17 @@ async function fleetNext() {
       const b = document.createElement('button'); b.type = 'button'; b.id = 'fc-all'; b.className = 'gb-btn gb-btn-quiet fc-all';
       b.addEventListener('click', () => { FOCUS.all = !FOCUS.all; setFocus(!FOCUS.all); });
       slot.append(b); focusQuests(); setFocus(true);
+      // The quest gate (setup period: Owner-assigned quests only). Once the game layer's data is in (LMCSGame.hasQuest: null until
+      // then), a Coordinator with no fleet quest assigned gets "No quests yet", not a step. An older game.js without hasQuest, or no
+      // answer within 20 s: the card stays (setupsave still refuses an unassigned quest).
+      (function gate(tries) {
+        const G = window.LMCSGame, has = G && typeof G.hasQuest === 'function' ? G.hasQuest('fleet:') : undefined;
+        if (has === null && tries < 40) { setTimeout(() => gate(tries + 1), 500); return; }
+        if (has !== false) return;
+        delete k.dataset.emoji; k.textContent = 'No quests yet'; // no tick: nothing is done
+        t.textContent = 'The Owner has not given you a fleet quest yet. It shows here when they do.';
+        body.querySelector('.gb-btn-primary')?.remove(); FOCUS.reg = ''; focusQuests();
+      })(0);
     }
   } catch (e) { slot.replaceChildren(); } // no next step is better than a wrong one; the fleet below still loads
 }
