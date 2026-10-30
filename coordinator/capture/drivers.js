@@ -2,13 +2,17 @@
 // one bus. Create shows a QR once (the driver scans it on their phone: driver/index.html#k=<token>); revoke unlinks a phone.
 // Backend: Roster web app driverlinkcreate / driverlinklist / driverlinkrevoke (apps-script/driver-link.gs). The bus list is the
 // roll call's. The token lives only in memory on this screen: never stored, never logged, gone when the screen is left.
+// The driver is picked, not typed (Uday, 30 Oct): a type-ahead over the signed-in staff list (Roster action=list, school-scoped),
+// that bus's school's drivers first, the bus's usual driver filled in, and the employee code follows the pick. The staff list is
+// for the Owner and Coordinators; a Fee Clerk (refused that list) keeps the typed name and optional code.
 import { linkUrl, whatsappUrl, cleanName, nameOk } from './driver-mode.js';
+import { rankStaff, lineOf, labelOf, findPick } from '../../assets/employee-pick.js';
 
 const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = rollcall.js
 const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = capture.js
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const S = { buses: [], links: [], fresh: null, googleReady: null };
+const S = { buses: [], links: [], fresh: null, googleReady: null, staff: null, pick: null };
 const day = (iso) => (iso ? String(iso).slice(0, 10) : '');
 
 async function roster(body) {
@@ -30,6 +34,8 @@ async function boot() {
   $('add').addEventListener('click', () => showForm(true));
   $('cancel').addEventListener('click', () => showForm(false));
   $('form').addEventListener('submit', create);
+  $('bus').addEventListener('change', busChanged);
+  $('name').addEventListener('change', nameChanged);
   await load();
 }
 
@@ -42,6 +48,10 @@ async function load() {
     S.buses = b.buses.slice().sort((x, y) => x.campus.localeCompare(y.campus) || x.reg.localeCompare(y.reg));
     const l = await roster({ action: 'driverlinklist' });
     S.links = l.links; S.googleReady = typeof l.googleReady === 'number' ? l.googleReady : null; // a count only (apps-script/driver-google.gs)
+    if (!S.staff) { // refused or failed: the typed name stays
+      const st = await (await fetch(ROSTER_URL + '?action=list&idToken=' + encodeURIComponent(s.idToken), { cache: 'no-store' })).json().catch(() => null);
+      S.staff = st && st.success && Array.isArray(st.employees) && st.employees.length ? st.employees : null;
+    }
     $('loadMsg').hidden = true;
   } catch (e) {
     $('loadMsg').firstElementChild.textContent = 'Could not load (' + e.message + '). Check the connection, then try again.';
@@ -63,13 +73,46 @@ function draw() {
 
 function showForm(on) {
   $('form').hidden = !on; $('addRow').hidden = on; $('formMsg').textContent = '';
-  if (on) { $('name').value = ''; $('code').value = ''; $('bus').focus(); }
+  if (on) { $('name').value = ''; $('code').value = ''; S.pick = null; S.auto = false; pickMode(); $('bus').focus(); }
+}
+
+// With the staff list: name is a search box over it and the code is read-only, filled from the pick. Without it: as before.
+function pickMode() {
+  const on = !!S.staff;
+  $('code').readOnly = on;
+  $('codeLabel').textContent = on ? 'Employee code (from the pick)' : 'Employee code (optional)';
+  $('name').placeholder = on ? 'Type a few letters, then pick' : '';
+  $('nameHelp').hidden = !on;
+}
+function fillList() { // that bus's school's drivers first, then other drivers (cover), then everyone else
+  const bus = S.buses.find((b) => b.reg === $('bus').value);
+  S.ranked = rankStaff(S.staff, { school: bus ? bus.campusId : '' });
+  $('staffList').innerHTML = S.ranked.map((e) => `<option value="${esc(lineOf(e))}" label="${esc(labelOf(e))}"></option>`).join('');
+  return bus;
+}
+function setPick(e) {
+  S.pick = e;
+  $('code').value = e ? e.employeeCode : '';
+  $('name').value = e ? lineOf(e) : ''; // only ever the filled-in default: a hand pick goes through nameChanged
+}
+function busChanged() { // the bus's usual driver (fleet register), when the list knows exactly one person by that name
+  if (!S.staff) return;
+  const bus = fillList(), usual = bus && bus.usual && bus.usual.driver;
+  if (!S.pick || S.auto) { setPick(usual ? findPick(S.ranked, usual) : null); S.auto = true; } // never over a person picked by hand
+}
+function nameChanged() {
+  if (!S.staff) return;
+  const e = findPick(S.ranked || [], $('name').value);
+  S.pick = e; S.auto = false; $('code').value = e ? e.employeeCode : '';
 }
 
 async function create(e) {
   e.preventDefault();
-  const reg = $('bus').value, driverName = cleanName($('name').value), driverCode = $('code').value.trim().toUpperCase();
-  const msg = !reg ? 'Pick the bus.' : !driverName ? 'Type the driver\'s name.' : !nameOk(driverName) ? 'The name can have letters, spaces and dots only.' : '';
+  if (S.staff) nameChanged();
+  const p = S.pick, reg = $('bus').value;
+  // a picked name keeps only what a link's name may hold (letters, spaces, dots); the code is the person's own
+  const driverName = cleanName(p ? p.name.replace(/[^A-Za-z .]+/g, ' ') : $('name').value), driverCode = p ? p.employeeCode : $('code').value.trim().toUpperCase();
+  const msg = !reg ? 'Pick the bus.' : S.staff && !p ? 'Pick the driver from the list.' : !driverName ? 'Type the driver\'s name.' : !nameOk(driverName) ? 'The name can have letters, spaces and dots only.' : '';
   if (msg) { $('formMsg').textContent = msg; return; }
   const btn = $('create'); btn.disabled = true; btn.textContent = 'Creating…';
   try {
