@@ -84,6 +84,7 @@ function pickMode() {
   $('codeLabel').textContent = on ? 'Employee code (from the pick)' : 'Employee code (optional)';
   $('name').placeholder = on ? 'Type a few letters, then pick' : '';
   $('nameHelp').hidden = !on;
+  if (on) fillList(); // the list is there before a bus is chosen, in plain name order until it is
 }
 function fillList() { // that bus's school's drivers first, then other drivers (cover), then everyone else
   const bus = S.buses.find((b) => b.reg === $('bus').value);

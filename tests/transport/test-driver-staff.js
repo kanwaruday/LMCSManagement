@@ -9,13 +9,13 @@ const books = { [ROSTER]: {
     ['E3', 'Left Driver', 'LMS4', 'Inactive'], ['E4', 'Lms Five Driver', 'LMS5', 'Active'], ['E5', 'Lms One Driver', 'LMS1', 'Active'], ['E6', 'Hidden One', 'LMS4', 'Active'],
     ['E7', 'No Personal Row', 'LMS4', 'Active']],
   EmpSalary: [['EmployeeCode', 'Designation', 'Department'], ['E1', 'Driver Cum Peon', 'Transport'], ['E2', 'TGT', 'Teaching'], ['E4', 'Driver', 'Transport'],
-    ['E5', 'Driver', 'Transport'], ['E6', 'Manager', 'admintm']],
+    ['E5', 'Driver', 'Transport'], ['E6', 'Manager', 'AdminTM']],
   EmpPersonal: [['EmployeeCode', 'AuthEmail', 'Mobile No'], ['E1', 'four.driver@gmail.com', '+91 98765-43210'], ['E2', '', '12345'], ['E4', 'x', '9876500000'],
     ['E5', '', '919876511111']],
 } };
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }) });
 const logs = [];
-const callers = { owner: { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, coord: { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator'] },
+const callers = { owner: { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, teacherAll: { email: 't@x', campusId: 'ALL', roles: ['Teacher'], manager: true }, coord: { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator'] },
   clerk: { email: 'f@x', campusId: 'LMS4', roles: ['FeeClerk'] } };
 const ctx = { Object, String, Math, JSON, Array, Number, RegExp, console: { log: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) },
   SpreadsheetApp: { openById: (id) => ({ getSheetByName: (n) => (books[id] && books[id][n] ? sheet(books[id][n]) : null) }) },
@@ -37,6 +37,13 @@ const all = JSON.stringify(call({ idToken: 'owner' }));
 assert.ok(!/@|gmail/i.test(all), 'never an address');
 assert.deepStrictEqual(call({ idToken: 'principal' }), { success: false, error: 'Not authorized' }, 'anyone else refused');
 assert.deepStrictEqual(call({}), { success: false, error: 'Not authorized' });
+assert.deepStrictEqual(call({ idToken: 'teacherAll' }), { success: false, error: 'Not authorized' }, 'a Teacher set to ALL is not Owner, Coordinator or Fee Clerk');
+const phoneIs = (v) => { books[ROSTER].EmpPersonal[1][2] = v; return call({ idToken: 'clerk' }).staff.find((e) => e.employeeCode === 'E1').phone; };
+assert.deepStrictEqual(['09876543210', '919876543210', '1234567890', '412345678901', '9876 543 210 9'].map(phoneIs), ['9876543210', '9876543210', '', '', ''],
+  'only a mobile number: a 0 or 91 in front dropped; Aadhaar-like or other digits never');
+books[ROSTER].EmpPersonal[1][2] = '+91 98765-43210';
+books[ROSTER].EmpPersonal[0][2] = 'Contact';
+assert.strictEqual(call({ idToken: 'owner' }).staff.find((e) => e.employeeCode === 'E1').phone, '', 'a bare Contact column is not trusted');
 books[ROSTER].EmpPersonal[0][2] = 'Emergency Contact Number';
 assert.strictEqual(Object.fromEntries(call({ idToken: 'owner' }).staff.map((e) => [e.employeeCode, e])).E1.phone, '', 'an emergency contact is not the phone');
 books[ROSTER].EmpPersonal[0][2] = 'Phone_Number';

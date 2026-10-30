@@ -17,7 +17,9 @@
 //   The Driver phones page's picker: active staff of the caller's schools (Owner all, Coordinator their district, Fee Clerk their own
 //   campus: tupCovers_ on EmpMaster.SchoolCode), the same people as the staff list. Only what linking needs: phone = 10 digits from
 //   the roster's phone column ('' if none), google = whether an AuthEmail is on file. The address itself never leaves the server.
-//   POST body only, nothing logged.
+//   Callers: the Owner, Coordinators and Fee Clerks only (a role check before the campus scope: a Teacher or Accountant set to ALL
+//   is a "manager" to verifyStaffManagerToken_ but gets nothing here). POST body only; no staff data is logged (the shared token
+//   check still logs who called, as for every staff action).
 // ═══════════════════════════════════════════════════════════════════
 
 const DGL_BY_ = 'google:self';
@@ -119,11 +121,13 @@ function dglGoogleReady_(campusOk) {
 }
 
 // The roster's phone column, by header: Mobile / Phone / Contact, with or without No / Number. EmpPersonal first, then EmpMaster.
-const DGL_PHONE_HEAD_ = /^(mobile|phone|contact)\s*(no|number|num)?\.?$/i;
+const DGL_PHONE_HEAD_ = /^((mobile|phone)\s*(no|number|num)?|contact\s*(no|number|num))\.?$/i; // a bare 'Contact' could hold anything
+// An Indian mobile number only (6-9 then 9 digits, with or without 91 / 0 in front), so a mislabelled column never shows other digits.
+const DGL_MOBILE_ = /^(?:91|0)?([6-9]\d{9})$/;
 
 function driverStaff_(body) {
   const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']);
-  if (!caller) return { success: false, error: 'Not authorized' };
+  if (!caller || !caller.roles.some(function (r) { return ['Owner', 'Coordinator', 'FeeClerk'].indexOf(r) !== -1; })) return { success: false, error: 'Not authorized' };
   const book = SpreadsheetApp.openById(EMP_ROSTER_SHEET_ID);
   const cell = function (v) { return String(v == null ? '' : v).replace(/[​-‏﻿⁠]/g, '').trim(); };
   const table = function (tab) { const sh = book.getSheetByName(tab), v = sh ? sh.getDataRange().getValues() : [[]]; return { h: v[0].map(cell), rows: v.slice(1) }; };
@@ -133,10 +137,10 @@ function driverStaff_(body) {
     return out;
   };
   const phoneCol = function (t) { return t.h.findIndex(function (h) { return DGL_PHONE_HEAD_.test(h.replace(/[_\s]+/g, ' ')); }); };
-  const phoneOf = function (v) { const d = cell(v).replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
-  const hidden = typeof STAFF_HIDDEN_DEPARTMENTS !== 'undefined' ? STAFF_HIDDEN_DEPARTMENTS : []; // staff-management-api.gs
+  const phoneOf = function (v) { const m = DGL_MOBILE_.exec(cell(v).replace(/\D/g, '')); return m ? m[1] : ''; };
+  const hidden = typeof STAFF_HIDDEN_DEPARTMENTS !== 'undefined' ? STAFF_HIDDEN_DEPARTMENTS : []; // staff-management-api.gs, lower case (the sheet says AdminTM)
   const per = table('EmpPersonal'), mas = table('EmpMaster'), pp = phoneCol(per), mp = phoneCol(mas);
-  const sal = byCode(table('EmpSalary'), function (r, col) { return { role: cell(r[col('Designation')]), dept: cell(r[col('Department')]) }; });
+  const sal = byCode(table('EmpSalary'), function (r, col) { return { role: cell(r[col('Designation')]), dept: cell(r[col('Department')]).toLowerCase() }; });
   const personal = byCode(per, function (r, col) { return { google: cell(r[col('AuthEmail')]).indexOf('@') > 0, phone: pp === -1 ? '' : phoneOf(r[pp]) }; });
   const staff = [];
   mas.rows.forEach(function (r) {
