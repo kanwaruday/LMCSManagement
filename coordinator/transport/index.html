@@ -10,7 +10,9 @@
 <link rel="stylesheet" href="../../assets/game/game.css?v=ee9ca522">
 <style>.gb-stage #appBody{padding:0}
 /* Setup focus: one active step; the fleet, other buses' quests and the other tools wait behind "Show all" */
-.fc-focus #appBody,.fc-focus #game-root .lg-today,.fc-focus #game-root .lg-quest:not(.fc-mine){display:none!important}
+.fc-focus #appBody{display:none!important}
+/* replaced by the unlock engine (GD): the game layer's Today, other buses' quests and the rail's Quests count (the second rail item) */
+.fc-focus #game-root .lg-today,.fc-focus #game-root .lg-quest:not(.fc-mine),.fc-focus #game-rail a.gb-rail-i:nth-of-type(2) .gb-count{display:none!important}
 .gb .gb-go.fc-locked{opacity:.55;cursor:default}
 .fc-all{display:block;margin:8px auto 0;min-height:44px}</style>
 <link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
