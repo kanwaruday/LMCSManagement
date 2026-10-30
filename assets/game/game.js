@@ -675,6 +675,9 @@ var LMCSGame = window.LMCSGame = (function () {
 
   return { outfit: outfit, greetingLine: greetingLine, daysLine: daysLine, joinList: joinList, dateLabel: dateLabel,
     safeHref: safeHref, sourceLabel: sourceLabel, art: art, openItems: openItems, smallLine: smallLine, windowSmall: windowSmall, pickedText: pickedText, nextMission: nextMission, onlyModule: onlyModule, mount: mount, tour: tour, setTourTargets: function (t) { tourTargets = t || {}; }, last: function () { return last; },
+    // is a quest whose id starts with `prefix` (e.g. 'fleet:') assigned to me? The server sends only assigned quests while the setup period
+    // is on, so this is its answer. null until today's data has loaded (the page waits, never guesses).
+    hasQuest: function (prefix) { return last && Array.isArray(last.quests) ? last.quests.some(function (q) { return String(q.questId || '').indexOf(prefix) === 0; }) : null; },
     viewAs: viewAs, setViewAs: setViewAs, viewParam: viewParam,
     ui: { h: h, img: img, trap: trap, reduced: reduced } }; // ui: the DOM helpers, shared with assets/game/buddy-dock.js
 })();

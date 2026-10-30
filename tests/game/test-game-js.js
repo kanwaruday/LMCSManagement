@@ -213,6 +213,7 @@ assert.strictEqual(G.tour([], {}), undefined); // no beats: nothing happens, no 
   assert.strictEqual(bt({ querySelector: () => null })('#x'), null);
 }
 assert.strictEqual(G.last(), null);            // no mount yet
+assert.strictEqual(G.hasQuest('fleet:'), null, 'unknown before today has loaded: the page waits');
 for (const k of ['h', 'img', 'trap', 'reduced']) assert.strictEqual(typeof G.ui[k], 'function', 'ui.' + k);
 // mount with no backendUrl renders nothing and touches nothing else
 let cleared = 0;

@@ -9,11 +9,13 @@ var LMCSRail = (function () {
   var KEY = 'gb-rail-v1:';
 
   // { missions, quests } from a Today payload: open missions and undecided decisions (as the Today list counts them),
-  // and quests not yet complete
+  // and the ACTIVE quests (Uday, 30 Oct: "only show the active quests"): the one sequential quest in play, plus the open parallel
+  // set (one per bus, per chapter...) counted once, since only its first is worked on. The server already sends only the quests the
+  // Owner assigned while the setup period is on (questGateKeep_), so 41 bus quests read 1, not 41.
   function counts(today) {
-    var t = today || {};
+    var t = today || {}, open = (t.quests || []).filter(function (x) { return !x.complete; });
     var m = (t.missions || []).filter(function (x) { return !x.done && !x.gone; }).length + (t.windows || []).filter(function (w) { return !w.decided; }).length;
-    var q = (t.quests || []).filter(function (x) { return !x.complete; }).length;
+    var q = (open.some(function (x) { return !x.parallel; }) ? 1 : 0) + (open.some(function (x) { return x.parallel; }) ? 1 : 0);
     return { missions: m, quests: q };
   }
   // the item's spoken name: "Missions, 3 waiting"

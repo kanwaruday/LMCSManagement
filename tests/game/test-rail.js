@@ -4,6 +4,11 @@ const assert = require('assert'), fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..', '..');
 const R = require(path.join(root, 'assets/game/rail.js'));
 assert.deepStrictEqual(R.counts({ missions: [{}, { done: true }, { gone: true }, {}], windows: [{}, { decided: true }], quests: [{ complete: true }, {}] }), { missions: 3, quests: 1 });
+// active quests only (30 Oct): 41 open bus quests (parallel) count once; one sequential quest in play counts once
+const bus = Array.from({ length: 41 }, (_, i) => ({ questId: 'fleet:HP' + i, parallel: true }));
+assert.strictEqual(R.counts({ quests: bus }).quests, 1, '41 bus quests read 1');
+assert.strictEqual(R.counts({ quests: bus.concat([{ questId: 'setup:game' }, { questId: 'x' }]) }).quests, 2, 'the sequential quest in play + the parallel set');
+assert.strictEqual(R.counts({ quests: bus.map((q) => Object.assign({}, q, { complete: true })) }).quests, 0);
 assert.deepStrictEqual(R.counts(null), { missions: 0, quests: 0 });
 assert.strictEqual(R.label('Missions', 3), 'Missions, 3 waiting');
 assert.strictEqual(R.label('Quests', 0), 'Quests');
