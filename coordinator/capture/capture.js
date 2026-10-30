@@ -406,10 +406,10 @@ function onGpsError(e) {
   $('gps').dataset.s = e.code === 1 ? 'bad' : 'wait';
   $('gps').textContent = e.code === 1 ? 'Location is blocked. Allow location for this site, then come back.' : 'No GPS signal yet. Keep the phone near the windscreen.';
 }
-function grab() { // a camera frame, longest side 1280 px (720p), JPEG 0.7, as base64
+function grab() { // a camera frame, longest side 960 px (Uday 30 Oct: ~40% less to upload than 1280), JPEG 0.7, as base64
   const v = $('cam'), w = v.videoWidth, h = v.videoHeight;
   if (!S.camReady || !w || !h) return null;
-  const k = Math.min(1, 1280 / Math.max(w, h));
+  const k = Math.min(1, 960 / Math.max(w, h));
   canvas.width = Math.round(w * k); canvas.height = Math.round(h * k);
   canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
