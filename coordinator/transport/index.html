@@ -8,7 +8,11 @@
 <link rel="stylesheet" href="../shared.css?v=5c95ae54">
 <link rel="stylesheet" href="../../assets/campus-picker.css?v=153d68d7">
 <link rel="stylesheet" href="../../assets/game/game.css?v=ee9ca522">
-<style>.gb-stage #appBody{padding:0}</style>
+<style>.gb-stage #appBody{padding:0}
+/* Setup focus: one active step; the fleet, other buses' quests and the other tools wait behind "Show all" */
+.fc-focus #appBody,.fc-focus #game-root .lg-today,.fc-focus #game-root .lg-quest:not(.fc-mine){display:none!important}
+.gb .gb-go.fc-locked{opacity:.55;cursor:default}
+.fc-all{display:block;margin:8px auto 0;min-height:44px}</style>
 <link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
 </head>
 <body class="gb gb-app">
@@ -46,6 +50,37 @@ const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZR
 const FLEET_TOUR = { id: 'fleet-transport', beats: [
   { target: '#game-root', text: 'Our fleet setup missions are here, with the next step for our buses.' },
 ] };
+// Setup focus (Uday, 30 Oct: "in the coordinator setup, only show the active quests, hide everything else"). While a fleet quest is
+// open: the next-step card, and in the game layer only that bus's quest (folded); the fleet list, the other buses' quests and Today
+// are hidden, and in Fleet pages only Fleet setup opens, the rest "Unlocks after fleet setup". "Show all" brings everything back.
+// Page-only for now; the game director's unlock engine takes this over. The quest gate stays server-side (setupsave refuses an
+// unassigned quest).
+const FOCUS = { reg: '', all: false };
+function focusTools(on) {
+  document.querySelectorAll('#fleet-pages .gb-go').forEach((a) => {
+    const href = a.getAttribute('href') || a.dataset.href || '';
+    if (href === 'setup.html') return;
+    let note = a.querySelector('.fc-unlock');
+    if (on) {
+      a.dataset.href = href; a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); a.classList.add('is-static', 'fc-locked');
+      if (!note) { note = document.createElement('small'); note.className = 'fc-unlock'; note.textContent = 'Unlocks after fleet setup'; (a.querySelector('small') || a).after(note); }
+    } else {
+      a.setAttribute('href', href); a.removeAttribute('aria-disabled'); a.classList.remove('is-static', 'fc-locked'); if (note) note.remove();
+    }
+  });
+}
+function focusQuests() { // the game layer draws on its own time: mark this bus's quest whenever it (re)draws
+  document.querySelectorAll('#game-root .lg-quest').forEach((q) => {
+    const mine = !!FOCUS.reg && (q.querySelector('h2') || q).textContent.indexOf(FOCUS.reg) !== -1;
+    if (mine && !q.classList.contains('fc-mine') && q.tagName === 'DETAILS') q.open = false; // folded: the card above is the step
+    q.classList.toggle('fc-mine', mine);
+  });
+}
+function setFocus(on) {
+  document.body.classList.toggle('fc-focus', on); focusTools(on);
+  const b = document.getElementById('fc-all');
+  if (b) { b.textContent = on ? 'Show all buses and pages' : 'Show only my next step'; b.setAttribute('aria-expanded', String(!on)); }
+}
 // The one next step: the bus nearest to ready (most of its six quests confirmed, not yet all), and its first open quest. Read only.
 async function fleetNext() {
   const slot = document.getElementById('fleet-next');
@@ -65,6 +100,12 @@ async function fleetNext() {
     body.append(k, t);
     if (m) { const a = document.createElement('a'); a.className = 'gb-btn gb-btn-primary'; a.href = '../../' + m.go; a.textContent = 'Go'; a.setAttribute('aria-label', 'Go: ' + m.title); body.append(a); }
     card.append(body); slot.replaceChildren(card); LMCSEmoji.decorate(slot);
+    if (m) { // setup is on: focus on this one step
+      FOCUS.reg = busOf(m);
+      const b = document.createElement('button'); b.type = 'button'; b.id = 'fc-all'; b.className = 'gb-btn gb-btn-quiet fc-all';
+      b.addEventListener('click', () => { FOCUS.all = !FOCUS.all; setFocus(!FOCUS.all); });
+      slot.append(b); focusQuests(); setFocus(true);
+    }
   } catch (e) { slot.replaceChildren(); } // no next step is better than a wrong one; the fleet below still loads
 }
 Coord.boot(function (body) {
@@ -74,6 +115,7 @@ Coord.boot(function (body) {
   document.getElementById('panels').hidden = false;
   if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('fleet-pages').open = true; // phones: folded, so the fleet stays in view
   LMCSRail.mount(document.getElementById('game-rail'), { hub: '../index.html', root: '../../' });
+  new MutationObserver(focusQuests).observe(document.getElementById('game-root'), { childList: true, subtree: true });
   if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../../', only: 'fleet', title: 'Fleet setup', tour: FLEET_TOUR }); } catch (e) { console.warn('game layer', e); } }
 });
 </script>
