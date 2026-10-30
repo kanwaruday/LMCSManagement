@@ -513,10 +513,15 @@ window.Coord = (function () {
           const extra = e.date && !one && e.unread.length ? ' <sup>' + a(e.unread[0].link, '+' + e.unread.length) + '</sup>' : '';
           return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + (c.bad ? ' bad' : '') + '" title="' + esc(tip) + '">' + (first ? a(first, txt) : txt) + extra + badge + upNew + '</td>';
         };
+        // Any paper, any bus (P21, 30 Oct: "Unable to add or upload new vehicle documents"): the cells above only offer an upload where
+        // a paper needs action, so a renewal of a paper still valid, or a paper for a bus past its service life, had nowhere to go.
+        // A paper already uploaded and waiting to be read is left out: a second one would be filed twice.
+        const upAny = b => '<select class="upany" data-upsel="' + esc(b.reg) + '" aria-label="' + esc('Upload a paper for ' + b.reg) + '"><option value="">Upload a paper…</option>' +
+          cols.map(x => b.docs[x.key] && b.docs[x.key].pending ? '' : '<option value="' + esc(x.key) + '">' + esc(x.label) + '</option>').join('') + '</select>';
         const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (2 + cols.length) + '"><span class="grp-l">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + '</span></span> <span class="sm grp-d">&middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
         let prev = '';
         const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td class="id"><b>' + esc(v.b.reg) + '</b><div class="sm">' + esc(v.b.campus) + ' &middot; ' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div>' +
-          drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div></td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
+          drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div>' + upAny(v.b) + '</td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
         html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document. Every paper that needs action has an Upload button: pick the renewed paper (PDF or photo, up to 10 MB) and it goes into the bus folder in Drive; the cell turns light blue, "uploaded, reading", until LM Studio reads its date on the next AI Coordinator run.</details>' +
           '<div class="twwrap"><div class="tw stick"><table class="l grid"><thead><tr><th class="id">Vehicle</th><th class="acol">Action needed</th>' + cols.map(x => '<th class="pp">' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
           (vs.length ? body : '<tr><td colspan="' + (2 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div></div>';
@@ -551,6 +556,15 @@ window.Coord = (function () {
       box.querySelectorAll('[data-psort]').forEach(th => th.addEventListener('click', () => { const k = th.dataset.psort; T.pd = T.pk === k ? -T.pd : (k === 'fee' ? -1 : 1); T.pk = k; render(); }));
       box.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { T.tier = b.dataset.tier; render(); }));
       box.querySelector('.tr-q').addEventListener('input', e => { T.q = e.target.value; render(); const i = box.querySelector('.tr-q'); i.focus(); i.setSelectionRange(T.q.length, T.q.length); });
+      box.querySelectorAll('[data-upsel]').forEach(sel => sel.addEventListener('change', () => {
+        const reg = sel.dataset.upsel, paper = sel.value, label = sel.selectedOptions[0].textContent;
+        sel.value = '';
+        if (!paper) return;
+        const pick = document.createElement('input');
+        pick.type = 'file'; pick.accept = '.pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*';
+        pick.addEventListener('change', () => { const f = pick.files[0]; if (f && confirm('Upload "' + f.name + '" as the ' + label + ' paper for ' + reg + '?')) upload(reg + '|' + paper, f); });
+        pick.click();
+      }));
       box.querySelectorAll('[data-up]').forEach(btn => btn.addEventListener('click', () => {
         const pick = document.createElement('input');
         pick.type = 'file'; pick.accept = '.pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*';

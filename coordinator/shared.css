@@ -73,6 +73,7 @@ td.dt.onfile{background:#ecfdf5;color:#047857}td.dt.pending{background:#dbeafe;c
 .act.pending{color:#1e40af}.grp.pending td{background:#eff6ff}
 td.dt .upcell{all:unset;cursor:pointer;display:block;font:inherit;font-weight:600;text-decoration:underline dotted}td.dt .upcell:hover,td.dt .upcell:focus-visible{text-decoration:underline;outline:2px solid currentColor;outline-offset:1px}
 td.dt .upnew{display:block;margin:3px 0 0;padding:1px 6px;font:inherit;font-size:10.5px;line-height:1.5;border:1px solid currentColor;border-radius:4px;background:var(--white);color:inherit;cursor:pointer;width:max-content}td.dt .upnew:hover,td.dt .upnew:focus-visible{background:var(--lgray);outline:2px solid currentColor;outline-offset:1px}
+select.upany{display:block;margin:6px 0 0;max-width:100%;min-height:36px;padding:2px 6px;font:inherit;font-size:12.5px;border:1px solid var(--line,#ccc);border-radius:6px;background:var(--white);color:inherit}
 td.dt .uperr{display:block;white-space:normal;max-width:16ch;margin-top:3px;font-size:10.5px;font-weight:600;color:var(--red)}
 td.dt.bad{box-shadow:inset 0 0 0 2px #ea580c}
 .wp{display:inline-block;margin-left:4px;padding:0 5px;border-radius:3px;background:#ea580c;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;white-space:nowrap}.wp a{color:#fff;text-decoration:none}
