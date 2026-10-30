@@ -76,7 +76,7 @@
   <script src="../assets/game/emoji.js?v=88532066"></script>
   <script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
   <script src="../assets/game/school-models.js?v=2d711258"></script>
-  <script src="../assets/game/home-hud.js?v=2184f672"></script>
+  <script src="../assets/game/home-hud.js?v=43c2853a"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../coordinator/route-map.js?v=3f998a20"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
@@ -242,7 +242,7 @@
       document.getElementById('view-bar-t').textContent = 'Viewing ' + VIEW.name + ' as the Owner · Game view only';
       document.getElementById('view-bar').hidden = false;
       document.getElementById('view-leave').addEventListener('click', function () { LMCSGame.setViewAs(null); location.href = '../owner/kingdom.html'; });
-      return Object.assign({}, session, { campus: VIEW.campus, campusName: VIEW.name });
+      return Object.assign({}, session, { campus: VIEW.campus, campusName: VIEW.name, roleShown: LMCS.roleLabel(session) + ' · viewing ' + VIEW.name + ' as Principal' }); // the profile sheet says whose eyes these are
     }
 
     // The HUD (assets/game/home-hud.js). Its sheets show these: the page lists for the sources that are plain link lists, and the setup rooms.
