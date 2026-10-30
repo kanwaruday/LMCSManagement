@@ -31,4 +31,10 @@ fs.readdirSync(path.join(root, 'principal')).filter((f) => f.endsWith('.html')).
   assert.ok(i !== -1, f + ' has showApp');
   assert.ok(/^\s*if \(!LMCS\.canViewPrincipalPortal\(session\)\) \{ LMCS\.showNotForRole\('#auth-root', session, '\.\.\/'\); return; \}/.test(html.slice(i + 27)), f + ' gates first');
 });
+// the role shown is the session's own (Jai Chand, Fee Clerk, saw "Principal" on 30 Oct): label helper, header line and profile sheet
+assert.deepStrictEqual(['FeeClerk', 'Principal,Teacher', 'Owner', ''].map((r) => L.roleLabel(S(r))), ['Fee Clerk', 'Principal + Teacher', 'Owner', '']);
+assert.strictEqual(L.roleLabel(null), '');
+const hud = fs.readFileSync(path.join(root, 'assets/game/home-hud.js'), 'utf8'), home = fs.readFileSync(path.join(root, 'principal/index.html'), 'utf8');
+assert.ok(!/\['Role', 'Principal'\]/.test(hud) && /\['Role', window\.LMCS && LMCS\.roleLabel \? LMCS\.roleLabel\(s\)/.test(hud), 'profile sheet: the real role');
+assert.ok(!home.includes("' · Principal · '") && home.includes("hello(session.name) + ' · ' + LMCS.roleLabel(session) + ' · '"), 'header: the real role');
 console.log('test-principal-gate: ok');

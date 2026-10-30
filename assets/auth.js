@@ -295,6 +295,13 @@ window.LMCS = (function () {
     return hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // A session's role(s) as people read them: "Principal", "Fee Clerk", "Principal + Teacher". Never a page's assumption about who signed in.
+  var ROLE_NAMES = { FeeClerk: 'Fee Clerk', PTI: 'PTI', ItTeacher: 'IT Teacher', NonTeaching: 'Non-Teaching' };
+  function roleLabel(session) {
+    if (!session || !session.role) return '';
+    return String(session.role).split(',').map(function (r) { r = r.trim(); return ROLE_NAMES[r] || r; }).filter(Boolean).join(' + ');
+  }
+
   // The card a page shows a signed-in person whose role can't open it, with a link to their own portal. root: the path to the site root ('../').
   function showNotForRole(container, session, root) {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
@@ -506,7 +513,7 @@ window.LMCS = (function () {
   }
   if (getSession()) loadDock_();
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 

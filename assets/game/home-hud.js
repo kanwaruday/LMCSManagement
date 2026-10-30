@@ -154,7 +154,7 @@ var LMCSHomeHud = (function () {
   }
   function openProfile(opener) {
     var s = S.o.session, base = S.base, held = [S.o.signout], nodes = [];
-    var facts = h('dl', { class: 'hh-facts' }, [['Name', s.name], ['Role', 'Principal'], ['Campus', s.campusName]].concat(base ? [['Level', String(Number(base.level) || 0)], ['Points', String(Number(base.points) || 0)]] : [])
+    var facts = h('dl', { class: 'hh-facts' }, [['Name', s.name], ['Role', window.LMCS && LMCS.roleLabel ? LMCS.roleLabel(s) : String(s.role || '')], ['Campus', s.campusName]].concat(base ? [['Level', String(Number(base.level) || 0)], ['Points', String(Number(base.points) || 0)]] : [])
       .reduce(function (a, f) { return f[1] ? a.concat([h('dt', {}, f[0]), h('dd', {}, f[1])]) : a; }, []));
     nodes.push(facts);
     if (S.o.appt.textContent.trim()) { held.push(S.o.appt); nodes.push(h('h3', {}, 'Appointments'), S.o.appt); }
