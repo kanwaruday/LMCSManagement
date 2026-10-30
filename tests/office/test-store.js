@@ -116,7 +116,14 @@ module.exports = function run(t) {
   t.test('a header that is not a prefix throws HEADER_MISMATCH', () => {
     const h = boot(); const b = h.addBook('LMS1', '2026-27'); const sh = b.insertSheet('DayBook');
     sh.getRange(1, 1, 1, 3).setNumberFormat('@').setValues([['id', 'wrong', 'entry_date']]);
-    assert.throws(() => open(h), /HEADER_MISMATCH/);
+    assert.throws(() => open(h), (e) => e.code === 'HEADER_MISMATCH' && e.message === 'HEADER_MISMATCH: DayBook!2');
+  });
+
+  t.test('officeHeaderMismatch_ finds the first column that breaks the prefix', () => {
+    const h = boot();
+    assert.equal(h.ctx.officeHeaderMismatch_(['a', 'b'], ['a', 'b', 'c']), -1);
+    assert.equal(h.ctx.officeHeaderMismatch_(['a', 'x', 'c'], ['a', 'b', 'c']), 1);
+    assert.equal(h.ctx.officeHeaderMismatch_(['a', 'b', 'c', 'extra'], ['a', 'b', 'c']), 3);
   });
 
   t.test('appending after migration writes every column in header order', () => {
