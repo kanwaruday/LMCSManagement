@@ -14,7 +14,7 @@ ctx.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, t) => Arra
 ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) };
 ctx.UrlFetchApp = { fetch: (url) => { calls.push(url); const a = typeof answer === 'function' ? answer(url) : answer; return { getResponseCode: () => a.code || 200, getContentText: () => a.body }; } };
 const ok = (body) => ({ body: JSON.stringify(Object.assign({ success: true }, body)) });
-const reset = (a) => { store = {}; calls = []; answer = a; };
+const reset = (a) => { store = {}; calls = []; answer = a; ctx.DAYBOOK_PROGRESS_MEMO = {}; }; // each reset = a new execution
 
 const NOW = new Date('2026-10-26T05:00:00Z'), cfg = J(ctx.gameConfigDefaults_());
 const acc = { email: 'Acc@test.invalid', campusId: 'ALL', roles: ['Accounts'], primaryRole: 'Accounts', idToken: 'tok-acc' };
@@ -51,13 +51,15 @@ reset(ok(PROG)); ctx.daybookMissions_(acc, cfg, NOW);
 assert.ok(calls[0].startsWith('https://script.google.com/macros/s/TESTOFFICE/exec?'), 'Script Property overrides the constant');
 delete props.OFFICE_BACKEND_URL;
 
-// ---- cached per caller: a second load (and the quests) do not fetch; another caller does
+// ---- one fetch per caller per execution, never the script cache (P23: a save shows on the next load)
 reset(ok(PROG));
 ctx.daybookMissions_(acc, cfg, NOW); ctx.daybookQuests_(acc, cfg, NOW); ctx.daybookMissions_(acc, cfg, NOW);
 assert.strictEqual(calls.length, 1);
-assert.strictEqual(Object.keys(store).length, 1, 'cached once for this caller');
+assert.strictEqual(Object.keys(store).length, 0, 'not in the 10-minute cache');
 ctx.daybookMissions_(clerk, cfg, NOW);
 assert.strictEqual(calls.length, 2);
+ctx.DAYBOOK_PROGRESS_MEMO = {}; ctx.daybookMissions_(acc, cfg, NOW);
+assert.strictEqual(calls.length, 3, 'the next execution fetches again');
 
 // ---- missions: one per (quest, school) with figures, open and done, in play order
 reset(ok(PROG));
