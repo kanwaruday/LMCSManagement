@@ -485,6 +485,7 @@ window.Coord = (function () {
         const act1 = v => v.lines.length ? '<span class="act ' + v.lines[0].kind + '">' + esc(v.lines[0].text) + '</span>' : '';
         const drvLine = b => b.driver ? '<div class="sm">' + esc(b.driver) + (b.driverCode ? ' &middot; <span class="nw">' + esc(b.driverCode) + '</span>' : '') +
           (b.driverStatus && b.driverStatus !== 'verified' ? ' &middot; <span class="miss">' + esc(b.driverStatus) + '</span>' : '') + '</div>' : '';
+        const needsUp = (v, x) => { const c = v.cells[x.key]; return v.tier !== 'eol' && (['expired', 'wrong', 'missing', 'check', 'soon', 'later'].indexOf(c.t) !== -1 || c.bad); }; // only cells needing action take an upload
         const cell = (v, x) => {
           const b = v.b, e = b.docs[x.key], c = v.cells[x.key], nx = e.noexp || [], ot = e.other || [], one = x.key === 'speed_governor';
           const bw = ot.find(o => TransportRank.fid(o.link) === TransportRank.fid(e.link)) || ot[0] || {};
@@ -504,7 +505,7 @@ window.Coord = (function () {
             return '<td class="dt pending' + (late1 ? ' late' : '') + '" title="Uploaded ' + esc(new Date(e.pending.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })) + (who ? ' by ' + esc(who) : '') + ', waiting for LM Studio to read its date. Click to open it.">' +
               a(e.pending.link, late1 ? 'uploaded ' + Math.round(h) + ' h ago, not read yet' : 'uploaded, reading') + '</td>';
           }
-          const needs = v.tier !== 'eol' && (['expired', 'wrong', 'missing', 'check', 'soon', 'later'].indexOf(c.t) !== -1 || c.bad); // only cells needing action take an upload
+          const needs = needsUp(v, x);
           const err = T.upErr[k] ? '<span class="uperr" role="alert">' + esc(T.upErr[k]) + '</span>' : '';
           const ub = (lbl, cls) => '<button type="button" class="' + cls + '" data-up="' + esc(k) + '" aria-label="' + esc(lbl + ': ' + x.label + ' for ' + b.reg) + '">' + lbl + '</button>';
           if (needs && !first) return '<td class="dt ' + (c.t === 'wrong' ? 'other' : c.t) + '">' + ub('Upload', 'upcell') + err + '</td>';
@@ -516,12 +517,15 @@ window.Coord = (function () {
         // Any paper, any bus (P21, 30 Oct: "Unable to add or upload new vehicle documents"): the cells above only offer an upload where
         // a paper needs action, so a renewal of a paper still valid, or a paper for a bus past its service life, had nowhere to go.
         // A paper already uploaded and waiting to be read is left out: a second one would be filed twice.
-        const upAny = b => '<select class="upany" data-upsel="' + esc(b.reg) + '" aria-label="' + esc('Upload a paper for ' + b.reg) + '"><option value="">Upload a paper…</option>' +
-          cols.map(x => b.docs[x.key] && b.docs[x.key].pending ? '' : '<option value="' + esc(x.key) + '">' + esc(x.label) + '</option>').join('') + '</select>';
+        // Its errors show under it for the papers whose cell has no upload button of its own (the cell shows the rest).
+        const upAny = v => { const b = v.b;
+          return '<select class="upany" data-upsel="' + esc(b.reg) + '" aria-label="' + esc('Upload a paper for ' + b.reg) + '"><option value="">Upload a paper…</option>' +
+            cols.map(x => b.docs[x.key] && b.docs[x.key].pending ? '' : '<option value="' + esc(x.key) + '">' + esc(x.label) + '</option>').join('') + '</select>' +
+            cols.map(x => { const m = T.upErr[b.reg + '|' + x.key]; return m && !needsUp(v, x) ? '<span class="uperr" role="alert">' + esc(x.label + ': ' + m) + '</span>' : ''; }).join(''); };
         const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (2 + cols.length) + '"><span class="grp-l">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + '</span></span> <span class="sm grp-d">&middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
         let prev = '';
         const body = vs.map(v => (v.tier !== prev ? (prev = v.tier, secRow(v.tier)) : '') + '<tr class="' + (v.tier === 'eol' ? 'eol' : '') + '"><td class="id"><b>' + esc(v.b.reg) + '</b><div class="sm">' + esc(v.b.campus) + ' &middot; ' + esc(v.b.route || v.b.bus) + nr(v.b) + '</div>' +
-          drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div>' + upAny(v.b) + '</td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
+          drvLine(v.b) + '<div class="act-m">' + act1(v) + '</div>' + upAny(v) + '</td><td class="acol">' + act(v) + '</td>' + cols.map(x => cell(v, x)).join('') + '</tr>').join('');
         html += '<details class="note legend"><summary>How this list is ordered, and what the colours mean</summary>One list, in the order the work should be done: vehicles with no documents first, then expired papers, wrong uploads, missing papers, unreadable scans and upcoming renewals, and last the buses past their service life (kept for the record, no action). Papers run from the ones that make a bus illegal to run to pollution and the speed governor, which is a one-time fitment certificate and never expires. Click a date to open its scan and check it. Red is expired, amber is due within 30 days, yellow within 90, blue is a scan whose date could not be read, green is a paper with nothing to renew, and orange marks a wrong paper: a scan filed in the wrong slot, or a typed date whose attached proof is not the right document. Every paper that needs action has an Upload button: pick the renewed paper (PDF or photo, up to 10 MB) and it goes into the bus folder in Drive; the cell turns light blue, "uploaded, reading", until LM Studio reads its date on the next AI Coordinator run.</details>' +
           '<div class="twwrap"><div class="tw stick"><table class="l grid"><thead><tr><th class="id">Vehicle</th><th class="acol">Action needed</th>' + cols.map(x => '<th class="pp">' + (x.key === 'speed_governor' ? 'Speed governor<div class="sm">one-time</div>' : esc(x.label)) + '</th>').join('') + '</tr></thead><tbody>' +
           (vs.length ? body : '<tr><td colspan="' + (2 + cols.length) + '" class="status">Nothing matches these filters.</td></tr>') + '</tbody></table></div></div>';
