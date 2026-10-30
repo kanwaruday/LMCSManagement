@@ -17,7 +17,8 @@ function setupSteps_(cfg) {
     ['term', "Set this term's end date", /^\d{4}-\d\d-\d\d$/.test(T.quests.termEnd || '')],
     ['suit', 'Open the track-suit decision', !!(suit && suit.opens && suit.closes)],
   ];
-  return steps.map(function (s) { return { id: s[0], title: s[1], done: s[2], locked: false, go: '', guide: 'setup-' + s[0] }; });
+  return steps.filter(function (s) { return !(s[0] === 'form' && T.cwhwDeferred); }) // CW/HW is "a quest for later" (Uday, 30 Oct)
+    .map(function (s) { return { id: s[0], title: s[1], done: s[2], locked: false, go: '', guide: 'setup-' + s[0] }; });
 }
 
 function setupQuests_(caller, cfg, now) {
