@@ -9,7 +9,7 @@ const gs = (f) => fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8')
 const allow = [['Email', 'Name', 'CampusId', 'Role', 'Notes', 'Functions'],
   ['owner@x', 'O', 'ALL', 'Owner', '', ''], ['coord@x', 'C', 'LMS4', 'Coordinator', '', ''], ['prin@x', 'P', 'LMS1', 'Principal', '', ''],
   ['clerk@x', 'F', 'LMS1', 'FeeClerk', '', ''], ['teach@x', 'T', 'LMS1', 'Teacher', '', ''], ['both@x', 'B', 'LMS1', 'FeeClerk,Principal', '', ''],
-  ['hr@x', 'H', 'LMS2', 'Teacher', '', 'HR & Hiring'], ['hrprin@x', 'HP', 'LMS2', 'Principal', '', 'Fees & Accounts, hr & hiring'],
+  ['hr@x', 'H', 'LMS2', 'Teacher', '', 'HR & Hiring'], ['prin2@x', 'P2', 'LMS2', 'Principal', '', ''], ['hrprin@x', 'HP', 'LMS2', 'Principal', '', 'Fees & Accounts, hr & hiring'],
   ['fees@x', 'A', 'LMS1', 'Teacher', '', 'Fees & Accounts'], ['hrsp@x', 'S', 'LMS3', 'Teacher', '', ' HR  &  Hiring '],
   ['pall@x', 'PA', 'ALL', 'Principal', '', ''], ['fall@x', 'FA', 'ALL', 'FeeClerk', '', ''], ['tall@x', 'TA', 'ALL', 'Teacher,Accounts', '', ''], ['faall@x', 'FX', 'ALL', 'FeeClerk,Accounts', '', ''], ['pcall@x', 'PC', 'ALL', 'Principal,Coordinator', '', ''], ['poall@x', 'PO', 'ALL', 'Owner,Principal', '', '']];
 let tokenEmail = '';
@@ -69,4 +69,6 @@ assert.ok(!who('fees@x'), 'another function alone gets nothing here');
 assert.ok(who('hrsp@x') && who('hrsp@x').hrHiring, 'extra spaces in the Functions cell still match');
 tokenEmail = 'hr@x';
 assert.ok(!ctx.verifyStaffManagerToken_('tok', ['FeeClerk']), 'callers that do not opt in (transport uploads) still refuse HR & Hiring');
+// A school's Principal (Arti's case, LMS2) opens the Documents page for their own school only.
+assert.ok(can('prin2@x', 'documentstatus') && ctx.callerCovers_(ctx.staffDocCaller_(who('prin2@x')), 'LMS2') && !ctx.callerCovers_(ctx.staffDocCaller_(who('prin2@x')), 'LMS1'), 'Principal: own school documents');
 console.log('staff access ok');

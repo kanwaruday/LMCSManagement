@@ -341,6 +341,10 @@ function pickedRows(rows) {
 let employeesByLabel = {}; // "Name (CODE) — School" -> {employeeCode, name, school}
 let DOCS_ONLY = false; // set by init(): this session sees only the Documents tab
 
+// A refusal says who to ask (P14, 30 Oct); any other failure is shown as it is.
+function loadError(e) {
+  return /not authori[sz]ed/i.test(e && e.message || '') ? 'The server didn\'t accept your sign-in for this. Sign out and sign in again; if it still says this, ask the Owner to check your Role and School in the portal access list.' : (e && e.message || 'unknown error');
+}
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 /* ═══════════════════════════════════════════════════════════
@@ -479,7 +483,7 @@ async function loadDirectory() {
     directoryRows = json.employees;
     renderDirectory();
   } catch (e) {
-    document.getElementById('dirBody').innerHTML = '<div class="dir-empty">Could not load directory: ' + esc(e.message) + '</div>';
+    document.getElementById('dirBody').innerHTML = '<div class="dir-empty">Could not load directory: ' + esc(loadError(e)) + '</div>';
   }
 }
 
@@ -540,7 +544,7 @@ async function loadDocumentStatus(prefetched) {
     if (json.allCampuses && DOCS_ONLY && SESSION.campusId !== 'ALL') mountPicker(Object.assign({}, SESSION, { campusId: 'ALL' }));
     renderDocumentStatus();
   } catch (e) {
-    document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(e.message) + '</div>';
+    document.getElementById('docBody').innerHTML = '<div class="dir-empty">Could not load document status: ' + esc(loadError(e)) + '</div>';
   }
 }
 
