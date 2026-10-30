@@ -38,4 +38,6 @@ const hud = fs.readFileSync(path.join(root, 'assets/game/home-hud.js'), 'utf8'),
 assert.ok(!/\['Role', 'Principal'\]/.test(hud) && /\['Role', s\.roleShown \|\| \(window\.LMCS && LMCS\.roleLabel \? LMCS\.roleLabel\(s\)/.test(hud), 'profile sheet: the real role');
 assert.ok(!home.includes("' · Principal · '") && home.includes("hello(session.name) + ' · ' + LMCS.roleLabel(session) + ' · '"), 'header: the real role');
 assert.ok(home.includes("roleShown: LMCS.roleLabel(session) + ' · viewing ' + VIEW.name + ' as Principal'"), 'view-as: Owner · viewing <school> as Principal');
+['canViewCoordinatorPortal', 'canManageStaff', 'canViewTeacherSS'].forEach((f) => assert.strictEqual(L[f](S('FeeClerk', 'ALL')), false, 'an ALL-campus Fee Clerk: no ' + f));
+assert.strictEqual(L.canViewCoordinatorPortal(S('Coordinator')), true);
 console.log('test-principal-gate: ok');

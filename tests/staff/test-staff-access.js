@@ -11,7 +11,7 @@ const allow = [['Email', 'Name', 'CampusId', 'Role', 'Notes', 'Functions'],
   ['clerk@x', 'F', 'LMS1', 'FeeClerk', '', ''], ['teach@x', 'T', 'LMS1', 'Teacher', '', ''], ['both@x', 'B', 'LMS1', 'FeeClerk,Principal', '', ''],
   ['hr@x', 'H', 'LMS2', 'Teacher', '', 'HR & Hiring'], ['hrprin@x', 'HP', 'LMS2', 'Principal', '', 'Fees & Accounts, hr & hiring'],
   ['fees@x', 'A', 'LMS1', 'Teacher', '', 'Fees & Accounts'], ['hrsp@x', 'S', 'LMS3', 'Teacher', '', ' HR  &  Hiring '],
-  ['pall@x', 'PA', 'ALL', 'Principal', '', ''], ['pcall@x', 'PC', 'ALL', 'Principal,Coordinator', '', ''], ['poall@x', 'PO', 'ALL', 'Owner,Principal', '', '']];
+  ['pall@x', 'PA', 'ALL', 'Principal', '', ''], ['fall@x', 'FA', 'ALL', 'FeeClerk', '', ''], ['tall@x', 'TA', 'ALL', 'Teacher', '', ''], ['pcall@x', 'PC', 'ALL', 'Principal,Coordinator', '', ''], ['poall@x', 'PO', 'ALL', 'Owner,Principal', '', '']];
 let tokenEmail = '';
 const ctx = vm.createContext({
   console,
@@ -44,6 +44,10 @@ assert.strictEqual(who('pall@x').manager, false, 'Principal + ALL in the Staff P
 tokenEmail = 'pcall@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true, 'Principal,Coordinator + ALL: still a manager');
 tokenEmail = 'poall@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true, 'Owner,Principal + ALL: still a manager');
 tokenEmail = 'owner@x'; assert.strictEqual(ctx.verifyStaffManagerToken_('tok', ['FeeClerk']).manager, true);
+// 30 Oct: a Fee Clerk or Teacher set to ALL is not a manager either -- the documents slice only, never the whole staff API
+assert.strictEqual(who('fall@x').manager, false, 'FeeClerk + ALL: not a manager');
+assert.ok(can('fall@x', 'documentstatus') && !can('fall@x', 'list') && !can('fall@x', 'detail') && !can('fall@x', 'markinactive'), 'FeeClerk + ALL: documents only');
+assert.ok(!who('tall@x'), 'Teacher + ALL: nothing');
 
 // A principal's campus scope: their own school only.
 const p = who('prin@x');

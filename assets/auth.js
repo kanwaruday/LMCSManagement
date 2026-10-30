@@ -256,7 +256,8 @@ window.LMCS = (function () {
   // session.campusId when acting, this only answers the yes/no).
   function canManageStaff(session) {
     if (!session) return false;
-    return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+      hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   // "Can this session view the Teacher SS (Support Session, formerly
@@ -267,7 +268,8 @@ window.LMCS = (function () {
   // Principal-and-above bar the Apps Script proxy re-checks server-side.
   function canViewTeacherSS(session) {
     if (!session) return false;
-    return session.campusId === 'ALL' || hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+      hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   // Hiring Dashboard (2026-10-22): everyone above, plus the Fee Clerk, who does the legwork (adds applicants,
@@ -286,7 +288,8 @@ window.LMCS = (function () {
   // matches today, so either can change without touching the other.
   function canViewCoordinatorPortal(session) {
     if (!session) return false;
-    return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+    return (session.campusId === 'ALL' && !hasRole(session, 'FeeClerk')) || // ALL widens a Fee Clerk's campus, not their portals (30 Oct)
+      hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
   // Principal portal (principal/*): Principal, Coordinator or Owner only (Uday, 30 Oct: a Fee Clerk "should not be able to login to the
