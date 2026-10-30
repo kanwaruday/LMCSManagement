@@ -1,6 +1,7 @@
 // Capture page (coordinator/transport/capture.html). A Coordinator rides a bus with a school phone in a dashboard mount.
 // Spec: docs/superpowers/specs/2026-10-25-transport-game-design.md, Loop 6. Guide: docs/transport-game/capture-guide.md.
-// - Timelapse (default): rear camera, a frame every ~15 m of GPS travel (geo.js), STOP HERE tags a stop with a photo.
+// - Timelapse (default): rear camera, a frame every ~10 m of GPS travel (geo.js); STOP HERE is one tap that saves the GPS point
+//   and the time, no name or photo (named later from the map).
 // - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
 //   the seats and the load cap (loadCapFactor() x seats).
 // - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
@@ -20,7 +21,7 @@ const FULL_MSG = 'The phone is full. Upload on Wi-Fi now, then carry on.';
 const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
 const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
-  timelapse: 'Photo run: a frame every 15 m and one photo at each stop. Outside school hours only.',
+  timelapse: 'Photo run: a frame every 10 m; tap STOP HERE at each stop. Outside school hours only.',
   count: 'School run, no camera: count the children who get on and off at each stop.',
   inspection: 'Monthly safety check with the bus parked: one card per item it must carry. Photograph the item only, never children or people.',
 };
@@ -141,12 +142,11 @@ function wire() {
   document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { if (S.resumeId) { S.resumeId = null; drawResume(); } setMode(b.dataset.mode); }));
   $('start').addEventListener('click', start);
-  $('stopHere').addEventListener('click', openSheet);
+  $('stopHere').addEventListener('click', () => (S.run.kind === 'count' ? openSheet() : tapStop()));
   $('end').addEventListener('click', endClick);
   $('send').addEventListener('click', sendAll);
   $('signIn').addEventListener('click', () => signIn());
-  // a tap on the dim backdrop closes the sheet, except while aiming the stop photo: then the "backdrop" is the viewfinder
-  $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap') && !$('sheetWrap').classList.contains('cap-aim')) closeSheet(); });
+  $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap')) closeSheet(); }); // a tap on the dim backdrop closes the sheet
   $('inspSave').addEventListener('click', saveInspection);
   $('inspPhoto').addEventListener('change', onInspPhoto);
   $('slots').addEventListener('click', (e) => { const li = e.target.closest('li'); if (li && S.insp) jump(S.insp.items[[...$('slots').children].indexOf(li)].id); });
@@ -445,7 +445,22 @@ async function onVisibility() {
   if (photo && S.active) { S.camWanted = true; openCamera().catch((e) => runSay(camMsg(e))); }
 }
 
-// ── STOP HERE sheet ──
+// ── STOP HERE ──
+// Timelapse: one tap saves where and when, nothing to answer (Uday, 30 Oct). A second tap within 5 s is a bump, not a stop.
+async function tapStop() {
+  const f = S.fix, now = Date.now(), last = S.run.stops[S.run.stops.length - 1];
+  if (S.stopBusy) return;
+  if (!f) return toast('No GPS yet. Wait a few seconds, then tap again.');
+  if (last && now - last.takenAt < 5000) return toast(`Stop ${S.run.stops.length} is already saved.`);
+  S.stopBusy = true;
+  try {
+    await store.addStop(S.run.id, { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now });
+    S.run = await store.getRun(S.run.id); hud();
+    toast(`Stop ${S.run.stops.length} saved` + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
+  } catch (e) { toast(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message); }
+  finally { S.stopBusy = false; }
+}
+// Count run: the sheet asks which stop and how many got on and off.
 function openSheet() {
   const f = S.fix;
   S.stop = { lat: f ? f.lat : undefined, lng: f ? f.lng : undefined, takenAt: Date.now(), name: '', on: 0, off: 0, step: 'pick' };
@@ -466,8 +481,7 @@ function behindSheet(on) { // the sheet is modal: keyboard and screen reader sta
   document.querySelectorAll('.gb-head, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
 }
 function drawSheet() {
-  const st = S.stop, sheet = $('sheet'), count = S.run.kind === 'count';
-  $('sheetWrap').classList.toggle('cap-aim', !count && st.step !== 'pick'); // aiming the stop photo: no dark veil over the camera
+  const st = S.stop, sheet = $('sheet');
   if (st.step === 'pick') {
     const bus = busOf(S.run.reg), done = new Set(S.run.stops.map((s) => s.name));
     const here = S.fix, list = (bus ? bus.stops : []).map((s) => ({ ...s, m: here && Number.isFinite(s.lat) ? distanceM(here, s) : null }))
@@ -483,10 +497,6 @@ function drawSheet() {
     const useTyped = () => { const n = $('newStop').value.trim(); if (n) pick(n); else $('newStop').focus(); };
     $('useName').addEventListener('click', useTyped);
     $('newStop').addEventListener('keydown', (e) => { if (e.key === 'Enter') useTyped(); });
-  } else if (!count) {
-    sheet.innerHTML = `<h2 id="sheetTitle">${esc(st.name)}</h2><p class="cap-note">Point the camera at the stop, then take its photo.</p>` +
-      '<button type="button" class="cap-primary" data-a="save">Take stop photo</button><p class="cap-msg" id="sheetMsg" role="alert"></p>' +
-      '<button type="button" class="cap-end" data-a="back">Back</button>';
   } else {
     const ctr = (k, label) => `<div class="cap-ctr"><span id="l-${k}">${label}</span><button type="button" class="cap-pm" data-k="${k}" data-d="-1" aria-label="${label}: one less">&minus;</button>` +
       `<b id="v-${k}" aria-labelledby="l-${k}">${st[k]}</b><button type="button" class="cap-pm" data-k="${k}" data-d="1" aria-label="${label}: one more">+</button></div>`;
@@ -514,17 +524,13 @@ async function saveStop(btn) {
     return;
   }
   const stop = { lat: st.lat ?? (f && f.lat), lng: st.lng ?? (f && f.lng), takenAt: st.takenAt, name: st.name };
-  if (S.run.kind !== 'count') {
-    stop.base64 = grab();
-    if (!stop.base64) { $('sheetMsg').textContent = 'The camera is not ready. Wait a second and try again.'; return; }
-  }
   btn.disabled = true;
   try {
     const entry = await store.addStop(id, stop);
-    if (S.run.kind === 'count') await store.setCount(id, entry.seq, st.on, st.off);
+    await store.setCount(id, entry.seq, st.on, st.off);
     S.run = await store.getRun(id);
     closeSheet(); hud();
-    const bus = busOf(S.run.reg), known = bus ? bus.stops.length : 0, n = S.run.stops.length, done = S.run.kind === 'count' ? 'counted' : 'tagged';
+    const bus = busOf(S.run.reg), known = bus ? bus.stops.length : 0, n = S.run.stops.length, done = 'counted';
     toast(known && n === known ? `All ${known} stops ${done}. Shabash. End the run when you are done.` : `${st.name} ${done}.`);
   } catch (e) {
     btn.disabled = false;

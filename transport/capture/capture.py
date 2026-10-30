@@ -194,7 +194,8 @@ def stitch(frames, chapters_text, out_mp4):
 def process_run(run_dir, run, detectors):
     """Blurs every frame and stop photo of one run into processed/ and stitches route.mp4 there. All or nothing: built in
     processed.partial/, renamed only when complete. Raises NotReady while Drive is still bringing the frames or a stop photo
-    down: every timelapse stop has a photo (the capture page saves no stop without one), so a run is never published without it."""
+    down. A stop's photo is awaited only if it has one: since 30 Oct STOP HERE is one tap, GPS only, and the manifest says photo: false
+    (a stop with no flag is from before then, when every timelapse stop had a photo)."""
     if not detectors:
         raise BlurUnavailable("no detectors")
     run_dir = Path(run_dir)
@@ -202,9 +203,10 @@ def process_run(run_dir, run, detectors):
     if not frames or len(frames) < int(run.get("frames") or 0):
         raise NotReady(f"{len(frames)} of {run.get('frames') or '?'} frames in this Mac's Drive copy")
     stops = run.get("stops") or []
-    missing = [s for s in stops if not (run_dir / f"stop-{int(s['seq']):05d}.jpg").exists()]
+    shot = [s for s in stops if s.get("photo", True)]
+    missing = [s for s in shot if not (run_dir / f"stop-{int(s['seq']):05d}.jpg").exists()]
     if missing:
-        raise NotReady(f"{len(missing)} of {len(stops)} stop photos not in this Mac's Drive copy")
+        raise NotReady(f"{len(missing)} of {len(shot)} stop photos not in this Mac's Drive copy")
     part = run_dir / "processed.partial"
     shutil.rmtree(part, ignore_errors=True)
     part.mkdir()
@@ -213,7 +215,7 @@ def process_run(run_dir, run, detectors):
             Image.fromarray(blur(np.asarray(Image.open(src).convert("RGB")), detectors)).save(part / name, quality=85)
             return part / name
         out = [put(f["path"], f"frame-{f['seq']:05d}.jpg") for f in frames]
-        for s in stops:
+        for s in shot:
             src = run_dir / f"stop-{int(s['seq']):05d}.jpg"
             put(src, src.name)
         stitch(out, chapters(stops, frames), part / "route.mp4")

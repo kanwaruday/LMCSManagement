@@ -115,6 +115,17 @@ def test_process_run_waits_for_frames_still_syncing():
         assert not (d / "processed").exists()
 
 
+def test_process_run_does_not_wait_for_a_one_tap_stop():
+    # since 30 Oct a timelapse STOP HERE is one tap, GPS only: photo false, no stop-*.jpg, and the run still publishes
+    with tempfile.TemporaryDirectory() as root:
+        d, run = make_run(root)
+        (d / "stop-00001.jpg").unlink()
+        run["stops"][0]["photo"] = False
+        C.process_run(d, run, [lambda i: []])
+        assert (d / "processed" / "route.mp4").exists()
+        assert not (d / "processed" / "stop-00001.jpg").exists()
+
+
 def test_process_run_waits_for_a_stop_photo_still_syncing():
     # the last stop is tagged after the last frame, and Drive syncs down in no set order: frames complete, stop photo not yet
     with tempfile.TemporaryDirectory() as root:

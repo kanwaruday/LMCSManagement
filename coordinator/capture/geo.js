@@ -1,5 +1,5 @@
 // Distance spacing for timelapse capture: a frame every FRAME_SPACING_M metres of GPS travel, not every N seconds.
-export const FRAME_SPACING_M = 15;
+export const FRAME_SPACING_M = 10; // Uday 30 Oct: 10 m, not 15, for the GPS error. A worse fix still spaces frames by its accuracy
 
 // Haversine distance in metres between two {lat, lng} points.
 export function distanceM(a, b) {

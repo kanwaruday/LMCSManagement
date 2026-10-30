@@ -113,8 +113,6 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
   }
   .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over STOP HERE */
   .cap-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start} /* the safety check: two cards across, half the scrolling */
-  .cap-sheetwrap.cap-aim{justify-content:flex-end} /* the photo sheet sits over the controls, the camera stays in view */
-  .cap-aim .cap-sheet{max-width:44vw;border-radius:16px 0 0 0}
   /* the count sheet fits the short screen whole: Save and Back side by side, no scrolling inside the sheet */
   .cap-sheet{max-height:calc(100vh - 12px);padding:12px 16px 14px}
   .cap-sheet h2{margin-bottom:6px}
@@ -125,7 +123,6 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
 
 /* STOP HERE sheet */
 .cap-sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
-.cap-sheetwrap.cap-aim{background:rgba(0,0,0,.12)} /* taking the stop photo: the viewfinder stays clear */
 .cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
 .cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}
 .cap-sheethead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}

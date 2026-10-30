@@ -97,12 +97,14 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
       return seq;
     }),
 
-    // A tagged stop. A photo (base64) makes it a 'stop' file; count runs only record the stop in the manifest.
+    // A tagged stop. A photo (base64) makes it a 'stop' file; without one only the manifest has it (count runs, and the one-tap
+    // timelapse stop since 30 Oct). photo says which, so the Mac waits only for photos that exist (old manifests: no flag, all photos).
     addStop: (runId, stop) => serial(async () => {
       const run = await load(runId); open(run);
       let seq;
       if (stop.base64) { noPhotos(run); seq = await addFile(run, 'stop', stop); } else seq = run.nextSeq++;
-      const entry = { seq, lat: stop.lat, lng: stop.lng, takenAt: stop.takenAt };
+      const entry = { seq, lat: stop.lat, lng: stop.lng, takenAt: stop.takenAt, photo: !!stop.base64 };
+      if (Number.isFinite(stop.accuracy)) entry.accuracy = Math.round(stop.accuracy);
       if (stop.name) entry.name = String(stop.name); // the stop's name as picked or typed on the capture page
       run.stops.push(entry);
       await idb.runs.put(run);

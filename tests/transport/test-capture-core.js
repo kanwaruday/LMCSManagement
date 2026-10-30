@@ -28,15 +28,15 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
 
   // ---- geo
   const at = (m) => ({ lat: 31 + m / 111194.9266, lng: 76 }); // m metres north (R = 6371 km)
-  await test('FRAME_SPACING_M is 15 and distanceM is haversine', () => {
-    assert.strictEqual(FRAME_SPACING_M, 15);
+  await test('FRAME_SPACING_M is 10 and distanceM is haversine', () => {
+    assert.strictEqual(FRAME_SPACING_M, 10);
     assert.ok(Math.abs(distanceM({ lat: 31, lng: 76 }, { lat: 32, lng: 76 }) - 111195) < 200);
     assert.strictEqual(distanceM({ lat: 31, lng: 76 }, { lat: 31, lng: 76 }), 0);
   });
-  await test('shouldCapture false under 15 m, true at 15 m, false when accuracy 80 m, true for the first fix', () => {
+  await test('shouldCapture false under 10 m, true at 10 m, false when accuracy 80 m, true for the first fix', () => {
     const last = at(0);
-    assert.strictEqual(shouldCapture(last, { ...at(10), accuracy: 5 }), false);
-    assert.strictEqual(shouldCapture(last, { ...at(15.5), accuracy: 5 }), true);
+    assert.strictEqual(shouldCapture(last, { ...at(9), accuracy: 5 }), false);
+    assert.strictEqual(shouldCapture(last, { ...at(10.5), accuracy: 5 }), true);
     assert.strictEqual(shouldCapture(last, { ...at(40), accuracy: 80 }), false);
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 10 }), true);
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 80 }), false);
@@ -45,12 +45,15 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     for (const accuracy of [undefined, NaN, null, Infinity]) assert.strictEqual(shouldCapture(null, { ...at(0), accuracy }), false, String(accuracy));
     assert.strictEqual(shouldCapture(at(0), { ...at(100) }), false);
   });
-  await test('stationary jitter inside the fix accuracy captures nothing; a moving bus at accuracy 10 still captures every 15 m', () => {
+  await test('stationary jitter inside the fix accuracy captures nothing; a moving bus at accuracy 10 still captures every 10 m', () => {
     const last = at(0);
     for (const m of [20, 25, 30, 35, 39.5]) assert.strictEqual(shouldCapture(last, { ...at(m), accuracy: 40 }), false, 'wander ' + m);
     assert.strictEqual(shouldCapture(last, { ...at(41), accuracy: 40 }), true);
     let pos = at(0), frames = 0;
     for (let m = 1; m <= 150; m++) { const fix = { ...at(m), accuracy: 10 }; if (shouldCapture(pos, fix)) { frames++; pos = fix; } }
+    assert.strictEqual(frames, 15);
+    pos = at(0); frames = 0; // a 15 m fix spaces frames by its own error, not 10 m
+    for (let m = 1; m <= 150; m++) { const fix = { ...at(m), accuracy: 15 }; if (shouldCapture(pos, fix)) { frames++; pos = fix; } }
     assert.strictEqual(frames, 10);
   });
 
@@ -75,6 +78,15 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     const r = (await store.runs())[0];
     assert.deepStrictEqual(r.gaps, [{ from: 100, to: 200 }]);
     assert.strictEqual(r.frames, 3);
+  });
+  await test('a one-tap timelapse stop: GPS, time and accuracy, photo false, nothing to upload; a stop with a photo says photo true', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 2);
+    const tap = await store.addStop(run.id, { lat: 31.9, lng: 77.1, accuracy: 7.6, takenAt: NOW });
+    const shot = await store.addStop(run.id, { lat: 31, lng: 76, takenAt: NOW, base64: 'SSSS' });
+    const r = (await store.runs())[0];
+    assert.deepStrictEqual(r.stops[0], { seq: tap.seq, lat: 31.9, lng: 77.1, takenAt: NOW, photo: false, accuracy: 8 });
+    assert.strictEqual(r.stops[1].photo, true);
+    assert.deepStrictEqual((await store.pending(run.id)).map((f) => f.kind), ['frame', 'frame', 'stop']);
   });
   await test('count runs reject addFrame and photos; setCount fills the stop manifest', async () => {
     const store = mkStore();
