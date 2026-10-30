@@ -97,7 +97,7 @@ var FleetQuests = (function () {
       fields: [
         { id: 'schoolPhoneToUse', col: 'School phone to use', type: 'text', label: 'School phone to use' },
         { id: 'phoneMountAndChargerReady', col: 'Phone mount and charger ready?', type: 'yesno', label: 'Phone mount and charger ready?' },
-        { id: 'timelapseRunDate', col: 'Timelapse run date (outside school hours)', type: 'date', label: 'Timelapse run date', hint: 'Outside school hours' },
+        { id: 'timelapseRunDate', col: 'Timelapse run date (outside school hours)', type: 'date', label: 'Timelapse run date', hint: 'Camera on the road, no children\'s faces' }, // col keeps its questionnaire name: stored data
         { id: 'countRunDate', col: 'Count run date (normal school run)', type: 'date', label: 'Count run date', hint: 'A normal school run' },
         { id: 'coordinatorRiding', col: 'Coordinator riding', type: 'text', label: 'Coordinator riding' },
         { id: 'done', col: 'Done?', type: 'derived', from: 'routeTimelapse' },

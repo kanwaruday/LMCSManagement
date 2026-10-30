@@ -21,7 +21,7 @@ const FULL_MSG = 'The phone is full. Upload on Wi-Fi now, then carry on.';
 const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
 const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
-  timelapse: 'Photo run: a frame every 10 m; tap STOP HERE at each stop. Outside school hours only.',
+  timelapse: 'Photo run: a frame every 10 m; tap STOP HERE at each stop. Camera on the road, never on children.',
   count: 'School run, no camera: count the children who get on and off at each stop.',
   inspection: 'Monthly safety check with the bus parked: one card per item it must carry. Photograph the item only, never children or people.',
 };
@@ -183,7 +183,7 @@ function driverLabels() {
   document.querySelector('label[for="bus"]').hidden = $('bus').hidden = true; // one bus: no picker, just say which
   t('busNote', 'बस ' + S.driver.reg + ' · आपकी बस · Your bus');
   $('busNote').className = 'cap-hint';
-  document.querySelector('#privacyRow span').textContent = 'स्कूल टाइम के बाद, बस में कोई बच्चा नहीं · Outside school hours, no children on board';
+  document.querySelector('#privacyRow span').textContent = 'कैमरा सड़क की ओर · फ़्रेम में बच्चों के चेहरे नहीं · Camera faces the road · no children\'s faces in the frame'; // any time of day (Uday, 30 Oct: a person is sent to capture); faces still blurred on the Mac
   t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
   t('start', (S.resumeId ? 'जारी रखें · Carry on' : '🎥 रिकॉर्ड शुरू करें · Start'));
   t('stopHere', 'यहाँ स्टॉप · STOP HERE');
@@ -340,7 +340,7 @@ async function start() {
     const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
     if (!reg) return setupSay('Pick the bus first.');
     if (kind === 'inspection') return await startInspection(resume, reg);
-    if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: outside school hours, no children on board.');
+    if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: the camera faces the road, with no children\'s faces in the frame.');
     if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
     if (kind === 'timelapse') {
       S.camWanted = true;

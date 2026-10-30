@@ -22,11 +22,11 @@ school phone. The page saves everything on the phone and you send it later on sc
 
 | Run | When | Camera | What you do |
 | --- | --- | --- | --- |
-| **Timelapse** (default) | **Outside school hours, no children on board** (an empty leg, or after school) | Yes: a frame every 10 m | Tap **STOP HERE** at each stop: one tap, nothing to answer |
+| **Timelapse** (default) | **Any time**, with the camera facing the road and no children's faces in the frame | Yes: a frame every 10 m | Tap **STOP HERE** at each stop: one tap, nothing to answer |
 | **Count run** | A normal school run | **Never** | Tap **STOP HERE** at each stop, count how many children got on and off |
 
 Privacy:
-- The page asks before every timelapse: "Outside school hours, no children on board". Tick it only if it is true.
+- The page asks before every timelapse: "Camera faces the road · no children's faces in the frame". Tick it only if it is true. Faces and number plates are still blurred on the Mac before anything is shared.
 - A count run records numbers only, never children's names, and never uses the camera.
 - Every photo is private and is blurred (faces, number plates) before anyone sees it.
 
