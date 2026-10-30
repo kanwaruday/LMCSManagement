@@ -33,7 +33,7 @@ var LMCSMapHome = (function () {
   var L = {
     town: ['नगर', 'Town'], world: ['दुनिया', 'World'], wild: ['जंगल', 'Wilderness'], daily: ['रोज़ाना', 'Daily'], tasks: ['काम', 'Tasks'],
     decide: ['फ़ैसले बाक़ी', 'Decisions waiting'], act: ['करना है', 'To act on'], rank: ['रैंकिंग', 'Ranking'], profile: ['प्रोफ़ाइल', 'Profile'],
-    close: ['बंद करें', 'Close'], go: ['जाएँ', 'Go'], resolve: ['हो गया', 'Mark resolved'], routes: ['रूट', 'Routes'], enter: ['स्कूल में जाएँ', 'Enter School'],
+    close: ['बंद करें', 'Close'], go: ['जाएँ', 'Go'], resolve: ['हो गया', 'Mark resolved'], routes: ['बसें', 'Buses and routes'], enter: ['स्कूल में जाएँ', 'Enter School'],
     buildings: ['इमारतें', 'Buildings and setup'], hqsetup: ['सेटअप', 'Set up the game at HQ'], here: ['यहाँ', 'Waiting here'], outside: ['आपके ज़िले में नहीं', 'Not in your district'], office: ['दफ़्तर', 'Your office']
   };
   function bi(k) { var p = L[k]; return p ? p[0] + ' · ' + p[1] : ''; }
@@ -137,6 +137,24 @@ var LMCSMapHome = (function () {
   function ranked(rows) {
     var r = 0; return rows.map(function (x, i) { if (i === 0 || x.a !== rows[i - 1].a || x.b !== rows[i - 1].b) r = i + 1; return { id: x.id, name: x.name, rank: r, line: x.line }; });
   }
+  // the next deadline on the timer card: the earliest open item or Today mission with a due date (yyyy-mm-dd, the end of that day IST)
+  function nextDeadline(list, now) {
+    var best = null, t = now ? now.getTime() : Date.now();
+    (list || []).forEach(function (x) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(x.due || '')); if (!m || x.done || x.gone) return;
+      var at = Date.UTC(+m[1], +m[2] - 1, +m[3], 23, 59) - 330 * 60000; // 23:59 IST
+      if (!best || at < best.at) best = { title: String(x.title || ''), due: m[0], at: at };
+    });
+    if (!best) return null;
+    var left = best.at - t, late = left < 0, mins = Math.floor(Math.abs(left) / 60000), d = Math.floor(mins / 1440), hr = Math.floor((mins % 1440) / 60);
+    best.late = late; best.left = (d ? d + 'd ' : '') + (d || hr ? hr + 'h' : (mins % 60) + 'm');
+    return best;
+  }
+  // "Day closes in 3h 10m" (IST, 15:30), or "Day closed": the same clock as the Principal home
+  function dayText(now) {
+    var d = new Date((now || new Date()).getTime() + 330 * 60000), left = 15 * 60 + 30 - (d.getUTCHours() * 60 + d.getUTCMinutes());
+    return left <= 0 ? 'Day closed' : 'Day open · ' + (left >= 60 ? Math.floor(left / 60) + 'h ' : '') + (left % 60) + 'm';
+  }
   function canRank(session) { return /(^|,)\s*(Owner|Coordinator)\s*(,|$)/.test(String((session && session.role) || '')); }
   function dueText(iso) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); if (!m) return '';
@@ -197,7 +215,7 @@ var LMCSMapHome = (function () {
 
   var api = { PINS: PINS, campusStats: campusStats, ART: ART, DISTRICTS: DISTRICTS, L: L, COPY: COPY, bi: bi, scopeOf: scopeOf, inScope: inScope, placeOf: placeOf, pinsFrom: pinsFrom, pos: pos,
     ownerDecisions: ownerDecisions, coordActions: coordActions, isWild: isWild, countByPlace: countByPlace, rankOwner: rankOwner, rankCoord: rankCoord,
-    canRank: canRank, dueText: dueText, districtText: districtText, pinLabel: pinLabel };
+    canRank: canRank, nextDeadline: nextDeadline, dayText: dayText, dueText: dueText, districtText: districtText, pinLabel: pinLabel };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ page ═══
@@ -428,21 +446,45 @@ var LMCSMapHome = (function () {
     btns.forEach(function (b, i) { el.appendChild(b); b.onkeydown = function (e) { var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (!d) return; e.preventDefault(); select((i + d + btns.length) % btns.length, true); }; });
     return { el: el, select: select };
   }
-  // a right-column icon: { key, e, label: [hi, en], n?, open(opener) }; the same key again replaces it
-  function icon(ic) {
-    var b = btn('mh-icon', ic.label[1] + ' · ' + ic.label[0] + (ic.n ? ', ' + ic.n + ' waiting' : ''), [emoji(ic.e), h('span', { class: 'mh-icon-t', lang: 'hi' }, ic.label[0]), badge(ic.n || 0)], function (x) { ic.open(x); });
-    b.setAttribute('data-icon', ic.key); return b;
+  // ── edge entry points (Uday, 30 Oct: "every functionality appears on that one screen on the sides ... about 20 places that open up").
+  // An entry: { key, e, label: [hi, en], value?, n?, soon?, soonText?, open(opener) }. A soon entry is on screen with its "जल्द · Coming soon" tag
+  // and opens a window that says so, so nothing is a dead end. kind = 'icon' (right column), 'chip' (top bar), 'bar' (bottom bar) ──
+  function soonWin(ent, opener) {
+    open({ title: ent.label[0] + ' · ' + ent.label[1], sub: 'जल्द · Coming soon', opener: opener,
+      nodes: [h('p', { class: 'mh-empty' }, ent.soonText || 'This opens here once it is built. Nothing to do yet.')] });
   }
+  function entry(ent, kind) {
+    var tag = ent.soon ? h('span', { class: 'mh-soon', 'aria-hidden': 'true' }, 'जल्द') : null;
+    var val = ent.value != null && ent.value !== '' ? h('b', { class: 'mh-val' }, String(ent.value)) : null;
+    var name = kind === 'chip' ? null : h('span', { class: kind === 'bar' ? 'mh-bar-t' : 'mh-icon-t', lang: 'hi' }, ent.label[0]);
+    var say = ent.label[1] + ' · ' + ent.label[0] + (ent.value != null && ent.value !== '' ? ': ' + ent.value : '') + (ent.n ? ', ' + ent.n + ' waiting' : '') + (ent.soon ? ', coming soon' : '');
+    var b = btn((kind === 'chip' ? 'mh-chipbtn' : kind === 'bar' ? 'mh-baritem' : 'mh-icon') + (ent.soon ? ' is-soon' : ''), say, [emoji(ent.e), val, name, tag, badge(ent.n || 0)],
+      function (x) { if (ent.soon || !ent.open) soonWin(ent, x); else ent.open(x); });
+    b.setAttribute('data-icon', ent.key); if (ent.pressed != null) b.setAttribute('aria-pressed', String(!!ent.pressed));
+    return b;
+  }
+  function icon(ic) { return entry(ic, 'icon'); }
+  // add, replace or (with { key } alone) remove an entry wherever it is; a new right-column icon goes to the top column
   function setIcon(ic) {
-    var old = S.el.events.querySelector('[data-icon="' + ic.key + '"]'), b = ic.open ? icon(ic) : null;
+    var old = document.querySelector('.mh-hud [data-icon="' + ic.key + '"], .mh-bar [data-icon="' + ic.key + '"]'), kind = old ? (old.classList.contains('mh-chipbtn') ? 'chip' : old.classList.contains('mh-baritem') ? 'bar' : 'icon') : 'icon';
+    var b = ic.open || ic.soon || ic.label ? entry(ic, kind) : null;
     if (old && b) old.replaceWith(b); else if (old) old.remove(); else if (b) S.el.events.appendChild(b);
   }
   function buildHud() {
     var o = S.o, el = {};
     el.avatar = btn('mh-avatar', 'Your profile · प्रोफ़ाइल', h('span', { 'aria-hidden': 'true' }, String((o.session.name || o.session.email || '?').trim().charAt(0) || '?').toUpperCase()), openProfile);
-    el.chip = h('span', { class: 'mh-chip', hidden: 'hidden' });
-    el.rank = canRank(o.session) ? btn('mh-icon', 'Ranking · रैंकिंग', [emoji('ranking'), h('span', { class: 'mh-icon-t', lang: 'hi' }, L.rank[0])], openRank) : null;
+    // the chip under the avatar: the network score (Owner: Kingdom level) or the district; with ranking it opens the Ranking window
+    el.chip = canRank(o.session) ? btn('mh-chip mh-chip-btn', 'Ranking · रैंकिंग', [], openRank) : h('span', { class: 'mh-chip' });
+    el.chip.hidden = true;
+    el.rank = canRank(o.session) && !o.top ? btn('mh-icon', 'Ranking · रैंकिंग', [emoji('ranking'), h('span', { class: 'mh-icon-t', lang: 'hi' }, L.rank[0])], openRank) : null;
     el.events = h('div', { class: 'mh-events' }, (el.rank ? [el.rank] : []).concat((o.icons || []).map(icon)));
+    el.lower = h('div', { class: 'mh-lower' }, (o.lower || []).map(icon));
+    el.top = o.top ? h('div', { class: 'mh-topbar' }, o.top.map(function (x) { return entry(x, 'chip'); })) : null;
+    el.bar = o.bar ? h('nav', { class: 'mh-bar', 'aria-label': 'Owner · मालिक' }, o.bar.map(function (x) { return entry(x, 'bar'); })) : null;
+    el.deadline = o.deadline ? h('button', { type: 'button', class: 'mh-deadline', id: 'mh-deadline' }, [emoji('due'), h('span', { class: 'mh-dl-t' }, '…')]) : null;
+    if (el.deadline) el.deadline.onclick = function () { openDeadline(el.deadline); };
+    el.ticker = o.ticker ? entry(o.ticker, 'icon') : null;
+    if (el.ticker) el.ticker.className = 'mh-ticker is-soon';
     el.say = h('p', { class: 'mh-sr', role: 'status', 'aria-live': 'polite' });
     var panes = [0, 1, 2].map(function (i) { return h('div', { role: 'tabpanel', id: 'mh-pane-' + i, 'aria-labelledby': 'mh-tab-' + i, hidden: i ? 'hidden' : null }); });
     var tt = tabs(['town', 'wild', 'daily'], function (i) { panes.forEach(function (p, k) { p.hidden = k !== i; }); });
@@ -459,8 +501,15 @@ var LMCSMapHome = (function () {
     el.panes = panes;
     el.strip = h('button', { type: 'button', id: 'mh-strip', class: 'mh-strip' }, [emoji('quests'), h('span', { class: 'mh-strip-t' }, COPY.loading), badge(0)]);
     el.strip.onclick = function () { var x = S.items[0]; if (x) openItem(x, el.strip); else drawer(true, true); };
-    o.scene.appendChild(h('div', { class: 'mh-hud' }, [h('div', { class: 'mh-tl' }, [el.avatar, el.chip]), el.events, el.edge, el.drawer, h('div', { class: 'mh-bottom' }, [el.strip, o.switchEl]), el.say]));
+    o.scene.appendChild(h('div', { class: 'mh-hud' + (o.top ? ' is-full' : '') }, [h('div', { class: 'mh-tl' }, [el.avatar, el.chip, el.deadline]), el.top, el.events, el.lower, el.edge, el.drawer,
+      h('div', { class: 'mh-bottom' }, [el.strip, el.ticker, o.bar ? null : o.switchEl]), el.say]));
+    if (el.bar) o.scene.parentNode.insertBefore(el.bar, o.scene.nextSibling); // the bottom bar sits under the scene, like a game's dock
     S.el = el; S.drawer = drawer; S.tabs = tt;
+  }
+  function openDeadline(opener) {
+    var d = S.deadline;
+    open({ title: 'Next deadline · अगली तारीख़', opener: opener, nodes: d ? [h('p', { class: 'mh-detail' }, d.title), h('p', { class: 'mh-pills' }, [h('span', { class: 'gb-pill' + (d.late ? ' gb-pill-low' : '') }, (d.late ? 'Overdue by ' : 'Due in ') + d.left + ' · ' + dueText(d.due))])]
+      : [note('Nothing on your list has a due date right now.')] });
   }
 
   // ── the map ──
@@ -471,11 +520,13 @@ var LMCSMapHome = (function () {
   // one place's marker: the fort, its name plate, and a bubble when something waits there. dim = another district (not a button)
   function makePin(p, c, extraStyle, label) {
     var dim = !owner() && !inScope(S.scope, p.id) && !c; // an item assigned to you there keeps it live
+    var base = owner() && S.kingdom ? ((S.kingdom.kingdom || {}).campuses || []).filter(function (b) { return b.id === p.id; })[0] : null;
     var top = here(p.id)[0], kids = [h('span', { class: 'mh-fort', 'aria-hidden': 'true' }, LMCSEmoji.get(p.darbar || p.id === 'HES' ? 'hq' : 'school')), h('span', { class: 'mh-plate', 'aria-hidden': 'true' }, label || p.name),
+      base ? h('span', { class: 'mh-lv', 'aria-hidden': 'true' }, 'Lv ' + (Number(base.level) || 0)) : null,
       c ? h('span', { class: 'mh-bub', 'aria-hidden': 'true' }, [LMCSEmoji.get(top.e), h('b', {}, c > 99 ? '99+' : String(c))]) : null];
     var cls = 'mh-pin' + (p.darbar || p.id === 'HES' ? ' is-hq' : '') + (dim ? ' is-dim' : '') + (!dim && !owner() && !inScope(S.scope, p.id) ? ' is-out' : '');
     var pin = dim ? h('span', { class: cls, style: extraStyle, 'data-id': p.id, role: 'img', 'aria-label': pinLabel(p, 0, S.o.role, true) }, kids)
-      : h('button', { type: 'button', class: cls, style: extraStyle, 'data-id': p.id, 'aria-label': pinLabel(p, c, S.o.role, false) }, kids);
+      : h('button', { type: 'button', class: cls, style: extraStyle, 'data-id': p.id, 'aria-label': pinLabel(p, c, S.o.role, false) + (base ? ', level ' + (Number(base.level) || 0) : '') }, kids);
     if (!dim) pin.onclick = function (e) { if (window.L && window.L.DomEvent) window.L.DomEvent.stopPropagation(e); var box = S.o.scene.querySelector('.mh-box'); if (!(box && box.dragged)) openPin(p.id, pin); };
     return pin;
   }
@@ -504,8 +555,9 @@ var LMCSMapHome = (function () {
       LMCSKingdomMap.load().then(function () {
         var Lf = window.L; // Leaflet (this file's own L is its labels)
         var c = LMCSPlaces.CENTER || { lat: 31.8, lng: 77.0, zoom: 9 };
-        R.map = Lf.map(el, { zoomControl: false, attributionControl: true }).setView([c.lat, c.lng], c.zoom);
-        Lf.control.zoom({ position: 'bottomright' }).addTo(R.map);
+        R.map = Lf.map(el, { zoomControl: false, attributionControl: false }).setView([c.lat, c.lng], c.zoom);
+        Lf.control.attribution({ position: 'bottomleft' }).addTo(R.map); // OpenStreetMap's credit stays in view, clear of the strip and the edge icons
+        Lf.control.zoom({ position: 'bottomleft' }).addTo(R.map); // the left side is free of edge icons
         Lf.tileLayer(LMCSKingdomMap.TILES, { maxZoom: 19, attribution: LMCSKingdomMap.ATTRIBUTION }).addTo(R.map);
         R.layer = Lf.layerGroup().addTo(R.map); R.loading = false;
         box.removeChild(box.lastChild);
@@ -568,7 +620,7 @@ var LMCSMapHome = (function () {
     el.panes[0].appendChild(h('h3', { class: 'mh-sr' }, owner() ? bi('decide') : bi('act')));
     el.panes[0].appendChild(list(town, S.loaded ? (owner() ? COPY.ownerClear : COPY.coordClear) : COPY.loading));
     var routes = h('button', { type: 'button', class: 'mh-row' }, [emoji('bus'), h('span', { class: 'mh-row-t' }, txt('routes')), h('span', { class: 'mh-go', 'aria-hidden': 'true' }, '›')]);
-    routes.onclick = function () { S.drawer(false); o.world(true); var b = o.switchEl.querySelector('button[aria-pressed="true"]'); if (b) b.focus(); };
+    routes.onclick = function () { S.drawer(false); o.world(true); var b = o.switchEl && o.switchEl.querySelector('button[aria-pressed="true"]'); if (b) b.focus(); };
     el.panes[1].textContent = ''; el.panes[1].appendChild(h('ul', { class: 'mh-list' }, [h('li', {}, routes)].concat(wild.map(function (x) { return h('li', {}, itemRow(x)); }))));
     var day = ((S.today && S.today.missions) || []).filter(function (m) { return !m.gone && m.why !== 'Assigned by the Owner'; }).map(function (m) {
       var href = !m.done && m.go ? LMCSGame.safeHref(m.go, o.root) : null, kids = [h('span', { class: 'mh-mark', 'aria-hidden': 'true' }, m.done ? LMCSEmoji.get('done') : '○'), h('span', { class: 'mh-row-t' }, String(m.title || '')), h('span', { class: 'mh-sr' }, m.done ? 'Done' : 'To do')];
@@ -581,9 +633,17 @@ var LMCSMapHome = (function () {
     el.strip.querySelector('.mh-strip-t').textContent = S.items[0] ? S.items[0].title : S.loaded ? (owner() ? COPY.ownerClear : COPY.coordClear) : COPY.loading;
     var sb = el.strip.lastChild; sb.textContent = String(total); sb.hidden = !total;
     el.strip.setAttribute('aria-label', (S.items[0] ? 'Next: ' + S.items[0].title : el.strip.querySelector('.mh-strip-t').textContent) + (total ? ', ' + total + ' waiting' : ''));
+    if (el.deadline) {
+      S.deadline = nextDeadline(((S.today && S.today.missions) || []).concat(S.items), new Date());
+      el.deadline.lastChild.textContent = S.deadline ? (S.deadline.late ? 'Overdue ' : '') + S.deadline.left : 'None';
+      el.deadline.classList.toggle('is-late', !!(S.deadline && S.deadline.late));
+      el.deadline.setAttribute('aria-label', 'Next deadline · अगली तारीख़: ' + (S.deadline ? S.deadline.title + ', ' + (S.deadline.late ? 'overdue by ' : 'in ') + S.deadline.left : 'none'));
+    }
     var lv = owner() && S.kingdom && S.kingdom.kingdom ? Number(S.kingdom.kingdom.level) || 0 : null;
     el.chip.hidden = owner() ? lv === null : !S.scope;
-    el.chip.textContent = owner() ? (lv === null ? '' : (LMCSEmoji.get('level') + ' Kingdom level ' + lv).trim()) : S.scope ? (LMCSEmoji.get('world') + ' ' + districtText(S.scope)).trim() : '';
+    el.chip.textContent = owner() ? (lv === null ? '' : (LMCSEmoji.get('level') + ' Network Lv ' + lv).trim()) : S.scope ? (LMCSEmoji.get('world') + ' ' + districtText(S.scope)).trim() : '';
+    if (el.chip.tagName === 'BUTTON') el.chip.setAttribute('aria-label', (owner() ? 'Network score: Kingdom level ' + lv : 'Your district: ' + districtText(S.scope)) + '. Opens the Ranking · रैंकिंग');
+    if (canRank(o.session) && !owner() && !S.scope) el.chip.hidden = true;
   }
   // the right column: Ranking, then one icon per running event (Game Day), taken from event.js's card when the page has one
   function renderEvents() {
@@ -598,6 +658,7 @@ var LMCSMapHome = (function () {
   function fit() {
     var sc = S.o.scene, top = sc.getBoundingClientRect().top + (window.scrollY || 0), rail = document.getElementById('game-rail'), bottom = window.innerHeight;
     if (rail && !rail.hidden && getComputedStyle(rail).position === 'fixed') { var r = rail.getBoundingClientRect(); if (r.top > window.innerHeight / 2) bottom = r.top; }
+    var bar = document.querySelector('.mh-bar'); if (bar) bottom -= bar.offsetHeight; // the bottom bar sits under the scene
     sc.style.height = Math.max(420, Math.round(bottom - top)) + 'px';
   }
   function mount(o) {

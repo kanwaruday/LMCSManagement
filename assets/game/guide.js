@@ -50,11 +50,10 @@ window.LMCSGuide = {
       ],
     },
     'owner/index.html': {
-      purpose: "HQ Home: the map of LMCS HQ and LMS 1–6, with a bubble wherever a decision waits for you.", roles: ['Owner'],
+      purpose: "HQ Home: one screen, the map of LMCS HQ and LMS 1–6, with every Owner tool on its edges.", roles: ['Owner'],
       tour: [
         { target: '#welcome-strip', text: "Your name and the whole school, at a glance." },
-        { target: '#mh-scene', text: "Your map. Tap LMCS HQ for All quests, the Requests tray, People and Game settings; tap a school for its buildings and setup steps." },
-        { target: '#mh-switch', text: "Town is this map. World shows the bus routes of every school." },
+        { target: '#mh-scene', text: "Your map. Tap LMCS HQ or a school to open it; the icons on the edges each open their own window, and the bar at the bottom holds All quests, People, Payroll and Schools." },
       ],
     },
     'owner/kingdom.html': { purpose: "See every school's setup at a glance, list every quest, and hand out the next steps.", roles: ['Owner'] },

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
   <link rel="stylesheet" href="../assets/game/kingdom.css?v=807b18f2" />
-  <link rel="stylesheet" href="../assets/game/map-home.css?v=03ceb21d" />
+  <link rel="stylesheet" href="../assets/game/map-home.css?v=d7ef6895" />
   <style>
     /* the HQ window's tiles and lists (they live in the stash until a window opens them) */
     #hq-box .gb-grid, #modules .gb-list { margin:0; }
@@ -30,7 +30,7 @@
        the edges and every list in a window. The Kingdom itself (assets/game/kingdom.js) is mounted off screen in #kg-root, so its own
        dialogs (buildings and setup steps, 📜 All quests with assign and bulk, the Requests tray, alliance heads) open from the map's windows.
        What used to be lists (the HQ tiles, Today, tools, appointments, sign out) waits in the stash and is moved into a window when opened. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
+  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <main class="gb-stage">
@@ -50,18 +50,13 @@
           <section id="modules" aria-label="Owner tools"><h3>Owner tools</h3><ul class="gb-list" id="modules-grid"></ul><h3>More pages</h3><ul class="gb-list" id="tools-more"></ul></section>
           <section id="gd-box" aria-label="Game Day"></section>
           <section id="people-box" aria-label="People"></section>
+          <section id="routes-box" aria-label="Bus routes, every school"><div id="world-map"></div></section>
           <div class="kg" id="kg-root"></div><div id="kg-next"></div><div id="kg-panels"></div>
           <section id="appt-wrap"><h3>Appointments</h3><div id="appt-box"></div></section>
           <section id="acct-wrap"><h3>Account</h3><a href="#" class="gb-btn" id="signout-link">Sign out</a></section>
         </div>
-        <div class="mh-scene" id="mh-scene">
-          <!-- 🏛️ Town (the map of LMCS HQ and the schools) or 🗺️ World (the bus routes, every school): one switch, as on the Principal home -->
-          <div class="gb-switch" id="mh-switch" role="group" aria-label="View · देखें">
-            <button type="button" id="view-town" aria-pressed="true" aria-controls="mh-town"><span data-emoji="hq"></span><span lang="hi">नगर</span> · Town</button>
-            <button type="button" id="view-world" aria-pressed="false" aria-controls="world"><span data-emoji="world"></span><span lang="hi">दुनिया</span> · World</button>
-          </div>
-          <section class="mh-world" id="world" aria-label="Bus routes, every school" hidden><div id="world-map"></div></section>
-        </div>
+        <!-- the one screen (Uday, 30 Oct): the map with ~20 entry points on its edges and a bottom bar under it; each opens its own window -->
+        <div class="mh-scene" id="mh-scene"></div>
       </div>
     </main>
     <aside class="gb-panels" id="panels" aria-label="More" hidden></aside><!-- kept empty: everything opens in a window -->
@@ -73,7 +68,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=6d50a352"></script>
+  <script src="../assets/auth.js?v=d8a26d6e"></script>
   <script src="../assets/game/game.js?v=e4fad387"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script src="../assets/game/emoji.js?v=cfda9180"></script>
@@ -82,7 +77,7 @@
   <script src="../assets/game/places.js?v=e29efb40"></script>
   <script src="../assets/game/kingdom-map.js?v=897c8cef"></script>
   <script src="../assets/game/people-room.js?v=d7775a66"></script>
-  <script src="../assets/game/map-home.js?v=f7aaad86"></script>
+  <script src="../assets/game/map-home.js?v=16e8a253"></script>
   <script src="../coordinator/route-map.js?v=3f998a20"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
@@ -206,7 +201,11 @@
       renderTiles(null); renderMore(null);
       if (!GAME_BACKEND_URL) { LMCSMapHome.setKingdom(null); return; }
       const tray = LMCSKingdom.hooks.after; // the Kingdom's own Requests tray (drawn off screen): kept, then the map follows
-      LMCSKingdom.hooks.after = function (d) { if (tray) tray(d); renderTiles(d); renderMore(d); LMCSMapHome.setKingdom(d); };
+      LMCSKingdom.hooks.after = function (d) {
+        if (tray) tray(d); renderTiles(d); renderMore(d); LMCSMapHome.setKingdom(d);
+        LMCSMapHome.setIcon(topEntries(d)[2]);
+        approvals().then(function (list) { LMCSMapHome.setIcon({ key: 'requests', e: 'requests', label: ['अनुरोध', 'Requests'], n: (list || []).length + (d.cards || []).length, open: openRequests }); });
+      };
       LMCSKingdom.mount(document.getElementById('kg-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels'),
         quiet: true, onWrite: function () { const p = document.getElementById('mh-edge'); if (p) p.focus(); } })
         .then(function () { if (!LMCSKingdom.last()) LMCSMapHome.setKingdom(null); }); // a failed read: the map keeps its places, the rows say so
@@ -222,14 +221,14 @@
       fetch(GAME_BACKEND_URL + '?action=gameeventboard&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (!(d && d.success && d.event && Array.isArray(d.schools))) return LMCSMapHome.setIcon({ key: 'gameday' });
+          if (!(d && d.success && d.event && Array.isArray(d.schools))) return; // no event: the icon stays and says so
           const box = document.getElementById('gd-box'), n = d.network;
           box.textContent = '';
           box.appendChild(el('p', '', d.event.upcoming ? d.event.name + ' starts ' + LMCSGame.dateLabel(d.event.date) + '.' : d.event.name + ' · live'));
           if (n) box.appendChild(el('p', 'gb-muted', 'All schools: ' + LMCSKingdom.gdNetworkText(n)));
           const ul = el('ul'); d.schools.forEach(function (x) { ul.appendChild(el('li', '', LMCSKingdom.gdSchoolLine(x))); }); box.appendChild(ul);
           const a = el('a', 'gb-btn', 'Open the full board'); a.href = 'kingdom.html'; box.appendChild(a);
-          LMCSMapHome.setIcon({ key: 'gameday', e: 'events', label: ['खेल दिवस', 'Game Day'], open: function (b) { LMCSMapHome.open({ title: d.event.name, nodes: [box], held: [box], opener: b }); } });
+          LMCSMapHome.setIcon({ key: 'gameday', e: 'events', label: ['खेल दिवस', 'Game Day'], n: d.event.upcoming ? 0 : 1, open: function (b) { LMCSMapHome.open({ title: d.event.name, nodes: [box], held: [box], opener: b }); } });
         }, function () { /* no board: no icon */ });
     }
 
@@ -238,27 +237,114 @@
       return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
     }
 
-    // 🏛️ Town (the map) or 🗺️ World (the bus routes of every school: Fleet Command's route map, read only, loaded once)
-    let worldMap = null;
-    function showView(world) {
-      const town = document.getElementById('mh-town');
-      if (town) town.hidden = world;
-      document.getElementById('world').hidden = !world;
-      document.getElementById('view-town').setAttribute('aria-pressed', String(!world));
-      document.getElementById('view-world').setAttribute('aria-pressed', String(world));
-      if (world && !worldMap && window.LMCSRouteMap) { try { worldMap = LMCSRouteMap.mount(document.getElementById('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro' }); } catch (e) { console.warn('route map', e); } }
-    }
     const byId = function (id) { return document.getElementById(id); };
+    const win = function (title, nodes, opener, sub, held) { LMCSMapHome.open({ title: title, sub: sub, nodes: nodes, held: held, opener: opener }); };
+    const row = function (t, small, href, onclick) { // one gb-go row: a link, or a button when it opens a window
+      const r = el(href ? 'a' : 'button', 'gb-go'), span = el('span', '', t); if (href) r.href = href; else r.type = 'button';
+      if (small) span.appendChild(el('small', '', small)); r.appendChild(span); if (onclick) r.addEventListener('click', onclick);
+      const li = el('li'); li.appendChild(r); return li;
+    };
+    // 🚌 Wilderness · the buses: Fleet Command's route map of every school, read only, in a window (loaded the first time)
+    let worldMap = null;
+    function openRoutes(opener) {
+      const box = byId('routes-box');
+      win('Buses · बसें', [box], opener, 'Routes and stops, every school', [box]);
+      if (!worldMap && window.LMCSRouteMap) { try { worldMap = LMCSRouteMap.mount(byId('world-map'), { session: LMCS.getSession(), backendUrl: COORD_BACKEND_URL, mode: 'metro' }); } catch (e) { console.warn('route map', e); } }
+    }
+    // approvals waiting for the Owner's decision (PDR approvalslist, the Approvals page's own read): read once, for the badge, the window and the school chips
+    let APPROVALS = null;
+    function approvals() {
+      if (!APPROVALS) APPROVALS = fetch(PDR_BACKEND_URL + '?action=approvalslist&idToken=' + encodeURIComponent((LMCS.getSession() || {}).idToken || ''), { cache: 'no-store' })
+        .then(function (r) { return r.json(); }).then(function (d) { return d && d.success && Array.isArray(d.requests) ? d.requests.filter(function (a) { return /^(Pending|Info Requested)$/.test(a.status) && !a.archived; }) : null; }, function () { return null; });
+      return APPROVALS;
+    }
+    // Requests: approvals waiting for a decision, then the Requests tray (approved, nobody following up)
+    function openRequests(opener) {
+      approvals().then(function (list) {
+        const cards = (LMCSKingdom.last() || {}).cards || [], a = el('ul', 'gb-list'), t = el('ul', 'gb-list');
+        if (list === null) a.appendChild(el('li', 'gb-muted', "The approvals list didn't load. The Approvals page still opens."));
+        else if (!list.length) a.appendChild(el('li', 'gb-empty', 'Nothing waits for your decision.'));
+        (list || []).slice(0, 12).forEach(function (x) { a.appendChild(row(x.title, (x.campusId || '') + ' · ' + x.status, '../coordinator/systems/index.html#approvals')); });
+        a.appendChild(row('Open Approvals', 'Decide, ask for information, or reject', '../coordinator/systems/index.html#approvals'));
+        if (!cards.length) t.appendChild(el('li', 'gb-empty', 'Nothing waiting. When a request is approved and nobody is following it up, it lands here.'));
+        cards.forEach(function (c) { t.appendChild(row(c.title, 'Approved request' + (c.campus ? ' · ' + c.campus : ''), null, function () { LMCSMapHome.close(); LMCSKingdom.openFollow(c, pinOf('HES')); })); });
+        win('Requests · अनुरोध', [el('h3', '', 'Waiting for your decision'), a, el('h3', '', 'Requests tray: pick who follows up'), t], opener);
+      });
+    }
+    // 🏫 Schools: every school with its level; a row opens that school's window on the map
+    function openSchools(opener) {
+      const bases = ((LMCSKingdom.last() || {}).kingdom || {}).campuses || [], ul = el('ul', 'gb-list');
+      if (!bases.length) ul.appendChild(el('li', 'gb-empty', 'The schools load with the Kingdom. Try again in a moment.'));
+      bases.forEach(function (b) { ul.appendChild(row(b.full || b.name, 'Level ' + (Number(b.level) || 0) + ' · ' + LMCSKingdom.progressText(LMCSKingdom.progressOf([b])), null, function () { LMCSMapHome.openPin(b.id); })); });
+      win('Schools · स्कूल', [ul], opener);
+    }
+    // 🏫 Map ⇄ School: pick a school and see it as its Principal does (read only; Leave comes back to this map)
+    function openSchoolView(opener) {
+      const bases = (((LMCSKingdom.last() || {}).kingdom || {}).campuses || []).filter(function (b) { return /^LMS[1-6]$/.test(b.id); }), ul = el('ul', 'gb-list');
+      (bases.length ? bases : LMCSMapHome.PINS.filter(function (p) { return !p.darbar; })).forEach(function (b) {
+        ul.appendChild(row(b.full || b.name, 'स्कूल में जाएँ · Enter School (read only)', null, function () {
+          try { sessionStorage.setItem('lmcs-map-return', JSON.stringify({ page: 'owner/index.html', pin: b.id })); } catch (e) { /* Leave lands on the map's start */ }
+          LMCSGame.setViewAs({ campus: b.id, name: b.name }); location.assign('../principal/index.html');
+        }));
+      });
+      win('Map ⇄ School · स्कूल', [el('p', 'gb-muted', 'See a school as its Principal does. Nothing can be changed while you look; Leave in the top bar brings you back to the map.'), ul], opener);
+    }
+    function openPayroll(opener) {
+      const ul = el('ul', 'gb-list');
+      ul.appendChild(row('Payroll', 'Monthly payroll for every school', '../payroll/index.html'));
+      ul.appendChild(row('Salary Dashboard', 'Offer-letter salary calculator and salary data', '../salary/index.html'));
+      win('Payroll · वेतन', [ul], opener);
+    }
+    function openDay(opener) {
+      const ul = el('ul', 'gb-list');
+      ul.appendChild(row('Money today', "The Day Book: today's cash and entries", '../office/daybook.html'));
+      win('The day · आज', [el('p', 'mh-detail', LMCSMapHome.dayText(new Date()) + '. The school day closes at 15:30 IST.'), ul], opener);
+    }
+    function openPoints(opener) {
+      const bases = ((LMCSKingdom.last() || {}).kingdom || {}).campuses || [], ol = el('ul', 'gb-list');
+      bases.slice().sort(function (a, b) { return (Number(b.points) || 0) - (Number(a.points) || 0); }).forEach(function (b) { ol.appendChild(row(b.full || b.name, (Number(b.points) || 0) + ' points · Level ' + (Number(b.level) || 0), null, function () { LMCSMapHome.openPin(b.id); })); });
+      if (!bases.length) ol.appendChild(el('li', 'gb-empty', 'Points load with the Kingdom.'));
+      win('Points · अंक', [el('p', 'gb-muted', 'A school earns points as its buildings level up.'), ol], opener);
+    }
+    // a school window's numbers (assets/game/map-home.js campusStats): existing reads only, loaded once, the first time a school is opened.
+    // Issues, today's reports and the buses from the Coordinator backend; approvals waiting from the approvals read above.
+    function analytics() {
+      const s = LMCS.getSession() || {}, tok = encodeURIComponent(s.idToken || ''), today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10); // IST
+      const get = function (q) { return fetch(COORD_BACKEND_URL + '?' + q + '&idToken=' + tok, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { return j && j.success ? j : null; }, function () { return null; }); };
+      return Promise.all([get('action=principalissues'), get('action=coordinatorpdrday&date=' + today), get('action=coordinatortransport'), approvals()]).then(function (r) {
+        return { today: today, issues: r[0] && r[0].issues, pdrDay: r[1], transport: r[2],
+          approvals: r[3] ? r[3].map(function (a) { return { campus: a.campusId, title: a.title, waiting: true }; }) : null };
+      });
+    }
+    const SOON = {
+      staff: 'Staff present today needs an attendance source: nothing in the portal records who is in yet.',
+      campaigns: 'Campaigns (the "Open the School" chapters after Game Day) open here.', admissions: 'Admissions, school by school, open here.',
+      events: 'The events calendar opens here.', notices: 'Notices and messages for you land here.', chat: 'A short line of news from the schools runs here.',
+      requisitions: 'Requisitions (purchase requests before approval) open here.' };
+    const total = function (k) { return (((k || {}).kingdom || {}).campuses || []).reduce(function (n, b) { return n + (Number(b.points) || 0); }, 0); };
+    function topEntries(k) {
+      return [{ key: 'day', e: 'day', label: ['दिन', 'Day'], value: LMCSMapHome.dayText(new Date()).replace('Day open · ', '').replace('Day closed', 'Closed'), open: openDay },
+        { key: 'staff', e: 'account', label: ['स्टाफ़', 'Staff present'], value: '—', soon: true, soonText: SOON.staff },
+        { key: 'points', e: 'points', label: ['अंक', 'Points'], value: k ? String(total(k)) : '…', open: openPoints }];
+    }
     function mountHud(session) {
       if (!window.LMCSMapHome) return;
-      LMCSMapHome.mount({ role: 'Owner', session: session, root: '../', scene: byId('mh-scene'), switchEl: byId('mh-switch'), stash: byId('mh-stash'),
-        gameRoot: byId('game-root'), world: showView, post: post, refresh: function () { LMCSKingdom.refresh(); }, realMap: true, setup: setup,
-        icons: [
-          { key: 'tools', e: 'tools', label: ['औज़ार', 'Tools'], open: function (b) { const n = [byId('modules')]; LMCSMapHome.open({ title: 'Tools · औज़ार', sub: 'Every Owner page', nodes: n, held: n, opener: b }); } },
-          { key: 'buddy', e: 'buddy', label: ['बडी', 'Ask Buddy'], open: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); else location.href = '../guide/index.html'; } }
-        ],
+      const icon = function (key, e, hi, en, open, soon) { return { key: key, e: e, label: [hi, en], open: open, soon: !open, soonText: SOON[key] }; };
+      LMCSMapHome.mount({ role: 'Owner', session: session, root: '../', scene: byId('mh-scene'), stash: byId('mh-stash'),
+        gameRoot: byId('game-root'), world: function () { openRoutes(byId('mh-edge')); }, post: post, refresh: function () { LMCSKingdom.refresh(); }, realMap: true, setup: setup,
+        analytics: analytics, enterSchool: true, deadline: true,
+        top: topEntries(null),
+        icons: [{ key: 'gameday', e: 'events', label: ['खेल दिवस', 'Game Day'], value: '', open: function (b) { win('Game Day · खेल दिवस', [el('p', 'mh-empty', 'No Game Day is running or coming up.')], b); } },
+          icon('campaigns', 'rallies', 'अभियान', 'Campaigns'), icon('admissions', 'applicants', 'दाख़िले', 'Admissions'), icon('events', 'appointments', 'कार्यक्रम', 'Events')],
+        lower: [{ key: 'requests', e: 'requests', label: ['अनुरोध', 'Requests'], open: openRequests }, icon('notices', 'bill', 'सूचना', 'Notices')],
+        ticker: { key: 'chat', e: 'call', label: ['चैट', 'Chat · coming soon'], soon: true, soonText: SOON.chat },
+        bar: [{ key: 'quests', e: 'quests', label: ['खोज', 'All quests'], open: function (b) { quests(b); } }, { key: 'people', e: 'heads', label: ['लोग', 'People'], open: openPeople },
+          { key: 'payroll', e: 'payroll', label: ['वेतन', 'Payroll'], open: openPayroll }, icon('requisitions', 'documents', 'माँग', 'Requisitions'),
+          { key: 'schools', e: 'school', label: ['स्कूल', 'Schools'], open: openSchools }, { key: 'mapschool', e: 'world', label: ['⇄ स्कूल', 'Map ⇄ School'], open: openSchoolView }],
         hq: function () { return { nodes: [byId('hq-box')], held: [byId('hq-box')] }; },
-        profile: function () { const n = [byId('appt-wrap'), byId('acct-wrap')]; return { nodes: n, held: n }; } });
+        profile: function () { const n = [byId('modules'), byId('appt-wrap'), byId('acct-wrap')]; return { nodes: n, held: n }; } });
+      setInterval(function () { LMCSMapHome.setIcon(topEntries(LMCSKingdom.last())[0]); }, 60000); // the day clock
+      if (window.LMCSDock) LMCSDock.avoid = '.mh-bar'; // the floating Buddy lifts above the bottom bar
     }
 
     function showApp(session) {
@@ -271,13 +357,12 @@
         e.preventDefault();
         LMCS.signOut();
       });
-      document.getElementById('view-town').addEventListener('click', function () { showView(false); });
-      document.getElementById('view-world').addEventListener('click', function () { showView(true); });
 
       renderModules();
       mountHud(session);
       mountKingdom(session); loadGameDay(session);
-      LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
+      approvals().then(function (list) { if (list) LMCSMapHome.setIcon({ key: 'requests', e: 'requests', label: ['अनुरोध', 'Requests'], n: list.length + (((LMCSKingdom.last() || {}).cards) || []).length, open: openRequests }); });
+      // no game rail here: the bottom bar is this page's dock, and Missions and Quests live in the drawer and the strip
       LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }

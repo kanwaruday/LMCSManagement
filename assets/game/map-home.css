@@ -156,6 +156,45 @@ body.mh-win-open { overflow:hidden; }
 .mh-ico { background:none; border:0; }
 .mh-ico .mh-pin { transform:translate(-50%, -60%); }
 .mh-pin.is-grp .mh-fort { background:var(--gb-info); }
-.mh-box.is-real .leaflet-bottom.leaflet-right { margin-bottom:148px; } /* the zoom buttons clear the quest strip and the switch */
+.mh-box.is-real .leaflet-bottom.leaflet-left { margin-bottom:116px; } /* the zoom buttons clear the quest strip */
+.mh-hud.is-full ~ .mh-town .leaflet-bottom.leaflet-left, .mh-scene:has(.mh-ticker) .mh-box.is-real .leaflet-bottom.leaflet-left { margin-bottom:116px; }
 .mh-box.is-real .leaflet-control-zoom a { width:44px; height:44px; line-height:44px; font-size:22px; }
 .mh-box.is-real .leaflet-control-attribution { font-size:11px; }
+
+/* ── the one screen (Owner, 30 Oct): ~20 entry points on the edges, each opening its own window ──
+   top-left: avatar, network score, next deadline · top bar: day, staff, points · right: Game Day, campaigns, admissions, events ·
+   right lower: requests, notices · left: the task drawer tab · bottom: the quest strip and the ticker · under the map: the bottom bar */
+.mh-chip-btn { min-height:44px; border:0; cursor:pointer; font:inherit; font-size:13px; font-weight:700; }
+.mh-chip-btn:focus-visible, .mh-chipbtn:focus-visible, .mh-baritem:focus-visible, .mh-deadline:focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
+.mh-deadline { display:inline-flex; align-items:center; gap:4px; min-height:44px; max-width:116px; padding:0 10px; border:2px solid var(--gb-gold); border-radius:12px; background:var(--gb-paper); color:var(--gb-ink); font:inherit; font-size:13px; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,.25); cursor:pointer; }
+.mh-deadline .gb-emoji { margin:0; }
+.mh-deadline.is-late { border-color:var(--gb-red-ink); background:var(--gb-red-soft); }
+.mh-dl-t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mh-topbar { position:absolute; top:8px; left:66px; right:72px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+.mh-chipbtn { position:relative; display:inline-flex; align-items:center; gap:4px; min-height:44px; min-width:44px; padding:0 9px; border:0; border-radius:22px; background:rgba(27,36,48,.88); color:#fff; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+.mh-chipbtn .gb-emoji { margin:0; font-size:15px; }
+.mh-chipbtn .mh-val { font-size:12.5px; }
+.mh-chipbtn.is-soon { background:rgba(27,36,48,.62); }
+.mh-soon { display:inline-block; padding:0 5px; border-radius:8px; background:var(--gb-gold-soft); color:var(--gb-gold-ink); font-size:10.5px; font-weight:700; line-height:1.5; }
+.mh-icon .mh-soon { position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); border:1px solid var(--gb-gold); }
+.mh-icon.is-soon { background:#f3f1ec; border-color:var(--gb-line); }
+.mh-hud.is-full .mh-events { gap:10px; }
+.mh-hud.is-full .mh-icon { width:58px; min-height:58px; }
+.mh-lower { position:absolute; right:8px; bottom:132px; display:flex; flex-direction:column; gap:10px; }
+.mh-lower .mh-icon { width:58px; min-height:58px; }
+.mh-ticker { display:flex; align-items:center; gap:8px; width:min(100%, 480px); min-height:44px; padding:4px 12px; border:1.5px dashed var(--gb-line); border-radius:22px; background:rgba(255,255,255,.9); color:var(--gb-muted); font:inherit; font-size:13px; cursor:pointer; }
+.mh-ticker .mh-icon-t { flex:1; text-align:left; font-size:13px; }
+.mh-ticker .mh-badge { display:none; }
+.mh-ticker .gb-emoji { margin:0; }
+.mh-ticker:focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
+.mh-lv { position:absolute; top:-6px; left:-4px; padding:0 5px; border-radius:8px; background:var(--gb-red); color:#fff; font-size:11px; font-weight:700; line-height:1.6; }
+/* the bottom bar (a game's dock): fixed under the map on phones, never two bars (the game rail stays off on this page) */
+.mh-bar { display:flex; justify-content:space-around; gap:2px; padding:4px 4px calc(4px + env(safe-area-inset-bottom)); background:var(--gb-paper); border-top:1.5px solid var(--gb-line); }
+.mh-baritem { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; min-width:44px; min-height:56px; padding:2px; border:0; border-radius:12px; background:transparent; color:var(--gb-ink); font:inherit; cursor:pointer; }
+.mh-baritem .gb-emoji { margin:0; font-size:22px; line-height:1.1; }
+.mh-bar-t { font-size:11.5px; font-weight:700; line-height:1.2; text-align:center; }
+.mh-baritem .mh-soon { position:absolute; top:0; right:2px; }
+.mh-baritem .mh-badge { top:0; right:6px; }
+.mh-baritem[aria-pressed="true"] { background:var(--gb-gold-soft); }
+.mh-baritem.is-soon { color:var(--gb-muted); }
+.mh-hud.is-full .mh-bottom { bottom:8px; }

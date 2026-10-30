@@ -108,6 +108,13 @@ assert.deepStrictEqual(Object.keys(M.ART).sort(), ['LMS1', 'LMS2', 'LMS3', 'LMS4
 for (const id of Object.keys(M.ART)) for (const x of ['1x', '2x']) assert.ok(fs.existsSync(path.join(root, 'assets/game/art', M.ART[id] + '-' + x + '.webp')), 'render ' + id + ' ' + x);
 assert.ok(/loading: 'lazy'/.test(read('assets/game/map-home.js')) && /-1x\.webp 480w, /.test(read('assets/game/map-home.js')), 'renders: lazy, the 1x on small screens');
 
+// the deadline card and the day chip (pure)
+const nd = M.nextDeadline([{ title: 'Late one', due: '2026-10-28' }, { title: 'Soon', due: '2026-10-31' }, { title: 'Done', due: '2026-10-01', done: true }, { title: 'No date' }], new Date('2026-10-30T06:00:00Z'));
+assert.strictEqual(nd.title, 'Late one'); assert.strictEqual(nd.late, true);
+assert.strictEqual(M.nextDeadline([{ title: 'x', due: '2026-10-31' }], new Date('2026-10-30T06:00:00Z')).left, '1d 12h', 'due 31 Oct 23:59 IST, now 30 Oct 11:30 IST');
+assert.strictEqual(M.nextDeadline([], new Date()), null);
+assert.strictEqual(M.dayText(new Date('2026-10-29T06:50:00Z')), 'Day open · 3h 10m');
+assert.strictEqual(M.dayText(new Date('2026-10-29T11:00:00Z')), 'Day closed');
 // the file and the windows: text nodes only, no backend call; ✕ 44px+ with a label; tap outside, Esc, focus and scroll restored; reduced motion
 const js = read('assets/game/map-home.js'), css = read('assets/game/map-home.css');
 assert.ok(!/fetch\(|XMLHttpRequest|innerHTML|insertAdjacentHTML|outerHTML/.test(js), 'presentation only: no backend call, no parsed HTML');
@@ -129,16 +136,20 @@ const ow = read('owner/index.html'), at = (f) => ow.indexOf('src="../assets/game
 assert.ok(at('map-home.js') > at('game.js') && at('map-home.js') > at('kingdom.js') && at('map-home.js') > at('emoji.js') && at('map-home.js') > at('kingdom-map.js') && at('kingdom-map.js') > at('places.js') && at('people-room.js') > 0, 'owner: script order');
 assert.ok(/map-home\.css\?v=[0-9a-f]{8}/.test(ow) && /map-home\.js\?v=[0-9a-f]{8}/.test(ow) && /kingdom\.css\?v=[0-9a-f]{8}/.test(ow), 'owner: stamped, the Kingdom dialogs styled');
 assert.ok(/LMCSMapHome\.mount\(\{ role: 'Owner'/.test(ow) && /realMap: true, setup: setup/.test(ow), 'owner: the map home on the real map, setup through the Kingdom');
-assert.strictEqual((ow.match(/class="gb-switch"/g) || []).length, 1, 'owner: one Town / World switch');
-assert.ok(/<span lang="hi">नगर<\/span> · Town/.test(ow) && /<span lang="hi">दुनिया<\/span> · World/.test(ow), 'owner: Hindi-first switch');
-assert.ok(/<nav class="gb-hsw" aria-label="Owner views">/.test(ow), 'owner: the Home / Kingdom header buttons stay as the fallback for now');
+// the one screen (Uday, 30 Oct): every entry point is on screen, built or "Coming soon", each opening its own window
+for (const k of ['day', 'staff', 'points', 'gameday', 'campaigns', 'admissions', 'events', 'requests', 'notices', 'chat', 'quests', 'people', 'payroll', 'requisitions', 'schools', 'mapschool'])
+  assert.ok(new RegExp("key: '" + k + "'|icon\\('" + k + "'").test(ow), 'owner entry point: ' + k);
+assert.ok(/deadline: true/.test(ow) && /analytics: analytics, enterSchool: true/.test(ow), 'owner: the deadline card, school analytics and one-tap Enter School');
+assert.ok(!/class="gb-switch"/.test(ow) && !/gb-hsw/.test(ow), 'owner: one screen; the bottom bar replaces the Town / World switch and the header buttons');
+assert.ok(!/LMCSRail\.mount/.test(ow) && /class="gb-rail"/.test(ow), 'owner: no second bottom bar (the game rail stays off; its element stays for the skeleton)');
+assert.ok(/function soonWin\(ent, opener\)/.test(js) && /if \(ent\.soon \|\| !ent\.open\) soonWin\(ent, x\)/.test(js) && /'जल्द'/.test(js), 'a Coming soon entry opens a window that says so');
+assert.ok(/LMCSDock\.avoid = '\.mh-bar'/.test(ow), 'the floating Buddy clears the bottom bar');
 assert.ok(/LMCSKingdom\.mount\(document\.getElementById\('kg-root'\), \{[^}]*quiet: true/.test(ow) && /<div class="kg" id="kg-root"><\/div>/.test(ow) && /id="mh-stash" hidden/.test(ow), 'owner: the Kingdom mounted off screen, quiet');
 for (const f of ['LMCSKingdom.openBase(id, to)', 'LMCSKingdom.openQuests(to)', 'LMCSKingdom.openFollow(c, ', 'LMCSKingdom.openHead(hd, ', "LMCSPeople.mount(box, { session: LMCS.getSession(), backendUrl: GAME_BACKEND_URL, inline: true })"]) assert.ok(ow.includes(f), 'owner opens ' + f);
 assert.ok(/'kingdom\.html#base-HES': function \(b\) \{ setup\('HES', b\); \}, 'people\.html': function \(b\) \{ openPeople\(b\); \}, 'kingdom\.html#quests'/.test(ow), 'the HQ tiles that pointed at setup pages open their windows; the links stay for the fallback');
 assert.ok(/const tray = LMCSKingdom\.hooks\.after;[\s\S]{0,260}if \(tray\) tray\(d\)/.test(ow), 'the Kingdom\'s own after-hook (its tray) is kept when the map follows');
 assert.ok(!/action=gamekingdom/.test(ow) && /action=gameeventboard/.test(ow), 'one gamekingdom read: the Kingdom\'s own');
 assert.ok(!/innerHTML\s*=\s*[^'\s]/.test(ow.slice(ow.lastIndexOf('<script>'))), 'owner: no data reaches innerHTML in the page script');
-assert.ok(!/analytics:|enterSchool:/.test(ow), 'school analytics and one-tap Enter School come in the next PR');
 // kingdom.js hooks: a quiet mount (no tour over a hidden page), the dialogs the map opens, the write callback; kingdom-map.js lends its Leaflet loader
 const kj = read('assets/game/kingdom.js');
 assert.ok(/else if \(!S\.quiet\) runTour\(false\)/.test(kj) && /S\.quiet = !!opts\.quiet; S\.onWrite = opts\.onWrite \|\| null;/.test(kj) && /if \(S\.onWrite\) return S\.onWrite\(d\);/.test(kj), 'kingdom.js: quiet mount');
