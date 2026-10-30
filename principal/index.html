@@ -70,7 +70,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=ed17b104"></script>
+  <script src="../assets/auth.js?v=5cdccf6d"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Principal"></script>
   <script src="../assets/game/game.js?v=e4fad387"></script>
   <script src="../assets/game/emoji.js?v=88532066"></script>
@@ -260,6 +260,7 @@
     }
 
     function showApp(session) {
+      if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; } // Fee Clerks and below (Uday, 30 Oct)
       session = viewSession(session);
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
