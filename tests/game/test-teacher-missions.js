@@ -5,6 +5,7 @@ const ctx = { console, Logger: { log() {} } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs');
+vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
 const J = (x) => JSON.parse(JSON.stringify(x));
 const kinds = (ms, k) => ms.filter((m) => m.kind === k);
 const CODE = 'NCM/99/01/901';
@@ -362,4 +363,12 @@ assert.deepStrictEqual(pm.map((m) => m.id), ['info_requested:A1', 'info_requeste
 ctx.SpreadsheetApp = { openById: () => { throw new Error('down'); } };
 assert.deepStrictEqual(J(ctx.tchStaffMissionsHook_(staff, fw, now)), []);
 assert.ok(!ctx.gameModuleHooks_(ctx.GAME_MODULE_QUESTS, 'Staff').some((f) => /^tch/.test(f.name)));
+// CW/HW deferred (Uday, 30 Oct): the same day with a log, a CWA and a remediation builds none of those missions; planning still shows
+{
+  const dm = J(ctx.tchMissions_(state({ periodsByDay: { Tue: [{ cls: 'Class 7', subj: 'Math' }] }, loggedDays: { [TUE]: [] }, episodes: [Object.assign({}, cwa1, { remediatedAt: null })], nextChapters: [nxt('2026-11-15')] }), TUE, true, {}, { teacher: { cwhwDeferred: true } }, now, 'T@LMS.org.in'));
+  ['cwhw_log', 'cwa_due', 'remediation_due'].forEach((k) => assert.strictEqual(kinds(dm, k).length, 0, k + ' while deferred'));
+  assert.ok(kinds(dm, 'activity_plan_due').length > 0, 'planning still shows');
+  const on = J(ctx.tchMissions_(state({ periodsByDay: { Tue: [{ cls: 'Class 7', subj: 'Math' }] }, loggedDays: { [TUE]: [] }, episodes: [Object.assign({}, cwa1, { remediatedAt: null })], nextChapters: [nxt('2026-11-15')] }), TUE, true, {}, { teacher: { cwhwDeferred: false } }, now, 'T@LMS.org.in'));
+  assert.ok(kinds(on, 'cwhw_log').length === 1, 'switched back on: the log card returns');
+}
 console.log('teacher-missions: ok');

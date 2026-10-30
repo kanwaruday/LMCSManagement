@@ -5,6 +5,7 @@ const ctx = { console, Logger: { log() {} } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs');
+vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
 const J = (x) => JSON.parse(JSON.stringify(x));
 const CODE = 'NCM/99/01/901', EMAIL = 'teacher@lms.org.in';
 const at = (iso) => Date.parse(iso);
@@ -125,6 +126,12 @@ assert.strictEqual(qs[0].steps[4].title, 'Remediate this chapter'); assert.stric
   assert.deepStrictEqual(cq.map((q) => q.title).sort(), ['Class 7 Science \u00b7 Light', 'M-II Hindi \u00b7 Swar']);
   assert.strictEqual(cq.filter((q) => /^M-II/.test(q.title))[0].steps.length, 3);
   assert.strictEqual(cq.filter((q) => /^Class 7/.test(q.title))[0].steps.length, 5);
+  // CW/HW deferred (Uday, 30 Oct): no CWA or remediation steps, no link to the CW/HW form, and Quest 1 without the log steps
+  const DEF = { teacher: { cwhwDeferred: true } }, cqd = J(ctx.tchChapterQuests_(built, {}, {}, DEF, new Date(D0 + 5 * DAY)));
+  const c7 = cqd.filter((q) => /^Class 7/.test(q.title))[0];
+  assert.deepStrictEqual(c7.steps.map((x) => x.id).join(), 'plan,teach,activity');
+  assert.ok(c7.steps.every((x) => x.id === 'plan' || x.go === ''), 'no form links while deferred');
+  assert.strictEqual(ids(J(ctx.tchSetupQuests_(built, {}, { onTrack: 0 }, DEF, new Date(D0 + 5 * DAY), {}))[0]).join(), 'plan_one,days_5');
   // the Owner's rules are unchanged: no flag, no Montessori episode and no one-entry episode
   assert.strictEqual(J(ctx.ownAcadEpisodes_(feed.cwRecords, {})).length, 0);
   assert.strictEqual(J(ctx.ownAcadEpisodes_(feed.cwRecords, { includeMClasses: true, minEpisodePeriods: 1 })).length, 2);

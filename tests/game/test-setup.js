@@ -14,6 +14,7 @@ function build(o) {
   ctx.CacheService = { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put() {} }) };
   for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs', 'game-teacher.gs', 'game-fleet.gs', 'game-setup.gs'])
     vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
+  vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
   const q = J(ctx.setupQuests_({}, o.cfg || {}, new Date()))[0];
   return { ctx, q, done: q.steps.filter((s) => s.done).map((s) => s.id) };
 }
@@ -56,4 +57,6 @@ assert.strictEqual(all.q.complete, true);
 // registry: an array on Owner, other modules kept; the hook is the function this file defines
 const reg = none.ctx.GAME_MODULE_QUESTS.Owner;
 assert.ok(Array.isArray(reg) && reg.length >= 2 && reg.indexOf(none.ctx.setupQuests_) !== -1 && reg.indexOf(none.ctx.fleetQuests_) !== -1);
+// CW/HW deferred (Uday, 30 Oct): the form-link step leaves "Set up the game", so the next step and HQ progress move on
+assert.deepStrictEqual(build({ cfg: { teacher: { cwhwDeferred: true } } }).q.steps.map((s) => s.id).join(), 'signin,secret,refresh,term,suit');
 console.log('test-setup OK');

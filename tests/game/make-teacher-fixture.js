@@ -11,6 +11,7 @@ function build() {
   vm.createContext(ctx);
   ['game-teacher.gs', 'acad-episodes.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs', 'game-quests.gs']
     .forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+  vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
   const J = (x) => JSON.parse(JSON.stringify(x));
   const at = (iso) => Date.parse(iso);
   const NOW = new Date('2026-11-10T05:00:00Z'), TUE = '2026-11-10'; // Tue, 10:30 IST
