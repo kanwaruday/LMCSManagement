@@ -290,6 +290,29 @@ window.LMCS = (function () {
     return session.campusId === 'ALL' || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
   }
 
+  // Principal portal (principal/*): Principal, Coordinator or Owner only (Uday, 30 Oct: a Fee Clerk "should not be able to login to the
+  // Principal/ coordinator/ owner portals, only itself and below"). UI only: the backend checks each read and write itself.
+  function canViewPrincipalPortal(session) {
+    return hasRole(session, 'Principal') || hasRole(session, 'Coordinator') || hasRole(session, 'Owner');
+  }
+
+  // The card a page shows a signed-in person whose role can't open it, with a link to their own portal. root: the path to the site root ('../').
+  function showNotForRole(container, session, root) {
+    const el = typeof container === 'string' ? document.querySelector(container) : container;
+    if (!el) return;
+    const own = hasRole(session, 'FeeClerk') ? ['office/index.html', 'Go to the Fee Clerk portal'] : hasRole(session, 'Driver') ? ['driver/index.html', 'Go to the Driver portal']
+      : canViewTeacherPortal(session) ? ['teacher/index.html', 'Go to the Teacher portal'] : ['index.html', 'Go to the portal home'];
+    const card = document.createElement('div'), h = document.createElement('h2'), p = document.createElement('p'), a = document.createElement('a');
+    card.className = 'not-for-role'; card.setAttribute('role', 'alert');
+    card.style.cssText = 'max-width:420px;margin:48px auto;padding:20px;border:1.5px solid #d9d4ca;border-radius:14px;background:#fff;color:#1b2430;font:16px/1.45 system-ui,sans-serif;text-align:center';
+    h.textContent = "This portal isn't for your role"; h.style.cssText = 'margin:0 0 8px;font-size:20px';
+    p.textContent = 'You are signed in as ' + (session && session.email ? session.email : 'someone') + '. Your own portal has everything you need.';
+    a.href = (root || '') + own[0]; a.textContent = own[1];
+    a.style.cssText = 'display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:10px;background:#a10000;color:#fff;font-weight:700;text-decoration:none';
+    card.appendChild(h); card.appendChild(p); card.appendChild(a);
+    el.textContent = ''; el.appendChild(card); el.style.display = '';
+  }
+
   // Who sees the small "data source" rows of Google Sheet links under each page's header (assets/datasrc.js and the
   // pages that draw their own): Owner and Coordinator (2026-10-21, per Uday; was Owner only). One rule so every
   // page agrees. Google still decides who can actually open each sheet.
@@ -469,7 +492,7 @@ window.LMCS = (function () {
   // for a kept session, after a fresh sign-in otherwise. Loaded next to this file, so the path is
   // right at any depth, with ?v=DOCK_V (a hash of the dock's files, written by tools/stamp-assets.mjs) so a release reaches
   // every browser at once. The dock passes the same ?v= on to game.js, game.css and guide.js. A page opts out with window.LMCS_NO_DOCK = true before auth.js.
-  const DOCK_V = '7f19034e'; // stamp-assets
+  const DOCK_V = '232f5e9d'; // stamp-assets
   let docked = false;
   function loadDock_() {
     if (docked || window.LMCS_NO_DOCK || !SELF_SRC) return;
@@ -484,7 +507,7 @@ window.LMCS = (function () {
   }
   if (getSession()) loadDock_();
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 

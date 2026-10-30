@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/home-hud.css?v=24b0153b" />
+  <link rel="stylesheet" href="../assets/game/home-hud.css?v=7b6d14ca" />
   <style>
     /* page only: the refusal card and the Owner's preview bar. Everything else comes from base.css (gb-) and home-hud.css (hh-). */
     .sh-refused { max-width:520px; margin:12px auto 0; padding:16px; border:1.5px solid var(--gb-line); border-radius:14px; background:var(--gb-paper); color:var(--gb-ink); text-align:left; }
@@ -25,8 +25,7 @@
     .gb-switch .gb-emoji, #base-name .gb-emoji { margin-right:.3em; }
     /* the route map's status line is a <p class="status">, which style.css draws as the chooser's small uppercase pill: read it as a sentence */
     #world-map .status { font-size:15px; font-weight:400; text-transform:none; letter-spacing:normal; white-space:normal; border-radius:0; padding:12px 8px; }
-    /* phones: the floating Buddy (44px, bottom right) keeps clear of the quest strip and the Town / World switch */
-    @media (max-width:959px) { body.hh .hh-bottom { padding-right:52px; } }
+    /* the bottom row already clears the floating Buddy (home-hud.css .hh-bottom right:68px) */
     /* a staff building is smaller than a school: draw it a little smaller on phones (base.css gives a school 600px), still pannable */
     body.hh #school-3d > .sb { min-width:480px; max-width:720px; margin:0 auto; }
     /* each spot's emoji and its two-line-tall Hindi label (matras sit high): a smaller emoji and the label a little lower, so they never touch */
@@ -80,15 +79,15 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=4ad1f1b6"></script>
+  <script src="../assets/auth.js?v=64d16bda"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Teacher,Staff"></script>
-  <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/emoji.js?v=833e17cb"></script>
-  <script src="../assets/game/school-building.js?v=ec79c3ff"></script>
-  <script src="../assets/game/home-hud.js?v=467b11a4"></script>
+  <script src="../assets/game/game.js?v=e4fad387"></script>
+  <script src="../assets/game/emoji.js?v=637364da"></script>
+  <script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
+  <script src="../assets/game/home-hud.js?v=b718ba7b"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
-  <script src="../coordinator/route-map.js?v=5cdc9703"></script>
-  <script src="./roles.js?v=69b1b10f"></script>
+  <script src="../coordinator/route-map.js?v=15e2d85e"></script>
+  <script src="./roles.js?v=c491e36b"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as every home
     const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
@@ -154,7 +153,11 @@
       box.addEventListener('keydown', function (e) { const g = e.target.closest('.sb-room'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickRoom(g.getAttribute('data-room'), g); } });
     }
     // what a spot's sheet holds (roles.js sheet()): what it is for, what will arrive there, and any real page it links to
+    // the Quests sheet's Growth tab asks for 'setup': staff have no Kingdom base, so it carries the full "no quests yet" line while none is open
+    let OPEN_QUESTS = 0;
+    document.addEventListener('lmcs-game-today', function (e) { OPEN_QUESTS = ((e.detail && e.detail.quests) || []).filter(function (q) { return !q.complete; }).length; });
     function sourceBody(key) {
+      if (key === 'setup') return OPEN_QUESTS ? h('div') : h('p', { class: 'hh-empty' }, SH.NO_QUESTS);
       const s = SH.sheet(ROLE, key), box = h('div');
       if (!s) return box;
       box.appendChild(h('p', { class: 'sh-lead' }, s.lead));
@@ -206,7 +209,7 @@
       LMCSHomeHud.mount({ session: view, campus: pick.campus, root: '../', scene: document.getElementById('hh-scene'), bubbles: document.getElementById('hh-bubbles'),
         building: document.getElementById('school-3d'), stash: document.getElementById('hh-stash'), gameRoot: document.getElementById('game-root'),
         evSlot: document.querySelector('.gb-next-slot'), signout: document.getElementById('signout-link'), switchEl: document.getElementById('hh-switch'),
-        world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title, noQuests: SH.NO_QUESTS, noQuestsLine: SH.NO_QUESTS_LINE });
+        world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title });
       wireSchool(); drawSchool();
       if (pick.preview) { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [], quests: [], windows: [] } })); return; }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }

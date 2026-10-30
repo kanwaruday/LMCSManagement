@@ -83,7 +83,7 @@ t('the same fillId again: the stored row, no new row or file', () => {
 
 t('driverme: lastOdometer and lastFill include the pending fill', () => {
   const me = call('driverMe_', { deviceToken: link.token });
-  assert.strictEqual(me.lastOdometer, 52100); assert.strictEqual(me.lastFill, '2026-10-28');
+  assert.strictEqual(me.lastOdometer, 52100); assert.strictEqual(me.lastFill, AT.slice(0, 10), 'the pending fill day');
   assert.strictEqual(call('driverMe_', { deviceToken: other.token }).lastOdometer, null, 'other bus untouched');
 });
 

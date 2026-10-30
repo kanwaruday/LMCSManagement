@@ -88,7 +88,7 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=4ad1f1b6"></script>
+  <script src="../assets/auth.js?v=64d16bda"></script>
   <script>
     // "LMCS Coordinator Backend" (apps-script/coordinator-principal.gs). Same URL as BACKEND_URL in coordinator/shared.js.
     const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec';
@@ -264,6 +264,7 @@
     }
 
     function showApp(session) {
+      if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; } // Fee Clerks and below (Uday, 30 Oct)
       SESSION = session;
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';

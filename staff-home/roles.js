@@ -9,16 +9,19 @@
 //
 // Spot sheets say what each spot is for and what will arrive there; nothing here is personal data. Labels are Hindi first, then English.
 var LMCSStaffHome = (function () {
-  var NO_QUESTS = 'अभी कोई क्वेस्ट नहीं। आपकी क्वेस्ट यहाँ दिखेंगी · No quests yet. Your quests will appear here.'; // inside the Quests sheet
+  // quests are owner-assigned only (the game backend's quest gate): with none assigned, the drawer and the Quests sheet say so in full,
+  // the one-line strip in short
+  var NO_QUESTS = 'अभी कोई क्वेस्ट नहीं। आपकी क्वेस्ट यहाँ दिखेंगी · No quests yet. Your quests will appear here.';
   var NO_QUESTS_LINE = 'अभी कोई क्वेस्ट नहीं · No quests yet'; // the one-line quest strip (the full sentence doesn't fit at 375px)
   var SOON = 'जल्द: आपकी चेकलिस्ट यहाँ आएगी · Coming soon: your checklist for this spot will appear here.';
   // the HUD's words (assets/game/home-hud.js LABELS), Hindi first
-  var LABELS = { town: 'स्कूल · Town', wild: 'बाहर · Wilderness', daily: 'रोज़ · Daily', tasks: 'काम · Tasks', openTasks: 'काम खोलें · Open tasks',
-    closeTasks: 'काम बंद करें · Close tasks', close: 'बंद करें · Close', board: 'क्वेस्ट बोर्ड · Quest board', quests: 'क्वेस्ट · Quests', growth: 'बढ़त · Growth',
+  var LABELS = { town: 'स्कूल · Town', wild: 'बाहर · Wilderness', daily: 'रोज़ · Daily', tasks: 'काम · Tasks', closeTasks: 'काम बंद करें · Close tasks',
+    closeTab: '\u25c2 बंद · Close', open: 'खुले · open', close: 'बंद करें · Close', board: 'क्वेस्ट बोर्ड · Quest board', quests: 'क्वेस्ट · Quests', growth: 'बढ़त · Growth',
     profile: 'आपकी प्रोफ़ाइल · Your profile', name: 'नाम · Name', role: 'पद · Role', campus: 'स्कूल · Campus', level: 'लेवल · Level', points: 'अंक · Points',
-    account: 'खाता · Account', appointments: 'मुलाक़ात · Appointments', go: 'जाएँ →', goAria: 'जाएँ · Go: ', waiting: 'बाकी · waiting', opened: 'खुला · opened',
-    done: 'हो गया · Done', todo: 'करना है · To do', dayClosed: 'दिन बंद · Day closed', closesIn: 'दिन बंद होगा · Day closes in', rank: 'रैंक · Rank', questsLine: 'क्वेस्ट · Quests',
-    copy: { clear: 'आज सब ठीक है · All clear today.', town: 'स्कूल में कुछ बाकी नहीं · Nothing open in town.', daily: 'आज कोई रोज़ का काम नहीं · No daily missions today.',
+    account: 'खाता · Account', appointments: 'मुलाक़ात · Appointments', dataSources: 'डेटा स्रोत · Data sources', go: 'जाएँ →', goAria: 'जाएँ · Go: ',
+    waiting: 'बाकी · waiting', opened: 'खुला · opened', done: 'हो गया · Done', todo: 'करना है · To do', questsLine: 'क्वेस्ट · Quests',
+    dayClosed: 'दिन बंद · Day closed', closes: 'बंद होगा · Closes',
+    copy: { none: NO_QUESTS, noneLine: NO_QUESTS_LINE, done: 'अभी सब हो गया · All done for now.', daily: 'आज कोई रोज़ का काम नहीं · No daily missions today.',
       today: 'आज कुछ बाकी नहीं · Nothing is waiting today.', routes: 'रूट · Routes' } };
   // spots every staff home has (each role adds its own in front)
   var COMMON = {

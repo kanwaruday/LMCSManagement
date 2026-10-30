@@ -1,10 +1,11 @@
 /* The route World (Uday, 28 Oct): a school's bus routes and stops on a map, for whoever may see them, with no money.
-     LMCSRouteMap.mount(el, { session, backendUrl, mode: 'metro' | 'city', campus?, driverToken?, refused? }) -> { reload }
+     LMCSRouteMap.mount(el, { session, backendUrl, mode: 'metro' | 'city', campus?, driverToken? | driverView?, refused? }) -> { reload }
    - refused: a calm line shown (no Try again) when the backend says this person may not see routes yet (staff-home/: the Coordinator
      backend reads Principals, Fee Clerks, Coordinators and the Owner only).
    - staff and Principals: GET <backendUrl>?action=transportworld&idToken=… (the Coordinator backend, apps-script/coordinator-world.gs),
      which scopes to the caller's own campuses; `campus` ('LMS4') narrows it further on the page.
-   - a driver's phone: POST {action:'driverroute', deviceToken} to the Roster backend (apps-script/driver-link.gs): their own bus only.
+   - a driver's phone: POST {action:'driverroute', deviceToken} to the Roster backend (apps-script/driver-link.gs): their own bus only. driverView {viewReg, idToken} instead: the Owner's or a
+     Coordinator's read-only view of one bus as its driver (the same POST, apps-script/driver-token.gs's dlkLinkOrView_).
    Drawn by coordinator/transport-views.js (loaded here when the page has not), styled by coordinator/route-map.css; the city map
    loads Leaflet 1.9.4 from cdnjs the first time it is needed. Stop locations are never in this repo: they come from the backend,
    for a signed-in person or a linked phone, and stay in memory. */
@@ -31,8 +32,9 @@ window.LMCSRouteMap = (function () {
   }
   async function data(opts) {
     let r;
-    if (opts.driverToken) {
-      r = await (await fetch(opts.backendUrl, { method: 'POST', body: JSON.stringify({ action: 'driverroute', deviceToken: opts.driverToken }) })).json();
+    if (opts.driverToken || opts.driverView) {
+      const who = opts.driverView ? { viewReg: opts.driverView.viewReg, idToken: opts.driverView.idToken } : { deviceToken: opts.driverToken };
+      r = await (await fetch(opts.backendUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'driverroute' }, who)) })).json();
     } else {
       const s = opts.session || (window.LMCS && LMCS.getSession());
       if (!s || !s.idToken) throw new Error('Sign in to see the routes.');
@@ -56,7 +58,7 @@ window.LMCSRouteMap = (function () {
   }
   function mount(el, opts) {
     opts = Object.assign({ mode: 'metro' }, opts || {});
-    hi = !!opts.driverToken;
+    hi = !!(opts.driverToken || opts.driverView);
     el.classList.add('rm');
     css(near('route-map.css'));
     const state = {};

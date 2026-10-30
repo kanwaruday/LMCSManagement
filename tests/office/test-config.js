@@ -4,12 +4,13 @@ const assert = require('assert');
 const { boot } = require('./harness');
 
 const fixture = {
-  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org' },
+  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'p4-token': 'p4@example.org' },
   allowlist: [
     ['Email', 'Name', 'Campuses', 'Roles'],
     ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
     ['fh@example.org', 'Finance Head', 'LMS1,LMS2', 'FinanceHead'],
     ['owner@example.org', 'Owner', 'ALL', 'Owner'],
+    ['p4@example.org', 'Principal', 'LMS4', 'Principal'],
   ],
 };
 const J = (x) => JSON.parse(JSON.stringify(x));
@@ -85,6 +86,20 @@ module.exports = function run(t) {
     const au = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Audit');
     assert.equal(au.length, 1); assert.equal(au[0].action, 'account.add'); assert.equal(au[0].tab, 'Accounts');
     assert.equal(h.call('account.add', { id: 'a2', label: 'HDFC', kind: 'bank', campus: 'LMS2' }, 'owner-token').success, true);
+  });
+
+  t.test('config.get: a Principal sees their own school\'s vehicles and accounts only (the school lock); office roles see every campus', () => {
+    const h = fresh();
+    h.addBook('LMS4', '2026-27');
+    assert.equal(h.call('vehicle.add', { reg: 'HP1', label: 'Bus 1', kind: 'bus', campus: 'LMS1' }, 'fh-token').duplicate, false);
+    assert.equal(h.call('vehicle.add', { reg: 'HP4', label: 'Bus 4', kind: 'bus', campus: 'LMS4' }, 'owner-token').duplicate, false);
+    const p = h.call('config.get', {}, 'p4-token');
+    assert.equal(p.success, true);
+    assert.deepEqual(p.vehicles.map((v) => v.reg), ['HP4']);
+    assert.ok(p.accounts.length && p.accounts.every((a) => a.campus === 'LMS4'), 'own school\'s accounts only');
+    const c = h.call('config.get', {}, 'clerk-token');
+    assert.deepEqual(c.vehicles.map((v) => v.reg).sort(), ['HP1', 'HP4'], 'a Fee Clerk keeps every campus (shared buses in the day book)');
+    assert.ok(c.accounts.some((a) => a.campus === 'LMS4'));
   });
 
   t.test('vehicle.add and vehicles.import normalise reg, skip existing, validate first', () => {

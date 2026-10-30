@@ -54,6 +54,9 @@ var TCH_DEFAULTS = {
   loggedDaysWindow: 60, taughtLookbackDays: 30, // taughtLookbackDays: a class-subject logged this recently counts as taught even if the roster lacks it
   // Ruling 13: where the missions send the teacher to log, and the Google Form entry ids to pre-fill ({cls, subj, ch, tag} -> 'entry.123')
   cwhwFormUrl: '', cwhwPrefill: {},
+  // Uday, 30 Oct: CW/HW is logged in the ERP for now, "a quest for later". While true: no CW/HW, CWA or remediation missions or quest steps,
+  // and the Owner's "Set up the game" skips the form-link step. Game Config teacher {"cwhwDeferred": false} brings it all back, no deploy.
+  cwhwDeferred: true,
   // Task 5: Quest 1's "on track" day target; quests.termEnd (a string setting, 'YYYY-MM-DD'; unset = no cut-off) drops upcoming chapters starting after the term from Quest 2
   questDays: 5, quests: {},
 };
@@ -68,6 +71,7 @@ function tchConfig_(cfg) {
     const def = TCH_DEFAULTS[k], v = tchHas_(given, k) ? given[k] : undefined;
     if (Array.isArray(def)) out[k] = Array.isArray(v) && v.every(function (x) { return typeof x === 'string'; }) ? v.slice() : def.slice();
     else if (typeof def === 'string') out[k] = typeof v === 'string' && (k !== 'cwhwFormUrl' || TCH_FORM_URL_RE.test(v.trim())) ? v.trim() : def;
+    else if (typeof def === 'boolean') out[k] = typeof v === 'boolean' ? v : def;
     else if (typeof def === 'object') { // a map of strings; anything else is ignored
       out[k] = {};
       if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach(function (n) { if (typeof v[n] === 'string' && v[n]) out[k][n] = v[n]; });
@@ -511,8 +515,9 @@ var TCH_CALENDAR_IDS = {
 var TCH_CAL_TTL_S = 21600;                    // 6 h: a campus's events for one day
 var TCH_CAL_UNKNOWN_TTL_S = 1800;             // 30 min: an unreadable calendar is not retried on every load
 var TCH_CODE_MISS_TTL_S = 600;                // 10 min: an email with no employee code
-var TCH_DEFAULT_FORM_GO = 'teacher/index.html#tags';
+var TCH_DEFAULT_FORM_GO = 'teacher/index.html#panel-tags'; // panel id; teacher/index.html must open the tab from the hash
 var TCH_PLAN_GO = 'teacher/plan-activity.html';
+var TCH_REQUESTS_GO = 'teacher/index.html#panel-requests'; // the Requests tab
 var TCH_STAFF_GO = 'teacher/index.html';      // Staff land on the teacher page, which has the game mount
 
 // Mon-Sat, not the 2nd Saturday, no event titled GH..., no event whose title has an exam keyword (cfg.teacher.examKeywords, case-insensitive).
@@ -609,7 +614,7 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email, campu
     return [m];
   }
 
-  const log = isWorkingDay ? tchLogProgress_(state, dayKey) : null;
+  const log = isWorkingDay && !T.cwhwDeferred ? tchLogProgress_(state, dayKey) : null;
   if (log) {
     const isDone = log.done >= log.total;
     const why = isDone ? '' : log.missing.length ? 'Still to log: ' + log.missing.join(', ') : 'No timetable on file yet, so a log for any of your classes counts';
@@ -624,7 +629,7 @@ function tchMissions_(state, dayKey, isWorkingDay, plans, cfg, now, email, campu
   // Ruling 27: a CWA is chased only for each taught class-subject's current chapter, and only until plannedCwaDate + remediationShowDays
   const current = {};
   tchCurrentEpisodes_(state, T, now.getTime()).forEach(function (e) { current[e.cls + '|' + e.subj + '|' + e.ch] = true; });
-  (state.episodes || []).forEach(function (e) {
+  (T.cwhwDeferred ? [] : state.episodes || []).forEach(function (e) { // deferred: no CWA or remediation to chase
     const key = e.cls + '|' + e.subj + '|' + e.ch, label = e.cls + ' ' + e.subj;
     if (e.cwaAt !== null && e.cwaAt !== undefined && e.cwaFrom !== 'tracker') { // Ruling 29: a tracker-only CWA's remediation is not knowable, so it is never asked for
       const cwaDay = tchIstDay_(e.cwaAt), due = tchAddDays_(cwaDay, T.remediationDays);
@@ -942,14 +947,14 @@ function tchChapterQuests_(state, plans, matches, cfg, now) {
     const hasPlan = !!plans && tchHas_(plans, key), m = matches && tchHas_(matches, key) ? matches[key] : null;
     const matched = !!m && m.matched === true && m.confidence >= T.matchMinConfidence;
     const checking = hasPlan && !matched && !!m && m.pending === true; // Ruling 32: only a note that is waiting for tonight's check, never "no row yet"
-    const form = function (tag) { return tchFormGo_(T, tag ? { cls: e.cls, subj: e.subj, ch: e.name, tag: tag } : null).go; };
+    const form = function (tag) { return T.cwhwDeferred ? '' : tchFormGo_(T, tag ? { cls: e.cls, subj: e.subj, ch: e.name, tag: tag } : null).go; };
     const steps = [
       { id: 'plan', title: 'Plan the activity', go: tchPlanGo_(e.cls, e.subj, e.ch, e.name), done: hasPlan, locked: false },
       { id: 'teach', title: 'Teach', go: form(''), done: true, locked: false },
       // waiting: the panel shows it muted and unlinked, never as the next action
       { id: 'activity', title: 'Run the activity' + (checking ? ' \u00b7 checking overnight' : ''), go: form(''), done: matched, locked: false, waiting: checking },
     ];
-    if (!/^m-/i.test(e.cls)) {
+    if (!/^m-/i.test(e.cls) && !T.cwhwDeferred) {
       const cwa = set(e.cwaAt), remDone = set(e.remediatedAt);
       const closed = cwa && e.cwaFrom !== 'tracker' && !remDone && today > tchAddDays_(tchIstDay_(e.cwaAt), T.remediationDays);
       steps.push({ id: 'cwa', title: 'Take the CWA', go: form('CWA'), done: cwa, locked: false });
@@ -988,12 +993,13 @@ function tchSetupQuests_(state, plans, daysOnTrack, cfg, now, recorded) {
   // the plan page needs a chapter to open on: the first upcoming chapter still without a plan, else the first one, else the teacher's own page
   const nextOnes = state.nextChapters || [], unplanned = nextOnes.filter(function (c) { return !has(c.cls + '|' + c.subj + '|' + c.ch); })[0] || nextOnes[0];
   const planOneGo = unplanned ? tchPlanGo_(unplanned.cls, unplanned.subj, unplanned.ch, unplanned.name) : TCH_STAFF_GO;
-  const q1 = mk(TCH_QUEST1_ID, 'Your portal', [
+  const q1 = mk(TCH_QUEST1_ID, 'Your portal', (T.cwhwDeferred ? [] : [
     { id: 'cw_today', title: "Log today's classwork", go: form, met: entries.length > 0 },
     { id: 'hw_today', title: "Log today's homework", go: form, met: entries.some(function (x) { return x.hw; }) },
+  ]).concat([
     { id: 'plan_one', title: 'Plan the activity for your next chapter', go: planOneGo, met: !!plans && Object.keys(plans).length > 0 },
     { id: 'days_5', title: daysTitle, go: TCH_STAFF_GO, met: ((daysOnTrack && +daysOnTrack.onTrack) || 0) >= T.questDays },
-  ], true);
+  ]), true);
   const out = [q1], byCs = {}, order = [];
   (state.nextChapters || []).forEach(function (c) {
     if (termEnd && String(c.startDate) > termEnd) return;
@@ -1104,7 +1110,7 @@ GAME_MODULE_DONE_AT.Teacher = function (caller, missionId) {
 function tchStaffMissionsHook_(caller, cfg, now) {
   let rows;
   try { rows = SpreadsheetApp.openById(GAME_APPROVALS_SHEET_ID).getSheetByName('Approvals').getDataRange().getValues(); } catch (err) { return []; }
-  return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_STAFF_GO);
+  return gameInfoRequested_(rows, gameLower_(caller.email), 'Staff', cfg, now, TCH_REQUESTS_GO);
 }
 
 // Registered by concatenation, never assigned: another file (game-confirm.gs) adds its own hooks to the same roles, in either load order.

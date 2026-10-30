@@ -67,12 +67,12 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=4ad1f1b6"></script>
+  <script src="../assets/auth.js?v=64d16bda"></script>
   <script src="../assets/game/event.js?v=0ddc76b7" data-roles="Coordinator"></script>
-  <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/emoji.js?v=833e17cb"></script>
+  <script src="../assets/game/game.js?v=e4fad387"></script>
+  <script src="../assets/game/emoji.js?v=637364da"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
-  <script src="./route-map.js?v=5cdc9703"></script>
+  <script src="./route-map.js?v=15e2d85e"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="./shared.js?v=9c654466"></script>
@@ -116,6 +116,7 @@
       box.textContent = '';
       const line = (c, desc) => ok && c ? (c.n ? c.n + ' open' : ALL_CLEAR) : desc;
       box.appendChild(room('missions', 'All follow-ups', line(ok && counts.all, 'Everything waiting, most urgent first.'), 'followups/index.html', ok && counts.all));
+      box.appendChild(room('requests', 'Coordinator HQ', 'Recommend on approvals and see your track record.', 'hq.html', null));
       Coord.DEPARTMENTS.forEach(function (d) {
         const c = ok && !d.live ? counts.byDept[d.name] : null;
         box.appendChild(room(ROOM_E[d.name] || 'office', d.name, d.page ? line(c, ROOM_S[d.name] || d.desc) : 'Later: ' + (ROOM_S[d.name] || d.desc), d.page ? d.page + '/index.html' : '', c));

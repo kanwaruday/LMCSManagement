@@ -41,7 +41,8 @@ function tupSniff_(bytes) {
 }
 
 function tupCovers_(caller, campusId) {
-  if (caller.campusId === 'ALL' || caller.roles.indexOf('Owner') !== -1) return true;
+  // ALL covers every school, except for a Principal who is not a manager (the school lock, 29 Oct: as verifyStaffManagerToken_)
+  if ((caller.campusId === 'ALL' && (caller.manager || caller.roles.indexOf('Principal') === -1)) || caller.roles.indexOf('Owner') !== -1) return true;
   const own = caller.campusId.split(',').map(function (c) { return c.trim(); });
   if (own.indexOf(campusId) !== -1) return true;
   return caller.roles.indexOf('Coordinator') !== -1 && TUP_DISTRICTS_.some(function (d) {

@@ -147,7 +147,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return keys.map(function (c) { return { campus: c, name: c ? questPlace(c) : 'HQ · every school', rows: by[c] }; });
   }
   function questFilter(rows, f) { return (rows || []).filter(function (r) { return f === 'open' ? r.state === 'open' : f === 'stuck' ? !!r.stuck : true; }); }
-  function questHolder(r) { return r.owner ? (r.owner.name || r.owner.email) : 'role: ' + (r.roles || []).map(function (x) { return ROLE_LABEL[x] || x; }).join(' or '); }
+  function questHolder(r) {
+    var who = (r.owner ? [r.owner.name || r.owner.email] : []).concat((r.held || []).map(function (g) { return g.label; })); // a person and/or the role groups holding it
+    return who.length ? who.join(', ') : 'role: ' + (r.roles || []).map(function (x) { return ROLE_LABEL[x] || x; }).join(' or ');
+  }
   function questAge(r) {
     var n = r.ageDays;
     if (n === null || n === undefined || !isFinite(n)) return r.state === 'done' ? '' : 'No changes yet';
@@ -159,10 +162,47 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return 'Hi' + (first ? ' ' + first + ' ji' : '') + ', when you get a moment, could you look at \'' + r.title + '\' for ' + (r.campus ? questPlace(r.campus) : 'all our schools') + '? Thank you!';
   }
   function reassignText(r, person) {
-    return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Until now, whoever holds the role had it.');
+    if (person.group) return 'Give \'' + r.title + '\' to ' + person.name + '? Everyone with that role there will see it. Nobody else loses it.';
+    return 'Give \'' + r.title + '\' at ' + questPlace(r.campus) + ' to ' + (person.name || person.email) + '? ' + (r.owner ? (r.owner.name || r.owner.email) + ' had it.' : 'Nobody has it yet.');
+  }
+  // Bulk (kingdomassignbulk): each open assignable row given to every role group it lists, at its own school (or HQ). Only schools
+  // that have a row for that quest get it. eventOnly: the event rows (Game Day) only. -> [{ quest, campus, assignee }]
+  function bulkItems(rows, eventOnly) {
+    var out = [], seen = {};
+    (rows || []).forEach(function (r) {
+      if (!r.assignable || r.state === 'done' || (eventOnly && String(r.questId).indexOf('event:') !== 0)) return;
+      (r.groups || []).forEach(function (g) {
+        var k = r.questId + '|' + (r.campus || '') + '|' + g.value;
+        if (!seen[k]) { seen[k] = true; out.push({ quest: r.questId, campus: r.campus || '', assignee: g.value }); }
+      });
+    });
+    return out;
+  }
+  // "Give 23 quests to their roles at 6 schools + HQ?"
+  function bulkSummary(items) {
+    var q = {}, c = {}, hq = false;
+    items.forEach(function (x) { q[x.quest] = true; if (x.campus) c[x.campus] = true; else hq = true; });
+    var nq = Object.keys(q).length, nc = Object.keys(c).length;
+    return 'Give ' + nq + (nq === 1 ? ' quest' : ' quests') + ' to their roles at ' + (nc ? nc + (nc === 1 ? ' school' : ' schools') : '') + (hq ? (nc ? ' + HQ' : 'HQ') : '') + '?';
+  }
+  // the bulk reply as one line; rows name the quests (a row title, else the id)
+  function bulkResult(d, rows) {
+    var bad = (d && d.refused) || [], title = function (id) { var r = (rows || []).filter(function (x) { return x.questId === id; })[0]; return r ? r.title : id; };
+    return 'Given: ' + ((d && d.done) || 0) + '. Already had it: ' + ((d && d.unchanged) || 0) + '.' + (bad.length ? ' Not given: ' + bad.length + ' (' +
+      bad.slice(0, 3).map(function (x) { return title(x.quest) + ' at ' + questPlace(x.campus); }).join(', ') + (bad.length > 3 ? ', …' : '') + ').' : '');
+  }
+  // the pick list of a quest row: its role groups first ('role:<Role>', "All teachers at LMS 3"), then the people; the current holder left out
+  function questPeople(r) {
+    var cur = r.owner ? String(r.owner.email).toLowerCase() : '', held = (r.held || []).map(function (g) { return g.value.toLowerCase(); });
+    return (r.groups || []).filter(function (g) { return held.indexOf(String(g.value).toLowerCase()) === -1; }).map(function (g) { return { email: g.value, name: g.label, group: true }; }).concat(r.assignees || [])
+      .filter(function (p) { return String(p.email).toLowerCase() !== cur; });
   }
 
-  var api = { questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText,
+  // what each campus window will show (Uday, 29 Oct: "placeholders for those areas with coming soon tags"): labels only, no numbers
+  // until the real data lands. The Kingdom is Owner-only, so Fees shows here.
+  var SOON = [{ e: 'staffPresent', t: 'Staff present' }, { e: 'dailyReport', t: 'Daily report' }, { e: 'issues', t: 'Open issues' },
+    { e: 'fees', t: 'Fees' }, { e: 'bus', t: 'Buses ready' }, { e: 'supportSession', t: 'SS this month' }];
+  var api = { SOON: SOON, questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, removeSchools: removeSchools, questPeople: questPeople,
     gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
@@ -253,6 +293,15 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       pips, h('div', { class: 'kg-st' }, [word]),
       h('ul', { class: 'kg-tiers' }, (b.tiers || []).map(function (t) { return tierRow(t, base, b, t === nt); }))]);
   }
+  // the coming-soon placeholders on a campus window: a school view and an analytics strip, plain markup the real data replaces
+  function soonPanel() {
+    var tag = function () { return h('span', { class: 'kg-soontag' }, ['जल्द · Coming soon']); };
+    return h('section', { class: 'kg-soon', 'aria-label': 'Coming soon' }, [
+      h('div', { class: 'kg-soonview', 'aria-hidden': 'true' }, [window.LMCSEmoji ? LMCSEmoji.tag('school') : null, h('span', {}, ['School view · Coming soon'])]),
+      h('ul', { class: 'kg-soonchips' }, SOON.map(function (c) {
+        return h('li', { class: 'kg-soonchip' }, [window.LMCSEmoji ? LMCSEmoji.tag(c.e) : null, h('span', { class: 'kg-soonname' }, [c.t]), tag()]);
+      }))]);
+  }
   function openBase(id, opener) {
     var base = ((S.data && S.data.kingdom && S.data.kingdom.campuses) || []).filter(function (b) { return b.id === id; })[0];
     if (!base) return;
@@ -263,6 +312,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var body = [h('div', { class: 'kg-bgrid' }, active.map(function (b) { return buildingCard(b, base); }))];
     if (soon.length) body.push(h('p', { class: 'kg-quiet kg-soonline' }, ['Coming soon: ' + soon.map(function (b) { return b.name; }).join(', ') + '.']));
     if (!all.length) body = [h('p', { class: 'kg-quiet' }, ['Nothing to build here yet.'])];
+    if (!base.darbar) body.unshift(soonPanel()); // a school, not HQ
     if (api.hooks.base) body.push(api.hooks.base(base));
     var dlg = openLayer(base.full || base.name, 'Level ' + (Number(base.level) || 0) + ' · ' + progressText(progressOf([base])), body, opener);
     var t = dlg.querySelector('.kg-tnext .kg-primary') || dlg.querySelector('.kg-tnext .kg-btn, .kg-tnext a') || dlg.querySelector('h2'); if (t) t.focus();
@@ -540,7 +590,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       var id = 'kg-r-' + name + i;
       return h('label', { class: 'kg-opt', for: id }, [
         h('input', { type: 'radio', name: name, id: id, value: p.email, checked: p.email === suggestEmail ? true : null }),
-        h('span', {}, [h('b', {}, [p.name || p.email]), p.name ? h('small', {}, [p.email]) : null,
+        h('span', {}, [h('b', {}, [p.name || p.email]), p.name && !p.group ? h('small', {}, [p.email]) : null,
           p.email === suggestEmail ? h('em', { class: 'kg-sug' }, ['Buddy suggests']) : null])]);
     })));
   }
@@ -628,7 +678,13 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var chips = h('div', { class: 'kg-chips', role: 'group', 'aria-label': 'Show' }, F.map(function (f) {
       return h('button', { type: 'button', class: 'kg-chip', 'data-f': f[0], 'aria-pressed': String(Q.filter === f[0]), onclick: function () { Q.filter = f[0]; draw(); } }, [f[1]]);
     }));
+    var tools = h('div', { class: 'kg-acts-row' }, []);
     function draw() {
+      tools.textContent = '';
+      if (data && data.rows.some(function (x) { return x.assignable; })) {
+        tools.appendChild(h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openBulk(bulkItems(data.rows, false), 'Give every quest to its roles', e.currentTarget, data.rows, 'All schools'); } }, ['Give every quest to its roles']));
+        tools.appendChild(h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openBulk(bulkItems(data.rows, true), 'Give Game Day to everyone', e.currentTarget, data.rows, 'All schools + HQ'); } }, ['Give Game Day to everyone']));
+      }
       [].forEach.call(chips.children, function (c, i) {
         c.setAttribute('aria-pressed', String(Q.filter === F[i][0]));
         c.textContent = F[i][1] + (data ? ' (' + questFilter(data.rows, F[i][0]).length + ')' : '');
@@ -644,16 +700,17 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     }
     function questRow(r) {
       var state = r.state === 'done' ? 'Done' : r.state === 'unknown' ? "Couldn't check" : r.progress ? r.progress.done + ' of ' + r.progress.total + ' done' : 'Open';
-      var people = (r.assignees || []).filter(function (p) { return !r.owner || p.email !== r.owner.email; });
+      var people = questPeople(r);
       return h('li', { class: 'kg-qr' + (r.stuck ? ' kg-qstuck' : '') }, [
         h('div', { class: 'kg-qt' }, [r.stuck ? h('b', { class: 'kg-tag' }, ['Stuck']) : null, h('b', {}, [(r.state === 'done' ? '✓ ' : '') + r.title])]),
         h('small', { class: 'kg-qm' }, [[state, questHolder(r), questAge(r)].filter(Boolean).join(' · ')]),
         h('div', { class: 'kg-acts-row' }, [
           goLink(r.go, 'Go', 'kg-btn kg-act'),
-          r.assignable && people.length ? h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openQuestPick(r, people, e.currentTarget); } }, ['Reassign']) : null,
+          r.assignable && people.length ? h('button', { type: 'button', class: 'kg-btn kg-act', onclick: function (e) { openQuestPick(r, people, e.currentTarget, data.rows); } }, ['Reassign']) : null,
+          r.assignable ? (r.held || []).map(function (g) { return h('button', { type: 'button', class: 'kg-btn kg-act kg-clear', onclick: function (e) { openRemove(r, g, e.currentTarget, data.rows); } }, ['Remove ' + g.label]); }) : null,
           r.state !== 'done' ? h('button', { type: 'button', class: 'kg-btn kg-act', 'aria-label': 'Nudge: copy a message about ' + r.title + ' at ' + questPlace(r.campus), onclick: function () { nudge(r, live); } }, ['Nudge']) : null])]);
     }
-    var dlg = openLayer('📜 All quests', 'Every setup quest, school by school', [chips, live, list], opener);
+    var dlg = openLayer('📜 All quests', 'Every setup quest, school by school', [tools, chips, live, list], opener);
     var t = dlg.querySelector('h2'); if (t) t.focus();
     var url = S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=kingdomquests&idToken=' + encodeURIComponent((S.session || {}).idToken || '');
     return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
@@ -669,14 +726,54 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var text = nudgeText(r), clip = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'));
     clip.then(function () { live.textContent = 'Copied. Paste it in WhatsApp: ' + text; }, function () { live.textContent = 'Copy this into WhatsApp: ' + text; });
   }
-  function openQuestPick(r, people, opener) {
-    sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Whoever holds the role has it.'),
+  // one confirmed kingdomassignbulk POST; the reply's line is the toast (role=status)
+  function openBulk(items, title, opener, rows, sub) {
+    if (!items.length || items.length > 400) {
+      var s0 = sheet(title, sub, items.length ? 'That is more than 400 at once. Give them a few quests at a time.' : 'Nothing to give: every open quest already has its roles, or none lists a role.', [], 'Confirm', function () {}, opener);
+      s0.querySelector('.kg-primary').remove(); return;
+    }
+    sheet(title, sub, bulkSummary(items), [], 'Confirm', function (form, ctl) {
+      ctl.done = function (d) { return bulkResult(d, rows); };
+      ctl.after = function () { return openQuests(null); };
+      send({ action: 'kingdomassignbulk', items: items }, ctl);
+    }, opener);
+  }
+  // the schools whose row of this quest a group holds -> ['LMS1', ...] (the All schools option of a removal)
+  function removeSchools(rows, questId, value) {
+    var v = String(value).toLowerCase();
+    return (rows || []).filter(function (x) { return x.questId === questId && /^LMS[1-6]$/.test(x.campus) && (x.held || []).some(function (g) { return String(g.value).toLowerCase() === v; }); })
+      .map(function (x) { return x.campus; });
+  }
+  // take a role group off a quest: kingdomassign {clear, assignee: 'role:X'}, or every school holding it (kingdomassignbulk)
+  function openRemove(r, g, opener, allRows) {
+    var schools = removeSchools(allRows, r.questId, g.value), all = /^LMS[1-6]$/.test(r.campus) && schools.length > 1 ? h('input', { type: 'checkbox', id: 'kg-rall' }) : null;
+    sheet('Remove ' + g.label, questPlace(r.campus), 'Take \'' + r.title + '\' off ' + g.label + '? They stop seeing it. Anyone else who has it keeps it.',
+      all ? [h('label', { class: 'kg-fld', for: 'kg-rall' }, [all, ' All schools (' + schools.map(questPlace).join(', ') + ')'])] : [], 'Confirm', function (form, ctl) {
+        ctl.after = function () { return openQuests(null); };
+        if (all && all.checked) {
+          ctl.done = function (d) { return bulkResult(d, allRows); };
+          return send({ action: 'kingdomassignbulk', items: schools.map(function (c) { return { quest: r.questId, campus: c, assignee: g.value, clear: true }; }) }, ctl);
+        }
+        ctl.done = function () { return 'Removed. ' + g.label + ' no longer has ' + r.title + '.'; };
+        send(Object.assign(assignBody(r, r.campus, g.value, ''), { clear: true }), ctl);
+      }, opener);
+  }
+  function openQuestPick(r, people, opener, allRows) {
+    sheet('Reassign ' + r.title, questPlace(r.campus), 'Who should have it now? ' + (r.owner ? (r.owner.name || r.owner.email) + ' has it.' : 'Nobody has it yet.'),
       [radios('kg-qwho', people, '', 'Who should have it now?')], 'Next', function (form, ctl) {
         var who = picked(form, 'kg-qwho'), person = people.filter(function (p) { return p.email === who; })[0];
         if (!person) { ctl.err.textContent = 'Pick a person first.'; return; }
-        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), [], 'Confirm', function (f2, ctl2) {
-          ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
+        // a role group at a school can go to every school with a row for this quest at once (one kingdomassignbulk). A group adds to the
+        // holders, so nothing is replaced; a person is single-holder per school, so a person never gets this option.
+        var schools = (allRows || []).filter(function (x) { return x.questId === r.questId && /^LMS[1-6]$/.test(x.campus) && x.assignable; }).map(function (x) { return x.campus; });
+        var all = person.group && /^LMS[1-6]$/.test(r.campus) && schools.length > 1 ? h('input', { type: 'checkbox', id: 'kg-all' }) : null;
+        sheet('Reassign ' + r.title, questPlace(r.campus), reassignText(r, person), all ? [h('label', { class: 'kg-fld', for: 'kg-all' }, [all, ' All schools (the same group at ' + schools.map(questPlace).join(', ') + ')'])] : [], 'Confirm', function (f2, ctl2) {
           ctl2.after = function () { return openQuests(null); };
+          if (all && all.checked) {
+            ctl2.done = function (d) { return bulkResult(d, allRows); };
+            return send({ action: 'kingdomassignbulk', items: schools.map(function (c) { return { quest: r.questId, campus: c, assignee: person.email }; }) }, ctl2);
+          }
+          ctl2.done = function () { return 'Done. ' + (person.name || person.email) + ' has ' + r.title + ' now.'; };
           send(assignBody(r, r.campus, person.email, ''), ctl2);
         }, null);
       }, opener);
@@ -713,7 +810,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
-  api.openBase = function (id) { openBase(id); }; api.close = closeLayer; api.state = S;
+  api.openBase = function (id, op) { openBase(id, op); }; api.close = closeLayer; api.state = S;
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site
   return api;
 })();

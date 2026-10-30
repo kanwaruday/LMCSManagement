@@ -324,14 +324,23 @@ function cqGetAction_(caller, p) {
       if (caller.roles.indexOf('Owner') === -1) throw cqErr_('SETUP_SAMPLE_OWNER_ONLY');
       return { success: true, sample: true, quests: cqSample_(caller, cfg, String(p.role || '')) };
     }
-    if (!p.quest) return { success: true, sample: false, quests: cqStatus_(caller, cfg, gameNow_(), {}) };
+    if (!p.quest) { const keep = questGateKeep_(caller, cfg), views = cqStatus_(caller, cfg, gameNow_(), {}); return { success: true, sample: false, quests: keep ? views.filter(function (v) { return keep(v.id, v.scope === 'self' ? undefined : v.campus || ''); }) : views }; } // the setup period: assigned quests only
     const def = cqMine_(caller, cqDefs_(cfg)).filter(function (d) { return d.id === p.quest; })[0];
     if (!def) throw cqErr_('SETUP_NOT_YOURS');
     cqRefuse_(def, p);
-    const scopes = cqScopes_(caller, def, p.campus);
-    const rows = cqRead_();
+    const rows = cqRead_(), scopes = cqGateScopes_(caller, cfg, def, cqScopes_(caller, def, p.campus), rows);
     return { success: true, sample: false, quests: scopes.map(function (sc) { return cqView_(caller, def, sc, rows, {}); }) };
   } catch (err) { return cqFail_(err); }
+}
+
+// the setup period (questGateKeep_) for one quest asked for by id: keep only the scopes the Owner assigned to this person or their
+// role group, the same test as the quest list; none left -> SETUP_NOT_YOURS, so the API can't reach an unassigned quest directly
+function cqGateScopes_(caller, cfg, def, scopes, rows) {
+  const keep = questGateKeep_(caller, cfg, rows);
+  if (!keep) return scopes;
+  const left = scopes.filter(function (sc) { return keep(def.id, def.scope === 'self' ? undefined : sc.campus || ''); });
+  if (!left.length) throw cqErr_('SETUP_NOT_YOURS');
+  return left;
 }
 
 function cqSaveAction_(caller, p) {
@@ -345,6 +354,7 @@ function cqSaveAction_(caller, p) {
     cqRefuse_(def, p);
     const scopes = cqScopes_(caller, def, p.campus);
     if (scopes.length !== 1) throw cqErr_('SETUP_BAD_CAMPUS');
+    cqGateScopes_(caller, cfg, def, scopes); // the setup period: only a quest the Owner assigned can be written
     const scope = scopes[0], item = cqItemKey_(p.item);
     const view = cqView_(caller, def, scope, cqRead_(), {}); // adapter runs here, outside the lock
     const cur = view.items.filter(function (it) { return it.item === item; })[0] || null;
@@ -414,15 +424,17 @@ function cqMissions_(caller, cfg, now) {
   // mission only for its assignee ("Assigned by the Owner") and the Owner; for anyone else it drops (the setup page stays open to them)
   const rows = (CQ_MEMO && CQ_MEMO.rows) || [];
   const owners = rows.some(function (r) { return r.quest.indexOf('_owner:') === 0; }) ? kingdomOwners_(rows) : {};
-  const me = cqLower_(caller.email), isOwner = caller.roles.indexOf('Owner') !== -1;
+  // the setup period (questGateKeep_): a step shows only once the Owner assigned it to this person or their role group
+  const me = cqLower_(caller.email), isOwner = caller.roles.indexOf('Owner') !== -1, keep = questGateKeep_(caller, cfg, rows);
   const out = [];
   views.forEach(function (v) {
     if (v.ring.total === 0 && !v.emptyLabel) return;
     const o = v.scope === 'self' ? null : owners[v.id + '|' + (v.scope === 'network' ? 'network' : 'campus:' + v.campus)];
-    if (o && o.email !== me && !isOwner) return;
+    const mineO = !!o && o.email === me; // person owners only: role groups (kingdomGroupHolders_) count through the gate
+    if (keep ? !keep(v.id, v.scope === 'self' ? undefined : v.campus || '') : o && !mineO && !isOwner) return;
     // done missions stay listed: one finished today still shows as done today
     out.push(gameMission_('cq_' + v.id, v.scope === 'self' ? 'me' : v.campus || 'network', {
-      title: v.task, why: o && o.email === me ? 'Assigned by the Owner' : v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
+      title: v.task, why: mineO || keep ? 'Assigned by the Owner' : v.title + (v.campus ? ' · ' + gameCampusLabel_(v.campus) : ''), owner: caller.email, campus: v.campus || '',
       go: cqGo_(v), progress: v.itemsTotal ? { done: v.itemsDone, total: v.itemsTotal } : undefined, done: v.ring.done, core: false, shared: v.scope !== 'self',
     }));
   });

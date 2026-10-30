@@ -244,8 +244,9 @@ function coordTransport_(caller) {
   const all = coordTransportFleet_();
   const visible = coordVisibleCampuses_(caller), clerk = !!caller.feeClerkOnly; // Fee Clerks see the papers only: no money, no staff list
   return {
-    success: true, generated: new Date().toISOString(), serverMs: Date.now() - t0, formRows: all.live.rows, unknown: all.unknown, // serverMs: shown on the page so slow loads are visible
-    syncedAt: all.base.syncedAt, warnings: all.base.warnings,
+    success: true, generated: new Date().toISOString(), serverMs: Date.now() - t0, formRows: all.live.rows, // serverMs: shown on the page so slow loads are visible
+    unknown: visible ? [] : all.unknown, warnings: visible ? [] : all.base.warnings, // fleet-wide: they can name any campus's bus, so the Owner (or ALL) only
+    syncedAt: all.base.syncedAt,
     people: clerk ? [] : (all.base.people || []).filter(function (q) { return !visible || visible.indexOf('LMS' + q.campus.replace(/\D/g, '')) !== -1; }),
     pnl: clerk ? [] : (all.base.pnl || []).filter(function (r) { return !visible || visible.indexOf('LMS' + r.campus.replace(/\D/g, '')) !== -1; }),
     docs: COORD_TRANSPORT_DOCS.map(function (d) { return { key: d[0], label: d[1] }; }),

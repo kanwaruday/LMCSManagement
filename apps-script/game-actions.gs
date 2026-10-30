@@ -284,9 +284,15 @@ function gameToday_(caller, params) {
     };
     const newly = gameQuestNewlyDone_(questRows, role, evidence, progRows, me, cfg);
     if (!peek) gameAppendText_(progSheet, newly.map(function (n) { return [me, 'quest_step', n.questId + ':' + n.stepId, 'done', now.toISOString()]; }));
+    // the setup period (questGateKeep_): only the quests the Owner assigned to this person or their role group; steps still record above
+    const keep = questGateKeep_(caller, cfg);
     let quests = gameQuestState_(questRows, role, evidence, progRows, me, cfg);
+    if (keep) quests = quests.filter(function (q) { return keep('gq:' + q.questId); });
     gameCallerHooks_(GAME_MODULE_QUESTS, role, caller.functions).forEach(function (fn) { // runs under the lock: modules keep this cheap; a throw drops only its quests
-      try { const q = fn(caller, cfg, now, { peek: !!peek }); if (Array.isArray(q)) quests = quests.concat(q); } catch (err) { console.error('game module quests', fn.name, err); }
+      try {
+        const q = fn(caller, cfg, now, { peek: !!peek });
+        if (Array.isArray(q)) quests = quests.concat(keep ? q.filter(function (x) { return questGateHookKeep_(keep, fn, x); }) : q);
+      } catch (err) { console.error('game module quests', fn.name, err); }
     });
 
     const out = {

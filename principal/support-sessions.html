@@ -75,8 +75,8 @@
     </div>
   </footer>
 
-  <script src="../assets/auth.js?v=4ad1f1b6"></script>
-  <script src="../assets/game/emoji.js?v=833e17cb"></script>
+  <script src="../assets/auth.js?v=64d16bda"></script>
+  <script src="../assets/game/emoji.js?v=637364da"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script src="../assets/campus-picker.js?v=cd35c768"></script>
   <script>
@@ -305,6 +305,7 @@
     }
 
     function showApp(session) {
+      if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; } // Fee Clerks and below (Uday, 30 Oct)
       SESSION = session;
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';

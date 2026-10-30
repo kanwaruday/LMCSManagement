@@ -115,7 +115,7 @@ function dlkRows_(tab) {
  *  GPS tabs of the transport workbook (the same rows Coordinators see in transportworld), never another bus's, never money.
  *  Unknown or revoked token: the same UNLINKED answer as driverme. */
 function driverRoute_(body) {
-  const link = dlkLink_(body.deviceToken);
+  const link = dlkLinkOrView_(body, dlkRosterCovers_); // or the Owner's or a Coordinator's read-only view (driver-token.gs)
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const own = function (reg) { return tupNormReg_(reg) === link.reg; };
   const cell = function (v) { return v instanceof Date ? Utilities.formatDate(v, TUP_TZ_, 'yyyy-MM-dd') : v; };
@@ -128,10 +128,10 @@ function driverRoute_(body) {
 }
 
 function driverMe_(body) {
-  const link = dlkLink_(body.deviceToken);
+  const link = dlkLinkOrView_(body, dlkRosterCovers_);
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ }; // the phone forgets its token only on this code
   const cache = CacheService.getScriptCache(), seen = 'dlk_seen_' + link.linkId;
-  if (!cache.get(seen)) {
+  if (!link.view && !cache.get(seen)) { // a staff view is not the driver's phone: Last Seen stays the driver's
     const sh = SpreadsheetApp.openById(TUP_SHEET_ID_).getSheetByName(DLK_TAB_);
     if (String(sh.getRange(link.at, 1).getValue()) === link.linkId) sh.getRange(link.at, 11).setValue(new Date()); // rows moved by hand: skip
     cache.put(seen, '1', 3600);
@@ -142,5 +142,21 @@ function driverMe_(body) {
   } catch (e) { runsDone = 0; }
   const fuel = dflLast_(link.reg); // driver-fuel.gs: the Fuel Fills mirror and pending Driver Fills; never throws
   return { success: true, name: link.name, reg: link.reg, campus: link.campus, runsNeeded: DLK_RUNS_NEEDED_, runsDone: runsDone,
-    lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer };
+    lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer, view: !!link.view };
+}
+
+/** The Roster's staff check for a view (verifyStaffManagerToken_, staff-management-api.gs, with Principals let in) -> which
+ *  campuses they may view: the Owner every one and a Coordinator their district (tupCovers_), a Principal their own school
+ *  (dlkOwnSchool_); null for anyone else. */
+function dlkRosterCovers_(idToken) {
+  const c = verifyStaffManagerToken_(idToken, ['Principal']);
+  if (!c) return null;
+  return dlkStaff_(c.roles) ? function (campus) { return tupCovers_(c, campus); } : dlkOwnSchool_(c.roles, c.campusId);
+}
+
+/** POST driverviewbuses {idToken}: the running buses the caller can view as their driver (dlkRosterCovers_'s scope). */
+function driverViewBuses_(body) {
+  const covers = body.idToken ? dlkRosterCovers_(body.idToken) : null;
+  if (!covers) return { success: false, error: DLK_NOVIEW_ };
+  return { success: true, buses: dlkFleet_().filter(function (b) { return covers(b.campus); }) };
 }

@@ -40,7 +40,7 @@ var LMCSBuildingModels = {
         { id: 'f3-wash', name: 'Washrooms', type: 'washroom', floor: 3, from: 0.66, to: 0.728 },
         { id: 'f3-c1', name: 'Classroom 3-1', type: 'classroom', floor: 3, from: 0.728, to: 0.847 },
         { id: 'f3-comp', name: 'Computer lab', type: 'computer', floor: 3, from: 0.847, to: 1.0 },
-        { id: 'f4-hall', name: 'Multipurpose hall', type: 'hall', floor: 4, from: 0.0, to: 0.323 },
+        { id: 'f4-hall', name: 'Multipurpose hall', short: 'Sessions', type: 'hall', host: 'ss', e: 'supportSession', floor: 4, from: 0.0, to: 0.323 },
         { id: 'f4-wash', name: 'Washrooms', type: 'washroom', floor: 4, from: 0.66, to: 0.728 },
         { id: 'f4-c1', name: 'Classroom 4-1', type: 'classroom', floor: 4, from: 0.728, to: 0.847 },
         { id: 'f4-comp', name: 'Computer lab 2', type: 'computer', floor: 4, from: 0.847, to: 1.0 }

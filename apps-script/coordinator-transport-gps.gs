@@ -586,7 +586,8 @@ function coordGpsInsight_(caller) {
     success: true, syncedAt: meta.syncedAt, today: today, owner: owner, liveOk: liveOk, vehicles: vehicles, tasks: tasks, checks: checks,
     days: gpsRows_(GPS_TAB_DAILY).filter(function (d) { return regs[d.reg] && d.date > gpsAddDays_(today, -30); }),
     bases: meta.bases.filter(function (b) { return regs[b.reg]; }),
-    stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }),
+    stops: gpsRows_(GPS_TAB_STOPS).filter(function (s) { return regs[s.bus]; }).map(function (s) { // a stop shared with a bus outside the caller's campuses does not name it (as transportworld)
+      s.shared_with = String(s.shared_with || '').split(' ').filter(function (r) { return regs[r]; }).join(' '); return s; }),
     tracks: gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; }).map(function (t) { return { reg: t.reg, trip: t.trip, date: t.date, path: JSON.parse(t.path || '[]') }; }),
     capture: { byReg: gpsCaptureByReg_(regs) }, // processed route timelapses with their stops (blurred; counts only)
     catalog: gpsCatalog_(regs), // the agencies' parts catalog: models and parts fleet-wide, vehicles and service history of the visible buses

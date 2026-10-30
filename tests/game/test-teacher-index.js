@@ -6,6 +6,7 @@ vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 // game-teacher.gs may run BEFORE game.gs (guard lines): load it first, on purpose
 load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs');
+vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
 const J = (x) => JSON.parse(JSON.stringify(x));
 const DAY = 86400000, D0 = Date.UTC(2026, 8, 1), NOW = D0 + 60 * DAY;       // 'today' = 31 Oct 2026
 
@@ -184,7 +185,7 @@ assert.ok(JSON.stringify(s1).length < 90000);
 // ---- teacher config (Ruling 12): defaults, Game Config `teacher` overrides, bad values fall back
 const D = J(ctx.tchConfig_(null));
 assert.deepStrictEqual(D, { remediationDays: 14, tagInflationThreshold: 7, planLeadDays: 7, remediationShowDays: 21,
-  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7, loggedDaysWindow: 60, taughtLookbackDays: 30, cwhwFormUrl: '', cwhwPrefill: {}, questDays: 5, quests: {} });
+  examKeywords: ['exam', 'examination', 'test week', 'pt-'], core: ['cwhw_log'], cap: 3, matchMinConfidence: 0.7, loggedDaysWindow: 60, taughtLookbackDays: 30, cwhwFormUrl: '', cwhwPrefill: {}, cwhwDeferred: false, questDays: 5, quests: {} });
 assert.deepStrictEqual(J(ctx.tchConfig_({ teacher: { remediationDays: 10, examKeywords: ['quiz'], cap: -1, core: 'x', planLeadDays: NaN, junk: 1 } })),
   Object.assign({}, D, { remediationDays: 10, examKeywords: ['quiz'] }));
 for (const bad of [undefined, null, 5, 'x', [], { teacher: 'x' }, { teacher: null }, { teacher: [1] }]) assert.deepStrictEqual(J(ctx.tchConfig_(bad)), D);

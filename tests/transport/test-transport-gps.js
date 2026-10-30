@@ -210,6 +210,8 @@ assert.ok(!('driver' in pw.vehicles[0]) && !('counts' in pw), 'a Principal gets 
 ['pnl', 'proposals', 'tasks', 'checks', 'catalog', 'bases'].forEach(k => assert.ok(!(k in pw), 'no ' + k + ' in the World (bases: where buses park at night)'));
 assert.strictEqual(pw.stops[0].shared_with, '', 'a stop shared with another campus\'s bus does not name it');
 assert.strictEqual(J(run('coordWorld_({email:"o@x.org", roles:["Owner"]})')).stops[0].shared_with, 'HP7', 'the Owner sees both buses, so the share stays');
+assert.strictEqual(J(run('coordGpsInsight_({email:"c4@x.org", roles:["Coordinator"], only:["LMS4"]})')).stops.find(x => x.bus === 'HP1').shared_with, '', 'the GPS page trims it too (school lock)');
+assert.strictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).stops.find(x => x.bus === 'HP1').shared_with, 'HP7');
 const kw = J(run('coordWorld_({email:"k@x.org", campusId:"LMS4", only:["LMS4"], feeClerkOnly:true, roles:["FeeClerk"]})'));
 assert.deepStrictEqual([kw.vehicles.map(v => v.reg), kw.vehicles[0].driver, kw.counts.HP1.rollCallToday], [['HP1'], 'Driver One', true], 'a Fee Clerk: their campus, the driver, today\'s roll call');
 assert.strictEqual(typeof kw.counts.HP1.fuelFills, 'number');

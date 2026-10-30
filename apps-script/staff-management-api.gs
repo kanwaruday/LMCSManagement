@@ -230,7 +230,9 @@ function verifyStaffManagerToken_(idToken, extraRoles, allowHrFunction) {
       // gets Staff Portal access via the Coordinator half.
       const role = String(rows[i][3] || '').trim();
       const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      const manager = roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1 || campusId === 'ALL';
+      // campusId ALL makes a manager, except a Principal's (Uday, 29 Oct, the school lock: a Principal set to ALL is not a manager
+      // across schools -- no transport uploads, fuel-fill decisions or driver links -- unless they also hold Owner or Coordinator).
+      const manager = roles.indexOf('Coordinator') !== -1 || roles.indexOf('Owner') !== -1 || (campusId === 'ALL' && roles.indexOf('Principal') === -1);
       const extra = (extraRoles || []).some(function (r) { return roles.indexOf(r) !== -1; });
       const hrHiring = staffFunctionsOf_(rows[0], rows[i]).some(function (f) { return f.toLowerCase().replace(/\s+/g, ' ') === STAFF_HR_FUNCTION_; });
       if (!manager && !extra && !(allowHrFunction && hrHiring)) {

@@ -8,14 +8,14 @@
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
-  <link rel="stylesheet" href="../assets/game/kingdom.css?v=e5d454d4" />
+  <link rel="stylesheet" href="../assets/game/kingdom.css?v=807b18f2" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
 </head>
 <body class="gb-app">
 
   <!-- The screen skeleton (assets/game/base.css): header, then the game bar, the next-step slot, the stage (the map) and the
        panels. The header's wrapper gives it the gb scope; the Kingdom itself keeps kingdom.css. -->
-  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="world">Kingdom</a></nav></div></header></div>
+  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="world">Kingdom</a><button type="button" id="kg-realmap" data-emoji="realMap" aria-label="Real map" hidden>Map</button></nav></div></header></div>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <div class="gb-next-slot" id="kg-next"></div>
@@ -33,10 +33,12 @@
     </aside>
   </div>
 
-  <script src="../assets/auth.js?v=4ad1f1b6"></script>
-  <script src="../assets/game/game.js?v=283ee731"></script>
-  <script src="../assets/game/kingdom.js?v=dcf73434"></script>
-  <script src="../assets/game/emoji.js?v=833e17cb"></script>
+  <script src="../assets/auth.js?v=64d16bda"></script>
+  <script src="../assets/game/game.js?v=e4fad387"></script>
+  <script src="../assets/game/kingdom.js?v=5889b2f4"></script>
+  <script src="../assets/game/places.js?v=e29efb40"></script>
+  <script src="../assets/game/kingdom-map.js?v=4696af8e"></script>
+  <script src="../assets/game/emoji.js?v=637364da"></script>
   <script src="../assets/game/rail.js?v=e726bf9c"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
@@ -45,6 +47,8 @@
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
       document.getElementById('panels').hidden = false;
+      const mb = document.getElementById('kg-realmap'); mb.hidden = false;
+      mb.onclick = function () { const d = LMCSKingdom.last(); LMCSKingdomMap.open({ bases: (d && d.kingdom && d.kingdom.campuses) || [], opener: mb, onPick: function (id, el) { LMCSKingdom.openBase(id, el); } }); };
       LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels') });
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); // Today (missions, quests) lives on Owner home
     }

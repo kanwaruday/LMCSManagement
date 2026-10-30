@@ -39,7 +39,7 @@ const ctx = {
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => ({ body: s }) }) },
 };
 vm.createContext(ctx);
-['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-event.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
 ctx.SpreadsheetApp = { openById: (id) => (id === vm.runInContext('GAME_ALLOWLIST_SHEET_ID', ctx) ? allowBook : book) };
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-10-29T05:00:00Z');
@@ -56,7 +56,7 @@ const DEFS = {
 const KINGDOM = { buildings: [{ id: 'hall', name: 'Hall', where: 'campus', tiers: [{ label: 'Campus step', refs: ['cq:tc'], owners: ['tc'] }] },
   { id: 'post', name: 'Post', where: 'darbar', tiers: [{ label: 'Network step', refs: ['cq:tn'], owners: ['tn'] }] }] };
 const reset = (cfgExtra) => {
-  const cfg = Object.assign({ confirmQuests: DEFS, kingdom: KINGDOM }, cfgExtra || {});
+  const cfg = Object.assign({ confirmQuests: DEFS, kingdom: KINGDOM, setupPeriod: { ownerAssignedQuestsOnly: false } }, cfgExtra || {});
   book.tabs = { 'Game Config': fakeSheet([['Key', 'Value']].concat(Object.keys(cfg).map((k) => [k, JSON.stringify(cfg[k])]))) };
   events.length = 0; warns.length = 0; logs.length = 0; fetches = []; fetchReply = null; lockFails = false; ctx.CQ_MEMO = null;
   ctx.CQ_PREFILL['test.one'] = () => [{ item: 'a', fields: { name: 'Sample' } }];
@@ -101,16 +101,17 @@ test('rows: each cq quest × scope (campus list or network), self and inactive l
   const ids = r.rows.map((x) => x.questId + '@' + x.campus);
   assert.deepStrictEqual(ids.filter((x) => x.startsWith('tc@')), ['tc@LMS1', 'tc@LMS2', 'tc@LMS3', 'tc@LMS4', 'tc@LMS5', 'tc@LMS6']);
   assert.deepStrictEqual(ids.filter((x) => x.startsWith('tn@')), ['tn@']);
-  assert.ok(!ids.some((x) => x.startsWith('toff') || x.startsWith('tself')), 'inactive and self quests are not listed');
-  assert.deepStrictEqual(ids.filter((x) => x.startsWith('daybook')), ['daybook-setup@LMS3'], 'only schools with something to count');
+  assert.ok(!ids.some((x) => x.startsWith('toff')), 'inactive quests are not listed');
+  assert.deepStrictEqual(ids.filter((x) => x.startsWith('tself')), ['tself@LMS1', 'tself@LMS2', 'tself@LMS3', 'tself@LMS4', 'tself@LMS5', 'tself@LMS6'], 'a self quest: assigned per school (the setup period)');
+  assert.deepStrictEqual(ids.filter((x) => x.startsWith('hook:daybook-setup')), ['hook:daybook-setup@LMS3'], 'only schools with something to count');
   const tc = find(r, 'tc', 'LMS4');
   assert.deepStrictEqual([tc.title, tc.roles, tc.state, tc.owner, tc.ownerSince, tc.ageDays, tc.stuck, tc.assignable], ['Campus step', ['Principal'], 'open', null, null, null, false, true]);
   assert.deepStrictEqual(tc.progress, { done: 0, total: 1 });
   assert.deepStrictEqual(tc.assignees, [{ email: 'p4@example.org', name: 'Principal Four' }]);
   assert.strictEqual(tc.go, 'setup/index.html?quest=tc&campus=LMS4');
   assert.deepStrictEqual(find(r, 'tn', '').assignees.map((p) => p.email), ['c1@example.org']);
-  const db = find(r, 'daybook-setup', 'LMS3');
-  assert.deepStrictEqual([db.state, db.progress, db.assignable, db.owner, db.roles], ['open', { done: 1, total: 5 }, false, null, ['FeeClerk']]);
+  const db = find(r, 'hook:daybook-setup', 'LMS3');
+  assert.deepStrictEqual([db.state, db.progress, db.assignable, db.owner, db.roles], ['open', { done: 1, total: 5 }, true, null, ['FeeClerk']]);
   assert.strictEqual(db.go, 'office/starting-data.html?campus=LMS3&quest=cash', 'Go opens the first step not done (check)');
 });
 test('owner, age and stuck: from Setup Data; reassign audit records from -> to', () => {
@@ -152,7 +153,7 @@ test('a source that cannot load: its rows are unknown and named in sourcesDown; 
   assert.strictEqual(r.success, true);
   assert.deepStrictEqual(r.sourcesDown.sort(), ['office', 'setup']);
   assert.ok(r.rows.filter((x) => x.questId === 'tc').every((x) => x.state === 'unknown' && x.stuck === false));
-  const db = r.rows.filter((x) => x.questId === 'daybook-setup');
+  const db = r.rows.filter((x) => x.questId === 'hook:daybook-setup');
   assert.deepStrictEqual(db.map((x) => x.campus), ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']);
   assert.ok(db.every((x) => x.state === 'unknown' && x.progress === null));
   assert.ok(!logs.some((l) => l.includes('@')), 'logs carry no people');
