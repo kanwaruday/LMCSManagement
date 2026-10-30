@@ -18,7 +18,7 @@
 //   campus: tupCovers_ on EmpMaster.SchoolCode), the same people as the staff list. Only what linking needs: phone = 10 digits from
 //   the roster's phone column ('' if none), google = whether an AuthEmail is on file. The address itself never leaves the server.
 //   Callers: the Owner, Coordinators and Fee Clerks only (a role check before the campus scope: a Teacher or Accountant set to ALL
-//   is a "manager" to verifyStaffManagerToken_ but gets nothing here). POST body only; no staff data is logged (the shared token
+//   is a "manager" to verifyStaffManagerToken_ but gets nothing here; nor does a Fee Clerk set to ALL). POST body only; no staff data is logged (the shared token
 //   check still logs who called, as for every staff action).
 // ═══════════════════════════════════════════════════════════════════
 
@@ -128,6 +128,9 @@ const DGL_MOBILE_ = /^(?:91|0)?([6-9]\d{9})$/;
 function driverStaff_(body) {
   const caller = verifyStaffManagerToken_(body.idToken, ['FeeClerk']);
   if (!caller || !caller.roles.some(function (r) { return ['Owner', 'Coordinator', 'FeeClerk'].indexOf(r) !== -1; })) return { success: false, error: 'Not authorized' };
+  // A Fee Clerk set to ALL gets no school here (the principal-gate rule, 30 Oct: ALL widens a Fee Clerk's campus, never their role).
+  const head = caller.roles.indexOf('Owner') !== -1 || caller.roles.indexOf('Coordinator') !== -1;
+  if (!head && caller.campusId.split(',').map(function (c) { return c.trim(); }).indexOf('ALL') !== -1) return { success: false, error: 'Not authorized' };
   const book = SpreadsheetApp.openById(EMP_ROSTER_SHEET_ID);
   const cell = function (v) { return String(v == null ? '' : v).replace(/[​-‏﻿⁠]/g, '').trim(); };
   const table = function (tab) { const sh = book.getSheetByName(tab), v = sh ? sh.getDataRange().getValues() : [[]]; return { h: v[0].map(cell), rows: v.slice(1) }; };

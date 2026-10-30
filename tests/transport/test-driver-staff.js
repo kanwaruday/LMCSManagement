@@ -15,7 +15,8 @@ const books = { [ROSTER]: {
 } };
 const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }) });
 const logs = [];
-const callers = { owner: { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, teacherAll: { email: 't@x', campusId: 'ALL', roles: ['Teacher'], manager: true }, coord: { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator'] },
+const callers = { owner: { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, teacherAll: { email: 't@x', campusId: 'ALL', roles: ['Teacher'], manager: true }, clerkAll: { email: 'fa@x', campusId: 'ALL', roles: ['FeeClerk'] },
+  clerkMix: { email: 'fm@x', campusId: 'LMS4,ALL', roles: ['FeeClerk', 'Accounts'] }, coordAll: { email: 'ca@x', campusId: 'ALL', roles: ['Coordinator', 'FeeClerk'] }, coord: { email: 'c@x', campusId: 'LMS4', roles: ['Coordinator'] },
   clerk: { email: 'f@x', campusId: 'LMS4', roles: ['FeeClerk'] } };
 const ctx = { Object, String, Math, JSON, Array, Number, RegExp, console: { log: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) },
   SpreadsheetApp: { openById: (id) => ({ getSheetByName: (n) => (books[id] && books[id][n] ? sheet(books[id][n]) : null) }) },
@@ -37,6 +38,8 @@ const all = JSON.stringify(call({ idToken: 'owner' }));
 assert.ok(!/@|gmail/i.test(all), 'never an address');
 assert.deepStrictEqual(call({ idToken: 'principal' }), { success: false, error: 'Not authorized' }, 'anyone else refused');
 assert.deepStrictEqual(call({}), { success: false, error: 'Not authorized' });
+for (const t of ['clerkAll', 'clerkMix']) assert.deepStrictEqual(call({ idToken: t }), { success: false, error: 'Not authorized' }, t + ': a Fee Clerk set to ALL gets no school');
+assert.deepStrictEqual(codes(call({ idToken: 'coordAll' })), ['E1', 'E2', 'E4', 'E5', 'E7'], 'a Coordinator at ALL still sees every school');
 assert.deepStrictEqual(call({ idToken: 'teacherAll' }), { success: false, error: 'Not authorized' }, 'a Teacher set to ALL is not Owner, Coordinator or Fee Clerk');
 const phoneIs = (v) => { books[ROSTER].EmpPersonal[1][2] = v; return call({ idToken: 'clerk' }).staff.find((e) => e.employeeCode === 'E1').phone; };
 assert.deepStrictEqual(['09876543210', '919876543210', '1234567890', '412345678901', '9876 543 210 9'].map(phoneIs), ['9876543210', '9876543210', '', '', ''],
