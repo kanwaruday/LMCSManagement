@@ -521,6 +521,8 @@ window.Coord = (function () {
         const upAny = v => { const b = v.b;
           return '<select class="upany" data-upsel="' + esc(b.reg) + '" aria-label="' + esc('Upload a paper for ' + b.reg) + '"><option value="">Upload a paper…</option>' +
             cols.map(x => b.docs[x.key] && b.docs[x.key].pending ? '' : '<option value="' + esc(x.key) + '">' + esc(x.label) + '</option>').join('') + '</select>' +
+            // a real file box the person taps, shown once a paper is picked: iPhone Safari opens no file dialog from a select's change
+            '<label class="upfile" hidden>Choose the file<input type="file" data-upfile="' + esc(b.reg) + '" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"></label>' +
             cols.map(x => { const m = T.upErr[b.reg + '|' + x.key]; return m && !needsUp(v, x) ? '<span class="uperr" role="alert">' + esc(x.label + ': ' + m) + '</span>' : ''; }).join(''); };
         const secRow = t => { const n = vs.filter(v => v.tier === t).length; return '<tr class="grp ' + t + '"><td colspan="' + (2 + cols.length) + '"><span class="grp-l">' + esc(SEC[t][0]) + ' <span class="sm">' + n + (n === 1 ? ' vehicle' : ' vehicles') + '</span></span> <span class="sm grp-d">&middot; ' + esc(SEC[t][1]) + '</span></td></tr>'; };
         let prev = '';
@@ -560,15 +562,16 @@ window.Coord = (function () {
       box.querySelectorAll('[data-psort]').forEach(th => th.addEventListener('click', () => { const k = th.dataset.psort; T.pd = T.pk === k ? -T.pd : (k === 'fee' ? -1 : 1); T.pk = k; render(); }));
       box.querySelectorAll('[data-tier]').forEach(b => b.addEventListener('click', () => { T.tier = b.dataset.tier; render(); }));
       box.querySelector('.tr-q').addEventListener('input', e => { T.q = e.target.value; render(); const i = box.querySelector('.tr-q'); i.focus(); i.setSelectionRange(T.q.length, T.q.length); });
-      box.querySelectorAll('[data-upsel]').forEach(sel => sel.addEventListener('change', () => {
-        const reg = sel.dataset.upsel, paper = sel.value, label = sel.selectedOptions[0].textContent;
-        sel.value = '';
-        if (!paper) return;
-        const pick = document.createElement('input');
-        pick.type = 'file'; pick.accept = '.pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*';
-        pick.addEventListener('change', () => { const f = pick.files[0]; if (f && confirm('Upload "' + f.name + '" as the ' + label + ' paper for ' + reg + '?')) upload(reg + '|' + paper, f); });
-        pick.click();
-      }));
+      box.querySelectorAll('[data-upsel]').forEach(sel => {
+        const box1 = sel.nextElementSibling, pick = box1.querySelector('input');
+        sel.addEventListener('change', () => { box1.hidden = !sel.value; pick.value = ''; });
+        pick.addEventListener('change', () => {
+          const f = pick.files[0], paper = sel.value, label = sel.value && sel.selectedOptions[0].textContent, reg = sel.dataset.upsel;
+          if (!f || !paper) return;
+          if (confirm('Upload "' + f.name + '" as the ' + label + ' paper for ' + reg + '?')) upload(reg + '|' + paper, f);
+          else pick.value = '';
+        });
+      });
       box.querySelectorAll('[data-up]').forEach(btn => btn.addEventListener('click', () => {
         const pick = document.createElement('input');
         pick.type = 'file'; pick.accept = '.pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*';

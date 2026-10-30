@@ -67,7 +67,7 @@ const S = (campusId) => ({ idToken: 't', email: 'c@lms.test', campusId });
       assert.ok(!('.tr-pick' in pickers), 'no picker mounted');
       assert.ok(box.innerHTML.includes('HP02') && !box.innerHTML.includes('HP01') && !box.innerHTML.includes('HP03'), 'only LMS2 rows');
       // P21: every vehicle row can take any paper, whatever its status; a paper waiting to be read is not offered twice
-      assert.ok(/<select class="upany" data-upsel="HP02"[^>]*><option value="">Upload a paper…<\/option><option value="ins">Insurance<\/option><\/select>/.test(box.innerHTML), 'Upload a paper on the row');
+      assert.ok(/<select class="upany" data-upsel="HP02"[^>]*><option value="">Upload a paper…<\/option><option value="ins">Insurance<\/option><\/select><label class="upfile" hidden>Choose the file<input type="file" data-upfile="HP02"/.test(box.innerHTML), 'Upload a paper on the row, with its own file box');
     }
     {
       const pend = JSON.parse(JSON.stringify(data)); pend.coordinatortransport.fleet[1].docs.ins.pending = { at: new Date().toISOString(), by: 'c@x', link: '' };
