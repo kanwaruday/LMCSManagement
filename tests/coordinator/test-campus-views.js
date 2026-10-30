@@ -77,6 +77,26 @@ const S = (campusId) => ({ idToken: 't', email: 'c@lms.test', campusId });
       await tick(); await tick();
       assert.ok(/data-upsel="HP02"[^>]*><option value="">Upload a paper…<\/option><\/select>/.test(box.innerHTML), 'a pending paper is left out of the picker');
     }
+    {
+      // a paper still valid has no cell button: a refused file from the row's picker shows its error on the row, not nowhere
+      const ok = JSON.parse(JSON.stringify(data)); ok.coordinatortransport.fleet[1].docs.ins.date = '2099-01-01';
+      const { body, box } = makeBody('.tr-body');
+      const ctx = makeCtx({ session: S('ALL'), data: ok });
+      const on = {}, sel = { dataset: { upsel: 'HP02' }, value: '', selectedOptions: [{ textContent: 'Insurance' }], addEventListener: (e, f) => { on.sel = f; } };
+      const pick = { value: '', files: [], addEventListener: (e, f) => { on.pick = f; } }, label = { hidden: true, querySelector: () => pick };
+      sel.nextElementSibling = label;
+      const all = box.querySelectorAll.bind(box);
+      box.querySelectorAll = (q) => (q === '[data-upsel]' ? [sel] : all(q));
+      ctx.confirm = () => true;
+      ctx.Coord.transportView(body, { tabs: ['matrix'], campus: 'LMS2' });
+      await tick(); await tick();
+      assert.ok(!/class="upcell"|class="upnew"/.test(box.innerHTML), 'a valid paper: no cell button');
+      sel.value = 'ins'; on.sel();
+      assert.strictEqual(label.hidden, false, 'picking a paper shows the file box');
+      pick.files = [{ name: 'papers.zip', type: 'application/zip', size: 10 }]; on.pick();
+      await tick();
+      assert.ok(/<span class="uperr" role="alert">Insurance: Not uploaded: PDF or photo only<\/span>/.test(box.innerHTML), 'the refusal shows on the row');
+    }
   }
 
   // ── Systems (pdrView) ──
