@@ -202,6 +202,30 @@ var LMCSDock = window.LMCSDock = (function () {
   }
   // ═══ Ask Buddy (end) ═══
 
+  // ── Reviewer mode (30 Oct): an invited reviewer (gametoday's buddyReviewer) notes what they see on this screen. The note goes to Uday
+  // to vet; nothing comes back here but "sent". Context: this page, the role view and the campus.
+  function reviewView() {
+    var s = session() || {}, v = window.LMCSGame && LMCSGame.viewAs ? LMCSGame.viewAs() : null;
+    return ((window.LMCS && LMCS.roleLabel ? LMCS.roleLabel(s) : String(s.role || '')) + (v && v.name ? ' viewing ' + v.name : '')).slice(0, 80);
+  }
+  function reviewSection(h) {
+    var err = h('p', { class: 'bd-err', role: 'alert' }), said = h('p', { class: 'bd-status', role: 'status' });
+    var box = h('textarea', { id: 'bd-review', class: 'bd-ask', rows: 3, maxlength: 2000 });
+    var send = h('button', { type: 'button', class: 'lg-btn bd-send', onclick: function () {
+      var text = box.value.trim(), s = session() || {};
+      if (!text) { err.textContent = 'Type what you noticed first.'; return; }
+      err.textContent = ''; said.textContent = ''; send.disabled = true;
+      buddyPost({ action: 'buddyreview', text: text, view: reviewView(), context: { page: PATH, campus: s.campusId } }).then(function (r) {
+        send.disabled = false;
+        if (r && r.success) { box.value = ''; said.textContent = 'Sent to Uday. Thank you!'; }
+        else err.textContent = (r && r.error) || 'Something went wrong. Try again.';
+      }, function () { send.disabled = false; err.textContent = "Couldn't send it. Your words are still in the box."; });
+    } }, 'Send review');
+    return h('section', { class: 'bd-part', 'aria-labelledby': 'bd-review-h' }, [
+      h('h3', { id: 'bd-review-h' }, 'Review this screen'),
+      h('label', { class: 'bd-ask-l', for: 'bd-review' }, 'What works, what is confusing, what is missing? Uday reads every note.'), box, err, send, said]);
+  }
+
   function build() {
     var ui = LMCSGame.ui, h = ui.h, G = window.LMCSGuide || {}, pg = (G.pages || {})[PATH] || null;
     var slot = h('div', {}), results = h('ul', { class: 'bd-results', 'aria-live': 'polite' });
@@ -241,6 +265,7 @@ var LMCSDock = window.LMCSDock = (function () {
       data = d;
       avatar(d);
       if (panel !== me || !d || d.notYet) return;
+      if (d.buddyReviewer === true && !owner()) slot.appendChild(reviewSection(h));
       var m = LMCSGame.nextMission(d), href = m && LMCSGame.safeHref(m.go, UP), s = setupStep(d), sHref = s && LMCSGame.safeHref(s.go, UP);
       var rows = [
         href && h('div', { class: 'bd-row' }, [h('span', { class: 'bd-t' }, m.title), h('a', { class: 'lg-go', href: href, 'aria-label': 'Go: ' + m.title }, 'Go')]),

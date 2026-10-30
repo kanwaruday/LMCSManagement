@@ -39,7 +39,8 @@ var BUDDY_HEADER = ['Id', 'Kind', 'Email', 'Text', 'Meta', 'At', 'By'];
 var BUDDY_LIMITS = { inFlight: 1, perHour: 20, perDayAll: 100, maxText: 2000, maxReply: 8000, maxSummary: 300,
   proposalMs: 86400000, staleClaimMs: 1200000, maxAttempts: 2, deskMs: 120000, minSecret: 32, maxForwardAttempts: 3 };
 var BUDDY_FORWARD_FAILED = "Buddy couldn't pass this on. Try again later or send it on Telegram."; // thread.proposalNote when proposalState is 'failed'
-var BUDDY_CODES = { BUDDY_OWNER_ONLY: 'Ask Buddy is for the Owner for now.', BUDDY_EMPTY: 'Type a question first.',
+var BUDDY_CODES = { BUDDY_OWNER_ONLY: 'Ask Buddy is for the Owner for now.', BUDDY_NOT_REVIEWER: 'Reviews are open to invited reviewers only.',
+  BUDDY_REVIEW_DAILY: 'That is 30 reviews today. Thank you! Please send more tomorrow.', BUDDY_REVIEW_DECIDED: 'That review was already approved or declined.', BUDDY_EMPTY: 'Type a question first.',
   BUDDY_TOO_LONG: 'That is a bit long. Please keep it under 2000 characters.',
   BUDDY_IN_FLIGHT: 'Buddy is still on your last question. One at a time.',
   BUDDY_HOURLY: 'That is 20 questions this hour. Please wait a little.', BUDDY_DAILY: 'Buddy has answered a lot today. Please try tomorrow.',
@@ -91,7 +92,7 @@ function buddyThreads_(rows, nowMs) {
       if (!buddyIdOk_(id) || out[id]) continue;
       out[id] = { id: id, email: String(r[2] || '').trim().toLowerCase(), text: buddyUncell_(r[3]), context: buddyContext_(meta.context), askedAt: at,
         state: 'queued', attempts: 0, claimedAt: null, reply: null, route: null, repliedAt: null, proposal: null, proposalState: null, failReason: null,
-        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, order: meta.order === true && !!owner && String(r[2] || '').trim().toLowerCase() === owner, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
+        fwdAttempts: 0, fwdClaimedAt: null, proposalNote: null, order: meta.order === true && !!owner && String(r[2] || '').trim().toLowerCase() === owner, review: meta.review === true, _decision: null, _decidedAt: null, _forwarded: false, _fwdFailed: false };
       continue;
     }
     const t = out[id];
@@ -146,7 +147,7 @@ function buddyPullable_(threads, nowMs) {
   const all = buddyList_(threads);
   const fwd = all.filter(function (t) { return t.proposalState === 'confirmed' && (!buddyFwdBusy_(t) || buddyFwdStale_(t, nowMs)); })
     .sort(function (a, b) { return buddyMs_(a._decidedAt) - buddyMs_(b._decidedAt); })[0];
-  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal ? fwd.proposal.summary : '', reply: fwd.order ? fwd.reply : undefined, context: fwd.context, order: fwd.order, attempt: fwd.fwdAttempts + 1 };
+  if (fwd) return { id: fwd.id, kind: 'forward', text: fwd.text, summary: fwd.proposal ? fwd.proposal.summary : '', reply: fwd.order ? fwd.reply : undefined, context: fwd.context, order: fwd.order, review: fwd.review === true ? true : undefined, attempt: fwd.fwdAttempts + 1 };
   const t = all.filter(function (x) { return x.state === 'queued'; })[0] ||
     all.filter(function (x) { return buddyStale_(x, nowMs) && x.attempts < BUDDY_LIMITS.maxAttempts; })[0];
   return t ? { id: t.id, kind: 'ask', text: t.text, context: t.context, attempt: t.attempts + 1 } : null;
@@ -352,4 +353,92 @@ function buddyReply_(body) {
       return { success: true };
     });
   } catch (err) { return buddyFail_(err); }
+}
+
+// ── Reviewer mode (Uday, 30 Oct: Vikas sir's reviews, "part of today's game setup") ─────────────
+// A reviewer (a verified caller whose email is in Game Config buddyReviewers) sends a "Review this screen" note from the dock: text,
+// the page, the role view and campus. It is stored in its own tab for Uday to vet; Claude never answers it and nothing is forwarded
+// until Uday approves. Approve writes one already-confirmed thread into the Buddy Inbox (ask + reply-with-proposal + confirm, in one
+// append under the lock), so the worker's existing forward path carries it to the master agent, labelled reviewer feedback
+// (meta.review; tools/buddy_worker.py), never as Uday's words. A reviewer reads nothing back: no threads, orders or answers.
+var BUDDY_REVIEW_TAB = 'Buddy Reviews';
+var BUDDY_REVIEW_LIMITS = { perDay: 30, list: 50, maxView: 80 };
+
+function buddyReviewerOk_(caller, cfg) {
+  const me = String((caller && caller.email) || '').trim().toLowerCase(), list = cfg && Array.isArray(cfg.buddyReviewers) ? cfg.buddyReviewers : [];
+  return !!me && list.some(function (e) { return typeof e === 'string' && e.trim().toLowerCase() === me; });
+}
+function buddyReviewSheet_(create) {
+  const ss = gameBook_();
+  let sh = ss.getSheetByName(BUDDY_REVIEW_TAB);
+  if (!sh && create) { sh = ss.insertSheet(BUDDY_REVIEW_TAB); gameAppendText_(sh, [BUDDY_HEADER]); }
+  return sh;
+}
+// rows -> reviews by id: { id, email, text, context, view, at, state: pending | approved | declined, sent (the approved text), decidedAt }
+function buddyReviews_(rows) {
+  const out = {}, order = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i], id = String(r[0] || ''), kind = String(r[1] || ''), meta = buddyMeta_(r[4]);
+    if (kind === 'review') {
+      if (!buddyIdOk_(id) || out[id]) continue;
+      out[id] = { id: id, email: String(r[2] || '').trim().toLowerCase(), text: buddyUncell_(r[3]), context: buddyContext_(meta.context),
+        view: typeof meta.view === 'string' ? meta.view.slice(0, BUDDY_REVIEW_LIMITS.maxView) : '', at: String(r[5] || ''), state: 'pending', sent: null, decidedAt: null };
+      order.push(id);
+    } else if (out[id] && out[id].state === 'pending' && (kind === 'approve' || kind === 'decline')) {
+      out[id].state = kind === 'approve' ? 'approved' : 'declined'; out[id].decidedAt = String(r[5] || '');
+      if (kind === 'approve') out[id].sent = buddyUncell_(r[3]);
+    }
+  }
+  return order.map(function (k) { return out[k]; });
+}
+function buddyReviewAction_(caller, action, body) {
+  try {
+    body = body || {};
+    if (action === 'buddyreview') {
+      if (!buddyReviewerOk_(caller, cqLoadCfg_())) throw buddyErr_('BUDDY_NOT_REVIEWER');
+      return buddyReviewSubmit_(caller, body);
+    }
+    // the Owner's vetting: the same one-person gate as Ask Buddy
+    const owner = buddyOwnerEmail_();
+    if (!caller || !Array.isArray(caller.roles) || caller.roles.indexOf('Owner') === -1 || !owner || String(caller.email || '').trim().toLowerCase() !== owner) throw buddyErr_('BUDDY_OWNER_ONLY');
+    if (action === 'buddyreviews') return { success: true, reviews: buddyReviews_(buddyRows_(buddyReviewSheet_(false))).slice(-BUDDY_REVIEW_LIMITS.list).reverse() };
+    if (action === 'buddyreviewdecide') return buddyReviewDecide_(caller, body);
+    throw buddyErr_('BUDDY_ERROR');
+  } catch (err) { return buddyFail_(err); }
+}
+function buddyReviewSubmit_(caller, body) {
+  const text = buddyClean_(body.text, BUDDY_LIMITS.maxText, false), context = buddyContext_(body.context);
+  const view = typeof body.view === 'string' ? body.view.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, BUDDY_REVIEW_LIMITS.maxView) : '';
+  const email = String(caller.email).toLowerCase(), nowMs = gameNow_().getTime(), nowIso = new Date(nowMs).toISOString(), today = gameDayKey_(new Date(nowMs));
+  const id = buddyLocked_(function () {
+    const sh = buddyReviewSheet_(true);
+    const mineToday = buddyReviews_(buddyRows_(sh)).filter(function (r) { return r.email === email && gameDayKey_(new Date(buddyMs_(r.at))) === today; }).length;
+    if (mineToday >= BUDDY_REVIEW_LIMITS.perDay) throw buddyErr_('BUDDY_REVIEW_DAILY');
+    const newId = buddyNewId_(nowMs);
+    gameAppendText_(sh, [[newId, 'review', email, buddyCell_(text), JSON.stringify({ context: context, view: buddyCell_(view) }), nowIso, email]]);
+    return newId;
+  });
+  return { success: true, id: id }; // nothing else comes back to a reviewer
+}
+function buddyReviewDecide_(caller, body) {
+  const id = body.id, decision = body.decision, me = String(caller.email).toLowerCase();
+  if (!buddyIdOk_(id)) throw buddyErr_('BUDDY_NOT_FOUND');
+  if (decision !== 'approve' && decision !== 'decline') throw buddyErr_('BUDDY_BAD_STATE');
+  const edited = decision === 'approve' && typeof body.text === 'string' && body.text.trim() ? buddyClean_(body.text, BUDDY_LIMITS.maxText, false) : null;
+  const nowMs = gameNow_().getTime(), nowIso = new Date(nowMs).toISOString();
+  return buddyLocked_(function () {
+    const sh = buddyReviewSheet_(false), rv = sh && buddyReviews_(buddyRows_(sh)).filter(function (r) { return r.id === id; })[0];
+    if (!rv) throw buddyErr_('BUDDY_NOT_FOUND');
+    if (rv.state !== 'pending') throw buddyErr_('BUDDY_REVIEW_DECIDED');
+    if (decision === 'decline') { gameAppendText_(sh, [[id, 'decline', '', '', '{}', nowIso, me]]); return { success: true, state: 'declined' }; }
+    const sent = edited || rv.text, fwdId = buddyNewId_(nowMs), inbox = buddySheet_(true);
+    const summary = 'Reviewer feedback (vetted by Uday)' + (rv.view ? ' · ' + rv.view : '');
+    gameAppendText_(inbox, [ // one already-confirmed thread: the worker forwards it (kind 'forward', review: true); Claude never answers it
+      [fwdId, 'ask', rv.email, buddyCell_(sent), JSON.stringify({ context: rv.context, review: true }), nowIso, me],
+      [fwdId, 'reply', '', '', JSON.stringify({ proposal: { summary: summary } }), nowIso, 'system'],
+      [fwdId, 'confirm', '', '', '{}', nowIso, me]]);
+    gameAppendText_(sh, [[id, 'approve', '', buddyCell_(sent), JSON.stringify({ forward: fwdId, edited: !!edited }), nowIso, me]]);
+    buddyMark_();
+    return { success: true, state: 'approved', forward: fwdId };
+  });
 }

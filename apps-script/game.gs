@@ -97,6 +97,7 @@ function gameConfigDefaults_() {
     principalIssuesGo: 'principal/issues.html', // from the Coordinator chat; ships with its C1
     approvalsGo: 'coordinator/systems/index.html#approvals', // approval_recommend / approval_wait and the Coordinator quest's recommend step
     recommendGo: 'coordinator/hq.html', // the recommend form; a mission opens it on its request (#d=<approvalId>)
+    buddyReviewers: [], // Ask Buddy reviewer mode (Uday, 30 Oct): verified emails that may send "Review this screen" notes; Uday sets them in Game Config, none in the repo
     recommendationsReady: true, // the Recommendations tab is created by the first coordinatorrecommend; off = no approval_recommend missions, Owner's `why` blank
     // Fleet Operations (game-fleet.gs). Game Config key `fleet`; a changed key replaces that whole nested object (weights, heat).
     // heat: a bus is warm from `warm` points and hot from `hot`; weights are per open item kind (compliance only: never speed as a goal).
@@ -257,6 +258,8 @@ function doPost(e) {
     caller.idToken = String(body.idToken);
     // Ask Buddy's Owner actions: POST only (never registered in GAME_MODULE_ACTIONS); the Owner check is inside buddyOwnerAction_.
     if (action === 'buddyask' || action === 'buddythread' || action === 'buddyconfirm') return gameJson_(buddyOwnerAction_(caller, action, body));
+    // Reviewer mode: POST only; buddyreview checks the Game Config reviewer list, buddyreviews / buddyreviewdecide the Owner (inside each).
+    if (action === 'buddyreview' || action === 'buddyreviews' || action === 'buddyreviewdecide') return gameJson_(buddyReviewAction_(caller, action, body));
     // The Kingdom's writes: POST only, never in GAME_MODULE_ACTIONS (a GET answers "Unknown action"); Owner and rights checks are inside each.
     if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
     if (action === 'kingdomassignbulk') return gameJson_(kingdomAssignBulk_(caller, body));

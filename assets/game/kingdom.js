@@ -585,6 +585,35 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       if (ctl.go) ctl.go.textContent = label;
     }).then(function () { W.busy = false; });
   }
+  // ── Reviews to vet (Buddy reviewer mode, 30 Oct): notes invited reviewers sent from "Review this screen". Approve (as written, or
+  // after an edit) passes one to the master agent labelled reviewer feedback; Decline only logs it. Owner-only on the server too.
+  function reviewDate(iso) { var d = new Date(iso); return isNaN(d) ? '' : ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function reviewCard(rv) {
+    var where = [rv.view, rv.context && rv.context.page, rv.context && rv.context.campus, reviewDate(rv.at)].filter(Boolean).join(' · ');
+    if (rv.state !== 'pending') return h('li', { class: 'kg-rv kg-rv-done' }, [h('p', { class: 'kg-quiet' }, [where + ' · ' + (rv.state === 'approved' ? 'Sent' : 'Declined')]), h('p', {}, [rv.sent || rv.text])]);
+    var id = 'kg-rv-' + rv.id, box = h('textarea', { id: id, class: 'kg-rvtext', rows: 4, maxlength: 2000 }), err = h('p', { class: 'kg-err', role: 'alert' }, []);
+    box.value = rv.text;
+    var ok = h('button', { type: 'button', class: 'kg-btn kg-primary' }, ['Approve and send']), no = h('button', { type: 'button', class: 'kg-btn' }, ['Decline']);
+    var ctl = function (go) { return { err: err, controls: [ok, no, box], go: go, after: function () { openReviews(); } }; };
+    ok.addEventListener('click', function () {
+      var t = box.value.trim(); if (!t) { err.textContent = 'The note is empty. Decline it instead.'; return; }
+      send({ action: 'buddyreviewdecide', id: rv.id, decision: 'approve', text: t === rv.text ? '' : t }, Object.assign(ctl(ok), { done: function () { return 'Review sent to the master agent.'; } }));
+    });
+    no.addEventListener('click', function () { send({ action: 'buddyreviewdecide', id: rv.id, decision: 'decline' }, Object.assign(ctl(no), { done: function () { return 'Review declined.'; } })); });
+    return h('li', { class: 'kg-rv' }, [h('p', { class: 'kg-quiet' }, [where]), h('p', {}, ['From ' + rv.email]),
+      h('label', { class: 'kg-sr', for: id }, ['The review note (you can edit it before sending)']), box, err, h('div', { class: 'kg-acts' }, [ok, no])]);
+  }
+  function openReviews(opener) {
+    var body = h('div', {}, [h('p', { class: 'kg-quiet' }, ['Loading…'])]);
+    openLayer('Reviews to vet', 'Notes from invited reviewers. Nothing reaches the master agent until you approve it.', [body], opener);
+    post({ action: 'buddyreviews' }).then(function (d) {
+      body.textContent = '';
+      if (!d || !d.success) { body.appendChild(h('p', { class: 'kg-err', role: 'alert' }, [(d && d.error) || SEND_ERR])); return; }
+      var list = d.reviews || [], open = list.filter(function (r) { return r.state === 'pending'; }), done = list.filter(function (r) { return r.state !== 'pending'; }).slice(0, 10);
+      body.appendChild(open.length ? h('ul', { class: 'kg-rvl' }, open.map(reviewCard)) : h('p', { class: 'kg-quiet' }, ['No reviews waiting.']));
+      if (done.length) body.appendChild(h('details', {}, [h('summary', {}, ['Recently decided']), h('ul', { class: 'kg-rvl' }, done.map(reviewCard))]));
+    }, function () { body.textContent = ''; body.appendChild(h('p', { class: 'kg-err', role: 'alert' }, [SEND_ERR])); });
+  }
   function radios(name, people, suggestEmail, legend) {
     return h('fieldset', { class: 'kg-pick' }, [h('legend', { class: 'kg-sr' }, [legend])].concat(people.map(function (p, i) {
       var id = 'kg-r-' + name + i;
@@ -810,7 +839,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   };
 
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
-  api.openBase = function (id, op) { openBase(id, op); }; api.close = closeLayer; api.state = S;
+  api.openBase = function (id, op) { openBase(id, op); }; api.openReviews = function (op) { openReviews(op); }; api.close = closeLayer; api.state = S;
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site
   return api;
 })();

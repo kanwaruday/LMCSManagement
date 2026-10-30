@@ -304,6 +304,7 @@ function gameToday_(caller, params) {
       sourcesDown: loaded.down, toursSeen: gameToursSeen_(progRows, me),
     };
     if (role === 'Owner' || role === 'Coordinator') out.board = gameWindowBoard_(caller, win.winRows, win.decRows, now, cfg);
+    if (typeof buddyReviewerOk_ === 'function' && buddyReviewerOk_(caller, cfg)) out.buddyReviewer = true; // the dock shows "Review this screen" (game-buddy.gs)
     return out;
   });
 }

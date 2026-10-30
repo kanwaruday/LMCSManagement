@@ -559,5 +559,54 @@ test('responses never contain the secret', () => {
 });
 
 let fail = 0;
+// ── Reviewer mode (30 Oct): Game Config buddyReviewers; stored for the Owner to vet; approve -> one confirmed forward labelled review
+const VIK = mk({ email: 'vik@test.invalid', roles: ['Coordinator'], campusId: 'ALL' });
+const reviewers = (list) => { book.tabs['Game Config'] = fakeSheet([['Key', 'Value'], ['buddyReviewers', JSON.stringify(list)]]); };
+const rv = (c, o) => R(ctx.buddyReviewAction_(c, 'buddyreview', Object.assign({ text: 'The SS button is hard to find', view: 'Coordinator', context: { page: 'principal/index.html', campus: 'LMS4' } }, o || {})));
+const rvList = (c) => R(ctx.buddyReviewAction_(c || OWN, 'buddyreviews', {}));
+const rvDecide = (c, o) => R(ctx.buddyReviewAction_(c || OWN, 'buddyreviewdecide', o));
+const rvRows = () => (book.tabs['Buddy Reviews'] ? book.tabs['Buddy Reviews'].rows.slice(1) : []);
+test('review: only a listed reviewer can send; nothing else comes back', () => {
+  reset(); reviewers([' Vik@Test.invalid ']);
+  const r = rv(VIK);
+  assert.strictEqual(r.success, true); assert.deepStrictEqual(Object.keys(r).sort(), ['id', 'success'], 'a reviewer reads nothing back');
+  assert.strictEqual(rv(PR).code, 'BUDDY_NOT_REVIEWER');
+  reviewers([]); assert.strictEqual(rv(VIK).code, 'BUDDY_NOT_REVIEWER', 'empty list: fail closed');
+  delete book.tabs['Game Config']; assert.strictEqual(rv(VIK).success, false, 'no config: refused');
+  assert.strictEqual(inbox().length, 0, 'never in the Buddy Inbox: Claude never answers a review');
+  assert.strictEqual(rvRows().length, 1);
+  assert.deepStrictEqual(meta(rvRows()[0]).context, { page: 'principal/index.html', campus: 'LMS4' });
+});
+test('review: a reviewer cannot list, decide or read Owner threads', () => {
+  reset(); reviewers(['vik@test.invalid']); const id = rv(VIK).id;
+  assert.strictEqual(rvList(VIK).code, 'BUDDY_OWNER_ONLY');
+  assert.strictEqual(rvDecide(VIK, { id, decision: 'approve' }).code, 'BUDDY_OWNER_ONLY');
+  assert.strictEqual(as2(() => rvList(OWN2)).success, true); assert.strictEqual(rvList(OWN2).code, 'BUDDY_OWNER_ONLY', 'a second Owner row is not the Owner');
+  assert.strictEqual(R(ctx.buddyOwnerAction_(VIK, 'buddythread', {})).code, 'BUDDY_OWNER_ONLY');
+});
+test('review: decline logs; approve (edited) forwards once, labelled review, never as an order', () => {
+  reset(); reviewers(['vik@test.invalid']);
+  const a = rv(VIK).id, b = rv(VIK, { text: '=HYPERLINK("x")' }).id;
+  assert.deepStrictEqual(rvList().reviews.map((x) => x.state), ['pending', 'pending']);
+  assert.strictEqual(rvDecide(OWN, { id: b, decision: 'decline' }).state, 'declined');
+  assert.strictEqual(rvDecide(OWN, { id: b, decision: 'approve' }).code, 'BUDDY_REVIEW_DECIDED');
+  const ok = rvDecide(OWN, { id: a, decision: 'approve', text: 'SS button: make it bigger' });
+  assert.strictEqual(ok.state, 'approved'); assert.strictEqual(rvDecide(OWN, { id: a, decision: 'approve' }).code, 'BUDDY_REVIEW_DECIDED', 'once only');
+  assert.deepStrictEqual(kinds(), ['ask', 'reply', 'confirm']);
+  assert.strictEqual(inbox()[0][2], 'vik@test.invalid', 'the thread carries the reviewer, not the Owner');
+  const p = pull();
+  assert.strictEqual(p.items.length, 1); const it = p.items[0];
+  assert.deepStrictEqual([it.kind, it.text, it.review, !!it.order], ['forward', 'SS button: make it bigger', true, false]);
+  assert.ok(/^Reviewer feedback \(vetted by Uday\)/.test(it.summary));
+  assert.strictEqual(thread(OWN).threads.length, 0, "not in the Owner's own Ask Buddy threads");
+  assert.strictEqual(rvList().reviews.filter((x) => x.id === a)[0].sent, 'SS button: make it bigger');
+  assert.strictEqual(rvRows()[0][3], "The SS button is hard to find"); assert.strictEqual(rvRows()[1][3], "'=HYPERLINK(\"x\")", 'a formula is stored as text');
+});
+test('review: 30 a day per reviewer', () => {
+  reset(); reviewers(['vik@test.invalid']);
+  for (let i = 0; i < 30; i++) assert.strictEqual(rv(VIK).success, true);
+  assert.strictEqual(rv(VIK).code, 'BUDDY_REVIEW_DAILY');
+});
+
 for (const [n, fn] of tests) { try { fn(); console.log('ok  ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n  ' + (e.stack || e).split('\n').slice(0, 4).join('\n  ')); } }
 if (fail) process.exit(1);
