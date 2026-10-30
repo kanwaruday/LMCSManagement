@@ -74,6 +74,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .when{font-weight:700;color:var(--dark)}
 .id{font-family:monospace;font-size:10.5px;color:var(--gray);background:var(--lgray);padding:1px 5px;border-radius:3px;font-weight:400}
 .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:10px;background:var(--lgray);color:var(--gray);margin-right:4px;white-space:nowrap}
+.pill-btn{border:0;cursor:pointer;font-family:inherit;min-height:28px;padding:4px 10px}
 .pill.stage{background:var(--blue-lt);color:var(--blue)}
 .pill.warn{background:var(--amber-lt);color:var(--amber)}
 .pill.ok{background:var(--green-lt);color:var(--green)}
@@ -299,7 +300,12 @@ function nextStep_(a) {
 }
 
 function chips_(a) {
-  const out = ['<span class="pill ' + (a.status === 'Rejected' ? 'bad' : a.status === 'Hired' ? 'ok' : 'stage') + '">' + esc_(a.status || 'Not shortlisted') + '</span>'];
+  const cls = 'pill ' + (a.status === 'Rejected' ? 'bad' : a.status === 'Hired' ? 'ok' : 'stage');
+  // Hiring Approved / Hired (P11, 30 Oct): the chip is where people tap, so it opens the Joining & documents block
+  // (Start Hiring Process, Mark Hired, the letter). Other stages stay a label.
+  const join = a.status === 'Hiring Approved' || a.status === 'Hired';
+  const out = [join ? '<button type="button" class="' + cls + ' pill-btn" data-act="open" data-focus="pJoin" data-row="' + a.row + '" aria-label="' + esc_(a.status) + ': open joining and documents">' + esc_(a.status) + ' ›</button>'
+    : '<span class="' + cls + '">' + esc_(a.status || 'Not shortlisted') + '</span>'];
   if (a.reportPending) out.push('<span class="pill warn">' + (a.reportPending === 'interview' ? 'Interview' : 'Demo') + ' report pending</span>');
   if (active_(a) && a.stageMarks && a.stageMarks.rejectPending) out.push('<span class="pill bad">Rejection to confirm</span>');
   (a.appointments || []).forEach(function (x) {
@@ -572,7 +578,7 @@ function renderPanel_(row) {
   }
 
   if (a.status === 'Hiring Approved' || a.status === 'Hired') {
-    h += '<div class="block"><h4>Joining & documents</h4>';
+    h += '<div class="block" id="pJoin" tabindex="-1"><h4>Joining & documents</h4>';
     if (a.status === 'Hiring Approved') h += '<div class="grid"><label class="fld">Date of Joining<input class="inp" type="date" id="pDoj" value="' + esc_(a.dateOfJoining || '') + '"></label></div><div class="foot"><button type="button" class="btn" data-act="savedoj" data-row="' + row + '">Save joining date</button><span class="formmsg" id="dojMsg"></span></div>';
     else if (a.dateOfJoining) h += '<div class="note">Joining ' + esc_(a.dateOfJoining) + '</div>';
     if (a.employeeCode) h += '<div style="margin-top:8px">Employee ID <b>' + esc_(a.employeeCode) + '</b> 🔒' + (a.employeeCodeNote ? '<div class="note">' + esc_(a.employeeCodeNote) + '</div>' : '') + '</div>';
@@ -873,7 +879,7 @@ document.addEventListener('click', function (e) {
     case 'close': closeModal_(); break;
     case 'open': case 'revive': case 'reject':
       renderPanel_(row); openModal_();
-      { const focus = { revive: 'pRevive', reject: 'pRejReason' }[b.dataset.act];
+      { const focus = b.dataset.focus || { revive: 'pRevive', reject: 'pRejReason' }[b.dataset.act];
         if (focus && document.getElementById(focus)) { document.getElementById(focus).scrollIntoView({ block: 'center' }); document.getElementById(focus).focus(); } }
       break;
     case 'book': {
