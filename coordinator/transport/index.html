@@ -65,7 +65,7 @@ function focusTools(on) {
     let note = a.querySelector('.fc-unlock');
     if (on) {
       a.dataset.href = href; a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); a.classList.add('is-static', 'fc-locked');
-      if (!note) { note = document.createElement('small'); note.className = 'fc-unlock'; note.textContent = 'Unlocks after fleet setup'; (a.querySelector('small') || a).after(note); }
+      if (!note) { note = document.createElement('small'); note.className = 'fc-unlock'; note.textContent = 'Unlocks after fleet setup · or tap Show all'; (a.querySelector('small') || a).after(note); }
     } else {
       a.setAttribute('href', href); a.removeAttribute('aria-disabled'); a.classList.remove('is-static', 'fc-locked'); if (note) note.remove();
     }
