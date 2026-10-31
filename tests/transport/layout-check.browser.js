@@ -38,7 +38,7 @@ window.layoutTest = async function () {
 
 // Capture page (coordinator/transport/capture.html), phone width. Load it at 375 px (and at 375x667 for a small phone),
 // paste this file into the console, then run   await captureLayoutTest()   on the start screen and again during a run.
-// Fails when the page scrolls sideways, anything visible sticks out past the right edge, or, during a run, the STOP HERE
+// Fails when the page scrolls sideways, anything visible sticks out past the right edge, or, during a run, the Mark a Bus Stop
 // button is not fully on screen at the top of the page (above the fold) or is under 88 px tall. On the safety check
 // (Inspection) it also fails when a Yes/No button is under 48 px tall, Take photo / Retake / the date field is under 48 px,
 // the strip of slots does not fit the width, or the pinned HUD (count + slots) takes more than 30% of the screen height.
@@ -60,8 +60,8 @@ window.captureLayoutTest = async function () {
   if (running) {
     const r = stop.getBoundingClientRect();
     facts.stopHere = Math.round(r.top) + '..' + Math.round(r.bottom) + ' of ' + innerHeight;
-    if (r.bottom > innerHeight) f.push('STOP HERE is below the fold');
-    if (r.height < 88) f.push('STOP HERE is under 88 px tall');
+    if (r.bottom > innerHeight) f.push('Mark a Bus Stop is below the fold');
+    if (r.height < 88) f.push('Mark a Bus Stop is under 88 px tall');
   }
   const insp = document.getElementById('inspect');
   if (insp && insp.getClientRects().length) {

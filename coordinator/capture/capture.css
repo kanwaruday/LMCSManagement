@@ -1,9 +1,9 @@
 /* Capture page: a phone in a dashboard mount, in bright daylight, worked one-handed in a moving bus.
-   High contrast on white, big targets (48 px at the least, 56 px and up for the capture actions), STOP HERE the one loud
+   High contrast on white, big targets (48 px at the least, 56 px and up for the capture actions), Mark a Bus Stop the one loud
    thing. Green means done, amber still needs something, red missing or refused. Layered on ../shared.css. */
 :root{--c-ink:#111;--c-mute:#3f3f3f;--c-line:#c9c9c9;--c-soft:#f2f2f2;--c-red:#CE0000;--c-red-d:#9e0000;--c-ok:#15803d;--c-warn:#b45309;--c-bad:#b91c1c}
 [hidden]{display:none!important}
-:root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or STOP HERE */
+:root{color-scheme:only light} /* a sunlight page: Chrome's auto-dark must not invert the viewfinder or Mark a Bus Stop */
 .cap{font-size:16px;line-height:1.45;color:var(--c-ink)}
 #appBody.cap{padding:12px 16px 32px;max-width:640px} /* #appBody in shared.css is 1200 px wide */
 .cap ::selection{background:#ffd6d6}
@@ -43,7 +43,7 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
 .cap-offline{display:flex;align-items:center;justify-content:space-between;gap:8px;border:2px solid var(--c-warn);background:#fffbeb;border-radius:10px;padding:6px 6px 6px 12px;margin:0 0 12px;font-size:15px;font-weight:700}
 .cap-offline .cap-btn{flex:none;min-height:48px;padding:0 12px}
 
-/* the run: mission, camera (or the on-board count), status, STOP HERE */
+/* the run: mission, camera (or the on-board count), status, Mark a Bus Stop */
 .cap-run{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"mission" "view" "status" "msg" "stop" "end";gap:8px}
 .cap-mission{grid-area:mission}
 .cap-mission h2{font-size:18px;font-weight:800;line-height:1.25;margin:0 0 6px;overflow-wrap:anywhere}
@@ -67,11 +67,12 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
 .cap-status[data-s="bad"]{color:var(--c-bad)}
 .cap-run .cap-msg{grid-area:msg;margin:0}
 .cap-stop{grid-area:stop;width:100%;min-height:112px;border:0;border-radius:16px;background:var(--c-red);color:#fff;font-size:34px;font-weight:900;letter-spacing:.02em;box-shadow:0 6px 16px rgba(158,0,0,.35)}
+.cap-stop small{display:block;margin-top:2px;font-size:17px;font-weight:700;letter-spacing:0}
 .cap-stop:active{background:var(--c-red-d)}
 .cap-run .cap-end{grid-area:end;margin:0}
 
 /* During a run the page is a HUD: it fills the screen, the camera (or the count) takes the space that is left, and
-   STOP HERE stays in one place at the bottom. A message or a longer GPS line shrinks the camera; it never moves the
+   Mark a Bus Stop stays in one place at the bottom. A message or a longer GPS line shrinks the camera; it never moves the
    button under the thumb. Browsers without :has() keep the plain stacked layout. */
 @supports selector(:has(*)){
   body:has(#tabCapture:not([hidden]) #running:not([hidden])){display:flex;flex-direction:column;height:100vh;height:100dvh}
@@ -84,7 +85,7 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
   #running:not([hidden]) .cap-count b{font-size:76px}
 }
 
-/* a short phone held upright (320x568): give the camera's room back so a message still fits above STOP HERE */
+/* a short phone held upright (320x568): give the camera's room back so a message still fits above Mark a Bus Stop */
 @media (orientation:portrait) and (max-height:620px){
   .cap-mission h2{font-size:16px}
   .cap-stop{min-height:100px;font-size:32px}
@@ -94,7 +95,7 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
   .cap-count .cap-fix{margin-top:4px}
 }
 
-/* phone on its side in the mount: the mission across the top, camera left, STOP HERE right, all on one screen */
+/* phone on its side in the mount: the mission across the top, camera left, Mark a Bus Stop right, all on one screen */
 @media (orientation:landscape) and (max-height:520px){
   body:has(#tabCapture) .gb-head > div{padding-top:4px;padding-bottom:4px}
   body:has(#tabCapture) .gb-head p{display:none}
@@ -111,7 +112,7 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
     #running:not([hidden]) .cap-stop{min-height:88px;height:100%}
     #running:not([hidden]) .cap-cam{height:auto}
   }
-  .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over STOP HERE */
+  .cap-toast{right:auto;width:calc(56vw - 24px);margin:0} /* over the camera, never over Mark a Bus Stop */
   .cap-cards{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start} /* the safety check: two cards across, half the scrolling */
   /* the count sheet fits the short screen whole: Save and Back side by side, no scrolling inside the sheet */
   .cap-sheet{max-height:calc(100vh - 12px);padding:12px 16px 14px}
@@ -121,7 +122,7 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
   .cap-sheetbtns>*{margin:0}
 }
 
-/* STOP HERE sheet */
+/* Mark a Bus Stop sheet */
 .cap-sheetwrap{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .cap-sheet{width:100%;max-width:640px;max-height:90vh;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 24px rgba(0,0,0,.25)}
 .cap-sheet h2{font-size:22px;font-weight:800;margin:0 0 10px;overflow-wrap:anywhere}

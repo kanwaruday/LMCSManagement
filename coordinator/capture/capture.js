@@ -1,8 +1,8 @@
 // Capture page (coordinator/transport/capture.html). A Coordinator rides a bus with a school phone in a dashboard mount.
 // Spec: docs/superpowers/specs/2026-10-25-transport-game-design.md, Loop 6. Guide: docs/transport-game/capture-guide.md.
-// - Timelapse (default): rear camera, a frame every ~10 m of GPS travel (geo.js); STOP HERE is one tap that saves the GPS point,
+// - Timelapse (default): rear camera, a frame every ~10 m of GPS travel (geo.js); Mark a Bus Stop is one tap that saves the GPS point,
 //   the time and a photo from the running camera, with nothing to answer (named later from the map).
-// - Count run: no camera at all. STOP HERE plus how many children got on and off; the summary sets the peak load against
+// - Count run: no camera at all. Mark a Bus Stop plus how many children got on and off; the summary sets the peak load against
 //   the seats and the load cap (loadCapFactor() x seats).
 // - Inspection: the monthly safety check, bus parked. One card per item of the Owner's safety loadout (Coordinator backend
 //   action=coordinatortransportloadout): Yes/No, a photo when the item needs one (the phone's own camera, not the timelapse
@@ -21,7 +21,7 @@ const FULL_MSG = 'The phone is full. Upload on Wi-Fi now, then carry on.';
 const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
 const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
-  timelapse: 'Photo run: a frame every 10 m; tap STOP HERE at each stop. Camera on the road, never on children.',
+  timelapse: 'Photo run: a frame every 10 m; tap Mark a Bus Stop at each stop. Camera on the road, never on children.',
   count: 'School run, no camera: count the children who get on and off at each stop.',
   inspection: 'Monthly safety check with the bus parked: one card per item it must carry. Photograph the item only, never children or people.',
 };
@@ -179,14 +179,14 @@ function driverLabels() {
   const t = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
   document.querySelector('.gb-head h1').textContent = 'रूट वीडियो · Route video';
   document.querySelector('.cap-modes').hidden = true; // one kind of run only
-  t('modeHelp', 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "यहाँ स्टॉप" दबाएँ। · Phone on the dashboard; tap STOP HERE at every stop.');
+  t('modeHelp', 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "बस स्टॉप दर्ज करें" दबाएँ। · Phone on the dashboard; tap Mark a Bus Stop at every stop.');
   document.querySelector('label[for="bus"]').hidden = $('bus').hidden = true; // one bus: no picker, just say which
   t('busNote', 'बस ' + S.driver.reg + ' · आपकी बस · Your bus');
   $('busNote').className = 'cap-hint';
   document.querySelector('#privacyRow span').textContent = 'कैमरा सड़क की ओर · फ़्रेम में बच्चों के चेहरे नहीं · Camera faces the road · no children\'s faces in the frame'; // any time of day (Uday, 30 Oct: a person is sent to capture); faces still blurred on the Mac
   t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
   t('start', (S.resumeId ? 'जारी रखें · Carry on' : '🎥 रिकॉर्ड शुरू करें · Start'));
-  t('stopHere', 'यहाँ स्टॉप · STOP HERE');
+  $('stopHere').innerHTML = 'बस स्टॉप दर्ज करें<small>Mark a Bus Stop</small>'; // the big button: Hindi big, English small under it (fixed text)
   t('end', 'रूट खत्म · End run');
   document.querySelector('[data-tab="capture"]').firstChild.textContent = 'रिकॉर्ड · Record';
   document.querySelector('[data-tab="upload"]').firstChild.textContent = 'भेजें · Send ';
@@ -362,7 +362,7 @@ async function start() {
     }
     S.resumeId = null; S.active = true; S.fix = null; S.last = null;
     $('setup').hidden = true; $('summary').hidden = true; $('running').hidden = false;
-    $('offline').hidden = true; // during a run STOP HERE keeps the space; the summary and Upload offer the sign-in again
+    $('offline').hidden = true; // during a run Mark a Bus Stop keeps the space; the summary and Upload offer the sign-in again
     $('camBox').hidden = kind !== 'timelapse'; $('countBox').hidden = kind !== 'count';
     runSay('');
     S.watch = navigator.geolocation.watchPosition(onFix, onGpsError, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
@@ -380,7 +380,7 @@ function load(stops) { // children on board after each stop, and the most at any
 }
 function hud() {
   const run = S.run, bus = busOf(run.reg), known = bus ? bus.stops.length : 0, tagged = run.stops.length, total = known && Math.max(known, tagged); // no known stops: just count up
-  const [verb, done] = run.kind === 'count' ? ['Count', 'counted'] : ['Capture', 'tagged'];
+  const [verb, done] = run.kind === 'count' ? ['Count', 'counted'] : ['Capture', 'marked'];
   $('mission').textContent = `${verb} ${routeName(bus, run.reg)}: ` + (total ? `${tagged} of ${total} stops ${done}` : `${plural(tagged, 'stop')} ${done}`);
   $('barWrap').hidden = !total;
   $('barWrap').classList.toggle('cap-pips', total > 0 && total <= 40); // one pip per stop while they are wide enough to see
@@ -445,7 +445,7 @@ async function onVisibility() {
   if (photo && S.active) { S.camWanted = true; openCamera().catch((e) => runSay(camMsg(e))); }
 }
 
-// ── STOP HERE ──
+// ── Mark a Bus Stop ──
 // Timelapse: one tap saves where and when, nothing to answer (Uday, 30 Oct), and a photo from the camera already running for the
 // timelapse (Uday, 30 Oct 21:45: "Stops should also take a picture along with the gps"): a 'stop' file the Mac blurs for the
 // stop's chapter. Camera not ready: the stop is still saved, GPS only (photo false). A second tap within 5 s is a bump, not a stop.
@@ -453,7 +453,7 @@ async function tapStop() {
   const f = S.fix, now = Date.now(), last = S.run.stops[S.run.stops.length - 1];
   if (S.stopBusy) return;
   if (!f) return toast('No GPS yet. Wait a few seconds, then tap again.');
-  if (last && now - last.takenAt < 5000) return toast(`Stop ${S.run.stops.length} is already saved.`);
+  if (last && now - last.takenAt < 5000) return toast(`Bus stop ${S.run.stops.length} is already marked.`);
   S.stopBusy = true;
   try {
     const at = { lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: now };
@@ -461,7 +461,7 @@ async function tapStop() {
     // the photo can't be kept (phone full): keep the stop, GPS only, rather than lose it
     try { await store.addStop(S.run.id, { ...at, base64 }); } catch (e) { if (!base64) throw e; base64 = undefined; await store.addStop(S.run.id, at); }
     S.run = await store.getRun(S.run.id); hud();
-    toast(`Stop ${S.run.stops.length} saved` + (base64 ? ' with a photo' : '') + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
+    toast(`Bus stop ${S.run.stops.length} marked` + (base64 ? ' with a photo' : '') + (Number.isFinite(f.accuracy) ? ` (±${Math.round(f.accuracy)} m).` : '.'));
   } catch (e) { toast(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Not saved: ' + e.message); }
   finally { S.stopBusy = false; }
 }
@@ -594,7 +594,7 @@ function drawSummary() {
   } else {
     const known = bus ? bus.stops.length : 0, n = run.stops.length;
     body = '<dl class="cap-stats">' + `<div><dt>Frames</dt><dd>${run.frames}</dd></div>` +
-      `<div><dt>Stops tagged</dt><dd>${n}${known ? ` <small>of ${Math.max(known, n)}</small>` : ''}</dd></div>` +
+      `<div><dt>Bus stops marked</dt><dd>${n}${known ? ` <small>of ${Math.max(known, n)}</small>` : ''}</dd></div>` +
       `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
   const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
