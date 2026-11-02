@@ -449,7 +449,7 @@ function computeServiceYear_(dateOfJoiningStr) {
   return Math.floor(years) + 1; // 0-1yr => Year 1, 1-2yr => Year 2, etc.
 }
 
-const RRF_FEE_NOTE = 'RRF in years 1–3 is worked out on CTI, which includes the child fee wash.';
+const RRF_FEE_NOTE = 'RRF in years 1–3 is worked out on CTI, which includes the child tuition allowance.';
 function renderResults_() {
   const r = calcSalary_();
   window._lastResult = r;
@@ -466,9 +466,9 @@ function renderResults_() {
     ['ESI employer (' + cVal_('ESI Employer %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiE],
     ['ESI employee (' + cVal_('ESI Employee %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiEe],
   ];
-  // P34 (2 Nov, Uday): the child fee wash is part of CTI, so RRF Y1-3 is
-  // charged on it too -- policy, not a bug. Shown so CTI doesn't jump unexplained.
-  if (r.tuiFee) rows.push(['Child fee wash (school fees, not paid in cash)', r.tuiFee]);
+  // P34 (2 Nov, Uday): child tuition is an allowance -- added to CTI, deducted
+  // before net pay, and RRF Y1-3 (a % of CTI) is charged on it too. Shown so CTI doesn't jump unexplained.
+  if (r.tuiFee) rows.push(['Child tuition allowance (added to CTI, deducted before net pay)', r.tuiFee]);
   rows.push(['CTI (Cost to Institution)', r.cti]);
   let html = rows.map(function (row) { return '<tr><td>' + row[0] + '</td><td>' + inr_(row[1]) + '</td></tr>'; }).join('');
 
