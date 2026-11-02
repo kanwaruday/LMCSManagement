@@ -6,7 +6,7 @@
 //
 // run:  { id, reg, kind: timelapse|count|inspection|profile, campus, by, role, startedAt, endedAt, status: running|ended|error,
 //         error, frames, nextSeq, gaps: [{from,to}], openGap: null|ms, stops: [{seq,lat,lng,takenAt,name,boardOn,boardOff}],
-//         inspection, draft (capture page: the safety check being filled in), startSent, endSent }
+//         inspection, draft (capture page: the safety check being filled in), startSent, endSent, trial (a timelapse practice run, staff only) }
 // The end manifest of a timelapse also carries frameTimes (see frameTimes below).
 // file: { id: '<runId>:<kind>:<seq>', runId, kind: frame|stop|inspection|profile, seq, lat, lng, takenAt, sent, fileId, sentAt, error }
 // seq is one counter per run across kinds, so it is also the capture order.
@@ -83,7 +83,7 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
       const tail = Array.from({ length: 4 }, () => ALNUM[Math.floor(rand() * ALNUM.length)]).join('');
       const run = { id: `${reg}-${stamp}-${tail}`, reg, kind: meta.kind, campus: meta.campus, by: meta.by, role: meta.role,
         startedAt: d.getTime(), endedAt: null, status: 'running', error: null, frames: 0, nextSeq: 0, gaps: [], openGap: null, stops: [],
-        inspection: meta.inspection, startSent: false, endSent: false };
+        inspection: meta.inspection, startSent: false, endSent: false, ...(meta.trial === true ? { trial: true } : {}) };
       await idb.runs.put(run);
       return run;
     }),

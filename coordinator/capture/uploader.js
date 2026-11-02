@@ -51,7 +51,8 @@ export function createUploader({
     // Safety-check answers go only in the END manifest: until then they point at their photos by seq, which the server refuses.
     const manifest = (status, inspection, frameTimes) => ({ action: 'capturerun', run: {
       runId, reg: run.reg, kind: run.kind, startedAt: run.startedAt, endedAt: run.endedAt, frames: run.frames,
-      gaps: run.gaps, stops: run.stops, inspection, status, capturedBy: run.by, ...(frameTimes ? { frameTimes } : {}) } });
+      gaps: run.gaps, stops: run.stops, inspection, status, capturedBy: run.by, ...(frameTimes ? { frameTimes } : {}),
+      ...(run.trial === true ? { trial: true } : {}) } }); // a trial waits on the Coordinator's shelf; only staff may send one (the Roster checks)
     // Inspection answers point at their photo by seq on the phone; the server gets the photo's Drive file id instead.
     const withFileIds = async (insp) => {
       if (!insp) return insp;

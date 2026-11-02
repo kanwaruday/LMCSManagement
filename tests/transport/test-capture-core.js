@@ -324,6 +324,18 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     await createUploader({ store, post: srv.post, sleep: instant }).start(run.id); // the page's post adds the sender's token, not the run's
     assert.deepStrictEqual(srv.calls.filter((c) => c.action === 'capturerun').map((c) => c.run.capturedBy), ['a@b.c', 'a@b.c']);
   });
+  await test('a trial run: newRun keeps trial, and only a trial\'s manifests say trial: true', async () => {
+    const store = mkStore();
+    const t = await store.newRun({ reg: 'HP1', kind: 'timelapse', by: 'a@b.c', trial: true }), r = await store.newRun({ reg: 'HP1', kind: 'timelapse', trial: 'yes' });
+    assert.deepStrictEqual([(await store.getRun(t.id)).trial, 'trial' in (await store.getRun(r.id))], [true, false], 'only a real true is kept');
+    await store.endRun(t.id); await store.endRun(r.id);
+    const srv = fakeServer();
+    await createUploader({ store, post: srv.post, sleep: instant }).start(t.id);
+    await createUploader({ store, post: srv.post, sleep: instant }).start(r.id);
+    const m = srv.calls.filter((c) => c.action === 'capturerun');
+    assert.deepStrictEqual(m.map((c) => [c.run.runId === t.id, c.run.trial]), [[true, true], [true, true], [false, undefined], [false, undefined]]);
+    assert.ok(!('trial' in m[2].run), 'a real run\'s manifest has no trial key at all');
+  });
   await test('an Apps Script "Service ... failed" or "Server error" is transient: retried, not a stopped send', async () => {
     const store = mkStore(); const run = await mkTimelapse(store, 2); await store.endRun(run.id);
     const errs = ['Service Spreadsheets failed while accessing document with id X.', 'Internal Server Error'];

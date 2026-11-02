@@ -414,3 +414,4 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
 .cap-phonecheck li{padding:8px 10px 8px 34px;border-radius:10px;position:relative;background:#f4f4f4}
 .cap-phonecheck li::before{position:absolute;left:10px;top:8px;font-weight:900}
 .cap-pc-ok::before{content:'✓';color:#1a7f37}.cap-pc-ask::before{content:'!';color:#9a6700}.cap-pc-bad{background:#fdecea;color:#8a1c12;font-weight:600}.cap-pc-bad::before{content:'✗'}
+.cap-trial{display:inline-block;padding:1px 7px;border:2px solid var(--c-ink);border-radius:6px;font-size:.8em;letter-spacing:.06em} /* a trial run, on its card, summary and mission line */

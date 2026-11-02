@@ -63,6 +63,9 @@ const sameUser = (s) => !!s && lower(s.email) === lower(S.session.email);
 // phone). Sending always needs a fresh sign-in; capture never uses the token.
 const ID_KEY = 'lmcs-capture-identity', ID_DAYS = 14;
 const allowed = (s) => LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk');
+// Trial runs: the Owner and Coordinators only (the Roster refuses anyone else), never a driver phone
+const canTrial = () => !S.driver && !!S.session && (LMCS.hasRole(S.session, 'Owner') || LMCS.hasRole(S.session, 'Coordinator'));
+const trialTag = (run) => (run.trial ? '<b class="cap-trial">TRIAL</b> ' : '');
 function cachedIdentity() {
   try { const id = JSON.parse(localStorage.getItem(ID_KEY) || 'null'); return id && Date.now() - id.signedInAt < ID_DAYS * 864e5 ? id : null; }
   catch (e) { return null; }
@@ -170,6 +173,8 @@ function setMode(mode) {
   $('hint').hidden = $('battery').hidden = $('phoneCheck').hidden = mode === 'inspection'; // a parked bus: no charger, no screen-on worries
   phoneCheck(); // the camera line is for a timelapse only
   $('privacy').checked = false; // asked again before every timelapse start
+  $('trialRow').hidden = mode !== 'timelapse' || !!S.resumeId || !canTrial(); // a resumed run keeps what it was
+  $('trial').checked = false; // off by default, every time
   $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
   loadoutLine();
@@ -372,7 +377,8 @@ async function start() {
     }
     const bus = busOf(reg);
     try {
-      S.run = resume || await store.newRun({ reg, kind, campus: bus && bus.campus, by: S.session.email, role: S.session.role });
+      S.run = resume || await store.newRun({ reg, kind, campus: bus && bus.campus, by: S.session.email, role: S.session.role,
+        trial: kind === 'timelapse' && canTrial() && $('trial').checked });
     } catch (e) {
       S.camWanted = false; closeCamera();
       return setupSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Could not save on this phone: ' + e.message);
@@ -405,7 +411,7 @@ function load(stops) { // children on board after each stop, and the most at any
 function hud() {
   const run = S.run, bus = busOf(run.reg), known = bus ? bus.stops.length : 0, tagged = run.stops.length, total = known && Math.max(known, tagged); // no known stops: just count up
   const [verb, done] = run.kind === 'count' ? ['Count', 'counted'] : ['Capture', 'marked'];
-  $('mission').textContent = `${verb} ${routeName(bus, run.reg)}: ` + (total ? `${tagged} of ${total} stops ${done}` : `${plural(tagged, 'stop')} ${done}`);
+  $('mission').textContent = (run.trial ? 'TRIAL · ' : '') + `${verb} ${routeName(bus, run.reg)}: ` + (total ? `${tagged} of ${total} stops ${done}` : `${plural(tagged, 'stop')} ${done}`);
   $('barWrap').hidden = !total;
   $('barWrap').classList.toggle('cap-pips', total > 0 && total <= 40); // one pip per stop while they are wide enough to see
   $('barWrap').style.setProperty('--n', String(total || 1));
@@ -623,7 +629,7 @@ function drawSummary() {
       `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
   const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
-  el.innerHTML = `<div class="gb-done-tick" aria-hidden="true">✓</div><h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
+  el.innerHTML = `<div class="gb-done-tick" aria-hidden="true">✓</div><h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${trialTag(run)}${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
     '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>' +
     `<a class="cap-end" href="${esc($('back').getAttribute('href'))}">Back to ${esc($('back').textContent.replace(/^[\u2039\u2190]\s*/, ''))}</a>`; // the header's way back, for this role
   el.querySelector('[data-a="send"]').addEventListener('click', () => { showTab('upload'); sendAll(); });
@@ -652,7 +658,7 @@ function stateLine(run, p) {
 }
 function drawRow(li, run, p) {
   const pct = p.total ? (100 * p.sent / p.total) : run.endSent ? 100 : 0;
-  li.innerHTML = `<div class="cap-runhead"><b>${esc(run.reg)}</b><span>${esc(KIND[run.kind])}</span></div><p class="cap-note">${when(run.startedAt)}</p>` +
+  li.innerHTML = `<div class="cap-runhead"><b>${esc(run.reg)}</b><span>${trialTag(run)}${esc(KIND[run.kind])}</span></div><p class="cap-note">${when(run.startedAt)}</p>` +
     `<p class="cap-line">${runLine(run, p)}</p>` + (run.kind === 'count' ? '' : `<div class="cap-bar"><i style="width:${pct}%"></i></div>`) +
     `<p class="cap-note ${p.state === 'error' || (!p.state && run.status === 'error') ? 'cap-bad' : p.state === 'done' || (!p.state && run.endSent) ? 'cap-good' : ''}">${esc(stateLine(run, p))}</p>`;
 }
