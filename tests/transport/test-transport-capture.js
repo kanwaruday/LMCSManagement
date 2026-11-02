@@ -101,9 +101,9 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(rows1[0])), run('CAP_RUN_HEADER
 assert.strictEqual(rows1.length, 2);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(rows1[1])).slice(0, 3), ['R1', 'HP659511', 'LMS4']);
 assert.strictEqual(rows1[1][8], 10); assert.strictEqual(rows1[1][10], '[{"seq":2}]');
-assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', startedAt: 1761600000000, endedAt: '2026-10-28T07:15:00.000Z', frames: 42, status: 'closed' }).success, true);
+assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', startedAt: 1761600000000, endedAt: '2026-10-28T07:15:00.000Z', frames: 42, status: 'closed' }).success, true, 'a manifest saying closed is stored, but not as closed');
 assert.strictEqual(tabs['Capture Runs'].length, 2, 'no new row');
-assert.strictEqual(tabs['Capture Runs'][1][8], 42); assert.strictEqual(tabs['Capture Runs'][1][5], '2026-10-28T07:15:00.000Z'); assert.strictEqual(tabs['Capture Runs'][1][12], 'closed');
+assert.strictEqual(tabs['Capture Runs'][1][8], 42); assert.strictEqual(tabs['Capture Runs'][1][5], '2026-10-28T07:15:00.000Z'); assert.strictEqual(tabs['Capture Runs'][1][12], 'open', "'closed' is the server's alone (capturediscard): a manifest cannot close a run");
 assert.strictEqual(cr({ runId: 'R2', reg: 'HP659511', kind: 'timelapse' }).success, true);
 // a sheet formula never reaches the sheet: times must be epoch ms or ISO, the status one of the phone's words
 assert.strictEqual(cr({ runId: 'R3', reg: 'HP659511', kind: 'timelapse', startedAt: '=IMAGE("https://x/")', endedAt: '+1', status: '=HYPERLINK("x")', capturedBy: '=a1&b1@x.com' }).success, true);
@@ -141,7 +141,7 @@ assert.match(cr({ runId: 'R5', reg: 'HP659511', kind: 'profile', inspection: { c
 assert.match(cr({ runId: 'R1', reg: 'HP659511', kind: 'inspection' }).error, /cannot change/, 'changed Kind on an existing runId is refused');
 assert.match(cr({ runId: 'R1', reg: 'HP665686', kind: 'timelapse' }).error, /cannot change/, 'changed Reg on an existing runId is refused');
 assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'R1')[1], 'HP659511');
-assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', frames: 60, status: 'closed' }).success, true, 'other fields still update');
+assert.strictEqual(cr({ runId: 'R1', reg: 'HP659511', kind: 'timelapse', frames: 60, status: 'ended' }).success, true, 'other fields still update');
 assert.match(frame({ reg: 'HP665686', runId: 'R1', seq: 60 }).error, /another bus/, 'capturefile for another bus against R1 row is refused');
 const other = frame({ reg: 'HP665686', runId: 'R77', seq: 1 }), mine = frame({ reg: 'HP659511', runId: 'R77', seq: 1 });
 assert.ok(other.success && mine.success && other.fileId !== mine.fileId, 'same runId+seq on two buses never share a fileId');
@@ -256,19 +256,32 @@ assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', trial
 assert.strictEqual(drv({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'not even an existing one');
 assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse' }).success, true, 'a real driver run still goes in');
 caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
-const trDir = runDirOf('R1'), cd = (b) => run('captureDiscard_(' + JSON.stringify(b) + ')');
-rowOf('R1')[12] = 'ended'; // processed on the Mac, now on the shelf
-assert.strictEqual(cd({ secret: 'X', reg: 'HP659511', runId: 'R1' }).error, 'Not authorized', 'capturediscard needs the secret');
-assert.ok(!trDir.trashed && rowOf('R1')[12] === 'ended', 'a refused discard changes nothing');
+const cd = (b) => run('captureDiscard_(' + JSON.stringify(b) + ')');
+assert.strictEqual(frame({ runId: 'TR1', seq: 0 }).success, true, 'a trial uploads like any run');
+const trDir = runDirOf('TR1');
+rowOf('TR1')[12] = 'ended'; // processed on the Mac, now on the shelf
+assert.strictEqual(cd({ secret: 'X', reg: 'HP659511', runId: 'TR1' }).error, 'Not authorized', 'capturediscard needs the secret');
+assert.ok(!trDir.trashed && rowOf('TR1')[12] === 'ended', 'a refused discard changes nothing');
 assert.match(cd({ secret: 'S', reg: 'HP659511', runId: 'NOPE' }).error, /Unknown run/);
-assert.match(cd({ secret: 'S', reg: 'HP665686', runId: 'R1' }).error, /Unknown run/, 'reg and runId must match the row');
+assert.match(cd({ secret: 'S', reg: 'HP665686', runId: 'TR1' }).error, /Unknown run/, 'reg and runId must match the row');
 assert.match(cd({ secret: 'S', reg: 'HP659511', runId: '../x' }).error, /Bad run/);
-assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'R1' }).success, true);
+assert.match(cd({ secret: 'S', reg: 'HP659511', runId: 'R1' }).error, /Only a trial run/, 'a real run is never binned, whoever holds the secret (review L2)');
+assert.ok(!runDirOf('R1').trashed, 'and its folder stays');
+assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR1' }).success, true);
 assert.strictEqual(trDir.trashed, true, 'the run folder goes to the bin');
 assert.strictEqual(trDir.files.length > 0, true, 'binned, not emptied: recoverable');
-assert.strictEqual(rowOf('R1')[12], 'closed', 'Status closed');
-assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR2' }).success, true, 'no folder (never uploaded or already gone): still closes');
-assert.strictEqual(rowOf('TR2')[12], 'closed');
+assert.strictEqual(rowOf('TR1')[12], 'closed', 'Status closed');
+// discard is final (review M1): a resent manifest is refused, and the binned folder is never found again
+caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+assert.match(cr({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', status: 'ended', trial: true }).error, /discarded/, 'a resent end manifest cannot bring it back');
+assert.strictEqual(rowOf('TR1')[12], 'closed');
+assert.deepStrictEqual(cp({ secret: 'S', runs: [{ reg: 'HP659511', runId: 'TR1', stops: [] }] }).notYet, ['TR1'], 'a binned folder is not found');
+assert.match(frame({ runId: 'TR1', seq: 9 }).error || '', /discarded/, 'no new frames into a discarded run');
+assert.match(cr({ runId: 'TR6', reg: 'HP659511', kind: 'inspection', trial: true }).error, /Only a route timelapse can be a trial/, 'a trial safety check is refused (review L3)');
+caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
+assert.strictEqual(cr({ runId: 'TR5', reg: 'HP659511', kind: 'timelapse', status: 'ended', trial: true }).success, true);
+assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR5' }).success, true, 'no folder (never uploaded or already gone): still closes');
+assert.strictEqual(rowOf('TR5')[12], 'closed');
 
 // C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
 // captured by a Coordinator and sent by the campus Fee Clerk (Ruling 41).

@@ -47,6 +47,13 @@ const CAP_TRIAL_DENIED_ = 'Only the Owner or a Coordinator can record a trial ru
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 // sibling of 'Bus Wise Documents'. A function, not a top-level const: TUP_PATH_ lives in transport-uploads.gs, which Apps Script
 // loads after this file, so reading it at load time took the whole Roster web app down (v49). tests/apps-script/test-load-order.js
+// A capture-path subfolder by name, never one in the bin: getFoldersByName also returns binned folders, so a discarded
+// trial's folder must not be found again (review M1, 2 Nov).
+function capSub_(parent, name) {
+  const it = parent.getFoldersByName(name);
+  while (it.hasNext()) { const f = it.next(); if (!(f.isTrashed && f.isTrashed())) return f; }
+  return null;
+}
 function capPath_() { return TUP_PATH_.slice(0, -1).concat(['Capture']); }
 
 // Capture/<REG>/<runId>/, created on first use.
@@ -54,11 +61,11 @@ function capFolder_(reg, runId) {
   let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
   const path = capPath_();
   path.forEach(function (n, i) {
-    f = f && (getSubfolder_(f, n) || (i === path.length - 1 ? f.createFolder(n) : null));
+    f = f && (capSub_(f, n) || (i === path.length - 1 ? f.createFolder(n) : null));
   });
   if (!f) throw new Error('Transport folder not found');
-  const bus = getSubfolder_(f, reg) || f.createFolder(reg);
-  return getSubfolder_(bus, runId) || bus.createFolder(runId);
+  const bus = capSub_(f, reg) || f.createFolder(reg);
+  return capSub_(bus, runId) || bus.createFolder(runId);
 }
 
 // A linked driver phone (driver-link.gs) sends body.deviceToken instead of an idToken: route timelapses of its own bus only.
@@ -117,6 +124,7 @@ function captureFile_(body) {
     const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
     if (row && String(row[1]) !== reg) return fail('This run belongs to another bus (' + row[1] + ')');
     if (row && String(row[3]) !== runKind) return fail('runKind ' + runKind + ' does not match this run (' + row[3] + ')');
+    if (row && String(row[12]) === 'closed') return fail('This run was discarded. Record a new one.'); // no new folder for a binned run
     const hit = CacheService.getScriptCache().get(key);
     if (hit) return { success: true, fileId: hit };
     const dir = capFolder_(reg, runId), it = dir.getFilesByName(name);
@@ -181,6 +189,7 @@ function captureRun_(body) {
     if (bad) return fail(bad);
   }
   const trial = run.trial === true;
+  if (trial && run.kind !== 'timelapse') return fail('Only a route timelapse can be a trial run'); // a trial safety check would still tick its quest
   if (trial && a.caller.role === 'Driver') return fail(CAP_TRIAL_DENIED_);
   const trialDenied = trial && !dlkStaff_(a.caller.roles); // a Fee Clerk: refused below unless the row already says yes (the shared phone, Ruling 41)
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
@@ -189,7 +198,7 @@ function captureRun_(body) {
   // Only shapes the phone really sends reach the sheet: a time is epoch ms or an ISO string, a status one of the phone's words.
   // Anything else (a "=..." formula from a forwarded driver link, say) would run as a formula when the workbook is opened.
   const when = function (t) { return typeof t === 'number' && isFinite(t) ? t : /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(String(t || '')) ? String(t) : ''; };
-  const status = CAP_RUN_STATUSES_.indexOf(run.status) !== -1 ? run.status : 'open';
+  const status = CAP_RUN_STATUSES_.indexOf(run.status) !== -1 && run.status !== 'closed' ? run.status : 'open'; // 'closed' is the server's (capturediscard) alone
   const row = [runId, a.v.reg, a.v.campusId, run.kind, when(run.startedAt), when(run.endedAt), a.caller.email, a.caller.role,
     Number(run.frames) || 0, js(run.gaps), js(run.stops), js(run.inspection), status, js(frameTimes),
     a.caller.role === 'Driver' ? a.caller.name : /^(?![=+\-@])[^\s@<>"]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(author) ? author : a.caller.email];
@@ -200,6 +209,7 @@ function captureRun_(body) {
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId) { at = i + 1; break; }
     if (at && (String(rows[at - 1][1]) !== a.v.reg || String(rows[at - 1][3]) !== run.kind)) return fail('A run\'s bus and kind cannot change (' + rows[at - 1][1] + ', ' + rows[at - 1][3] + ')');
+    if (at && String(rows[at - 1][12]) === 'closed') return fail('This run was discarded. Record a new one.'); // discard is final: a resent manifest must not bring it back
     let tc = rows[0].indexOf(CAP_TRIAL_COL_);
     const was = at && tc !== -1 && String(rows[at - 1][tc]) === 'yes';
     if (trialDenied && !was) return fail(CAP_TRIAL_DENIED_);
@@ -222,12 +232,12 @@ function captureProcessed_(body) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
   if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
   let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
-  capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
+  capPath_().forEach(function (n) { f = f && capSub_(f, n); });
   const found = {}, notYet = [], one = function (dir, name) { const it = dir.getFilesByName(name); return it.hasNext() ? it.next().getId() : ''; };
   (Array.isArray(body.runs) ? body.runs : []).forEach(function (r) {
     const runId = String(r.runId || ''), reg = String(r.reg || '');
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || !/^[A-Z0-9]{1,16}$/.test(reg)) return;
-    const bus = f && getSubfolder_(f, reg), run = bus && getSubfolder_(bus, runId), out = run && getSubfolder_(run, 'processed');
+    const bus = f && capSub_(f, reg), run = bus && capSub_(bus, runId), out = run && capSub_(run, 'processed');
     const video = out ? one(out, 'route.mp4') : '';
     if (!video) { notYet.push(runId); return; }
     const photos = {};
@@ -268,9 +278,11 @@ function captureDiscard_(body) {
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId && String(rows[i][1]) === reg) { at = i + 1; break; }
     if (!at) return { success: false, error: 'Unknown run ' + runId };
+    const tcol = rows[0].indexOf(CAP_TRIAL_COL_); // only a trial timelapse is ever binned, whoever holds the secret
+    if (String(rows[at - 1][3]) !== 'timelapse' || tcol === -1 || String(rows[at - 1][tcol]) !== 'yes') return { success: false, error: 'Only a trial run can be discarded' };
     let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
-    capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
-    const bus = f && getSubfolder_(f, reg), dir = bus && getSubfolder_(bus, runId);
+    capPath_().forEach(function (n) { f = f && capSub_(f, n); });
+    const bus = f && capSub_(f, reg), dir = bus && capSub_(bus, runId);
     if (dir) dir.setTrashed(true); // the bin, never a hard delete: 30 days to change one's mind
     sh.getRange(at, 13).setValue('closed'); // Status: the pull lists only 'ended' runs
   } finally {
