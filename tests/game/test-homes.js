@@ -33,7 +33,8 @@ for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'],
   assert(/<script src="\.\.\/\.\.\/assets\/game\/game\.js(\?v=[0-9a-f]+)?"/.test(html), page + ': game.js script');
   assert(html.search(/assets\/game\/game\.js/) > html.search(/assets\/auth\.js/), page + ': game.js after auth.js');
   if (page.endsWith('index.html')) { // Fleet Command is a hub on the screen skeleton: Buddy's fleet missions open the stage, the game bar is mounted
-    assert(/<main class="gb-stage">\s*<section id="game-root" aria-label="Fleet setup with Buddy" hidden><\/section>/.test(html), page + ': hidden #game-root first on the stage');
+    // only the Trial runs shelf may come before it: hidden unless a trial waits for the Owner's or a Coordinator's check
+    assert(/<main class="gb-stage">\s*(<section id="trial-runs"[^>]* hidden>[\s\S]*?<\/section>\s*)?<section id="game-root" aria-label="Fleet setup with Buddy" hidden><\/section>/.test(html), page + ': hidden #game-root first on the stage');
     assert(/LMCSRail\.mount\(document\.getElementById\('game-rail'\), \{ hub: '\.\.\/index\.html', root: '\.\.\/\.\.\/' \}\)/.test(html), page + ': game bar mounted');
   } else {
   assert(/<details id="buddy" class="fs-buddy" hidden>[\s\S]*<section id="game-root" aria-label="Fleet setup with Buddy" hidden><\/section>/.test(html), page + ': collapsed panel holding a hidden #game-root');
