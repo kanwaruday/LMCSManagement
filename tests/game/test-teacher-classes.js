@@ -6,6 +6,7 @@ const ctx = { console, Logger: { log() {} } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs');
+vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred case is at the end
 const J = (x) => JSON.parse(JSON.stringify(x));
 const at = (iso) => Date.parse(iso);
 const DAY = 86400000;
@@ -120,4 +121,12 @@ assert.strictEqual(r.classes[0].last21.days, 6, 'Tue 3 to Mon 9 Nov, Sunday out'
 stub(null);
 r = J(ctx.GAME_MODULE_ACTIONS.teacherclasses({ roles: ['Teacher'], email: 't@x' }));
 assert.deepStrictEqual([r.success, r.classes, r.builtAt], [true, [], null], 'no state: no cards, no error');
+// CW/HW deferred (Game Config teacher.cwhwDeferred): My classes follows the switch, before any state read
+stub(state); ctx.tchLoadCfg_ = () => ({ teacher: { cwhwDeferred: true } });
+ctx.tchStateFor_ = () => { throw new Error('deferred must not read the state'); };
+assert.deepStrictEqual(J(ctx.GAME_MODULE_ACTIONS.teacherclasses({ roles: ['Teacher'], email: 't@x' })), { success: true, deferred: true, classes: [] }, 'deferred: no cards');
+assert.strictEqual(ctx.GAME_MODULE_ACTIONS.teacherclasses({ roles: ['Staff'], email: 's@x' }).success, false, 'deferred: Staff still refused');
+// the page hides the whole section on a deferred reply
+const page = fs.readFileSync(__dirname + '/../../teacher/index.html', 'utf8');
+assert.ok(/res\.deferred\) \{ classesOn_ = false; showClasses_\(\); return; \}/.test(page), 'teacher home hides My classes when deferred');
 console.log('teacher-classes: ok');

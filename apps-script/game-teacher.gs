@@ -1200,9 +1200,11 @@ function tchClasses_(state, T, dayKey, todayWorking, schoolDays, prevDay, nextDa
 GAME_MODULE_ACTIONS.teacherclasses = function (caller) {
   const code = tchPlanCaller_(caller);
   if (!code) return { success: false, error: 'Only a teacher has classes here.' };
+  const cfg = tchLoadCfg_(), T = tchConfig_(cfg);
+  if (T.cwhwDeferred) return { success: true, deferred: true, classes: [] }; // My classes is CW/HW: it follows the same switch (the page hides the section)
   const state = tchStateFor_(code);
   if (!state) return { success: true, builtAt: null, loading: tchIndexLoading_(), classes: [] };
-  const cfg = tchLoadCfg_(), T = tchConfig_(cfg), now = gameNow_(), dayKey = gameDayKey_(now);
+  const now = gameNow_(), dayKey = gameDayKey_(now);
   const working = function (day) { // true | false | null (unknown)
     if (!tchWorkingDay_(state.campus, day, [], cfg)) return false;
     const ev = tchCalendarEvents_(state.campus, day);

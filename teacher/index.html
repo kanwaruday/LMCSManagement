@@ -494,6 +494,7 @@ function classesStep_(title, emoji, lines) {
 }
 function renderClasses_(res) {
   const body = document.getElementById('classesBody');
+  if (res && res.success === true && res.deferred) { classesOn_ = false; showClasses_(); return; } // CW/HW is deferred (Game Config teacher.cwhwDeferred): no section at all
   if (!res || res.success !== true) { body.innerHTML = '<div class="gb-alert gb-alert-err" role="alert"><p>Couldn’t load your classes just now. Please try again later.</p></div>'; return; }
   const list = (res.classes || []).map(function (c, i) { return { c: c, i: i }; })
     .sort(function (a, b) { return (b.c.scheduledToday - a.c.scheduledToday) || a.i - b.i; }).map(function (x) { return x.c; }); // today's classes first
