@@ -194,6 +194,7 @@ function doGet(e) {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
     if (action === 'designations') return jsonOut({ success: true, designations: cached_('emp_designations', readDesignationSummary) });
+    if (action === 'drivecheck') return jsonOut(captureDriveCheck_()); // read-only: can this deployment reach Drive? (transport-capture.gs)
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });

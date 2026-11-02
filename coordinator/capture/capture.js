@@ -293,8 +293,13 @@ async function drawResume() {
 
 // ── Start a run ──
 function setupSay(msg) { $('setupMsg').textContent = msg; }
+// Phone permissions, Hindi first (2 Nov: "Location is blocked… cannot keep the screen on" stopped a driver's first run): the exact
+// taps in Chrome on an Android phone, shown where the person is looking (the start button's line, the run's message line).
+const LOC_HELP = 'लोकेशन बंद है। Chrome में ऊपर 🔒 (या ⓘ) दबाएँ → अनुमतियाँ → लोकेशन → अनुमति दें, फिर पेज दोबारा खोलें। · Location is blocked: in Chrome tap 🔒 (or ⓘ) at the top → Permissions → Location → Allow, then reload this page.';
+const CAM_HELP = 'कैमरा बंद है। Chrome में ऊपर 🔒 (या ⓘ) दबाएँ → अनुमतियाँ → कैमरा → अनुमति दें, फिर Start दोबारा दबाएँ। · The camera is blocked: in Chrome tap 🔒 (or ⓘ) at the top → Permissions → Camera → Allow, then tap Start again.';
+const SCREEN_HELP = 'स्क्रीन अपने-आप बंद हो सकती है: फ़ोन की Settings → Display → Screen timeout → सबसे लंबा चुनें, और चार्जर लगाए रखें। · This phone may switch the screen off: Settings → Display → Screen timeout → the longest, and keep it on charge.';
 function camMsg(e) {
-  if (e && e.name === 'NotAllowedError') return 'The camera is blocked. Allow the camera for this site in the browser settings, then tap Start again.';
+  if (e && e.name === 'NotAllowedError') return CAM_HELP;
   if (e && e.name === 'NotFoundError') return 'This phone has no rear camera the browser can use.';
   return 'The camera is not available in this browser. Use the school phone in Chrome, or do a count run.';
 }
@@ -328,7 +333,7 @@ function closeCamera() {
 }
 async function holdScreen() {
   try { S.wake = await navigator.wakeLock.request('screen'); }
-  catch (e) { S.wake = null; runSay('This browser cannot keep the screen on. Set the screen timeout to the longest.'); }
+  catch (e) { S.wake = null; if (!$('runMsg').textContent) runSay(SCREEN_HELP); } // never over the location steps: no GPS, no run
 }
 
 async function start() {
@@ -342,6 +347,9 @@ async function start() {
     if (kind === 'inspection') return await startInspection(resume, reg);
     if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: the camera faces the road, with no children\'s faces in the frame.');
     if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
+    // already blocked for this site: say how to allow it before the run starts, not after
+    const loc = navigator.permissions && await navigator.permissions.query({ name: 'geolocation' }).catch(() => null);
+    if (loc && loc.state === 'denied') return setupSay(LOC_HELP);
     if (kind === 'timelapse') {
       S.camWanted = true;
       try { await openCamera(); } catch (e) { S.camWanted = false; return setupSay(camMsg(e)); } // no camera, no run
@@ -404,7 +412,8 @@ function gpsLine() {
 }
 function onGpsError(e) {
   $('gps').dataset.s = e.code === 1 ? 'bad' : 'wait';
-  $('gps').textContent = e.code === 1 ? 'Location is blocked. Allow location for this site, then come back.' : 'No GPS signal yet. Keep the phone near the windscreen.';
+  $('gps').textContent = e.code === 1 ? 'लोकेशन बंद है · Location is blocked' : 'No GPS signal yet. Keep the phone near the windscreen.';
+  if (e.code === 1) runSay(LOC_HELP); // the steps, in the big message line, not only the small GPS line
 }
 function grab() { // a camera frame, longest side 960 px (Uday 30 Oct: ~40% less to upload than 1280), JPEG 0.7, as base64
   const v = $('cam'), w = v.videoWidth, h = v.videoHeight;

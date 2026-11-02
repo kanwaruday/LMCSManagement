@@ -222,6 +222,14 @@ caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owne
 assert.strictEqual(cr({ runId: 'RB1', reg: 'HP659511', kind: 'count', status: 'ended' }).success, true); // the end, sent by an old phone
 assert.deepStrictEqual([rowOf('RB1')[6], rowOf('RB1')[CB], rowOf('RB1')[12]], ['o@lms.org.in', 'c4@lms.org.in', 'ended'], 'a run keeps its first capturer');
 
+// drivecheck (2 Nov): read-only; says whether this deployment reaches Drive, never a folder name or data
+assert.deepStrictEqual(run('captureDriveCheck_()'), { success: true, drive: 'ok', capture: 'found' });
+const realDrive = ctx.DriveApp;
+ctx.DriveApp = { getFolderById: () => { throw new Error('You do not have permission to call DriveApp.getFolderById. Required permissions: https://www.googleapis.com/auth/drive'); } };
+const dc = run('captureDriveCheck_()');
+assert.ok(dc.success && /do not have permission/.test(dc.drive) && dc.capture === 'n/a', 'the exact Drive error comes back');
+ctx.DriveApp = realDrive;
+
 // C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
 // captured by a Coordinator and sent by the campus Fee Clerk (Ruling 41).
 (async () => {

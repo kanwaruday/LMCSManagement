@@ -222,3 +222,17 @@ function captureProcessed_(body) {
   });
   return { success: true, found: found, notYet: notYet };
 }
+
+// GET action=drivecheck -> {success, drive: 'ok' | <the error>, capture: 'found' | 'missing' | 'n/a'} (2 Nov, capture uploads failing
+// with "You do not have permission to call DriveApp…" on the live web app while the editor run works). Read-only: it opens the
+// transport folder and walks to Capture/, writes nothing, names no folder and returns no data, so it needs no sign-in.
+function captureDriveCheck_() {
+  try {
+    let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+    f.getName(); // the call that needs the Drive grant
+    capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
+    return { success: true, drive: 'ok', capture: f ? 'found' : 'missing' };
+  } catch (e) {
+    return { success: true, drive: String(e && e.message || e).slice(0, 300), capture: 'n/a' };
+  }
+}
