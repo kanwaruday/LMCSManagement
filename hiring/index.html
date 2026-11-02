@@ -74,7 +74,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .when{font-weight:700;color:var(--dark)}
 .id{font-family:monospace;font-size:10.5px;color:var(--gray);background:var(--lgray);padding:1px 5px;border-radius:3px;font-weight:400}
 .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:10px;background:var(--lgray);color:var(--gray);margin-right:4px;white-space:nowrap}
-.pill-btn{border:0;cursor:pointer;font-family:inherit;min-height:28px;padding:4px 10px}
+.pill-btn{border:0;cursor:pointer;font-family:inherit;min-height:28px;padding:4px 10px;position:relative}
+.pill-btn::after{content:"";position:absolute;inset:-8px -4px} /* a 44px tap target on a phone, without a bigger chip (GM pass) */
 .pill.stage{background:var(--blue-lt);color:var(--blue)}
 .pill.warn{background:var(--amber-lt);color:var(--amber)}
 .pill.ok{background:var(--green-lt);color:var(--green)}
