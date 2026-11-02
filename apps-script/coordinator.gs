@@ -154,7 +154,7 @@ function doGet(e) {
     if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
     if (action === 'coordinatorbuschecks') return coordJson_(coordGpsClerkChecks_(caller));
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
-    if (action === 'transportcapturereview') return coordJson_(coordCaptureReview_(caller)); // the trial / first-run shelf: Owner and Coordinators (checked inside)
+    if (action === 'transportcapturereview') return coordJson_(coordCaptureReview_(caller)); // the trial-run shelf: Owner and Coordinators (checked inside)
     if (action === 'coordinatortransportloadout') return coordJson_(coordLoadout_(caller)); // the safety loadout list: every transport role reads it
     if (action === 'coordinatortransportfleet') return coordJson_(coordFleet_(caller)); // Fleet setup quests: the caller's campuses
     if (action === 'coordinatortransportrollcall') return coordJson_(coordRollCall_(caller, e.parameter.date)); // daily duty roll call: the caller's campuses
