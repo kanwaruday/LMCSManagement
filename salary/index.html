@@ -10,6 +10,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(--dark);min-height:100vh;font-size:12px;line-height:1.4;display:flex;flex-direction:column}
 
+.embed .hdr{display:none} /* H1: opened in the Hiring Dashboard's window, which has its own ✕ */
 .hdr{background:var(--red);color:#fff;padding:0 20px;height:36px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;border-bottom:1px solid var(--red-h);flex-wrap:wrap}
 .hdr-brand{display:flex;align-items:center;gap:10px}
 .hdr h1{font-size:13px;font-weight:700;letter-spacing:.3px}
@@ -558,6 +559,12 @@ function requestEpfExemption_() {
 // ── Record as Salary Offer (writes evidence back onto the Hiring row) ─
 const params = new URLSearchParams(location.search);
 const APPLICANT_ID = params.get('applicantId') || '';
+// H1 (31 Oct): embed=1 = inside the Hiring Dashboard's salary window. Esc and a recorded offer are told to it.
+const EMBED = params.get('embed') === '1' && window.parent !== window;
+if (EMBED) {
+  document.documentElement.classList.add('embed');
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.parent.postMessage({ type: 'lmcs-salary-close' }, location.origin); });
+}
 let EXISTING_NOTES = ''; // fetched once on load -- see loadExistingNotes_
 // 2026-09-28, per Uday: "Record as Salary Offer" now ALSO submits a
 // Salary Offer Approval request to the Owners (see recordSalaryOffer_)
@@ -598,13 +605,14 @@ function recordSalaryOffer_() {
   const btn = document.getElementById('recordBtn');
   const msg = document.getElementById('recordMsg');
   if (!row) { msg.textContent = 'No applicant linked — open this page from the Hiring Dashboard.'; msg.className = 'record-msg err'; return; }
-  const r = window._lastResult || calcSalary_();
+  const r = calcSalary_(); // fresh: the experience may have just been edited
+  const lmsExp = Number(document.getElementById('fLmsExp').value) || 0, otherExp = Number(document.getElementById('fOtherExp').value) || 0;
   const name = document.getElementById('fName').value.trim();
   const campus = document.getElementById('fCampus').value;
   const designation = document.getElementById('fDesignation').value;
   const subjects = document.getElementById('fSubjects').value.trim();
   const role = designation + (designation && subjects ? ': ' : '') + subjects;
-  const summary = 'Salary Offer recorded: ' + (role ? role + ' — ' : '') + 'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo (' + new Date().toISOString().slice(0, 10) + ')';
+  const summary = 'Salary Offer recorded: ' + (role ? role + ' — ' : '') + 'CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, experience LMS ' + lmsExp + ' y + other ' + otherExp + ' y (' + new Date().toISOString().slice(0, 10) + ')';
   const notes = EXISTING_NOTES ? EXISTING_NOTES + ' | ' + summary : summary;
   btn.disabled = true; msg.textContent = 'Recording…'; msg.className = 'record-msg';
   showLoading_('Recording salary offer…');
@@ -616,7 +624,7 @@ function recordSalaryOffer_() {
     // The salary table of the Appointment Letter (Hiring Dashboard, on Hired).
     offerBreakdown: JSON.stringify({ basic: r.nb, da: r.da, ada: r.ada, epfE: r.epfE, pfE: r.pfE, esiE: r.esiE, totEpf: r.totEpf,
       totEsi: r.totEsi, rrf: r.rrf1, tuition: Number(document.getElementById('fTuiFee').value) || 0, cti: r.cti, net: r.netY1,
-      designation: designation, subjects: subjects }),
+      designation: designation, subjects: subjects, lmsExp: lmsExp, otherExp: otherExp }),
   }).then(function (res) {
     btn.disabled = false;
     if (!res.success) { hideLoading_(); msg.textContent = res.error; msg.className = 'record-msg err'; return; }
@@ -642,7 +650,7 @@ function recordSalaryOffer_() {
       // payroll.gs, the coordinator portal); only the wording the Owner reads changes.
       title: 'Appointment Confirmation — ' + name + (role ? ' (' + role + ')' : ''),
       description: 'Confirm the appointment of ' + name + (role ? ' as ' + role : '') + ' at ' + LMCS.campusLabel(campus) + ' (' + APPLICANT_ID + '), after the MD Academics interview. ' +
-        'Proposed pay: CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo. ' +
+        'Proposed pay: CTI ' + inr_(r.cti) + ', Net Bank Y1 ' + inr_(r.netY1) + '/mo, Y2 ' + inr_(r.netY2) + '/mo, Y3 ' + inr_(r.netY3) + '/mo, on experience LMS ' + lmsExp + ' y + other ' + otherExp + ' y. ' +
         'Approving lets the Principal complete the hire.',
       itemName: APPLICANT_ID + ' — ' + name,
     }).then(function (aprRes) {
@@ -687,7 +695,10 @@ function finishRecord_(msg, text, ok, payrollNote) {
 // ladder rung -- closes the loop instead of leaving them stranded on
 // the Salary Dashboard with nothing left to do here.
 function returnToHiringDashboard_() {
-  setTimeout(function () { location.href = '../hiring/index.html'; }, 1400);
+  setTimeout(function () {
+    if (EMBED) window.parent.postMessage({ type: 'lmcs-salary-recorded' }, location.origin);
+    else location.href = '../hiring/index.html';
+  }, 1400);
 }
 
 function wireInputs_() {
@@ -781,7 +792,8 @@ function applyFieldLockState_() {
 
   // Every remaining field: locked in every mode except 'new'.
   const lockExtras = (mode !== 'new');
-  EXTRA_FIELD_IDS.forEach(function (id) { document.getElementById(id).disabled = lockExtras; });
+  // H2 (Uday, 31 Oct): for a linked applicant the Principal sets their experience and sees the offer change; the rest stays locked.
+  EXTRA_FIELD_IDS.forEach(function (id) { document.getElementById(id).disabled = lockExtras && !(mode === 'handoff' && (id === 'fLmsExp' || id === 'fOtherExp')); });
   if (lockExtras) {
     const md = document.getElementById('fMdExempt');
     if (md.checked) md.checked = false;

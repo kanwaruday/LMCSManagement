@@ -85,6 +85,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .modal[open]{display:block}
 .modal-box{background:#fff;max-width:760px;margin:0 auto;border-radius:10px;padding:16px;position:relative}
 .modal-close{position:absolute;top:10px;right:10px}
+/* H1 (Uday, 31 Oct): the salary offer opens in a window over the panel, not a new tab. ✕, Esc or a tap outside closes it */
+#salWin{z-index:950}
+.sal-box{max-width:980px;height:calc(100vh - 32px);padding:52px 0 0;display:flex;overflow:hidden}
+.sal-box iframe{flex:1;width:100%;border:0;border-top:1px solid var(--border);border-radius:0 0 10px 10px}
 .modal h3{font-size:16px;margin-bottom:2px;padding-right:60px}
 .block{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
 .block h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin-bottom:8px}
@@ -172,6 +176,12 @@ textarea{min-height:56px;resize:vertical}
   </div>
 </div>
 
+<div class="modal" id="salWin" role="dialog" aria-modal="true" aria-label="Salary offer">
+  <div class="modal-box sal-box">
+    <button type="button" class="btn ghost modal-close" data-act="salclose" aria-label="Close the salary offer">✕ Close</button>
+    <iframe id="salFrame" title="Salary offer"></iframe>
+  </div>
+</div>
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
   <div class="modal-box">
     <button type="button" class="btn ghost modal-close" data-act="close" aria-label="Close">✕ Close</button>
@@ -548,7 +558,7 @@ function renderPanel_(row) {
   h += '<div id="formHost"></div></div>';
 
   if (['Demo Done', 'Salary Offer', 'MD Academics Interview Scheduled', 'Hiring Approved', 'Hired'].indexOf(a.status) !== -1) {
-    h += '<div class="block"><h4>Offer</h4><div class="foot" style="margin-top:0"><a class="btn" href="' + esc_(salaryLinkUrl_(a)) + '" target="_blank" rel="noopener">💰 Salary Dashboard</a>' +
+    h += '<div class="block"><h4>Offer</h4><div class="foot" style="margin-top:0"><button type="button" class="btn" data-act="salary" data-row="' + row + '">💰 Salary offer</button>' +
       (a.salaryOfferAt ? '<span class="note">Offer recorded ' + esc_(fmtDay_(a.salaryOfferAt)) + '</span>' : '') + '</div>';
     if (a.status !== 'Demo Done') {
       if (a.status === 'Salary Offer' || a.status === 'MD Academics Interview Scheduled') {
@@ -621,6 +631,29 @@ function openModal_(html) {
   const first = m.querySelector('input,select,textarea,button:not(.modal-close)');
   if (first) first.focus();
 }
+// H1: the Salary Dashboard for this applicant, in a window (embed=1 hides its header). Recording the offer there
+// posts 'lmcs-salary-recorded' back: the window closes and the list reloads, so the next rung shows.
+function openSalary_(a) {
+  if (!a) return;
+  document.getElementById('salFrame').src = salaryLinkUrl_(a) + '&embed=1';
+  document.getElementById('salWin').setAttribute('open', '');
+  document.body.style.overflow = 'hidden';
+  document.querySelector('#salWin .modal-close').focus();
+}
+function closeSalary_() {
+  const w = document.getElementById('salWin');
+  if (!w.hasAttribute('open')) return;
+  w.removeAttribute('open');
+  document.getElementById('salFrame').src = 'about:blank';
+  if (!document.getElementById('modal').hasAttribute('open')) document.body.style.overflow = '';
+  const back = document.querySelector('#modal [data-act="salary"]');
+  if (back) back.focus();
+}
+window.addEventListener('message', function (e) {
+  if (e.origin !== location.origin || !e.data) return;
+  if (e.data.type === 'lmcs-salary-close') closeSalary_(); // Esc pressed inside the window
+  if (e.data.type === 'lmcs-salary-recorded') { closeSalary_(); loadAll_(); }
+});
 function closeModal_() {
   document.getElementById('modal').removeAttribute('open');
   document.body.style.overflow = '';
@@ -827,7 +860,7 @@ function doAdd_(btn) {
 
 document.addEventListener('click', function (e) {
   const b = e.target.closest('[data-act]');
-  if (!b) { if (e.target.id === 'modal') closeModal_(); return; }
+  if (!b) { if (e.target.id === 'salWin') closeSalary_(); else if (e.target.id === 'modal') closeModal_(); return; }
   const row = b.dataset.row ? parseInt(b.dataset.row, 10) : null;
   const a = row ? byRow_(row) : null;
   switch (b.dataset.act) {
@@ -885,7 +918,8 @@ document.addEventListener('click', function (e) {
     case 'cancelform': document.getElementById('formHost').innerHTML = ''; break;
     case 'submitinterview': submitInterview_(b, row); break;
     case 'submitdemo': submitDemo_(b, row); break;
-    case 'salary': window.open(salaryLinkUrl_(a), '_blank', 'noopener'); break;
+    case 'salary': openSalary_(a); break;
+    case 'salclose': closeSalary_(); break;
     case 'mark': post_('hiringmarkstage', { row: row, stage: b.dataset.stage }, 'markMsg', b, 'Marked ✓ — file the report when you can'); break;
     case 'savenotes': post_('updatehiringstatus', { row: row, status: '', notes: val_('pNotes') }, 'notesMsg', b); break;
     case 'savedoj': if (!val_('pDoj')) { msg_('dojMsg', 'Pick the joining date.', 'err'); break; } post_('updatehiringstatus', { row: row, status: '', dateOfJoining: val_('pDoj') }, 'dojMsg', b); break;
@@ -920,7 +954,11 @@ document.addEventListener('change', function (e) {
     document.getElementById('dfTotal').textContent = t;
   }
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.getElementById('modal').hasAttribute('open')) closeModal_(); });
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('salWin').hasAttribute('open')) closeSalary_();
+  else if (document.getElementById('modal').hasAttribute('open')) closeModal_();
+});
 let SEARCH_T = null;
 document.getElementById('search').addEventListener('input', function () { clearTimeout(SEARCH_T); SEARCH_T = setTimeout(render_, 150); });
 
