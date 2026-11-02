@@ -156,6 +156,7 @@ async function trialRuns() {
     pub.type = del.type = 'button'; pub.className = 'gb-btn gb-btn-primary'; pub.textContent = 'Promote to real run'; del.className = 'gb-btn gb-btn-danger'; del.textContent = 'Discard';
     const decide = async (decision) => {
       if (decision === 'discard' && !confirm('Discard the trial run of bus ' + r.reg + ' (' + trialWhen(r) + ')? Its Drive folder goes to the bin.')) return;
+      if (decision === 'publish' && !confirm('Promote the trial run of bus ' + r.reg + ' (' + trialWhen(r) + ') to a real run? It joins the bus\'s route and counts for its Capture quest.')) return;
       pub.disabled = del.disabled = true; err.textContent = '';
       try {
         const res = await Coord.postJson({ action: 'transportcapturedecide', runId: r.runId, decision });
