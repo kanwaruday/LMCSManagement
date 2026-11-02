@@ -6,11 +6,12 @@ const gs = (f) => fs.readFileSync(path.join(__dirname, '../../apps-script', f), 
 
 function folder(name) {
   const kids = [], files = [];
-  return { name, kids, files, getName: () => name,
+  const me = { name, kids, files, trashed: false, getName: () => name, setTrashed(v) { me.trashed = v; },
     getFoldersByName(n) { const m = kids.filter((k) => k.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     getFilesByName(n) { const m = files.filter((f) => f.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     createFolder(n) { const f = folder(n); kids.push(f); return f; },
     createFile(blob) { const id = 'FILE' + (nextId++) + 'x'.repeat(20); const f = { name: blob.name, blob, desc: '', getId: () => id, setDescription(d) { f.desc = d; } }; files.push(f); return f; } };
+  return me;
 }
 let nextId = 1;
 const root = folder('LMS Central Repository');
@@ -21,7 +22,8 @@ const tabs = {
 };
 const mkSheet = (n) => ({ appendRow: (r) => tabs[n].push(r), setFrozenRows() {}, getLastColumn: () => Math.max(0, ...tabs[n].map((r) => r.length)),
   getDataRange: () => ({ getValues: () => tabs[n].map((r) => r.slice()) }),
-  getRange: (r, c, nr, nc) => ({ setFontWeight() {}, setValues: (v) => { tabs[n][r - 1] = v[0].slice(); } }) });
+  getRange: (r, c, nr, nc) => ({ setFontWeight() {}, setValues: (v) => { tabs[n][r - 1] = (tabs[n][r - 1] || []).slice(0, c - 1).concat(v[0]); },
+    setValue: (v) => { tabs[n][r - 1][c - 1] = v; } }) });
 const ss = { getSheetByName: (n) => tabs[n] ? mkSheet(n) : null, insertSheet(n) { tabs[n] = []; return mkSheet(n); } };
 let caller = null;
 const cache = {};
@@ -39,6 +41,7 @@ vm.createContext(ctx);
 vm.runInContext(gs('staff-documents.gs').split('\n').filter((l) => /^var SDOC_(MAX_BYTES|MIME_EXT)_/.test(l)).join('\n'), ctx);
 vm.runInContext(gs('transport-uploads.gs'), ctx);
 vm.runInContext(gs('transport-capture.gs'), ctx);
+vm.runInContext(gs('driver-token.gs'), ctx); // dlkStaff_ is the real role test; dlkLink_ is stubbed below where a driver phone sends
 const run = (code) => JSON.parse(JSON.stringify(vm.runInContext(code, ctx)));
 const b64 = (hex, pad) => Buffer.concat([Buffer.from(hex.replace(/ /g, ''), 'hex'), Buffer.alloc(pad || 8)]).toString('base64');
 const JPG = b64('FF D8 FF E0'), PDF = b64('25 50 44 46 2D');
@@ -229,6 +232,43 @@ ctx.DriveApp = { getFolderById: () => { throw new Error('You do not have permiss
 const dc = run('captureDriveCheck_()');
 assert.ok(dc.success && /do not have permission/.test(dc.drive) && dc.capture === 'n/a', 'the exact Drive error comes back');
 ctx.DriveApp = realDrive;
+// Trial runs (2 Nov): Owner/Coordinator only, a 'Trial' column found by header name, never flips; capturediscard bins the folder
+const TR = () => tabs['Capture Runs'][0].indexOf('Trial');
+caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+assert.strictEqual(TR(), -1, 'no Trial column until the first trial');
+assert.strictEqual(cr({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', status: 'running', trial: true }).success, true);
+assert.strictEqual(TR(), 15, 'Trial appended after Captured By');
+assert.strictEqual(rowOf('TR1')[TR()], 'yes');
+assert.strictEqual(cr({ runId: 'TR2', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
+assert.strictEqual(rowOf('TR2')[TR()], '', 'a real run says nothing');
+tabs['Capture Runs'][0].splice(15, 0, 'Notes'); tabs['Capture Runs'].slice(1).forEach((r) => { if (r.length > 15) r.splice(15, 0, 'kept'); }); // someone added a column before Trial
+assert.strictEqual(cr({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', status: 'ended', frames: 9, trial: true }).success, true, 'the end manifest of a trial');
+assert.deepStrictEqual([rowOf('TR1')[15], rowOf('TR1')[16], rowOf('TR1')[8]], ['kept', 'yes', 9], 'Trial found by name; the column before it kept');
+assert.match(cr({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).error, /cannot become a trial or stop/, 'a trial cannot flip to real');
+assert.match(cr({ runId: 'TR2', reg: 'HP659511', kind: 'timelapse', status: 'ended', trial: true }).error, /cannot become a trial or stop/, 'nor a real run to trial');
+caller = { email: 'f4@lms.org.in', campusId: 'LMS4', roles: ['FeeClerk'], role: 'FeeClerk' };
+assert.strictEqual(cr({ runId: 'TR3', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run');
+assert.ok(!rowOf('TR3'), 'a refused trial is not stored');
+assert.strictEqual(cr({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', status: 'ended', trial: true }).success, true, 'the clerk may send a Coordinator\'s trial on the shared phone');
+vm.runInContext("dlkLink_ = function (t) { return t === 'dev1' ? { linkId: 'L1', reg: 'HP659511', campus: 'LMS4', name: 'Test Driver' } : null; }", ctx);
+const drv = (r) => run('captureRun_(' + JSON.stringify({ deviceToken: 'dev1', run: r }) + ')');
+assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'a driver phone never sends a trial');
+assert.strictEqual(drv({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'not even an existing one');
+assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse' }).success, true, 'a real driver run still goes in');
+caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
+const trDir = runDirOf('R1'), cd = (b) => run('captureDiscard_(' + JSON.stringify(b) + ')');
+rowOf('R1')[12] = 'ended'; // processed on the Mac, now on the shelf
+assert.strictEqual(cd({ secret: 'X', reg: 'HP659511', runId: 'R1' }).error, 'Not authorized', 'capturediscard needs the secret');
+assert.ok(!trDir.trashed && rowOf('R1')[12] === 'ended', 'a refused discard changes nothing');
+assert.match(cd({ secret: 'S', reg: 'HP659511', runId: 'NOPE' }).error, /Unknown run/);
+assert.match(cd({ secret: 'S', reg: 'HP665686', runId: 'R1' }).error, /Unknown run/, 'reg and runId must match the row');
+assert.match(cd({ secret: 'S', reg: 'HP659511', runId: '../x' }).error, /Bad run/);
+assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'R1' }).success, true);
+assert.strictEqual(trDir.trashed, true, 'the run folder goes to the bin');
+assert.strictEqual(trDir.files.length > 0, true, 'binned, not emptied: recoverable');
+assert.strictEqual(rowOf('R1')[12], 'closed', 'Status closed');
+assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR2' }).success, true, 'no folder (never uploaded or already gone): still closes');
+assert.strictEqual(rowOf('TR2')[12], 'closed');
 
 // C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
 // captured by a Coordinator and sent by the campus Fee Clerk (Ruling 41).

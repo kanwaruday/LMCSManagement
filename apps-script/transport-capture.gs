@@ -27,6 +27,11 @@
 //   notYet:[runId]}. The Coordinator backend (no Drive access) asks here for the ids of the Mac's BLURRED output:
 //   Capture/<REG>/<runId>/processed/route.mp4 and processed/stop-NNNNN.jpg, never the phone's originals. A run whose processed
 //   folder has not synced up from the Mac yet is "not yet". Same shared secret as the Mac's pushes (TRANSPORT_PUSH_SECRET).
+// Trial runs (2 Nov): run.trial === true marks a practice timelapse; the 'Trial' column (found or appended by header name) says
+//   'yes'. Only an Owner or Coordinator idToken may start one; once set it never flips. The Coordinator shelves trials on its
+//   'Capture Review' tab (coordinator-transport-gps.gs) instead of publishing them.
+// POST {action:'capturediscard', secret, reg, runId} -> {success}. The Coordinator's Discard on that shelf: Capture/<REG>/<runId>/
+//   goes to the Drive bin (recoverable 30 days) and the run's Status becomes 'closed', so the Mac's pull never lists it again.
 // ═══════════════════════════════════════════════════════════════════
 
 const CAP_TAB_ = 'Capture Runs';
@@ -37,6 +42,8 @@ const CAP_RUN_KINDS_ = ['timelapse', 'count', 'inspection', 'profile'];
 const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: ['inspection'], profile: ['profile'] };
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
 const CAP_MAX_FRAME_TIMES_ = 40000; // characters of frameTimes JSON kept: well inside Sheets' 50,000 per cell (a 75 km run is ~10,000)
+const CAP_TRIAL_COL_ = 'Trial'; // read and written by header name: appended after Captured By on first use
+const CAP_TRIAL_DENIED_ = 'Only the Owner or a Coordinator can record a trial run';
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 // sibling of 'Bus Wise Documents'. A function, not a top-level const: TUP_PATH_ lives in transport-uploads.gs, which Apps Script
 // loads after this file, so reading it at load time took the whole Roster web app down (v49). tests/apps-script/test-load-order.js
@@ -173,6 +180,9 @@ function captureRun_(body) {
     const bad = capInspectionError_(run.inspection);
     if (bad) return fail(bad);
   }
+  const trial = run.trial === true;
+  if (trial && a.caller.role === 'Driver') return fail(CAP_TRIAL_DENIED_);
+  const trialDenied = trial && !dlkStaff_(a.caller.roles); // a Fee Clerk: refused below unless the row already says yes (the shared phone, Ruling 41)
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const author = String(run.capturedBy || '').trim().toLowerCase();
@@ -190,7 +200,16 @@ function captureRun_(body) {
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId) { at = i + 1; break; }
     if (at && (String(rows[at - 1][1]) !== a.v.reg || String(rows[at - 1][3]) !== run.kind)) return fail('A run\'s bus and kind cannot change (' + rows[at - 1][1] + ', ' + rows[at - 1][3] + ')');
+    let tc = rows[0].indexOf(CAP_TRIAL_COL_);
+    const was = at && tc !== -1 && String(rows[at - 1][tc]) === 'yes';
+    if (trialDenied && !was) return fail(CAP_TRIAL_DENIED_);
+    if (at && was !== trial) return fail('A run cannot become a trial or stop being one');
     if (at && rows[at - 1][14]) row[14] = rows[at - 1][14]; // a run keeps its capturer, whoever sends the next manifest
+    if (trial && tc === -1) { tc = rows[0].length; sh.getRange(1, 1, 1, tc + 1).setValues([rows[0].concat([CAP_TRIAL_COL_])]); }
+    if (tc !== -1) { // whole row, so columns between Captured By and Trial keep their values
+      while (row.length <= tc) row.push(at ? rows[at - 1][row.length] : '');
+      row[tc] = trial ? 'yes' : '';
+    }
     if (at) sh.getRange(at, 1, 1, row.length).setValues([row]); else sh.appendRow(row);
   } finally {
     lock.releaseLock();
@@ -235,4 +254,27 @@ function captureDriveCheck_() {
   } catch (e) {
     return { success: true, drive: String(e && e.message || e).slice(0, 300), capture: 'n/a' };
   }
+/** POST capturediscard (see the header): bins one run's Drive folder and closes its Capture Runs row. A folder already gone
+ *  (a retry after a lost reply) is fine; an unknown run is refused. */
+function captureDiscard_(body) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
+  const runId = String(body.runId || ''), reg = String(body.reg || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || !/^[A-Z0-9]{1,16}$/.test(reg)) return { success: false, error: 'Bad run' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sh = capRunSheet_(), rows = sh.getDataRange().getValues();
+    let at = 0;
+    for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId && String(rows[i][1]) === reg) { at = i + 1; break; }
+    if (!at) return { success: false, error: 'Unknown run ' + runId };
+    let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+    capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
+    const bus = f && getSubfolder_(f, reg), dir = bus && getSubfolder_(bus, runId);
+    if (dir) dir.setTrashed(true); // the bin, never a hard delete: 30 days to change one's mind
+    sh.getRange(at, 13).setValue('closed'); // Status: the pull lists only 'ended' runs
+  } finally {
+    lock.releaseLock();
+  }
+  return { success: true };
 }
