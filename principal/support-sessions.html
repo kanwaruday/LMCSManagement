@@ -18,6 +18,32 @@
     .ss-row:last-child { border-bottom:none; }
     .ss-row label { flex:1 1 auto; min-width:0; font-weight:600; font-size:14px; overflow-wrap:anywhere; }
     .ss-row input[type=number] { flex:0 0 auto; width:84px; text-align:center; font-weight:700; }
+
+    /* This month's evaluations panel (2026-10-30) -- Kingshot-compact:
+       rows, not cards, first 8 then "Show all" in a window. */
+    .ss-eval-filters { display:flex; gap:8px; margin:0 0 8px; flex-wrap:wrap; }
+    .ss-eval-filters .ss-eval-filter { padding:6px 12px; min-height:44px; font-size:13px; }
+    .ss-eval-filters .ss-eval-filter.is-active { background:var(--gb-gold-soft); border-color:var(--gb-gold); font-weight:700; }
+    .ss-eval-list { list-style:none; margin:0; padding:0; }
+    .ss-eval-row { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:8px 4px; border:none; border-bottom:1px solid var(--gb-line); background:none; font:inherit; color:var(--gb-ink); text-align:left; cursor:pointer; }
+    .ss-eval-list > li:last-child .ss-eval-row { border-bottom:none; }
+    .ss-eval-row:hover, .ss-eval-row:focus-visible { background:var(--gb-gold-soft); }
+    .ss-eval-ico { flex:none; font-size:18px; width:22px; text-align:center; }
+    .ss-eval-name { flex:1 1 auto; min-width:0; font-weight:600; overflow-wrap:anywhere; }
+    .ss-eval-meta { flex:none; font-size:12.5px; color:var(--gb-muted); white-space:nowrap; }
+
+    /* Native <dialog>, styled with the same gb- tokens as the rest of the page. */
+    .ss-eval-dialog { border:none; border-radius:14px; padding:0; max-width:420px; width:calc(100% - 32px); background:var(--gb-paper); color:var(--gb-ink); }
+    .ss-eval-dialog::backdrop { background:rgba(0,0,0,.4); }
+    .ss-eval-dialog-in { padding:16px; position:relative; max-height:80vh; overflow-y:auto; }
+    .ss-eval-dialog-x { position:absolute; top:10px; right:10px; width:44px; height:44px; min-height:44px; border:none; background:var(--gb-panel); border-radius:50%; font-size:16px; cursor:pointer; }
+    .ss-eval-dialog h3 { margin:0 24px 4px 0; font-size:16px; }
+    .ss-eval-detail-scores { list-style:none; margin:10px 0 0; padding:0; }
+    .ss-eval-detail-scores li { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--gb-line); font-size:13.5px; }
+    .ss-eval-detail-scores li:last-child { border-bottom:none; }
+    @media (max-width:520px) {
+      .ss-eval-dialog { position:fixed; left:0; right:0; bottom:0; top:auto; max-width:none; width:100%; margin:0; border-radius:16px 16px 0 0; }
+    }
   </style>
 </head>
 <body class="gb gb-app">
@@ -30,6 +56,22 @@
       <section id="auth-root"><div id="gate-slot"></div></section>
 
       <div id="app-root" style="display:none">
+        <!-- 2026-10-30, per Uday via V1: who's been evaluated this month and
+             who's recommended next, at a glance. Hidden until a role+school's
+             roster loads (renderEvalPanel()); reuses ssdashboard (loadDashboard_,
+             fetched once) -- no new backend action. -->
+        <div class="gb-card" id="ss-eval-panel" hidden>
+          <h2 style="margin:0 0 4px;font-size:15px">इस महीने के मूल्यांकन · This month's evaluations</h2>
+          <p class="gb-muted" id="ss-eval-count" style="margin:0 0 10px"></p>
+          <div class="ss-eval-filters" role="group" aria-label="Filter">
+            <button type="button" class="gb-btn ss-eval-filter is-active" data-filter="all">सभी · All</button>
+            <button type="button" class="gb-btn ss-eval-filter" data-filter="pending">बाकी · Not yet</button>
+            <button type="button" class="gb-btn ss-eval-filter" data-filter="done">हो गया · Done</button>
+          </div>
+          <ul class="ss-eval-list" id="ss-eval-list"></ul>
+          <button type="button" class="gb-btn" id="ss-eval-showall" hidden style="margin-top:4px">Show all</button>
+        </div>
+
         <div class="gb-card">
           <h2 style="margin:0 0 4px;font-size:15px">School &amp; role</h2>
           <p class="gb-muted" style="margin:0 0 10px">Evaluate one Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member at a time.</p>
@@ -69,6 +111,30 @@
     </aside>
   </div>
 
+  <!-- Native <dialog> for both windows -- Esc-to-close and (once shown
+       via showModal()) a real top-layer stacking context come for free;
+       "tap outside" is one click listener (e.target === the dialog
+       itself, not a descendant, since the dialog has no padding of its
+       own -- see ss-eval-dialog-in). Deliberately NOT assets/game/game.css's
+       .lg-modal (the Buddy/mission layer's own modal) -- that would mean
+       loading game.js/game.css on this page for one read-only popup;
+       these reuse the gb- tokens already here instead. -->
+  <dialog class="ss-eval-dialog" id="ss-eval-detail">
+    <div class="ss-eval-dialog-in">
+      <button type="button" class="ss-eval-dialog-x" id="ss-eval-detail-close" aria-label="Close">✕</button>
+      <h3 id="ss-eval-detail-name"></h3>
+      <p class="gb-muted" id="ss-eval-detail-when"></p>
+      <ul class="ss-eval-detail-scores" id="ss-eval-detail-scores"></ul>
+    </div>
+  </dialog>
+  <dialog class="ss-eval-dialog" id="ss-eval-all">
+    <div class="ss-eval-dialog-in">
+      <button type="button" class="ss-eval-dialog-x" id="ss-eval-all-close" aria-label="Close">✕</button>
+      <h3>इस महीने के मूल्यांकन · This month's evaluations</h3>
+      <ul class="ss-eval-list" id="ss-eval-all-list"></ul>
+    </div>
+  </dialog>
+
   <footer class="site">
     <div class="wrap">
       LMCS Portal — internal management system for La Montessori Schools.
@@ -106,6 +172,8 @@
     let SESSION = null;
     let campusPicker = null;
     let currentMeta = null; // last successful ssformmeta response
+    let dashboardCache = null; // action=ssdashboard, fetched ONCE (all roles/campuses in one call, same as the old SS Dashboard tab) -- role/campus switches re-filter this in memory, never re-fetch
+    let currentEvalRows = []; // this role+school's roster merged with dashboard stats, sorted most-overdue-first -- see buildEvalRows()
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -148,6 +216,208 @@
     }
     function roleLabel(key) { const r = SS_ROLES.find((x) => x.key === key); return r ? r.label : key; }
 
+    // 'LMS1' (portal/campus-picker format) -> 'LMS 1' (the format
+    // ssdashboard's roster.school already uses -- ss-forms-sync.gs's own
+    // SS_PREFIX_TO_SCHOOL map, unrelated to this page, happens to be
+    // keyed the same way). Mirrors ss-forms-sync.gs's
+    // ssPortalCampusToFormKey_ -- same two formats, same reason.
+    function campusToFormKey_(portalCampus) {
+      const m = /^LMS([1-6])$/.exec(String(portalCampus || '').trim().toUpperCase());
+      return m ? 'LMS ' + m[1] : null;
+    }
+
+    // action=ssdashboard, fetched once (every role/campus this caller
+    // can see, same as the old SS Dashboard tab) and cached -- role/
+    // school switches below re-filter this in memory. Failure here is
+    // NOT fatal to the page: the rubric form itself (ssformmeta) still
+    // works without it, the new evaluations panel + the Next card's
+    // "recommended" ranking just fall back to no-stats/alphabetical.
+    async function loadDashboard_() {
+      try {
+        const res = await get({ action: 'ssdashboard' });
+        if (res && res.success) dashboardCache = res;
+      } catch (err) { console.warn('ssdashboard', err); }
+      // Fired in parallel with the first loadForm() (see showApp()), so
+      // the rubric form shows immediately without waiting on this --
+      // once it resolves, re-rank/re-render with real stats instead of
+      // the no-stats fallback currentMeta alone would have given.
+      if (currentMeta) { currentEvalRows = buildEvalRows(currentMeta); renderNext(); renderEvalPanel(); }
+    }
+
+    // This role+school's roster (from the SAME ssformmeta.employees list
+    // everything else on this page already treats as the source of truth
+    // for "who's a valid choice right now"), each augmented with this
+    // month's stats from dashboardCache when available -- a brand-new
+    // employee dashboardCache hasn't seen yet just shows as not-yet-
+    // evaluated, which is correct, not a gap. Sorted most-overdue-first:
+    // never evaluated this month, THEN oldest lastSubmission (null =
+    // never evaluated at all, sorts first of all) -- the ONE ranking
+    // both the Next card and the new panel's ⭐ use, per Uday via V1 (a
+    // correction: the Next card never actually did this before -- it
+    // just took employees[0], alphabetical).
+    // The ONE ranking both buildEvalRows and patchEvalRowAfterSubmit_
+    // sort by -- never evaluated this month first, then oldest
+    // lastSubmission (null = never evaluated at all, sorts first of
+    // all). Mutates and returns `rows`.
+    function sortEvalRows_(rows) {
+      rows.sort(function (a, b) {
+        if (a.evaluatedThisMonth !== b.evaluatedThisMonth) return a.evaluatedThisMonth ? 1 : -1;
+        const at = a.lastSubmission ? new Date(a.lastSubmission).getTime() : -Infinity;
+        const bt = b.lastSubmission ? new Date(b.lastSubmission).getTime() : -Infinity;
+        return at - bt;
+      });
+      return rows;
+    }
+
+    function buildEvalRows(meta) {
+      const schoolKey = campusToFormKey_(meta.school);
+      const roleRoster = dashboardCache && dashboardCache.roles && dashboardCache.roles[meta.role]
+        ? dashboardCache.roles[meta.role].roster : [];
+      const statsById = {};
+      roleRoster.forEach(function (r) {
+        if (schoolKey && r.school !== schoolKey) return;
+        statsById[r.employee.split(' ')[0]] = r; // "CODE NAME" -> CODE is always the first token (ss-tracker.gs's own convention)
+      });
+
+      const rows = meta.employees.map(function (e) {
+        const stats = statsById[e.employeeId] || null;
+        return {
+          employeeId: e.employeeId,
+          name: e.name,
+          label: e.label,
+          evaluatedThisMonth: !!stats && stats.submissionsThisMonth > 0,
+          lastSubmission: stats ? stats.lastSubmission : null, // ISO string or null
+          lastTotal: stats && stats.history && stats.history.length ? stats.history[0].total : null,
+          lastScores: stats && stats.history && stats.history.length ? stats.history[0].scores : null,
+        };
+      });
+      return sortEvalRows_(rows);
+    }
+
+    // After a successful submit, update the ONE row in currentEvalRows in
+    // place and re-sort/re-render -- no re-fetch of ssdashboard needed,
+    // the panel and the Next card both reflect the just-saved evaluation
+    // immediately (matters most for "Evaluate another": the person you
+    // just did should now show ✓, not still be the top recommendation).
+    function patchEvalRowAfterSubmit_(employeeId, scores) {
+      const row = currentEvalRows.find(function (r) { return r.employeeId === employeeId; });
+      if (!row) return;
+      row.evaluatedThisMonth = true;
+      row.lastSubmission = new Date().toISOString();
+      row.lastTotal = scores.reduce(function (a, b) { return a + b; }, 0);
+      row.lastScores = scores;
+      sortEvalRows_(currentEvalRows);
+      renderNext();
+      renderEvalPanel();
+    }
+
+    const EVAL_MONTHS_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function fmtEvalDate_(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return d.getDate() + ' ' + EVAL_MONTHS_[d.getMonth()];
+    }
+
+    let evalFilter = 'all';
+    const EVAL_COMPACT_LIMIT = 8;
+    function filteredEvalRows_() {
+      return currentEvalRows.filter(function (r) {
+        return evalFilter === 'done' ? r.evaluatedThisMonth : evalFilter === 'pending' ? !r.evaluatedThisMonth : true;
+      });
+    }
+    // isRecommended overrides the ⏳/✓ icon with ⭐ (one row at most, per
+    // Uday's phrasing: ✓ / ⏳ / ⭐ read as three states, not ⭐ layered on
+    // top of one of the other two).
+    function evalRowHtml_(row, isRecommended) {
+      const icon = isRecommended ? '⭐' : row.evaluatedThisMonth ? '✓' : '⏳';
+      const meta = row.evaluatedThisMonth
+        ? fmtEvalDate_(row.lastSubmission) + (row.lastTotal != null ? ' · ' + row.lastTotal : '')
+        : isRecommended ? 'अगला सुझाव · Recommended' : 'अभी बाकी · Not yet';
+      return '<li><button type="button" class="ss-eval-row" data-id="' + esc(row.employeeId) + '">'
+        + '<span class="ss-eval-ico" aria-hidden="true">' + icon + '</span>'
+        + '<span class="ss-eval-name">' + esc(row.name) + '</span>'
+        + '<span class="ss-eval-meta">' + esc(meta) + '</span>'
+        + '</button></li>';
+    }
+    function renderEvalRowsInto_(targetId, rows) {
+      const recommendedId = currentEvalRows.length ? currentEvalRows[0].employeeId : null;
+      document.getElementById(targetId).innerHTML = rows.length
+        ? rows.map(function (r) { return evalRowHtml_(r, r.employeeId === recommendedId); }).join('')
+        : '<li class="gb-muted" style="padding:8px 4px">कोई नहीं · Nobody matches this filter.</li>';
+    }
+    function renderEvalList_() {
+      const rows = filteredEvalRows_();
+      renderEvalRowsInto_('ss-eval-list', rows.slice(0, EVAL_COMPACT_LIMIT));
+      document.getElementById('ss-eval-showall').hidden = rows.length <= EVAL_COMPACT_LIMIT;
+    }
+
+    function renderEvalPanel() {
+      const panel = document.getElementById('ss-eval-panel');
+      if (!currentEvalRows.length) { panel.hidden = true; return; }
+      panel.hidden = false;
+      const doneCount = currentEvalRows.filter(function (r) { return r.evaluatedThisMonth; }).length;
+      document.getElementById('ss-eval-count').textContent = doneCount + ' में से ' + currentEvalRows.length
+        + ' का मूल्यांकन हो गया · ' + doneCount + ' of ' + currentEvalRows.length + ' evaluated this month';
+      renderEvalList_();
+    }
+
+    // Tap "not yet"/⭐ -> select them below and jump to the rubric (same
+    // destination the Next card's own Go already uses). Tap "evaluated"
+    // (✓, or ⭐ when the recommended person already has a submission this
+    // month -- the ranking doesn't require "not yet") -> read-only detail.
+    function handleEvalRowTap_(employeeId) {
+      const row = currentEvalRows.find(function (r) { return r.employeeId === employeeId; });
+      if (!row) return;
+      if (row.evaluatedThisMonth) { openEvalDetail_(row); return; }
+      document.getElementById('ss-eval-all').close();
+      document.getElementById('ss-employee').value = employeeId;
+      document.getElementById('ss-employee').focus();
+      document.getElementById('ss-rubric-rows').scrollIntoView({ block: 'nearest' });
+    }
+
+    function openEvalDetail_(row) {
+      document.getElementById('ss-eval-detail-name').textContent = row.name;
+      document.getElementById('ss-eval-detail-when').textContent = fmtEvalDate_(row.lastSubmission)
+        + (row.lastTotal != null ? ' · ' + row.lastTotal : '');
+      document.getElementById('ss-eval-detail-scores').innerHTML = (currentMeta.rubricTitles || []).map(function (title, i) {
+        const v = row.lastScores && row.lastScores[i] != null ? row.lastScores[i] : '—';
+        return '<li><span>' + esc(title) + '</span><strong>' + esc(String(v)) + '</strong></li>';
+      }).join('');
+      document.getElementById('ss-eval-detail').showModal();
+    }
+
+    function openEvalAllDialog_() {
+      renderEvalRowsInto_('ss-eval-all-list', filteredEvalRows_());
+      document.getElementById('ss-eval-all').showModal();
+    }
+
+    // Native <dialog>: Esc-to-close is automatic; "tap outside" is one
+    // click check per dialog (the click lands on the <dialog> element
+    // itself, never a descendant, when it's outside ss-eval-dialog-in).
+    function wireEvalPanel() {
+      document.querySelectorAll('.ss-eval-filter').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          evalFilter = btn.dataset.filter;
+          document.querySelectorAll('.ss-eval-filter').forEach(function (b) { b.classList.toggle('is-active', b === btn); });
+          renderEvalList_();
+        });
+      });
+      document.getElementById('ss-eval-list').addEventListener('click', function (e) {
+        const btn = e.target.closest('.ss-eval-row');
+        if (btn) handleEvalRowTap_(btn.dataset.id);
+      });
+      document.getElementById('ss-eval-all-list').addEventListener('click', function (e) {
+        const btn = e.target.closest('.ss-eval-row');
+        if (btn) handleEvalRowTap_(btn.dataset.id);
+      });
+      document.getElementById('ss-eval-showall').addEventListener('click', openEvalAllDialog_);
+
+      document.getElementById('ss-eval-detail-close').addEventListener('click', function () { document.getElementById('ss-eval-detail').close(); });
+      document.getElementById('ss-eval-detail').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.close(); });
+      document.getElementById('ss-eval-all-close').addEventListener('click', function () { document.getElementById('ss-eval-all').close(); });
+      document.getElementById('ss-eval-all').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.close(); });
+    }
+
     // LMCSCampus.mount() calls onChange SYNCHRONOUSLY before returning
     // (campus-picker.js), so loadForm() -> selectedCampus() can run while
     // `campusPicker = LMCSCampus.mount(...)`'s own assignment hasn't
@@ -164,16 +434,20 @@
 
     // The one next-step card, always the first thing under the header
     // (base.css's own 5-place skeleton) -- "pick a school and role"
-    // before a form is loaded, "evaluate <first on the list>" once it
-    // is, Go pre-selects that person and jumps to the rubric.
+    // before a form is loaded, else the MOST-OVERDUE person from
+    // currentEvalRows (buildEvalRows' own sort -- never evaluated this
+    // month first, then oldest lastSubmission), Go pre-selects them and
+    // jumps to the rubric. Was employees[0] (alphabetical) until Uday
+    // asked, via V1, for this to be the same ranking the new evaluations
+    // panel's ⭐ uses -- it wasn't actually "the same logic" before this.
     function renderNext() {
       const slot = document.getElementById('ss-next');
-      if (!currentMeta || !currentMeta.employees.length) {
+      if (!currentMeta || !currentEvalRows.length) {
         slot.innerHTML = '<div class="gb-next"><div class="gb-next-b"><span class="gb-next-k">Next</span>'
           + '<p class="gb-next-t">Pick a school and role to begin.</p></div></div>';
         return;
       }
-      const first = currentMeta.employees[0];
+      const first = currentEvalRows[0];
       // Plain gb-btn, not gb-btn-primary -- once the rubric form renders
       // below, its own Submit is the one red primary action; Go staying
       // red too put two competing red CTAs on screen at once (GM pass).
@@ -223,9 +497,11 @@
       // what ssformmeta actually returned, not whatever the controls
       // happen to show by the time someone clicks Submit.
       currentMeta = Object.assign({ role: role, school: campus }, res);
+      currentEvalRows = buildEvalRows(currentMeta);
       status('', false);
       renderForm(currentMeta);
       renderNext();
+      renderEvalPanel();
     }
 
     function renderForm(meta) {
@@ -288,6 +564,7 @@
         const res = await post({ action: 'submitss', role: role, school: currentMeta.school, employeeId: employeeId, scores: scores });
         if (res.success) {
           status('', false);
+          patchEvalRowAfterSubmit_(employeeId, scores.map(Number));
           document.getElementById('ss-done-p').textContent = 'You evaluated ' + employeeName + ' for ' + roleLabel(role) + '.';
           document.getElementById('ss-form-card').hidden = true;
           document.getElementById('ss-done').hidden = false;
@@ -323,8 +600,10 @@
       document.getElementById('ss-role').addEventListener('change', loadForm);
       document.getElementById('ss-submit').addEventListener('click', submit);
       document.getElementById('ss-done-again').addEventListener('click', evaluateAnother);
+      wireEvalPanel();
       renderNext();
       loadForm();
+      loadDashboard_(); // parallel, not awaited -- see its own comment
     }
 
     const cachedSession = LMCS.getSession();
