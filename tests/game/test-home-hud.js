@@ -17,6 +17,14 @@ for (const s of lms1.hotspots) {
 }
 assert.ok(ids.includes(lms1.entrance), 'the Quest board sits at a real room');
 for (const k of ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']) assert.ok(Array.isArray(cfg[k].hotspots), k + ' has a hotspots array');
+// P28-31: every campus has doors on the building it draws (LMS 3-6: the sample's; LMS 2: its own model), each one real and placed,
+// the Quest board at a real room, and a Support Sessions door everywhere
+for (const k of ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6']) {
+  const rooms = B.rooms(B.clean(M[k] || B.SAMPLE)).map((r) => r.id), plan = H.plan(cfg[k], rooms);
+  assert.strictEqual(plan.placed.length, cfg[k].hotspots.length, k + ': every door lands on a real room');
+  assert.ok(rooms.includes(cfg[k].entrance), k + ': the Quest board sits at a real room');
+  assert.ok(plan.placed.some((x) => x.source === 'ss') && plan.placed.some((x) => x.source === 'daily'), k + ': Support Sessions and Daily work doors');
+}
 assert.deepStrictEqual(Object.keys(M).sort(), ['LMS2'], 'the models stay campus keys only');
 
 // each source exactly once: a placed hotspot or the Quest board, never both, never neither
@@ -70,7 +78,7 @@ assert.ok(/'aria-label': 'Close tasks' \}, '\\u00d7'/.test(js) && /pointerdown',
 assert.ok(/body\.hh \.lg-nextbar \{ display:none !important; \}/.test(css), "game.js's next-step bar is hidden here");
 assert.ok(/if \(document\.querySelector\('\.lg-layer'\)\) return;/.test(js) && !/LMCSGame\.ui\.trap/.test(js), 'the sheet leaves Esc and Tab to a game.js card');
 assert.ok(/data-hh/.test(js) && /S\.bm\[key\]/.test(js) && /function backTo/.test(js) && !/layer\.textContent = ''/.test(js), 'bubbles update in place; focus returns by key');
-assert.ok(/LINK_ONLY = \['daily', 'hr', 'routes'\]/.test(js), 'link-only bubbles');
+assert.ok(/LINK_ONLY = \['daily', 'hr', 'ss', 'routes'\]/.test(js), 'link-only bubbles: Support Sessions always shows');
 assert.strictEqual(H.rankText({ rank: 'x'.repeat(50) }).length, 20, 'rank text is capped');
 assert.ok(LMCSEmoji.get('setupUp') && !/u2b06|\u2b06/.test(js) && /function chip\(/.test(js) && !/textContent = LMCSEmoji/.test(js), 'setup bubble and chips use the emoji map, not typed or glued emoji');
 // Uday's first look: Esc closes the drawer from the edge tab too, a header with a 44px X that stays put, a labelled edge tab, no hint line

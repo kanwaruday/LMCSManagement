@@ -65,14 +65,26 @@ var LMCSBuildingModels = {
 // the drawn building lacks) is reached from the 📜 Quest board bubble at `entrance` (a room id), so nothing is unreachable. A bubble
 // shows only while its source needs attention. LMS 1 has no plan yet, so it uses the sample building's rooms; when its own model lands,
 // map these ids again (the gate and notice board get their own rooms then, and appointments and setup move there).
+// P28-31 (31 Oct): LMS 3-6 have no plan yet, so they draw the sample building too -- and so take the sample's doors (they had none,
+// so their homes showed a building with no way in). The Support Sessions door is always there (home-hud.js LINK_ONLY).
+var LMCS_SAMPLE_HOTSPOTS = { entrance: 'play', hotspots: [
+  { room: 'office', kind: 'quest', source: 'today' },      // the Principal's room: Today with Buddy
+  { room: 'reception', kind: 'count', source: 'daily' },   // the office: reports and issues
+  { room: 'staff', kind: 'count', source: 'hr' },          // the staff room: teachers and hiring
+  { room: 'meet', kind: 'count', source: 'ss' },           // the meeting room: Support Sessions
+  { room: 'busbay', kind: 'count', source: 'routes' },     // the bus bay: the World
+  { room: 'site', kind: 'setup', source: 'setup' }         // the building site stands in for the notice board
+] };
 var LMCSHomeHotspots = {
-  LMS1: { entrance: 'play', hotspots: [
-    { room: 'office', kind: 'quest', source: 'today' },      // the Principal's room: Today with Buddy
-    { room: 'reception', kind: 'count', source: 'daily' },   // the office: reports and issues
-    { room: 'staff', kind: 'count', source: 'hr' },          // the staff room: teachers and hiring
-    { room: 'busbay', kind: 'count', source: 'routes' },     // the bus bay: the World
-    { room: 'site', kind: 'setup', source: 'setup' }         // the building site stands in for the notice board
-  ] },
-  LMS2: { hotspots: [] }, LMS3: { hotspots: [] }, LMS4: { hotspots: [] }, LMS5: { hotspots: [] }, LMS6: { hotspots: [] }
+  LMS1: LMCS_SAMPLE_HOTSPOTS, LMS3: LMCS_SAMPLE_HOTSPOTS, LMS4: LMCS_SAMPLE_HOTSPOTS, LMS5: LMCS_SAMPLE_HOTSPOTS, LMS6: LMCS_SAMPLE_HOTSPOTS,
+  // LMS 2 has its own model (above): its own rooms carry the same doors
+  LMS2: { entrance: 'assembly', hotspots: [
+    { room: 'g-principal', kind: 'quest', source: 'today' },
+    { room: 'g-office', kind: 'count', source: 'daily' },
+    { room: 'f3-staff', kind: 'count', source: 'hr' },
+    { room: 'f4-hall', kind: 'count', source: 'ss' },
+    { room: 'busbay', kind: 'count', source: 'routes' },
+    { room: 'site', kind: 'setup', source: 'setup' }
+  ] }
 };
 if (typeof module !== 'undefined') { module.exports = LMCSBuildingModels; Object.defineProperty(module.exports, 'hotspots', { value: LMCSHomeHotspots }); } // not enumerable: the models stay campus keys only

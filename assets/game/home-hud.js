@@ -272,7 +272,7 @@ var LMCSHomeHud = (function () {
 
   // ── bubbles pinned to rooms ──
   function roomEls() { return [].slice.call(S.o.building.querySelectorAll('.sb-room')); }
-  var LINK_ONLY = ['daily', 'hr', 'routes']; // no count to show: a plain door on its room
+  var LINK_ONLY = ['daily', 'hr', 'ss', 'routes']; // no count to show: a plain door on its room (Support Sessions always shows, P28)
   function bubbles() { // each bubble is kept and updated in place (keyed by source), never rebuilt, so focus on it survives
     var layer = S.layer; if (!layer) return;
     var ids = roomEls().map(function (g) { return g.getAttribute('data-room'); }), counts = { today: S.today ? LMCSRail.counts(S.today).missions : 0, setup: setupLeft(S.base) };
