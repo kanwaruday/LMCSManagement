@@ -52,6 +52,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--white);color:var(-
 table.results{width:100%;border-collapse:collapse;font-size:11.5px}
 table.results td{padding:2px 8px;border-bottom:1px solid var(--border)}
 table.results td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+table.results td.rrf-note{font-size:11px;color:var(--gray);text-align:left;font-weight:400;border-bottom:none;padding-top:4px}
 table.results tr.total td{font-weight:700;border-top:2px solid var(--dark);border-bottom:none}
 table.results tr.year-hdr td{padding-top:6px;font-weight:700;color:var(--red);border-bottom:1px solid var(--red-lt);text-align:right}
 table.results tr.sep td{padding-top:8px}
@@ -428,7 +429,7 @@ function calcSalary_() {
   const netY2 = cti - rrf2 - totEpf - totEsi - tuiFee;
   const netY3 = cti - rrf3 - totEpf - totEsi - tuiFee;
 
-  return { inc, nb, da, ada, ns, epfExempt, epfE, pfE, totEpf, esiAllowed, esiE, esiEe, totEsi, cti, rrf1, rrf2, rrf3, netY1, netY2, netY3 };
+  return { inc, nb, da, ada, ns, epfExempt, epfE, pfE, totEpf, esiAllowed, esiE, esiEe, totEsi, cti, tuiFee, rrf1, rrf2, rrf3, netY1, netY2, netY3 };
 }
 
 function inr_(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -448,6 +449,7 @@ function computeServiceYear_(dateOfJoiningStr) {
   return Math.floor(years) + 1; // 0-1yr => Year 1, 1-2yr => Year 2, etc.
 }
 
+const RRF_FEE_NOTE = 'RRF in years 1–3 is worked out on CTI, which includes the child fee wash.';
 function renderResults_() {
   const r = calcSalary_();
   window._lastResult = r;
@@ -463,8 +465,11 @@ function renderResults_() {
     ['Total EPF (employee + employer)', r.totEpf],
     ['ESI employer (' + cVal_('ESI Employer %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiE],
     ['ESI employee (' + cVal_('ESI Employee %') + '%)' + (r.esiAllowed ? '' : ' — not applicable'), r.esiEe],
-    ['CTI (Cost to Institution)', r.cti],
   ];
+  // P34 (2 Nov, Uday): the child fee wash is part of CTI, so RRF Y1-3 is
+  // charged on it too -- policy, not a bug. Shown so CTI doesn't jump unexplained.
+  if (r.tuiFee) rows.push(['Child fee wash (school fees, not paid in cash)', r.tuiFee]);
+  rows.push(['CTI (Cost to Institution)', r.cti]);
   let html = rows.map(function (row) { return '<tr><td>' + row[0] + '</td><td>' + inr_(row[1]) + '</td></tr>'; }).join('');
 
   const mode = currentMode_();
@@ -482,6 +487,7 @@ function renderResults_() {
       html += '<tr class="year-hdr sep"><td colspan="2">Year ' + y + ' of service — RRF still accruing</td></tr>';
       html += '<tr><td>Refundable Reserve Fund</td><td>' + inr_(rrfAmt) + '</td></tr>';
       html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(netAmt) + '</td></tr>';
+      if (r.tuiFee) html += '<tr><td colspan="2" class="rrf-note">' + RRF_FEE_NOTE + '</td></tr>';
     } else {
       const netAmt = r.cti - r.totEpf - r.totEsi - Number(document.getElementById('fTuiFee').value || 0);
       html += '<tr class="year-hdr sep"><td colspan="2">Year ' + y + ' of service — RRF no longer accrues</td></tr>';
@@ -495,6 +501,7 @@ function renderResults_() {
     html += '<tr class="year-hdr sep"><td></td><td>Year 1</td><td>Year 2</td><td>Year 3</td></tr>';
     html += '<tr><td>Refundable Reserve Fund</td><td>' + inr_(r.rrf1) + '</td><td>' + inr_(r.rrf2) + '</td><td>' + inr_(r.rrf3) + '</td></tr>';
     html += '<tr class="total"><td>Net Bank Take-Home / mo</td><td>' + inr_(r.netY1) + '</td><td>' + inr_(r.netY2) + '</td><td>' + inr_(r.netY3) + '</td></tr>';
+    if (r.tuiFee) html += '<tr><td colspan="4" class="rrf-note">' + RRF_FEE_NOTE + '</td></tr>';
   }
   document.getElementById('resultsTable').innerHTML = html;
 }
