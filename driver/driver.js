@@ -12,6 +12,9 @@
 // Staff view (?staff=1; Uday, 29 Oct): the Owner, a Coordinator or a Principal (their own school's buses) signs in with their normal Google account, picks a running bus and
 // sees that driver's page, read only (no fuel fill, no route video). It never touches the phone's driver link (TOKEN_KEY and the
 // saved bus stay as they are); the backend checks the role on every call (apps-script/driver-token.gs's dlkLinkOrView_).
+// Staff entries (2 Nov): when driverme says canAct (the Owner, or a Coordinator of the bus's district; never a Principal) the view
+// also logs a fuel fill for the driver (driverfuel {idToken, viewReg}: saved under the staff member's name) and opens the staff
+// capture page for a route video. A staff fill is sent online only: no IndexedDB queue, and a failure keeps the form with the error.
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -49,11 +52,10 @@
         return r;
       },
       send: async (form, files, onProgress) => {
-        const rec = { fillId: newFillId(), litres: form.litres, amount: form.amount, odometer: form.odometer, filledAt: new Date().toISOString(),
-          bill: { mime: files.bill.type, base64: await toB64(files.bill) }, video: { mime: files.video.type, base64: await toB64(files.video) } };
+        const rec = await fillRec(form, files, newFillId());
         let kept = true;
         try { await queue.put(rec); } catch (e) { kept = false; } // private mode or a full phone: send it anyway
-        const r = await post(token, rec, onProgress), o = DriverLogic.sendOutcome(r);
+        const r = await post({ deviceToken: token }, rec, onProgress), o = DriverLogic.sendOutcome(r);
         if (o === 'sent' || o === 'refused') await queue.delete(rec.fillId).catch(() => {}); // refused: the form still holds it all
         if (o === 'refused') throw new Error(r.error || 'The office did not accept this fill.');
         if (o === 'retry' && !kept) throw new Error('Not sent and not saved: try again when there is signal.');
@@ -65,13 +67,20 @@
   })();
   // the staff view: {viewReg, idToken} once a bus is picked; the Google token stays in memory (or the portals' own session)
   let view = null;
+  // a backend older than this page answers "Unknown action: x" (GM nit, 29 Oct): say so in words, not the raw error
+  const said = (m) => (/^Unknown action/.test(String(m || '')) ? 'This page was just updated. Try again in a few minutes.' : m);
   const viewApi = STAFF ? {
     load: async () => {
       let r;
       try { r = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'driverme' }, view)) })).json(); }
       catch (e) { throw new Error('Could not reach the office. Try again.'); }
-      if (!r.success) throw new Error(r.error || 'This bus cannot be viewed.');
+      if (!r.success) throw new Error(said(r.error) || 'This bus cannot be viewed.');
       return r;
+    },
+    send: async (form, files, onProgress) => { // online only, never the driver's queue; one fillId per form, so a resend after a lost reply is the same fill
+      const r = await post(view, await fillRec(form, files, S.fillId || (S.fillId = newFillId())), onProgress);
+      if (!r || !r.success) throw new Error(said(r && r.error) || 'Not sent: check the signal and send again.');
+      return { queued: false };
     },
   } : null;
   const api = DEMO ? demoApi : live || viewApi;
@@ -93,6 +102,8 @@
   function newFillId() { // a leading letter, as the server wants
     return 'F' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
   }
+  const fillRec = async (form, files, fillId) => ({ fillId, litres: form.litres, amount: form.amount, odometer: form.odometer, filledAt: new Date().toISOString(),
+    bill: { mime: files.bill.type, base64: await toB64(files.bill) }, video: { mime: files.video.type, base64: await toB64(files.video) } });
   const toB64 = (blob) => new Promise((ok, no) => {
     const r = new FileReader();
     r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => no(new Error('Could not read the file. Take it again.'));
@@ -100,14 +111,14 @@
   });
   // the server's JSON answer, or null for no answer (offline, a timeout, an HTML error page): a 25 MB video on a weak signal is slow,
   // so this is an XHR, which reports how much of the upload has gone (onProgress(0..1))
-  function post(token, rec, onProgress) {
+  function post(auth, rec, onProgress) { // auth: {deviceToken} (a driver phone) or {viewReg, idToken} (a staff entry)
     return new Promise((ok) => {
       const x = new XMLHttpRequest();
       x.open('POST', ROSTER_URL); x.timeout = 300000;
       if (onProgress) x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
       x.onload = () => { try { ok(JSON.parse(x.responseText)); } catch (e) { ok(null); } };
       x.onerror = x.ontimeout = x.onabort = () => ok(null);
-      x.send(JSON.stringify(Object.assign({ action: 'driverfuel', deviceToken: token }, rec)));
+      x.send(JSON.stringify(Object.assign({ action: 'driverfuel' }, auth, rec)));
     });
   }
   let flushing = false;
@@ -115,7 +126,7 @@
     if (flushing) return; flushing = true;
     try {
       for (const rec of await queue.getAll()) {
-        const r = await post(token, rec), o = DriverLogic.sendOutcome(r);
+        const r = await post({ deviceToken: token }, rec), o = DriverLogic.sendOutcome(r);
         if (o === 'sent') await queue.delete(rec.fillId);
         if (o === 'refused') { // the office said no (the form is long gone): stop resending 25 MB, and tell the driver once, on home
           await queue.delete(rec.fillId);
@@ -143,7 +154,8 @@
 
   // ---- screens
   const STEPS = DriverLogic.FUEL_STEPS, CHECK = STEPS.length + 1; // #fuel-1..5, then #fuel-6 = check and send
-  const S = { bus: null, form: {}, files: {}, urls: {}, fileErr: {}, shown: {}, failed: '', sending: false, sent: null };
+  const S = { bus: null, form: {}, files: {}, urls: {}, fileErr: {}, shown: {}, failed: '', sending: false, sent: null, fillId: '' }; // fillId: a staff fill's, kept across resends
+  const ACT = () => VIEW && !!(S.bus && S.bus.canAct); // a staff view that may add entries: display only, the server checks every write
   const routeHref = () => '../coordinator/transport/capture.html?' + (api === live ? 'driver=1&' : '') + 'mode=timelapse&reg=' + encodeURIComponent(S.bus.reg.replace(/\s/g, ''));
   // the bottom of the screen: the game bar, or in a task the action bar with the one red button (never both)
   const bar = (html) => { $('barIn').innerHTML = html; $('bar').hidden = !html; $('rail').hidden = !!html; document.body.classList.toggle('dr-task', !!html); };
@@ -161,6 +173,7 @@
       `<li><button type="button" class="gb-rail-i" id="buddy" aria-label="मदद · Buddy, help">${svg('buddy')}<b>मदद</b></button></li></ul>`;
     $('buddy').onclick = () => { const h = $('pHelp'); h.open = true; h.querySelector('summary').focus(); h.scrollIntoView({ block: 'nearest' }); };
   }
+  const staffLine = (b) => 'Staff entry for ' + (b.bus || b.reg) + ' (driver ' + b.name + '). Saved under your name.';
   const big = (hi, en) => `<span class="dr-hi">${esc(hi)}</span><span class="dr-en">${esc(en)}</span>`;
 
   function home() {
@@ -168,8 +181,9 @@
     const m = DriverLogic.missions(b), next = m.find((x) => x.primary);
     $('hello').textContent = 'नमस्ते, ' + b.name; $('who').textContent = 'ड्राइवर · Driver' + (b.campus ? ' · ' + b.campus : ''); $('reg').textContent = b.reg; $('reg').hidden = false;
     // the one next step, always in this spot
-    $('slot').innerHTML = VIEW ? '<div class="gb-next dr-next"><div class="gb-next-b"><span class="gb-next-k">स्टाफ़ व्यू · Staff view</span>' +
-        `<p class="gb-next-t">${big('सिर्फ़ देखने के लिए', 'Read only: what ' + b.name + ' sees on ' + (b.bus || b.reg) + '. Nothing can be sent.')}</p>` +
+    $('slot').innerHTML = VIEW ? '<div class="gb-next dr-next"><div class="gb-next-b">' + (ACT()
+        ? `<span class="gb-next-k">स्टाफ़ एंट्री · Staff entry</span><p class="gb-next-t">${big('ड्राइवर की ओर से भरें', staffLine(b))}</p>`
+        : `<span class="gb-next-k">स्टाफ़ व्यू · Staff view</span><p class="gb-next-t">${big('सिर्फ़ देखने के लिए', 'Read only: what ' + b.name + ' sees on ' + (b.bus || b.reg) + '. Nothing can be sent.')}</p>`) +
         '<button type="button" class="gb-btn dr-big" id="otherBus">दूसरी बस · Another bus</button></div></div>'
       : '<div class="gb-next dr-next"><img src="../assets/game/buddy/avatar-winter-formal.webp" alt="">' + (next.id === 'route'
       ? `<div class="gb-next-b"><span class="gb-next-k">अगला काम · Next</span><p class="gb-next-t">${big('रूट का वीडियो बनाएँ', 'Record your bus route')}</p>` +
@@ -181,8 +195,8 @@
     const tile = (o) => `<li><a class="dr-tile${o.next ? ' is-next' : ''}${o.done ? ' is-done' : ''}" href="${o.href || '#'}"${o.href ? '' : ' aria-disabled="true"'}>` +
       `<span class="dr-ico" aria-hidden="true">${o.icon}</span><span class="dr-tile-b">${big(o.hi, o.en)}<span class="dr-en">${esc(o.line)}</span>${o.bar || ''}</span>` +
       (o.next ? '<span class="dr-state next">अगला</span>' : o.done ? `<span class="dr-state done" aria-hidden="true">${E('done')}</span>` : '') + '</a></li>';
-    $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: VIEW ? '' : '#fuel-1', next: !VIEW && next.id === 'fuel' }) +
-      tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: !VIEW && need && !routeDone ? routeHref() : '', next: !VIEW && next.id === 'route', done: routeDone,
+    $('tiles').innerHTML = tile({ icon: E('fuel'), hi: 'डीज़ल', en: 'Fuel fill', line: fuelLine, href: VIEW && !ACT() ? '' : '#fuel-1', next: !VIEW && next.id === 'fuel' }) +
+      tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: ACT() || (!VIEW && need && !routeDone) ? routeHref() : '', next: !VIEW && next.id === 'route', done: routeDone, // staff: any time (the staff capture page)
         bar: need ? `<span class="gb-bar${routeDone ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * done / need)}%"></i></span>` : '' });
     if (VIEW) $('otherBus').onclick = () => { try { sessionStorage.removeItem(VIEW_KEY); } catch (e) { /* none */ } location.reload(); };
     homeBase();
@@ -354,7 +368,7 @@
       const d = new Date(); S.bus.lastFill = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
       S.bus.lastOdometer = Number(String(fill.odometer).replace(/,/g, ''));
       Object.values(S.urls).forEach((u) => URL.revokeObjectURL(u));
-      S.form = {}; S.files = {}; S.urls = {}; S.fileErr = {}; S.shown = {};
+      S.form = {}; S.files = {}; S.urls = {}; S.fileErr = {}; S.shown = {}; S.fillId = '';
       location.hash = 'sent';
     });
   }
@@ -376,7 +390,7 @@
     if (!S.bus) return;
     const h = location.hash.slice(1), m = /^fuel-(\d)$/.exec(h), n = m ? Math.min(CHECK, Math.max(1, Number(m[1]))) : 0;
     if (S.sending && h !== 'fuel-' + CHECK) { location.hash = 'fuel-' + CHECK; return; } // never leave a send half-way
-    if (VIEW && h) { location.hash = ''; return; } // a staff view is home only: no fuel step, nothing sent
+    if (VIEW && h && !ACT()) { location.hash = ''; return; } // a read-only staff view (a Principal) is home only: no fuel step, nothing sent
     $('home').hidden = !!(n || h === 'sent'); $('fuel').hidden = !n; $('sent').hidden = h !== 'sent';
     $('panels').hidden = !!(n || h === 'sent'); // the panels belong to home; a fuel step shows only the step
     window.scrollTo(0, 0);
@@ -446,14 +460,19 @@
     const withToken = (idToken) => {
       why('खोल रहे हैं… · Loading the buses…');
       fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify({ action: 'driverviewbuses', idToken }) }).then((x) => x.json()).then((x) => {
-        if (!x.success) { why(x.error || 'Only the Owner, Coordinators and Principals can view a driver\'s page.'); googleIn(); return; }
+        if (!x.success) { why(said(x.error) || 'Only the Owner, Coordinators and Principals can view a driver\'s page.'); googleIn(); return; }
         why(''); $('staffBtn').hidden = true; // signed in: the list, not the Google button
         const open = (reg) => {
           view = { viewReg: reg, idToken };
           try { sessionStorage.setItem(VIEW_KEY, reg); } catch (e) { /* this visit only */ }
           $('closed').hidden = true; $('home').hidden = false;
           $('demo').textContent = 'स्टाफ़ व्यू · Staff view: read only. Nothing is sent.'; $('demo').hidden = false;
-          api.load().then((bus) => { S.bus = bus; route(); }, (e) => { stop('यह बस नहीं खुली', e.message, E('refused')); try { sessionStorage.removeItem(VIEW_KEY); } catch (er) { /* none */ } });
+          const b = x.buses.find((y) => y.reg === reg) || {};
+          api.load().then((bus) => {
+            S.bus = Object.assign(bus, { bus: b.bus ? b.bus + ' · ' + bus.reg : bus.reg });
+            if (bus.canAct) $('demo').textContent = 'स्टाफ़ एंट्री · ' + staffLine(S.bus);
+            route();
+          }, (e) => { stop('यह बस नहीं खुली', e.message, E('refused')); try { sessionStorage.removeItem(VIEW_KEY); } catch (er) { /* none */ } });
         };
         let kept = ''; try { kept = sessionStorage.getItem(VIEW_KEY) || ''; } catch (e) { /* none */ }
         if (kept && x.buses.some((b) => b.reg === kept)) return open(kept);
