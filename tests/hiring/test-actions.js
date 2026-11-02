@@ -282,3 +282,39 @@ T('Hired gate: a closed position (no approved New/ Backup Position) blocks an ot
   ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Hired' });
   assert.strictEqual(apps.rows[1][C.STATUS - 1], 'Hired');
 });
+
+// ── Walk-through extras (2 Nov): missing details, possible duplicates ──
+T('details: a Principal fills only the fields sent; a formula is stored as text; CV must be a link', () => {
+  reset([appRow({ QUALIFICATION: 'B.A.' })]);
+  ctx.hiringUpdateDetails_(principal, { row: 2, bed: 'B.Ed', age: '=1+1', qualification: '' });
+  assert.strictEqual(apps.rows[1][C.BED - 1], 'B.Ed'); assert.strictEqual(apps.rows[1][C.AGE - 1], "'=1+1");
+  assert.strictEqual(apps.rows[1][C.QUALIFICATION - 1], 'B.A.'); // blank = left alone
+  throws(() => ctx.hiringUpdateDetails_(principal, { row: 2, cv: 'not a link' }), /link/);
+  throws(() => ctx.hiringUpdateDetails_(principal, { row: 2 }), /at least one/);
+});
+T('details: Fee Clerk and other schools are refused', () => {
+  reset([appRow({}), appRow({ branches: 'LMS-1', phone: '9000000001' })]);
+  throws(() => ctx.hiringUpdateDetails_(clerk, { row: 2, age: '30' }), /Principal/);
+  throws(() => ctx.hiringUpdateDetails_(principal, { row: 3, age: '30' }), /school/i);
+});
+T('duplicate: "not the same" is remembered on both rows', () => {
+  reset([appRow({ name: 'Asha Kumari', phone: '9000000001' }), appRow({ name: 'asha  kumari', phone: '9000000002' })]);
+  ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: false });
+  assert.deepStrictEqual(JSON.parse(apps.rows[1][C.STAGE_MARKS - 1]).notDup, ['T-0003']);
+  assert.deepStrictEqual(JSON.parse(apps.rows[2][C.STAGE_MARKS - 1]).notDup, ['T-0002']);
+  assert.strictEqual(apps.rows[2][C.STATUS - 1], '');
+});
+T('duplicate: "same person" keeps one, copies its missing details, files the other as a duplicate', () => {
+  reset([appRow({ name: 'Asha Kumari', phone: '9000000001' }), appRow({ name: 'Asha Kumari', phone: '9000000002', QUALIFICATION: 'M.Sc.' })]);
+  ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: true });
+  assert.strictEqual(apps.rows[1][C.QUALIFICATION - 1], 'M.Sc.');
+  assert.strictEqual(apps.rows[2][C.STATUS - 1], 'Rejected'); assert.strictEqual(apps.rows[2][C.REJECT_REASON - 1], 'Duplicate entry');
+  assert.strictEqual(apps.rows[1][C.STATUS - 1], '');
+});
+T('duplicate: different names, the same row, a Fee Clerk, or a Hired "other" are refused', () => {
+  reset([appRow({ name: 'Asha', phone: '9000000001' }), appRow({ name: 'Ritu', phone: '9000000002' }), appRow({ name: 'Asha', phone: '9000000003', STATUS: 'Hired' })]);
+  throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: true }), /share a name/);
+  throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 2, same: false }), /two different/);
+  throws(() => ctx.hiringDupSettle_(clerk, { row: 2, otherRow: 4, same: false }), /Principal/);
+  throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 4, same: true }), /already Hired/);
+});

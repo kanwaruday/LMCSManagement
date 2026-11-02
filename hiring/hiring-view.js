@@ -115,7 +115,30 @@
     return root.LMCSCampus.filter(rows, sel).length > 0;
   }
 
-  const api = { inSel_, openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
+  // Possible duplicates (walk-through extra (c), 2 Nov): same name (letters only, any case or spacing), different phone.
+  // Not flagged: a pair settled "not the same" (stageMarks.notDup holds the other's ID), or a row already filed as a
+  // duplicate. -> { row: [other applicant, ...] } for rows with at least one.
+  const nameKey_ = (n) => String(n || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  function possibleDups_(applicants) {
+    const live = (applicants || []).filter((a) => a.rejectReason !== 'Duplicate entry' && nameKey_(a.name));
+    const byName = {};
+    live.forEach((a) => { (byName[nameKey_(a.name)] = byName[nameKey_(a.name)] || []).push(a); });
+    const out = {};
+    Object.keys(byName).forEach((k) => {
+      const g = byName[k];
+      g.forEach((a) => {
+        const not = (a.stageMarks && a.stageMarks.notDup) || [];
+        const others = g.filter((b) => b !== a && (b.phoneNorm || b.phone) !== (a.phoneNorm || a.phone) && not.indexOf(b.applicantId) === -1);
+        if (others.length) out[a.row] = others;
+      });
+    });
+    return out;
+  }
+  // (b) the details a form-less applicant often lacks: [key, label] in panel order
+  const DETAILS = [['qualification', 'Qualification'], ['bed', 'B.Ed / TET'], ['age', 'Age'], ['gender', 'Gender'], ['cv', 'CV / bio-data']];
+  function missingDetails_(a) { return DETAILS.filter((d) => !String((a || {})[d[0]] || '').trim()); }
+
+  const api = { possibleDups_, missingDetails_, DETAILS, inSel_, openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HiringView = api;
 })(typeof window !== 'undefined' ? window : this);

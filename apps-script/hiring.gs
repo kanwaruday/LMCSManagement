@@ -120,6 +120,8 @@ const HIR_REJECT_REASONS = [
   { label: 'Reference / background concern', group: 'notsuitable' },
   { label: 'Position filled or closed', group: 'filled' },
   { label: 'Other', group: 'other' },
+  // Walk-through extra (c), 2 Nov: set only by hiringdupsettle ("same person"), never offered in the reject list.
+  { label: 'Duplicate entry', group: 'duplicate' },
 ];
 
 // The campuses a caller may browse: null = every campus (campusId ALL); otherwise the union of the
@@ -290,7 +292,8 @@ function hirBuildApplicants_(values, ctx) {
     if (!prev) { byPhone[key] = a; order.push(key); continue; }
     const keep = hirPreferRow_(a, prev);
     const other = keep === a ? prev : a;
-    if (!keep.cv && other.cv) keep.cv = other.cv;
+    // a missing detail is borrowed from the person's other row (walk-through extra (b), 2 Nov: "pull from the application data")
+    HIR_DETAIL_KEYS.forEach(function (k) { if (!keep[k] && other[k]) keep[k] = other[k]; });
     byPhone[key] = keep;
   }
   const reqs = ctx.requisitions || {};
@@ -1724,6 +1727,61 @@ function hiringMarkStage_(caller, body) {
     throw new Error('Mark the interview done (or file its report) before the demo');
   }
   hirSetMark_(sheet, r.row, body.stage, caller);
+  return hiringApplicants_(caller);
+}
+
+// ── Walk-through extras (Uday, 31 Oct; "yes" 2 Nov) ─────────────────
+// (b) the candidate details a form-less applicant often lacks, and their columns.
+const HIR_DETAIL_KEYS = ['qualification', 'bed', 'age', 'gender', 'cv'];
+const HIR_DETAIL_COL = { qualification: HIR_COL.QUALIFICATION, bed: HIR_COL.BED, age: HIR_COL.AGE, gender: HIR_COL.GENDER, cv: HIR_COL.CV };
+// a typed value as a cell: trimmed, capped, and never read as a formula
+function hirCellText_(v, max) { return hirText_(v, max).replace(/^([=+\-@])/, "'$1"); }
+
+// action=hiringupdatedetails {row, qualification?, bed?, age?, gender?, cv?} -- elevated, own district. Writes only the
+// fields sent non-empty; the CV must be a link.
+function hiringUpdateDetails_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const r = hirScopedRow_(caller, sheet, body.row, true);
+  const vals = {};
+  HIR_DETAIL_KEYS.forEach(function (k) { const v = hirCellText_(body[k], k === 'qualification' ? 200 : k === 'cv' ? 500 : 40); if (v) vals[k] = v; });
+  if (vals.cv && !/^https?:\/\//i.test(vals.cv)) throw new Error('The CV must be a link (https://...)');
+  if (!Object.keys(vals).length) throw new Error('Fill in at least one detail');
+  hirWithLock_(function () { Object.keys(vals).forEach(function (k) { sheet.getRange(r.row, HIR_DETAIL_COL[k]).setValue(vals[k]); }); });
+  return hiringApplicants_(caller);
+}
+
+// (c) a possible duplicate: same name, different phone. Names compare as letters only, any case or spacing.
+function hirNameKey_(name) { return String(name || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim(); }
+
+// action=hiringdupsettle {row, otherRow, same} -- elevated, both rows in the caller's district.
+//   same=false: "not the same person", remembered on both rows (stage marks notDup) so the flag stops.
+//   same=true:  keep `row`; it takes any detail it lacks from the other, and the other is filed as Rejected
+//               "Duplicate entry" (Revive undoes it), with its open appointments cancelled like any reject.
+function hiringDupSettle_(caller, body) {
+  hirNeedElevated_(caller);
+  const sheet = hirSheet_();
+  const keep = hirScopedRow_(caller, sheet, body.row, true), other = hirScopedRow_(caller, sheet, body.otherRow, !body.same);
+  if (keep.row === other.row) throw new Error('Pick two different candidates');
+  if (hirNameKey_(keep.name) !== hirNameKey_(other.name)) throw new Error('These two candidates do not share a name');
+  hirWithLock_(function () {
+    hirGrow_(sheet);
+    if (!body.same) {
+      [[keep.row, other.row], [other.row, keep.row]].forEach(function (p) {
+        const marks = hirJson_(sheet.getRange(p[0], HIR_COL.STAGE_MARKS).getValue(), {});
+        const list = Array.isArray(marks.notDup) ? marks.notDup : [];
+        if (list.indexOf(hirApplicantId_(p[1])) === -1) list.push(hirApplicantId_(p[1]));
+        marks.notDup = list;
+        sheet.getRange(p[0], HIR_COL.STAGE_MARKS).setValue(JSON.stringify(marks));
+      });
+      return;
+    }
+    HIR_DETAIL_KEYS.forEach(function (k) {
+      const c = HIR_DETAIL_COL[k], v = sheet.getRange(other.row, c).getValue();
+      if (!String(sheet.getRange(keep.row, c).getValue() || '').trim() && String(v || '').trim()) sheet.getRange(keep.row, c).setValue(v);
+    });
+    hirRejectRowCore_(caller, sheet, other.row, 'Duplicate entry', 'same person as ' + hirApplicantId_(keep.row));
+  });
   return hiringApplicants_(caller);
 }
 

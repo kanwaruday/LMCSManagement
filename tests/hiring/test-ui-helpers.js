@@ -119,3 +119,19 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   require('assert').deepStrictEqual(f.map((a) => a.row), [3, 4]);
   console.log('ok  - furthest_');
 }
+
+// ── possibleDups_ / missingDetails_ (walk-through extras, 2 Nov) ──
+{
+  const A = require('assert');
+  const x = (row, name, phone, extra) => Object.assign({ row, applicantId: 'T-000' + row, name, phoneNorm: phone, stageMarks: {} }, extra);
+  const d = V.possibleDups_([
+    x(1, 'Asha Kumari', '1'), x(2, 'asha  kumari.', '2'), x(3, 'Asha Kumari', '1'),        // 3 shares 1's phone: not a duplicate of 1
+    x(4, 'Ritu', '4'), x(5, 'Ritu', '5', { stageMarks: { notDup: ['T-0004'] } }),          // settled "not the same" from 5's side only
+    x(6, 'Neha', '6'), x(7, 'Neha', '7', { rejectReason: 'Duplicate entry' }),             // already filed
+  ]);
+  A.deepStrictEqual(Object.keys(d).map(Number), [1, 2, 3, 4]);
+  A.deepStrictEqual(d[1].map((a) => a.row), [2]); A.deepStrictEqual(d[2].map((a) => a.row), [1, 3]);
+  A.deepStrictEqual(d[4].map((a) => a.row), [5]); // the server writes notDup on both rows, so in practice both clear
+  A.deepStrictEqual(V.missingDetails_({ qualification: 'B.A.', bed: ' ', age: '30' }).map((m) => m[0]), ['bed', 'gender', 'cv']);
+  console.log('ok  - possibleDups_ / missingDetails_');
+}

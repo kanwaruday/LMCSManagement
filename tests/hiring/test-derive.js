@@ -162,3 +162,10 @@ T('hirRefreshTrackerCore_ writes one row per phone using that rule', () => {
   assert.strictEqual(ctx.hirRefreshTrackerCore_().count, 1);
   assert.strictEqual(written[0][1], 'Far');
 });
+T('de-dupe by phone: a missing detail is borrowed from the person\'s other row', () => {
+  const a = row({ ts: day(-20) }); a[C.QUALIFICATION - 1] = 'M.A. English'; a[C.AGE - 1] = '29';
+  const b = row({ ts: day(-5), interviewAt: day(-1) }); b[C.GENDER - 1] = 'Female';
+  const out = build([a, b]);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].qualification, 'M.A. English'); assert.strictEqual(out[0].age, '29'); assert.strictEqual(out[0].gender, 'Female');
+});

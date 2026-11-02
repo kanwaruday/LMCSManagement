@@ -241,6 +241,8 @@ function doPost(e) {
     if (action === 'hiringaddapplicant') return jsonOut_(hiringAddApplicant_(caller, body));
     if (action === 'hiringschedule') return jsonOut_(hiringSchedule_(caller, body));
     if (action === 'hiringmarkstage') return jsonOut_(hiringMarkStage_(caller, body));
+    if (action === 'hiringupdatedetails') return jsonOut_(hiringUpdateDetails_(caller, body));
+    if (action === 'hiringdupsettle') return jsonOut_(hiringDupSettle_(caller, body));
     if (action === 'hiringsubmitinterview') return jsonOut_(hiringSubmitInterview_(caller, body));
     if (action === 'hiringsubmitdemo') return jsonOut_(hiringSubmitDemo_(caller, body));
     if (action === 'hiringshortlist') return jsonOut_(hiringShortlist_(caller, body));

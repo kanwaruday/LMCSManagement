@@ -106,7 +106,10 @@ textarea{min-height:56px;resize:vertical}
 .ladder{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
 .rung{font-size:10.5px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);color:var(--gray)}
 .rung.done{background:var(--green-lt);border-color:#bbf7d0;color:var(--green);font-weight:600}
-.rung.now{background:var(--red-lt);border-color:var(--red);color:var(--red);font-weight:700}
+.rung.now{background:#fbefd3;border-color:#e0a526;color:#7a5200;font-weight:700} /* the current step is gold, done steps green (walk-through extra (a)) */
+.dup-cmp{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+.dup-cmp th,.dup-cmp td{border:1px solid var(--border);padding:4px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.dup-cmp th{background:var(--lgray);font-weight:600}
 .scores{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media (max-width:600px){.scores{grid-template-columns:repeat(2,1fr)}}
 .capwrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}
@@ -193,7 +196,7 @@ textarea{min-height:56px;resize:vertical}
 
 <script src="../assets/auth.js?v=1c991646"></script>
 <script src="../assets/campus-picker.js?v=cd35c768"></script>
-<script src="./hiring-view.js?v=7389ceb1"></script>
+<script src="./hiring-view.js?v=a1541fdb"></script>
 <script>
 const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
 // Data-source links (Owner/Coordinator): IDs duplicated from apps-script/hiring.gs -- keep in sync.
@@ -207,7 +210,7 @@ const SOURCES = ['Walk-in', 'Referral', 'Paper CV', 'Phone call', 'Other'];
 const BED_OPTIONS = ['', 'Yes - TET qualified', 'Yes - TET not qualified', 'Yes', 'No', 'Not applicable'];
 const DEMO_SCORES = [['pedagogy', 'Pedagogy'], ['content', 'Content'], ['interaction', 'Student Interaction'], ['response', 'Student Response'],
   ['management', 'Classroom Management'], ['clarity', 'Clarity & Audibility'], ['relatable', 'Makes Subject Relatable'], ['aids', 'Use of Teaching Aids']];
-const REASON_GROUPS = { notnow: 'Not now (their choice)', filled: 'Position filled or closed', notsuitable: 'Not suitable (our call)', other: 'Other', none: 'Earlier (no reason recorded)' };
+const REASON_GROUPS = { duplicate: 'Filed as duplicates', notnow: 'Not now (their choice)', filled: 'Position filled or closed', notsuitable: 'Not suitable (our call)', other: 'Other', none: 'Earlier (no reason recorded)' };
 
 let SESSION = null;
 let DATA = { applicants: [], statuses: [], rejectReasons: [], positions: [] };
@@ -217,6 +220,7 @@ let VIEW = 'today';
 let SEL = { all: true, campuses: [] }; // the shared campus picker's selection
 let selectedRoleKey = null;
 let OPEN_ROW = null;        // the candidate panel's row, so it re-renders after a save
+let IS_ELEVATED = false;   // Principal, Coordinator or Owner: may fill missing details and settle duplicates (the server checks too)
 let IS_PRINCIPAL = false;   // role Principal: an interview/demo time they set is booked at once (accepted); anyone else proposes
 let APPTS = { toAccept: [], myProposals: [], upcoming: [] }; // apptlist (elevated only)
 let SL_FILTER = 'all';      // By role: 'not' (not yet shortlisted) | 'yes' (shortlisted) | 'all'
@@ -251,6 +255,9 @@ function fmtDay_(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLoca
 function fmtWhen_(iso) { return iso ? fmtDay_(iso) + ', ' + fmtTime_(iso) : ''; }
 function toLocalInput_(iso) { const d = new Date(iso); if (isNaN(d)) return ''; const p = function (n) { return ('0' + n).slice(-2); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()); }
 function byRow_(row) { return (DATA.applicants || []).filter(function (a) { return a.row === row; })[0]; }
+// possible duplicates (same name, other phone), worked out once per load of DATA
+let DUPS_FOR = null, DUPS = {};
+function dups_(a) { if (DUPS_FOR !== DATA) { DUPS = HV.possibleDups_(DATA.applicants); DUPS_FOR = DATA; } return DUPS[a.row] || []; }
 function active_(a) { return a.status !== 'Rejected' && a.status !== 'Hired'; }
 function reasonGroup_(a) {
   const hit = (DATA.rejectReasons || []).filter(function (r) { return r.label === a.rejectReason; })[0];
@@ -314,6 +321,7 @@ function chips_(a) {
     else if (x.status === 'declined' && !HV.openAppt_(a, x.kind) && active_(a)) out.push('<span class="pill bad" title="' + esc_(x.declineNote) + '">' + esc_(KIND_LABEL[x.kind]) + ' declined</span>');
   });
   if (a.round > 1) out.push('<span class="pill">Revived · round ' + a.round + '</span>');
+  if (active_(a) && dups_(a).length) out.push('<span class="pill warn">Possible duplicate of ' + esc_(dups_(a).map(function (d) { return d.applicantId; }).join(', ')) + '</span>');
   if (a.noOpenRole && active_(a)) out.push('<span class="pill warn" title="No approved New/ Backup Position matches this applicant">No open role</span>');
   if (a.source) out.push('<span class="pill">' + esc_(a.source) + '</span>');
   if (a.status === 'Rejected' && a.rejectReason) out.push('<span class="pill bad">' + esc_(a.rejectReason) + '</span>');
@@ -441,7 +449,7 @@ function renderRole_() {
 function renderPool_() {
   const pool = visible_().filter(function (a) { return a.status === 'Rejected'; });
   if (!pool.length) return '<div class="empty">No rejected candidates here.</div>';
-  return ['notnow', 'filled', 'notsuitable', 'other', 'none'].map(function (g) {
+  return ['notnow', 'filled', 'notsuitable', 'other', 'none', 'duplicate'].map(function (g) {
     const items = pool.filter(function (a) { return reasonGroup_(a) === g; });
     return items.length ? section_('pool-' + g, REASON_GROUPS[g], items.map(function (a) { return cardHtml_(a); }), '') : '';
   }).join('') + '<p class="note">"Not now" and "Position filled" are the first people to call when a role opens. Reviving starts them again from a fresh interview; their earlier round stays on their record.</p>';
@@ -468,6 +476,23 @@ function render_(keepPanel) { // keepPanel: leave an open candidate panel as it 
 }
 
 // ── candidate panel ───────────────────────────────────────────────
+// Possible duplicate (walk-through extra (c)): the two side by side, then "same person" (keep this one; the other is
+// filed as a duplicate, Revive undoes it) or "not the same" (the flag stops for this pair).
+function dupBlockHtml_(a) {
+  const list = active_(a) ? dups_(a) : [];
+  if (!list.length) return '';
+  const rows = [['Applicant', 'applicantId'], ['Phone', 'phone'], ['Applied', 'timestamp'], ['Status', 'status'], ['School', 'branches'], ['Qualification', 'qualification'], ['Subjects', 'subjects']];
+  const cell = function (x, k) { return esc_(k === 'timestamp' ? (x[k] ? fmtDay_(x[k]) : '') : (x[k] || '')) || '—'; };
+  return list.map(function (o) {
+    return '<div class="block" style="border-color:#e0a526"><h4>Possible duplicate of ' + esc_(o.applicantId) + '</h4>' +
+      '<p class="note">Same name, different phone. Is this the same person?</p>' +
+      '<table class="dup-cmp"><thead><tr><th></th><th>This one</th><th>' + esc_(o.applicantId) + '</th></tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr><th>' + r[0] + '</th><td>' + cell(a, r[1]) + '</td><td>' + cell(o, r[1]) + '</td></tr>'; }).join('') + '</tbody></table>' +
+      (IS_ELEVATED ? '<div class="foot"><button type="button" class="btn" data-act="dupsame" data-row="' + a.row + '" data-other="' + o.row + '">Same person: keep this one</button>' +
+        '<button type="button" class="btn ghost" data-act="dupnot" data-row="' + a.row + '" data-other="' + o.row + '">Not the same person</button><span class="formmsg" id="dupMsg-' + o.row + '"></span></div>' : '') + '</div>';
+  }).join('');
+}
+
 function ladderHtml_(a) {
   const ladder = (DATA.statuses || []).filter(function (s) { return s !== 'Rejected'; });
   const idx = ladder.indexOf(a.status);
@@ -542,7 +567,7 @@ function renderPanel_(row) {
   const cv = safeUrl_(a.cv);
   let h = '<div id="panel"><h3 id="modalTitle">' + esc_(a.name) + ' <span class="id">' + esc_(a.applicantId) + '</span></h3>' +
     '<div class="meta note">' + esc_(a.phone) + ' · ' + esc_(campusesOf_(a).map(LMCS.campusLabel).join(', ')) + (a.timestamp ? ' · applied ' + esc_(fmtDay_(a.timestamp)) : '') + (a.addedBy ? ' · added by ' + esc_(a.addedBy) : '') + '</div>' +
-    '<div style="margin-top:6px">' + chips_(a) + '</div>' + ladderHtml_(a);
+    '<div style="margin-top:6px">' + chips_(a) + '</div>' + ladderHtml_(a) + dupBlockHtml_(a);
 
   if (active_(a) && a.stageMarks && a.stageMarks.rejectPending) {
     const p = a.stageMarks.rejectPending;
@@ -601,10 +626,19 @@ function renderPanel_(row) {
       '<span class="formmsg" id="hireMsg"></span></div></div>';
   }
 
-  h += '<div class="block"><h4>Details</h4><div class="grid three">' +
-    [['Subjects', a.subjects], ['Qualification', a.qualification], ['B.Ed / TET', a.bed], ['Age', a.age], ['Gender', a.gender], ['Fit score', a.matchScore != null ? a.matchScore + '/100' : '—']]
-      .map(function (f) { return '<div class="fld">' + esc_(f[0]) + '<b>' + esc_(f[1] || '—') + '</b></div>'; }).join('') +
-    '<div class="fld">CV / bio-data<b>' + (cv ? '<a href="' + esc_(cv) + '" target="_blank" rel="noopener">Open ↗</a>' : '—') + '</b></div></div>';
+  // a missing detail says so, with one tap to fill it in (walk-through extra (b))
+  const miss = '<span class="pill warn">Missing</span>';
+  h += '<div class="block" id="pDetails"><h4>Details</h4><div class="grid three">' +
+    [['Subjects', a.subjects], ['Qualification', a.qualification, 1], ['B.Ed / TET', a.bed, 1], ['Age', a.age, 1], ['Gender', a.gender, 1], ['Fit score', a.matchScore != null ? a.matchScore + '/100' : '']]
+      .map(function (f) { return '<div class="fld">' + esc_(f[0]) + '<b>' + (f[1] ? esc_(f[1]) : f[2] ? miss : '—') + '</b></div>'; }).join('') +
+    '<div class="fld">CV / bio-data<b>' + (cv ? '<a href="' + esc_(cv) + '" target="_blank" rel="noopener">Open ↗</a>' : miss) + '</b></div></div>';
+  const missing = HV.missingDetails_(a);
+  if (missing.length && IS_ELEVATED) {
+    h += '<div class="foot"><button type="button" class="btn" data-act="details" data-row="' + row + '">Fill in ' + missing.length + ' missing detail' + (missing.length === 1 ? '' : 's') + '</button></div>' +
+      '<div id="pDetailsForm" hidden><div class="grid">' + missing.map(function (d) {
+        return '<label class="fld">' + esc_(d[1]) + '<input class="inp" id="pDet-' + d[0] + '"' + (d[0] === 'cv' ? ' type="url" placeholder="https://drive.google.com/..."' : d[0] === 'age' ? ' inputmode="numeric"' : '') + '></label>';
+      }).join('') + '</div><div class="foot"><button type="button" class="btn primary" data-act="savedetails" data-row="' + row + '">Save details</button><span class="formmsg" id="detMsg"></span></div></div>';
+  }
   h += '<div class="fld wide" style="margin-top:10px"><label for="pNotes">Notes</label><textarea id="pNotes">' + esc_(a.notes) + '</textarea></div><div class="foot"><button type="button" class="btn" data-act="savenotes" data-row="' + row + '">Save notes</button><span class="formmsg" id="notesMsg"></span></div>';
   h += '</div>';
 
@@ -928,6 +962,20 @@ document.addEventListener('click', function (e) {
     case 'salary': openSalary_(a); break;
     case 'salclose': closeSalary_(); break;
     case 'mark': post_('hiringmarkstage', { row: row, stage: b.dataset.stage }, 'markMsg', b, 'Marked ✓ — file the report when you can'); break;
+    case 'details': { const f = document.getElementById('pDetailsForm'); if (f) { f.hidden = false; b.style.display = 'none'; const i = f.querySelector('input'); if (i) i.focus(); } break; }
+    case 'savedetails': {
+      const body = { row: row };
+      HV.DETAILS.forEach(function (d) { const v = val_('pDet-' + d[0]); if (v) body[d[0]] = v; });
+      if (Object.keys(body).length === 1) { msg_('detMsg', 'Fill in at least one detail.', 'err'); break; }
+      post_('hiringupdatedetails', body, 'detMsg', b, 'Saved ✓');
+      break;
+    }
+    case 'dupsame': case 'dupnot': {
+      const other = parseInt(b.dataset.other, 10), o = byRow_(other), same = b.dataset.act === 'dupsame';
+      if (same && !confirm('Keep ' + a.applicantId + ' and file ' + (o ? o.applicantId : 'the other') + ' as a duplicate? Revive brings it back if this was wrong.')) break;
+      post_('hiringdupsettle', { row: row, otherRow: other, same: same }, 'dupMsg-' + other, b, same ? 'Kept ✓' : 'Noted ✓');
+      break;
+    }
     case 'savenotes': post_('updatehiringstatus', { row: row, status: '', notes: val_('pNotes') }, 'notesMsg', b); break;
     case 'savedoj': if (!val_('pDoj')) { msg_('dojMsg', 'Pick the joining date.', 'err'); break; } post_('updatehiringstatus', { row: row, status: '', dateOfJoining: val_('pDoj') }, 'dojMsg', b); break;
     case 'hire': post_('updatehiringstatus', { row: row, status: 'Hired' }, 'hireMsg', b, 'Hired ✓').then(function (res) { if (res) showAppointmentLetter_(row); }); break;
@@ -1076,6 +1124,7 @@ function showApp(session) {
   // Decisions by role, not by campus: a Fee Clerk whose campus is ALL is still a Fee Clerk.
   if (!['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(session, r); })) { location.replace('../office/hiring.html'); return; } // Fee Clerks have their own screen
   IS_PRINCIPAL = LMCS.hasRole(session, 'Principal');
+  IS_ELEVATED = IS_PRINCIPAL || LMCS.hasRole(session, 'Coordinator') || LMCS.hasRole(session, 'Owner');
   if (LMCS.canViewCoordinatorPortal(session)) document.getElementById('aprLink').href = '../coordinator/systems/index.html#approvals';
   let mounted = false; // the picker's first onChange fires inside mount, before anything is loaded
   LMCSCampus.mount('#campusRow', { session: session, label: 'School', onChange: function (sel) { SEL = sel; selectedRoleKey = null; if (mounted) render_(); } });
