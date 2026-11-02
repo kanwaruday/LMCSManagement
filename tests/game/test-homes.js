@@ -91,5 +91,11 @@ for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'],
   urls[page] = backendUrl(html, page);
 }
 assert(/window\.mountFleetBuddy/.test(fs.readFileSync(__dirname + '/../../coordinator/capture/setup.js', 'utf8')), 'setup.js mounts Buddy once the buses are drawn');
+// route_: #requests / #evals / #tags open their section; old #panel-* links still do; Staff never get the CW/HW tags
+const routeFor = (hash, staff) => { const went = []; new Function('location', 'teacherOnlyHidden_', 'goTab', 'currentTab', 'document', body(tHtml, 'route_') + '}')({ hash: hash }, staff, (t) => went.push(t), 'home', { getElementById: () => null }); return went[0] || 'home'; };
+for (const [hash, staff, want] of [['#requests', false, 'requests'], ['#panel-requests', false, 'requests'], ['#tags', false, 'tags'], ['#panel-tags', false, 'tags'],
+  ['#evals', false, 'evals'], ['#panel-requests', true, 'requests'], ['#tags', true, 'home'], ['#panel-tags', true, 'home'], ['', false, 'home']]) {
+  assert.strictEqual(routeFor(hash, staff), want, 'route ' + hash + (staff ? ' (Staff)' : ''));
+}
 assert.strictEqual(new Set(Object.values(urls)).size, 1, 'every page holds the same GAME_BACKEND_URL: ' + JSON.stringify(urls));
 console.log('test-homes ok');

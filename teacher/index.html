@@ -469,7 +469,7 @@ function goTab(tab) {
 // panel's row unfolds that panel.
 let teacherOnlyHidden_ = false;
 function route_() {
-  const h = location.hash.slice(1);
+  const h = location.hash.slice(1).replace(/^panel-/, ''); // old links (game-teacher.gs TCH_REQUESTS_GO / TCH_DEFAULT_FORM_GO, game.gs) say #panel-requests, #panel-tags
   if ((h === 'requests' || h === 'evals' || h === 'tags') && !(h === 'tags' && teacherOnlyHidden_)) { goTab(h); return; }
   if (currentTab !== 'home') goTab('home');
   const panel = h && document.getElementById(h);
