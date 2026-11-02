@@ -10,6 +10,10 @@
 //   the bus's last recorded odometer nor more than 5000 km past it (dflLast_: the 'Fuel Fills' mirror and pending fills).
 //   Files: the declared mime is ignored, the bytes are sniffed. Bill: a photo, <= 3 MB. Video: MP4/MOV/3GP ('ftyp' box), <= 25 MB.
 //   Saved as Capture/Fuel/<REG>/<fillId>/bill.<ext> and video.<ext> (capFolder_). Every cell is a number, a Date or a server value.
+// Staff entries (2 Nov): {idToken, viewReg} in place of deviceToken lets the Owner or a Coordinator of the bus's district log a fill
+//   for its driver (dflActor_). Driver Link ID is 'staff:<email>' (the pending cap is per staff member), Driver Name the bus's fleet
+//   driver, and 'Entered By' (found or appended by header name, past driver-fill-confirm.gs's Reject Reason if that came first) says
+//   '<email> (<Role>)'. Principals and everyone else are refused. Driver Devices is never read or written for a staff fill.
 // ═══════════════════════════════════════════════════════════════════
 
 const DFL_TAB_ = 'Driver Fills';
@@ -19,6 +23,8 @@ const DFL_BILL_MAX_ = 3 * 1024 * 1024;
 const DFL_VIDEO_MAX_ = 25 * 1024 * 1024;
 const DFL_MAX_KM_ = 5000; // = MAX_KM_SINCE_LAST in driver/driver-logic.js
 const DFL_MAX_PENDING_ = 3; // fills one link may have waiting for the office at once
+const DFL_ENTERED_BY_COL_ = 'Entered By'; // by header name, never in DFL_HEADER_: column 17 may already be the Reject Reason
+const DFL_STAFF_DENIED_ = 'Only the Owner or a Coordinator of this bus\'s district can add a fill for its driver.';
 // = FUEL_FIELDS in driver/driver-logic.js
 const DFL_NUMS_ = { litres: { min: 1, max: 400, int: false }, amount: { min: 1, max: 100000, int: true }, odometer: { min: 1, max: 9999999, int: true } };
 
@@ -85,11 +91,23 @@ function dflFile_(f, kind) {
     : /^3g/.test(brand) ? { bytes: bytes, mime: 'video/3gpp', ext: '3gp' } : { bytes: bytes, mime: 'video/mp4', ext: 'mp4' };
 }
 
+/** Who a fill is from: a driver phone's link (dlkLink_, as before), or for a staff view {idToken, viewReg} the Owner or a Coordinator
+ *  covering the bus (dlkRosterView_, driver-link.gs) as {reg, campus, linkId: 'staff:<email>', name: the fleet driver, enteredBy};
+ *  null for anyone else, Principals included (they view only). */
+function dflActor_(body) {
+  if (body.deviceToken || !body.idToken || !body.viewReg) return dlkLink_(body.deviceToken);
+  const v = dlkRosterView_(body), c = v && v.staff;
+  if (!c) return null;
+  return { reg: v.reg, campus: v.campus, linkId: 'staff:' + c.email, name: v.name,
+    enteredBy: c.email + ' (' + (c.roles.indexOf('Owner') !== -1 ? 'Owner' : 'Coordinator') + ')' };
+}
+
 function driverFuel_(body) {
   // refused: the office says no to this fill for good, so the phone drops it and tells the driver. Anything else that goes wrong
   // (a lock timeout, a Drive or Sheets error, caught in doPost) comes back without it, and the phone keeps the fill and retries.
   const fail = function (m) { return { success: false, refused: true, error: m }; };
-  const link = dlkLink_(body.deviceToken);
+  const link = dflActor_(body);
+  if (!link && !body.deviceToken && body.idToken && body.viewReg) return fail(DFL_STAFF_DENIED_); // no UNLINKED code: the page holds no token to forget
   if (!link) return { success: false, refused: true, code: 'UNLINKED', error: DLK_UNLINKED_ };
   const fillId = String(body.fillId || '');
   // a leading letter: never a number, a date or a formula in the cell
@@ -141,8 +159,16 @@ function driverFuel_(body) {
     const again = verdict();
     if (again.done) return again.done;
     if (again.no) return again.no;
-    sh.appendRow([fillId, link.reg, link.campus, link.linkId, link.name, filledAt, n.litres, n.amount, n.odometer,
-      billId, videoId, new Date(), 'pending', '', '', '']);
+    const row = [fillId, link.reg, link.campus, link.linkId, link.name, filledAt, n.litres, n.amount, n.odometer,
+      billId, videoId, new Date(), 'pending', '', '', ''];
+    if (link.enteredBy) { // a staff fill: 'Entered By' by name, appended after whatever columns the tab has grown
+      const head = sh.getDataRange().getValues()[0].map(String);
+      let ec = head.indexOf(DFL_ENTERED_BY_COL_);
+      if (ec === -1) { ec = Math.max(head.length, DFL_HEADER_.length); sh.getRange(1, ec + 1).setValue(DFL_ENTERED_BY_COL_); }
+      while (row.length < ec) row.push('');
+      row[ec] = link.enteredBy;
+    }
+    sh.appendRow(row);
   } finally {
     lock.releaseLock();
   }

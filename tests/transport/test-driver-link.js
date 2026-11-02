@@ -215,7 +215,11 @@ assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }),
 caller = owner;
 assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511' }), revoked, 'no Google token: no view');
 assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't', deviceToken: 'f'.repeat(64) }), revoked, 'a device token is judged alone');
-assert.strictEqual(call('driverFuel_', { viewReg: 'HP659511', idToken: 't', fillId: 'Fview0000001', litres: '40', amount: '3800', odometer: '52000' }).code, 'UNLINKED', 'a staff view cannot send a fill');
+assert.match(call('driverFuel_', { viewReg: 'HP659511', idToken: 't', fillId: 'Fview0000001', litres: '40', amount: '3800', odometer: '52000' }).error, /bill photo is missing/, 'the Owner\'s view passes the actor check (2 Nov); the fill itself is judged as any');
+caller = { email: 'p4@x', campusId: 'LMS4', roles: ['Principal'] };
+const pf = call('driverFuel_', { viewReg: 'HP659511', idToken: 't', fillId: 'Fview0000001', litres: '40', amount: '3800', odometer: '52000' });
+assert.ok(pf.refused && /Owner or a Coordinator/.test(pf.error) && !pf.code, 'a Principal\'s view cannot send a fill, and is not told to unlink');
+caller = owner;
 assert.strictEqual(JSON.stringify(tabs['Driver Devices']), devBefore, 'Driver Devices untouched: no link made, no Last Seen written');
 
 console.log('driver link: all checks passed');

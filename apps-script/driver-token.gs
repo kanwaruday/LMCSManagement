@@ -30,7 +30,8 @@ function dlkLink_(token) {
 // The staff view (Uday, 29 Oct: "normal google login is also possible especially for owner and coordinators"): the Owner or a
 // Coordinator opens the driver page as a running bus's driver, read only, as the Owner views a school as its Principal. Its link is
 // built from the fleet register, never from a Driver Devices row: no token is made, no Last Seen is written, no phone is unlinked.
-// Only driverme, driverroute and driverbus take it; driverfuel and capture read dlkLink_ alone, so a staff view can send nothing.
+// Only driverme, driverroute and driverbus take it; capture reads dlkLink_ alone, and driverfuel (2 Nov) takes a view only from the
+// Owner or a Coordinator (driver-fuel.gs dflActor_), writing 'staff:<email>' as its link: a Principal's view can send nothing.
 // Uday, 29 Oct: "a schoolwise lock for the schools and the principals, we know which vehicle belongs to who": a Principal views
 // their own school's buses only (the fleet register's campus), a Coordinator their district, the Owner every school.
 

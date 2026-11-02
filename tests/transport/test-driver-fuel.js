@@ -1,13 +1,14 @@
 // apps-script/driver-fuel.gs: a linked driver phone's fuel fill lands as a pending row of 'Driver Fills' with its bill and video in
 // Drive. Idempotent on fillId; numbers, odometer and file bytes are checked on the server; no client text reaches a cell; driverme's
 // lastOdometer counts the pending fill. Runs the real .gs files in a vm with stubbed Sheets, Drive, Cache, Lock and Utilities.
-// Also the client's queue rule (driver/driver-logic.js sendOutcome) and file checks. Fictional data only.
+// Staff entries (2 Nov): the Owner's and a Coordinator's fills from the staff view. Also the client's queue rule (driver/driver-logic.js sendOutcome) and file checks. Fictional data only.
 const fs = require('fs'), vm = require('vm'), assert = require('assert'), path = require('path'), crypto = require('crypto');
 const gs = (f) => fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var ');
 const DL = require(path.join(__dirname, '../../driver/driver-logic.js'));
 
 const tabs = {
-  'LM Studio Fleet': [['Reg', 'Bus', 'Campus'], ['HP659511', 'Bus 4', 'LMS 4'], ['HP665805', 'Bus 1', 'LMS 1']],
+  'LM Studio Fleet': [['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver'], ['HP659511', 'Bus 4', 'LMS 4', 'yes', '', '', 'Fleet Driver'],
+    ['HP665805', 'Bus 1', 'LMS 1', 'yes', '', '', 'Other Fleet Driver']],
   'Fuel Fills': [['id', 'campus', 'date', 'reg', 'litres', 'odometer', 'amount_rs', 'odometer_note', 'hasVideo', 'hasBill'],
     ['f2', 'LMS4', '2026-10-20', 'HP659511', '42', '51600', '3990', '', 'yes', 'yes']],
 };
@@ -24,6 +25,8 @@ const mkFolder = (name) => ({ name, folders: [], files: [], getName: () => name,
   getFilesByName(n) { const hit = this.files.filter((f) => f.name === n); return { hasNext: () => hit.length > 0, next: () => hit.shift() }; },
   createFile(b) { const f = { name: b.name, mime: b.mime, size: b.bytes.length, getId: () => 'FILE-' + b.name + '-' + driveFiles.length }; this.files.push(f); driveFiles.push(f); return f; } });
 const driveFiles = [], root = mkFolder('root');
+const OWNER = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
+let staff = OWNER; // what verifyStaffManagerToken_ finds for the idToken
 const cache = {};
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite, isNaN,
   SpreadsheetApp: { openById: () => ss },
@@ -35,7 +38,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, 
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
     base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
     newBlob: (bytes, mime, name) => ({ bytes, mime, name }) },
-  verifyStaffManagerToken_: () => ({ email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' }),
+  verifyStaffManagerToken_: () => staff,
   HIR_EMPCODE_RE_: /^([A-Z]{3})\/(\d{2})\/(\d{2})\/(\d{3,})$/,
   CENTRAL_REPO_FOLDER_ID_: 'x', SDOC_MIME_EXT_: { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/webp': 'webp' },
   getSubfolder_: (parent, name) => { const it = parent.getFoldersByName(name); return it.hasNext() ? it.next() : null; } };
@@ -155,6 +158,60 @@ t('review fixes: refused is marked, pending is capped per link, a fill time must
   assert.strictEqual(rows().find((r) => r[0] === 'Fclock0002')[5], '', 'nor one more than 7 days back');
   const theirs = call('driverFuel_', fill({ deviceToken: other.token, fillId: 'Fclock0001' }));
   assert.strictEqual(theirs.success, false, "another link can't read this fill by its id");
+});
+
+// staff entries (2 Nov): the Owner or a Coordinator of the bus's district logs a fill for its driver from the staff view
+const coord = { email: 'c5@lms.org.in', campusId: 'LMS5', roles: ['Coordinator', 'Teacher'], role: 'Coordinator' };
+const sfill = (o) => { const b = fill(Object.assign({ idToken: 't', viewReg: 'HP659511' }, o)); delete b.deviceToken; return call('driverFuel_', b); };
+const H = () => tabs['Driver Fills'][0];
+t('staff: a Coordinator in district stores a fill as staff:<email>, Entered By, on behalf of the fleet driver; Devices untouched', () => {
+  decideAll();
+  H()[16] = 'Reject Reason'; tabs['Driver Fills'][1][16] = 'blurry bill'; // the Fee Clerk's column came first
+  const devices = JSON.stringify(tabs['Driver Devices']);
+  staff = coord;
+  assert.deepStrictEqual(sfill({ fillId: 'Fstaff00001', odometer: '58000' }), { success: true, fillId: 'Fstaff00001', status: 'pending' });
+  const r = rows().find((x) => x[0] === 'Fstaff00001'), ec = H().indexOf('Entered By');
+  assert.deepStrictEqual([r[1], r[2], r[3], r[4], r[12]], ['HP659511', 'LMS4', 'staff:c5@lms.org.in', 'Fleet Driver', 'pending']);
+  assert.strictEqual(ec, 17, 'Entered By found or appended by name, after the Reject Reason');
+  assert.strictEqual(r[ec], 'c5@lms.org.in (Coordinator)');
+  assert.deepStrictEqual([H()[16], tabs['Driver Fills'][1][16], r[16]], ['Reject Reason', 'blurry bill', ''], 'the reason column kept');
+  assert.strictEqual(sfill({ fillId: 'Fstaff00001', odometer: '58000' }).success, true, 'a repeat: the stored row');
+  assert.strictEqual(rows().filter((x) => x[0] === 'Fstaff00001').length, 1);
+  assert.strictEqual(JSON.stringify(tabs['Driver Devices']), devices, 'Driver Devices never read or written');
+  assert.strictEqual(call('driverMe_', { deviceToken: link.token }).lastOdometer, 58000, 'the driver\'s page counts it');
+  staff = OWNER;
+  assert.strictEqual(sfill({ fillId: 'Fstaff00002', odometer: '58100' }).success, true, 'the Owner too');
+  assert.strictEqual(rows().find((x) => x[0] === 'Fstaff00002')[17], 'o@lms.org.in (Owner)', 'the second staff fill finds Entered By by name');
+  assert.strictEqual(H().filter((h) => h === 'Entered By').length, 1);
+  assert.strictEqual(call('driverFuel_', fill({ fillId: 'Fdrv-after1', odometer: '58200' })).success, true, 'a driver fill still goes in');
+  assert.ok(!rows().find((x) => x[0] === 'Fdrv-after1')[17], 'with no Entered By');
+  staff = coord;
+  assert.strictEqual(sfill({ fillId: 'Fstaff00002', odometer: '58300' }).error, 'Bad fillId', 'another staff member cannot claim the Owner\'s fill');
+});
+t('staff: refused out of district, Principal, Fee Clerk, teacher, no token; nothing stored', () => {
+  const before = rows().length, files = driveFiles.length;
+  [{ email: 'c1@lms.org.in', campusId: 'LMS1', roles: ['Coordinator'], role: 'Coordinator' },
+    { email: 'p4@lms.org.in', campusId: 'LMS4', roles: ['Principal'], role: 'Principal' },
+    { email: 'f4@lms.org.in', campusId: 'LMS4', roles: ['FeeClerk'], role: 'FeeClerk' }, null].forEach((c) => {
+    staff = c; // null: a teacher, not on the staff allowlist
+    const r = sfill({ fillId: 'Fdenied0001', odometer: '58400' });
+    assert.ok(r.refused && /Owner or a Coordinator/.test(r.error) && !r.code, JSON.stringify(c && c.roles));
+  });
+  staff = OWNER;
+  const none = sfill({ fillId: 'Fdenied0002', odometer: '58400', idToken: undefined });
+  assert.strictEqual(none.code, 'UNLINKED', 'no token at all');
+  assert.ok(sfill({ fillId: 'Fdenied0003', odometer: '58400', viewReg: 'HP000000' }).refused, 'a bus not in the fleet');
+  assert.strictEqual(rows().length, before); assert.strictEqual(driveFiles.length, files, 'and no file');
+});
+t('staff: the pending cap applies per staff member', () => {
+  staff = coord;
+  assert.strictEqual(sfill({ fillId: 'Fstaff00003', odometer: '58500' }).success, true, 'the Coordinator\'s 2nd and 3rd');
+  assert.strictEqual(sfill({ fillId: 'Fstaff00004', odometer: '58600' }).success, true);
+  const fourth = sfill({ fillId: 'Fstaff00005', odometer: '58700' });
+  assert.ok(fourth.refused && /already waiting/.test(fourth.error), 'a 4th waiting fill of the same staff member is refused');
+  staff = OWNER;
+  assert.strictEqual(sfill({ fillId: 'Fstaff00006', odometer: '58700' }).success, true, 'the Owner has their own cap');
+  assert.strictEqual(call('driverFuel_', fill({ fillId: 'Fdrv-after2', odometer: '58800' })).success, true, 'and the driver theirs');
 });
 
 // client side (driver/driver-logic.js)
