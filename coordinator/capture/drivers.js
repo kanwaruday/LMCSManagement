@@ -31,6 +31,7 @@ async function boot() {
   $('authRoot').style.display = 'none';
   $('appBody').hidden = false;
   if (!(LMCS.canViewCoordinatorPortal(s) || LMCS.hasRole(s, 'FeeClerk'))) { $('appBody').innerHTML = '<div class="denied">Driver phones are for Fee Clerks, Coordinators and the Owner.</div>'; return; }
+  if (!LMCS.canViewCoordinatorPortal(s)) { $('back').href = '../../office/index.html'; $('back').textContent = '‹ Office'; } // a Fee Clerk came from the office home, not Fleet setup
   $('retry').addEventListener('click', load);
   $('add').addEventListener('click', () => showForm(true));
   $('cancel').addEventListener('click', () => showForm(false));
