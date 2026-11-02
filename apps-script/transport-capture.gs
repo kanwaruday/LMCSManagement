@@ -223,16 +223,25 @@ function captureProcessed_(body) {
   return { success: true, found: found, notYet: notYet };
 }
 
-// GET action=drivecheck -> {success, drive: 'ok' | <the error>, capture: 'found' | 'missing' | 'n/a'} (2 Nov, capture uploads failing
-// with "You do not have permission to call DriveApp…" on the live web app while the editor run works). Read-only: it opens the
-// transport folder and walks to Capture/, writes nothing, names no folder and returns no data, so it needs no sign-in.
+// GET action=drivecheck -> {success, drive: 'ok' | <the error>, capture: 'found' | 'missing' | 'n/a', write: 'ok' | <the error> | 'n/a'}
+// (2 Nov, capture uploads failing with "You do not have permission to call DriveApp…" on the live web app). Reading alone passed
+// while the upload's createFolder still failed (a read-only Drive grant does that), so it also creates an empty test folder where
+// uploads create theirs (Capture/, else the transport folder) and bins it at once. Names no folder and returns no data.
 function captureDriveCheck_() {
+  let f;
+  const out = { success: true, drive: 'ok', capture: 'n/a', write: 'n/a' };
   try {
-    let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
-    f.getName(); // the call that needs the Drive grant
-    capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
-    return { success: true, drive: 'ok', capture: f ? 'found' : 'missing' };
-  } catch (e) {
-    return { success: true, drive: String(e && e.message || e).slice(0, 300), capture: 'n/a' };
-  }
+    f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+    f.getName(); // the call that needs a Drive grant
+    let c = f;
+    capPath_().forEach(function (n) { c = c && getSubfolder_(c, n); });
+    out.capture = c ? 'found' : 'missing';
+    if (c) f = c;
+  } catch (e) { out.drive = String(e && e.message || e).slice(0, 300); return out; }
+  try { f.createFolder('_drivecheck-' + Date.now()).setTrashed(true); out.write = 'ok'; } // the call that needs the full Drive grant
+  catch (e) { out.write = String(e && e.message || e).slice(0, 300); }
+  return out;
 }
+// Run this once from the Apps Script editor (Run > authorizeDrive) as the account the web app executes as: it asks for the
+// full Drive permission if it is missing, then logs what drivecheck would return.
+function authorizeDrive() { Logger.log(JSON.stringify(captureDriveCheck_())); }

@@ -10,6 +10,7 @@ function folder(name) {
     getFoldersByName(n) { const m = kids.filter((k) => k.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     getFilesByName(n) { const m = files.filter((f) => f.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     createFolder(n) { const f = folder(n); kids.push(f); return f; },
+    setTrashed(v) { this.trashed = v; return this; },
     createFile(blob) { const id = 'FILE' + (nextId++) + 'x'.repeat(20); const f = { name: blob.name, blob, desc: '', getId: () => id, setDescription(d) { f.desc = d; } }; files.push(f); return f; } };
 }
 let nextId = 1;
@@ -223,11 +224,20 @@ assert.strictEqual(cr({ runId: 'RB1', reg: 'HP659511', kind: 'count', status: 'e
 assert.deepStrictEqual([rowOf('RB1')[6], rowOf('RB1')[CB], rowOf('RB1')[12]], ['o@lms.org.in', 'c4@lms.org.in', 'ended'], 'a run keeps its first capturer');
 
 // drivecheck (2 Nov): read-only; says whether this deployment reaches Drive, never a folder name or data
-assert.deepStrictEqual(run('captureDriveCheck_()'), { success: true, drive: 'ok', capture: 'found' });
+// drivecheck also proves it can write: an empty test folder made in Capture/ and binned at once
+assert.deepStrictEqual(run('captureDriveCheck_()'), { success: true, drive: 'ok', capture: 'found', write: 'ok' });
+const capDir = transport.kids.find((k) => k.name === 'Capture');
+assert.ok(capDir && capDir.kids.some((k) => /^_drivecheck-/.test(k.name) && k.trashed), 'the test folder is made in Capture/ and binned');
+// a read-only grant: reading works, createFolder fails -> write carries the exact error
+const realCreate = capDir.createFolder;
+capDir.createFolder = () => { throw new Error('You do not have permission to call DriveApp.Folder.createFolder. Required permissions: https://www.googleapis.com/auth/drive'); };
+const ro = run('captureDriveCheck_()');
+assert.ok(ro.drive === 'ok' && ro.capture === 'found' && /Folder\.createFolder/.test(ro.write), 'a read-only grant shows up as a write error');
+capDir.createFolder = realCreate;
 const realDrive = ctx.DriveApp;
 ctx.DriveApp = { getFolderById: () => { throw new Error('You do not have permission to call DriveApp.getFolderById. Required permissions: https://www.googleapis.com/auth/drive'); } };
 const dc = run('captureDriveCheck_()');
-assert.ok(dc.success && /do not have permission/.test(dc.drive) && dc.capture === 'n/a', 'the exact Drive error comes back');
+assert.ok(dc.success && /do not have permission/.test(dc.drive) && dc.capture === 'n/a' && dc.write === 'n/a', 'the exact Drive error comes back');
 ctx.DriveApp = realDrive;
 
 // C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
