@@ -91,7 +91,7 @@ async function boot() {
   const want = new URLSearchParams(location.search); // from the Fleet setup quests: ?mode=inspection&reg=HP659511
   setMode(HELP[want.get('mode')] ? want.get('mode') : 'timelapse');
   S.wantReg = normReg(want.get('reg'));
-  battery();
+  battery(); phoneCheck();
   loadBuses();
   loadLoadout();
   drawResume().then((open) => { // an unfinished count run or safety check is waiting: open its mode, not Timelapse
@@ -131,7 +131,7 @@ async function driverBoot() {
   $('bus').innerHTML = `<option value="${esc(me.reg)}">${esc(me.reg)}</option>`;
   $('bus').value = me.reg;
   driverLabels();
-  battery();
+  battery(); phoneCheck();
   drawResume();
   drawUpload();
   addEventListener('beforeunload', (e) => { if (S.active) { e.preventDefault(); e.returnValue = ''; } });
@@ -167,7 +167,8 @@ function setMode(mode) {
   document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
   $('modeHelp').textContent = HELP[mode] || '';
   $('privacyRow').hidden = mode !== 'timelapse';
-  $('hint').hidden = $('battery').hidden = mode === 'inspection'; // a parked bus: no charger, no screen-on worries
+  $('hint').hidden = $('battery').hidden = $('phoneCheck').hidden = mode === 'inspection'; // a parked bus: no charger, no screen-on worries
+  phoneCheck(); // the camera line is for a timelapse only
   $('privacy').checked = false; // asked again before every timelapse start
   $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
@@ -201,6 +202,21 @@ function loadoutLine() {
     : `${plural(L.length, 'item')}, ${p ? p + (p === 1 ? ' needs' : ' need') + ' a photo' : 'no photos'}.`;
 }
 
+// Phone check before Start (P37, 2 Nov: a run stuck at 0 stops with location blocked and no screen lock): location, camera and
+// keeping the screen on, each ✓ or a Hindi-first fix. Permission changes redraw it. A browser that can't say leaves a line out.
+async function phoneCheck() {
+  const box = $('phoneCheck');
+  if (!box) return;
+  const state = async (name) => { try { const p = await navigator.permissions.query({ name }); p.onchange = phoneCheck; return p.state; } catch (e) { return ''; } };
+  const [loc, cam] = await Promise.all([state('geolocation'), state('camera')]);
+  const rows = [];
+  if (loc) rows.push(loc === 'denied' ? ['bad', LOC_HELP] : loc === 'granted' ? ['ok', 'लोकेशन चालू · Location allowed']
+    : ['ask', 'Start दबाने पर Chrome लोकेशन माँगेगा: "अनुमति दें" दबाएँ · At Start, Chrome asks for location: tap Allow']);
+  if (cam && S.mode === 'timelapse') rows.push(cam === 'denied' ? ['bad', CAM_HELP] : cam === 'granted' ? ['ok', 'कैमरा चालू · Camera allowed']
+    : ['ask', 'Start दबाने पर Chrome कैमरा माँगेगा: "अनुमति दें" दबाएँ · At Start, Chrome asks for the camera: tap Allow']);
+  rows.push('wakeLock' in navigator ? ['ok', 'स्क्रीन चालू रहेगी · The screen stays on during the run'] : ['bad', SCREEN_HELP]);
+  box.replaceChildren(...rows.map(([s, text]) => { const li = document.createElement('li'); li.className = 'cap-pc-' + s; li.textContent = text; return li; }));
+}
 async function battery() {
   if (!navigator.getBattery) return;
   try {
