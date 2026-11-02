@@ -271,7 +271,7 @@ td{padding:6px 12px;vertical-align:middle}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=b3b0748e"></script>
+<script src="../assets/auth.js?v=1c991646"></script>
 <script src="../assets/campus-picker.js?v=cd35c768"></script>
 <script>
 (function () {
@@ -1761,14 +1761,22 @@ function draftCollect_() {
     tasksCompleted: listToArray('tasksCompletedList'), tasksTomorrow: listToArray('tasksTomorrowList'), importantMessage: listToArray('importantMsgList'),
     registers: selectedRegisters.slice(), typed: { tasksCompletedInput: v('tasksCompletedInput'), tasksTomorrowInput: v('tasksTomorrowInput'), importantMsgInput: v('importantMsgInput') } };
 }
+var draftPending = null; // { key, data }: taken at the edit, written a moment later (or at once by draftFlush_)
+function draftWrite_(p) { try { localStorage.setItem(p.key, JSON.stringify(p.data)); } catch (e) { /* storage full or blocked: the form still works */ } }
 function draftSave_() {
   if (draftLoading || !SESSION || !principalCampusId) return;
   clearTimeout(draftTimer);
-  var key = draftKey_(); // the date field now, not when the timer fires
-  draftTimer = setTimeout(function () { try { localStorage.setItem(key, JSON.stringify(draftCollect_())); } catch (e) { /* storage full or blocked: the form still works */ } }, 300);
+  var p = draftPending = { key: draftKey_(), data: draftCollect_() }; // the date and the form as they are now, not when the timer fires
+  draftTimer = setTimeout(function () { if (draftPending === p) { draftPending = null; draftWrite_(p); } }, 300);
 }
+// a load is about to clear the form: write any pending edit NOW, under its own date and school
+function draftFlush_() {
+  if (!draftPending) return;
+  clearTimeout(draftTimer); var p = draftPending; draftPending = null; draftWrite_(p);
+}
+var DRAFT_KEEP_MS = 7 * 86400000; // an unsent copy older than a week is dropped (shared devices)
 function draftClear_(dateISO) {
-  clearTimeout(draftTimer);
+  clearTimeout(draftTimer); draftPending = null;
   try { localStorage.removeItem(draftKey_(dateISO)); } catch (e) { /* ignore */ }
   var n = document.getElementById('draftRestoredNotice'); if (n) n.hidden = true;
 }
@@ -1777,6 +1785,7 @@ function draftRestore_() {
   var d = null;
   try { d = JSON.parse(localStorage.getItem(draftKey_()) || 'null'); } catch (e) { d = null; }
   if (!d || typeof d !== 'object') return;
+  if (Date.now() - (Number(d.at) || 0) > DRAFT_KEEP_MS) { draftClear_(); return; }
   document.getElementById('maNone').checked = !!d.maNone;
   if (typeof d.maClass === 'string' && d.maClass) document.getElementById('maClass').value = d.maClass;
   document.getElementById('maScore').value = typeof d.maScore === 'string' ? d.maScore : '';
@@ -1840,7 +1849,12 @@ function syncMaNone() {
 }
 async function loadReportForDate() {
   var myToken = ++principalLoadToken; // see its declaration for why
+  draftFlush_(); // keystrokes from the last 300 ms belong to the date/school being left
   draftLoading = true; // the server prefill below must never overwrite the device copy
+  try { await loadReportForDateInner_(myToken); }
+  finally { setTimeout(function () { if (myToken === principalLoadToken) draftLoading = false; }, 0); } // never stuck off, even if a step throws
+}
+async function loadReportForDateInner_(myToken) {
   var campusId = principalCampusId;
   var dateISO = document.getElementById('reportDate').value || todayISO();
 
@@ -1907,7 +1921,6 @@ async function loadReportForDate() {
   renderMultiselectOptions();
   renderMsTags();
   draftRestore_();
-  setTimeout(function () { if (myToken === principalLoadToken) draftLoading = false; }, 0); // after the list observer's prefill records
 
   // Support Session count follows the Date field -- viewing 1 Sept's
   // report shows 1 Sept's real SS count.

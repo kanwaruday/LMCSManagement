@@ -133,7 +133,7 @@ window.LMCS = (function () {
       'border:none;border-radius:4px;padding:4px 12px;font:700 13px/1 system-ui,sans-serif;cursor:pointer;">' +
       'Sign in again</button>';
     document.body.appendChild(bar);
-    document.getElementById('lmcs-auth-expired-btn').onclick = signOut;
+    document.getElementById('lmcs-auth-expired-btn').onclick = signInAgain_; // an expired sign-in keeps unsent drafts (P33): not signOut
   }
 
   // Started once per page, right after requireSession() first resolves.
@@ -227,6 +227,12 @@ window.LMCS = (function () {
     localStorage.setItem(SESSION_KEY, JSON.stringify(s));
   }
 
+  // the expiry banner's "Sign in again": drop only the dead session and reload; unsent drafts stay for the restore
+  function signInAgain_() {
+    localStorage.removeItem(SESSION_KEY);
+    if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache();
+    window.location.reload();
+  }
   function signOut() {
     localStorage.removeItem(SESSION_KEY);
     try { Object.keys(localStorage).filter(function (k) { return k.indexOf('lmcsDraft:') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* ignore */ } // unsent drafts belong to the person signing out (an expired sign-in keeps them)

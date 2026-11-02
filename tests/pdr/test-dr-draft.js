@@ -20,7 +20,7 @@ const els = {}, get = (id) => (els[id] = els[id] || el(id));
 get('panel-principal').appendChild(get('dayHolidayNotice'));
 const store = {};
 const ctx = {
-  console, JSON, Date, Number, Object, Array, String, setTimeout: (fn) => fn(), clearTimeout() {}, confirm: () => true,
+  console, JSON, Date, Number, Object, Array, String, setTimeout: (fn) => (ctx.holdTimers ? ctx.held.push(fn) : fn()), held: [], clearTimeout() {}, confirm: () => true,
   localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
   document: { getElementById: (id) => els[id] || null, createElement: () => el(''), createTextNode: (t) => ({ t }) },
   window: {}, SESSION: { email: 'P4@Example.org' }, principalCampusId: 'LMS4', selectedRegisters: ['Teachers TRR'],
@@ -29,7 +29,7 @@ const ctx = {
   addItemDirect: (id, t) => { get(id).children.push({ t }); },
 };
 vm.createContext(ctx);
-vm.runInContext(block + '\nthis.draftSave_ = draftSave_; this.draftRestore_ = draftRestore_; this.draftClear_ = draftClear_; this.setLoading = function (v) { draftLoading = v; };', ctx);
+vm.runInContext(block + '\nthis.draftSave_ = draftSave_; this.draftRestore_ = draftRestore_; this.draftClear_ = draftClear_; this.draftFlush_ = draftFlush_; this.setLoading = function (v) { draftLoading = v; };', ctx);
 get('reportDate').value = '2026-11-02';
 const KEY = 'lmcsDraft:pdr:p4@example.org:LMS4:2026-11-02';
 
@@ -61,6 +61,21 @@ ctx.SESSION = { email: 'P4@Example.org' }; vm.runInContext('SESSION = this.SESSI
 note.children[1].onclick(); assert.ok(!(KEY in store) && ctx.reloaded, 'Discard: cleared and reloaded');
 store[KEY] = '{"maScore":"5"}'; ctx.draftClear_('2026-11-02'); assert.ok(!(KEY in store));
 
+// a date change within the 300 ms wait: the pending edit is written under the date being LEFT, from the form as typed (review, P33)
+ctx.holdTimers = true; ctx.held.length = 0;
+get('reportDate').value = '2026-11-02'; get('maScore').value = '9';
+get('panel-principal').listeners.input[0]({ target: get('maScore') });
+get('reportDate').value = '2026-11-03'; get('maScore').value = '';  // the next load is about to clear the form
+ctx.draftFlush_();
+assert.strictEqual(JSON.parse(store[KEY]).maScore, '9', 'flushed under 2 Nov, with what was typed');
+assert.ok(!('lmcsDraft:pdr:p4@example.org:LMS4:2026-11-03' in store), 'nothing written under the new date');
+ctx.held.forEach((fn) => fn()); ctx.holdTimers = false;
+assert.strictEqual(JSON.parse(store[KEY]).maScore, '9', 'the late timer is cancelled, not run');
+// an unsent copy older than a week is dropped, not restored
+get('reportDate').value = '2026-11-02';
+store[KEY] = JSON.stringify({ at: Date.now() - 8 * 86400000, maScore: '3' }); get('maScore').value = '';
+ctx.draftRestore_(); assert.ok(get('maScore').value === '' && !(KEY in store), 'older than 7 days: dropped');
+
 // wiring in the page and in auth.js
 assert.ok(/if \(result && result\.success\) \{\n\s+draftClear_\(payload\.date\);/.test(page), 'only a confirmed submit clears it');
 assert.ok(/draftLoading = true;[^]*?renderMsTags\(\);\n\s+draftRestore_\(\);/.test(page.slice(page.indexOf('async function loadReportForDate'))), 'restored after the server prefill');
@@ -68,4 +83,6 @@ const auth = fs.readFileSync(path.join(root, 'assets/auth.js'), 'utf8');
 const signOut = auth.slice(auth.indexOf('function signOut()'), auth.indexOf('function campusLabel'));
 assert.ok(/lmcsDraft:/.test(signOut), 'Sign out clears drafts');
 assert.ok(!/lmcsDraft:/.test(auth.replace(signOut, '')), 'an expired sign-in (anything else in auth.js) never clears them');
+assert.ok(/lmcs-auth-expired-btn'\)\.onclick = signInAgain_;/.test(auth) && !/onclick = signOut/.test(auth), "the expiry banner's Sign in again keeps drafts (review, P33)");
+assert.ok(/draftFlush_\(\);[^\n]*\n\s+draftLoading = true;[^]*?finally \{/.test(page), 'the load flushes first and can never leave autosave off');
 console.log('test-dr-draft: ok');
