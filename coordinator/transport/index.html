@@ -14,7 +14,12 @@
 /* replaced by the unlock engine (GD): the game layer's Today, other buses' quests and the rail's Quests count (the second rail item) */
 .fc-focus #game-root .lg-today,.fc-focus #game-root .lg-quest:not(.fc-mine),.fc-focus #game-rail a.gb-rail-i:nth-of-type(2) .gb-count{display:none!important}
 .gb .gb-go.fc-locked{opacity:.55;cursor:default}
-.fc-all{display:block;margin:8px auto 0;min-height:44px}</style>
+.fc-all{display:block;margin:8px auto 0;min-height:44px}
+/* Trial runs: outside #appBody, so setup focus never hides it */
+#trial-runs{margin:0 0 16px}
+#trial-runs .tr-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#trial-runs .tr-links{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 0;padding:0;list-style:none}
+#trial-runs .tr-links a{display:inline-flex;align-items:center;min-height:44px}</style>
 <link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
 </head>
 <body class="gb gb-app">
@@ -25,6 +30,9 @@
   <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
   <div class="gb-next-slot" id="fleet-next"></div>
   <main class="gb-stage">
+    <section id="trial-runs" aria-labelledby="trial-runs-h" hidden><h2 id="trial-runs-h">Trial runs</h2>
+      <p class="gb-muted">Practice runs wait here. Watch the blurred video, then promote one to a real run or discard it. Until then it counts for nothing.</p>
+      <ul class="gb-list" id="trial-list"></ul><p class="gb-err" id="trial-err" role="alert"></p></section>
     <section id="game-root" aria-label="Fleet setup with Buddy" hidden></section>
     <div id="authRoot"></div>
     <div id="appBody" style="display:none"></div>
@@ -121,9 +129,51 @@ async function fleetNext() {
     }
   } catch (e) { slot.replaceChildren(); } // no next step is better than a wrong one; the fleet below still loads
 }
+// Trial runs (transportcapturereview): the Owner's or a Coordinator's shelf of trial timelapses. Shown only when it has rows.
+// The video and photo ids are the Mac's blurred copies only. Every value goes in as text.
+const TRIAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function trialWhen(r) { // the runId says when it was recorded: <REG>-yyyyMMdd-HHmmss-xxxx
+  const m = /-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}-/.exec(r.runId);
+  return m ? Number(m[3]) + ' ' + TRIAL_MONTHS[Number(m[2]) - 1] + ' ' + m[1] + ', ' + m[4] + ':' + m[5] : String(r.pushedAt || '').slice(0, 10);
+}
+const driveLink = (id, text) => { const a = document.createElement('a'); a.href = 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/view'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a; };
+async function trialRuns() {
+  const box = document.getElementById('trial-runs'), list = document.getElementById('trial-list'), err = document.getElementById('trial-err');
+  let runs = [];
+  try { runs = (await Coord.api({ action: 'transportcapturereview' })).runs || []; } catch (e) { runs = []; } // no shelf is better than a broken page
+  box.hidden = !runs.length;
+  list.replaceChildren(...runs.map((r) => {
+    const li = document.createElement('li'), head = document.createElement('div'), badge = document.createElement('span'), reg = document.createElement('b'), meta = document.createElement('p');
+    li.className = 'gb-card'; head.className = 'tr-head'; badge.className = 'gb-pill gb-pill-warn'; badge.textContent = 'TRIAL'; reg.textContent = r.reg;
+    const stops = Array.isArray(r.stops) ? r.stops : [];
+    meta.className = 'gb-muted'; meta.textContent = trialWhen(r) + ' · ' + stops.length + (stops.length === 1 ? ' stop' : ' stops') + (r.capturedBy ? ' · by ' + r.capturedBy : '');
+    head.append(badge, reg);
+    const links = document.createElement('ul'); links.className = 'tr-links';
+    if (r.videoFileId) { const i = document.createElement('li'); i.append(driveLink(r.videoFileId, 'Watch video')); links.append(i); }
+    stops.forEach((s, n) => { if (!s || !s.photoFileId) return; const i = document.createElement('li'); i.append(driveLink(s.photoFileId, 'Stop ' + (n + 1) + (s.name ? ': ' + s.name : '') + ' photo')); links.append(i); });
+    const acts = document.createElement('div'), pub = document.createElement('button'), del = document.createElement('button');
+    acts.className = 'gb-row-acts';
+    pub.type = del.type = 'button'; pub.className = 'gb-btn gb-btn-primary'; pub.textContent = 'Promote to real run'; del.className = 'gb-btn gb-btn-danger'; del.textContent = 'Discard';
+    const decide = async (decision) => {
+      if (decision === 'discard' && !confirm('Discard the trial run of bus ' + r.reg + ' (' + trialWhen(r) + ')? Its Drive folder goes to the bin.')) return;
+      pub.disabled = del.disabled = true; err.textContent = '';
+      try {
+        const res = await Coord.postJson({ action: 'transportcapturedecide', runId: r.runId, decision });
+        if (!res || !res.success) throw new Error((res && res.error) || 'Request failed');
+      } catch (e) { err.textContent = r.reg + ': ' + e.message; }
+      trialRuns();
+    };
+    pub.addEventListener('click', () => decide('publish')); del.addEventListener('click', () => decide('discard'));
+    acts.append(pub, del);
+    li.append(head, meta, links, acts);
+    return li;
+  }));
+  if (err.textContent) box.hidden = false; // keep the reason in view even when the list emptied
+}
 Coord.boot(function (body) {
   Coord.transportView(body);
   fleetNext();
+  trialRuns();
   const session = LMCS.getSession();
   document.getElementById('panels').hidden = false;
   if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('fleet-pages').open = true; // phones: folded, so the fleet stays in view
