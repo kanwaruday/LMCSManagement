@@ -25,12 +25,18 @@
     .ss-eval-filters .ss-eval-filter { padding:6px 12px; min-height:44px; font-size:13px; }
     .ss-eval-filters .ss-eval-filter.is-active { background:var(--gb-gold-soft); border-color:var(--gb-gold); font-weight:700; }
     .ss-eval-list { list-style:none; margin:0; padding:0; }
-    .ss-eval-row { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:8px 4px; border:none; border-bottom:1px solid var(--gb-line); background:none; font:inherit; color:var(--gb-ink); text-align:left; cursor:pointer; }
+    .ss-eval-row { display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%; min-height:44px; padding:8px 4px; border:none; border-bottom:1px solid var(--gb-line); background:none; font:inherit; color:var(--gb-ink); text-align:left; cursor:pointer; }
     .ss-eval-list > li:last-child .ss-eval-row { border-bottom:none; }
     .ss-eval-row:hover, .ss-eval-row:focus-visible { background:var(--gb-gold-soft); }
+    /* icon+name+meta on their own line; a "Recommended" pill, when present,
+       goes on a second line below (not inline with the name) -- inline
+       caused the pill to wrap under the meta text and visually overlap it
+       at narrow widths. GM pass 2026-11-02. */
+    .ss-eval-row-top { display:flex; align-items:center; gap:10px; width:100%; }
     .ss-eval-ico { flex:none; font-size:18px; width:22px; text-align:center; }
     .ss-eval-name { flex:1 1 auto; min-width:0; font-weight:600; overflow-wrap:anywhere; }
     .ss-eval-meta { flex:none; font-size:12.5px; color:var(--gb-muted); white-space:nowrap; }
+    .ss-eval-row .gb-pill-next { margin-left:32px; }
 
     /* Native <dialog>, styled with the same gb- tokens as the rest of the page. */
     .ss-eval-dialog { border:none; border-radius:14px; padding:0; max-width:420px; width:calc(100% - 32px); background:var(--gb-paper); color:var(--gb-ink); }
@@ -69,7 +75,7 @@
             <button type="button" class="gb-btn ss-eval-filter" data-filter="done">हो गया · Done</button>
           </div>
           <ul class="ss-eval-list" id="ss-eval-list"></ul>
-          <button type="button" class="gb-btn" id="ss-eval-showall" hidden style="margin-top:4px">Show all</button>
+          <button type="button" class="gb-btn" id="ss-eval-showall" hidden style="margin-top:4px">सभी दिखाएँ · Show all</button>
         </div>
 
         <div class="gb-card">
@@ -252,9 +258,9 @@
     // evaluated, which is correct, not a gap. Sorted most-overdue-first:
     // never evaluated this month, THEN oldest lastSubmission (null =
     // never evaluated at all, sorts first of all) -- the ONE ranking
-    // both the Next card and the new panel's ⭐ use, per Uday via V1 (a
-    // correction: the Next card never actually did this before -- it
-    // just took employees[0], alphabetical).
+    // both the Next card and the new panel's "Recommended" marker use,
+    // per Uday via V1 (a correction: the Next card never actually did
+    // this before -- it just took employees[0], alphabetical).
     // The ONE ranking both buildEvalRows and patchEvalRowAfterSubmit_
     // sort by -- never evaluated this month first, then oldest
     // lastSubmission (null = never evaluated at all, sorts first of
@@ -325,18 +331,33 @@
         return evalFilter === 'done' ? r.evaluatedThisMonth : evalFilter === 'pending' ? !r.evaluatedThisMonth : true;
       });
     }
-    // isRecommended overrides the ⏳/✓ icon with ⭐ (one row at most, per
-    // Uday's phrasing: ✓ / ⏳ / ⭐ read as three states, not ⭐ layered on
-    // top of one of the other two).
+    // GM pass 2026-11-02: ⭐ was the wrong choice -- emoji.js already
+    // owns ⭐ for the `points` key (scores/rewards), so reusing it here
+    // gave one glyph two meanings. The icon now stays ✓/⏳ regardless of
+    // recommended status; "recommended" is its own red gb-pill-next
+    // text badge next to the name (the game's existing "this one's
+    // next" convention, base.css) instead of a competing icon. ✓ stays
+    // plain text (GM: "fine as text"); ⏳ now goes through LMCSEmoji
+    // ('pending' -- requested from the game director, not yet a key, so
+    // this renders blank until it lands, same guarded pattern as
+    // supportSession/evaluate before it).
     function evalRowHtml_(row, isRecommended) {
-      const icon = isRecommended ? '⭐' : row.evaluatedThisMonth ? '✓' : '⏳';
+      // GM pass: only mark a row recommended if it's actually not yet
+      // evaluated this month -- when everyone's done, currentEvalRows[0]
+      // is just "longest since", not someone still owed an evaluation,
+      // and the panel shouldn't claim otherwise.
+      const recommend = isRecommended && !row.evaluatedThisMonth;
+      const icon = row.evaluatedThisMonth ? '✓' : (window.LMCSEmoji ? esc(LMCSEmoji.get('pending') || '') : '');
+      const pill = recommend ? '<span class="gb-pill gb-pill-next">अगला सुझाव · Recommended</span>' : '';
       const meta = row.evaluatedThisMonth
         ? fmtEvalDate_(row.lastSubmission) + (row.lastTotal != null ? ' · ' + row.lastTotal : '')
-        : isRecommended ? 'अगला सुझाव · Recommended' : 'अभी बाकी · Not yet';
+        : 'अभी बाकी · Not yet';
       return '<li><button type="button" class="ss-eval-row" data-id="' + esc(row.employeeId) + '">'
+        + '<span class="ss-eval-row-top">'
         + '<span class="ss-eval-ico" aria-hidden="true">' + icon + '</span>'
         + '<span class="ss-eval-name">' + esc(row.name) + '</span>'
         + '<span class="ss-eval-meta">' + esc(meta) + '</span>'
+        + '</span>' + pill
         + '</button></li>';
     }
     function renderEvalRowsInto_(targetId, rows) {
@@ -361,10 +382,10 @@
       renderEvalList_();
     }
 
-    // Tap "not yet"/⭐ -> select them below and jump to the rubric (same
-    // destination the Next card's own Go already uses). Tap "evaluated"
-    // (✓, or ⭐ when the recommended person already has a submission this
-    // month -- the ranking doesn't require "not yet") -> read-only detail.
+    // Tap "not yet" (including the recommended one, which is always a
+    // not-yet row -- see evalRowHtml_) -> select them below and jump to
+    // the rubric (same destination the Next card's own Go already
+    // uses). Tap "evaluated" (✓) -> read-only detail.
     function handleEvalRowTap_(employeeId) {
       const row = currentEvalRows.find(function (r) { return r.employeeId === employeeId; });
       if (!row) return;
@@ -439,7 +460,8 @@
     // month first, then oldest lastSubmission), Go pre-selects them and
     // jumps to the rubric. Was employees[0] (alphabetical) until Uday
     // asked, via V1, for this to be the same ranking the new evaluations
-    // panel's ⭐ uses -- it wasn't actually "the same logic" before this.
+    // panel's "Recommended" marker uses -- it wasn't actually "the same
+    // logic" before this.
     function renderNext() {
       const slot = document.getElementById('ss-next');
       if (!currentMeta || !currentEvalRows.length) {
