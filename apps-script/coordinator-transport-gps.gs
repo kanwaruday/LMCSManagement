@@ -12,6 +12,12 @@
 // (POST transportcapturepush, kept in the "Capture Stops" tab). This project has no Drive access, so the ids of the blurred
 // route.mp4 and stop photos come from the Roster project by path (captureprocessed, transport-capture.gs), never from the push.
 // An operational bus with no processed run gets capture_route (from GPS.captureFrom).
+// The review shelf (2 Nov): a trial run (Capture Runs' Trial column) lands in 'Capture Review', not Capture Stops, so nothing on
+// the shelf ticks a quest or joins a route; real runs publish straight away. The Owner (all) or a
+// Coordinator (their district) watches the blurred video and stop photos on Fleet Command, then publishes or discards:
+//   GET  transportcapturereview {idToken}                                  the shelf, scoped
+//   POST transportcapturedecide {idToken, runId, decision:'publish'|'discard'}  publish moves the row to Capture Stops; discard asks
+//        the Roster (capturediscard) to bin the run's Drive folder and close the run, then drops the row
 // Agency service data (transport/capture/agency_import.py on the Mac, same secret): the vehicle agencies' filled templates become the
 // parts catalog the garage reads (POST transportcatalogpush -> Parts Catalog, Agency Vehicles, Agency History; idempotent), served
 // read-only in coordinatortransportinsight as `catalog`: models and parts fleet-wide, vehicles and history by reg like the rest.
@@ -26,6 +32,7 @@
 const GPS_TAB_DAILY = 'GPS Daily', GPS_TAB_META = 'GPS Meta', GPS_TAB_STOPS = 'GPS Stops', GPS_TAB_TRACKS = 'GPS Tracks', GPS_TAB_FILLS = 'Fuel Fills',
   GPS_TAB_CHECKS = 'Fuel Checks', GPS_TAB_ANSWERS = 'Fuel Responses', GPS_TAB_CAPTURE = 'Capture Stops';
 const GPS_CAPTURE_COLS = ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy']; // capturedBy: the run's Captured By (Ruling 41)
+const GPS_TAB_REVIEW = 'Capture Review', GPS_REVIEW_COLS = GPS_CAPTURE_COLS.concat(['kind']); // kind: 'trial' for now; the column lets the shelf hold other kinds later
 const GPS_TAB_CATALOG = 'Parts Catalog', GPS_TAB_AGVEH = 'Agency Vehicles', GPS_TAB_AGHIST = 'Agency History';
 const GPS_CATALOG_COLS = ['key', 'model', 'code', 'lifeKm', 'lifeMonths', 'price', 'labour', 'spec', 'components', 'asOf', 'pushedAt'];
 const GPS_AGVEH_COLS = ['chassis', 'reg', 'model', 'catalogModel', 'variant', 'engine', 'emission', 'year', 'warrantyDate', 'warrantyKm', 'recalls', 'asOf', 'pushedAt'];
@@ -340,6 +347,7 @@ function coordCapturePull_(body) {
   if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
   const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE), runs = [], stored = {};
   gpsRows_(GPS_TAB_CAPTURE).forEach(function (r) { if (r.videoFileId) stored[r.runId] = true; });
+  gpsRows_(GPS_TAB_REVIEW).forEach(function (r) { stored[r.runId] = true; }); // on the shelf: processed, so the Mac stops re-pushing it
   const list = function (cell) { let v = null; try { v = JSON.parse(String(cell || 'null')); } catch (e) { v = null; } return Array.isArray(v) ? v : null; };
   (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) { // Run ID | Reg | Campus | Kind | Started | Ended | By | Role | Frames | Gaps | Stops | Inspection | Status | Frame Times
     if (String(r[3]) !== 'timelapse' || String(r[12]) !== 'ended') return;
@@ -386,21 +394,88 @@ function coordCapturePush_(body) {
     fresh.push({ runId: String(r.runId), reg: r.reg, campus: campusOf[r.reg], videoFileId: f.videoFileId, pushedAt: now,
       stops: JSON.stringify(r.stops.map(function (s) { const x = gpsCaptureStop_(s || {}); x.photoFileId = gpsDriveId_(photos[x.seq]); return x; })) });
   });
+  let shelved = 0;
   if (fresh.length) {
-    const who = {}, sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
-    (sh ? sh.getDataRange().getValues().slice(1) : []).forEach(function (r) { who[String(r[0])] = String(r[14] || r[6] || ''); }); // Captured By, else By (a row from before the column)
+    const who = {}, trial = {}, sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+    const runRows = sh ? sh.getDataRange().getValues() : [], tc = runRows.length ? runRows[0].indexOf('Trial') : -1; // by header name (transport-capture.gs)
+    runRows.slice(1).forEach(function (r) { who[String(r[0])] = String(r[14] || r[6] || ''); if (tc !== -1 && String(r[tc]) === 'yes') trial[String(r[0])] = true; }); // Captured By, else By (a row from before the column)
     fresh.forEach(function (r) { r.capturedBy = who[r.runId] || ''; });
     const lock = LockService.getScriptLock();
+    let published = 0;
     lock.waitLock(20000);
     try {
-      const ids = {};
-      fresh.forEach(function (r) { ids[r.runId] = true; });
-      gpsWrite_(GPS_TAB_CAPTURE, GPS_CAPTURE_COLS, gpsRows_(GPS_TAB_CAPTURE).filter(function (r) { return !ids[r.runId]; }).concat(fresh));
+      const pub = gpsRows_(GPS_TAB_CAPTURE), shelf = gpsRows_(GPS_TAB_REVIEW), inPub = {}, inShelf = {}, toPub = {}, toShelf = {};
+      pub.forEach(function (r) { inPub[r.runId] = true; });
+      shelf.forEach(function (r) { inShelf[r.runId] = r.kind; });
+      fresh.forEach(function (r) { // a run stays where it already is (a promoted trial stays published); else a trial goes to the shelf
+        const kind = inPub[r.runId] ? '' : inShelf[r.runId] || (trial[r.runId] ? 'trial' : '');
+        if (kind) { r.kind = kind; toShelf[r.runId] = r; } else toPub[r.runId] = r;
+      });
+      const upsert = function (rows, add) { return rows.filter(function (r) { return !add[r.runId]; }).concat(Object.keys(add).map(function (k) { return add[k]; })); };
+      published = Object.keys(toPub).length; shelved = Object.keys(toShelf).length;
+      if (published) gpsWrite_(GPS_TAB_CAPTURE, GPS_CAPTURE_COLS, upsert(pub, toPub));
+      if (shelved) gpsWrite_(GPS_TAB_REVIEW, GPS_REVIEW_COLS, upsert(shelf, toShelf));
     } finally { lock.releaseLock(); }
-    try { gpsRefresh_(gpsRows_(GPS_TAB_DAILY), gpsMeta_().health); } catch (err) { console.error('GPS refresh after capture push: ' + err.message); } // the next GPS push retries
-    CacheService.getScriptCache().remove('coord_gps_insight_v1');
+    if (published) gpsCaptureChanged_();
   }
-  return { success: true, runs: fresh.length, notYet: notYet, later: later, skipped: skipped };
+  return { success: true, runs: fresh.length, shelved: shelved, notYet: notYet, later: later, skipped: skipped };
+}
+
+/** Capture Stops changed: the follow-ups (capture_route) and the insight cache catch up. */
+function gpsCaptureChanged_() {
+  try { gpsRefresh_(gpsRows_(GPS_TAB_DAILY), gpsMeta_().health); } catch (err) { console.error('GPS refresh after capture change: ' + err.message); } // the next GPS push retries
+  CacheService.getScriptCache().remove('coord_gps_insight_v1');
+}
+
+/** The shelf rows a caller may act on: the Owner all, a Coordinator their district; null for anyone else (Principals, Fee Clerks). */
+function gpsReviewScope_(caller) {
+  if (!caller || caller.feeClerkOnly || !dlkStaff_(caller.roles)) return null;
+  const seen = coordVisibleCampuses_(caller);
+  return function (r) { return !seen || seen.indexOf(String(r.campus)) !== -1; };
+}
+
+/** GET transportcapturereview: the shelf. Ids are the Mac's BLURRED files only (they came from captureprocessed), never originals. */
+function coordCaptureReview_(caller) {
+  const mine = gpsReviewScope_(caller);
+  if (!mine) return { success: false, error: 'Not authorized' };
+  return { success: true, runs: gpsRows_(GPS_TAB_REVIEW).filter(mine).map(function (r) {
+    let stops = [];
+    try { stops = JSON.parse(r.stops || '[]'); } catch (e) { stops = []; } // a cut-off cell must not break the panel
+    return { runId: String(r.runId), reg: String(r.reg), campus: String(r.campus), kind: String(r.kind), pushedAt: String(r.pushedAt),
+      capturedBy: String(r.capturedBy || ''), videoFileId: String(r.videoFileId), stops: Array.isArray(stops) ? stops : [] };
+  }) };
+}
+
+/** POST transportcapturedecide: publish (to Capture Stops) or discard (Drive bin via the Roster, then the row goes). */
+function coordCaptureDecide_(caller, body) {
+  const mine = gpsReviewScope_(caller);
+  if (!mine) return { success: false, error: 'Not authorized' };
+  const runId = String(body.runId || ''), decision = String(body.decision || '');
+  if (decision !== 'publish' && decision !== 'discard') return { success: false, error: 'decision must be publish or discard' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const shelf = gpsRows_(GPS_TAB_REVIEW), row = shelf.filter(function (r) { return String(r.runId) === runId; })[0];
+    if (!row || !mine(row)) return { success: false, error: 'That run is not waiting for your check' }; // out of scope reads as unknown
+    if (decision === 'discard') {
+      const res = gpsCaptureDiscard_(row);
+      if (res.error) return { success: false, error: res.error }; // the row stays: try again
+    } else gpsWrite_(GPS_TAB_CAPTURE, GPS_CAPTURE_COLS, gpsRows_(GPS_TAB_CAPTURE).filter(function (r) { return String(r.runId) !== runId; }).concat([row]));
+    gpsWrite_(GPS_TAB_REVIEW, GPS_REVIEW_COLS, shelf.filter(function (r) { return r !== row; }));
+  } finally { lock.releaseLock(); }
+  if (decision === 'publish') gpsCaptureChanged_();
+  return { success: true };
+}
+
+/** Asks the Roster to bin one run's Drive folder and close the run (capturediscard, transport-capture.gs): {} or {error}. */
+function gpsCaptureDiscard_(row) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  const res = UrlFetchApp.fetch(COORD_ROSTER_URL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+    payload: JSON.stringify({ action: 'capturediscard', secret: secret, reg: String(row.reg), runId: String(row.runId) }) });
+  let out = null;
+  try { out = JSON.parse(res.getContentText()); } catch (e) { out = null; }
+  if (res.getResponseCode() !== 200 || !out || !out.success) return { error: 'The Drive folder could not be binned: ' + ((out && out.error) || 'HTTP ' + res.getResponseCode()) };
+  return {};
 }
 
 /** Asks the Roster project (the one with Drive access) for the processed files' ids: {found:{runId:{videoFileId, photos:{seq:id}}}} or {error}. */

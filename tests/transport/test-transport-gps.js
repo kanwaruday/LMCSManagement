@@ -25,9 +25,9 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, isFinite
   Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } };
 vm.createContext(ctx);
 const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
-load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs'); load('coordinator-world.gs'); load('../coordinator/capture/fleet-quests.js'); // the Coordinator project carries it
+load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs'); load('coordinator-world.gs'); load('driver-token.gs'); load('../coordinator/capture/fleet-quests.js'); // the Coordinator project carries it
 const run = c => vm.runInContext(c, ctx);
-const realRefresh = ctx.gpsRefresh_; // later sections stub it; the capture section needs the real one
+const realRefresh = ctx.gpsRefresh_, realVisible = ctx.coordVisibleCampuses_; // later sections stub them; the capture sections need the real ones
 
 // ── fuel checks ──
 const days = [];
@@ -302,6 +302,70 @@ assert.deepStrictEqual([fetched.length, fetched[0].body.runs.length, capped.notY
 const capTab = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Stops')._rows();
 capTab.find(r => r[0] === 'HP7-20261024-071500-zz99')[4] = '[{"seq":1,'; // a cut-off or hand-edited cell
 assert.deepStrictEqual(J(run('coordGpsInsight_({email:"o@x.org", roles:["Owner"]})')).capture.byReg.HP7.stops, [], 'one bad cell does not break the page');
+// ── the trial shelf (2 Nov): trial runs wait in Capture Review for the Owner / a Coordinator; real runs publish as before ──
+ctx.coordTransportBase_ = () => ({ fleet: [{ reg: 'HP1', campus: 'LMS 4', operational: true }, { reg: 'HP7', campus: 'LMS 1', operational: true },
+  { reg: 'HP5', campus: 'LMS 5', operational: true }, { reg: 'HP6', campus: 'LMS 2', operational: true }] });
+const capRuns = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows();
+capRuns[0].push('Captured By', 'Trial');
+const tl = (id, reg, campus, trial) => [id, reg, campus, 'timelapse', 1, 2, 'c4@x.org', 'Coordinator', 5, '[]', '[]', '', 'ended', '', 'c4@x.org', trial ? 'yes' : ''];
+capRuns.push(tl('HP1-20261102-071500-tr01', 'HP1', 'LMS4', true), tl('HP5-20261102-071500-aa01', 'HP5', 'LMS5'),
+  tl('HP6-20261102-071500-cc01', 'HP6', 'LMS2', true), tl('HP6-20261102-081500-cc02', 'HP6', 'LMS2'));
+const shelf = () => J(run('gpsRows_(GPS_TAB_REVIEW)'));
+const pubIds = () => J(run('gpsRows_(GPS_TAB_CAPTURE)')).map(r => r.runId);
+const pushOne = (runId, reg) => { roster = { success: true, found: { [runId]: { videoFileId: 'VID' + runId.slice(-4) + 'blurred', photos: {} } }, notYet: [] };
+  return J(run('coordCapturePush_({secret:"S", payload: {runs: [{runId: "' + runId + '", reg: "' + reg + '", stops: [{seq: 1, name: "Stop A", photo: false}]}]}})')); };
+assert.deepStrictEqual(J(run('GPS_REVIEW_COLS')), ['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy', 'kind']);
+let sp = pushOne('HP1-20261102-071500-tr01', 'HP1');
+assert.deepStrictEqual([sp.runs, sp.shelved], [1, 1]);
+assert.deepStrictEqual(shelf().map(r => [r.runId, r.kind]), [['HP1-20261102-071500-tr01', 'trial']], 'a trial run goes to Capture Review');
+assert.ok(pubIds().indexOf('HP1-20261102-071500-tr01') === -1, 'not to Capture Stops');
+sp = pushOne('HP5-20261102-071500-aa01', 'HP5');
+assert.deepStrictEqual([sp.shelved, pubIds().indexOf('HP5-20261102-071500-aa01') !== -1], [0, true], 'a real first run of a bus goes straight to Capture Stops');
+assert.strictEqual(J(run('gpsCaptured_()')).HP5.by, 'c4@x.org', 'and counts');
+pushOne('HP6-20261102-071500-cc01', 'HP6');
+assert.ok(!J(run('gpsCaptured_()')).HP6, 'a shelved trial ticks no capture quest');
+// pull marks shelved runs done, so the Mac does not re-push them every 2 h
+const pd = {}; J(run('coordCapturePull_({secret:"S"})')).runs.forEach(r => { pd[r.runId] = r.done; });
+assert.deepStrictEqual([pd['HP1-20261102-071500-tr01'], pd['HP6-20261102-081500-cc02']], [true, false], 'pull marks review runs done; an unpushed run is not');
+// the list: Owner all, a Coordinator their district; Principals and Fee Clerks never
+const stubVisible = ctx.coordVisibleCampuses_; ctx.coordVisibleCampuses_ = realVisible; // the real district map (COORD_DISTRICTS)
+const OWN = '{email:"o@x.org", roles:["Owner"], campusId:"ALL"}', C4 = '{email:"c4@x.org", roles:["Coordinator"], campusId:"LMS4"}', C1 = '{email:"c1@x.org", roles:["Coordinator"], campusId:"LMS1"}';
+const FC = '{email:"f4@x.org", roles:["FeeClerk"], campusId:"LMS4", feeClerkOnly:true}';
+const rv = (who) => J(run('coordCaptureReview_(' + who + ')'));
+assert.deepStrictEqual(rv(OWN).runs.map(r => r.runId).sort(), ['HP1-20261102-071500-tr01', 'HP6-20261102-071500-cc01'], 'the Owner sees every shelved run');
+assert.deepStrictEqual(rv(C4).runs.map(r => r.runId), ['HP1-20261102-071500-tr01'], 'a Coordinator sees their district only');
+assert.deepStrictEqual(rv(C1).runs.map(r => r.runId), ['HP6-20261102-071500-cc01']);
+const one = rv(C4).runs[0];
+assert.deepStrictEqual([one.reg, one.campus, one.kind, one.capturedBy, one.videoFileId, one.stops[0].photoFileId, one.stops[0].name], ['HP1', 'LMS4', 'trial', 'c4@x.org', 'VIDtr01blurred', '', 'Stop A']);
+assert.strictEqual(rv('{email:"p4@x.org", roles:["Principal"], campusId:"LMS4"}').error, 'Not authorized', 'a Principal is refused');
+assert.strictEqual(rv(FC).error, 'Not authorized', 'a Fee Clerk is refused');
+assert.strictEqual(rv('null').error, 'Not authorized');
+// decide
+const decide = (who, runId, decision) => J(run('coordCaptureDecide_(' + who + ', ' + JSON.stringify({ runId, decision }) + ')'));
+assert.strictEqual(decide(FC, 'HP1-20261102-071500-tr01', 'publish').error, 'Not authorized', 'nor may a Fee Clerk decide');
+assert.strictEqual(decide(C1, 'HP1-20261102-071500-tr01', 'publish').error, 'That run is not waiting for your check', 'an out-of-scope runId is refused');
+assert.strictEqual(decide(OWN, 'HP1-NOPE', 'publish').error, 'That run is not waiting for your check', 'an unknown one, with the same words');
+assert.match(decide(OWN, 'HP1-20261102-071500-tr01', 'delete').error, /publish or discard/);
+assert.strictEqual(shelf().length, 2, 'refusals change nothing');
+fetched.length = 0;
+assert.strictEqual(decide(C4, 'HP1-20261102-071500-tr01', 'publish').success, true, 'a trial can be promoted to a real run');
+assert.strictEqual(fetched.length, 0, 'publish asks the Roster nothing');
+const promoted = J(run('gpsRows_(GPS_TAB_CAPTURE)')).find(r => r.runId === 'HP1-20261102-071500-tr01');
+assert.deepStrictEqual(Object.keys(promoted), J(run('GPS_CAPTURE_COLS')), 'decide publish moves the row into Capture Stops, in its shape (no kind)');
+assert.deepStrictEqual([promoted.videoFileId, promoted.capturedBy], ['VIDtr01blurred', 'c4@x.org']);
+assert.ok(!shelf().some(r => r.runId === 'HP1-20261102-071500-tr01'), 'and off the shelf');
+sp = pushOne('HP1-20261102-071500-tr01', 'HP1');
+assert.deepStrictEqual([sp.shelved, pubIds().filter(id => id === 'HP1-20261102-071500-tr01').length], [0, 1], 'a re-push of a promoted trial stays published');
+// discard: the Roster bins the folder and closes the run; the row goes only when it says so
+fetched.length = 0; roster = { success: false, error: 'Unknown run' };
+assert.match(decide(OWN, 'HP6-20261102-071500-cc01', 'discard').error, /could not be binned: Unknown run/);
+assert.deepStrictEqual([fetched[0].url, fetched[0].body], [run('COORD_ROSTER_URL'), { action: 'capturediscard', secret: 'S', reg: 'HP6', runId: 'HP6-20261102-071500-cc01' }], 'decide discard calls Roster with the secret');
+assert.ok(shelf().some(r => r.runId === 'HP6-20261102-071500-cc01'), 'a failed discard keeps the row');
+roster = { success: true };
+assert.strictEqual(decide(C1, 'HP6-20261102-071500-cc01', 'discard').success, true);
+assert.ok(!shelf().some(r => r.runId === 'HP6-20261102-071500-cc01'), 'a discarded run leaves the shelf');
+assert.ok(pubIds().indexOf('HP6-20261102-071500-cc01') === -1, 'and never reaches Capture Stops');
+ctx.coordVisibleCampuses_ = stubVisible;
 // ── parts catalog (Task 9): the agencies' service data, pushed from the Mac; models and parts fleet-wide, vehicles and history by reg ──
 const part = (o) => Object.assign({ lifeKm: 40000, lifeMonths: 24, price: 9500, labour: 300, spec: '', components: ['tyre_fl', 'tyre_fr'], asOf: '2026-10-01T10:00:00' }, o);
 ctx.catPush = {

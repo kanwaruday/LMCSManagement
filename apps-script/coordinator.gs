@@ -154,6 +154,7 @@ function doGet(e) {
     if (action === 'coordinatorbuslive') return coordJson_(coordBusLive_(caller));
     if (action === 'coordinatorbuschecks') return coordJson_(coordGpsClerkChecks_(caller));
     if (action === 'coordinatortransportinsight') return coordJson_(coordGpsInsight_(caller));
+    if (action === 'transportcapturereview') return coordJson_(coordCaptureReview_(caller)); // the trial / first-run shelf: Owner and Coordinators (checked inside)
     if (action === 'coordinatortransportloadout') return coordJson_(coordLoadout_(caller)); // the safety loadout list: every transport role reads it
     if (action === 'coordinatortransportfleet') return coordJson_(coordFleet_(caller)); // Fleet setup quests: the caller's campuses
     if (action === 'coordinatortransportrollcall') return coordJson_(coordRollCall_(caller, e.parameter.date)); // daily duty roll call: the caller's campuses
@@ -195,6 +196,7 @@ function doPost(e) {
     if (action === 'coordinatorresolvetask') return coordJson_(coordTaskResolve_(caller, body));
     if (action === 'coordinatortransportloadout') return coordJson_(coordLoadoutSet_(caller, body)); // Owner only (checked inside)
     if (action === 'coordinatorrecommend') return coordJson_(coordRecommend_(caller, body));
+    if (action === 'transportcapturedecide') return coordJson_(coordCaptureDecide_(caller, body)); // publish or discard a shelved run (coordinator-transport-gps.gs)
     return coordJson_({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return coordJson_({ success: false, error: err.message });
