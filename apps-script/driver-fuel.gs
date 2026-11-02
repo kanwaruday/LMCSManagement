@@ -98,7 +98,7 @@ function dflActor_(body) {
   if (body.deviceToken || !body.idToken || !body.viewReg) return dlkLink_(body.deviceToken);
   const v = dlkRosterView_(body), c = v && v.staff;
   if (!c) return null;
-  return { reg: v.reg, campus: v.campus, linkId: 'staff:' + c.email, name: v.name,
+  return { reg: v.reg, campus: v.campus, linkId: 'staff:' + c.email, name: String(v.name || '').replace(/^[=+\-@\s']+/, ''), // the fleet sheet's name: never a formula in the cell (review L4)
     enteredBy: c.email + ' (' + (c.roles.indexOf('Owner') !== -1 ? 'Owner' : 'Coordinator') + ')' };
 }
 
@@ -133,10 +133,12 @@ function driverFuel_(body) {
   const sh = dflSheet_();
   const verdict = function () {
     const rows = sh.getDataRange().getValues().slice(1), old = rows.filter(function (r) { return String(r[0]) === fillId; })[0];
-    if (old) return String(old[3]) === link.linkId ? { done: { success: true, fillId: fillId, status: String(old[12]) } } : { no: fail('Bad fillId') };
+    if (old) return String(old[3]) === link.linkId && String(old[1]) === link.reg ? { done: { success: true, fillId: fillId, status: String(old[12]) } } : { no: fail('Bad fillId') };
     // a link holds at most DFL_MAX_PENDING_ fills waiting for the office: a forwarded link can't flood Drive with 25 MB videos
-    if (rows.filter(function (r) { return String(r[3]) === link.linkId && String(r[12]) === 'pending'; }).length >= DFL_MAX_PENDING_) {
-      return { no: fail(DFL_MAX_PENDING_ + ' fills are already waiting for the office to check. Ask your Fee Clerk to check them, then send this one.') };
+    // a staff member's cap is per bus (review M3): their unchecked fills on one bus never block another
+    if (rows.filter(function (r) { return String(r[3]) === link.linkId && String(r[12]) === 'pending' && (!link.enteredBy || String(r[1]) === link.reg); }).length >= DFL_MAX_PENDING_) {
+      return { no: fail(link.enteredBy ? DFL_MAX_PENDING_ + ' fills you entered for this bus are waiting for the office to check. Ask the Fee Clerk to check them first.'
+        : DFL_MAX_PENDING_ + ' fills are already waiting for the office to check. Ask your Fee Clerk to check them, then send this one.') };
     }
     const last = dflLast_(link.reg).lastOdometer;
     if (last != null && n.odometer < last) return { no: fail('The odometer is less than last time (' + last + ')') };

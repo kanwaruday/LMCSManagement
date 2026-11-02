@@ -208,10 +208,24 @@ t('staff: the pending cap applies per staff member', () => {
   assert.strictEqual(sfill({ fillId: 'Fstaff00003', odometer: '58500' }).success, true, 'the Coordinator\'s 2nd and 3rd');
   assert.strictEqual(sfill({ fillId: 'Fstaff00004', odometer: '58600' }).success, true);
   const fourth = sfill({ fillId: 'Fstaff00005', odometer: '58700' });
-  assert.ok(fourth.refused && /already waiting/.test(fourth.error), 'a 4th waiting fill of the same staff member is refused');
+  assert.ok(fourth.refused && /you entered for this bus are waiting/.test(fourth.error), 'a 4th waiting fill of the same staff member on this bus is refused');
   staff = OWNER;
   assert.strictEqual(sfill({ fillId: 'Fstaff00006', odometer: '58700' }).success, true, 'the Owner has their own cap');
   assert.strictEqual(call('driverFuel_', fill({ fillId: 'Fdrv-after2', odometer: '58800' })).success, true, 'and the driver theirs');
+});
+t('staff: the cap is per bus (review M3); a fillId of another bus is not "done"; a fleet name never becomes a formula (review L4)', () => {
+  staff = OWNER;
+  let km = 58900, n = 7, last;
+  do { last = sfill({ fillId: 'Fstaff0000' + n++, odometer: String(km += 100) }); } while (last.success && n < 12); // fill the Owner's cap on HP659511
+  assert.ok(last.refused && /for this bus/.test(last.error), 'the Owner\'s cap on HP659511 is reached');
+  const sent = rows().find((r) => r[0] === 'Fstaff00007') ? 'Fstaff00007' : 'Fstaff00006';
+  tabs['LM Studio Fleet'][2][6] = '=HYPERLINK("x")';
+  const other = sfill({ fillId: 'Fstaff00010', odometer: '12000', viewReg: 'HP665805' });
+  assert.strictEqual(other.success, true, 'another bus still takes their fill');
+  const row = rows().find((r) => r[0] === 'Fstaff00010');
+  assert.deepStrictEqual([row[1], row[4]], ['HP665805', 'HYPERLINK("x")'], 'the driver name is stored as text, never a formula');
+  const replay = sfill({ fillId: sent, odometer: '12100', viewReg: 'HP665805' });
+  assert.ok(replay.refused && /Bad fillId/.test(replay.error), 'a fillId used on another bus is refused, not reported done');
 });
 
 // client side (driver/driver-logic.js)

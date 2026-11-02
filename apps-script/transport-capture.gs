@@ -197,7 +197,7 @@ function captureRun_(body) {
   if (trial && a.caller.role === 'Driver') return fail(CAP_TRIAL_DENIED_);
   const trialDenied = trial && !dlkStaff_(a.caller.roles); // a Fee Clerk: refused below unless the row already says yes (the shared phone, Ruling 41)
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
-  const driver = run.kind === 'timelapse' && a.caller.role !== 'Driver' ? ((dlkFleet_().filter(function (b) { return b.reg === a.v.reg; })[0] || {}).driver || '') : ''; // driver-token.gs
+  const driver = run.kind === 'timelapse' && a.caller.role !== 'Driver' ? String((dlkFleet_().filter(function (b) { return b.reg === a.v.reg; })[0] || {}).driver || '').replace(/^[=+\-@\s']+/, '') : ''; // driver-token.gs; never a formula (review L4)
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const author = String(run.capturedBy || '').trim().toLowerCase();
   // Only shapes the phone really sends reach the sheet: a time is epoch ms or an ISO string, a status one of the phone's words.
