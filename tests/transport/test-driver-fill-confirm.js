@@ -80,3 +80,18 @@ t('reject needs a reason; the reason is formula-safe and goes in its own column'
   assert.strictEqual(call('driverFillList_', { idToken: 'clerk1' }).fills[0].reason, 'HYPERLINK("x") bill is blurred');
   tabs['Driver Fills'].forEach((r) => r.forEach((c) => assert.ok(typeof c !== 'string' || !/^[=+\-@]/.test(c), 'formula-like cell ' + c)));
 });
+
+t('staff entries (2 Nov): nobody confirms a fill they entered themselves; the list says who entered it and whether it is mine', () => {
+  CALLERS.coord4 = { email: 'C4.Coord@X.test', campusId: 'LMS4', roles: ['Coordinator'], role: 'Coordinator' };
+  const h = tabs['Driver Fills'][0]; if (h.indexOf('Entered By') === -1) h.push(...Array(Math.max(0, 17 - h.length)).fill(''), 'Entered By');
+  const ec = h.indexOf('Entered By'), staffRow = row('Fstaff0001', 'HP659511', 'LMS4', 'pending');
+  staffRow[3] = 'staff:c4.coord@x.test'; staffRow[ec] = 'c4.coord@x.test (Coordinator)';
+  tabs['Driver Fills'].push(staffRow);
+  const mine = call('driverFillList_', { idToken: 'coord4' }).fills.find((x) => x.fillId === 'Fstaff0001');
+  assert.deepStrictEqual([mine.enteredBy, mine.mine], ['c4.coord@x.test (Coordinator)', true], 'the entrant sees it is theirs (email case ignored)');
+  assert.strictEqual(call('driverFillList_', { idToken: 'clerk4' }).fills.find((x) => x.fillId === 'Fstaff0001').mine, false, 'the clerk sees who entered it');
+  assert.strictEqual(call('driverFillList_', { idToken: 'clerk4' }).fills.find((x) => x.fillId === 'Fpending1').enteredBy, '', 'a driver\'s own fill names nobody');
+  assert.match(call('driverFillDecide_', { idToken: 'coord4', fillId: 'Fstaff0001', decision: 'confirm' }).error, /You entered this fill/, 'no self-approval');
+  assert.strictEqual(fillRow('Fstaff0001')[12], 'pending', 'still waiting');
+  assert.strictEqual(call('driverFillDecide_', { idToken: 'clerk4', fillId: 'Fstaff0001', decision: 'confirm' }).status, 'confirmed', 'someone else confirms it');
+});

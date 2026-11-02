@@ -6,15 +6,22 @@
 // Same project as driver-fuel.gs (Roster). Who: verifyStaffManagerToken_ with FeeClerk; tupCovers_ of the fill's campus.
 //
 // POST {action:'driverfilllist', idToken} -> {success, fills:[{fillId, reg, campus, driverName, filledAt, received, litres, amount,
-//   odometer, billFileId, videoFileId, status, decidedAt, decidedBy, reason, dayBookEntryId}]}: every pending fill of the caller's
+//   odometer, billFileId, videoFileId, status, decidedAt, decidedBy, reason, dayBookEntryId, enteredBy, mine}]}: every pending fill of the caller's
 //   campuses, and those decided in the last 14 days. Drive ids only: the page opens them in Drive.
 // POST {action:'driverfilldecide', idToken, fillId, decision:'confirm'|'reject', reason?} -> {success, fillId, status}.
 //   Under the lock. The same decision again is a no-op; the other decision on a decided fill is refused. A reject needs a short
 //   reason (3-200 characters, staff eyes only: the driver's page never reads it). Confirmed At / Confirmed By record either decision.
+// Staff entries (2 Nov): a fill the Owner or a Coordinator entered from the driver page (Driver Link ID 'staff:<email>', 'Entered By')
+//   lists enteredBy, and mine = the caller entered it. Nobody confirms their own fill: someone else must check it (security review).
 // ═══════════════════════════════════════════════════════════════════
 
 const DFC_REASON_COL_ = 'Reject Reason'; // column 17, after driver-fuel.gs's 16; its header is added on the first decision
 const DFC_KEEP_DAYS_ = 14;
+// Did this caller enter the fill themselves? A staff fill's link id is 'staff:<email>'; Google's email case varies, so both lower.
+function dfcEnteredBy_(linkId, email) {
+  const m = /^staff:(.+)$/.exec(String(linkId || ''));
+  return !!m && !!email && m[1].trim().toLowerCase() === String(email).trim().toLowerCase();
+}
 
 function dfcIso_(v) { return v instanceof Date && isFinite(v.getTime()) ? v.toISOString() : String(v || ''); }
 
@@ -34,7 +41,7 @@ function driverFillList_(body) {
       filledAt: dfcIso_(r['Filled At']), received: dfcIso_(r['Received']), litres: Number(r['Litres']), amount: Number(r['Amount']),
       odometer: Number(r['Odometer']), billFileId: String(r['Bill File ID']), videoFileId: String(r['Video File ID']), status: String(r['Status']),
       decidedAt: dfcIso_(r['Confirmed At']), decidedBy: String(r['Confirmed By'] || ''), reason: String(r[DFC_REASON_COL_] || ''),
-      dayBookEntryId: String(r['Day Book Entry ID'] || '') };
+      dayBookEntryId: String(r['Day Book Entry ID'] || ''), enteredBy: String(r['Entered By'] || ''), mine: dfcEnteredBy_(r['Driver Link ID'], caller.email) };
   });
   return { success: true, fills: fills };
 }
@@ -58,6 +65,7 @@ function driverFillDecide_(body) {
       const now = String(v[i][12]);
       if (now === status) return { success: true, fillId: fillId, status: status }; // a repeat tap
       if (now !== 'pending') return fail('This fill is already ' + now);
+      if (decision === 'confirm' && dfcEnteredBy_(v[i][3], caller.email)) return fail('You entered this fill. Someone else must check it.'); // no self-approval
       let rc = head.indexOf(DFC_REASON_COL_) + 1;
       if (!rc) { rc = Math.max(head.length, DFL_HEADER_.length) + 1; sh.getRange(1, rc).setValue(DFC_REASON_COL_); }
       sh.getRange(i + 1, 13, 1, 3).setValues([[status, new Date(), caller.email]]);
