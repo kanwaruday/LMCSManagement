@@ -133,5 +133,6 @@ const kinds = (list) => V.myActions_(list, NOW).map((x) => x.row + ':' + x.kind)
   A.deepStrictEqual(d[1].map((a) => a.row), [2]); A.deepStrictEqual(d[2].map((a) => a.row), [1, 3]);
   A.deepStrictEqual(d[4].map((a) => a.row), [5]); // the server writes notDup on both rows, so in practice both clear
   A.deepStrictEqual(V.missingDetails_({ qualification: 'B.A.', bed: ' ', age: '30' }).map((m) => m[0]), ['bed', 'gender', 'cv']);
+  A.deepStrictEqual(V.missingDetails_({ qualification: 'B.A.', bed: 'B.Ed', age: '30', gender: 'F', cv: 'Paper copy with office' }).map((m) => m[0]), ['cv']); // a CV that isn't a link can be filled
   console.log('ok  - possibleDups_ / missingDetails_');
 }

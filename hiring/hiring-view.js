@@ -136,7 +136,8 @@
   }
   // (b) the details a form-less applicant often lacks: [key, label] in panel order
   const DETAILS = [['qualification', 'Qualification'], ['bed', 'B.Ed / TET'], ['age', 'Age'], ['gender', 'Gender'], ['cv', 'CV / bio-data']];
-  function missingDetails_(a) { return DETAILS.filter((d) => !String((a || {})[d[0]] || '').trim()); }
+  // a CV counts only as a link, as the panel shows it
+  function missingDetails_(a) { return DETAILS.filter((d) => { const v = String((a || {})[d[0]] || '').trim(); return d[0] === 'cv' ? !/^https?:\/\//i.test(v) : !v; }); }
 
   const api = { possibleDups_, missingDetails_, DETAILS, inSel_, openAppt_, canOverride_, todayItems_, myActions_, waitingOnOthers_, furthest_, clerkBuckets_, SCAN_MAX_BYTES: 7 * 1024 * 1024 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

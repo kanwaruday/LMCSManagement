@@ -318,3 +318,17 @@ T('duplicate: different names, the same row, a Fee Clerk, or a Hired "other" are
   throws(() => ctx.hiringDupSettle_(clerk, { row: 2, otherRow: 4, same: false }), /Principal/);
   throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 4, same: true }), /already Hired/);
 });
+T('duplicate (review): an already-Rejected "other" keeps its reason; a formula is copied as text; same phone refused', () => {
+  reset([appRow({ name: 'Asha', phone: '9000000001' }), appRow({ name: 'Asha', phone: '9000000002', STATUS: 'Rejected', REJECT_REASON: 'Weak subject knowledge' })]);
+  throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: true }), /already Rejected/);
+  assert.strictEqual(apps.rows[2][C.REJECT_REASON - 1], 'Weak subject knowledge');
+  reset([appRow({ name: 'Asha', phone: '9000000001' }), appRow({ name: 'Asha', phone: '9000000002', AGE: '=IMPORTXML("x")' })]);
+  ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: true });
+  assert.strictEqual(apps.rows[1][C.AGE - 1], "'=IMPORTXML(\"x\")");
+  reset([appRow({ name: 'Asha', phone: '9000000001' }), appRow({ name: 'Asha', phone: '9000000001' })]);
+  throws(() => ctx.hiringDupSettle_(principal, { row: 2, otherRow: 3, same: true }), /two different/);
+});
+T('"Duplicate entry" is not a reason anyone can pick on a reject', () => {
+  reset([appRow({})]);
+  throws(() => ctx.hiringUpdateStatus_(principal, { row: 2, status: 'Rejected', rejectReason: 'Duplicate entry' }), /Pick a reason/);
+});

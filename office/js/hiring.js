@@ -215,7 +215,7 @@ export async function mountHiring(root, session, deps = {}) {
 
   function reportForm(a, x) {
     return (close) => {
-      const kind = x.kind, reasons = (data.rejectReasons || []).map((r) => r.label);
+      const kind = x.kind, reasons = (data.rejectReasons || []).filter((r) => r.group !== 'duplicate').map((r) => r.label); // "Duplicate entry" is set only by settling a duplicate
       const err = h('p', { class: 'err', role: 'alert' });
       const file = inp('file', { accept: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png' });
       const els = {}; // name -> control

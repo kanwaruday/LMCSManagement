@@ -1757,13 +1757,17 @@ function hirNameKey_(name) { return String(name || '').toLowerCase().replace(/[^
 // action=hiringdupsettle {row, otherRow, same} -- elevated, both rows in the caller's district.
 //   same=false: "not the same person", remembered on both rows (stage marks notDup) so the flag stops.
 //   same=true:  keep `row`; it takes any detail it lacks from the other, and the other is filed as Rejected
-//               "Duplicate entry" (Revive undoes it), with its open appointments cancelled like any reject.
+//               "Duplicate entry", with its open appointments cancelled like any reject. Revive brings it back as a new
+//               round (progress reset), so the page offers to keep the one further along. Refused if the other is
+//               already Rejected (its reason stays) or shares the phone.
 function hiringDupSettle_(caller, body) {
   hirNeedElevated_(caller);
   const sheet = hirSheet_();
   const keep = hirScopedRow_(caller, sheet, body.row, true), other = hirScopedRow_(caller, sheet, body.otherRow, !body.same);
-  if (keep.row === other.row) throw new Error('Pick two different candidates');
+  if (keep.row === other.row || (keep.phone && keep.phone === other.phone)) throw new Error('Pick two different candidates');
   if (hirNameKey_(keep.name) !== hirNameKey_(other.name)) throw new Error('These two candidates do not share a name');
+  // an already-Rejected row keeps its own reason: nothing to file (review, 2 Nov)
+  if (body.same && String(sheet.getRange(other.row, HIR_COL.STATUS).getValue() || '').trim() === 'Rejected') throw new Error(hirApplicantId_(other.row) + ' is already Rejected; there is nothing to file');
   hirWithLock_(function () {
     hirGrow_(sheet);
     if (!body.same) {
@@ -1778,17 +1782,18 @@ function hiringDupSettle_(caller, body) {
     }
     HIR_DETAIL_KEYS.forEach(function (k) {
       const c = HIR_DETAIL_COL[k], v = sheet.getRange(other.row, c).getValue();
-      if (!String(sheet.getRange(keep.row, c).getValue() || '').trim() && String(v || '').trim()) sheet.getRange(keep.row, c).setValue(v);
+      // copied as text: a cell reading "=..." must not come back as a live formula
+      if (!String(sheet.getRange(keep.row, c).getValue() || '').trim() && String(v || '').trim()) sheet.getRange(keep.row, c).setValue(typeof v === 'string' ? hirCellText_(v, 500) : v);
     });
-    hirRejectRowCore_(caller, sheet, other.row, 'Duplicate entry', 'same person as ' + hirApplicantId_(keep.row));
+    hirRejectRowCore_(caller, sheet, other.row, 'Duplicate entry', 'same person as ' + hirApplicantId_(keep.row), true);
   });
   return hiringApplicants_(caller);
 }
 
 // Throws unless reason is one of HIR_REJECT_REASONS (and "Other" has a note). Run BEFORE anything is
 // written, so a refused reject never leaves a half-saved report behind.
-function hirCheckRejectArgs_(reason, note) {
-  const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === reason; })[0];
+function hirCheckRejectArgs_(reason, note, allowDuplicate) {
+  const hit = HIR_REJECT_REASONS.filter(function (x) { return x.label === reason && (x.group !== 'duplicate' || allowDuplicate); })[0];
   if (!hit) throw new Error('Pick a reason for rejecting this candidate');
   if (hit.group === 'other' && !hirText_(note, 500)) throw new Error('Add a note saying why (reason: Other)');
   return hit;
@@ -1810,8 +1815,8 @@ function hirSamePhoneRows_(sheet, row) {
 function hirRejectRow_(caller, sheet, row, reason, note) {
   hirWithLock_(function () { hirRejectRowCore_(caller, sheet, row, reason, note); });
 }
-function hirRejectRowCore_(caller, sheet, row, reason, note) {
-  hirCheckRejectArgs_(reason, note);
+function hirRejectRowCore_(caller, sheet, row, reason, note, allowDuplicate) {
+  hirCheckRejectArgs_(reason, note, allowDuplicate);
   note = hirText_(note, 500);
   hirGrow_(sheet);
   hirSamePhoneRows_(sheet, row).forEach(function (r) {
