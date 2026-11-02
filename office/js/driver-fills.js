@@ -14,6 +14,11 @@ const AFTER_COUNT = 'Goes into the Day Book after 31 Oct';
 export const canSeeFills = (session) => ['FeeClerk', 'Coordinator', 'Owner'].some((r) => String((session && session.role) || '').split(',').map((x) => x.trim()).includes(r));
 // '₹94.12/L' of a fill, or '' when it cannot be worked out.
 export const perLitre = (f) => (f.litres > 0 && f.amount > 0 ? '₹' + (f.amount / f.litres).toFixed(2) + '/L' : '');
+// A fill staff entered for a driver (Fleet's staff entries) can't be confirmed by the one who entered it: the Roster refuses it
+// (driverFillDecide_), so the screen offers only Reject and says why. Older Roster answers carry neither field.
+export const canConfirm = (f) => f.mine !== true;
+export const enteredByLine = (f) => (f.enteredBy ? 'Entered by ' + f.enteredBy : '');
+export const OWN_FILL = 'You entered this fill. Someone else must check it.';
 export const driveUrl = (id) => 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/view';
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) : '');
 
@@ -87,6 +92,7 @@ export async function showDriverFills(root, session, api) {
 
   const card = (f, acts) => h('li', {},
     h('b', {}, f.reg), ' · ', f.driverName, ' · ', day(f.filledAt || f.received),
+    enteredByLine(f) ? h('div', { class: 'meta' }, enteredByLine(f)) : null,
     h('div', { class: 'meta' }, [f.litres + ' L', formatInr(Math.round(f.amount * 100)), f.odometer.toLocaleString('en-IN') + ' km', perLitre(f)].filter(Boolean).join(' · ')),
     h('div', {}, h('a', { href: driveUrl(f.billFileId), target: '_blank', rel: 'noopener' }, 'View bill'), ' · ',
       h('a', { href: driveUrl(f.videoFileId), target: '_blank', rel: 'noopener' }, 'View video')),
@@ -96,7 +102,9 @@ export async function showDriverFills(root, session, api) {
     const mine = fills.filter((f) => f.campus === campus);
     const pending = mine.filter((f) => f.status === 'pending'), decided = mine.filter((f) => f.status !== 'pending');
     setKids(list, pending.length ? pending.map((f) => {
-      const ok = h('button', { type: 'button', class: 'dfl-confirm' }, 'Confirm'), no = h('button', { type: 'button' }, 'Reject');
+      const no = h('button', { type: 'button' }, 'Reject');
+      if (!canConfirm(f)) { no.onclick = () => decide(f, 'reject', [no]); return card(f, [h('div', { class: 'flag' }, OWN_FILL), h('div', { class: 'row-actions' }, no)]); }
+      const ok = h('button', { type: 'button', class: 'dfl-confirm' }, 'Confirm');
       ok.onclick = () => decide(f, 'confirm', [ok, no]); no.onclick = () => decide(f, 'reject', [ok, no]);
       return card(f, h('div', { class: 'row-actions' }, ok, no));
     }) : h('li', { class: 'meta' }, 'No fills waiting.'));
