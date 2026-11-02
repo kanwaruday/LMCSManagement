@@ -30,6 +30,9 @@
 // Trial runs (2 Nov): run.trial === true marks a practice timelapse; the 'Trial' column (found or appended by header name) says
 //   'yes'. Only an Owner or Coordinator idToken may start one; once set it never flips. The Coordinator shelves trials on its
 //   'Capture Review' tab (coordinator-transport-gps.gs) instead of publishing them.
+// Staff entries (2 Nov): a staff sender's route timelapse also writes 'Driver' (found or appended by header name, like Trial): the
+//   bus's fleet driver at run time (dlkFleet_), the run's "on behalf of" note. Kept from the first manifest that set it; a driver
+//   phone's run never writes it (Captured By already names the driver).
 // POST {action:'capturediscard', secret, reg, runId} -> {success}. The Coordinator's Discard on that shelf: Capture/<REG>/<runId>/
 //   goes to the Drive bin (recoverable 30 days) and the run's Status becomes 'closed', so the Mac's pull never lists it again.
 // ═══════════════════════════════════════════════════════════════════
@@ -43,6 +46,7 @@ const CAP_RUN_ACCEPTS_ = { timelapse: ['frame', 'stop'], count: [], inspection: 
 const CAP_MAX_BYTES_ = 2 * 1024 * 1024;
 const CAP_MAX_FRAME_TIMES_ = 40000; // characters of frameTimes JSON kept: well inside Sheets' 50,000 per cell (a 75 km run is ~10,000)
 const CAP_TRIAL_COL_ = 'Trial'; // read and written by header name: appended after Captured By on first use
+const CAP_DRIVER_COL_ = 'Driver'; // by header name, as Trial: the fleet driver a staff member's timelapse was run for
 const CAP_TRIAL_DENIED_ = 'Only the Owner or a Coordinator can record a trial run';
 const CAP_LOADOUT_TAB_ = 'Safety Loadout'; // Item ID | Label | ... (coordinator-transport.gs writes it, seed included, on first read)
 // sibling of 'Bus Wise Documents'. A function, not a top-level const: TUP_PATH_ lives in transport-uploads.gs, which Apps Script
@@ -193,6 +197,7 @@ function captureRun_(body) {
   if (trial && a.caller.role === 'Driver') return fail(CAP_TRIAL_DENIED_);
   const trialDenied = trial && !dlkStaff_(a.caller.roles); // a Fee Clerk: refused below unless the row already says yes (the shared phone, Ruling 41)
   const frameTimes = run.kind === 'timelapse' && capFrameTimesOk_(run.frameTimes) ? run.frameTimes : null; // else dropped, never a refusal
+  const driver = run.kind === 'timelapse' && a.caller.role !== 'Driver' ? ((dlkFleet_().filter(function (b) { return b.reg === a.v.reg; })[0] || {}).driver || '') : ''; // driver-token.gs
   const js = function (x) { return x === undefined || x === null ? '' : JSON.stringify(x); };
   const author = String(run.capturedBy || '').trim().toLowerCase();
   // Only shapes the phone really sends reach the sheet: a time is epoch ms or an ISO string, a status one of the phone's words.
@@ -210,16 +215,21 @@ function captureRun_(body) {
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId) { at = i + 1; break; }
     if (at && (String(rows[at - 1][1]) !== a.v.reg || String(rows[at - 1][3]) !== run.kind)) return fail('A run\'s bus and kind cannot change (' + rows[at - 1][1] + ', ' + rows[at - 1][3] + ')');
     if (at && String(rows[at - 1][12]) === 'closed') return fail('This run was discarded. Record a new one.'); // discard is final: a resent manifest must not bring it back
-    let tc = rows[0].indexOf(CAP_TRIAL_COL_);
+    const head = rows[0].slice(), col = function (name) { // by header name; appended (after any added columns) on first use
+      let c = head.indexOf(name);
+      if (c === -1) { c = head.length; head.push(name); sh.getRange(1, 1, 1, head.length).setValues([head]); }
+      return c;
+    };
+    let tc = head.indexOf(CAP_TRIAL_COL_);
     const was = at && tc !== -1 && String(rows[at - 1][tc]) === 'yes';
     if (trialDenied && !was) return fail(CAP_TRIAL_DENIED_);
     if (at && was !== trial) return fail('A run cannot become a trial or stop being one');
     if (at && rows[at - 1][14]) row[14] = rows[at - 1][14]; // a run keeps its capturer, whoever sends the next manifest
-    if (trial && tc === -1) { tc = rows[0].length; sh.getRange(1, 1, 1, tc + 1).setValues([rows[0].concat([CAP_TRIAL_COL_])]); }
-    if (tc !== -1) { // whole row, so columns between Captured By and Trial keep their values
-      while (row.length <= tc) row.push(at ? rows[at - 1][row.length] : '');
-      row[tc] = trial ? 'yes' : '';
-    }
+    if (trial && tc === -1) tc = col(CAP_TRIAL_COL_);
+    const dc = driver ? col(CAP_DRIVER_COL_) : head.indexOf(CAP_DRIVER_COL_);
+    const pad = function (c) { while (row.length <= c) row.push(at ? rows[at - 1][row.length] : ''); }; // whole row: columns past Captured By keep their values
+    if (tc !== -1) { pad(tc); row[tc] = trial ? 'yes' : ''; }
+    if (dc !== -1) { pad(dc); if (driver && !row[dc]) row[dc] = driver; } // the first manifest's driver stands
     if (at) sh.getRange(at, 1, 1, row.length).setValues([row]); else sh.appendRow(row);
   } finally {
     lock.releaseLock();

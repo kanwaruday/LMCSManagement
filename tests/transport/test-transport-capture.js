@@ -283,6 +283,27 @@ assert.strictEqual(cr({ runId: 'TR5', reg: 'HP659511', kind: 'timelapse', status
 assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR5' }).success, true, 'no folder (never uploaded or already gone): still closes');
 assert.strictEqual(rowOf('TR5')[12], 'closed');
 
+// Staff entries (2 Nov): a staff member's timelapse notes the bus's fleet driver in 'Driver' (by header name); a driver phone's never does
+tabs['LM Studio Fleet'] = [['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver'], ['HP659511', 'Bus 4', 'LMS 4', 'yes', '', '', 'Fleet Driver'],
+  ['HP665805', 'Bus 1', 'LMS 1', 'yes', '', '', ''], ['HP665686', 'Bus 5', 'LMS 4', 'yes', '', '', 'Bus Five Driver']];
+const DV = () => tabs['Capture Runs'][0].indexOf('Driver');
+assert.strictEqual(DV(), -1, 'no Driver column until a staff timelapse');
+assert.strictEqual(drv({ runId: 'DV0', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
+assert.strictEqual(DV(), -1, 'a driver phone\'s run adds none');
+caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+assert.strictEqual(cr({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
+assert.strictEqual(DV(), 17, 'appended after Notes and Trial');
+assert.deepStrictEqual([rowOf('DV1')[6], rowOf('DV1')[DV()]], ['c4@lms.org.in', 'Fleet Driver'], 'the staff run says whose bus it was run for');
+tabs['LM Studio Fleet'][1][6] = 'New Driver';
+assert.strictEqual(cr({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status: 'ended', trial: false }).success, true);
+assert.strictEqual(rowOf('DV1')[DV()], 'Fleet Driver', 'the driver at run time stands');
+assert.strictEqual(drv({ runId: 'DV2', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
+assert.ok(!rowOf('DV2')[DV()], 'a driver phone\'s run leaves Driver blank');
+assert.strictEqual(drv({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).success, true, 'a driver resending a staff run');
+assert.strictEqual(rowOf('DV1')[DV()], 'Fleet Driver', 'keeps the note');
+assert.strictEqual(cr({ runId: 'DV4', reg: 'HP665686', kind: 'profile', status: 'running' }).success, true);
+assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
+
 // C1 end to end: the phone's real run store and uploader, this real server behind post(). A safety check with a photo item,
 // captured by a Coordinator and sent by the campus Fee Clerk (Ruling 41).
 (async () => {
