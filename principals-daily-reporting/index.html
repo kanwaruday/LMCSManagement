@@ -271,7 +271,7 @@ td{padding:6px 12px;vertical-align:middle}
   #lmcs-gate .auth-denied{margin-top:16px;background:#fde8e8;border:1px solid #CE0000;color:#a70000;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;text-align:left}
 </style>
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
-<script src="../assets/auth.js?v=96f2b2ba"></script>
+<script src="../assets/auth.js?v=b3b0748e"></script>
 <script src="../assets/campus-picker.js?v=cd35c768"></script>
 <script>
 (function () {
@@ -1474,6 +1474,7 @@ function renderMsTags() {
       selectedRegisters = selectedRegisters.filter(function(v){ return v !== r; });
       renderMsTags();
       renderMultiselectCheckboxState();
+      draftSave_();
     };
     tag.appendChild(x);
     tagsEl.appendChild(tag);
@@ -1733,6 +1734,7 @@ async function submitReport() {
     };
     var result = await saveDailyReport(principalCampusId, payload);
     if (result && result.success) {
+      draftClear_(payload.date); // only a save the server confirmed clears the copy on this device
       alert('Report submitted.');
       homeLoad_(principalCampusId, true); // Home's "Daily Report" card flips to Filed
     } else {
@@ -1744,6 +1746,67 @@ async function submitReport() {
     btn.textContent = originalLabel;
   }
 }
+// ── The report draft on this device (P33, 2 Nov: a sign-in that expired mid-entry lost a whole report) ──
+// Every edit saves the form to localStorage under this person + school + date. After a sign-in prompt (an expired token clears only
+// the session, never this), the next load restores it over the empty form, with a note saying it is not submitted yet. It is removed
+// only by a submit the server confirmed, by Discard, or by Sign out (assets/auth.js clears every 'lmcsDraft:' key).
+var DRAFT_PREFIX = 'lmcsDraft:pdr:', draftLoading = false, draftTimer = null;
+function draftKey_(dateISO) {
+  var s = SESSION || {};
+  return DRAFT_PREFIX + String(s.email || '').toLowerCase() + ':' + principalCampusId + ':' + (dateISO || document.getElementById('reportDate').value || todayISO());
+}
+function draftCollect_() {
+  var v = function (id) { return document.getElementById(id).value; };
+  return { at: Date.now(), maNone: document.getElementById('maNone').checked, maClass: v('maClass'), maScore: v('maScore'),
+    tasksCompleted: listToArray('tasksCompletedList'), tasksTomorrow: listToArray('tasksTomorrowList'), importantMessage: listToArray('importantMsgList'),
+    registers: selectedRegisters.slice(), typed: { tasksCompletedInput: v('tasksCompletedInput'), tasksTomorrowInput: v('tasksTomorrowInput'), importantMsgInput: v('importantMsgInput') } };
+}
+function draftSave_() {
+  if (draftLoading || !SESSION || !principalCampusId) return;
+  clearTimeout(draftTimer);
+  var key = draftKey_(); // the date field now, not when the timer fires
+  draftTimer = setTimeout(function () { try { localStorage.setItem(key, JSON.stringify(draftCollect_())); } catch (e) { /* storage full or blocked: the form still works */ } }, 300);
+}
+function draftClear_(dateISO) {
+  clearTimeout(draftTimer);
+  try { localStorage.removeItem(draftKey_(dateISO)); } catch (e) { /* ignore */ }
+  var n = document.getElementById('draftRestoredNotice'); if (n) n.hidden = true;
+}
+// after loadReportForDate filled the form from the server: an unsent copy on this device wins (it is newer work)
+function draftRestore_() {
+  var d = null;
+  try { d = JSON.parse(localStorage.getItem(draftKey_()) || 'null'); } catch (e) { d = null; }
+  if (!d || typeof d !== 'object') return;
+  document.getElementById('maNone').checked = !!d.maNone;
+  if (typeof d.maClass === 'string' && d.maClass) document.getElementById('maClass').value = d.maClass;
+  document.getElementById('maScore').value = typeof d.maScore === 'string' ? d.maScore : '';
+  syncMaNone();
+  [['tasksCompletedList', d.tasksCompleted], ['tasksTomorrowList', d.tasksTomorrow], ['importantMsgList', d.importantMessage]].forEach(function (x) {
+    document.getElementById(x[0]).innerHTML = '';
+    (Array.isArray(x[1]) ? x[1] : []).forEach(function (t) { if (typeof t === 'string') addItemDirect(x[0], t); });
+  });
+  if (Array.isArray(d.registers)) selectedRegisters = d.registers.filter(function (r) { return typeof r === 'string'; });
+  Object.keys(d.typed || {}).forEach(function (id) { var el = document.getElementById(id); if (el && typeof d.typed[id] === 'string') el.value = d.typed[id]; });
+  renderMultiselectOptions();
+  renderMsTags();
+  var n = document.getElementById('draftRestoredNotice');
+  if (!n) {
+    n = document.createElement('div'); n.id = 'draftRestoredNotice'; n.className = 'notice'; n.setAttribute('role', 'status');
+    var hol = document.getElementById('dayHolidayNotice'); hol.parentNode.insertBefore(n, hol.nextSibling);
+  }
+  n.textContent = '';
+  var at = new Date(Number(d.at) || Date.now());
+  n.appendChild(document.createTextNode('Restored your report from this device (last typed ' + ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2) + '). It is NOT submitted yet: check it and press Submit. '));
+  var b = document.createElement('button'); b.type = 'button'; b.style.cssText = 'min-height:44px;padding:0 10px;border:1px solid currentColor;border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer'; b.textContent = 'Discard this copy';
+  b.onclick = function () { if (confirm('Discard the unsent copy on this device?')) { draftClear_(); loadReportForDate(); } };
+  n.appendChild(b); n.hidden = false;
+}
+(function () {
+  var panel = document.getElementById('panel-principal');
+  ['input', 'change'].forEach(function (ev) { panel.addEventListener(ev, function (e) { if (e.target && e.target.id !== 'reportDate') draftSave_(); }); });
+  var mo = window.MutationObserver ? new MutationObserver(function () { draftSave_(); }) : null; // list items added or removed
+  if (mo) ['tasksCompletedList', 'tasksTomorrowList', 'importantMsgList'].forEach(function (id) { mo.observe(document.getElementById(id), { childList: true }); });
+})();
 function listToArray(listId) {
   var out = [];
   document.querySelectorAll('#' + listId + ' .txt').forEach(function(el) { out.push(el.textContent); });
@@ -1777,6 +1840,7 @@ function syncMaNone() {
 }
 async function loadReportForDate() {
   var myToken = ++principalLoadToken; // see its declaration for why
+  draftLoading = true; // the server prefill below must never overwrite the device copy
   var campusId = principalCampusId;
   var dateISO = document.getElementById('reportDate').value || todayISO();
 
@@ -1842,6 +1906,8 @@ async function loadReportForDate() {
   }
   renderMultiselectOptions();
   renderMsTags();
+  draftRestore_();
+  setTimeout(function () { if (myToken === principalLoadToken) draftLoading = false; }, 0); // after the list observer's prefill records
 
   // Support Session count follows the Date field -- viewing 1 Sept's
   // report shows 1 Sept's real SS count.

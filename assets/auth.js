@@ -229,6 +229,7 @@ window.LMCS = (function () {
 
   function signOut() {
     localStorage.removeItem(SESSION_KEY);
+    try { Object.keys(localStorage).filter(function (k) { return k.indexOf('lmcsDraft:') === 0; }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* ignore */ } // unsent drafts belong to the person signing out (an expired sign-in keeps them)
     if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // cached data belongs to the signed-out user
     window.location.reload();
   }
