@@ -269,11 +269,13 @@ function captureDriveCheck_() {
   try {
     let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
     f.getName(); // the call that needs the Drive grant
-    capPath_().forEach(function (n) { f = f && getSubfolder_(f, n); });
+    capPath_().forEach(function (n) { f = f && capSub_(f, n); });
     return { success: true, drive: 'ok', capture: f ? 'found' : 'missing' };
   } catch (e) {
     return { success: true, drive: String(e && e.message || e).slice(0, 300), capture: 'n/a' };
   }
+}
+
 /** POST capturediscard (see the header): bins one run's Drive folder and closes its Capture Runs row. A folder already gone
  *  (a retry after a lost reply) is fine; an unknown run is refused. */
 function captureDiscard_(body) {
