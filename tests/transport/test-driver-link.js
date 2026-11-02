@@ -79,7 +79,7 @@ assert.strictEqual(call('driverLinkList_', { idToken: 't' }).error, 'Not authori
 
 // driverme happy path
 const me = call('driverMe_', { deviceToken: c1.token });
-assert.deepStrictEqual(me, { success: true, name: 'Test Driver', reg: 'HP659511', campus: 'LMS4', runsNeeded: 1, runsDone: 1, lastFill: '2026-10-20', lastOdometer: 51600, view: false });
+assert.deepStrictEqual(me, { success: true, name: 'Test Driver', reg: 'HP659511', campus: 'LMS4', runsNeeded: 1, runsDone: 1, lastFill: '2026-10-20', lastOdometer: 51600, view: false, canAct: false }, 'a driver phone: canAct false, nothing else changed');
 assert.ok(rows()[0][10] instanceof Date, 'Last Seen written');
 const seen = rows()[0][10];
 call('driverMe_', { deviceToken: c1.token });
@@ -186,10 +186,11 @@ const owner = { email: 'o@x', campusId: 'ALL', roles: ['Owner'] }, coord = { ema
 caller = owner;
 const v = call('driverMe_', { viewReg: 'hp 659511', idToken: 't' });
 assert.deepStrictEqual([v.success, v.reg, v.campus, v.name, v.view, v.lastFill], [true, 'HP659511', 'LMS4', 'Test Driver', true, '2026-10-20'], 'the Owner sees what the driver sees');
+assert.strictEqual(v.canAct, true, 'the Owner may add entries (2 Nov)');
 assert.strictEqual(call('driverRoute_', { viewReg: 'HP659511', idToken: 't' }).vehicles[0].reg, 'HP659511');
 assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'running buses only');
 caller = coord;
-assert.strictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).success, true, 'a Coordinator too');
+assert.deepStrictEqual([call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).success, call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).canAct], [true, true], 'a Coordinator too, in district: canAct');
 assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), revoked, 'a parked bus: no view');
 tabs['LM Studio Fleet'][2][3] = 'yes'; // Bus 1 (LMS 1) running: another district
 assert.deepStrictEqual(call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), revoked, 'a Coordinator: their own district only');
@@ -200,7 +201,7 @@ assert.strictEqual(call('driverViewBuses_', { idToken: 't' }).buses.length, 2, '
 // a Principal (29 Oct, the school lock): their own school's buses only, by the fleet register's campus
 caller = { email: 'p4@x', campusId: 'LMS4', roles: ['Principal'] };
 assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses.map((b) => b.reg), ['HP659511'], 'a Principal: own school only');
-assert.strictEqual(call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).view, true);
+assert.deepStrictEqual([call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).view, call('driverMe_', { viewReg: 'HP659511', idToken: 't' }).canAct], [true, false], 'a Principal views but cannot act');
 assert.deepStrictEqual([call('driverMe_', { viewReg: 'HP665805', idToken: 't' }), call('driverRoute_', { viewReg: 'HP665805', idToken: 't' })], [revoked, revoked], 'not another school\'s bus');
 caller = { email: 'p5@x', campusId: 'LMS5', roles: ['Principal'] };
 assert.deepStrictEqual(call('driverViewBuses_', { idToken: 't' }).buses, [], 'a Principal gets no district: LMS 5 sees none of LMS 4\'s buses');

@@ -18,6 +18,8 @@
 //   the Capture Runs Status column only ever says running/ended, the Mac's processed output is what lands in Capture Stops);
 //   runsNeeded is 1 (no capture plan carries a number yet). lastFill/lastOdometer come from the 'Fuel Fills' mirror
 //   (office-fuel-mirror.gs) raised by the bus's pending 'Driver Fills' (driver-fuel.gs dflLast_), null when neither can be read. Last Seen is written at most once an hour.
+//   A staff view {idToken, viewReg} (driver-token.gs) adds view: true and canAct: true for the Owner or a Coordinator of the bus's
+//   district (2 Nov: they may add entries), false for a Principal. canAct is for the page alone: driverfuel and capture check again.
 // capture: capAuth_ (transport-capture.gs) takes body.deviceToken in place of idToken: route timelapses of the linked bus only.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -128,7 +130,7 @@ function driverRoute_(body) {
 }
 
 function driverMe_(body) {
-  const link = dlkLinkOrView_(body, dlkRosterCovers_);
+  const link = dlkRosterView_(body);
   if (!link) return { success: false, code: 'UNLINKED', error: DLK_UNLINKED_ }; // the phone forgets its token only on this code
   const cache = CacheService.getScriptCache(), seen = 'dlk_seen_' + link.linkId;
   if (!link.view && !cache.get(seen)) { // a staff view is not the driver's phone: Last Seen stays the driver's
@@ -142,7 +144,7 @@ function driverMe_(body) {
   } catch (e) { runsDone = 0; }
   const fuel = dflLast_(link.reg); // driver-fuel.gs: the Fuel Fills mirror and pending Driver Fills; never throws
   return { success: true, name: link.name, reg: link.reg, campus: link.campus, runsNeeded: DLK_RUNS_NEEDED_, runsDone: runsDone,
-    lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer, view: !!link.view };
+    lastFill: fuel.lastFill, lastOdometer: fuel.lastOdometer, view: !!link.view, canAct: !!link.staff }; // canAct: display only, driverfuel checks again
 }
 
 /** The Roster's staff check for a view (verifyStaffManagerToken_, staff-management-api.gs, with Principals let in) -> which
@@ -151,7 +153,19 @@ function driverMe_(body) {
 function dlkRosterCovers_(idToken) {
   const c = verifyStaffManagerToken_(idToken, ['Principal']);
   if (!c) return null;
-  return dlkStaff_(c.roles) ? function (campus) { return tupCovers_(c, campus); } : dlkOwnSchool_(c.roles, c.campusId);
+  if (!dlkStaff_(c.roles)) return dlkOwnSchool_(c.roles, c.campusId);
+  const covers = function (campus) { return tupCovers_(c, campus); };
+  covers.staff = c; // the Owner or a Coordinator: may also add entries for the bus (dlkRosterView_)
+  return covers;
+}
+
+/** dlkLinkOrView_ with the Roster's check; a staff view of the Owner or a Coordinator also carries .staff = the caller (verifyStaffManagerToken_),
+ *  the one test for adding entries (driverme canAct, driverfuel dflActor_). A Principal's view and a driver phone's link have none. */
+function dlkRosterView_(body) {
+  let staff = null;
+  const link = dlkLinkOrView_(body, function (t) { const f = dlkRosterCovers_(t); staff = (f && f.staff) || null; return f; });
+  if (link && link.view) link.staff = staff;
+  return link;
 }
 
 /** POST driverviewbuses {idToken}: the running buses the caller can view as their driver (dlkRosterCovers_'s scope). */
