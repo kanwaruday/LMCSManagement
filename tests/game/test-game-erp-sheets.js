@@ -115,11 +115,16 @@ assert.ok(/key/.test(push({ campus: 'LMS4', tab: 'dues', mode: 'upsert', key: ['
 // ---- guards: tabs, sensitive columns, sizes, shapes
 const bad = (b) => { const x = push(Object.assign({ campus: 'LMS4', tab: 'students_now', mode: 'replace', header: H, rows: [] }, b)); assert.strictEqual(x.success, false, JSON.stringify(b).slice(0, 80)); return x.error; };
 bad({ tab: 'assignments' }); bad({ tab: 'Students' }); bad({ campus: 'LMS9' }); bad({ campus: 'HES' }); bad({ mode: 'append' });
-['aadhaar', 'Aadhar No', 'PAN', 'pan_no', 'bank_account', 'IFSC', 'mobile', 'father_phone', 'DOB', 'date_of_birth', 'address', 'photo', 'image_ref', 'email', 'parent_name', 'salary', 'gross', 'net_pay'].forEach((c) => {
+['aadhaar', 'Aadhar No', 'Adhar No', 'adhaar', 'UID', 'uid_no', 'PAN', 'pan_no', 'bank_account', 'IFSC', 'mobile', 'father_phone', 'DOB', 'date_of_birth', 'address', 'photo', 'image_ref', 'email', 'parent_name',
+  'caste', 'Religion', 'blood_group', 'medical_notes', 'health', 'disability', 'salary', 'gross', 'net_pay', 'deduction'].forEach((c) => {
   assert.ok(/not allowed/.test(bad({ header: H.concat([c]), rows: [] })), c);
 });
-assert.strictEqual(push({ campus: 'LMS4', tab: 'salary_totals', mode: 'replace', header: ['month', 'staff_count', 'gross', 'net'], rows: [['2026-10', 50, 1, 1]] }).success, true, 'aggregates on salary_totals');
-assert.ok(/not allowed/.test(bad({ tab: 'salary_totals', header: ['month', 'aadhaar'], rows: [] })));
+// salary_totals never goes to a game Sheet (per-person pay could hide in it); the sensitive Sheet takes it (below)
+assert.ok(/tab not accepted/.test(bad({ tab: 'salary_totals', header: ['month', 'staff_count', 'gross', 'net'], rows: [] })));
+assert.strictEqual(push({ campus: 'LMS4', tab: 'staff', mode: 'replace', header: ['emp_code', 'name', 'category', 'house'], rows: [['T1', 'Test Teacher', 'Teaching', 'Red']] }).success, true, 'category and house pass');
+// a value starting with '=' is stored quoted, never as a formula
+push({ campus: 'LMS4', tab: 'last_pushed', mode: 'replace', header: ['tab', 'count'], rows: [['=HYPERLINK("x")', 1]] });
+assert.strictEqual(book4().getSheetByName('last_pushed').data[1][0], "'=HYPERLINK(\"x\")");
 bad({ header: [] }); bad({ header: ['a', 'A'] }); bad({ header: ['a', ''] }); bad({ header: Array.from({ length: 31 }, (_, i) => 'c' + i) });
 bad({ rows: Array.from({ length: 5001 }, (_, i) => row(i)) });
 bad({ rows: [['E1']] }); bad({ rows: [row(1).slice(0, -1).concat([{ x: 1 }])] }); bad({ rows: [row(1).slice(0, -1).concat(['x'.repeat(501)])] });
@@ -136,6 +141,7 @@ assert.ok(books[props.ERP_SENS_SHEET_LMS4].getSheetByName('students_full'));
 assert.strictEqual(book4().getSheetByName('students_full'), null);
 assert.ok(push(Object.assign({}, S, { tab: 'Bad Name!' })).error);
 assert.strictEqual(push({ mode: 'check' }).sensitivePush, true);
+assert.strictEqual(push({ campus: 'LMS4', sensitive: true, tab: 'salary_totals', mode: 'replace', header: ['month', 'staff_count', 'gross', 'net'], rows: [['2026-10', 50, 1, 1]] }).success, true, 'salary_totals on the sensitive Sheet');
 
 // ---- no Sheet yet; a server failure hides its message
 delete props.ERP_SHEET_LMS5;

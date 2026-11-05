@@ -12,14 +12,15 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //   POST erppush       caller-less, gated by Script property ERP_PUSH_SECRET (Uday sets it; the transportpush pattern). Modes:
 //                      check (says whether the secret matches, writes nothing), replace (whole tab, in parts through a staging tab
 //                      swapped in on the last part, so readers never see half a tab), upsert (by key columns).
-// Guards: game Sheets take only the known tabs (never `assignments`, which is filled by hand) and refuse a header naming a
-// sensitive column (Aadhaar, PAN, bank, phone, DOB, address, photo, salary…). The sensitive Sheets take any tab, but only while
+// Guards: game Sheets take only the known tabs (never `assignments`, which is filled by hand; never salary_totals, which goes to
+// the sensitive Sheet) and refuse a header naming a sensitive column (Aadhaar/UID, PAN, bank, phone, DOB, address, photo, caste,
+// religion, health, salary…). The sensitive Sheets take any tab, but only while
 // Script property ERP_SENS_PUSH is exactly "on" (Uday's own switch). Size limits per call. Logs: counts only.
 // ponytail: no script lock (the Mac pushes one call at a time); add LockService if two pushers ever run at once.
 // ═══════════════════════════════════════════════════════════════════
 
 var ERP_FOLDER_NAME = 'ERP Data (private)';
-var ERP_PUSH_TABS = ['students_now', 'attendance', 'marks_summary', 'dues', 'staff', 'salary_totals', 'last_pushed'];
+var ERP_PUSH_TABS = ['students_now', 'attendance', 'marks_summary', 'dues', 'staff', 'last_pushed']; // salary_totals: sensitive Sheet only (G2, 6 Nov)
 // the headers erpSetupSheets writes into a new game Sheet (the push may replace them; assignments is only ever set up here)
 var ERP_SETUP_HEADERS = {
   students_now: ['enroll_no', 'name', 'class', 'section', 'roll_no', 'house', 'status', 'bus', 'route', 'pickup_point', 'way'],
@@ -30,8 +31,8 @@ var ERP_SETUP_HEADERS = {
   assignments: ['emp_code', 'email', 'kind', 'class', 'section', 'subject', 'bus'],
 };
 // header keys (erpHeadKey_: lower case, no spaces/underscores) a game Sheet never holds
-var ERP_DENY_COLS = /aadha|^pan|panno|bank|ifsc|account|mobile|phone|contact|dob|birth|address|income|occupation|photo|image|email|father|mother|guardian|parent/;
-var ERP_DENY_PAY = /salary|gross|net|deduction|basic|allowance/; // allowed on salary_totals only (aggregates)
+// (CSM spellings vary: Adhar/Aadhaar/UID; `category` stays allowed, staff use it)
+var ERP_DENY_COLS = /a+dh+a+r|^uid|^pan|panno|bank|ifsc|account|mobile|phone|contact|dob|birth|address|income|occupation|photo|image|email|father|mother|guardian|parent|caste|religion|blood|medical|health|disab|salary|gross|net|deduction|basic|allowance/;
 var ERP_MAX_ROWS = 5000, ERP_MAX_COLS = 30, ERP_MAX_CELL = 500, ERP_MAX_PARTS = 200;
 var ERP_STAGE_SUFFIX = '__staging';
 
@@ -106,7 +107,7 @@ function erpPushCheckBody_(b) {
   const keys = header.map(function (h) { return typeof h === 'string' ? erpHeadKey_(h) : ''; });
   if (keys.some(function (k, i) { return !k || keys.indexOf(k) !== i; })) return { error: 'header: names must be non-empty text and unique' };
   if (!sens) {
-    const bad = keys.filter(function (k) { return ERP_DENY_COLS.test(k) || (tab !== 'salary_totals' && ERP_DENY_PAY.test(k)); });
+    const bad = keys.filter(function (k) { return ERP_DENY_COLS.test(k); });
     if (bad.length) return { error: 'header: ' + bad.length + ' column(s) not allowed in the game Sheet (sensitive data goes to the sensitive Sheet)' };
   }
   if (!Array.isArray(rows) || rows.length > ERP_MAX_ROWS) return { error: 'rows: at most ' + ERP_MAX_ROWS + ' per call' };
@@ -118,7 +119,8 @@ function erpPushCheckBody_(b) {
     for (let j = 0; j < r.length; j++) {
       const v = r[j];
       if (v !== null && typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') return { error: 'row ' + (i + 1) + ': cells must be text, numbers or empty' };
-      const t = v === null ? '' : String(v);
+      let t = v === null ? '' : String(v);
+      if (t.charAt(0) === '=') t = "'" + t; // never a formula, even if a CSM value starts with '='
       if (t.length > ERP_MAX_CELL) return { error: 'row ' + (i + 1) + ': a cell is longer than ' + ERP_MAX_CELL + ' characters' };
       cells.push(t);
     }
