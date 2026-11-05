@@ -205,4 +205,13 @@ K.SOON.forEach((c) => assert.ok(EM.get(c.e), 'emoji key ' + c.e));
 const ksrc = read('assets/game/kingdom.js'), soonFn = ksrc.slice(ksrc.indexOf('function soonPanel'), ksrc.indexOf('function openBase'));
 assert.ok(soonFn.includes('जल्द · Coming soon') && soonFn.includes('School view · Coming soon') && !/button|onclick|href|\d/.test(soonFn.replace(/aria-\w+/g, '')), 'tags present; no buttons, links or numbers');
 assert.ok(ksrc.includes('if (!base.darbar) body.unshift(soonPanel())'), 'schools only, not HQ');
+// 🗳️ Reviews to vet: the tray has an Owner-only entry point beside All quests, with the pending count (GM fix on e87cea1)
+{
+  const topFn = src.slice(src.indexOf('function top(d)'), src.indexOf('function panel('));
+  assert.ok(/d\.role === 'Owner' \? reviewsButton\(\) : null/.test(topFn), 'Reviews to vet button in the top row, Owner only');
+  const rb = src.slice(src.indexOf('function reviewsButton'), src.indexOf('function pendingOf'));
+  assert.ok(/openReviews\(e\.currentTarget\)/.test(rb), 'the button opens the Reviews tray');
+  assert.ok(/action: 'buddyreviews'/.test(rb) && /S\.rvAsked = true/.test(rb), 'the count is read once per page load');
+  assert.ok(/setReviewsCount\(pendingOf\(d\)\)/.test(src.slice(src.indexOf('function openReviews'))), 'the tray refreshes the count');
+}
 console.log('kingdom js: all passed');

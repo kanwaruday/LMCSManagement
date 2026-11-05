@@ -379,6 +379,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         h('div', { class: 'kg-sub' }, ['Kingdom level ' + (Number(d.kingdom && d.kingdom.level) || 0) + ' · ' + n + (n === 1 ? ' base' : ' bases')])])]),
       h('div', { class: 'kg-topacts' }, [
         d.role === 'Owner' ? h('button', { type: 'button', class: 'kg-btn kg-questsbtn', onclick: function (e) { openQuests(e.currentTarget); } }, ['📜 All quests']) : null,
+        d.role === 'Owner' ? reviewsButton() : null,
         h('button', { type: 'button', class: 'kg-btn kg-tourbtn', onclick: function () { runTour(true); } }, ['Show me around']),
         h('button', { type: 'button', class: 'kg-btn kg-ask', onclick: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); } }, [buddyImg('avatar-winter-formal'), 'Ask Buddy'])])]);
   }
@@ -603,12 +604,26 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return h('li', { class: 'kg-rv' }, [h('p', { class: 'kg-quiet' }, [where]), h('p', {}, ['From ' + rv.email]),
       h('label', { class: 'kg-sr', for: id }, ['The review note (you can edit it before sending)']), box, err, h('div', { class: 'kg-acts' }, [ok, no])]);
   }
+  // 🗳️ Reviews to vet (Owner only; the server refuses anyone else): the button carries the pending count, read once per page load and
+  // again each time the tray loads (so a decision there updates it). No count yet, or a failed read: the plain button.
+  function reviewsLabel() { var n = S.rvN || 0; return '🗳️ Reviews to vet' + (n ? ' (' + n + ')' : ''); }
+  function setReviewsCount(n) {
+    S.rvN = n; var b = S.el && S.el.ownerDocument.querySelector('.kg-revbtn');
+    if (b) { b.textContent = reviewsLabel(); b.setAttribute('aria-label', 'Reviews to vet: ' + (n ? n + ' waiting' : 'none waiting')); }
+  }
+  function reviewsButton() {
+    var b = h('button', { type: 'button', class: 'kg-btn kg-revbtn', onclick: function (e) { openReviews(e.currentTarget); } }, [reviewsLabel()]);
+    if (S.rvN == null && !S.rvAsked) { S.rvAsked = true; post({ action: 'buddyreviews' }).then(function (d) { if (d && d.success) setReviewsCount(pendingOf(d)); }, function () {}); }
+    return b;
+  }
+  function pendingOf(d) { return (d.reviews || []).filter(function (r) { return r.state === 'pending'; }).length; }
   function openReviews(opener) {
     var body = h('div', {}, [h('p', { class: 'kg-quiet' }, ['Loading…'])]);
     openLayer('Reviews to vet', 'Notes from invited reviewers. Nothing reaches the master agent until you approve it.', [body], opener);
     post({ action: 'buddyreviews' }).then(function (d) {
       body.textContent = '';
       if (!d || !d.success) { body.appendChild(h('p', { class: 'kg-err', role: 'alert' }, [(d && d.error) || SEND_ERR])); return; }
+      setReviewsCount(pendingOf(d));
       var list = d.reviews || [], open = list.filter(function (r) { return r.state === 'pending'; }), done = list.filter(function (r) { return r.state !== 'pending'; }).slice(0, 10);
       body.appendChild(open.length ? h('ul', { class: 'kg-rvl' }, open.map(reviewCard)) : h('p', { class: 'kg-quiet' }, ['No reviews waiting.']));
       if (done.length) body.appendChild(h('details', {}, [h('summary', {}, ['Recently decided']), h('ul', { class: 'kg-rvl' }, done.map(reviewCard))]));
