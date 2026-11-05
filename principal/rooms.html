@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LMCS — Your school's rooms</title>
+<meta name="theme-color" content="#CE0000">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="stylesheet" href="../assets/style.css?v=0049023a">
+<link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522">
+<link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
+<link rel="stylesheet" href="../assets/game/v2-animations.css">
+<link rel="stylesheet" href="../assets/game/room-setup.css">
+<style>
+  body { min-height: 100vh; }
+  #lmcs-gate { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
+  #lmcs-gate .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
+  #lmcs-gate .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
+  #lmcs-gate #lmcs-g-signin { display: flex; justify-content: center; }
+  #lmcs-gate .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
+</style>
+</head>
+<body class="gb">
+<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<script src="../assets/auth.js?v=1c991646"></script>
+<script src="../assets/game/room-setup.js"></script>
+
+<header class="gb-head"><div><div><h1>🏫 Your school's rooms</h1><p id="rs-sub">Name every room, then put your staff in them</p></div><a id="rs-back" href="index.html"><span aria-hidden="true">&lsaquo;</span> Back</a></div></header>
+<main class="gb-page" id="rs-root"></main>
+
+<script>
+(function () {
+  var GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as office/js/config.js
+  var root = document.getElementById('rs-root'), back = document.getElementById('rs-back');
+  var campus = (new URLSearchParams(location.search).get('campus') || '').toUpperCase();
+  if (!/^LMS[1-6]$/.test(campus)) campus = '';
+  // came from the Owner's Kingdom: the way back is the Kingdom (same site only)
+  try { var r = new URL(document.referrer); if (r.origin === location.origin && /\/owner\/kingdom\.html$/.test(r.pathname)) back.href = '../owner/kingdom.html'; } catch (e) { /* no referrer */ }
+
+  function start(session) {
+    document.getElementById('lmcs-gate').style.display = 'none';
+    var wide = /Owner|Coordinator/.test(String(session.role || ''));
+    if (wide && !campus) return pickSchool();
+    LMCSRooms.mount(root, { session: session, backendUrl: GAME_BACKEND_URL, campus: campus, back: back.href,
+      onLoad: function (res) { document.getElementById('rs-sub').textContent = res.campusName + ' · name every room, then put your staff in them'; } });
+  }
+  // the Owner or a Coordinator: choose the school first (a Principal always gets their own)
+  function pickSchool() {
+    var h = document.createElement('h2'); h.className = 'gb-h2'; h.textContent = 'Which school?';
+    var grid = document.createElement('div'); grid.className = 'rs-schools';
+    ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].forEach(function (c) {
+      var a = document.createElement('a'); a.className = 'gb-btn'; a.href = '?campus=' + c;
+      a.textContent = (window.LMCS && LMCS.CAMPUS_NAMES && LMCS.CAMPUS_NAMES[c]) || c.replace(/^LMS(\d)$/, 'LMS $1');
+      grid.appendChild(a);
+    });
+    root.appendChild(h); root.appendChild(grid);
+  }
+  (LMCS.getSession() ? Promise.resolve(LMCS.getSession()) : LMCS.requireSession('#lmcs-gate-slot')).then(function (s) { start(s || LMCS.getSession()); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+/* 🏫 Room setup (principal/rooms.html, assets/game/room-setup.js). On top of base.css (gb-*); motion from v2-animations.css (a-*). */
+.rs-steps { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 10px; }
+.rs-step { display:flex; align-items:center; gap:10px; min-height:56px; padding:8px 10px; border:1.5px solid var(--gb-line); border-radius:12px; background:var(--gb-paper); color:var(--gb-ink); font:inherit; text-align:left; cursor:pointer; }
+.rs-step small { display:block; font-size:13px; color:var(--gb-muted); font-weight:400; }
+.rs-step > span:last-child { font-weight:700; line-height:1.25; }
+.rs-step.is-on { border-color:var(--gb-red); background:var(--gb-red-soft); }
+.rs-step:disabled { opacity:.55; cursor:not-allowed; }
+.rs-num { flex:0 0 30px; display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:var(--gb-panel); border:1.5px solid var(--gb-line); font-weight:700; }
+.rs-step.is-on .rs-num { background:var(--gb-red); border-color:var(--gb-red); color:#fff; }
+.rs-bar { margin:0 0 16px; }
+.rs-add-row { display:flex; gap:8px; }
+.rs-add-row .gb-input { flex:1 1 auto; min-width:0; }
+.rs-add-row .gb-btn { flex:0 0 auto; min-height:44px; min-width:72px; }
+.rs-sub { margin:4px 0 6px; font-weight:700; }
+.rs-chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
+.rs-chip { min-height:44px; padding:6px 12px; border:1.5px dashed var(--gb-gold); border-radius:22px; background:var(--gb-gold-soft); color:var(--gb-gold-ink); font:inherit; font-weight:700; cursor:pointer; }
+.rs-h { margin-top:8px; }
+.rs-list { list-style:none; margin:0 0 14px; padding:0; display:flex; flex-direction:column; gap:8px; }
+.rs-room { display:flex; align-items:center; gap:10px; padding:10px; }
+.rs-room.is-set { border-color:var(--gb-ok); }
+.rs-emoji { flex:0 0 auto; font-size:24px; line-height:1; }
+.rs-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; }
+.rs-name { font-weight:700; }
+.rs-room-name { font-weight:700; }
+.rs-remove { flex:0 0 auto; min-height:44px; padding:0 10px; }
+.rs-mark { flex:0 0 22px; color:var(--gb-ok); font-weight:700; font-size:20px; text-align:center; }
+.rs-next { width:100%; min-height:48px; }
+.rs-done { margin:0 0 16px; }
+.rs-done strong { display:block; font-size:18px; margin:0 0 6px; }
+.rs-toast { position:sticky; bottom:0; min-height:1.4em; margin:12px 0 0; padding:6px 0; font-weight:700; background:var(--gb-panel); }
+.rs-toast-ok { color:var(--gb-ok); }
+.rs-toast-err { color:var(--gb-low); }
+.rs-schools { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; }
+@media (max-width: 420px) {
+  .rs-room { flex-wrap:wrap; }
+  .rs-remove { margin-left:34px; }
+}

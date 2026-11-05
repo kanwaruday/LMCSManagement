@@ -265,6 +265,7 @@ function doPost(e) {
     if (action === 'gameeventtick') return gameJson_(eventTick_(caller, body));
     // An Owner tick-off quest step (game-setup.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.
     if (action === 'ownertick') return gameJson_(ownerTick_(caller, body));
+    if (action === 'roomssave') return gameJson_(roomsSave_(caller, body)); // 🏫 rooms (game-rooms.gs): POST only; Principal / Owner checks inside
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

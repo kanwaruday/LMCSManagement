@@ -161,6 +161,7 @@ var QUEST_GATE_HOOKS = {
   daybookClerkQuests_: { id: 'hook:daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'] },
   daybookQuests_: { id: 'hook:daybook', title: 'Day Book starting data', roles: ['Accounts'] },
   daybookAccountantQuests_: { id: 'hook:daybook-accountant', title: 'Set up the bank side of the Day Book', roles: ['Coordinator', 'Accounts'] },
+  roomsQuests_: { id: 'hook:rooms', title: 'Name your rooms and put staff in them', roles: ['Principal'] },
 };
 var QUEST_GATE_PLURAL = { Principal: 'principals', Coordinator: 'coordinators', Teacher: 'teachers', Staff: 'staff', FeeClerk: 'fee clerks', Accounts: 'accounts staff' };
 var QUEST_GATE_HOME = { Principal: 'principal/index.html', Coordinator: 'coordinator/index.html', Teacher: 'teacher/index.html', Staff: 'teacher/index.html', FeeClerk: 'office/index.html', Accounts: 'office/index.html' };
