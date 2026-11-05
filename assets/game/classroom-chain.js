@@ -46,7 +46,7 @@ var LMCSClassroom = (function () {
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
-  var S = { el: null, o: null, data: null, tie: null, pending: null, students: null, studentsFor: '', edit: null, busy: false };
+  var S = { el: null, o: null, data: null, tie: null, pending: null, students: null, studentsFor: '', edit: null, busy: false, pop: '' };
 
   function get(qs) {
     return fetch(S.o.backendUrl + '?' + qs + '&idToken=' + encodeURIComponent(S.o.session.idToken || ''), { cache: 'no-store' })
@@ -82,11 +82,12 @@ var LMCSClassroom = (function () {
       el.appendChild(sel);
     } else el.appendChild(h('p', { class: 'cr-tie' }, tieLabel(S.tie)));
 
-    var att = h('p', { class: 'cr-att', role: 'status' }, 'Checking today’s attendance…');
+    var att = h('p', { class: 'cr-att a-room-build-progress', role: 'status' }, 'Checking today’s attendance…'); // V2 animations (Art Studio)
     el.appendChild(h('div', { class: 'gb-card cr-card' }, [h('h3', {}, 'Today’s attendance'), att]));
     var forTie = S.tie;
     get(erpQs('attendance') + '&from=' + istToday() + '&to=' + istToday()).then(function (r) {
       if (forTie !== S.tie) return;
+      att.classList.remove('a-room-build-progress');
       att.textContent = erpEmpty(r) || attendanceLine(r.summary, istToday()) || 'Today’s attendance isn’t in yet.';
     });
 
@@ -94,12 +95,15 @@ var LMCSClassroom = (function () {
     if (d.photosOn) el.appendChild(itemsCard());
   }
 
+  // the room-tap-pop ring plays once, on the render right after that step's save (not on every re-render)
+  function popOnce(which) { if (S.pop !== which) return ''; S.pop = ''; return ' a-room-tap-pop'; }
+
   // ── Meet your students ──
   function meetCard() {
     var key = classKey(S.tie), done = !!S.data.confirmed[key];
     var body = h('div', { class: 'cr-meet', id: 'cr-students', hidden: S.studentsFor !== key });
     var card = h('div', { class: 'gb-card cr-card' }, [h('h3', {}, 'Meet your students'),
-      done ? h('p', { class: 'cr-ok' }, '✓ You confirmed this list.') : h('p', { class: 'gb-muted' }, 'Check the names your school’s ERP has for this class.'),
+      done ? h('p', { class: 'cr-ok' + popOnce('meet') }, '✓ You confirmed this list.') : h('p', { class: 'gb-muted' }, 'Check the names your school’s ERP has for this class.'),
       h('button', { type: 'button', class: 'gb-btn', 'aria-controls': 'cr-students', 'aria-expanded': String(S.studentsFor === key), onclick: function () { toggleStudents(this, body); } },
         S.studentsFor === key ? 'Hide the list' : 'Show the list'), body]);
     if (S.studentsFor === key) fillStudents(body);
@@ -114,7 +118,7 @@ var LMCSClassroom = (function () {
   function fillStudents(body) {
     var forTie = S.tie, key = classKey(forTie);
     clear(body);
-    body.appendChild(h('p', { class: 'gb-muted', role: 'status' }, 'Loading your class list…'));
+    body.appendChild(h('p', { class: 'gb-muted a-room-build-progress', role: 'status' }, 'Loading your class list…'));
     var got = S.students && S.students.key === key ? Promise.resolve(S.students.r) : get(erpQs('students'));
     got.then(function (r) {
       if (forTie !== S.tie) return;
@@ -131,7 +135,7 @@ var LMCSClassroom = (function () {
       var yes = h('button', { type: 'button', class: 'gb-btn gb-btn-primary', onclick: function () {
         yes.disabled = true; say.textContent = 'Saving…';
         post({ op: 'confirm', campus: forTie.campus, class: forTie.class, section: forTie.section }).then(function (res) {
-          if (res && res.success) { S.data = res; keepTie(); render(); return; }
+          if (res && res.success) { S.data = res; S.pop = 'meet'; keepTie(); render(); return; }
           yes.disabled = false; say.textContent = (res && res.error) || 'That didn’t save. Try again.';
         });
       } }, 'Yes, this is my class');
@@ -160,13 +164,13 @@ var LMCSClassroom = (function () {
     else card.appendChild(h('p', { class: 'gb-empty' }, 'No items saved yet.'));
     card.appendChild(itemForm(key));
     var say = h('p', { class: 'cr-say', role: 'status' });
-    if (done) card.appendChild(h('p', { class: 'cr-ok' }, '✓ Done: you listed everything in this room. Add more any time.'));
+    if (done) card.appendChild(h('p', { class: 'cr-ok' + popOnce('items') }, '✓ Done: you listed everything in this room. Add more any time.'));
     else {
       var hasPhoto = mine.some(function (it) { return it.hasPhoto; });
       var all = h('button', { type: 'button', class: 'gb-btn', disabled: !hasPhoto, onclick: function () {
         all.disabled = true; say.textContent = 'Saving…';
         post({ op: 'itemsdone', classKey: key }).then(function (res) {
-          if (res && res.success) { S.data = res; keepTie(); render(); return; }
+          if (res && res.success) { S.data = res; S.pop = 'items'; keepTie(); render(); return; }
           all.disabled = false; say.textContent = (res && res.error) || 'That didn’t save. Try again.';
         });
       } }, 'That’s everything');
