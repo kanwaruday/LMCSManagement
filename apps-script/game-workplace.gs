@@ -63,7 +63,7 @@ function wpState_(rows, room) {
 function wpReviewerOf_(caller, room) {
   const roles = caller.roles || [];
   if (roles.indexOf('Owner') !== -1) return true;
-  return caller.primaryRole === 'Principal' && caller.campusId === room.campus && room.staff !== gameLower_(caller.email);
+  return caller.primaryRole === 'Principal' && caller.campusId === room.campus && room.staff !== gameLower_(caller.email) && !wpIsPrincipalRoom_(room, wpPrincipals_()); // a co-Principal's room: the Owner's
 }
 function wpIsPrincipalRoom_(room, allow) { return (allow || []).indexOf(room.campus + '|' + room.staff) !== -1; }
 // "LMS4|email" for every Principal on the allowlist (the Owner's review list: Principal-held rooms only)

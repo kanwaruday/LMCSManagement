@@ -173,7 +173,8 @@ const tabs = {
   // Run ID | Reg | Campus | Kind | Started | Ended | By | ... | Inspection JSON (12th) | Status | Frame Times | Captured By
   runs: H(['Run ID', 'Reg', 'Campus', 'Kind', 'Started', 'Ended', 'By', '', '', '', '', 'Inspection', 'Status', 'Frames', 'Captured By'],
     ['r1', 'TEST02', 'LMS5', 'inspection', '', String(Date.parse('2026-10-25T20:00:00Z')), 'phone@test.invalid', '', '', '', '', '{"cctv":{"ok":true}}', 'ended', '', 'coord@test.invalid'],
-    ['r2', 'TEST01', 'LMS4', 'inspection', '', '', 'p', '', '', '', '', '{"cctv":{"ok":true}}', 'started', '', '']),
+    ['r2', 'TEST01', 'LMS4', 'inspection', '', '', 'p', '', '', '', '', '{"cctv":{"ok":true}}', 'started', '', ''],
+    ['r3', 'TEST01', 'LMS4', 'inspection', '', String(Date.parse('2026-10-20T20:00:00Z')), 'driver:L1', '', '', '', '', '{"bus_front":{"ok":true,"fileId":"FILEabcdefghij"},"bus_back":{"ok":true,"fileId":"FILEabcdefghij"},"bus_left":{"ok":true,"fileId":"FILEabcdefghij"},"bus_right":{"ok":true,"fileId":"FILEabcdefghij"},"bus_plate":{"ok":true,"fileId":"FILEabcdefghij"},"bus_tyres":{"ok":true,"fileId":"FILEabcdefghij"},"bus_seats":{"ok":true,"fileId":"FILEabcdefghij"},"bus_aisle":{"ok":true,"fileId":"FILEabcdefghij"}}', 'ended', '', 'Test Driver']),
   stops: H(['runId', 'reg', 'campus', 'videoFileId', 'stops', 'pushedAt', 'capturedBy'], ['TEST01-20261002-1', 'TEST01', 'LMS4', 'v', '[]', '2026-10-02T00:00:00Z', 'c@test.invalid'], ['TEST01-20261001-1', 'TEST01', 'LMS4', 'v', '[]', '2026-10-01T00:00:00Z', 'b@test.invalid']),
   fills: H(['reg', 'hasVideo', 'hasBill'], ['TEST02', 'yes', 'yes'], ['TEST02', 'yes', 'no'], ['TEST02', 'no', 'no']),
 };
@@ -181,7 +182,8 @@ const sh = J(ctx.fleetShape_(tabs));
 assert.deepStrictEqual(sh.fleet.map((b) => [b.reg, b.campusId, b.campus, b.driverCode]), [['TEST01', 'LMS4', 'LMS 4', ''], ['TEST02', 'LMS5', 'LMS 5', 'E1']]); // not running: left out
 assert.deepStrictEqual(sh.fleet[1].scan, { make: { value: 'Testmake' } });   // only the papers quest's scan fields, never blanks
 assert.deepStrictEqual(sh.fleet[1].fills, { count: 3, withVideo: 2, withVideoAndBill: 1 });
-assert.deepStrictEqual(sh.inspected, { TEST02: { by: 'coord@test.invalid', at: '2026-10-26' } }); // ended runs only, IST day
+assert.deepStrictEqual(sh.inspected, { TEST02: { by: 'coord@test.invalid', at: '2026-10-26' } }); // ended runs only, IST day; a driver's bus photos alone are no safety check (review 1)
+assert.deepStrictEqual(sh.photographed, { TEST01: true }, 'but they do mark the bus photographed');
 assert.deepStrictEqual(sh.captured, { TEST01: { by: 'b@test.invalid', at: '2026-10-01T00:00:00Z' } }); // the first run
 assert.strictEqual(sh.profiles.length, 1); assert.strictEqual(sh.parts.length, 1);
 assert.deepStrictEqual(sh.drivers, [{ driverKey: 'E1', reg: 'TEST02', fields: JSON.stringify({ driverPhone: 1, dateOfBirth: 1, licenceClass: '' }), ageLimit: 'no' }], 'driver cards only as filled in or not (M1)');

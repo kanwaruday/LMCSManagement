@@ -12,8 +12,8 @@ const folder = (name) => { const kids = {}; return { name, getFoldersByName: (n)
   createFolder: (n) => (kids[n] = folder(n)), createFile: (blob) => { const id = 'F' + nextId++; files[id] = { blob, trashed: false }; return { getId: () => id }; }, kids }; };
 const root = folder('My Drive');
 const rooms = [['Campus', 'RoomId', 'Name', 'Type', 'StaffEmail'], ['LMS4', 'r1', 'Office', 'office', 'clerk@x.in'], ['LMS4', 'r2', 'Class 7A', 'classroom', 'teach@x.in'],
-  ['LMS4', 'r3', "Principal's office", 'office', 'p4@x.in'], ['LMS1', 'r9', 'Library', 'library', 'lib@x.in'], ['LMS4', 'r4', 'Records', 'records', '']];
-const allow = [['Email', 'Name', 'Campus', 'Role'], ['p4@x.in', '', 'LMS4', 'Principal'], ['p1@x.in', '', 'LMS1', 'Principal']];
+  ['LMS4', 'r3', "Principal's office", 'office', 'p4@x.in'], ['LMS4', 'r6', 'Second office', 'office', 'p4b@x.in'], ['LMS1', 'r9', 'Library', 'library', 'lib@x.in'], ['LMS4', 'r4', 'Records', 'records', '']];
+const allow = [['Email', 'Name', 'Campus', 'Role'], ['p4@x.in', '', 'LMS4', 'Principal'], ['p1@x.in', '', 'LMS1', 'Principal'], ['p4b@x.in', '', 'LMS4', 'Principal']];
 const ctx = { console, Object, String, JSON, Array, Date, Math, encodeURIComponent, GAME_ALLOWLIST_SHEET_ID: 'allow',
   gameBook_: () => ({ getSheetByName: (n) => tabs[n] || null, insertSheet: (n) => (tabs[n] = sheet([])) }),
   gameLower_: (v) => String(v || '').trim().toLowerCase(),
@@ -82,6 +82,12 @@ assert.strictEqual(save('p4', { op: 'decide', campus: 'LMS4', roomId: 'r3', deci
 assert.deepStrictEqual(get('owner', { review: '1' }).rooms.map((r) => r.roomId), ['r3'], 'the Owner\'s list: Principal-held rooms');
 assert.strictEqual(quests('owner')[0].title, '📸 Check workplace photos: 1 waiting');
 assert.strictEqual(save('owner', { op: 'decide', campus: 'LMS4', roomId: 'r3', decision: 'approve' }).status, 'approved');
+// a co-Principal's room is the Owner's to check, not the other Principal's (review 3)
+['wide', 'desk', 'store'].forEach((s) => J(ctx.workplaceSave_({ email: 'p4b@x.in', campusId: 'LMS4', roles: ['Principal'], primaryRole: 'Principal' }, { op: 'photo', roomId: 'r6', shot: s, base64: JPG })));
+J(ctx.workplaceSave_({ email: 'p4b@x.in', campusId: 'LMS4', roles: ['Principal'], primaryRole: 'Principal' }, { op: 'submit', roomId: 'r6', noPeople: true }));
+assert.strictEqual(save('p4', { op: 'decide', campus: 'LMS4', roomId: 'r6', decision: 'approve' }).code, 'WP_NO_RIGHT');
+assert.strictEqual(J(ctx.workplaceImage_(who.p4, { campus: 'LMS4', roomId: 'r6', shot: 'wide' })).code, 'WP_NO_ROOM');
+assert.ok(!get('p4', { review: '1' }).rooms.some((r) => r.roomId === 'r6'));
 // no rooms module deployed yet: no rooms, no quests
 ctx.roomsRows_ = undefined;
 assert.deepStrictEqual([get('clerk').rooms, quests('clerk')], [[], []]);

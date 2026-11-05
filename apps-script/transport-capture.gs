@@ -192,6 +192,13 @@ function captureRun_(body) {
     if (run.kind !== 'inspection') return fail('Only an inspection run carries safety check answers');
     const bad = capInspectionError_(run.inspection);
     if (bad) return fail(bad);
+    // a driver phone's photos (the bus setup chain) must be files of this run, so "photographed" can't be claimed with made-up ids
+    const ids = Object.keys(run.inspection).map(function (k) { return run.inspection[k].fileId; }).filter(Boolean);
+    if (ids.length && a.caller.role === 'Driver') {
+      const have = {}, it = capFolder_(a.v.reg, runId).getFiles();
+      while (it.hasNext()) have[it.next().getId()] = true;
+      if (!ids.every(function (id) { return have[id]; })) return fail('A photo of this check has not arrived yet. Send again.');
+    }
   }
   const trial = run.trial === true;
   if (trial && run.kind !== 'timelapse') return fail('Only a route timelapse can be a trial run'); // a trial safety check would still tick its quest

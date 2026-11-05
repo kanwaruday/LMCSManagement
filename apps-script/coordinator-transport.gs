@@ -456,7 +456,7 @@ function coordInspections_() {
     const items = {};
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) Object.keys(raw).forEach(function (k) {
       const a = raw[k];
-      if (!a || typeof a !== 'object') return;
+      if (!a || typeof a !== 'object' || BusChain.isShot(k)) return; // the bus setup chain's vehicle shots are photos, not safety items: a shots-only run is no safety check
       items[k] = { ok: a.ok === true };
       if (a.ok === true && a.date) items[k].date = String(a.date);
       if (a.ok === true && a.fileId) items[k].fileId = String(a.fileId);

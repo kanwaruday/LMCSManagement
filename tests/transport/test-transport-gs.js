@@ -25,6 +25,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number,
   Utilities: { formatDate: d => d.toISOString().slice(0, 10) } };
 vm.createContext(ctx);
 vm.runInContext('var COORD_DEPT_TRANSPORT="Transport"; function coordCacheGetBig_(){return null} function coordCachePutBig_(){} function coordVisibleCampuses_(c){return c.only||null}', ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/game/bus-chain.js'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator-transport.gs'), 'utf8').replace(/^const /gm, 'var '), ctx);
 
 const bus = (i, campus, extra) => Object.assign({ reg: 'HP' + i, bus: 'Bus ' + i, campus, operational: true, route: 'Route ' + i, start: '', driver: 'D' + i, seats: 40, year: 2020,
@@ -146,6 +147,7 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   vm.createContext(c);
   ['coordinator.gs', 'coordinator-approvals.gs', 'coordinator-transport.gs', 'coordinator-transport-gps.gs']
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), c));
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/game/bus-chain.js'), 'utf8'), c);
   const r = code => J(vm.runInContext(code, c));
   const FORM = vm.runInContext('COORD_TRANSPORT_FORM_ID', c);
   const owner = '{email:"o@x.org", campusId:"ALL", roles:["Owner"]}', coord = '{email:"c4@x.org", campusId:"LMS4", roles:["Coordinator"]}';
@@ -312,6 +314,7 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
   vm.createContext(c);
   ['coordinator.gs', 'coordinator-approvals.gs', 'coordinator-transport.gs', 'coordinator-transport-gps.gs']
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), c));
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/game/bus-chain.js'), 'utf8'), c);
   const proj = JSON.parse(fs.readFileSync(path.join(__dirname, '../../apps-script/projects.json'), 'utf8')).coordinator.files;
   const shared = proj.filter(f => f.indexOf('/') !== -1);
   assert.deepStrictEqual(shared, ['../coordinator/capture/fleet-quests.js', '../coordinator/transport-rank.js', '../assets/game/bus-chain.js'], 'deploy.mjs puts the shared quest logic, the Transport page\'s paper rules and the bus setup chain into the Coordinator project');

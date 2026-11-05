@@ -121,7 +121,7 @@ function fleetShape_(tabs, today) {
     if (String(r[3]) !== 'inspection' || String(r[12]) !== 'ended') return;
     let raw = null;
     try { raw = JSON.parse(String(r[11] || 'null')); } catch (e) { raw = null; }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.keys(raw).some(function (k) { return raw[k] && typeof raw[k] === 'object'; })) return;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.keys(raw).some(function (k) { return raw[k] && typeof raw[k] === 'object' && !BusChain.isShot(k); })) return; // bus shots alone are no safety check (bus-chain.js)
     const v = r[5] || r[4], t = v instanceof Date ? v.getTime() : /^\d+$/.test(String(v).trim()) ? Number(v) : Date.parse(String(v));
     if (isNaN(t)) return;
     const reg = FQ.normReg(r[1]), day = fleetIstDay_(t);

@@ -41,6 +41,7 @@ window.LMCSGuide = {
     'coordinator/transport/capture.html': { purpose: "Record a timelapse, a passenger count or a bus safety check from your phone.", roles: ['Coordinator'] },
     'driver/index.html': { purpose: 'Driver portal: your bus, its route videos and your fuel fills.', roles: ['Driver'] },
     'staff-home/index.html': { purpose: 'Staff home for IT Teachers, PTIs and Non-Teaching staff: your building, its spots, and your school\'s routes.', roles: ['Teacher', 'Staff'] },
+    'workplace/index.html': { purpose: 'Photograph your workplace (the empty room) so your Principal can approve it.', roles: ['Principal', 'Teacher', 'Staff', 'FeeClerk', 'Accounts'] },
     'coordinator/transport/drivers.html': { purpose: "Driver phones: link a driver's own phone to their bus with a QR, or unlink it.", roles: ['Coordinator', 'Fee Clerk', 'Owner'] },
     'coordinator/transport/rollcall.html': { purpose: "Today's roll call: who drove and attended each bus, or who stood in.", roles: ['Coordinator', 'Fee Clerk', 'Owner'] },
     'coordinator/transport/setup.html': {

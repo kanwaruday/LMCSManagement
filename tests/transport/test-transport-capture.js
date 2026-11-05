@@ -10,6 +10,7 @@ function folder(name) {
     getFoldersByName(n) { const m = kids.filter((k) => k.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     getFilesByName(n) { const m = files.filter((f) => f.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     createFolder(n) { const f = folder(n); kids.push(f); return f; },
+    getFiles() { let i = 0; return { hasNext: () => i < files.length, next: () => files[i++] }; },
     setTrashed(v) { this.trashed = v; return this; },
     createFile(blob) { const id = 'FILE' + (nextId++) + 'x'.repeat(20); const f = { name: blob.name, blob, desc: '', getId: () => id, setDescription(d) { f.desc = d; } }; files.push(f); return f; } };
   return me;
@@ -267,7 +268,10 @@ assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', trial
 assert.strictEqual(drv({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'not even an existing one');
 assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse' }).success, true, 'a real driver run still goes in');
 // the bus setup chain (V2): a driver phone also sends its bus photos, as a safety check with the vehicle shots; nothing else
-const shots = { bus_front: { ok: true, fileId: 'FILEabcdefghij' }, bus_tyres: { ok: false } };
+const up = run('captureFile_(' + JSON.stringify({ deviceToken: 'dev1', reg: 'HP659511', runId: 'BP1', runKind: 'inspection', kind: 'inspection', seq: 0, base64: JPG }) + ')');
+assert.strictEqual(up.success, true, 'a driver phone uploads a bus photo');
+assert.match(drv({ runId: 'BP1', reg: 'HP659511', kind: 'inspection', status: 'ended', inspection: { bus_front: { ok: true, fileId: 'FILEmadeupid99' } } }).error, /has not arrived/, 'a made-up photo id is refused (review 2)');
+const shots = { bus_front: { ok: true, fileId: up.fileId }, bus_tyres: { ok: false } };
 assert.strictEqual(drv({ runId: 'BP1', reg: 'HP659511', kind: 'inspection', status: 'ended', inspection: shots }).success, true, 'a driver\'s bus photos go in');
 assert.strictEqual(rowOf('BP1')[7], 'Driver');
 assert.match(drv({ runId: 'BP2', reg: 'HP659511', kind: 'inspection', status: 'ended', inspection: { bus_roof: { ok: true } } }).error, /Unknown safety item/, 'only the known shots');
