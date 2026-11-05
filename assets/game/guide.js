@@ -38,6 +38,7 @@ window.LMCSGuide = {
     'coordinator/transport/live.html': { purpose: "Live buses, route timelapses and the monthly safety checks.", roles: ['Coordinator'] },
     'coordinator/transport/capture.html': { purpose: "Record a timelapse, a passenger count or a bus safety check from your phone.", roles: ['Coordinator'] },
     'driver/index.html': { purpose: 'Driver portal: your bus, its route videos and your fuel fills.', roles: ['Driver'] },
+    'staff-home/index.html': { purpose: 'Staff home for IT Teachers, PTIs and Non-Teaching staff: your building, its spots, and your school\'s routes.', roles: ['Teacher', 'Staff'] },
     'coordinator/transport/drivers.html': { purpose: "Driver phones: link a driver's own phone to their bus with a QR, or unlink it.", roles: ['Coordinator', 'Fee Clerk', 'Owner'] },
     'coordinator/transport/rollcall.html': { purpose: "Today's roll call: who drove and attended each bus, or who stood in.", roles: ['Coordinator', 'Fee Clerk', 'Owner'] },
     'coordinator/transport/setup.html': {

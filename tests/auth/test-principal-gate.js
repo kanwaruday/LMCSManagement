@@ -35,7 +35,8 @@ fs.readdirSync(path.join(root, 'principal')).filter((f) => f.endsWith('.html')).
 assert.deepStrictEqual(['FeeClerk', 'Principal,Teacher', 'Owner', ''].map((r) => L.roleLabel(S(r))), ['Fee Clerk', 'Principal + Teacher', 'Owner', '']);
 assert.strictEqual(L.roleLabel(null), '');
 const hud = fs.readFileSync(path.join(root, 'assets/game/home-hud.js'), 'utf8'), home = fs.readFileSync(path.join(root, 'principal/index.html'), 'utf8');
-assert.ok(!/\['Role', 'Principal'\]/.test(hud) && /\['Role', s\.roleShown \|\| \(window\.LMCS && LMCS\.roleLabel \? LMCS\.roleLabel\(s\)/.test(hud), 'profile sheet: the real role');
+// staff-home/ passes its own role line (o.role); every other home shows the session's real role
+assert.ok(!/\[L\.role, S\.o\.role \|\| 'Principal'\]/.test(hud) && /\[L\.role, S\.o\.role \|\| s\.roleShown \|\| \(window\.LMCS && LMCS\.roleLabel \? LMCS\.roleLabel\(s\)/.test(hud), 'profile sheet: the real role');
 assert.ok(!home.includes("' · Principal · '") && home.includes("hello(session.name) + ' · ' + LMCS.roleLabel(session) + ' · '"), 'header: the real role');
 assert.ok(home.includes("roleShown: LMCS.roleLabel(session) + ' · viewing ' + VIEW.name + ' as Principal'"), 'view-as: Owner · viewing <school> as Principal');
 ['canViewCoordinatorPortal', 'canManageStaff', 'canViewTeacherSS'].forEach((f) => assert.strictEqual(L[f](S('FeeClerk', 'ALL')), false, 'an ALL-campus Fee Clerk: no ' + f));

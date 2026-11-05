@@ -43,6 +43,8 @@ var TCH_MIN_KEEP_RATIO = 0.7;     // a feed under this share of the last build's
 var TCH_MAX_VALUE_BYTES = 95000;  // CacheService caps one value at 100 KB
 var TCH_PUT_CHUNK = 20;           // values per cache putAll / getAll (states are up to ~95 KB each)
 var TCH_STALE_MS = 2 * 3600000;   // an index older than this (the feed has been failing) makes the log card say "as of"
+var TCH_LASTCW_DAYS = 2;          // upload days of classwork kept per class-subject (state.lastCw)
+var TCH_LASTCW_DESC_MAX = 200;    // characters of a classwork description kept there
 var TCH_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── config: the Game Config key `teacher` (a JSON object) merged over these defaults (Ruling 12) ──────────────
@@ -122,7 +124,9 @@ var TCH_SUBJECTS = ['Math', 'Hindi', 'English', 'Computer', 'General Awareness',
 // spellings seen in timetable.json, the Course Map and EmpAcademic -> the feed's subject
 var TCH_SUBJECT_ALIASES = { 'Maths': 'Math', 'Englsih': 'English', 'Eng': 'English', 'Art and Craft': 'Art & Craft', 'Business Studies': 'Business Study',
   'Accounts': 'Accountancy', 'Phonics': 'My Book of Phonics', 'Rhymes': 'Book of Rhymes & Stories', 'General Knowledge': 'GK',
-  'IT': 'Information Technology', 'Cognitive Activity': 'Cognitive Activities' };
+  'IT': 'Information Technology', 'Cognitive Activity': 'Cognitive Activities',
+  // Course Mapping names Classes 3-5's subject "Social Studies"; teachers log it as "Social Science" (vault chain map, join break 3)
+  'Social Studies': 'Social Science' };
 
 function tchRawKey_(s) { return String(s || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 var TCH_SUBJECT_BY_KEY = (function () {
@@ -279,7 +283,7 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     const pk = r.classMapped + '|' + tchSubjKey_(r.subject), cp = codePairs[code] = codePairs[code] || {};
     cp[pk] = (cp[pk] || 0) + 1;
     slim.push({ lmsIdx: idx, classMapped: r.classMapped, subject: r.subject, teacher: code, cwChapter: r.cwChapter, cwTag: r.cwTag,
-      hwDesc: r.hwDesc, hwTag: r.hwTag, timeMs: r.timeMs, dateStr: r.dateStr });
+      hwDesc: r.hwDesc, hwTag: r.hwTag, timeMs: r.timeMs, dateStr: r.dateStr, cwBook: r.cwBook, cwDesc: r.cwDesc });
   });
   const unmatched = {};
   Object.keys(unmatchedBy).forEach(function (idx) { unmatched[idx] = Object.keys(unmatchedBy[idx]).map(function (k) { return unmatchedBy[idx][k]; }).slice(0, 200); });
@@ -317,13 +321,27 @@ function tchBuildIndex_(feed, roster, trackerRows, timetable, prevMeta, cfg) {
     if (!st.classSubjects.some(function (x) { return x.cls === lab.cls && x.subj === lab.subj; })) st.classSubjects.push(lab);
   });
 
-  const cutoff = now - T.loggedDaysWindow * TCH_DAY_MS;
+  const cutoff = now - T.loggedDaysWindow * TCH_DAY_MS, cwBy = {}; // cwBy: code -> 'cls|subjKey' -> upload day -> latest classwork row
   slim.forEach(function (r) {
     const t = Number(r.timeMs);
     if (!(t >= cutoff)) return;
     const day = /^\d{4}-\d\d-\d\d$/.test(String(r.dateStr || '')) ? r.dateStr : tchIstDay_(t);
     const st = stateOf(r.teacher);
     (st.loggedDays[day] = st.loggedDays[day] || []).push({ cls: r.classMapped, subj: String(r.subject || '').trim(), at: t, hw: !!String(r.hwDesc || '').trim() });
+    // My classes' "yesterday's plan": per class-subject and upload day, the latest row with any classwork (the ERP appends Save then Update rows)
+    const cw = { book: String(r.cwBook || '').trim().slice(0, 80), chapter: String(r.cwChapter || '').trim().slice(0, 120), desc: String(r.cwDesc || '').trim().slice(0, TCH_LASTCW_DESC_MAX) };
+    if (!cw.book && !cw.chapter && !cw.desc) return;
+    const byDay = (cwBy[r.teacher] = cwBy[r.teacher] || {}), k = tchCsKey_(r.classMapped, r.subject), m = (byDay[k] = byDay[k] || {});
+    if (!tchHas_(m, day) || t >= m[day].t) { cw.t = t; m[day] = cw; }
+  });
+  // state.lastCw = {'cls|subjKey': [{day, book, chapter, desc}]}: the TCH_LASTCW_DAYS newest upload days, newest first. Two, not one, so a teacher who
+  // has already uploaded today (or an index built yesterday evening) still has the previous school day's row.
+  Object.keys(cwBy).forEach(function (code) {
+    const st = stateOf(code), out = st.lastCw = {};
+    Object.keys(cwBy[code]).forEach(function (k) {
+      const m = cwBy[code][k];
+      out[k] = Object.keys(m).sort().reverse().slice(0, TCH_LASTCW_DAYS).map(function (d) { return { day: d, book: m[d].book, chapter: m[d].chapter, desc: m[d].desc }; });
+    });
   });
 
   // includeMClasses / minEpisodePeriods 1: a Montessori chapter or a chapter with a single entry still gets a chapter quest
@@ -1130,6 +1148,78 @@ GAME_MODULE_ACTIONS.teacherindexaudit = function (caller) {
     resolution['LMS' + (i + 1)] = (meta.resolution || {})[i] || { records: 0, resolved: 0 };
   }
   return { success: true, builtAt: meta.builtAt, records: meta.records, unmatched: unmatched, resolution: resolution };
+};
+
+// ── My classes (teacher/index.html, the "My classes" section) ──────────
+// Placeholders only (Uday, 28 Oct): teachers keep entering classwork and homework in the ERP app, which mirrors to the CW/HW sheet. The cards
+// claim nothing done: the feed has no "for date", only the upload time, so every count here is by upload day.
+// One card per class-subject the teacher teaches: taught by the chapter quests' rule (tchTaughtCs_: roster with umbrella subjects, or logged
+// within taughtLookbackDays), plus every timetabled class-subject. A roster-only umbrella subject ("Class 9 Science") that a finer card of the
+// same class already covers ("Class 9 Physics") is left out. Due, the daily log card's rule (tchLogProgress_): with a timetable, a class-subject
+// is due only on the weekdays it is timetabled (an untimetabled one is never due); with no timetable at all, every class-subject is due every
+// school day. Pure: schoolDays = the known working days before today, newest first (up to TCH_CLASSES_WINDOW); todayWorking = today is known to
+// be a working day; prevDay / nextDay = the previous / next school day, null when the calendar could not say.
+// -> [{cls, subj, scheduledToday, periodsTomorrow, yesterdayPlan:{book, chapter, desc}|null, last21:{logged, of, days}}]
+var TCH_CLASSES_WINDOW = 21;
+function tchClasses_(state, T, dayKey, todayWorking, schoolDays, prevDay, nextDay, nowMs) {
+  if (!state) return [];
+  const cards = {}, order = [];
+  const add = function (cls, subj, from) {
+    const k = tchCsKey_(cls, subj);
+    if (!tchHas_(cards, k)) { cards[k] = { cls: cls, subj: subj, from: {}, days: null }; order.push(k); }
+    cards[k].from[from] = true;
+    return cards[k];
+  };
+  const pbd = state.periodsByDay || {};
+  Object.keys(pbd).forEach(function (wd) { (pbd[wd] || []).forEach(function (p) { const c = add(p.cls, p.subj, 'tt'); (c.days = c.days || {})[wd] = true; }); });
+  (state.episodes || []).concat(state.classSubjects || []).forEach(function (x) { if (tchTaughtCs_(state, T, x.cls, x.subj, nowMs)) add(x.cls, x.subj, x.first !== undefined ? 'log' : 'roster'); });
+  const covered = function (c) { // roster-only, and an umbrella over another card of the same class
+    if (c.from.tt || c.from.log || !tchHas_(TCH_UMBRELLA, c.subj)) return false;
+    return TCH_UMBRELLA[c.subj].some(function (a) { const k = tchCsKey_(c.cls, a); return tchHas_(cards, k) && cards[k] !== c; });
+  };
+  const wdOf = function (day) { return TCH_DAYS[(new Date(day + 'T00:00:00Z').getUTCDay() + 6) % 7]; };
+  // per upload day, so the ERP's Save + Update rows for one day count once
+  const loggedOn = function (day, k) { return ((state.loggedDays && state.loggedDays[day]) || []).some(function (e) { return tchCsKey_(e.cls, e.subj) === k; }); };
+  const days = (schoolDays || []).length, lastCw = state.lastCw || {};
+  return order.filter(function (k) { return !covered(cards[k]); }).map(function (k) {
+    const c = cards[k], due = function (day) { return state.periodsByDay ? !!(c.days && c.days[wdOf(day)]) : true; };
+    const dueDays = (schoolDays || []).filter(due);
+    const plan = prevDay && tchHas_(lastCw, k) ? lastCw[k].filter(function (x) { return x.day === prevDay; })[0] : null;
+    return {
+      cls: c.cls, subj: c.subj, scheduledToday: !!todayWorking && due(dayKey), periodsTomorrow: !!nextDay && due(nextDay),
+      yesterdayPlan: plan ? { book: plan.book, chapter: plan.chapter, desc: plan.desc } : null,
+      last21: { logged: dueDays.filter(function (d) { return loggedOn(d, k); }).length, of: dueDays.length, days: days },
+    };
+  });
+}
+
+// GET, Teacher role only, the caller's own code, read-only. Outside any lock (tchStateFor_ may refresh the index). The Today rule for a calendar
+// that cannot be read: today unknown is not a working day; an unknown past day is left out of the window, never counted as due; an unknown
+// previous / next day gives no yesterday's plan / no periods tomorrow. Sundays and 2nd Saturdays are settled without a calendar read.
+// ponytail: up to ~45 per-day calendar reads on a cold cache (cached 6 h per campus and day, shared by the campus); one range read if this is slow.
+GAME_MODULE_ACTIONS.teacherclasses = function (caller) {
+  const code = tchPlanCaller_(caller);
+  if (!code) return { success: false, error: 'Only a teacher has classes here.' };
+  const cfg = tchLoadCfg_(), T = tchConfig_(cfg);
+  if (T.cwhwDeferred) return { success: true, deferred: true, classes: [] }; // My classes is CW/HW: it follows the same switch (the page hides the section)
+  const state = tchStateFor_(code);
+  if (!state) return { success: true, builtAt: null, loading: tchIndexLoading_(), classes: [] };
+  const now = gameNow_(), dayKey = gameDayKey_(now);
+  const working = function (day) { // true | false | null (unknown)
+    if (!tchWorkingDay_(state.campus, day, [], cfg)) return false;
+    const ev = tchCalendarEvents_(state.campus, day);
+    return ev === null ? null : tchWorkingDay_(state.campus, day, ev, cfg);
+  };
+  const schoolDays = [];
+  let prevDay, nextDay;
+  for (let i = 1; schoolDays.length < TCH_CLASSES_WINDOW && i <= TCH_CLASSES_WINDOW * 2; i++) {
+    const d = tchAddDays_(dayKey, -i), w = working(d);
+    if (w) schoolDays.push(d);
+    if (prevDay === undefined && w !== false) prevDay = w ? d : null;
+  }
+  for (let i = 1; nextDay === undefined && i <= 14; i++) { const d = tchAddDays_(dayKey, i), w = working(d); if (w !== false) nextDay = w ? d : null; }
+  return { success: true, builtAt: state.builtAt || null,
+    classes: tchClasses_(state, T, dayKey, working(dayKey) === true, schoolDays, prevDay || null, nextDay || null, now.getTime()) };
 };
 
 // ── employee sign-in fallback ────────────────────────────────────────
