@@ -289,18 +289,25 @@
       LMCSBus.info(p, H.bus).map((l) => `<dt>${esc(l.k)}</dt><dd>${esc(l.v === '—' ? '—' : day(l.v))}</dd>`).join('') + '</dl>' +
       `<button type="button" class="gb-btn" disabled aria-disabled="true"><span aria-hidden="true">${E('busCheck')}</span> दिक्कत बताएँ · Report a problem <span aria-hidden="true">${E('soon')}</span> जल्द · Soon</button>`;
   }
+  // V2 animation (assets/game/v2-animations.css, engine-contract.md): a once-only class, removed on animationend so it can play again.
+  // Each has its own reduced-motion block (no movement). Until the file is on the line the classes do nothing.
+  function play(el, id) {
+    if (!el) return;
+    el.classList.remove('a-' + id); void el.getBoundingClientRect(); el.classList.add('a-' + id);
+    el.addEventListener('animationend', function f() { el.classList.remove('a-' + id); el.removeEventListener('animationend', f); });
+  }
   function pick(id) {
     H.sel = H.sel === id ? '' : id;
     const p = LMCSBus.PARTS.find((x) => x.id === H.sel);
     if (p && !p.at[H.view]) H.view = Object.keys(p.at)[0]; // a part not seen from here: turn the bus so it is
     drawBus();
-    if (H.sel) $('partCard').querySelector('h3').focus({ preventScroll: false });
+    if (H.sel) { play($('busDraw').querySelector('g[data-part="' + id + '"]'), 'bus-part-highlight'); $('partCard').querySelector('h3').focus({ preventScroll: false }); }
     else { const g = $('busDraw').querySelector('[data-part="' + id + '"]') || $('partList').querySelector('[data-part="' + id + '"]'); if (g) g.focus(); } // a second tap closes the card; focus stays on the part
   }
   function homeBase() {
     $('busBase').hidden = H.world; $('world').hidden = !H.world;
     $('viewBus').setAttribute('aria-pressed', String(!H.world)); $('viewRoute').setAttribute('aria-pressed', String(H.world));
-    if (!H.world) loadBus();
+    if (!H.world) { loadBus(); if (!H.rolled) { H.rolled = true; play($('busDraw'), 'bus-roll-in'); } } // the bus drives in once per visit
   }
   $('busBase').addEventListener('click', (e) => {
     const v = e.target.closest('[data-view]'), p = e.target.closest('[data-part]');
