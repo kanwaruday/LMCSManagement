@@ -41,7 +41,8 @@ var BusChain = (function () {
   }
 
   // the driver's steps. s: {linked, photos (bool), runsNeeded, runsDone, riders (array or null = the ERP list not set up yet)}
-  // Each step: {id, hi, en, done, locked, status, action}. Only the first open step is the one to do; later ones are locked.
+  // Each step: {id, hi, en, done, next, status, action}. next: the first open step. Nothing is locked: the route video was live
+  // before this chain, so a driver who has not photographed the bus yet can still record the route.
   function steps(s) {
     s = s || {};
     var need = Math.max(0, s.runsNeeded || 0), runs = Math.min(need, Math.max(0, s.runsDone || 0));
@@ -58,8 +59,8 @@ var BusChain = (function () {
         status: riders == null ? 'जल्द · Soon: the school list is being set up' : riders.length ? riders.length + ' बच्चे · riders' : 'कोई नाम नहीं · No riders listed yet',
         action: riders && riders.length ? 'सूची देखें · See the list' : '' }
     ];
-    var open = -1;
-    for (var i = 0; i < list.length; i++) { if (!list[i].done && open === -1) open = i; list[i].locked = open !== -1 && i > open; }
+    var found = false;
+    list.forEach(function (x) { x.next = !x.done && !found; if (x.next) found = true; });
     return list;
   }
   // how many steps are done, for the card's "2 of 4"

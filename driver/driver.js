@@ -156,6 +156,7 @@
   const STEPS = DriverLogic.FUEL_STEPS, CHECK = STEPS.length + 1; // #fuel-1..5, then #fuel-6 = check and send
   const S = { bus: null, form: {}, files: {}, urls: {}, fileErr: {}, shown: {}, failed: '', sending: false, sent: null, fillId: '' }; // fillId: a staff fill's, kept across resends
   const ACT = () => VIEW && !!(S.bus && S.bus.canAct); // a staff view that may add entries: display only, the server checks every write
+  const photoHref = () => '../coordinator/transport/capture.html?' + (api === live ? 'driver=1&' : 'shots=1&') + 'mode=inspection&reg=' + encodeURIComponent(S.bus.reg.replace(/\s/g, ''));
   const routeHref = () => '../coordinator/transport/capture.html?' + (api === live ? 'driver=1&' : '') + 'mode=timelapse&reg=' + encodeURIComponent(S.bus.reg.replace(/\s/g, ''));
   // the bottom of the screen: the game bar, or in a task the action bar with the one red button (never both)
   const bar = (html) => { $('barIn').innerHTML = html; $('bar').hidden = !html; $('rail').hidden = !!html; document.body.classList.toggle('dr-task', !!html); };
@@ -199,10 +200,28 @@
       tile({ icon: E('routeVideo'), hi: 'रूट वीडियो', en: 'Route video', line: routeLine, href: ACT() || (!VIEW && need && !routeDone) ? routeHref() : '', next: !VIEW && next.id === 'route', done: routeDone, // staff: any time (the staff capture page)
         bar: need ? `<span class="gb-bar${routeDone ? ' gb-bar-ok' : ''}" aria-hidden="true"><i style="width:${Math.round(100 * done / need)}%"></i></span>` : '' });
     if (VIEW) $('otherBus').onclick = () => { try { sessionStorage.removeItem(VIEW_KEY); } catch (e) { /* none */ } location.reload(); };
+    drawChain();
     homeBase();
     rail(need - done);
     bar('');
     showWaiting();
+  }
+  // ── 🚌 Bus setup chain (assets/game/bus-chain.js): my bus, photograph the bus, route video, my riders. The photos state comes with
+  // driverbus (H.bus.busPhotos), so the card redraws when it lands. Riders: names only from the school list (ERP), null until it is set up.
+  function drawChain() {
+    const b = S.bus, el = $('chain');
+    if (!b) { el.hidden = true; return; }
+    const st = BusChain.steps({ linked: true, photos: !!(H.bus && H.bus.busPhotos), runsNeeded: b.runsNeeded, runsDone: b.runsDone, riders: S.riders || null });
+    const pr = BusChain.progress(st), can = !VIEW || ACT(); // a read-only staff view sees the steps, no buttons
+    const go = { photos: can ? photoHref() : '', route: can ? routeHref() : '' };
+    el.hidden = false;
+    el.innerHTML = `<h2><span>🚌 बस सेटअप · Bus setup</span><small>${pr.done} / ${pr.total}</small></h2><ol>` + st.map((x, i) => {
+      const cls = x.done ? 'is-done' : x.next ? 'is-open' : '';
+      const act = !x.done && x.action && go[x.id] ? `<a class="gb-btn" href="${go[x.id]}">${esc(x.action)}</a>` : ''; // never red: the one red button is the Next slot's
+      const riders = x.id === 'riders' && S.riders && S.riders.length ? '<ul class="dr-riders">' + S.riders.map((r) => `<li>${esc(r.name)}${r.stop ? ' · ' + esc(r.stop) : ''}</li>`).join('') + '</ul>' : '';
+      return `<li class="${cls}"><span class="dr-mk" aria-hidden="true">${x.done ? '✓' : i + 1}</span><div class="dr-st">${big(x.hi, x.en)}` +
+        `<span class="dr-en">${esc(x.status)}</span>${act}${riders}</div><span class="gb-sr">${x.done ? 'done' : x.next ? 'next' : 'to do'}</span></li>`;
+    }).join('') + '</ol>';
   }
   // ── 🏠 Home Base: the driver's own bus (Coordinator backend driverbus, apps-script/coordinator-driverbus.gs), every part a tap.
   // Today a tap shows the part's last service; later "🔧 Report a problem" turns the same part id into a repair request.
@@ -215,7 +234,7 @@
   const day = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : '—'; };
   function loadBus() {
     if (H.bus || H.loading) return;
-    if (DEMO) { H.bus = DEMO_BUS; drawBus(); return; }
+    if (DEMO) { H.bus = DEMO_BUS; drawBus(); drawChain(); return; }
     if (!VIEW) try { H.bus = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch (e) { H.bus = null; } // a staff view keeps nothing
     const norm = (r) => String(r || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (H.bus && norm(H.bus.reg) !== norm(S.bus.reg)) H.bus = null; // a phone moved to another bus never shows the old one
@@ -223,7 +242,7 @@
     fetch(COORD_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'driverbus' }, VIEW ? view : { deviceToken: live.token })) }).then((r) => r.json()).then((r) => {
       if (!r.success) { if (r.code === 'UNLINKED' && !VIEW) { H.bus = null; try { localStorage.removeItem(HOME_KEY); } catch (e) { /* none */ } drawBus(); } return; } // driverme locks the page on its next load
       H.bus = r; if (!VIEW) try { localStorage.setItem(HOME_KEY, JSON.stringify(r)); } catch (e) { /* full */ }
-      drawBus();
+      drawBus(); drawChain();
     }).catch(() => { /* no signal: the saved bus, or the plain one */ }).finally(() => { H.loading = false; });
     drawBus();
   }

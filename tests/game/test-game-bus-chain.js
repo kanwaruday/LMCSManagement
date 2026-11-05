@@ -17,12 +17,13 @@ const less = all(); delete less.bus_plate;
 assert.strictEqual(BC.photosDone(less), false, 'a shot missing');
 assert.strictEqual(BC.photosDone(null), false);
 
-// steps: one open step at a time, the later ones locked; riders null = the ERP list not set up yet
+// steps: the first open step is next, nothing locked (the route video stays open before the photos); riders null = the ERP list not set up yet
 let st = BC.steps({ linked: true, photos: false, runsNeeded: 2, runsDone: 0, riders: null });
-assert.deepStrictEqual(st.map((s) => [s.id, s.done, s.locked]), [['bus', true, false], ['photos', false, false], ['route', false, true], ['riders', false, true]]);
+assert.deepStrictEqual(st.map((s) => [s.id, s.done, s.next]), [['bus', true, false], ['photos', false, true], ['route', false, false], ['riders', false, false]]);
+assert.strictEqual(st[2].action, 'रूट रिकॉर्ड करें · Record your route', 'the route can be recorded before the photos');
 assert.match(st[3].status, /Soon/);
 st = BC.steps({ linked: true, photos: true, runsNeeded: 2, runsDone: 2, riders: [{ name: 'A' }, { name: 'B' }] });
-assert.ok(st.every((s) => s.done && !s.locked));
+assert.ok(st.every((s) => s.done && !s.next));
 assert.deepStrictEqual(BC.progress(st), { done: 4, total: 4 });
 assert.strictEqual(BC.steps({ linked: true, photos: true, runsNeeded: 0 })[2].done, false, 'no runs planned is not done');
 

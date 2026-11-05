@@ -92,6 +92,7 @@ async function boot() {
   S.session = s;
   wire();
   const want = new URLSearchParams(location.search); // from the Fleet setup quests: ?mode=inspection&reg=HP659511
+  S.shots = want.get('mode') === 'inspection' && want.get('shots') === '1';
   setMode(HELP[want.get('mode')] ? want.get('mode') : 'timelapse');
   S.wantReg = normReg(want.get('reg'));
   battery(); phoneCheck();
@@ -127,10 +128,13 @@ async function driverBoot() {
   S.session = { email: 'driver:' + normReg(me.reg), role: 'Driver', idToken: null, driver: true };
   S.buses = [{ reg: me.reg, route: '', campus: me.campus, operational: true, stops: [] }];
   $('back').href = '../../driver/'; $('back').textContent = '\u2039 होम · Home';
-  document.querySelectorAll('[data-mode]').forEach((b) => { b.hidden = b.dataset.mode !== 'timelapse'; });
+  S.shots = new URLSearchParams(location.search).get('mode') === 'inspection'; // the bus setup chain's "Photograph your bus" step
+  const mode = S.shots ? 'inspection' : 'timelapse';
+  document.querySelectorAll('[data-mode]').forEach((b) => { b.hidden = b.dataset.mode !== mode; });
   $('offline').hidden = true;
   wire();
-  setMode('timelapse');
+  setMode(mode);
+  if (S.shots) driverLoadout();
   $('bus').innerHTML = `<option value="${esc(me.reg)}">${esc(me.reg)}</option>`;
   $('bus').value = me.reg;
   driverLabels();
@@ -138,6 +142,20 @@ async function driverBoot() {
   drawResume();
   drawUpload();
   addEventListener('beforeunload', (e) => { if (S.active) { e.preventDefault(); e.returnValue = ''; } });
+}
+// The Owner's safety items for a driver's bus photos: from the Coordinator's driverbus (it reads the phone's token), kept on the phone
+// like the staff list so the photos can be taken without signal once it has loaded.
+async function driverLoadout() {
+  const key = 'lmcs-capture-loadout:driver';
+  try {
+    const r = await (await fetch(COORD_URL, { method: 'POST', body: JSON.stringify({ action: 'driverbus', deviceToken: storedToken() }) })).json();
+    if (!r.success || !Array.isArray(r.loadout)) throw new Error(r.error || 'no list');
+    S.loadout = r.loadout;
+    try { localStorage.setItem(key, JSON.stringify(S.loadout)); } catch (e) { /* full */ }
+  } catch (err) {
+    try { S.loadout = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { S.loadout = null; }
+  }
+  loadoutLine();
 }
 const signedIn = () => !!(S.driver || LMCS.getSession()); // a linked driver phone counts: it posts deviceToken
 
@@ -169,7 +187,9 @@ function setMode(mode) {
   S.mode = mode;
   document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
   $('modeHelp').textContent = HELP[mode] || '';
-  $('privacyRow').hidden = mode !== 'timelapse';
+  $('privacyRow').hidden = mode !== 'timelapse' && !(mode === 'inspection' && S.shots);
+  document.querySelector('#privacyRow span').textContent = mode === 'inspection' ? (S.driver ? 'खाली बस · फ़ोटो में कोई बच्चा या व्यक्ति नहीं · Empty bus: no children or people in the photos' : 'Empty bus: no children or people in the photos')
+    : S.driver ? PRIVACY_HI : 'Camera faces the road · no children\'s faces in the frame';
   $('hint').hidden = $('battery').hidden = $('phoneCheck').hidden = mode === 'inspection'; // a parked bus: no charger, no screen-on worries
   phoneCheck(); // the camera line is for a timelapse only
   $('privacy').checked = false; // asked again before every timelapse start
@@ -180,26 +200,31 @@ function setMode(mode) {
   loadoutLine();
   if (S.driver) driverLabels();
 }
+const PRIVACY_HI = 'कैमरा सड़क की ओर · फ़्रेम में बच्चों के चेहरे नहीं · Camera faces the road · no children\'s faces in the frame'; // any time of day (Uday, 30 Oct: a person is sent to capture); faces still blurred on the Mac
 // Driver mode speaks Hindi first (a driver may read little; driver/index.html does the same), English small after it
 function driverLabels() {
   const t = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
-  document.querySelector('.gb-head h1').textContent = 'रूट वीडियो · Route video';
+  document.querySelector('.gb-head h1').textContent = S.shots ? 'बस की फ़ोटो · Bus photos' : 'रूट वीडियो · Route video';
   document.querySelector('.cap-modes').hidden = true; // one kind of run only
-  t('modeHelp', 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "बस स्टॉप दर्ज करें" दबाएँ। · Phone on the dashboard; tap Mark a Bus Stop at every stop.');
+  t('modeHelp', S.shots ? 'बस खड़ी हो, खाली हो। हर कार्ड पर फ़ोटो लें: चारों तरफ़, नंबर प्लेट, टायर, सीटें, फिर सुरक्षा सामान। · Bus parked and empty: a photo on every card, then the safety kit.'
+    : 'बस चलाते समय फ़ोन डैशबोर्ड पर लगाएँ। हर स्टॉप पर "बस स्टॉप दर्ज करें" दबाएँ। · Phone on the dashboard; tap Mark a Bus Stop at every stop.');
   document.querySelector('label[for="bus"]').hidden = $('bus').hidden = true; // one bus: no picker, just say which
   t('busNote', 'बस ' + S.driver.reg + ' · आपकी बस · Your bus');
   $('busNote').className = 'cap-hint';
-  document.querySelector('#privacyRow span').textContent = 'कैमरा सड़क की ओर · फ़्रेम में बच्चों के चेहरे नहीं · Camera faces the road · no children\'s faces in the frame'; // any time of day (Uday, 30 Oct: a person is sent to capture); faces still blurred on the Mac
+  if (S.mode === 'timelapse') document.querySelector('#privacyRow span').textContent = PRIVACY_HI;
   t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
-  t('start', (S.resumeId ? 'जारी रखें · Carry on' : '🎥 रिकॉर्ड शुरू करें · Start'));
+  t('start', (S.resumeId ? 'जारी रखें · Carry on' : S.shots ? '📸 फ़ोटो शुरू करें · Start' : '🎥 रिकॉर्ड शुरू करें · Start'));
   $('stopHere').innerHTML = 'बस स्टॉप दर्ज करें<small>Mark a Bus Stop</small>'; // the big button: Hindi big, English small under it (fixed text)
   t('end', 'रूट खत्म · End run');
   document.querySelector('[data-tab="capture"]').firstChild.textContent = 'रिकॉर्ड · Record';
   document.querySelector('[data-tab="upload"]').firstChild.textContent = 'भेजें · Send ';
 }
+// Bus photos (the bus setup chain, assets/game/bus-chain.js): ?shots=1 from the staff quest, or a driver phone's photo step. The same
+// safety check with the vehicle shots in front of the Owner's loadout, so it also counts as that month's check.
+const checkItems = () => (S.loadout && S.shots ? window.BusChain.photoItems(S.loadout) : S.loadout);
 // Inspection: what the check holds before it starts ("10 items, 4 need a photo"), from the list saved on the phone.
 function loadoutLine() {
-  const L = S.loadout, el = $('loNote');
+  const L = checkItems(), el = $('loNote');
   el.hidden = S.mode !== 'inspection' || L === undefined; // undefined: still loading
   if (el.hidden) return;
   const p = L ? L.filter((i) => i.needsPhoto).length : 0;
@@ -365,6 +390,7 @@ async function start() {
     if (resume && !mine(resume)) { S.resumeId = null; drawResume(); return setupSay('That run belongs to another person.'); }
     const kind = resume ? resume.kind : S.mode, reg = resume ? resume.reg : $('bus').value;
     if (!reg) return setupSay('Pick the bus first.');
+    if (kind === 'inspection' && S.shots && !resume && !$('privacy').checked) return setupSay(S.driver ? 'पहले बॉक्स पर टिक करें: खाली बस, फ़ोटो में कोई बच्चा या व्यक्ति नहीं · Tick the box first: empty bus, no children or people in the photos.' : 'Tick the box first: empty bus, no children or people in the photos.');
     if (kind === 'inspection') return await startInspection(resume, reg);
     if (kind === 'timelapse' && !$('privacy').checked) return setupSay('Tick the box first: the camera faces the road, with no children\'s faces in the frame.');
     if (!navigator.geolocation) return setupSay('This browser has no location. Use the school phone in Chrome.');
@@ -726,7 +752,7 @@ const SVG = {
   cam: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
 };
 async function startInspection(resume, reg) {
-  const items = (resume && resume.draft && resume.draft.items) || S.loadout; // a check closed before its draft was written takes today's list
+  const items = (resume && resume.draft && resume.draft.items) || checkItems(); // a check closed before its draft was written takes today's list
   if (!items) return setupSay('The safety list is not on this phone yet. Open this page on Wi-Fi once, then start again.');
   if (!items.length) return setupSay('The Owner has switched off every safety item: there is nothing to check.');
   const bus = busOf(reg);
@@ -737,7 +763,7 @@ async function startInspection(resume, reg) {
   S.resumeId = null;
   S.insp = { items, answers: { ...S.run.draft.answers }, thumbs: {}, cur: null }; // cur: the card being worked on stays open
   $('setup').hidden = true; $('summary').hidden = true; $('inspect').hidden = false;
-  $('inspTitle').textContent = `Safety check ${S.run.reg}` + (bus && bus.route ? ` (${routeName(bus, S.run.reg)})` : '');
+  $('inspTitle').textContent = (items.some((i) => i.shot) ? (S.driver ? 'बस की फ़ोटो · Bus photos ' : 'Bus photos ') : 'Safety check ') + S.run.reg + (bus && bus.route ? ` (${routeName(bus, S.run.reg)})` : '');
   $('inspMsg').textContent = '';
   $('cards').innerHTML = items.map((i) => `<li class="cap-slot" data-id="${esc(i.id)}"></li>`).join('');
   items.forEach((i) => drawCard(i.id));
@@ -787,7 +813,7 @@ function drawCard(id) {
   li.classList.toggle('cap-folded', fold);
   if (fold) {
     li.innerHTML = `<button type="button" class="cap-fold" data-a="open" aria-expanded="false"><span class="cap-mark">${state === 'ok' ? SVG.ok : SVG.no}</span>` +
-      `<span class="cap-foldname">${esc(item.label)}</span><small>${state === 'ok' ? 'On board' : 'Missing'}</small></button>`;
+      `<span class="cap-foldname">${esc(item.label)}</span><small>${item.shot ? (state === 'ok' ? 'Photo saved' : 'Needs repair') : state === 'ok' ? 'On board' : 'Missing'}</small></button>`;
     li.querySelector('[data-a="open"]').addEventListener('click', () => { setCur(id); drawCard(id); const y = cardEl(id).querySelector('[aria-pressed="true"]'); if (y) y.focus(); });
     if (focused) li.querySelector('button').focus();
     return;
@@ -795,9 +821,9 @@ function drawCard(id) {
   li.innerHTML = `<div class="cap-slothead"><span class="cap-mark">${state === 'ok' ? SVG.ok : state === 'no' ? SVG.no : ''}</span>` +
     `<h3 id="lab-${esc(id)}">${esc(item.label)}</h3></div>` +
     `<div class="cap-yn" role="group" aria-labelledby="lab-${esc(id)}">` +
-    `<button type="button" data-a="yes" aria-pressed="${!!(a && a.ok)}">Yes</button><button type="button" data-a="no" aria-pressed="${!!(a && !a.ok)}">No</button></div>` +
+    `<button type="button" data-a="yes" aria-pressed="${!!(a && a.ok)}">${S.driver ? 'हाँ, ठीक · Yes' : 'Yes'}</button><button type="button" data-a="no" aria-pressed="${!!(a && !a.ok)}">${S.driver ? (item.shot ? 'मरम्मत चाहिए · Repair' : 'नहीं · No') : item.shot ? 'Needs repair' : 'No'}</button></div>` +
     (!a && needs.length ? `<p class="cap-note">Yes needs ${needs.join(' and ')}.</p>` : '') +
-    (a && !a.ok ? '<p class="cap-slotnote">Missing or not working.</p>' : '') +
+    (a && !a.ok ? `<p class="cap-slotnote">${item.shot ? 'Needs repair: the office will see it.' : 'Missing or not working.'}</p>` : '') +
     (state === 'todo' ? `<p class="cap-slotnote cap-todo">${stillNeeds(item, a)}</p>` : '') +
     (a && a.ok && item.needsPhoto ? (a.seq == null ? `<button type="button" class="cap-btn cap-photo" data-a="photo">${SVG.cam}<span>Take photo</span></button>`
       : `<div class="cap-took">${S.insp.thumbs[id] ? `<img src="${S.insp.thumbs[id]}" alt="">` : ''}<span>Photo saved</span><button type="button" class="cap-btn" data-a="photo">Retake</button></div>`) : '') +
