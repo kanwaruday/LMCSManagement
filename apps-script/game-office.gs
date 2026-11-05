@@ -177,9 +177,51 @@ function daybookBoth_(full, campus, states) {
   return ['cash', 'odometer'].every(function (q) { return states.indexOf(daybookState_(full, campus, q).state) !== -1; });
 }
 
+// ── ERP fee dues (V2 row 6) ─────────────────────────────────────────
+// Fee Clerk / Principal -> one mission while their school has fees due: "Fee dues: 38 students owe ₹1,24,500", its bar the
+// share of fees collected (received of receivable). The go link opens the dues window (office/js/erp-dues.js) on their home.
+// The numbers come from the ERP read module (game-erp.gs, erpread what=dues) called as the caller, so its scope applies.
+// Counts only are cached, per school, for ERPDUES_CACHE_S: each read opens the campus Sheet, and the Sheet is refreshed
+// nightly, so a 10-minute cache costs nothing. No names leave this function. Not connected, no Dues tab, nothing due, a read
+// that fails or no ERP module at all: no mission (never marks the day down).
+var ERPDUES_CACHE_S = 600;
+var ERPDUES_GO = { FeeClerk: 'office/index.html#erp-dues', Principal: 'principal/index.html#erp-dues' };
+function erpDuesCounts_(caller) {
+  const read = typeof GAME_MODULE_ACTIONS !== 'undefined' && GAME_MODULE_ACTIONS.erpread;
+  if (!read) return null;
+  const cache = CacheService.getScriptCache(), key = 'erpdues:' + String(caller.campusId || '');
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const r = read(caller, { what: 'dues' });
+  if (!r || !r.success || r.configured === false || (r.missing || []).indexOf('Dues') !== -1) return null;
+  const rows = r.rows || [], sum = function (f) { return rows.reduce(function (t, x) { return t + (Number(x[f]) || 0); }, 0); };
+  const out = { campus: String(r.campus || caller.campusId || ''), count: rows.length, pending: sum('pending'), received: sum('received'), receivable: sum('receivable') };
+  cache.put(key, JSON.stringify(out), ERPDUES_CACHE_S);
+  return out;
+}
+// 124500 -> '₹1,24,500' (Indian grouping, whole rupees)
+function erpDuesInr_(n) {
+  const s = String(Math.round(n)), head = s.slice(0, -3).replace(/\B(?=(\d{2})+$)/g, ',');
+  return '₹' + (s.length > 3 ? head + ',' + s.slice(-3) : s);
+}
+function erpDuesMissions_(caller, cfg, now) {
+  const role = caller.primaryRole;
+  if (!ERPDUES_GO[role]) return [];
+  let c;
+  try { c = erpDuesCounts_(caller); } catch (err) { console.error('erp dues', err); return []; }
+  if (!c || !c.count) return [];
+  return [gameMission_('erp_dues', c.campus, {
+    title: 'Fee dues: ' + c.count + ' student' + (c.count === 1 ? ' owes ' : 's owe ') + erpDuesInr_(c.pending),
+    why: 'From the ERP. The bar shows fees collected so far.', owner: caller.email, campus: c.campus, go: ERPDUES_GO[role],
+    progress: c.receivable > 0 ? { done: Math.min(c.received, c.receivable), total: c.receivable } : undefined,
+    done: false, core: false, shared: true,
+  })];
+}
+
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_MISSIONS.Accounts = [].concat(GAME_MODULE_MISSIONS.Accounts || [], daybookMissions_);
-GAME_MODULE_MISSIONS.FeeClerk = [].concat(GAME_MODULE_MISSIONS.FeeClerk || [], daybookMissions_);
+GAME_MODULE_MISSIONS.FeeClerk = [].concat(GAME_MODULE_MISSIONS.FeeClerk || [], daybookMissions_, erpDuesMissions_);
+GAME_MODULE_MISSIONS.Principal = [].concat(GAME_MODULE_MISSIONS.Principal || [], erpDuesMissions_);
 GAME_MODULE_MISSIONS.Coordinator = [].concat(GAME_MODULE_MISSIONS.Coordinator || [], daybookMissions_, daybookApproveMissions_);
 GAME_MODULE_MISSIONS.Owner = [].concat(GAME_MODULE_MISSIONS.Owner || [], daybookOwnerWarm_);
 GAME_MODULE_QUESTS.Owner = [].concat(GAME_MODULE_QUESTS.Owner || [], daybookQuests_);
