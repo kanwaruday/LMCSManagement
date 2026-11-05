@@ -5,7 +5,7 @@ const dir = __dirname + '/../../apps-script/';
 const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
-load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('../coordinator/transport-rank.js'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs');
+load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('../coordinator/transport-rank.js'); load('../assets/game/bus-chain.js'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs');
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-10-26T05:00:00Z'); // Mon 26 Oct 2026, 10:30 IST
 const cfg = J(ctx.gameConfigDefaults_());

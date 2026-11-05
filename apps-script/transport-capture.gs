@@ -78,7 +78,7 @@ function capAuth_(body) {
     const link = dlkLink_(body.deviceToken);
     if (!link) return { error: DLK_UNLINKED_ };
     if (tupNormReg_(body.reg) !== link.reg) return { error: 'This phone can only send for bus ' + link.reg };
-    if (body.runKind !== 'timelapse') return { error: 'A driver phone sends only route videos' };
+    if (body.runKind !== 'timelapse' && body.runKind !== 'inspection') return { error: 'A driver phone sends only route videos and bus photos' }; // bus photos: the bus setup chain (assets/game/bus-chain.js)
     const v = tupVehicle_(link.reg);
     if (!v) return { error: 'Vehicle ' + link.reg + ' is not in the fleet' };
     return { caller: { roles: ['Driver'], role: 'Driver', campusId: link.campus, email: 'driver:' + link.linkId, name: link.name }, v: v };
@@ -153,6 +153,7 @@ function capInspectionError_(insp) {
     const id = String(r[0] || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
     if (id) known[id] = true;
   });
+  BusChain.SHOTS.forEach(function (x) { known[x.id] = true; }); // the bus setup chain's vehicle shots (assets/game/bus-chain.js)
   for (let i = 0; i < keys.length; i++) {
     const id = keys[i], a = insp[id];
     if (!known[id]) return 'Unknown safety item: ' + String(id).slice(0, 40);

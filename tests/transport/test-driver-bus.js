@@ -8,6 +8,10 @@ const T1 = 'a'.repeat(64), T2 = 'b'.repeat(64), T3 = 'c'.repeat(64);
 const devices = [['Link ID', 'Token Hash', 'Reg', 'Campus', 'Driver Code', 'Driver Name', 'Created', 'Created By', 'Revoked', 'Revoked By', 'Last Seen'],
   ['L1', hash(T1), 'HP659511', 'LMS4', '', 'Test Driver', '', '', '', '', ''],
   ['L2', hash(T2), 'HP665805', 'LMS1', '', 'Other Driver', '', '', 'yes', 'x', '']];
+const shot = (fid) => Object.fromEntries(['bus_front', 'bus_back', 'bus_left', 'bus_right', 'bus_plate', 'bus_tyres', 'bus_seats', 'bus_aisle'].map((id) => [id, { ok: true, fileId: fid }]));
+const runs = [['Run ID', 'Reg', 'Campus', 'Kind', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps', 'Stops', 'Inspection JSON', 'Status'],
+  ['R1', 'HP665805', 'LMS1', 'inspection', '', '', '', '', 0, '', '', JSON.stringify(shot('FILEabcdefghij')), 'ended'],
+  ['R2', 'HP659511', 'LMS4', 'inspection', '', '', '', '', 0, '', '', JSON.stringify(Object.assign(shot('FILEabcdefghij'), { bus_aisle: { ok: true } })), 'ended']];
 const fleet = [['Reg', 'Bus', 'Campus', 'Operational'], ['HP 65 9511', 'Bus 4', 'LMS 4', 'yes'], ['HP665805', 'Bus 1', 'LMS 1', 'yes']];
 const staff = { owner: { campusId: 'ALL', roles: ['Owner'] }, coord: { campusId: 'LMS2', roles: ['Coordinator'] }, coord4: { campusId: 'LMS4', roles: ['Coordinator'] },
   clerk: { campusId: 'LMS4', roles: ['FeeClerk'], feeClerkOnly: true } };
@@ -17,11 +21,13 @@ const tabs = {
     { reg: 'HP665805', component: 'battery', fields: '{"lastReplacedOn":"2026-01-01"}' }, { reg: 'HP659511', component: 'clutch', fields: 'not json' }]
 };
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, isFinite,
-  SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n === 'Driver Devices' ? devices : n === 'LM Studio Fleet' ? fleet : null) && { getDataRange: () => ({ getValues: () => (n === 'Driver Devices' ? devices : fleet).map((r) => r.slice()) }) } }) },
+  SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => ({ 'Driver Devices': devices, 'LM Studio Fleet': fleet, 'Capture Runs': runs })[n] && { getDataRange: () => ({ getValues: () => ({ 'Driver Devices': devices, 'LM Studio Fleet': fleet, 'Capture Runs': runs })[n].map((r) => r.slice()) }) } }) },
   coordVerifyCaller_: (t) => staff[t] || null, coordVerifyPrincipal_: (t) => ({ p1: { campusId: 'LMS1', principal: true }, p4: { campusId: 'LMS4', principal: true } }[t] || null), COORD_DISTRICTS: { LMS1: ['LMS1', 'LMS2', 'LMS3'], LMS2: ['LMS1', 'LMS2', 'LMS3'], LMS4: ['LMS4', 'LMS5', 'LMS6'] },
   coordVisibleCampuses_: (c) => (c.campusId === 'ALL' ? null : ctx.COORD_DISTRICTS[c.campusId] || [c.campusId]),
   Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)) },
+  COORD_TRANSPORT_FORM_ID: 'book', COORD_TRANSPORT_TAB_CAPTURE: 'Capture Runs',
+  coordLoadoutAll_: () => [{ id: 'fire_extinguisher', label: 'Fire extinguisher', needsPhoto: true, needsDate: true, order: 1, active: true }, { id: 'cctv', label: 'CCTV', needsPhoto: false, needsDate: false, order: 2, active: false }],
   COORD_FLEET_TABS: { profile: 'Fleet Profile', driver: 'Driver Profile', parts: 'Parts History' },
   gpsRows_: (t) => tabs[t] || [],
   coordFleetScan_: (regs) => (regs.HP659511 ? { HP659511: { modelAndVariant: { value: 'Starbus 32', disagree: false }, make: { value: 'Eicher', disagree: false } } } : {}),
@@ -29,6 +35,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp, 
   coordTransportFleet_: () => ({ fleet: [{ reg: 'HP659511', docs: { insurance: { date: '2027-01-31', link: 'secret-link', src: 'drive' }, pollution: { na: true, date: '' } } }] }) };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../coordinator/capture/fleet-quests.js'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/game/bus-chain.js'), 'utf8'), ctx);
 vm.runInContext(gs('driver-token.gs'), ctx);
 vm.runInContext(gs('coordinator-driverbus.gs'), ctx);
 const call = (b) => JSON.parse(JSON.stringify(vm.runInContext('coordDriverBus_(' + JSON.stringify(b) + ')', ctx)));
@@ -39,6 +46,11 @@ assert.deepStrictEqual([me.make, me.model, me.seats, me.fromScan], ['Tata', 'Sta
 assert.deepStrictEqual(me.parts, { battery: '2026-03-04' }, 'own bus only; "unknown" and a bad cell stay out');
 assert.deepStrictEqual(me.papers, { insurance: { date: '2027-01-31', na: false }, fitness: { date: '' }, pollution: { date: '', na: true }, speed_governor: { date: '' } }, 'dates only, never a file link');
 assert.ok(!/secret-link|Other Driver|HP665805/.test(JSON.stringify(me)), 'no paper links, no other bus or driver');
+// the bus setup chain: the active safety items for the driver's photo check, and whether this bus is photographed
+assert.deepStrictEqual(me.loadout.map((i) => i.id), ['fire_extinguisher'], 'active safety items only');
+assert.strictEqual(me.busPhotos, false, 'a check missing one shot\'s photo is not done');
+runs[2][11] = JSON.stringify(Object.assign(shot('FILEabcdefghij'), { bus_tyres: { ok: false } }));
+assert.strictEqual(call({ deviceToken: T1 }).busPhotos, true, 'every shot answered (a "needs repair" counts) is done');
 const unknown = call({ deviceToken: T3 }), revoked = call({ deviceToken: T2 }), bad = call({ deviceToken: 'x' });
 assert.deepStrictEqual(unknown, { success: false, code: 'UNLINKED', error: 'This phone is not linked. Ask the office for a new link.' });
 assert.deepStrictEqual([revoked, bad], [unknown, unknown], 'unknown, revoked and malformed tokens get one answer');

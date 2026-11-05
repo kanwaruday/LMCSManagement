@@ -41,6 +41,7 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp,
 vm.createContext(ctx);
 vm.runInContext(gs('staff-documents.gs').split('\n').filter((l) => /^var SDOC_(MAX_BYTES|MIME_EXT)_/.test(l)).join('\n'), ctx);
 vm.runInContext(gs('transport-uploads.gs'), ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/game/bus-chain.js'), 'utf8'), ctx);
 vm.runInContext(gs('transport-capture.gs'), ctx);
 vm.runInContext(gs('driver-token.gs'), ctx); // dlkStaff_ is the real role test; dlkLink_ is stubbed below where a driver phone sends
 const run = (code) => JSON.parse(JSON.stringify(vm.runInContext(code, ctx)));
@@ -265,6 +266,13 @@ const drv = (r) => run('captureRun_(' + JSON.stringify({ deviceToken: 'dev1', ru
 assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'a driver phone never sends a trial');
 assert.strictEqual(drv({ runId: 'TR1', reg: 'HP659511', kind: 'timelapse', trial: true }).error, 'Only the Owner or a Coordinator can record a trial run', 'not even an existing one');
 assert.strictEqual(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse' }).success, true, 'a real driver run still goes in');
+// the bus setup chain (V2): a driver phone also sends its bus photos, as a safety check with the vehicle shots; nothing else
+const shots = { bus_front: { ok: true, fileId: 'FILEabcdefghij' }, bus_tyres: { ok: false } };
+assert.strictEqual(drv({ runId: 'BP1', reg: 'HP659511', kind: 'inspection', status: 'ended', inspection: shots }).success, true, 'a driver\'s bus photos go in');
+assert.strictEqual(rowOf('BP1')[7], 'Driver');
+assert.match(drv({ runId: 'BP2', reg: 'HP659511', kind: 'inspection', status: 'ended', inspection: { bus_roof: { ok: true } } }).error, /Unknown safety item/, 'only the known shots');
+assert.match(drv({ runId: 'BP3', reg: 'HP659511', kind: 'count' }).error, /route videos and bus photos/, 'no count run from a driver phone');
+assert.match(drv({ runId: 'BP4', reg: 'HP665805', kind: 'inspection' }).error, /only send for bus HP659511/, 'own bus only');
 caller = { email: 'o@lms.org.in', campusId: 'ALL', roles: ['Owner'], role: 'Owner' };
 const cd = (b) => run('captureDiscard_(' + JSON.stringify(b) + ')');
 assert.strictEqual(frame({ runId: 'TR1', seq: 0 }).success, true, 'a trial uploads like any run');

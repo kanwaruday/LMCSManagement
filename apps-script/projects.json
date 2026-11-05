@@ -42,7 +42,8 @@
       "driver-token",
       "driver-link",
       "driver-google",
-      "driver-fuel"
+      "driver-fuel",
+      "../assets/game/bus-chain.js"
     ]
   },
   "payroll": {
@@ -70,7 +71,7 @@
       "coordinator-world",
       "coordinator-driverbus",
       "driver-token",
-      "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js"
+      "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js", "../assets/game/bus-chain.js"
     ]
   },
   "chapter": {
@@ -137,10 +138,12 @@
       "game-scout",
       "game-event-design",
       "acad-episodes",
+      "game-bus-chain",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js",
       "game-erp",
       "driver-token"
+      "../assets/game/bus-chain.js"
     ]
   }
 }

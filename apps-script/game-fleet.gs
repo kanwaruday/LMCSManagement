@@ -88,7 +88,7 @@ function fleetWarm_() {
 }
 
 // tabs = {fleet, profile, driver, parts, papers, runs, stops, fills}: sheet values, header first (null = no tab) -> {fleet,
-// profiles, drivers, parts, inspected, captured}, as coordFleet_ builds them (coordFleetBuses_, coordFleetScan_,
+// profiles, drivers, parts, inspected, captured, photographed}, as coordFleet_ builds them (coordFleetBuses_, coordFleetScan_,
 // coordFleetFills_, coordFleetDone_). The papers on file (docs) are left out: they never count towards a quest.
 function fleetShape_(tabs, today) {
   today = today || fleetIstDay_(Date.now());
@@ -141,7 +141,8 @@ function fleetShape_(tabs, today) {
     Object.keys(f).forEach(function (k) { kept[k] = f[k] == null || String(f[k]).trim() === '' ? '' : 1; });
     return { driverKey: d.driverKey, reg: d.reg, fields: JSON.stringify(kept), ageLimit: d.ageLimit };
   });
-  return Object.assign({ fleet: fleet, profiles: objs(tabs.profile), drivers: drivers, parts: objs(tabs.parts), inspected: inspected, captured: captured },
+  return Object.assign({ fleet: fleet, profiles: objs(tabs.profile), drivers: drivers, parts: objs(tabs.parts), inspected: inspected, captured: captured,
+    photographed: BusChain.photographed((tabs.runs || []).slice(1), FQ.normReg) }, // the bus setup chain's photos (game-bus-chain.gs)
     fleetShapeOps_(tabs, today, fleet, objs));
 }
 

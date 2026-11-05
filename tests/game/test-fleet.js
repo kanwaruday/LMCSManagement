@@ -4,7 +4,7 @@ const dir = __dirname + '/../../apps-script/';
 const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} } }; // the expected failures below log through console.error
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
-load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs'); load('../coordinator/transport-rank.js');
+load('game-fleet.gs'); load('../coordinator/capture/fleet-quests.js'); load('../assets/game/bus-chain.js'); load('game-bus-chain.gs'); load('game.gs'); load('game-actions.gs'); load('game-missions.gs'); load('game-windows.gs'); load('game-quests.gs'); load('../coordinator/transport-rank.js');
 const zlib = require('zlib');
 // Apps Script services, small: a counting SpreadsheetApp (the quests must never open the workbook) and a real-ish cache
 let opened = 0, store = {};

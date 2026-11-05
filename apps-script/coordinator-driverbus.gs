@@ -6,6 +6,8 @@
 //   fromScan lists the fields read that way), else the fleet list's seats; year is the fleet list's. papers: the bus-level
 //   expiry dates (insurance, fitness, pollution, speed governor) as the Transport page resolves them, dates only. parts: Fleet
 //   setup's parts history, {part id: last replaced on}. Never money, never other buses, never the driver card.
+//   loadout: the Owner's active safety items (for the driver's "Photograph your bus" check, bus setup chain); busPhotos: true once
+//   an ended safety check of this bus covers every vehicle shot (assets/game/bus-chain.js BusChain.photographed).
 
 const DBUS_PAPERS_ = ['insurance', 'fitness', 'pollution', 'speed_governor'];
 
@@ -39,10 +41,17 @@ function coordDriverBus_(body) {
   } catch (e) { DBUS_PAPERS_.forEach(function (k) { docs[k] = { date: '' }; }); } // papers unreadable: the card says —, the bus still draws
   return { success: true, reg: reg, campus: link.campus, bus: String(fleetBus.bus || ''), route: String(fleetBus.route || ''),
     make: pick('make'), model: pick('modelAndVariant'), fuel: pick('fuel'), seats: pick('seatingCapacityAsPerRc') || String(fleetBus.seats || ''),
-    year: String(fleetBus.year || ''), fromScan: fromScan, papers: docs, parts: parts };
+    year: String(fleetBus.year || ''), fromScan: fromScan, papers: docs, parts: parts,
+    loadout: coordLoadoutAll_().filter(function (i) { return i.active; }), busPhotos: !!coordDriverBusPhotos_()[reg] };
 }
 
 function coordDriverBusObj_(v) {
   if (v && typeof v === 'object') return v;
   try { const o = JSON.parse(v || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
+}
+
+/** {REG: true} for every bus with a photographed safety check (Capture Runs, the Roster's tab in the same workbook). */
+function coordDriverBusPhotos_() {
+  const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+  return sh ? BusChain.photographed(sh.getDataRange().getValues().slice(1), FleetQuests.normReg) : {};
 }
