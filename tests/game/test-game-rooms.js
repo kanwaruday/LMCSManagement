@@ -133,6 +133,32 @@ g = get(P4);
 assert.deepStrictEqual([g.success, g.code], [false, 'ROOMS_ERROR']); assert.ok(!/secret/.test(g.error));
 ctx.eventRoster_ = keep;
 
+// ---- ERP suggestions (game-erp.gs erpread, looked up at call time): class-sections as classrooms, first, deduped and sorted; no student data out
+assert.strictEqual(ctx.roomsClassName_('7', 'A'), 'Class 7A');
+assert.strictEqual(ctx.roomsClassName_('10', ''), 'Class 10');
+assert.strictEqual(ctx.roomsClassName_('NUR', 'B'), 'NUR B');
+save(P4, []);
+let erpCalls = [];
+ctx.GAME_MODULE_ACTIONS.erpread = (c, p) => { erpCalls.push([c.email, p.what, p.campus]); return { success: true, configured: true, rows: [
+  { enrollNo: 'E1', name: 'Kid One', class: '10', section: 'A' }, { enrollNo: 'E2', name: 'Kid Two', class: '2', section: 'B' },
+  { enrollNo: 'E3', name: 'Kid Three', class: '2', section: 'A' }, { enrollNo: 'E4', name: 'Kid Four', class: '2', section: 'A' }] }; };
+g = get(P4);
+assert.deepStrictEqual(erpCalls, [['p4@example.org', 'students', 'LMS4']], 'asked as the caller, for their school');
+assert.deepStrictEqual(g.suggest.filter((s) => s.erp).map((s) => s.name), ['Class 2A', 'Class 2B', 'Class 10A'], 'numeric order, one per class-section');
+assert.strictEqual(g.suggest[0].type, 'classroom');
+assert.deepStrictEqual(g.erp, { configured: true, classes: 3 });
+assert.ok(!/Kid|E1/.test(JSON.stringify(g)), 'no student name or number in the answer');
+save(P4, [{ name: 'class 2a' }]);
+assert.deepStrictEqual(get(P4).suggest.filter((s) => s.erp).map((s) => s.name), ['Class 2B', 'Class 10A'], 'a named classroom leaves the list');
+ctx.GAME_MODULE_ACTIONS.erpread = () => ({ success: true, configured: false, rows: [], note: 'not connected' });
+assert.deepStrictEqual([get(P4).erp, get(P4).suggest.some((s) => s.erp)], [{ configured: false, classes: 0 }, false], 'not connected: the usual rooms only');
+ctx.GAME_MODULE_ACTIONS.erpread = () => ({ success: false, code: 'ERP_NOT_ALLOWED' });
+assert.strictEqual(get(CALL, 'LMS4').success, true, 'an ERP refusal (a Coordinator) never breaks the page');
+ctx.GAME_MODULE_ACTIONS.erpread = () => { throw new Error('boom'); };
+assert.strictEqual(get(P4).success, true, 'an ERP throw never breaks the page');
+delete ctx.GAME_MODULE_ACTIONS.erpread;
+assert.strictEqual(get(P4).erp.configured, false, 'no game-erp.gs: no ERP suggestions');
+
 // ---- doPost carries exactly one roomssave line
 const post = fs.readFileSync(dir + 'game.gs', 'utf8').match(/action === 'roomssave'/g) || [];
 assert.strictEqual(post.length, 1);

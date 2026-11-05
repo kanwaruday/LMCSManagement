@@ -12,7 +12,8 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 // Storage: tab `Game Rooms` in the Game workbook (created on the first save), one row per room, plain text.
 // Room types: Game Config key `roomTypes` ([{ id, label, emoji }]) when set, else ROOMS_TYPES_DEFAULT. Read here straight from the
 // Config rows, since gameConfigDefaults_ (game.gs) does not carry the key.
-// Suggestions: the usual rooms of a school; the ERP's classes and sections join them once game-erp.gs exists (erp-read-contract.md).
+// Suggestions: the ERP's class-sections as classrooms (game-erp.gs erpread, scoped as the caller; empty until the campus Sheet is set),
+// then the usual rooms of a school.
 // Children's faces rule: nothing here touches students. Staff names reach only that school's Principal, the Owner and Coordinators.
 // Only this file's own functions are used at top level (load order: tests/apps-script/test-load-order.js).
 // ═══════════════════════════════════════════════════════════════════
@@ -83,11 +84,35 @@ function roomsStaff_(campus) {
   return { people: people, complete: roster.complete };
 }
 
-// suggested rooms not yet named (case-insensitive) -> [{ name, type }]
-function roomsSuggest_(rooms) {
+// a class-section as a room name: 7 + A -> 'Class 7A'; NUR + A -> 'NUR A'; no section -> 'Class 7'
+function roomsClassName_(cls, sec) {
+  cls = String(cls || '').trim(); sec = String(sec || '').trim();
+  return /^\d{1,2}$/.test(cls) ? 'Class ' + cls + sec : (cls + ' ' + sec).trim();
+}
+// The school's class-sections from the ERP (game-erp.gs, erp-read-contract.md: erpread what=students, scoped as the caller) ->
+// { configured, names: ['Class 1A', ...] }. Only class and section are kept: no student name or number leaves this function.
+// Looked up at call time, so either load order works and a backend without game-erp.gs simply has no ERP suggestions.
+function roomsErpClasses_(caller, campus) {
+  const read = GAME_MODULE_ACTIONS.erpread;
+  if (typeof read !== 'function') return { configured: false, names: [] };
+  let res = null;
+  try { res = read(caller, { what: 'students', campus: campus }); } catch (err) { console.error('rooms erp: ' + (err && err.message)); }
+  if (!res || res.success !== true || res.configured !== true) return { configured: false, names: [] };
+  const seen = {}, pairs = [];
+  (res.rows || []).forEach(function (r) {
+    const k = String(r.class || '').trim() + '|' + String(r.section || '').trim();
+    if (k !== '|' && !seen[k]) { seen[k] = true; pairs.push(k.split('|')); }
+  });
+  pairs.sort(function (a, b) { return a[0].localeCompare(b[0], 'en', { numeric: true }) || a[1].localeCompare(b[1]); });
+  return { configured: true, names: pairs.map(function (p) { return roomsClassName_(p[0], p[1]); }) };
+}
+
+// suggested rooms not yet named (case-insensitive) -> [{ name, type, erp? }]: the ERP's classrooms first, then the usual rooms
+function roomsSuggest_(rooms, erpNames) {
   const have = {};
   rooms.forEach(function (r) { have[r.name.toLowerCase()] = true; });
-  return ROOMS_USUAL.filter(function (u) { return !have[u[0].toLowerCase()]; }).map(function (u) { return { name: u[0], type: u[1] }; });
+  const erp = (erpNames || []).filter(function (n) { return !have[n.toLowerCase()]; }).map(function (n) { return { name: n, type: 'classroom', erp: true }; });
+  return erp.concat(ROOMS_USUAL.filter(function (u) { return !have[u[0].toLowerCase()]; }).map(function (u) { return { name: u[0], type: u[1] }; }));
 }
 
 // the two steps' state -> { named, allocated, total, complete }
@@ -98,18 +123,19 @@ function roomsProgress_(rooms) {
 
 // ── actions ──────────────────────────────────────────────────────────
 // GET roomsget [campus] -> { success, campus, campusName, canEdit, types, rooms: [{ id, name, type, staff, staffName }], staff: [{ email, name, role }],
-//   staffComplete, suggest: [{ name, type }], progress }
+//   staffComplete, suggest: [{ name, type, erp? }], erp: { configured, classes }, progress }
 function roomsGet_(caller, params) {
   const campus = roomsCampus_(caller, params && params.campus, false);
   if (ROOMS_CODES[campus]) return roomsFail_(campus);
   try {
-    const book = gameBook_(), rooms = roomsOf_(roomsRows_(book), campus), staff = roomsStaff_(campus);
+    const book = gameBook_(), rooms = roomsOf_(roomsRows_(book), campus), staff = roomsStaff_(campus), erp = roomsErpClasses_(caller, campus);
     const nameOf = {};
     staff.people.forEach(function (p) { nameOf[p.email] = p.name; });
     return { success: true, campus: campus, campusName: gameCampusLabel_(campus), canEdit: !ROOMS_CODES[roomsCampus_(caller, campus, true)],
       types: roomsTypes_(book.getSheetByName('Game Config').getDataRange().getValues()),
       rooms: rooms.map(function (r) { return { id: r.id, name: r.name, type: r.type, staff: r.staff, staffName: r.staff ? nameOf[r.staff] || r.staff : '' }; }),
-      staff: staff.people, staffComplete: staff.complete, suggest: roomsSuggest_(rooms), progress: roomsProgress_(rooms) };
+      staff: staff.people, staffComplete: staff.complete, suggest: roomsSuggest_(rooms, erp.names), erp: { configured: erp.configured, classes: erp.names.length },
+      progress: roomsProgress_(rooms) };
   } catch (err) {
     console.error('roomsget: ' + (err && err.message)); // a raw message may carry data, so it is logged, never returned
     return roomsFail_('ROOMS_ERROR');

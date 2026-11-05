@@ -35,3 +35,4 @@
   .rs-room { flex-wrap:wrap; }
   .rs-remove { margin-left:34px; }
 }
+.rs-all { width:100%; min-height:44px; margin:0 0 8px; }

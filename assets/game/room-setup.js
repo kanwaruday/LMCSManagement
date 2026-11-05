@@ -137,16 +137,29 @@ var LMCSRooms = (function () {
         el('div', { class: 'rs-add-row' }, [input, el('button', { type: 'submit', class: 'gb-btn a-button-press' + (S.justDone ? '' : ' gb-btn-primary'), text: 'Add' })]),
         el('p', { class: 'gb-hint', id: 'rs-new-hint', text: 'Several at once? Separate them with commas: Class 1A, Class 1B, Class 2A' }), err]));
 
-      if (d.suggest && d.suggest.length) {
-        box.appendChild(el('p', { class: 'rs-sub', text: 'Or tap to add:' }));
-        box.appendChild(el('div', { class: 'rs-chips' }, d.suggest.map(function (sg) {
+      var chips = function (list) {
+        return el('div', { class: 'rs-chips' }, list.map(function (sg) {
           return el('button', { type: 'button', class: 'rs-chip a-button-press', 'aria-label': 'Add ' + sg.name,
             on: { click: function () {
               if (clash(S.rooms, [sg.name], -1)) return;
               S.fresh = [sg.name.toLowerCase()];
               save(S, S.rooms.concat({ name: sg.name, type: sg.type, staff: '' }), '“' + sg.name + '” added');
             } } }, ['+ ' + typeOf(S, sg.type).emoji + ' ' + sg.name]);
-        })));
+        }));
+      };
+      var fromErp = (d.suggest || []).filter(function (sg) { return sg.erp; }), usual = (d.suggest || []).filter(function (sg) { return !sg.erp; });
+      if (fromErp.length) {
+        box.appendChild(el('p', { class: 'rs-sub', text: 'Your classes in the ERP:' }));
+        if (fromErp.length > 1) box.appendChild(el('button', { type: 'button', class: 'gb-btn rs-all a-button-press', text: '+ Add all ' + fromErp.length + ' classrooms',
+          on: { click: function () {
+            S.fresh = fromErp.map(function (sg) { return sg.name.toLowerCase(); });
+            save(S, S.rooms.concat(fromErp.map(function (sg) { return { name: sg.name, type: sg.type, staff: '' }; })), fromErp.length + ' classrooms added');
+          } } }));
+        box.appendChild(chips(fromErp));
+      }
+      if (usual.length) {
+        box.appendChild(el('p', { class: 'rs-sub', text: fromErp.length ? 'Other rooms most schools have:' : 'Or tap to add:' }));
+        box.appendChild(chips(usual));
       }
     }
 

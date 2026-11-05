@@ -36,4 +36,5 @@ assert.ok(/aria-live/.test(src) && /window\.confirm\(/.test(src), 'live region a
 assert.ok(/min-height:44px/.test(css), '44px targets');
 assert.ok(/a-room-unlock/.test(src) && /a-quest-complete/.test(src) && /v2-animations\.css/.test(page), 'v2 animation classes wired');
 assert.ok(/<script src="\.\.\/assets\/game\/room-setup\.js"><\/script>/.test(page), 'unstamped: V2 stamps at assembly');
+assert.ok(/Add all ' \+ fromErp\.length/.test(src), 'one tap adds every ERP classroom');
 console.log('room-setup.js: all checks passed');
