@@ -148,6 +148,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 .tt-today b{flex-shrink:0;width:96px}
 </style>
 <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
+<link rel="stylesheet" href="../assets/game/classroom-chain.css">
 </head>
 <body class="gb gb-app">
 
@@ -169,6 +170,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
 <script src="../assets/game/school-building.js?v=ccbd1b4a"></script>
 <script src="../assets/game/school-models.js?v=8d407d9a"></script>
 <script src="../assets/game/rail.js?v=716e2ce0"></script>
+<script src="../assets/game/classroom-chain.js"></script>
 <script>
 (function () {
   if (LMCS.getSession()) { document.getElementById('lmcs-gate').style.display = 'none'; return; }
@@ -190,6 +192,8 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--red)}
       <div class="tab-panel active" id="panel-home">
         <div class="gb-next-slot"></div>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
+        <!-- My class (assets/game/classroom-chain.js): the tie, today's attendance, Meet your students, the classroom's items. #classroom, #classroom-students, #classroom-items open it. -->
+        <section id="classroom" aria-labelledby="crHead" hidden></section>
         <!-- 🏠 Home (my classroom(s): My classes and my tools) or 🗺️ World (the school building, my rooms and today's periods): Uday, 28 Oct.
              Hidden for Staff (no Today) and for a view-as target whose timetable isn't there. -->
         <div class="gb-switch" id="viewSwitch" role="group" aria-label="View" hidden>
@@ -472,6 +476,7 @@ function route_() {
   const h = location.hash.slice(1).replace(/^panel-/, ''); // old links (game-teacher.gs TCH_REQUESTS_GO / TCH_DEFAULT_FORM_GO, game.gs) say #panel-requests, #panel-tags
   if ((h === 'requests' || h === 'evals' || h === 'tags') && !(h === 'tags' && teacherOnlyHidden_)) { goTab(h); return; }
   if (currentTab !== 'home') goTab('home');
+  if (/^classroom(-students|-items)?$/.test(h)) { if (typeof LMCSClassroom !== 'undefined') LMCSClassroom.open(h); return; } // the classroom quest's steps
   const panel = h && document.getElementById(h);
   if (panel && panel.classList.contains('gb-panel')) panel.open = true;
 }
@@ -1261,6 +1266,8 @@ function init() {
   loadTimetable_().then(updateWorld_);
   loadRank_();
   if (LMCS.hasRole(SESSION, 'Teacher')) loadClasses_(); // the game answers a Teacher only; a Principal / Coordinator / Owner without it sees no section
+  // My class: the signed-in teacher's own (classroomget answers Teacher / Staff only); below Today
+  if (LMCS.hasRole(SESSION, 'Teacher') && typeof LMCSClassroom !== 'undefined') LMCSClassroom.mount(document.getElementById('classroom'), { session: SESSION, backendUrl: GAME_BACKEND_URL }); // the game answers a Teacher only; a Principal / Coordinator / Owner without it sees no section
   // the signed-in person's own list; the Owner/Coordinator view-as target has no session of its own, so it is not passed.
   // A Principal, Coordinator or Owner has their panel on their own home: here it would cover the bottom nav.
   var gameOwnHome = ['Principal', 'Coordinator', 'Owner'].some(function (r) { return LMCS.hasRole(SESSION, r); });

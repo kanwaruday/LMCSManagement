@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
   <link rel="stylesheet" href="../assets/game/home-hud.css?v=7b6d14ca" />
+  <link rel="stylesheet" href="../assets/game/classroom-chain.css" />
   <style>
     /* page only: the refusal card and the Owner's preview bar. Everything else comes from base.css (gb-) and home-hud.css (hh-). */
     .sh-refused { max-width:520px; margin:12px auto 0; padding:16px; border:1.5px solid var(--gb-line); border-radius:14px; background:var(--gb-paper); color:var(--gb-ink); text-align:left; }
@@ -69,6 +70,8 @@
             <div id="world-map"></div>
           </section>
         </div>
+        <!-- My class (assets/game/classroom-chain.js): shown only to a person the ERP ties to a class -->
+        <section id="classroom" aria-labelledby="crHead" hidden></section>
       </div>
     </main>
   </div>
@@ -88,6 +91,7 @@
   <script src="../assets/game/rail.js?v=716e2ce0"></script>
   <script src="../coordinator/route-map.js?v=15e2d85e"></script>
   <script src="./roles.js?v=c491e36b"></script>
+  <script src="../assets/game/classroom-chain.js"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as every home
     const COORD_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // transportworld (apps-script/coordinator-world.gs)
@@ -213,6 +217,7 @@
       wireSchool(); drawSchool();
       if (pick.preview) { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [], quests: [], windows: [] } })); return; }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
+      if (typeof LMCSClassroom !== 'undefined') LMCSClassroom.mount(document.getElementById('classroom'), { session: session, backendUrl: GAME_BACKEND_URL, hideWithoutTies: true });
     }
 
     // a kept session shows the home at once; otherwise the staff Google sign-in gate (assets/auth.js) first
