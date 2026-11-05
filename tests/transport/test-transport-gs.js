@@ -314,7 +314,7 @@ assert.strictEqual(run('coordTransport_({})').success, true, 'old cached shape t
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), c));
   const proj = JSON.parse(fs.readFileSync(path.join(__dirname, '../../apps-script/projects.json'), 'utf8')).coordinator.files;
   const shared = proj.filter(f => f.indexOf('/') !== -1);
-  assert.deepStrictEqual(shared, ['../coordinator/capture/fleet-quests.js', '../coordinator/transport-rank.js'], 'deploy.mjs puts the shared quest logic and the Transport page\'s paper rules into the Coordinator project');
+  assert.deepStrictEqual(shared, ['../coordinator/capture/fleet-quests.js', '../coordinator/transport-rank.js', '../assets/game/bus-chain.js'], 'deploy.mjs puts the shared quest logic, the Transport page\'s paper rules and the bus setup chain into the Coordinator project');
   shared.forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), c));
   vm.runInContext('coordCacheGetBig_ = function () { return null; }; coordCachePutBig_ = function () {}; coordFleetToday_ = function () { return "2026-10-25"; };', c);
   const r = code => J(vm.runInContext(code, c));

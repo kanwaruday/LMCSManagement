@@ -150,7 +150,7 @@ assert.strictEqual(frame({}).success, true, 'own bus timelapse frame');
 assert.match(files[0].desc, /driver:DL-/, 'the file says which link sent it');
 assert.strictEqual(frame({ kind: 'stop', seq: 2 }).success, true, 'own bus stop photo');
 assert.match(frame({ reg: 'HP665805', runId: 'D2' }).error, /only send for bus HP659511/, 'another bus refused');
-assert.match(frame({ runKind: 'inspection', kind: 'inspection', runId: 'D3' }).error, /only route videos/, 'safety check refused');
+assert.strictEqual(frame({ runKind: 'inspection', kind: 'inspection', runId: 'D3' }).success, true, 'bus photos (the bus setup chain) go in as a safety check');
 assert.match(frame({ runKind: 'profile', kind: 'profile', runId: 'D4' }).error, /only route videos/, 'profile photo refused');
 assert.match(frame({ runKind: 'count', runId: 'D5' }).error, /only route videos/, 'count run refused');
 assert.strictEqual(frame({ deviceToken: c1.token }).error, UNLINKED, 'revoked phone: the same error as unknown');
@@ -160,7 +160,8 @@ const run = tabs['Capture Runs'].find((r) => r[0] === 'D1');
 assert.deepStrictEqual([run[1], run[2], run[6].slice(0, 10), run[7], run[14]], ['HP659511', 'LMS4', 'driver:DL-', 'Driver', 'Test Driver'], 'Captured By is the driver\'s name');
 assert.strictEqual(cr({ status: 'ended', capturedBy: 'someone@lms.org.in' }).success, true);
 assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'D1')[14], 'Test Driver', 'a driver cannot credit someone else');
-assert.match(cr({ runId: 'D6', kind: 'inspection' }).error, /only route videos/);
+assert.strictEqual(cr({ runId: 'D6', kind: 'inspection' }).success, true, 'a bus-photo run (the bus setup chain)');
+assert.match(cr({ runId: 'D8', kind: 'count' }).error, /only route videos and bus photos/);
 assert.match(cr({ runId: 'D7', reg: 'HP665805' }).error, /only send for bus/);
 
 // staff idToken path unchanged (an idToken wins over a deviceToken)
