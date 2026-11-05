@@ -91,7 +91,15 @@
     function post(body) {
       return fetch(S.url, { method: 'POST', body: JSON.stringify(Object.assign({ idToken: (S.session || {}).idToken }, body)) }).then(function (r) { return r.json(); });
     }
-    function say(t) { status.textContent = ''; setTimeout(function () { status.textContent = t; }, 30); }
+    function say(t) { status.textContent = ''; setTimeout(function () { status.textContent = t; play(status, 'toast-slide'); }, 30); }
+    // V2 animations (assets/game/v2-animations.css, engine-contract.md): play once, then free the class so it can play again
+    function play(node, id) {
+      node.classList.remove('a-' + id); void node.offsetWidth; node.classList.add('a-' + id);
+      var done = function () { node.classList.remove('a-' + id); node.removeEventListener('animationend', done); };
+      node.addEventListener('animationend', done);
+      setTimeout(done, 1500); // no animationend in a background tab or under reduced motion
+    }
+    function presses(root) { [].forEach.call(root.querySelectorAll('.gb-btn'), function (b) { b.classList.add('a-button-press'); }); }
     function views() { return S.items.map(function (it) { return view(it, S.dec[it.id]); }); }
 
     function load() {
@@ -140,6 +148,7 @@
           open.length ? h('ul', { class: 'ed-list' }, open.map(card)) : h('p', { class: 'gb-empty' }, ['All decided.']),
           done.length ? h('details', { class: 'ed-done' }, [h('summary', {}, ['Decided (' + done.length + ')']), h('ul', { class: 'ed-list' }, done.map(doneCard))]) : null]));
       });
+      presses(el);
     }
 
     function meta(v) { return [v.id, schoolsText(v.schools), fmtWhen(v.when)].filter(Boolean).join(' · '); }
@@ -195,6 +204,10 @@
         var f = document.getElementById('ed-t-' + id) || document.getElementById('ed-h-' + (g ? g.group : 'calendar')); // a decided card moved to "Decided"
         if (f) { f.setAttribute('tabindex', '-1'); f.focus(); }
         say(then(d) + ' ' + c.decided + ' of ' + c.total + ' decided.');
+        if (body.decision === 'approved') { // the approved item's moment: its group's count, and its new "Add to the calendars" card
+          var n = document.querySelector('#ed-h-' + (g ? g.group : 'calendar') + ' .ed-count'); if (n) play(n, 'quest-complete');
+          var a = document.getElementById('ed-a-' + id); if (a) play(a, 'quest-complete');
+        }
       }).catch(function (e) {
         S.busy = false;
         ctl.err.textContent = e && e.server ? e.message : SEND_ERR;
@@ -217,6 +230,7 @@
         if (same) return;
         S.open[v.id] = which;
         build();
+        presses(panel);
       }
       function field(id, text, input, hint) { return h('div', { class: 'gb-field' }, [h('label', { for: id }, [text]), hint ? h('p', { class: 'gb-hint' }, [hint]) : null, input]); }
       function row(go) { return h('div', { class: 'ed-acts' }, [go, h('button', { type: 'button', class: 'gb-btn gb-btn-quiet', onclick: function () { show(S.open[v.id], function () {}); } }, ['Cancel'])]); }
@@ -318,7 +332,7 @@
         else err.textContent = 'Copy did not work here. Select the text instead.';
       });
       ok.addEventListener('click', function () { send(v.id, { decision: 'added' }, { err: err, controls: [cp, ok], go: ok }, function () { return v.id + ' is on the calendar.'; }); });
-      return h('li', { class: 'ed-card ed-card-add' }, [
+      return h('li', { class: 'ed-card ed-card-add', id: 'ed-a-' + v.id }, [
         h('p', { class: 'gb-muted' }, [v.id + ' · ' + schoolsText(v.schools)]),
         h('p', { class: 'ed-line' }, [line]),
         h('div', { class: 'ed-acts' }, [cp, ok]), err]);

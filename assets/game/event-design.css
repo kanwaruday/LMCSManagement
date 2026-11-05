@@ -1,6 +1,6 @@
 /* Owner quest "Design the event quests" (owner/event-design.html, assets/game/event-design.js). Every class is prefixed ed-;
    the rest is base.css (gb-). The cards copy the Kingdom's "Reviews to vet" look (kingdom.css .kg-rv). */
-.ed { max-width:760px; margin:0 auto; padding:8px 0 40px; min-width:0; }
+.ed { max-width:760px; margin:0 auto; padding:8px 0 40px; min-width:0; overflow-x:clip; } /* clip: .a-quest-complete's ring ends at 1.5x and must not widen the page */
 .ed *, .ed *:before, .ed *:after { box-sizing:border-box; }
 .ed-lead { margin:4px 0 12px; font-size:16px; }
 .ed-prog { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; padding:10px 14px; margin:0 0 8px; }
@@ -9,7 +9,8 @@
 .ed-status { min-height:1.5em; margin:4px 0; font-weight:700; color:var(--gb-ok); }
 .ed-sec { margin:22px 0; scroll-margin-top:12px; }
 .ed-sec h2 { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin:0 0 4px; }
-.ed-count { font:700 14px/1.4 var(--gb-font); color:var(--gb-muted); }
+.ed-count { position:relative; font:700 14px/1.4 var(--gb-font); color:var(--gb-muted); } /* relative: .a-quest-complete's burst sits on it */
+.ed-card-add { position:relative; }
 .ed-list { list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
 .ed-card { padding:10px 12px; border:1.5px solid var(--gb-line); border-radius:12px; background:var(--gb-paper); min-width:0; scroll-margin-top:12px; }
 .ed-card p { margin:0 0 6px; overflow-wrap:anywhere; }
