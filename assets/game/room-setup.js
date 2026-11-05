@@ -102,7 +102,7 @@ var LMCSRooms = (function () {
         on: { click: function () { S.step = 2; draw(S); } } }, [el('span', { class: 'rs-num', text: p.complete ? '✓' : '2' }), el('span', {}, ['Put staff in rooms', el('small', { text: rooms.length ? p.allocated + ' of ' + p.total : 'After step 1' })])]),
     ]);
     root.appendChild(tabs);
-    root.appendChild(el('div', { class: 'gb-bar rs-bar a-room-build-progress' + (p.complete ? ' gb-bar-ok' : ''), role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct(p)), 'aria-label': stepText(p) },
+    root.appendChild(el('div', { class: 'gb-bar rs-bar' + (p.complete ? ' gb-bar-ok' : ' a-room-build-progress' + (document.hidden ? ' is-paused' : '')), role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct(p)), 'aria-label': stepText(p) },
       [el('i', { style: 'width:' + pct(p) + '%' })]));
 
     if (S.justDone && p.complete) {
@@ -112,6 +112,7 @@ var LMCSRooms = (function () {
         el('a', { class: 'gb-btn gb-btn-primary', href: S.back, text: 'Back to my page' })]));
     }
     root.appendChild(S.step === 1 ? stepOne(S) : stepTwo(S));
+    S.fresh = null; S.pop = -1; // once-only animations: the next redraw doesn't replay them
     if (focusId && document.getElementById(focusId)) document.getElementById(focusId).focus();
   }
 
@@ -205,11 +206,12 @@ var LMCSRooms = (function () {
         var o = el('option', { value: p.email, text: p.name + ' · ' + roleLabel(p.role) }); if (p.email === r.staff) o.selected = true; return o;
       }));
       if (r.staff && !d.staff.some(function (p) { return p.email === r.staff; })) { var gone = el('option', { value: r.staff, text: (r.staffName || r.staff) + ' (not on the staff list now)' }); gone.selected = true; opts.push(gone); }
-      list.appendChild(el('li', { class: 'gb-card rs-room' + (r.staff ? ' is-set' : '') }, [
+      list.appendChild(el('li', { class: 'gb-card rs-room' + (r.staff ? ' is-set' : '') + (S.pop === i ? ' a-room-tap-pop' : '') }, [
         el('span', { class: 'rs-emoji', 'aria-hidden': 'true', text: t.emoji || '🚪' }),
         el('div', { class: 'rs-main' }, [el('label', { for: id, class: 'rs-room-name', text: r.name }),
           el('select', { id: id, class: 'gb-input', disabled: !d.canEdit, on: { change: function (e) {
             var who = e.target.value, p = d.staff.filter(function (x) { return x.email === who; })[0];
+            S.pop = i;
             save(S, S.rooms.map(function (x, j) { return j === i ? Object.assign({}, x, { staff: who }) : x; }), who ? (p ? p.name : 'Someone') + ' is in charge of ' + r.name : r.name + ' has nobody now');
           } } }, opts)]),
         el('span', { class: 'rs-mark', 'aria-hidden': 'true', text: r.staff ? '✓' : '' })]));
@@ -225,6 +227,9 @@ var LMCSRooms = (function () {
     var S = { root: el('div', { class: 'rs' }), session: o.session, url: o.backendUrl, back: o.back || '../principal/index.html', step: /#staff/.test(location.hash) ? 2 : 1, seq: 0, chain: Promise.resolve(), live: el('p', { class: 'rs-toast', role: 'status', 'aria-live': 'polite' }) };
     root.appendChild(S.root);
     root.appendChild(S.live);
+    document.addEventListener('visibilitychange', function () {
+      S.root.querySelectorAll('.a-room-build-progress').forEach(function (n) { n.classList.toggle('is-paused', document.hidden); });
+    });
     S.root.appendChild(el('p', { class: 'gb-loading', text: 'Loading your rooms…' }));
     var url = S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=roomsget&idToken=' + encodeURIComponent(S.session.idToken || '') + (o.campus ? '&campus=' + encodeURIComponent(o.campus) : '');
     return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (res) {
