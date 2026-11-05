@@ -176,14 +176,20 @@
       S.busy = true; ctl.err.textContent = '';
       ctl.controls.forEach(function (x) { x.disabled = true; });
       var was = ctl.go.textContent; ctl.go.textContent = 'Saving…';
-      var pre = body.discuss ? post({ action: 'buddyask', text: body.discuss, context: { page: 'owner/event-design.html' } }) : Promise.resolve({ success: true });
+      var discuss = body.discuss;
       delete body.discuss;
-      pre.then(function (b) {
-        if (!b || !b.success) { var be = new Error((b && b.error) ? 'Jarvis could not take the note: ' + b.error : SEND_ERR); be.server = true; throw be; }
-        return post(Object.assign({ action: 'eventdesigndecide', id: id }, body));
-      }).then(function (d) {
+      // the decision is saved first, then a Discuss note goes to Jarvis: a retry after a Jarvis error re-saves (harmless) and
+      // sends once, never twice
+      post(Object.assign({ action: 'eventdesigndecide', id: id }, body)).then(function (d) {
         if (!d || !d.success) { var se = new Error((d && d.error) || SEND_ERR); se.server = true; throw se; }
-        S.dec[id] = d.state; S.open = {}; S.busy = false;
+        S.dec[id] = d.state;
+        if (!discuss) return d;
+        return post({ action: 'buddyask', text: discuss, context: { page: 'owner/event-design.html' } }).then(function (b) {
+          if (!b || !b.success) { var be = new Error('Your note is saved, but Jarvis could not take it yet' + (b && b.error ? ': ' + b.error : '.') + ' Send it again in a moment.'); be.server = true; throw be; }
+          return d;
+        });
+      }).then(function (d) {
+        S.open = {}; S.busy = false;
         var c = counts(views()), g = S.items.filter(function (it) { return it.id === id; })[0];
         render();
         var f = document.getElementById('ed-t-' + id) || document.getElementById('ed-h-' + (g ? g.group : 'calendar')); // a decided card moved to "Decided"
@@ -199,7 +205,7 @@
 
     function card(v) {
       var err = h('p', { class: 'gb-err ed-err', role: 'alert' }, []), panel = h('div', { class: 'ed-panel' }, []);
-      var ok = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Approve']);
+      var ok = h('button', { type: 'button', class: 'gb-btn' }, ['Approve']); // plain: the one red button is the confirm inside the open panel
       var ed = h('button', { type: 'button', class: 'gb-btn', 'aria-expanded': 'false' }, ['Edit']);
       var di = h('button', { type: 'button', class: 'gb-btn', 'aria-expanded': 'false' }, ['Discuss']);
       var no = h('button', { type: 'button', class: 'gb-btn', 'aria-expanded': 'false' }, ['Decline']);
@@ -305,7 +311,7 @@
     function addCard(v) {
       var line = calLine(v), err = h('p', { class: 'gb-err ed-err', role: 'alert' }, []);
       var cp = h('button', { type: 'button', class: 'gb-btn' }, ['Copy the title']);
-      var ok = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ["I've added it"]);
+      var ok = h('button', { type: 'button', class: 'gb-btn' }, ["I've added it"]);
       cp.addEventListener('click', function () {
         var done = function () { say('Copied the event title: ' + v.eventTitle); };
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v.eventTitle).then(done, function () { err.textContent = 'Copy did not work here. Select the text instead.'; });

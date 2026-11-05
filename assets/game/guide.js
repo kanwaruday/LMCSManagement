@@ -62,6 +62,7 @@ window.LMCSGuide = {
       ],
     },
     'owner/kingdom.html': { purpose: "See every school's setup at a glance, list every quest, and hand out the next steps.", roles: ['Owner'] },
+    'owner/event-design.html': { purpose: "The Events Director's proposed events: approve, edit, discuss or decline each one.", roles: ['Owner'] },
     'owner/people.html': { purpose: "The Coordinators: add one, or change their school and what they look after.", roles: ['Owner'] },
     'owner/transport/index.html': { purpose: "Fleet readiness for every campus: papers, safety kit, parts, drivers and fuel.", roles: ['Owner'] },
     'teacher/index.html': {
