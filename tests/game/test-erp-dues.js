@@ -32,6 +32,7 @@ assert.strictEqual(m.length, 1);
 assert.strictEqual(m[0].title, 'Fee dues: 2 students owe ₹1,25,500');
 assert.strictEqual(m[0].go, 'principal/index.html#erp-dues');
 assert.deepStrictEqual(m[0].progress, { done: 64500, total: 190000 }, 'the bar is fees collected of receivable');
+assert.strictEqual(m[0].id, 'erp_dues:LMS4:' + ctx.gameDayKey_(NOW), 'a new id each day: never rolls over');
 assert.strictEqual(m[0].done, false); assert.strictEqual(m[0].core, false); assert.strictEqual(m[0].campus, 'LMS4');
 assert.ok(!JSON.stringify(m).includes('Test Child'), 'no names in the mission');
 assert.ok(!store['erpdues:LMS4'].includes('Test Child'), 'no names in the cache');
@@ -41,9 +42,13 @@ assert.strictEqual(run(clerk)[0].go, 'office/index.html#erp-dues');
 assert.strictEqual(reads.length, 1, 'the second home within 10 minutes reads the cache, not the Sheet');
 console.log('  ok  - Fee Clerk mission from the cache');
 
-reset(Object.assign({}, DUES, { rows: [row('Test Child A', 900, 0, 900)] }));
+reset(Object.assign({}, DUES, { rows: [row('Test Child A', 900, 0, 900), row('', 500, 0, 500), row('Test Child Z', 100, 100, 0)] }));
 assert.strictEqual(run(clerk)[0].title, 'Fee dues: 1 student owes ₹900');
-console.log('  ok  - one student, small amount');
+console.log('  ok  - one student, small amount; nameless and settled rows are not counted (as in the window)');
+
+reset(DUES);
+assert.deepStrictEqual(run(Object.assign({}, prin, { viewAs: true })), []); assert.strictEqual(reads.length, 0, 'the Owner viewing as a Principal: no erpread');
+console.log('  ok  - no mission under view-as');
 
 for (const [why, a] of [['not connected', { success: true, configured: false, rows: [], missing: [], note: 'x' }],
   ['no Dues tab', { success: true, configured: true, rows: [], missing: ['Dues'] }],

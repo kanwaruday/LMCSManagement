@@ -180,10 +180,12 @@ function daybookBoth_(full, campus, states) {
 // ── ERP fee dues (V2 row 6) ─────────────────────────────────────────
 // Fee Clerk / Principal -> one mission while their school has fees due: "Fee dues: 38 students owe ₹1,24,500", its bar the
 // share of fees collected (received of receivable). The go link opens the dues window (office/js/erp-dues.js) on their home.
-// The numbers come from the ERP read module (game-erp.gs, erpread what=dues) called as the caller, so its scope applies.
+// The numbers (the same rows the window lists: named, pending > 0) come from the ERP read module (game-erp.gs, erpread what=dues) called as the caller, so its scope applies.
 // Counts only are cached, per school, for ERPDUES_CACHE_S: each read opens the campus Sheet, and the Sheet is refreshed
 // nightly, so a 10-minute cache costs nothing. No names leave this function. Not connected, no Dues tab, nothing due, a read
-// that fails or no ERP module at all: no mission (never marks the day down).
+// that fails or no ERP module at all: no mission (never marks the day down). Never done, so its id carries the day: a mission
+// that kept one id would roll over and rank first every day (gamePick_). Not for the Owner's view-as (the contract keeps erpread
+// out of view-as; the Owner opens the window, which asks for that school as themself).
 var ERPDUES_CACHE_S = 600;
 var ERPDUES_GO = { FeeClerk: 'office/index.html#erp-dues', Principal: 'principal/index.html#erp-dues' };
 function erpDuesCounts_(caller) {
@@ -194,7 +196,7 @@ function erpDuesCounts_(caller) {
   if (hit) return JSON.parse(hit);
   const r = read(caller, { what: 'dues' });
   if (!r || !r.success || r.configured === false || (r.missing || []).indexOf('Dues') !== -1) return null;
-  const rows = r.rows || [], sum = function (f) { return rows.reduce(function (t, x) { return t + (Number(x[f]) || 0); }, 0); };
+  const rows = (r.rows || []).filter(function (x) { return x.name && Number(x.pending) > 0; }), sum = function (f) { return rows.reduce(function (t, x) { return t + (Number(x[f]) || 0); }, 0); };
   const out = { campus: String(r.campus || caller.campusId || ''), count: rows.length, pending: sum('pending'), received: sum('received'), receivable: sum('receivable') };
   cache.put(key, JSON.stringify(out), ERPDUES_CACHE_S);
   return out;
@@ -206,11 +208,11 @@ function erpDuesInr_(n) {
 }
 function erpDuesMissions_(caller, cfg, now) {
   const role = caller.primaryRole;
-  if (!ERPDUES_GO[role]) return [];
+  if (!ERPDUES_GO[role] || caller.viewAs) return [];
   let c;
   try { c = erpDuesCounts_(caller); } catch (err) { console.error('erp dues', err); return []; }
   if (!c || !c.count) return [];
-  return [gameMission_('erp_dues', c.campus, {
+  return [gameMission_('erp_dues', c.campus + ':' + gameDayKey_(now), {
     title: 'Fee dues: ' + c.count + ' student' + (c.count === 1 ? ' owes ' : 's owe ') + erpDuesInr_(c.pending),
     why: 'From the ERP. The bar shows fees collected so far.', owner: caller.email, campus: c.campus, go: ERPDUES_GO[role],
     progress: c.receivable > 0 ? { done: Math.min(c.received, c.receivable), total: c.receivable } : undefined,

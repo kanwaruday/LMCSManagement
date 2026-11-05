@@ -49,18 +49,18 @@ export function summaryLine(d) {
 export const failLine = (r) => (r && r.error) || 'Could not load the fee dues. Try again.';
 
 function viewAs() { try { const v = JSON.parse(sessionStorage.getItem('lmcs-view-as') || 'null'); return v && /^LMS[1-6]$/.test(v.campus) ? v.campus : ''; } catch (e) { return ''; } }
-export const viewing = () => (typeof location !== 'undefined' && location.pathname.includes('/principal/') ? viewAs() : '');
+// only an Owner's view counts: a stale key in a Principal's tab must not send another school
+export const viewing = (s) => (typeof location !== 'undefined' && location.pathname.includes('/principal/') && rolesOf(s).includes('Owner') ? viewAs() : '');
 // as: the school the Owner is viewing (sent as campus=, not asCampus: erpread isn't a view-as action, the Owner reads it as themself)
 export const readUrl = (token, as) => GAME_BACKEND_URL + '?action=' + ACTION + '&what=dues&idToken=' + encodeURIComponent(token || '') + (as ? '&campus=' + as : '');
 export async function load(session) {
-  const url = readUrl(session.idToken, viewing());
+  const url = readUrl(session.idToken, viewing(session));
   let r;
   try { r = await (await fetch(url, { cache: 'no-store' })).json(); } catch (e) { return { ok: false, line: 'No connection. Try again.' }; }
   return r && r.success ? { ok: true, d: normalize(r) } : { ok: false, line: failLine(r) };
 }
 
 const CSS = `
-.erpd-card{display:block;width:100%;min-height:44px;text-align:left;font:inherit;cursor:pointer}
 .erpd{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:0;border-radius:12px;background:#fff;color:#1a1a1a}
 .erpd::backdrop{background:rgba(0,0,0,.45)}
 .erpd header{display:flex;align-items:center;gap:8px;padding:12px 12px 4px 16px}
@@ -127,16 +127,22 @@ function makeWindow(getSession) {
 function boot() {
   const getSession = () => (window.LMCS && window.LMCS.getSession && window.LMCS.getSession()) || null;
   let win = null;
-  const open = () => { const s = getSession(); if (!canSeeDues(s, viewing())) return; (win = win || makeWindow(getSession)).open(); };
+  const open = () => { const s = getSession(); if (!canSeeDues(s, viewing(s))) return; (win = win || makeWindow(getSession)).open(); };
   window.addEventListener('hashchange', () => { if (location.hash === HASH) open(); });
   if (location.hash === HASH) open();
   const anchor = document.getElementById('drivers-card');
-  if (anchor && canSeeDues(getSession(), '')) {
+  if (!anchor) return;
+  // signed in through the gate on this load: the session appears later (auth.js sends no event)
+  // ponytail: polls once a second for a minute; listen for an auth event if auth.js ever sends one
+  let tries = 0;
+  const addCard = () => { const s = getSession(); if (!s) { if (++tries < 60) setTimeout(addCard, 1000); return; } if (canSeeDues(s, '')) card(); };
+  const card = () => {
     const card = h('button', { type: 'button', class: 'hiring-banner erpd-card', onclick: open },
       h('b', {}, 'फ़ीस बकाया · Fee dues'), h('br'), 'Who still owes fees at your school, from the ERP.');
     anchor.after(card);
-    if (!document.querySelector('style[data-erpd]')) document.head.append(h('style', { 'data-erpd': '' }, '.erpd-card{display:block;width:100%;min-height:44px;text-align:left;font:inherit;cursor:pointer}'));
-  }
+    document.head.append(h('style', {}, '.erpd-card{display:block;width:100%;min-height:44px;text-align:left;font:inherit;cursor:pointer}'));
+  };
+  addCard();
 }
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.body) boot();
 else if (typeof window !== 'undefined' && typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', boot);
