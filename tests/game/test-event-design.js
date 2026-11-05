@@ -147,5 +147,9 @@ assert.ok(/^Move "Sports Week" on LMCS Master from .+: replaced by/.test(E.calLi
 assert.ok(/^Uday's note on event proposal B1 \(Board-class Farewell\), for the Events Director: hi$/.test(E.discussText(E.view(byId('B1')), 'hi')));
 assert.deepStrictEqual(J(E.counts([E.view(byId('C2'), { status: 'approved' }), E.view(byId('C3'), { status: 'discussing' })])), { decided: 1, total: 2, left: 1 });
 // every item renders a date line and a summary
-ITEMS.forEach((it) => { const x = E.view(it); assert.ok(x.title && x.summary && E.fmtWhen(x.when)); if (it.group === 'calendar') assert.ok(!/undefined/.test(E.calLine(x))); });
+ITEMS.forEach((it) => { const x = E.view(it); assert.ok(x.title && E.fmtWhen(x.when)); if (it.group === 'calendar') assert.ok(!/undefined/.test(E.calLine(x))); });
+
+// the public file (GitHub Pages): titles and proposed dates only, no staff names, no note paths (Owner's answer "A", 6 Nov)
+ITEMS.forEach((it) => assert.deepStrictEqual(Object.keys(it).filter((k) => ['id', 'group', 'title', 'schools', 'when', 'payload'].indexOf(k) === -1), [], it.id + ': public fields only'));
+assert.ok(!/Tilak|Urvashi|Pawan|Deepshikha|Neha|Banta|Mukherjee|Puri|Uday|work\/|\.md\b/.test(FILE), 'no staff names or note paths in the public file');
 console.log('test-event-design OK');

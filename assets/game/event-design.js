@@ -175,8 +175,9 @@
       return h('details', { class: 'ed-more' }, [h('summary', {}, [v.group === 'chain' ? 'Step dates' : 'Details']),
         h('dl', { class: 'ed-dl' }, pairs.map(function (r) { return [h('dt', {}, [r[0]]), h('dd', {}, [r[1]])]; }))]);
     }
+    // the public file holds titles and dates only (Owner, 6 Nov: no staff names, no note paths); the plans stay with the Events Director
     function sourceLine(v) {
-      return v.source ? h('p', { class: 'ed-src' }, ['Full detail in the vault: ', h('span', {}, [v.source.replace('#', ' › ')])]) : null;
+      return v.group === 'calendar' ? null : h('p', { class: 'ed-src' }, ['The full plan (steps, people, money) is with the Events Director. Ask about it with Discuss.']);
     }
 
     // one write. ctl = { err, controls, go, label }; then -> the toast text
@@ -302,7 +303,7 @@
       return h('li', { class: 'ed-card', id: 'ed-c-' + v.id }, [
         h('div', { class: 'ed-top' }, [h('h3', { id: 'ed-t-' + v.id }, [v.title]), pill(v)]),
         h('p', { class: 'gb-muted' }, [meta(v)]),
-        h('p', {}, [v.summary]),
+        v.summary ? h('p', {}, [v.summary]) : null,
         details(v),
         v.questions.length ? h('div', { class: 'ed-q' }, [h('p', {}, [h('b', {}, ['To settle'])]), h('ul', {}, v.questions.map(function (q) { return h('li', {}, [q]); }))]) : null,
         v.status === 'discussing' && v.note ? h('p', { class: 'ed-note' }, ['Your note: ' + v.note]) : null,
