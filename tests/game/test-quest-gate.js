@@ -306,6 +306,18 @@ test('removal: a group cleared at one school, or at every school in one bulk (cl
   assert.strictEqual(can(P4, EV), false);
 });
 
+test('a module registers its own gate family from its own file, in either load order (engine-contract.md)', () => {
+  const mod = "var QUEST_GATE_HOOKS = QUEST_GATE_HOOKS || {}; QUEST_GATE_HOOKS.roomsQuests_ = { id: 'hook:rooms', title: 'Name your rooms', roles: ['Principal'] };";
+  const kingdom = fs.readFileSync(dir + 'game-kingdom.gs', 'utf8');
+  [[mod, kingdom], [kingdom, mod]].forEach((order) => {
+    const c = vm.createContext({ console });
+    order.forEach((src) => vm.runInContext(src, c));
+    const h = vm.runInContext('QUEST_GATE_HOOKS', c);
+    assert.strictEqual(h.roomsQuests_.id, 'hook:rooms');
+    assert.strictEqual(h.fleetQuests_.id, 'hook:fleet'); // the built-in rows survive
+  });
+});
+
 let fail = 0;
 for (const [n, fn] of tests) { try { fn(); console.log('ok  ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n  ' + (e.stack || e).split('\n').slice(0, 4).join('\n  ')); } }
 if (fail) process.exit(1);

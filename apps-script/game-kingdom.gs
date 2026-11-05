@@ -155,7 +155,9 @@ function kingdomOwners_(setupRows) {
 // function name (QUEST_GATE_HOOKS: no hook is edited). The scope is 'campus:<LMSn>' or 'network'. The page never decides: this does. ═══
 var QUEST_GATE_NETWORK_ROLES = ['Coordinator', 'Accounts']; // network-wide roles: their families are assigned at campus '' (scope network)
 // hook function name -> its family. A hook not listed here is family 'hook:<name>': nobody can be assigned it, so it stays hidden.
-var QUEST_GATE_HOOKS = {
+// A module adds its own row in its own file (`var QUEST_GATE_HOOKS = QUEST_GATE_HOOKS || {}; QUEST_GATE_HOOKS.myQuests_ = {...};`); merged
+// here, so either file load order keeps it (engine-contract.md).
+var QUEST_GATE_HOOKS = Object.assign(QUEST_GATE_HOOKS || {}, {
   tchQuestsHook_: { id: 'hook:teacher-quests', title: 'Teacher quests: Your portal and chapters', roles: ['Teacher'] },
   fleetQuests_: { id: 'hook:fleet', title: 'Fleet setup quests', roles: ['Coordinator'] },
   busChainQuests_: { id: 'hook:bus-photos', title: 'Bus photos (bus setup chain)', roles: ['Coordinator'] },
@@ -165,7 +167,7 @@ var QUEST_GATE_HOOKS = {
   daybookQuests_: { id: 'hook:daybook', title: 'Day Book starting data', roles: ['Accounts'] },
   daybookAccountantQuests_: { id: 'hook:daybook-accountant', title: 'Set up the bank side of the Day Book', roles: ['Coordinator', 'Accounts'] },
   roomsQuests_: { id: 'hook:rooms', title: 'Name your rooms and put staff in them', roles: ['Principal'] },
-};
+});
 var QUEST_GATE_PLURAL = { Principal: 'principals', Coordinator: 'coordinators', Teacher: 'teachers', Staff: 'staff', FeeClerk: 'fee clerks', Accounts: 'accounts staff' };
 var QUEST_GATE_HOME = { Principal: 'principal/index.html', Coordinator: 'coordinator/index.html', Teacher: 'teacher/index.html', Staff: 'teacher/index.html', FeeClerk: 'office/index.html', Accounts: 'office/index.html' };
 
