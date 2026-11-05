@@ -73,7 +73,7 @@ var LMCSClassroom = (function () {
     var d = S.data, el = S.el;
     clear(el);
     el.appendChild(h('h2', { class: 'gb-h2', id: 'crHead' }, 'My class'));
-    if (!d.ties.length) { el.appendChild(h('p', { class: 'gb-empty' }, d.erp && d.erp.connected && !d.erp.configured && d.erp.note ? d.erp.note : NO_TIE)); return; }
+    if (!d.ties.length) { el.appendChild(h('p', { class: 'gb-empty' }, d.erp && !(d.erp.connected && d.erp.configured) && d.erp.note ? d.erp.note : NO_TIE)); return; }
     if (d.ties.length > 1) {
       var sel = h('select', { class: 'gb-input cr-pick', 'aria-label': 'Which class' }, d.ties.map(function (t, i) {
         return h('option', { value: String(i), selected: t === S.tie }, tieLabel(t));

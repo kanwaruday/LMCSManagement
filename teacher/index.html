@@ -521,7 +521,9 @@ function renderClasses_(res) {
 }
 // My classes are the signed-in teacher's own: hidden while a view-as target is on screen
 let classesOn_ = false;
-function showClasses_() { document.getElementById('classes').hidden = !classesOn_ || !!VIEW_AS_CODE; }
+function showClasses_() { document.getElementById('classes').hidden = !classesOn_ || !!VIEW_AS_CODE;
+  const cr = document.getElementById('classroom'); if (cr) cr.style.display = VIEW_AS_CODE ? 'none' : ''; // My class is the signed-in teacher's own, never shown under a view-as name
+}
 function loadClasses_() {
   if (!GAME_BACKEND_URL) return;
   fetch(GAME_BACKEND_URL + '?action=teacherclasses&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })

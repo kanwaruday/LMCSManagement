@@ -134,6 +134,7 @@ assert.strictEqual(ctx.classroomSave_(T4, item({ photo: PNG })).code, 'CLASSROOM
 assert.strictEqual(ctx.classroomSave_(T4, item({ photo: 'data:image/jpeg;base64,' + PNG })).code, 'CLASSROOM_NOT_JPEG');
 const big = Buffer.alloc(2 * 1024 * 1024 + 1); big[0] = 0xFF; big[1] = 0xD8; big[2] = 0xFF;
 assert.strictEqual(ctx.classroomSave_(T4, item({ photo: big.toString('base64') })).code, 'CLASSROOM_TOO_BIG');
+assert.strictEqual(ctx.classroomSave_(T4, item({ photo: '!'.repeat(3000000) })).code, 'CLASSROOM_TOO_BIG', 'refused before decoding');
 assert.strictEqual(ctx.classroomSave_(T4, item({ photo: '' })).code, 'CLASSROOM_NEED_PHOTO');
 assert.strictEqual(ctx.classroomSave_(T4, item({ name: 'x'.repeat(61) })).code, 'CLASSROOM_BAD_NAME');
 assert.strictEqual(ctx.classroomSave_(T4, item({ count: 0 })).code, 'CLASSROOM_BAD_COUNT');
@@ -163,6 +164,13 @@ assert.ok(r.success && r.items[0].count === 3 && files.length === 1);
 assert.strictEqual(tab[2][8], 'FILE0');
 assert.strictEqual(ctx.classroomSave_(T4, item({ itemId: 'nope' })).code, 'CLASSROOM_NO_ITEM');
 
+// a new photo replaces the old one: the old file leaves Drive (a child caught in frame must be deletable)
+const trashed = []; ctx.DriveApp.getFileById = (fid) => ({ setTrashed: (v) => { if (v) trashed.push(fid); } });
+r = J(ctx.classroomSave_(T4, item({ itemId: id, name: 'Steel almirah', count: 3 })));
+assert.ok(r.success && files.length === 2);
+assert.deepStrictEqual(trashed, ['FILE0']);
+assert.strictEqual(tab[tab.length - 1][8], 'FILE1');
+
 // that's everything -> items step done
 r = J(ctx.classroomSave_(T4, { op: 'itemsdone', classKey: 'LMS4:7:A' }));
 assert.ok(r.success && r.itemsDone && r.itemsDoneFor['LMS4:7:A']);
@@ -173,6 +181,12 @@ assert.ok(q.steps[2].done && q.complete);
 r = J(ctx.classroomSave_(T4, { op: 'remove', classKey: 'LMS4:7:A', itemId: id }));
 assert.ok(r.success && r.items.length === 0 && !r.itemsDone);
 assert.strictEqual(tab[tab.length - 1][9], 'removed');
+assert.strictEqual(tab[tab.length - 1][8], '', 'the removed row keeps no file id');
+assert.deepStrictEqual(trashed, ['FILE0', 'FILE1'], 'removing an item trashes its photo');
+// a second tab: Change or Remove on an item already removed is refused, nothing is revived or uploaded
+assert.strictEqual(ctx.classroomSave_(T4, { op: 'remove', classKey: 'LMS4:7:A', itemId: id }).code, 'CLASSROOM_NO_ITEM');
+assert.strictEqual(ctx.classroomSave_(T4, item({ itemId: id })).code, 'CLASSROOM_NO_ITEM');
+assert.strictEqual(files.length, 2);
 
 // the quest hook reads no Sheet (and no Drive): only the cache
 ctx.SpreadsheetApp = { openById: () => { throw new Error('Sheet read under the lock'); } };

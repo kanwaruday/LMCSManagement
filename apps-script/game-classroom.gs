@@ -136,6 +136,7 @@ function classroomGet_(caller) {
 function classroomJpeg_(photo) {
   const s = String(photo || '').replace(/^data:[^,]*,/, '');
   if (!s) return { code: 'CLASSROOM_NEED_PHOTO', error: 'Add a photo of the item.' };
+  if (s.length > Math.ceil(CLASSROOM_MAX_PHOTO * 4 / 3) + 4) return { code: 'CLASSROOM_TOO_BIG', error: 'That photo is too big (over 2 MB). Take it again.' }; // before decoding
   let bytes;
   try { bytes = Utilities.base64Decode(s); } catch (err) { return { code: 'CLASSROOM_NOT_JPEG', error: 'That photo could not be read. Take it again.' }; }
   if (bytes.length > CLASSROOM_MAX_PHOTO) return { code: 'CLASSROOM_TOO_BIG', error: 'That photo is too big (over 2 MB). Take it again.' };
@@ -157,7 +158,7 @@ function classroomSave_(caller, body) {
   try {
     if (!classroomMayUse_(caller)) return classroomErr_('CLASSROOM_NOT_YOURS', 'My class is for teachers and staff.');
     body = body && typeof body === 'object' ? body : {};
-    const op = String(body.op || ''), me = gameLower_(caller.email), now = gameNow_(), tiesR = classroomTies_(caller);
+    const op = String(body.op || ''), me = gameLower_(caller.email), now = gameNow_(), tiesR = classroomTiesFresh_(caller); // fresh: an unlinked teacher can't write from a cached tie
     const NOT_YOURS = classroomErr_('CLASSROOM_NOT_YOURS', "That class isn't linked to you. Your Principal links you to your class.");
     const key = op === 'confirm' ? classroomKey_(body.campus, body.class, body.section) : String(body.classKey || '');
     const tie = classroomTieFor_(tiesR.ties, key);
@@ -189,10 +190,23 @@ function classroomSave_(caller, body) {
     const itemId = String(body.itemId || '');
     const old = itemId ? live.filter(function (it) { return it.id === itemId; })[0] : null;
     if (itemId && !old) return classroomErr_('CLASSROOM_NO_ITEM', "That item isn't on your list any more.");
-    const row = function (vals) { gameWithLock_(function () { gameAppendText_(classroomItemsTab_(gameBook_()), [vals]); }); };
+    // under the lock: an edit or removal applies only while the item is still live (two tabs: Remove then Change must not revive it)
+    const row = function (vals) {
+      let ok = true;
+      gameWithLock_(function () {
+        const sh = classroomItemsTab_(gameBook_());
+        if (old) ok = classroomLive_(classroomItemsFrom_(sh.getDataRange().getValues(), me), key).some(function (it) { return it.id === old.id; });
+        if (ok) gameAppendText_(sh, [vals]);
+      });
+      return ok;
+    };
+    // a removed or replaced photo leaves Drive too (a child caught in frame must be deletable); after the row lands
+    const trash = function (id) { if (!id) return; try { DriveApp.getFileById(id).setTrashed(true); } catch (err) { console.error('classroom photo trash failed'); } };
+    const GONE = classroomErr_('CLASSROOM_NO_ITEM', "That item isn't on your list any more.");
     if (op === 'remove') {
       if (!old) return classroomErr_('CLASSROOM_NO_ITEM', "That item isn't on your list any more.");
-      row([now.toISOString(), me, tie.campus, tie.class, tie.section, old.id, old.name, String(old.count), old.fileId, 'removed']);
+      if (!row([now.toISOString(), me, tie.campus, tie.class, tie.section, old.id, old.name, String(old.count), '', 'removed'])) return GONE;
+      trash(old.fileId);
       return done();
     }
 
@@ -209,8 +223,11 @@ function classroomSave_(caller, body) {
       file = classroomDriveSave_(tie.campus, tie.class, tie.section, id, j.bytes, now); // slow: outside the lock
       fileId = file.getId();
     }
-    try { row([now.toISOString(), me, tie.campus, tie.class, tie.section, id, name, String(count), fileId, 'live']); }
+    let landed;
+    try { landed = row([now.toISOString(), me, tie.campus, tie.class, tie.section, id, name, String(count), fileId, 'live']); }
     catch (err) { if (file) { try { file.setTrashed(true); } catch (e) { /* left in the folder */ } } throw err; }
+    if (!landed) { if (file) trash(fileId); return GONE; }
+    if (file && old && old.fileId && old.fileId !== fileId) trash(old.fileId);
     return done();
   } catch (err) {
     console.error('classroomsave failed: CLASSROOM_SAVE_FAILED'); // no message: it could carry an id
@@ -232,7 +249,7 @@ function classroomQuests_(caller) {
   ties.forEach(function (t) { const k = classroomKey_(t.campus, t.class, t.section); if (keys.indexOf(k) === -1) keys.push(k); });
   const linked = keys.length > 0;
   const steps = [
-    { id: 'link', title: linked ? 'Your class is linked' : tiesR ? 'Your class is linked · Your Principal links you to your class' : 'Your class is linked · checking your class list',
+    { id: 'link', title: linked ? 'Your class is linked' : tiesR ? 'Your class is linked · ' + (tiesR.connected && tiesR.configured ? 'Your Principal links you to your class' : "the school's ERP list isn't connected yet") : 'Your class is linked · checking your class list',
       go: CLASSROOM_GO, done: linked, waiting: !linked },
     { id: 'meet', title: 'Meet your students', go: CLASSROOM_GO + '-students', done: linked && keys.every(function (k) { return !!st.confirmed[k]; }) },
   ];
