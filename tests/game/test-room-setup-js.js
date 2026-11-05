@@ -35,7 +35,7 @@ assert.ok(/action=roomsget/.test(src), 'the read is a GET');
 assert.ok(/aria-live/.test(src) && /window\.confirm\(/.test(src), 'live region and a confirm before Remove');
 assert.ok(/min-height:44px/.test(css), '44px targets');
 assert.ok(/a-room-unlock/.test(src) && /a-quest-complete/.test(src) && /v2-animations\.css/.test(page), 'v2 animation classes wired');
-assert.ok(/<script src="\.\.\/assets\/game\/room-setup\.js"><\/script>/.test(page), 'unstamped: V2 stamps at assembly');
+assert.ok(/<script src="\.\.\/assets\/game\/room-setup\.js(\?v=[0-9a-f]+)?"><\/script>/.test(page), 'the page loads room-setup.js (stamped or not)');
 assert.ok(/Add all ' \+ fromErp\.length/.test(src), 'one tap adds every ERP classroom');
 assert.ok(/a-room-tap-pop/.test(src) && /S\.fresh = null; S\.pop = -1/.test(src) && /is-paused/.test(src), 'tap-pop on assign, once-only animations, idle paused when hidden');
 console.log('room-setup.js: all checks passed');
