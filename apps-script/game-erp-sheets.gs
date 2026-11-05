@@ -4,7 +4,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- the ERP Sheets' write side: the one-time setup and the Mac's push (the CyberSchoolManager extractor).
-// Uday approved the Sheets push (6 Nov, via V1). The read side is game-erp.gs; the contract is erp-read-contract.md, section 8.
+// Uday approved the Sheets push (6 Nov, via V1). The read side is game-erp.gs; the contract is erp-read-contract.md, section 7.
 //   erpSetupSheets()   run ONCE from the editor by Uday: makes the private Drive folder "ERP Data (private)", one Sheet per campus
 //                      ("LMS1 ERP" … "LMS6 ERP", the game reads these) and one "LMSn ERP – sensitive" (never read by the game), and
 //                      writes their ids into Script properties ERP_SHEET_LMSn / ERP_SENS_SHEET_LMSn. No id is ever copied by hand.
