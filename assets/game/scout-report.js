@@ -153,9 +153,9 @@ var LMCSScout = window.LMCSScout = (function () {
     if (ig) acts.push(h('a', { class: 'sc-btn a-button-press', href: ig }, ['Open issues' + ((d.openIssues || []).length ? ' (' + d.openIssues.length + ' waiting long)' : '')]));
     if (d.role === 'Owner' || d.role === 'Coordinator') acts.push(h('button', { type: 'button', class: 'sc-btn a-button-press', onclick: function () {
       var text = nudgeText(d, opts.name);
-      var done = function () { status.textContent = 'Nudge copied. Paste it into WhatsApp.'; };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { status.textContent = text; });
-      else status.textContent = text;
+      var say = function (msg) { status.textContent = msg; status.classList.remove('a-toast-slide'); void status.offsetWidth; status.classList.add('a-toast-slide'); }; // replays the slide each time
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { say('Nudge copied. Paste it into WhatsApp.'); }, function () { say(text); });
+      else say(text);
     } }, ['Nudge']));
     blocks.push(h('div', { class: 'sc-acts' }, acts));
     blocks.push(status);
