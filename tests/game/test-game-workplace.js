@@ -58,7 +58,7 @@ assert.strictEqual(get('clerk', { review: '1' }).code, 'WP_NO_RIGHT');
 assert.strictEqual(get('coord', { review: '1' }).code, 'WP_NO_RIGHT');
 assert.deepStrictEqual(get('p4', { review: '1' }).rooms.map((r) => r.roomId), ['r1']);
 assert.deepStrictEqual(get('p1', { review: '1' }).rooms, []);
-assert.strictEqual(quests('p4').filter((q) => q.questId === 'workplace-review')[0].title, '📸 Check workplace photos: 1 waiting');
+assert.strictEqual(quests('p4').filter((q) => q.questId === 'workplace-review')[0].title, '📷 Check workplace photos: 1 waiting');
 assert.strictEqual(J(ctx.workplaceImage_(who.p1, { campus: 'LMS4', roomId: 'r1', shot: 'wide' })).code, 'WP_NO_ROOM', 'another school\'s Principal sees no photo');
 assert.strictEqual(J(ctx.workplaceImage_(who.p4, { campus: 'LMS4', roomId: 'r1', shot: 'wide' })).base64, JPG);
 assert.strictEqual(J(ctx.workplaceImage_(who.teach, { campus: 'LMS4', roomId: 'r1', shot: 'wide' })).code, 'WP_NO_ROOM');
@@ -80,7 +80,7 @@ assert.deepStrictEqual(quests('p4').filter((q) => q.questId === 'workplace-revie
 save('p4', { op: 'submit', roomId: 'r3', noPeople: true });
 assert.strictEqual(save('p4', { op: 'decide', campus: 'LMS4', roomId: 'r3', decision: 'approve' }).code, 'WP_NO_RIGHT', 'not their own');
 assert.deepStrictEqual(get('owner', { review: '1' }).rooms.map((r) => r.roomId), ['r3'], 'the Owner\'s list: Principal-held rooms');
-assert.strictEqual(quests('owner')[0].title, '📸 Check workplace photos: 1 waiting');
+assert.strictEqual(quests('owner')[0].title, '📷 Check workplace photos: 1 waiting');
 assert.strictEqual(save('owner', { op: 'decide', campus: 'LMS4', roomId: 'r3', decision: 'approve' }).status, 'approved');
 // a co-Principal's room is the Owner's to check, not the other Principal's (review 3)
 ['wide', 'desk', 'store'].forEach((s) => J(ctx.workplaceSave_({ email: 'p4b@x.in', campusId: 'LMS4', roles: ['Principal'], primaryRole: 'Principal' }, { op: 'photo', roomId: 'r6', shot: s, base64: JPG })));

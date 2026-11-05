@@ -234,7 +234,7 @@
     const pr = BusChain.progress(st), can = !VIEW || ACT(); // a read-only staff view sees the steps, no buttons
     const go = { photos: can ? photoHref() : '', route: can ? routeHref() : '' };
     el.hidden = false;
-    el.innerHTML = `<h2><span>🚌 बस सेटअप · Bus setup</span><small>${pr.done} / ${pr.total}</small></h2><ol>` + st.map((x, i) => {
+    el.innerHTML = `<h2><span>${E('bus')} बस सेटअप · Bus setup</span><small>${pr.done} / ${pr.total}</small></h2><ol>` + st.map((x, i) => {
       const cls = x.done ? 'is-done' : x.next ? 'is-open' : '';
       const act = x.action && go[x.id] && !x.done ? `<a class="gb-btn" href="${go[x.id]}">${esc(x.action)}</a>` : ''; // never red: the one red button is the Next slot's
       const riders = x.id === 'riders' && S.riders && S.riders.length ? '<details class="dr-all"><summary>' + esc(x.action) + '</summary><ul class="dr-riders">' + S.riders.map((r) =>

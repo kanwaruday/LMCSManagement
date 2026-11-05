@@ -2,7 +2,7 @@ var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 // ═══════════════════════════════════════════════════════════════════
-// LMCS Game Backend -- 📸 the workplace setup chain (V2 row #5; vault work/Role Screens Drafts.html, room setup chain steps 3–4).
+// LMCS Game Backend -- 📷 the workplace setup chain (V2 row #5; vault work/Role Screens Drafts.html, room setup chain steps 3–4).
 // Uday, 1 Nov: "Once the Principal has allocated rooms names, allocated staff to the rooms, let the Teachers, Drivers, Fee Clerks all
 // take pictures of their respective work places, to setup their home."
 //   3  each person with a room (game-rooms.gs, N2: the Principal named it and put them in it) photographs it: the whole room from the
@@ -164,10 +164,10 @@ function workplaceQuests_(caller) {
   return rooms.map(function (r) {
     const st = wpState_(rows, r), go = WP_GO + '?room=' + encodeURIComponent(r.id);
     const sent = st.status === 'pending' || st.status === 'approved';
-    const steps = WP_SHOTS.map(function (s) { return { id: s.id, title: '📸 ' + s.label, go: go, done: !!st.shots[s.id], locked: false }; }).concat([
+    const steps = WP_SHOTS.map(function (s) { return { id: s.id, title: '📷 ' + s.label, go: go, done: !!st.shots[s.id], locked: false }; }).concat([
       { id: 'send', title: st.status === 'redo' ? 'Take them again: ' + st.note : 'Send them to be checked', go: go, done: sent, locked: false },
       { id: 'checked', title: 'Checked and approved', go: go, done: st.status === 'approved', locked: false }]);
-    return { questId: 'workplace:' + r.campus + ':' + r.id, title: '📸 Photograph your workplace: ' + r.name, parallel: false, steps: steps, complete: st.status === 'approved' };
+    return { questId: 'workplace:' + r.campus + ':' + r.id, title: '📷 Photograph your workplace: ' + r.name, parallel: false, steps: steps, complete: st.status === 'approved' };
   });
 }
 function workplaceReviewQuests_(caller) {
@@ -176,7 +176,7 @@ function workplaceReviewQuests_(caller) {
   const rows = wpRows_(), allow = isOwner ? wpPrincipals_() : null;
   const waiting = wpRooms_().filter(function (r) { return wpReviewerOf_(caller, r) && (!isOwner || wpIsPrincipalRoom_(r, allow)) && wpState_(rows, r).status === 'pending'; });
   if (!waiting.length) return [];
-  return [{ questId: 'workplace-review', title: '📸 Check workplace photos: ' + waiting.length + ' waiting', parallel: true, complete: false,
+  return [{ questId: 'workplace-review', title: '📷 Check workplace photos: ' + waiting.length + ' waiting', parallel: true, complete: false,
     steps: waiting.map(function (r) { return { id: r.campus + ':' + r.id, title: r.name + (isOwner ? ' (' + r.campus + ')' : ''), go: WP_GO + '?review=1' + (isOwner ? '&campus=' + r.campus : ''), done: false, locked: false }; }) }];
 }
 

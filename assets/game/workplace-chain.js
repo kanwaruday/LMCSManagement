@@ -1,4 +1,4 @@
-/* 📸 The workplace setup chain (workplace/index.html), V2 row #5. Backend: apps-script/game-workplace.gs.
+/* 📷 The workplace setup chain (workplace/index.html), V2 row #5. Backend: apps-script/game-workplace.gs.
    Person mode: each of your rooms (the Principal put you in it, principal/rooms.html), three photos, an empty-room tick, then send.
    Review mode (?review=1): the Principal (own school) or the Owner (?campus, or every Principal's room) looks at each set and approves it
    or asks for a redo with a reason. Photos are resized on the phone (1280 px, JPEG 0.7) before they leave it. Text nodes only.
@@ -42,7 +42,7 @@ var LMCSWorkplace = (function () {
   }
 
   function mount(root, o) {
-    var S = { data: null, thumbs: {}, busy: false, tick: {}, msg: {} };
+    var S = { data: null, thumbs: {}, busy: false, tick: {}, msg: {}, red: false }; // red: the screen's one red button is taken
     var get = function (q) {
       return fetch(o.backendUrl + '?' + q + '&idToken=' + encodeURIComponent(o.session.idToken), { cache: 'no-store' }).then(function (r) { return r.json(); });
     };
@@ -72,10 +72,11 @@ var LMCSWorkplace = (function () {
         return el('li', { class: 'wp-shot' + (s.taken ? ' is-done' : '') }, [
           el('div', { class: 'wp-shot-h' }, [el('span', { class: 'wp-n', 'aria-hidden': 'true', text: s.taken ? '✓' : String(i + 1) }), el('b', { text: s.label })]),
           s.taken ? thumb(r, s) : null,
-          locked ? null : el('label', { class: 'gb-btn wp-take' }, [s.taken ? '📸 Take again' : '📸 Take photo', input])]);
+          locked ? null : el('label', { class: 'gb-btn wp-take' }, [s.taken ? '📷 Take again' : '📷 Take photo', input])]);
       }));
       var tick = el('input', { type: 'checkbox', id: 'tk-' + r.roomId, checked: !!S.tick[r.roomId], disabled: locked, on: { change: function () { S.tick[r.roomId] = tick.checked; draw(); } } });
-      var send = el('button', { type: 'button', class: 'gb-btn gb-btn-primary wp-send', disabled: !canSend(r, S.tick[r.roomId]) || S.busy, on: { click: function () { act(r, post({ op: 'submit', campus: r.campus, roomId: r.roomId, noPeople: true })); } },
+      var red = !locked && !S.red; if (red) S.red = true; // one red button per screen: the first room still to send
+      var send = el('button', { type: 'button', class: 'gb-btn wp-send' + (red ? ' gb-btn-primary' : ''), disabled: !canSend(r, S.tick[r.roomId]) || S.busy, on: { click: function () { act(r, post({ op: 'submit', campus: r.campus, roomId: r.roomId, noPeople: true })); } },
         text: 'Send to be checked' });
       return el('section', { class: 'gb-card wp-room', 'aria-label': r.roomName }, [
         el('h2', { class: 'gb-h2' }, [r.roomName, el('small', { class: 'wp-st wp-' + r.status, text: STATUS[r.status] || '' })]),
@@ -89,18 +90,19 @@ var LMCSWorkplace = (function () {
     function reviewRoom(r) {
       var note = el('textarea', { class: 'gb-input', rows: '2', maxlength: '200', 'aria-label': 'What to take again', placeholder: 'What to take again (for a redo)' });
       var waiting = r.status === 'pending';
+      var red = waiting && !S.red; if (red) S.red = true; // one red button per screen: the first waiting room's Approve
       return el('section', { class: 'gb-card wp-room', 'aria-label': r.roomName }, [
         el('h2', { class: 'gb-h2' }, [r.roomName + ' · ' + r.campus.replace(/^LMS(\d)$/, 'LMS $1'), el('small', { class: 'wp-st wp-' + r.status, text: waiting ? 'Waiting for your check' : STATUS[r.status] || '' })]),
         el('p', { class: 'gb-muted', text: r.staff }),
         el('ol', { class: 'wp-shots wp-grid' }, r.shots.map(function (s) { return el('li', { class: 'wp-shot' }, [el('b', { text: s.label }), s.taken ? thumb(r, s) : el('span', { class: 'gb-muted', text: 'Not taken' })]); })),
         waiting ? note : null,
         waiting ? el('div', { class: 'wp-row' }, [
-          el('button', { type: 'button', class: 'gb-btn gb-btn-primary', disabled: S.busy, text: '✓ Approve', on: { click: function () { act(r, post({ op: 'decide', campus: r.campus, roomId: r.roomId, decision: 'approve' })); } } }),
+          el('button', { type: 'button', class: 'gb-btn' + (red ? ' gb-btn-primary' : ''), disabled: S.busy, text: '✓ Approve', on: { click: function () { act(r, post({ op: 'decide', campus: r.campus, roomId: r.roomId, decision: 'approve' })); } } }),
           el('button', { type: 'button', class: 'gb-btn', disabled: S.busy, text: 'Ask for a redo', on: { click: function () { act(r, post({ op: 'decide', campus: r.campus, roomId: r.roomId, decision: 'redo', note: note.value })); } } })]) : null,
         el('p', { class: 'wp-msg', role: 'status', text: S.msg[r.roomId] || '' })]);
     }
     function draw() {
-      root.textContent = '';
+      root.textContent = ''; S.red = false;
       var rooms = S.data.rooms || [];
       if (!rooms.length) {
         root.appendChild(el('div', { class: 'gb-card wp-empty' }, [el('p', { text: o.review ? 'No photos are waiting for you.'

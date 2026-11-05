@@ -213,7 +213,7 @@ function driverLabels() {
   $('busNote').className = 'cap-hint';
   if (S.mode === 'timelapse') document.querySelector('#privacyRow span').textContent = PRIVACY_HI;
   t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
-  t('start', (S.resumeId ? 'जारी रखें · Carry on' : S.shots ? '📸 फ़ोटो शुरू करें · Start' : '🎥 रिकॉर्ड शुरू करें · Start'));
+  t('start', (S.resumeId ? 'जारी रखें · Carry on' : S.shots ? '📷 फ़ोटो शुरू करें · Start' : '🎥 रिकॉर्ड शुरू करें · Start'));
   $('stopHere').innerHTML = 'बस स्टॉप दर्ज करें<small>Mark a Bus Stop</small>'; // the big button: Hindi big, English small under it (fixed text)
   t('end', 'रूट खत्म · End run');
   document.querySelector('[data-tab="capture"]').firstChild.textContent = 'रिकॉर्ड · Record';

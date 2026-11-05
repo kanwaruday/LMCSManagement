@@ -23,7 +23,7 @@ function busChainQuests_(caller, cfg) {
     const c = campuses[id], steps = c.buses.map(function (b) {
       return { id: b.reg, title: b.reg + (shot[b.reg] ? ' · photographed' : ' · photograph the empty bus'), go: busChainGo_(b.reg), done: !!shot[b.reg], locked: false };
     }), done = steps.filter(function (s) { return s.done; }).length;
-    return { questId: 'bus-photos:' + id, title: '📸 ' + c.label + ' bus photos: ' + done + ' of ' + steps.length, parallel: true, steps: steps, complete: done === steps.length };
+    return { questId: 'bus-photos:' + id, title: '📷 ' + c.label + ' bus photos: ' + done + ' of ' + steps.length, parallel: true, steps: steps, complete: done === steps.length };
   });
 }
 

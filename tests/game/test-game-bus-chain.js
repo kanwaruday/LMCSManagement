@@ -41,7 +41,7 @@ let rows = { fleet: [{ reg: 'HP659511', campus: 'LMS 4', campusId: 'LMS4' }, { r
 ctx.fleetScopedRows_ = (caller, cfg, cacheOnly) => (assert.strictEqual(cacheOnly, true, 'cache only, under the lock'), rows);
 const q = (role) => JSON.parse(JSON.stringify(vm.runInContext('busChainQuests_(' + JSON.stringify({ primaryRole: role }) + ', {})', ctx)));
 const owner = q('Owner');
-assert.deepStrictEqual(owner.map((x) => [x.questId, x.title, x.complete]), [['bus-photos:LMS1', '📸 LMS 1 bus photos: 0 of 1', false], ['bus-photos:LMS4', '📸 LMS 4 bus photos: 1 of 2', false]]);
+assert.deepStrictEqual(owner.map((x) => [x.questId, x.title, x.complete]), [['bus-photos:LMS1', '📷 LMS 1 bus photos: 0 of 1', false], ['bus-photos:LMS4', '📷 LMS 4 bus photos: 1 of 2', false]]);
 assert.deepStrictEqual(owner[1].steps.map((s) => [s.id, s.done]), [['HP659511', true], ['HP665686', false]]);
 assert.strictEqual(owner[1].steps[1].go, 'coordinator/transport/capture.html?mode=inspection&shots=1&reg=HP665686');
 assert.strictEqual(q('Coordinator').length, 2);
