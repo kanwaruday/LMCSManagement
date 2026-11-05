@@ -268,6 +268,8 @@ function doPost(e) {
     if (action === 'roomssave') return gameJson_(roomsSave_(caller, body)); // 🏫 rooms (game-rooms.gs): POST only; Principal / Owner checks inside
     // The Owner's event-design decisions (game-event-design.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.
     if (action === 'eventdesigndecide') return gameJson_(eventDesignDecide_(caller, body));
+    // The workplace photo chain's writes (game-workplace.gs): POST only, never in GAME_MODULE_ACTIONS; every check is inside it.
+    if (action === 'workplacesave') return gameJson_(workplaceSave_(caller, body));
     return gameJson_(gameDispatch_(caller, action, body));
   } catch (err) {
     return gameJson_({ success: false, error: err.message });

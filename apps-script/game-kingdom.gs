@@ -159,6 +159,8 @@ var QUEST_GATE_HOOKS = {
   tchQuestsHook_: { id: 'hook:teacher-quests', title: 'Teacher quests: Your portal and chapters', roles: ['Teacher'] },
   fleetQuests_: { id: 'hook:fleet', title: 'Fleet setup quests', roles: ['Coordinator'] },
   busChainQuests_: { id: 'hook:bus-photos', title: 'Bus photos (bus setup chain)', roles: ['Coordinator'] },
+  workplaceQuests_: { id: 'hook:workplace', title: 'Photograph your workplace', roles: ['Principal', 'Teacher', 'Staff', 'FeeClerk', 'Accounts'] },
+  workplaceReviewQuests_: { id: 'hook:workplace-review', title: 'Check workplace photos', roles: ['Principal'] },
   daybookClerkQuests_: { id: 'hook:daybook-setup', title: 'Start your Day Book', roles: ['FeeClerk'] },
   daybookQuests_: { id: 'hook:daybook', title: 'Day Book starting data', roles: ['Accounts'] },
   daybookAccountantQuests_: { id: 'hook:daybook-accountant', title: 'Set up the bank side of the Day Book', roles: ['Coordinator', 'Accounts'] },

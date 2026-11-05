@@ -139,6 +139,7 @@
       "game-event-design",
       "acad-episodes",
       "game-bus-chain",
+      "game-workplace",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js",
       "game-erp",
