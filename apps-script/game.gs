@@ -248,6 +248,8 @@ function doPost(e) {
     // The Mac's Ask Buddy worker (tools/buddy_worker.py): the same pattern, gated by BUDDY_WORKER_SECRET (checked inside each, game-buddy.gs).
     if (action === 'buddypull') return gameJson_(buddyPull_(body));
     if (action === 'buddyreply') return gameJson_(buddyReply_(body));
+    // A linked driver phone's own bus list (game-erp.gs): gated by its device token (dlkLink_), checked inside.
+    if (action === 'erpdriverbus') return gameJson_(erpDriverBus_(body));
     const caller = gameVerifyCaller_(body.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
     caller.idToken = String(body.idToken);
