@@ -143,6 +143,7 @@
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js",
       "game-erp",
+      "game-erp-sheets",
       "driver-token",
       "../assets/game/bus-chain.js"
     ]
