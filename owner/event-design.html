@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Design the event quests</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/game.css?v=ee9ca522" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <link rel="stylesheet" href="../assets/game/event-design.css" />
+</head>
+<body class="gb gb-app">
+
+  <!-- 📅 The Owner quest "Design the event quests" (Owner only): the Events Director's proposals from data/event-proposals.json,
+       Uday's decisions from the game backend (eventdesign / eventdesigndecide). The server checks the Owner again on every call. -->
+  <header class="gb-head"><div><div><h1>Design the event quests</h1><p>Calendar changes, event chains and designs from the Events Director</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
+  <div class="gb-shell">
+    <main class="gb-stage">
+      <section class="hero" id="auth-root" style="padding-top:24px;"><div id="gate-slot"></div></section>
+      <div id="app-root" style="display:none"><div class="ed" id="ed-root"></div></div>
+    </main>
+  </div>
+
+  <script src="../assets/auth.js?v=1c991646"></script>
+  <script src="../assets/game/game.js?v=9eff94df"></script>
+  <script src="../assets/game/emoji.js?v=88532066"></script>
+  <script src="../assets/game/event-design.js"></script>
+  <script>
+    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
+
+    function show(session) {
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      LMCSEventDesign.mount(document.getElementById('ed-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' });
+    }
+    function gate(session) {
+      if (LMCS.canViewOwnerPortal(session)) return show(session);
+      const slot = document.getElementById('gate-slot'), p = document.createElement('p'), a = document.createElement('a');
+      p.appendChild(document.createTextNode('This quest is for the Owner. '));
+      a.href = '../index.html'; a.textContent = 'Back to the portals';
+      p.appendChild(a); slot.textContent = ''; slot.appendChild(p);
+    }
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) gate(cachedSession);
+    else LMCS.requireSession('#gate-slot').then(gate);
+  </script>
+
+</body>
+</html>

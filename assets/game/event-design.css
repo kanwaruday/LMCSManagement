@@ -1,0 +1,45 @@
+/* Owner quest "Design the event quests" (owner/event-design.html, assets/game/event-design.js). Every class is prefixed ed-;
+   the rest is base.css (gb-). The cards copy the Kingdom's "Reviews to vet" look (kingdom.css .kg-rv). */
+.ed { max-width:760px; margin:0 auto; padding:8px 0 40px; min-width:0; }
+.ed *, .ed *:before, .ed *:after { box-sizing:border-box; }
+.ed-lead { margin:4px 0 12px; font-size:16px; }
+.ed-prog { background:var(--gb-paper); border:1.5px solid var(--gb-line); border-radius:12px; padding:10px 14px; margin:0 0 8px; }
+.ed-prog p { margin:0 0 6px; }
+.ed-prog .gb-muted { margin:6px 0 0; }
+.ed-status { min-height:1.5em; margin:4px 0; font-weight:700; color:var(--gb-ok); }
+.ed-sec { margin:22px 0; scroll-margin-top:12px; }
+.ed-sec h2 { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin:0 0 4px; }
+.ed-count { font:700 14px/1.4 var(--gb-font); color:var(--gb-muted); }
+.ed-list { list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.ed-card { padding:10px 12px; border:1.5px solid var(--gb-line); border-radius:12px; background:var(--gb-paper); min-width:0; scroll-margin-top:12px; }
+.ed-card p { margin:0 0 6px; overflow-wrap:anywhere; }
+.ed-card h3 { margin:0; font:700 17px/1.3 var(--gb-font); overflow-wrap:anywhere; }
+.ed-card h3:focus { outline:none; }
+.ed-card h3:focus-visible { outline:3px solid var(--gb-focus); outline-offset:2px; }
+.ed-card-done { background:transparent; }
+.ed-card-add { border-color:var(--gb-gold); background:var(--gb-gold-soft); }
+.ed-top { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 10px; margin:0 0 4px; }
+.ed .gb-pill-info { background:#e6eefb; color:#1d4fa3; }
+.ed-dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; margin:6px 0 8px; font-size:15px; }
+.ed-dl dt { color:var(--gb-muted); }
+.ed-dl dd { margin:0; overflow-wrap:anywhere; }
+.ed-more { margin:4px 0 8px; }
+.ed-more summary, .ed-done summary { cursor:pointer; font-weight:700; min-height:44px; display:flex; align-items:center; }
+.ed-q { background:var(--gb-warn-soft); border-radius:10px; padding:8px 10px; margin:6px 0 8px; }
+.ed-q ul { margin:0; padding-left:20px; }
+.ed-q li { margin:2px 0; }
+.ed-note { border-left:3px solid var(--gb-gold); padding-left:8px; }
+.ed-src { font-size:13px; color:var(--gb-muted); }
+.ed-line { font-weight:700; }
+.ed-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.ed-acts .gb-btn { min-height:44px; }
+.ed-err { margin:6px 0 0; }
+.ed-err:empty { display:none; }
+.ed-panel:not(:empty) { margin-top:10px; padding-top:10px; border-top:1px dashed var(--gb-line); }
+.ed-panel .gb-hint { margin:0 0 6px; font-size:14px; color:var(--gb-muted); }
+.ed-text { width:100%; }
+@media (max-width:480px) {
+  .ed-dl { grid-template-columns:1fr; gap:0; }
+  .ed-dl dd { margin:0 0 6px; }
+  .ed-acts .gb-btn { flex:1 1 calc(50% - 8px); }
+}

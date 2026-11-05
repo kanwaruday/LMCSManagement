@@ -1,0 +1,631 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-06",
+  "generatedBy": "Events Director",
+  "note": "Generated from the vault notes in each item's source; never hand-edit. Nothing here writes to any calendar: approving a calendar item gives Uday a mission to add it himself.",
+  "quest": {
+    "id": "owner:event-design",
+    "role": "Owner",
+    "title": "Design the event quests"
+  },
+  "items": [
+    {
+      "id": "C1",
+      "group": "calendar",
+      "title": "Move: Sports Week",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5",
+        "LMS6"
+      ],
+      "when": "2027-02-08..2027-02-12",
+      "summary": "Sports Week leaves the winter break (25–28 Dec) and becomes one Sports Day per school, 8–12 Feb.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "move",
+        "calendar": "LMCS Master",
+        "eventTitle": "Sports Week",
+        "to": "replaced by per-school Sports Days C2–C7",
+        "from": "2026-12-25..2026-12-28"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C2",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 1",
+      "schools": [
+        "LMS1"
+      ],
+      "when": "2027-02-08",
+      "summary": "LMS 1's Sports Day on Mon 08 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 1 Students",
+        "eventTitle": "Sports Day - LMS 1",
+        "to": "2027-02-08"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C3",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 2",
+      "schools": [
+        "LMS2"
+      ],
+      "when": "2027-02-09",
+      "summary": "LMS 2's Sports Day on Tue 09 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 2 & 3 Students",
+        "eventTitle": "Sports Day - LMS 2",
+        "to": "2027-02-09"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C4",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 3",
+      "schools": [
+        "LMS3"
+      ],
+      "when": "2027-02-10",
+      "summary": "LMS 3's Sports Day on Wed 10 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 2 & 3 Students",
+        "eventTitle": "Sports Day - LMS 3",
+        "to": "2027-02-10"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C5",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 4",
+      "schools": [
+        "LMS4"
+      ],
+      "when": "2027-02-11",
+      "summary": "LMS 4's Sports Day on Thu 11 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 4 Students",
+        "eventTitle": "Sports Day - LMS 4",
+        "to": "2027-02-11"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C6",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 5",
+      "schools": [
+        "LMS5"
+      ],
+      "when": "2027-02-12",
+      "summary": "LMS 5's Sports Day on Fri 12 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 5 Students",
+        "eventTitle": "Sports Day - LMS 5",
+        "to": "2027-02-12"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C7",
+      "group": "calendar",
+      "title": "Add: Sports Day - LMS 6",
+      "schools": [
+        "LMS6"
+      ],
+      "when": "2027-02-08",
+      "summary": "LMS 6's Sports Day on Mon 08 Feb 2027, one school a day so Tilak and the PTIs can cover each.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 6 Students",
+        "eventTitle": "Sports Day - LMS 6",
+        "to": "2027-02-08"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C8",
+      "group": "calendar",
+      "title": "Move: Open House Boards Classes",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5"
+      ],
+      "when": "2026-12-24",
+      "summary": "Moves off Christmas Day (a holiday) to Thu 24 Dec.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "move",
+        "calendar": "LMS 1, 2&3, 4, 5 Students",
+        "eventTitle": "Open House Boards Classes",
+        "to": "2026-12-24",
+        "from": "2026-12-25"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C9",
+      "group": "calendar",
+      "title": "Move: Open House-PB",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5"
+      ],
+      "when": "2027-01-27",
+      "summary": "Moves off Republic Day (a holiday) to Wed 27 Jan.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "move",
+        "calendar": "LMS 1, 2&3, 4, 5 Students",
+        "eventTitle": "Open House-PB",
+        "to": "2027-01-27",
+        "from": "2027-01-26"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C10",
+      "group": "calendar",
+      "title": "Add: Annual Day - LMS 6",
+      "schools": [
+        "LMS6"
+      ],
+      "when": "2026-12-19",
+      "summary": "LMS 6 has no Annual Function on its calendar; proposed Sat 19 Dec, before winter vacation (24 Dec).",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 6 Students",
+        "eventTitle": "Annual Day - LMS 6",
+        "to": "2026-12-19"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C11",
+      "group": "calendar",
+      "title": "Add: Farewell - C-X (LMS 2: C-XII)",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5"
+      ],
+      "when": "2027-02-06",
+      "summary": "Board-class farewell on Sat 6 Feb, the afternoon after Pre-Board 2 ends.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 1, 2&3, 4, 5 Students",
+        "eventTitle": "Farewell - C-X (LMS 2: C-XII)",
+        "to": "2027-02-06"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C12",
+      "group": "calendar",
+      "title": "Add: MW Graduation - LMS 2 · LMS 5",
+      "schools": [
+        "LMS2",
+        "LMS5"
+      ],
+      "when": "2027-03-16",
+      "summary": "M-3 graduation for LMS 2 and LMS 5 on Tue 16 Mar, after T2 exams; two schools a day so MD Academics can attend.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 2 & 3 / LMS 5 Students",
+        "eventTitle": "MW Graduation - LMS 2 · LMS 5",
+        "to": "2027-03-16"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C13",
+      "group": "calendar",
+      "title": "Add: MW Graduation - LMS 3 · LMS 6",
+      "schools": [
+        "LMS3",
+        "LMS6"
+      ],
+      "when": "2027-03-17",
+      "summary": "M-3 graduation for LMS 3 and LMS 6 on Wed 17 Mar.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 2 & 3 / LMS 6 Students",
+        "eventTitle": "MW Graduation - LMS 3 · LMS 6",
+        "to": "2027-03-17"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C14",
+      "group": "calendar",
+      "title": "Add: MW Graduation - LMS 1 · LMS 4",
+      "schools": [
+        "LMS1",
+        "LMS4"
+      ],
+      "when": "2027-03-18",
+      "summary": "M-3 graduation for LMS 1 and LMS 4 on Thu 18 Mar (LMS 1's exams end 15 Mar).",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 1 / LMS 4 Students",
+        "eventTitle": "MW Graduation - LMS 1 · LMS 4",
+        "to": "2027-03-18"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "C15",
+      "group": "calendar",
+      "title": "Add: School Fete-2 (LMS 2, LMS 3)",
+      "schools": [
+        "LMS2",
+        "LMS3"
+      ],
+      "when": "2027-03-19",
+      "summary": "LMS 2 and LMS 3 get Fete-2 on Fri 19 Mar alongside their Open House, matching the other schools' 19/20 Mar fetes.",
+      "source": "work/Events Register.md#Proposed calendar changes — held for Uday (2 Nov)",
+      "payload": {
+        "action": "add",
+        "calendar": "LMS 2 & 3 Students",
+        "eventTitle": "School Fete-2 (LMS 2, LMS 3)",
+        "to": "2027-03-19"
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B1",
+      "group": "chain",
+      "title": "Board-class Farewell",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5"
+      ],
+      "when": "2027-02-06",
+      "summary": "Juniors host the Class 10 (LMS 2: Class 12) farewell. SOP by Fri 22 Jan, one rehearsal 4 Feb, report and P&L 9 Feb.",
+      "source": "work/Event SOP Quest design.md#1. Board-class Farewell — Sat 6 Feb 2027 (LMS 1, 3, 4, 5: Class 10; LMS 2: Class 12)",
+      "payload": {
+        "blueprint": "B1",
+        "dates": {
+          "inCharge": "2027-01-16",
+          "sop": "2027-01-22",
+          "approve": "2027-01-27",
+          "quotes": "2027-01-30",
+          "mockDrill1": "2027-02-04",
+          "safetyReview": "2027-02-04",
+          "day": "2027-02-06",
+          "report": "2027-02-09"
+        }
+      },
+      "openQuestions": [
+        "Farewell money: school pays or juniors contribute? Recommendation: the school pays from a small fixed budget per school, so no student cash is collected."
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B2",
+      "group": "chain",
+      "title": "MW Graduation (M-3)",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5",
+        "LMS6"
+      ],
+      "when": "2027-03-16..2027-03-18",
+      "summary": "M-3 graduation, two schools a day. SOP pulled to Sat 20 Feb so it's done before the T2 exams; certificates and caps/gowns by 27 Feb.",
+      "source": "work/Event SOP Quest design.md#2. MW Graduation (M-3) — Tue 16 Mar (LMS 2, LMS 5) · Wed 17 Mar (LMS 3, LMS 6) · Thu 18 Mar (LMS 1, LMS 4)",
+      "payload": {
+        "blueprint": "B2",
+        "dates": {
+          "inCharge": "2027-02-13",
+          "sop": "2027-02-20",
+          "approve": "2027-02-23",
+          "certificatesAndGowns": "2027-02-27",
+          "invitations": "2027-02-27",
+          "mockDrill1": "2027-03-15",
+          "day": {
+            "LMS2": "2027-03-16",
+            "LMS5": "2027-03-16",
+            "LMS3": "2027-03-17",
+            "LMS6": "2027-03-17",
+            "LMS1": "2027-03-18",
+            "LMS4": "2027-03-18"
+          },
+          "report": "+2 working days"
+        }
+      },
+      "openQuestions": [
+        "Caps/gowns: hire, or buy once and reuse? Recommendation: buy one set per school and reuse it."
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B3",
+      "group": "chain",
+      "title": "Sports Week (one Sports Day per school)",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5",
+        "LMS6"
+      ],
+      "when": "2027-02-08..2027-02-12",
+      "summary": "Run by the Houses under the PTI. Heats are mock drill 1, march past is mock drill 2; results go on CSM as House points. Dates shown for LMS 1; other schools shift by their day.",
+      "source": "work/Event SOP Quest design.md#3. Sports Week — LMS 1 Mon 8 Feb · LMS 2 Tue 9 · LMS 3 Wed 10 · LMS 4 Thu 11 · LMS 5 Fri 12 · LMS 6 Mon 8 Feb 2027",
+      "payload": {
+        "blueprint": "B3",
+        "dates": {
+          "inCharge": "2027-01-18",
+          "sop": "2027-01-23",
+          "approve": "2027-01-27",
+          "houseTrials": "2027-01-30",
+          "medalsAndGround": "2027-02-01",
+          "mockDrill1": "2027-02-01",
+          "mockDrill2": "2027-02-05",
+          "safetyReview": "2027-02-06",
+          "day": {
+            "LMS1": "2027-02-08",
+            "LMS2": "2027-02-09",
+            "LMS3": "2027-02-10",
+            "LMS4": "2027-02-11",
+            "LMS5": "2027-02-12",
+            "LMS6": "2027-02-08"
+          },
+          "resultsOnCSM": "+2 days"
+        }
+      },
+      "openQuestions": [
+        "Sports Week fee: none in the rules. Recommendation: no fee; medals and certificates come from the school budget."
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B4",
+      "group": "chain",
+      "title": "School Fete-2 + Open House (LMS 2, LMS 3)",
+      "schools": [
+        "LMS2",
+        "LMS3"
+      ],
+      "when": "2027-03-19",
+      "summary": "A House event: each House fills its fete booklet as a parallel quest, and cash goes to the Fee Clerk the same day on a two-part receipt.",
+      "source": "work/Event SOP Quest design.md#4. School Fete-2 + Open House — LMS 2 and LMS 3 Fri 19 Mar 2027 (the same blueprint as the other schools' Fete-2 on 19/20 Mar)",
+      "payload": {
+        "blueprint": "B4",
+        "dates": {
+          "inCharge": "2027-02-27",
+          "sop": "2027-03-05",
+          "approve": "2027-03-08",
+          "houseBooklets": "2027-03-13",
+          "seedMoney": "2027-03-13",
+          "safetyReview": "2027-03-17",
+          "day": "2027-03-19",
+          "cashHandover": "2027-03-19",
+          "houseP&L": "2027-03-22"
+        }
+      },
+      "openQuestions": [
+        "Does the Fete P&L have to close on 19 Mar, the last working day before vacation? Recommendation: cash is handed over the same day; the per-House P&L closes on the first day of the new session."
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B5",
+      "group": "chain",
+      "title": "LMS 6 Annual Day (MW–C3)",
+      "schools": [
+        "LMS6"
+      ],
+      "when": "2026-12-19",
+      "summary": "The Annual Function chain scaled down for LMS 6. Uday approves the budget 28 Nov, zero periods from 1 Dec, SOP 5 Dec, mock drills 11 and 15 Dec, P&L 22 Dec.",
+      "source": "work/Event SOP Quest design.md#5. LMS 6 Annual Day (MW–C3) — Sat 19 Dec 2026",
+      "payload": {
+        "blueprint": "B5",
+        "dates": {
+          "inCharge": "2026-11-28",
+          "budget": "2026-11-28",
+          "zeroPeriods": "2026-12-01",
+          "sop": "2026-12-05",
+          "feeCollection": "2026-12-05..2026-12-12",
+          "mockDrill1": "2026-12-11",
+          "mockDrill2": "2026-12-15",
+          "safetyReview": "2026-12-17",
+          "finalClearance": "2026-12-18",
+          "day": "2026-12-19",
+          "p&l": "2026-12-22"
+        }
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "B6",
+      "group": "chain",
+      "title": "PTA meetings (blueprint only)",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5",
+        "LMS6"
+      ],
+      "when": null,
+      "summary": "Used once a date is set. The Principal is In-charge: notice at −7, agenda at −3, minutes with an attendance photo at +2. No money. Stays off the calendar until there's a date.",
+      "source": "work/Event SOP Quest design.md#6. PTA meetings — no date yet",
+      "payload": {
+        "blueprint": "B6",
+        "dates": {
+          "notice": "-7",
+          "agenda": "-3",
+          "minutes": "+2"
+        }
+      },
+      "openQuestions": [],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "D1",
+      "group": "design",
+      "title": "Annual Function quest chain",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5"
+      ],
+      "when": "2026-11-20..2026-12-13",
+      "summary": "One chain per school in seven stages, with a 100% money trail (formats F1–F23). Dance evaluation, Tilak as Admin Manager and dresses from the AF fee were decided on 30 Oct.",
+      "source": "work/Annual Function Quests design.md",
+      "payload": {
+        "chainId": "af2026:<campus>",
+        "dates": {
+          "LMS3": "2026-11-20",
+          "LMS1": "2026-11-24",
+          "LMS2": "2026-11-28",
+          "LMS4": "2026-11-29",
+          "LMS5": "2026-12-13"
+        }
+      },
+      "openQuestions": [
+        "LMS 1 on Tue 24 Nov (Guru Nanak's Birthday): keep or move?",
+        "Accountable coordinator: Urvashi for the chain and Pawan Puri for the money? (Deepshikha Mukherjee also holds Events & House.)",
+        "Quote threshold: 2–3 quotes for every head, or only above ₹5,000 (petty under ₹500 on a signed voucher)?",
+        "Sibling rate: ₹700 for the second child only when both take part, or for any sibling?"
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    },
+    {
+      "id": "D2",
+      "group": "design",
+      "title": "Event SOP quest (every event opens with it)",
+      "schools": [
+        "LMS1",
+        "LMS2",
+        "LMS3",
+        "LMS4",
+        "LMS5",
+        "LMS6"
+      ],
+      "when": null,
+      "summary": "The Principal names the In-charge at −21, the In-charge fills the SOP (template V-2) by −14, the Principal approves or returns it within 2 days, the System Coordinator sees it, then prep quests unlock.",
+      "source": "work/Event SOP Quest design.md",
+      "payload": {
+        "template": "V-2",
+        "offsets": {
+          "inCharge": -21,
+          "sop": -14,
+          "approveWithinDays": 2,
+          "report": "+2 working days"
+        }
+      },
+      "openQuestions": [
+        "Adopt V-2 as the new master template and publish it on the bye-laws site? (V-1 is the 2022 trial.)",
+        "Every event fills the SOP, but light ones (no outside guests, no money) skip mock drill 2 and the money section?",
+        "Budget limit above which Uday approves, not just the Principal?",
+        "Does a late SOP count as a non-compliance instance?"
+      ],
+      "status": "proposed",
+      "decidedAt": null,
+      "note": null
+    }
+  ]
+}
