@@ -250,6 +250,8 @@ function doPost(e) {
     if (action === 'buddyreply') return gameJson_(buddyReply_(body));
     // A linked driver phone's own bus list (game-erp.gs): gated by its device token (dlkLink_), checked inside.
     if (action === 'erpdriverbus') return gameJson_(erpDriverBus_(body));
+    // The Mac's ERP extractor push into the private campus Sheets (game-erp-sheets.gs): gated by ERP_PUSH_SECRET, checked inside.
+    if (action === 'erppush') return gameJson_(erpPush_(body));
     const caller = gameVerifyCaller_(body.idToken);
     if (!caller) return gameJson_({ success: false, error: 'Not authorized' });
     caller.idToken = String(body.idToken);
