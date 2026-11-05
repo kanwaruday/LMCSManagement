@@ -17,6 +17,7 @@ window.LMCSGuide = {
     },
     'principal/rooms.html': { purpose: "Name your school's rooms, then choose who is in charge of each one.", roles: ['Principal'] },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },
+    'principal/scout.html': { purpose: "Your daily reports as a Scout report: the last 7 school days, on time or not, your streak and compliance.", roles: ['Principal', 'Coordinator', 'Owner'] },
     'principal/support-sessions.html': { purpose: "Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member with their rubric.", roles: ['Principal'] },
     'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report: support sessions, activities and staff requests.", roles: ['Principal'] },
     'coordinator/index.html': {

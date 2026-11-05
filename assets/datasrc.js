@@ -44,6 +44,7 @@
   const PAGES = {
     '/principal/':               ['allowlist'],
     '/principal/issues.html':    ['dailyreports'],   // the PDR Issues tabs live in the Daily Reports sheet
+    '/principal/scout.html':     ['dailyreports'],   // Scout report: Daily Reports + the PDR Issues/Repeats/Tags tabs, through the game backend (gamescout)
     '/principal/support-sessions.html': ['teacherss', 'nonteaching', 'driver', 'staff'], // teacherss covers the new unified "SS Submissions"/"SS Rubrics" tabs too -- same workbook as the old Teacher/IT/PTI/Clerk SS tabs
     '/teacher/':                 ['teacherss', 'staff', 'approvals', 'daily', 'cal1', 'cal2', 'cal4', 'cal5', 'cal6', 'timetable'],
     '/salary/':                  ['payscale', 'hiring', 'approvals', 'payroll', 'staff'],

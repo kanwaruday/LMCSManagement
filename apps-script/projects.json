@@ -134,6 +134,7 @@
       "game-people",
       "game-event",
       "game-rooms",
+      "game-scout",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js",

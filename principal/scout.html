@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMCS Portal — Scout report</title>
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
+  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <link rel="stylesheet" href="../assets/game/v2-animations.css" />
+  <link rel="stylesheet" href="../assets/game/scout-report.css" />
+  <style>
+    .page { padding-top: 16px; padding-bottom: 48px; }
+    .page > * { max-width: 640px; }
+    .pick { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 0.95rem; }
+    .pick select { min-height: 44px; padding: 6px 10px; font: inherit; border: 1.5px solid #d9d4ca; border-radius: 10px; background: #fff; }
+    @media (max-width: 640px) { .wrap { padding: 0 16px; } }
+  </style>
+</head>
+<body>
+
+  <!-- the game header (base.css) only; the report itself is assets/game/scout-report.js -->
+  <div class="gb"><header class="gb-head"><div><div><h1>Scout report</h1><p id="header-status">Your daily reports, last 7 school days</p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> Principal portal</a></div></header></div>
+
+  <main class="wrap page">
+    <div id="auth-root"><div id="gate-slot"></div></div>
+    <div id="app-root" style="display:none">
+      <label class="pick" id="pick" hidden>School
+        <select id="campus">
+          <option value="LMS1">LMS 1 Dhalpur</option><option value="LMS2">LMS 2 Kelheli</option><option value="LMS3">LMS 3 Dunkhra</option>
+          <option value="LMS4">LMS 4 Ner Chowk</option><option value="LMS5">LMS 5 Sayoli</option><option value="LMS6">LMS 6 Jogindernagar</option>
+        </select>
+      </label>
+      <div id="scout-root"></div>
+    </div>
+  </main>
+
+  <script src="../assets/auth.js?v=1c991646"></script>
+  <script src="../assets/game/scout-report.js"></script>
+  <script>
+    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as principal/index.html
+
+    // A Principal sees their own school (the server decides). The Owner and Coordinators pick one: ?campus=LMS4 or the picker.
+    function showApp(session) {
+      if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; }
+      document.getElementById('auth-root').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+      const wide = LMCS.hasRole(session, 'Owner') || LMCS.hasRole(session, 'Coordinator');
+      const root = document.getElementById('scout-root'), sel = document.getElementById('campus');
+      const asked = (new URLSearchParams(location.search).get('campus') || '').toUpperCase();
+      const draw = (campus) => {
+        document.getElementById('header-status').textContent = campus ? LMCS.campusLabel(campus) + ' · last 7 school days' : session.campusName + ' · last 7 school days';
+        LMCSScout.mount(root, { session, backendUrl: GAME_BACKEND_URL, root: '../', campus });
+      };
+      if (wide) {
+        document.getElementById('pick').hidden = false;
+        sel.value = /^LMS[1-6]$/.test(asked) ? asked : (/^LMS[1-6]$/.test(session.campusId) ? session.campusId : 'LMS1');
+        sel.addEventListener('change', () => { history.replaceState(null, '', '?campus=' + sel.value); draw(sel.value); });
+        draw(sel.value);
+      } else draw('');
+    }
+
+    const cachedSession = LMCS.getSession();
+    if (cachedSession) showApp(cachedSession);
+    else LMCS.requireSession('#gate-slot').then(showApp);
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,70 @@
+/* 📜 Scout report (assets/game/scout-report.js). Every class is prefixed sc-. Tokens match the Kingdom (kingdom.css), so the window reads
+   the same in the Kingdom's campus window and on principal/scout.html. Colour carries meaning only: green on time, amber late, grey missing. */
+.sc {
+  --sc-ink:#1b2430; --sc-muted:#556170; --sc-line:#d9d4ca; --sc-panel:#f6f4ef; --sc-paper:#fff;
+  --sc-red:#ce0000; --sc-red-ink:#a10000; --sc-gold:#e0a526; --sc-gold-soft:#fbefd3; --sc-gold-ink:#7a5200;
+  --sc-ok:#1a7f3c; --sc-ok-soft:#e3f3e8; --sc-focus:#1d4fa3;
+  color:var(--sc-ink); background:var(--sc-panel); border:1.5px solid var(--sc-line); border-radius:14px; padding:12px; margin:0 0 12px; line-height:1.45; min-width:0;
+}
+.sc *, .sc *:before, .sc *:after { box-sizing:border-box; }
+.sc [hidden] { display:none !important; }
+.sc :focus-visible { outline:3px solid var(--sc-focus); outline-offset:2px; }
+.sc h3, .sc h4 { margin:0; font-weight:700; }
+.sc-title { font-family:Georgia,"Times New Roman",serif; font-weight:400 !important; font-size:20px; margin:0 0 8px !important; }
+.sc-quiet { color:var(--sc-muted); font-size:14px; margin:6px 0; }
+.sc-buddy { display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:8px 12px 8px 8px; background:var(--sc-paper); border:1.5px solid var(--sc-gold); border-radius:12px; font-size:15px; }
+.sc-bi { width:44px; height:44px; flex:none; border-radius:50%; background:var(--sc-gold-soft); object-fit:cover; }
+.sc-top { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 14px; margin:0 0 8px; }
+.sc-top p { margin:0; font-weight:700; font-size:15px; }
+.sc-streak { color:var(--sc-gold-ink); }
+.sc-streak.sc-lost { color:#2c5f86; }
+.sc-strip { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+.sc-day { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:56px; min-width:0; padding:4px 0; font:inherit; cursor:pointer;
+  background:var(--sc-paper); color:var(--sc-ink); border:1.5px solid var(--sc-line); border-radius:10px; }
+.sc-day:hover { border-color:var(--sc-muted); }
+.sc-day[aria-pressed="true"] { border-color:var(--sc-ink); box-shadow:inset 0 0 0 1px var(--sc-ink); }
+.sc-di { font-size:20px; line-height:1; }
+.sc-dl { font-size:11px; color:var(--sc-muted); white-space:nowrap; }
+.sc-ontime { background:var(--sc-ok-soft); }
+.sc-late { background:var(--sc-gold-soft); }
+.sc-missing { background:#eceae6; }
+.sc-legend { margin:6px 0 0; font-size:12px; color:var(--sc-muted); }
+.sc-read { margin:8px 0 0; padding:10px 12px; background:var(--sc-paper); border:1.5px solid var(--sc-line); border-radius:12px; }
+.sc-read h4 { font-size:15px; margin:0 0 6px; }
+.sc-field { margin:6px 0 0; }
+.sc-field b { display:block; font-size:12px; color:var(--sc-muted); text-transform:uppercase; letter-spacing:.03em; }
+.sc-field p { margin:2px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
+.sc-sec { margin:12px 0 0; }
+.sc-sec h3 { font-size:15px; margin:0 0 6px; }
+.sc-ins { list-style:none; margin:0; padding:0; }
+.sc-ins li { padding:6px 0; border-top:1px solid var(--sc-line); font-size:14px; overflow-wrap:anywhere; }
+.sc-ins li:first-child { border-top:0; }
+.sc-bars { list-style:none; margin:0; padding:0; }
+.sc-bar { display:grid; grid-template-columns:76px minmax(0,1fr) 44px; align-items:center; gap:2px 8px; padding:4px 0; font-size:14px; }
+.sc-bar small { grid-column:2 / 4; color:var(--sc-muted); font-size:12px; }
+.sc-track { display:block; height:12px; background:#e7e3da; border-radius:999px; overflow:hidden; }
+.sc-fill { display:block; height:100%; border-radius:999px; }
+.sc-good { background:var(--sc-ok); } .sc-mid { background:var(--sc-gold); } .sc-low { background:#c2410c; }
+.sc-bn { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+.sc-unset .sc-track { background:repeating-linear-gradient(45deg,#ebe8e1 0 6px,#f3f1ec 6px 12px); }
+.sc-unset .sc-bn { color:var(--sc-muted); font-weight:400; }
+.sc-board summary { cursor:pointer; min-height:44px; display:flex; align-items:center; font-size:14px; color:var(--sc-red-ink); }
+.sc-board ol { margin:0; padding:0 0 0 22px; }
+.sc-board li { padding:3px 0; font-size:14px; }
+.sc-board li span:first-child { display:inline-block; min-width:64px; }
+.sc-board li span + span { color:var(--sc-muted); font-variant-numeric:tabular-nums; }
+.sc-me { font-weight:700; }
+.sc-acts { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 0; }
+.sc-btn { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:8px 14px; font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  color:var(--sc-ink); background:var(--sc-paper); border:1.5px solid var(--sc-line); border-radius:10px; text-decoration:none; }
+.sc-btn:hover { border-color:var(--sc-muted); }
+.sc-primary { background:var(--sc-red); border-color:var(--sc-red-ink); color:#fff; }
+.sc-primary:hover { background:var(--sc-red-ink); }
+.sc-status { margin:8px 0 0; font-size:13px; color:var(--sc-ok); overflow-wrap:anywhere; }
+.sc-status:empty { display:none; }
+.sc-err p { margin:0 0 8px; color:var(--sc-red-ink); }
+@media (max-width:480px) {
+  .sc { padding:10px; }
+  .sc-acts .sc-btn { flex:1 1 100%; }
+  .sc-dl { font-size:10px; }
+}
