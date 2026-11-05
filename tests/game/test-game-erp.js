@@ -22,25 +22,24 @@ ctx.SpreadsheetApp = { openById(id) {
 const TODAY = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
 const LMS4 = {
   // extra columns a Sheet must never leak: aadhaar, mobile, dob, photo
-  Students: [['Enroll No', 'Name', 'Class', 'Section', 'Roll No', 'House', 'Status', 'Aadhaar', 'Mobile', 'DOB', 'Photo'],
-    ['E002', 'Test Student 2', '7', 'A', '2', 'Red', 'Active', '999988887777', '9000000001', '2014-01-01', 'img_2'],
-    ['E001', 'Test Student 1', '7', 'a', '1', 'Blue', '', '999988887776', '9000000002', '2014-01-02', 'img_1'],
-    ['E003', 'Test Student 3', '7', 'B', '1', 'Red', 'Active', '', '', '', ''],
-    ['E004', 'Test Student 4', '8', 'A', '1', 'Green', 'Active', '', '', '', ''],
-    ['E005', 'Test Student 5', '7', 'A', '3', 'Red', 'Left', '', '', '', '']],
-  Attendance: [['Date', 'Enroll No', 'Status'],
+  // the extractor's snake_case headers; bus fields ride on students_now
+  students_now: [['enroll_no', 'name', 'class', 'section', 'roll_no', 'house', 'status', 'aadhaar', 'mobile', 'dob', 'photo', 'bus', 'route', 'pickup_point', 'way'],
+    ['E002', 'Test Student 2', '7', 'A', '2', 'Red', 'Active', '999988887777', '9000000001', '2014-01-01', 'img_2', 'test 01', '', 'Stop A', 'Pick'],
+    ['E001', 'Test Student 1', '7', 'a', '1', 'Blue', '', '999988887776', '9000000002', '2014-01-02', 'img_1', 'TEST-01', 'Route 1', 'Stop B', 'Both'],
+    ['E003', 'Test Student 3', '7', 'B', '1', 'Red', 'Active', '', '', '', '', '', '', '', ''],
+    ['E004', 'Test Student 4', '8', 'A', '1', 'Green', 'Active', '', '', '', '', 'TEST02', 'Route 2', 'Stop C', 'Both'],
+    ['E005', 'Test Student 5', '7', 'A', '3', 'Red', 'Left', '', '', '', '', 'TEST01', 'Route 1', 'Stop A', 'Both']],
+  attendance: [['Date', 'Enroll No', 'Status'],
     [TODAY, 'E001', 'P'], [TODAY, 'E002', 'A'], [TODAY, 'E003', 'P'], [TODAY, 'E004', 'L'], [TODAY, 'E005', 'P'], ['2026-01-01', 'E001', 'P']],
-  Marks: [['Session', 'Term', 'Exam', 'Subject', 'Enroll No', 'Max Marks', 'Marks'],
+  marks_summary: [['session', 'Term', 'Exam', 'Subject', 'Enroll No', 'Max Marks', 'Marks'],
     ['2026', 'T1', 'UT1', 'Maths', 'E001', '20', '18'], ['2026', 'T1', 'UT1', 'English', 'E001', '20', 'AB'],
     ['2026', 'T1', 'UT1', 'Maths', 'E003', '20', '12.5'], ['2026', 'T1', 'UT1', 'Maths', 'E004', '20', '15']],
-  Dues: [['Enroll No', 'Fee Head', 'Receivable', 'Received', 'Concession', 'Pending'],
+  dues: [['enroll_no', 'fee_head', 'receivable', 'received', 'concession', 'balance'],
     ['E001', 'Tuition', '10000', '4000', '0', '6000.4'], ['E001', 'Transport', '3,000', '3000', '0', '0'],
     ['E002', 'Tuition', '10000', '10000', '0', '0'], ['E004', 'Tuition', '12000', '2000', '500', '9500'], ['E005', 'Tuition', '9000', '0', '0', '9000']],
-  Bus: [['Enroll No', 'Bus', 'Route', 'Pickup Point', 'Way'],
-    ['E001', 'TEST-01', 'Route 1', 'Stop B', 'Both'], ['E002', 'test 01', '', 'Stop A', 'Pick'], ['E004', 'TEST02', 'Route 2', 'Stop C', 'Both'], ['E005', 'TEST01', 'Route 1', 'Stop A', 'Both']],
-  Staff: [['Emp Code', 'Name', 'Designation', 'Department', 'Status', 'House', 'Mobile', 'Salary'],
-    ['T100', 'Test Teacher B', 'TGT', 'Academics', 'Active', 'Red', '9000000009', '50000'], ['T101', 'Test Teacher A', 'PRT', 'Academics', 'Active', 'Blue', '', '']],
-  Assignments: [['Emp Code', 'Email', 'Kind', 'Class', 'Section', 'Subject', 'Bus'],
+  staff: [['emp_code', 'name', 'designation', 'department', 'category', 'status', 'doj', 'Mobile', 'Salary'],
+    ['T100', 'Test Teacher B', 'TGT', 'Academics', 'Teaching', 'Active', '2020-01-01', '9000000009', '50000'], ['T101', 'Test Teacher A', 'PRT', 'Academics', 'Teaching', 'Active', '2021-01-01', '', '']],
+  assignments: [['Emp Code', 'Email', 'Kind', 'Class', 'Section', 'Subject', 'Bus'],
     ['T100', '', 'class', '7', 'A', '', ''],
     ['', 'subj@test.invalid', 'subject', '7', '', 'maths', ''],
     ['A200', '', 'bus', '', '', '', 'TEST 01'],
@@ -86,9 +85,9 @@ r = read(principal, { what: 'students', campus: 'LMS4' }); assert.ok(r.configure
 const p5 = Object.assign({}, principal, { campusId: 'LMS5' });
 r = read(p5, { what: 'dues' });
 assert.deepStrictEqual(r, { success: true, what: 'dues', campus: 'LMS5', configured: false, missing: [], count: 0, rows: [], note: "ERP data for LMS 5 isn't connected yet.", totalPending: 0, classes: [] });
-delete books.book4.Attendance;
+delete books.book4.attendance;
 r = read(principal, { what: 'attendance' });
-assert.deepStrictEqual(r.missing, ['Attendance']); assert.deepStrictEqual(r.rows, []);
+assert.deepStrictEqual(r.missing, ['attendance']); assert.deepStrictEqual(r.rows, []);
 reset();
 
 // ---- Owner: any campus, must name it; scope lists all six

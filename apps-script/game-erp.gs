@@ -20,17 +20,18 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 
 var ERP_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 var ERP_WHATS = ['students', 'attendance', 'marks', 'dues', 'bus', 'staff'];
-// tab -> the only columns ever read from it (header names, matched case- and space-insensitively)
+// tab -> the only columns ever read from it (header names, matched ignoring case, spaces and underscores: enroll_no = enrollNo).
+// Tab names are the extractor's (vault work/active/csm-erp-extractor.md, Private-Drive export design); assignments is filled by hand.
 var ERP_TABS = {
-  Students: ['enrollNo', 'name', 'class', 'section', 'rollNo', 'house', 'status'],
+  Students: ['enrollNo', 'name', 'class', 'section', 'rollNo', 'house', 'status', 'bus', 'route', 'pickupPoint', 'way'],
   Attendance: ['date', 'enrollNo', 'status'],
   Marks: ['session', 'term', 'exam', 'subject', 'enrollNo', 'maxMarks', 'marks'],
-  Dues: ['enrollNo', 'feeHead', 'receivable', 'received', 'concession', 'pending'],
-  Bus: ['enrollNo', 'bus', 'route', 'pickupPoint', 'way'],
+  Dues: ['enrollNo', 'feeHead', 'receivable', 'received', 'concession', 'balance'],
   Staff: ['empCode', 'name', 'designation', 'department', 'status', 'house'],
   Assignments: ['empCode', 'email', 'kind', 'class', 'section', 'subject', 'bus'],
 };
-var ERP_NEEDS = { students: ['Students'], attendance: ['Students', 'Attendance'], marks: ['Students', 'Marks'], dues: ['Students', 'Dues'], bus: ['Students', 'Bus'], staff: ['Staff'] };
+var ERP_SHEET_TAB = { Students: 'students_now', Attendance: 'attendance', Marks: 'marks_summary', Dues: 'dues', Staff: 'staff', Assignments: 'assignments' };
+var ERP_NEEDS = { students: ['Students'], attendance: ['Students', 'Attendance'], marks: ['Students', 'Marks'], dues: ['Students', 'Dues'], bus: ['Students'], staff: ['Staff'] };
 var ERP_MAX_DAYS = 31;
 var ERP_IST_MS = 330 * 60000;
 
@@ -126,8 +127,8 @@ function erpReadTabs_(campus, tabNames) {
   if (!id) return out;
   const book = SpreadsheetApp.openById(id);
   tabNames.forEach(function (t) {
-    const sh = book.getSheetByName(t);
-    if (!sh) { out.missing.push(t); return; }
+    const sh = book.getSheetByName(ERP_SHEET_TAB[t]);
+    if (!sh) { out.missing.push(ERP_SHEET_TAB[t]); return; }
     out.tabs[t] = erpProject_(sh.getDataRange().getValues(), ERP_TABS[t]);
   });
   return out;
@@ -187,7 +188,7 @@ function erpDues_(grant, tabs, f) {
     const k = erpNorm_(d.enrollNo), s = by[k];
     if (!s || !erpInSections_(grant, s) || !erpMatchF_(s, f)) return;
     if (!per[k]) { per[k] = { enrollNo: s.enrollNo, name: s.name, class: s.class, section: s.section, receivable: 0, received: 0, concession: 0, pending: 0, heads: [] }; order.push(k); }
-    const p = per[k], due = erpNum_(d.pending);
+    const p = per[k], due = erpNum_(d.balance);
     p.receivable += erpNum_(d.receivable); p.received += erpNum_(d.received); p.concession += erpNum_(d.concession); p.pending += due;
     if (due > 0) p.heads.push({ feeHead: d.feeHead, pending: Math.round(due) });
   });
@@ -207,10 +208,10 @@ function erpDues_(grant, tabs, f) {
 
 // buses: grant true = every bus, else {buses: [key]}; driver = true drops the enroll number
 function erpBuses_(grant, tabs, f, driver) {
-  const by = erpByEnroll_(tabs), buses = {}, order = [];
-  tabs.Bus.forEach(function (b) {
-    const key = erpBusKey_(b.bus), s = by[erpNorm_(b.enrollNo)];
-    if (!key || !s || (grant !== true && (grant.buses || []).indexOf(key) === -1) || (f.bus && key !== f.bus) || !erpMatchF_(s, f)) return;
+  const buses = {}, order = [];
+  tabs.Students.forEach(function (b) {
+    const key = erpBusKey_(b.bus), s = b;
+    if (!key || !erpActive_(s) || (grant !== true && (grant.buses || []).indexOf(key) === -1) || (f.bus && key !== f.bus) || !erpMatchF_(s, f)) return;
     if (!buses[key]) { buses[key] = { bus: b.bus, route: '', students: [] }; order.push(key); }
     if (!buses[key].route && b.route) buses[key].route = b.route;
     const st = { enrollNo: s.enrollNo, name: s.name, class: s.class, section: s.section, pickupPoint: b.pickupPoint, way: b.way };
@@ -290,7 +291,7 @@ function erpRead_(caller, params) {
     }
     if (!erpFilterAllowed_(what, grant, f)) return erpErr_('ERP_NOT_ALLOWED', ERP_DENY);
     if (!read.configured) return erpEmpty_(what, campus, read);
-    const out = { success: true, what: what, campus: campus, configured: true, missing: read.missing.filter(function (t) { return t !== 'Assignments'; }) };
+    const out = { success: true, what: what, campus: campus, configured: true, missing: read.missing.filter(function (t) { return t !== ERP_SHEET_TAB.Assignments; }) };
     if (what === 'students') out.rows = erpStudents_(grant, read.tabs, f);
     else if (what === 'attendance') { const a = erpAttendance_(grant, read.tabs, f); out.rows = a.rows; out.summary = a.summary; out.from = f.from; out.to = f.to; }
     else if (what === 'marks') out.rows = erpMarks_(grant, read.tabs, f);
