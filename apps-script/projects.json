@@ -135,7 +135,9 @@
       "game-event",
       "acad-episodes",
       "../coordinator/capture/fleet-quests.js",
-      "../coordinator/transport-rank.js"
+      "../coordinator/transport-rank.js",
+      "game-erp",
+      "driver-token"
     ]
   }
 }
