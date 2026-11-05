@@ -29,6 +29,7 @@
     waiting: () => Promise.resolve(0),
   } : null;
   const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // driverbus: the Home Base bus
+  const GAME_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // = GAME_BACKEND_URL in owner/index.html: the ERP bus list (game-erp.gs)
   const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
   const TOKEN_KEY = 'lmcs.driverToken'; // also read by coordinator/capture/driver-mode.js
   const REFUSED_KEY = 'lmcs.driverRefused'; // fills the office refused after they waited on the phone, shown once on home
@@ -208,8 +209,26 @@
   }
   // ── 🚌 Bus setup chain (assets/game/bus-chain.js): my bus, photograph the bus, route video, my riders. The photos state comes with
   // driverbus (H.bus.busPhotos), so the card redraws when it lands. Riders: names only from the school list (ERP), null until it is set up.
+  // My riders: the school list (ERP) for this bus, names only (game-erp.gs: erpdriverbus for the phone, erpread what=bus for a staff
+  // view). Fetched once per page load and never kept on the phone. S.riders: null = not connected yet (the step says Soon), [] = none.
+  const DEMO_RIDERS = [{ name: 'Aarav (demo)', class: '3', section: 'A', pickupPoint: 'Bus stand', way: 'both' }, { name: 'Diya (demo)', class: '5', section: 'B', pickupPoint: 'Temple gate', way: 'pick' }];
+  function loadRiders() {
+    if (S.ridersAsked) return;
+    S.ridersAsked = true;
+    if (DEMO) { S.riders = DEMO_RIDERS; return drawChain(); }
+    const req = VIEW ? fetch(GAME_URL + '?action=erpread&what=bus&bus=' + encodeURIComponent(S.bus.reg.replace(/\s/g, '')) + '&campus=' + encodeURIComponent(String(S.bus.campus || '').replace(/\s/g, '')) + '&idToken=' + encodeURIComponent(view.idToken), { cache: 'no-store' })
+      : fetch(GAME_URL, { method: 'POST', body: JSON.stringify({ action: 'erpdriverbus', deviceToken: live.token }) });
+    req.then((r) => r.json()).then((r) => {
+      if (!r.success || r.configured === false) return; // not connected, not allowed or not live yet: the step stays "Soon"
+      const list = VIEW ? [].concat(...(r.rows || []).map((x) => x.students || [])) : r.students || [];
+      S.riders = list.slice().sort((a, b) => String(a.pickupPoint || '').localeCompare(String(b.pickupPoint || '')) || String(a.name).localeCompare(String(b.name)));
+      drawChain();
+    }).catch(() => { /* no signal: Soon */ });
+  }
+  const WAY = { pick: 'सुबह · morning', drop: 'छुट्टी · after school', both: '' };
   function drawChain() {
     const b = S.bus, el = $('chain');
+    loadRiders();
     if (!b) { el.hidden = true; return; }
     const st = BusChain.steps({ linked: true, photos: !!(H.bus && H.bus.busPhotos), runsNeeded: b.runsNeeded, runsDone: b.runsDone, riders: S.riders || null });
     const pr = BusChain.progress(st), can = !VIEW || ACT(); // a read-only staff view sees the steps, no buttons
@@ -217,8 +236,9 @@
     el.hidden = false;
     el.innerHTML = `<h2><span>🚌 बस सेटअप · Bus setup</span><small>${pr.done} / ${pr.total}</small></h2><ol>` + st.map((x, i) => {
       const cls = x.done ? 'is-done' : x.next ? 'is-open' : '';
-      const act = !x.done && x.action && go[x.id] ? `<a class="gb-btn" href="${go[x.id]}">${esc(x.action)}</a>` : ''; // never red: the one red button is the Next slot's
-      const riders = x.id === 'riders' && S.riders && S.riders.length ? '<ul class="dr-riders">' + S.riders.map((r) => `<li>${esc(r.name)}${r.stop ? ' · ' + esc(r.stop) : ''}</li>`).join('') + '</ul>' : '';
+      const act = x.action && go[x.id] && !x.done ? `<a class="gb-btn" href="${go[x.id]}">${esc(x.action)}</a>` : ''; // never red: the one red button is the Next slot's
+      const riders = x.id === 'riders' && S.riders && S.riders.length ? '<details class="dr-all"><summary>' + esc(x.action) + '</summary><ul class="dr-riders">' + S.riders.map((r) =>
+        `<li><b>${esc(r.name)}</b> · ${esc(r.class)}${r.section ? '-' + esc(r.section) : ''}${r.pickupPoint ? ' · ' + esc(r.pickupPoint) : ''}${WAY[r.way] ? ' · ' + WAY[r.way] : ''}</li>`).join('') + '</ul></details>' : '';
       return `<li class="${cls}"><span class="dr-mk" aria-hidden="true">${x.done ? '✓' : i + 1}</span><div class="dr-st">${big(x.hi, x.en)}` +
         `<span class="dr-en">${esc(x.status)}</span>${act}${riders}</div><span class="gb-sr">${x.done ? 'done' : x.next ? 'next' : 'to do'}</span></li>`;
     }).join('') + '</ol>';
