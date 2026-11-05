@@ -204,7 +204,7 @@ assert.strictEqual(K.SOON.map((c) => c.t).join('|'), 'Staff present|Daily report
 K.SOON.forEach((c) => assert.ok(EM.get(c.e), 'emoji key ' + c.e));
 const ksrc = read('assets/game/kingdom.js'), soonFn = ksrc.slice(ksrc.indexOf('function soonPanel'), ksrc.indexOf('function openBase'));
 assert.ok(soonFn.includes('जल्द · Coming soon') && soonFn.includes('School view · Coming soon') && !/button|onclick|href|\d/.test(soonFn.replace(/aria-\w+/g, '')), 'tags present; no buttons, links or numbers');
-assert.ok(ksrc.includes('if (!base.darbar) body.unshift(soonPanel())'), 'schools only, not HQ');
+assert.ok(ksrc.includes('if (!base.darbar) body.unshift(window.LMCSScout ? LMCSScout.panel(base.id, ') && ksrc.includes(' : soonPanel()); // a school, not HQ'), 'schools only, not HQ: the Scout report, else the coming-soon strip');
 // 🗳️ Reviews to vet: the tray has an Owner-only entry point beside All quests, with the pending count (GM fix on e87cea1)
 {
   const topFn = src.slice(src.indexOf('function top(d)'), src.indexOf('function panel('));

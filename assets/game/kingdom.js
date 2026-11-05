@@ -312,7 +312,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     var body = [h('div', { class: 'kg-bgrid' }, active.map(function (b) { return buildingCard(b, base); }))];
     if (soon.length) body.push(h('p', { class: 'kg-quiet kg-soonline' }, ['Coming soon: ' + soon.map(function (b) { return b.name; }).join(', ') + '.']));
     if (!all.length) body = [h('p', { class: 'kg-quiet' }, ['Nothing to build here yet.'])];
-    if (!base.darbar) body.unshift(soonPanel()); // a school, not HQ
+    if (!base.darbar) body.unshift(window.LMCSScout ? LMCSScout.panel(base.id, { session: S.session, backendUrl: S.url, root: S.root, name: base.full || base.name }) : soonPanel()); // a school, not HQ: 📜 Scout report (scout-report.js), else the coming-soon strip
     if (api.hooks.base) body.push(api.hooks.base(base));
     var dlg = openLayer(base.full || base.name, 'Level ' + (Number(base.level) || 0) + ' · ' + progressText(progressOf([base])), body, opener);
     var t = dlg.querySelector('.kg-tnext .kg-primary') || dlg.querySelector('.kg-tnext .kg-btn, .kg-tnext a') || dlg.querySelector('h2'); if (t) t.focus();
