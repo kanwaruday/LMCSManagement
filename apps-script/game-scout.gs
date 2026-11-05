@@ -147,29 +147,30 @@ function scoutCompute_(inp) {
   if (inp.ss && inp.ss.expected > 0) bars.push({ id: 'ss', label: 'SS pace', pct: Math.min(100, Math.round(inp.ss.done / inp.ss.expected * 100)), note: inp.ss.done + ' done, ' + Math.round(inp.ss.expected) + ' due by today' });
   else bars.push({ id: 'ss', label: 'SS pace', pct: null, note: inp.ss ? 'nothing due yet' : "couldn't check" });
 
-  // insights, by rules, biggest first, at most 5
+  // insights, by rules, biggest first, at most 5. icon = an LMCSEmoji key (assets/game/emoji.js); streakLost, registers, trendUp/Down, repeat
+  // and topic are new concepts not in emoji.js yet: they show text only until the Game Director picks their emoji
   const ins = [], add = function (size, icon, text) { ins.push({ size: size, icon: icon, text: text }); };
-  if (lost) add(95, '🧊', 'Streak lost after ' + prevRun + ' days. Start again today.');
-  else if (streak >= 3) add(50 + streak, '🔥', streak + (capped ? '+' : '') + ' school days on time in a row.');
-  if (tally.missing) add(85, '⬜', tally.missing + (tally.missing === 1 ? ' report' : ' reports') + ' missing this week.');
-  if (tally.late >= 2) add(65, '⏰', 'Filed after ' + scoutHm_(cfg.dueBy) + ' on ' + tally.late + ' days.');
-  Object.keys(skipped).forEach(function (x) { if (skipped[x] >= 2) add(70, '📒', 'Register "' + x + '" not checked on ' + skipped[x] + ' days.'); });
-  openLong.slice(0, 2).forEach(function (o) { add(60 + Math.min(30, o.days), '⚠️', '"' + o.subject + '" still open after ' + o.days + ' days.'); });
+  if (lost) add(95, 'streakLost', 'Streak lost after ' + prevRun + ' days. Start again today.');
+  else if (streak >= 3) add(50 + streak, 'onTrack', streak + (capped ? '+' : '') + ' school days on time in a row.');
+  if (tally.missing) add(85, 'overdue', tally.missing + (tally.missing === 1 ? ' report' : ' reports') + ' missing this week.');
+  if (tally.late >= 2) add(65, 'due', 'Filed after ' + scoutHm_(cfg.dueBy) + ' on ' + tally.late + ' days.');
+  Object.keys(skipped).forEach(function (x) { if (skipped[x] >= 2) add(70, 'registers', 'Register "' + x + '" not checked on ' + skipped[x] + ' days.'); });
+  openLong.slice(0, 2).forEach(function (o) { add(60 + Math.min(30, o.days), 'issues', '"' + o.subject + '" still open after ' + o.days + ' days.'); });
   const scores = counted.map(function (s) { return mine[s.date] ? parseFloat(mine[s.date].maScore) : NaN; }).filter(function (v) { return !isNaN(v); });
   if (scores.length >= 4) {
     const avg = function (a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; };
     const a = Math.round(avg(scores.slice(0, 3)) * 10) / 10, b = Math.round(avg(scores.slice(-3)) * 10) / 10;
-    if (Math.abs(b - a) >= 1) add(40 + Math.abs(b - a) * 10, b > a ? '📈' : '📉', 'Morning assembly score ' + (b > a ? 'up' : 'down') + ': ' + a + ' → ' + b + '.');
+    if (Math.abs(b - a) >= 1) add(40 + Math.abs(b - a) * 10, b > a ? 'trendUp' : 'trendDown', 'Morning assembly score ' + (b > a ? 'up' : 'down') + ': ' + a + ' → ' + b + '.');
   }
   const inStrip = {};
   strip.forEach(function (s) { inStrip[s.date] = true; });
   const rep = (inp.repeats || []).filter(function (r) { return r.campus === campus && inStrip[r.date] && ((scoutPct_(r.tasks) || 0) >= cfg.repeatPct || (scoutPct_(r.message) || 0) >= cfg.repeatPct); }).length;
-  if (rep >= 3) add(55, '🔁', 'Mostly the same report repeated on ' + rep + ' days.');
+  if (rep >= 3) add(55, 'repeat', 'Mostly the same report repeated on ' + rep + ' days.');
   const topics = {};
   strip.forEach(function (s) { const t = (inp.tags || {})[s.date + '|' + campus]; ((t && t.topics) || []).forEach(function (w) { topics[w] = (topics[w] || 0) + 1; }); });
   Object.keys(topics).filter(function (w) { return topics[w] >= 3; }).sort(function (a, b) { return topics[b] - topics[a]; }).slice(0, 1)
-    .forEach(function (w) { add(35, '🏷️', '"' + w + '" came up on ' + topics[w] + ' days.'); });
-  if (counted.length && tally.ontime === counted.length) add(30, '✅', 'Every report this week came in on time.');
+    .forEach(function (w) { add(35, 'topic', '"' + w + '" came up on ' + topics[w] + ' days.'); });
+  if (counted.length && tally.ontime === counted.length) add(30, 'done', 'Every report this week came in on time.');
   ins.sort(function (a, b) { return b.size - a.size; });
 
   const texts = {};
@@ -205,12 +206,10 @@ function scoutSsPace_(ss, campus, today) {
 function scoutGet_(caller, p) {
   const roles = caller.roles || [], wide = roles.indexOf('Owner') !== -1 || roles.indexOf('Coordinator') !== -1;
   let campus = gameCampusKey_(p && p.campus);
-  if (!wide) {
-    if (roles.indexOf('Principal') === -1) return { success: false, error: 'Not authorized' };
-    if (caller.campusId !== 'ALL') {
-      if (campus && campus !== caller.campusId) return { success: false, error: 'Not authorized' };
-      campus = caller.campusId;
-    }
+  if (!wide) { // fails closed: a Principal reads exactly one school of their own (campus ALL, empty or a list gets nothing, as erpread does)
+    if (roles.indexOf('Principal') === -1 || SCOUT_CAMPUSES.indexOf(caller.campusId) === -1) return { success: false, error: 'Not authorized' };
+    if (campus && campus !== caller.campusId) return { success: false, error: 'Not authorized' };
+    campus = caller.campusId;
   }
   if (SCOUT_CAMPUSES.indexOf(campus) === -1) return { success: false, error: 'Pick a school (LMS1 to LMS6)' };
 

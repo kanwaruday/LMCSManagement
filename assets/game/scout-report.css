@@ -8,6 +8,8 @@
 }
 .sc *, .sc *:before, .sc *:after { box-sizing:border-box; }
 .sc [hidden] { display:none !important; }
+.sc .gb-emoji { margin-right:.3em; font-style:normal; }
+.sc-di .gb-emoji { margin:0; }
 .sc :focus-visible { outline:3px solid var(--sc-focus); outline-offset:2px; }
 .sc h3, .sc h4 { margin:0; font-weight:700; }
 .sc-title { font-family:Georgia,"Times New Roman",serif; font-weight:400 !important; font-size:20px; margin:0 0 8px !important; }

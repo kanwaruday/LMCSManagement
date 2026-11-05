@@ -1,9 +1,11 @@
-// 📜 Scout report (V2 row #9): a school's Principal daily reports as a game window. Backend: apps-script/game-scout.gs (GET gamescout).
+// Scout report (V2 row #9): a school's Principal daily reports as a game window. Backend: apps-script/game-scout.gs (GET gamescout).
 //   LMCSScout.panel(campus, { session, backendUrl, root, name }) -> a <section> that fills itself (the Kingdom's campus window)
 //   LMCSScout.mount(el, { session, backendUrl, root, campus?, name? }) -> the same, into el (principal/scout.html)
 // Every string from the server goes in as text (never HTML). Animation: v2-animations.css classes (a-*); they no-op until that file is loaded.
+// Emoji: only through LMCSEmoji keys (assets/game/emoji.js), aria-hidden, always beside a text label. Keys not in emoji.js yet are NEW concepts
+// for the Game Director to pick (scoutWeek, compliance, rank, streakLost, registers, trendUp, trendDown, repeat, topic): they show text only.
 var LMCSScout = window.LMCSScout = (function () {
-  var ICON = { ontime: '✅', late: '⏰', missing: '⬜', waiting: '⏳', overdue: '⌛' };
+  var KEY = { ontime: 'done', late: 'due', missing: 'overdue', waiting: 'waiting', overdue: 'overdue' }; // strip state -> LMCSEmoji key
   var WORD = { ontime: 'on time', late: 'late', missing: 'missing', waiting: 'due today', overdue: 'not in yet' };
   function hm12(hm) {
     var p = String(hm || '').split(':'), h = +p[0];
@@ -15,17 +17,17 @@ var LMCSScout = window.LMCSScout = (function () {
   // the first line: how today stands
   function todayLine(d) {
     var t = last(d);
-    if (!t || t.date !== d.today) return 'No school today. Rest well.';
-    if (t.state === 'ontime') return 'Today: ✅ in at ' + hm12(t.at);
-    if (t.state === 'late') return 'Today: ⏰ in at ' + hm12(t.at) + ', after ' + hm12(d.dueBy);
-    if (t.state === 'waiting') return "Today: ⏳ due by " + hm12(d.dueBy);
-    return "Today: ⌛ not in yet (due " + hm12(d.dueBy) + ')';
+    if (!t || t.date !== d.today) return { key: 'day', text: 'No school today. Rest well.' };
+    if (t.state === 'ontime') return { key: 'done', text: 'Today: in at ' + hm12(t.at) };
+    if (t.state === 'late') return { key: 'due', text: 'Today: in at ' + hm12(t.at) + ', after ' + hm12(d.dueBy) };
+    if (t.state === 'waiting') return { key: 'waiting', text: 'Today: due by ' + hm12(d.dueBy) };
+    return { key: 'overdue', text: 'Today: not in yet (due ' + hm12(d.dueBy) + ')' };
   }
   function streakLine(d) {
     var s = d.streak || {};
-    if (s.lost) return '🧊 Streak lost after ' + s.lostAfter + ' days. Start again today.';
-    if (!s.days) return '🔥 No streak yet. One on-time report starts it.';
-    return '🔥 Streak ' + s.days + (s.capped ? '+' : '') + (s.days === 1 ? ' day' : ' days');
+    if (s.lost) return { key: 'streakLost', text: 'Streak lost after ' + s.lostAfter + ' days. Start again today.' };
+    if (!s.days) return { key: 'onTrack', text: 'No streak yet. One on-time report starts it.' };
+    return { key: 'onTrack', text: 'Streak ' + s.days + (s.capped ? '+' : '') + (s.days === 1 ? ' day' : ' days') };
   }
   // Buddy's short scout line, in his voice
   function buddyLine(d) {
@@ -44,8 +46,8 @@ var LMCSScout = window.LMCSScout = (function () {
     if ((d.tally || {}).missing) bits.push(d.tally.missing + ' missing this week');
     if ((d.tally || {}).late) bits.push(d.tally.late + ' filed late');
     (d.openIssues || []).slice(0, 1).forEach(function (o) { bits.push('"' + o.subject + '" open ' + o.days + ' days'); });
-    if (!bits.length) return 'Shabash ' + who + '! Daily reports all on time' + (s.days ? ', ' + s.days + '-day streak 🔥' : '') + '. Keep it going.';
-    return who + ': ' + bits.join('; ') + '. Please take a look 🙏';
+    if (!bits.length) return 'Shabash ' + who + '! Daily reports all on time' + (s.days ? ', ' + s.days + '-day streak' : '') + '. Keep it going.';
+    return who + ': ' + bits.join('; ') + '. Please take a look.';
   }
   // Buddy's face for the line above (winter uniform art, assets/game/buddy/)
   function buddyMood(d) {
@@ -54,8 +56,8 @@ var LMCSScout = window.LMCSScout = (function () {
     if (s.lost || t.missing) return 'nudge';
     return t.ontime === d.judged ? 'celebrate' : 'neutral';
   }
-  function dayLabel(s) { return s.label + ', ' + WORD[s.state] + (s.at ? ' at ' + hm12(s.at) : ''); }
-  var api = { hm12: hm12, todayLine: todayLine, streakLine: streakLine, buddyLine: buddyLine, buddyMood: buddyMood, nudgeText: nudgeText, dayLabel: dayLabel, ICON: ICON };
+  function dayLabel(s) { return s.label + ', ' + WORD[s.state] + (s.at ? ', last saved ' + hm12(s.at) : ''); } // the sheet keeps the last save time, not the first
+  var api = { hm12: hm12, todayLine: todayLine, streakLine: streakLine, buddyLine: buddyLine, buddyMood: buddyMood, nudgeText: nudgeText, dayLabel: dayLabel, KEY: KEY };
   if (typeof document === 'undefined') return api; // tests: helpers only
 
   var BASE = (document.currentScript && document.currentScript.src || '').replace(/[^/?#]*([?#].*)?$/, '');
@@ -70,6 +72,8 @@ var LMCSScout = window.LMCSScout = (function () {
     (kids || []).forEach(function (c) { if (c !== null && c !== undefined) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
     return el;
   }
+  function em(key) { return window.LMCSEmoji ? LMCSEmoji.tag(key) : null; } // null for a key emoji.js doesn't have yet: text only
+  function line(o, cls) { return h('p', { class: cls }, [em(o.key), o.text]); }
   function rise(el, i) { el.classList.add('a-report-card-rise'); el.style.animationDelay = (i * 60) + 'ms'; return el; }
   function safeGo(go, root) { return /^[\w\/.-]+(\.html)?([#?][\w=&.-]*)?$/.test(String(go || '')) && go.indexOf('..') === -1 ? (root || '') + go : ''; }
 
@@ -98,6 +102,7 @@ var LMCSScout = window.LMCSScout = (function () {
       picked = s.date;
       reader.appendChild(h('h4', {}, [dayLabel(s)]));
       if (!r) { reader.appendChild(h('p', { class: 'sc-quiet' }, [s.state === 'missing' ? 'No report was filed this day.' : 'Not filed yet.'])); return; }
+      reader.appendChild(h('p', { class: 'sc-quiet' }, ['Time shown is when the report was last saved.']));
       [['Morning assembly', (r.maClass ? r.maClass : '') + (r.maScore ? ' · score ' + r.maScore : '')], ['Done today', r.done], ['Plan for tomorrow', r.tomorrow],
         ['Registers checked', r.registers], ['Important message', r.message]].forEach(function (f) {
         if (String(f[1] || '').trim()) reader.appendChild(h('div', { class: 'sc-field' }, [h('b', {}, [f[0]]), h('p', {}, [String(f[1])])]));
@@ -107,22 +112,22 @@ var LMCSScout = window.LMCSScout = (function () {
     var strip = d.strip || [];
     var dayBtns = strip.map(function (s) {
       var b = h('button', { type: 'button', class: 'sc-day sc-' + s.state + ' a-button-press', 'aria-pressed': 'false', 'aria-label': dayLabel(s) }, [
-        h('span', { class: 'sc-di', 'aria-hidden': 'true' }, [ICON[s.state]]), h('span', { class: 'sc-dl', 'aria-hidden': 'true' }, [s.label])]);
+        h('span', { class: 'sc-di', 'aria-hidden': 'true' }, [em(KEY[s.state])]), h('span', { class: 'sc-dl', 'aria-hidden': 'true' }, [s.label])]);
       b.addEventListener('click', function () { if (picked === s.date) { reader.hidden = true; picked = null; b.setAttribute('aria-pressed', 'false'); } else showDay(s, b); });
       return b;
     });
     var blocks = [];
     blocks.push(h('p', { class: 'sc-buddy a-buddy-speak-bubble' }, [h('img', { class: 'sc-bi', src: BASE + 'buddy/winter-formal-' + buddyMood(d) + '.webp', alt: '', width: '44', height: '44', decoding: 'async' }, []), buddyLine(d)]));
-    blocks.push(h('div', { class: 'sc-top' }, [h('p', { class: 'sc-today' }, [todayLine(d)]),
-      h('p', { class: 'sc-streak a-reward-count-pop' + (d.streak && d.streak.lost ? ' sc-lost' : '') }, [streakLine(d)])]));
+    blocks.push(h('div', { class: 'sc-top' }, [line(todayLine(d), 'sc-today'),
+      line(streakLine(d), 'sc-streak a-reward-count-pop' + (d.streak && d.streak.lost ? ' sc-lost' : ''))]));
     blocks.push(h('div', { class: 'sc-stripw' }, [
       h('div', { class: 'sc-strip', role: 'group', 'aria-label': 'Last ' + strip.length + ' school days. Tap a day to read its report.' }, dayBtns),
-      h('p', { class: 'sc-legend', 'aria-hidden': 'true' }, ['✅ on time · ⏰ after ' + hm12(d.dueBy) + ' · ⬜ missing · tap a day to read it']), reader]));
+      h('p', { class: 'sc-legend', 'aria-hidden': 'true' }, [em('done'), 'on time · ', em('due'), 'after ' + hm12(d.dueBy) + ' · ', em('overdue'), 'missing · ', em('waiting'), 'due today · tap a day to read it']), reader]));
     var ins = d.insights || [];
-    blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'This week' }, [h('h3', {}, ['⚔️ This week']),
-      ins.length ? h('ul', { class: 'sc-ins' }, ins.map(function (x) { return h('li', {}, [h('span', { 'aria-hidden': 'true' }, [x.icon]), ' ' + x.text]); }))
+    blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'This week' }, [h('h3', {}, [em('scoutWeek'), 'This week']),
+      ins.length ? h('ul', { class: 'sc-ins' }, ins.map(function (x) { return h('li', {}, [em(x.icon), x.text]); }))
         : h('p', { class: 'sc-quiet' }, ['Quiet week. Nothing stands out.'])]));
-    blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'Compliance' }, [h('h3', {}, ['🛡️ Compliance']),
+    blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'Compliance' }, [h('h3', {}, [em('compliance'), 'Compliance']),
       h('ul', { class: 'sc-bars' }, (d.bars || []).map(function (b) {
         var set = b.pct !== null && b.pct !== undefined;
         return h('li', { class: 'sc-bar' + (set ? '' : ' sc-unset') }, [
@@ -133,9 +138,9 @@ var LMCSScout = window.LMCSScout = (function () {
       })),
       h('p', { class: 'sc-quiet' }, ['CW/HW by ' + hm12(d.cwhwDueBy) + ': counted once CW/HW comes back from the ERP.'])]));
     if (d.rank && d.board) {
-      blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'Rank' }, [h('h3', {}, ['🏆 Rank ' + d.rank.pos + ' of ' + d.rank.of]),
+      blocks.push(h('section', { class: 'sc-sec', 'aria-label': 'Rank' }, [h('h3', {}, [em('rank'), 'Rank ' + d.rank.pos + ' of ' + d.rank.of]),
         h('details', { class: 'sc-board' }, [h('summary', {}, ['All schools this week']), h('ol', {}, d.board.map(function (b) {
-          return h('li', { class: b.campus === d.campus ? 'sc-me' : null }, [h('span', {}, [schoolName(b.campus)]), h('span', {}, [b.score + ' pts' + (b.streak ? ' · 🔥' + b.streak : '')])]);
+          return h('li', { class: b.campus === d.campus ? 'sc-me' : null }, [h('span', {}, [schoolName(b.campus)]), h('span', {}, [b.score + ' pts' + (b.streak ? ' · streak ' + b.streak : '')])]);
         }))]),
         h('p', { class: 'sc-quiet' }, ['Points = share on time × compliance. Only you and the Coordinators see the rank.'])]));
     }
@@ -160,7 +165,7 @@ var LMCSScout = window.LMCSScout = (function () {
   function fill(el, opts) {
     el.setAttribute('aria-busy', 'true');
     el.textContent = '';
-    el.appendChild(h('p', { class: 'sc-quiet' }, ['📜 Scout is reading the reports…']));
+    el.appendChild(h('p', { class: 'sc-quiet' }, ['Scout is reading the reports…']));
     if (!opts.backendUrl) { el.textContent = ''; el.appendChild(h('p', { class: 'sc-quiet' }, ['Scout report is not connected here yet.'])); return Promise.resolve(); }
     return load(opts).then(function (d) {
       if (!d || !d.success) throw new Error(d && d.error === 'Not authorized' ? 'Your sign-in has expired or does not cover this school. Sign in again at the top.' : (d && d.error) || 'Something went wrong.');
@@ -173,7 +178,7 @@ var LMCSScout = window.LMCSScout = (function () {
     });
   }
   function shell(opts) {
-    var title = h('h3', { class: 'sc-title' }, ['📜 Scout report']);
+    var title = h('h3', { class: 'sc-title' }, [em('dailyReport'), 'Scout report']);
     var body = h('div', { class: 'sc-body' }, []);
     var sec = h('section', { class: 'sc', 'aria-label': 'Scout report' + (opts.campus ? ' for ' + schoolName(opts.campus) : '') }, [title, body]);
     fill(body, opts);
