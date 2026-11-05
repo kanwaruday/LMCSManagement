@@ -15,6 +15,7 @@ window.LMCSGuide = {
         { target: '#school-3d', text: "This is your school building. Each room holds its pages, and the setup room shows how far your buildings are built." },
       ],
     },
+    'principal/rooms.html': { purpose: "Name your school's rooms, then choose who is in charge of each one.", roles: ['Principal'] },
     'principal/issues.html': { purpose: "Open and recently closed issues from daily reports, so each one gets closed.", roles: ['Principal'] },
     'principal/support-sessions.html': { purpose: "Evaluate a Teacher, IT Teacher, PTI, Fee Clerk, Non-Teaching or Driver cum Peon staff member with their rubric.", roles: ['Principal'] },
     'principals-daily-reporting/index.html': { purpose: "Write your campus's daily report: support sessions, activities and staff requests.", roles: ['Principal'] },

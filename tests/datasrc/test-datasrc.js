@@ -26,6 +26,7 @@ const OFFICE_REASON = 'Office portal: data sits behind the Office backend; sheet
 const NO_SOURCES = {
   'index.html': 'role chooser, public, no data',
   'owner/index.html': 'HQ Home: tiles from the game backend (gamekingdom counts) and the appointment box (PDR data, whose sources are linked on hiring/); Owner Part A adds a strip',
+  'principal/rooms.html': 'room setup: the Game Rooms tab through the game backend (roomsget / roomssave), no sheet links',
   'owner/people.html': 'the People room: the Coordinator rows of the allowlist through the game backend (peoplelist / peoplecoordinator), no sheet links',
   'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',

@@ -13,20 +13,20 @@
 <link rel="stylesheet" href="../assets/game/room-setup.css">
 <style>
   body { min-height: 100vh; }
-  #lmcs-gate { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
-  #lmcs-gate .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
-  #lmcs-gate .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
-  #lmcs-gate #lmcs-g-signin { display: flex; justify-content: center; }
-  #lmcs-gate .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
+  #auth-root { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
+  #auth-root .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
+  #auth-root .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
+  #auth-root #lmcs-g-signin { display: flex; justify-content: center; }
+  #auth-root .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
 </style>
 </head>
 <body class="gb">
-<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<div id="auth-root"><div id="gate-slot"></div></div>
 <script src="../assets/auth.js?v=1c991646"></script>
 <script src="../assets/game/room-setup.js"></script>
 
 <header class="gb-head"><div><div><h1>🏫 Your school's rooms</h1><p id="rs-sub">Name every room, then put your staff in them</p></div><a id="rs-back" href="index.html"><span aria-hidden="true">&lsaquo;</span> Back</a></div></header>
-<main class="gb-page" id="rs-root"></main>
+<main class="gb-page" id="rs-root" style="display:none"></main>
 
 <script>
 (function () {
@@ -37,8 +37,10 @@
   // came from the Owner's Kingdom: the way back is the Kingdom (same site only)
   try { var r = new URL(document.referrer); if (r.origin === location.origin && /\/owner\/kingdom\.html$/.test(r.pathname)) back.href = '../owner/kingdom.html'; } catch (e) { /* no referrer */ }
 
-  function start(session) {
-    document.getElementById('lmcs-gate').style.display = 'none';
+  function showApp(session) {
+    if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; } // Fee Clerks and below
+    document.getElementById('auth-root').style.display = 'none';
+    root.style.display = '';
     var wide = /Owner|Coordinator/.test(String(session.role || ''));
     if (wide && !campus) return pickSchool();
     LMCSRooms.mount(root, { session: session, backendUrl: GAME_BACKEND_URL, campus: campus, back: back.href,
@@ -55,7 +57,10 @@
     });
     root.appendChild(h); root.appendChild(grid);
   }
-  (LMCS.getSession() ? Promise.resolve(LMCS.getSession()) : LMCS.requireSession('#lmcs-gate-slot')).then(function (s) { start(s || LMCS.getSession()); });
+  // Same gate as the other principal pages: a cached session shows the page at once, else the sign-in gate.
+  var cached = LMCS.getSession();
+  if (cached) showApp(cached);
+  else LMCS.requireSession('#gate-slot').then(showApp);
 })();
 </script>
 </body>

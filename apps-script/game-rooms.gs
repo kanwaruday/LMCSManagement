@@ -22,10 +22,11 @@ var ROOMS_HEADER = ['Campus', 'RoomId', 'Name', 'Type', 'StaffEmail', 'At', 'By'
 var ROOMS_SCHOOLS = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 var ROOMS_MAX = 150, ROOMS_NAME_MAX = 60;
 var ROOMS_GO = 'principal/rooms.html';
+// classroom, lab, library, office, staff room: the emoji.js room keys, so the picker matches the school building
 var ROOMS_TYPES_DEFAULT = [
-  { id: 'classroom', label: 'Classroom', emoji: '🏫' }, { id: 'lab', label: 'Lab', emoji: '🔬' }, { id: 'office', label: 'Office', emoji: '🗂️' },
-  { id: 'library', label: 'Library', emoji: '📚' }, { id: 'staffroom', label: 'Staff room', emoji: '☕' }, { id: 'activity', label: 'Activity room', emoji: '🎨' },
-  { id: 'pt', label: 'PT room or ground', emoji: '⚽' }, { id: 'records', label: 'Records room', emoji: '🗄️' }, { id: 'accounts', label: 'Accounts room', emoji: '🧾' },
+  { id: 'classroom', label: 'Classroom', emoji: '✏️' }, { id: 'lab', label: 'Lab', emoji: '🔬' }, { id: 'office', label: 'Office', emoji: '🗄️' },
+  { id: 'library', label: 'Library', emoji: '📕' }, { id: 'staffroom', label: 'Staff room', emoji: '☕' }, { id: 'activity', label: 'Activity room', emoji: '🎨' },
+  { id: 'pt', label: 'PT room or ground', emoji: '⚽' }, { id: 'records', label: 'Records room', emoji: '🗃️' }, { id: 'accounts', label: 'Accounts room', emoji: '🧾' },
   { id: 'other', label: 'Other', emoji: '🚪' }];
 // the usual rooms of a school, offered as one-tap suggestions while unused (names, not people)
 var ROOMS_USUAL = [['Office', 'office'], ['Staff room', 'staffroom'], ['Library', 'library'], ['Computer lab', 'lab'], ['Science lab', 'lab'],

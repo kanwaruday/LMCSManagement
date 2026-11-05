@@ -134,7 +134,7 @@ var LMCSRooms = (function () {
       };
       box.appendChild(el('form', { class: 'gb-field rs-add', on: { submit: add } }, [
         el('label', { for: 'rs-new', text: 'New room' }),
-        el('div', { class: 'rs-add-row' }, [input, el('button', { type: 'submit', class: 'gb-btn gb-btn-primary a-button-press', text: 'Add' })]),
+        el('div', { class: 'rs-add-row' }, [input, el('button', { type: 'submit', class: 'gb-btn a-button-press' + (S.justDone ? '' : ' gb-btn-primary'), text: 'Add' })]),
         el('p', { class: 'gb-hint', id: 'rs-new-hint', text: 'Several at once? Separate them with commas: Class 1A, Class 1B, Class 2A' }), err]));
 
       if (d.suggest && d.suggest.length) {
@@ -176,7 +176,7 @@ var LMCSRooms = (function () {
       list.appendChild(el('li', { class: 'gb-card rs-room' + (fresh ? ' a-room-unlock' : '') }, kids));
     });
     box.appendChild(list);
-    box.appendChild(el('button', { type: 'button', class: 'gb-btn gb-btn-primary rs-next', text: 'Next: put staff in rooms →', on: { click: function () { S.step = 2; S.fresh = null; draw(S); window.scrollTo(0, 0); } } }));
+    box.appendChild(el('button', { type: 'button', class: 'gb-btn rs-next', text: 'Next: put staff in rooms →', on: { click: function () { S.step = 2; S.fresh = null; draw(S); window.scrollTo(0, 0); } } }));
     return box;
   }
 
