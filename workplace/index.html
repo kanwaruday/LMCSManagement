@@ -43,9 +43,10 @@
 <body class="gb">
 <div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
 <script src="../assets/auth.js?v=1c991646"></script>
+<script src="../assets/game/emoji.js?v=88532066"></script>
 <script src="../assets/game/workplace-chain.js"></script>
 
-<header class="gb-head"><div><div><h1 id="wp-title">📷 Your workplace</h1><p id="wp-sub">Photograph your room: the whole room, your desk, the cupboard</p></div><a id="wp-back" href="../"><span aria-hidden="true">&lsaquo;</span> Back</a></div></header>
+<header class="gb-head"><div><div><h1 id="wp-title" data-emoji="photo">Your workplace</h1><p id="wp-sub">Photograph your room: the whole room, your desk, the cupboard</p></div><a id="wp-back" href="../"><span aria-hidden="true">&lsaquo;</span> Back</a></div></header>
 <main class="gb-page" id="wp-root"></main>
 
 <script>
@@ -55,7 +56,7 @@
   var campus = (q.get('campus') || '').toUpperCase(); if (!/^LMS[1-6]$/.test(campus)) campus = '';
   // back to where the quest was opened from (same site only), else the portal chooser
   try { var r = new URL(document.referrer); if (r.origin === location.origin && r.pathname !== location.pathname) document.getElementById('wp-back').href = r.pathname + r.search; } catch (e) { /* no referrer */ }
-  if (review) { document.getElementById('wp-title').textContent = '📷 Check workplace photos'; document.getElementById('wp-sub').textContent = 'Approve each room, or ask for a redo with a reason'; }
+  if (review) { document.getElementById('wp-title').textContent = 'Check workplace photos'; LMCSEmoji.decorate(document.querySelector('.gb-head')); document.getElementById('wp-sub').textContent = 'Approve each room, or ask for a redo with a reason'; }
   function start(session) {
     document.getElementById('lmcs-gate').style.display = 'none';
     LMCSWorkplace.mount(document.getElementById('wp-root'), { session: session, backendUrl: GAME_BACKEND_URL, review: review, campus: campus, room: q.get('room') || '' });

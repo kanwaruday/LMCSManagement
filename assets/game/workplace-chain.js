@@ -1,4 +1,4 @@
-/* 📷 The workplace setup chain (workplace/index.html), V2 row #5. Backend: apps-script/game-workplace.gs.
+/* The workplace setup chain (workplace/index.html), V2 row #5. Backend: apps-script/game-workplace.gs.
    Person mode: each of your rooms (the Principal put you in it, principal/rooms.html), three photos, an empty-room tick, then send.
    Review mode (?review=1): the Principal (own school) or the Owner (?campus, or every Principal's room) looks at each set and approves it
    or asks for a redo with a reason. Photos are resized on the phone (1280 px, JPEG 0.7) before they leave it. Text nodes only.
@@ -72,7 +72,7 @@ var LMCSWorkplace = (function () {
         return el('li', { class: 'wp-shot' + (s.taken ? ' is-done' : '') }, [
           el('div', { class: 'wp-shot-h' }, [el('span', { class: 'wp-n', 'aria-hidden': 'true', text: s.taken ? '✓' : String(i + 1) }), el('b', { text: s.label })]),
           s.taken ? thumb(r, s) : null,
-          locked ? null : el('label', { class: 'gb-btn wp-take' }, [s.taken ? '📷 Take again' : '📷 Take photo', input])]);
+          locked ? null : el('label', { class: 'gb-btn wp-take' }, [window.LMCSEmoji && LMCSEmoji.tag('photo'), s.taken ? ' Take again' : ' Take photo', input])]);
       }));
       var tick = el('input', { type: 'checkbox', id: 'tk-' + r.roomId, checked: !!S.tick[r.roomId], disabled: locked, on: { change: function () { S.tick[r.roomId] = tick.checked; draw(); } } });
       var red = !locked && !S.red; if (red) S.red = true; // one red button per screen: the first room still to send
