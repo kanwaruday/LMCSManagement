@@ -92,7 +92,7 @@ var LMCSClassroom = (function () {
     });
 
     el.appendChild(meetCard());
-    if (d.photosOn) el.appendChild(itemsCard());
+    if (d.photosOn && S.data.confirmed[classKey(S.tie)]) el.appendChild(itemsCard()); // items open once this class's list is confirmed (the quest's lock); one primary button at a time
   }
 
   // the room-tap-pop ring plays once, on the render right after that step's save (not on every re-render)
