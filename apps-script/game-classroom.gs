@@ -31,18 +31,9 @@ var CLASSROOM_MAX_PHOTO = 2 * 1024 * 1024;
 var CLASSROOM_GO = 'teacher/index.html#classroom';
 var CLASSROOM_GATE = { id: 'hook:classroom', title: 'Set up your classroom', roles: ['Teacher'] };
 
-// The quest gate row. game-kingdom.gs ASSIGNS QUEST_GATE_HOOKS (no `|| {}`) and clasp pushes files alphabetically, so this file can run
-// first and a plain `QUEST_GATE_HOOKS.x = ...` here would be wiped. Either order: add now, or add when game-kingdom.gs assigns it.
-// (No `var` here on purpose: a var binding is non-configurable and would block the accessor.)
-// ponytail: remove the accessor once game-kingdom.gs declares `var QUEST_GATE_HOOKS = Object.assign(QUEST_GATE_HOOKS || {}, {...})`.
-(function () {
-  if (typeof QUEST_GATE_HOOKS === 'object' && QUEST_GATE_HOOKS) { QUEST_GATE_HOOKS.classroomQuests_ = CLASSROOM_GATE; return; }
-  var held;
-  Object.defineProperty(globalThis, 'QUEST_GATE_HOOKS', { configurable: true, enumerable: true,
-    get: function () { return held; },
-    set: function (v) { held = v; if (v && typeof v === 'object') v.classroomQuests_ = CLASSROOM_GATE; } });
-  globalThis.QUEST_GATE_HOOKS = { classroomQuests_: CLASSROOM_GATE };
-})();
+// The quest gate row: same contract as game-scout.gs; game-kingdom.gs merges with Object.assign(QUEST_GATE_HOOKS || {}, ...).
+var QUEST_GATE_HOOKS = QUEST_GATE_HOOKS || {};
+QUEST_GATE_HOOKS.classroomQuests_ = CLASSROOM_GATE;
 
 function classroomErr_(code, error) { return { success: false, code: code, error: error }; }
 function classroomNorm_(v) { return String(v === null || v === undefined ? '' : v).trim().replace(/\s+/g, ' ').toUpperCase(); }
