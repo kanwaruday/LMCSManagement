@@ -253,7 +253,7 @@ module.exports = function run(t) {
     assert.ok(byCode['OWL/24/01/050'].some((t) => /Not found in EmpKeyNumbers/.test(t)), 'everyone else is missing from EmpKeyNumbers entirely');
     assert.ok(!byCode['JAY/21/03/020'].some((t) => /No ESI number/.test(t)), 'LMS6 is not ESI-registered, so no ESI-number flag even though absent from EmpKeyNumbers');
     // From Oct 2026 ESI wages leave ADA out (Uday, 2026-11-06): 20000 + 5% DA = 21000, at the threshold, so covered.
-    assert.ok(byCode['ELK/05/03/005'].some((t) => /No ESI number on file \(ESI wages ₹21000/.test(t)), 'ESI wages at the threshold -- flagged');
+    assert.ok(byCode['ELK/05/03/005'].some((t) => /No ESI number on file \(coverage wages ₹21000/.test(t)), 'ESI wages at the threshold -- flagged');
   });
 
   t.test('leave template: CL/Comp balance carries forward when a month has no upload yet', () => {

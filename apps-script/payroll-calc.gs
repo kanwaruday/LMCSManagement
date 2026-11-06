@@ -37,6 +37,14 @@ function payEsiWages_(basic, ada, da, otherAllowances, monthEnd) {
   return basic + da + Math.max(0, payRound_(total / 2 - (basic + da)));
 }
 
+// Which wage decides whether someone is ESI-covered at all (Uday's call, asked 2026-11-06):
+// 'esi' = the ESI wage above (Basic + DA from Oct 2026); 'full' = Basic + ADA + DA as before.
+// Contributions are always on the ESI wage.
+const PAY_ESI_COVERAGE_BASE = 'esi';
+function payEsiCoverageWages_(basic, ada, da, otherAllowances, monthEnd) {
+  return PAY_ESI_COVERAGE_BASE === 'full' ? basic + ada + da : payEsiWages_(basic, ada, da, otherAllowances, monthEnd);
+}
+
 function payMonthsBetween_(from, to) {
   let m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
   if (to.getDate() < from.getDate()) m--;
@@ -75,7 +83,8 @@ function payCalc_(emp, input, rates, s, ctx) {
   // ESI: coverage is decided once per contribution period (Apr-Sep, Oct-Mar) -- someone covered at
   // its start stays covered even if wages cross the threshold mid-period.
   const esiWages = payEsiWages_(basic, ada, da, preGross - wages, ctx.monthEnd);
-  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : esiWages <= s.esiThreshold);
+  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered
+    : payEsiCoverageWages_(basic, ada, da, preGross - wages, ctx.monthEnd) <= s.esiThreshold);
   const esi = esiOn ? up(esiWages * s.esiEmpRate) : 0;
   const esiEr = esiOn ? up(esiWages * s.esiErRate) : 0;
   const clEnc = R((Number(input.clDays) || 0) * (wages - epf - esi) / s.clDivisor);
@@ -115,6 +124,7 @@ function payCalc_(emp, input, rates, s, ctx) {
   const release = Number(input.release) || 0;
   return {
     paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages, esiWages: esiWages,
+    esiCoverageWages: payEsiCoverageWages_(basic, ada, da, preGross - wages, ctx.monthEnd),
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
     epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery, tds: tds,
     totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
