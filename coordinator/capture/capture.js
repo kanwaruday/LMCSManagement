@@ -17,7 +17,7 @@ import { createUploader } from './uploader.js';
 
 const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
 const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
-const FULL_MSG = 'The phone is full. Upload on Wi-Fi now, then carry on.';
+const FULL_MSG = 'The phone is full. Send your runs now, then carry on.';
 const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
 const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
@@ -174,6 +174,7 @@ function wire() {
   $('fixCount').addEventListener('click', openFix);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheetWrap').hidden) closeSheet(); });
   document.addEventListener('visibilitychange', onVisibility);
+  PORTRAIT.addEventListener('change', turnCheck);
 }
 
 function showTab(tab) {
@@ -228,7 +229,7 @@ function loadoutLine() {
   el.hidden = S.mode !== 'inspection' || L === undefined; // undefined: still loading
   if (el.hidden) return;
   const p = L ? L.filter((i) => i.needsPhoto).length : 0;
-  el.textContent = !L ? 'The safety list is not on this phone yet. Open this page on Wi-Fi once.'
+  el.textContent = !L ? 'The safety list is not on this phone yet. Open this page once with signal.'
     : `${plural(L.length, 'item')}, ${p ? p + (p === 1 ? ' needs' : ' need') + ' a photo' : 'no photos'}.`;
 }
 
@@ -286,7 +287,7 @@ async function loadBuses() {
     let cached = null;
     try { cached = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* ignore */ }
     if (cached) { S.buses = cached.buses; note = (S.session.idToken ? 'No connection: using' : 'Using') + ' the bus list saved on ' + when(cached.at) + '.'; }
-    else note = 'Could not load the buses (' + err.message + '). Open this page on Wi-Fi once before the ride.';
+    else note = 'Could not load the buses (' + err.message + '). Open this page once with signal before the ride.';
   }
   const sel = $('bus');
   sel.innerHTML = S.buses.length
@@ -400,6 +401,7 @@ async function start() {
     if (kind === 'timelapse') {
       S.camWanted = true;
       try { await openCamera(); } catch (e) { S.camWanted = false; return setupSay(camMsg(e)); } // no camera, no run
+      lockLandscape();
     }
     const bus = busOf(reg);
     try {
@@ -423,7 +425,7 @@ async function start() {
     runSay('');
     S.watch = navigator.geolocation.watchPosition(onFix, onGpsError, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
     await holdScreen();
-    hud(); gpsLine();
+    hud(); gpsLine(); turnCheck();
   } finally { $('start').disabled = false; }
 }
 
@@ -474,7 +476,7 @@ function grab() { // a camera frame, longest side 960 px (Uday 30 Oct: ~40% less
 async function onFix(p) {
   const fix = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, at: p.timestamp || Date.now() };
   S.fix = fix; gpsLine();
-  if (!S.active || S.run.kind !== 'timelapse' || S.busy || document.hidden || !shouldCapture(S.last, fix)) return;
+  if (!S.active || S.run.kind !== 'timelapse' || turnCheck() || S.busy || document.hidden || !shouldCapture(S.last, fix)) return;
   const base64 = grab();
   if (!base64) return;
   S.busy = true;
@@ -484,6 +486,25 @@ async function onFix(p) {
     if ($('runMsg').textContent === FULL_MSG) runSay('');
   } catch (e) { runSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Frame not saved: ' + e.message); }
   finally { S.busy = false; }
+}
+// Timelapse frames are landscape only (Uday, 6 Nov: "I feel that gives more data"). Upright: the turn prompt, and no frames until
+// the phone is sideways. Stop photos and safety-check photos are not gated. The lock is best effort (Chrome on Android allows it
+// in full screen only); the check on every fix is what holds.
+const PORTRAIT = matchMedia('(orientation: portrait)');
+function turnCheck() {
+  const up = !!(S.active && S.run && S.run.kind === 'timelapse' && PORTRAIT.matches);
+  $('turn').hidden = !up;
+  return up;
+}
+async function lockLandscape() {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    await screen.orientation.lock('landscape');
+  } catch (e) { /* not allowed here: the turn prompt does the job */ }
+}
+function unlockLandscape() {
+  try { screen.orientation.unlock(); } catch (e) { /* never locked */ }
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 // Hidden (locked, or another app): capture pauses and the gap is on record at once; back: it carries on.
 async function onVisibility() {
@@ -621,7 +642,7 @@ async function endRun() {
   S.watch = null;
   if (S.wake) S.wake.release().catch(() => {});
   S.wake = null;
-  S.camWanted = false; closeCamera();
+  S.camWanted = false; closeCamera(); $('turn').hidden = true; unlockLandscape();
   await store.endRun(S.run.id);
   S.run = await store.getRun(S.run.id);
   $('running').hidden = true;
@@ -655,8 +676,8 @@ function drawSummary() {
       `<div><dt>Gaps</dt><dd>${run.gaps.length}</dd></div></dl>`;
   }
   const route = bus && bus.route ? ' (' + esc(routeName(bus, run.reg)) + ')' : '';
-  el.innerHTML = `<div class="gb-done-tick" aria-hidden="true">✓</div><h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${trialTag(run)}${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it on school Wi-Fi.</p>` + body +
-    '<button type="button" class="cap-primary" data-a="send">Send now on Wi-Fi</button><button type="button" class="cap-end" data-a="new">Start another run</button>' +
+  el.innerHTML = `<div class="gb-done-tick" aria-hidden="true">✓</div><h2 class="cap-h">${run.kind === 'inspection' ? 'Safety check' : 'Run'} saved on this phone</h2><p class="cap-note">${trialTag(run)}${esc(KIND[run.kind])} on ${esc(run.reg)}${route}. Send it now: mobile data is fine.</p>` + body +
+    '<button type="button" class="cap-primary" data-a="send">Send now</button><button type="button" class="cap-end" data-a="new">Start another run</button>' +
     `<a class="cap-end" href="${esc($('back').getAttribute('href'))}">Back to ${esc($('back').textContent.replace(/^[\u2039\u2190]\s*/, ''))}</a>`; // the header's way back, for this role
   el.querySelector('[data-a="send"]').addEventListener('click', () => { showTab('upload'); sendAll(); });
   el.querySelector('[data-a="new"]').addEventListener('click', () => { el.hidden = true; $('setup').hidden = false; S.run = null; S.insp = null; setMode(S.mode); drawResume(); });
@@ -666,7 +687,7 @@ function drawSummary() {
 // ── Upload tab ──
 async function post(body) { // the uploader's transport: the signed-in idToken, the Roster web app (apps-script/transport-capture.gs)
   const s = S.driver ? { deviceToken: storedToken() } : LMCS.getSession();
-  if (!s) return { success: false, error: 'Signed out. Sign in again, then tap Send now on Wi-Fi' };
+  if (!s) return { success: false, error: 'Signed out. Sign in again, then tap Send now' };
   const auth = S.driver ? { deviceToken: s.deviceToken } : { idToken: s.idToken };
   const text = await (await fetch(ROSTER_URL, { method: 'POST', body: JSON.stringify(Object.assign(auth, body)) })).text();
   return JSON.parse(text); // a Google error page instead of JSON throws, and the uploader retries
@@ -692,7 +713,10 @@ async function drawUpload() {
   const runs = (await store.runs()).sort((a, b) => b.startedAt - a.startedAt), list = $('runList');
   const todo = runs.filter((r) => !r.endSent).length;
   $('upCount').textContent = todo ? '(' + todo + ')' : '';
-  const rows = await Promise.all(runs.map(async (r) => ({ r, total: await store.total(r.id), left: (await store.pending(r.id)).length })));
+  const rows = await Promise.all(runs.map(async (r) => {
+    const left = await store.pending(r.id);
+    return { r, total: await store.total(r.id), left: left.length, bytes: left.reduce((t, f) => t + (f.bytes || 105000), 0) }; // older files: ~105 KB a frame
+  }));
   list.innerHTML = rows.length ? '' : '<li class="cap-note">No runs on this phone.</li>';
   rows.forEach(({ r, total, left }) => {
     const li = document.createElement('li'); li.dataset.id = r.id;
@@ -700,10 +724,11 @@ async function drawUpload() {
     drawRow(li, r, { ...p, sent: total - left, total });
     list.appendChild(li);
   });
-  const c = navigator.connection;
-  $('netNote').textContent = c && c.type === 'cellular' ? 'You are on mobile data. Frames are large: send on school Wi-Fi.' : '';
+  // Mobile data is fine (Uday, 6 Nov: "each run is about 150 mb, most drivers can spare that much"): just say how much it is
+  const c = navigator.connection, bytes = rows.reduce((t, x) => t + x.bytes, 0);
+  $('netNote').textContent = c && c.type === 'cellular' && bytes ? `About ${Math.max(1, Math.round(bytes / 1e6))} MB on mobile data.` : '';
   $('send').disabled = S.sending || !todo;
-  if (!S.sending) $('send').textContent = todo ? 'Send now on Wi-Fi' : runs.length ? 'All runs sent' : 'Nothing to send';
+  if (!S.sending) $('send').textContent = todo ? 'Send now' : runs.length ? 'All runs sent' : 'Nothing to send';
   const info = await store.storageInfo();
   $('storage').textContent = info.quota ? `Phone storage for capture: ${mb(info.usage)} used of ${mb(info.quota)}.` + (info.persisted ? '' : ' The browser may clear it if the phone runs low: send soon.') : '';
 }
@@ -738,7 +763,7 @@ async function sendAll() {
       await up.start(r.id);
     }
   } finally {
-    S.sending = false; $('send').textContent = 'Send now on Wi-Fi';
+    S.sending = false; $('send').textContent = 'Send now';
     await drawUpload();
   }
 }
@@ -753,7 +778,7 @@ const SVG = {
 };
 async function startInspection(resume, reg) {
   const items = (resume && resume.draft && resume.draft.items) || checkItems(); // a check closed before its draft was written takes today's list
-  if (!items) return setupSay('The safety list is not on this phone yet. Open this page on Wi-Fi once, then start again.');
+  if (!items) return setupSay('The safety list is not on this phone yet. Open this page once with signal, then start again.');
   if (!items.length) return setupSay('The Owner has switched off every safety item: there is nothing to check.');
   const bus = busOf(reg);
   try {

@@ -9,7 +9,7 @@ const DELAYS = [5000, 15000, 60000];
 const TRANSIENT = /timed? ?out|try again|too many|temporar|could not obtain lock|failed to fetch|network|service|server error/i;
 
 export function createUploader({
-  store, post, onProgress = () => {}, delays = DELAYS,
+  store, post, onProgress = () => {}, delays = DELAYS, parallel = 3,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   // Waiting for `online` hangs if the phone thinks it is online but the server is unreachable, so then just wait once more.
   waitOnline = () => (typeof navigator !== 'undefined' && navigator.onLine === false
@@ -81,15 +81,23 @@ export function createUploader({
       await store.patchRun(runId, { startSent: true });
     }
     // Files until none are left, then the end manifest if the run has ended by now (checked on a fresh read).
+    // `parallel` files at a time (6 Nov: one at a time ran ~3 frames a minute): the phone's upload and the server's sign-in check
+    // overlap; the Drive write itself still queues on the Roster's script lock. A refusal stops the others after their current file.
     while (pending.length) {
-      for (const f of pending) {
-        const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, kind: f.kind, seq: f.seq,
-          lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) }, progress);
-        if (!r) return progress('stopped');
-        if (r.error) return fail(r.error, f);
-        await store.markSent(runId, f.kind, f.seq, r.res.fileId);
-        sent++; progress('uploading');
-      }
+      let next = 0, halt = null;
+      const worker = async () => {
+        while (!halt && next < pending.length) {
+          const f = pending[next++];
+          const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, kind: f.kind, seq: f.seq,
+            lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) }, progress);
+          if (!r) { halt = halt || {}; return; }
+          if (r.error) { halt = halt || { error: r.error, f }; return; }
+          await store.markSent(runId, f.kind, f.seq, r.res.fileId);
+          sent++; progress('uploading');
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(parallel, pending.length) }, worker));
+      if (halt) return halt.error ? fail(halt.error, halt.f) : progress('stopped');
       pending = await refresh();
     }
     if (run.endedAt && !run.endSent) {

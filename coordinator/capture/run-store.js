@@ -36,7 +36,7 @@ const fileId = (runId, kind, seq) => `${runId}:${kind}:${seq}`;
 
 // Out of phone storage surfaces as an error with code STORAGE_FULL, which the page can show ("free some space, then carry on").
 const isQuota = (e) => e && (e.name === 'QuotaExceededError' || e.code === 22);
-const storageFull = (cause) => Object.assign(new Error('Phone storage is full: free some space (upload on Wi-Fi, delete photos or apps)'), { code: 'STORAGE_FULL', cause });
+const storageFull = (cause) => Object.assign(new Error('Phone storage is full: free some space (send your runs, delete photos or apps)'), { code: 'STORAGE_FULL', cause });
 
 export function createRunStore(idb, { now = () => Date.now(), rand = Math.random, storage = typeof navigator !== 'undefined' ? navigator.storage : null } = {}) {
   // Every update is read-modify-write, so run them one at a time.
@@ -57,7 +57,7 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     if (!f.base64) throw new Error('Photo missing');
     const seq = run.nextSeq++, id = fileId(run.id, kind, seq);
     await idb.data.put({ id, base64: f.base64 });
-    try { await idb.files.put({ id, runId: run.id, kind, seq, lat: f.lat, lng: f.lng, takenAt: f.takenAt, sent: false }); }
+    try { await idb.files.put({ id, runId: run.id, kind, seq, lat: f.lat, lng: f.lng, takenAt: f.takenAt, bytes: Math.round(String(f.base64).length * 0.75), sent: false }); }
     catch (e) { await idb.data.delete(id).catch(() => {}); throw e; }
     return seq;
   };

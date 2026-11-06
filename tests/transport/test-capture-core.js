@@ -10,7 +10,8 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
   const dir = '../../coordinator/capture/';
   const { distanceM, shouldCapture, FRAME_SPACING_M } = await import(dir + 'geo.js');
   const { createRunStore } = await import(dir + 'run-store.js');
-  const { createUploader } = await import(dir + 'uploader.js');
+  const { createUploader: createUp } = await import(dir + 'uploader.js');
+  const createUploader = (o) => createUp({ parallel: 1, ...o }); // the order checks below send one at a time; parallel sends have their own tests
 
   const clone = (e) => JSON.parse(JSON.stringify(e));
   const memStore = () => { const m = new Map(); return { m, reads: 0, put: async (e) => { m.set(e.id, clone(e)); }, get: async function (id) { this.reads++; return m.has(id) ? clone(m.get(id)) : undefined; }, getAll: async () => [...m.values()].map(clone), delete: async (id) => { m.delete(id); } }; };
@@ -374,6 +375,37 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.deepStrictEqual([srv.calls.length, states.slice(-1)[0]], [0, 'not-ended'], 'nothing leaves the phone before the check is saved');
     await store.discard(run.id);
     assert.deepStrictEqual([idb.runs.m.size, idb.files.m.size, idb.data.m.size], [0, 0, 0]);
+  });
+
+  // ---- parallel sends (6 Nov: one at a time ran ~3 frames a minute)
+  await test('parallel: up to 3 files in flight at once, every file sent once, then the end manifest', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 7); await store.endRun(run.id);
+    let inflight = 0, peak = 0; const calls = [];
+    const post = async (b) => {
+      calls.push(b.action + (b.seq !== undefined ? b.seq : ''));
+      inflight++; peak = Math.max(peak, inflight); await new Promise((r) => setTimeout(r, 2)); inflight--;
+      return b.action === 'capturefile' ? { success: true, fileId: 'D' + b.seq } : { success: true };
+    };
+    await createUp({ store, post, sleep: instant }).start(run.id);
+    assert.strictEqual(peak, 3);
+    assert.deepStrictEqual([calls[0], calls[calls.length - 1]], ['capturerun', 'capturerun']);
+    assert.deepStrictEqual(calls.filter((c) => c !== 'capturerun').sort(), [0, 1, 2, 3, 4, 5, 6].map((i) => 'capturefile' + i).sort());
+    assert.strictEqual((await store.pending(run.id)).length, 0);
+  });
+  await test('parallel: a refusal stops the run after the files already in flight; no end manifest; error recorded', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 8); await store.endRun(run.id);
+    const srv = fakeServer((b) => (b.seq === 1 ? { success: false, error: 'This run was discarded. Record a new one.' } : null));
+    await createUp({ store, post: srv.post, sleep: instant }).start(run.id);
+    const files = srv.calls.filter((c) => c.action === 'capturefile').length;
+    assert.ok(files <= 4, 'stopped soon after the refusal: ' + files);
+    assert.strictEqual(srv.calls.filter((c) => c.action === 'capturerun').length, 1, 'start manifest only');
+    const r = await store.getRun(run.id);
+    assert.deepStrictEqual([r.status, r.error], ['error', 'This run was discarded. Record a new one.']);
+  });
+  await test('each saved file records its size, for the "About N MB on mobile data" note', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 1);
+    await store.addFrame(run.id, { lat: 0, lng: 0, takenAt: NOW, base64: 'A'.repeat(4000) });
+    assert.deepStrictEqual((await store.pending(run.id)).map((f) => f.bytes), [Math.round(5 * 0.75), 3000]);
   });
 
   process.exit(failed ? 1 : 0);
