@@ -204,4 +204,19 @@ const lms1 = DAYS.concat('2026-11-06').map((d) => rep('LMS1', d, '16:00'));
   assert.strictEqual(L.dayLabel(d.strip[0]), 'Thu 5, on time, last saved 4:10 pm');
 }
 
+// ---- 9. the setup-period gate: scoutQuests_'s family survives either load order with game-kingdom.gs (engine contract)
+{
+  const kingdom = fs.readFileSync(process.env.SCOUT_KINGDOM_GS || dir + 'game-kingdom.gs', 'utf8'), scout = fs.readFileSync(dir + 'game-scout.gs', 'utf8');
+  const contract = /QUEST_GATE_HOOKS = Object\.assign\(QUEST_GATE_HOOKS \|\| \{\}/.test(kingdom);
+  // ponytail: until engine-contract 1ab63c56 is on the line, game-kingdom.gs's plain `var QUEST_GATE_HOOKS = {...}` wipes the row when it loads
+  //   second; that order is skipped (loudly) here and runs for real once the contract lands
+  if (!contract) console.log('test-scout: PENDING engine-contract 1ab63c56: scout-then-kingdom order not checked');
+  [[kingdom, scout]].concat(contract ? [[scout, kingdom]] : []).forEach((order) => {
+    const c = { console: ctx.console, Logger: ctx.Logger };
+    vm.createContext(c);
+    order.forEach((src) => vm.runInContext(src, c));
+    assert.deepStrictEqual(J(vm.runInContext('QUEST_GATE_HOOKS.scoutQuests_', c)), { id: 'hook:scout', title: 'Scout report', roles: ['Principal', 'Coordinator'] }, 'the scout gate row survives');
+  });
+}
+
 console.log('test-scout: all passed');

@@ -1,6 +1,7 @@
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+var QUEST_GATE_HOOKS = QUEST_GATE_HOOKS || {}; // engine contract: the setup-period gate's family for scoutQuests_ (the Kingdom assigns it)
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- 📜 Scout report: a school's Principal daily reports as a game (V2 row #9, N3).
 // Design: daily-report-in-game-design.md (Game Director, 30 Oct; Uday 2 Nov: on time is till 5 pm, CW/HW 4 pm).
@@ -293,4 +294,5 @@ function scoutQuests_(caller, cfg, now) {
 }
 
 GAME_MODULE_ACTIONS.gamescout = scoutGet_;
+QUEST_GATE_HOOKS.scoutQuests_ = { id: 'hook:scout', title: 'Scout report', roles: ['Principal', 'Coordinator'] };
 ['Principal', 'Owner', 'Coordinator'].forEach(function (r) { GAME_MODULE_QUESTS[r] = [].concat(GAME_MODULE_QUESTS[r] || [], scoutQuests_); });
