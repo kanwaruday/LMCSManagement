@@ -148,7 +148,8 @@ function gameConfigDefaults_() {
     // The Townhall: one building on every World, each person sees only their doors. roles: missing or ['all'] = everyone;
     // needs: a fills key or one of the person's slot ids (the door shows locked until it is filled); needsLabel: the words for a fills key.
     townhall: { rooms: [
-      { id: 'requests', label: 'Requests & leave', emoji: 'requests', roles: ['all'], opens: 'teacher/index.html#panel-requests' },
+      // every staff role files its own requests on the teacher page ("Leave and other requests go to your Principal/Owner"); the Owner has no one to ask
+      { id: 'requests', label: 'Requests & leave', emoji: 'requests', roles: ['Coordinator', 'Principal', 'Teacher', 'Staff', 'FeeClerk', 'Accounts'], opens: 'teacher/index.html#panel-requests' },
       { id: 'evaluation', label: 'My evaluation', emoji: 'evaluate', roles: ['Teacher', 'Staff', 'Principal'], opens: 'teacher/index.html#panel-evals' },
       { id: 'office', label: 'Office & fees', emoji: 'fees', roles: ['FeeClerk', 'Accounts', 'Principal'], opens: 'office/index.html' } ] },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)

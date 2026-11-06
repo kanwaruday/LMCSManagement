@@ -448,7 +448,7 @@ var LMCSGame = window.LMCSGame = (function () {
           ? [h('a', { href: href }, [e(r.emoji), label])]
           : [e('locked'), h('span', {}, label), h('small', {}, r.state === 'open' ? '' : r.after ? 'Opens after ' + r.after : 'Not open yet')]);
       });
-      return h('details', { class: 'lg-panel lg-town' }, [h('summary', {}, [e('hq'), 'Townhall']),
+      return h('details', { class: 'lg-panel lg-town' }, [h('summary', {}, [e('townhall'), 'Townhall']),
         rows.length ? h('ul', { class: 'lg-town-l' }, rows) : h('p', { class: 'lg-clear' }, 'No doors for you here yet.')]);
     }
     // The sequential quest: the first unfinished one that isn't parallel, numbered; once all are finished, the last one

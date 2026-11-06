@@ -188,7 +188,7 @@ var LMCSHomeHud = (function () {
     el.rank = h('span', { class: 'hh-chip hh-rank', hidden: 'hidden' }); // shown only when a state response carries `rank` (see rankText)
     el.clock = h('span', { class: 'hh-chip hh-clock' });
     el.points = h('span', { class: 'hh-chip hh-points', hidden: 'hidden' });
-    el.townhall = btn('hh-chip hh-town', L.townhall, [emoji('hq'), h('span', {}, L.townhall)], openTownhall); el.townhall.hidden = true; el.townhall.setAttribute('data-hh', 'townhall'); // always there once Today has loaded (never locked)
+    el.townhall = btn('hh-chip hh-town', L.townhall, [emoji('townhall'), h('span', {}, L.townhall)], openTownhall); el.townhall.hidden = true; el.townhall.setAttribute('data-hh', 'townhall'); // always there once Today has loaded (never locked)
     el.events = h('div', { class: 'hh-events' });
     var tl = h('div', { class: 'hh-tl' }, [el.avatar, el.level, el.rank]), top = h('div', { class: 'hh-top' }, [el.clock, el.points, el.townhall]);
 
