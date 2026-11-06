@@ -404,6 +404,13 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     assert.strictEqual(run('captureDiscard_(' + JSON.stringify({ secret: 'S', reg: 'HP659511', runId: 'SP1' }) + ')').success, true);
     assert.match(batch([fr(7)]).error, /discarded/, 'a discard is seen at once, though the row was cached');
     assert.ok(!dir.files.some((f) => f.name === 'frame-00007.jpg'), 'and nothing lands in the binned folder');
+    // review 6 Nov: the discard lands between the run check and the save (a batch in flight, or a stale cached row)
+    cache['caprow_SP1'] = JSON.stringify({ reg: 'HP659511', kind: 'timelapse', status: 'ended' });
+    const busDir = transport.kids.find((k) => k.name === 'Capture').kids.find((k) => k.name === 'HP659511');
+    const before = busDir.kids.filter((k) => k.name === 'SP1').length;
+    const late = batch([fr(8), fr(9)]);
+    assert.deepStrictEqual(late.results.map((x) => x.error), ['This run was discarded. Record a new one.', 'This run was discarded. Record a new one.'], 'each file refused');
+    assert.strictEqual(busDir.kids.filter((k) => k.name === 'SP1').length, before, 'no fresh run folder outside the bin');
   }
   console.log('transport capture: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

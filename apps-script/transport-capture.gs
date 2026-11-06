@@ -106,14 +106,20 @@ function capRunSheet_() {
 // Speed (6 Nov: a driver's run went at ~1 frame per 20 s, all of it round trips and Drive calls, not bytes): the run's folder id and
 // its Capture Runs row are cached, the script lock is held only while a run's folder is first made, and capturefiles takes a
 // batch. Idempotent as before: a (runId, kind, seq) already saved answers its file id again.
-// Capture/<REG>/<runId>/ by its cached id (6 h). A binned folder (a discarded run) is never reused: the closed check runs first,
-// and a trashed hit walks the path again. Only the first frame of a run makes folders, so only that walk takes the lock.
+// Capture/<REG>/<runId>/ by its cached id (6 h), or null when the run was discarded. Only the first frame of a run makes folders,
+// so only that walk takes the lock. A binned folder is never reused, and no new one is made for a closed run: the Status is read
+// from the sheet itself under the lock (review 6 Nov: a discard landing mid-batch, or a stale cached row, must not put the
+// removed frames back on Drive in a fresh folder).
 function capRunFolder_(reg, runId) {
   const c = CacheService.getScriptCache(), key = 'capdir_' + reg + '_' + runId, id = c.get(key);
   if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* gone: walk */ } }
   const lock = LockService.getScriptLock();
   lock.waitLock(30000); // two first frames at once must not make two run folders
-  try { const f = capFolder_(reg, runId); c.put(key, f.getId(), 21600); return f; } finally { lock.releaseLock(); }
+  try {
+    const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
+    if (row && String(row[12]) === 'closed') return null;
+    const f = capFolder_(reg, runId); c.put(key, f.getId(), 21600); return f;
+  } finally { lock.releaseLock(); }
 }
 // The run's row as {reg, kind, status}, or null: cached 10 min. captureRun_ and captureDiscard_ write it through, so a discard
 // is seen at once. ponytail: a Status edited by hand in the sheet shows up within 10 min.
@@ -156,7 +162,9 @@ function capFileSave_(ck, f) {
   const cache = CacheService.getScriptCache(), hit = cache.get(key);
   if (hit) return { fileId: hit };
   // ponytail: no lock here, so a retry racing its own first try can leave a second copy of one frame (same name); the Mac takes one
-  const dir = capRunFolder_(ck.reg, ck.runId), it = dir.getFilesByName(name);
+  const dir = capRunFolder_(ck.reg, ck.runId);
+  if (!dir) return { error: 'This run was discarded. Record a new one.' };
+  const it = dir.getFilesByName(name);
   if (it.hasNext()) return { fileId: it.next().getId() };
   const file = dir.createFile(Utilities.newBlob(bytes, mime, name));
   file.setDescription(JSON.stringify({ lat: f.lat, lng: f.lng, takenAt: f.takenAt, by: ck.a.caller.email }));
@@ -239,7 +247,9 @@ function captureRun_(body) {
     // a driver phone's photos (the bus setup chain) must be files of this run, so "photographed" can't be claimed with made-up ids
     const ids = Object.keys(run.inspection).map(function (k) { return run.inspection[k].fileId; }).filter(Boolean);
     if (ids.length && a.caller.role === 'Driver') {
-      const have = {}, it = capRunFolder_(a.v.reg, runId).getFiles();
+      const dir = capRunFolder_(a.v.reg, runId);
+      if (!dir) return fail('This run was discarded. Record a new one.');
+      const have = {}, it = dir.getFiles();
       while (it.hasNext()) have[it.next().getId()] = true;
       if (!ids.every(function (id) { return have[id]; })) return fail('A photo of this check has not arrived yet. Send again.');
     }
