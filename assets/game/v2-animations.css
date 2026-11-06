@@ -114,6 +114,9 @@
   95% { transform: scaleY(1); opacity: 1; }
 }
 .a-buddy-blink { transform-origin: 50% 0; opacity: 0; animation: k-buddy-blink 4.5s ease-in-out infinite; }
+/* 96x96 dock overlay: origin = top of the eyes (blink-<outfit>.webp); add one modifier */
+.a-buddy-blink.eyes-std { transform-origin: 50% 28%; }
+.a-buddy-blink.eyes-festival { transform-origin: 50% 35.5%; }
 
 @keyframes k-buddy-speak-bubble { 0% { transform: scale(.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .a-buddy-speak-bubble { transform-origin: 0 100%; animation: k-buddy-speak-bubble 240ms cubic-bezier(.2,.8,.2,1) backwards; }

@@ -69,7 +69,7 @@ var LMCSDock = window.LMCSDock = (function () {
   var BASE = SRC.replace(/[^/?#]*([?#].*)?$/, ''), V = (SRC.match(/\?[^#]*/) || [''])[0]; // .../assets/game/ and auth.js's ?v=
   var PATH = pagePath(location.pathname, (function () { try { return new URL(BASE + '../../').pathname; } catch (e) { return '/'; } })());
   var UP = rootFrom(PATH), GUIDE = UP + 'guide/index.html';
-  var btn = null, av = null, panel = null, release = null, data = null, pollTimer = null;
+  var btn = null, av = null, lid = null, panel = null, release = null, data = null, pollTimer = null;
 
   function session() { return (window.LMCS && LMCS.getSession && LMCS.getSession()) || null; }
   function owner() { return !!(window.LMCS && LMCS.canViewOwnerPortal && LMCS.canViewOwnerPortal(session())); }
@@ -317,12 +317,23 @@ var LMCSDock = window.LMCSDock = (function () {
     btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'bd-btn';
     btn.setAttribute('aria-label', 'Buddy: help'); btn.setAttribute('aria-haspopup', 'dialog'); btn.setAttribute('aria-expanded', 'false');
-    btn.appendChild(av);
+    // eyelids over the avatar (blink-<outfit>.webp, same 96x96 box); follows av.src, hidden if an outfit has none
+    lid = document.createElement('img');
+    lid.className = 'bd-lid a-buddy-blink'; lid.alt = ''; lid.setAttribute('aria-hidden', 'true');
+    lid.onerror = function () { this.hidden = true; };
+    av.onload = function () {
+      var m = /buddy\/avatar-([a-z-]+)\.webp/.exec(av.src);
+      lid.hidden = !m; if (!m) return;
+      lid.classList.toggle('eyes-festival', m[1] === 'festival'); lid.classList.toggle('eyes-std', m[1] !== 'festival');
+      var src = BASE + 'buddy/blink-' + m[1] + '.webp';
+      if (lid.getAttribute('src') !== src) lid.src = src;
+    };
+    btn.appendChild(av); btn.appendChild(lid);
     // Buddy bobs on the button (v2-animations.css, loaded here so every page with the dock has it); paused while the tab is hidden
     var anim = [].some.call(document.styleSheets, function (x) { return /\/game\/v2-animations\.css/.test(x.href || ''); });
     load('link', { rel: 'stylesheet', href: BASE + 'v2-animations.css' + V }, anim).catch(function () { /* no bob: still a button */ });
     btn.classList.add('a-buddy-bob'); // the whole button: the avatar alone would show a gap inside its round clip
-    var rest = function () { btn.classList.toggle('is-paused', document.hidden); };
+    var rest = function () { btn.classList.toggle('is-paused', document.hidden); lid.classList.toggle('is-paused', document.hidden); };
     document.addEventListener('visibilitychange', rest); rest();
     btn.addEventListener('click', function () { if (panel) close(); else open(); });
     document.body.appendChild(btn);
