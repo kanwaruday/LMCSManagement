@@ -432,9 +432,24 @@ var LMCSGame = window.LMCSGame = (function () {
       el.hidden = false;
       // a module page with no missions of its own (e.g. the Owner, quests only): no Today box, and nothing at all without quests
       if (opts.only && !all.length) { todayEl.hidden = true; if (!questEl && !parEls.length) { el.hidden = true; return; } }
-      rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, parEls, days && h('p', { class: 'lg-days' },
+      rootEl = h('div', { class: 'lg-root' }, [todayEl, questEl, parEls, townhallPanel(), days && h('p', { class: 'lg-days' },
         cut === -1 ? days : [days.slice(0, cut), ' ', h('span', { class: 'lg-days-last' }, days.slice(cut + 1))])]);
       el.appendChild(rootEl);
+    }
+    // 🏛️ The Townhall (Home engine v2, game-home.gs): one building for everyone, only this person's doors; always there, never locked
+    // as a whole. Folded, after the quests. Not on a module page (opts.only) or the Principal home, whose HUD has its own Townhall button.
+    function townhallPanel() {
+      var rooms = t.townhall && t.townhall.rooms;
+      if (opts.only || !Array.isArray(rooms) || document.body.classList.contains('hh')) return null;
+      var e = function (k) { return window.LMCSEmoji ? LMCSEmoji.tag(k) : null; };
+      var rows = rooms.map(function (r) {
+        var href = r.state === 'open' ? safeHref(r.opens, opts.root) : null, label = String(r.label || r.id);
+        return h('li', { class: 'lg-town-r' + (href ? '' : ' is-locked') }, href
+          ? [h('a', { href: href }, [e(r.emoji), label])]
+          : [e('locked'), h('span', {}, label), h('small', {}, r.state === 'open' ? '' : r.after ? 'Opens after ' + r.after : 'Not open yet')]);
+      });
+      return h('details', { class: 'lg-panel lg-town' }, [h('summary', {}, [e('hq'), 'Townhall']),
+        rows.length ? h('ul', { class: 'lg-town-l' }, rows) : h('p', { class: 'lg-clear' }, 'No doors for you here yet.')]);
     }
     // The sequential quest: the first unfinished one that isn't parallel, numbered; once all are finished, the last one
     // with its reward. Parallel quests (q.parallel, set by a module: one chapter quest per class-subject) are listed

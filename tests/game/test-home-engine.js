@@ -92,4 +92,8 @@ assert.strictEqual(st(p), 'rooms:filled staff:building');
 const actions = fs.readFileSync(dir + 'game-actions.gs', 'utf8');
 assert(/if \(typeof homeTodayFields_ === 'function'\) Object\.assign\(out, homeTodayFields_\(caller, cfg, now, quests\)\);/.test(actions), 'gameToday_ adds home/townhall, guarded');
 assert(JSON.parse(fs.readFileSync(dir + 'projects.json', 'utf8')).game.files.includes('game-home'), 'game-home in the Game project');
+// the pages: game.js folds the Townhall after the quests on every home but the Principal's (its HUD has the button); never on a module page
+const gjs = fs.readFileSync(__dirname + '/../../assets/game/game.js', 'utf8'), hud = fs.readFileSync(__dirname + '/../../assets/game/home-hud.js', 'utf8');
+assert(/parEls, townhallPanel\(\), days/.test(gjs) && /if \(opts\.only \|\| !Array\.isArray\(rooms\) \|\| document\.body\.classList\.contains\('hh'\)\) return null;/.test(gjs), 'game.js Townhall panel, skipped on module pages and the HUD home');
+assert(/slots\(\); el\.townhall\.hidden = !t\.townhall;/.test(hud) && /play\(b, 'room-unlock'\)/.test(hud), 'the HUD draws the slots and the Townhall button after each Today');
 console.log('test-home-engine: ok');

@@ -187,3 +187,11 @@ body.lg-modal-open .lg-nextbar { visibility: hidden; }
 .lg-picked.lg-picked-over { color: var(--lg-red-ink); font-weight: 600; }
 .lg-saved { display: flex; align-items: center; gap: 10px; }
 .lg-av.lg-av-40 { width: 40px; height: 40px; }
+
+/* 🏛️ The Townhall (Home engine v2): folded doors after the quests; a locked door is muted and says what opens it */
+.lg-town > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .4em; font-weight: 700; }
+.lg-town-l { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.lg-town-r a, .lg-town-r.is-locked { display: flex; align-items: center; gap: .5em; min-height: 44px; padding: 6px 10px; border: 1px solid var(--lg-line); border-radius: 10px; }
+.lg-town-r a { color: var(--lg-ink); font-weight: 600; text-decoration: none; }
+.lg-town-r.is-locked { color: var(--lg-muted); }
+.lg-town-r.is-locked small { margin-left: auto; text-align: right; }
