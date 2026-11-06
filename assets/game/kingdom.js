@@ -93,7 +93,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
         t = bases[i].buildings[j].tiers[k];
         if (t.state === 'open' && t.assignable && !t.owner && (t.assignees || []).length) return { kind: 'assign', base: bases[i], building: bases[i].buildings[j], tier: t };
       }
-      if ((d.cards || []).length && (d.followHeads || []).length) return { kind: 'follow', card: d.cards[0] };
+      if ((d.cards || []).length && ((d.followHeads || []).length || (d.followCoordinators || []).length)) return { kind: 'follow', card: d.cards[0] };
     }
     for (i = 0; i < bases.length; i++) for (j = 0; j < (bases[i].buildings || []).length; j++) {
       t = nextTier(bases[i].buildings[j]);
@@ -670,22 +670,34 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     }, opener);
   }
   function openFollow(card, opener) {
-    var d = S.data || {}, heads = d.followHeads || [];
+    var d = S.data || {}, heads = d.followHeads || [], coords = heads.length ? [] : d.followCoordinators || [], people = heads.length ? heads : coords;
     var title = 'Follow up: ' + card.title;
-    if (!heads.length) {
-      var s0 = sheet(title, card.campus, "No alliance heads who are Coordinators are set up yet, so a follow-up can't be sent. Add them in the game config first.", [], 'Send', function () {}, opener);
+    if (!people.length) {
+      var s0 = sheet(title, card.campus, "Nobody on the allowlist is a Coordinator yet, so there is no one to send a follow-up to.", [], 'Send', function () {}, opener);
       s0.querySelector('.kg-primary').remove(); return;
     }
     var today = d.day || '', sug = suggestHead(card, heads), days = Number(d.kingdom && d.kingdom.followupDueDays) || 7;
     var due = h('input', { type: 'date', id: 'kg-due', value: defaultDue(today, days), min: today || null, required: true });
-    sheet(title, card.campus, 'Who should follow this approved request up, and by when?',
-      [radios('kg-head', heads, sug ? sug.email : '', 'Who should follow this up?'), h('label', { class: 'kg-fld', for: 'kg-due' }, ['Due date', due]), noteField('kg-note')], 'Assign', function (form, ctl) {
+    // no alliance heads yet: any allowlist Coordinator, and an optional tick that makes them a head (kingdomsethead) before the follow-up goes
+    var fn = KINGDOM_DEPT_FUNCTION[card.category], mk = coords.length ? h('input', { type: 'checkbox', id: 'kg-mkhead' }) : null;
+    var fields = [radios('kg-head', people, sug ? sug.email : '', 'Who should follow this up?'), h('label', { class: 'kg-fld', for: 'kg-due' }, ['Due date', due]), noteField('kg-note')];
+    if (mk) fields.splice(1, 0, h('label', { class: 'kg-opt', for: 'kg-mkhead' }, [mk, h('span', {}, ['Also make them an alliance head' + (fn ? ' for ' + fnLabels([fn]) : '') + ', so Buddy suggests them next time'])]));
+    sheet(title, card.campus, coords.length ? 'No alliance heads are set up yet, so pick any Coordinator. Who should follow this up, and by when?' : 'Who should follow this approved request up, and by when?',
+      fields, 'Assign', function (form, ctl) {
         var who = picked(form, 'kg-head'), dv = due.value;
-        if (!who) { ctl.err.textContent = 'Pick a head first.'; return; }
+        if (!who) { ctl.err.textContent = 'Pick a person first.'; return; }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dv) || (today && dv < today)) { ctl.err.textContent = 'Pick a due date that is today or later.'; return; }
-        var name = (heads.filter(function (x) { return x.email === who; })[0] || {}).name || 'them';
-        ctl.done = function () { return 'Follow-up sent to ' + name + ', due ' + dv + '.'; };
-        send(allocateBody(card, who, dv, form.querySelector('textarea').value.trim()), ctl);
+        var name = (people.filter(function (x) { return x.email === who; })[0] || {}).name || 'them', body = allocateBody(card, who, dv, form.querySelector('textarea').value.trim());
+        ctl.done = function () { return 'Follow-up sent to ' + name + ', due ' + dv + '.' + (mk && mk.checked ? ' ' + name + ' is an alliance head now.' : ''); };
+        if (!(mk && mk.checked)) return send(body, ctl);
+        if (W.busy) return;
+        // the head first: if the follow-up then fails, they are a head already and a retry lists them as one
+        W.busy = true; ctl.err.textContent = ''; ctl.controls.forEach(function (c) { c.disabled = true; });
+        post({ action: 'kingdomsethead', email: who, functions: fn ? [fn] : [] }).then(function (r) {
+          if (!r || !r.success) { var se = new Error((r && r.error) || SEND_ERR); se.server = true; throw se; }
+        }).then(function () { W.busy = false; send(body, ctl); }, function (e) {
+          W.busy = false; ctl.err.textContent = e && e.server ? e.message : SEND_ERR; ctl.controls.forEach(function (c) { c.disabled = false; });
+        });
       }, opener);
   }
   function owner() { return S.data && S.data.role === 'Owner'; }

@@ -267,6 +267,7 @@ function doPost(e) {
     if (action === 'kingdomassign') return gameJson_(kingdomAssign_(caller, body));
     if (action === 'kingdomassignbulk') return gameJson_(kingdomAssignBulk_(caller, body));
     if (action === 'kingdomallocate') return gameJson_(kingdomAllocate_(caller, body));
+    if (action === 'kingdomsethead') return gameJson_(kingdomSetHead_(caller, body)); // game-kingdom-heads.gs: Owner + allowlist Coordinator checks inside
     // The People room's write (game-people.gs): POST only, never in GAME_MODULE_ACTIONS; Owner and rights checks are inside it.
     if (action === 'peoplecoordinator') return gameJson_(peopleCoordinator_(caller, body));
     // The 🎉 event self-tick (game-event.gs): POST only, never in GAME_MODULE_ACTIONS; every check is inside it.

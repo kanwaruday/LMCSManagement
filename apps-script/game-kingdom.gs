@@ -356,6 +356,15 @@ function kingdomGet_(caller, params) {
         const r = h && h.id && h.email ? rows.filter(function (x) { return gameLower_(x[0]) === gameLower_(h.email); })[0] : null;
         return r && String(r[3] || '').split(',').map(function (x) { return x.trim(); }).indexOf('Coordinator') !== -1;
       }).map(function (h) { return { id: h.id, name: h.name, email: gameLower_(h.email), functions: h.functions }; });
+      // no head is a Coordinator yet: every allowlist Coordinator, so the Owner can still send it (and may make them a head: kingdomsethead)
+      if (!res.followHeads.length) {
+        const seen = {};
+        res.followCoordinators = rows.filter(function (x) {
+          const e = gameLower_(x[0]);
+          if (!e || seen[e] || String(x[3] || '').split(',').map(function (y) { return y.trim(); }).indexOf('Coordinator') === -1) return false;
+          return (seen[e] = true);
+        }).map(function (x) { return { id: gameLower_(x[0]), name: String(x[1] || '').trim(), email: gameLower_(x[0]) }; });
+      }
       res.advice = kingdomAdvice_(bases, cards);
     }
     return res;
