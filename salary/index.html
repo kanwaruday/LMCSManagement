@@ -393,8 +393,10 @@ function calcSalary_() {
   const inc = existing ? Math.floor(lmsExp + otherExp / otherExpDivisor) : Math.floor(baseIncrements + lmsExp + otherExp / otherExpDivisor);
   const nb = Math.floor((preBasic + gradePay) * Math.pow(annualIncrementRate, inc) * (workHours / idealHours));
   const campusRates = (CONFIG.payrollRates && CONFIG.payrollRates[campus]) || { da: 0.05, ada: 0.35 };
-  const da = Math.floor(campusRates.da * nb);
-  const ada = Math.floor(campusRates.ada * nb);
+  // DA/ADA rounded exactly as payroll (payroll-calc.gs payRound_), so the offer's ESI matches payroll's.
+  const payRound = function (x) { return Math.round(Math.round(x * 1e6) / 1e6); };
+  const da = payRound(campusRates.da * nb);
+  const ada = payRound(campusRates.ada * nb);
   const ns = nb + da + ada;
 
   const epfCeiling = cVal_('EPF Cap Salary');

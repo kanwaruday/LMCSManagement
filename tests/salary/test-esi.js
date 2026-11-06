@@ -13,15 +13,16 @@ const html = fs.readFileSync(path.join(__dirname, '..', '..', 'salary', 'index.h
 const grab = (start) => { const i = html.indexOf(start); assert(i >= 0, start); return html.slice(i, html.indexOf('\n}\n', i) + 2); };
 const RATES = { 'LMS 1': { da: 0.05, ada: 0.35 }, 'LMS 3': { da: 0.05, ada: 0.25 } };
 
+// one page context; each call sets the form fields and reruns calcSalary_
+const f = {};
+const ctx = vm.createContext({ CONFIG: { constants: {}, payrollRates: RATES }, EPF_EXEMPTION_APPROVED: false, f,
+  document: { getElementById: (id) => ({ value: f[id], checked: f[id] }) } });
+vm.runInContext(html.match(/const DEFAULT_C = \{[\s\S]*?\};/)[0] + grab('function cVal_(') + grab('function calcSalary_(') + ';this.calc = calcSalary_;', ctx);
 function offer(basic, campus, opts) {
   const o = Object.assign({ esi: true, tuiFee: 0 }, opts);
-  const f = { fExisting: true, fCampus: campus, fLmsExp: 0, fOtherExp: 0, fPreBasic: basic, fGradePay: 0, fIdealHours: 1, fWorkHours: '',
-    fEpf: true, fEsi: o.esi, fMdExempt: false, fTuiFee: o.tuiFee };
-  const ctx = { CONFIG: { constants: {}, payrollRates: RATES }, EPF_EXEMPTION_APPROVED: false,
-    document: { getElementById: (id) => ({ value: f[id], checked: f[id] }) } };
-  vm.createContext(ctx);
-  vm.runInContext(html.match(/const DEFAULT_C = \{[\s\S]*?\};/)[0] + grab('function cVal_(') + grab('function calcSalary_(') + ';this.out = calcSalary_();', ctx);
-  return ctx.out;
+  Object.assign(f, { fExisting: true, fCampus: campus, fLmsExp: 0, fOtherExp: 0, fPreBasic: basic, fGradePay: 0, fIdealHours: 1, fWorkHours: '',
+    fEpf: true, fEsi: o.esi, fMdExempt: false, fTuiFee: o.tuiFee });
+  return ctx.calc();
 }
 
 // payroll for a full October month on the same Full Basic and school rates
@@ -37,6 +38,15 @@ for (const st of STAFF.filter((x) => x.entity !== 'LMS 6')) {
   assert.deepStrictEqual([o.esiWages, o.esiEe, o.esiE], [p.esiWages, p.esi, p.esiEmployer], st.code + ' matches payroll');
 }
 console.log('ok  - offer ESI matches payroll-calc.gs on every fixture basic');
+
+// sweep (G2's): every basic 3,000-30,000 on both rate sets -- DA, ADA, ESI wage, coverage and ESI all equal payroll's
+let diffs = 0;
+for (const campus of Object.keys(RATES)) for (let b = 3000; b <= 30000; b++) {
+  const o = offer(b, campus), p = pay(b, campus);
+  if (o.da !== p.da || o.ada !== p.ada || o.esiWages !== p.esiWages || o.esiAllowed !== p.esi > 0 || o.esiEe !== p.esi || o.esiE !== p.esiEmployer) diffs++;
+}
+assert.strictEqual(diffs, 0, 'offer vs payroll differences over the sweep');
+console.log('ok  - sweep: 54,002 basics x rate sets, 0 differences from payCalc_');
 
 // covered: Basic + DA = 21000 is at the threshold (Basic + ADA + DA = 28000 would have been out)
 let o = offer(20000, 'LMS 1');
