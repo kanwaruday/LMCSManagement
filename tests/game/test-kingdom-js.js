@@ -195,7 +195,7 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(K.questPeople(QR({ held: [{ val
 assert.ok(/Nobody else loses it/.test(K.reassignText(QR({}), { email: 'role:Teacher', name: 'All teachers at LMS 3', group: true })));
 assert.strictEqual(K.assignBody(QR({ campus: '' }), '', 'a@x.org', '').campus, '', 'a network row reassigns with an empty campus');
 // 📜 source: the list is a GET read; reassign reuses the one POST path behind a confirm; nudge only copies
-assert.ok(/action=kingdomquests/.test(src) && /'📜 All quests'/.test(src), 'All quests view reachable from the top row');
+assert.ok(/action=kingdomquests/.test(src) && /LMCSEmoji\.tag\('quests'\) : null, 'All quests'\]/.test(src), 'All quests view reachable from the top row (emoji from emoji.js)');
 assert.ok(/'Confirm', function \(f2, ctl2\)/.test(src) && /send\(assignBody\(r, r\.campus, person\.email, ''\), ctl2\)/.test(src), 'reassign: confirm sheet, then kingdomassign');
 assert.ok(/navigator\.clipboard\.writeText\(text\)/.test(src), 'nudge copies to the clipboard');
 // coming-soon placeholders on a campus window: six labelled chips, LMCSEmoji keys that exist, no numbers, nothing tappable, schools only
@@ -211,6 +211,7 @@ assert.ok(ksrc.includes('if (!base.darbar) body.unshift(window.LMCSScout ? LMCSS
   assert.ok(/d\.role === 'Owner' \? reviewsButton\(\) : null/.test(topFn), 'Reviews to vet button in the top row, Owner only');
   const rb = src.slice(src.indexOf('function reviewsButton'), src.indexOf('function pendingOf'));
   assert.ok(/openReviews\(e\.currentTarget\)/.test(rb), 'the button opens the Reviews tray');
+  assert.ok(/LMCSEmoji\.tag\('reviews'\)/.test(src) && !src.includes("'🗳️ Reviews"), 'the 🗳️ comes from emoji.js, never a typed literal (GM FIX 1)');
   assert.ok(/action: 'buddyreviews'/.test(rb) && /S\.rvAsked = true/.test(rb), 'the count is read once per page load');
   assert.ok(/setReviewsCount\(pendingOf\(d\)\)/.test(src.slice(src.indexOf('function openReviews'))), 'the tray refreshes the count');
 }

@@ -378,7 +378,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       h('div', { class: 'kg-crest' }, [svgUse('darbar', 'kg-crest-i'), h('div', {}, [h(S.panels ? 'h2' : 'h1', {}, [d.role === 'Owner' ? "Owner's Kingdom" : 'Your school']),
         h('div', { class: 'kg-sub' }, ['Kingdom level ' + (Number(d.kingdom && d.kingdom.level) || 0) + ' · ' + n + (n === 1 ? ' base' : ' bases')])])]),
       h('div', { class: 'kg-topacts' }, [
-        d.role === 'Owner' ? h('button', { type: 'button', class: 'kg-btn kg-questsbtn', onclick: function (e) { openQuests(e.currentTarget); } }, ['📜 All quests']) : null,
+        d.role === 'Owner' ? h('button', { type: 'button', class: 'kg-btn kg-questsbtn', onclick: function (e) { openQuests(e.currentTarget); } }, [window.LMCSEmoji ? LMCSEmoji.tag('quests') : null, 'All quests']) : null,
         d.role === 'Owner' ? reviewsButton() : null,
         h('button', { type: 'button', class: 'kg-btn kg-tourbtn', onclick: function () { runTour(true); } }, ['Show me around']),
         h('button', { type: 'button', class: 'kg-btn kg-ask', onclick: function () { if (window.LMCSDock && LMCSDock.open) LMCSDock.open(); } }, [buddyImg('avatar-winter-formal'), 'Ask Buddy'])])]);
@@ -606,13 +606,14 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   // 🗳️ Reviews to vet (Owner only; the server refuses anyone else): the button carries the pending count, read once per page load and
   // again each time the tray loads (so a decision there updates it). No count yet, or a failed read: the plain button.
-  function reviewsLabel() { var n = S.rvN || 0; return '🗳️ Reviews to vet' + (n ? ' (' + n + ')' : ''); }
+  // the label's nodes: the shared emoji (an aria-hidden tag, emoji.js 'reviews') beside the words, rebuilt whole on each count
+  function reviewsLabel() { var n = S.rvN || 0; return [window.LMCSEmoji ? LMCSEmoji.tag('reviews') : null, 'Reviews to vet' + (n ? ' (' + n + ')' : '')]; }
   function setReviewsCount(n) {
     S.rvN = n; var b = S.el && S.el.ownerDocument.querySelector('.kg-revbtn');
-    if (b) { b.textContent = reviewsLabel(); b.setAttribute('aria-label', 'Reviews to vet: ' + (n ? n + ' waiting' : 'none waiting')); }
+    if (b) { b.textContent = ''; reviewsLabel().forEach(function (k) { if (k) b.appendChild(typeof k === 'string' ? document.createTextNode(k) : k); }); b.setAttribute('aria-label', 'Reviews to vet: ' + (n ? n + ' waiting' : 'none waiting')); }
   }
   function reviewsButton() {
-    var b = h('button', { type: 'button', class: 'kg-btn kg-revbtn', onclick: function (e) { openReviews(e.currentTarget); } }, [reviewsLabel()]);
+    var b = h('button', { type: 'button', class: 'kg-btn kg-revbtn', onclick: function (e) { openReviews(e.currentTarget); } }, reviewsLabel());
     if (S.rvN == null && !S.rvAsked) { S.rvAsked = true; post({ action: 'buddyreviews' }).then(function (d) { if (d && d.success) setReviewsCount(pendingOf(d)); }, function () {}); }
     return b;
   }
