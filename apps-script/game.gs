@@ -137,6 +137,20 @@ function gameConfigDefaults_() {
         { id: 'collections', name: 'Collection heads', where: 'campus', sub: true, tiers: [t('Collection heads', 'cq:cfin')] }, // a sub-row of the Treasury card
       ],
     },
+    // Home engine v2 (game-home.gs; engine-contract.md B). homes.<Role>: { scene, slots: [{ id, label, emoji (an emoji.js key), at: [x%, y%],
+    // after (the slot that must be filled first), fills: { quest: '<questId>:<stepId>' ({campus} = the person's school), data: a GAME_MODULE_FILLS key }, opens }],
+    // schools: { LMSn: { scene, slots, hide } } }. A role without a row keeps today's home. A changed key replaces that role's whole row.
+    homes: {
+      Principal: { scene: 'school-building', slots: [
+        { id: 'rooms', label: 'Name your rooms', emoji: 'school', fills: { quest: 'rooms:{campus}:name' }, opens: 'principal/rooms.html' },
+        { id: 'staff', label: 'Put your staff in their rooms', emoji: 'staffRoom', after: 'rooms', fills: { quest: 'rooms:{campus}:staff' }, opens: 'principal/rooms.html#staff' } ] },
+    },
+    // The Townhall: one building on every World, each person sees only their doors. roles: missing or ['all'] = everyone;
+    // needs: a fills key or one of the person's slot ids (the door shows locked until it is filled).
+    townhall: { rooms: [
+      { id: 'requests', label: 'Requests & leave', emoji: 'requests', roles: ['all'], opens: 'teacher/index.html#panel-requests' },
+      { id: 'evaluation', label: 'My evaluation', emoji: 'evaluate', roles: ['Teacher', 'Staff', 'Principal'], opens: 'teacher/index.html#panel-evals' },
+      { id: 'office', label: 'Office & fees', emoji: 'fees', roles: ['FeeClerk', 'Accounts', 'Principal'], opens: 'office/index.html' } ] },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
     // 🎉 Events (game-event.gs). Game Config key `events` (an array; a row replaces the whole list). An event shows from `date` until the
     // person's checklist is done, or until `showTo`. steps[Role]: { id, emoji (the character assets/game/emoji.js uses for that concept), label, go, check, fn?, hint? }.

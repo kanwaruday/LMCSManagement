@@ -304,6 +304,7 @@ function gameToday_(caller, params) {
       sourcesDown: loaded.down, toursSeen: gameToursSeen_(progRows, me),
     };
     if (role === 'Owner' || role === 'Coordinator') out.board = gameWindowBoard_(caller, win.winRows, win.decRows, now, cfg);
+    if (typeof homeTodayFields_ === 'function') Object.assign(out, homeTodayFields_(caller, cfg, now, quests)); // Home engine v2 (game-home.gs): home.slots, townhall.rooms
     const agent = typeof buddyAgentFor_ === 'function' ? buddyAgentFor_(caller, cfg) : null; // the dock's agent: Jarvis (orders) or Buddy (review), game-buddy.gs
     if (agent) out.agent = agent;
     return out;
