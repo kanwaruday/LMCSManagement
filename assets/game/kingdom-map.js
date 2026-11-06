@@ -117,7 +117,7 @@ window.LMCSKingdomMap = (function () {
     (opts.bases || []).forEach(function (b) { level[b.id] = Number(b.level) || 0; });
     if (!V.map) {
       var c = places.CENTER || { lat: 31.8, lng: 77.0, zoom: 9 };
-      V.map = L.map(V.mapEl, { zoomControl: true, attributionControl: true, scrollWheelZoom: false }) // in the page: the wheel scrolls the page; zoom with + and −.setView([c.lat, c.lng], c.zoom);
+      V.map = L.map(V.mapEl, { zoomControl: true, attributionControl: true, scrollWheelZoom: false }).setView([c.lat, c.lng], c.zoom); // in the page: the wheel scrolls the page; zoom with + and −
       L.tileLayer(TILES, { maxZoom: 19, attribution: ATTR }).addTo(V.map);
       V.lines = L.layerGroup().addTo(V.map); // under the pins
       V.layer = L.layerGroup().addTo(V.map);

@@ -37,6 +37,7 @@ assert.strictEqual(M.ATTRIBUTION, '&copy; OpenStreetMap contributors');
 assert.ok(/attribution: ATTR/.test(src) && M.TILES === 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 ['leaflet/1.9.4/', ...(rm.match(/sha512-[\w+/=]+/g) || [])].forEach((s) => assert.ok(src.includes(s), 'same Leaflet pin: ' + s.slice(0, 20)));
 assert.ok(!/innerHTML/.test(src), 'no HTML from strings');
+assert.ok(src.split('\n').some((l) => /L\.map\(.*\)\.setView\(/.test(l.split('//')[0])), 'the map starts on CENTER: setView is code, not inside a comment');
 assert.ok(!/aria-modal/.test(src) && /role', 'region'/.test(src), 'the map is in the page, not a dialog: the base sheet it opens traps focus itself');
 assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the module');
 const page = read('owner/kingdom.html');
